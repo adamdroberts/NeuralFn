@@ -1,0 +1,436 @@
+{
+  "nodes": {
+    "in1": {
+      "instance_id": "in1",
+      "neuron_def": {
+        "id": "b824a3cc297e",
+        "name": "input",
+        "input_ports": [
+          {
+            "name": "in",
+            "range": [
+              -100,
+              100
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "output_ports": [
+          {
+            "name": "out",
+            "range": [
+              -100,
+              100
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "source_code": "@neuron(\n    inputs=[Port(\"in\", range=(-100, 100), precision=0.001)],\n    outputs=[Port(\"out\", range=(-100, 100), precision=0.001)],\n    name=\"input\",\n)\ndef input_node(x):\n    return x\n"
+      },
+      "position": [
+        0.0,
+        0.0
+      ]
+    },
+    "in2": {
+      "instance_id": "in2",
+      "neuron_def": {
+        "id": "b824a3cc297e",
+        "name": "input",
+        "input_ports": [
+          {
+            "name": "in",
+            "range": [
+              -100,
+              100
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "output_ports": [
+          {
+            "name": "out",
+            "range": [
+              -100,
+              100
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "source_code": "@neuron(\n    inputs=[Port(\"in\", range=(-100, 100), precision=0.001)],\n    outputs=[Port(\"out\", range=(-100, 100), precision=0.001)],\n    name=\"input\",\n)\ndef input_node(x):\n    return x\n"
+      },
+      "position": [
+        0.0,
+        0.0
+      ]
+    },
+    "h1": {
+      "instance_id": "h1",
+      "neuron_def": {
+        "id": "c431aa97a972",
+        "name": "weighted_sum",
+        "input_ports": [
+          {
+            "name": "a",
+            "range": [
+              -10,
+              10
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          },
+          {
+            "name": "b",
+            "range": [
+              -10,
+              10
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "output_ports": [
+          {
+            "name": "sum",
+            "range": [
+              -20,
+              20
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "source_code": "@neuron(\n    inputs=[Port(\"a\", range=(-10, 10)), Port(\"b\", range=(-10, 10))],\n    outputs=[Port(\"sum\", range=(-20, 20))],\n)\ndef weighted_sum(a, b):\n    return a + b\n"
+      },
+      "position": [
+        0.0,
+        0.0
+      ]
+    },
+    "h2": {
+      "instance_id": "h2",
+      "neuron_def": {
+        "id": "c431aa97a972",
+        "name": "weighted_sum",
+        "input_ports": [
+          {
+            "name": "a",
+            "range": [
+              -10,
+              10
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          },
+          {
+            "name": "b",
+            "range": [
+              -10,
+              10
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "output_ports": [
+          {
+            "name": "sum",
+            "range": [
+              -20,
+              20
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "source_code": "@neuron(\n    inputs=[Port(\"a\", range=(-10, 10)), Port(\"b\", range=(-10, 10))],\n    outputs=[Port(\"sum\", range=(-20, 20))],\n)\ndef weighted_sum(a, b):\n    return a + b\n"
+      },
+      "position": [
+        0.0,
+        0.0
+      ]
+    },
+    "a1": {
+      "instance_id": "a1",
+      "neuron_def": {
+        "id": "8e8016341a41",
+        "name": "sigmoid",
+        "input_ports": [
+          {
+            "name": "x",
+            "range": [
+              -10,
+              10
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "output_ports": [
+          {
+            "name": "y",
+            "range": [
+              0,
+              1
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "source_code": "@neuron(\n    inputs=[Port(\"x\", range=(-10, 10), precision=0.001)],\n    outputs=[Port(\"y\", range=(0, 1), precision=0.001)],\n)\ndef sigmoid(x):\n    return 1.0 / (1.0 + math.exp(-x))\n"
+      },
+      "position": [
+        0.0,
+        0.0
+      ]
+    },
+    "a2": {
+      "instance_id": "a2",
+      "neuron_def": {
+        "id": "8e8016341a41",
+        "name": "sigmoid",
+        "input_ports": [
+          {
+            "name": "x",
+            "range": [
+              -10,
+              10
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "output_ports": [
+          {
+            "name": "y",
+            "range": [
+              0,
+              1
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "source_code": "@neuron(\n    inputs=[Port(\"x\", range=(-10, 10), precision=0.001)],\n    outputs=[Port(\"y\", range=(0, 1), precision=0.001)],\n)\ndef sigmoid(x):\n    return 1.0 / (1.0 + math.exp(-x))\n"
+      },
+      "position": [
+        0.0,
+        0.0
+      ]
+    },
+    "h3": {
+      "instance_id": "h3",
+      "neuron_def": {
+        "id": "c431aa97a972",
+        "name": "weighted_sum",
+        "input_ports": [
+          {
+            "name": "a",
+            "range": [
+              -10,
+              10
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          },
+          {
+            "name": "b",
+            "range": [
+              -10,
+              10
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "output_ports": [
+          {
+            "name": "sum",
+            "range": [
+              -20,
+              20
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "source_code": "@neuron(\n    inputs=[Port(\"a\", range=(-10, 10)), Port(\"b\", range=(-10, 10))],\n    outputs=[Port(\"sum\", range=(-20, 20))],\n)\ndef weighted_sum(a, b):\n    return a + b\n"
+      },
+      "position": [
+        0.0,
+        0.0
+      ]
+    },
+    "a3": {
+      "instance_id": "a3",
+      "neuron_def": {
+        "id": "8e8016341a41",
+        "name": "sigmoid",
+        "input_ports": [
+          {
+            "name": "x",
+            "range": [
+              -10,
+              10
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "output_ports": [
+          {
+            "name": "y",
+            "range": [
+              0,
+              1
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "source_code": "@neuron(\n    inputs=[Port(\"x\", range=(-10, 10), precision=0.001)],\n    outputs=[Port(\"y\", range=(0, 1), precision=0.001)],\n)\ndef sigmoid(x):\n    return 1.0 / (1.0 + math.exp(-x))\n"
+      },
+      "position": [
+        0.0,
+        0.0
+      ]
+    },
+    "out": {
+      "instance_id": "out",
+      "neuron_def": {
+        "id": "f4a657509732",
+        "name": "output",
+        "input_ports": [
+          {
+            "name": "in",
+            "range": [
+              -100,
+              100
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "output_ports": [
+          {
+            "name": "out",
+            "range": [
+              -100,
+              100
+            ],
+            "precision": 0.001,
+            "dtype": "float"
+          }
+        ],
+        "source_code": "@neuron(\n    inputs=[Port(\"in\", range=(-100, 100), precision=0.001)],\n    outputs=[Port(\"out\", range=(-100, 100), precision=0.001)],\n    name=\"output\",\n)\ndef output_node(x):\n    return x\n"
+      },
+      "position": [
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "edges": {
+    "e1": {
+      "id": "e1",
+      "src_node": "in1",
+      "src_port": 0,
+      "dst_node": "h1",
+      "dst_port": 0,
+      "weight": 2.455150604248047,
+      "bias": -0.27576959133148193
+    },
+    "e2": {
+      "id": "e2",
+      "src_node": "in2",
+      "src_port": 0,
+      "dst_node": "h1",
+      "dst_port": 1,
+      "weight": 2.460325002670288,
+      "bias": -0.2856653332710266
+    },
+    "e3": {
+      "id": "e3",
+      "src_node": "in1",
+      "src_port": 0,
+      "dst_node": "h2",
+      "dst_port": 0,
+      "weight": 2.4105613231658936,
+      "bias": -0.2800719738006592
+    },
+    "e4": {
+      "id": "e4",
+      "src_node": "in2",
+      "src_port": 0,
+      "dst_node": "h2",
+      "dst_port": 1,
+      "weight": 2.410367488861084,
+      "bias": -0.28199058771133423
+    },
+    "e5": {
+      "id": "e5",
+      "src_node": "h1",
+      "src_port": 0,
+      "dst_node": "a1",
+      "dst_port": 0,
+      "weight": 2.50529408454895,
+      "bias": -0.19363251328468323
+    },
+    "e6": {
+      "id": "e6",
+      "src_node": "h2",
+      "src_port": 0,
+      "dst_node": "a2",
+      "dst_port": 0,
+      "weight": 2.4608960151672363,
+      "bias": -0.2084774225950241
+    },
+    "e7": {
+      "id": "e7",
+      "src_node": "a1",
+      "src_port": 0,
+      "dst_node": "h3",
+      "dst_port": 0,
+      "weight": 1.5705283880233765,
+      "bias": -0.4030129313468933
+    },
+    "e8": {
+      "id": "e8",
+      "src_node": "a2",
+      "src_port": 0,
+      "dst_node": "h3",
+      "dst_port": 1,
+      "weight": 1.5588774681091309,
+      "bias": -0.40215814113616943
+    },
+    "e9": {
+      "id": "e9",
+      "src_node": "h3",
+      "src_port": 0,
+      "dst_node": "a3",
+      "dst_port": 0,
+      "weight": 1.6381124258041382,
+      "bias": -0.3675890862941742
+    },
+    "e10": {
+      "id": "e10",
+      "src_node": "a3",
+      "src_port": 0,
+      "dst_node": "out",
+      "dst_port": 0,
+      "weight": 1.0003182888031006,
+      "bias": -0.3073287606239319
+    }
+  },
+  "input_node_ids": [
+    "in1",
+    "in2"
+  ],
+  "output_node_ids": [
+    "out"
+  ]
+}
