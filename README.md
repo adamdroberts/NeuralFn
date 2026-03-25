@@ -84,4 +84,30 @@ losses = evo.train(X, Y)
 
 ## Built-in neurons
 
-`sigmoid`, `relu`, `tanh`, `threshold`, `identity`, `negate`, `add`, `multiply`, `gaussian`, `log`, `input`, `output`
+sigmoid,
+relu,
+tanh_neuron,
+threshold,
+identity,
+negate,
+add,
+multiply,
+gaussian,
+log_neuron,
+leaky_relu,
+prelu,
+relu6,
+elu,
+selu,
+gelu,
+silu,
+mish,
+softplus,
+softsign,
+hard_sigmoid,
+hard_tanh,
+hard_swish,
+softmax_2,
+logsoftmax_2,
+input_node,
+output_node
