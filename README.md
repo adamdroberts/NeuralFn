@@ -1,6 +1,6 @@
 # NeuralFn
 
-A brain-inspired neural network framework where each neuron is a user-defined Python function with typed I/O ports, connected in an arbitrary graph.
+A brain-inspired neural network framework where each neuron is a either a well-established pre-defined NN function or a user-defined Python function with typed I/O ports, connected in an arbitrary graph.
 
 ## How it works
 
