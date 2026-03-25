@@ -292,34 +292,123 @@ def output_node(x):
     return x
 
 
-BUILTIN_NEURONS: list[NeuronDef] = [
-    sigmoid,
-    relu,
-    tanh_neuron,
-    threshold,
-    identity,
-    negate,
-    add,
-    multiply,
-    gaussian,
-    log_neuron,
-    leaky_relu,
-    prelu,
-    relu6,
-    elu,
-    selu,
-    gelu,
-    silu,
-    mish,
-    softplus,
-    softsign,
-    hard_sigmoid,
-    hard_tanh,
-    hard_swish,
-    softmax_2,
-    logsoftmax_2,
-    input_node,
-    output_node,
-]
+_BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
+    "sigmoid": sigmoid,
+    "relu": relu,
+    "tanh_neuron": tanh_neuron,
+    "threshold": threshold,
+    "identity": identity,
+    "negate": negate,
+    "add": add,
+    "multiply": multiply,
+    "gaussian": gaussian,
+    "log_neuron": log_neuron,
+    "leaky_relu": leaky_relu,
+    "prelu": prelu,
+    "relu6": relu6,
+    "elu": elu,
+    "selu": selu,
+    "gelu": gelu,
+    "silu": silu,
+    "mish": mish,
+    "softplus": softplus,
+    "softsign": softsign,
+    "hard_sigmoid": hard_sigmoid,
+    "hard_tanh": hard_tanh,
+    "hard_swish": hard_swish,
+    "softmax_2": softmax_2,
+    "logsoftmax_2": logsoftmax_2,
+    "input_node": input_node,
+    "output_node": output_node,
+}
+
+
+class BuiltinNeurons:
+    """Public helper exposing the built-in neuron catalog."""
+
+    sigmoid = sigmoid
+    relu = relu
+    tanh_neuron = tanh_neuron
+    threshold = threshold
+    identity = identity
+    negate = negate
+    add = add
+    multiply = multiply
+    gaussian = gaussian
+    log_neuron = log_neuron
+    leaky_relu = leaky_relu
+    prelu = prelu
+    relu6 = relu6
+    elu = elu
+    selu = selu
+    gelu = gelu
+    silu = silu
+    mish = mish
+    softplus = softplus
+    softsign = softsign
+    hard_sigmoid = hard_sigmoid
+    hard_tanh = hard_tanh
+    hard_swish = hard_swish
+    softmax_2 = softmax_2
+    logsoftmax_2 = logsoftmax_2
+    input_node = input_node
+    output_node = output_node
+
+    @classmethod
+    def all(cls) -> list[NeuronDef]:
+        """Return the full built-in neuron catalog."""
+        return list(_BUILTIN_ATTR_MAP.values())
+
+    @classmethod
+    def get(cls, name: str) -> NeuronDef:
+        """Lookup a built-in by attribute name or serialised display name."""
+        neuron_def = _BUILTIN_ATTR_MAP.get(name)
+        if neuron_def is not None:
+            return neuron_def
+
+        for candidate in _BUILTIN_ATTR_MAP.values():
+            if candidate.name == name:
+                return candidate
+
+        raise KeyError(f"Unknown built-in neuron: {name}")
+
+
+BUILTIN_NEURONS: list[NeuronDef] = BuiltinNeurons.all()
+
+BUILTIN_ATTR_MAP: dict[str, NeuronDef] = dict(_BUILTIN_ATTR_MAP)
 
 BUILTIN_MAP: dict[str, NeuronDef] = {n.name: n for n in BUILTIN_NEURONS}
+
+__all__ = [
+    "BuiltinNeurons",
+    "BUILTIN_NEURONS",
+    "BUILTIN_MAP",
+    "BUILTIN_ATTR_MAP",
+    "sigmoid",
+    "relu",
+    "tanh_neuron",
+    "threshold",
+    "identity",
+    "negate",
+    "add",
+    "multiply",
+    "gaussian",
+    "log_neuron",
+    "leaky_relu",
+    "prelu",
+    "relu6",
+    "elu",
+    "selu",
+    "gelu",
+    "silu",
+    "mish",
+    "softplus",
+    "softsign",
+    "hard_sigmoid",
+    "hard_tanh",
+    "hard_swish",
+    "softmax_2",
+    "logsoftmax_2",
+    "input_node",
+    "output_node",
+]

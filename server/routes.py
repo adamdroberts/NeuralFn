@@ -10,10 +10,11 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 from starlette.responses import StreamingResponse
 
-from neuralfn.builtins import BUILTIN_NEURONS
+from neuralfn.builtins import BuiltinNeurons
 from neuralfn.evolutionary import EvoConfig, EvolutionaryTrainer
 from neuralfn.graph import Edge, NeuronGraph, NeuronInstance
-from neuralfn.neuron import NeuronDef, neuron_from_source
+from neuralfn.hybrid import HybridConfig, HybridTrainer
+from neuralfn.neuron import NeuronDef, neuron_from_source, subgraph_neuron
 from neuralfn.port import Port
 from neuralfn.surrogate import probe_neuron
 from neuralfn.trainer import SurrogateTrainer, TrainConfig
@@ -24,7 +25,7 @@ router = APIRouter(prefix="/api")
 
 _graph = NeuronGraph()
 _training_thread: threading.Thread | None = None
-_trainer_instance: SurrogateTrainer | EvolutionaryTrainer | None = None
+_trainer_instance: SurrogateTrainer | EvolutionaryTrainer | HybridTrainer | None = None
 
 
 def _port_from_model(pm: Any) -> Port:
@@ -32,6 +33,18 @@ def _port_from_model(pm: Any) -> Port:
 
 
 def _ndef_from_model(nm: Any) -> NeuronDef:
+    if getattr(nm, "kind", "function") == "subgraph":
+        if nm.subgraph is None:
+            raise ValueError(f"Subgraph neuron '{nm.name}' is missing nested graph data")
+        nested = NeuronGraph.from_dict(nm.subgraph.model_dump())
+        return subgraph_neuron(
+            nested,
+            name=nm.name,
+            input_aliases=list(getattr(nm, "input_aliases", [])) or None,
+            output_aliases=list(getattr(nm, "output_aliases", [])) or None,
+            neuron_id=nm.id or None,
+        )
+
     input_ports = [_port_from_model(p) for p in nm.input_ports]
     output_ports = [_port_from_model(p) for p in nm.output_ports]
     return neuron_from_source(
@@ -115,7 +128,7 @@ def execute(body: ExecuteRequest) -> dict[str, Any]:
 
 @router.get("/builtins")
 def list_builtins() -> list[dict[str, Any]]:
-    return [n.to_dict() for n in BUILTIN_NEURONS]
+    return [n.to_dict() for n in BuiltinNeurons.all()]
 
 
 # ── Probe ─────────────────────────────────────────────────────────────
@@ -147,29 +160,63 @@ def train_start(body: TrainRequest) -> StreamingResponse:
     def on_progress(step: int, loss: float) -> None:
         progress_queue.append({"step": step, "loss": loss})
 
+    def on_hybrid_progress(info: dict[str, Any]) -> None:
+        progress_queue.append(info)
+
     def run_surrogate() -> None:
-        cfg = TrainConfig(
-            learning_rate=body.learning_rate,
-            epochs=body.epochs,
-        )
-        trainer = SurrogateTrainer(_graph, cfg)
-        global _trainer_instance
-        _trainer_instance = trainer
-        trainer.train(train_in, train_tgt, on_epoch=on_progress)
-        done_event.set()
+        try:
+            cfg = TrainConfig(
+                learning_rate=body.learning_rate,
+                epochs=body.epochs,
+                loss_fn=body.loss_fn,
+            )
+            trainer = SurrogateTrainer(_graph, cfg)
+            global _trainer_instance
+            _trainer_instance = trainer
+            trainer.train(train_in, train_tgt, on_epoch=on_progress)
+        finally:
+            done_event.set()
 
     def run_evolutionary() -> None:
-        cfg = EvoConfig(
-            population_size=body.population_size,
-            generations=body.generations,
-        )
-        trainer = EvolutionaryTrainer(_graph, cfg)
-        global _trainer_instance
-        _trainer_instance = trainer
-        trainer.train(train_in, train_tgt, on_generation=on_progress)
-        done_event.set()
+        try:
+            cfg = EvoConfig(
+                population_size=body.population_size,
+                generations=body.generations,
+            )
+            trainer = EvolutionaryTrainer(_graph, cfg)
+            global _trainer_instance
+            _trainer_instance = trainer
+            trainer.train(train_in, train_tgt, on_generation=on_progress)
+        finally:
+            done_event.set()
 
-    target = run_surrogate if body.method == "surrogate" else run_evolutionary
+    def run_hybrid() -> None:
+        try:
+            cfg = HybridConfig(
+                outer_rounds=body.outer_rounds,
+                loss_fn=body.loss_fn,
+                default_surrogate=TrainConfig(
+                    learning_rate=body.learning_rate,
+                    epochs=body.epochs,
+                    loss_fn=body.loss_fn,
+                ),
+                default_evolutionary=EvoConfig(
+                    population_size=body.population_size,
+                    generations=body.generations,
+                ),
+            )
+            trainer = HybridTrainer(_graph, cfg)
+            global _trainer_instance
+            _trainer_instance = trainer
+            trainer.train(train_in, train_tgt, on_step=on_hybrid_progress)
+        finally:
+            done_event.set()
+
+    use_legacy = body.method in {"surrogate", "evolutionary"} and not _graph.has_nested_subgraphs()
+    if use_legacy:
+        target = run_surrogate if body.method == "surrogate" else run_evolutionary
+    else:
+        target = run_hybrid
     _training_thread = threading.Thread(target=target, daemon=True)
     _training_thread.start()
 

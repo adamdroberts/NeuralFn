@@ -5,9 +5,12 @@ import math
 import textwrap
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from .port import Port
+
+if TYPE_CHECKING:
+    from .graph import NeuronGraph
 
 
 @dataclass
@@ -18,20 +21,40 @@ class NeuronDef:
     """
 
     name: str
-    fn: Callable[..., Any]
+    fn: Callable[..., Any] | None
     input_ports: list[Port]
     output_ports: list[Port]
     source_code: str = ""
+    kind: str = "function"
+    subgraph: NeuronGraph | None = None
+    input_aliases: list[str] = field(default_factory=list)
+    output_aliases: list[str] = field(default_factory=list)
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
 
     def __call__(self, *args: float) -> tuple[float, ...]:
-        result = self.fn(*args)
+        if self.kind == "subgraph":
+            if self.subgraph is None:
+                raise ValueError(f"Subgraph neuron '{self.name}' is missing a nested graph")
+            result = self.subgraph.execute_flat(tuple(float(arg) for arg in args))
+        else:
+            if self.fn is None:
+                raise ValueError(f"Function neuron '{self.name}' is missing a callable")
+            result = self.fn(*args)
         if not isinstance(result, (tuple, list)):
             result = (result,)
         conditioned: list[float] = []
         for val, port in zip(result, self.output_ports):
             conditioned.append(port.condition(float(val)))
         return tuple(conditioned)
+
+    def refresh_interface_ports(self) -> None:
+        """Refresh aliased interface ports from the nested subgraph definition."""
+        if self.kind != "subgraph" or self.subgraph is None:
+            return
+        self.input_ports = self.subgraph.flattened_input_ports(self.input_aliases or None)
+        self.output_ports = self.subgraph.flattened_output_ports(self.output_aliases or None)
+        self.input_aliases = [port.name for port in self.input_ports]
+        self.output_aliases = [port.name for port in self.output_ports]
 
     @property
     def n_inputs(self) -> int:
@@ -42,12 +65,18 @@ class NeuronDef:
         return len(self.output_ports)
 
     def to_dict(self) -> dict[str, Any]:
+        if self.kind == "subgraph":
+            self.refresh_interface_ports()
         return {
             "id": self.id,
             "name": self.name,
+            "kind": self.kind,
             "input_ports": [p.to_dict() for p in self.input_ports],
             "output_ports": [p.to_dict() for p in self.output_ports],
             "source_code": self.source_code,
+            "subgraph": self.subgraph.to_dict() if self.subgraph is not None else None,
+            "input_aliases": self.input_aliases,
+            "output_aliases": self.output_aliases,
         }
 
     @classmethod
@@ -56,6 +85,22 @@ class NeuronDef:
 
         The callable is rebuilt by exec-ing the stored source code.
         """
+        kind = d.get("kind", "function")
+        if kind == "subgraph":
+            from .graph import NeuronGraph
+
+            subgraph_data = d.get("subgraph")
+            if subgraph_data is None:
+                raise ValueError(f"Subgraph neuron '{d['name']}' is missing nested graph data")
+            subgraph = NeuronGraph.from_dict(subgraph_data)
+            return subgraph_neuron(
+                subgraph,
+                name=d["name"],
+                input_aliases=d.get("input_aliases") or None,
+                output_aliases=d.get("output_aliases") or None,
+                neuron_id=d.get("id"),
+            )
+
         import neuralfn.port as _port_mod
         ns: dict[str, Any] = {"math": math, "Port": _port_mod.Port}
         ns["neuron"] = lambda **_kw: (lambda fn: fn)
@@ -74,6 +119,7 @@ class NeuronDef:
             input_ports=[Port.from_dict(p) for p in d["input_ports"]],
             output_ports=[Port.from_dict(p) for p in d["output_ports"]],
             source_code=d["source_code"],
+            kind=kind,
         )
 
 
@@ -96,6 +142,7 @@ def neuron(
             input_ports=list(inputs),
             output_ports=list(outputs),
             source_code=src,
+            kind="function",
         )
 
     return wrapper
@@ -126,4 +173,31 @@ def neuron_from_source(
         input_ports=input_ports,
         output_ports=output_ports,
         source_code=source_code,
+        kind="function",
+    )
+
+
+def subgraph_neuron(
+    graph: NeuronGraph,
+    *,
+    name: str,
+    input_aliases: list[str] | None = None,
+    output_aliases: list[str] | None = None,
+    neuron_id: str | None = None,
+) -> NeuronDef:
+    """Wrap a ``NeuronGraph`` as a reusable neuron definition."""
+    graph.validate(as_subgraph=True)
+    input_ports = graph.flattened_input_ports(input_aliases)
+    output_ports = graph.flattened_output_ports(output_aliases)
+    return NeuronDef(
+        id=neuron_id or uuid.uuid4().hex[:12],
+        name=name,
+        fn=None,
+        input_ports=input_ports,
+        output_ports=output_ports,
+        source_code="",
+        kind="subgraph",
+        subgraph=graph,
+        input_aliases=[port.name for port in input_ports],
+        output_aliases=[port.name for port in output_ports],
     )

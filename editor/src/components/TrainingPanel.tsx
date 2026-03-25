@@ -10,6 +10,7 @@ import {
 } from "recharts";
 import { useGraphStore } from "../store/graphStore";
 import { api } from "../api/client";
+import { graphContainsSubgraphs } from "../store/graphUtils";
 
 export default function TrainingPanel() {
   const {
@@ -18,11 +19,11 @@ export default function TrainingPanel() {
     addLossPoint,
     clearLoss,
     setTraining,
-    nodes,
-    edges,
+    rootGraph,
   } = useGraphStore();
 
-  const [method, setMethod] = useState<"surrogate" | "evolutionary">("surrogate");
+  const hasNestedGraphs = graphContainsSubgraphs(rootGraph);
+  const [outerRounds, setOuterRounds] = useState(3);
   const [epochs, setEpochs] = useState(200);
   const [lr, setLr] = useState(0.001);
   const [popSize, setPopSize] = useState(50);
@@ -44,53 +45,19 @@ export default function TrainingPanel() {
     clearLoss();
     setTraining(true);
 
-    const inputIds = nodes.filter((n) => n.data.isInput).map((n) => n.id);
-    const outputIds = nodes.filter((n) => n.data.isOutput).map((n) => n.id);
-
     try {
-      await api.setIO(inputIds, outputIds);
-    } catch {}
-
-    const graphData = {
-      nodes: Object.fromEntries(
-        nodes.map((n) => [
-          n.id,
-          {
-            instance_id: n.id,
-            neuron_def: n.data.neuronDef,
-            position: [n.position.x, n.position.y] as [number, number],
-          },
-        ])
-      ),
-      edges: Object.fromEntries(
-        edges.map((e) => [
-          e.id,
-          {
-            id: e.id,
-            src_node: e.source,
-            src_port: parseInt((e.sourceHandle ?? "out-0").split("-")[1]) || 0,
-            dst_node: e.target,
-            dst_port: parseInt((e.targetHandle ?? "in-0").split("-")[1]) || 0,
-            weight: (e.data as any)?.weight ?? 1.0,
-            bias: (e.data as any)?.bias ?? 0.0,
-          },
-        ])
-      ),
-      input_node_ids: inputIds,
-      output_node_ids: outputIds,
-    };
-
-    try {
-      await api.putGraph(graphData);
+      await api.putGraph(rootGraph);
     } catch (err) {
       console.error("Failed to sync graph", err);
     }
 
     ctrlRef.current = api.startTraining(
       {
-        method,
+        method: hasNestedGraphs ? null : rootGraph.training_method,
         train_inputs: inputs,
         train_targets: targets,
+        outer_rounds: outerRounds,
+        loss_fn: "mse",
         epochs,
         learning_rate: lr,
         population_size: popSize,
@@ -99,14 +66,29 @@ export default function TrainingPanel() {
       (msg) => {
         if (msg.done) {
           setTraining(false);
-        } else if (msg.step !== undefined && msg.loss !== undefined) {
-          addLossPoint({ step: msg.step, loss: msg.loss });
+        } else if (msg.loss !== undefined) {
+          addLossPoint({
+            step: msg.local_step ?? msg.step ?? lossHistory.length,
+            loss: msg.loss,
+            graphName: msg.graph_name,
+            method: msg.method,
+          });
         }
       }
     );
   }, [
-    method, epochs, lr, popSize, dataInput, dataTarget,
-    nodes, edges, clearLoss, setTraining, addLossPoint,
+    rootGraph,
+    hasNestedGraphs,
+    outerRounds,
+    epochs,
+    lr,
+    popSize,
+    dataInput,
+    dataTarget,
+    clearLoss,
+    setTraining,
+    addLossPoint,
+    lossHistory.length,
   ]);
 
   const stop = useCallback(async () => {
@@ -118,14 +100,21 @@ export default function TrainingPanel() {
   return (
     <div className="border-t border-gray-800 bg-gray-900 p-3">
       <div className="flex items-center gap-3 flex-wrap">
-        <select
-          value={method}
-          onChange={(e) => setMethod(e.target.value as any)}
-          className="bg-gray-800 border border-gray-700 rounded text-xs px-2 py-1 text-gray-200"
-        >
-          <option value="surrogate">Surrogate (gradient)</option>
-          <option value="evolutionary">Evolutionary</option>
-        </select>
+        <span className="text-xs text-gray-300">
+          Root method: <span className="font-mono">{rootGraph.training_method}</span>
+        </span>
+
+        {hasNestedGraphs && (
+          <label className="text-[10px] text-gray-400">
+            Outer Rounds
+            <input
+              type="number"
+              value={outerRounds}
+              onChange={(e) => setOuterRounds(parseInt(e.target.value, 10) || 1)}
+              className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+            />
+          </label>
+        )}
 
         <label className="text-[10px] text-gray-400">
           Epochs
@@ -137,28 +126,26 @@ export default function TrainingPanel() {
           />
         </label>
 
-        {method === "surrogate" ? (
-          <label className="text-[10px] text-gray-400">
-            LR
-            <input
-              type="number"
-              value={lr}
-              step={0.0001}
-              onChange={(e) => setLr(parseFloat(e.target.value) || 0.001)}
-              className="ml-1 w-20 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
-            />
-          </label>
-        ) : (
-          <label className="text-[10px] text-gray-400">
-            Pop
-            <input
-              type="number"
-              value={popSize}
-              onChange={(e) => setPopSize(parseInt(e.target.value) || 50)}
-              className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
-            />
-          </label>
-        )}
+        <label className="text-[10px] text-gray-400">
+          LR
+          <input
+            type="number"
+            value={lr}
+            step={0.0001}
+            onChange={(e) => setLr(parseFloat(e.target.value) || 0.001)}
+            className="ml-1 w-20 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+          />
+        </label>
+
+        <label className="text-[10px] text-gray-400">
+          Pop
+          <input
+            type="number"
+            value={popSize}
+            onChange={(e) => setPopSize(parseInt(e.target.value) || 50)}
+            className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+          />
+        </label>
 
         {!isTraining ? (
           <button
@@ -182,6 +169,12 @@ export default function TrainingPanel() {
           </span>
         )}
       </div>
+
+      {hasNestedGraphs && (
+        <div className="mt-2 text-[10px] text-gray-500">
+          Nested networks use each graph&apos;s own training method. Set root and subgraph methods from the side panel.
+        </div>
+      )}
 
       <div className="flex gap-2 mt-2">
         <label className="text-[10px] text-gray-400 flex-1">

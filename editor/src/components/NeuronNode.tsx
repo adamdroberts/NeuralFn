@@ -6,6 +6,8 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
   const { label, neuronDef, isInput, isOutput } = data;
   const inputs = neuronDef.input_ports;
   const outputs = neuronDef.output_ports;
+  const isSubgraph = neuronDef.kind === "subgraph";
+  const trainingMethod = neuronDef.subgraph?.training_method;
 
   const roleTag = isInput ? "IN" : isOutput ? "OUT" : null;
 
@@ -13,20 +15,37 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
     <div
       className={`rounded-lg border px-3 py-2 min-w-[140px] shadow-lg transition-colors ${
         selected
-          ? "border-blue-400 bg-gray-800"
-          : "border-gray-700 bg-gray-900"
+          ? isSubgraph
+            ? "border-amber-400 bg-gray-800"
+            : "border-blue-400 bg-gray-800"
+          : isSubgraph
+            ? "border-amber-700 bg-gray-900"
+            : "border-gray-700 bg-gray-900"
       }`}
     >
       <div className="flex items-center justify-between gap-2 mb-1">
-        <span className="text-xs font-bold text-blue-300 truncate">
+        <span className={`text-xs font-bold truncate ${isSubgraph ? "text-amber-300" : "text-blue-300"}`}>
           {label}
         </span>
-        {roleTag && (
-          <span className="text-[10px] font-mono px-1 rounded bg-blue-900 text-blue-200">
-            {roleTag}
-          </span>
-        )}
+        <div className="flex items-center gap-1">
+          {trainingMethod && (
+            <span className="text-[10px] font-mono px-1 rounded bg-amber-950 text-amber-200 uppercase">
+              {trainingMethod.slice(0, 3)}
+            </span>
+          )}
+          {roleTag && (
+            <span className="text-[10px] font-mono px-1 rounded bg-blue-900 text-blue-200">
+              {roleTag}
+            </span>
+          )}
+        </div>
       </div>
+
+      {isSubgraph && (
+        <div className="mb-2 text-[10px] text-amber-200/80">
+          Double-click to open subgraph
+        </div>
+      )}
 
       <div className="flex justify-between gap-4 text-[10px] text-gray-400">
         <div className="flex flex-col gap-1">

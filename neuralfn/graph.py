@@ -83,7 +83,18 @@ class NeuronGraph:
     Supports both DAG (feedforward) and cyclic (recurrent) execution.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        name: str = "graph",
+        training_method: str = "surrogate",
+        surrogate_config: dict[str, Any] | None = None,
+        evo_config: dict[str, Any] | None = None,
+    ) -> None:
+        self.name = name
+        self.training_method = training_method
+        self.surrogate_config = dict(surrogate_config or {})
+        self.evo_config = dict(evo_config or {})
         self.nodes: dict[str, NeuronInstance] = {}
         self.edges: dict[str, Edge] = {}
         self.input_node_ids: list[str] = []
@@ -135,6 +146,151 @@ class NeuronGraph:
 
     def _incoming(self, node_id: str) -> list[Edge]:
         return [e for e in self.edges.values() if e.dst_node == node_id]
+
+    def interface_input_layout(self) -> list[tuple[str, int, Port]]:
+        layout: list[tuple[str, int, Port]] = []
+        for nid in self.input_node_ids:
+            node = self.nodes.get(nid)
+            if node is None:
+                raise ValueError(f"Graph '{self.name}' is missing input node '{nid}'")
+            for idx, port in enumerate(node.neuron_def.output_ports):
+                layout.append((nid, idx, port))
+        return layout
+
+    def interface_output_layout(self) -> list[tuple[str, int, Port]]:
+        layout: list[tuple[str, int, Port]] = []
+        for nid in self.output_node_ids:
+            node = self.nodes.get(nid)
+            if node is None:
+                raise ValueError(f"Graph '{self.name}' is missing output node '{nid}'")
+            for idx, port in enumerate(node.neuron_def.output_ports):
+                layout.append((nid, idx, port))
+        return layout
+
+    def flattened_input_ports(self, aliases: list[str] | None = None) -> list[Port]:
+        return self._aliased_ports(self.interface_input_layout(), aliases, "input")
+
+    def flattened_output_ports(self, aliases: list[str] | None = None) -> list[Port]:
+        return self._aliased_ports(self.interface_output_layout(), aliases, "output")
+
+    def _aliased_ports(
+        self,
+        layout: list[tuple[str, int, Port]],
+        aliases: list[str] | None,
+        direction: str,
+    ) -> list[Port]:
+        if aliases is not None and len(aliases) != len(layout):
+            raise ValueError(
+                f"Graph '{self.name}' has {len(layout)} {direction} ports but "
+                f"received {len(aliases)} aliases"
+            )
+        resolved = aliases or [f"{nid}.{port.name}" for nid, _idx, port in layout]
+        ports: list[Port] = []
+        for alias, (_nid, _idx, port) in zip(resolved, layout):
+            ports.append(
+                Port(
+                    name=alias,
+                    range=port.range,
+                    precision=port.precision,
+                    dtype=port.dtype,
+                )
+            )
+        return ports
+
+    def execute_flat(self, flat_inputs: tuple[float, ...]) -> tuple[float, ...]:
+        """Execute the graph using flattened external inputs/outputs."""
+        inputs = self._expand_flat_inputs(flat_inputs)
+        outputs = self.execute(inputs)
+        return self._flatten_outputs(outputs)
+
+    def _expand_flat_inputs(self, flat_inputs: tuple[float, ...]) -> dict[str, tuple[float, ...]]:
+        expanded: dict[str, tuple[float, ...]] = {}
+        idx = 0
+        for nid in self.input_node_ids:
+            node = self.nodes.get(nid)
+            if node is None:
+                raise ValueError(f"Graph '{self.name}' is missing input node '{nid}'")
+            n_out = node.neuron_def.n_outputs
+            chunk = flat_inputs[idx : idx + n_out]
+            if len(chunk) != n_out:
+                raise ValueError(
+                    f"Graph '{self.name}' expected {len(self.interface_input_layout())} flattened "
+                    f"inputs but received {len(flat_inputs)}"
+                )
+            expanded[nid] = tuple(float(val) for val in chunk)
+            idx += n_out
+        if idx != len(flat_inputs):
+            raise ValueError(
+                f"Graph '{self.name}' expected {idx} flattened inputs but received {len(flat_inputs)}"
+            )
+        return expanded
+
+    def _flatten_outputs(self, outputs: dict[str, tuple[float, ...]]) -> tuple[float, ...]:
+        values: list[float] = []
+        for nid in self.output_node_ids:
+            node_vals = outputs.get(nid, ())
+            values.extend(float(val) for val in node_vals)
+        return tuple(values)
+
+    def has_nested_subgraphs(self) -> bool:
+        return any(
+            node.neuron_def.kind == "subgraph" and node.neuron_def.subgraph is not None
+            for node in self.nodes.values()
+        )
+
+    def has_recursive_subgraphs(self) -> bool:
+        if self.has_nested_subgraphs():
+            return True
+        return any(
+            node.neuron_def.subgraph is not None and node.neuron_def.subgraph.has_recursive_subgraphs()
+            for node in self.nodes.values()
+            if node.neuron_def.kind == "subgraph"
+        )
+
+    def validate(
+        self,
+        *,
+        as_subgraph: bool = False,
+        seen: set[int] | None = None,
+    ) -> None:
+        if as_subgraph:
+            if not self.input_node_ids:
+                raise ValueError(f"Subgraph '{self.name}' must declare input_node_ids")
+            if not self.output_node_ids:
+                raise ValueError(f"Subgraph '{self.name}' must declare output_node_ids")
+
+        for nid in self.input_node_ids:
+            if nid not in self.nodes:
+                raise ValueError(f"Graph '{self.name}' references missing input node '{nid}'")
+        for nid in self.output_node_ids:
+            if nid not in self.nodes:
+                raise ValueError(f"Graph '{self.name}' references missing output node '{nid}'")
+
+        seen = set(seen or set())
+        ident = id(self)
+        if ident in seen:
+            raise ValueError(f"Recursive subgraph reference detected in graph '{self.name}'")
+        next_seen = seen | {ident}
+
+        for nid, node in self.nodes.items():
+            neuron_def = node.neuron_def
+            if neuron_def.kind != "subgraph" or neuron_def.subgraph is None:
+                continue
+            child = neuron_def.subgraph
+            child.validate(as_subgraph=True, seen=next_seen)
+            if neuron_def.input_aliases and (
+                len(neuron_def.input_aliases) != len(child.interface_input_layout())
+            ):
+                raise ValueError(
+                    f"Subgraph node '{nid}' input aliases do not match nested graph '{child.name}'"
+                )
+            if neuron_def.output_aliases and (
+                len(neuron_def.output_aliases) != len(child.interface_output_layout())
+            ):
+                raise ValueError(
+                    f"Subgraph node '{nid}' output aliases do not match nested graph '{child.name}'"
+                )
+            neuron_def.refresh_interface_ports()
 
     # ── execution ─────────────────────────────────────────────────────
 
@@ -259,6 +415,10 @@ class NeuronGraph:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "name": self.name,
+            "training_method": self.training_method,
+            "surrogate_config": self.surrogate_config,
+            "evo_config": self.evo_config,
             "nodes": {nid: n.to_dict() for nid, n in self.nodes.items()},
             "edges": {eid: e.to_dict() for eid, e in self.edges.items()},
             "input_node_ids": self.input_node_ids,
@@ -267,11 +427,17 @@ class NeuronGraph:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> NeuronGraph:
-        g = cls()
+        g = cls(
+            name=d.get("name", "graph"),
+            training_method=d.get("training_method", "surrogate"),
+            surrogate_config=d.get("surrogate_config", {}),
+            evo_config=d.get("evo_config", {}),
+        )
         for nid, nd in d["nodes"].items():
             g.nodes[nid] = NeuronInstance.from_dict(nd)
         for eid, ed in d["edges"].items():
             g.edges[eid] = Edge.from_dict(ed)
         g.input_node_ids = d.get("input_node_ids", [])
         g.output_node_ids = d.get("output_node_ids", [])
+        g.validate()
         return g

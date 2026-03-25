@@ -4,56 +4,51 @@ import {
   Background,
   Controls,
   MiniMap,
-  addEdge,
-  applyNodeChanges,
-  applyEdgeChanges,
   type Connection,
-  type Edge as RFEdge,
+  type EdgeChange,
   type Node,
+  type NodeChange,
   type NodeTypes,
   type OnConnect,
-  type NodeChange,
-  type EdgeChange,
 } from "@xyflow/react";
 import { NeuronNode } from "./NeuronNode";
-import { useGraphStore, type NeuronNodeData } from "../store/graphStore";
+import {
+  selectFlowEdges,
+  selectFlowNodes,
+  useGraphStore,
+  type NeuronNodeData,
+} from "../store/graphStore";
 
 const nodeTypes: NodeTypes = { neuron: NeuronNode as any };
 
 export default function GraphCanvas() {
-  const {
-    nodes,
-    edges,
-    setNodes,
-    setEdges,
-    selectNode,
-  } = useGraphStore();
+  const nodes = useGraphStore(selectFlowNodes);
+  const edges = useGraphStore(selectFlowEdges);
+  const applyActiveNodeChanges = useGraphStore((state) => state.applyActiveNodeChanges);
+  const applyActiveEdgeChanges = useGraphStore((state) => state.applyActiveEdgeChanges);
+  const connectActiveGraph = useGraphStore((state) => state.connectActiveGraph);
+  const selectNode = useGraphStore((state) => state.selectNode);
+  const openSubgraph = useGraphStore((state) => state.openSubgraph);
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      setNodes(applyNodeChanges(changes, nodes) as Node<NeuronNodeData>[]);
+      applyActiveNodeChanges(changes);
     },
-    [nodes, setNodes]
+    [applyActiveNodeChanges]
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      setEdges(applyEdgeChanges(changes, edges));
+      applyActiveEdgeChanges(changes);
     },
-    [edges, setEdges]
+    [applyActiveEdgeChanges]
   );
 
   const onConnect: OnConnect = useCallback(
     (connection: Connection) => {
-      const newEdge: RFEdge = {
-        ...connection,
-        id: `e-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        type: "default",
-        data: { weight: 1.0, bias: 0.0 },
-      } as unknown as RFEdge;
-      setEdges(addEdge(newEdge, edges));
+      connectActiveGraph(connection);
     },
-    [edges, setEdges]
+    [connectActiveGraph]
   );
 
   const onNodeClick = useCallback(
@@ -61,6 +56,15 @@ export default function GraphCanvas() {
       selectNode(node.id);
     },
     [selectNode]
+  );
+
+  const onNodeDoubleClick = useCallback(
+    (_: React.MouseEvent, node: Node<NeuronNodeData>) => {
+      if (node.data.neuronDef.kind === "subgraph") {
+        openSubgraph(node.id);
+      }
+    },
+    [openSubgraph]
   );
 
   const onPaneClick = useCallback(() => {
@@ -76,6 +80,7 @@ export default function GraphCanvas() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={onNodeDoubleClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         fitView

@@ -1,10 +1,18 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { api, type NeuronDefData } from "../api/client";
-import { useGraphStore, type NeuronNodeData } from "../store/graphStore";
-import type { Node } from "@xyflow/react";
+import { selectBreadcrumbs, selectCurrentPath, useGraphStore } from "../store/graphStore";
+import { normalizeGraph } from "../store/graphUtils";
 
 export default function Toolbar() {
-  const { builtins, setBuiltins, addNode, nodes } = useGraphStore();
+  const builtins = useGraphStore((state) => state.builtins);
+  const setBuiltins = useGraphStore((state) => state.setBuiltins);
+  const addBuiltinNode = useGraphStore((state) => state.addBuiltinNode);
+  const addCustomNode = useGraphStore((state) => state.addCustomNode);
+  const addSubgraphNode = useGraphStore((state) => state.addSubgraphNode);
+  const rootGraph = useGraphStore((state) => state.rootGraph);
+  const currentPath = useGraphStore(selectCurrentPath);
+  const breadcrumbs = useGraphStore(selectBreadcrumbs);
+  const setPath = useGraphStore((state) => state.setPath);
   const [showLibrary, setShowLibrary] = useState(true);
 
   useEffect(() => {
@@ -13,56 +21,29 @@ export default function Toolbar() {
 
   const onAddBuiltin = useCallback(
     (ndef: NeuronDefData) => {
-      const id = `n-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const node: Node<NeuronNodeData> = {
-        id,
-        type: "neuron",
-        position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 300 },
-        data: {
-          label: ndef.name,
-          neuronDef: { ...ndef, id },
-          isInput: ndef.name === "input",
-          isOutput: ndef.name === "output",
-        },
-      };
-      addNode(node);
+      addBuiltinNode(ndef);
     },
-    [addNode]
+    [addBuiltinNode]
   );
 
   const onAddCustom = useCallback(() => {
-    const id = `n-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const ndef: NeuronDefData = {
-      id,
-      name: "custom",
-      input_ports: [{ name: "x", range: [-10, 10], precision: 0.001, dtype: "float" }],
-      output_ports: [{ name: "y", range: [-10, 10], precision: 0.001, dtype: "float" }],
-      source_code: "def custom(x):\n    return x\n",
-    };
-    const node: Node<NeuronNodeData> = {
-      id,
-      type: "neuron",
-      position: { x: 200 + Math.random() * 200, y: 200 + Math.random() * 200 },
-      data: {
-        label: "custom",
-        neuronDef: ndef,
-        isInput: false,
-        isOutput: false,
-      },
-    };
-    addNode(node);
-  }, [addNode]);
+    addCustomNode();
+  }, [addCustomNode]);
+
+  const onAddSubgraph = useCallback(() => {
+    addSubgraphNode();
+  }, [addSubgraphNode]);
 
   const onSave = useCallback(() => {
-    const data = JSON.stringify({ nodes, edges: useGraphStore.getState().edges }, null, 2);
+    const data = JSON.stringify(rootGraph, null, 2);
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "neuralfn-graph.json";
+    a.download = "neuralfn-network.json";
     a.click();
     URL.revokeObjectURL(url);
-  }, [nodes]);
+  }, [rootGraph]);
 
   const onLoad = useCallback(() => {
     const input = document.createElement("input");
@@ -74,8 +55,7 @@ export default function Toolbar() {
       const text = await file.text();
       try {
         const data = JSON.parse(text);
-        if (data.nodes) useGraphStore.getState().setNodes(data.nodes);
-        if (data.edges) useGraphStore.getState().setEdges(data.edges);
+        useGraphStore.getState().setRootGraph(normalizeGraph(data, data.name ?? "Loaded graph"));
       } catch {
         alert("Invalid graph file");
       }
@@ -100,6 +80,30 @@ export default function Toolbar() {
         >
           + Custom Node
         </button>
+        <button
+          onClick={onAddSubgraph}
+          className="bg-amber-900 hover:bg-amber-800 text-amber-100 text-xs px-2 py-1 rounded"
+        >
+          + Subgraph
+        </button>
+
+        <div className="flex items-center gap-1 ml-2 text-[10px] text-gray-400 overflow-x-auto">
+          {breadcrumbs.map((crumb, idx) => (
+            <React.Fragment key={`${crumb.id}-${idx}`}>
+              {idx > 0 && <span>/</span>}
+              <button
+                onClick={() => setPath(currentPath.slice(0, idx))}
+                className={`whitespace-nowrap rounded px-1 py-0.5 ${
+                  idx === breadcrumbs.length - 1
+                    ? "bg-gray-800 text-gray-200"
+                    : "hover:bg-gray-800 hover:text-gray-200"
+                }`}
+              >
+                {crumb.label}
+              </button>
+            </React.Fragment>
+          ))}
+        </div>
 
         <div className="ml-auto flex gap-2">
           <button

@@ -16,18 +16,25 @@ export interface PortData {
   dtype: string;
 }
 
+export type TrainingMethod = "surrogate" | "evolutionary" | "frozen";
+
 export interface NeuronDefData {
   id: string;
   name: string;
+  kind: "function" | "subgraph";
   input_ports: PortData[];
   output_ports: PortData[];
   source_code: string;
+  subgraph: GraphData | null;
+  input_aliases: string[];
+  output_aliases: string[];
 }
 
 export interface NodeData {
   instance_id: string;
   neuron_def: NeuronDefData;
   position: [number, number];
+  measured?: { width?: number; height?: number };
 }
 
 export interface EdgeData {
@@ -41,10 +48,25 @@ export interface EdgeData {
 }
 
 export interface GraphData {
+  name: string;
+  training_method: TrainingMethod;
+  surrogate_config: Record<string, unknown>;
+  evo_config: Record<string, unknown>;
   nodes: Record<string, NodeData>;
   edges: Record<string, EdgeData>;
   input_node_ids: string[];
   output_node_ids: string[];
+}
+
+export interface TrainingMessage {
+  step?: number;
+  loss?: number;
+  done?: boolean;
+  graph_path?: string[];
+  graph_name?: string;
+  method?: string;
+  round?: number;
+  local_step?: number;
 }
 
 export const api = {
@@ -90,15 +112,17 @@ export const api = {
 
   startTraining: (
     body: {
-      method: string;
+      method?: string | null;
       train_inputs: number[][];
       train_targets: number[][];
+      outer_rounds?: number;
+      loss_fn?: string;
       epochs?: number;
       learning_rate?: number;
       population_size?: number;
       generations?: number;
     },
-    onMessage: (data: { step?: number; loss?: number; done?: boolean }) => void
+    onMessage: (data: TrainingMessage) => void
   ) => {
     const ctrl = new AbortController();
     fetch(BASE + "/train/start", {

@@ -5,10 +5,9 @@ sys.path.insert(0, ".")
 
 import numpy as np
 from neuralfn import (
-    Port, NeuronDef, neuron, NeuronGraph, NeuronInstance, Edge,
+    BuiltinNeurons, Port, neuron, NeuronGraph, NeuronInstance, Edge,
     SurrogateTrainer, EvolutionaryTrainer, save_graph,
 )
-from neuralfn.builtins import input_node, output_node, sigmoid
 from neuralfn.trainer import TrainConfig
 from neuralfn.evolutionary import EvoConfig
 
@@ -24,15 +23,15 @@ def weighted_sum(a, b):
 def build_xor_graph() -> NeuronGraph:
     g = NeuronGraph()
 
-    in1 = NeuronInstance(input_node, instance_id="in1")
-    in2 = NeuronInstance(input_node, instance_id="in2")
+    in1 = NeuronInstance(BuiltinNeurons.input_node, instance_id="in1")
+    in2 = NeuronInstance(BuiltinNeurons.input_node, instance_id="in2")
     h1 = NeuronInstance(weighted_sum, instance_id="h1")
     h2 = NeuronInstance(weighted_sum, instance_id="h2")
-    a1 = NeuronInstance(sigmoid, instance_id="a1")
-    a2 = NeuronInstance(sigmoid, instance_id="a2")
+    a1 = NeuronInstance(BuiltinNeurons.sigmoid, instance_id="a1")
+    a2 = NeuronInstance(BuiltinNeurons.sigmoid, instance_id="a2")
     h3 = NeuronInstance(weighted_sum, instance_id="h3")
-    a3 = NeuronInstance(sigmoid, instance_id="a3")
-    out = NeuronInstance(output_node, instance_id="out")
+    a3 = NeuronInstance(BuiltinNeurons.sigmoid, instance_id="a3")
+    out = NeuronInstance(BuiltinNeurons.output_node, instance_id="out")
 
     for node in [in1, in2, h1, h2, a1, a2, h3, a3, out]:
         g.add_node(node)
