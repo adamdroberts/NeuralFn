@@ -2,6 +2,37 @@ import React, { useCallback, useEffect, useState } from "react";
 import { api, type NeuronDefData } from "../api/client";
 import { selectBreadcrumbs, selectCurrentPath, useGraphStore } from "../store/graphStore";
 import { normalizeGraph } from "../store/graphUtils";
+import NeuronIcon from "./NeuronIcon";
+
+const DESCRIPTIONS: Record<string, string> = {
+  sigmoid: "Sigmoid activation function",
+  relu: "Rectified Linear Unit activation",
+  tanh_neuron: "Hyperbolic tangent activation",
+  threshold: "Binary threshold function (0 or 1)",
+  identity: "Passes input unchanged",
+  negate: "Negates the input",
+  add: "Adds two inputs",
+  multiply: "Multiplies two inputs",
+  gaussian: "Gaussian activation function",
+  log: "Natural logarithm function",
+  leaky_relu: "Rectified Linear Unit with a small slope for negative inputs",
+  prelu: "Parametric Rectified Linear Unit",
+  relu6: "ReLU capped at 6.0",
+  elu: "Exponential Linear Unit",
+  selu: "Scaled Exponential Linear Unit",
+  gelu: "Gaussian Error Linear Unit",
+  silu: "Sigmoid Linear Unit (also known as Swish)",
+  mish: "Self Regularized Non-Monotonic Activation Function",
+  softplus: "Smooth approximation to the ReLU function",
+  softsign: "Continuous alternative to tanh: x / (1 + |x|)",
+  hard_sigmoid: "Piece-wise linear approximation of sigmoid",
+  hard_tanh: "Piece-wise linear approximation of tanh",
+  hard_swish: "Piece-wise linear approximation of swish",
+  softmax_2: "Softmax probabilities for 2 inputs",
+  logsoftmax_2: "Log-Softmax values for 2 inputs",
+  input: "Graph input terminal",
+  output: "Graph output terminal",
+};
 
 export default function Toolbar() {
   const builtins = useGraphStore((state) => state.builtins);
@@ -14,7 +45,7 @@ export default function Toolbar() {
   const breadcrumbs = useGraphStore(selectBreadcrumbs);
   const setPath = useGraphStore((state) => state.setPath);
   const [showLibrary, setShowLibrary] = useState(true);
-
+  const [hoveredNeuron, setHoveredNeuron] = useState<{ builtin: NeuronDefData, rect: DOMRect } | null>(null);
   useEffect(() => {
     api.getBuiltins().then(setBuiltins).catch(() => {});
   }, [setBuiltins]);
@@ -122,50 +153,49 @@ export default function Toolbar() {
       </div>
 
       {showLibrary && (
-        <div className="flex gap-1 px-3 pb-2 flex-wrap">
+        <div className="flex gap-1 px-3 pb-2 flex-wrap relative">
           {builtins.map((b) => {
-            const descriptions: Record<string, string> = {
-              sigmoid: "Sigmoid activation function",
-              relu: "Rectified Linear Unit activation",
-              tanh_neuron: "Hyperbolic tangent activation",
-              threshold: "Binary threshold function (0 or 1)",
-              identity: "Passes input unchanged",
-              negate: "Negates the input",
-              add: "Adds two inputs",
-              multiply: "Multiplies two inputs",
-              gaussian: "Gaussian activation function",
-              log: "Natural logarithm function",
-              leaky_relu: "Rectified Linear Unit with a small slope for negative inputs",
-              prelu: "Parametric Rectified Linear Unit",
-              relu6: "ReLU capped at 6.0",
-              elu: "Exponential Linear Unit",
-              selu: "Scaled Exponential Linear Unit",
-              gelu: "Gaussian Error Linear Unit",
-              silu: "Sigmoid Linear Unit (also known as Swish)",
-              mish: "Self Regularized Non-Monotonic Activation Function",
-              softplus: "Smooth approximation to the ReLU function",
-              softsign: "Continuous alternative to tanh: x / (1 + |x|)",
-              hard_sigmoid: "Piece-wise linear approximation of sigmoid",
-              hard_tanh: "Piece-wise linear approximation of tanh",
-              hard_swish: "Piece-wise linear approximation of swish",
-              softmax_2: "Softmax probabilities for 2 inputs",
-              logsoftmax_2: "Log-Softmax values for 2 inputs",
-              input: "Graph input terminal",
-              output: "Graph output terminal",
-            };
-            const desc = descriptions[b.name] ? `${descriptions[b.name]}\n` : "";
+            const desc = DESCRIPTIONS[b.name] ? `${DESCRIPTIONS[b.name]}\n` : "";
             
             return (
               <button
                 key={b.id}
-                onClick={() => onAddBuiltin(b)}
-                className="bg-gray-800 hover:bg-blue-900 border border-gray-700 text-gray-300 text-[10px] px-2 py-0.5 rounded"
+                onClick={() => {
+                  onAddBuiltin(b);
+                  setHoveredNeuron(null);
+                }}
+                onMouseEnter={(e) => {
+                  setHoveredNeuron({ builtin: b, rect: e.currentTarget.getBoundingClientRect() });
+                }}
+                onMouseLeave={() => setHoveredNeuron(null)}
+                className="bg-gray-800 hover:bg-blue-900 border border-gray-700 text-gray-300 text-[10px] px-2 py-0.5 rounded flex items-center justify-center whitespace-nowrap transition-colors"
                 title={`${desc}(${b.input_ports.length} in / ${b.output_ports.length} out)`}
               >
-                {b.name}
+                <span>{b.name}</span>
+                <NeuronIcon name={b.name} />
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* Floating Tooltip */}
+      {hoveredNeuron && (
+        <div 
+          className="fixed flex flex-col items-center bg-gray-950 border border-gray-700 px-4 py-3 rounded-lg shadow-2xl z-[9999] pointer-events-none"
+          style={{
+            top: hoveredNeuron.rect.bottom + 8,
+            left: Math.max(10, Math.min(window.innerWidth - 180, hoveredNeuron.rect.left + hoveredNeuron.rect.width / 2 - 85)),
+            width: 170
+          }}
+        >
+          <div className="text-xs font-bold text-blue-300 mb-2">{hoveredNeuron.builtin.name}</div>
+          <div className="bg-gray-900 rounded p-1">
+            <NeuronIcon name={hoveredNeuron.builtin.name} expanded={true} />
+          </div>
+          <div className="text-[9px] text-gray-500 mt-2 text-center whitespace-normal leading-snug">
+            {DESCRIPTIONS[hoveredNeuron.builtin.name] || 'Custom function'}
+          </div>
         </div>
       )}
     </div>
