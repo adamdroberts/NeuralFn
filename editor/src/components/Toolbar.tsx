@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useReactFlow } from "@xyflow/react";
 import { api, type NeuronDefData } from "../api/client";
 import { selectBreadcrumbs, selectCurrentPath, useGraphStore } from "../store/graphStore";
 import { normalizeGraph } from "../store/graphUtils";
@@ -35,6 +36,8 @@ const DESCRIPTIONS: Record<string, string> = {
 };
 
 export default function Toolbar() {
+  const { screenToFlowPosition } = useReactFlow();
+
   const builtins = useGraphStore((state) => state.builtins);
   const setBuiltins = useGraphStore((state) => state.setBuiltins);
   const addBuiltinNode = useGraphStore((state) => state.addBuiltinNode);
@@ -46,24 +49,43 @@ export default function Toolbar() {
   const setPath = useGraphStore((state) => state.setPath);
   const [showLibrary, setShowLibrary] = useState(true);
   const [hoveredNeuron, setHoveredNeuron] = useState<{ builtin: NeuronDefData, rect: DOMRect } | null>(null);
+
   useEffect(() => {
     api.getBuiltins().then(setBuiltins).catch(() => {});
   }, [setBuiltins]);
 
   const onAddBuiltin = useCallback(
-    (ndef: NeuronDefData) => {
-      addBuiltinNode(ndef);
+    (ndef: NeuronDefData, e: React.MouseEvent) => {
+      const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
+      addBuiltinNode(ndef, pos);
     },
-    [addBuiltinNode]
+    [addBuiltinNode, screenToFlowPosition]
   );
 
-  const onAddCustom = useCallback(() => {
-    addCustomNode();
-  }, [addCustomNode]);
+  const onAddCustom = useCallback((e: React.MouseEvent) => {
+    const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
+    addCustomNode(pos);
+  }, [addCustomNode, screenToFlowPosition]);
 
-  const onAddSubgraph = useCallback(() => {
-    addSubgraphNode();
-  }, [addSubgraphNode]);
+  const onAddOverride = useCallback((e: React.MouseEvent) => {
+    const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
+    const ndef: NeuronDefData = {
+        id: "override-" + Date.now().toString(36),
+        name: "override",
+        kind: "function",
+        input_ports: [{ name: "x", range: [-1, 1], precision: 0.1, dtype: "float" }],
+        output_ports: [{ name: "y", range: [-1, 1], precision: 0.1, dtype: "float" }],
+        source_code: "def override(x):\n    return 0.0\n",
+        subgraph: null,
+        input_aliases: [], output_aliases: []
+    };
+    addBuiltinNode(ndef, pos);
+  }, [addBuiltinNode, screenToFlowPosition]);
+
+  const onAddSubgraph = useCallback((e: React.MouseEvent) => {
+    const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
+    addSubgraphNode(pos);
+  }, [addSubgraphNode, screenToFlowPosition]);
 
   const onSave = useCallback(() => {
     const data = JSON.stringify(rootGraph, null, 2);
@@ -110,6 +132,12 @@ export default function Toolbar() {
           className="bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded"
         >
           + Custom Node
+        </button>
+        <button
+          onClick={onAddOverride}
+          className="bg-purple-900 hover:bg-purple-800 text-purple-100 text-xs px-2 py-1 rounded"
+        >
+          + Override
         </button>
         <button
           onClick={onAddSubgraph}
@@ -160,8 +188,8 @@ export default function Toolbar() {
             return (
               <button
                 key={b.id}
-                onClick={() => {
-                  onAddBuiltin(b);
+                onClick={(e) => {
+                  onAddBuiltin(b, e);
                   setHoveredNeuron(null);
                 }}
                 onMouseEnter={(e) => {

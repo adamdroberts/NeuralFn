@@ -124,6 +124,16 @@ def execute(body: ExecuteRequest) -> dict[str, Any]:
     return {k: list(v) for k, v in outputs.items()}
 
 
+@router.post("/execute-trace")
+def execute_trace(body: ExecuteRequest) -> dict[str, Any]:
+    inputs = {k: tuple(v) for k, v in body.inputs.items()}
+    try:
+        outputs = _graph.execute_trace(inputs)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+    return {k: list(v) for k, v in outputs.items()}
+
+
 # ── Builtins ──────────────────────────────────────────────────────────
 
 @router.get("/builtins")

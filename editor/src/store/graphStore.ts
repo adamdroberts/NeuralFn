@@ -44,14 +44,15 @@ interface GraphState {
   builtins: NeuronDefData[];
   lossHistory: LossPoint[];
   isTraining: boolean;
+  edgeTelemetry: Record<string, number[]>;
 
   setRootGraph: (graph: GraphData) => void;
   applyActiveNodeChanges: (changes: NodeChange[]) => void;
   applyActiveEdgeChanges: (changes: EdgeChange[]) => void;
   connectActiveGraph: (connection: Connection) => void;
-  addBuiltinNode: (ndef: NeuronDefData) => void;
-  addCustomNode: () => void;
-  addSubgraphNode: () => void;
+  addBuiltinNode: (ndef: NeuronDefData, pos?: { x: number; y: number }) => void;
+  addCustomNode: (pos?: { x: number; y: number }) => void;
+  addSubgraphNode: (pos?: { x: number; y: number }) => void;
   removeNode: (id: string) => void;
   updateNodeData: (id: string, data: Partial<NeuronNodeData>) => void;
   selectNode: (id: string | null) => void;
@@ -59,6 +60,7 @@ interface GraphState {
   addLossPoint: (p: LossPoint) => void;
   clearLoss: () => void;
   setTraining: (v: boolean) => void;
+  updateEdgeTelemetry: (t: Record<string, number[]>) => void;
 
   toggleInput: (id: string) => void;
   toggleOutput: (id: string) => void;
@@ -190,6 +192,7 @@ export const useGraphStore = create<GraphState>((set) => ({
   builtins: [],
   lossHistory: [],
   isTraining: false,
+  edgeTelemetry: {},
 
   setRootGraph: (graph) =>
     set((state) => ({
@@ -260,25 +263,25 @@ export const useGraphStore = create<GraphState>((set) => ({
       };
     }),
 
-  addBuiltinNode: (ndef) =>
+  addBuiltinNode: (ndef, pos) =>
     set((state) => {
       const { nextState } = addNodeToGraph(state, ndef, {
         idPrefix: "n",
-        position: createNodePosition(100, 100),
+        position: pos ? [pos.x, pos.y] : createNodePosition(100, 100),
       });
       return { ...state, ...nextState };
     }),
 
-  addCustomNode: () =>
+  addCustomNode: (pos) =>
     set((state) => {
       const { nextState } = addNodeToGraph(state, createCustomNeuronDef("custom"), {
         idPrefix: "n",
-        position: createNodePosition(200, 160),
+        position: pos ? [pos.x, pos.y] : createNodePosition(200, 160),
       });
       return { ...state, ...nextState };
     }),
 
-  addSubgraphNode: () =>
+  addSubgraphNode: (pos) =>
     set((state) => {
       const subgraphIndex =
         Object.values(toActiveGraph(state).nodes).filter(
@@ -289,7 +292,7 @@ export const useGraphStore = create<GraphState>((set) => ({
         createSubgraphNeuronDef(`subgraph_${subgraphIndex}`),
         {
           idPrefix: "g",
-          position: createNodePosition(180, 120),
+          position: pos ? [pos.x, pos.y] : createNodePosition(180, 120),
         },
       );
       return { ...state, ...nextState };
@@ -355,6 +358,8 @@ export const useGraphStore = create<GraphState>((set) => ({
     set((state) => ({ lossHistory: [...state.lossHistory, lossPoint] })),
   clearLoss: () => set({ lossHistory: [] }),
   setTraining: (isTraining) => set({ isTraining }),
+
+  updateEdgeTelemetry: (edgeTelemetry) => set({ edgeTelemetry }),
 
   toggleInput: (id) =>
     set((state) => ({

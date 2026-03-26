@@ -20,6 +20,7 @@ export default function TrainingPanel() {
     clearLoss,
     setTraining,
     rootGraph,
+    updateEdgeTelemetry,
   } = useGraphStore();
 
   const hasNestedGraphs = graphContainsSubgraphs(rootGraph);
@@ -96,6 +97,26 @@ export default function TrainingPanel() {
     await api.stopTraining();
     setTraining(false);
   }, [setTraining]);
+
+  // Fetch graph telemetry continuously when inputs change
+  React.useEffect(() => {
+    try {
+      const inputs = JSON.parse(dataInput);
+      if (Array.isArray(inputs) && inputs.length > 0 && Array.isArray(inputs[0])) {
+        const payload: Record<string, number[]> = {};
+        rootGraph.input_node_ids.forEach((id, colIdx) => {
+          payload[id] = inputs.map((row: any[]) => Number(row[colIdx]) || 0);
+        });
+        api.putGraph(rootGraph).then(() => {
+          api.executeTrace(payload).then(res => {
+            updateEdgeTelemetry(res);
+          }).catch(() => {});
+        }).catch(() => {});
+      }
+    } catch (e) {
+      // ignore parse errors while typing
+    }
+  }, [dataInput, rootGraph, updateEdgeTelemetry]);
 
   return (
     <div className="border-t border-gray-800 bg-gray-900 p-3">

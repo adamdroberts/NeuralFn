@@ -1,6 +1,6 @@
 import React, { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import type { NeuronNodeData } from "../store/graphStore";
+import { type NeuronNodeData, useGraphStore } from "../store/graphStore";
 
 function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeData }) {
   const { label, neuronDef, isInput, isOutput } = data;
@@ -8,8 +8,24 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
   const outputs = neuronDef.output_ports;
   const isSubgraph = neuronDef.kind === "subgraph";
   const trainingMethod = neuronDef.subgraph?.training_method;
+  const updateNodeData = useGraphStore((state) => state.updateNodeData);
 
   const roleTag = isInput ? "IN" : isOutput ? "OUT" : null;
+  const isOverride = neuronDef.source_code?.includes("def override(x):") ?? false;
+  const overrideMatch = neuronDef.source_code?.match(/return\s+([-\d.]+)/);
+  const overrideValue = overrideMatch ? parseFloat(overrideMatch[1]) : 0;
+
+  const handleOverrideChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    if (!isNaN(val)) {
+      updateNodeData(id, {
+        neuronDef: {
+          ...neuronDef,
+          source_code: `def override(x):\n    return ${val}\n`
+        }
+      });
+    }
+  };
 
   return (
     <div
@@ -44,6 +60,19 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
       {isSubgraph && (
         <div className="mb-2 text-[10px] text-amber-200/80">
           Double-click to open subgraph
+        </div>
+      )}
+
+      {isOverride && (
+        <div className="mb-2 flex items-center justify-between text-[10px] text-gray-400 bg-gray-950 px-2 py-1 rounded">
+          <span>Value:</span>
+          <input
+            type="number"
+            value={overrideValue}
+            onChange={handleOverrideChange}
+            className="w-16 bg-gray-800 text-gray-200 px-1 py-0.5 rounded border border-gray-700 text-right no-spinners"
+            step="0.1"
+          />
         </div>
       )}
 

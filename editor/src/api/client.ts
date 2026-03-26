@@ -93,6 +93,12 @@ export const api = {
       body: JSON.stringify({ inputs }),
     }),
 
+  executeTrace: (inputs: Record<string, number[]>) =>
+    json<Record<string, number[]>>("/execute-trace", {
+      method: "POST",
+      body: JSON.stringify({ inputs }),
+    }),
+
   getBuiltins: () => json<NeuronDefData[]>("/builtins"),
 
   probe: (nodeId: string, nSamples = 1000) =>

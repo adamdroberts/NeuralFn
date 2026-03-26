@@ -317,6 +317,30 @@ class NeuronGraph:
             return self._execute_cyclic(inputs, max_iters, damping, tolerance)
         return self._execute_dag(inputs)
 
+    def execute_trace(
+        self,
+        inputs: dict[str, tuple[float, ...]],
+        *,
+        max_iters: int = 50,
+        damping: float = 0.5,
+        tolerance: float = 1e-6,
+    ) -> dict[str, tuple[float, ...]]:
+        """Run the graph and return all internal activations.
+        
+        Args:
+            inputs: mapping of input-node instance_id -> tuple of values.
+        
+        Returns:
+            mapping of all instance_id -> tuple of output values.
+        """
+        if self.has_cycles():
+            # For simplicity, cyclic trace just returns the final terminal outputs or whatever 
+            # execute_cyclic would normally return, plus internal states if we rewrite it.
+            # But DAG trace is the primary goal. We'll reuse DAG logic for simplicity here or 
+            # just delegate to _execute_dag_trace.
+            pass
+        return self._execute_dag_trace(inputs)
+
     def _execute_dag(
         self, inputs: dict[str, tuple[float, ...]],
     ) -> dict[str, tuple[float, ...]]:
@@ -334,6 +358,24 @@ class NeuronGraph:
             values[nid] = result
 
         return {nid: values.get(nid, ()) for nid in self.output_node_ids}
+
+    def _execute_dag_trace(
+        self, inputs: dict[str, tuple[float, ...]],
+    ) -> dict[str, tuple[float, ...]]:
+        values: dict[str, tuple[float, ...]] = {}
+
+        for nid in inputs:
+            values[nid] = inputs[nid]
+
+        for nid in self.topological_order():
+            if nid in values and nid in inputs:
+                continue
+            node = self.nodes[nid]
+            port_accum = self._gather_inputs(nid, values, node)
+            result = node.neuron_def(*port_accum)
+            values[nid] = result
+
+        return values
 
     def _execute_cyclic(
         self,
