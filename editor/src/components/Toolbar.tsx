@@ -123,16 +123,49 @@ export default function Toolbar() {
 
       {showLibrary && (
         <div className="flex gap-1 px-3 pb-2 flex-wrap">
-          {builtins.map((b) => (
-            <button
-              key={b.id}
-              onClick={() => onAddBuiltin(b)}
-              className="bg-gray-800 hover:bg-blue-900 border border-gray-700 text-gray-300 text-[10px] px-2 py-0.5 rounded"
-              title={`${b.input_ports.length} in / ${b.output_ports.length} out`}
-            >
-              {b.name}
-            </button>
-          ))}
+          {builtins.map((b) => {
+            const descriptions: Record<string, string> = {
+              sigmoid: "Sigmoid activation function",
+              relu: "Rectified Linear Unit activation",
+              tanh_neuron: "Hyperbolic tangent activation",
+              threshold: "Binary threshold function (0 or 1)",
+              identity: "Passes input unchanged",
+              negate: "Negates the input",
+              add: "Adds two inputs",
+              multiply: "Multiplies two inputs",
+              gaussian: "Gaussian activation function",
+              log: "Natural logarithm function",
+              leaky_relu: "Rectified Linear Unit with a small slope for negative inputs",
+              prelu: "Parametric Rectified Linear Unit",
+              relu6: "ReLU capped at 6.0",
+              elu: "Exponential Linear Unit",
+              selu: "Scaled Exponential Linear Unit",
+              gelu: "Gaussian Error Linear Unit",
+              silu: "Sigmoid Linear Unit (also known as Swish)",
+              mish: "Self Regularized Non-Monotonic Activation Function",
+              softplus: "Smooth approximation to the ReLU function",
+              softsign: "Continuous alternative to tanh: x / (1 + |x|)",
+              hard_sigmoid: "Piece-wise linear approximation of sigmoid",
+              hard_tanh: "Piece-wise linear approximation of tanh",
+              hard_swish: "Piece-wise linear approximation of swish",
+              softmax_2: "Softmax probabilities for 2 inputs",
+              logsoftmax_2: "Log-Softmax values for 2 inputs",
+              input: "Graph input terminal",
+              output: "Graph output terminal",
+            };
+            const desc = descriptions[b.name] ? `${descriptions[b.name]}\n` : "";
+            
+            return (
+              <button
+                key={b.id}
+                onClick={() => onAddBuiltin(b)}
+                className="bg-gray-800 hover:bg-blue-900 border border-gray-700 text-gray-300 text-[10px] px-2 py-0.5 rounded"
+                title={`${desc}(${b.input_ports.length} in / ${b.output_ports.length} out)`}
+              >
+                {b.name}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

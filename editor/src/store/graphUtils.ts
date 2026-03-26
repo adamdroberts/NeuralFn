@@ -40,7 +40,52 @@ export function createCustomNeuronDef(name = "custom"): NeuronDefData {
   };
 }
 
+const DEFAULT_INPUT_DEF: NeuronDefData = {
+  id: "builtin-input",
+  name: "input",
+  kind: "function",
+  input_ports: [{ name: "in", range: [-100, 100], precision: 0.001, dtype: "float" }],
+  output_ports: [{ name: "out", range: [-100, 100], precision: 0.001, dtype: "float" }],
+  source_code: "def input_node(x):\n    return x\n",
+  subgraph: null,
+  input_aliases: [],
+  output_aliases: [],
+};
+
+const DEFAULT_OUTPUT_DEF: NeuronDefData = {
+  id: "builtin-output",
+  name: "output",
+  kind: "function",
+  input_ports: [{ name: "in", range: [-100, 100], precision: 0.001, dtype: "float" }],
+  output_ports: [{ name: "out", range: [-100, 100], precision: 0.001, dtype: "float" }],
+  source_code: "def output_node(x):\n    return x\n",
+  subgraph: null,
+  input_aliases: [],
+  output_aliases: [],
+};
+
 export function createSubgraphNeuronDef(name = "subgraph"): NeuronDefData {
+  const subgraph = createEmptyGraph(`${name} graph`);
+  const inId = "n-in";
+  const outId = "n-out";
+
+  subgraph.nodes[inId] = {
+    instance_id: inId,
+    position: [50, 150],
+    neuron_def: DEFAULT_INPUT_DEF,
+    measured: undefined,
+  };
+
+  subgraph.nodes[outId] = {
+    instance_id: outId,
+    position: [350, 150],
+    neuron_def: DEFAULT_OUTPUT_DEF,
+    measured: undefined,
+  };
+
+  subgraph.input_node_ids = [inId];
+  subgraph.output_node_ids = [outId];
+
   return normalizeNeuronDef({
     id: "",
     name,
@@ -48,9 +93,9 @@ export function createSubgraphNeuronDef(name = "subgraph"): NeuronDefData {
     input_ports: [],
     output_ports: [],
     source_code: "",
-    subgraph: createEmptyGraph(`${name} graph`),
-    input_aliases: [],
-    output_aliases: [],
+    subgraph: subgraph,
+    input_aliases: ["x"],
+    output_aliases: ["y"],
   });
 }
 
