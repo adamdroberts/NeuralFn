@@ -12,6 +12,11 @@ class PortModel(BaseModel):
     dtype: str = "float"
 
 
+class VariantRefModel(BaseModel):
+    family: str
+    version: str
+
+
 class NeuronDefModel(BaseModel):
     id: str = ""
     name: str
@@ -25,6 +30,7 @@ class NeuronDefModel(BaseModel):
     module_state: str = ""
     input_aliases: list[str] = Field(default_factory=list)
     output_aliases: list[str] = Field(default_factory=list)
+    variant_ref: VariantRefModel | None = None
 
 
 class NodeModel(BaseModel):
@@ -50,6 +56,7 @@ class GraphModel(BaseModel):
     surrogate_config: dict[str, Any] = Field(default_factory=dict)
     evo_config: dict[str, Any] = Field(default_factory=dict)
     torch_config: dict[str, Any] = Field(default_factory=dict)
+    variant_library: dict[str, dict[str, GraphModel]] = Field(default_factory=dict)
     nodes: dict[str, NodeModel] = Field(default_factory=dict)
     edges: dict[str, EdgeModel] = Field(default_factory=dict)
     input_node_ids: list[str] = Field(default_factory=list)
@@ -72,6 +79,11 @@ class TrainRequest(BaseModel):
     generations: int = 200
     batch_size: int = 8
     weight_decay: float = 0.01
+
+
+class GPTTemplateRequest(BaseModel):
+    name: str = "gpt"
+    config: dict[str, Any] = Field(default_factory=dict)
 
 
 NeuronDefModel.model_rebuild()

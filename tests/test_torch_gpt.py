@@ -23,6 +23,9 @@ def make_gpt_graph():
 class TorchGPTTest(unittest.TestCase):
     def test_gpt_template_is_a_subgraph_with_internal_stages(self) -> None:
         graph = make_gpt_graph()
+        self.assertIn("attention", graph.variant_library)
+        self.assertIn("mlp", graph.variant_library)
+        self.assertIn("transformer_block", graph.variant_library)
         gpt_node = graph.nodes["gpt"]
         self.assertEqual("subgraph", gpt_node.neuron_def.kind)
         self.assertIsNotNone(gpt_node.neuron_def.subgraph)
@@ -32,6 +35,10 @@ class TorchGPTTest(unittest.TestCase):
         self.assertIn("final_norm", child.nodes)
         self.assertIn("token_cross_entropy", child.nodes)
         self.assertTrue(any(node.neuron_def.kind == "subgraph" for node in child.nodes.values()))
+        self.assertEqual(
+            {"family": "transformer_block", "version": "baseline"},
+            child.nodes["encoder_block_0"].neuron_def.variant_ref,
+        )
 
     def test_torch_graph_round_trip_preserves_nested_module_metadata(self) -> None:
         graph = make_gpt_graph()
@@ -42,6 +49,10 @@ class TorchGPTTest(unittest.TestCase):
         child = gpt_node.neuron_def.subgraph
         assert child is not None
         self.assertEqual("module", child.nodes["token_embedding"].neuron_def.kind)
+        self.assertEqual(
+            {"family": "transformer_block", "version": "baseline"},
+            child.nodes["encoder_block_0"].neuron_def.variant_ref,
+        )
         self.assertEqual("torch", loaded.training_method)
         self.assertEqual("torch", loaded.runtime)
 

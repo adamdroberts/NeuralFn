@@ -20,8 +20,9 @@ from neuralfn.port import Port
 from neuralfn.surrogate import probe_neuron
 from neuralfn.trainer import SurrogateTrainer, TrainConfig
 from neuralfn.torch_backend import CompiledTorchGraph, TorchTrainConfig, TorchTrainer
+from neuralfn.torch_templates import build_gpt_template_payload
 
-from .models import EdgeModel, ExecuteRequest, GraphModel, NodeModel, TrainRequest
+from .models import EdgeModel, ExecuteRequest, GPTTemplateRequest, GraphModel, NodeModel, TrainRequest
 
 router = APIRouter(prefix="/api")
 
@@ -44,6 +45,11 @@ def _ndef_from_model(nm: Any) -> NeuronDef:
             name=nm.name,
             input_aliases=list(getattr(nm, "input_aliases", [])) or None,
             output_aliases=list(getattr(nm, "output_aliases", [])) or None,
+            variant_ref=(
+                getattr(nm.variant_ref, "model_dump", lambda: None)()
+                if getattr(nm, "variant_ref", None) is not None
+                else None
+            ),
             neuron_id=nm.id or None,
         )
 
@@ -192,6 +198,15 @@ def torch_trace(body: ExecuteRequest) -> dict[str, Any]:
 @router.get("/builtins")
 def list_builtins() -> list[dict[str, Any]]:
     return [n.to_dict() for n in BuiltinNeurons.all()]
+
+
+@router.post("/templates/gpt")
+def build_gpt_template(body: GPTTemplateRequest) -> dict[str, Any]:
+    payload = build_gpt_template_payload(
+        name=body.name,
+        config=dict(body.config or {}),
+    )
+    return payload
 
 
 # ── Probe ─────────────────────────────────────────────────────────────

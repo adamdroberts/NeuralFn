@@ -36,6 +36,7 @@ class NeuronDef:
     module_state: str = ""
     input_aliases: list[str] = field(default_factory=list)
     output_aliases: list[str] = field(default_factory=list)
+    variant_ref: dict[str, str] | None = None
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
 
     def __call__(self, *args: float) -> tuple[float, ...]:
@@ -92,6 +93,7 @@ class NeuronDef:
             "module_state": self.module_state,
             "input_aliases": self.input_aliases,
             "output_aliases": self.output_aliases,
+            "variant_ref": self.variant_ref,
         }
 
     @classmethod
@@ -102,19 +104,11 @@ class NeuronDef:
         """
         kind = d.get("kind", "function")
         if kind == "subgraph":
-            from .graph import NeuronGraph
-
-            subgraph_data = d.get("subgraph")
-            if subgraph_data is None:
-                raise ValueError(f"Subgraph neuron '{d['name']}' is missing nested graph data")
-            subgraph = NeuronGraph.from_dict(subgraph_data)
-            return subgraph_neuron(
-                subgraph,
-                name=d["name"],
-                input_aliases=d.get("input_aliases") or None,
-                output_aliases=d.get("output_aliases") or None,
-                neuron_id=d.get("id"),
-            )
+            raw = cls.from_dict_raw(d)
+            if raw.subgraph is not None:
+                raw.subgraph.validate(as_subgraph=True)
+                raw.refresh_interface_ports()
+            return raw
 
         if kind == "module":
             return module_neuron(
@@ -147,6 +141,36 @@ class NeuronDef:
             source_code=d["source_code"],
             kind=kind,
         )
+
+    @classmethod
+    def from_dict_raw(cls, d: dict[str, Any]) -> NeuronDef:
+        kind = d.get("kind", "function")
+        if kind == "subgraph":
+            from .graph import NeuronGraph
+
+            subgraph_data = d.get("subgraph")
+            subgraph = NeuronGraph.from_dict_raw(subgraph_data) if subgraph_data is not None else None
+            input_ports = [Port.from_dict(p) for p in d.get("input_ports", [])]
+            output_ports = [Port.from_dict(p) for p in d.get("output_ports", [])]
+            if subgraph is not None:
+                if not input_ports:
+                    input_ports = subgraph.flattened_input_ports(d.get("input_aliases") or None)
+                if not output_ports:
+                    output_ports = subgraph.flattened_output_ports(d.get("output_aliases") or None)
+            return cls(
+                id=d.get("id", uuid.uuid4().hex[:12]),
+                name=d["name"],
+                fn=None,
+                input_ports=input_ports,
+                output_ports=output_ports,
+                source_code="",
+                kind="subgraph",
+                subgraph=subgraph,
+                input_aliases=list(d.get("input_aliases", [])),
+                output_aliases=list(d.get("output_aliases", [])),
+                variant_ref=dict(d["variant_ref"]) if d.get("variant_ref") else None,
+            )
+        return cls.from_dict(d)
 
 
 def neuron(
@@ -233,6 +257,7 @@ def subgraph_neuron(
     name: str,
     input_aliases: list[str] | None = None,
     output_aliases: list[str] | None = None,
+    variant_ref: dict[str, str] | None = None,
     neuron_id: str | None = None,
 ) -> NeuronDef:
     """Wrap a ``NeuronGraph`` as a reusable neuron definition."""
@@ -250,6 +275,7 @@ def subgraph_neuron(
         subgraph=graph,
         input_aliases=[port.name for port in input_ports],
         output_aliases=[port.name for port in output_ports],
+        variant_ref=dict(variant_ref) if variant_ref else None,
     )
 
 

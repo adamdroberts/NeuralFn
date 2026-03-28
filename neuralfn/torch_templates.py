@@ -29,15 +29,248 @@ def clone_neuron_def(ndef: NeuronDef, *, config: dict[str, Any] | None = None) -
     return cloned
 
 
-def build_transformer_block_graph(
+def link_variant_neuron(
+    graph: NeuronGraph,
+    *,
+    family: str,
+    version: str,
+    name: str,
+    input_aliases: list[str] | None = None,
+    output_aliases: list[str] | None = None,
+) -> NeuronDef:
+    return subgraph_neuron(
+        graph,
+        name=name,
+        input_aliases=input_aliases,
+        output_aliases=output_aliases,
+        variant_ref={"family": family, "version": version},
+    )
+
+
+def build_attention_variant_graph(
     *,
     name: str,
     model_dim: int,
     num_heads: int,
     num_kv_heads: int,
-    mlp_mult: int,
     rope_base: float,
     qk_gain_init: float,
+) -> NeuronGraph:
+    graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
+    head_dim = model_dim // num_heads
+    kv_dim = num_kv_heads * head_dim
+
+    graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="x", dtype="tensor"), instance_id="x_in", position=(40, 180)))
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.linear_module,
+                config={"input_dim": model_dim, "output_dim": model_dim, "bias": False},
+            ),
+            instance_id="q_proj",
+            position=(220, 40),
+        )
+    )
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.linear_module,
+                config={"input_dim": model_dim, "output_dim": kv_dim, "bias": False},
+            ),
+            instance_id="k_proj",
+            position=(220, 160),
+        )
+    )
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.linear_module,
+                config={"input_dim": model_dim, "output_dim": kv_dim, "bias": False},
+            ),
+            instance_id="v_proj",
+            position=(220, 280),
+        )
+    )
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.reshape_heads_module, config={"num_heads": num_heads}),
+            instance_id="q_heads",
+            position=(420, 40),
+        )
+    )
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.reshape_heads_module, config={"num_heads": num_kv_heads}),
+            instance_id="k_heads",
+            position=(420, 160),
+        )
+    )
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.reshape_heads_module, config={"num_heads": num_kv_heads}),
+            instance_id="v_heads",
+            position=(420, 280),
+        )
+    )
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.rms_norm_module, config={"eps": 1e-6}),
+            instance_id="q_norm",
+            position=(620, 40),
+        )
+    )
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.rms_norm_module, config={"eps": 1e-6}),
+            instance_id="k_norm",
+            position=(620, 160),
+        )
+    )
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.rotary_embedding_module,
+                config={"head_dim": head_dim, "rope_base": rope_base},
+            ),
+            instance_id="rope",
+            position=(820, 100),
+        )
+    )
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.qk_gain_module,
+                config={"num_heads": num_heads, "qk_gain_init": qk_gain_init},
+            ),
+            instance_id="q_gain",
+            position=(1020, 40),
+        )
+    )
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.repeat_kv_module,
+                config={"num_heads": num_heads, "num_kv_heads": num_kv_heads},
+            ),
+            instance_id="k_repeat",
+            position=(1020, 160),
+        )
+    )
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.repeat_kv_module,
+                config={"num_heads": num_heads, "num_kv_heads": num_kv_heads},
+            ),
+            instance_id="v_repeat",
+            position=(1020, 280),
+        )
+    )
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.scaled_dot_product_attention_module),
+            instance_id="attn",
+            position=(1220, 160),
+        )
+    )
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.merge_heads_module), instance_id="merge", position=(1420, 160)))
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.linear_module,
+                config={"input_dim": model_dim, "output_dim": model_dim, "bias": False},
+            ),
+            instance_id="out_proj",
+            position=(1620, 160),
+        )
+    )
+    graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="attn_out", dtype="tensor"), instance_id="x_out", position=(1820, 160)))
+
+    edges = [
+        ("e_x_q", "x_in", 0, "q_proj", 0),
+        ("e_x_k", "x_in", 0, "k_proj", 0),
+        ("e_x_v", "x_in", 0, "v_proj", 0),
+        ("e_q_qheads", "q_proj", 0, "q_heads", 0),
+        ("e_k_kheads", "k_proj", 0, "k_heads", 0),
+        ("e_v_vheads", "v_proj", 0, "v_heads", 0),
+        ("e_qheads_qnorm", "q_heads", 0, "q_norm", 0),
+        ("e_kheads_knorm", "k_heads", 0, "k_norm", 0),
+        ("e_qnorm_rope", "q_norm", 0, "rope", 0),
+        ("e_knorm_rope", "k_norm", 0, "rope", 1),
+        ("e_rope_qgain", "rope", 0, "q_gain", 0),
+        ("e_rope_krepeat", "rope", 1, "k_repeat", 0),
+        ("e_vheads_vrepeat", "v_heads", 0, "v_repeat", 0),
+        ("e_qgain_attn", "q_gain", 0, "attn", 0),
+        ("e_krepeat_attn", "k_repeat", 0, "attn", 1),
+        ("e_vrepeat_attn", "v_repeat", 0, "attn", 2),
+        ("e_attn_merge", "attn", 0, "merge", 0),
+        ("e_merge_outproj", "merge", 0, "out_proj", 0),
+        ("e_outproj_out", "out_proj", 0, "x_out", 0),
+    ]
+    for edge_id, src_node, src_port, dst_node, dst_port in edges:
+        graph.add_edge(Edge(id=edge_id, src_node=src_node, src_port=src_port, dst_node=dst_node, dst_port=dst_port))
+
+    graph.input_node_ids = ["x_in"]
+    graph.output_node_ids = ["x_out"]
+    return graph
+
+
+def build_mlp_variant_graph(
+    *,
+    name: str,
+    model_dim: int,
+    mlp_mult: int,
+) -> NeuronGraph:
+    graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
+    hidden_dim = model_dim * mlp_mult
+
+    graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="x", dtype="tensor"), instance_id="x_in", position=(40, 160)))
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.linear_module,
+                config={"input_dim": model_dim, "output_dim": hidden_dim, "bias": False},
+            ),
+            instance_id="fc",
+            position=(220, 160),
+        )
+    )
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.relu), instance_id="relu", position=(420, 160)))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.multiply), instance_id="square", position=(620, 160)))
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.linear_module,
+                config={"input_dim": hidden_dim, "output_dim": model_dim, "bias": False},
+            ),
+            instance_id="proj",
+            position=(820, 160),
+        )
+    )
+    graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="y", dtype="tensor"), instance_id="y_out", position=(1020, 160)))
+
+    edges = [
+        ("e_x_fc", "x_in", 0, "fc", 0),
+        ("e_fc_relu", "fc", 0, "relu", 0),
+        ("e_relu_square_a", "relu", 0, "square", 0),
+        ("e_relu_square_b", "relu", 0, "square", 1),
+        ("e_square_proj", "square", 0, "proj", 0),
+        ("e_proj_out", "proj", 0, "y_out", 0),
+    ]
+    for edge_id, src_node, src_port, dst_node, dst_port in edges:
+        graph.add_edge(Edge(id=edge_id, src_node=src_node, src_port=src_port, dst_node=dst_node, dst_port=dst_port))
+
+    graph.input_node_ids = ["x_in"]
+    graph.output_node_ids = ["y_out"]
+    return graph
+
+
+def build_transformer_block_graph(
+    *,
+    name: str,
+    model_dim: int,
+    attention_graph: NeuronGraph,
+    mlp_graph: NeuronGraph,
 ) -> NeuronGraph:
     graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
 
@@ -62,15 +295,13 @@ def build_transformer_block_graph(
     )
     graph.add_node(
         NeuronInstance(
-            clone_neuron_def(
-                BuiltinNeurons.causal_self_attention_module,
-                config={
-                    "model_dim": model_dim,
-                    "num_heads": num_heads,
-                    "num_kv_heads": num_kv_heads,
-                    "rope_base": rope_base,
-                    "qk_gain_init": qk_gain_init,
-                },
+            link_variant_neuron(
+                attention_graph,
+                family="attention",
+                version="baseline",
+                name="attention",
+                input_aliases=["x"],
+                output_aliases=["attn_out"],
             ),
             instance_id="attention",
             position=(620, 140),
@@ -95,9 +326,13 @@ def build_transformer_block_graph(
     )
     graph.add_node(
         NeuronInstance(
-            clone_neuron_def(
-                BuiltinNeurons.mlp_relu2_module,
-                config={"model_dim": model_dim, "mlp_mult": mlp_mult},
+            link_variant_neuron(
+                mlp_graph,
+                family="mlp",
+                version="relu2",
+                name="mlp",
+                input_aliases=["x"],
+                output_aliases=["y"],
             ),
             instance_id="mlp",
             position=(1220, 140),
@@ -136,9 +371,45 @@ def build_transformer_block_graph(
     return graph
 
 
-def build_gpt_stage_graph(*, name: str = "gpt", config: dict[str, Any] | None = None) -> NeuronGraph:
+def build_gpt_variant_library(config: dict[str, Any] | None = None) -> dict[str, dict[str, NeuronGraph]]:
     cfg = {**default_gpt_config(), **(config or {})}
+    attention_graph = build_attention_variant_graph(
+        name="attention_baseline",
+        model_dim=int(cfg["model_dim"]),
+        num_heads=int(cfg["num_heads"]),
+        num_kv_heads=int(cfg["num_kv_heads"]),
+        rope_base=float(cfg["rope_base"]),
+        qk_gain_init=float(cfg["qk_gain_init"]),
+    )
+    mlp_graph = build_mlp_variant_graph(
+        name="mlp_relu2",
+        model_dim=int(cfg["model_dim"]),
+        mlp_mult=int(cfg["mlp_mult"]),
+    )
+    block_graph = build_transformer_block_graph(
+        name="transformer_block_baseline",
+        model_dim=int(cfg["model_dim"]),
+        attention_graph=attention_graph,
+        mlp_graph=mlp_graph,
+    )
+    return {
+        "attention": {"baseline": attention_graph},
+        "mlp": {"relu2": mlp_graph},
+        "transformer_block": {"baseline": block_graph},
+    }
+
+
+def build_gpt_stage_graph(
+    *,
+    name: str = "gpt",
+    config: dict[str, Any] | None = None,
+    attach_variant_library: bool = True,
+) -> NeuronGraph:
+    cfg = {**default_gpt_config(), **(config or {})}
+    variant_library = build_gpt_variant_library(cfg)
     graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
+    if attach_variant_library:
+        graph.variant_library = deepcopy(variant_library)
 
     graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="tokens", dtype="tokens"), instance_id="tokens_in", position=(40, 140)))
     graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="targets", dtype="tokens"), instance_id="targets_in", position=(40, 360)))
@@ -169,19 +440,17 @@ def build_gpt_stage_graph(*, name: str = "gpt", config: dict[str, Any] | None = 
     skip_nodes: list[str] = []
 
     for idx in range(encoder_count):
-        block_graph = build_transformer_block_graph(
-            name=f"encoder_block_{idx}",
-            model_dim=int(cfg["model_dim"]),
-            num_heads=int(cfg["num_heads"]),
-            num_kv_heads=int(cfg["num_kv_heads"]),
-            mlp_mult=int(cfg["mlp_mult"]),
-            rope_base=float(cfg["rope_base"]),
-            qk_gain_init=float(cfg["qk_gain_init"]),
-        )
         block_node_id = f"encoder_block_{idx}"
         graph.add_node(
             NeuronInstance(
-                subgraph_neuron(block_graph, name=block_node_id, input_aliases=["x", "x0"], output_aliases=["x"]),
+                link_variant_neuron(
+                    deepcopy(variant_library["transformer_block"]["baseline"]),
+                    family="transformer_block",
+                    version="baseline",
+                    name=block_node_id,
+                    input_aliases=["x", "x0"],
+                    output_aliases=["x"],
+                ),
                 instance_id=block_node_id,
                 position=(680 + idx * 220, 100),
             )
@@ -209,19 +478,17 @@ def build_gpt_stage_graph(*, name: str = "gpt", config: dict[str, Any] | None = 
             graph.add_edge(Edge(id=f"e_{skip_add_id}_skip", src_node=skip_src, src_port=0, dst_node=skip_add_id, dst_port=1))
             current_node = skip_add_id
 
-        block_graph = build_transformer_block_graph(
-            name=f"decoder_block_{idx}",
-            model_dim=int(cfg["model_dim"]),
-            num_heads=int(cfg["num_heads"]),
-            num_kv_heads=int(cfg["num_kv_heads"]),
-            mlp_mult=int(cfg["mlp_mult"]),
-            rope_base=float(cfg["rope_base"]),
-            qk_gain_init=float(cfg["qk_gain_init"]),
-        )
         block_node_id = f"decoder_block_{idx}"
         graph.add_node(
             NeuronInstance(
-                subgraph_neuron(block_graph, name=block_node_id, input_aliases=["x", "x0"], output_aliases=["x"]),
+                link_variant_neuron(
+                    deepcopy(variant_library["transformer_block"]["baseline"]),
+                    family="transformer_block",
+                    version="baseline",
+                    name=block_node_id,
+                    input_aliases=["x", "x0"],
+                    output_aliases=["x"],
+                ),
                 instance_id=block_node_id,
                 position=(900 + (encoder_count + idx) * 220, 100),
             )
@@ -285,11 +552,49 @@ def build_gpt_subgraph(*, name: str = "gpt", config: dict[str, Any] | None = Non
     return subgraph_neuron(graph, name=name, input_aliases=["tokens", "targets"], output_aliases=["loss"])
 
 
+def build_gpt_template_payload(
+    *,
+    name: str = "gpt",
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    variant_library = build_gpt_variant_library(config)
+    node_def = subgraph_neuron(
+        build_gpt_stage_graph(name=f"{name}_graph", config=config, attach_variant_library=False),
+        name=name,
+        input_aliases=["tokens", "targets"],
+        output_aliases=["loss"],
+    )
+    return {
+        "node_def": node_def.to_dict(),
+        "variant_library": {
+            family: {version: graph.to_dict() for version, graph in versions.items()}
+            for family, versions in variant_library.items()
+        },
+        "graph_settings": {
+            "training_method": "torch",
+            "runtime": "torch",
+            "torch_config": {"device": "cuda", "amp_dtype": "bfloat16"},
+        },
+    }
+
+
 def build_gpt_root_graph(*, name: str = "gpt_root", config: dict[str, Any] | None = None) -> NeuronGraph:
     graph = NeuronGraph(name=name, training_method="torch", runtime="torch", torch_config={"device": "cuda", "amp_dtype": "bfloat16"})
+    graph.variant_library = deepcopy(build_gpt_variant_library(config))
     graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="tokens", dtype="tokens"), instance_id="tokens_in", position=(40, 120)))
     graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="targets", dtype="tokens"), instance_id="targets_in", position=(40, 300)))
-    graph.add_node(NeuronInstance(build_gpt_subgraph(name="gpt", config=config), instance_id="gpt", position=(280, 180)))
+    graph.add_node(
+        NeuronInstance(
+            subgraph_neuron(
+                build_gpt_stage_graph(name="gpt_graph", config=config, attach_variant_library=False),
+                name="gpt",
+                input_aliases=["tokens", "targets"],
+                output_aliases=["loss"],
+            ),
+            instance_id="gpt",
+            position=(280, 180),
+        )
+    )
     graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="loss", dtype="loss"), instance_id="loss_out", position=(560, 180)))
     graph.add_edge(Edge(id="e_tokens_gpt", src_node="tokens_in", src_port=0, dst_node="gpt", dst_port=0))
     graph.add_edge(Edge(id="e_targets_gpt", src_node="targets_in", src_port=0, dst_node="gpt", dst_port=1))

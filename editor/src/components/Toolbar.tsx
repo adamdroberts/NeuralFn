@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { api, type NeuronDefData } from "../api/client";
-import { selectBreadcrumbs, selectCurrentPath, useGraphStore } from "../store/graphStore";
-import { createGPTNeuronDef, normalizeGraph } from "../store/graphUtils";
+import { selectBreadcrumbs, useGraphStore } from "../store/graphStore";
+import { normalizeGraph } from "../store/graphUtils";
 import NeuronIcon from "./NeuronIcon";
 
 const DESCRIPTIONS: Record<string, string> = {
@@ -34,7 +34,14 @@ const DESCRIPTIONS: Record<string, string> = {
   input: "Graph input terminal",
   output: "Graph output terminal",
   token_embedding: "Token embedding stage with tied-weight output",
+  linear: "Trainable linear projection stage",
   rms_norm: "Tensor RMSNorm stage",
+  reshape_heads: "Reshape hidden states into attention heads",
+  merge_heads: "Merge attention heads back into model width",
+  repeat_kv: "Repeat grouped KV heads to match query head count",
+  rotary_embedding: "Apply rotary positional embedding to Q and K tensors",
+  qk_gain: "Learned per-head scale for the query stream",
+  scaled_dot_product_attention: "Causal scaled dot-product attention primitive",
   residual_mix: "Learns a mix of the current stream and the original embedding stream",
   causal_self_attention: "Causal self-attention stage with RoPE and grouped KV heads",
   residual_add: "Residual add with a learned per-channel scale",
@@ -54,8 +61,8 @@ export default function Toolbar() {
   const addCustomNode = useGraphStore((state) => state.addCustomNode);
   const addSubgraphNode = useGraphStore((state) => state.addSubgraphNode);
   const updateActiveGraphSettings = useGraphStore((state) => state.updateActiveGraphSettings);
+  const mergeVariantLibrary = useGraphStore((state) => state.mergeVariantLibrary);
   const rootGraph = useGraphStore((state) => state.rootGraph);
-  const currentPath = useGraphStore(selectCurrentPath);
   const breadcrumbs = useGraphStore(selectBreadcrumbs);
   const setPath = useGraphStore((state) => state.setPath);
   const [showLibrary, setShowLibrary] = useState(true);
@@ -91,7 +98,9 @@ export default function Toolbar() {
         module_type: "",
         module_config: {},
         module_state: "",
-        input_aliases: [], output_aliases: []
+        input_aliases: [],
+        output_aliases: [],
+        variant_ref: null,
     };
     addBuiltinNode(ndef, pos);
   }, [addBuiltinNode, screenToFlowPosition]);
@@ -103,9 +112,12 @@ export default function Toolbar() {
 
   const onAddGPT = useCallback((e: React.MouseEvent) => {
     const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
-    updateActiveGraphSettings({ training_method: "torch", runtime: "torch" });
-    addBuiltinNode(createGPTNeuronDef("gpt"), pos);
-  }, [addBuiltinNode, screenToFlowPosition, updateActiveGraphSettings]);
+    api.buildGPTTemplate({ name: "gpt" }).then((template) => {
+      mergeVariantLibrary(template.variant_library);
+      updateActiveGraphSettings(template.graph_settings);
+      addBuiltinNode(template.node_def, pos);
+    }).catch(() => {});
+  }, [addBuiltinNode, mergeVariantLibrary, screenToFlowPosition, updateActiveGraphSettings]);
 
   const onSave = useCallback(() => {
     const data = JSON.stringify(rootGraph, null, 2);
@@ -177,7 +189,7 @@ export default function Toolbar() {
             <React.Fragment key={`${crumb.id}-${idx}`}>
               {idx > 0 && <span>/</span>}
               <button
-                onClick={() => setPath(currentPath.slice(0, idx))}
+                onClick={() => setPath(crumb.path)}
                 className={`whitespace-nowrap rounded px-1 py-0.5 ${
                   idx === breadcrumbs.length - 1
                     ? "bg-gray-800 text-gray-200"

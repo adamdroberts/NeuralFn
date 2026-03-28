@@ -8,12 +8,19 @@ from .neuron import NeuronDef, module_neuron, neuron
 from .port import Port
 from .torch_backend import (
     default_attention_config,
+    default_linear_config,
     default_lm_head_config,
     default_logit_softcap_config,
+    default_merge_heads_config,
     default_mlp_config,
+    default_qk_gain_config,
+    default_repeat_kv_config,
     default_residual_add_config,
     default_residual_mix_config,
+    default_reshape_heads_config,
+    default_rotary_embedding_config,
     default_rms_norm_config,
+    default_scaled_dot_product_attention_config,
     default_token_embedding_config,
 )
 
@@ -313,12 +320,78 @@ token_embedding_module = module_neuron(
     module_config=default_token_embedding_config(),
 )
 
+linear_module = module_neuron(
+    name="linear",
+    module_type="linear",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_linear_config(),
+)
+
 rms_norm_module = module_neuron(
     name="rms_norm",
     module_type="rms_norm",
     input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
     output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
     module_config=default_rms_norm_config(),
+)
+
+reshape_heads_module = module_neuron(
+    name="reshape_heads",
+    module_type="reshape_heads",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("heads", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_reshape_heads_config(),
+)
+
+merge_heads_module = module_neuron(
+    name="merge_heads",
+    module_type="merge_heads",
+    input_ports=[Port("heads", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_merge_heads_config(),
+)
+
+repeat_kv_module = module_neuron(
+    name="repeat_kv",
+    module_type="repeat_kv",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_repeat_kv_config(),
+)
+
+rotary_embedding_module = module_neuron(
+    name="rotary_embedding",
+    module_type="rotary_embedding",
+    input_ports=[
+        Port("q", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("k", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[
+        Port("q_rot", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("k_rot", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config=default_rotary_embedding_config(),
+)
+
+qk_gain_module = module_neuron(
+    name="qk_gain",
+    module_type="qk_gain",
+    input_ports=[Port("q", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("q_scaled", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_qk_gain_config(),
+)
+
+scaled_dot_product_attention_module = module_neuron(
+    name="scaled_dot_product_attention",
+    module_type="scaled_dot_product_attention",
+    input_ports=[
+        Port("q", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("k", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("v", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_scaled_dot_product_attention_config(),
 )
 
 residual_mix_module = module_neuron(
@@ -427,7 +500,14 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "input_node": input_node,
     "output_node": output_node,
     "token_embedding_module": token_embedding_module,
+    "linear_module": linear_module,
     "rms_norm_module": rms_norm_module,
+    "reshape_heads_module": reshape_heads_module,
+    "merge_heads_module": merge_heads_module,
+    "repeat_kv_module": repeat_kv_module,
+    "rotary_embedding_module": rotary_embedding_module,
+    "qk_gain_module": qk_gain_module,
+    "scaled_dot_product_attention_module": scaled_dot_product_attention_module,
     "residual_mix_module": residual_mix_module,
     "causal_self_attention_module": causal_self_attention_module,
     "residual_add_module": residual_add_module,
@@ -470,7 +550,14 @@ class BuiltinNeurons:
     input_node = input_node
     output_node = output_node
     token_embedding_module = token_embedding_module
+    linear_module = linear_module
     rms_norm_module = rms_norm_module
+    reshape_heads_module = reshape_heads_module
+    merge_heads_module = merge_heads_module
+    repeat_kv_module = repeat_kv_module
+    rotary_embedding_module = rotary_embedding_module
+    qk_gain_module = qk_gain_module
+    scaled_dot_product_attention_module = scaled_dot_product_attention_module
     residual_mix_module = residual_mix_module
     causal_self_attention_module = causal_self_attention_module
     residual_add_module = residual_add_module
@@ -538,7 +625,14 @@ __all__ = [
     "input_node",
     "output_node",
     "token_embedding_module",
+    "linear_module",
     "rms_norm_module",
+    "reshape_heads_module",
+    "merge_heads_module",
+    "repeat_kv_module",
+    "rotary_embedding_module",
+    "qk_gain_module",
+    "scaled_dot_product_attention_module",
     "residual_mix_module",
     "causal_self_attention_module",
     "residual_add_module",

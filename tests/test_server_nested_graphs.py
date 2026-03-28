@@ -3,7 +3,7 @@ import asyncio
 
 from neuralfn import BuiltinNeurons, Edge, NeuronGraph, NeuronInstance, build_gpt_root_graph, subgraph_neuron
 from server.models import ExecuteRequest, GraphModel, TrainRequest
-from server.routes import execute, get_graph, put_graph, torch_trace, train_start
+from server.routes import build_gpt_template, execute, get_graph, put_graph, torch_trace, train_start
 
 
 def make_child_graph(name: str, method: str) -> NeuronGraph:
@@ -140,6 +140,7 @@ class ServerNestedGraphsTest(unittest.TestCase):
         data = get_graph()
         child = data["nodes"]["gpt"]["neuron_def"]["subgraph"]
         self.assertTrue(child["nodes"]["token_embedding"]["neuron_def"]["module_state"])
+        self.assertIn("transformer_block", data["variant_library"])
 
     def test_torch_trace_exposes_nested_stage_summaries(self) -> None:
         put_graph(GraphModel.model_validate(make_torch_payload()))
@@ -147,6 +148,16 @@ class ServerNestedGraphsTest(unittest.TestCase):
         self.assertIn("gpt/token_embedding", trace)
         self.assertIn("gpt/final_norm", trace)
         self.assertEqual([1, 4, 32], trace["gpt/final_norm"][0]["shape"])
+
+    def test_gpt_template_route_returns_variant_library_payload(self) -> None:
+        payload = build_gpt_template(type("Body", (), {"name": "gpt", "config": {}})())
+        self.assertIn("node_def", payload)
+        self.assertIn("variant_library", payload)
+        self.assertIn("attention", payload["variant_library"])
+        self.assertEqual(
+            {"family": "transformer_block", "version": "baseline"},
+            payload["node_def"]["subgraph"]["nodes"]["encoder_block_0"]["neuron_def"]["variant_ref"],
+        )
 
 
 if __name__ == "__main__":

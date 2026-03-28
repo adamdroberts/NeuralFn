@@ -49,6 +49,52 @@ def default_attention_config() -> dict[str, Any]:
     }
 
 
+def default_linear_config() -> dict[str, Any]:
+    cfg = default_gpt_config()
+    return {
+        "input_dim": cfg["model_dim"],
+        "output_dim": cfg["model_dim"],
+        "bias": False,
+    }
+
+
+def default_reshape_heads_config(num_heads: int | None = None) -> dict[str, Any]:
+    cfg = default_gpt_config()
+    return {"num_heads": int(num_heads or cfg["num_heads"])}
+
+
+def default_merge_heads_config() -> dict[str, Any]:
+    return {}
+
+
+def default_repeat_kv_config() -> dict[str, Any]:
+    cfg = default_gpt_config()
+    return {
+        "num_heads": cfg["num_heads"],
+        "num_kv_heads": cfg["num_kv_heads"],
+    }
+
+
+def default_rotary_embedding_config() -> dict[str, Any]:
+    cfg = default_gpt_config()
+    return {
+        "head_dim": cfg["model_dim"] // cfg["num_heads"],
+        "rope_base": cfg["rope_base"],
+    }
+
+
+def default_qk_gain_config() -> dict[str, Any]:
+    cfg = default_gpt_config()
+    return {
+        "num_heads": cfg["num_heads"],
+        "qk_gain_init": cfg["qk_gain_init"],
+    }
+
+
+def default_scaled_dot_product_attention_config() -> dict[str, Any]:
+    return {"is_causal": True}
+
+
 def default_residual_mix_config() -> dict[str, Any]:
     return {"dim": default_gpt_config()["model_dim"], "primary_init": 1.0, "skip_init": 0.0}
 
@@ -224,8 +270,106 @@ class TokenCrossEntropyStage(nn.Module):
         return F.cross_entropy(flat_logits.float(), target_ids.reshape(-1), reduction="mean")
 
 
+class LinearStage(nn.Module):
+    def __init__(self, input_dim: int, output_dim: int, bias: bool = False) -> None:
+        super().__init__()
+        self.proj = nn.Linear(input_dim, output_dim, bias=bias)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.proj(x)
+
+
+class ReshapeHeadsStage(nn.Module):
+    def __init__(self, num_heads: int) -> None:
+        super().__init__()
+        self.num_heads = int(num_heads)
+
+    def forward(self, x: Tensor) -> Tensor:
+        batch, seq_len, width = x.shape
+        if width % self.num_heads != 0:
+            raise ValueError("Last tensor dimension must be divisible by num_heads")
+        head_dim = width // self.num_heads
+        return x.reshape(batch, seq_len, self.num_heads, head_dim).transpose(1, 2)
+
+
+class MergeHeadsStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        batch, heads, seq_len, head_dim = x.shape
+        return x.transpose(1, 2).contiguous().reshape(batch, seq_len, heads * head_dim)
+
+
+class RepeatKVStage(nn.Module):
+    def __init__(self, num_heads: int, num_kv_heads: int) -> None:
+        super().__init__()
+        if num_heads % num_kv_heads != 0:
+            raise ValueError("num_heads must be divisible by num_kv_heads")
+        self.repeats = num_heads // num_kv_heads
+
+    def forward(self, x: Tensor) -> Tensor:
+        if self.repeats == 1:
+            return x
+        return x.repeat_interleave(self.repeats, dim=1)
+
+
+class RotaryEmbeddingStage(nn.Module):
+    def __init__(self, head_dim: int, rope_base: float) -> None:
+        super().__init__()
+        if head_dim % 2 != 0:
+            raise ValueError("head_dim must be even for rotary embeddings")
+        self.rotary = Rotary(head_dim, rope_base)
+
+    def forward(self, q: Tensor, k: Tensor) -> tuple[Tensor, Tensor]:
+        cos, sin = self.rotary(q.size(2), q.device, q.dtype)
+        return apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
+
+
+class QKGainStage(nn.Module):
+    def __init__(self, num_heads: int, qk_gain_init: float) -> None:
+        super().__init__()
+        self.q_gain = nn.Parameter(torch.full((num_heads,), qk_gain_init, dtype=torch.float32))
+
+    def forward(self, q: Tensor) -> Tensor:
+        return q * self.q_gain.to(dtype=q.dtype)[None, :, None, None]
+
+
+class ScaledDotProductAttentionStage(nn.Module):
+    def __init__(self, is_causal: bool = True) -> None:
+        super().__init__()
+        self.is_causal = bool(is_causal)
+
+    def forward(self, q: Tensor, k: Tensor, v: Tensor) -> Tensor:
+        return F.scaled_dot_product_attention(q, k, v, attn_mask=None, is_causal=self.is_causal)
+
+
 def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
     cfg = dict(module_config or {})
+    if module_type == "linear":
+        return LinearStage(
+            input_dim=int(cfg["input_dim"]),
+            output_dim=int(cfg["output_dim"]),
+            bias=bool(cfg.get("bias", False)),
+        )
+    if module_type == "reshape_heads":
+        return ReshapeHeadsStage(num_heads=int(cfg["num_heads"]))
+    if module_type == "merge_heads":
+        return MergeHeadsStage()
+    if module_type == "repeat_kv":
+        return RepeatKVStage(
+            num_heads=int(cfg["num_heads"]),
+            num_kv_heads=int(cfg["num_kv_heads"]),
+        )
+    if module_type == "rotary_embedding":
+        return RotaryEmbeddingStage(
+            head_dim=int(cfg["head_dim"]),
+            rope_base=float(cfg["rope_base"]),
+        )
+    if module_type == "qk_gain":
+        return QKGainStage(
+            num_heads=int(cfg["num_heads"]),
+            qk_gain_init=float(cfg.get("qk_gain_init", 1.0)),
+        )
+    if module_type == "scaled_dot_product_attention":
+        return ScaledDotProductAttentionStage(is_causal=bool(cfg.get("is_causal", True)))
     if module_type == "token_embedding":
         return TokenEmbeddingStage(
             vocab_size=int(cfg["vocab_size"]),

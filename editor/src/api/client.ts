@@ -18,6 +18,11 @@ export interface PortData {
 
 export type TrainingMethod = "surrogate" | "evolutionary" | "frozen" | "torch";
 
+export interface VariantRefData {
+  family: string;
+  version: string;
+}
+
 export interface NeuronDefData {
   id: string;
   name: string;
@@ -31,6 +36,7 @@ export interface NeuronDefData {
   module_state: string;
   input_aliases: string[];
   output_aliases: string[];
+  variant_ref: VariantRefData | null;
 }
 
 export interface NodeData {
@@ -57,11 +63,14 @@ export interface GraphData {
   surrogate_config: Record<string, unknown>;
   evo_config: Record<string, unknown>;
   torch_config: Record<string, unknown>;
+  variant_library: VariantLibraryData;
   nodes: Record<string, NodeData>;
   edges: Record<string, EdgeData>;
   input_node_ids: string[];
   output_node_ids: string[];
 }
+
+export type VariantLibraryData = Record<string, Record<string, GraphData>>;
 
 export interface TrainingMessage {
   step?: number;
@@ -81,6 +90,12 @@ export interface TorchTraceStat {
   min?: number;
   max?: number;
   kind?: string;
+}
+
+export interface GPTTemplateResponse {
+  node_def: NeuronDefData;
+  variant_library: VariantLibraryData;
+  graph_settings: Pick<GraphData, "training_method" | "runtime" | "torch_config">;
 }
 
 export const api = {
@@ -120,6 +135,12 @@ export const api = {
     }),
 
   getBuiltins: () => json<NeuronDefData[]>("/builtins"),
+
+  buildGPTTemplate: (body?: { name?: string; config?: Record<string, unknown> }) =>
+    json<GPTTemplateResponse>("/templates/gpt", {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
+    }),
 
   probe: (nodeId: string, nSamples = 1000) =>
     json<{ inputs: number[][]; outputs: number[][] }>(

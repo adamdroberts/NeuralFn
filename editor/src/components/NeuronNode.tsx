@@ -9,6 +9,7 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
   const isSubgraph = neuronDef.kind === "subgraph";
   const isModule = neuronDef.kind === "module";
   const trainingMethod = neuronDef.subgraph?.training_method;
+  const variantRef = neuronDef.variant_ref;
   const updateNodeData = useGraphStore((state) => state.updateNodeData);
 
   const roleTag = isInput ? "IN" : isOutput ? "OUT" : null;
@@ -63,6 +64,11 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
               {trainingMethod.slice(0, 3)}
             </span>
           )}
+          {variantRef && (
+            <span className="text-[10px] font-mono px-1 rounded bg-gray-950 text-amber-200">
+              {variantRef.family}@{variantRef.version}
+            </span>
+          )}
           {roleTag && (
             <span className="text-[10px] font-mono px-1 rounded bg-blue-900 text-blue-200">
               {roleTag}
@@ -73,7 +79,7 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
 
       {isSubgraph && (
         <div className="mb-2 text-[10px] text-amber-200/80">
-          Double-click to open subgraph
+          {variantRef ? "Double-click to open shared variant" : "Double-click to open subgraph"}
         </div>
       )}
 
