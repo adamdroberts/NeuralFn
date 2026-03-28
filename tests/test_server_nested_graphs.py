@@ -1,9 +1,9 @@
 import unittest
 import asyncio
 
-from neuralfn import BuiltinNeurons, Edge, NeuronGraph, NeuronInstance, subgraph_neuron
+from neuralfn import BuiltinNeurons, Edge, NeuronGraph, NeuronInstance, build_gpt_root_graph, subgraph_neuron
 from server.models import ExecuteRequest, GraphModel, TrainRequest
-from server.routes import execute, get_graph, put_graph, train_start
+from server.routes import execute, get_graph, put_graph, torch_trace, train_start
 
 
 def make_child_graph(name: str, method: str) -> NeuronGraph:
@@ -37,6 +37,21 @@ def make_recursive_payload() -> dict:
     root.input_node_ids = ["root_in"]
     root.output_node_ids = ["root_out"]
     return root.to_dict()
+
+
+def make_torch_payload() -> dict:
+    graph = build_gpt_root_graph(
+        name="torch_root",
+        config={
+            "vocab_size": 16,
+            "num_layers": 4,
+            "model_dim": 32,
+            "num_heads": 4,
+            "num_kv_heads": 2,
+        },
+    )
+    graph.torch_config = {"device": "cpu", "amp_dtype": "bfloat16"}
+    return graph.to_dict()
 
 
 class ServerNestedGraphsTest(unittest.TestCase):
@@ -105,6 +120,33 @@ class ServerNestedGraphsTest(unittest.TestCase):
         body = asyncio.run(self._consume_stream(response))
 
         self.assertIn("\"step\"", body)
+
+    def test_torch_training_streams_and_updates_module_state(self) -> None:
+        put_graph(GraphModel.model_validate(make_torch_payload()))
+        response = train_start(
+            TrainRequest(
+                method="torch",
+                train_inputs=[[0, 1, 2, 3], [1, 2, 3, 4]],
+                train_targets=[[1, 2, 3, 4], [2, 3, 4, 5]],
+                epochs=2,
+                batch_size=1,
+                learning_rate=0.005,
+                weight_decay=0.0,
+            )
+        )
+        body = asyncio.run(self._consume_stream(response))
+        self.assertIn("\"step\"", body)
+        self.assertIn("\"done\": true", body)
+        data = get_graph()
+        child = data["nodes"]["gpt"]["neuron_def"]["subgraph"]
+        self.assertTrue(child["nodes"]["token_embedding"]["neuron_def"]["module_state"])
+
+    def test_torch_trace_exposes_nested_stage_summaries(self) -> None:
+        put_graph(GraphModel.model_validate(make_torch_payload()))
+        trace = torch_trace(ExecuteRequest(inputs={"tokens_in": [0, 1, 2, 3], "targets_in": [1, 2, 3, 4]}))
+        self.assertIn("gpt/token_embedding", trace)
+        self.assertIn("gpt/final_norm", trace)
+        self.assertEqual([1, 4, 32], trace["gpt/final_norm"][0]["shape"])
 
 
 if __name__ == "__main__":

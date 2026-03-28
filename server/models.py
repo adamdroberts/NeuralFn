@@ -20,6 +20,9 @@ class NeuronDefModel(BaseModel):
     output_ports: list[PortModel] = Field(default_factory=list)
     source_code: str = ""
     subgraph: GraphModel | None = None
+    module_type: str = ""
+    module_config: dict[str, Any] = Field(default_factory=dict)
+    module_state: str = ""
     input_aliases: list[str] = Field(default_factory=list)
     output_aliases: list[str] = Field(default_factory=list)
 
@@ -43,8 +46,10 @@ class EdgeModel(BaseModel):
 class GraphModel(BaseModel):
     name: str = "graph"
     training_method: str = "surrogate"
+    runtime: str = "scalar"
     surrogate_config: dict[str, Any] = Field(default_factory=dict)
     evo_config: dict[str, Any] = Field(default_factory=dict)
+    torch_config: dict[str, Any] = Field(default_factory=dict)
     nodes: dict[str, NodeModel] = Field(default_factory=dict)
     edges: dict[str, EdgeModel] = Field(default_factory=dict)
     input_node_ids: list[str] = Field(default_factory=list)
@@ -52,19 +57,21 @@ class GraphModel(BaseModel):
 
 
 class ExecuteRequest(BaseModel):
-    inputs: dict[str, list[float]]
+    inputs: dict[str, Any]
 
 
 class TrainRequest(BaseModel):
     method: str | None = "surrogate"  # legacy single-graph training only
-    train_inputs: list[list[float]]
-    train_targets: list[list[float]]
+    train_inputs: list[list[float | int]]
+    train_targets: list[list[float | int]]
     outer_rounds: int = 3
     loss_fn: str = "mse"
     epochs: int = 200
     learning_rate: float = 0.001
     population_size: int = 50
     generations: int = 200
+    batch_size: int = 8
+    weight_decay: float = 0.01
 
 
 NeuronDefModel.model_rebuild()

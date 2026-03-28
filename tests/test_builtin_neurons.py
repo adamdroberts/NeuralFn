@@ -44,6 +44,16 @@ EXPECTED_BUILTINS = [
     "logsoftmax_2",
     "input_node",
     "output_node",
+    "token_embedding_module",
+    "rms_norm_module",
+    "residual_mix_module",
+    "causal_self_attention_module",
+    "residual_add_module",
+    "mlp_relu2_module",
+    "tied_lm_head_module",
+    "lm_head_module",
+    "logit_softcap_module",
+    "token_cross_entropy_module",
 ]
 
 
@@ -67,11 +77,17 @@ class BuiltinNeuronsTest(unittest.TestCase):
         self.assertIs(BuiltinNeurons.get("input"), BuiltinNeurons.input_node)
         self.assertIs(BuiltinNeurons.get("output_node"), BuiltinNeurons.output_node)
         self.assertIs(BuiltinNeurons.get("output"), BuiltinNeurons.output_node)
+        self.assertIs(BuiltinNeurons.get("token_embedding_module"), BuiltinNeurons.token_embedding_module)
+        self.assertIs(BuiltinNeurons.get("token_embedding"), BuiltinNeurons.token_embedding_module)
+        self.assertIs(BuiltinNeurons.get("rms_norm"), BuiltinNeurons.rms_norm_module)
+        self.assertIs(BuiltinNeurons.get("causal_self_attention"), BuiltinNeurons.causal_self_attention_module)
 
         serialized_names = [neuron_def.name for neuron_def in builtins]
         self.assertIn("log", serialized_names)
         self.assertIn("input", serialized_names)
         self.assertIn("output", serialized_names)
+        self.assertIn("token_embedding", serialized_names)
+        self.assertIn("token_cross_entropy", serialized_names)
 
     def test_graph_executes_with_builtin_helper_nodes(self) -> None:
         graph = NeuronGraph()

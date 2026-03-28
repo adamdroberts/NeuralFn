@@ -16,16 +16,19 @@ export interface PortData {
   dtype: string;
 }
 
-export type TrainingMethod = "surrogate" | "evolutionary" | "frozen";
+export type TrainingMethod = "surrogate" | "evolutionary" | "frozen" | "torch";
 
 export interface NeuronDefData {
   id: string;
   name: string;
-  kind: "function" | "subgraph";
+  kind: "function" | "subgraph" | "module";
   input_ports: PortData[];
   output_ports: PortData[];
   source_code: string;
   subgraph: GraphData | null;
+  module_type: string;
+  module_config: Record<string, unknown>;
+  module_state: string;
   input_aliases: string[];
   output_aliases: string[];
 }
@@ -50,8 +53,10 @@ export interface EdgeData {
 export interface GraphData {
   name: string;
   training_method: TrainingMethod;
+  runtime: "scalar" | "torch";
   surrogate_config: Record<string, unknown>;
   evo_config: Record<string, unknown>;
+  torch_config: Record<string, unknown>;
   nodes: Record<string, NodeData>;
   edges: Record<string, EdgeData>;
   input_node_ids: string[];
@@ -67,6 +72,15 @@ export interface TrainingMessage {
   method?: string;
   round?: number;
   local_step?: number;
+}
+
+export interface TorchTraceStat {
+  shape?: number[];
+  mean?: number;
+  std?: number;
+  min?: number;
+  max?: number;
+  kind?: string;
 }
 
 export const api = {
@@ -99,6 +113,12 @@ export const api = {
       body: JSON.stringify({ inputs }),
     }),
 
+  traceTorch: (inputs: Record<string, number[]>) =>
+    json<Record<string, TorchTraceStat[]>>("/trace/torch", {
+      method: "POST",
+      body: JSON.stringify({ inputs }),
+    }),
+
   getBuiltins: () => json<NeuronDefData[]>("/builtins"),
 
   probe: (nodeId: string, nSamples = 1000) =>
@@ -119,14 +139,16 @@ export const api = {
   startTraining: (
     body: {
       method?: string | null;
-      train_inputs: number[][];
-      train_targets: number[][];
+      train_inputs: Array<Array<number | string>>;
+      train_targets: Array<Array<number | string>>;
       outer_rounds?: number;
       loss_fn?: string;
       epochs?: number;
       learning_rate?: number;
       population_size?: number;
       generations?: number;
+      batch_size?: number;
+      weight_decay?: number;
     },
     onMessage: (data: TrainingMessage) => void
   ) => {

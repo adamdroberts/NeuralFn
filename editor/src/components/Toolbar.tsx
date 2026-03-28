@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { api, type NeuronDefData } from "../api/client";
 import { selectBreadcrumbs, selectCurrentPath, useGraphStore } from "../store/graphStore";
-import { normalizeGraph } from "../store/graphUtils";
+import { createGPTNeuronDef, normalizeGraph } from "../store/graphUtils";
 import NeuronIcon from "./NeuronIcon";
 
 const DESCRIPTIONS: Record<string, string> = {
@@ -33,6 +33,16 @@ const DESCRIPTIONS: Record<string, string> = {
   logsoftmax_2: "Log-Softmax values for 2 inputs",
   input: "Graph input terminal",
   output: "Graph output terminal",
+  token_embedding: "Token embedding stage with tied-weight output",
+  rms_norm: "Tensor RMSNorm stage",
+  residual_mix: "Learns a mix of the current stream and the original embedding stream",
+  causal_self_attention: "Causal self-attention stage with RoPE and grouped KV heads",
+  residual_add: "Residual add with a learned per-channel scale",
+  mlp_relu2: "ReLU-squared MLP stage",
+  tied_lm_head: "Language-model head that reuses embedding weights",
+  lm_head: "Untied language-model head",
+  logit_softcap: "Softcap the logits before loss",
+  token_cross_entropy: "Token cross-entropy loss stage",
 };
 
 export default function Toolbar() {
@@ -43,6 +53,7 @@ export default function Toolbar() {
   const addBuiltinNode = useGraphStore((state) => state.addBuiltinNode);
   const addCustomNode = useGraphStore((state) => state.addCustomNode);
   const addSubgraphNode = useGraphStore((state) => state.addSubgraphNode);
+  const updateActiveGraphSettings = useGraphStore((state) => state.updateActiveGraphSettings);
   const rootGraph = useGraphStore((state) => state.rootGraph);
   const currentPath = useGraphStore(selectCurrentPath);
   const breadcrumbs = useGraphStore(selectBreadcrumbs);
@@ -77,6 +88,9 @@ export default function Toolbar() {
         output_ports: [{ name: "y", range: [-1, 1], precision: 0.1, dtype: "float" }],
         source_code: "def override(x):\n    return 0.0\n",
         subgraph: null,
+        module_type: "",
+        module_config: {},
+        module_state: "",
         input_aliases: [], output_aliases: []
     };
     addBuiltinNode(ndef, pos);
@@ -86,6 +100,12 @@ export default function Toolbar() {
     const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
     addSubgraphNode(pos);
   }, [addSubgraphNode, screenToFlowPosition]);
+
+  const onAddGPT = useCallback((e: React.MouseEvent) => {
+    const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
+    updateActiveGraphSettings({ training_method: "torch", runtime: "torch" });
+    addBuiltinNode(createGPTNeuronDef("gpt"), pos);
+  }, [addBuiltinNode, screenToFlowPosition, updateActiveGraphSettings]);
 
   const onSave = useCallback(() => {
     const data = JSON.stringify(rootGraph, null, 2);
@@ -144,6 +164,12 @@ export default function Toolbar() {
           className="bg-amber-900 hover:bg-amber-800 text-amber-100 text-xs px-2 py-1 rounded"
         >
           + Subgraph
+        </button>
+        <button
+          onClick={onAddGPT}
+          className="bg-emerald-900 hover:bg-emerald-800 text-emerald-100 text-xs px-2 py-1 rounded"
+        >
+          + GPT Template
         </button>
 
         <div className="flex items-center gap-1 ml-2 text-[10px] text-gray-400 overflow-x-auto">

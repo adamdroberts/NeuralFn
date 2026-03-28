@@ -4,8 +4,18 @@ from __future__ import annotations
 
 import math
 
-from .neuron import NeuronDef, neuron
+from .neuron import NeuronDef, module_neuron, neuron
 from .port import Port
+from .torch_backend import (
+    default_attention_config,
+    default_lm_head_config,
+    default_logit_softcap_config,
+    default_mlp_config,
+    default_residual_add_config,
+    default_residual_mix_config,
+    default_rms_norm_config,
+    default_token_embedding_config,
+)
 
 
 @neuron(
@@ -292,6 +302,102 @@ def output_node(x):
     return x
 
 
+token_embedding_module = module_neuron(
+    name="token_embedding",
+    module_type="token_embedding",
+    input_ports=[Port("token_ids", range=(0, 65535), precision=1.0, dtype="tokens")],
+    output_ports=[
+        Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("weight", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config=default_token_embedding_config(),
+)
+
+rms_norm_module = module_neuron(
+    name="rms_norm",
+    module_type="rms_norm",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_rms_norm_config(),
+)
+
+residual_mix_module = module_neuron(
+    name="residual_mix",
+    module_type="residual_mix",
+    input_ports=[
+        Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("x0", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("mixed", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_residual_mix_config(),
+)
+
+causal_self_attention_module = module_neuron(
+    name="causal_self_attention",
+    module_type="causal_self_attention",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("attn_out", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_attention_config(),
+)
+
+residual_add_module = module_neuron(
+    name="residual_add",
+    module_type="residual_add",
+    input_ports=[
+        Port("residual", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("delta", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_residual_add_config(),
+)
+
+mlp_relu2_module = module_neuron(
+    name="mlp_relu2",
+    module_type="mlp_relu2",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_mlp_config(),
+)
+
+tied_lm_head_module = module_neuron(
+    name="tied_lm_head",
+    module_type="tied_lm_head",
+    input_ports=[
+        Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("weight", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={},
+)
+
+lm_head_module = module_neuron(
+    name="lm_head",
+    module_type="lm_head",
+    input_ports=[Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_lm_head_config(),
+)
+
+logit_softcap_module = module_neuron(
+    name="logit_softcap",
+    module_type="logit_softcap",
+    input_ports=[Port("logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("softcapped", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_logit_softcap_config(),
+)
+
+token_cross_entropy_module = module_neuron(
+    name="token_cross_entropy",
+    module_type="token_cross_entropy",
+    input_ports=[
+        Port("logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("targets", range=(0, 65535), precision=1.0, dtype="tokens"),
+    ],
+    output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    module_config={},
+)
+
+
 _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "sigmoid": sigmoid,
     "relu": relu,
@@ -320,6 +426,16 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "logsoftmax_2": logsoftmax_2,
     "input_node": input_node,
     "output_node": output_node,
+    "token_embedding_module": token_embedding_module,
+    "rms_norm_module": rms_norm_module,
+    "residual_mix_module": residual_mix_module,
+    "causal_self_attention_module": causal_self_attention_module,
+    "residual_add_module": residual_add_module,
+    "mlp_relu2_module": mlp_relu2_module,
+    "tied_lm_head_module": tied_lm_head_module,
+    "lm_head_module": lm_head_module,
+    "logit_softcap_module": logit_softcap_module,
+    "token_cross_entropy_module": token_cross_entropy_module,
 }
 
 
@@ -353,6 +469,16 @@ class BuiltinNeurons:
     logsoftmax_2 = logsoftmax_2
     input_node = input_node
     output_node = output_node
+    token_embedding_module = token_embedding_module
+    rms_norm_module = rms_norm_module
+    residual_mix_module = residual_mix_module
+    causal_self_attention_module = causal_self_attention_module
+    residual_add_module = residual_add_module
+    mlp_relu2_module = mlp_relu2_module
+    tied_lm_head_module = tied_lm_head_module
+    lm_head_module = lm_head_module
+    logit_softcap_module = logit_softcap_module
+    token_cross_entropy_module = token_cross_entropy_module
 
     @classmethod
     def all(cls) -> list[NeuronDef]:
@@ -411,4 +537,14 @@ __all__ = [
     "logsoftmax_2",
     "input_node",
     "output_node",
+    "token_embedding_module",
+    "rms_norm_module",
+    "residual_mix_module",
+    "causal_self_attention_module",
+    "residual_add_module",
+    "mlp_relu2_module",
+    "tied_lm_head_module",
+    "lm_head_module",
+    "logit_softcap_module",
+    "token_cross_entropy_module",
 ]

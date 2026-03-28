@@ -16,6 +16,8 @@ export default function CodePanel() {
   useEffect(() => {
     if (node && node.data.neuronDef.kind === "function") {
       setCode(node.data.neuronDef.source_code || `def ${node.data.label}(x):\n    return x\n`);
+    } else if (node && node.data.neuronDef.kind === "module") {
+      setCode(JSON.stringify(node.data.neuronDef.module_config ?? {}, null, 2));
     }
   }, [node]);
 
@@ -31,6 +33,7 @@ export default function CodePanel() {
   );
 
   if (!node) {
+    const isTorchGraph = activeGraph.training_method === "torch" || activeGraph.runtime === "torch";
     return (
       <div className="w-80 border-l border-gray-800 bg-gray-900 flex flex-col p-4 gap-3">
         <div>
@@ -60,8 +63,49 @@ export default function CodePanel() {
             <option value="surrogate">surrogate</option>
             <option value="evolutionary">evolutionary</option>
             <option value="frozen">frozen</option>
+            <option value="torch">torch</option>
           </select>
         </label>
+
+        {isTorchGraph && (
+          <>
+            <label className="text-[11px] text-gray-400">
+              Torch Device
+              <input
+                type="text"
+                value={String(activeGraph.torch_config.device ?? "cuda")}
+                onChange={(e) =>
+                  updateActiveGraphSettings({
+                    torch_config: {
+                      ...activeGraph.torch_config,
+                      device: e.target.value || "cuda",
+                    },
+                  })
+                }
+                className="mt-1 block w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 font-mono"
+              />
+            </label>
+
+            <label className="text-[11px] text-gray-400">
+              AMP DType
+              <select
+                value={String(activeGraph.torch_config.amp_dtype ?? "bfloat16")}
+                onChange={(e) =>
+                  updateActiveGraphSettings({
+                    torch_config: {
+                      ...activeGraph.torch_config,
+                      amp_dtype: e.target.value,
+                    },
+                  })
+                }
+                className="mt-1 block w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200"
+              >
+                <option value="bfloat16">bfloat16</option>
+                <option value="float16">float16</option>
+              </select>
+            </label>
+          </>
+        )}
 
         <div className="text-[11px] text-gray-500 leading-5">
           Select a function node to edit code, or select a subgraph node to edit aliases and its nested graph settings.
@@ -89,7 +133,11 @@ export default function CodePanel() {
       updateNodeData(node.id, {
         neuronDef: {
           ...node.data.neuronDef,
-          subgraph: { ...subgraph, training_method: method },
+          subgraph: {
+            ...subgraph,
+            training_method: method,
+            runtime: method === "torch" ? "torch" : subgraph.runtime,
+          },
         },
       });
     };
@@ -121,13 +169,14 @@ export default function CodePanel() {
             <select
               value={subgraph?.training_method ?? "surrogate"}
               onChange={(e) => updateTrainingMethod(e.target.value as TrainingMethod)}
-              className="mt-1 block w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200"
-            >
-              <option value="surrogate">surrogate</option>
-              <option value="evolutionary">evolutionary</option>
-              <option value="frozen">frozen</option>
-            </select>
-          </label>
+            className="mt-1 block w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200"
+          >
+            <option value="surrogate">surrogate</option>
+            <option value="evolutionary">evolutionary</option>
+            <option value="frozen">frozen</option>
+            <option value="torch">torch</option>
+          </select>
+        </label>
 
           <button
             onClick={() => openSubgraph(node.id)}
@@ -175,6 +224,75 @@ export default function CodePanel() {
               )}
             </div>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (node.data.neuronDef.kind === "module") {
+    const updateModuleConfig = (value: string | undefined) => {
+      if (value === undefined) return;
+      setCode(value);
+      try {
+        updateNodeData(node.id, {
+          neuronDef: {
+            ...node.data.neuronDef,
+            module_config: JSON.parse(value),
+          },
+        });
+      } catch {
+        // Keep the editor responsive while JSON is mid-edit.
+      }
+    };
+
+    return (
+      <div className="w-80 border-l border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
+        <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between">
+          <span className="text-sm font-bold text-emerald-300">{node.data.label}</span>
+          <span className="text-[10px] text-gray-500 font-mono">{node.id}</span>
+        </div>
+
+        <div className="px-3 py-2 border-b border-gray-800 text-[11px] text-gray-400 space-y-2">
+          <label className="block">
+            Node Name
+            <input
+              type="text"
+              value={node.data.neuronDef.name}
+              onChange={(e) =>
+                updateNodeData(node.id, {
+                  neuronDef: { ...node.data.neuronDef, name: e.target.value },
+                })
+              }
+              className="mt-1 block w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200"
+            />
+          </label>
+          <div>
+            Module Type
+            <div className="mt-1 rounded bg-gray-800 border border-gray-700 px-2 py-1 text-gray-200 font-mono">
+              {node.data.neuronDef.module_type}
+            </div>
+          </div>
+          <div className="text-[10px] text-gray-500">
+            Edit the module config as JSON. Training writes weights into the hidden serialized state field.
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-0">
+          <Editor
+            height="100%"
+            language="json"
+            theme="vs-dark"
+            value={code}
+            onChange={updateModuleConfig}
+            options={{
+              minimap: { enabled: false },
+              fontSize: 12,
+              lineNumbers: "on",
+              scrollBeyondLastLine: false,
+              wordWrap: "on",
+              padding: { top: 8 },
+            }}
+          />
         </div>
       </div>
     );

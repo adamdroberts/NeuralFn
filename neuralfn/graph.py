@@ -88,13 +88,17 @@ class NeuronGraph:
         *,
         name: str = "graph",
         training_method: str = "surrogate",
+        runtime: str = "scalar",
         surrogate_config: dict[str, Any] | None = None,
         evo_config: dict[str, Any] | None = None,
+        torch_config: dict[str, Any] | None = None,
     ) -> None:
         self.name = name
         self.training_method = training_method
+        self.runtime = runtime
         self.surrogate_config = dict(surrogate_config or {})
         self.evo_config = dict(evo_config or {})
+        self.torch_config = dict(torch_config or {})
         self.nodes: dict[str, NeuronInstance] = {}
         self.edges: dict[str, Edge] = {}
         self.input_node_ids: list[str] = []
@@ -238,6 +242,17 @@ class NeuronGraph:
             for node in self.nodes.values()
         )
 
+    def has_module_nodes(self) -> bool:
+        return any(
+            node.neuron_def.kind == "module"
+            or (
+                node.neuron_def.kind == "subgraph"
+                and node.neuron_def.subgraph is not None
+                and node.neuron_def.subgraph.has_module_nodes()
+            )
+            for node in self.nodes.values()
+        )
+
     def has_recursive_subgraphs(self) -> bool:
         if self.has_nested_subgraphs():
             return True
@@ -313,6 +328,11 @@ class NeuronGraph:
         Returns:
             mapping of output-node instance_id -> tuple of output values.
         """
+        if self.runtime == "torch" or self.has_module_nodes():
+            raise TypeError(
+                f"Graph '{self.name}' uses torch module nodes and cannot be executed through "
+                "the scalar runtime"
+            )
         if self.has_cycles():
             return self._execute_cyclic(inputs, max_iters, damping, tolerance)
         return self._execute_dag(inputs)
@@ -333,6 +353,11 @@ class NeuronGraph:
         Returns:
             mapping of all instance_id -> tuple of output values.
         """
+        if self.runtime == "torch" or self.has_module_nodes():
+            raise TypeError(
+                f"Graph '{self.name}' uses torch module nodes and cannot be traced through "
+                "the scalar runtime"
+            )
         if self.has_cycles():
             # For simplicity, cyclic trace just returns the final terminal outputs or whatever 
             # execute_cyclic would normally return, plus internal states if we rewrite it.
@@ -459,8 +484,10 @@ class NeuronGraph:
         return {
             "name": self.name,
             "training_method": self.training_method,
+            "runtime": self.runtime,
             "surrogate_config": self.surrogate_config,
             "evo_config": self.evo_config,
+            "torch_config": self.torch_config,
             "nodes": {nid: n.to_dict() for nid, n in self.nodes.items()},
             "edges": {eid: e.to_dict() for eid, e in self.edges.items()},
             "input_node_ids": self.input_node_ids,
@@ -472,8 +499,10 @@ class NeuronGraph:
         g = cls(
             name=d.get("name", "graph"),
             training_method=d.get("training_method", "surrogate"),
+            runtime=d.get("runtime", "scalar"),
             surrogate_config=d.get("surrogate_config", {}),
             evo_config=d.get("evo_config", {}),
+            torch_config=d.get("torch_config", {}),
         )
         for nid, nd in d["nodes"].items():
             g.nodes[nid] = NeuronInstance.from_dict(nd)

@@ -7,6 +7,7 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
   const inputs = neuronDef.input_ports;
   const outputs = neuronDef.output_ports;
   const isSubgraph = neuronDef.kind === "subgraph";
+  const isModule = neuronDef.kind === "module";
   const trainingMethod = neuronDef.subgraph?.training_method;
   const updateNodeData = useGraphStore((state) => state.updateNodeData);
 
@@ -33,17 +34,30 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
         selected
           ? isSubgraph
             ? "border-amber-400 bg-gray-800"
+            : isModule
+            ? "border-emerald-400 bg-gray-800"
             : "border-blue-400 bg-gray-800"
           : isSubgraph
             ? "border-amber-700 bg-gray-900"
+            : isModule
+            ? "border-emerald-700 bg-gray-900"
             : "border-gray-700 bg-gray-900"
       }`}
     >
       <div className="flex items-center justify-between gap-2 mb-1">
-        <span className={`text-xs font-bold truncate ${isSubgraph ? "text-amber-300" : "text-blue-300"}`}>
+        <span
+          className={`text-xs font-bold truncate ${
+            isSubgraph ? "text-amber-300" : isModule ? "text-emerald-300" : "text-blue-300"
+          }`}
+        >
           {label}
         </span>
         <div className="flex items-center gap-1">
+          {isModule && (
+            <span className="text-[10px] font-mono px-1 rounded bg-emerald-950 text-emerald-200 uppercase">
+              {neuronDef.module_type}
+            </span>
+          )}
           {trainingMethod && (
             <span className="text-[10px] font-mono px-1 rounded bg-amber-950 text-amber-200 uppercase">
               {trainingMethod.slice(0, 3)}

@@ -2,12 +2,15 @@
 
 A brain-inspired neural network framework where each neuron is either a well-established pre-defined NN function or a user-defined Python function with typed I/O ports, connected in an arbitrary graph.
 
+NeuralFn now has both a scalar graph runtime and a PyTorch-backed `torch` runtime for trainable module nodes such as GPT.
+
 ## How it works
 
 1. **Choose neurons** from built-ins or define custom Python functions with `@neuron` and typed I/O ports.
 2. **Wire them** into a directed graph with weighted edges.
-3. **Probe & train** — the framework samples each neuron to build differentiable surrogate models, then trains connection weights via gradient descent or evolutionary search.
-4. **Visual editor** — a React-based web UI for drag-and-drop graph editing with an embedded code editor.
+3. **Probe & train** — scalar graphs sample each neuron to build differentiable surrogate models, then train connection weights via gradient descent or evolutionary search.
+4. **Torch modules** — tensor-native graphs can train serialised module nodes through a PyTorch backend, including nested subgraphs built from multiple trainable stages.
+5. **Visual editor** — a React-based web UI for drag-and-drop graph editing with an embedded code editor.
 
 ## Quick start
 
@@ -27,6 +30,12 @@ python examples/xor_graph.py
 
 ```bash
 python examples/nested_hybrid_graph.py
+```
+
+### Run the GPT example
+
+```bash
+python examples/gpt_graph.py
 ```
 
 ### Start the visual editor
@@ -112,7 +121,13 @@ root.add_node(NeuronInstance(BuiltinNeurons.output_node, instance_id="root_out")
 trainer = HybridTrainer(root, HybridConfig(outer_rounds=3))
 ```
 
-Subgraph nodes expose their ports from the nested graph’s designated `input_node_ids` and `output_node_ids`, and each graph picks its own `training_method`: `surrogate`, `evolutionary`, or `frozen`.
+Subgraph nodes expose their ports from the nested graph’s designated `input_node_ids` and `output_node_ids`, and each graph picks its own `training_method`: `surrogate`, `evolutionary`, `frozen`, or `torch`.
+
+## GPT / torch graphs
+
+Use the GPT template subgraph when you want a causal language model that remains explorable in the editor. The template expands into token embedding, residual-mix, RMSNorm, attention, MLP, skip-add, head, softcap, and token cross-entropy stages, with transformer blocks represented as nested subgraphs. Torch graphs should use `training_method="torch"` and `runtime="torch"`. The torch trainer is CUDA-first and will raise if the graph is configured for `cuda` but no CUDA device is available.
+
+Training data for GPT graphs is integer token data shaped `[batch, seq_len]` for both `train_inputs` and shifted `train_targets`.
 
 ## Training
 

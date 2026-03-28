@@ -69,8 +69,10 @@ interface GraphState {
   updateActiveGraphSettings: (patch: {
     name?: string;
     training_method?: TrainingMethod;
+    runtime?: "scalar" | "torch";
     surrogate_config?: Record<string, unknown>;
     evo_config?: Record<string, unknown>;
+    torch_config?: Record<string, unknown>;
   }) => void;
 }
 
@@ -409,8 +411,12 @@ export const useGraphStore = create<GraphState>((set) => ({
       ...mutateActiveGraph(state, (graph) => ({
         ...graph,
         ...patch,
+        runtime:
+          patch.runtime ??
+          (patch.training_method === "torch" ? "torch" : graph.runtime),
         surrogate_config: patch.surrogate_config ?? graph.surrogate_config,
         evo_config: patch.evo_config ?? graph.evo_config,
+        torch_config: patch.torch_config ?? graph.torch_config,
       })),
     })),
 }));
