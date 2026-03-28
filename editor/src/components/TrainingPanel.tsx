@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useGraphStore } from "../store/graphStore";
-import { api } from "../api/client";
+import { api, type TorchTraceStat } from "../api/client";
 import { graphContainsSubgraphs } from "../store/graphUtils";
 
 export default function TrainingPanel() {
@@ -20,15 +20,20 @@ export default function TrainingPanel() {
     clearLoss,
     setTraining,
     rootGraph,
+    updateEdgeTelemetry,
   } = useGraphStore();
 
   const hasNestedGraphs = graphContainsSubgraphs(rootGraph);
+  const usesTorch = rootGraph.training_method === "torch" || rootGraph.runtime === "torch";
   const [outerRounds, setOuterRounds] = useState(3);
   const [epochs, setEpochs] = useState(200);
   const [lr, setLr] = useState(0.001);
+  const [batchSize, setBatchSize] = useState(8);
+  const [weightDecay, setWeightDecay] = useState(0.01);
   const [popSize, setPopSize] = useState(50);
-  const [dataInput, setDataInput] = useState("[[0,0],[0,1],[1,0],[1,1]]");
-  const [dataTarget, setDataTarget] = useState("[[0],[1],[1],[0]]");
+  const [dataInput, setDataInput] = useState("[[0,1,2,3],[1,2,3,4],[2,3,4,5],[3,4,5,6]]");
+  const [dataTarget, setDataTarget] = useState("[[1,2,3,4],[2,3,4,5],[3,4,5,6],[4,5,6,7]]");
+  const [torchTrace, setTorchTrace] = useState<Record<string, TorchTraceStat[]>>({});
   const ctrlRef = useRef<AbortController | null>(null);
 
   const start = useCallback(async () => {
@@ -57,11 +62,13 @@ export default function TrainingPanel() {
         train_inputs: inputs,
         train_targets: targets,
         outer_rounds: outerRounds,
-        loss_fn: "mse",
+        loss_fn: usesTorch ? "cross_entropy" : "mse",
         epochs,
         learning_rate: lr,
         population_size: popSize,
         generations: epochs,
+        batch_size: batchSize,
+        weight_decay: weightDecay,
       },
       (msg) => {
         if (msg.done) {
@@ -79,9 +86,12 @@ export default function TrainingPanel() {
   }, [
     rootGraph,
     hasNestedGraphs,
+    usesTorch,
     outerRounds,
     epochs,
     lr,
+    batchSize,
+    weightDecay,
     popSize,
     dataInput,
     dataTarget,
@@ -96,6 +106,48 @@ export default function TrainingPanel() {
     await api.stopTraining();
     setTraining(false);
   }, [setTraining]);
+
+  // Fetch graph telemetry continuously when inputs change
+  React.useEffect(() => {
+    if (usesTorch) {
+      updateEdgeTelemetry({});
+      try {
+        const inputs = JSON.parse(dataInput);
+        const targets = JSON.parse(dataTarget);
+        if (Array.isArray(inputs) && Array.isArray(targets)) {
+          api
+            .putGraph(rootGraph)
+            .then(() =>
+              api.traceTorch({
+                [rootGraph.input_node_ids[0] ?? "tokens_in"]: inputs,
+                [rootGraph.input_node_ids[1] ?? "targets_in"]: targets,
+              })
+            )
+            .then(setTorchTrace)
+            .catch(() => setTorchTrace({}));
+        }
+      } catch {
+        setTorchTrace({});
+      }
+      return;
+    }
+    try {
+      const inputs = JSON.parse(dataInput);
+      if (Array.isArray(inputs) && inputs.length > 0 && Array.isArray(inputs[0])) {
+        const payload: Record<string, number[]> = {};
+        rootGraph.input_node_ids.forEach((id, colIdx) => {
+          payload[id] = inputs.map((row: any[]) => Number(row[colIdx]) || 0);
+        });
+        api.putGraph(rootGraph).then(() => {
+          api.executeTrace(payload).then(res => {
+            updateEdgeTelemetry(res);
+          }).catch(() => {});
+        }).catch(() => {});
+      }
+    } catch (e) {
+      // ignore parse errors while typing
+    }
+  }, [dataInput, dataTarget, rootGraph, updateEdgeTelemetry, usesTorch]);
 
   return (
     <div className="border-t border-gray-800 bg-gray-900 p-3">
@@ -137,6 +189,31 @@ export default function TrainingPanel() {
           />
         </label>
 
+        {usesTorch && (
+          <>
+            <label className="text-[10px] text-gray-400">
+              Batch
+              <input
+                type="number"
+                value={batchSize}
+                onChange={(e) => setBatchSize(parseInt(e.target.value, 10) || 1)}
+                className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+              />
+            </label>
+
+            <label className="text-[10px] text-gray-400">
+              WD
+              <input
+                type="number"
+                value={weightDecay}
+                step={0.001}
+                onChange={(e) => setWeightDecay(parseFloat(e.target.value) || 0)}
+                className="ml-1 w-20 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+              />
+            </label>
+          </>
+        )}
+
         <label className="text-[10px] text-gray-400">
           Pop
           <input
@@ -173,6 +250,12 @@ export default function TrainingPanel() {
       {hasNestedGraphs && (
         <div className="mt-2 text-[10px] text-gray-500">
           Nested networks use each graph&apos;s own training method. Set root and subgraph methods from the side panel.
+        </div>
+      )}
+
+      {usesTorch && (
+        <div className="mt-2 text-[10px] text-gray-500">
+          Torch graphs expect integer token IDs shaped as `[batch, seq_len]` for both inputs and shifted targets.
         </div>
       )}
 
@@ -218,6 +301,28 @@ export default function TrainingPanel() {
               />
             </LineChart>
           </ResponsiveContainer>
+        </div>
+      )}
+
+      {usesTorch && Object.keys(torchTrace).length > 0 && (
+        <div className="mt-3 border border-gray-800 rounded bg-gray-950/70">
+          <div className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-800">
+            Torch Trace
+          </div>
+          <div className="max-h-48 overflow-auto divide-y divide-gray-900">
+            {Object.entries(torchTrace).map(([nodeId, stats]) => (
+              <div key={nodeId} className="px-3 py-2 text-[10px] text-gray-300 font-mono">
+                <div className="text-emerald-300 mb-1">{nodeId}</div>
+                {stats.map((stat, idx) => (
+                  <div key={`${nodeId}-${idx}`} className="text-gray-400">
+                    {stat.kind
+                      ? stat.kind
+                      : `${JSON.stringify(stat.shape)} mean=${stat.mean?.toFixed(4)} std=${stat.std?.toFixed(4)} min=${stat.min?.toFixed(4)} max=${stat.max?.toFixed(4)}`}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

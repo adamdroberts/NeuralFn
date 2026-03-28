@@ -1,15 +1,33 @@
 import React, { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import type { NeuronNodeData } from "../store/graphStore";
+import { type NeuronNodeData, useGraphStore } from "../store/graphStore";
 
 function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeData }) {
   const { label, neuronDef, isInput, isOutput } = data;
   const inputs = neuronDef.input_ports;
   const outputs = neuronDef.output_ports;
   const isSubgraph = neuronDef.kind === "subgraph";
+  const isModule = neuronDef.kind === "module";
   const trainingMethod = neuronDef.subgraph?.training_method;
+  const variantRef = neuronDef.variant_ref;
+  const updateNodeData = useGraphStore((state) => state.updateNodeData);
 
   const roleTag = isInput ? "IN" : isOutput ? "OUT" : null;
+  const isOverride = neuronDef.source_code?.includes("def override(x):") ?? false;
+  const overrideMatch = neuronDef.source_code?.match(/return\s+([-\d.]+)/);
+  const overrideValue = overrideMatch ? parseFloat(overrideMatch[1]) : 0;
+
+  const handleOverrideChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    if (!isNaN(val)) {
+      updateNodeData(id, {
+        neuronDef: {
+          ...neuronDef,
+          source_code: `def override(x):\n    return ${val}\n`
+        }
+      });
+    }
+  };
 
   return (
     <div
@@ -17,20 +35,38 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
         selected
           ? isSubgraph
             ? "border-amber-400 bg-gray-800"
+            : isModule
+            ? "border-emerald-400 bg-gray-800"
             : "border-blue-400 bg-gray-800"
           : isSubgraph
             ? "border-amber-700 bg-gray-900"
+            : isModule
+            ? "border-emerald-700 bg-gray-900"
             : "border-gray-700 bg-gray-900"
       }`}
     >
       <div className="flex items-center justify-between gap-2 mb-1">
-        <span className={`text-xs font-bold truncate ${isSubgraph ? "text-amber-300" : "text-blue-300"}`}>
+        <span
+          className={`text-xs font-bold truncate ${
+            isSubgraph ? "text-amber-300" : isModule ? "text-emerald-300" : "text-blue-300"
+          }`}
+        >
           {label}
         </span>
         <div className="flex items-center gap-1">
+          {isModule && (
+            <span className="text-[10px] font-mono px-1 rounded bg-emerald-950 text-emerald-200 uppercase">
+              {neuronDef.module_type}
+            </span>
+          )}
           {trainingMethod && (
             <span className="text-[10px] font-mono px-1 rounded bg-amber-950 text-amber-200 uppercase">
               {trainingMethod.slice(0, 3)}
+            </span>
+          )}
+          {variantRef && (
+            <span className="text-[10px] font-mono px-1 rounded bg-gray-950 text-amber-200">
+              {variantRef.family}@{variantRef.version}
             </span>
           )}
           {roleTag && (
@@ -43,7 +79,20 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
 
       {isSubgraph && (
         <div className="mb-2 text-[10px] text-amber-200/80">
-          Double-click to open subgraph
+          {variantRef ? "Double-click to open shared variant" : "Double-click to open subgraph"}
+        </div>
+      )}
+
+      {isOverride && (
+        <div className="mb-2 flex items-center justify-between text-[10px] text-gray-400 bg-gray-950 px-2 py-1 rounded">
+          <span>Value:</span>
+          <input
+            type="number"
+            value={overrideValue}
+            onChange={handleOverrideChange}
+            className="w-16 bg-gray-800 text-gray-200 px-1 py-0.5 rounded border border-gray-700 text-right no-spinners"
+            step="0.1"
+          />
         </div>
       )}
 

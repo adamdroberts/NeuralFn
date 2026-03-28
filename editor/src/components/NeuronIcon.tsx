@@ -24,7 +24,17 @@ const FNS: Record<string, (x: number) => number> = {
   hard_swish: x => x * Math.max(0, Math.min(1, x / 6 + 0.5)),
 };
 
-export default function NeuronIcon({ name, expanded }: { name: string, expanded?: boolean }) {
+export default function NeuronIcon({ 
+  name, 
+  expanded, 
+  animated, 
+  telemetry = [] 
+}: { 
+  name: string, 
+  expanded?: boolean, 
+  animated?: boolean, 
+  telemetry?: number[] 
+}) {
   const fn = FNS[name];
   if (!fn) return null;
 
@@ -62,6 +72,43 @@ export default function NeuronIcon({ name, expanded }: { name: string, expanded?
 
   const size = expanded ? 160 : 14;
 
+  const [animProgress, setAnimProgress] = React.useState(0);
+  
+  React.useEffect(() => {
+    if (!animated || telemetry.length < 2) return;
+    let start = performance.now();
+    let frameId: number;
+    
+    const tick = (now: number) => {
+      const elapsed = now - start;
+      const progress = (elapsed % 2000) / 2000;
+      setAnimProgress(progress);
+      frameId = requestAnimationFrame(tick);
+    };
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
+  }, [animated, telemetry.length]);
+
+  let dotPx = null;
+  let dotPy = null;
+  if (animated && telemetry.length > 0) {
+    let rawX = 0;
+    if (telemetry.length === 1) {
+      rawX = telemetry[0];
+    } else {
+      const floatIndex = animProgress * (telemetry.length - 1);
+      const intIndex = Math.floor(floatIndex);
+      const frac = floatIndex - intIndex;
+      rawX = telemetry[intIndex] * (1 - frac) + telemetry[Math.min(intIndex + 1, telemetry.length - 1)] * frac;
+    }
+    
+    const cx = Math.max(range[0], Math.min(range[1], rawX));
+    const cy = fn(cx);
+    
+    dotPx = ((cx - range[0]) / (range[1] - range[0])) * 100;
+    dotPy = 100 - ((cy - minY) / (maxY - minY)) * 100;
+  }
+
   return (
     <svg 
       width={size} 
@@ -72,6 +119,17 @@ export default function NeuronIcon({ name, expanded }: { name: string, expanded?
       <line x1="0" y1={zeroY} x2="100" y2={zeroY} stroke="#4b5563" strokeWidth={expanded ? 1.5 : 8} />
       <line x1={zeroX} y1="0" x2={zeroX} y2="100" stroke="#4b5563" strokeWidth={expanded ? 1.5 : 8} />
       <polyline points={path} fill="none" stroke={expanded ? "#60a5fa" : "#93c5fd"} strokeWidth={expanded ? 3.5 : 12} strokeLinecap="round" strokeLinejoin="round" />
+      
+      {dotPx !== null && dotPy !== null && (
+        <circle 
+          cx={dotPx} 
+          cy={dotPy} 
+          r={expanded ? 4 : 12} 
+          fill="#ef4444" 
+          stroke="#7f1d1d" 
+          strokeWidth={expanded ? 1 : 4} 
+        />
+      )}
     </svg>
   );
 }

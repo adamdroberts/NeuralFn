@@ -7,6 +7,7 @@ import uuid
 from typing import Any
 
 import numpy as np
+import torch
 from fastapi import APIRouter, HTTPException
 from starlette.responses import StreamingResponse
 
@@ -14,18 +15,20 @@ from neuralfn.builtins import BuiltinNeurons
 from neuralfn.evolutionary import EvoConfig, EvolutionaryTrainer
 from neuralfn.graph import Edge, NeuronGraph, NeuronInstance
 from neuralfn.hybrid import HybridConfig, HybridTrainer
-from neuralfn.neuron import NeuronDef, neuron_from_source, subgraph_neuron
+from neuralfn.neuron import NeuronDef, module_neuron, neuron_from_source, subgraph_neuron
 from neuralfn.port import Port
 from neuralfn.surrogate import probe_neuron
 from neuralfn.trainer import SurrogateTrainer, TrainConfig
+from neuralfn.torch_backend import CompiledTorchGraph, TorchTrainConfig, TorchTrainer
+from neuralfn.torch_templates import build_gpt_template_payload
 
-from .models import EdgeModel, ExecuteRequest, GraphModel, NodeModel, TrainRequest
+from .models import EdgeModel, ExecuteRequest, GPTTemplateRequest, GraphModel, NodeModel, TrainRequest
 
 router = APIRouter(prefix="/api")
 
 _graph = NeuronGraph()
 _training_thread: threading.Thread | None = None
-_trainer_instance: SurrogateTrainer | EvolutionaryTrainer | HybridTrainer | None = None
+_trainer_instance: SurrogateTrainer | EvolutionaryTrainer | HybridTrainer | TorchTrainer | None = None
 
 
 def _port_from_model(pm: Any) -> Port:
@@ -42,6 +45,22 @@ def _ndef_from_model(nm: Any) -> NeuronDef:
             name=nm.name,
             input_aliases=list(getattr(nm, "input_aliases", [])) or None,
             output_aliases=list(getattr(nm, "output_aliases", [])) or None,
+            variant_ref=(
+                getattr(nm.variant_ref, "model_dump", lambda: None)()
+                if getattr(nm, "variant_ref", None) is not None
+                else None
+            ),
+            neuron_id=nm.id or None,
+        )
+
+    if getattr(nm, "kind", "function") == "module":
+        return module_neuron(
+            name=nm.name,
+            module_type=getattr(nm, "module_type", "") or nm.name,
+            input_ports=[_port_from_model(p) for p in nm.input_ports],
+            output_ports=[_port_from_model(p) for p in nm.output_ports],
+            module_config=dict(getattr(nm, "module_config", {}) or {}),
+            module_state=getattr(nm, "module_state", ""),
             neuron_id=nm.id or None,
         )
 
@@ -124,11 +143,70 @@ def execute(body: ExecuteRequest) -> dict[str, Any]:
     return {k: list(v) for k, v in outputs.items()}
 
 
+@router.post("/execute-trace")
+def execute_trace(body: ExecuteRequest) -> dict[str, Any]:
+    inputs = {k: tuple(v) for k, v in body.inputs.items()}
+    try:
+        outputs = _graph.execute_trace(inputs)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+    return {k: list(v) for k, v in outputs.items()}
+
+
+def _summarize_tensor_tuple(values: tuple[Any, ...]) -> list[dict[str, Any]]:
+    summary: list[dict[str, Any]] = []
+    for value in values:
+        if not hasattr(value, "shape"):
+            summary.append({"kind": type(value).__name__})
+            continue
+        tensor = value.detach().float()
+        summary.append(
+            {
+                "shape": list(tensor.shape),
+                "mean": float(tensor.mean().item()) if tensor.numel() else 0.0,
+                "std": float(tensor.std(unbiased=False).item()) if tensor.numel() else 0.0,
+                "min": float(tensor.min().item()) if tensor.numel() else 0.0,
+                "max": float(tensor.max().item()) if tensor.numel() else 0.0,
+            }
+        )
+    return summary
+
+
+@router.post("/trace/torch")
+def torch_trace(body: ExecuteRequest) -> dict[str, Any]:
+    if _graph.runtime != "torch" and not _graph.has_module_nodes():
+        raise HTTPException(400, "Active graph is not a torch graph")
+    try:
+        compiled = CompiledTorchGraph(_graph)
+        flat_inputs: list[Any] = []
+        for node_id in _graph.input_node_ids:
+            values = body.inputs.get(node_id)
+            if values is None:
+                raise ValueError(f"Missing input values for '{node_id}'")
+            tensor = torch.tensor(values)
+            if tensor.ndim == 1:
+                tensor = tensor.unsqueeze(0)
+            flat_inputs.append(tensor)
+        _outputs, trace = compiled.trace(*flat_inputs)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+    return {node_id: _summarize_tensor_tuple(values) for node_id, values in trace.items()}
+
+
 # ── Builtins ──────────────────────────────────────────────────────────
 
 @router.get("/builtins")
 def list_builtins() -> list[dict[str, Any]]:
     return [n.to_dict() for n in BuiltinNeurons.all()]
+
+
+@router.post("/templates/gpt")
+def build_gpt_template(body: GPTTemplateRequest) -> dict[str, Any]:
+    payload = build_gpt_template_payload(
+        name=body.name,
+        config=dict(body.config or {}),
+    )
+    return payload
 
 
 # ── Probe ─────────────────────────────────────────────────────────────
@@ -212,8 +290,28 @@ def train_start(body: TrainRequest) -> StreamingResponse:
         finally:
             done_event.set()
 
-    use_legacy = body.method in {"surrogate", "evolutionary"} and not _graph.has_nested_subgraphs()
-    if use_legacy:
+    def run_torch() -> None:
+        try:
+            cfg = TorchTrainConfig(
+                learning_rate=body.learning_rate,
+                epochs=body.epochs,
+                batch_size=body.batch_size,
+                weight_decay=body.weight_decay,
+                device=str(_graph.torch_config.get("device", "cuda")),
+                amp_dtype=str(_graph.torch_config.get("amp_dtype", "bfloat16")),
+            )
+            trainer = TorchTrainer(_graph, cfg)
+            global _trainer_instance
+            _trainer_instance = trainer
+            trainer.train(body.train_inputs, body.train_targets, on_epoch=on_progress)
+        finally:
+            done_event.set()
+
+    use_torch = body.method == "torch" or _graph.training_method == "torch" or _graph.runtime == "torch" or _graph.has_module_nodes()
+    use_legacy = body.method in {"surrogate", "evolutionary"} and not _graph.has_nested_subgraphs() and not use_torch
+    if use_torch:
+        target = run_torch
+    elif use_legacy:
         target = run_surrogate if body.method == "surrogate" else run_evolutionary
     else:
         target = run_hybrid

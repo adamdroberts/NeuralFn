@@ -88,13 +88,22 @@ class NeuronGraph:
         *,
         name: str = "graph",
         training_method: str = "surrogate",
+        runtime: str = "scalar",
         surrogate_config: dict[str, Any] | None = None,
         evo_config: dict[str, Any] | None = None,
+        torch_config: dict[str, Any] | None = None,
+        variant_library: dict[str, dict[str, NeuronGraph]] | None = None,
     ) -> None:
         self.name = name
         self.training_method = training_method
+        self.runtime = runtime
         self.surrogate_config = dict(surrogate_config or {})
         self.evo_config = dict(evo_config or {})
+        self.torch_config = dict(torch_config or {})
+        self.variant_library = {
+            family: dict(versions)
+            for family, versions in dict(variant_library or {}).items()
+        }
         self.nodes: dict[str, NeuronInstance] = {}
         self.edges: dict[str, Edge] = {}
         self.input_node_ids: list[str] = []
@@ -238,6 +247,17 @@ class NeuronGraph:
             for node in self.nodes.values()
         )
 
+    def has_module_nodes(self) -> bool:
+        return any(
+            node.neuron_def.kind == "module"
+            or (
+                node.neuron_def.kind == "subgraph"
+                and node.neuron_def.subgraph is not None
+                and node.neuron_def.subgraph.has_module_nodes()
+            )
+            for node in self.nodes.values()
+        )
+
     def has_recursive_subgraphs(self) -> bool:
         if self.has_nested_subgraphs():
             return True
@@ -292,6 +312,79 @@ class NeuronGraph:
                 )
             neuron_def.refresh_interface_ports()
 
+    def resolve_variant_library(self) -> None:
+        resolved_variants: dict[tuple[str, str], NeuronGraph] = {}
+        resolving: list[tuple[str, str]] = []
+
+        def clone_graph(graph: NeuronGraph) -> NeuronGraph:
+            return NeuronGraph.from_dict_raw(graph.to_dict())
+
+        def resolve_variant_graph(family: str, version: str) -> NeuronGraph:
+            key = (family, version)
+            cached = resolved_variants.get(key)
+            if cached is not None:
+                return cached
+            if key in resolving:
+                cycle = " -> ".join([f"{fam}@{ver}" for fam, ver in [*resolving, key]])
+                raise ValueError(f"Recursive variant reference detected: {cycle}")
+            family_map = self.variant_library.get(family)
+            if family_map is None or version not in family_map:
+                raise ValueError(f"Missing variant '{family}@{version}' in graph '{self.name}'")
+            resolving.append(key)
+            variant_graph = clone_graph(family_map[version])
+            resolve_graph(variant_graph)
+            variant_graph.validate(as_subgraph=True)
+            resolving.pop()
+            resolved_variants[key] = variant_graph
+            return variant_graph
+
+        def ports_compatible(current: list[Port], target: list[Port]) -> bool:
+            if len(current) != len(target):
+                return False
+            return all(
+                left.name == right.name
+                and tuple(left.range) == tuple(right.range)
+                and left.precision == right.precision
+                and left.dtype == right.dtype
+                for left, right in zip(current, target)
+            )
+
+        def resolve_graph(graph: NeuronGraph) -> None:
+            for node in graph.nodes.values():
+                ndef = node.neuron_def
+                if ndef.kind != "subgraph":
+                    continue
+                variant_ref = ndef.variant_ref or {}
+                if variant_ref:
+                    family = str(variant_ref.get("family", "")).strip()
+                    version = str(variant_ref.get("version", "")).strip()
+                    if not family or not version:
+                        raise ValueError(f"Subgraph node '{ndef.name}' has an incomplete variant_ref")
+                    resolved = clone_graph(resolve_variant_graph(family, version))
+                    expected_inputs = resolved.flattened_input_ports(ndef.input_aliases or None)
+                    expected_outputs = resolved.flattened_output_ports(ndef.output_aliases or None)
+                    if ndef.input_ports and not ports_compatible(ndef.input_ports, expected_inputs):
+                        raise ValueError(
+                            f"Variant '{family}@{version}' is incompatible with linked node '{ndef.name}' inputs"
+                        )
+                    if ndef.output_ports and not ports_compatible(ndef.output_ports, expected_outputs):
+                        raise ValueError(
+                            f"Variant '{family}@{version}' is incompatible with linked node '{ndef.name}' outputs"
+                        )
+                    ndef.subgraph = resolved
+                    ndef.refresh_interface_ports()
+                    continue
+                if ndef.subgraph is not None:
+                    resolve_graph(ndef.subgraph)
+                    ndef.refresh_interface_ports()
+
+        for family, versions in list(self.variant_library.items()):
+            self.variant_library[family] = {
+                version: resolve_variant_graph(family, version)
+                for version in versions
+            }
+        resolve_graph(self)
+
     # ── execution ─────────────────────────────────────────────────────
 
     def execute(
@@ -313,9 +406,43 @@ class NeuronGraph:
         Returns:
             mapping of output-node instance_id -> tuple of output values.
         """
+        if self.runtime == "torch" or self.has_module_nodes():
+            raise TypeError(
+                f"Graph '{self.name}' uses torch module nodes and cannot be executed through "
+                "the scalar runtime"
+            )
         if self.has_cycles():
             return self._execute_cyclic(inputs, max_iters, damping, tolerance)
         return self._execute_dag(inputs)
+
+    def execute_trace(
+        self,
+        inputs: dict[str, tuple[float, ...]],
+        *,
+        max_iters: int = 50,
+        damping: float = 0.5,
+        tolerance: float = 1e-6,
+    ) -> dict[str, tuple[float, ...]]:
+        """Run the graph and return all internal activations.
+        
+        Args:
+            inputs: mapping of input-node instance_id -> tuple of values.
+        
+        Returns:
+            mapping of all instance_id -> tuple of output values.
+        """
+        if self.runtime == "torch" or self.has_module_nodes():
+            raise TypeError(
+                f"Graph '{self.name}' uses torch module nodes and cannot be traced through "
+                "the scalar runtime"
+            )
+        if self.has_cycles():
+            # For simplicity, cyclic trace just returns the final terminal outputs or whatever 
+            # execute_cyclic would normally return, plus internal states if we rewrite it.
+            # But DAG trace is the primary goal. We'll reuse DAG logic for simplicity here or 
+            # just delegate to _execute_dag_trace.
+            pass
+        return self._execute_dag_trace(inputs)
 
     def _execute_dag(
         self, inputs: dict[str, tuple[float, ...]],
@@ -334,6 +461,24 @@ class NeuronGraph:
             values[nid] = result
 
         return {nid: values.get(nid, ()) for nid in self.output_node_ids}
+
+    def _execute_dag_trace(
+        self, inputs: dict[str, tuple[float, ...]],
+    ) -> dict[str, tuple[float, ...]]:
+        values: dict[str, tuple[float, ...]] = {}
+
+        for nid in inputs:
+            values[nid] = inputs[nid]
+
+        for nid in self.topological_order():
+            if nid in values and nid in inputs:
+                continue
+            node = self.nodes[nid]
+            port_accum = self._gather_inputs(nid, values, node)
+            result = node.neuron_def(*port_accum)
+            values[nid] = result
+
+        return values
 
     def _execute_cyclic(
         self,
@@ -417,8 +562,14 @@ class NeuronGraph:
         return {
             "name": self.name,
             "training_method": self.training_method,
+            "runtime": self.runtime,
             "surrogate_config": self.surrogate_config,
             "evo_config": self.evo_config,
+            "torch_config": self.torch_config,
+            "variant_library": {
+                family: {version: graph.to_dict() for version, graph in versions.items()}
+                for family, versions in self.variant_library.items()
+            },
             "nodes": {nid: n.to_dict() for nid, n in self.nodes.items()},
             "edges": {eid: e.to_dict() for eid, e in self.edges.items()},
             "input_node_ids": self.input_node_ids,
@@ -427,17 +578,37 @@ class NeuronGraph:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> NeuronGraph:
+        g = cls.from_dict_raw(d)
+        g.resolve_variant_library()
+        g.validate()
+        return g
+
+    @classmethod
+    def from_dict_raw(cls, d: dict[str, Any] | None) -> NeuronGraph:
+        if d is None:
+            raise ValueError("Cannot deserialize an empty graph payload")
         g = cls(
             name=d.get("name", "graph"),
             training_method=d.get("training_method", "surrogate"),
+            runtime=d.get("runtime", "scalar"),
             surrogate_config=d.get("surrogate_config", {}),
             evo_config=d.get("evo_config", {}),
+            torch_config=d.get("torch_config", {}),
+            variant_library={},
         )
-        for nid, nd in d["nodes"].items():
-            g.nodes[nid] = NeuronInstance.from_dict(nd)
-        for eid, ed in d["edges"].items():
+        for family, versions in d.get("variant_library", {}).items():
+            g.variant_library[family] = {
+                version: cls.from_dict_raw(graph_payload)
+                for version, graph_payload in versions.items()
+            }
+        for nid, nd in d.get("nodes", {}).items():
+            g.nodes[nid] = NeuronInstance(
+                neuron_def=NeuronDef.from_dict_raw(nd["neuron_def"]),
+                instance_id=nd["instance_id"],
+                position=tuple(nd.get("position", [0, 0])),
+            )
+        for eid, ed in d.get("edges", {}).items():
             g.edges[eid] = Edge.from_dict(ed)
         g.input_node_ids = d.get("input_node_ids", [])
         g.output_node_ids = d.get("output_node_ids", [])
-        g.validate()
         return g

@@ -12,6 +12,7 @@ import {
   type OnConnect,
 } from "@xyflow/react";
 import { NeuronNode } from "./NeuronNode";
+import InteractiveEdge from "./InteractiveEdge";
 import {
   selectFlowEdges,
   selectFlowNodes,
@@ -20,6 +21,7 @@ import {
 } from "../store/graphStore";
 
 const nodeTypes: NodeTypes = { neuron: NeuronNode as any };
+const edgeTypes = { default: InteractiveEdge };
 
 export default function GraphCanvas() {
   const nodes = useGraphStore(selectFlowNodes);
@@ -83,10 +85,10 @@ export default function GraphCanvas() {
         onNodeDoubleClick={onNodeDoubleClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         className="bg-gray-950"
         defaultEdgeOptions={{
-          style: { stroke: "#6b7280", strokeWidth: 2 },
           animated: true,
         }}
       >

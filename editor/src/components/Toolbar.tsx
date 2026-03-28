@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useReactFlow } from "@xyflow/react";
 import { api, type NeuronDefData } from "../api/client";
-import { selectBreadcrumbs, selectCurrentPath, useGraphStore } from "../store/graphStore";
+import { selectBreadcrumbs, useGraphStore } from "../store/graphStore";
 import { normalizeGraph } from "../store/graphUtils";
 import NeuronIcon from "./NeuronIcon";
 
@@ -32,38 +33,91 @@ const DESCRIPTIONS: Record<string, string> = {
   logsoftmax_2: "Log-Softmax values for 2 inputs",
   input: "Graph input terminal",
   output: "Graph output terminal",
+  token_embedding: "Token embedding stage with tied-weight output",
+  linear: "Trainable linear projection stage",
+  rms_norm: "Tensor RMSNorm stage",
+  reshape_heads: "Reshape hidden states into attention heads",
+  merge_heads: "Merge attention heads back into model width",
+  repeat_kv: "Repeat grouped KV heads to match query head count",
+  rotary_embedding: "Apply rotary positional embedding to Q and K tensors",
+  qk_gain: "Learned per-head scale for the query stream",
+  scaled_dot_product_attention: "Causal scaled dot-product attention primitive",
+  residual_mix: "Learns a mix of the current stream and the original embedding stream",
+  causal_self_attention: "Causal self-attention stage with RoPE and grouped KV heads",
+  residual_add: "Residual add with a learned per-channel scale",
+  mlp_relu2: "ReLU-squared MLP stage",
+  tied_lm_head: "Language-model head that reuses embedding weights",
+  lm_head: "Untied language-model head",
+  logit_softcap: "Softcap the logits before loss",
+  token_cross_entropy: "Token cross-entropy loss stage",
 };
 
 export default function Toolbar() {
+  const { screenToFlowPosition } = useReactFlow();
+
   const builtins = useGraphStore((state) => state.builtins);
   const setBuiltins = useGraphStore((state) => state.setBuiltins);
   const addBuiltinNode = useGraphStore((state) => state.addBuiltinNode);
   const addCustomNode = useGraphStore((state) => state.addCustomNode);
   const addSubgraphNode = useGraphStore((state) => state.addSubgraphNode);
+  const updateActiveGraphSettings = useGraphStore((state) => state.updateActiveGraphSettings);
+  const mergeVariantLibrary = useGraphStore((state) => state.mergeVariantLibrary);
   const rootGraph = useGraphStore((state) => state.rootGraph);
-  const currentPath = useGraphStore(selectCurrentPath);
   const breadcrumbs = useGraphStore(selectBreadcrumbs);
   const setPath = useGraphStore((state) => state.setPath);
   const [showLibrary, setShowLibrary] = useState(true);
   const [hoveredNeuron, setHoveredNeuron] = useState<{ builtin: NeuronDefData, rect: DOMRect } | null>(null);
+
   useEffect(() => {
     api.getBuiltins().then(setBuiltins).catch(() => {});
   }, [setBuiltins]);
 
   const onAddBuiltin = useCallback(
-    (ndef: NeuronDefData) => {
-      addBuiltinNode(ndef);
+    (ndef: NeuronDefData, e: React.MouseEvent) => {
+      const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
+      addBuiltinNode(ndef, pos);
     },
-    [addBuiltinNode]
+    [addBuiltinNode, screenToFlowPosition]
   );
 
-  const onAddCustom = useCallback(() => {
-    addCustomNode();
-  }, [addCustomNode]);
+  const onAddCustom = useCallback((e: React.MouseEvent) => {
+    const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
+    addCustomNode(pos);
+  }, [addCustomNode, screenToFlowPosition]);
 
-  const onAddSubgraph = useCallback(() => {
-    addSubgraphNode();
-  }, [addSubgraphNode]);
+  const onAddOverride = useCallback((e: React.MouseEvent) => {
+    const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
+    const ndef: NeuronDefData = {
+        id: "override-" + Date.now().toString(36),
+        name: "override",
+        kind: "function",
+        input_ports: [{ name: "x", range: [-1, 1], precision: 0.1, dtype: "float" }],
+        output_ports: [{ name: "y", range: [-1, 1], precision: 0.1, dtype: "float" }],
+        source_code: "def override(x):\n    return 0.0\n",
+        subgraph: null,
+        module_type: "",
+        module_config: {},
+        module_state: "",
+        input_aliases: [],
+        output_aliases: [],
+        variant_ref: null,
+    };
+    addBuiltinNode(ndef, pos);
+  }, [addBuiltinNode, screenToFlowPosition]);
+
+  const onAddSubgraph = useCallback((e: React.MouseEvent) => {
+    const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
+    addSubgraphNode(pos);
+  }, [addSubgraphNode, screenToFlowPosition]);
+
+  const onAddGPT = useCallback((e: React.MouseEvent) => {
+    const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
+    api.buildGPTTemplate({ name: "gpt" }).then((template) => {
+      mergeVariantLibrary(template.variant_library);
+      updateActiveGraphSettings(template.graph_settings);
+      addBuiltinNode(template.node_def, pos);
+    }).catch(() => {});
+  }, [addBuiltinNode, mergeVariantLibrary, screenToFlowPosition, updateActiveGraphSettings]);
 
   const onSave = useCallback(() => {
     const data = JSON.stringify(rootGraph, null, 2);
@@ -112,10 +166,22 @@ export default function Toolbar() {
           + Custom Node
         </button>
         <button
+          onClick={onAddOverride}
+          className="bg-purple-900 hover:bg-purple-800 text-purple-100 text-xs px-2 py-1 rounded"
+        >
+          + Override
+        </button>
+        <button
           onClick={onAddSubgraph}
           className="bg-amber-900 hover:bg-amber-800 text-amber-100 text-xs px-2 py-1 rounded"
         >
           + Subgraph
+        </button>
+        <button
+          onClick={onAddGPT}
+          className="bg-emerald-900 hover:bg-emerald-800 text-emerald-100 text-xs px-2 py-1 rounded"
+        >
+          + GPT Template
         </button>
 
         <div className="flex items-center gap-1 ml-2 text-[10px] text-gray-400 overflow-x-auto">
@@ -123,7 +189,7 @@ export default function Toolbar() {
             <React.Fragment key={`${crumb.id}-${idx}`}>
               {idx > 0 && <span>/</span>}
               <button
-                onClick={() => setPath(currentPath.slice(0, idx))}
+                onClick={() => setPath(crumb.path)}
                 className={`whitespace-nowrap rounded px-1 py-0.5 ${
                   idx === breadcrumbs.length - 1
                     ? "bg-gray-800 text-gray-200"
@@ -160,8 +226,8 @@ export default function Toolbar() {
             return (
               <button
                 key={b.id}
-                onClick={() => {
-                  onAddBuiltin(b);
+                onClick={(e) => {
+                  onAddBuiltin(b, e);
                   setHoveredNeuron(null);
                 }}
                 onMouseEnter={(e) => {

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import base64
 import inspect
 import math
+import io
 import textwrap
 import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Sequence
+
+import torch
 
 from .port import Port
 
@@ -27,8 +31,12 @@ class NeuronDef:
     source_code: str = ""
     kind: str = "function"
     subgraph: NeuronGraph | None = None
+    module_type: str = ""
+    module_config: dict[str, Any] = field(default_factory=dict)
+    module_state: str = ""
     input_aliases: list[str] = field(default_factory=list)
     output_aliases: list[str] = field(default_factory=list)
+    variant_ref: dict[str, str] | None = None
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
 
     def __call__(self, *args: float) -> tuple[float, ...]:
@@ -36,6 +44,11 @@ class NeuronDef:
             if self.subgraph is None:
                 raise ValueError(f"Subgraph neuron '{self.name}' is missing a nested graph")
             result = self.subgraph.execute_flat(tuple(float(arg) for arg in args))
+        elif self.kind == "module":
+            raise TypeError(
+                f"Module neuron '{self.name}' requires the torch runtime and cannot be called "
+                "through scalar graph execution"
+            )
         else:
             if self.fn is None:
                 raise ValueError(f"Function neuron '{self.name}' is missing a callable")
@@ -75,8 +88,12 @@ class NeuronDef:
             "output_ports": [p.to_dict() for p in self.output_ports],
             "source_code": self.source_code,
             "subgraph": self.subgraph.to_dict() if self.subgraph is not None else None,
+            "module_type": self.module_type,
+            "module_config": self.module_config,
+            "module_state": self.module_state,
             "input_aliases": self.input_aliases,
             "output_aliases": self.output_aliases,
+            "variant_ref": self.variant_ref,
         }
 
     @classmethod
@@ -87,17 +104,20 @@ class NeuronDef:
         """
         kind = d.get("kind", "function")
         if kind == "subgraph":
-            from .graph import NeuronGraph
+            raw = cls.from_dict_raw(d)
+            if raw.subgraph is not None:
+                raw.subgraph.validate(as_subgraph=True)
+                raw.refresh_interface_ports()
+            return raw
 
-            subgraph_data = d.get("subgraph")
-            if subgraph_data is None:
-                raise ValueError(f"Subgraph neuron '{d['name']}' is missing nested graph data")
-            subgraph = NeuronGraph.from_dict(subgraph_data)
-            return subgraph_neuron(
-                subgraph,
+        if kind == "module":
+            return module_neuron(
                 name=d["name"],
-                input_aliases=d.get("input_aliases") or None,
-                output_aliases=d.get("output_aliases") or None,
+                module_type=d.get("module_type", d["name"]),
+                input_ports=[Port.from_dict(p) for p in d["input_ports"]],
+                output_ports=[Port.from_dict(p) for p in d["output_ports"]],
+                module_config=d.get("module_config") or {},
+                module_state=d.get("module_state", ""),
                 neuron_id=d.get("id"),
             )
 
@@ -121,6 +141,36 @@ class NeuronDef:
             source_code=d["source_code"],
             kind=kind,
         )
+
+    @classmethod
+    def from_dict_raw(cls, d: dict[str, Any]) -> NeuronDef:
+        kind = d.get("kind", "function")
+        if kind == "subgraph":
+            from .graph import NeuronGraph
+
+            subgraph_data = d.get("subgraph")
+            subgraph = NeuronGraph.from_dict_raw(subgraph_data) if subgraph_data is not None else None
+            input_ports = [Port.from_dict(p) for p in d.get("input_ports", [])]
+            output_ports = [Port.from_dict(p) for p in d.get("output_ports", [])]
+            if subgraph is not None:
+                if not input_ports:
+                    input_ports = subgraph.flattened_input_ports(d.get("input_aliases") or None)
+                if not output_ports:
+                    output_ports = subgraph.flattened_output_ports(d.get("output_aliases") or None)
+            return cls(
+                id=d.get("id", uuid.uuid4().hex[:12]),
+                name=d["name"],
+                fn=None,
+                input_ports=input_ports,
+                output_ports=output_ports,
+                source_code="",
+                kind="subgraph",
+                subgraph=subgraph,
+                input_aliases=list(d.get("input_aliases", [])),
+                output_aliases=list(d.get("output_aliases", [])),
+                variant_ref=dict(d["variant_ref"]) if d.get("variant_ref") else None,
+            )
+        return cls.from_dict(d)
 
 
 def neuron(
@@ -177,12 +227,37 @@ def neuron_from_source(
     )
 
 
+def module_neuron(
+    *,
+    name: str,
+    module_type: str,
+    input_ports: list[Port],
+    output_ports: list[Port],
+    module_config: dict[str, Any] | None = None,
+    module_state: str = "",
+    neuron_id: str | None = None,
+) -> NeuronDef:
+    return NeuronDef(
+        id=neuron_id or uuid.uuid4().hex[:12],
+        name=name,
+        fn=None,
+        input_ports=input_ports,
+        output_ports=output_ports,
+        source_code="",
+        kind="module",
+        module_type=module_type,
+        module_config=dict(module_config or {}),
+        module_state=module_state,
+    )
+
+
 def subgraph_neuron(
     graph: NeuronGraph,
     *,
     name: str,
     input_aliases: list[str] | None = None,
     output_aliases: list[str] | None = None,
+    variant_ref: dict[str, str] | None = None,
     neuron_id: str | None = None,
 ) -> NeuronDef:
     """Wrap a ``NeuronGraph`` as a reusable neuron definition."""
@@ -200,4 +275,18 @@ def subgraph_neuron(
         subgraph=graph,
         input_aliases=[port.name for port in input_ports],
         output_aliases=[port.name for port in output_ports],
+        variant_ref=dict(variant_ref) if variant_ref else None,
     )
+
+
+def encode_module_state_dict(state_dict: dict[str, Any]) -> str:
+    buffer = io.BytesIO()
+    torch.save(state_dict, buffer)
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def decode_module_state_dict(blob: str) -> dict[str, Any]:
+    if not blob:
+        return {}
+    data = base64.b64decode(blob.encode("ascii"))
+    return torch.load(io.BytesIO(data), map_location="cpu")
