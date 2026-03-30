@@ -8,7 +8,11 @@ NeuralFn now has both a scalar graph runtime and a PyTorch-backed `torch` runtim
 
 NeuralFn now has full support for Torch-backed large language models. The framework currently provides templates for NanoGPT, GPT-2, Llama, and MoE (Mixture of Experts) architectures. **Note: Only NanoGPT has been fully tested so far. GPT-2, Llama, and MoE support is implemented but untested.**
 
-Training is powered by a new `dataset_source` node that can download Hugging Face datasets, seamlessly tokenize them, and feed them directly into the graph. Trained weights are embedded directly back into the graph's serialized JSON format (`module_state`), meaning your architecture and trained parameters reside safely inside the same visual graph structure.
+Training is powered by a new `dataset_source` node that can download Hugging Face datasets, seamlessly tokenize them, and feed them directly into the graph. Trained weights are embedded directly back into the graph's serialized JSON format (`module_state`), meaning your architecture and trained parameters reside safely inside the same visual graph structure. Hit save to save the model and the configuration / design after training or before.
+
+**TODOs:**
+- Need to add an export for `.pt` file.
+- Need to add inference support for the custom training / graph format. :-)
 
 ## How it works
 
