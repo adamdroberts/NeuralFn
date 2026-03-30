@@ -1,4 +1,6 @@
-from __future__ import annotations
+import os
+
+new_code = """from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any
@@ -17,7 +19,7 @@ def make_terminal_def(
     dtype: str,
     neuron_id: str | None = None,
 ) -> NeuronDef:
-    source = f"def {role}(x):\n    return x\n"
+    source = f"def {role}(x):\\n    return x\\n"
     ports = [Port(port_name, range=(-1_000_000.0, 1_000_000.0), precision=0.001, dtype=dtype)]
     return neuron_from_source(source, role, ports, ports, neuron_id=neuron_id)
 
@@ -110,10 +112,10 @@ def build_dense_attention_graph(name: str, model_dim: int, spec: BlockSpec) -> N
         v_attn_port = 0
 
     # Attention Core
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.scaled_dot_product_attention_module, config={"is_causal": spec.is_causal, "backend": spec.attention_backend, "dropout_p": spec.dropout_p}), instance_id="sdpa", position=(1180, 180)))
-    graph.add_edge(Edge(id=f"e_{curr_q}_sdpa_0", src_node=curr_q, src_port=q_port, dst_node="sdpa", dst_port=0))
-    graph.add_edge(Edge(id=f"e_{curr_k_attn}_sdpa_1", src_node=curr_k_attn, src_port=k_attn_port, dst_node="sdpa", dst_port=1))
-    graph.add_edge(Edge(id=f"e_{curr_v_attn}_sdpa_2", src_node=curr_v_attn, src_port=v_attn_port, dst_node="sdpa", dst_port=2))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.scaled_dot_product_attention_module, config={"is_causal": spec.is_causal}), instance_id="sdpa", position=(1180, 180)))
+    graph.add_edge(Edge(id=f"e_{curr_q}_sdpa", src_node=curr_q, src_port=q_port, dst_node="sdpa", dst_port=0))
+    graph.add_edge(Edge(id=f"e_{curr_k_attn}_sdpa", src_node=curr_k_attn, src_port=k_attn_port, dst_node="sdpa", dst_port=1))
+    graph.add_edge(Edge(id=f"e_{curr_v_attn}_sdpa", src_node=curr_v_attn, src_port=v_attn_port, dst_node="sdpa", dst_port=2))
     curr_out = "sdpa"
 
     # Merge Heads
@@ -274,7 +276,7 @@ def build_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
     graph.variant_library = {
         "attention": {"default": attn_graph},
         "mlp": {"default": mlp_graph},
-        spec.family: {"default": block_graph},
+        "transformer_block": {"default": block_graph},
     }
 
     graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="tokens", dtype="tokens"), instance_id="tokens_in", position=(40, 140)))
@@ -307,7 +309,7 @@ def build_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
         if spec.mlp_type == "moe":
             out_aliases.append("aux_loss")
             
-        graph.add_node(NeuronInstance(link_variant_neuron(block_graph, family=model_spec.block_spec.family, version="default", name=bname, input_aliases=["x"], output_aliases=out_aliases), instance_id=bname, position=(920 + i*220, 140)))
+        graph.add_node(NeuronInstance(link_variant_neuron(block_graph, family="transformer_block", version="default", name=bname, input_aliases=["x"], output_aliases=out_aliases), instance_id=bname, position=(920 + i*220, 140)))
         graph.add_edge(Edge(id=f"e_{curr_out}_{bname}", src_node=curr_out, src_port=0, dst_node=bname, dst_port=0))
         curr_out = bname
         if spec.mlp_type == "moe":
@@ -324,14 +326,12 @@ def build_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
     graph.add_edge(Edge(id="e_norm_head", src_node="final_norm", src_port=0, dst_node=head_id, dst_port=0))
     if model_spec.tie_embeddings:
         graph.add_edge(Edge(id="e_tie", src_node="token_embed", src_port=1, dst_node=head_id, dst_port=1))
-    ce_input = head_id
-    if model_spec.logit_softcap > 0.0:
-        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.logit_softcap_module, config={"softcap": model_spec.logit_softcap}), instance_id="softcap", position=(1580 + model_spec.num_layers*220, 140)))
-        graph.add_edge(Edge(id="e_head_softcap", src_node=head_id, src_port=0, dst_node="softcap", dst_port=0))
-        ce_input = "softcap"
+        
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.logit_softcap_module, config={"softcap": model_spec.logit_softcap}), instance_id="softcap", position=(1580 + model_spec.num_layers*220, 140)))
+    graph.add_edge(Edge(id="e_head_softcap", src_node=head_id, src_port=0, dst_node="softcap", dst_port=0))
 
     graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module), instance_id="ce", position=(1800 + model_spec.num_layers*220, 260)))
-    graph.add_edge(Edge(id="e_logits_ce", src_node=ce_input, src_port=0, dst_node="ce", dst_port=0))
+    graph.add_edge(Edge(id="e_softcap_ce", src_node="softcap", src_port=0, dst_node="ce", dst_port=0))
     graph.add_edge(Edge(id="e_targets_ce", src_node="targets_in", src_port=0, dst_node="ce", dst_port=1))
 
     main_loss = "ce"
@@ -385,33 +385,7 @@ def build_gpt_root_graph(*, name: str = "model_root", model_spec: ModelSpec | No
     graph.input_node_ids = ["tokens_in", "targets_in"]
     graph.output_node_ids = ["loss_out"]
     return graph
+"""
 
-def build_gpt_template_payload(name: str, config: dict[str, Any]) -> dict[str, Any]:
-    from neuralfn.config import build_nanogpt_spec, build_gpt2_spec, build_llama_spec, build_moe_spec
-    
-    preset = config.get("preset", "nanogpt")
-    if preset == "gpt2":
-        spec = build_gpt2_spec(num_layers=1)
-    elif preset == "llama":
-        spec = build_llama_spec(num_layers=1)
-    elif preset == "moe":
-        spec = build_moe_spec(num_layers=1, num_heads=4, experts=4, top_k=2) # Smaller moe for quick test
-    else:
-        spec = build_nanogpt_spec(num_layers=1)
-        
-    graph = build_gpt_root_graph(name=name, model_spec=spec)
-    
-    node_def = graph.nodes["model"].neuron_def
-    
-    return {
-        "variant_library": {
-            family: {version: vg.to_dict() for version, vg in versions.items()}
-            for family, versions in graph.variant_library.items()
-        },
-        "graph_settings": {
-            "training_method": graph.training_method,
-            "runtime": graph.runtime,
-            "torch_config": graph.torch_config,
-        },
-        "node_def": node_def.to_dict(),
-    }
+with open("neuralfn/torch_templates.py", "w") as f:
+    f.write(new_code)

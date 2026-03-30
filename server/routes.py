@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 import torch
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from starlette.responses import StreamingResponse
 
 from neuralfn.builtins import BuiltinNeurons
@@ -22,7 +22,22 @@ from neuralfn.trainer import SurrogateTrainer, TrainConfig
 from neuralfn.torch_backend import CompiledTorchGraph, TorchTrainConfig, TorchTrainer
 from neuralfn.torch_templates import build_gpt_template_payload
 
-from .models import EdgeModel, ExecuteRequest, GPTTemplateRequest, GraphModel, NodeModel, TrainRequest
+from .dataset_manager import (
+    list_local_datasets,
+    download_hf_dataset,
+    upload_local_file,
+    load_dataset_tokens,
+    delete_dataset,
+)
+from .models import (
+    DownloadDatasetRequest,
+    EdgeModel,
+    ExecuteRequest,
+    GPTTemplateRequest,
+    GraphModel,
+    NodeModel,
+    TrainRequest,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -229,8 +244,20 @@ def probe(node_id: str, n_samples: int = 1000) -> dict[str, Any]:
 def train_start(body: TrainRequest) -> StreamingResponse:
     global _trainer_instance, _training_thread
 
-    train_in = np.array(body.train_inputs, dtype=np.float32)
-    train_tgt = np.array(body.train_targets, dtype=np.float32)
+    # ── Resolve datasets if specified ─────────────────────────────────
+    if body.dataset_names and len(body.dataset_names) > 0:
+        try:
+            inputs, targets = load_dataset_tokens(
+                body.dataset_names,
+                seq_len=body.seq_len,
+            )
+        except Exception as e:
+            raise HTTPException(400, f"Dataset loading failed: {e}")
+        train_in = np.array(inputs, dtype=np.float32)
+        train_tgt = np.array(targets, dtype=np.float32)
+    else:
+        train_in = np.array(body.train_inputs, dtype=np.float32)
+        train_tgt = np.array(body.train_targets, dtype=np.float32)
 
     progress_queue: list[dict[str, Any]] = []
     done_event = threading.Event()
@@ -303,7 +330,15 @@ def train_start(body: TrainRequest) -> StreamingResponse:
             trainer = TorchTrainer(_graph, cfg)
             global _trainer_instance
             _trainer_instance = trainer
-            trainer.train(body.train_inputs, body.train_targets, on_epoch=on_progress)
+            # If datasets were specified, use the resolved arrays
+            if body.dataset_names and len(body.dataset_names) > 0:
+                trainer.train(
+                    train_in.astype(int).tolist(),
+                    train_tgt.astype(int).tolist(),
+                    on_epoch=on_progress,
+                )
+            else:
+                trainer.train(body.train_inputs, body.train_targets, on_epoch=on_progress)
         finally:
             done_event.set()
 
@@ -349,3 +384,48 @@ def set_io(input_ids: list[str], output_ids: list[str]) -> dict[str, Any]:
     _graph.input_node_ids = input_ids
     _graph.output_node_ids = output_ids
     return {"input_node_ids": input_ids, "output_node_ids": output_ids}
+
+
+# ── Dataset Management ────────────────────────────────────────────────
+
+@router.get("/datasets")
+def get_datasets() -> list[dict[str, Any]]:
+    """List all locally available datasets."""
+    return list_local_datasets()
+
+
+@router.post("/datasets/download")
+def download_dataset(body: DownloadDatasetRequest) -> dict[str, Any]:
+    """Download a HuggingFace dataset into server/datasets/."""
+    try:
+        result = download_hf_dataset(
+            body.hf_path,
+            hf_split=body.hf_split,
+            text_column=body.text_column,
+            max_rows=body.max_rows,
+            alias=body.alias,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/datasets/upload")
+async def upload_dataset(
+    file: UploadFile = File(...),
+    name: str = Form(...),
+) -> dict[str, Any]:
+    """Upload a local file as a dataset."""
+    try:
+        content = await file.read()
+        return upload_local_file(name, content, file.filename or "data.txt")
+    except Exception as e:
+        raise HTTPException(400, str(e))
+
+
+@router.delete("/datasets/{ds_name}")
+def remove_dataset(ds_name: str) -> dict[str, str]:
+    """Delete a dataset from local storage."""
+    if not delete_dataset(ds_name):
+        raise HTTPException(404, f"Dataset '{ds_name}' not found")
+    return {"status": "deleted"}

@@ -1,0 +1,10 @@
+model = "gpt-5.4"
+model_reasoning_effort = "xhigh"
+full-auto = true
+bypass-approvals = true
+bypass-sandbox = true
+trusted-workspace = true
+
+[plugins."hugging-face@openai-curated"]
+enabled = true
+

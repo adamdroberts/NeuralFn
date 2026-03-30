@@ -1,0 +1,8 @@
+{
+  "source": "huggingface",
+  "hf_path": "karpathy/tiny_shakespeare",
+  "hf_split": "train",
+  "text_column": "text",
+  "num_rows": 1508,
+  "num_tokens": 419372
+}

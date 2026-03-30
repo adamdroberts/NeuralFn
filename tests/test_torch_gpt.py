@@ -4,18 +4,17 @@ from unittest.mock import patch
 from neuralfn import TorchTrainConfig, TorchTrainer, build_gpt_root_graph, load_graph, save_graph
 
 
+from neuralfn.config import build_gpt2_spec
+
+
 def make_gpt_graph():
-    graph = build_gpt_root_graph(
-        config={
-            "vocab_size": 16,
-            "num_layers": 4,
-            "model_dim": 32,
-            "num_heads": 4,
-            "num_kv_heads": 2,
-            "mlp_mult": 2,
-            "tie_embeddings": True,
-        }
+    spec = build_gpt2_spec(
+        vocab_size=16,
+        num_layers=4,
+        model_dim=32,
+        num_heads=4,
     )
+    graph = build_gpt_root_graph(name="model_root", model_spec=spec)
     graph.torch_config = {"device": "cpu", "amp_dtype": "bfloat16"}
     return graph
 
@@ -26,32 +25,32 @@ class TorchGPTTest(unittest.TestCase):
         self.assertIn("attention", graph.variant_library)
         self.assertIn("mlp", graph.variant_library)
         self.assertIn("transformer_block", graph.variant_library)
-        gpt_node = graph.nodes["gpt"]
+        gpt_node = graph.nodes["model"]
         self.assertEqual("subgraph", gpt_node.neuron_def.kind)
         self.assertIsNotNone(gpt_node.neuron_def.subgraph)
         child = gpt_node.neuron_def.subgraph
         assert child is not None
-        self.assertIn("token_embedding", child.nodes)
+        self.assertIn("token_embed", child.nodes)
         self.assertIn("final_norm", child.nodes)
-        self.assertIn("token_cross_entropy", child.nodes)
+        self.assertIn("ce", child.nodes)
         self.assertTrue(any(node.neuron_def.kind == "subgraph" for node in child.nodes.values()))
         self.assertEqual(
-            {"family": "transformer_block", "version": "baseline"},
-            child.nodes["encoder_block_0"].neuron_def.variant_ref,
+            {"family": "transformer_block", "version": "default"},
+            child.nodes["block_0"].neuron_def.variant_ref,
         )
 
     def test_torch_graph_round_trip_preserves_nested_module_metadata(self) -> None:
         graph = make_gpt_graph()
         save_graph(graph, "/tmp/gpt_graph_test.json")
         loaded = load_graph("/tmp/gpt_graph_test.json")
-        gpt_node = loaded.nodes["gpt"]
+        gpt_node = loaded.nodes["model"]
         self.assertEqual("subgraph", gpt_node.neuron_def.kind)
         child = gpt_node.neuron_def.subgraph
         assert child is not None
-        self.assertEqual("module", child.nodes["token_embedding"].neuron_def.kind)
+        self.assertEqual("module", child.nodes["token_embed"].neuron_def.kind)
         self.assertEqual(
-            {"family": "transformer_block", "version": "baseline"},
-            child.nodes["encoder_block_0"].neuron_def.variant_ref,
+            {"family": "transformer_block", "version": "default"},
+            child.nodes["block_0"].neuron_def.variant_ref,
         )
         self.assertEqual("torch", loaded.training_method)
         self.assertEqual("torch", loaded.runtime)
@@ -82,9 +81,9 @@ class TorchGPTTest(unittest.TestCase):
         )
         losses = trainer.train(train_inputs, train_targets)
         self.assertGreater(losses[0], losses[-1])
-        child = graph.nodes["gpt"].neuron_def.subgraph
+        child = graph.nodes["model"].neuron_def.subgraph
         assert child is not None
-        self.assertTrue(child.nodes["token_embedding"].neuron_def.module_state)
+        self.assertTrue(child.nodes["token_embed"].neuron_def.module_state)
 
     def test_cuda_config_does_not_fall_back_to_cpu(self) -> None:
         graph = make_gpt_graph()

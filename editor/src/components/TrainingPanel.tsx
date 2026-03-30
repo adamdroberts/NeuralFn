@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   LineChart,
   Line,
@@ -9,8 +9,10 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useGraphStore } from "../store/graphStore";
-import { api, type TorchTraceStat } from "../api/client";
+import { api, type DatasetInfo, type TorchTraceStat } from "../api/client";
 import { graphContainsSubgraphs } from "../store/graphUtils";
+
+type DataMode = "manual" | "datasets";
 
 export default function TrainingPanel() {
   const {
@@ -33,18 +35,101 @@ export default function TrainingPanel() {
   const [popSize, setPopSize] = useState(50);
   const [dataInput, setDataInput] = useState("[[0,1,2,3],[1,2,3,4],[2,3,4,5],[3,4,5,6]]");
   const [dataTarget, setDataTarget] = useState("[[1,2,3,4],[2,3,4,5],[3,4,5,6],[4,5,6,7]]");
+  const [seqLen, setSeqLen] = useState(64);
   const [torchTrace, setTorchTrace] = useState<Record<string, TorchTraceStat[]>>({});
   const ctrlRef = useRef<AbortController | null>(null);
 
-  const start = useCallback(async () => {
-    let inputs: number[][];
-    let targets: number[][];
+  // ── Dataset state ──────────────────────────────────────────────────
+  const [dataMode, setDataMode] = useState<DataMode>("manual");
+  const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
+  const [selectedDatasets, setSelectedDatasets] = useState<string[]>([]);
+  const [hfInput, setHfInput] = useState("");
+  const [hfSplit, setHfSplit] = useState("train");
+  const [hfMaxRows, setHfMaxRows] = useState("");
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  // Fetch datasets on mount and whenever dataMode switches to datasets
+  const refreshDatasets = useCallback(async () => {
     try {
-      inputs = JSON.parse(dataInput);
-      targets = JSON.parse(dataTarget);
+      const ds = await api.getDatasets();
+      setDatasets(ds);
     } catch {
-      alert("Invalid JSON in training data fields");
-      return;
+      setDatasets([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (dataMode === "datasets") {
+      refreshDatasets();
+    }
+  }, [dataMode, refreshDatasets]);
+
+  const toggleDataset = (name: string) => {
+    setSelectedDatasets((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+    );
+  };
+
+  const handleDownloadHF = async () => {
+    if (!hfInput.trim()) return;
+    setIsDownloading(true);
+    setDownloadError(null);
+    try {
+      await api.downloadDataset({
+        hf_path: hfInput.trim(),
+        hf_split: hfSplit,
+        max_rows: hfMaxRows ? parseInt(hfMaxRows, 10) : null,
+      });
+      setHfInput("");
+      setHfMaxRows("");
+      await refreshDatasets();
+    } catch (err: any) {
+      setDownloadError(err?.message || "Download failed");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleDeleteDataset = async (name: string) => {
+    try {
+      await api.deleteDataset(name);
+      setSelectedDatasets((prev) => prev.filter((n) => n !== name));
+      await refreshDatasets();
+    } catch {
+      // ignore
+    }
+  };
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const name = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
+    try {
+      await api.uploadDataset(name, file);
+      await refreshDatasets();
+    } catch {
+      // ignore
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // ── Training ───────────────────────────────────────────────────────
+
+  const start = useCallback(async () => {
+    const usingDatasets = dataMode === "datasets" && selectedDatasets.length > 0;
+
+    let inputs: number[][] = [];
+    let targets: number[][] = [];
+    if (!usingDatasets) {
+      try {
+        inputs = JSON.parse(dataInput);
+        targets = JSON.parse(dataTarget);
+      } catch {
+        alert("Invalid JSON in training data fields");
+        return;
+      }
     }
 
     clearLoss();
@@ -59,8 +144,9 @@ export default function TrainingPanel() {
     ctrlRef.current = api.startTraining(
       {
         method: hasNestedGraphs ? null : rootGraph.training_method,
-        train_inputs: inputs,
-        train_targets: targets,
+        ...(usingDatasets
+          ? { dataset_names: selectedDatasets, seq_len: seqLen }
+          : { train_inputs: inputs, train_targets: targets }),
         outer_rounds: outerRounds,
         loss_fn: usesTorch ? "cross_entropy" : "mse",
         epochs,
@@ -95,6 +181,9 @@ export default function TrainingPanel() {
     popSize,
     dataInput,
     dataTarget,
+    dataMode,
+    selectedDatasets,
+    seqLen,
     clearLoss,
     setTraining,
     addLossPoint,
@@ -108,7 +197,7 @@ export default function TrainingPanel() {
   }, [setTraining]);
 
   // Fetch graph telemetry continuously when inputs change
-  React.useEffect(() => {
+  useEffect(() => {
     if (usesTorch) {
       updateEdgeTelemetry({});
       try {
@@ -148,6 +237,13 @@ export default function TrainingPanel() {
       // ignore parse errors while typing
     }
   }, [dataInput, dataTarget, rootGraph, updateEdgeTelemetry, usesTorch]);
+
+  const formatTokens = (n: number | null) => {
+    if (n === null) return "?";
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+    return String(n);
+  };
 
   return (
     <div className="border-t border-gray-800 bg-gray-900 p-3">
@@ -259,24 +355,190 @@ export default function TrainingPanel() {
         </div>
       )}
 
-      <div className="flex gap-2 mt-2">
-        <label className="text-[10px] text-gray-400 flex-1">
-          Inputs (JSON)
-          <textarea
-            value={dataInput}
-            onChange={(e) => setDataInput(e.target.value)}
-            className="block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono h-12 resize-none"
-          />
-        </label>
-        <label className="text-[10px] text-gray-400 flex-1">
-          Targets (JSON)
-          <textarea
-            value={dataTarget}
-            onChange={(e) => setDataTarget(e.target.value)}
-            className="block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono h-12 resize-none"
-          />
-        </label>
+      {/* ── Data source toggle ──────────────────────────────────────── */}
+      <div className="flex items-center gap-2 mt-3 mb-1">
+        <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Data Source</span>
+        <button
+          onClick={() => setDataMode("manual")}
+          className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${
+            dataMode === "manual"
+              ? "bg-blue-600 text-white"
+              : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+          }`}
+        >
+          Manual
+        </button>
+        <button
+          onClick={() => setDataMode("datasets")}
+          className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${
+            dataMode === "datasets"
+              ? "bg-blue-600 text-white"
+              : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+          }`}
+        >
+          Datasets
+        </button>
       </div>
+
+      {/* ── Manual JSON entry ────────────────────────────────────────── */}
+      {dataMode === "manual" && (
+        <div className="flex gap-2 mt-1">
+          <label className="text-[10px] text-gray-400 flex-1">
+            Inputs (JSON)
+            <textarea
+              value={dataInput}
+              onChange={(e) => setDataInput(e.target.value)}
+              className="block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono h-12 resize-none"
+            />
+          </label>
+          <label className="text-[10px] text-gray-400 flex-1">
+            Targets (JSON)
+            <textarea
+              value={dataTarget}
+              onChange={(e) => setDataTarget(e.target.value)}
+              className="block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono h-12 resize-none"
+            />
+          </label>
+        </div>
+      )}
+
+      {/* ── Dataset picker ───────────────────────────────────────────── */}
+      {dataMode === "datasets" && (
+        <div className="mt-1 border border-gray-800 rounded bg-gray-950/50 p-2">
+          {/* HuggingFace download row */}
+          <div className="flex items-end gap-2 mb-2">
+            <label className="text-[10px] text-gray-400 flex-1">
+              HuggingFace Path
+              <input
+                type="text"
+                value={hfInput}
+                onChange={(e) => setHfInput(e.target.value)}
+                placeholder="e.g. karpathy/tiny_shakespeare"
+                className="block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono"
+              />
+            </label>
+            <label className="text-[10px] text-gray-400 w-20">
+              Split
+              <input
+                type="text"
+                value={hfSplit}
+                onChange={(e) => setHfSplit(e.target.value)}
+                className="block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono"
+              />
+            </label>
+            <label className="text-[10px] text-gray-400 w-20">
+              Max Rows
+              <input
+                type="text"
+                value={hfMaxRows}
+                onChange={(e) => setHfMaxRows(e.target.value)}
+                placeholder="all"
+                className="block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono"
+              />
+            </label>
+            <button
+              onClick={handleDownloadHF}
+              disabled={isDownloading || !hfInput.trim()}
+              className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-[10px] px-3 py-1 rounded font-medium whitespace-nowrap"
+            >
+              {isDownloading ? "Downloading…" : "Download"}
+            </button>
+          </div>
+          {downloadError && (
+            <div className="text-[10px] text-red-400 mb-2">{downloadError}</div>
+          )}
+
+          {/* Upload local file */}
+          <div className="flex items-center gap-2 mb-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="bg-gray-700 hover:bg-gray-600 text-gray-200 text-[10px] px-3 py-1 rounded font-medium"
+            >
+              Upload Local File
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleUpload}
+              accept=".txt,.json,.jsonl,.csv,.parquet"
+              className="hidden"
+            />
+            <span className="text-[10px] text-gray-500">(.txt, .json, .jsonl, .csv, .parquet)</span>
+          </div>
+
+          {/* Seq len control */}
+          <div className="flex items-center gap-2 mb-2">
+            <label className="text-[10px] text-gray-400">
+              Seq Length
+              <input
+                type="number"
+                value={seqLen}
+                onChange={(e) => setSeqLen(parseInt(e.target.value, 10) || 64)}
+                className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+              />
+            </label>
+            <span className="text-[10px] text-gray-500">
+              {selectedDatasets.length > 0
+                ? `${selectedDatasets.length} dataset${selectedDatasets.length > 1 ? "s" : ""} selected`
+                : "No datasets selected"}
+            </span>
+          </div>
+
+          {/* Dataset list */}
+          {datasets.length === 0 ? (
+            <div className="text-[10px] text-gray-600 italic py-2 text-center">
+              No datasets available. Download from HuggingFace or upload a local file.
+            </div>
+          ) : (
+            <div className="max-h-36 overflow-auto divide-y divide-gray-800/50">
+              {datasets.map((ds) => (
+                <div
+                  key={ds.name}
+                  className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer transition-colors rounded ${
+                    selectedDatasets.includes(ds.name)
+                      ? "bg-blue-900/30 border-l-2 border-blue-400"
+                      : "hover:bg-gray-800/50 border-l-2 border-transparent"
+                  }`}
+                  onClick={() => toggleDataset(ds.name)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedDatasets.includes(ds.name)}
+                    onChange={() => toggleDataset(ds.name)}
+                    className="accent-blue-500"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] text-gray-200 font-medium truncate">
+                      {ds.name}
+                    </div>
+                    <div className="text-[9px] text-gray-500">
+                      {ds.source === "huggingface" && ds.hf_path
+                        ? `HF: ${ds.hf_path}`
+                        : ds.source}
+                      {ds.num_tokens != null && (
+                        <span className="ml-2">• {formatTokens(ds.num_tokens)} tokens</span>
+                      )}
+                      {ds.num_rows != null && (
+                        <span className="ml-2">• {ds.num_rows.toLocaleString()} rows</span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteDataset(ds.name);
+                    }}
+                    className="text-gray-600 hover:text-red-400 text-[10px] px-1"
+                    title="Delete dataset"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {lossHistory.length > 0 && (
         <div className="mt-2 h-28">
