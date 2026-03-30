@@ -4,6 +4,8 @@ A brain-inspired neural network framework where each neuron is either a well-est
 
 NeuralFn now has both a scalar graph runtime and a PyTorch-backed `torch` runtime for trainable module nodes such as GPT.
 
+## Currentl state of play, WIP most of this. NanoGPT has been tested and trains, need to add an export for .pt file. Currently, the trained weights are stored in the graph, hit save to save the model and the configuration / design after training or before :-)  
+
 ## How it works
 
 1. **Choose neurons** from built-ins or define custom Python functions with `@neuron` and typed I/O ports.
