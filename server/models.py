@@ -69,8 +69,11 @@ class ExecuteRequest(BaseModel):
 
 class TrainRequest(BaseModel):
     method: str | None = "surrogate"  # legacy single-graph training only
-    train_inputs: list[list[float | int]]
-    train_targets: list[list[float | int]]
+    train_inputs: list[list[float | int]] = Field(default_factory=list)
+    train_targets: list[list[float | int]] = Field(default_factory=list)
+    dataset_names: list[str] | None = None
+    text_column: str = "text"
+    seq_len: int = 64
     outer_rounds: int = 3
     loss_fn: str = "mse"
     epochs: int = 200
@@ -79,6 +82,14 @@ class TrainRequest(BaseModel):
     generations: int = 200
     batch_size: int = 8
     weight_decay: float = 0.01
+
+
+class DownloadDatasetRequest(BaseModel):
+    hf_path: str
+    hf_split: str = "train"
+    text_column: str = "text"
+    max_rows: int | None = None
+    alias: str | None = None
 
 
 class GPTTemplateRequest(BaseModel):

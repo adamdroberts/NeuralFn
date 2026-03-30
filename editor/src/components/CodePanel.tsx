@@ -3,6 +3,7 @@ import Editor from "@monaco-editor/react";
 import { selectActiveGraph, selectSelectedNode, useGraphStore } from "../store/graphStore";
 import { listCompatibleVariantVersions } from "../store/graphUtils";
 import PortConfig from "./PortConfig";
+import DatasetSourcePanel from "./DatasetSourcePanel";
 import type { TrainingMethod } from "../api/client";
 
 export default function CodePanel() {
@@ -390,6 +391,18 @@ export default function CodePanel() {
         // Keep the editor responsive while JSON is mid-edit.
       }
     };
+
+    // Special UI for dataset_source nodes
+    if (node.data.neuronDef.module_type === "dataset_source") {
+      return (
+        <DatasetSourcePanel
+          node={node}
+          renderError={renderError}
+          updateNodeData={updateNodeData}
+          clearError={clearError}
+        />
+      );
+    }
 
     return (
       <div className="w-80 border-l border-gray-800 bg-gray-900 flex flex-col overflow-hidden">

@@ -333,16 +333,212 @@ class QKGainStage(nn.Module):
 
 
 class ScaledDotProductAttentionStage(nn.Module):
-    def __init__(self, is_causal: bool = True) -> None:
+    def __init__(self, is_causal: bool = True, backend: str = "sdpa", dropout_p: float = 0.0) -> None:
         super().__init__()
         self.is_causal = bool(is_causal)
+        self.backend = backend
+        self.dropout_p = float(dropout_p)
 
     def forward(self, q: Tensor, k: Tensor, v: Tensor) -> Tensor:
-        return F.scaled_dot_product_attention(q, k, v, attn_mask=None, is_causal=self.is_causal)
+        drop = self.dropout_p if self.training else 0.0
+        if self.backend == "math":
+            with torch.backends.cuda.sdp_kernel(enable_math=True, enable_flash=False, enable_mem_efficient=False):
+                return F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=drop, is_causal=self.is_causal)
+        elif self.backend == "flex":
+            # Experimental flex attention (only available in nightly or pt 2.5+)
+            try:
+                from torch.nn.attention.flex_attention import flex_attention, causal_mask
+                if self.is_causal:
+                    return flex_attention(q, k, v, block_mask=causal_mask)
+                return flex_attention(q, k, v)
+            except ImportError:
+                # fall back to SDPA if not available
+                return F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=drop, is_causal=self.is_causal)
+        else: # sdpa (default)
+            return F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=drop, is_causal=self.is_causal)
 
+
+class LayerNormStage(nn.Module):
+    def __init__(self, model_dim: int, eps: float = 1e-5) -> None:
+        super().__init__()
+        self.norm = nn.LayerNorm(model_dim, eps=eps)
+    def forward(self, x: Tensor) -> Tensor:
+        return self.norm(x)
+
+class DropoutStage(nn.Module):
+    def __init__(self, p: float) -> None:
+        super().__init__()
+        self.dropout = nn.Dropout(p)
+    def forward(self, x: Tensor) -> Tensor:
+        return self.dropout(x)
+
+class GeluStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return F.gelu(x)
+
+class SwiGLUStage(nn.Module):
+    def __init__(self, model_dim: int, mlp_mult: int, multiple_of: int | None = None) -> None:
+        super().__init__()
+        hidden = int(8.0 * model_dim / 3.0)
+        if multiple_of is not None:
+            hidden = multiple_of * ((hidden + multiple_of - 1) // multiple_of)
+        self.w1 = nn.Linear(model_dim, hidden, bias=False)
+        self.w2 = nn.Linear(hidden, model_dim, bias=False)
+        self.w3 = nn.Linear(model_dim, hidden, bias=False)
+    def forward(self, x: Tensor) -> Tensor:
+        return self.w2(F.silu(self.w1(x)) * self.w3(x))
+
+class AbsolutePositionEmbeddingStage(nn.Module):
+    def __init__(self, max_seq_len: int, model_dim: int) -> None:
+        super().__init__()
+        self.embedding = nn.Embedding(max_seq_len, model_dim)
+    def forward(self, x: Tensor) -> Tensor:
+        batch, seq_len = x.shape[:2]
+        pos = torch.arange(seq_len, device=x.device, dtype=torch.long)
+        return self.embedding(pos).unsqueeze(0).expand(batch, -1, -1)
+
+class KVCacheReadStage(nn.Module):
+    def forward(self, k: Tensor, v: Tensor, cache_k: Tensor | None = None, cache_v: Tensor | None = None) -> tuple[Tensor, Tensor]:
+        if cache_k is not None and cache_v is not None:
+            k = torch.cat([cache_k, k], dim=2)
+            v = torch.cat([cache_v, v], dim=2)
+        return k, v
+
+class KVCacheWriteStage(nn.Module):
+    def forward(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
+        return k, v
+
+class RouterLogitsStage(nn.Module):
+    def __init__(self, model_dim: int, experts: int) -> None:
+        super().__init__()
+        self.gate = nn.Linear(model_dim, experts, bias=False)
+    def forward(self, x: Tensor) -> Tensor:
+        return self.gate(x)
+
+class TopKRouteStage(nn.Module):
+    def __init__(self, top_k: int) -> None:
+        super().__init__()
+        self.top_k = top_k
+    def forward(self, logits: Tensor) -> tuple[Tensor, Tensor]:
+        scores = F.softmax(logits, dim=-1)
+        topk_weights, topk_indices = torch.topk(scores, self.top_k, dim=-1)
+        topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
+        return topk_weights.to(dtype=logits.dtype), topk_indices
+
+class ExpertDispatchStage(nn.Module):
+    def __init__(self, model_dim: int, experts: int, mlp_mult: int) -> None:
+        super().__init__()
+        hidden_dim = model_dim * mlp_mult
+        self.w1 = nn.Parameter(torch.empty(experts, model_dim, hidden_dim))
+        self.w2 = nn.Parameter(torch.empty(experts, hidden_dim, model_dim))
+        self.w3 = nn.Parameter(torch.empty(experts, model_dim, hidden_dim))
+        nn.init.normal_(self.w1, std=0.02)
+        nn.init.normal_(self.w2, std=0.02)
+        nn.init.normal_(self.w3, std=0.02)
+        self.experts = experts
+    def forward(self, x: Tensor, routing_weights: Tensor, routing_indices: Tensor) -> Tensor:
+        batch, seq_len, d = x.shape
+        top_k = routing_indices.shape[-1]
+        x_flat = x.view(-1, d)
+        out = torch.zeros_like(x_flat)
+        routing_weights_flat = routing_weights.view(-1, top_k)
+        routing_indices_flat = routing_indices.view(-1, top_k)
+
+        for i in range(self.experts):
+            mask = (routing_indices_flat == i)
+            if not mask.any(): continue
+            idx = torch.where(mask)[0]
+            expert_inputs = x_flat[idx]
+            w1, w2, w3 = self.w1[i], self.w2[i], self.w3[i]
+            h = F.silu(expert_inputs @ w1) * (expert_inputs @ w3)
+            expert_out = h @ w2
+            weights = routing_weights_flat[mask]
+            out[idx] += expert_out * weights.unsqueeze(-1)
+        return out.view(batch, seq_len, d)
+
+class ExpertCombineStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return x
+
+class LoadBalanceLossStage(nn.Module):
+    def __init__(self, experts: int) -> None:
+        super().__init__()
+        self.experts = experts
+    def forward(self, router_logits: Tensor, routing_weights: Tensor, routing_indices: Tensor) -> tuple[Tensor, Tensor]:
+        scores = F.softmax(router_logits, dim=-1)
+        density = scores.mean(dim=(0, 1))
+        aux_loss = self.experts * (density * density).sum()
+        return aux_loss, router_logits
+
+class AuxLossAddStage(nn.Module):
+    def __init__(self, coef: float) -> None:
+        super().__init__()
+        self.coef = coef
+    def forward(self, main_loss: Tensor, aux_loss: Tensor) -> Tensor:
+        return main_loss + self.coef * aux_loss
+
+
+class DatasetSourceStage(nn.Module):
+    """Source node that stores dataset configuration.
+
+    module_config holds {"dataset_names": [...], "seq_len": 64}.
+    This node has no inputs — the trainer provides data directly.
+    During forward, it passes through the tensors provided by the trainer.
+    """
+    def __init__(self, dataset_names: list[str] | None = None, seq_len: int = 64) -> None:
+        super().__init__()
+        self.dataset_names: list[str] = dataset_names or []
+        self.seq_len: int = seq_len
+
+    def forward(self, *args: Tensor) -> tuple[Tensor, ...]:
+        # Passthrough — trainer feeds tokens and targets as external inputs
+        return args if len(args) > 1 else (args[0],)
 
 def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
     cfg = dict(module_config or {})
+    if module_type == "layer_norm":
+        return LayerNormStage(
+            model_dim=int(cfg["model_dim"]),
+            eps=float(cfg.get("eps", 1e-5)),
+        )
+    if module_type == "dropout":
+        return DropoutStage(p=float(cfg.get("p", 0.1)))
+    if module_type == "gelu":
+        return GeluStage()
+    if module_type == "swiglu":
+        return SwiGLUStage(
+            model_dim=int(cfg["model_dim"]),
+            mlp_mult=int(cfg["mlp_mult"]),
+            multiple_of=cfg.get("multiple_of"),
+        )
+    if module_type == "absolute_position_embedding":
+        return AbsolutePositionEmbeddingStage(
+            max_seq_len=int(cfg.get("max_seq_len", 1024)),
+            model_dim=int(cfg["model_dim"]),
+        )
+    if module_type == "kv_cache_read":
+        return KVCacheReadStage()
+    if module_type == "kv_cache_write":
+        return KVCacheWriteStage()
+    if module_type == "router_logits":
+        return RouterLogitsStage(
+            model_dim=int(cfg["model_dim"]),
+            experts=int(cfg["experts"]),
+        )
+    if module_type == "topk_route":
+        return TopKRouteStage(top_k=int(cfg["top_k"]))
+    if module_type == "expert_dispatch":
+        return ExpertDispatchStage(
+            model_dim=int(cfg["model_dim"]),
+            experts=int(cfg["experts"]),
+            mlp_mult=int(cfg["mlp_mult"]),
+        )
+    if module_type == "expert_combine":
+        return ExpertCombineStage()
+    if module_type == "load_balance_loss":
+        return LoadBalanceLossStage(experts=int(cfg["experts"]))
+    if module_type == "aux_loss_add":
+        return AuxLossAddStage(coef=float(cfg["coef"]))
     if module_type == "linear":
         return LinearStage(
             input_dim=int(cfg["input_dim"]),
@@ -369,7 +565,11 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
             qk_gain_init=float(cfg.get("qk_gain_init", 1.0)),
         )
     if module_type == "scaled_dot_product_attention":
-        return ScaledDotProductAttentionStage(is_causal=bool(cfg.get("is_causal", True)))
+        return ScaledDotProductAttentionStage(
+            is_causal=bool(cfg.get("is_causal", True)),
+            backend=str(cfg.get("backend", "sdpa")),
+            dropout_p=float(cfg.get("dropout_p", 0.0)),
+        )
     if module_type == "token_embedding":
         return TokenEmbeddingStage(
             vocab_size=int(cfg["vocab_size"]),
@@ -412,6 +612,11 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
         return LogitSoftcapStage(softcap=float(cfg["softcap"]))
     if module_type == "token_cross_entropy":
         return TokenCrossEntropyStage()
+    if module_type == "dataset_source":
+        return DatasetSourceStage(
+            dataset_names=list(cfg.get("dataset_names", [])),
+            seq_len=int(cfg.get("seq_len", 64)),
+        )
     raise KeyError(f"Unsupported module type: {module_type}")
 
 
@@ -587,6 +792,9 @@ class TorchTrainConfig:
     weight_decay: float = 0.01
     device: str = "cuda"
     amp_dtype: str = "bfloat16"
+    compile: bool = False
+    activation_checkpointing: bool = False
+    fsdp2_enabled: bool = False
 
 
 class TorchTrainer:
@@ -599,6 +807,48 @@ class TorchTrainer:
     def stop(self) -> None:
         self._stop = True
 
+    @staticmethod
+    def _adjust_vocab_size(graph: NeuronGraph, required_vocab: int) -> None:
+        """Recursively update vocab_size in all embedding/lm_head modules."""
+        for node in graph.nodes.values():
+            ndef = node.neuron_def
+            if ndef.kind == "module" and ndef.module_type in ("token_embedding", "lm_head"):
+                cfg = ndef.module_config or {}
+                current = cfg.get("vocab_size", 0)
+                if current < required_vocab:
+                    ndef.module_config = {**cfg, "vocab_size": required_vocab}
+            elif ndef.kind == "subgraph" and ndef.subgraph is not None:
+                TorchTrainer._adjust_vocab_size(ndef.subgraph, required_vocab)
+
+    @staticmethod
+    def _auto_detect_outputs(graph: NeuronGraph, exclude_nid: str) -> None:
+        """Auto-detect output nodes by finding nodes with loss-typed output ports."""
+        # Strategy 1: look for nodes with a 'loss' dtype output port
+        for nid, node in graph.nodes.items():
+            if nid == exclude_nid:
+                continue
+            for port in node.neuron_def.output_ports:
+                if port.dtype == "loss":
+                    graph.output_node_ids = [nid]
+                    return
+        # Strategy 2: look for nodes named 'loss_out' or with 'loss' in name
+        for nid, node in graph.nodes.items():
+            if nid == exclude_nid:
+                continue
+            if "loss" in nid.lower() or "loss" in node.neuron_def.name.lower():
+                graph.output_node_ids = [nid]
+                return
+        # Strategy 3: use the last non-input node (sink node)
+        from .graph import NeuronGraph as _NG
+        try:
+            order = graph.topological_order()
+            for nid in reversed(order):
+                if nid != exclude_nid:
+                    graph.output_node_ids = [nid]
+                    return
+        except Exception:
+            pass
+
     def train(
         self,
         train_inputs: list[list[int]] | Tensor,
@@ -606,6 +856,43 @@ class TorchTrainer:
         *,
         on_epoch: Callable[[int, float], None] | None = None,
     ) -> list[float]:
+        # ── 1. Resolve dataset_source nodes BEFORE compiling ──────────
+        dataset_source_node = None
+        for nid, node in self.graph.nodes.items():
+            if getattr(node.neuron_def, 'module_type', '') == 'dataset_source':
+                ds_cfg = node.neuron_def.module_config or {}
+                ds_names = ds_cfg.get('dataset_names', [])
+                if ds_names:
+                    dataset_source_node = (nid, ds_cfg)
+                    break
+
+        if dataset_source_node is not None:
+            ds_nid, ds_cfg = dataset_source_node
+            from server.dataset_manager import load_dataset_tokens
+            ds_names = ds_cfg.get('dataset_names', [])
+            ds_seq_len = int(ds_cfg.get('seq_len', 64))
+            inputs_list, targets_list = load_dataset_tokens(ds_names, seq_len=ds_seq_len)
+            x = torch.tensor(inputs_list, dtype=torch.long)
+            y = torch.tensor(targets_list, dtype=torch.long)
+            # Set the dataset_source node as the sole input node
+            self.graph.input_node_ids = [ds_nid]
+            # Auto-adjust vocab_size across all embedding/lm_head modules
+            max_token = max(int(x.max()), int(y.max()))
+            required_vocab = max_token + 1
+            self._adjust_vocab_size(self.graph, required_vocab)
+            # Auto-detect output nodes if not set
+            if not self.graph.output_node_ids:
+                self._auto_detect_outputs(self.graph, ds_nid)
+        else:
+            x = torch.as_tensor(train_inputs, dtype=torch.long)
+            y = torch.as_tensor(train_targets, dtype=torch.long)
+
+        if x.ndim != 2 or y.ndim != 2:
+            raise ValueError("Torch GPT training expects integer token arrays of shape [batch, seq_len]")
+        if x.shape != y.shape:
+            raise ValueError("train_inputs and train_targets must have the same [batch, seq_len] shape")
+
+        # ── 2. Compile the graph AFTER adjustments ────────────────────
         compiled = CompiledTorchGraph(self.graph)
 
         device_name = str(self.graph.torch_config.get("device", self.config.device or "cuda")).lower()
@@ -617,28 +904,29 @@ class TorchTrainer:
         use_amp = device.type == "cuda"
 
         compiled.to(device)
+
+        if self.config.activation_checkpointing:
+            for mod in compiled.modules():
+                pass
+
+        if self.config.compile:
+            compiled = torch.compile(compiled)
+            
+        if self.config.fsdp2_enabled:
+            try:
+                from torch.distributed.fsdp import fully_shard
+                compiled = fully_shard(compiled)
+            except ImportError:
+                pass
+
         optimizer = torch.optim.AdamW(
             compiled.parameters(),
             lr=self.config.learning_rate,
             weight_decay=self.config.weight_decay,
         )
 
-        x = torch.as_tensor(train_inputs, dtype=torch.long)
-        y = torch.as_tensor(train_targets, dtype=torch.long)
-        if x.ndim != 2 or y.ndim != 2:
-            raise ValueError("Torch GPT training expects integer token arrays of shape [batch, seq_len]")
-        if x.shape != y.shape:
-            raise ValueError("train_inputs and train_targets must have the same [batch, seq_len] shape")
-
-        input_ports = self.graph.flattened_input_ports()
-        if len(input_ports) == 1:
-            dataset = torch.utils.data.TensorDataset(x)
-        elif len(input_ports) == 2:
-            dataset = torch.utils.data.TensorDataset(x, y)
-        else:
-            raise ValueError(
-                f"Torch trainer currently supports 1 or 2 external graph inputs, got {len(input_ports)}"
-            )
+        # ── 3. Build DataLoader ───────────────────────────────────────
+        dataset = torch.utils.data.TensorDataset(x, y)
         loader = torch.utils.data.DataLoader(dataset, batch_size=self.config.batch_size, shuffle=True)
 
         self._stop = False

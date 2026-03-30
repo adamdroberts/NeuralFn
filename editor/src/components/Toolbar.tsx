@@ -110,14 +110,16 @@ export default function Toolbar() {
     addSubgraphNode(pos);
   }, [addSubgraphNode, screenToFlowPosition]);
 
+  const [gptType, setGptType] = useState("nanogpt");
+
   const onAddGPT = useCallback((e: React.MouseEvent) => {
     const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
-    api.buildGPTTemplate({ name: "gpt" }).then((template) => {
+    api.buildGPTTemplate({ name: "gpt", config: { preset: gptType } }).then((template) => {
       mergeVariantLibrary(template.variant_library);
       updateActiveGraphSettings(template.graph_settings);
       addBuiltinNode(template.node_def, pos);
     }).catch(() => {});
-  }, [addBuiltinNode, mergeVariantLibrary, screenToFlowPosition, updateActiveGraphSettings]);
+  }, [addBuiltinNode, mergeVariantLibrary, screenToFlowPosition, updateActiveGraphSettings, gptType]);
 
   const onSave = useCallback(() => {
     const data = JSON.stringify(rootGraph, null, 2);
@@ -177,12 +179,24 @@ export default function Toolbar() {
         >
           + Subgraph
         </button>
-        <button
-          onClick={onAddGPT}
-          className="bg-emerald-900 hover:bg-emerald-800 text-emerald-100 text-xs px-2 py-1 rounded"
-        >
-          + GPT Template
-        </button>
+        <div className="flex bg-emerald-900 rounded items-center">
+          <button
+            onClick={onAddGPT}
+            className="hover:bg-emerald-800 text-emerald-100 text-xs px-2 py-1 rounded-l"
+          >
+            + GPT Template
+          </button>
+          <select
+            className="bg-emerald-950 text-emerald-100 text-[10px] uppercase font-bold tracking-wider py-1 px-1 rounded-r border-l border-emerald-800 outline-none cursor-pointer"
+            value={gptType}
+            onChange={(e) => setGptType(e.target.value)}
+          >
+            <option value="nanogpt">NanoGPT</option>
+            <option value="gpt2">GPT-2</option>
+            <option value="llama">LLaMA</option>
+            <option value="moe">MoE</option>
+          </select>
+        </div>
 
         <div className="flex items-center gap-1 ml-2 text-[10px] text-gray-400 overflow-x-auto">
           {breadcrumbs.map((crumb, idx) => (

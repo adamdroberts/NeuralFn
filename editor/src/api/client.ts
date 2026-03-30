@@ -98,6 +98,16 @@ export interface GPTTemplateResponse {
   graph_settings: Pick<GraphData, "training_method" | "runtime" | "torch_config">;
 }
 
+export interface DatasetInfo {
+  name: string;
+  source: string;
+  hf_path: string | null;
+  hf_split: string | null;
+  text_column: string;
+  num_tokens: number | null;
+  num_rows: number | null;
+}
+
 export const api = {
   getGraph: () => json<GraphData>("/graph"),
 
@@ -160,8 +170,10 @@ export const api = {
   startTraining: (
     body: {
       method?: string | null;
-      train_inputs: Array<Array<number | string>>;
-      train_targets: Array<Array<number | string>>;
+      train_inputs?: Array<Array<number | string>>;
+      train_targets?: Array<Array<number | string>>;
+      dataset_names?: string[];
+      seq_len?: number;
       outer_rounds?: number;
       loss_fn?: string;
       epochs?: number;
@@ -205,4 +217,34 @@ export const api = {
 
   stopTraining: () =>
     json<{ status: string }>("/train/stop", { method: "POST" }),
+
+  // ── Datasets ─────────────────────────────────────────────────────
+  getDatasets: () => json<DatasetInfo[]>("/datasets"),
+
+  downloadDataset: (body: {
+    hf_path: string;
+    hf_split?: string;
+    text_column?: string;
+    max_rows?: number | null;
+    alias?: string | null;
+  }) =>
+    json<DatasetInfo>("/datasets/download", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  uploadDataset: async (name: string, file: File): Promise<DatasetInfo> => {
+    const form = new FormData();
+    form.append("name", name);
+    form.append("file", file);
+    const res = await fetch(BASE + "/datasets/upload", {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
+  deleteDataset: (name: string) =>
+    json<{ status: string }>(`/datasets/${name}`, { method: "DELETE" }),
 };

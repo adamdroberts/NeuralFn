@@ -10,7 +10,7 @@ from .evolutionary import EvolutionaryTrainer
 from .hybrid import HybridConfig, HybridTrainer
 from .serialization import save_graph, load_graph
 from .torch_backend import TorchTrainConfig, TorchTrainer
-from .torch_templates import build_gpt_root_graph, build_gpt_stage_graph, build_gpt_subgraph
+from .torch_templates import build_gpt_root_graph, build_model_stage_graph
 
 __all__ = [
     "Port",
@@ -35,6 +35,5 @@ __all__ = [
     "TorchTrainConfig",
     "TorchTrainer",
     "build_gpt_root_graph",
-    "build_gpt_stage_graph",
-    "build_gpt_subgraph",
+    "build_model_stage_graph",
 ]
