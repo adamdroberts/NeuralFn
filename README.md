@@ -4,7 +4,11 @@ A brain-inspired neural network framework where each neuron is either a well-est
 
 NeuralFn now has both a scalar graph runtime and a PyTorch-backed `torch` runtime for trainable module nodes such as GPT.
 
-## Current state of play, WIP most of this. NanoGPT has been tested and trains, need to add an export for .pt file. Currently, the trained weights are stored in the graph, hit save to save the model and the configuration / design after training or before. Need to add an inference support for the custom format. :-)
+## Current state of play
+
+NeuralFn now has full support for Torch-backed large language models. The framework currently provides templates for NanoGPT, GPT-2, Llama, and MoE (Mixture of Experts) architectures. **Note: Only NanoGPT has been fully tested so far. GPT-2, Llama, and MoE support is implemented but untested.**
+
+Training is powered by a new `dataset_source` node that can download Hugging Face datasets, seamlessly tokenize them, and feed them directly into the graph. Trained weights are embedded directly back into the graph's serialized JSON format (`module_state`), meaning your architecture and trained parameters reside safely inside the same visual graph structure.
 
 ## How it works
 
@@ -127,9 +131,9 @@ Subgraph nodes expose their ports from the nested graph’s designated `input_no
 
 ## GPT / torch graphs
 
-Use the GPT template subgraph when you want a causal language model that remains explorable in the editor. The template expands into token embedding, residual-mix, RMSNorm, attention, MLP, skip-add, head, softcap, and token cross-entropy stages, with transformer blocks represented as nested subgraphs. Torch graphs should use `training_method="torch"` and `runtime="torch"`. The torch trainer is CUDA-first and will raise if the graph is configured for `cuda` but no CUDA device is available.
+Use the GPT template generator when you want a causal language model that remains explorable in the editor. The templates expand into intricate graphs of token embedding, residual-mix, RMSNorm, attention, MLP (Dense or Mixture of Experts), skip-add, head, softcap, and token cross-entropy stages. Transformer blocks are represented as nested subgraphs via the Variant Library, allowing easy exploration of architecture choices. Torch graphs should use `training_method="torch"` and `runtime="torch"`. The torch trainer is CUDA-first.
 
-Training data for GPT graphs is integer token data shaped `[batch, seq_len]` for both `train_inputs` and shifted `train_targets`.
+Training data for GPT graphs is managed via a `dataset_source` node. Drop the node onto your graph, select Hugging Face or local datasets from the side panel, and connect its `tokens` and `targets` ports to the network's inputs. The trainer will automatically tokenize the text, dynamically adjust the model's `vocab_size` for compatibility, and handle the data batching.
 
 ## Training
 
