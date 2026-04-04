@@ -74,7 +74,7 @@ export default function GraphCanvas() {
   }, [selectNode]);
 
   return (
-    <div className="flex-1 h-full">
+    <div className="flex-1 h-full min-h-0">
       <ReactFlow
         nodes={nodes}
         edges={edges}

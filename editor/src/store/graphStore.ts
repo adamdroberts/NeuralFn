@@ -48,6 +48,13 @@ export interface LossPoint {
 }
 
 interface GraphState {
+  projectId: string | null;
+  sessionId: string | null;
+  revision: number;
+  hydrationState: "idle" | "loading" | "ready" | "error";
+  isDirty: boolean;
+  isSaving: boolean;
+  saveError: string | null;
   rootGraph: GraphData;
   currentPath: GraphPathSegment[];
   selectedNodeId: string | null;
@@ -59,6 +66,16 @@ interface GraphState {
   torchTraceSource: "manual" | "dataset" | null;
   lastError: string | null;
 
+  hydrateSession: (params: {
+    projectId: string;
+    sessionId: string;
+    graph: GraphData;
+    revision: number;
+  }) => void;
+  setHydrationState: (state: "idle" | "loading" | "ready" | "error") => void;
+  markSessionSaved: (revision: number) => void;
+  setSaving: (value: boolean) => void;
+  setSaveError: (message: string | null) => void;
   setRootGraph: (graph: GraphData) => void;
   applyActiveNodeChanges: (changes: NodeChange[]) => void;
   applyActiveEdgeChanges: (changes: EdgeChange[]) => void;
@@ -131,10 +148,13 @@ function withSafety(
     currentPath?: GraphPathSegment[];
     selectedNodeId?: string | null;
   },
+  options?: {
+    graphChanged?: boolean;
+  },
 ): GraphState {
   try {
     const next = build();
-    return normalizeState(
+    const normalized = normalizeState(
       state,
       next.rootGraph,
       next.currentPath ?? state.currentPath,
@@ -142,6 +162,12 @@ function withSafety(
         ? (next.selectedNodeId ?? null)
         : state.selectedNodeId,
     );
+    return {
+      ...normalized,
+      isDirty: options?.graphChanged ? true : state.isDirty,
+      saveError: options?.graphChanged ? null : state.saveError,
+      lastError: null,
+    };
   } catch (error) {
     return {
       ...state,
@@ -162,7 +188,7 @@ function mutateActiveGraph(
       currentPath,
       selectedNodeId,
     };
-  });
+  }, { graphChanged: true });
 }
 
 function addNodeToGraph(
@@ -258,6 +284,13 @@ export function selectSelectedNode(state: GraphState): Node<NeuronNodeData> | nu
 export const useGraphStore = create<GraphState>((set) => ({
   ...normalizeState(
     {
+      projectId: null,
+      sessionId: null,
+      revision: 0,
+      hydrationState: "idle",
+      isDirty: false,
+      isSaving: false,
+      saveError: null,
       rootGraph: initialGraph,
       currentPath: [],
       selectedNodeId: null,
@@ -268,6 +301,11 @@ export const useGraphStore = create<GraphState>((set) => ({
       torchTrace: {},
       torchTraceSource: null,
       lastError: null,
+      hydrateSession: () => undefined,
+      setHydrationState: () => undefined,
+      markSessionSaved: () => undefined,
+      setSaving: () => undefined,
+      setSaveError: () => undefined,
       setRootGraph: () => undefined,
       applyActiveNodeChanges: () => undefined,
       applyActiveEdgeChanges: () => undefined,
@@ -300,7 +338,42 @@ export const useGraphStore = create<GraphState>((set) => ({
     [],
     null,
   ),
-  setRootGraph: (graph) => set((state) => withSafety(state, () => ({ rootGraph: graph }))),
+  hydrateSession: ({ projectId, sessionId, graph, revision }) =>
+    set((state) => ({
+      ...withSafety(state, () => ({ rootGraph: graph, currentPath: [], selectedNodeId: null })),
+      projectId,
+      sessionId,
+      revision,
+      hydrationState: "ready",
+      isDirty: false,
+      isSaving: false,
+      saveError: null,
+    })),
+
+  setHydrationState: (hydrationState) => set((state) => ({ ...state, hydrationState })),
+  markSessionSaved: (revision) =>
+    set((state) => ({
+      ...state,
+      revision,
+      isDirty: false,
+      isSaving: false,
+      saveError: null,
+      hydrationState: "ready",
+    })),
+  setSaving: (isSaving) => set((state) => ({ ...state, isSaving })),
+  setSaveError: (saveError) =>
+    set((state) => ({
+      ...state,
+      saveError,
+      isSaving: false,
+      hydrationState: saveError ? "error" : state.hydrationState,
+    })),
+
+  setRootGraph: (graph) =>
+    set((state) => ({
+      ...withSafety(state, () => ({ rootGraph: graph }), { graphChanged: true }),
+      lastError: null,
+    })),
 
   applyActiveNodeChanges: (changes) =>
     set((state) => {
@@ -413,7 +486,7 @@ export const useGraphStore = create<GraphState>((set) => ({
           ...state.rootGraph,
           variant_library: mergeVariantLibraries(state.rootGraph.variant_library, library),
         },
-      })),
+      }), { graphChanged: true }),
     ),
 
   saveNodeAsVariant: (nodeId, family, version, linkNode = true) =>
@@ -457,7 +530,7 @@ export const useGraphStore = create<GraphState>((set) => ({
           })),
           selectedNodeId: nodeId,
         };
-      }),
+      }, { graphChanged: true }),
     ),
 
   swapNodeVariant: (nodeId, family, version) =>
@@ -493,7 +566,7 @@ export const useGraphStore = create<GraphState>((set) => ({
           })),
           selectedNodeId: nodeId,
         };
-      }),
+      }, { graphChanged: true }),
     ),
 
   removeNode: (id) =>

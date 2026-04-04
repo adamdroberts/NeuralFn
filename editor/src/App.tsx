@@ -1,61 +1,80 @@
-import React, { useEffect, useState } from "react";
-import { ReactFlowProvider } from "@xyflow/react";
-import GraphCanvas from "./components/GraphCanvas";
-import CodePanel from "./components/CodePanel";
-import LibraryPanel from "./components/LibraryPanel";
-import TrainingPanel from "./components/TrainingPanel";
-import Toolbar from "./components/Toolbar";
-import { useGraphStore } from "./store/graphStore";
-import { api } from "./api/client";
+import React from "react";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import AppShell from "./components/shell/AppShell";
+import { AppStateProvider, useAppState } from "./routes/AppState";
+import AdminPage from "./pages/AdminPage";
+import AnalyticsPage from "./pages/AnalyticsPage";
+import DatasetsPage from "./pages/DatasetsPage";
+import EditorPage from "./pages/EditorPage";
+import LoginPage from "./pages/LoginPage";
+import RunsPage from "./pages/RunsPage";
 
-function AgentBanner() {
-  const [active, setActive] = useState(false);
-  const setRootGraph = useGraphStore(state => state.setRootGraph);
-
-  useEffect(() => {
-    let lastActive = false;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch("/api/agent/status");
-        if (!res.ok) return;
-        const data = await res.json();
-        setActive(data.active);
-        
-        // Auto-refresh graph if agent just became inactive
-        if (lastActive && !data.active) {
-           const graph = await api.getGraph();
-           setRootGraph(graph);
-        }
-        lastActive = data.active;
-      } catch (err) {
-        console.error("Failed to fetch agent status", err);
-      }
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [setRootGraph]);
-
-  if (!active) return null;
+function LoadingScreen() {
   return (
-    <div className="bg-purple-600 text-white text-center py-1.5 px-4 text-sm font-semibold tracking-wide flex items-center justify-center space-x-2 animate-pulse shadow-md z-50">
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
-      <span>AI Agent is controlling the editor...</span>
+    <div className="min-h-screen bg-gray-950 text-gray-300 flex items-center justify-center">
+      Loading NeuralFn...
     </div>
+  );
+}
+
+function RootRedirect() {
+  const { bootstrap } = useAppState();
+  if (bootstrap?.authenticated && bootstrap.active_project_id && bootstrap.active_session_id) {
+    return (
+      <Navigate
+        replace
+        to={`/app/projects/${bootstrap.active_project_id}/sessions/${bootstrap.active_session_id}/editor`}
+      />
+    );
+  }
+  return <Navigate replace to={bootstrap?.authenticated ? "/app" : "/login"} />;
+}
+
+function ProtectedShell() {
+  const { bootstrap } = useAppState();
+  if (!bootstrap?.authenticated) {
+    return <Navigate replace to="/login" />;
+  }
+  return <AppShell />;
+}
+
+function EmptyWorkspace() {
+  return (
+    <div className="p-6 text-sm text-gray-500">
+      No active session is selected yet. Create a project from the header controls and NeuralFn will seed a `Main session` for you automatically.
+    </div>
+  );
+}
+
+function RoutedApp() {
+  const { bootstrapping } = useAppState();
+  if (bootstrapping) {
+    return <LoadingScreen />;
+  }
+
+  return (
+    <Routes>
+      <Route path="/" element={<RootRedirect />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/app" element={<ProtectedShell />}>
+        <Route index element={<EmptyWorkspace />} />
+        <Route path="admin" element={<AdminPage />} />
+        <Route path="projects/:projectId/sessions/:sessionId/editor" element={<EditorPage />} />
+        <Route path="projects/:projectId/sessions/:sessionId/datasets" element={<DatasetsPage />} />
+        <Route path="projects/:projectId/sessions/:sessionId/runs" element={<RunsPage />} />
+        <Route path="projects/:projectId/sessions/:sessionId/analytics" element={<AnalyticsPage />} />
+      </Route>
+      <Route path="*" element={<Navigate replace to="/" />} />
+    </Routes>
   );
 }
 
 export default function App() {
   return (
-    <ReactFlowProvider>
-      <div className="h-screen flex flex-col bg-gray-950 text-gray-100 relative">
-        <AgentBanner />
-        <Toolbar />
-        <div className="flex flex-1 min-h-0">
-          <LibraryPanel />
-          <GraphCanvas />
-          <CodePanel />
-        </div>
-        <TrainingPanel />
-      </div>
-    </ReactFlowProvider>
+    <AppStateProvider>
+      <BrowserRouter>
+        <RoutedApp />
+      </BrowserRouter>
+    </AppStateProvider>
   );
 }

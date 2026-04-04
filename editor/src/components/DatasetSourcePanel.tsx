@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, type DatasetInfo } from "../api/client";
+import { useGraphStore } from "../store/graphStore";
 
 interface DatasetSourcePanelProps {
   node: any;
@@ -14,6 +16,9 @@ export default function DatasetSourcePanel({
   updateNodeData,
   clearError,
 }: DatasetSourcePanelProps) {
+  const projectId = useGraphStore((state) => state.projectId);
+  const sessionId = useGraphStore((state) => state.sessionId);
+  const navigate = useNavigate();
   const config = (node.data.neuronDef.module_config ?? {}) as {
     dataset_names?: string[];
     seq_len?: number;
@@ -24,12 +29,16 @@ export default function DatasetSourcePanel({
   const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
 
   const refreshDatasets = useCallback(async () => {
+    if (!projectId) {
+      setDatasets([]);
+      return;
+    }
     try {
-      setDatasets(await api.getDatasets());
+      setDatasets(await api.getDatasets(projectId));
     } catch {
       setDatasets([]);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     refreshDatasets();
@@ -102,8 +111,19 @@ export default function DatasetSourcePanel({
 
         {/* Dataset list */}
         {datasets.length === 0 ? (
-          <div className="text-[10px] text-gray-600 italic text-center py-4">
-            No datasets available. Use the Training Panel to download from HuggingFace or upload local files.
+          <div className="rounded border border-dashed border-gray-800 bg-gray-950/40 px-3 py-4 text-center text-[10px] text-gray-500">
+            <div>No datasets are visible to this project yet.</div>
+            <div className="mt-1">
+              Use the dedicated Datasets tab to download or upload project datasets.
+            </div>
+            {projectId && sessionId && (
+              <button
+                onClick={() => navigate(`/app/projects/${projectId}/sessions/${sessionId}/datasets`)}
+                className="mt-3 rounded border border-gray-700 px-2 py-1 text-[10px] text-gray-300 hover:bg-gray-800"
+              >
+                Open Datasets Tab
+              </button>
+            )}
           </div>
         ) : (
           <div className="max-h-64 overflow-auto divide-y divide-gray-800/50 border border-gray-800 rounded">

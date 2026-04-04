@@ -9,7 +9,7 @@ export default function LibraryPanel() {
   const families = Object.entries(variantLibrary);
 
   return (
-    <aside className="w-64 border-r border-gray-800 bg-gray-950/80 p-3 overflow-auto">
+    <aside className="w-64 min-h-0 border-r border-gray-800 bg-gray-950/80 p-3 overflow-auto">
       <div className="mb-3">
         <div className="text-sm font-bold text-amber-200">Variant Library</div>
         <div className="text-[11px] text-gray-500">

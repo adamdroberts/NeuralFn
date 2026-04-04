@@ -798,6 +798,7 @@ class TorchTrainConfig:
     compile: bool = False
     activation_checkpointing: bool = False
     fsdp2_enabled: bool = False
+    max_steps: int | None = None
 
 
 class TorchTrainer:
@@ -869,20 +870,36 @@ class TorchTrainer:
                     dataset_source_node = (nid, ds_cfg)
                     break
 
+        dataset = None
         if dataset_source_node is not None:
             ds_nid, ds_cfg = dataset_source_node
-            from server.dataset_manager import load_dataset_tokens
-            ds_names = ds_cfg.get('dataset_names', [])
-            ds_seq_len = int(ds_cfg.get('seq_len', 64))
-            inputs_list, targets_list = load_dataset_tokens(ds_names, seq_len=ds_seq_len)
-            x = torch.tensor(inputs_list, dtype=torch.long)
-            y = torch.tensor(targets_list, dtype=torch.long)
+            try:
+                from server.dataset_manager import load_dataset_tensors
+                ds_names = ds_cfg.get('dataset_names', [])
+                ds_seq_len = int(ds_cfg.get('seq_len', 64))
+                dataset = load_dataset_tensors(ds_names, seq_len=ds_seq_len)
+
+                # Check vocab size using the first chunk
+                if len(dataset) > 0:
+                    x, y = dataset[0]
+                    max_token = max(int(x.max()), int(y.max()))
+                    required_vocab = max_token + 1
+                    self._adjust_vocab_size(self.graph, required_vocab)
+            except ImportError:
+                # Fallback if dataset_manager is not updated or available
+                from server.dataset_manager import load_dataset_tokens
+                ds_names = ds_cfg.get('dataset_names', [])
+                ds_seq_len = int(ds_cfg.get('seq_len', 64))
+                inputs_list, targets_list = load_dataset_tokens(ds_names, seq_len=ds_seq_len)
+                x = torch.tensor(inputs_list, dtype=torch.long)
+                y = torch.tensor(targets_list, dtype=torch.long)
+                max_token = max(int(x.max()), int(y.max()))
+                required_vocab = max_token + 1
+                self._adjust_vocab_size(self.graph, required_vocab)
+                dataset = torch.utils.data.TensorDataset(x, y)
+
             # Set the dataset_source node as the sole input node
             self.graph.input_node_ids = [ds_nid]
-            # Auto-adjust vocab_size across all embedding/lm_head modules
-            max_token = max(int(x.max()), int(y.max()))
-            required_vocab = max_token + 1
-            self._adjust_vocab_size(self.graph, required_vocab)
             # Auto-detect output nodes if not set
             if not self.graph.output_node_ids:
                 self._auto_detect_outputs(self.graph, ds_nid)
@@ -890,11 +907,11 @@ class TorchTrainer:
             x = torch.as_tensor(train_inputs, dtype=torch.long)
             y = torch.as_tensor(train_targets, dtype=torch.long)
 
-        if x.ndim != 2 or y.ndim != 2:
-            raise ValueError("Torch GPT training expects integer token arrays of shape [batch, seq_len]")
-        if x.shape != y.shape:
-            raise ValueError("train_inputs and train_targets must have the same [batch, seq_len] shape")
-
+            if x.ndim != 2 or y.ndim != 2:
+                raise ValueError("Torch GPT training expects integer token arrays of shape [batch, seq_len]")
+            if x.shape != y.shape:
+                raise ValueError("train_inputs and train_targets must have the same [batch, seq_len] shape")
+            dataset = torch.utils.data.TensorDataset(x, y)
         # ── 2. Compile the graph AFTER adjustments ────────────────────
         compiled = CompiledTorchGraph(self.graph)
 
@@ -929,12 +946,13 @@ class TorchTrainer:
         )
 
         # ── 3. Build DataLoader ───────────────────────────────────────
-        dataset = torch.utils.data.TensorDataset(x, y)
         loader = torch.utils.data.DataLoader(dataset, batch_size=self.config.batch_size, shuffle=True)
 
         self._stop = False
         self.loss_history = []
         compiled.train()
+        
+        global_step = 0
 
         for epoch in range(self.config.epochs):
             if self._stop:
@@ -942,6 +960,10 @@ class TorchTrainer:
             total_loss = 0.0
             total_rows = 0
             for batch in loader:
+                if self._stop or (self.config.max_steps is not None and global_step >= self.config.max_steps):
+                    self._stop = True
+                    break
+                    
                 if isinstance(batch, Tensor):
                     batch = (batch,)
                 if len(batch) == 1:
@@ -963,6 +985,7 @@ class TorchTrainer:
                 batch_rows = int(flat_inputs[0].size(0))
                 total_loss += float(loss.item()) * batch_rows
                 total_rows += batch_rows
+                global_step += 1
 
             avg_loss = total_loss / max(total_rows, 1)
             self.loss_history.append(avg_loss)

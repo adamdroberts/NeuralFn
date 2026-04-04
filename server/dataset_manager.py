@@ -24,6 +24,39 @@ def _ensure_datasets_dir() -> None:
 
 # ── Listing ───────────────────────────────────────────────────────────
 
+def _meta_to_summary(name: str, meta: dict[str, Any], *, default_source: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "source": meta.get("source", default_source),
+        "hf_path": meta.get("hf_path"),
+        "hf_split": meta.get("hf_split"),
+        "text_column": meta.get("text_column", "text"),
+        "num_tokens": meta.get("num_tokens"),
+        "num_rows": meta.get("num_rows"),
+        "variant": meta.get("variant"),
+        "train_shards": meta.get("train_shards"),
+        "val_shards": meta.get("val_shards"),
+        "data_format": meta.get("data_format"),
+        "repo_id": meta.get("repo_id"),
+        "remote_root_prefix": meta.get("remote_root_prefix"),
+    }
+
+
+def get_local_dataset_info(name: str) -> dict[str, Any] | None:
+    """Return metadata for one dataset stored under server/datasets/."""
+    _ensure_datasets_dir()
+    ds_dir = DATASETS_DIR / name
+    if ds_dir.is_dir():
+        meta_file = ds_dir / "meta.json"
+        meta = json.loads(meta_file.read_text(encoding="utf-8")) if meta_file.exists() else {}
+        return _meta_to_summary(name, meta, default_source="local")
+    for ext in (".txt", ".json", ".jsonl", ".csv", ".parquet"):
+        file_path = DATASETS_DIR / f"{name}{ext}"
+        if file_path.exists():
+            return _meta_to_summary(name, {}, default_source="local_file")
+    return None
+
+
 def list_local_datasets() -> list[dict[str, Any]]:
     """Return metadata about locally available datasets in server/datasets/."""
     _ensure_datasets_dir()
@@ -31,36 +64,11 @@ def list_local_datasets() -> list[dict[str, Any]]:
     for entry in sorted(DATASETS_DIR.iterdir()):
         if entry.name.startswith("."):
             continue
-        if entry.is_dir():
-            meta_file = entry / "meta.json"
-            if meta_file.exists():
-                meta = json.loads(meta_file.read_text())
-            else:
-                meta = {}
-            results.append({
-                "name": entry.name,
-                "source": meta.get("source", "local"),
-                "hf_path": meta.get("hf_path"),
-                "hf_split": meta.get("hf_split"),
-                "text_column": meta.get("text_column", "text"),
-                "num_tokens": meta.get("num_tokens"),
-                "num_rows": meta.get("num_rows"),
-                "variant": meta.get("variant"),
-                "train_shards": meta.get("train_shards"),
-                "val_shards": meta.get("val_shards"),
-                "data_format": meta.get("data_format"),
-            })
-        elif entry.suffix in {".txt", ".json", ".jsonl", ".csv", ".parquet"}:
-            results.append({
-                "name": entry.stem,
-                "source": "local_file",
-                "hf_path": None,
-                "hf_split": None,
-                "text_column": "text",
-                "num_tokens": None,
-                "num_rows": None,
-            })
-    return results
+        summary = get_local_dataset_info(entry.stem if entry.is_file() else entry.name)
+        if summary is not None:
+            results.append(summary)
+    deduped = {dataset["name"]: dataset for dataset in results}
+    return [deduped[name] for name in sorted(deduped)]
 
 
 # ── Downloading / Importing ───────────────────────────────────────────
@@ -411,6 +419,75 @@ def load_dataset_tokens(
 
     return inputs, targets
 
+
+import torch
+from torch.utils.data import Dataset
+import numpy as np
+
+class MemmapTokenDataset(Dataset):
+    def __init__(self, token_arrays: list[np.ndarray], seq_len: int):
+        self.seq_len = seq_len
+        self.arrays = token_arrays
+        self.array_lengths = [len(arr) for arr in self.arrays]
+        
+        self.chunk_counts = []
+        for length in self.array_lengths:
+            count = max(0, (length - 1) // seq_len)
+            self.chunk_counts.append(count)
+            
+        self.cumulative_chunks = np.cumsum([0] + self.chunk_counts)
+        self.total_chunks = self.cumulative_chunks[-1]
+        
+    def __len__(self) -> int:
+        return self.total_chunks
+        
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        if idx < 0 or idx >= self.total_chunks:
+            raise IndexError("Index out of bounds")
+            
+        array_idx = np.searchsorted(self.cumulative_chunks[1:], idx, side='right')
+        local_idx = idx - self.cumulative_chunks[array_idx]
+        
+        start_pos = local_idx * self.seq_len
+        end_pos = start_pos + self.seq_len + 1
+        
+        chunk = self.arrays[array_idx][start_pos:end_pos].astype(np.int64)
+        
+        x = torch.from_numpy(chunk[:-1])
+        y = torch.from_numpy(chunk[1:])
+        return x, y
+
+def load_dataset_tensors(
+    dataset_names: list[str],
+    *,
+    seq_len: int = 64,
+) -> Dataset:
+    """Load one or more local datasets efficiently using MemmapTokenDataset."""
+    _ensure_datasets_dir()
+    
+    arrays = []
+    for ds_name in dataset_names:
+        ds_path = DATASETS_DIR / ds_name
+        if ds_path.is_dir():
+            meta_file = ds_path / "meta.json"
+            if meta_file.exists():
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                if meta.get("data_format") == "uint16_shards":
+                    train_files = sorted(ds_path.glob("fineweb_train_*.bin"))
+                    for path in train_files:
+                        # Memmap to avoid loading entirely into memory at once
+                        arr = np.memmap(path, dtype=np.uint16, mode='r')
+                        arrays.append(arr)
+                    continue
+                
+        # Fallback to in-memory load for text/json
+        tokens = _load_tokens_for(ds_name, None)
+        arrays.append(np.array(tokens, dtype=np.uint16))
+        
+    if not arrays:
+        raise ValueError(f"No tokens found for datasets {dataset_names}")
+        
+    return MemmapTokenDataset(arrays, seq_len)
 
 def _load_tokens_for(
     ds_name: str,

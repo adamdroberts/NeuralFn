@@ -174,7 +174,7 @@ def build_dense_mlp_graph(name: str, model_dim: int, spec: BlockSpec) -> NeuronG
     graph.output_node_ids = ["y_out"]
     return graph
 
-def build_moe_mlp_graph(name: str, model_dim: int, spec: BlockSpec) -> NeuronGraph:
+def build_mixllama_mlp_graph(name: str, model_dim: int, spec: BlockSpec) -> NeuronGraph:
     graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
     graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="x", dtype="tensor"), instance_id="x_in", position=(40, 160)))
     
@@ -236,7 +236,7 @@ def build_decoder_block_graph(name: str, model_dim: int, spec: BlockSpec, attent
     graph.add_edge(Edge(id="e_add_mlp_norm", src_node="attn_add", src_port=0, dst_node="mlp_norm", dst_port=0))
 
     out_aliases = ["y"]
-    if spec.mlp_type == "moe":
+    if spec.mlp_type == "mixllama":
         out_aliases.append("aux_loss")
     
     graph.add_node(NeuronInstance(link_variant_neuron(mlp_graph, family="mlp", version="default", name="mlp", input_aliases=["x"], output_aliases=out_aliases), instance_id="mlp", position=(1140, 80)))
@@ -249,7 +249,7 @@ def build_decoder_block_graph(name: str, model_dim: int, spec: BlockSpec, attent
     graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="x", dtype="tensor"), instance_id="x_out", position=(1580, 140)))
     graph.add_edge(Edge(id="e_mlpadd_xout", src_node="mlp_add", src_port=0, dst_node="x_out", dst_port=0))
 
-    if spec.mlp_type == "moe":
+    if spec.mlp_type == "mixllama":
         graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="aux_loss", dtype="tensor"), instance_id="aux_loss_out", position=(1580, 260)))
         graph.add_edge(Edge(id="e_mlp_auxout", src_node="mlp", src_port=1, dst_node="aux_loss_out", dst_port=0))
         graph.output_node_ids = ["x_out", "aux_loss_out"]
@@ -262,12 +262,12 @@ def build_decoder_block_graph(name: str, model_dim: int, spec: BlockSpec, attent
 def build_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
     spec = model_spec.block_spec
     graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
-    block_family = "moe" if spec.mlp_type == "moe" else "transformer_block"
+    block_family = "mixllama" if spec.mlp_type == "mixllama" else "transformer_block"
     
     # Pre-build variant libraries
     attn_graph = build_dense_attention_graph("attention_engine", model_spec.model_dim, spec)
-    if spec.mlp_type == "moe":
-        mlp_graph = build_moe_mlp_graph("mlp_moe", model_spec.model_dim, spec)
+    if spec.mlp_type == "mixllama":
+        mlp_graph = build_mixllama_mlp_graph("mlp_moe", model_spec.model_dim, spec)
     else:
         mlp_graph = build_dense_mlp_graph("mlp_dense", model_spec.model_dim, spec)
     block_graph = build_decoder_block_graph("decoder_block", model_spec.model_dim, spec, attn_graph, mlp_graph)
@@ -305,13 +305,13 @@ def build_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
         bname = f"block_{i}"
         
         out_aliases = ["x"]
-        if spec.mlp_type == "moe":
+        if spec.mlp_type == "mixllama":
             out_aliases.append("aux_loss")
             
         graph.add_node(NeuronInstance(link_variant_neuron(block_graph, family=block_family, version="default", name=bname, input_aliases=["x"], output_aliases=out_aliases), instance_id=bname, position=(920 + i*220, 140)))
         graph.add_edge(Edge(id=f"e_{curr_out}_{bname}", src_node=curr_out, src_port=0, dst_node=bname, dst_port=0))
         curr_out = bname
-        if spec.mlp_type == "moe":
+        if spec.mlp_type == "mixllama":
             aux_losses.append(bname)
 
     norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
@@ -337,7 +337,7 @@ def build_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
 
     main_loss = "ce"
     # Accumulate Aux Losses
-    if spec.mlp_type == "moe" and aux_losses and spec.router_aux_loss_coef > 0.0:
+    if spec.mlp_type == "mixllama" and aux_losses and spec.router_aux_loss_coef > 0.0:
         # Sum them up
         prev_loss = f"{aux_losses[0]}_loss"
         for i, b_id in enumerate(aux_losses):
@@ -388,15 +388,19 @@ def build_gpt_root_graph(*, name: str = "model_root", model_spec: ModelSpec | No
     return graph
 
 def build_gpt_template_payload(name: str, config: dict[str, Any]) -> dict[str, Any]:
-    from neuralfn.config import build_nanogpt_spec, build_gpt2_spec, build_llama_spec, build_moe_spec
+    from neuralfn.config import build_nanogpt_spec, build_gpt2_spec, build_llama_spec, build_mixllama_spec, build_llama_fast_spec, build_mixllama_fast_spec
     
     preset = config.get("preset", "nanogpt")
     if preset == "gpt2":
         spec = build_gpt2_spec(num_layers=1)
     elif preset == "llama":
         spec = build_llama_spec(num_layers=1)
-    elif preset == "moe":
-        spec = build_moe_spec(num_layers=1, num_heads=4, experts=4, top_k=2) # Smaller moe for quick test
+    elif preset == "mixllama":
+        spec = build_mixllama_spec(num_layers=1, num_heads=4, experts=4, top_k=2) # Smaller mixllama for quick test
+    elif preset == "llama_fast":
+        spec = build_llama_fast_spec(num_layers=1)
+    elif preset == "mixllama_fast":
+        spec = build_mixllama_fast_spec(num_layers=1, num_heads=4, experts=4, top_k=2)
     else:
         spec = build_nanogpt_spec(num_layers=1)
         

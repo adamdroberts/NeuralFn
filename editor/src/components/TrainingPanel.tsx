@@ -9,10 +9,9 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useGraphStore } from "../store/graphStore";
-import { api, type DatasetInfo } from "../api/client";
+import { api } from "../api/client";
 import { graphContainsSubgraphs } from "../store/graphUtils";
-
-type DataMode = "manual" | "datasets";
+import { syncActiveSessionGraph } from "../routes/sessionSync";
 
 function stripGraphForTrace(graph: any): any {
   return {
@@ -75,6 +74,8 @@ function findTraceDatasetConfig(graph: any): { datasetNames: string[]; seqLen: n
 
 export default function TrainingPanel() {
   const {
+    projectId,
+    sessionId,
     lossHistory,
     isTraining,
     addLossPoint,
@@ -96,62 +97,8 @@ export default function TrainingPanel() {
   const [popSize, setPopSize] = useState(50);
   const [dataInput, setDataInput] = useState("[[0,1,2,3],[1,2,3,4],[2,3,4,5],[3,4,5,6]]");
   const [dataTarget, setDataTarget] = useState("[[1,2,3,4],[2,3,4,5],[3,4,5,6],[4,5,6,7]]");
-  const [seqLen, setSeqLen] = useState(64);
   const [isTorchTraceMinimized, setIsTorchTraceMinimized] = useState(false);
   const ctrlRef = useRef<AbortController | null>(null);
-
-  // ── Dataset state ──────────────────────────────────────────────────
-  const [dataMode, setDataMode] = useState<DataMode>("manual");
-  const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
-  const [selectedDatasets, setSelectedDatasets] = useState<string[]>([]);
-  const [hfInput, setHfInput] = useState("");
-  const [hfSplit, setHfSplit] = useState("train");
-  const [hfMaxRows, setHfMaxRows] = useState("");
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloadStatus, setDownloadStatus] = useState("Idle");
-  const [downloadError, setDownloadError] = useState<string | null>(null);
-
-  // Fetch datasets on mount and whenever dataMode switches to datasets
-  const refreshDatasets = useCallback(async () => {
-    try {
-      const ds = await api.getDatasets();
-      setDatasets(ds);
-    } catch {
-      setDatasets([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (dataMode === "datasets") {
-      refreshDatasets();
-    }
-  }, [dataMode, refreshDatasets]);
-
-  useEffect(() => {
-    if (!isDownloading) return;
-
-    setDownloadProgress(6);
-    setDownloadStatus("Contacting Hugging Face...");
-
-    const startedAt = Date.now();
-    const interval = window.setInterval(() => {
-      const elapsedMs = Date.now() - startedAt;
-      setDownloadProgress((prev) => {
-        const next = prev < 35 ? prev + 5 : prev < 70 ? prev + 3 : prev < 92 ? prev + 1 : prev;
-        return Math.min(next, 92);
-      });
-      if (elapsedMs > 12000) {
-        setDownloadStatus("Tokenizing and indexing dataset...");
-      } else if (elapsedMs > 4000) {
-        setDownloadStatus("Downloading dataset files...");
-      }
-    }, 500);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [isDownloading]);
 
   const traceGraphSignature = useMemo(
     () => JSON.stringify(stripGraphForTrace(rootGraph)),
@@ -167,73 +114,17 @@ export default function TrainingPanel() {
     [graphDatasetConfig],
   );
 
-  const toggleDataset = (name: string) => {
-    setSelectedDatasets((prev) =>
-      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
-    );
-  };
-
-  const handleDownloadHF = async () => {
-    if (!hfInput.trim()) return;
-    setIsDownloading(true);
-    setDownloadProgress(4);
-    setDownloadStatus("Starting download...");
-    setDownloadError(null);
-    try {
-      await api.downloadDataset({
-        hf_path: hfInput.trim(),
-        hf_split: hfSplit,
-        max_rows: hfMaxRows ? parseInt(hfMaxRows, 10) : null,
-      });
-      setDownloadProgress(100);
-      setDownloadStatus("Download complete");
-      setHfInput("");
-      setHfMaxRows("");
-      await refreshDatasets();
-    } catch (err: any) {
-      setDownloadError(err?.message || "Download failed");
-      setDownloadStatus("Download failed");
-    } finally {
-      window.setTimeout(() => {
-        setIsDownloading(false);
-        setDownloadProgress(0);
-        setDownloadStatus("Idle");
-      }, 350);
-    }
-  };
-
-  const handleDeleteDataset = async (name: string) => {
-    try {
-      await api.deleteDataset(name);
-      setSelectedDatasets((prev) => prev.filter((n) => n !== name));
-      await refreshDatasets();
-    } catch {
-      // ignore
-    }
-  };
-
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const name = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
-    try {
-      await api.uploadDataset(name, file);
-      await refreshDatasets();
-    } catch {
-      // ignore
-    }
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
   // ── Training ───────────────────────────────────────────────────────
 
   const start = useCallback(async () => {
-    const usingDatasets = dataMode === "datasets" && selectedDatasets.length > 0;
+    if (!projectId || !sessionId) {
+      return;
+    }
+    const usingGraphDatasets = Boolean(graphDatasetConfig?.datasetNames.length);
 
     let inputs: number[][] = [];
     let targets: number[][] = [];
-    if (!usingDatasets) {
+    if (!usingGraphDatasets) {
       try {
         inputs = JSON.parse(dataInput);
         targets = JSON.parse(dataTarget);
@@ -247,17 +138,17 @@ export default function TrainingPanel() {
     setTraining(true);
 
     try {
-      await api.putGraph(rootGraph);
+      await syncActiveSessionGraph({ skipIfClean: true });
     } catch (err) {
       console.error("Failed to sync graph", err);
     }
 
     ctrlRef.current = api.startTraining(
+      projectId,
+      sessionId,
       {
         method: hasNestedGraphs ? null : rootGraph.training_method,
-        ...(usingDatasets
-          ? { dataset_names: selectedDatasets, seq_len: seqLen }
-          : { train_inputs: inputs, train_targets: targets }),
+        ...(usingGraphDatasets ? {} : { train_inputs: inputs, train_targets: targets }),
         outer_rounds: outerRounds,
         loss_fn: usesTorch ? "cross_entropy" : "mse",
         epochs,
@@ -281,6 +172,8 @@ export default function TrainingPanel() {
       }
     );
   }, [
+    projectId,
+    sessionId,
     rootGraph,
     hasNestedGraphs,
     usesTorch,
@@ -292,9 +185,7 @@ export default function TrainingPanel() {
     popSize,
     dataInput,
     dataTarget,
-    dataMode,
-    selectedDatasets,
-    seqLen,
+    graphDatasetConfigKey,
     clearLoss,
     setTraining,
     addLossPoint,
@@ -302,30 +193,32 @@ export default function TrainingPanel() {
   ]);
 
   const stop = useCallback(async () => {
+    if (!projectId || !sessionId) {
+      return;
+    }
     ctrlRef.current?.abort();
-    await api.stopTraining();
+    const activeRun = await api.getActiveRun(projectId, sessionId);
+    if (activeRun.run_id) {
+      await api.stopTraining(projectId, sessionId, activeRun.run_id);
+    }
     setTraining(false);
-  }, [setTraining]);
+  }, [projectId, sessionId, setTraining]);
 
   // Fetch graph telemetry continuously when inputs change
   useEffect(() => {
+    if (!projectId || !sessionId) {
+      updateEdgeTelemetry({});
+      updateTorchTrace({}, null);
+      return;
+    }
     if (usesTorch) {
       updateEdgeTelemetry({});
-      const previewDatasets =
-        graphDatasetConfig?.datasetNames.length
-          ? graphDatasetConfig
-          : dataMode === "datasets" && selectedDatasets.length > 0
-            ? { datasetNames: selectedDatasets, seqLen }
-            : null;
+      const previewDatasets = graphDatasetConfig?.datasetNames.length ? graphDatasetConfig : null;
 
       const syncAndTrace = async () => {
-        await api.putGraph(rootGraph);
+        await syncActiveSessionGraph({ skipIfClean: true });
         if (previewDatasets) {
-          const response = await api.traceTorchPreview({
-            dataset_names: previewDatasets.datasetNames,
-            seq_len: previewDatasets.seqLen,
-            preview_batch_size: 1,
-          });
+          const response = await api.traceTorchPreview(projectId, sessionId, { preview_batch_size: 1 });
           updateTorchTrace(response.trace, response.source);
           return;
         }
@@ -334,7 +227,7 @@ export default function TrainingPanel() {
           const inputs = JSON.parse(dataInput);
           const targets = JSON.parse(dataTarget);
           if (Array.isArray(inputs) && Array.isArray(targets)) {
-            const response = await api.traceTorchPreview({
+            const response = await api.traceTorchPreview(projectId, sessionId, {
               inputs: {
                 [rootGraph.input_node_ids[0] ?? "tokens_in"]: inputs,
                 [rootGraph.input_node_ids[1] ?? "targets_in"]: targets,
@@ -361,8 +254,8 @@ export default function TrainingPanel() {
         rootGraph.input_node_ids.forEach((id, colIdx) => {
           payload[id] = inputs.map((row: any[]) => Number(row[colIdx]) || 0);
         });
-        api.putGraph(rootGraph).then(() => {
-          api.executeTrace(payload).then(res => {
+        syncActiveSessionGraph({ skipIfClean: true }).then(() => {
+          api.executeTrace(projectId, sessionId, payload).then(res => {
             updateEdgeTelemetry(res);
           }).catch(() => {});
         }).catch(() => {});
@@ -373,22 +266,14 @@ export default function TrainingPanel() {
   }, [
     dataInput,
     dataTarget,
-    dataMode,
     graphDatasetConfigKey,
-    selectedDatasets,
-    seqLen,
+    projectId,
+    sessionId,
     traceGraphSignature,
     updateEdgeTelemetry,
     updateTorchTrace,
     usesTorch,
   ]);
-
-  const formatTokens = (n: number | null) => {
-    if (n === null) return "?";
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-    return String(n);
-  };
 
   return (
     <div className="border-t border-gray-800 bg-gray-900 p-3">
@@ -500,34 +385,20 @@ export default function TrainingPanel() {
         </div>
       )}
 
-      {/* ── Data source toggle ──────────────────────────────────────── */}
-      <div className="flex items-center gap-2 mt-3 mb-1">
-        <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Data Source</span>
-        <button
-          onClick={() => setDataMode("manual")}
-          className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${
-            dataMode === "manual"
-              ? "bg-blue-600 text-white"
-              : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-          }`}
-        >
-          Manual
-        </button>
-        <button
-          onClick={() => setDataMode("datasets")}
-          className={`text-[10px] px-2 py-0.5 rounded font-medium transition-colors ${
-            dataMode === "datasets"
-              ? "bg-blue-600 text-white"
-              : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-          }`}
-        >
-          Datasets
-        </button>
-      </div>
-
-      {/* ── Manual JSON entry ────────────────────────────────────────── */}
-      {dataMode === "manual" && (
-        <div className="flex gap-2 mt-1">
+      {graphDatasetConfig ? (
+        <div className="mt-3 rounded border border-blue-900/70 bg-blue-950/20 px-3 py-3">
+          <div className="text-[11px] font-medium text-blue-200">
+            Dataset-backed training is configured from the graph&apos;s `dataset_source` node.
+          </div>
+          <div className="mt-1 text-[10px] text-gray-400">
+            {graphDatasetConfig.datasetNames.length} dataset
+            {graphDatasetConfig.datasetNames.length > 1 ? "s" : ""} selected with seq_len{" "}
+            {graphDatasetConfig.seqLen}. Manage project datasets from the Datasets tab and pick them
+            from the dataset_source node panel.
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex gap-2">
           <label className="text-[10px] text-gray-400 flex-1">
             Inputs (JSON)
             <textarea
@@ -544,161 +415,6 @@ export default function TrainingPanel() {
               className="block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono h-12 resize-none"
             />
           </label>
-        </div>
-      )}
-
-      {/* ── Dataset picker ───────────────────────────────────────────── */}
-      {dataMode === "datasets" && (
-        <div className="mt-1 border border-gray-800 rounded bg-gray-950/50 p-2">
-          {/* HuggingFace download row */}
-          <div className="flex items-end gap-2 mb-2">
-            <label className="text-[10px] text-gray-400 flex-1">
-              HuggingFace Path
-              <input
-                type="text"
-                value={hfInput}
-                onChange={(e) => setHfInput(e.target.value)}
-                placeholder="e.g. karpathy/tiny_shakespeare"
-                className="block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono"
-              />
-            </label>
-            <label className="text-[10px] text-gray-400 w-20">
-              Split
-              <input
-                type="text"
-                value={hfSplit}
-                onChange={(e) => setHfSplit(e.target.value)}
-                className="block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono"
-              />
-            </label>
-            <label className="text-[10px] text-gray-400 w-20">
-              Max Rows
-              <input
-                type="text"
-                value={hfMaxRows}
-                onChange={(e) => setHfMaxRows(e.target.value)}
-                placeholder="all"
-                className="block w-full mt-0.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs font-mono"
-              />
-            </label>
-            <button
-              onClick={handleDownloadHF}
-              disabled={isDownloading || !hfInput.trim()}
-              className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-[10px] px-3 py-1 rounded font-medium whitespace-nowrap"
-            >
-              {isDownloading ? "Downloading…" : "Download"}
-            </button>
-          </div>
-          {downloadError && (
-            <div className="text-[10px] text-red-400 mb-2">{downloadError}</div>
-          )}
-          {isDownloading && (
-            <div className="mb-2 rounded border border-emerald-900/70 bg-emerald-950/30 px-2 py-2">
-              <div className="mb-1 flex items-center justify-between text-[10px]">
-                <span className="text-emerald-300">{downloadStatus}</span>
-                <span className="font-mono text-emerald-200">{downloadProgress}%</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded bg-gray-800">
-                <div
-                  className="h-full rounded bg-emerald-500 transition-all duration-500"
-                  style={{ width: `${downloadProgress}%` }}
-                />
-              </div>
-              <div className="mt-1 text-[9px] text-gray-500">
-                Large datasets can take a while because NeuralFn downloads, normalizes, and tokenizes them before they appear in the list.
-              </div>
-            </div>
-          )}
-
-          {/* Upload local file */}
-          <div className="flex items-center gap-2 mb-2">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="bg-gray-700 hover:bg-gray-600 text-gray-200 text-[10px] px-3 py-1 rounded font-medium"
-            >
-              Upload Local File
-            </button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleUpload}
-              accept=".txt,.json,.jsonl,.csv,.parquet"
-              className="hidden"
-            />
-            <span className="text-[10px] text-gray-500">(.txt, .json, .jsonl, .csv, .parquet)</span>
-          </div>
-
-          {/* Seq len control */}
-          <div className="flex items-center gap-2 mb-2">
-            <label className="text-[10px] text-gray-400">
-              Seq Length
-              <input
-                type="number"
-                value={seqLen}
-                onChange={(e) => setSeqLen(parseInt(e.target.value, 10) || 64)}
-                className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
-              />
-            </label>
-            <span className="text-[10px] text-gray-500">
-              {selectedDatasets.length > 0
-                ? `${selectedDatasets.length} dataset${selectedDatasets.length > 1 ? "s" : ""} selected`
-                : "No datasets selected"}
-            </span>
-          </div>
-
-          {/* Dataset list */}
-          {datasets.length === 0 ? (
-            <div className="text-[10px] text-gray-600 italic py-2 text-center">
-              No datasets available. Download from HuggingFace or upload a local file.
-            </div>
-          ) : (
-            <div className="max-h-36 overflow-auto divide-y divide-gray-800/50">
-              {datasets.map((ds) => (
-                <div
-                  key={ds.name}
-                  className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer transition-colors rounded ${
-                    selectedDatasets.includes(ds.name)
-                      ? "bg-blue-900/30 border-l-2 border-blue-400"
-                      : "hover:bg-gray-800/50 border-l-2 border-transparent"
-                  }`}
-                  onClick={() => toggleDataset(ds.name)}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedDatasets.includes(ds.name)}
-                    onChange={() => toggleDataset(ds.name)}
-                    className="accent-blue-500"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[11px] text-gray-200 font-medium truncate">
-                      {ds.name}
-                    </div>
-                    <div className="text-[9px] text-gray-500">
-                      {ds.source === "huggingface" && ds.hf_path
-                        ? `HF: ${ds.hf_path}`
-                        : ds.source}
-                      {ds.num_tokens != null && (
-                        <span className="ml-2">• {formatTokens(ds.num_tokens)} tokens</span>
-                      )}
-                      {ds.num_rows != null && (
-                        <span className="ml-2">• {ds.num_rows.toLocaleString()} rows</span>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteDataset(ds.name);
-                    }}
-                    className="text-gray-600 hover:text-red-400 text-[10px] px-1"
-                    title="Delete dataset"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
 

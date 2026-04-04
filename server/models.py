@@ -71,12 +71,12 @@ class ExecuteRequest(BaseModel):
 
 
 class TrainRequest(BaseModel):
-    method: str | None = "surrogate"  # legacy single-graph training only
+    method: str | None = "surrogate"
     train_inputs: list[list[float | int]] = Field(default_factory=list)
     train_targets: list[list[float | int]] = Field(default_factory=list)
     dataset_names: list[str] | None = None
     text_column: str = "text"
-    seq_len: int = 64
+    seq_len: int | None = None
     outer_rounds: int = 3
     loss_fn: str = "mse"
     epochs: int = 200
@@ -99,6 +99,7 @@ class DownloadDatasetRequest(BaseModel):
     with_docs: bool = False
     repo_id: str | None = None
     remote_root_prefix: str = "datasets"
+    project_ids: list[str] | None = None
 
 
 class LoadDatasetRequest(BaseModel):
@@ -117,6 +118,7 @@ class LoadDatasetRequest(BaseModel):
     seq_len: int = 64
     node_id: str = "dataset_source"
     append: bool = False
+    project_ids: list[str] | None = None
 
 
 class GPTTemplateRequest(BaseModel):
@@ -131,6 +133,56 @@ class EdgeUpdateModel(BaseModel):
 
 class AgentStatusModel(BaseModel):
     active: bool = False
+
+
+class BootstrapAdminRequest(BaseModel):
+    email: str
+    password: str
+    display_name: str = "Admin"
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class CreateUserRequest(BaseModel):
+    email: str
+    password: str
+    display_name: str
+    is_admin: bool = False
+
+
+class ProjectCreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class SessionCreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class ActiveSessionRequest(BaseModel):
+    project_id: str | None = None
+    session_id: str | None = None
+
+
+class SessionGraphUpdateRequest(BaseModel):
+    graph: GraphModel
+    expected_revision: int | None = None
+    persist_snapshot: bool = False
+    snapshot_reason: str = "autosave"
+
+
+class ProjectMembershipRequest(BaseModel):
+    user_id: str | None = None
+    email: str | None = None
+    role: str = "data_scientist"
+
+
+class DatasetAccessUpdateRequest(BaseModel):
+    project_ids: list[str] = Field(default_factory=list)
 
 
 NeuronDefModel.model_rebuild()

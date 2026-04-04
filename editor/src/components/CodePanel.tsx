@@ -75,8 +75,8 @@ export default function CodePanel() {
   if (!node) {
     const isTorchGraph = activeGraph.training_method === "torch" || activeGraph.runtime === "torch";
     return (
-      <div className="w-80 border-l border-gray-800 bg-gray-900 flex flex-col">
-        <div className="p-4 flex flex-col gap-3 overflow-auto">
+      <div className="w-80 min-h-0 border-l border-gray-800 bg-gray-900 flex flex-col">
+        <div className="flex flex-1 min-h-0 flex-col gap-3 overflow-auto p-4">
           <div>
             <div className="text-sm font-bold text-blue-300">{activeGraph.name}</div>
             <div className="text-[11px] text-gray-500">
@@ -204,7 +204,7 @@ export default function CodePanel() {
     };
 
     return (
-      <div className="w-80 border-l border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
+      <div className="w-80 min-h-0 border-l border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
         <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between">
           <span className="text-sm font-bold text-amber-300">{node.data.label}</span>
           <span className="text-[10px] text-gray-500 font-mono">{node.id}</span>
@@ -405,7 +405,7 @@ export default function CodePanel() {
     }
 
     return (
-      <div className="w-80 border-l border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
+      <div className="w-80 min-h-0 border-l border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
         <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between">
           <span className="text-sm font-bold text-emerald-300">{node.data.label}</span>
           <span className="text-[10px] text-gray-500 font-mono">{node.id}</span>
@@ -460,7 +460,7 @@ export default function CodePanel() {
   }
 
   return (
-    <div className="w-80 border-l border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
+    <div className="w-80 min-h-0 border-l border-gray-800 bg-gray-900 flex flex-col overflow-hidden">
       <div className="px-3 py-2 border-b border-gray-800 flex items-center justify-between">
         <span className="text-sm font-bold text-blue-300">{node.data.label}</span>
         <span className="text-[10px] text-gray-500 font-mono">{node.id}</span>
