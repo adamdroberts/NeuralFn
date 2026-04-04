@@ -85,11 +85,20 @@ export interface TrainingMessage {
 
 export interface TorchTraceStat {
   shape?: number[];
+  dtype?: string;
   mean?: number;
   std?: number;
   min?: number;
   max?: number;
   kind?: string;
+  preview?: Array<number | string>;
+  preview_shape?: number[];
+}
+
+export interface TorchTraceResponse {
+  source: "manual" | "dataset";
+  sample_inputs: Record<string, Array<number | string>>;
+  trace: Record<string, TorchTraceStat[]>;
 }
 
 export interface GPTTemplateResponse {
@@ -139,9 +148,20 @@ export const api = {
     }),
 
   traceTorch: (inputs: Record<string, number[]>) =>
-    json<Record<string, TorchTraceStat[]>>("/trace/torch", {
+    json<TorchTraceResponse>("/trace/torch", {
       method: "POST",
       body: JSON.stringify({ inputs }),
+    }),
+
+  traceTorchPreview: (body: {
+    inputs?: Record<string, Array<number | string> | Array<Array<number | string>>>;
+    dataset_names?: string[];
+    seq_len?: number;
+    preview_batch_size?: number;
+  }) =>
+    json<TorchTraceResponse>("/trace/torch", {
+      method: "POST",
+      body: JSON.stringify(body),
     }),
 
   getBuiltins: () => json<NeuronDefData[]>("/builtins"),

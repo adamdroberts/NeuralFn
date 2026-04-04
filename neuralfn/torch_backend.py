@@ -629,6 +629,9 @@ def _wrap_output(value: Any) -> tuple[Tensor, ...]:
 
 
 def _apply_tensor_function(name: str, args: tuple[Tensor, ...]) -> tuple[Tensor, ...]:
+    def _float_arg(arg: Tensor) -> Tensor:
+        return arg if torch.is_floating_point(arg) else arg.float()
+
     if name in {"input", "output", "identity"}:
         return (args[0],)
     if name == "add":
@@ -640,19 +643,19 @@ def _apply_tensor_function(name: str, args: tuple[Tensor, ...]) -> tuple[Tensor,
     if name == "relu":
         return (torch.relu(args[0]),)
     if name == "sigmoid":
-        return (torch.sigmoid(args[0]),)
+        return (torch.sigmoid(_float_arg(args[0])),)
     if name == "tanh_neuron":
-        return (torch.tanh(args[0]),)
+        return (torch.tanh(_float_arg(args[0])),)
     if name == "leaky_relu":
-        return (F.leaky_relu(args[0], negative_slope=0.01),)
+        return (F.leaky_relu(_float_arg(args[0]), negative_slope=0.01),)
     if name == "gelu":
-        return (F.gelu(args[0]),)
+        return (F.gelu(_float_arg(args[0])),)
     if name == "silu":
-        return (F.silu(args[0]),)
+        return (F.silu(_float_arg(args[0])),)
     if name == "softplus":
-        return (F.softplus(args[0]),)
+        return (F.softplus(_float_arg(args[0])),)
     if name == "hard_tanh":
-        return (F.hardtanh(args[0]),)
+        return (F.hardtanh(_float_arg(args[0])),)
     raise TypeError(f"Function node '{name}' is not supported by the torch runtime")
 
 

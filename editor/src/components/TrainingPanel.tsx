@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   LineChart,
   Line,
@@ -9,10 +9,69 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { useGraphStore } from "../store/graphStore";
-import { api, type DatasetInfo, type TorchTraceStat } from "../api/client";
+import { api, type DatasetInfo } from "../api/client";
 import { graphContainsSubgraphs } from "../store/graphUtils";
 
 type DataMode = "manual" | "datasets";
+
+function stripGraphForTrace(graph: any): any {
+  return {
+    ...graph,
+    nodes: Object.fromEntries(
+      Object.entries(graph.nodes ?? {}).map(([id, node]: [string, any]) => [
+        id,
+        {
+          ...node,
+          position: [0, 0],
+          measured: undefined,
+          neuron_def: node.neuron_def?.subgraph
+            ? {
+                ...node.neuron_def,
+                subgraph: stripGraphForTrace(node.neuron_def.subgraph),
+              }
+            : node.neuron_def,
+        },
+      ]),
+    ),
+    variant_library: Object.fromEntries(
+      Object.entries(graph.variant_library ?? {}).map(([family, versions]: [string, any]) => [
+        family,
+        Object.fromEntries(
+          Object.entries(versions ?? {}).map(([version, variantGraph]: [string, any]) => [
+            version,
+            stripGraphForTrace(variantGraph),
+          ]),
+        ),
+      ]),
+    ),
+  };
+}
+
+function findTraceDatasetConfig(graph: any): { datasetNames: string[]; seqLen: number } | null {
+  const search = (current: any): { datasetNames: string[]; seqLen: number } | null => {
+    for (const node of Object.values(current.nodes ?? {}) as any[]) {
+      const neuronDef = node?.neuron_def;
+      if (neuronDef?.module_type === "dataset_source") {
+        const datasetNames = Array.isArray(neuronDef.module_config?.dataset_names)
+          ? neuronDef.module_config.dataset_names.filter(Boolean)
+          : [];
+        if (datasetNames.length > 0) {
+          return {
+            datasetNames,
+            seqLen: Number(neuronDef.module_config?.seq_len) || 64,
+          };
+        }
+      }
+      if (neuronDef?.kind === "subgraph" && neuronDef.subgraph) {
+        const nested = search(neuronDef.subgraph);
+        if (nested) return nested;
+      }
+    }
+    return null;
+  };
+
+  return search(graph);
+}
 
 export default function TrainingPanel() {
   const {
@@ -23,6 +82,8 @@ export default function TrainingPanel() {
     setTraining,
     rootGraph,
     updateEdgeTelemetry,
+    torchTrace,
+    updateTorchTrace,
   } = useGraphStore();
 
   const hasNestedGraphs = graphContainsSubgraphs(rootGraph);
@@ -36,7 +97,7 @@ export default function TrainingPanel() {
   const [dataInput, setDataInput] = useState("[[0,1,2,3],[1,2,3,4],[2,3,4,5],[3,4,5,6]]");
   const [dataTarget, setDataTarget] = useState("[[1,2,3,4],[2,3,4,5],[3,4,5,6],[4,5,6,7]]");
   const [seqLen, setSeqLen] = useState(64);
-  const [torchTrace, setTorchTrace] = useState<Record<string, TorchTraceStat[]>>({});
+  const [isTorchTraceMinimized, setIsTorchTraceMinimized] = useState(false);
   const ctrlRef = useRef<AbortController | null>(null);
 
   // ── Dataset state ──────────────────────────────────────────────────
@@ -47,6 +108,8 @@ export default function TrainingPanel() {
   const [hfSplit, setHfSplit] = useState("train");
   const [hfMaxRows, setHfMaxRows] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadStatus, setDownloadStatus] = useState("Idle");
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   // Fetch datasets on mount and whenever dataMode switches to datasets
@@ -65,6 +128,45 @@ export default function TrainingPanel() {
     }
   }, [dataMode, refreshDatasets]);
 
+  useEffect(() => {
+    if (!isDownloading) return;
+
+    setDownloadProgress(6);
+    setDownloadStatus("Contacting Hugging Face...");
+
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => {
+      const elapsedMs = Date.now() - startedAt;
+      setDownloadProgress((prev) => {
+        const next = prev < 35 ? prev + 5 : prev < 70 ? prev + 3 : prev < 92 ? prev + 1 : prev;
+        return Math.min(next, 92);
+      });
+      if (elapsedMs > 12000) {
+        setDownloadStatus("Tokenizing and indexing dataset...");
+      } else if (elapsedMs > 4000) {
+        setDownloadStatus("Downloading dataset files...");
+      }
+    }, 500);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isDownloading]);
+
+  const traceGraphSignature = useMemo(
+    () => JSON.stringify(stripGraphForTrace(rootGraph)),
+    [rootGraph],
+  );
+
+  const graphDatasetConfig = useMemo(() => findTraceDatasetConfig(rootGraph), [rootGraph]);
+  const graphDatasetConfigKey = useMemo(
+    () =>
+      graphDatasetConfig
+        ? `${graphDatasetConfig.datasetNames.join("|")}::${graphDatasetConfig.seqLen}`
+        : "",
+    [graphDatasetConfig],
+  );
+
   const toggleDataset = (name: string) => {
     setSelectedDatasets((prev) =>
       prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
@@ -74,6 +176,8 @@ export default function TrainingPanel() {
   const handleDownloadHF = async () => {
     if (!hfInput.trim()) return;
     setIsDownloading(true);
+    setDownloadProgress(4);
+    setDownloadStatus("Starting download...");
     setDownloadError(null);
     try {
       await api.downloadDataset({
@@ -81,13 +185,20 @@ export default function TrainingPanel() {
         hf_split: hfSplit,
         max_rows: hfMaxRows ? parseInt(hfMaxRows, 10) : null,
       });
+      setDownloadProgress(100);
+      setDownloadStatus("Download complete");
       setHfInput("");
       setHfMaxRows("");
       await refreshDatasets();
     } catch (err: any) {
       setDownloadError(err?.message || "Download failed");
+      setDownloadStatus("Download failed");
     } finally {
-      setIsDownloading(false);
+      window.setTimeout(() => {
+        setIsDownloading(false);
+        setDownloadProgress(0);
+        setDownloadStatus("Idle");
+      }, 350);
     }
   };
 
@@ -200,26 +311,49 @@ export default function TrainingPanel() {
   useEffect(() => {
     if (usesTorch) {
       updateEdgeTelemetry({});
-      try {
-        const inputs = JSON.parse(dataInput);
-        const targets = JSON.parse(dataTarget);
-        if (Array.isArray(inputs) && Array.isArray(targets)) {
-          api
-            .putGraph(rootGraph)
-            .then(() =>
-              api.traceTorch({
+      const previewDatasets =
+        graphDatasetConfig?.datasetNames.length
+          ? graphDatasetConfig
+          : dataMode === "datasets" && selectedDatasets.length > 0
+            ? { datasetNames: selectedDatasets, seqLen }
+            : null;
+
+      const syncAndTrace = async () => {
+        await api.putGraph(rootGraph);
+        if (previewDatasets) {
+          const response = await api.traceTorchPreview({
+            dataset_names: previewDatasets.datasetNames,
+            seq_len: previewDatasets.seqLen,
+            preview_batch_size: 1,
+          });
+          updateTorchTrace(response.trace, response.source);
+          return;
+        }
+
+        try {
+          const inputs = JSON.parse(dataInput);
+          const targets = JSON.parse(dataTarget);
+          if (Array.isArray(inputs) && Array.isArray(targets)) {
+            const response = await api.traceTorchPreview({
+              inputs: {
                 [rootGraph.input_node_ids[0] ?? "tokens_in"]: inputs,
                 [rootGraph.input_node_ids[1] ?? "targets_in"]: targets,
-              })
-            )
-            .then(setTorchTrace)
-            .catch(() => setTorchTrace({}));
+              },
+            });
+            updateTorchTrace(response.trace, response.source);
+            return;
+          }
+        } catch {
+          // ignore parse errors while typing
         }
-      } catch {
-        setTorchTrace({});
-      }
+
+        updateTorchTrace({}, null);
+      };
+
+      syncAndTrace().catch(() => updateTorchTrace({}, null));
       return;
     }
+    updateTorchTrace({}, null);
     try {
       const inputs = JSON.parse(dataInput);
       if (Array.isArray(inputs) && inputs.length > 0 && Array.isArray(inputs[0])) {
@@ -236,7 +370,18 @@ export default function TrainingPanel() {
     } catch (e) {
       // ignore parse errors while typing
     }
-  }, [dataInput, dataTarget, rootGraph, updateEdgeTelemetry, usesTorch]);
+  }, [
+    dataInput,
+    dataTarget,
+    dataMode,
+    graphDatasetConfigKey,
+    selectedDatasets,
+    seqLen,
+    traceGraphSignature,
+    updateEdgeTelemetry,
+    updateTorchTrace,
+    usesTorch,
+  ]);
 
   const formatTokens = (n: number | null) => {
     if (n === null) return "?";
@@ -447,6 +592,23 @@ export default function TrainingPanel() {
           {downloadError && (
             <div className="text-[10px] text-red-400 mb-2">{downloadError}</div>
           )}
+          {isDownloading && (
+            <div className="mb-2 rounded border border-emerald-900/70 bg-emerald-950/30 px-2 py-2">
+              <div className="mb-1 flex items-center justify-between text-[10px]">
+                <span className="text-emerald-300">{downloadStatus}</span>
+                <span className="font-mono text-emerald-200">{downloadProgress}%</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded bg-gray-800">
+                <div
+                  className="h-full rounded bg-emerald-500 transition-all duration-500"
+                  style={{ width: `${downloadProgress}%` }}
+                />
+              </div>
+              <div className="mt-1 text-[9px] text-gray-500">
+                Large datasets can take a while because NeuralFn downloads, normalizes, and tokenizes them before they appear in the list.
+              </div>
+            </div>
+          )}
 
           {/* Upload local file */}
           <div className="flex items-center gap-2 mb-2">
@@ -568,23 +730,35 @@ export default function TrainingPanel() {
 
       {usesTorch && Object.keys(torchTrace).length > 0 && (
         <div className="mt-3 border border-gray-800 rounded bg-gray-950/70">
-          <div className="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-800">
-            Torch Trace
+          <div className="px-3 py-2 flex items-center justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-800">
+            <span>Torch Trace</span>
+            <button
+              onClick={() => setIsTorchTraceMinimized((prev) => !prev)}
+              className="text-[10px] normal-case font-medium text-gray-400 hover:text-gray-200"
+            >
+              {isTorchTraceMinimized ? "Expand" : "Minimize"}
+            </button>
           </div>
-          <div className="max-h-48 overflow-auto divide-y divide-gray-900">
-            {Object.entries(torchTrace).map(([nodeId, stats]) => (
-              <div key={nodeId} className="px-3 py-2 text-[10px] text-gray-300 font-mono">
-                <div className="text-emerald-300 mb-1">{nodeId}</div>
-                {stats.map((stat, idx) => (
-                  <div key={`${nodeId}-${idx}`} className="text-gray-400">
-                    {stat.kind
-                      ? stat.kind
-                      : `${JSON.stringify(stat.shape)} mean=${stat.mean?.toFixed(4)} std=${stat.std?.toFixed(4)} min=${stat.min?.toFixed(4)} max=${stat.max?.toFixed(4)}`}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
+          {isTorchTraceMinimized ? (
+            <div className="px-3 py-2 text-[10px] text-gray-500">
+              {Object.keys(torchTrace).length} traced node{Object.keys(torchTrace).length === 1 ? "" : "s"}
+            </div>
+          ) : (
+            <div className="max-h-48 overflow-auto divide-y divide-gray-900">
+              {Object.entries(torchTrace).map(([nodeId, stats]) => (
+                <div key={nodeId} className="px-3 py-2 text-[10px] text-gray-300 font-mono">
+                  <div className="text-emerald-300 mb-1">{nodeId}</div>
+                  {stats.map((stat, idx) => (
+                    <div key={`${nodeId}-${idx}`} className="text-gray-400">
+                      {stat.kind
+                        ? stat.kind
+                        : `${JSON.stringify(stat.shape)}${stat.dtype ? ` ${stat.dtype}` : ""} mean=${stat.mean?.toFixed(4)} std=${stat.std?.toFixed(4)} min=${stat.min?.toFixed(4)} max=${stat.max?.toFixed(4)}${Array.isArray(stat.preview) && stat.preview.length > 0 ? ` preview=${JSON.stringify(stat.preview)}` : ""}`}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

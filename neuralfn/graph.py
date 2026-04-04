@@ -10,6 +10,13 @@ from .neuron import NeuronDef
 from .port import Port
 
 
+_VARIANT_FAMILY_ALIASES: dict[str, tuple[str, ...]] = {
+    "gpt2": ("transformer_block",),
+    "nanogpt": ("transformer_block",),
+    "llama": ("transformer_block",),
+}
+
+
 @dataclass
 class NeuronInstance:
     """A placed instance of a NeuronDef inside a graph."""
@@ -327,8 +334,13 @@ class NeuronGraph:
             if key in resolving:
                 cycle = " -> ".join([f"{fam}@{ver}" for fam, ver in [*resolving, key]])
                 raise ValueError(f"Recursive variant reference detected: {cycle}")
-            family_map = self.variant_library.get(family)
-            if family_map is None or version not in family_map:
+            family_map = None
+            for candidate_family in (family, *_VARIANT_FAMILY_ALIASES.get(family, ())):
+                candidate_versions = self.variant_library.get(candidate_family)
+                if candidate_versions is not None and version in candidate_versions:
+                    family_map = candidate_versions
+                    break
+            if family_map is None:
                 raise ValueError(f"Missing variant '{family}@{version}' in graph '{self.name}'")
             resolving.append(key)
             variant_graph = clone_graph(family_map[version])

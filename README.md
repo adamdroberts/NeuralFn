@@ -62,6 +62,130 @@ cd editor && npm run dev
 
 Open http://localhost:5173
 
+## MCP Server (AI agent integration)
+
+NeuralFn ships with an [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) server that exposes every graph-editing operation as a tool. Any MCP-compatible AI client (Cursor, Claude Desktop, etc.) can build, modify, train, and inspect NeuralFn graphs programmatically — the same operations available in the visual editor.
+
+### Prerequisites
+
+The FastAPI backend must be running on port 8000 before starting the MCP server:
+
+```bash
+uvicorn server.app:app --reload --port 8000
+```
+
+### Configuration
+
+Add the NeuralFn MCP server to your client configuration. The server uses inline script metadata (PEP 723), so `uv run` resolves the `mcp` dependency automatically.
+
+**Cursor** (`.cursor/mcp.json` in the project root):
+
+```json
+{
+  "mcpServers": {
+    "neuralfn": {
+      "command": "uv",
+      "args": ["run", "server/mcp_server.py"]
+    }
+  }
+}
+```
+
+**Claude Desktop** (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "neuralfn": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/NeuralFn", "server/mcp_server.py"]
+    }
+  }
+}
+```
+
+### Available tools
+
+**Graph**
+| Tool | Description |
+|------|-------------|
+| `get_graph` | Get the full graph structure (nodes, edges, settings). |
+| `replace_graph` | Replace the entire server-side graph. |
+| `update_graph_settings` | Update name, training_method, runtime, or config dicts. |
+| `set_io` | Set which nodes are graph inputs/outputs. |
+
+**Nodes**
+| Tool | Description |
+|------|-------------|
+| `list_builtins` | List available builtin neuron definitions. |
+| `add_node` | Add a builtin neuron by id. |
+| `add_custom_node` | Add a function node with custom Python source code and ports. |
+| `add_subgraph_node` | Add an empty subgraph node (with internal input/output nodes). |
+| `add_variant_node` | Add a node linked to a variant from the variant library. |
+| `get_node` | Get the full details of a single node. |
+| `update_node` | Update a node's name, source code, ports, or module config. |
+| `delete_node` | Delete a node. |
+| `update_node_positions` | Batch-update node canvas positions. |
+
+**Edges**
+| Tool | Description |
+|------|-------------|
+| `add_edge` | Connect two node ports with optional weight/bias. |
+| `update_edge` | Update an edge's weight and/or bias. |
+| `delete_edge` | Delete an edge. |
+
+**Variants**
+| Tool | Description |
+|------|-------------|
+| `list_variants` | List all variant families and versions. |
+| `save_node_as_variant` | Save a subgraph node into the variant library. |
+| `swap_node_variant` | Swap a node to a different variant version. |
+
+**Execution & Training**
+| Tool | Description |
+|------|-------------|
+| `execute_graph` | Run the graph with scalar inputs. |
+| `execute_trace` | Run the graph and trace intermediate outputs. |
+| `trace_torch` | Trace a torch graph for tensor statistics. |
+| `probe_node` | Probe a node's response curve. |
+| `train_start` | Start training (surrogate/evolutionary/hybrid/torch). |
+| `get_training_status` | Read the active training snapshot, latest loss, and recent events. |
+| `poll_training_status` | Wait for the next training update by `event_id`, or until the run finishes. |
+| `train_stop` | Stop the current training run. |
+| `load_gpt_template` | Build and load a GPT/Llama/MoE graph in one call. |
+
+**Datasets**
+| Tool | Description |
+|------|-------------|
+| `list_datasets` | List locally available datasets. |
+| `download_dataset` | Download a HuggingFace dataset. |
+| `load_dataset_source` | Download/load datasets and wire them into a `dataset_source` node for torch training. |
+| `delete_dataset` | Delete a local dataset. |
+
+### Example: building a graph via MCP
+
+An AI agent can build a simple sigmoid pipeline like this (shown as sequential tool calls):
+
+```
+1. add_node(neuron_id="builtin-input", instance_id="in", position=[100, 200])
+2. add_node(neuron_id="builtin-sigmoid", instance_id="sig", position=[350, 200])
+3. add_node(neuron_id="builtin-output", instance_id="out", position=[600, 200])
+4. add_edge(src_node="in", src_port=0, dst_node="sig", dst_port=0)
+5. add_edge(src_node="sig", src_port=0, dst_node="out", dst_port=0)
+6. set_io(input_ids=["in"], output_ids=["out"])
+7. execute_graph(inputs={"in": [0.5]})
+```
+
+### Example: train an MoE on FineWeb via MCP
+
+```
+1. load_gpt_template(name="fineweb_moe", preset="moe", config={"n_layer": 4, "n_head": 4, "n_embd": 128, "num_experts": 4, "top_k": 2})
+2. load_dataset_source(hf_path="HuggingFaceFW/fineweb", hf_split="train", max_rows=10000, seq_len=64)
+3. train_start(method="torch", epochs=10, learning_rate=0.001)
+4. get_training_status()
+5. poll_training_status(since_event_id=0, timeout_seconds=30)
+```
+
 ## Using built-in neurons
 
 ```python

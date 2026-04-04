@@ -10,6 +10,12 @@ import type {
   VariantRefData,
 } from "../api/client";
 
+const VARIANT_FAMILY_ALIASES: Record<string, string[]> = {
+  gpt2: ["transformer_block"],
+  nanogpt: ["transformer_block"],
+  llama: ["transformer_block"],
+};
+
 export interface FlowNodeData extends Record<string, unknown> {
   label: string;
   neuronDef: NeuronDefData;
@@ -247,7 +253,11 @@ function resolveVariantLibrary(root: GraphData): GraphData {
     if (resolving.has(key)) {
       throw new Error(`Recursive variant reference detected: ${key}`);
     }
-    const variant = workingRoot.variant_library[family]?.[version];
+    const variant =
+      workingRoot.variant_library[family]?.[version] ??
+      VARIANT_FAMILY_ALIASES[family]
+        ?.map((alias) => workingRoot.variant_library[alias]?.[version])
+        .find((candidate): candidate is GraphData => Boolean(candidate));
     if (!variant) {
       throw new Error(`Missing variant '${key}'`);
     }

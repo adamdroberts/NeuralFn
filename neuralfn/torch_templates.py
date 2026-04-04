@@ -262,6 +262,7 @@ def build_decoder_block_graph(name: str, model_dim: int, spec: BlockSpec, attent
 def build_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
     spec = model_spec.block_spec
     graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
+    block_family = "moe" if spec.mlp_type == "moe" else "transformer_block"
     
     # Pre-build variant libraries
     attn_graph = build_dense_attention_graph("attention_engine", model_spec.model_dim, spec)
@@ -274,7 +275,7 @@ def build_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
     graph.variant_library = {
         "attention": {"default": attn_graph},
         "mlp": {"default": mlp_graph},
-        spec.family: {"default": block_graph},
+        block_family: {"default": block_graph},
     }
 
     graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="tokens", dtype="tokens"), instance_id="tokens_in", position=(40, 140)))
@@ -307,7 +308,7 @@ def build_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
         if spec.mlp_type == "moe":
             out_aliases.append("aux_loss")
             
-        graph.add_node(NeuronInstance(link_variant_neuron(block_graph, family=model_spec.block_spec.family, version="default", name=bname, input_aliases=["x"], output_aliases=out_aliases), instance_id=bname, position=(920 + i*220, 140)))
+        graph.add_node(NeuronInstance(link_variant_neuron(block_graph, family=block_family, version="default", name=bname, input_aliases=["x"], output_aliases=out_aliases), instance_id=bname, position=(920 + i*220, 140)))
         graph.add_edge(Edge(id=f"e_{curr_out}_{bname}", src_node=curr_out, src_port=0, dst_node=bname, dst_port=0))
         curr_out = bname
         if spec.mlp_type == "moe":

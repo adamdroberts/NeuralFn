@@ -35,8 +35,8 @@ export default function NeuronIcon({
   animated?: boolean, 
   telemetry?: number[] 
 }) {
-  const fn = FNS[name];
-  if (!fn) return null;
+  const fn = FNS[name] ?? ((x: number) => x);
+  const isKnownFn = Boolean(FNS[name]);
 
   const points = [];
   const range = [-4, 4];
@@ -108,6 +108,8 @@ export default function NeuronIcon({
     dotPx = ((cx - range[0]) / (range[1] - range[0])) * 100;
     dotPy = 100 - ((cy - minY) / (maxY - minY)) * 100;
   }
+
+  if (!isKnownFn) return null;
 
   return (
     <svg 

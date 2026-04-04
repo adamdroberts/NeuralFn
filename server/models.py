@@ -64,7 +64,10 @@ class GraphModel(BaseModel):
 
 
 class ExecuteRequest(BaseModel):
-    inputs: dict[str, Any]
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    dataset_names: list[str] | None = None
+    seq_len: int | None = None
+    preview_batch_size: int = 1
 
 
 class TrainRequest(BaseModel):
@@ -90,11 +93,40 @@ class DownloadDatasetRequest(BaseModel):
     text_column: str = "text"
     max_rows: int | None = None
     alias: str | None = None
+    variant: str | None = None
+    train_shards: int | None = None
+    skip_manifest: bool = False
+    with_docs: bool = False
+    repo_id: str | None = None
+    remote_root_prefix: str = "datasets"
+
+
+class LoadDatasetRequest(BaseModel):
+    dataset_names: list[str] | None = None
+    hf_path: str | None = None
+    hf_split: str = "train"
+    text_column: str = "text"
+    max_rows: int | None = None
+    alias: str | None = None
+    variant: str | None = None
+    train_shards: int | None = None
+    skip_manifest: bool = False
+    with_docs: bool = False
+    repo_id: str | None = None
+    remote_root_prefix: str = "datasets"
+    seq_len: int = 64
+    node_id: str = "dataset_source"
+    append: bool = False
 
 
 class GPTTemplateRequest(BaseModel):
     name: str = "gpt"
     config: dict[str, Any] = Field(default_factory=dict)
+
+
+class EdgeUpdateModel(BaseModel):
+    weight: float | None = None
+    bias: float | None = None
 
 
 class AgentStatusModel(BaseModel):

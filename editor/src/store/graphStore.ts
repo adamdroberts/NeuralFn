@@ -9,7 +9,13 @@ import {
   type Node,
   type NodeChange,
 } from "@xyflow/react";
-import type { GraphData, NeuronDefData, TrainingMethod, VariantLibraryData } from "../api/client";
+import type {
+  GraphData,
+  NeuronDefData,
+  TorchTraceStat,
+  TrainingMethod,
+  VariantLibraryData,
+} from "../api/client";
 import {
   type Breadcrumb,
   type FlowNodeData,
@@ -49,6 +55,8 @@ interface GraphState {
   lossHistory: LossPoint[];
   isTraining: boolean;
   edgeTelemetry: Record<string, number[]>;
+  torchTrace: Record<string, TorchTraceStat[]>;
+  torchTraceSource: "manual" | "dataset" | null;
   lastError: string | null;
 
   setRootGraph: (graph: GraphData) => void;
@@ -70,6 +78,7 @@ interface GraphState {
   clearLoss: () => void;
   setTraining: (v: boolean) => void;
   updateEdgeTelemetry: (t: Record<string, number[]>) => void;
+  updateTorchTrace: (trace: Record<string, TorchTraceStat[]>, source: "manual" | "dataset" | null) => void;
   clearError: () => void;
 
   toggleInput: (id: string) => void;
@@ -199,6 +208,23 @@ export function selectCurrentPath(state: GraphState): GraphPathSegment[] {
   return clampGraphPath(state.rootGraph, state.currentPath);
 }
 
+export function torchTracePathPrefix(path: GraphPathSegment[]): string {
+  return path
+    .filter((segment): segment is { kind: "node"; nodeId: string } => segment.kind === "node")
+    .map((segment) => segment.nodeId)
+    .join("/");
+}
+
+export function resolveTorchTraceStats(
+  trace: Record<string, TorchTraceStat[]>,
+  path: GraphPathSegment[],
+  nodeId: string,
+): TorchTraceStat[] {
+  const prefix = torchTracePathPrefix(path);
+  const scopedKey = prefix ? `${prefix}/${nodeId}` : nodeId;
+  return trace[scopedKey] ?? trace[nodeId] ?? [];
+}
+
 export function selectActiveGraph(state: GraphState): GraphData {
   return toActiveGraph(state);
 }
@@ -239,6 +265,8 @@ export const useGraphStore = create<GraphState>((set) => ({
       lossHistory: [],
       isTraining: false,
       edgeTelemetry: {},
+      torchTrace: {},
+      torchTraceSource: null,
       lastError: null,
       setRootGraph: () => undefined,
       applyActiveNodeChanges: () => undefined,
@@ -259,6 +287,7 @@ export const useGraphStore = create<GraphState>((set) => ({
       clearLoss: () => undefined,
       setTraining: () => undefined,
       updateEdgeTelemetry: () => undefined,
+      updateTorchTrace: () => undefined,
       clearError: () => undefined,
       toggleInput: () => undefined,
       toggleOutput: () => undefined,
@@ -524,6 +553,8 @@ export const useGraphStore = create<GraphState>((set) => ({
   clearLoss: () => set((state) => ({ ...state, lossHistory: [] })),
   setTraining: (isTraining) => set((state) => ({ ...state, isTraining })),
   updateEdgeTelemetry: (edgeTelemetry) => set((state) => ({ ...state, edgeTelemetry })),
+  updateTorchTrace: (torchTrace, torchTraceSource) =>
+    set((state) => ({ ...state, torchTrace, torchTraceSource })),
   clearError: () => set((state) => ({ ...state, lastError: null })),
 
   toggleInput: (id) =>

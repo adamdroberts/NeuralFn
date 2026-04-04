@@ -1,6 +1,11 @@
-import React, { memo } from "react";
+import React, { memo, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { type NeuronNodeData, useGraphStore } from "../store/graphStore";
+import {
+  resolveTorchTraceStats,
+  selectCurrentPath,
+  type NeuronNodeData,
+  useGraphStore,
+} from "../store/graphStore";
 
 function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeData }) {
   const { label, neuronDef, isInput, isOutput } = data;
@@ -11,6 +16,11 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
   const trainingMethod = neuronDef.subgraph?.training_method;
   const variantRef = neuronDef.variant_ref;
   const updateNodeData = useGraphStore((state) => state.updateNodeData);
+  const torchTrace = useGraphStore((state) => state.torchTrace);
+  const torchTraceSource = useGraphStore((state) => state.torchTraceSource);
+  const currentPath = useGraphStore(selectCurrentPath);
+  const [isHovered, setIsHovered] = useState(false);
+  const traceStats = resolveTorchTraceStats(torchTrace, currentPath, id);
 
   const roleTag = isInput ? "IN" : isOutput ? "OUT" : null;
   const isOverride = neuronDef.source_code?.includes("def override(x):") ?? false;
@@ -31,6 +41,8 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
 
   return (
     <div
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       className={`rounded-lg border px-3 py-2 min-w-[140px] shadow-lg transition-colors ${
         selected
           ? isSubgraph
@@ -43,7 +55,7 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
             : isModule
             ? "border-emerald-700 bg-gray-900"
             : "border-gray-700 bg-gray-900"
-      }`}
+      } relative`}
     >
       <div className="flex items-center justify-between gap-2 mb-1">
         <span
@@ -181,6 +193,36 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
           })}
         </div>
       </div>
+
+      {isHovered && traceStats.length > 0 && (
+        <div className="pointer-events-none absolute left-0 top-full z-50 mt-2 min-w-[220px] rounded border border-gray-700 bg-gray-950/95 px-3 py-2 shadow-2xl">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[10px] font-bold text-blue-300">Preview: {label}</span>
+            <span className="text-[8px] uppercase tracking-wider text-emerald-300">
+              {torchTraceSource === "dataset" ? "dataset" : "manual"}
+            </span>
+          </div>
+          {traceStats.slice(0, 2).map((stat, idx) => (
+            <div key={`${id}-${idx}`} className="mb-1 last:mb-0 text-[9px] text-gray-400 font-mono">
+              {stat.kind ? (
+                <div>{stat.kind}</div>
+              ) : (
+                <>
+                  <div>{JSON.stringify(stat.shape)} {stat.dtype ? `• ${stat.dtype}` : ""}</div>
+                  <div>
+                    mean={stat.mean?.toFixed(4)} std={stat.std?.toFixed(4)} min={stat.min?.toFixed(4)} max={stat.max?.toFixed(4)}
+                  </div>
+                  {Array.isArray(stat.preview) && stat.preview.length > 0 && (
+                    <div className="truncate text-cyan-300">
+                      preview {JSON.stringify(stat.preview)}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
