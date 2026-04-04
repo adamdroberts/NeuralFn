@@ -97,6 +97,10 @@ class GPTTemplateRequest(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
 
 
+class AgentStatusModel(BaseModel):
+    active: bool = False
+
+
 NeuronDefModel.model_rebuild()
 NodeModel.model_rebuild()
 GraphModel.model_rebuild()

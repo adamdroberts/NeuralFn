@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import time
 import uuid
 from typing import Any
 
@@ -37,6 +38,7 @@ from .models import (
     GraphModel,
     NodeModel,
     TrainRequest,
+    AgentStatusModel,
 )
 
 router = APIRouter(prefix="/api")
@@ -44,6 +46,7 @@ router = APIRouter(prefix="/api")
 _graph = NeuronGraph()
 _training_thread: threading.Thread | None = None
 _trainer_instance: SurrogateTrainer | EvolutionaryTrainer | HybridTrainer | TorchTrainer | None = None
+_agent_last_active: float = 0.0
 
 
 def _port_from_model(pm: Any) -> Port:
@@ -91,6 +94,21 @@ def _ndef_from_model(nm: Any) -> NeuronDef:
 @router.get("/graph")
 def get_graph() -> dict[str, Any]:
     return _graph.to_dict()
+
+
+@router.get("/agent/status")
+def get_agent_status() -> dict[str, bool]:
+    return {"active": (time.time() - _agent_last_active) < 5.0}
+
+
+@router.post("/agent/status")
+def set_agent_status(body: AgentStatusModel) -> dict[str, bool]:
+    global _agent_last_active
+    if body.active:
+        _agent_last_active = time.time()
+    else:
+        _agent_last_active = 0.0
+    return {"active": body.active}
 
 
 @router.put("/graph")
