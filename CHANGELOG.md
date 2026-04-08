@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-04-08 [Experimental] Hybrid JEPA Semantic LLM preset
+
+This is a **research prototype**, not a stable feature. All APIs, data formats, and architectural decisions introduced here are experimental and may change significantly or be removed based on findings.
+
+#### Added
+
+- **`jepa_semantic_hybrid` GPT template preset** -- a new first-class preset loaded via `load_gpt_template(preset="jepa_semantic_hybrid")`. Combines JEPA self-supervised learning with a 9-dimensional grounded semantic space, LSH-based hashing, semantic MoE routing, and an attention-less decoder stage.
+- **9D semantic space** -- 8 vocabulary-grounded dimensions (`entity_type`, `action`, `property`, `emotion_sentiment`, `domain`, `temporal`, `causality`, `social_register`) plus a 9th taxonomy hash dimension derived from the `semantic_signature` (entity+action+domain trigram) via learned softmax compression. Grounded in a 320-term vocabulary (40 terms per dimension) extracted from 100k semantic matrix analysis.
+- **`neuralfn/semantic.py`** -- `SemanticMatrix`, `SemanticHasher`, `ConversationalVocabulary` (loads `vocab_8d.json`, encodes/decodes 9D vectors), `signature_to_float()` (deterministic MD5-based taxonomy hash), `load_training_data()` (reads the shipped 100k-row CSV into matrix format), and `generate_synthetic_semantic_data()` (now uses real vocabulary when available).
+- **Shipped data assets** in `neuralfn/data/semantic/`: `vocab_8d.json` (320 core vocabulary terms, 8 dims x 40 terms, with coverage stats) and `training_100k_8d.csv` (100k training rows with 88,362 unique semantic signatures).
+- **6 new `nn.Module` stages** in `neuralfn/torch_backend.py`: `SemanticProjectorStage` (model_dim -> 9D with learned signature softmax + residual), `SemanticAlignmentLossStage`, `SemanticHasherStage` (LSH in-graph), `SemanticMoERouterStage` (cosine-to-centroid routing), `AttentionlessDecoderStage` (bucket-conditioned decode), `SoftmaxDistillationLossStage`.
+- **6 new builtin neuron defs** in `neuralfn/builtins.py`: `semantic_projector_module`, `semantic_alignment_loss_module`, `semantic_hasher_module`, `semantic_moe_router_module`, `attentionless_decoder_module`, `softmax_distillation_loss_module`.
+- **`build_jepa_semantic_hybrid_spec()`** in `neuralfn/config.py` with new `ModelSpec` fields: `semantic_dim` (default 9), `semantic_residual_dim`, `semantic_n_lsh_tables`, `semantic_n_lsh_planes`, `semantic_table_path`.
+- **`build_jepa_semantic_encoder_graph()`** and **`build_jepa_semantic_model_stage_graph()`** in `neuralfn/torch_templates.py`.
+- **`"jepa_semantic"` objective type** added to `ObjectiveType` literal and handled in `build_gpt_root_graph` and `TorchTrainer`.
+- **4 new MCP tools**: `reverse_engineer_to_semantic`, `semantic_search`, `train_jepa_semantic`, `generate_with_semantics`.
+- **4 new REST endpoints**: `POST .../semantic/encode`, `POST .../semantic/search`, `GET .../semantic/dimensions`, `POST .../semantic/generate`.
+- **`SemanticInferenceCache`** subclass and `export_semantic_tables` / `import_semantic_tables` helpers in `neuralfn/inference.py`.
+- **`tests/test_jepa_semantic.py`** with 15 tests covering the semantic data layer, all new stages, and end-to-end preset compile/forward/training.
+
+#### Notes
+
+- The preset uses the JEPA latent MSE loss as its sole training signal during the initial self-supervised phase. The decoder/hasher/router paths are wired in the graph for inference and later distillation phases.
+- The `TorchTrainer` now treats `objective == "jepa_semantic"` the same as `"jepa"` for EMA target updates.
+- Semantic data artifacts (`neuralfn/data/semantic/`) are generated, not tracked in git.
+
 ### 2026-04-08 Full SDK documentation and agent skills
 
 #### Added

@@ -1119,6 +1119,37 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
             max_steps=int(cfg.get("max_steps", 4)),
             halt_epsilon=float(cfg.get("halt_epsilon", 0.01)),
         )
+    if module_type == "semantic_projector":
+        return SemanticProjectorStage(
+            input_dim=int(cfg["input_dim"]),
+            semantic_dim=int(cfg.get("semantic_dim", 9)),
+            residual_dim=int(cfg.get("residual_dim", 64)),
+            n_sig_buckets=int(cfg.get("n_sig_buckets", 4096)),
+        )
+    if module_type == "semantic_alignment_loss":
+        return SemanticAlignmentLossStage()
+    if module_type == "semantic_hasher":
+        return SemanticHasherStage(
+            dim=int(cfg.get("dim", 9)),
+            tables=int(cfg.get("tables", 8)),
+            planes=int(cfg.get("planes", 12)),
+            seed=int(cfg.get("seed", 42)),
+        )
+    if module_type == "semantic_moe_router":
+        return SemanticMoERouterStage(
+            n_experts=int(cfg["n_experts"]),
+            semantic_dim=int(cfg.get("semantic_dim", 9)),
+            top_k=int(cfg.get("top_k", 2)),
+        )
+    if module_type == "attentionless_decoder":
+        return AttentionlessDecoderStage(
+            semantic_dim=int(cfg.get("semantic_dim", 9)),
+            residual_dim=int(cfg.get("residual_dim", 64)),
+            vocab_size=int(cfg.get("vocab_size", 256)),
+            n_buckets=int(cfg.get("n_buckets", 256)),
+        )
+    if module_type == "softmax_distillation_loss":
+        return SoftmaxDistillationLossStage()
     raise KeyError(f"Unsupported module type: {module_type}")
 
 
@@ -1573,7 +1604,7 @@ class TorchTrainer:
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                if objective == "jepa":
+                if objective in ("jepa", "jepa_semantic"):
                     self._ema_update_targets(compiled, ema_decay)
                 batch_rows = int(flat_inputs[0].size(0))
                 total_loss += float(loss.item()) * batch_rows
@@ -1625,6 +1656,118 @@ class MaskSchedulerStage(nn.Module):
         noisy_tokens = tokens.clone()
         noisy_tokens[mask] = self.mask_token_id
         return noisy_tokens
+
+
+class SemanticProjectorStage(nn.Module):
+    """Experimental: projects hidden states to 15-D semantic space + residual."""
+
+    def __init__(self, input_dim: int, semantic_dim: int = 9, residual_dim: int = 64, n_sig_buckets: int = 4096) -> None:
+        super().__init__()
+        vocab_dim = semantic_dim - 1
+        self.vocab_dim = vocab_dim
+        self.semantic_dim = semantic_dim
+        self.vocab_head = nn.Sequential(
+            nn.Linear(input_dim, vocab_dim, bias=False),
+            nn.LayerNorm(vocab_dim),
+            nn.GELU(),
+            nn.Linear(vocab_dim, vocab_dim, bias=False),
+        )
+        self.sig_head = nn.Linear(input_dim, n_sig_buckets, bias=False)
+        self.residual_head = nn.Sequential(
+            nn.Linear(input_dim, residual_dim, bias=False),
+            nn.GELU(),
+            nn.Linear(residual_dim, residual_dim, bias=False),
+        )
+
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        if x.ndim == 2:
+            x = x.unsqueeze(1)
+        vocab_sem = self.vocab_head(x)
+        vocab_sem = F.normalize(vocab_sem, dim=-1)
+        vocab_sem = vocab_sem.squeeze(1)
+        sig_logits = self.sig_head(x.squeeze(1) if x.ndim == 3 else x)
+        sig_scalar = F.softmax(sig_logits, dim=-1).max(dim=-1).values.unsqueeze(-1)
+        sem = torch.cat([vocab_sem, sig_scalar], dim=-1)
+        res = self.residual_head(x)
+        return sem, res
+
+
+class SemanticAlignmentLossStage(nn.Module):
+    """Experimental: MSE loss between predicted and ground-truth 15-D vectors."""
+
+    def forward(self, pred: Tensor, target: Tensor) -> Tensor:
+        return F.mse_loss(pred.float(), target.detach().float())
+
+
+class SemanticHasherStage(nn.Module):
+    """Experimental: LSH hashing of semantic vectors inside a compiled graph."""
+
+    def __init__(self, dim: int = 9, tables: int = 8, planes: int = 12, seed: int = 42) -> None:
+        super().__init__()
+        import numpy as np
+        rng = np.random.RandomState(seed)
+        proj = torch.from_numpy(rng.randn(tables, planes, dim).astype("float32"))
+        self.register_buffer("proj", proj)
+        self.n_tables = tables
+
+    def forward(self, sem_vec: Tensor) -> Tensor:
+        bits = torch.einsum("tpd,bd->btp", self.proj.to(sem_vec.dtype), sem_vec) > 0
+        powers = (2 ** torch.arange(bits.shape[-1], device=bits.device, dtype=torch.long)).unsqueeze(0).unsqueeze(0)
+        return (bits.long() * powers).sum(dim=-1)
+
+
+class SemanticMoERouterStage(nn.Module):
+    """Experimental: MoE routing via cosine similarity to 15-D expert centroids."""
+
+    def __init__(self, n_experts: int, semantic_dim: int = 9, top_k: int = 2) -> None:
+        super().__init__()
+        self.centroids = nn.Parameter(torch.randn(n_experts, semantic_dim))
+        self.top_k = top_k
+
+    def forward(self, sem_vec: Tensor) -> tuple[Tensor, Tensor]:
+        c = F.normalize(self.centroids, dim=-1)
+        s = F.normalize(sem_vec, dim=-1)
+        if s.ndim == 3:
+            s = s.mean(dim=1)
+        sim = s @ c.T
+        topk_weights, topk_indices = torch.topk(sim, self.top_k, dim=-1)
+        topk_weights = F.softmax(topk_weights, dim=-1)
+        return topk_weights.unsqueeze(1), topk_indices.unsqueeze(1)
+
+
+class AttentionlessDecoderStage(nn.Module):
+    """Experimental: decodes via learned linear maps conditioned on semantic state.
+
+    Outputs (batch, 1, vocab_size) so the downstream CE loss can broadcast
+    against a single target token.
+    """
+
+    def __init__(self, semantic_dim: int = 9, residual_dim: int = 64, vocab_size: int = 256, n_buckets: int = 256) -> None:
+        super().__init__()
+        self.bucket_embed = nn.Embedding(n_buckets, residual_dim)
+        self.out_proj = nn.Linear(residual_dim, vocab_size, bias=False)
+        self.n_buckets = n_buckets
+
+    def forward(self, bucket_indices: Tensor, expert_output: Tensor) -> Tensor:
+        if bucket_indices.ndim == 2:
+            primary_bucket = bucket_indices[:, 0] % self.n_buckets
+        else:
+            primary_bucket = bucket_indices % self.n_buckets
+        bucket_bias = self.bucket_embed(primary_bucket)
+        if expert_output.ndim == 3:
+            expert_output = expert_output.squeeze(1)
+        combined = expert_output + bucket_bias
+        logits = self.out_proj(combined)
+        return logits.unsqueeze(1)
+
+
+class SoftmaxDistillationLossStage(nn.Module):
+    """Experimental: KL-divergence loss for softmax table distillation."""
+
+    def forward(self, teacher_logits: Tensor, student_logits: Tensor) -> Tensor:
+        teacher = F.log_softmax(teacher_logits.float().detach(), dim=-1)
+        student = F.log_softmax(student_logits.float(), dim=-1)
+        return F.kl_div(student, teacher.exp(), reduction="batchmean")
 
 
 class TTTLinearStage(nn.Module):

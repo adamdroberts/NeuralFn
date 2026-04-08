@@ -31,6 +31,11 @@ server/datasets/
 server/session_snapshots/
 server/artifacts/
 
+# Semantic data artifacts (generated, not tracked)
+neuralfn/data/semantic/*.npz
+neuralfn/data/semantic/*.npy
+neuralfn/data/semantic/*.pkl
+
 # Tooling caches
 .cache/
 *.tsbuildinfo

@@ -210,3 +210,29 @@ All preset builders accept `**kwargs` to override default values. Common kwargs 
 | `build_universal_llama_spec(**kwargs)` | universal | dense | compile | Universal transformer with ACT |
 | `build_llama_megakernel_spec(**kwargs)` | llama | dense | megakernel | Fused attention megakernel |
 | `build_kv_pca_llama_spec(**kwargs)` | llama | dense | compile | KV cache PCA compression |
+
+---
+
+## [Experimental] JEPA semantic hybrid fields and builder
+
+### Additional `ModelSpec` fields [Experimental]
+
+These fields exist on `ModelSpec` for the **[Experimental]** semantic hybrid preset and related graphs:
+
+| Field [Experimental] | Type | Default | Description |
+|----------------------|------|---------|-------------|
+| `semantic_dim` | `int` | `15` | Dimensionality of the interpretable semantic vector (default 15-D). |
+| `semantic_residual_dim` | `int` | `64` | Residual stream width paired with the semantic projection. |
+| `semantic_n_lsh_tables` | `int` | `8` | Number of LSH tables for bucketing semantic vectors. |
+| `semantic_n_lsh_planes` | `int` | `12` | Number of hyperplanes per table (hash width). |
+| `semantic_table_path` | `str` | `""` | Optional filesystem path for persistent LSH / semantic table data (empty = in-memory default). |
+
+### `build_jepa_semantic_hybrid_spec` [Experimental]
+
+```python
+def build_jepa_semantic_hybrid_spec(**kwargs: Any) -> ModelSpec
+```
+
+**[Experimental]** Factory for the `jepa_semantic_hybrid` template: JEPA objective with LLaMA-style blocks, MoE sparsity, `torch.compile` runtime, plus semantic projection, LSH hashing, semantic MoE routing, and an attentionless decoder in the generated graph. Same `**kwargs` overrides as other preset builders (`n_layer` / `num_layers`, `n_embd` / `model_dim`, `semantic_*`, MoE keys such as `experts` / `top_k`, etc.).
+
+**Disclaimer [Experimental]:** This builder and its `ModelSpec` fields are research prototypes and may change.

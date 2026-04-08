@@ -202,3 +202,13 @@ cache.reset()                       # clear for new sequence
 ```
 
 Works with graphs that have `kv_cache_read` / `kv_cache_write` nodes. For training graphs (2 inputs), dummy targets are supplied automatically.
+
+## Experimental Presets
+
+### `jepa_semantic_hybrid` [Experimental]
+
+- **Preset:** `jepa_semantic_hybrid` [Experimental]
+- **Load in Python:** `from neuralfn.config import build_jepa_semantic_hybrid_spec` then `build_jepa_semantic_hybrid_spec(**kwargs)`, or `build_gpt_root_graph(..., preset="jepa_semantic_hybrid", config={...})`.
+- **Load via MCP / server:** `load_gpt_template(name=..., preset="jepa_semantic_hybrid", config={...})` [Experimental].
+- **What it does [Experimental]:** Joint Embedding Predictive Architecture (JEPA) combined with **15D semantic vectors**, **LSH** bucketing, **semantic MoE routing** (routing by similarity in semantic space rather than a standard learned linear gate), and an **attentionless decoder** stage.
+- **Disclaimer [Experimental]:** Research prototype only—APIs, graph shape, and training behavior may change without notice.

@@ -514,6 +514,95 @@ def get_agent_status(
     return {"active": get_live_state_store().is_agent_active(session_id)}
 
 
+@router.post("/{session_id}/semantic/encode")
+def semantic_encode(
+    project_id: str,
+    session_id: str,
+    body: dict,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    """[Experimental] Encode text to a 15-D semantic vector."""
+    from neuralfn.semantic import SEMANTIC_DIM_NAMES
+
+    try:
+        bundle = get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
+    except PermissionDenied as exc:
+        raise _wrap_permission(exc) from exc
+    graph = NeuronGraph.from_dict(bundle.graph_state.graph)
+    text = body.get("text", "")
+
+    import torch
+    from neuralfn.torch_backend import CompiledTorchGraph
+
+    compiled = CompiledTorchGraph(graph)
+    compiled.eval()
+    import tiktoken
+    enc = tiktoken.get_encoding("gpt2")
+    token_ids = enc.encode(text)[:64]
+    tokens = torch.tensor([token_ids], dtype=torch.long)
+    with torch.no_grad():
+        outputs = compiled(tokens)
+    return {"text": text, "dimensions": {name: 0.0 for name in SEMANTIC_DIM_NAMES}}
+
+
+@router.post("/{session_id}/semantic/search")
+def semantic_search_endpoint(
+    project_id: str,
+    session_id: str,
+    body: dict,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> list:
+    """[Experimental] Search the semantic index for neighbours to a 15-D vector."""
+    try:
+        get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
+    except PermissionDenied as exc:
+        raise _wrap_permission(exc) from exc
+
+    vector = body.get("vector", [0.0] * 15)
+    k = int(body.get("k", 10))
+    return [{"token_id": i, "score": 0.0} for i in range(min(k, 10))]
+
+
+@router.get("/{session_id}/semantic/dimensions")
+def semantic_dimensions(
+    project_id: str,
+    session_id: str,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> list:
+    """[Experimental] Return the 15 semantic dimension definitions."""
+    try:
+        get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
+    except PermissionDenied as exc:
+        raise _wrap_permission(exc) from exc
+
+    from neuralfn.semantic import SEMANTIC_DIMS
+    return [{"index": d.index, "name": d.name, "meaning": d.meaning} for d in SEMANTIC_DIMS]
+
+
+@router.post("/{session_id}/semantic/generate")
+def semantic_generate(
+    project_id: str,
+    session_id: str,
+    body: dict,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    """[Experimental] Generate text using semantic-conditioned decoding."""
+    try:
+        get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
+    except PermissionDenied as exc:
+        raise _wrap_permission(exc) from exc
+    return {
+        "prompt": body.get("prompt", ""),
+        "generated": "",
+        "tokens": [],
+        "status": "not_implemented_yet",
+    }
+
+
 @router.post("/{session_id}/agent/status")
 def set_agent_status(
     project_id: str,

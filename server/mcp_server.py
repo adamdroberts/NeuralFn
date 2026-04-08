@@ -786,5 +786,63 @@ def delete_dataset(project_id: str, ds_name: str) -> dict:
     return _request("DELETE", f"{_project_prefix(project_id)}/datasets/{ds_name}")
 
 
+@mcp.tool()
+def reverse_engineer_to_semantic(project_id: str, session_id: str, text: str) -> dict:
+    """[Experimental] Map text to a 15-D semantic vector using the session's JEPA semantic encoder."""
+    with AgentSession(project_id, session_id):
+        return _request(
+            "POST",
+            f"{_session_prefix(project_id, session_id)}/semantic/encode",
+            {"text": text},
+        )
+
+
+@mcp.tool()
+def semantic_search(project_id: str, session_id: str, vector: list[float], k: int = 10) -> list:
+    """[Experimental] Find nearest neighbours to a 15-D semantic vector."""
+    with AgentSession(project_id, session_id):
+        return _request(
+            "POST",
+            f"{_session_prefix(project_id, session_id)}/semantic/search",
+            {"vector": vector, "k": k},
+        )
+
+
+@mcp.tool()
+def train_jepa_semantic(
+    project_id: str,
+    session_id: str,
+    dataset_names: list[str] | None = None,
+    epochs: int = 10,
+    learning_rate: float = 3e-4,
+) -> dict:
+    """[Experimental] Start a training run using the jepa_semantic_hybrid template."""
+    return train_start(
+        project_id=project_id,
+        session_id=session_id,
+        method="torch",
+        epochs=epochs,
+        learning_rate=learning_rate,
+        dataset_names=dataset_names,
+    )
+
+
+@mcp.tool()
+def generate_with_semantics(
+    project_id: str,
+    session_id: str,
+    prompt: str,
+    target_vector: list[float] | None = None,
+    max_tokens: int = 100,
+) -> dict:
+    """[Experimental] Generate tokens using the attention-less semantic decoder."""
+    with AgentSession(project_id, session_id):
+        return _request(
+            "POST",
+            f"{_session_prefix(project_id, session_id)}/semantic/generate",
+            {"prompt": prompt, "target_vector": target_vector, "max_tokens": max_tokens},
+        )
+
+
 if __name__ == "__main__":
     mcp.run()

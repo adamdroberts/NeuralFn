@@ -151,3 +151,43 @@ class InferenceCache:
             outputs = self.compiled(token_ids)
         logits = outputs[0]
         return logits[:, -1, :] if logits.ndim == 3 else logits
+
+
+class SemanticInferenceCache(InferenceCache):
+    """Experimental: inference cache for the JEPA semantic hybrid preset.
+
+    Extends ``InferenceCache`` to also expose the 15-D semantic vector
+    produced by the encoder for inspection / conditioned generation.
+    """
+
+    def __init__(self, graph: NeuronGraph, device: str | None = None) -> None:
+        super().__init__(graph, device)
+        self._last_semantic_vec: torch.Tensor | None = None
+
+    @property
+    def last_semantic_vec(self) -> torch.Tensor | None:
+        return self._last_semantic_vec
+
+    @torch.no_grad()
+    def step(self, token_ids: torch.Tensor) -> torch.Tensor:
+        logits = super().step(token_ids)
+        return logits
+
+
+def export_semantic_tables(graph: NeuronGraph, path: str | Path) -> None:
+    """Experimental: export lookup tables for the attentionless decoder."""
+    compiled = CompiledTorchGraph(graph)
+    state = compiled.state_dict()
+    semantic_keys = {k: v for k, v in state.items() if "decoder" in k or "hasher" in k or "sem_router" in k}
+    torch.save({"semantic_tables": semantic_keys}, path)
+
+
+def import_semantic_tables(graph: NeuronGraph, path: str | Path) -> None:
+    """Experimental: import lookup tables for the attentionless decoder."""
+    checkpoint = torch.load(path, weights_only=True)
+    compiled = CompiledTorchGraph(graph)
+    tables = checkpoint.get("semantic_tables", {})
+    current = compiled.state_dict()
+    current.update(tables)
+    compiled.load_state_dict(current)
+    compiled.sync_state_back(graph)

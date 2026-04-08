@@ -29,6 +29,12 @@ NeuralFn now ships Torch-backed template presets for:
 - autoregressive families: `nanogpt`, `gpt2`, `llama`, `moe` / `mixllama`, `llama_fast`, `mixllama_fast`, `jamba`, `ternary_b158`, `ttt_llama`, `universal_llama`, `llama_megakernel`, and `kv_pca_llama`
 - non-AR research/overlay families: `seq2seq`, `diffusion`, `llm_jepa`, and `hnet_lm`
 
+### Research Experiments
+
+> **Warning:** Experimental presets are research prototypes. Their APIs, performance targets, and architectural choices are exploratory and subject to change or removal. Do not depend on stability.
+
+- **`jepa_semantic_hybrid`** -- [Experimental] Hybrid JEPA Semantic LLM that fuses a Joint Embedding Predictive Architecture with a 9-dimensional grounded semantic space (8 vocabulary dimensions + 1 taxonomy hash), LSH-based O(1) nearest-neighbor lookup, semantic MoE routing (cosine similarity to learned centroids), and an attention-less decoder. The 8 vocabulary dimensions (`entity_type`, `action`, `property`, `emotion_sentiment`, `domain`, `temporal`, `causality`, `social_register`) are grounded in a 320-term vocabulary extracted from 100k matrix analysis. The 9th dimension compresses a taxonomy signature (entity+action+domain trigram) through learned softmax to a single float for O(1) topic matching. Ships with 100k training rows and the vocabulary in `neuralfn/data/semantic/`. See `neuralfn/semantic.py` for the data layer
+
 Backend capabilities (`TemplateSpec.backend_capabilities`) now drive runtime behavior:
 - **cache** -- KV cache nodes (`kv_cache_read` / `kv_cache_write`) can be inserted into attention graphs for inference-time autoregressive caching. `InferenceCache` in `neuralfn/inference.py` wraps a compiled graph for stateful step-by-step generation.
 - **quantized_export** -- `export_quantized_pt` / `import_quantized_pt` support int8 per-channel and ternary weight quantization for smaller checkpoint files. `KVQuantPackStage` now performs real int8 quantization instead of a plain concat.

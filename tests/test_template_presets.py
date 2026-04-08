@@ -37,6 +37,7 @@ PRESETS = [
     "universal_llama",
     "llama_megakernel",
     "kv_pca_llama",
+    "jepa_semantic_hybrid",
 ]
 
 

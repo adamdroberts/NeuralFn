@@ -62,6 +62,14 @@ This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_me
 | `llama_megakernel` | `build_llama_megakernel_spec` | llama | ar | dense | Fused attention, max-autotune compile |
 | `kv_pca_llama` | `build_kv_pca_llama_spec` | llama | ar | dense | PCA-compressed KV cache |
 
+### [Experimental] Presets
+
+| Preset [Experimental] | Builder [Experimental] | Backbone | Objective [Experimental] | Sparsity | Key features [Experimental] |
+|-----------------------|------------------------|----------|----------------------------|----------|----------------------------|
+| `jepa_semantic_hybrid` | `build_jepa_semantic_hybrid_spec` | llama | `jepa_semantic` | moe | JEPA + 15D semantic vectors + LSH + semantic MoE routing + attentionless decoder (research prototype). |
+
+**Disclaimer [Experimental]:** The `jepa_semantic_hybrid` preset is experimental; graph layout, config keys, and training APIs may change.
+
 ---
 
 ## Common config keys

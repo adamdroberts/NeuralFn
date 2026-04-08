@@ -1,7 +1,7 @@
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-ObjectiveType = Literal["ar", "diffusion", "jepa", "seq2seq"]
+ObjectiveType = Literal["ar", "diffusion", "jepa", "jepa_semantic", "seq2seq"]
 BackboneType = Literal["gpt2", "nanogpt", "llama", "mixllama", "jamba", "universal", "ttt", "hnet"]
 TokenizationType = Literal["sp", "byte_hnet"]
 SparsityType = Literal["dense", "moe"]
@@ -88,6 +88,11 @@ class ModelSpec:
     ema_decay: float = 0.99
     max_recurrence_steps: int = 4
     halt_epsilon: float = 0.01
+    semantic_dim: int = 9
+    semantic_residual_dim: int = 64
+    semantic_n_lsh_tables: int = 8
+    semantic_n_lsh_planes: int = 12
+    semantic_table_path: str = ""
 
 
 def model_spec_to_dict(spec: ModelSpec) -> dict[str, Any]:
@@ -120,6 +125,11 @@ def _base_model_spec(
         ema_decay=float(kwargs.get("ema_decay", 0.99)),
         max_recurrence_steps=int(kwargs.get("max_recurrence_steps", 4)),
         halt_epsilon=float(kwargs.get("halt_epsilon", 0.01)),
+        semantic_dim=int(kwargs.get("semantic_dim", 9)),
+        semantic_residual_dim=int(kwargs.get("semantic_residual_dim", 64)),
+        semantic_n_lsh_tables=int(kwargs.get("semantic_n_lsh_tables", 8)),
+        semantic_n_lsh_planes=int(kwargs.get("semantic_n_lsh_planes", 12)),
+        semantic_table_path=str(kwargs.get("semantic_table_path", "")),
     )
 
 
@@ -458,6 +468,36 @@ def build_kv_pca_llama_spec(**kwargs: Any) -> ModelSpec:
             num_kv_heads=kwargs.get("num_kv_heads", 2),
             attention_backend="sdpa",
             compression="kv_pca",
+        ),
+        default_tie_embeddings=False,
+    )
+
+
+def build_jepa_semantic_hybrid_spec(**kwargs: Any) -> ModelSpec:
+    """Experimental: Hybrid JEPA Semantic LLM preset."""
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(
+            objective="jepa_semantic",
+            backbone="llama",
+            sparsity="moe",
+            runtime="compile",
+        ),
+        block_spec=BlockSpec(
+            family="llama",
+            norm_type="rmsnorm",
+            mlp_type="swiglu",
+            pos_encoding="rope",
+            linear_bias=False,
+            dropout_p=0.0,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            multiple_of=kwargs.get("multiple_of", 256),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+            attention_backend="sdpa",
+            experts=kwargs.get("experts", 32),
+            top_k=kwargs.get("top_k", 2),
+            router_aux_loss_coef=kwargs.get("router_aux_loss_coef", 0.01),
         ),
         default_tie_embeddings=False,
     )

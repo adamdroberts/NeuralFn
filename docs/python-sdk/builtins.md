@@ -177,3 +177,20 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | `act_weighted_sum_module` | act_weighted_sum | module | 2 | 1 |
 | `universal_transformer_module` | universal_transformer | module | 1 | 2 |
 | `ttt_linear_module` | ttt_linear | module | 1 | 1 |
+
+---
+
+## Experimental Builtins [Experimental]
+
+The module neurons below are **[Experimental]** (JEPA semantic hybrid stack). Port names match `NeuronDef` I/O; shapes follow the active `module_config` on the node.
+
+| Attribute [Experimental] | `module_type` [Experimental] | Inputs [Experimental] | Outputs [Experimental] |
+|--------------------------|------------------------------|------------------------|-------------------------|
+| `semantic_projector_module` | `semantic_projector` | `hidden` | `semantic_vec`, `residual` |
+| `semantic_alignment_loss_module` | `semantic_alignment_loss` | `pred`, `target` | `loss` |
+| `semantic_hasher_module` | `semantic_hasher` | `semantic_vec` | `bucket_indices` |
+| `semantic_moe_router_module` | `semantic_moe_router` | `semantic_vec` | `expert_weights`, `expert_indices` |
+| `attentionless_decoder_module` | `attentionless_decoder` | `bucket_indices`, `expert_output` | `logits` |
+| `softmax_distillation_loss_module` | `softmax_distillation_loss` | `teacher_logits`, `student_logits` | `loss` |
+
+**Disclaimer [Experimental]:** These builtins are tied to a research prototype; port semantics and `module_config` keys may change.

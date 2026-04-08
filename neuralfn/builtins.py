@@ -837,6 +837,69 @@ ttt_linear_module = module_neuron(
     module_config={"input_dim": 128, "output_dim": 128, "hidden_dim": 16},
 )
 
+semantic_projector_module = module_neuron(
+    name="semantic_projector",
+    module_type="semantic_projector",
+    input_ports=[Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[
+        Port("semantic_vec", range=(-1, 1), precision=0.001, dtype="tensor"),
+        Port("residual", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config={"input_dim": 128, "semantic_dim": 9, "residual_dim": 64, "n_sig_buckets": 4096},
+)
+
+semantic_alignment_loss_module = module_neuron(
+    name="semantic_alignment_loss",
+    module_type="semantic_alignment_loss",
+    input_ports=[
+        Port("pred", range=(-1, 1), precision=0.001, dtype="tensor"),
+        Port("target", range=(-1, 1), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    module_config={},
+)
+
+semantic_hasher_module = module_neuron(
+    name="semantic_hasher",
+    module_type="semantic_hasher",
+    input_ports=[Port("semantic_vec", range=(-1, 1), precision=0.001, dtype="tensor")],
+    output_ports=[Port("bucket_indices", range=(0, 1_000_000), precision=1.0, dtype="tensor")],
+    module_config={"dim": 9, "tables": 8, "planes": 12, "seed": 42},
+)
+
+semantic_moe_router_module = module_neuron(
+    name="semantic_moe_router",
+    module_type="semantic_moe_router",
+    input_ports=[Port("semantic_vec", range=(-1, 1), precision=0.001, dtype="tensor")],
+    output_ports=[
+        Port("expert_weights", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("expert_indices", range=(0, 100), precision=1.0, dtype="tensor"),
+    ],
+    module_config={"n_experts": 32, "semantic_dim": 9, "top_k": 2},
+)
+
+attentionless_decoder_module = module_neuron(
+    name="attentionless_decoder",
+    module_type="attentionless_decoder",
+    input_ports=[
+        Port("bucket_indices", range=(0, 1_000_000), precision=1.0, dtype="tensor"),
+        Port("expert_output", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"semantic_dim": 9, "residual_dim": 64, "vocab_size": 256, "n_buckets": 256},
+)
+
+softmax_distillation_loss_module = module_neuron(
+    name="softmax_distillation_loss",
+    module_type="softmax_distillation_loss",
+    input_ports=[
+        Port("teacher_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("student_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    module_config={},
+)
+
 _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "sigmoid": sigmoid,
     "relu": relu,
@@ -918,6 +981,12 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "act_weighted_sum_module": act_weighted_sum_module,
     "universal_transformer_module": universal_transformer_module,
     "ttt_linear_module": ttt_linear_module,
+    "semantic_projector_module": semantic_projector_module,
+    "semantic_alignment_loss_module": semantic_alignment_loss_module,
+    "semantic_hasher_module": semantic_hasher_module,
+    "semantic_moe_router_module": semantic_moe_router_module,
+    "attentionless_decoder_module": attentionless_decoder_module,
+    "softmax_distillation_loss_module": softmax_distillation_loss_module,
 }
 
 
@@ -1004,6 +1073,12 @@ class BuiltinNeurons:
     act_weighted_sum_module = act_weighted_sum_module
     universal_transformer_module = universal_transformer_module
     ttt_linear_module = ttt_linear_module
+    semantic_projector_module = semantic_projector_module
+    semantic_alignment_loss_module = semantic_alignment_loss_module
+    semantic_hasher_module = semantic_hasher_module
+    semantic_moe_router_module = semantic_moe_router_module
+    attentionless_decoder_module = attentionless_decoder_module
+    softmax_distillation_loss_module = softmax_distillation_loss_module
 
     @classmethod
     def all(cls) -> list[NeuronDef]:
@@ -1115,4 +1190,10 @@ __all__ = [
     "act_weighted_sum_module",
     "universal_transformer_module",
     "ttt_linear_module",
+    "semantic_projector_module",
+    "semantic_alignment_loss_module",
+    "semantic_hasher_module",
+    "semantic_moe_router_module",
+    "attentionless_decoder_module",
+    "softmax_distillation_loss_module",
 ]
