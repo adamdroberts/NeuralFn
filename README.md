@@ -4,9 +4,22 @@ NeuralFn is a graph-native neural network framework where each neuron can be a b
 
 NeuralFn supports both a scalar graph runtime and a PyTorch-backed `torch` runtime for trainable module nodes such as GPT.
 
-> **Full documentation:** See the [`docs/`](docs/README.md) directory for the complete SDK reference, framework guide, REST API reference, MCP tools reference, and more. AI coding agent skills are available in [`.cursor/skills/`](docs/agent-skills.md).
-
 > **Pre-alpha notice:** NeuralFn is in active pre-alpha development. The SDK, REST API, MCP tools, and graph format are all subject to rapid, breaking changes without prior deprecation. Do not depend on API stability at this stage. See the [CHANGELOG](CHANGELOG.md) for a running list of what has changed.
+
+## Documentation
+
+**[Read the full documentation](docs/README.md)**
+
+| Section | What it covers |
+|---------|---------------|
+| [Getting Started](docs/getting-started.md) | Installation, quickstart, your first graph |
+| [Framework Guide](docs/framework-guide/README.md) | How to build with NeuralFn in Python -- neurons, graphs, subgraphs, training, inference |
+| [Python SDK Reference](docs/python-sdk/README.md) | Every class, function, method, and type in the `neuralfn` package |
+| [REST API Reference](docs/rest-api/README.md) | All HTTP endpoints with request/response shapes |
+| [MCP Tools Reference](docs/mcp/README.md) | All MCP tools for AI agent integration |
+| [Server Internals](docs/server/README.md) | Services, ORM models, auth, configuration |
+| [Editor Reference](docs/editor/README.md) | React frontend: store, components, API client |
+| [Agent Skills](docs/agent-skills.md) | AI coding agent skills for Cursor and Codex |
 
 ## Current state of play
 
