@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-04-08 Full SDK documentation and agent skills
+
+#### Added
+
+- Comprehensive `docs/` directory with 50+ markdown pages covering every part of the platform:
+  - **Framework guide** (`docs/framework-guide/`): 9 tutorial-oriented pages teaching developers how to build with NeuralFn in Python -- defining neurons, building graphs, subgraphs/variants, torch models, templates/presets, training workflows, inference/export, and datasets.
+  - **Python SDK reference** (`docs/python-sdk/`): 15 pages documenting every public class, function, method, property, and type in the `neuralfn` package including all 58 builtin neurons, all 16 presets, all 40+ Stage classes, and all training methods.
+  - **REST API reference** (`docs/rest-api/`): 8 pages covering all 60+ HTTP endpoints with method, path, auth requirements, request/response shapes, and error codes.
+  - **MCP tools reference** (`docs/mcp/`): 7 pages documenting all 35+ MCP tools with parameters, descriptions, and workflow examples.
+  - **Server internals** (`docs/server/`): 6 pages covering Settings, ORM models, auth system, services, and Pydantic models.
+  - **Editor reference** (`docs/editor/`): 6 pages covering the TypeScript API client, Zustand store, graph utilities, components, and pages.
+  - **Testing guide** (`docs/testing.md`): test suite overview with targeted check commands.
+  - **Agent skills page** (`docs/agent-skills.md`): links to all AI coding agent skills with descriptions.
+- Three AI coding agent skills in `.cursor/skills/`:
+  - `neuralfn-python-sdk`: teaches agents how to build graphs with the core Python SDK.
+  - `neuralfn-torch`: teaches agents how to build, train, and export torch-backed models using presets and the template system.
+  - `neuralfn-mcp` (updated): expanded with all 16 presets, full config key table, missing tools (`load_dataset_source`, `poll_training_status`, `get_training_status`, `set_dataset_access`), and non-AR workflow examples.
+- `AGENTS.md` updated with documentation maintenance rules: any change to public APIs must update the corresponding `docs/` page and relevant agent skills.
+- `README.md` updated with link to `docs/` directory.
+
+#### Notes
+
+- The framework guide and API reference are complementary: the guide teaches how to build, the reference has exact signatures. They cross-link to each other.
+- All docs use relative markdown links for GitHub navigation.
+- Agent skills are designed to stay under 500 lines for optimal context window usage, with supporting reference files where needed.
+
 ### 2026-04-08 JEPA block masking
 
 #### Added

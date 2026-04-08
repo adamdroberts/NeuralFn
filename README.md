@@ -4,6 +4,10 @@ NeuralFn is a graph-native neural network framework where each neuron can be a b
 
 NeuralFn supports both a scalar graph runtime and a PyTorch-backed `torch` runtime for trainable module nodes such as GPT.
 
+> **Full documentation:** See the [`docs/`](docs/README.md) directory for the complete SDK reference, framework guide, REST API reference, MCP tools reference, and more. AI coding agent skills are available in [`.cursor/skills/`](docs/agent-skills.md).
+
+> **Pre-alpha notice:** NeuralFn is in active pre-alpha development. The SDK, REST API, MCP tools, and graph format are all subject to rapid, breaking changes without prior deprecation. Do not depend on API stability at this stage. See the [CHANGELOG](CHANGELOG.md) for a running list of what has changed.
+
 ## Current state of play
 
 NeuralFn now ships Torch-backed template presets for:
