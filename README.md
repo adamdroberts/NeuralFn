@@ -6,7 +6,16 @@ NeuralFn supports both a scalar graph runtime and a PyTorch-backed `torch` runti
 
 ## Current state of play
 
-NeuralFn includes Torch-backed large language model templates for NanoGPT, GPT-2, Llama, and MoE architectures. Project datasets are managed from a dedicated `Datasets` surface, then attached to graphs through a `dataset_source` node that feeds tokenized data into torch graphs. Trained weights are serialized back into the graph JSON via `module_state`, so the graph keeps both architecture and learned parameters together.
+NeuralFn now ships Torch-backed template presets for:
+- autoregressive families: `nanogpt`, `gpt2`, `llama`, `moe` / `mixllama`, `llama_fast`, `mixllama_fast`, `jamba`, `ternary_b158`, `ttt_llama`, and `universal_llama`
+- non-AR research/overlay families: `seq2seq`, `diffusion`, `llm_jepa`, and `hnet_lm`
+
+Project datasets are managed from a dedicated `Datasets` surface, then attached to graphs through a `dataset_source` node that now adapts its output roles to the active template shape:
+- AR / H-Net / Universal: `tokens`, `targets`
+- Seq2Seq: `enc_tokens`, `dec_tokens`, `targets`
+- Diffusion / JEPA: `tokens`
+
+`hnet_lm` uses a raw-byte training path (`vocab_size == 256`) instead of the normal tokenized loader. Trained weights are serialized back into graph JSON via `module_state`, and PyTorch weight round-tripping plus inference helpers live in `neuralfn/inference.py`.
 
 The platform foundation now adds:
 - authenticated users with HTTP-only session cookies
@@ -16,10 +25,6 @@ The platform foundation now adds:
 - optional Redis-backed live state for refresh-safe restore and agent/run coordination
 - project/session-scoped REST APIs and MCP tools
 
-**Current gaps**
-- Need to add an export for `.pt` files.
-- Need to add inference support for the custom training / graph format.
-
 ## How it works
 
 1. **Choose neurons** from built-ins or define custom Python functions with `@neuron` and typed I/O ports.
@@ -27,6 +32,19 @@ The platform foundation now adds:
 3. **Probe & train** — scalar graphs sample each neuron to build differentiable surrogate models, then train connection weights via gradient descent or evolutionary search.
 4. **Torch modules** — tensor-native graphs can train serialized module nodes through a PyTorch backend, including nested subgraphs built from multiple trainable stages.
 5. **Use the platform** — store graphs inside project/session workspaces, inspect runs and analytics, and drive the same scoped graph APIs from the UI or MCP tools.
+
+## Torch template workflows
+
+- The editor toolbar, `/api/.../templates/gpt/*` routes, and MCP `load_gpt_template` all accept the same shipped preset names.
+- Template graphs persist a serialized `template_spec` in `graph.torch_config`, so training, tracing, dataset loading, and exports can recover the original objective/backbone/tokenization contract without inferring it from node names.
+- Dataset-backed tracing and training now route by input role rather than assuming only `(tokens, targets)`. That is what enables single-input JEPA/diffusion graphs and three-input Seq2Seq graphs to use the normal `dataset_source` workflow.
+- `llm_jepa` uses an EMA target encoder, `diffusion` samples timesteps internally, and `hnet_lm` switches the dataset pipeline to raw bytes automatically.
+- Saved graphs that still reference older block-family names such as `attn_block`, `transformer_block`, or `mixllama` now resolve through a compatibility alias layer instead of failing during template normalization when the equivalent current family is present.
+
+## Editor behavior
+
+- Toolbar, template, custom-node, subgraph, and variant-library inserts now default to the center of the visible graph viewport with a small stagger, so newly added nodes appear on screen even after panning or zooming away from the origin.
+- Direct graph edits still preserve explicit positions; the viewport anchor is only the fallback when an add action does not originate from a canvas click.
 
 ## Architecture at a glance
 
@@ -73,6 +91,8 @@ By default, the backend starts with a local SQLite database at `neuralfn.db`, st
 | `NEURALFN_ALLOW_ORIGINS` | Comma-separated CORS origins. Must include the frontend origin when using cookies. | `http://127.0.0.1:5173,http://localhost:5173` |
 | `NEURALFN_SESSION_COOKIE_NAME` | Session cookie name used by the web app and API. | `neuralfn_session` |
 | `NEURALFN_SESSION_TTL_SECONDS` | Session lifetime in seconds. | `1209600` |
+
+`.gitignore` excludes the default SQLite file, downloaded datasets under `server/datasets/`, session snapshots, artifacts, local `.env` files, and common caches so they are not committed.
 
 If you want migration-managed startup instead of auto-creating tables, run:
 
