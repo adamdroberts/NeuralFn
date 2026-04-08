@@ -8,6 +8,7 @@ from .neuron import NeuronDef, module_neuron, neuron
 from .port import Port
 from .torch_backend import (
     default_attention_config,
+    default_fused_attention_config,
     default_gpt_config,
     default_kv_pca_config,
     default_kv_quant_unpack_config,
@@ -416,6 +417,14 @@ causal_self_attention_module = module_neuron(
     module_config=default_attention_config(),
 )
 
+fused_causal_attention_module = module_neuron(
+    name="fused_causal_attention",
+    module_type="fused_causal_attention",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("attn_out", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config=default_fused_attention_config(),
+)
+
 residual_add_module = module_neuron(
     name="residual_add",
     module_type="residual_add",
@@ -730,7 +739,7 @@ jepa_mask_module = module_neuron(
         Port("masked_tokens", range=(0, 65535), precision=1.0, dtype="tokens"),
         Port("mask", range=(0, 1), precision=0.001, dtype="tensor"),
     ],
-    module_config={"mask_ratio": 0.5, "mask_token_id": 0},
+    module_config={"mask_ratio": 0.5, "mask_token_id": 0, "mask_strategy": "random", "num_blocks": 4, "min_block_ratio": 0.1, "max_block_ratio": 0.25},
 )
 
 latent_pool_module = module_neuron(
@@ -867,6 +876,7 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "scaled_dot_product_attention_module": scaled_dot_product_attention_module,
     "residual_mix_module": residual_mix_module,
     "causal_self_attention_module": causal_self_attention_module,
+    "fused_causal_attention_module": fused_causal_attention_module,
     "residual_add_module": residual_add_module,
     "mlp_relu2_module": mlp_relu2_module,
     "tied_lm_head_module": tied_lm_head_module,
@@ -952,6 +962,7 @@ class BuiltinNeurons:
     scaled_dot_product_attention_module = scaled_dot_product_attention_module
     residual_mix_module = residual_mix_module
     causal_self_attention_module = causal_self_attention_module
+    fused_causal_attention_module = fused_causal_attention_module
     residual_add_module = residual_add_module
     mlp_relu2_module = mlp_relu2_module
     tied_lm_head_module = tied_lm_head_module
@@ -1062,6 +1073,7 @@ __all__ = [
     "scaled_dot_product_attention_module",
     "residual_mix_module",
     "causal_self_attention_module",
+    "fused_causal_attention_module",
     "residual_add_module",
     "mlp_relu2_module",
     "tied_lm_head_module",

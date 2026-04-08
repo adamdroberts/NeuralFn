@@ -55,6 +55,7 @@ EXPECTED_BUILTINS = [
     "scaled_dot_product_attention_module",
     "residual_mix_module",
     "causal_self_attention_module",
+    "fused_causal_attention_module",
     "residual_add_module",
     "mlp_relu2_module",
     "tied_lm_head_module",

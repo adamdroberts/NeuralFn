@@ -378,16 +378,14 @@ class NeuronGraph:
                     resolved = clone_graph(resolve_variant_graph(family, version))
                     expected_inputs = resolved.flattened_input_ports(ndef.input_aliases or None)
                     expected_outputs = resolved.flattened_output_ports(ndef.output_aliases or None)
-                    if ndef.input_ports and not ports_compatible(ndef.input_ports, expected_inputs):
-                        raise ValueError(
-                            f"Variant '{family}@{version}' is incompatible with linked node '{ndef.name}' inputs"
-                        )
-                    if ndef.output_ports and not ports_compatible(ndef.output_ports, expected_outputs):
-                        raise ValueError(
-                            f"Variant '{family}@{version}' is incompatible with linked node '{ndef.name}' outputs"
-                        )
-                    ndef.subgraph = resolved
-                    ndef.refresh_interface_ports()
+                    inputs_ok = not ndef.input_ports or ports_compatible(ndef.input_ports, expected_inputs)
+                    outputs_ok = not ndef.output_ports or ports_compatible(ndef.output_ports, expected_outputs)
+                    if inputs_ok and outputs_ok:
+                        ndef.subgraph = resolved
+                        ndef.refresh_interface_ports()
+                    elif ndef.subgraph is not None:
+                        resolve_graph(ndef.subgraph)
+                        ndef.refresh_interface_ports()
                     continue
                 if ndef.subgraph is not None:
                     resolve_graph(ndef.subgraph)
