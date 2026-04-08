@@ -13,7 +13,7 @@ description: >-
 
 Use this skill when building, training, or exporting torch-backed models with the NeuralFn Python API. For core graph operations, see `neuralfn-python-sdk`. For MCP tools, see `neuralfn-mcp`.
 
-For complete reference, see [docs/python-sdk/torch-backend.md](docs/python-sdk/torch-backend.md) and [docs/framework-guide/templates-and-presets.md](docs/framework-guide/templates-and-presets.md).
+For detailed torch backend and preset reference, see [presets-reference.md](presets-reference.md).
 
 ## End-to-end example: build, train, export
 

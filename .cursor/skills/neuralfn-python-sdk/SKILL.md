@@ -12,7 +12,7 @@ description: >-
 
 Use this skill when writing Python code that imports and uses the `neuralfn` package directly. For MCP tool operations, use the `neuralfn-mcp` skill instead.
 
-For complete API details, see [docs/python-sdk/](docs/python-sdk/README.md). For tutorials, see [docs/framework-guide/](docs/framework-guide/README.md).
+For the complete class/method reference and graph-building walkthrough, see [reference.md](reference.md).
 
 ## Core imports
 
