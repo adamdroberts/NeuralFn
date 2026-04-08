@@ -331,24 +331,24 @@ class WorkspaceService:
             )
         except RevisionConflict:
             raise
-        bundle.session.latest_revision = state.revision
-        bundle.session.updated_at = utcnow()
-        bundle.session.updated_by_user_id = user.id
-        db.commit()
-        db.refresh(bundle.session)
-        if persist_snapshot:
-            self.create_snapshot(
-                db,
-                project=bundle.project,
-                session_row=bundle.session,
-                graph=state.graph,
-                revision=state.revision,
-                created_by_user_id=user.id,
-                reason=snapshot_reason,
-            )
+            
+        # Background the SQLite persistence
+        from .persistence_worker import get_persistence_worker
+        get_persistence_worker().enqueue_update(
+            session_id=session_id,
+            revision=state.revision,
+            user_id=user.id,
+            graph=state.graph,
+            persist_snapshot=persist_snapshot,
+            snapshot_reason=snapshot_reason
+        )
+        
+        serialized_session = self.serialize_session(bundle.session)
+        serialized_session["latest_revision"] = state.revision
+        
         return {
             "project": self.serialize_project(bundle.project, role=self._project_access(db, user, project_id).role),
-            "session": self.serialize_session(bundle.session),
+            "session": serialized_session,
             "graph": state.graph,
             "revision": state.revision,
         }

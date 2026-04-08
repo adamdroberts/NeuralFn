@@ -12,7 +12,7 @@ class ServerDatasetLoadingTest(unittest.TestCase):
         graph.torch_config = {"device": "cpu", "amp_dtype": "bfloat16"}
         put_graph(GraphModel.model_validate(graph.to_dict()))
 
-        with patch("server.routes.download_hf_dataset", return_value={"name": "HuggingFaceFW__fineweb"}):
+        with patch("server.services.graph_ops.download_hf_dataset", return_value={"name": "HuggingFaceFW__fineweb"}):
             result = load_dataset(
                 LoadDatasetRequest(
                     hf_path="HuggingFaceFW/fineweb",
@@ -43,7 +43,7 @@ class ServerDatasetLoadingTest(unittest.TestCase):
         put_graph(GraphModel.model_validate(graph.to_dict()))
 
         with patch(
-            "server.routes.download_hf_dataset",
+            "server.services.graph_ops.download_hf_dataset",
             return_value={"name": "willdepueoai__parameter-golf__sp1024__train10"},
         ) as mocked:
             load_dataset(

@@ -14,6 +14,9 @@ const VARIANT_FAMILY_ALIASES: Record<string, string[]> = {
   gpt2: ["transformer_block"],
   nanogpt: ["transformer_block"],
   llama: ["transformer_block"],
+  attn_block: ["transformer_block"],
+  transformer_block: ["attn_block"],
+  mixllama: ["attn_block"],
 };
 
 export interface FlowNodeData extends Record<string, unknown> {

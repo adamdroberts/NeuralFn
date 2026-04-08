@@ -235,7 +235,7 @@ class ServerNestedGraphsTest(unittest.TestCase):
         payload["nodes"].pop("targets_in")
         put_graph(GraphModel.model_validate(payload))
 
-        with patch("server.routes.load_dataset_tokens", return_value=([[0, 1, 2, 3]], [[1, 2, 3, 4]])):
+        with patch("server.services.graph_ops.load_dataset_tokens", return_value=([[0, 1, 2, 3]], [[1, 2, 3, 4]])):
             response = torch_trace(ExecuteRequest())
 
         self.assertEqual("dataset", response["source"])

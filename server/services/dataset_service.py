@@ -11,6 +11,7 @@ from ..dataset_manager import (
     download_hf_dataset,
     get_local_dataset_info,
     list_local_datasets,
+    load_dataset_bytes,
     load_dataset_tokens,
     upload_local_file,
 )
@@ -218,6 +219,18 @@ class DatasetService:
     ) -> tuple[list[list[int]], list[list[int]]]:
         names = self.ensure_dataset_access(db, user, project_id=project_id, dataset_names=dataset_names)
         return load_dataset_tokens(names, seq_len=seq_len)
+
+    def load_dataset_bytes_for_project(
+        self,
+        db: Session,
+        user: User,
+        *,
+        project_id: str,
+        dataset_names: Iterable[str],
+        seq_len: int,
+    ) -> tuple[list[list[int]], list[list[int]]]:
+        names = self.ensure_dataset_access(db, user, project_id=project_id, dataset_names=dataset_names)
+        return load_dataset_bytes(names, seq_len=seq_len)
 
     def _upsert_asset(
         self,

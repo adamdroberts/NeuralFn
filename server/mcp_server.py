@@ -253,7 +253,7 @@ def list_builtins() -> list:
 
 @mcp.tool()
 def load_gpt_template(project_id: str, session_id: str, name: str = "gpt", preset: str = "nanogpt", config: dict | None = None) -> dict:
-    """Build and load a GPT/Llama/MoE graph into one project/session."""
+    """Build and load a shipped language-model template into one project/session."""
     with AgentSession(project_id, session_id):
         payload = {"name": name, "config": {"preset": preset, **(config or {})}}
         result = _request("POST", f"{_session_prefix(project_id, session_id)}/templates/gpt/apply", payload)

@@ -215,9 +215,12 @@ class MemoryLiveStateStore(LiveStateStore):
 class RedisLiveStateStore(LiveStateStore):
     def __init__(self, redis_url: str) -> None:
         import redis
+        import logging
+        logger = logging.getLogger(__name__)
 
         self._redis = redis.Redis.from_url(redis_url, decode_responses=True)
         self._redis.ping()
+        logger.info(f"Connected to Redis live state store at {redis_url}")
 
     def _session_graph_key(self, session_id: str) -> str:
         return f"neuralfn:session:{session_id}:graph"

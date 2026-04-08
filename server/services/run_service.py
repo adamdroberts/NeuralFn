@@ -149,7 +149,7 @@ class RunService:
         project_id: str,
         graph: NeuronGraph,
         body: TrainRequest,
-    ) -> tuple[np.ndarray, np.ndarray, list[str], int]:
+    ) -> tuple[np.ndarray | list, np.ndarray | list, list[str], int]:
         dataset_names, seq_len = self._resolve_dataset_inputs(
             db,
             user,
@@ -157,18 +157,29 @@ class RunService:
             graph=graph,
             body=body,
         )
+        template_spec = dict(graph.torch_config.get("template_spec", {}))
+        tokenization = str(template_spec.get("template", {}).get("tokenization", "sp"))
         if dataset_names:
-            inputs, targets = self._datasets.load_dataset_tokens_for_project(
-                db,
-                user,
-                project_id=project_id,
-                dataset_names=dataset_names,
-                seq_len=seq_len,
-            )
-            return np.array(inputs, dtype=np.float32), np.array(targets, dtype=np.float32), dataset_names, seq_len
+            if tokenization == "byte_hnet":
+                inputs, targets = self._datasets.load_dataset_bytes_for_project(
+                    db,
+                    user,
+                    project_id=project_id,
+                    dataset_names=dataset_names,
+                    seq_len=seq_len,
+                )
+            else:
+                inputs, targets = self._datasets.load_dataset_tokens_for_project(
+                    db,
+                    user,
+                    project_id=project_id,
+                    dataset_names=dataset_names,
+                    seq_len=seq_len,
+                )
+            return inputs, targets, dataset_names, seq_len
         return (
-            np.array(body.train_inputs, dtype=np.float32),
-            np.array(body.train_targets, dtype=np.float32),
+            body.train_inputs,
+            body.train_targets,
             [],
             int(body.seq_len or 64),
         )
@@ -197,16 +208,19 @@ class RunService:
         with self._lock:
             self._active_runs.pop(handle.run_id, None)
 
+        # Background the SQLite update
+        from .persistence_worker import get_persistence_worker
+        snapshot = self._live_state.get_run_snapshot(handle.run_id, history_limit=0)
+        get_persistence_worker().enqueue_run_update(
+            run_id=handle.run_id,
+            status=status,
+            last_loss=snapshot.get("last_loss") if snapshot else None,
+            last_step=snapshot.get("last_step") if snapshot else None,
+            error=error,
+            completed_at=time.time()
+        )
+
         with self._session_factory() as db:
-            self._update_run_row(
-                db,
-                handle.run_id,
-                status=status,
-                last_loss=self._live_state.get_run_snapshot(handle.run_id, history_limit=0).get("last_loss"),  # type: ignore[union-attr]
-                last_step=self._live_state.get_run_snapshot(handle.run_id, history_limit=0).get("last_step"),  # type: ignore[union-attr]
-                error=error,
-                completed_at=now,
-            )
             user = db.get(User, handle.started_by_user_id) if handle.started_by_user_id else None
             session_row = db.get(EditorSession, handle.session_id)
             if user is not None and session_row is not None and status in {"completed", "stopped"}:
@@ -353,21 +367,38 @@ class RunService:
                 raise ValueError("A training run is already active for this session")
 
         graph = NeuronGraph.from_dict(bundle.graph_state.graph)
-        train_in, train_tgt, dataset_names, seq_len = self._load_training_arrays(
-            db,
-            user,
-            project_id=project_id,
-            graph=graph,
-            body=body,
-        )
+        
         use_torch = (
             body.method == "torch"
             or graph.training_method == "torch"
             or graph.runtime == "torch"
             or graph.has_module_nodes()
         )
+        
+        # Optimization: Don't load full dataset into memory if we are using TorchTrainer
+        # and there is an attached dataset_source node.
+        attached_ds_cfg = find_attached_dataset_config(graph)
+        if use_torch and attached_ds_cfg and not body.dataset_names:
+            train_in, train_tgt = np.array([]), np.array([])
+            dataset_names = attached_ds_cfg.get("dataset_names", [])
+            seq_len = int(body.seq_len or attached_ds_cfg.get("seq_len") or 64)
+            # Just ensure access
+            self._datasets.ensure_dataset_access(db, user, project_id=project_id, dataset_names=dataset_names)
+        else:
+            train_in, train_tgt, dataset_names, seq_len = self._load_training_arrays(
+                db,
+                user,
+                project_id=project_id,
+                graph=graph,
+                body=body,
+            )
+
         use_legacy = body.method in {"surrogate", "evolutionary"} and not graph.has_nested_subgraphs() and not use_torch
         resolved_method = "torch" if use_torch else (body.method if use_legacy else "hybrid")
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Starting training run: requested_method={body.method}, resolved_method={resolved_method}, torch={use_torch}")
 
         run_row = TrainingRun(
             project_id=project_id,
@@ -405,14 +436,17 @@ class RunService:
         def record_event(payload: dict[str, Any]) -> dict[str, Any]:
             event = self._live_state.append_run_event(run_row.id, payload)
             handle.progress_queue.append(event)
-            with self._session_factory() as event_db:
-                self._update_run_row(
-                    event_db,
-                    run_row.id,
-                    last_loss=event.get("loss"),
-                    last_step=event.get("local_step", event.get("step")),
-                )
+            # Background the SQLite update
+            from .persistence_worker import get_persistence_worker
+            get_persistence_worker().enqueue_run_update(
+                run_id=run_row.id,
+                last_loss=event.get("loss"),
+                last_step=event.get("local_step", event.get("step")),
+            )
             return event
+
+        # Emit initial event
+        record_event({"status": "starting", "message": f"Training session started using {resolved_method} method"})
 
         def on_progress(step: int, loss: float) -> None:
             record_event({"step": step, "loss": loss})
@@ -428,7 +462,7 @@ class RunService:
             )
             trainer = SurrogateTrainer(graph, cfg)
             handle.trainer = trainer
-            trainer.train(train_in, train_tgt, on_epoch=on_progress)
+            trainer.train(np.asarray(train_in, dtype=np.float32), np.asarray(train_tgt, dtype=np.float32), on_epoch=on_progress)
 
         def run_evolutionary() -> None:
             cfg = EvoConfig(
@@ -437,7 +471,7 @@ class RunService:
             )
             trainer = EvolutionaryTrainer(graph, cfg)
             handle.trainer = trainer
-            trainer.train(train_in, train_tgt, on_generation=on_progress)
+            trainer.train(np.asarray(train_in, dtype=np.float32), np.asarray(train_tgt, dtype=np.float32), on_generation=on_progress)
 
         def run_hybrid() -> None:
             cfg = HybridConfig(
@@ -455,7 +489,7 @@ class RunService:
             )
             trainer = HybridTrainer(graph, cfg)
             handle.trainer = trainer
-            trainer.train(train_in, train_tgt, on_step=on_hybrid_progress)
+            trainer.train(np.asarray(train_in, dtype=np.float32), np.asarray(train_tgt, dtype=np.float32), on_step=on_hybrid_progress)
 
         def run_torch() -> None:
             cfg = TorchTrainConfig(
@@ -468,14 +502,7 @@ class RunService:
             )
             trainer = TorchTrainer(graph, cfg)
             handle.trainer = trainer
-            if dataset_names:
-                trainer.train(
-                    train_in.astype(int).tolist(),
-                    train_tgt.astype(int).tolist(),
-                    on_epoch=on_progress,
-                )
-            else:
-                trainer.train(body.train_inputs, body.train_targets, on_epoch=on_progress)
+            trainer.train(train_in, train_tgt, on_epoch=on_progress)
 
         target = (
             run_torch

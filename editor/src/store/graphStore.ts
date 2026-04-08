@@ -58,6 +58,8 @@ interface GraphState {
   rootGraph: GraphData;
   currentPath: GraphPathSegment[];
   selectedNodeId: string | null;
+  preferredInsertPosition: { x: number; y: number } | null;
+  insertSequence: number;
   builtins: NeuronDefData[];
   lossHistory: LossPoint[];
   isTraining: boolean;
@@ -77,6 +79,7 @@ interface GraphState {
   setSaving: (value: boolean) => void;
   setSaveError: (message: string | null) => void;
   setRootGraph: (graph: GraphData) => void;
+  setPreferredInsertPosition: (position: { x: number; y: number } | null) => void;
   applyActiveNodeChanges: (changes: NodeChange[]) => void;
   applyActiveEdgeChanges: (changes: EdgeChange[]) => void;
   connectActiveGraph: (connection: Connection) => void;
@@ -114,13 +117,33 @@ interface GraphState {
 }
 
 const initialGraph = createEmptyGraph("Root graph");
+const INSERT_FALLBACK_POSITION = { x: 160, y: 120 };
+const INSERT_STAGGER_OFFSETS = [
+  [0, 0],
+  [56, 0],
+  [-56, 0],
+  [0, 56],
+  [0, -56],
+  [56, 56],
+  [-56, 56],
+  [56, -56],
+  [-56, -56],
+] as const;
 
 function createNodeId(prefix = "n"): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-function createNodePosition(baseX = 100, baseY = 100) {
-  return [baseX + Math.random() * 280, baseY + Math.random() * 220] as [number, number];
+function createNodePosition(
+  state: Pick<GraphState, "preferredInsertPosition" | "insertSequence">,
+  explicitPosition?: [number, number],
+) {
+  if (explicitPosition) {
+    return explicitPosition;
+  }
+  const anchor = state.preferredInsertPosition ?? INSERT_FALLBACK_POSITION;
+  const [offsetX, offsetY] = INSERT_STAGGER_OFFSETS[state.insertSequence % INSERT_STAGGER_OFFSETS.length];
+  return [anchor.x + offsetX, anchor.y + offsetY] as [number, number];
 }
 
 function normalizeState(
@@ -200,7 +223,7 @@ function addNodeToGraph(
   },
 ) {
   const instanceId = createNodeId(options?.idPrefix);
-  const nodePosition = options?.position ?? createNodePosition();
+  const nodePosition = createNodePosition(state, options?.position);
   const neuronDef = normalizeNeuronDef({
     ...ndef,
     id: instanceId,
@@ -208,21 +231,24 @@ function addNodeToGraph(
 
   return {
     instanceId,
-    nextState: mutateActiveGraph(
-      state,
-      (graph) => ({
-        ...graph,
-        nodes: {
-          ...graph.nodes,
-          [instanceId]: {
-            instance_id: instanceId,
-            position: nodePosition,
-            neuron_def: neuronDef,
+    nextState: {
+      ...mutateActiveGraph(
+        state,
+        (graph) => ({
+          ...graph,
+          nodes: {
+            ...graph.nodes,
+            [instanceId]: {
+              instance_id: instanceId,
+              position: nodePosition,
+              neuron_def: neuronDef,
+            },
           },
-        },
-      }),
-      instanceId,
-    ),
+        }),
+        instanceId,
+      ),
+      insertSequence: state.insertSequence + 1,
+    },
   };
 }
 
@@ -294,6 +320,8 @@ export const useGraphStore = create<GraphState>((set) => ({
       rootGraph: initialGraph,
       currentPath: [],
       selectedNodeId: null,
+      preferredInsertPosition: null,
+      insertSequence: 0,
       builtins: [],
       lossHistory: [],
       isTraining: false,
@@ -307,6 +335,7 @@ export const useGraphStore = create<GraphState>((set) => ({
       setSaving: () => undefined,
       setSaveError: () => undefined,
       setRootGraph: () => undefined,
+      setPreferredInsertPosition: () => undefined,
       applyActiveNodeChanges: () => undefined,
       applyActiveEdgeChanges: () => undefined,
       connectActiveGraph: () => undefined,
@@ -375,6 +404,9 @@ export const useGraphStore = create<GraphState>((set) => ({
       lastError: null,
     })),
 
+  setPreferredInsertPosition: (preferredInsertPosition) =>
+    set((state) => ({ ...state, preferredInsertPosition })),
+
   applyActiveNodeChanges: (changes) =>
     set((state) => {
       const activeGraph = toActiveGraph(state);
@@ -432,7 +464,7 @@ export const useGraphStore = create<GraphState>((set) => ({
     set((state) => {
       const { nextState } = addNodeToGraph(state, ndef, {
         idPrefix: "n",
-        position: pos ? [pos.x, pos.y] : createNodePosition(100, 100),
+        position: pos ? [pos.x, pos.y] : undefined,
       });
       return nextState;
     }),
@@ -441,7 +473,7 @@ export const useGraphStore = create<GraphState>((set) => ({
     set((state) => {
       const { nextState } = addNodeToGraph(state, createCustomNeuronDef("custom"), {
         idPrefix: "n",
-        position: pos ? [pos.x, pos.y] : createNodePosition(200, 160),
+        position: pos ? [pos.x, pos.y] : undefined,
       });
       return nextState;
     }),
@@ -454,7 +486,7 @@ export const useGraphStore = create<GraphState>((set) => ({
         ).length + 1;
       const { nextState } = addNodeToGraph(state, createSubgraphNeuronDef(`subgraph_${subgraphIndex}`), {
         idPrefix: "g",
-        position: pos ? [pos.x, pos.y] : createNodePosition(180, 120),
+        position: pos ? [pos.x, pos.y] : undefined,
       });
       return nextState;
     }),
@@ -473,7 +505,7 @@ export const useGraphStore = create<GraphState>((set) => ({
         createLinkedVariantNeuronDef(`${family}_${version}`, { family, version }, variantGraph),
         {
           idPrefix: "g",
-          position: pos ? [pos.x, pos.y] : createNodePosition(220, 180),
+          position: pos ? [pos.x, pos.y] : undefined,
         },
       );
       return nextState;

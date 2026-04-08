@@ -8,6 +8,9 @@ from .neuron import NeuronDef, module_neuron, neuron
 from .port import Port
 from .torch_backend import (
     default_attention_config,
+    default_gpt_config,
+    default_kv_pca_config,
+    default_kv_quant_unpack_config,
     default_linear_config,
     default_lm_head_config,
     default_logit_softcap_config,
@@ -542,6 +545,56 @@ kv_cache_write_module = module_neuron(
     module_config={},
 )
 
+kv_pca_encode_module = module_neuron(
+    name="kv_pca_encode",
+    module_type="kv_pca_encode",
+    input_ports=[
+        Port("k", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("v", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[
+        Port("k_comp", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("v_comp", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config=default_kv_pca_config(),
+)
+
+kv_pca_decode_module = module_neuron(
+    name="kv_pca_decode",
+    module_type="kv_pca_decode",
+    input_ports=[
+        Port("k_comp", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("v_comp", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[
+        Port("k", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("v", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config=default_kv_pca_config(),
+)
+
+kv_quant_pack_module = module_neuron(
+    name="kv_quant_pack",
+    module_type="kv_quant_pack",
+    input_ports=[
+        Port("k", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("v", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("packed", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={},
+)
+
+kv_quant_unpack_module = module_neuron(
+    name="kv_quant_unpack",
+    module_type="kv_quant_unpack",
+    input_ports=[Port("packed", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[
+        Port("k", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("v", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config=default_kv_quant_unpack_config(),
+)
+
 router_logits_module = module_neuron(
     name="router_logits",
     module_type="router_logits",
@@ -618,6 +671,163 @@ dataset_source_module = module_neuron(
     module_config={"dataset_names": [], "seq_len": 64},
 )
 
+bitlinear_ternary_module = module_neuron(
+    name="bitlinear_ternary",
+    module_type="bitlinear_ternary",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"input_dim": 128, "output_dim": 128},
+)
+
+randmap_adapter_module = module_neuron(
+    name="randmap_adapter",
+    module_type="randmap_adapter",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"model_dim": 128, "adapter_dim": 32},
+)
+
+mamba_module = module_neuron(
+    name="mamba",
+    module_type="mamba",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"model_dim": 128, "d_state": 16, "d_conv": 4, "expand": 2},
+)
+
+denoise_head_module = module_neuron(
+    name="denoise_head",
+    module_type="denoise_head",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"model_dim": 128, "vocab_size": 1024},
+)
+
+mask_scheduler_module = module_neuron(
+    name="mask_scheduler",
+    module_type="mask_scheduler",
+    input_ports=[
+        Port("tokens", range=(0, 65535), precision=1.0, dtype="tokens"),
+        Port("timesteps", range=(0, 1), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("noisy_tokens", range=(0, 65535), precision=1.0, dtype="tokens")],
+    module_config={"vocab_size": 1024, "mask_token_id": 0},
+)
+
+random_timesteps_module = module_neuron(
+    name="random_timesteps",
+    module_type="random_timesteps",
+    input_ports=[Port("tokens", range=(0, 65535), precision=1.0, dtype="tokens")],
+    output_ports=[Port("timesteps", range=(0, 1), precision=0.001, dtype="tensor")],
+    module_config={},
+)
+
+jepa_mask_module = module_neuron(
+    name="jepa_mask",
+    module_type="jepa_mask",
+    input_ports=[Port("tokens", range=(0, 65535), precision=1.0, dtype="tokens")],
+    output_ports=[
+        Port("masked_tokens", range=(0, 65535), precision=1.0, dtype="tokens"),
+        Port("mask", range=(0, 1), precision=0.001, dtype="tensor"),
+    ],
+    module_config={"mask_ratio": 0.5, "mask_token_id": 0},
+)
+
+latent_pool_module = module_neuron(
+    name="latent_pool",
+    module_type="latent_pool",
+    input_ports=[
+        Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("mask", range=(0, 1), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("pooled", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={},
+)
+
+jepa_projector_module = module_neuron(
+    name="jepa_projector",
+    module_type="jepa_projector",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"input_dim": 128, "latent_dim": 128},
+)
+
+jepa_predictor_module = module_neuron(
+    name="jepa_predictor",
+    module_type="jepa_predictor",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"latent_dim": 128},
+)
+
+latent_mse_loss_module = module_neuron(
+    name="latent_mse_loss",
+    module_type="latent_mse_loss",
+    input_ports=[
+        Port("pred", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("target", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    module_config={},
+)
+
+byte_patch_embed_module = module_neuron(
+    name="byte_patch_embed",
+    module_type="byte_patch_embed",
+    input_ports=[Port("tokens", range=(0, 255), precision=1.0, dtype="tokens")],
+    output_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"model_dim": 128, "patch_size": 4, "stride": 4, "vocab_size": 256},
+)
+
+byte_patch_merge_module = module_neuron(
+    name="byte_patch_merge",
+    module_type="byte_patch_merge",
+    input_ports=[
+        Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("target_tokens", range=(0, 255), precision=1.0, dtype="tokens"),
+    ],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={},
+)
+
+act_halt_gate_module = module_neuron(
+    name="act_halt_gate",
+    module_type="act_halt_gate",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("halt", range=(0, 1), precision=0.001, dtype="tensor")],
+    module_config={"model_dim": 128},
+)
+
+act_weighted_sum_module = module_neuron(
+    name="act_weighted_sum",
+    module_type="act_weighted_sum",
+    input_ports=[
+        Port("states", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("weights", range=(0, 1), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={},
+)
+
+universal_transformer_module = module_neuron(
+    name="universal_transformer",
+    module_type="universal_transformer",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[
+        Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("halt_weights", range=(0, 1), precision=0.001, dtype="tensor"),
+    ],
+    module_config={"model_dim": 128, "num_heads": 4, "mlp_mult": 4.0, "max_steps": 4, "halt_epsilon": 0.01},
+)
+
+ttt_linear_module = module_neuron(
+    name="ttt_linear",
+    module_type="ttt_linear",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"input_dim": 128, "output_dim": 128, "hidden_dim": 16},
+)
+
 _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "sigmoid": sigmoid,
     "relu": relu,
@@ -669,6 +879,10 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "absolute_position_embedding_module": absolute_position_embedding_module,
     "kv_cache_read_module": kv_cache_read_module,
     "kv_cache_write_module": kv_cache_write_module,
+    "kv_pca_encode_module": kv_pca_encode_module,
+    "kv_pca_decode_module": kv_pca_decode_module,
+    "kv_quant_pack_module": kv_quant_pack_module,
+    "kv_quant_unpack_module": kv_quant_unpack_module,
     "router_logits_module": router_logits_module,
     "topk_route_module": topk_route_module,
     "expert_dispatch_module": expert_dispatch_module,
@@ -677,6 +891,23 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "aux_loss_add_module": aux_loss_add_module,
     "token_cross_entropy_module": token_cross_entropy_module,
     "dataset_source_module": dataset_source_module,
+    "bitlinear_ternary_module": bitlinear_ternary_module,
+    "randmap_adapter_module": randmap_adapter_module,
+    "mamba_module": mamba_module,
+    "denoise_head_module": denoise_head_module,
+    "mask_scheduler_module": mask_scheduler_module,
+    "random_timesteps_module": random_timesteps_module,
+    "jepa_mask_module": jepa_mask_module,
+    "latent_pool_module": latent_pool_module,
+    "jepa_projector_module": jepa_projector_module,
+    "jepa_predictor_module": jepa_predictor_module,
+    "latent_mse_loss_module": latent_mse_loss_module,
+    "byte_patch_embed_module": byte_patch_embed_module,
+    "byte_patch_merge_module": byte_patch_merge_module,
+    "act_halt_gate_module": act_halt_gate_module,
+    "act_weighted_sum_module": act_weighted_sum_module,
+    "universal_transformer_module": universal_transformer_module,
+    "ttt_linear_module": ttt_linear_module,
 }
 
 
@@ -733,6 +964,10 @@ class BuiltinNeurons:
     absolute_position_embedding_module = absolute_position_embedding_module
     kv_cache_read_module = kv_cache_read_module
     kv_cache_write_module = kv_cache_write_module
+    kv_pca_encode_module = kv_pca_encode_module
+    kv_pca_decode_module = kv_pca_decode_module
+    kv_quant_pack_module = kv_quant_pack_module
+    kv_quant_unpack_module = kv_quant_unpack_module
     router_logits_module = router_logits_module
     topk_route_module = topk_route_module
     expert_dispatch_module = expert_dispatch_module
@@ -741,6 +976,23 @@ class BuiltinNeurons:
     aux_loss_add_module = aux_loss_add_module
     token_cross_entropy_module = token_cross_entropy_module
     dataset_source_module = dataset_source_module
+    bitlinear_ternary_module = bitlinear_ternary_module
+    randmap_adapter_module = randmap_adapter_module
+    mamba_module = mamba_module
+    denoise_head_module = denoise_head_module
+    mask_scheduler_module = mask_scheduler_module
+    random_timesteps_module = random_timesteps_module
+    jepa_mask_module = jepa_mask_module
+    latent_pool_module = latent_pool_module
+    jepa_projector_module = jepa_projector_module
+    jepa_predictor_module = jepa_predictor_module
+    latent_mse_loss_module = latent_mse_loss_module
+    byte_patch_embed_module = byte_patch_embed_module
+    byte_patch_merge_module = byte_patch_merge_module
+    act_halt_gate_module = act_halt_gate_module
+    act_weighted_sum_module = act_weighted_sum_module
+    universal_transformer_module = universal_transformer_module
+    ttt_linear_module = ttt_linear_module
 
     @classmethod
     def all(cls) -> list[NeuronDef]:
@@ -822,6 +1074,10 @@ __all__ = [
     "absolute_position_embedding_module",
     "kv_cache_read_module",
     "kv_cache_write_module",
+    "kv_pca_encode_module",
+    "kv_pca_decode_module",
+    "kv_quant_pack_module",
+    "kv_quant_unpack_module",
     "router_logits_module",
     "topk_route_module",
     "expert_dispatch_module",
@@ -830,4 +1086,21 @@ __all__ = [
     "aux_loss_add_module",
     "token_cross_entropy_module",
     "dataset_source_module",
+    "bitlinear_ternary_module",
+    "randmap_adapter_module",
+    "mamba_module",
+    "denoise_head_module",
+    "mask_scheduler_module",
+    "random_timesteps_module",
+    "jepa_mask_module",
+    "latent_pool_module",
+    "jepa_projector_module",
+    "jepa_predictor_module",
+    "latent_mse_loss_module",
+    "byte_patch_embed_module",
+    "byte_patch_merge_module",
+    "act_halt_gate_module",
+    "act_weighted_sum_module",
+    "universal_transformer_module",
+    "ttt_linear_module",
 ]

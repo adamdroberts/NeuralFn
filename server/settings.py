@@ -35,10 +35,20 @@ class Settings:
 def get_settings() -> Settings:
     root_dir = Path(__file__).resolve().parent.parent
     allow_origins_raw = os.getenv("NEURALFN_ALLOW_ORIGINS", "http://127.0.0.1:5173,http://localhost:5173")
+    redis_url_raw = os.getenv("NEURALFN_REDIS_URL", "redis://localhost:6379/1")
+    if redis_url_raw and not any(redis_url_raw.endswith(f"/{i}") for i in range(16)):
+        if "?" in redis_url_raw:
+            parts = redis_url_raw.split("?")
+            redis_url = f"{parts[0].rstrip('/')}/1?{parts[1]}"
+        else:
+            redis_url = f"{redis_url_raw.rstrip('/')}/1"
+    else:
+        redis_url = redis_url_raw
+
     return Settings(
         root_dir=root_dir,
         database_url=os.getenv("NEURALFN_DATABASE_URL", _default_database_url(root_dir)),
-        redis_url=os.getenv("NEURALFN_REDIS_URL"),
+        redis_url=redis_url,
         session_cookie_name=os.getenv("NEURALFN_SESSION_COOKIE_NAME", "neuralfn_session"),
         session_ttl_seconds=int(os.getenv("NEURALFN_SESSION_TTL_SECONDS", "1209600")),
         snapshots_dir=Path(os.getenv("NEURALFN_SNAPSHOTS_DIR", root_dir / "server" / "session_snapshots")),

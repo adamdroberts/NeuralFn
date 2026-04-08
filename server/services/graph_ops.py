@@ -13,9 +13,9 @@ from neuralfn.neuron import NeuronDef, module_neuron, neuron_from_source, subgra
 from neuralfn.port import Port
 from neuralfn.surrogate import probe_neuron
 from neuralfn.torch_backend import CompiledTorchGraph, TorchTrainer
-from neuralfn.torch_templates import build_gpt_root_graph, build_gpt_template_payload
+from neuralfn.torch_templates import build_gpt_root_graph, build_gpt_template_payload, build_model_spec_from_config
 
-from ..dataset_manager import download_hf_dataset, load_dataset_tokens
+from ..dataset_manager import download_hf_dataset, load_dataset_bytes, load_dataset_tokens
 from ..models import DownloadDatasetRequest, EdgeModel, EdgeUpdateModel, ExecuteRequest, GPTTemplateRequest, LoadDatasetRequest, NeuronDefModel, NodeModel
 
 
@@ -98,47 +98,8 @@ def build_template_payload(body: GPTTemplateRequest) -> dict[str, Any]:
 
 
 def apply_gpt_template(body: GPTTemplateRequest) -> NeuronGraph:
-    from neuralfn.config import build_gpt2_spec, build_llama_spec, build_mixllama_spec, build_nanogpt_spec, build_llama_fast_spec, build_mixllama_fast_spec
-
     cfg = dict(body.config or {})
-    preset = cfg.get("preset", "nanogpt")
-    kwargs = {
-        key: cfg[key]
-        for key in (
-            "num_heads",
-            "num_kv_heads",
-            "tie_embeddings",
-            "dropout_p",
-            "experts",
-            "top_k",
-            "router_aux_loss_coef",
-            "mlp_multiplier",
-            "multiple_of",
-        )
-        if key in cfg
-    }
-    if preset == "gpt2":
-        spec = build_gpt2_spec(**kwargs)
-    elif preset == "llama":
-        spec = build_llama_spec(**kwargs)
-    elif preset in ("moe", "mixllama"):
-        spec = build_mixllama_spec(**kwargs)
-    elif preset == "llama_fast":
-        spec = build_llama_fast_spec(**kwargs)
-    elif preset == "mixllama_fast":
-        spec = build_mixllama_fast_spec(**kwargs)
-    else:
-        spec = build_nanogpt_spec(**kwargs)
-
-    if "n_layer" in cfg:
-        spec.num_layers = cfg["n_layer"]
-    if "n_embd" in cfg:
-        spec.model_dim = cfg["n_embd"]
-    if "n_head" in cfg:
-        spec.block_spec.num_heads = cfg["n_head"]
-    if "vocab_size" in cfg:
-        spec.vocab_size = cfg["vocab_size"]
-
+    spec = build_model_spec_from_config(cfg)
     return build_gpt_root_graph(name=body.name, model_spec=spec)
 
 
@@ -309,33 +270,38 @@ def _build_dataset_trace_inputs(
     seq_len: int,
     preview_batch_size: int,
 ) -> tuple[dict[str, tuple[torch.Tensor, ...]], dict[str, list[int]]]:
-    inputs_list, targets_list = load_dataset_tokens(dataset_names, seq_len=seq_len)
+    template_spec = dict(graph.torch_config.get("template_spec", {}))
+    tokenization = str(template_spec.get("template", {}).get("tokenization", "sp"))
+    if tokenization == "byte_hnet":
+        inputs_list, targets_list = load_dataset_bytes(dataset_names, seq_len=seq_len)
+    else:
+        inputs_list, targets_list = load_dataset_tokens(dataset_names, seq_len=seq_len)
     batch_size = max(1, min(int(preview_batch_size or 1), len(inputs_list)))
     x = torch.tensor(inputs_list[:batch_size], dtype=torch.long)
     y = torch.tensor(targets_list[:batch_size], dtype=torch.long)
+    role_tensors = {
+        "tokens": x,
+        "enc_tokens": x,
+        "dec_tokens": x,
+        "targets": y,
+    }
 
-    flattened_expected = sum(graph.nodes[nid].neuron_def.n_outputs for nid in graph.input_node_ids)
-    if flattened_expected != 2:
-        raise GraphOperationError(
-            f"Dataset-backed tracing expects exactly 2 flattened graph inputs (tokens, targets), found {flattened_expected}"
-        )
-
-    supplied = [x, y]
-    supplied_idx = 0
     provided: dict[str, tuple[torch.Tensor, ...]] = {}
+    sample_inputs: dict[str, list[int]] = {}
     for nid in graph.input_node_ids:
         node = graph.nodes[nid]
         node_values: list[torch.Tensor] = []
         for port in node.neuron_def.output_ports:
-            tensor = supplied[supplied_idx]
+            tensor = role_tensors.get(port.name)
+            if tensor is None:
+                raise GraphOperationError(
+                    f"Dataset-backed tracing does not know how to populate graph input role '{port.name}'"
+                )
             node_values.append(tensor if port.dtype == "tokens" else tensor.float())
-            supplied_idx += 1
+            sample_inputs.setdefault(port.name, tensor[0].tolist())
         provided[nid] = tuple(node_values)
 
-    return provided, {
-        "tokens": x[0].tolist(),
-        "targets": y[0].tolist(),
-    }
+    return provided, sample_inputs
 
 
 def _resolve_torch_trace_inputs(
@@ -417,30 +383,26 @@ def _find_dataset_source_node(graph: NeuronGraph) -> str | None:
     return None
 
 
-def _find_token_input_nodes(graph: NeuronGraph) -> tuple[str, str]:
-    token_node_id: str | None = None
-    target_node_id: str | None = None
+def _find_input_ports(graph: NeuronGraph) -> list[tuple[str, Port]]:
+    inputs: list[tuple[str, Port]] = []
     for nid in graph.input_node_ids:
         node = graph.nodes.get(nid)
-        if node is None or not node.neuron_def.output_ports:
+        if node is None:
             continue
-        port_name = node.neuron_def.output_ports[0].name.lower()
-        if port_name == "tokens" or nid == "tokens_in":
-            token_node_id = nid
-        elif port_name == "targets" or nid == "targets_in":
-            target_node_id = nid
-    if token_node_id is None or target_node_id is None:
+        for port in node.neuron_def.output_ports:
+            if port.dtype == "tokens":
+                inputs.append((nid, port))
+    if not inputs:
         raise GraphOperationError(
-            "Active graph must expose token inputs named 'tokens' and 'targets' before a dataset can be loaded"
+            f"Active graph (inputs={graph.input_node_ids}) must expose token-typed inputs before a dataset can be loaded"
         )
-    return token_node_id, target_node_id
+    return inputs
 
 
-def _dataset_source_position(graph: NeuronGraph, token_node_id: str, target_node_id: str) -> tuple[float, float]:
-    token_pos = tuple(graph.nodes[token_node_id].position or (40.0, 120.0))
-    target_pos = tuple(graph.nodes[target_node_id].position or (40.0, 300.0))
-    x = min(float(token_pos[0]), float(target_pos[0])) - 220.0
-    y = (float(token_pos[1]) + float(target_pos[1])) / 2.0
+def _dataset_source_position(graph: NeuronGraph, input_node_ids: list[str]) -> tuple[float, float]:
+    positions = [tuple(graph.nodes[nid].position or (40.0, 120.0)) for nid in input_node_ids]
+    x = min(float(pos[0]) for pos in positions) - 220.0
+    y = sum(float(pos[1]) for pos in positions) / max(len(positions), 1)
     return (x, y)
 
 
@@ -453,32 +415,34 @@ def ensure_dataset_source_node(graph: NeuronGraph, *, node_id: str, seq_len: int
         graph.input_node_ids = [existing]
         return existing
 
-    token_node_id, target_node_id = _find_token_input_nodes(graph)
+    input_ports = _find_input_ports(graph)
     dataset_node_id = node_id or "dataset_source"
     if dataset_node_id in graph.nodes:
         dataset_node_id = f"{dataset_node_id}_{uuid.uuid4().hex[:6]}"
 
     dataset_def = clone_neuron_def(BuiltinNeurons.dataset_source_module)
     dataset_def.module_config = {"dataset_names": [], "seq_len": seq_len}
+    dataset_def.output_ports = [
+        Port(port.name, range=tuple(port.range), precision=port.precision, dtype=port.dtype)
+        for _, port in input_ports
+    ]
     graph.add_node(
         NeuronInstance(
             dataset_def,
             instance_id=dataset_node_id,
-            position=_dataset_source_position(graph, token_node_id, target_node_id),
+            position=_dataset_source_position(graph, [nid for nid, _ in input_ports]),
         )
     )
 
+    input_port_map = {nid: idx for idx, (nid, _port) in enumerate(input_ports)}
     for edge in graph.edges.values():
-        if edge.src_node == token_node_id:
+        mapped_port = input_port_map.get(edge.src_node)
+        if mapped_port is not None:
             edge.src_node = dataset_node_id
-            edge.src_port = 0
-        elif edge.src_node == target_node_id:
-            edge.src_node = dataset_node_id
-            edge.src_port = 1
+            edge.src_port = mapped_port
 
-    graph.remove_node(token_node_id)
-    if target_node_id != token_node_id:
-        graph.remove_node(target_node_id)
+    for nid in dict.fromkeys(nid for nid, _ in input_ports):
+        graph.remove_node(nid)
     graph.input_node_ids = [dataset_node_id]
     return dataset_node_id
 

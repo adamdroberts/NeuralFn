@@ -14,6 +14,9 @@ _VARIANT_FAMILY_ALIASES: dict[str, tuple[str, ...]] = {
     "gpt2": ("transformer_block",),
     "nanogpt": ("transformer_block",),
     "llama": ("transformer_block",),
+    "attn_block": ("transformer_block",),
+    "transformer_block": ("attn_block",),
+    "mixllama": ("attn_block",),
 }
 
 

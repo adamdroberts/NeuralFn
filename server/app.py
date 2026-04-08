@@ -12,8 +12,11 @@ from .settings import get_settings
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    from .services.persistence_worker import get_persistence_worker
     init_db()
+    get_persistence_worker().start()
     yield
+    get_persistence_worker().stop()
 
 
 settings = get_settings()

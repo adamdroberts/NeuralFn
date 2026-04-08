@@ -45,7 +45,14 @@ EXPECTED_BUILTINS = [
     "input_node",
     "output_node",
     "token_embedding_module",
+    "linear_module",
     "rms_norm_module",
+    "reshape_heads_module",
+    "merge_heads_module",
+    "repeat_kv_module",
+    "rotary_embedding_module",
+    "qk_gain_module",
+    "scaled_dot_product_attention_module",
     "residual_mix_module",
     "causal_self_attention_module",
     "residual_add_module",
@@ -53,7 +60,42 @@ EXPECTED_BUILTINS = [
     "tied_lm_head_module",
     "lm_head_module",
     "logit_softcap_module",
+    "layer_norm_module",
+    "dropout_module",
+    "gelu_module",
+    "swiglu_module",
+    "absolute_position_embedding_module",
+    "kv_cache_read_module",
+    "kv_cache_write_module",
+    "kv_pca_encode_module",
+    "kv_pca_decode_module",
+    "kv_quant_pack_module",
+    "kv_quant_unpack_module",
+    "router_logits_module",
+    "topk_route_module",
+    "expert_dispatch_module",
+    "expert_combine_module",
+    "load_balance_loss_module",
+    "aux_loss_add_module",
     "token_cross_entropy_module",
+    "dataset_source_module",
+    "bitlinear_ternary_module",
+    "randmap_adapter_module",
+    "mamba_module",
+    "denoise_head_module",
+    "mask_scheduler_module",
+    "random_timesteps_module",
+    "jepa_mask_module",
+    "latent_pool_module",
+    "jepa_projector_module",
+    "jepa_predictor_module",
+    "latent_mse_loss_module",
+    "byte_patch_embed_module",
+    "byte_patch_merge_module",
+    "act_halt_gate_module",
+    "act_weighted_sum_module",
+    "universal_transformer_module",
+    "ttt_linear_module",
 ]
 
 
@@ -88,6 +130,9 @@ class BuiltinNeuronsTest(unittest.TestCase):
         self.assertIn("output", serialized_names)
         self.assertIn("token_embedding", serialized_names)
         self.assertIn("token_cross_entropy", serialized_names)
+        self.assertIn("jepa_mask", serialized_names)
+        self.assertIn("universal_transformer", serialized_names)
+        self.assertIn("ttt_linear", serialized_names)
 
     def test_graph_executes_with_builtin_helper_nodes(self) -> None:
         graph = NeuronGraph()

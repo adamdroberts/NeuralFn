@@ -70,6 +70,10 @@ def start_run(
         raise _wrap_permission(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).error(f"Failed to start training run: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(exc)}") from exc
 
     async def event_stream():
         idx = 0

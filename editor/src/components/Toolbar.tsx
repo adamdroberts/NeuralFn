@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { useReactFlow } from "@xyflow/react";
 import { api, type NeuronDefData } from "../api/client";
 import { selectBreadcrumbs, useGraphStore } from "../store/graphStore";
 import { normalizeGraph } from "../store/graphUtils";
@@ -53,8 +52,6 @@ const DESCRIPTIONS: Record<string, string> = {
 };
 
 export default function Toolbar() {
-  const { screenToFlowPosition } = useReactFlow();
-
   const builtins = useGraphStore((state) => state.builtins);
   const setBuiltins = useGraphStore((state) => state.setBuiltins);
   const addBuiltinNode = useGraphStore((state) => state.addBuiltinNode);
@@ -73,20 +70,17 @@ export default function Toolbar() {
   }, [setBuiltins]);
 
   const onAddBuiltin = useCallback(
-    (ndef: NeuronDefData, e: React.MouseEvent) => {
-      const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
-      addBuiltinNode(ndef, pos);
+    (ndef: NeuronDefData) => {
+      addBuiltinNode(ndef);
     },
-    [addBuiltinNode, screenToFlowPosition]
+    [addBuiltinNode]
   );
 
-  const onAddCustom = useCallback((e: React.MouseEvent) => {
-    const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
-    addCustomNode(pos);
-  }, [addCustomNode, screenToFlowPosition]);
+  const onAddCustom = useCallback(() => {
+    addCustomNode();
+  }, [addCustomNode]);
 
-  const onAddOverride = useCallback((e: React.MouseEvent) => {
-    const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
+  const onAddOverride = useCallback(() => {
     const ndef: NeuronDefData = {
         id: "override-" + Date.now().toString(36),
         name: "override",
@@ -102,24 +96,22 @@ export default function Toolbar() {
         output_aliases: [],
         variant_ref: null,
     };
-    addBuiltinNode(ndef, pos);
-  }, [addBuiltinNode, screenToFlowPosition]);
+    addBuiltinNode(ndef);
+  }, [addBuiltinNode]);
 
-  const onAddSubgraph = useCallback((e: React.MouseEvent) => {
-    const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
-    addSubgraphNode(pos);
-  }, [addSubgraphNode, screenToFlowPosition]);
+  const onAddSubgraph = useCallback(() => {
+    addSubgraphNode();
+  }, [addSubgraphNode]);
 
   const [gptType, setGptType] = useState("nanogpt");
 
-  const onAddGPT = useCallback((e: React.MouseEvent) => {
-    const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY + 100 });
+  const onAddGPT = useCallback(() => {
     api.buildGPTTemplate({ name: "gpt", config: { preset: gptType } }).then((template) => {
       mergeVariantLibrary(template.variant_library);
       updateActiveGraphSettings(template.graph_settings);
-      addBuiltinNode(template.node_def, pos);
+      addBuiltinNode(template.node_def);
     }).catch(() => {});
-  }, [addBuiltinNode, mergeVariantLibrary, screenToFlowPosition, updateActiveGraphSettings, gptType]);
+  }, [addBuiltinNode, mergeVariantLibrary, updateActiveGraphSettings, gptType]);
 
   const onSave = useCallback(() => {
     const data = JSON.stringify(rootGraph, null, 2);
@@ -195,6 +187,16 @@ export default function Toolbar() {
             <option value="gpt2">GPT-2</option>
             <option value="llama">LLaMA</option>
             <option value="moe">MoE</option>
+            <option value="llama_fast">LLaMA Fast</option>
+            <option value="mixllama_fast">MixLLaMA Fast</option>
+            <option value="jamba">Jamba Hybrid</option>
+            <option value="ternary_b158">Ternary b1.58</option>
+            <option value="seq2seq">Seq2Seq MoE</option>
+            <option value="diffusion">DiffLLaMA</option>
+            <option value="ttt_llama">TTT LLaMA</option>
+            <option value="llm_jepa">LLM JEPA</option>
+            <option value="hnet_lm">H-Net LM</option>
+            <option value="universal_llama">Universal LLaMA</option>
           </select>
         </div>
 
@@ -240,8 +242,8 @@ export default function Toolbar() {
             return (
               <button
                 key={b.id}
-                onClick={(e) => {
-                  onAddBuiltin(b, e);
+                onClick={() => {
+                  onAddBuiltin(b);
                   setHoveredNeuron(null);
                 }}
                 onMouseEnter={(e) => {

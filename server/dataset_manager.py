@@ -420,6 +420,36 @@ def load_dataset_tokens(
     return inputs, targets
 
 
+def load_dataset_bytes(
+    dataset_names: list[str],
+    *,
+    seq_len: int = 64,
+) -> tuple[list[list[int]], list[list[int]]]:
+    """Load one or more datasets as raw-byte training sequences."""
+    _ensure_datasets_dir()
+
+    all_bytes: list[int] = []
+    for ds_name in dataset_names:
+        all_bytes.extend(_load_bytes_for(ds_name))
+
+    if len(all_bytes) < seq_len + 1:
+        raise ValueError(
+            f"Combined dataset has only {len(all_bytes)} bytes but "
+            f"need at least {seq_len + 1} for seq_len={seq_len}"
+        )
+
+    inputs: list[list[int]] = []
+    targets: list[list[int]] = []
+    for start in range(0, len(all_bytes) - seq_len, seq_len):
+        chunk = all_bytes[start : start + seq_len + 1]
+        if len(chunk) < seq_len + 1:
+            break
+        inputs.append(chunk[:-1])
+        targets.append(chunk[1:])
+
+    return inputs, targets
+
+
 import torch
 from torch.utils.data import Dataset
 import numpy as np
@@ -489,6 +519,53 @@ def load_dataset_tensors(
         
     return MemmapTokenDataset(arrays, seq_len)
 
+
+def load_dataset_byte_tensors(
+    dataset_names: list[str],
+    *,
+    seq_len: int = 64,
+) -> Dataset:
+    """Load one or more datasets as raw-byte tensors efficiently."""
+    _ensure_datasets_dir()
+
+    arrays: list[np.ndarray] = []
+    for ds_name in dataset_names:
+        data_file = _data_file_for(ds_name)
+        if data_file is not None:
+            arrays.append(np.memmap(data_file, dtype=np.uint8, mode='r'))
+            continue
+        raw_bytes = _load_bytes_for(ds_name)
+        arrays.append(np.array(raw_bytes, dtype=np.uint8))
+
+    if not arrays:
+        raise ValueError(f"No bytes found for datasets {dataset_names}")
+
+    return MemmapTokenDataset(arrays, seq_len)
+
+
+def _data_file_for(ds_name: str) -> Path | None:
+    ds_path = DATASETS_DIR / ds_name
+    if ds_path.is_dir():
+        meta_file = ds_path / "meta.json"
+        if meta_file.exists():
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            if meta.get("data_format") == "uint16_shards":
+                return None
+
+        data_file = ds_path / "data.txt"
+        if not data_file.exists():
+            for candidate in ds_path.iterdir():
+                if candidate.is_file() and candidate.name != "meta.json":
+                    data_file = candidate
+                    break
+        return data_file if data_file.exists() else None
+
+    for ext in (".txt", ".json", ".jsonl", ".csv", ".parquet", ".bin"):
+        file_path = DATASETS_DIR / f"{ds_name}{ext}"
+        if file_path.exists():
+            return file_path
+    return None
+
 def _load_tokens_for(
     ds_name: str,
     enc: tiktoken.Encoding | None,
@@ -538,6 +615,25 @@ def _load_tokens_for(
             return enc.encode(text)
 
     raise FileNotFoundError(f"Dataset '{ds_name}' not found in {DATASETS_DIR}")
+
+
+def _load_bytes_for(ds_name: str) -> list[int]:
+    """Load raw bytes for a single dataset name."""
+    ds_path = DATASETS_DIR / ds_name
+
+    if ds_path.is_dir():
+        meta_file = ds_path / "meta.json"
+        if meta_file.exists():
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            if meta.get("data_format") == "uint16_shards":
+                raise ValueError(
+                    f"Dataset '{ds_name}' stores token shards and cannot be used for raw-byte H-Net training"
+                )
+
+    data_file = _data_file_for(ds_name)
+    if data_file is None:
+        raise FileNotFoundError(f"Dataset '{ds_name}' not found in {DATASETS_DIR}")
+    return list(data_file.read_bytes())
 
 
 def delete_dataset(ds_name: str) -> bool:

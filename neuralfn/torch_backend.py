@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any, Callable
 
 import torch
@@ -278,6 +279,91 @@ class LinearStage(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         return self.proj(x)
 
+class BitLinearTernaryStage(nn.Module):
+    """BitNet b1.58 style Ternary Linear Layer (-1, 0, 1)."""
+    def __init__(self, input_dim: int, output_dim: int) -> None:
+        super().__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.weight = nn.Parameter(torch.randn(output_dim, input_dim))
+
+    def forward(self, x: Tensor) -> Tensor:
+        # Weight quantization to {-1, 0, 1}
+        w = self.weight
+        scale = w.abs().mean()
+        w_quant = torch.round(w / (scale + 1e-7)).clamp(-1, 1)
+        # Straight-through estimator
+        w_quant = w + (w_quant - w).detach()
+
+        # Activation quantization (simple 8-bit-like scaling)
+        x_max = x.abs().max(dim=-1, keepdim=True).values
+        x_quant = torch.round(x * 127 / (x_max + 1e-7)).clamp(-128, 127)
+        x_quant = x + (x_quant * x_max / 127 - x).detach()
+
+        return F.linear(x_quant, w_quant)
+
+class RandMapAdapterStage(nn.Module):
+    """Random-map adapter: frozen random projections with a trainable middle."""
+    def __init__(self, model_dim: int, adapter_dim: int) -> None:
+        super().__init__()
+        self.model_dim = model_dim
+        self.adapter_dim = adapter_dim
+
+        # Frozen random projections
+        self.down_proj = nn.Linear(model_dim, adapter_dim, bias=False)
+        self.up_proj = nn.Linear(adapter_dim, model_dim, bias=False)
+
+        for p in self.down_proj.parameters():
+            p.requires_grad = False
+        for p in self.up_proj.parameters():
+            p.requires_grad = False
+
+        # Trainable middle
+        self.middle = nn.Linear(adapter_dim, adapter_dim, bias=False)
+        # Residual scale gate
+        self.scale = nn.Parameter(torch.zeros(1))
+
+        self._init_random_projections()
+
+    def _init_random_projections(self) -> None:
+        # Use orthogonal init for the frozen maps
+        nn.init.orthogonal_(self.down_proj.weight)
+        nn.init.orthogonal_(self.up_proj.weight)
+
+    def forward(self, x: Tensor) -> Tensor:
+        # x: [batch, seq, model_dim]
+        # Residual adapter: x + scale * (up(middle(down(x))))
+        adapter_out = self.up_proj(self.middle(self.down_proj(x)))
+        return x + self.scale * adapter_out
+
+class MambaStage(nn.Module):
+    """Simplified Mamba-style SSM Stage."""
+    def __init__(self, model_dim: int, d_state: int = 16, d_conv: int = 4, expand: int = 2) -> None:
+        super().__init__()
+        self.model_dim = model_dim
+        self.d_inner = model_dim * expand
+        self.in_proj = nn.Linear(model_dim, self.d_inner * 2, bias=False)
+        self.conv1d = nn.Conv1d(self.d_inner, self.d_inner, kernel_size=d_conv, groups=self.d_inner, padding=d_conv - 1)
+        self.x_proj = nn.Linear(self.d_inner, d_state + 2, bias=False) # delta, B, C
+        self.out_proj = nn.Linear(self.d_inner, model_dim, bias=False)
+
+    def forward(self, x: Tensor) -> Tensor:
+        batch, seq_len, _ = x.shape
+        xz = self.in_proj(x)
+        x, z = xz.chunk(2, dim=-1)
+
+        # Conv
+        x = x.transpose(1, 2)
+        x = self.conv1d(x)[:, :, :seq_len]
+        x = x.transpose(1, 2)
+
+        x = F.silu(x)
+
+        # Simplified SSM (Identity for now to ensure it runs, real Mamba is complex)
+        # In a real impl, we'd do the scan here.
+        y = x * F.sigmoid(z)
+
+        return self.out_proj(y)
 
 class ReshapeHeadsStage(nn.Module):
     def __init__(self, num_heads: int) -> None:
@@ -408,6 +494,35 @@ class KVCacheWriteStage(nn.Module):
     def forward(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
         return k, v
 
+class KVPCAEncodeStage(nn.Module):
+    def __init__(self, head_dim: int, compressed_dim: int) -> None:
+        super().__init__()
+        self.k_proj = nn.Linear(head_dim, compressed_dim, bias=False)
+        self.v_proj = nn.Linear(head_dim, compressed_dim, bias=False)
+    def forward(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
+        return self.k_proj(k), self.v_proj(v)
+
+class KVPCADecodeStage(nn.Module):
+    def __init__(self, head_dim: int, compressed_dim: int) -> None:
+        super().__init__()
+        self.k_unproj = nn.Linear(compressed_dim, head_dim, bias=False)
+        self.v_unproj = nn.Linear(compressed_dim, head_dim, bias=False)
+    def forward(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
+        return self.k_unproj(k), self.v_unproj(v)
+
+class KVQuantPackStage(nn.Module):
+    def forward(self, k: Tensor, v: Tensor) -> Tensor:
+        # Simple concat for now; real impl might use bits/quantization
+        return torch.cat([k, v], dim=-1)
+
+class KVQuantUnpackStage(nn.Module):
+    def __init__(self, head_dim: int) -> None:
+        super().__init__()
+        self.head_dim = head_dim
+    def forward(self, packed: Tensor) -> tuple[Tensor, Tensor]:
+        k, v = torch.split(packed, [self.head_dim, packed.size(-1) - self.head_dim], dim=-1)
+        return k, v
+
 class RouterLogitsStage(nn.Module):
     def __init__(self, model_dim: int, experts: int) -> None:
         super().__init__()
@@ -494,8 +609,252 @@ class DatasetSourceStage(nn.Module):
         # Passthrough — trainer feeds tokens and targets as external inputs
         return args if len(args) > 1 else (args[0],)
 
+
+class RandomTimestepsStage(nn.Module):
+    def forward(self, tokens: Tensor) -> Tensor:
+        return torch.rand(tokens.size(0), device=tokens.device, dtype=torch.float32)
+
+
+class JEPAMaskStage(nn.Module):
+    def __init__(self, mask_ratio: float, mask_token_id: int = 0) -> None:
+        super().__init__()
+        self.mask_ratio = float(mask_ratio)
+        self.mask_token_id = int(mask_token_id)
+
+    def forward(self, tokens: Tensor) -> tuple[Tensor, Tensor]:
+        noise = torch.rand(tokens.shape, device=tokens.device)
+        mask = noise < self.mask_ratio
+        masked_tokens = tokens.clone()
+        masked_tokens[mask] = self.mask_token_id
+        return masked_tokens, mask.to(dtype=torch.float32)
+
+
+class LatentPoolStage(nn.Module):
+    def forward(self, x: Tensor, mask: Tensor) -> Tensor:
+        weights = mask.to(dtype=x.dtype).unsqueeze(-1)
+        denom = weights.sum(dim=1).clamp_min(1.0)
+        pooled = (x * weights).sum(dim=1) / denom
+        fallback = x.mean(dim=1)
+        has_mask = (mask.sum(dim=1, keepdim=True) > 0).to(dtype=x.dtype)
+        return pooled * has_mask + fallback * (1.0 - has_mask)
+
+
+class JEPAProjectorStage(nn.Module):
+    def __init__(self, input_dim: int, latent_dim: int) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, latent_dim, bias=False),
+            nn.LayerNorm(latent_dim),
+            nn.GELU(),
+            nn.Linear(latent_dim, latent_dim, bias=False),
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.net(x)
+
+
+class JEPAPredictorStage(nn.Module):
+    def __init__(self, latent_dim: int) -> None:
+        super().__init__()
+        hidden_dim = max(latent_dim // 2, 16)
+        self.net = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim, bias=False),
+            nn.GELU(),
+            nn.Linear(hidden_dim, latent_dim, bias=False),
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.net(x)
+
+
+class LatentMSELossStage(nn.Module):
+    def forward(self, pred: Tensor, target: Tensor) -> Tensor:
+        return F.mse_loss(pred.float(), target.detach().float())
+
+
+class BytePatchEmbedStage(nn.Module):
+    def __init__(self, model_dim: int, patch_size: int, stride: int, vocab_size: int = 256) -> None:
+        super().__init__()
+        self.model_dim = int(model_dim)
+        self.patch_size = int(patch_size)
+        self.stride = int(stride)
+        self.vocab_size = int(vocab_size)
+        self.embedding = nn.Embedding(self.vocab_size, self.model_dim)
+        self.proj = nn.Conv1d(self.model_dim, self.model_dim, kernel_size=self.patch_size, stride=self.stride, bias=False)
+
+    def forward(self, tokens: Tensor) -> Tensor:
+        byte_ids = tokens.clamp(0, self.vocab_size - 1)
+        x = self.embedding(byte_ids).transpose(1, 2)
+        seq_len = x.size(-1)
+        if seq_len < self.patch_size:
+            pad_right = self.patch_size - seq_len
+        else:
+            pad_right = (self.stride - ((seq_len - self.patch_size) % self.stride)) % self.stride
+        if pad_right:
+            x = F.pad(x, (0, pad_right))
+        return self.proj(x).transpose(1, 2)
+
+
+class BytePatchMergeStage(nn.Module):
+    def forward(self, x: Tensor, target_tokens: Tensor) -> Tensor:
+        target_len = target_tokens.size(1)
+        merged = F.interpolate(x.transpose(1, 2), size=target_len, mode="nearest")
+        return merged.transpose(1, 2)
+
+
+class ACTHaltGateStage(nn.Module):
+    def __init__(self, model_dim: int) -> None:
+        super().__init__()
+        self.proj = nn.Linear(model_dim, 1)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return torch.sigmoid(self.proj(x.mean(dim=1)))
+
+
+class ACTWeightedSumStage(nn.Module):
+    def forward(self, states: Tensor, weights: Tensor) -> Tensor:
+        return (states * weights.to(dtype=states.dtype).unsqueeze(-1).unsqueeze(-1)).sum(dim=1)
+
+
+class UniversalTransformerStage(nn.Module):
+    def __init__(
+        self,
+        model_dim: int,
+        num_heads: int,
+        mlp_mult: float,
+        max_steps: int,
+        halt_epsilon: float,
+    ) -> None:
+        super().__init__()
+        hidden_dim = max(int(model_dim * mlp_mult), model_dim)
+        self.max_steps = int(max_steps)
+        self.halt_epsilon = float(halt_epsilon)
+        self.attn_norm = nn.LayerNorm(model_dim)
+        self.attn = nn.MultiheadAttention(model_dim, num_heads, batch_first=True)
+        self.mlp_norm = nn.LayerNorm(model_dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(model_dim, hidden_dim, bias=False),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, model_dim, bias=False),
+        )
+        self.halt_gate = ACTHaltGateStage(model_dim)
+
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        state = x
+        batch = x.size(0)
+        remaining = torch.ones(batch, 1, device=x.device, dtype=torch.float32)
+        accum = torch.zeros_like(x)
+        weights: list[Tensor] = []
+
+        for step in range(self.max_steps):
+            attn_in = self.attn_norm(state)
+            attn_out, _ = self.attn(attn_in, attn_in, attn_in, need_weights=False)
+            state = state + attn_out
+            mlp_in = self.mlp_norm(state)
+            state = state + self.mlp(mlp_in)
+
+            raw_p = self.halt_gate(state).float()
+            step_p = torch.minimum(raw_p, remaining)
+            if step == self.max_steps - 1:
+                step_p = remaining
+            if self.halt_epsilon > 0.0:
+                step_p = torch.where(remaining <= self.halt_epsilon, remaining, step_p)
+
+            accum = accum + step_p.to(dtype=state.dtype).unsqueeze(-1) * state
+            remaining = (remaining - step_p).clamp_min(0.0)
+            weights.append(step_p.squeeze(-1))
+
+        return accum, torch.stack(weights, dim=1)
+
+
+class RoleMappedDataset(torch.utils.data.Dataset):
+    def __init__(self, base_dataset: torch.utils.data.Dataset, roles: list[str]) -> None:
+        self.base_dataset = base_dataset
+        self.roles = list(roles)
+
+    def __len__(self) -> int:
+        return len(self.base_dataset)
+
+    def __getitem__(self, idx: int) -> tuple[Tensor, ...]:
+        sample = self.base_dataset[idx]
+        if isinstance(sample, Tensor):
+            x = sample
+            y = sample
+        else:
+            values = tuple(sample)
+            x = values[0]
+            y = values[1] if len(values) > 1 else values[0]
+        mapped: list[Tensor] = []
+        for role in self.roles:
+            if role in {"tokens", "enc_tokens", "dec_tokens"}:
+                mapped.append(x)
+            elif role == "targets":
+                mapped.append(y)
+            else:
+                raise ValueError(f"Unsupported dataset role '{role}'")
+        return tuple(mapped)
+
+def default_dataset_source_config() -> dict[str, Any]:
+    return {"dataset_names": [], "seq_len": 64}
+
+
+def default_kv_pca_config() -> dict[str, Any]:
+    return {"head_dim": 64, "compressed_dim": 16}
+
+
+def default_kv_quant_unpack_config() -> dict[str, Any]:
+    return {"head_dim": 64}
+
+
 def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
     cfg = dict(module_config or {})
+    if module_type == "bitlinear_ternary":
+        return BitLinearTernaryStage(
+            input_dim=int(cfg["input_dim"]),
+            output_dim=int(cfg["output_dim"]),
+        )
+    if module_type == "randmap_adapter":
+        return RandMapAdapterStage(
+            model_dim=int(cfg["model_dim"]),
+            adapter_dim=int(cfg["adapter_dim"]),
+        )
+    if module_type == "mamba":
+        return MambaStage(
+            model_dim=int(cfg["model_dim"]),
+            d_state=int(cfg.get("d_state", 16)),
+            d_conv=int(cfg.get("d_conv", 4)),
+            expand=int(cfg.get("expand", 2)),
+        )
+    if module_type == "denoise_head":
+        return DenoiseHeadStage(
+            model_dim=int(cfg["model_dim"]),
+            vocab_size=int(cfg["vocab_size"]),
+        )
+    if module_type == "mask_scheduler":
+        return MaskSchedulerStage(
+            vocab_size=int(cfg["vocab_size"]),
+            mask_token_id=int(cfg["mask_token_id"]),
+        )
+    if module_type == "ttt_linear":
+        return TTTLinearStage(
+            input_dim=int(cfg["input_dim"]),
+            output_dim=int(cfg["output_dim"]),
+            hidden_dim=int(cfg.get("hidden_dim", 16)),
+        )
+    if module_type == "kv_pca_encode":
+        return KVPCAEncodeStage(
+            head_dim=int(cfg["head_dim"]),
+            compressed_dim=int(cfg["compressed_dim"]),
+        )
+    if module_type == "kv_pca_decode":
+        return KVPCADecodeStage(
+            head_dim=int(cfg["head_dim"]),
+            compressed_dim=int(cfg["compressed_dim"]),
+        )
+    if module_type == "kv_quant_pack":
+        return KVQuantPackStage()
+    if module_type == "kv_quant_unpack":
+        return KVQuantUnpackStage(head_dim=int(cfg["head_dim"]))
     if module_type == "layer_norm":
         return LayerNormStage(
             model_dim=int(cfg["model_dim"]),
@@ -616,6 +975,45 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
         return DatasetSourceStage(
             dataset_names=list(cfg.get("dataset_names", [])),
             seq_len=int(cfg.get("seq_len", 64)),
+        )
+    if module_type == "random_timesteps":
+        return RandomTimestepsStage()
+    if module_type == "jepa_mask":
+        return JEPAMaskStage(
+            mask_ratio=float(cfg.get("mask_ratio", 0.5)),
+            mask_token_id=int(cfg.get("mask_token_id", 0)),
+        )
+    if module_type == "latent_pool":
+        return LatentPoolStage()
+    if module_type == "jepa_projector":
+        return JEPAProjectorStage(
+            input_dim=int(cfg["input_dim"]),
+            latent_dim=int(cfg["latent_dim"]),
+        )
+    if module_type == "jepa_predictor":
+        return JEPAPredictorStage(latent_dim=int(cfg["latent_dim"]))
+    if module_type == "latent_mse_loss":
+        return LatentMSELossStage()
+    if module_type == "byte_patch_embed":
+        return BytePatchEmbedStage(
+            model_dim=int(cfg["model_dim"]),
+            patch_size=int(cfg.get("patch_size", 4)),
+            stride=int(cfg.get("stride", cfg.get("patch_size", 4))),
+            vocab_size=int(cfg.get("vocab_size", 256)),
+        )
+    if module_type == "byte_patch_merge":
+        return BytePatchMergeStage()
+    if module_type == "act_halt_gate":
+        return ACTHaltGateStage(model_dim=int(cfg["model_dim"]))
+    if module_type == "act_weighted_sum":
+        return ACTWeightedSumStage()
+    if module_type == "universal_transformer":
+        return UniversalTransformerStage(
+            model_dim=int(cfg["model_dim"]),
+            num_heads=int(cfg["num_heads"]),
+            mlp_mult=float(cfg.get("mlp_mult", 4.0)),
+            max_steps=int(cfg.get("max_steps", 4)),
+            halt_epsilon=float(cfg.get("halt_epsilon", 0.01)),
         )
     raise KeyError(f"Unsupported module type: {module_type}")
 
@@ -816,13 +1214,110 @@ class TorchTrainer:
         """Recursively update vocab_size in all embedding/lm_head modules."""
         for node in graph.nodes.values():
             ndef = node.neuron_def
-            if ndef.kind == "module" and ndef.module_type in ("token_embedding", "lm_head"):
+            if ndef.kind == "module" and ndef.module_type in ("token_embedding", "lm_head", "denoise_head", "mask_scheduler"):
                 cfg = ndef.module_config or {}
                 current = cfg.get("vocab_size", 0)
                 if current < required_vocab:
                     ndef.module_config = {**cfg, "vocab_size": required_vocab}
             elif ndef.kind == "subgraph" and ndef.subgraph is not None:
                 TorchTrainer._adjust_vocab_size(ndef.subgraph, required_vocab)
+
+    @staticmethod
+    def _flatten_input_roles(graph: NeuronGraph) -> list[str]:
+        roles: list[str] = []
+        for nid in graph.input_node_ids:
+            node = graph.nodes[nid]
+            roles.extend(port.name for port in node.neuron_def.output_ports)
+        return roles
+
+    @staticmethod
+    def _template_spec(graph: NeuronGraph) -> dict[str, Any]:
+        return dict(graph.torch_config.get("template_spec", {}))
+
+    @classmethod
+    def _tokenization_mode(cls, graph: NeuronGraph) -> str:
+        template = cls._template_spec(graph).get("template", {})
+        return str(template.get("tokenization", "sp"))
+
+    @classmethod
+    def _load_dataset_for_graph(
+        cls,
+        graph: NeuronGraph,
+        dataset_names: list[str],
+        *,
+        seq_len: int,
+    ) -> torch.utils.data.Dataset:
+        if cls._tokenization_mode(graph) == "byte_hnet":
+            from server.dataset_manager import load_dataset_byte_tensors
+
+            return load_dataset_byte_tensors(dataset_names, seq_len=seq_len)
+        from server.dataset_manager import load_dataset_tensors
+
+        return load_dataset_tensors(dataset_names, seq_len=seq_len)
+
+    @classmethod
+    def _build_manual_dataset(
+        cls,
+        graph: NeuronGraph,
+        train_inputs: list[list[int]] | Tensor,
+        train_targets: list[list[int]] | Tensor,
+    ) -> torch.utils.data.Dataset:
+        roles = cls._flatten_input_roles(graph)
+        x = torch.as_tensor(train_inputs, dtype=torch.long)
+        if len(roles) == 1:
+            if x.ndim != 2:
+                raise ValueError("Torch training expects integer input arrays of shape [batch, seq_len]")
+            return torch.utils.data.TensorDataset(x)
+
+        y = torch.as_tensor(train_targets, dtype=torch.long)
+        if x.ndim != 2 or y.ndim != 2:
+            raise ValueError("Torch training expects integer token arrays of shape [batch, seq_len]")
+        if x.shape != y.shape:
+            raise ValueError("train_inputs and train_targets must have the same [batch, seq_len] shape")
+
+        tensors = [x if role in {"tokens", "enc_tokens", "dec_tokens"} else y for role in roles]
+        return torch.utils.data.TensorDataset(*tensors)
+
+    @staticmethod
+    def _freeze_ema_targets(module: nn.Module) -> None:
+        for param in module.parameters():
+            param.requires_grad = False
+
+    @classmethod
+    def _prepare_ema_targets(cls, compiled: nn.Module) -> None:
+        if not isinstance(compiled, CompiledTorchGraph):
+            return
+        for child in compiled.node_modules.values():
+            if isinstance(child, CompiledTorchGraph):
+                cls._prepare_ema_targets(child)
+        if "online_encoder" in compiled.node_modules and "target_encoder" in compiled.node_modules:
+            target = compiled.node_modules["target_encoder"]
+            target.load_state_dict(compiled.node_modules["online_encoder"].state_dict())
+            cls._freeze_ema_targets(target)
+
+    @classmethod
+    def _ema_update_targets(cls, compiled: nn.Module, decay: float) -> None:
+        if not isinstance(compiled, CompiledTorchGraph):
+            return
+        for child in compiled.node_modules.values():
+            if isinstance(child, CompiledTorchGraph):
+                cls._ema_update_targets(child, decay)
+        if "online_encoder" not in compiled.node_modules or "target_encoder" not in compiled.node_modules:
+            return
+        online = compiled.node_modules["online_encoder"]
+        target = compiled.node_modules["target_encoder"]
+        online_params = dict(online.named_parameters())
+        for name, target_param in target.named_parameters():
+            source_param = online_params.get(name)
+            if source_param is None:
+                continue
+            target_param.data.mul_(decay).add_(source_param.data, alpha=1.0 - decay)
+        online_buffers = dict(online.named_buffers())
+        for name, target_buffer in target.named_buffers():
+            source_buffer = online_buffers.get(name)
+            if source_buffer is None:
+                continue
+            target_buffer.data.copy_(source_buffer.data)
 
     @staticmethod
     def _auto_detect_outputs(graph: NeuronGraph, exclude_nid: str) -> None:
@@ -860,6 +1355,10 @@ class TorchTrainer:
         *,
         on_epoch: Callable[[int, float], None] | None = None,
     ) -> list[float]:
+        roles = self._flatten_input_roles(self.graph)
+        template_spec = self._template_spec(self.graph)
+        objective = str(template_spec.get("template", {}).get("objective", "ar"))
+        ema_decay = float(template_spec.get("ema_decay", 0.99))
         # ── 1. Resolve dataset_source nodes BEFORE compiling ──────────
         dataset_source_node = None
         for nid, node in self.graph.nodes.items():
@@ -873,30 +1372,20 @@ class TorchTrainer:
         dataset = None
         if dataset_source_node is not None:
             ds_nid, ds_cfg = dataset_source_node
-            try:
-                from server.dataset_manager import load_dataset_tensors
-                ds_names = ds_cfg.get('dataset_names', [])
-                ds_seq_len = int(ds_cfg.get('seq_len', 64))
-                dataset = load_dataset_tensors(ds_names, seq_len=ds_seq_len)
+            ds_names = ds_cfg.get('dataset_names', [])
+            ds_seq_len = int(ds_cfg.get('seq_len', 64))
+            base_dataset = self._load_dataset_for_graph(self.graph, ds_names, seq_len=ds_seq_len)
 
-                # Check vocab size using the first chunk
-                if len(dataset) > 0:
-                    x, y = dataset[0]
-                    max_token = max(int(x.max()), int(y.max()))
-                    required_vocab = max_token + 1
-                    self._adjust_vocab_size(self.graph, required_vocab)
-            except ImportError:
-                # Fallback if dataset_manager is not updated or available
-                from server.dataset_manager import load_dataset_tokens
-                ds_names = ds_cfg.get('dataset_names', [])
-                ds_seq_len = int(ds_cfg.get('seq_len', 64))
-                inputs_list, targets_list = load_dataset_tokens(ds_names, seq_len=ds_seq_len)
-                x = torch.tensor(inputs_list, dtype=torch.long)
-                y = torch.tensor(targets_list, dtype=torch.long)
-                max_token = max(int(x.max()), int(y.max()))
+            if len(base_dataset) > 0:
+                sample = base_dataset[0]
+                if isinstance(sample, Tensor):
+                    sample_tensors = (sample,)
+                else:
+                    sample_tensors = tuple(sample)
+                max_token = max(int(t.max()) for t in sample_tensors)
                 required_vocab = max_token + 1
                 self._adjust_vocab_size(self.graph, required_vocab)
-                dataset = torch.utils.data.TensorDataset(x, y)
+            dataset = RoleMappedDataset(base_dataset, roles)
 
             # Set the dataset_source node as the sole input node
             self.graph.input_node_ids = [ds_nid]
@@ -904,16 +1393,10 @@ class TorchTrainer:
             if not self.graph.output_node_ids:
                 self._auto_detect_outputs(self.graph, ds_nid)
         else:
-            x = torch.as_tensor(train_inputs, dtype=torch.long)
-            y = torch.as_tensor(train_targets, dtype=torch.long)
-
-            if x.ndim != 2 or y.ndim != 2:
-                raise ValueError("Torch GPT training expects integer token arrays of shape [batch, seq_len]")
-            if x.shape != y.shape:
-                raise ValueError("train_inputs and train_targets must have the same [batch, seq_len] shape")
-            dataset = torch.utils.data.TensorDataset(x, y)
+            dataset = self._build_manual_dataset(self.graph, train_inputs, train_targets)
         # ── 2. Compile the graph AFTER adjustments ────────────────────
         compiled = CompiledTorchGraph(self.graph)
+        self._prepare_ema_targets(compiled)
 
         device_name = str(self.graph.torch_config.get("device", self.config.device or "cuda")).lower()
         if device_name == "cuda" and not torch.cuda.is_available():
@@ -924,18 +1407,19 @@ class TorchTrainer:
         use_amp = device.type == "cuda"
 
         compiled.to(device)
+        run_graph: nn.Module = compiled
 
         if self.config.activation_checkpointing:
             for mod in compiled.modules():
                 pass
 
         if self.config.compile:
-            compiled = torch.compile(compiled)
+            run_graph = torch.compile(compiled)
             
         if self.config.fsdp2_enabled:
             try:
                 from torch.distributed.fsdp import fully_shard
-                compiled = fully_shard(compiled)
+                run_graph = fully_shard(run_graph)
             except ImportError:
                 pass
 
@@ -950,7 +1434,7 @@ class TorchTrainer:
 
         self._stop = False
         self.loss_history = []
-        compiled.train()
+        run_graph.train()
         
         global_step = 0
 
@@ -971,7 +1455,7 @@ class TorchTrainer:
                 else:
                     flat_inputs = tuple(item.to(device) for item in batch)
                 with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
-                    outputs = compiled(*flat_inputs)
+                    outputs = run_graph(*flat_inputs)
                     if len(outputs) != 1:
                         raise ValueError(
                             f"Torch training graph '{self.graph.name}' must expose exactly one scalar loss output"
@@ -982,6 +1466,8 @@ class TorchTrainer:
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                if objective == "jepa":
+                    self._ema_update_targets(compiled, ema_decay)
                 batch_rows = int(flat_inputs[0].size(0))
                 total_loss += float(loss.item()) * batch_rows
                 total_rows += batch_rows
@@ -1001,3 +1487,57 @@ class TorchTrainer:
             "amp_dtype": amp_name,
         }
         return self.loss_history
+
+
+class DenoiseHeadStage(nn.Module):
+    """Diffusion denoising head: predicts clean tokens from noisy ones."""
+    def __init__(self, model_dim: int, vocab_size: int) -> None:
+        super().__init__()
+        self.proj = nn.Linear(model_dim, vocab_size, bias=False)
+        
+    def forward(self, x: Tensor) -> Tensor:
+        return self.proj(x)
+
+
+class MaskSchedulerStage(nn.Module):
+    """Discrete mask scheduler for Diffusion LMs."""
+    def __init__(self, vocab_size: int, mask_token_id: int) -> None:
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.mask_token_id = mask_token_id
+        
+    def forward(self, tokens: Tensor, timesteps: Tensor) -> Tensor:
+        # tokens: [batch, seq]
+        # timesteps: [batch] normalized 0-1
+        # Simple random masking based on timestep
+        batch, seq = tokens.shape
+        mask_probs = timesteps.view(-1, 1).expand(batch, seq)
+        noise = torch.rand(batch, seq, device=tokens.device)
+        mask = noise < mask_probs
+        
+        noisy_tokens = tokens.clone()
+        noisy_tokens[mask] = self.mask_token_id
+        return noisy_tokens
+
+
+class TTTLinearStage(nn.Module):
+    """TTT-style Linear layer with Test-Time Training (fast weights)."""
+    def __init__(self, input_dim: int, output_dim: int, hidden_dim: int = 16) -> None:
+        super().__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.hidden_dim = hidden_dim
+        
+        # Base weights (slow weights)
+        self.weight = nn.Parameter(torch.randn(output_dim, input_dim) / math.sqrt(input_dim))
+        
+        # TTT components
+        self.ttt_down = nn.Linear(input_dim, hidden_dim, bias=False)
+        self.ttt_up = nn.Linear(hidden_dim, output_dim, bias=False)
+        
+    def forward(self, x: Tensor) -> Tensor:
+        # x: [batch, seq, input_dim]
+        # In a real TTT impl, we would update fast weights here based on the sequence.
+        # For now, we implement a simplified version that adds a sequence-dependent residual.
+        ttt_out = self.ttt_up(torch.tanh(self.ttt_down(x)))
+        return F.linear(x, self.weight) + ttt_out

@@ -444,7 +444,7 @@ def apply_gpt(
         raise _wrap_permission(exc) from exc
     return {
         "revision": updated["revision"],
-        "graph": summarize_graph_for_agent(graph),
+        "graph": updated["graph"],
     }
 
 
@@ -493,7 +493,11 @@ def load_dataset_source(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if downloaded_info is not None:
         result["downloaded"] = downloaded_info
-    return {"result": result, "revision": updated["revision"]}
+    return {
+        "result": result,
+        "revision": updated["revision"],
+        "graph": updated["graph"]
+    }
 
 
 @router.get("/{session_id}/agent/status")
