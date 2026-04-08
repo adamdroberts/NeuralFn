@@ -34,6 +34,17 @@ Any change to public API surfaces must also update the corresponding page in `do
 
 Agent skills in `.cursor/skills/` should also be kept in sync when the tools or APIs they reference change.
 
+## Breaking changes log
+
+NeuralFn is pre-alpha. When you make a change that breaks backward compatibility -- renaming or removing a public function/class/method, changing a function signature, altering REST API request/response shapes, renaming or removing MCP tools, changing graph serialization format, or modifying config dataclass fields -- you must:
+
+1. Add a clearly labeled **Breaking changes** entry to the relevant `CHANGELOG.md` section describing what broke, what it was before, what it is now, and how callers should migrate.
+2. If the break affects the Python SDK, note it in `docs/python-sdk/` on the relevant page.
+3. If the break affects the REST API or MCP tools, note it in the corresponding `docs/rest-api/` or `docs/mcp/` page.
+4. Update any agent skills in `.cursor/skills/` that reference the changed API.
+
+The goal is that anyone reading `CHANGELOG.md` can find every breaking change in one place and know exactly what to update.
+
 ## GPT template and variant library integrity
 
 Any change that touches template graph builders (`neuralfn/torch_templates.py`), block/attention graph construction, variant wiring, `BlockSpec` / `TemplateSpec` / `ModelSpec` fields, builtin neuron port definitions (`neuralfn/builtins.py`), or torch module stages (`neuralfn/torch_backend.py`) **must** verify that all shipped presets still work end-to-end before the task is considered done.
