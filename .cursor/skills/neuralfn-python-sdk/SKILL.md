@@ -14,6 +14,8 @@ Use this skill when writing Python code that imports and uses the `neuralfn` pac
 
 For the complete class/method reference and graph-building walkthrough, see [reference.md](reference.md).
 
+Full API documentation lives in the repo at `docs/` ([index](../../../docs/README.md)). For a single-file LLM-ready dump of all docs, see [llms-full.txt](../../../llms-full.txt).
+
 ## Core imports
 
 ```python

@@ -16,7 +16,9 @@ All tool responses are compact summaries safe for LLM context. No tool returns o
 
 The backend must be running: `uvicorn server.app:app --reload --port 8000`
 
-For complete MCP tool reference, see [docs/mcp/](docs/mcp/README.md). For the Python SDK, see the `neuralfn-python-sdk` and `neuralfn-torch` skills.
+For complete MCP tool reference, see [docs/mcp/](../../../docs/mcp/README.md). For the Python SDK, see the `neuralfn-python-sdk` and `neuralfn-torch` skills.
+
+Full API documentation lives in the repo at `docs/` ([index](../../../docs/README.md)). For a single-file LLM-ready dump of all docs, see [llms-full.txt](../../../llms-full.txt).
 
 ## Architecture quick reference
 

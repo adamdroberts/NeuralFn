@@ -15,6 +15,8 @@ Use this skill when building, training, or exporting torch-backed models with th
 
 For detailed torch backend and preset reference, see [presets-reference.md](presets-reference.md).
 
+Full API documentation lives in the repo at `docs/` ([index](../../../docs/README.md)). For a single-file LLM-ready dump of all docs, see [llms-full.txt](../../../llms-full.txt).
+
 ## End-to-end example: build, train, export
 
 ```python
