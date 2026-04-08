@@ -16,6 +16,8 @@ All tool responses are compact summaries safe for LLM context. No tool returns o
 
 The backend must be running: `uvicorn server.app:app --reload --port 8000`
 
+For complete MCP tool reference, see [docs/mcp/](docs/mcp/README.md). For the Python SDK, see the `neuralfn-python-sdk` and `neuralfn-torch` skills.
+
 ## Architecture quick reference
 
 - **Nodes** have a `neuron_def` (kind: `function`, `subgraph`, or `module`) with typed I/O ports.
@@ -32,35 +34,46 @@ When the user asks to "train a [model] on [dataset]", follow these steps using M
 ### Step 1 -- Build and load the model graph (one call)
 
 ```
-load_gpt_template(name="my_model", preset="moe", config={
+load_gpt_template(name="my_model", preset="llama", config={
   "n_layer": 4,
   "n_head": 4,
   "n_embd": 128,
-  "num_experts": 4,
-  "top_k": 2
+  "num_kv_heads": 2
 })
 ```
 
-This builds the full model graph server-side and loads it. The response is a compact summary with node IDs, edge count, and variant families.
-
-### Step 2 -- Download the dataset
+### Step 2 -- Download and wire the dataset (one call)
 
 ```
-download_dataset(hf_path="HuggingFaceFW/fineweb", hf_split="train", max_rows=10000)
+load_dataset_source(
+  hf_path="HuggingFaceFW/fineweb",
+  hf_split="train",
+  max_rows=10000,
+  seq_len=64
+)
 ```
+
+This downloads the dataset AND wires it into the graph's `dataset_source` node.
 
 ### Step 3 -- Start training
 
 ```
-train_start(
-  method="torch",
-  epochs=10,
-  learning_rate=0.001,
-  dataset_names=["HuggingFaceFW__fineweb"]
-)
+train_start(method="torch", epochs=10, learning_rate=0.001)
 ```
 
-That's it -- three tool calls.
+### Step 4 -- Monitor progress
+
+```
+poll_training_status(since_event_id=0, timeout_seconds=30)
+```
+
+Or check current state:
+
+```
+get_training_status()
+```
+
+That's it -- four tool calls for a complete train run.
 
 ## Tool reference
 
@@ -113,19 +126,42 @@ That's it -- three tool calls.
 | `trace_torch(inputs)` | Torch tensor statistics. |
 | `probe_node(node_id, n_samples)` | Sample a node's response curve. |
 | `train_start(method, epochs, learning_rate, train_inputs, train_targets, dataset_names)` | Start training. Methods: surrogate, evolutionary, hybrid, torch. |
+| `get_training_status()` | Read the active training snapshot, latest loss, and recent events. |
+| `poll_training_status(since_event_id, timeout_seconds, interval_seconds)` | Wait for the next training update or until the run finishes. |
 | `train_stop()` | Stop training. |
 
 ### Datasets
 
 | Tool | Purpose |
 |------|---------|
-| `list_datasets()` | List local datasets. |
-| `download_dataset(hf_path, hf_split, max_rows)` | Download from HuggingFace. |
+| `list_datasets()` | List datasets visible to the project. |
+| `download_dataset(hf_path, hf_split, max_rows, ...)` | Download from HuggingFace into project catalog. |
+| `load_dataset_source(hf_path, dataset_names, seq_len, ...)` | Download/load datasets AND wire into graph's dataset_source node. |
+| `set_dataset_access(ds_name, project_ids)` | Update which projects can use a dataset. |
 | `delete_dataset(ds_name)` | Delete a local dataset. |
 
-## GPT template config keys
+## All 16 GPT template presets
 
-Common config keys for `load_gpt_template`:
+| Preset | Architecture | Objective |
+|--------|-------------|-----------|
+| `nanogpt` | GPT-2 style (LayerNorm, GELU, absolute pos) | AR |
+| `gpt2` | GPT-2 (with bias) | AR |
+| `llama` | LLaMA (RMSNorm, SwiGLU, RoPE, GQA) | AR |
+| `moe` / `mixllama` | LLaMA + Mixture of Experts | AR |
+| `llama_fast` | LLaMA with torch.compile | AR |
+| `mixllama_fast` | MoE with torch.compile | AR |
+| `jamba` | Attention + Mamba hybrid, MoE | AR |
+| `ternary_b158` | BitNet b1.58 ternary weights | AR |
+| `seq2seq` | Encoder-decoder, MoE | Seq2Seq |
+| `diffusion` | Discrete diffusion with denoising head | Diffusion |
+| `ttt_llama` | Test-Time Training layers | AR |
+| `llm_jepa` | JEPA with EMA target encoder | JEPA |
+| `hnet_lm` | Raw-byte input, byte patches | AR |
+| `universal_llama` | ACT-based universal transformer | AR |
+| `llama_megakernel` | Fused attention, max-autotune compile | AR |
+| `kv_pca_llama` | PCA-compressed KV cache | AR |
+
+## GPT template config keys
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -133,10 +169,20 @@ Common config keys for `load_gpt_template`:
 | `n_head` | 4 | Attention heads |
 | `n_embd` | 128 | Embedding dimension |
 | `vocab_size` | 256 | Vocabulary size (auto-adjusted by trainer) |
-| `num_experts` | 4 | MoE only: number of experts |
-| `top_k` | 2 | MoE only: experts per token |
-
-Presets: `"nanogpt"`, `"gpt2"`, `"llama"`, `"moe"`.
+| `num_kv_heads` | 2 | GQA key/value heads |
+| `mlp_multiplier` | varies | MLP hidden dimension multiplier |
+| `multiple_of` | 256 | Round MLP width to this multiple |
+| `experts` | 8 | MoE: number of experts |
+| `top_k` | 2 | MoE: active experts per token |
+| `router_aux_loss_coef` | 0.01 | MoE load-balance loss coefficient |
+| `dropout_p` | 0.0 | Dropout rate |
+| `tie_embeddings` | varies | Tie embedding and LM head weights |
+| `logit_softcap` | 0.0 | Tanh softcap value (>0 enables) |
+| `ttt_hidden_dim` | 32 | TTT hidden dimension |
+| `byte_patch_size` | 4 | H-Net byte patch size |
+| `byte_patch_stride` | 4 | H-Net byte patch stride |
+| `max_recurrence_steps` | 4 | Universal TX max steps |
+| `halt_epsilon` | 0.01 | Universal TX halt threshold |
 
 ## Other common workflows
 
@@ -163,3 +209,29 @@ train_start(
   train_targets=[[0],[1],[1],[0]]
 )
 ```
+
+### Non-AR template workflows
+
+**Seq2Seq:**
+```
+load_gpt_template(name="s2s", preset="seq2seq", config={"n_layer": 4, "n_embd": 128, "experts": 4})
+```
+Dataset roles: `enc_tokens`, `dec_tokens`, `targets`.
+
+**Diffusion:**
+```
+load_gpt_template(name="diff", preset="diffusion", config={"n_layer": 4, "n_embd": 128})
+```
+Dataset role: `tokens` only.
+
+**JEPA:**
+```
+load_gpt_template(name="jepa", preset="llm_jepa", config={"n_layer": 4, "n_embd": 128})
+```
+Dataset role: `tokens` only. Uses EMA target encoder, supports `jepa_mask_strategy` ("random" or "block").
+
+**H-Net (byte-level):**
+```
+load_gpt_template(name="hnet", preset="hnet_lm", config={"n_layer": 4, "n_embd": 128})
+```
+Uses raw bytes (vocab_size=256), byte patch embedding.

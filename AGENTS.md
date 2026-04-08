@@ -21,6 +21,19 @@ Treat the documentation update requirement as mandatory for:
 
 A meaningful feature change is not complete until the relevant `README.md` and `CHANGELOG.md` updates are included.
 
+## SDK documentation updates
+
+Any change to public API surfaces must also update the corresponding page in `docs/`. This includes:
+
+- **Python SDK changes** (new/changed classes, functions, methods, types in `neuralfn/`): update the matching page in `docs/python-sdk/` and, if it affects how developers build with the framework, the relevant `docs/framework-guide/` page.
+- **REST API changes** (new/changed endpoints in `server/routers/`): update the matching page in `docs/rest-api/`.
+- **MCP tool changes** (new/changed tools in `server/mcp_server.py`): update the matching page in `docs/mcp/` and the `.cursor/skills/neuralfn-mcp/SKILL.md` skill.
+- **New builtin neurons**: update `docs/python-sdk/builtins.md`.
+- **New template presets**: update `docs/python-sdk/config.md`, `docs/framework-guide/templates-and-presets.md`, and both the `neuralfn-torch` and `neuralfn-mcp` agent skills.
+- **Server/editor internals**: update the relevant `docs/server/` or `docs/editor/` page.
+
+Agent skills in `.cursor/skills/` should also be kept in sync when the tools or APIs they reference change.
+
 ## GPT template and variant library integrity
 
 Any change that touches template graph builders (`neuralfn/torch_templates.py`), block/attention graph construction, variant wiring, `BlockSpec` / `TemplateSpec` / `ModelSpec` fields, builtin neuron port definitions (`neuralfn/builtins.py`), or torch module stages (`neuralfn/torch_backend.py`) **must** verify that all shipped presets still work end-to-end before the task is considered done.
