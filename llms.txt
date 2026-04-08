@@ -1,0 +1,81 @@
+# NeuralFn
+
+> A graph-native neural network framework where every neuron is a node with typed I/O ports, connected in directed graphs that can be nested, versioned, trained with four methods, and executed on both a scalar runtime and a PyTorch tensor backend.
+
+NeuralFn models every computation -- from a scalar sigmoid to a full causal-attention block -- as a node in a directed graph. Nodes are defined by `NeuronDef` (with kind `function`, `subgraph`, or `module`), placed as `NeuronInstance` entries, and connected by weighted `Edge` objects. Each port has a `Port` spec with name, range, precision, and dtype. Graphs can be nested via `subgraph_neuron()`, versioned through a variant library, and trained with surrogate (gradient through MLP proxies), evolutionary (genetic algorithm), hybrid (per-subgraph method), or torch (native PyTorch) training. The platform includes an authenticated web editor, REST API, and MCP server for AI agent integration.
+
+This is a pre-alpha project. All APIs are subject to rapid breaking changes.
+
+## Documentation
+
+- [Getting Started](docs/getting-started.md): Installation, quickstart, environment variables, and your first graph.
+- [Architecture](docs/architecture.md): System overview -- how neuralfn/, server/, and editor/ fit together.
+- [Full docs (single file)](llms-full.txt): Complete documentation concatenated into one file for LLM ingestion.
+
+## Framework Guide
+
+- [Framework Guide Overview](docs/framework-guide/README.md): What NeuralFn is and how to think in graphs.
+- [Defining Neurons](docs/framework-guide/defining-neurons.md): @neuron decorator, neuron_from_source, module_neuron, subgraph_neuron, Port fields.
+- [Building Graphs](docs/framework-guide/building-graphs.md): NeuronGraph, NeuronInstance, Edge, wiring, I/O, execution, full XOR example.
+- [Subgraphs and Variants](docs/framework-guide/subgraphs-and-variants.md): Nested composition, variant library, alias resolution, fallback behavior.
+- [Torch Models](docs/framework-guide/torch-models.md): Module neurons, CompiledTorchGraph, building tensor-native architectures.
+- [Templates and Presets](docs/framework-guide/templates-and-presets.md): All 16 presets, ModelSpec, BlockSpec, TemplateSpec, config keys.
+- [Training Workflows](docs/framework-guide/training-workflows.md): Surrogate, evolutionary, hybrid, and torch training end-to-end.
+- [Inference and Export](docs/framework-guide/inference-and-export.md): Weight I/O, quantization, InferenceCache for autoregressive generation.
+- [Datasets](docs/framework-guide/datasets.md): Download, upload, dataset_source node, byte vs tokenized paths.
+
+## API Reference
+
+- [Python SDK Overview](docs/python-sdk/README.md): Package exports and module index.
+- [Port](docs/python-sdk/port.md): Port dataclass -- fields, clamp, quantize, condition.
+- [Neuron](docs/python-sdk/neuron.md): NeuronDef, @neuron, neuron_from_source, module_neuron, subgraph_neuron.
+- [Graph](docs/python-sdk/graph.md): NeuronGraph, NeuronInstance, Edge -- all methods, execution, serialization.
+- [Builtins](docs/python-sdk/builtins.md): BuiltinNeurons class and the full 58-entry catalog.
+- [Config](docs/python-sdk/config.md): TemplateSpec, BlockSpec, ModelSpec, type aliases, all 16 build_*_spec presets.
+- [Torch Backend](docs/python-sdk/torch-backend.md): CompiledTorchGraph, TorchTrainConfig, TorchTrainer, all Stage classes.
+- [Torch Templates](docs/python-sdk/torch-templates.md): Template and graph builder functions.
+- [Training Overview](docs/python-sdk/training/README.md): When to use each training method.
+- [Surrogate Training](docs/python-sdk/training/surrogate.md): SurrogateModel, probe_neuron, build_surrogates.
+- [Trainer](docs/python-sdk/training/trainer.md): TrainConfig, SurrogateTrainer.
+- [Evolutionary Training](docs/python-sdk/training/evolutionary.md): EvoConfig, EvolutionaryTrainer.
+- [Hybrid Training](docs/python-sdk/training/hybrid.md): HybridConfig, HybridTrainer, GraphScope.
+- [Inference](docs/python-sdk/inference.md): export_to_pt, import_from_pt, quantization, InferenceCache.
+- [Serialization](docs/python-sdk/serialization.md): save_graph, load_graph.
+
+## REST API
+
+- [REST API Overview](docs/rest-api/README.md): Auth model, base URL, error shapes.
+- [Bootstrap](docs/rest-api/bootstrap.md): GET /api/bootstrap.
+- [Auth](docs/rest-api/auth.md): Login, logout, session management.
+- [Admin](docs/rest-api/admin.md): User and membership management.
+- [Projects](docs/rest-api/projects.md): Project CRUD and analytics.
+- [Sessions](docs/rest-api/sessions.md): Session/graph CRUD, node/edge mutations, execution, tracing, templates.
+- [Datasets](docs/rest-api/datasets.md): Dataset catalog, download, upload, access grants.
+- [Runs](docs/rest-api/runs.md): Training runs and SSE streaming.
+
+## MCP Tools
+
+- [MCP Overview](docs/mcp/README.md): Setup, auth, scope rules, client config.
+- [Graph Tools](docs/mcp/graph-tools.md): get_graph, replace_graph, update_graph_settings, set_io.
+- [Node Tools](docs/mcp/node-tools.md): add_node, add_custom_node, add_subgraph_node, add_variant_node, get_node, update_node, delete_node.
+- [Edge Tools](docs/mcp/edge-tools.md): add_edge, update_edge, delete_edge.
+- [Variant Tools](docs/mcp/variant-tools.md): list_variants, save_node_as_variant, swap_node_variant.
+- [Execution and Training Tools](docs/mcp/execution-tools.md): execute_graph, trace_torch, train_start, load_gpt_template, and more.
+- [Dataset Tools](docs/mcp/dataset-tools.md): list_datasets, download_dataset, load_dataset_source, set_dataset_access.
+
+## Optional
+
+- [Server Overview](docs/server/README.md): Server architecture -- FastAPI, services, persistence.
+- [Configuration](docs/server/configuration.md): Environment variables, Settings dataclass.
+- [Database](docs/server/database.md): ORM models, schema, Alembic migrations.
+- [Authentication](docs/server/authentication.md): AuthService, session cookies, security.
+- [Services](docs/server/services.md): WorkspaceService, RunService, DatasetService, LiveStateStore.
+- [Pydantic Models](docs/server/models.md): All request/response models.
+- [Editor Overview](docs/editor/README.md): React frontend architecture.
+- [API Client](docs/editor/api-client.md): TypeScript api object, DTO interfaces.
+- [Store](docs/editor/store.md): Zustand useGraphStore, state, actions, selectors.
+- [Graph Utilities](docs/editor/graph-utils.md): FlowNodeData, graph conversion, variant merge.
+- [Components](docs/editor/components.md): React components and props.
+- [Pages](docs/editor/pages.md): Route pages, AppState, session sync.
+- [Testing](docs/testing.md): Test suite overview and how to run tests.
+- [Agent Skills](docs/agent-skills.md): AI coding agent skills for Cursor and Codex.

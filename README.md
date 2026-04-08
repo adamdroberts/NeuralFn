@@ -20,6 +20,8 @@ NeuralFn supports both a scalar graph runtime and a PyTorch-backed `torch` runti
 | [Server Internals](docs/server/README.md) | Services, ORM models, auth, configuration |
 | [Editor Reference](docs/editor/README.md) | React frontend: store, components, API client |
 | [Agent Skills](docs/agent-skills.md) | AI coding agent skills for Cursor and Codex |
+| [llms.txt](llms.txt) | LLM-friendly project index |
+| [llms-full.txt](llms-full.txt) | Complete docs in a single file for LLM ingestion |
 
 ## Current state of play
 
