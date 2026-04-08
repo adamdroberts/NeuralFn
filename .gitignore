@@ -1,3 +1,46 @@
-node_modules
-__pycache__
-dist
+# Dependencies / build
+node_modules/
+dist/
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# SQLite / local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Local env / secrets (app config uses env vars; see README)
+.env
+.env.local
+.env.*.local
+
+# Project-local data (defaults in server/settings.py)
+server/datasets/
+server/session_snapshots/
+server/artifacts/
+
+# Tooling caches
+.cache/
+*.tsbuildinfo
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+neuralfn.db

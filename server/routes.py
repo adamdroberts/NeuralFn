@@ -2,367 +2,205 @@ from __future__ import annotations
 
 import asyncio
 import json
-import threading
-import uuid
-from typing import Any
 
-import numpy as np
-import torch
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter
+from sqlalchemy import select
 from starlette.responses import StreamingResponse
 
-from neuralfn.builtins import BuiltinNeurons
-from neuralfn.evolutionary import EvoConfig, EvolutionaryTrainer
-from neuralfn.graph import Edge, NeuronGraph, NeuronInstance
-from neuralfn.hybrid import HybridConfig, HybridTrainer
-from neuralfn.neuron import NeuronDef, module_neuron, neuron_from_source, subgraph_neuron
-from neuralfn.port import Port
-from neuralfn.surrogate import probe_neuron
-from neuralfn.trainer import SurrogateTrainer, TrainConfig
-from neuralfn.torch_backend import CompiledTorchGraph, TorchTrainConfig, TorchTrainer
-from neuralfn.torch_templates import build_gpt_template_payload
+from neuralfn.graph import NeuronGraph
 
-from .dataset_manager import (
-    list_local_datasets,
-    download_hf_dataset,
-    upload_local_file,
-    load_dataset_tokens,
-    delete_dataset,
-)
-from .models import (
-    DownloadDatasetRequest,
-    EdgeModel,
-    ExecuteRequest,
-    GPTTemplateRequest,
-    GraphModel,
-    NodeModel,
-    TrainRequest,
-)
+from .db import get_session_factory, init_db
+from .models import ExecuteRequest, GPTTemplateRequest, GraphModel, LoadDatasetRequest, TrainRequest
+from .routers.admin import router as admin_router
+from .routers.auth import router as auth_router
+from .routers.bootstrap import router as bootstrap_router
+from .routers.catalog import router as catalog_router
+from .routers.datasets import router as datasets_router
+from .routers.projects import router as projects_router
+from .routers.runs import router as runs_router
+from .routers.sessions import router as sessions_router
+from .services.auth_service import get_auth_service
+from .services.graph_ops import build_template_payload, execute_graph, execute_trace, load_dataset_source_into_graph, trace_torch_graph
+from .services.run_service import get_run_service
+from .services.session_service import get_workspace_service
 
 router = APIRouter(prefix="/api")
+router.include_router(bootstrap_router)
+router.include_router(auth_router)
+router.include_router(admin_router)
+router.include_router(projects_router)
+router.include_router(catalog_router)
+router.include_router(datasets_router)
+router.include_router(sessions_router)
+router.include_router(runs_router)
 
-_graph = NeuronGraph()
-_training_thread: threading.Thread | None = None
-_trainer_instance: SurrogateTrainer | EvolutionaryTrainer | HybridTrainer | TorchTrainer | None = None
+
+LEGACY_EMAIL = "legacy-tests@neuralfn.local"
+LEGACY_PASSWORD = "legacy-tests"
+LEGACY_PROJECT_NAME = "Legacy Project"
+LEGACY_PROJECT_SLUG = "legacy-project"
+LEGACY_SESSION_NAME = "Legacy Session"
 
 
-def _port_from_model(pm: Any) -> Port:
-    return Port(name=pm.name, range=tuple(pm.range), precision=pm.precision, dtype=pm.dtype)
+def _legacy_scope() -> tuple[str, str, str]:
+    init_db()
+    auth_service = get_auth_service()
+    workspace = get_workspace_service()
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        from .db_models import EditorSession, Project
 
+        user = auth_service.get_user_by_email(db, LEGACY_EMAIL)
+        if user is None:
+            user = auth_service.create_user(
+                db,
+                email=LEGACY_EMAIL,
+                password=LEGACY_PASSWORD,
+                display_name="Legacy Tests",
+                is_admin=True,
+            )
 
-def _ndef_from_model(nm: Any) -> NeuronDef:
-    if getattr(nm, "kind", "function") == "subgraph":
-        if nm.subgraph is None:
-            raise ValueError(f"Subgraph neuron '{nm.name}' is missing nested graph data")
-        nested = NeuronGraph.from_dict(nm.subgraph.model_dump())
-        return subgraph_neuron(
-            nested,
-            name=nm.name,
-            input_aliases=list(getattr(nm, "input_aliases", [])) or None,
-            output_aliases=list(getattr(nm, "output_aliases", [])) or None,
-            variant_ref=(
-                getattr(nm.variant_ref, "model_dump", lambda: None)()
-                if getattr(nm, "variant_ref", None) is not None
-                else None
-            ),
-            neuron_id=nm.id or None,
+        project_row = db.scalar(select(Project).where(Project.slug == LEGACY_PROJECT_SLUG))
+        if project_row is None:
+            project = workspace.create_project(
+                db,
+                user,
+                name=LEGACY_PROJECT_NAME,
+                description="Legacy test workspace",
+            )["project"]
+        else:
+            project = workspace.serialize_project(project_row, role="admin")
+
+        session_row = db.scalar(
+            select(EditorSession).where(
+                EditorSession.project_id == project["id"],
+                EditorSession.name == LEGACY_SESSION_NAME,
+            )
         )
+        if session_row is None:
+            session_row = workspace.create_session(db, user, project_id=project["id"], name=LEGACY_SESSION_NAME)
+        else:
+            session_row = workspace.serialize_session(session_row)
+        return user.id, project["id"], session_row["id"]
 
-    if getattr(nm, "kind", "function") == "module":
-        return module_neuron(
-            name=nm.name,
-            module_type=getattr(nm, "module_type", "") or nm.name,
-            input_ports=[_port_from_model(p) for p in nm.input_ports],
-            output_ports=[_port_from_model(p) for p in nm.output_ports],
-            module_config=dict(getattr(nm, "module_config", {}) or {}),
-            module_state=getattr(nm, "module_state", ""),
-            neuron_id=nm.id or None,
+
+def build_gpt_template(body: GPTTemplateRequest) -> dict:
+    return build_template_payload(body)
+
+
+def get_graph() -> dict:
+    user_id, project_id, session_id = _legacy_scope()
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        from .db_models import User
+
+        user = db.get(User, user_id)
+        return get_workspace_service().get_session_detail(db, user, project_id, session_id)["graph"]  # type: ignore[arg-type]
+
+
+def put_graph(body: GraphModel) -> dict:
+    user_id, project_id, session_id = _legacy_scope()
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        from .db_models import User
+
+        user = db.get(User, user_id)
+        updated = get_workspace_service().update_session_graph(
+            db,
+            user,  # type: ignore[arg-type]
+            project_id=project_id,
+            session_id=session_id,
+            graph=body.model_dump(),
+            expected_revision=None,
+            persist_snapshot=False,
         )
-
-    input_ports = [_port_from_model(p) for p in nm.input_ports]
-    output_ports = [_port_from_model(p) for p in nm.output_ports]
-    return neuron_from_source(
-        nm.source_code, nm.name, input_ports, output_ports, neuron_id=nm.id or None,
-    )
+        return updated["graph"]
 
 
-# ── Graph CRUD ────────────────────────────────────────────────────────
+def execute(body: ExecuteRequest) -> dict:
+    user_id, project_id, session_id = _legacy_scope()
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        from .db_models import User
 
-@router.get("/graph")
-def get_graph() -> dict[str, Any]:
-    return _graph.to_dict()
-
-
-@router.put("/graph")
-def put_graph(body: GraphModel) -> dict[str, Any]:
-    global _graph
-    _graph = NeuronGraph.from_dict(body.model_dump())
-    return _graph.to_dict()
+        user = db.get(User, user_id)
+        bundle = get_workspace_service().get_session_bundle(db, user, project_id, session_id)  # type: ignore[arg-type]
+        return execute_graph(NeuronGraph.from_dict(bundle.graph_state.graph), body)
 
 
-@router.post("/nodes")
-def add_node(body: NodeModel) -> dict[str, Any]:
-    ndef = _ndef_from_model(body.neuron_def)
-    inst = NeuronInstance(
-        neuron_def=ndef,
-        instance_id=body.instance_id or uuid.uuid4().hex[:12],
-        position=tuple(body.position),
-    )
-    _graph.add_node(inst)
-    return inst.to_dict()
+def execute_trace_legacy(body: ExecuteRequest) -> dict:
+    user_id, project_id, session_id = _legacy_scope()
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        from .db_models import User
+
+        user = db.get(User, user_id)
+        bundle = get_workspace_service().get_session_bundle(db, user, project_id, session_id)  # type: ignore[arg-type]
+        return execute_trace(NeuronGraph.from_dict(bundle.graph_state.graph), body)
 
 
-@router.delete("/nodes/{node_id}")
-def delete_node(node_id: str) -> dict[str, str]:
-    if node_id not in _graph.nodes:
-        raise HTTPException(404, "Node not found")
-    _graph.remove_node(node_id)
-    return {"status": "deleted"}
+def execute_trace(body: ExecuteRequest) -> dict:
+    return execute_trace_legacy(body)
 
 
-@router.post("/edges")
-def add_edge(body: EdgeModel) -> dict[str, Any]:
-    edge = Edge(
-        id=body.id or uuid.uuid4().hex[:12],
-        src_node=body.src_node,
-        src_port=body.src_port,
-        dst_node=body.dst_node,
-        dst_port=body.dst_port,
-        weight=body.weight,
-        bias=body.bias,
-    )
-    try:
-        _graph.add_edge(edge)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    return edge.to_dict()
+def torch_trace(body: ExecuteRequest) -> dict:
+    user_id, project_id, session_id = _legacy_scope()
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        from .db_models import User
+
+        user = db.get(User, user_id)
+        bundle = get_workspace_service().get_session_bundle(db, user, project_id, session_id)  # type: ignore[arg-type]
+        return trace_torch_graph(NeuronGraph.from_dict(bundle.graph_state.graph), body)
 
 
-@router.delete("/edges/{edge_id}")
-def delete_edge(edge_id: str) -> dict[str, str]:
-    if edge_id not in _graph.edges:
-        raise HTTPException(404, "Edge not found")
-    _graph.remove_edge(edge_id)
-    return {"status": "deleted"}
+def load_dataset(body: LoadDatasetRequest) -> dict:
+    user_id, project_id, session_id = _legacy_scope()
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        from .db_models import User
 
-
-# ── Execution ─────────────────────────────────────────────────────────
-
-@router.post("/execute")
-def execute(body: ExecuteRequest) -> dict[str, Any]:
-    inputs = {k: tuple(v) for k, v in body.inputs.items()}
-    try:
-        outputs = _graph.execute(inputs)
-    except Exception as e:
-        raise HTTPException(400, str(e))
-    return {k: list(v) for k, v in outputs.items()}
-
-
-@router.post("/execute-trace")
-def execute_trace(body: ExecuteRequest) -> dict[str, Any]:
-    inputs = {k: tuple(v) for k, v in body.inputs.items()}
-    try:
-        outputs = _graph.execute_trace(inputs)
-    except Exception as e:
-        raise HTTPException(400, str(e))
-    return {k: list(v) for k, v in outputs.items()}
-
-
-def _summarize_tensor_tuple(values: tuple[Any, ...]) -> list[dict[str, Any]]:
-    summary: list[dict[str, Any]] = []
-    for value in values:
-        if not hasattr(value, "shape"):
-            summary.append({"kind": type(value).__name__})
-            continue
-        tensor = value.detach().float()
-        summary.append(
-            {
-                "shape": list(tensor.shape),
-                "mean": float(tensor.mean().item()) if tensor.numel() else 0.0,
-                "std": float(tensor.std(unbiased=False).item()) if tensor.numel() else 0.0,
-                "min": float(tensor.min().item()) if tensor.numel() else 0.0,
-                "max": float(tensor.max().item()) if tensor.numel() else 0.0,
-            }
+        user = db.get(User, user_id)
+        bundle = get_workspace_service().get_session_bundle(db, user, project_id, session_id)  # type: ignore[arg-type]
+        graph = NeuronGraph.from_dict(bundle.graph_state.graph)
+        result = load_dataset_source_into_graph(graph, body)
+        get_workspace_service().update_session_graph(
+            db,
+            user,  # type: ignore[arg-type]
+            project_id=project_id,
+            session_id=session_id,
+            graph=graph.to_dict(),
+            expected_revision=bundle.graph_state.revision,
+            persist_snapshot=False,
         )
-    return summary
+        return result
 
 
-@router.post("/trace/torch")
-def torch_trace(body: ExecuteRequest) -> dict[str, Any]:
-    if _graph.runtime != "torch" and not _graph.has_module_nodes():
-        raise HTTPException(400, "Active graph is not a torch graph")
-    try:
-        compiled = CompiledTorchGraph(_graph)
-        flat_inputs: list[Any] = []
-        for node_id in _graph.input_node_ids:
-            values = body.inputs.get(node_id)
-            if values is None:
-                raise ValueError(f"Missing input values for '{node_id}'")
-            tensor = torch.tensor(values)
-            if tensor.ndim == 1:
-                tensor = tensor.unsqueeze(0)
-            flat_inputs.append(tensor)
-        _outputs, trace = compiled.trace(*flat_inputs)
-    except Exception as e:
-        raise HTTPException(400, str(e))
-    return {node_id: _summarize_tensor_tuple(values) for node_id, values in trace.items()}
-
-
-# ── Builtins ──────────────────────────────────────────────────────────
-
-@router.get("/builtins")
-def list_builtins() -> list[dict[str, Any]]:
-    return [n.to_dict() for n in BuiltinNeurons.all()]
-
-
-@router.post("/templates/gpt")
-def build_gpt_template(body: GPTTemplateRequest) -> dict[str, Any]:
-    payload = build_gpt_template_payload(
-        name=body.name,
-        config=dict(body.config or {}),
-    )
-    return payload
-
-
-# ── Probe ─────────────────────────────────────────────────────────────
-
-@router.post("/probe/{node_id}")
-def probe(node_id: str, n_samples: int = 1000) -> dict[str, Any]:
-    if node_id not in _graph.nodes:
-        raise HTTPException(404, "Node not found")
-    ndef = _graph.nodes[node_id].neuron_def
-    xs, ys = probe_neuron(ndef, n_samples)
-    return {
-        "inputs": xs.tolist(),
-        "outputs": ys.tolist(),
-    }
-
-
-# ── Training (SSE) ───────────────────────────────────────────────────
-
-@router.post("/train/start")
 def train_start(body: TrainRequest) -> StreamingResponse:
-    global _trainer_instance, _training_thread
+    user_id, project_id, session_id = _legacy_scope()
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        from .db_models import User
 
-    # ── Resolve datasets if specified ─────────────────────────────────
-    if body.dataset_names and len(body.dataset_names) > 0:
-        try:
-            inputs, targets = load_dataset_tokens(
-                body.dataset_names,
-                seq_len=body.seq_len,
-            )
-        except Exception as e:
-            raise HTTPException(400, f"Dataset loading failed: {e}")
-        train_in = np.array(inputs, dtype=np.float32)
-        train_tgt = np.array(targets, dtype=np.float32)
-    else:
-        train_in = np.array(body.train_inputs, dtype=np.float32)
-        train_tgt = np.array(body.train_targets, dtype=np.float32)
-
-    progress_queue: list[dict[str, Any]] = []
-    done_event = threading.Event()
-
-    def on_progress(step: int, loss: float) -> None:
-        progress_queue.append({"step": step, "loss": loss})
-
-    def on_hybrid_progress(info: dict[str, Any]) -> None:
-        progress_queue.append(info)
-
-    def run_surrogate() -> None:
-        try:
-            cfg = TrainConfig(
-                learning_rate=body.learning_rate,
-                epochs=body.epochs,
-                loss_fn=body.loss_fn,
-            )
-            trainer = SurrogateTrainer(_graph, cfg)
-            global _trainer_instance
-            _trainer_instance = trainer
-            trainer.train(train_in, train_tgt, on_epoch=on_progress)
-        finally:
-            done_event.set()
-
-    def run_evolutionary() -> None:
-        try:
-            cfg = EvoConfig(
-                population_size=body.population_size,
-                generations=body.generations,
-            )
-            trainer = EvolutionaryTrainer(_graph, cfg)
-            global _trainer_instance
-            _trainer_instance = trainer
-            trainer.train(train_in, train_tgt, on_generation=on_progress)
-        finally:
-            done_event.set()
-
-    def run_hybrid() -> None:
-        try:
-            cfg = HybridConfig(
-                outer_rounds=body.outer_rounds,
-                loss_fn=body.loss_fn,
-                default_surrogate=TrainConfig(
-                    learning_rate=body.learning_rate,
-                    epochs=body.epochs,
-                    loss_fn=body.loss_fn,
-                ),
-                default_evolutionary=EvoConfig(
-                    population_size=body.population_size,
-                    generations=body.generations,
-                ),
-            )
-            trainer = HybridTrainer(_graph, cfg)
-            global _trainer_instance
-            _trainer_instance = trainer
-            trainer.train(train_in, train_tgt, on_step=on_hybrid_progress)
-        finally:
-            done_event.set()
-
-    def run_torch() -> None:
-        try:
-            cfg = TorchTrainConfig(
-                learning_rate=body.learning_rate,
-                epochs=body.epochs,
-                batch_size=body.batch_size,
-                weight_decay=body.weight_decay,
-                device=str(_graph.torch_config.get("device", "cuda")),
-                amp_dtype=str(_graph.torch_config.get("amp_dtype", "bfloat16")),
-            )
-            trainer = TorchTrainer(_graph, cfg)
-            global _trainer_instance
-            _trainer_instance = trainer
-            # If datasets were specified, use the resolved arrays
-            if body.dataset_names and len(body.dataset_names) > 0:
-                trainer.train(
-                    train_in.astype(int).tolist(),
-                    train_tgt.astype(int).tolist(),
-                    on_epoch=on_progress,
-                )
-            else:
-                trainer.train(body.train_inputs, body.train_targets, on_epoch=on_progress)
-        finally:
-            done_event.set()
-
-    use_torch = body.method == "torch" or _graph.training_method == "torch" or _graph.runtime == "torch" or _graph.has_module_nodes()
-    use_legacy = body.method in {"surrogate", "evolutionary"} and not _graph.has_nested_subgraphs() and not use_torch
-    if use_torch:
-        target = run_torch
-    elif use_legacy:
-        target = run_surrogate if body.method == "surrogate" else run_evolutionary
-    else:
-        target = run_hybrid
-    _training_thread = threading.Thread(target=target, daemon=True)
-    _training_thread.start()
+        user = db.get(User, user_id)
+        handle = get_run_service().start_run(
+            db,
+            user,  # type: ignore[arg-type]
+            project_id=project_id,
+            session_id=session_id,
+            body=body,
+        )
 
     async def event_stream():
         idx = 0
-        while not done_event.is_set():
+        while not handle.done_event.is_set():
             await asyncio.sleep(0.1)
-            while idx < len(progress_queue):
-                msg = progress_queue[idx]
+            while idx < len(handle.progress_queue):
+                msg = handle.progress_queue[idx]
                 yield f"data: {json.dumps(msg)}\n\n"
                 idx += 1
-        while idx < len(progress_queue):
-            msg = progress_queue[idx]
+        while idx < len(handle.progress_queue):
+            msg = handle.progress_queue[idx]
             yield f"data: {json.dumps(msg)}\n\n"
             idx += 1
         yield "data: {\"done\": true}\n\n"
@@ -370,62 +208,34 @@ def train_start(body: TrainRequest) -> StreamingResponse:
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
-@router.post("/train/stop")
-def train_stop() -> dict[str, str]:
-    if _trainer_instance is not None:
-        _trainer_instance.stop()
-    return {"status": "stopped"}
+def get_training_status(
+    since_event_id: int | None = None,
+    history_limit: int = 25,
+) -> dict:
+    user_id, project_id, session_id = _legacy_scope()
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        from .db_models import User
 
-
-# ── I/O designation ───────────────────────────────────────────────────
-
-@router.put("/graph/io")
-def set_io(input_ids: list[str], output_ids: list[str]) -> dict[str, Any]:
-    _graph.input_node_ids = input_ids
-    _graph.output_node_ids = output_ids
-    return {"input_node_ids": input_ids, "output_node_ids": output_ids}
-
-
-# ── Dataset Management ────────────────────────────────────────────────
-
-@router.get("/datasets")
-def get_datasets() -> list[dict[str, Any]]:
-    """List all locally available datasets."""
-    return list_local_datasets()
-
-
-@router.post("/datasets/download")
-def download_dataset(body: DownloadDatasetRequest) -> dict[str, Any]:
-    """Download a HuggingFace dataset into server/datasets/."""
-    try:
-        result = download_hf_dataset(
-            body.hf_path,
-            hf_split=body.hf_split,
-            text_column=body.text_column,
-            max_rows=body.max_rows,
-            alias=body.alias,
+        user = db.get(User, user_id)
+        return get_run_service().get_run_snapshot(
+            db,
+            user,  # type: ignore[arg-type]
+            project_id,
+            session_id,
+            since_event_id=since_event_id,
+            history_limit=max(0, min(history_limit, 500)),
         )
-        return result
-    except Exception as e:
-        raise HTTPException(400, str(e))
 
 
-@router.post("/datasets/upload")
-async def upload_dataset(
-    file: UploadFile = File(...),
-    name: str = Form(...),
-) -> dict[str, Any]:
-    """Upload a local file as a dataset."""
-    try:
-        content = await file.read()
-        return upload_local_file(name, content, file.filename or "data.txt")
-    except Exception as e:
-        raise HTTPException(400, str(e))
+def train_stop() -> dict:
+    user_id, project_id, session_id = _legacy_scope()
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        from .db_models import User
 
-
-@router.delete("/datasets/{ds_name}")
-def remove_dataset(ds_name: str) -> dict[str, str]:
-    """Delete a dataset from local storage."""
-    if not delete_dataset(ds_name):
-        raise HTTPException(404, f"Dataset '{ds_name}' not found")
-    return {"status": "deleted"}
+        user = db.get(User, user_id)
+        latest = get_run_service().get_latest_run(db, user, project_id, session_id)  # type: ignore[arg-type]
+        if not latest or not latest.get("run_id"):
+            return {"status": "not_running"}
+        return get_run_service().stop_run(db, user, project_id, session_id, latest["run_id"])  # type: ignore[arg-type]

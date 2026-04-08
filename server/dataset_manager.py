@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,39 @@ def _ensure_datasets_dir() -> None:
 
 # ── Listing ───────────────────────────────────────────────────────────
 
+def _meta_to_summary(name: str, meta: dict[str, Any], *, default_source: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "source": meta.get("source", default_source),
+        "hf_path": meta.get("hf_path"),
+        "hf_split": meta.get("hf_split"),
+        "text_column": meta.get("text_column", "text"),
+        "num_tokens": meta.get("num_tokens"),
+        "num_rows": meta.get("num_rows"),
+        "variant": meta.get("variant"),
+        "train_shards": meta.get("train_shards"),
+        "val_shards": meta.get("val_shards"),
+        "data_format": meta.get("data_format"),
+        "repo_id": meta.get("repo_id"),
+        "remote_root_prefix": meta.get("remote_root_prefix"),
+    }
+
+
+def get_local_dataset_info(name: str) -> dict[str, Any] | None:
+    """Return metadata for one dataset stored under server/datasets/."""
+    _ensure_datasets_dir()
+    ds_dir = DATASETS_DIR / name
+    if ds_dir.is_dir():
+        meta_file = ds_dir / "meta.json"
+        meta = json.loads(meta_file.read_text(encoding="utf-8")) if meta_file.exists() else {}
+        return _meta_to_summary(name, meta, default_source="local")
+    for ext in (".txt", ".json", ".jsonl", ".csv", ".parquet"):
+        file_path = DATASETS_DIR / f"{name}{ext}"
+        if file_path.exists():
+            return _meta_to_summary(name, {}, default_source="local_file")
+    return None
+
+
 def list_local_datasets() -> list[dict[str, Any]]:
     """Return metadata about locally available datasets in server/datasets/."""
     _ensure_datasets_dir()
@@ -30,32 +64,11 @@ def list_local_datasets() -> list[dict[str, Any]]:
     for entry in sorted(DATASETS_DIR.iterdir()):
         if entry.name.startswith("."):
             continue
-        if entry.is_dir():
-            meta_file = entry / "meta.json"
-            if meta_file.exists():
-                meta = json.loads(meta_file.read_text())
-            else:
-                meta = {}
-            results.append({
-                "name": entry.name,
-                "source": meta.get("source", "local"),
-                "hf_path": meta.get("hf_path"),
-                "hf_split": meta.get("hf_split"),
-                "text_column": meta.get("text_column", "text"),
-                "num_tokens": meta.get("num_tokens"),
-                "num_rows": meta.get("num_rows"),
-            })
-        elif entry.suffix in {".txt", ".json", ".jsonl", ".csv", ".parquet"}:
-            results.append({
-                "name": entry.stem,
-                "source": "local_file",
-                "hf_path": None,
-                "hf_split": None,
-                "text_column": "text",
-                "num_tokens": None,
-                "num_rows": None,
-            })
-    return results
+        summary = get_local_dataset_info(entry.stem if entry.is_file() else entry.name)
+        if summary is not None:
+            results.append(summary)
+    deduped = {dataset["name"]: dataset for dataset in results}
+    return [deduped[name] for name in sorted(deduped)]
 
 
 # ── Downloading / Importing ───────────────────────────────────────────
@@ -67,6 +80,12 @@ def download_hf_dataset(
     text_column: str = "text",
     max_rows: int | None = None,
     alias: str | None = None,
+    variant: str | None = None,
+    train_shards: int | None = None,
+    skip_manifest: bool = False,
+    with_docs: bool = False,
+    repo_id: str | None = None,
+    remote_root_prefix: str = "datasets",
 ) -> dict[str, Any]:
     """Download a HuggingFace dataset and persist it locally as a .txt file.
 
@@ -75,6 +94,18 @@ def download_hf_dataset(
 
     Returns metadata about the downloaded dataset.
     """
+    if variant is not None:
+        return _download_cached_fineweb_variant(
+            hf_path,
+            variant=variant,
+            train_shards=train_shards,
+            alias=alias,
+            skip_manifest=skip_manifest,
+            with_docs=with_docs,
+            repo_id=repo_id,
+            remote_root_prefix=remote_root_prefix,
+        )
+
     from datasets import load_dataset
 
     _ensure_datasets_dir()
@@ -118,6 +149,135 @@ def download_hf_dataset(
     }
     (ds_dir / "meta.json").write_text(json.dumps(meta, indent=2))
 
+    return {"name": ds_name, **meta}
+
+
+def _dataset_dir_for_variant(name: str) -> str:
+    if name == "byte260":
+        return "fineweb10B_byte260"
+    if name.startswith("sp") and name[2:].isdigit():
+        return f"fineweb10B_{name}"
+    raise ValueError(f"unsupported variant {name!r}; expected byte260 or sp<VOCAB_SIZE>")
+
+
+def _download_hf_file(repo_id: str, relative_path: str, destination: Path) -> Path:
+    from huggingface_hub import hf_hub_download
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        return destination
+
+    remote_path = Path(relative_path)
+    cached_path = Path(
+        hf_hub_download(
+            repo_id=repo_id,
+            filename=remote_path.name,
+            subfolder=remote_path.parent.as_posix() if remote_path.parent != Path(".") else None,
+            repo_type="dataset",
+        )
+    )
+    cached_source = cached_path.resolve(strict=True)
+    try:
+        os.link(cached_source, destination)
+    except OSError:
+        shutil.copy2(cached_source, destination)
+    return destination
+
+
+def _download_cached_fineweb_variant(
+    hf_path: str,
+    *,
+    variant: str,
+    train_shards: int | None,
+    alias: str | None,
+    skip_manifest: bool,
+    with_docs: bool,
+    repo_id: str | None,
+    remote_root_prefix: str,
+) -> dict[str, Any]:
+    _ensure_datasets_dir()
+
+    repo = repo_id or hf_path
+    effective_train_shards = 80 if train_shards is None else train_shards
+    if effective_train_shards < 0:
+        raise ValueError("train_shards must be non-negative")
+
+    ds_name = alias or f"{repo.replace('/', '__')}__{variant}__train{effective_train_shards}"
+    ds_dir = DATASETS_DIR / ds_name
+    ds_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest_path = ds_dir / "manifest.json"
+    manifest_remote = f"{remote_root_prefix}/manifest.json"
+    if not manifest_path.exists():
+        if skip_manifest:
+            raise FileNotFoundError(
+                f"manifest.json is required for variant downloads but skip_manifest=True and {manifest_path} is missing"
+            )
+        _download_hf_file(repo, manifest_remote, manifest_path)
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    dataset_dir = _dataset_dir_for_variant(variant)
+    dataset_entry = next((x for x in manifest.get("datasets", []) if x.get("name") == dataset_dir), None)
+    if dataset_entry is None:
+        raise ValueError(f"dataset {dataset_dir} not found in {manifest_remote}")
+
+    max_train_shards = int((dataset_entry.get("stats") or {}).get("files_train", 0))
+    val_shards = int((dataset_entry.get("stats") or {}).get("files_val", 0))
+    if effective_train_shards > max_train_shards:
+        raise ValueError(
+            f"{variant} only has {max_train_shards} training shards on {repo}, requested {effective_train_shards}"
+        )
+
+    tokenizer_name = dataset_entry.get("tokenizer_name")
+    tokenizer_entry = next((x for x in manifest.get("tokenizers", []) if x.get("name") == tokenizer_name), None)
+    if tokenizer_entry is None:
+        raise ValueError(f"tokenizer {tokenizer_name} not found in {manifest_remote}")
+
+    dataset_prefix = f"{remote_root_prefix}/datasets/{dataset_dir}"
+    for i in range(val_shards):
+        _download_hf_file(repo, f"{dataset_prefix}/fineweb_val_{i:06d}.bin", ds_dir / f"fineweb_val_{i:06d}.bin")
+    for i in range(effective_train_shards):
+        _download_hf_file(repo, f"{dataset_prefix}/fineweb_train_{i:06d}.bin", ds_dir / f"fineweb_train_{i:06d}.bin")
+
+    tokenizer_artifacts: list[str] = []
+    for key in ("model_path", "vocab_path", "path"):
+        value = tokenizer_entry.get(key)
+        if value:
+            tokenizer_artifacts.append(str(value))
+    if not tokenizer_artifacts:
+        raise ValueError(f"tokenizer entry is missing downloadable artifacts: {tokenizer_entry}")
+
+    for artifact_path in tokenizer_artifacts:
+        filename = Path(artifact_path).name
+        _download_hf_file(repo, f"{remote_root_prefix}/{artifact_path}", ds_dir / "tokenizers" / filename)
+
+    if with_docs:
+        _download_hf_file(repo, f"{remote_root_prefix}/docs_selected.jsonl", ds_dir / "docs_selected.jsonl")
+        _download_hf_file(
+            repo,
+            f"{remote_root_prefix}/docs_selected.source_manifest.json",
+            ds_dir / "docs_selected.source_manifest.json",
+        )
+
+    train_files = sorted(ds_dir.glob("fineweb_train_*.bin"))
+    num_tokens = sum(path.stat().st_size for path in train_files) // 2
+    meta = {
+        "source": "huggingface_cached_tokens",
+        "hf_path": hf_path,
+        "hf_split": "train",
+        "text_column": "tokens",
+        "num_rows": effective_train_shards,
+        "num_tokens": int(num_tokens),
+        "variant": variant,
+        "train_shards": effective_train_shards,
+        "val_shards": val_shards,
+        "repo_id": repo,
+        "remote_root_prefix": remote_root_prefix,
+        "tokenizer_name": tokenizer_name,
+        "tokenizer_files": [Path(path).name for path in tokenizer_artifacts],
+        "data_format": "uint16_shards",
+    }
+    (ds_dir / "meta.json").write_text(json.dumps(meta, indent=2))
     return {"name": ds_name, **meta}
 
 
@@ -234,11 +394,11 @@ def load_dataset_tokens(
     length `seq_len`.  targets are inputs shifted by one token.
     """
     _ensure_datasets_dir()
-    enc = tiktoken.get_encoding(encoding_name)
+    enc: tiktoken.Encoding | None = None
 
     all_tokens: list[int] = []
     for ds_name in dataset_names:
-        tokens = _load_tokens_for(ds_name, enc)
+        tokens = _load_tokens_for(ds_name, enc, encoding_name=encoding_name)
         all_tokens.extend(tokens)
 
     if len(all_tokens) < seq_len + 1:
@@ -260,12 +420,177 @@ def load_dataset_tokens(
     return inputs, targets
 
 
-def _load_tokens_for(ds_name: str, enc: tiktoken.Encoding) -> list[int]:
+def load_dataset_bytes(
+    dataset_names: list[str],
+    *,
+    seq_len: int = 64,
+) -> tuple[list[list[int]], list[list[int]]]:
+    """Load one or more datasets as raw-byte training sequences."""
+    _ensure_datasets_dir()
+
+    all_bytes: list[int] = []
+    for ds_name in dataset_names:
+        all_bytes.extend(_load_bytes_for(ds_name))
+
+    if len(all_bytes) < seq_len + 1:
+        raise ValueError(
+            f"Combined dataset has only {len(all_bytes)} bytes but "
+            f"need at least {seq_len + 1} for seq_len={seq_len}"
+        )
+
+    inputs: list[list[int]] = []
+    targets: list[list[int]] = []
+    for start in range(0, len(all_bytes) - seq_len, seq_len):
+        chunk = all_bytes[start : start + seq_len + 1]
+        if len(chunk) < seq_len + 1:
+            break
+        inputs.append(chunk[:-1])
+        targets.append(chunk[1:])
+
+    return inputs, targets
+
+
+import torch
+from torch.utils.data import Dataset
+import numpy as np
+
+class MemmapTokenDataset(Dataset):
+    def __init__(self, token_arrays: list[np.ndarray], seq_len: int):
+        self.seq_len = seq_len
+        self.arrays = token_arrays
+        self.array_lengths = [len(arr) for arr in self.arrays]
+        
+        self.chunk_counts = []
+        for length in self.array_lengths:
+            count = max(0, (length - 1) // seq_len)
+            self.chunk_counts.append(count)
+            
+        self.cumulative_chunks = np.cumsum([0] + self.chunk_counts)
+        self.total_chunks = self.cumulative_chunks[-1]
+        
+    def __len__(self) -> int:
+        return self.total_chunks
+        
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        if idx < 0 or idx >= self.total_chunks:
+            raise IndexError("Index out of bounds")
+            
+        array_idx = np.searchsorted(self.cumulative_chunks[1:], idx, side='right')
+        local_idx = idx - self.cumulative_chunks[array_idx]
+        
+        start_pos = local_idx * self.seq_len
+        end_pos = start_pos + self.seq_len + 1
+        
+        chunk = self.arrays[array_idx][start_pos:end_pos].astype(np.int64)
+        
+        x = torch.from_numpy(chunk[:-1])
+        y = torch.from_numpy(chunk[1:])
+        return x, y
+
+def load_dataset_tensors(
+    dataset_names: list[str],
+    *,
+    seq_len: int = 64,
+) -> Dataset:
+    """Load one or more local datasets efficiently using MemmapTokenDataset."""
+    _ensure_datasets_dir()
+    
+    arrays = []
+    for ds_name in dataset_names:
+        ds_path = DATASETS_DIR / ds_name
+        if ds_path.is_dir():
+            meta_file = ds_path / "meta.json"
+            if meta_file.exists():
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                if meta.get("data_format") == "uint16_shards":
+                    train_files = sorted(ds_path.glob("fineweb_train_*.bin"))
+                    for path in train_files:
+                        # Memmap to avoid loading entirely into memory at once
+                        arr = np.memmap(path, dtype=np.uint16, mode='r')
+                        arrays.append(arr)
+                    continue
+                
+        # Fallback to in-memory load for text/json
+        tokens = _load_tokens_for(ds_name, None)
+        arrays.append(np.array(tokens, dtype=np.uint16))
+        
+    if not arrays:
+        raise ValueError(f"No tokens found for datasets {dataset_names}")
+        
+    return MemmapTokenDataset(arrays, seq_len)
+
+
+def load_dataset_byte_tensors(
+    dataset_names: list[str],
+    *,
+    seq_len: int = 64,
+) -> Dataset:
+    """Load one or more datasets as raw-byte tensors efficiently."""
+    _ensure_datasets_dir()
+
+    arrays: list[np.ndarray] = []
+    for ds_name in dataset_names:
+        data_file = _data_file_for(ds_name)
+        if data_file is not None:
+            arrays.append(np.memmap(data_file, dtype=np.uint8, mode='r'))
+            continue
+        raw_bytes = _load_bytes_for(ds_name)
+        arrays.append(np.array(raw_bytes, dtype=np.uint8))
+
+    if not arrays:
+        raise ValueError(f"No bytes found for datasets {dataset_names}")
+
+    return MemmapTokenDataset(arrays, seq_len)
+
+
+def _data_file_for(ds_name: str) -> Path | None:
+    ds_path = DATASETS_DIR / ds_name
+    if ds_path.is_dir():
+        meta_file = ds_path / "meta.json"
+        if meta_file.exists():
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            if meta.get("data_format") == "uint16_shards":
+                return None
+
+        data_file = ds_path / "data.txt"
+        if not data_file.exists():
+            for candidate in ds_path.iterdir():
+                if candidate.is_file() and candidate.name != "meta.json":
+                    data_file = candidate
+                    break
+        return data_file if data_file.exists() else None
+
+    for ext in (".txt", ".json", ".jsonl", ".csv", ".parquet", ".bin"):
+        file_path = DATASETS_DIR / f"{ds_name}{ext}"
+        if file_path.exists():
+            return file_path
+    return None
+
+def _load_tokens_for(
+    ds_name: str,
+    enc: tiktoken.Encoding | None,
+    *,
+    encoding_name: str = "gpt2",
+) -> list[int]:
     """Load tokenized data for a single dataset name."""
     ds_path = DATASETS_DIR / ds_name
 
     # Case 1: it's a directory with data.txt
     if ds_path.is_dir():
+        meta_file = ds_path / "meta.json"
+        if meta_file.exists():
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            if meta.get("data_format") == "uint16_shards":
+                import numpy as np
+
+                train_files = sorted(ds_path.glob("fineweb_train_*.bin"))
+                if not train_files:
+                    raise FileNotFoundError(f"No training shards found in dataset '{ds_name}'")
+                shards = [np.fromfile(path, dtype=np.uint16) for path in train_files]
+                if not shards:
+                    raise FileNotFoundError(f"No readable training shards found in dataset '{ds_name}'")
+                return np.concatenate(shards).astype(int).tolist()
+
         data_file = ds_path / "data.txt"
         if not data_file.exists():
             # Try to find any data file
@@ -276,6 +601,8 @@ def _load_tokens_for(ds_name: str, enc: tiktoken.Encoding) -> list[int]:
         if not data_file.exists():
             raise FileNotFoundError(f"No data file found in dataset '{ds_name}'")
         text = data_file.read_text(encoding="utf-8")
+        if enc is None:
+            enc = tiktoken.get_encoding(encoding_name)
         return enc.encode(text)
 
     # Case 2: it's a plain file in the datasets dir
@@ -283,14 +610,34 @@ def _load_tokens_for(ds_name: str, enc: tiktoken.Encoding) -> list[int]:
         file_path = DATASETS_DIR / f"{ds_name}{ext}"
         if file_path.exists():
             text = file_path.read_text(encoding="utf-8")
+            if enc is None:
+                enc = tiktoken.get_encoding(encoding_name)
             return enc.encode(text)
 
     raise FileNotFoundError(f"Dataset '{ds_name}' not found in {DATASETS_DIR}")
 
 
+def _load_bytes_for(ds_name: str) -> list[int]:
+    """Load raw bytes for a single dataset name."""
+    ds_path = DATASETS_DIR / ds_name
+
+    if ds_path.is_dir():
+        meta_file = ds_path / "meta.json"
+        if meta_file.exists():
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            if meta.get("data_format") == "uint16_shards":
+                raise ValueError(
+                    f"Dataset '{ds_name}' stores token shards and cannot be used for raw-byte H-Net training"
+                )
+
+    data_file = _data_file_for(ds_name)
+    if data_file is None:
+        raise FileNotFoundError(f"Dataset '{ds_name}' not found in {DATASETS_DIR}")
+    return list(data_file.read_bytes())
+
+
 def delete_dataset(ds_name: str) -> bool:
     """Delete a dataset from the local storage. Returns True if deleted."""
-    import shutil
     ds_path = DATASETS_DIR / ds_name
     if ds_path.is_dir():
         shutil.rmtree(ds_path)

@@ -5,7 +5,11 @@ import {
   getBezierPath,
   type EdgeProps,
 } from '@xyflow/react';
-import { useGraphStore } from '../store/graphStore';
+import {
+  resolveTorchTraceStats,
+  selectCurrentPath,
+  useGraphStore,
+} from '../store/graphStore';
 import NeuronIcon from './NeuronIcon';
 
 export default function InteractiveEdge({
@@ -31,12 +35,11 @@ export default function InteractiveEdge({
   });
 
   const [isHovered, setIsHovered] = useState(false);
-  const graph = useGraphStore((state) => state.rootGraph); // Assuming flat scope for now, we could use toActiveGraph
-  const activeGraph = useGraphStore((state) => {
-    // Basic lookup for the node
-    return state.rootGraph; 
-  }); 
+  const activeGraph = useGraphStore((state) => state.rootGraph);
+  const currentPath = useGraphStore(selectCurrentPath);
   const edgeTelemetry = useGraphStore(state => state.edgeTelemetry);
+  const torchTrace = useGraphStore((state) => state.torchTrace);
+  const torchTraceSource = useGraphStore((state) => state.torchTraceSource);
   
   // Find the exact node object in the graph
   const searchNode = () => {
@@ -59,10 +62,40 @@ export default function InteractiveEdge({
 
   const targetNode: any = searchNode();
   const functionName = targetNode?.neuron_def?.name || 'identity';
-
-  // Get telemetry array for the source node, since the edge carries the source node's output!
-  // Note: the backend trace returns the values for the instance_id.
+  // Get telemetry array for the source node, since the edge carries the source node's output.
   const telemetryValues = edgeTelemetry[source] || [];
+  const sourceTrace = resolveTorchTraceStats(torchTrace, currentPath, source);
+  const targetTrace = resolveTorchTraceStats(torchTrace, currentPath, target);
+  const scalarPreview = telemetryValues.length > 0;
+  const torchPreview = sourceTrace.length > 0 || targetTrace.length > 0;
+
+  const renderTraceCard = (label: string, stats: any[]) => {
+    if (stats.length === 0) return null;
+    return (
+      <div className="w-full rounded border border-gray-800 bg-gray-900/80 px-2 py-1">
+        <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-gray-500">{label}</div>
+        {stats.slice(0, 2).map((stat, idx) => (
+          <div key={`${label}-${idx}`} className="mb-1 last:mb-0 text-[9px] text-gray-400 font-mono">
+            {stat.kind ? (
+              <div>{stat.kind}</div>
+            ) : (
+              <>
+                <div>{JSON.stringify(stat.shape)} {stat.dtype ? `• ${stat.dtype}` : ""}</div>
+                <div>
+                  mean={stat.mean?.toFixed(4)} std={stat.std?.toFixed(4)} min={stat.min?.toFixed(4)} max={stat.max?.toFixed(4)}
+                </div>
+                {Array.isArray(stat.preview) && stat.preview.length > 0 && (
+                  <div className="truncate text-cyan-300">
+                    preview {JSON.stringify(stat.preview)}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <>
@@ -97,23 +130,33 @@ export default function InteractiveEdge({
             <div className="text-[10px] font-bold text-blue-300 mb-1">
               Target Transform: {functionName}
             </div>
-            <div className="bg-gray-900 rounded p-1 mb-1">
-              {/* Force expanded state to show the high res curve + animation */}
-              <NeuronIcon 
-                name={functionName} 
-                expanded={true} 
-                animated={true} 
-                telemetry={telemetryValues} 
-              />
-            </div>
-            {telemetryValues.length > 0 && (
+            {targetNode?.neuron_def?.kind === "function" && (
+              <div className="bg-gray-900 rounded p-1 mb-1">
+                <NeuronIcon
+                  name={functionName}
+                  expanded={true}
+                  animated={scalarPreview}
+                  telemetry={telemetryValues}
+                />
+              </div>
+            )}
+            {scalarPreview && (
               <div className="text-[9px] text-gray-500 font-mono">
                 {telemetryValues.length} samples streaming
               </div>
             )}
-            {telemetryValues.length === 0 && (
+            {torchPreview && (
+              <div className="mt-1 flex w-full flex-col gap-1">
+                {renderTraceCard("Input Sample", sourceTrace)}
+                {renderTraceCard("Output Sample", targetTrace)}
+                <div className="text-[8px] text-emerald-300">
+                  {torchTraceSource === "dataset" ? "Previewing dataset sample" : "Previewing traced tensor flow"}
+                </div>
+              </div>
+            )}
+            {!scalarPreview && !torchPreview && (
               <div className="text-[8px] text-amber-500/80">
-                Awaiting Inputs (JSON)...
+                Preview unavailable yet
               </div>
             )}
           </div>

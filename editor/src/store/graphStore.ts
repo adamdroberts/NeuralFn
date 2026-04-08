@@ -9,7 +9,13 @@ import {
   type Node,
   type NodeChange,
 } from "@xyflow/react";
-import type { GraphData, NeuronDefData, TrainingMethod, VariantLibraryData } from "../api/client";
+import type {
+  GraphData,
+  NeuronDefData,
+  TorchTraceStat,
+  TrainingMethod,
+  VariantLibraryData,
+} from "../api/client";
 import {
   type Breadcrumb,
   type FlowNodeData,
@@ -42,16 +48,38 @@ export interface LossPoint {
 }
 
 interface GraphState {
+  projectId: string | null;
+  sessionId: string | null;
+  revision: number;
+  hydrationState: "idle" | "loading" | "ready" | "error";
+  isDirty: boolean;
+  isSaving: boolean;
+  saveError: string | null;
   rootGraph: GraphData;
   currentPath: GraphPathSegment[];
   selectedNodeId: string | null;
+  preferredInsertPosition: { x: number; y: number } | null;
+  insertSequence: number;
   builtins: NeuronDefData[];
   lossHistory: LossPoint[];
   isTraining: boolean;
   edgeTelemetry: Record<string, number[]>;
+  torchTrace: Record<string, TorchTraceStat[]>;
+  torchTraceSource: "manual" | "dataset" | null;
   lastError: string | null;
 
+  hydrateSession: (params: {
+    projectId: string;
+    sessionId: string;
+    graph: GraphData;
+    revision: number;
+  }) => void;
+  setHydrationState: (state: "idle" | "loading" | "ready" | "error") => void;
+  markSessionSaved: (revision: number) => void;
+  setSaving: (value: boolean) => void;
+  setSaveError: (message: string | null) => void;
   setRootGraph: (graph: GraphData) => void;
+  setPreferredInsertPosition: (position: { x: number; y: number } | null) => void;
   applyActiveNodeChanges: (changes: NodeChange[]) => void;
   applyActiveEdgeChanges: (changes: EdgeChange[]) => void;
   connectActiveGraph: (connection: Connection) => void;
@@ -70,6 +98,7 @@ interface GraphState {
   clearLoss: () => void;
   setTraining: (v: boolean) => void;
   updateEdgeTelemetry: (t: Record<string, number[]>) => void;
+  updateTorchTrace: (trace: Record<string, TorchTraceStat[]>, source: "manual" | "dataset" | null) => void;
   clearError: () => void;
 
   toggleInput: (id: string) => void;
@@ -88,13 +117,33 @@ interface GraphState {
 }
 
 const initialGraph = createEmptyGraph("Root graph");
+const INSERT_FALLBACK_POSITION = { x: 160, y: 120 };
+const INSERT_STAGGER_OFFSETS = [
+  [0, 0],
+  [56, 0],
+  [-56, 0],
+  [0, 56],
+  [0, -56],
+  [56, 56],
+  [-56, 56],
+  [56, -56],
+  [-56, -56],
+] as const;
 
 function createNodeId(prefix = "n"): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-function createNodePosition(baseX = 100, baseY = 100) {
-  return [baseX + Math.random() * 280, baseY + Math.random() * 220] as [number, number];
+function createNodePosition(
+  state: Pick<GraphState, "preferredInsertPosition" | "insertSequence">,
+  explicitPosition?: [number, number],
+) {
+  if (explicitPosition) {
+    return explicitPosition;
+  }
+  const anchor = state.preferredInsertPosition ?? INSERT_FALLBACK_POSITION;
+  const [offsetX, offsetY] = INSERT_STAGGER_OFFSETS[state.insertSequence % INSERT_STAGGER_OFFSETS.length];
+  return [anchor.x + offsetX, anchor.y + offsetY] as [number, number];
 }
 
 function normalizeState(
@@ -122,10 +171,13 @@ function withSafety(
     currentPath?: GraphPathSegment[];
     selectedNodeId?: string | null;
   },
+  options?: {
+    graphChanged?: boolean;
+  },
 ): GraphState {
   try {
     const next = build();
-    return normalizeState(
+    const normalized = normalizeState(
       state,
       next.rootGraph,
       next.currentPath ?? state.currentPath,
@@ -133,6 +185,12 @@ function withSafety(
         ? (next.selectedNodeId ?? null)
         : state.selectedNodeId,
     );
+    return {
+      ...normalized,
+      isDirty: options?.graphChanged ? true : state.isDirty,
+      saveError: options?.graphChanged ? null : state.saveError,
+      lastError: null,
+    };
   } catch (error) {
     return {
       ...state,
@@ -153,7 +211,7 @@ function mutateActiveGraph(
       currentPath,
       selectedNodeId,
     };
-  });
+  }, { graphChanged: true });
 }
 
 function addNodeToGraph(
@@ -165,7 +223,7 @@ function addNodeToGraph(
   },
 ) {
   const instanceId = createNodeId(options?.idPrefix);
-  const nodePosition = options?.position ?? createNodePosition();
+  const nodePosition = createNodePosition(state, options?.position);
   const neuronDef = normalizeNeuronDef({
     ...ndef,
     id: instanceId,
@@ -173,21 +231,24 @@ function addNodeToGraph(
 
   return {
     instanceId,
-    nextState: mutateActiveGraph(
-      state,
-      (graph) => ({
-        ...graph,
-        nodes: {
-          ...graph.nodes,
-          [instanceId]: {
-            instance_id: instanceId,
-            position: nodePosition,
-            neuron_def: neuronDef,
+    nextState: {
+      ...mutateActiveGraph(
+        state,
+        (graph) => ({
+          ...graph,
+          nodes: {
+            ...graph.nodes,
+            [instanceId]: {
+              instance_id: instanceId,
+              position: nodePosition,
+              neuron_def: neuronDef,
+            },
           },
-        },
-      }),
-      instanceId,
-    ),
+        }),
+        instanceId,
+      ),
+      insertSequence: state.insertSequence + 1,
+    },
   };
 }
 
@@ -197,6 +258,23 @@ function toActiveGraph(state: GraphState): GraphData {
 
 export function selectCurrentPath(state: GraphState): GraphPathSegment[] {
   return clampGraphPath(state.rootGraph, state.currentPath);
+}
+
+export function torchTracePathPrefix(path: GraphPathSegment[]): string {
+  return path
+    .filter((segment): segment is { kind: "node"; nodeId: string } => segment.kind === "node")
+    .map((segment) => segment.nodeId)
+    .join("/");
+}
+
+export function resolveTorchTraceStats(
+  trace: Record<string, TorchTraceStat[]>,
+  path: GraphPathSegment[],
+  nodeId: string,
+): TorchTraceStat[] {
+  const prefix = torchTracePathPrefix(path);
+  const scopedKey = prefix ? `${prefix}/${nodeId}` : nodeId;
+  return trace[scopedKey] ?? trace[nodeId] ?? [];
 }
 
 export function selectActiveGraph(state: GraphState): GraphData {
@@ -232,15 +310,32 @@ export function selectSelectedNode(state: GraphState): Node<NeuronNodeData> | nu
 export const useGraphStore = create<GraphState>((set) => ({
   ...normalizeState(
     {
+      projectId: null,
+      sessionId: null,
+      revision: 0,
+      hydrationState: "idle",
+      isDirty: false,
+      isSaving: false,
+      saveError: null,
       rootGraph: initialGraph,
       currentPath: [],
       selectedNodeId: null,
+      preferredInsertPosition: null,
+      insertSequence: 0,
       builtins: [],
       lossHistory: [],
       isTraining: false,
       edgeTelemetry: {},
+      torchTrace: {},
+      torchTraceSource: null,
       lastError: null,
+      hydrateSession: () => undefined,
+      setHydrationState: () => undefined,
+      markSessionSaved: () => undefined,
+      setSaving: () => undefined,
+      setSaveError: () => undefined,
       setRootGraph: () => undefined,
+      setPreferredInsertPosition: () => undefined,
       applyActiveNodeChanges: () => undefined,
       applyActiveEdgeChanges: () => undefined,
       connectActiveGraph: () => undefined,
@@ -259,6 +354,7 @@ export const useGraphStore = create<GraphState>((set) => ({
       clearLoss: () => undefined,
       setTraining: () => undefined,
       updateEdgeTelemetry: () => undefined,
+      updateTorchTrace: () => undefined,
       clearError: () => undefined,
       toggleInput: () => undefined,
       toggleOutput: () => undefined,
@@ -271,7 +367,45 @@ export const useGraphStore = create<GraphState>((set) => ({
     [],
     null,
   ),
-  setRootGraph: (graph) => set((state) => withSafety(state, () => ({ rootGraph: graph }))),
+  hydrateSession: ({ projectId, sessionId, graph, revision }) =>
+    set((state) => ({
+      ...withSafety(state, () => ({ rootGraph: graph, currentPath: [], selectedNodeId: null })),
+      projectId,
+      sessionId,
+      revision,
+      hydrationState: "ready",
+      isDirty: false,
+      isSaving: false,
+      saveError: null,
+    })),
+
+  setHydrationState: (hydrationState) => set((state) => ({ ...state, hydrationState })),
+  markSessionSaved: (revision) =>
+    set((state) => ({
+      ...state,
+      revision,
+      isDirty: false,
+      isSaving: false,
+      saveError: null,
+      hydrationState: "ready",
+    })),
+  setSaving: (isSaving) => set((state) => ({ ...state, isSaving })),
+  setSaveError: (saveError) =>
+    set((state) => ({
+      ...state,
+      saveError,
+      isSaving: false,
+      hydrationState: saveError ? "error" : state.hydrationState,
+    })),
+
+  setRootGraph: (graph) =>
+    set((state) => ({
+      ...withSafety(state, () => ({ rootGraph: graph }), { graphChanged: true }),
+      lastError: null,
+    })),
+
+  setPreferredInsertPosition: (preferredInsertPosition) =>
+    set((state) => ({ ...state, preferredInsertPosition })),
 
   applyActiveNodeChanges: (changes) =>
     set((state) => {
@@ -330,7 +464,7 @@ export const useGraphStore = create<GraphState>((set) => ({
     set((state) => {
       const { nextState } = addNodeToGraph(state, ndef, {
         idPrefix: "n",
-        position: pos ? [pos.x, pos.y] : createNodePosition(100, 100),
+        position: pos ? [pos.x, pos.y] : undefined,
       });
       return nextState;
     }),
@@ -339,7 +473,7 @@ export const useGraphStore = create<GraphState>((set) => ({
     set((state) => {
       const { nextState } = addNodeToGraph(state, createCustomNeuronDef("custom"), {
         idPrefix: "n",
-        position: pos ? [pos.x, pos.y] : createNodePosition(200, 160),
+        position: pos ? [pos.x, pos.y] : undefined,
       });
       return nextState;
     }),
@@ -352,7 +486,7 @@ export const useGraphStore = create<GraphState>((set) => ({
         ).length + 1;
       const { nextState } = addNodeToGraph(state, createSubgraphNeuronDef(`subgraph_${subgraphIndex}`), {
         idPrefix: "g",
-        position: pos ? [pos.x, pos.y] : createNodePosition(180, 120),
+        position: pos ? [pos.x, pos.y] : undefined,
       });
       return nextState;
     }),
@@ -371,7 +505,7 @@ export const useGraphStore = create<GraphState>((set) => ({
         createLinkedVariantNeuronDef(`${family}_${version}`, { family, version }, variantGraph),
         {
           idPrefix: "g",
-          position: pos ? [pos.x, pos.y] : createNodePosition(220, 180),
+          position: pos ? [pos.x, pos.y] : undefined,
         },
       );
       return nextState;
@@ -384,7 +518,7 @@ export const useGraphStore = create<GraphState>((set) => ({
           ...state.rootGraph,
           variant_library: mergeVariantLibraries(state.rootGraph.variant_library, library),
         },
-      })),
+      }), { graphChanged: true }),
     ),
 
   saveNodeAsVariant: (nodeId, family, version, linkNode = true) =>
@@ -428,7 +562,7 @@ export const useGraphStore = create<GraphState>((set) => ({
           })),
           selectedNodeId: nodeId,
         };
-      }),
+      }, { graphChanged: true }),
     ),
 
   swapNodeVariant: (nodeId, family, version) =>
@@ -464,7 +598,7 @@ export const useGraphStore = create<GraphState>((set) => ({
           })),
           selectedNodeId: nodeId,
         };
-      }),
+      }, { graphChanged: true }),
     ),
 
   removeNode: (id) =>
@@ -524,6 +658,8 @@ export const useGraphStore = create<GraphState>((set) => ({
   clearLoss: () => set((state) => ({ ...state, lossHistory: [] })),
   setTraining: (isTraining) => set((state) => ({ ...state, isTraining })),
   updateEdgeTelemetry: (edgeTelemetry) => set((state) => ({ ...state, edgeTelemetry })),
+  updateTorchTrace: (torchTrace, torchTraceSource) =>
+    set((state) => ({ ...state, torchTrace, torchTraceSource })),
   clearError: () => set((state) => ({ ...state, lastError: null })),
 
   toggleInput: (id) =>
