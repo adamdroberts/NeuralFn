@@ -6,6 +6,46 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-04-08 JEPA block masking
+
+#### Added
+
+- `JEPAMaskStage` now supports a `mask_strategy` parameter: `"random"` (default, backward-compatible i.i.d. per-token masking) and `"block"` (contiguous span masking). Block masking samples `num_blocks` contiguous spans per sequence with lengths drawn uniformly from `[min_block_ratio * seq_len, max_block_ratio * seq_len]`, forcing the predictor to reason about larger semantic structures rather than interpolating from adjacent unmasked tokens.
+- New `ModelSpec` fields: `jepa_mask_strategy` (str), `jepa_num_blocks` (int, default 4), `jepa_min_block_ratio` (float, default 0.1), `jepa_max_block_ratio` (float, default 0.25). All wired through `_base_model_spec` and the `build_jepa_model_stage_graph` template builder.
+- Default `jepa_mask` builtin neuron config extended with the new keys.
+- Two new tests in `tests/test_template_presets.py`:
+  - `test_jepa_block_masking_produces_contiguous_spans` — verifies block masks produce contiguous spans of at least `min_block_len`, masked positions are replaced, unmasked positions are preserved, and random mode still produces scattered masks.
+  - `test_jepa_block_masking_config_wires_through_template` — verifies `ModelSpec` fields propagate through the template builder into the compiled graph's module config.
+
+#### Verification
+
+- `python -m pytest tests/test_template_presets.py -q` — all tests pass, including the existing EMA target encoder test.
+
+### 2026-04-08 Implement backend_capabilities: cache, quantized_export, megakernel, PCA KV cache
+
+#### Added
+
+- `resolve_backend_capabilities(spec)` in `neuralfn/config.py` auto-derives capability flags from `TemplateSpec` fields (`runtime`, `compression`, etc.) and is called from `_base_model_spec()` so every preset gets a correct capability map.
+- `FusedCausalAttentionStage` in `neuralfn/torch_backend.py` combines QKV projection, reshape, RoPE, SDPA, merge, and output projection into a single `nn.Module` for the megakernel runtime's aggressive kernel fusion scope.  Registered as `fused_causal_attention` builtin module.
+- `export_quantized_pt(graph, path, scheme)` and `import_quantized_pt(graph, path)` in `neuralfn/inference.py` supporting `int8` (per-channel) and `ternary` quantization schemes.
+- `InferenceCache` class in `neuralfn/inference.py` for stateful autoregressive generation with KV cache management.  Reads device from the graph's `torch_config` and handles both training (tokens+targets) and inference-only graphs.
+- New presets `llama_megakernel` (`runtime="megakernel"`) and `kv_pca_llama` (`compression="kv_pca"`) in `neuralfn/config.py`, registered in `build_model_spec_from_config`.
+- `build_dense_attention_graph` now accepts `enable_cache`, `enable_pca`, `pca_compressed_dim`, and `fused_megakernel` flags to optionally insert KV cache read/write nodes, PCA encode/decode nodes, or collapse to a single fused attention node.
+- 24 new tests in `tests/test_backend_capabilities.py` covering capabilities resolution, megakernel forward, PCA attention, KV cache graph structure, quantized export round-trips, runtime wiring, inference cache, and new preset registration.
+
+#### Changed
+
+- `TorchTrainer.train()` now reads `template.runtime` from the graph's serialized `template_spec` to select the compilation mode (`eager` → none, `compile` → `torch.compile`, `megakernel` → `torch.compile(mode="max-autotune", fullgraph=True)`).  `TorchTrainConfig.compile` still acts as an override when explicitly True.
+- `KVQuantPackStage` upgraded from a plain concat stub to real int8 quantization with per-token scale factors.  `KVQuantUnpackStage` performs the inverse dequantization.
+- `TemplateSpec.backend_capabilities` defaults updated: `cache` and `quantized_export` now default to `True`.
+- All template graph builders (`build_model_stage_graph`, `build_hidden_backbone_graph`, `build_seq2seq_model_stage_graph`, `build_diffusion_model_stage_graph`) now forward PCA/megakernel flags to `build_dense_attention_graph` via `_attn_flags()`.
+- `test_kv_quant.py` tolerance widened from exact match to `atol=0.02` to account for int8 quantization noise.
+- Built-in neuron catalog test updated to include `fused_causal_attention_module` (80 entries).
+
+#### Verification
+
+- `python -m pytest tests/test_backend_capabilities.py tests/test_template_presets.py tests/test_kv_quant.py tests/test_kv_pca.py tests/test_builtin_neurons.py -q` → 41 passed.
+
 ### 2026-04-08 Gitignore for local data and caches
 
 #### Changed

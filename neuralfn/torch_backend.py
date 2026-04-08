@@ -228,6 +228,50 @@ class CausalSelfAttentionStage(nn.Module):
         return self.out_proj(y.transpose(1, 2).contiguous().reshape(batch, seq_len, model_dim))
 
 
+class FusedCausalAttentionStage(nn.Module):
+    """Fused QKV-proj + reshape + RoPE + SDPA + merge + out-proj in one module.
+
+    Designed for the ``megakernel`` runtime so ``torch.compile`` sees the
+    entire attention layer as a single graph, enabling aggressive kernel fusion.
+    """
+
+    def __init__(
+        self,
+        model_dim: int,
+        num_heads: int,
+        num_kv_heads: int,
+        rope_base: float = 10000.0,
+        dropout_p: float = 0.0,
+    ) -> None:
+        super().__init__()
+        head_dim = model_dim // num_heads
+        kv_dim = num_kv_heads * head_dim
+        self.num_heads = num_heads
+        self.num_kv_heads = num_kv_heads
+        self.head_dim = head_dim
+        self.dropout_p = dropout_p
+        self.q_proj = nn.Linear(model_dim, model_dim, bias=False)
+        self.k_proj = nn.Linear(model_dim, kv_dim, bias=False)
+        self.v_proj = nn.Linear(model_dim, kv_dim, bias=False)
+        self.out_proj = nn.Linear(model_dim, model_dim, bias=False)
+        self.rotary = Rotary(head_dim, rope_base)
+
+    def forward(self, x: Tensor) -> Tensor:
+        batch, seq_len, model_dim = x.shape
+        q = self.q_proj(x).reshape(batch, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        k = self.k_proj(x).reshape(batch, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(x).reshape(batch, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
+        cos, sin = self.rotary(seq_len, x.device, q.dtype)
+        q = apply_rotary_emb(q, cos, sin)
+        k = apply_rotary_emb(k, cos, sin)
+        drop = self.dropout_p if self.training else 0.0
+        y = F.scaled_dot_product_attention(
+            q, k, v, attn_mask=None, dropout_p=drop,
+            is_causal=True, enable_gqa=self.num_heads != self.num_kv_heads,
+        )
+        return self.out_proj(y.transpose(1, 2).contiguous().reshape(batch, seq_len, model_dim))
+
+
 class MLPReluSquaredStage(nn.Module):
     def __init__(self, model_dim: int, mlp_mult: int) -> None:
         super().__init__()
@@ -511,16 +555,27 @@ class KVPCADecodeStage(nn.Module):
         return self.k_unproj(k), self.v_unproj(v)
 
 class KVQuantPackStage(nn.Module):
+    """Pack K and V into int8 with per-token scales for memory-efficient KV storage."""
+
     def forward(self, k: Tensor, v: Tensor) -> Tensor:
-        # Simple concat for now; real impl might use bits/quantization
-        return torch.cat([k, v], dim=-1)
+        kv = torch.cat([k, v], dim=-1)  # (..., 2*head_dim)
+        amax = kv.abs().amax(dim=-1, keepdim=True).clamp(min=1e-7)
+        scale = amax / 127.0
+        quantized = torch.round(kv / scale).clamp(-128, 127)
+        # Store scale as the last element so unpack can recover it
+        return torch.cat([quantized, scale], dim=-1)
+
 
 class KVQuantUnpackStage(nn.Module):
     def __init__(self, head_dim: int) -> None:
         super().__init__()
         self.head_dim = head_dim
+
     def forward(self, packed: Tensor) -> tuple[Tensor, Tensor]:
-        k, v = torch.split(packed, [self.head_dim, packed.size(-1) - self.head_dim], dim=-1)
+        scale = packed[..., -1:]
+        quantized = packed[..., :-1]
+        dequantized = quantized * scale
+        k, v = torch.split(dequantized, [self.head_dim, dequantized.size(-1) - self.head_dim], dim=-1)
         return k, v
 
 class RouterLogitsStage(nn.Module):
@@ -616,14 +671,47 @@ class RandomTimestepsStage(nn.Module):
 
 
 class JEPAMaskStage(nn.Module):
-    def __init__(self, mask_ratio: float, mask_token_id: int = 0) -> None:
+    def __init__(
+        self,
+        mask_ratio: float,
+        mask_token_id: int = 0,
+        mask_strategy: str = "random",
+        num_blocks: int = 4,
+        min_block_ratio: float = 0.1,
+        max_block_ratio: float = 0.25,
+    ) -> None:
         super().__init__()
         self.mask_ratio = float(mask_ratio)
         self.mask_token_id = int(mask_token_id)
+        self.mask_strategy = mask_strategy
+        self.num_blocks = int(num_blocks)
+        self.min_block_ratio = float(min_block_ratio)
+        self.max_block_ratio = float(max_block_ratio)
+
+    def _random_mask(self, tokens: Tensor) -> Tensor:
+        noise = torch.rand(tokens.shape, device=tokens.device)
+        return noise < self.mask_ratio
+
+    def _block_mask(self, tokens: Tensor) -> Tensor:
+        batch, seq_len = tokens.shape
+        mask = torch.zeros(batch, seq_len, dtype=torch.bool, device=tokens.device)
+        min_len = max(1, int(self.min_block_ratio * seq_len))
+        max_len = max(min_len, int(self.max_block_ratio * seq_len))
+        positions = torch.arange(seq_len, device=tokens.device).unsqueeze(0)
+        for _ in range(self.num_blocks):
+            block_len = torch.randint(min_len, max_len + 1, (batch,), device=tokens.device)
+            max_start = (seq_len - block_len).clamp_min(0)
+            start = (torch.rand(batch, device=tokens.device) * (max_start.float() + 1.0)).long().clamp_max(max_start)
+            end = start + block_len
+            span = (positions >= start.unsqueeze(1)) & (positions < end.unsqueeze(1))
+            mask = mask | span
+        return mask
 
     def forward(self, tokens: Tensor) -> tuple[Tensor, Tensor]:
-        noise = torch.rand(tokens.shape, device=tokens.device)
-        mask = noise < self.mask_ratio
+        if self.mask_strategy == "block":
+            mask = self._block_mask(tokens)
+        else:
+            mask = self._random_mask(tokens)
         masked_tokens = tokens.clone()
         masked_tokens[mask] = self.mask_token_id
         return masked_tokens, mask.to(dtype=torch.float32)
@@ -798,6 +886,10 @@ def default_dataset_source_config() -> dict[str, Any]:
     return {"dataset_names": [], "seq_len": 64}
 
 
+def default_fused_attention_config() -> dict[str, Any]:
+    return {"model_dim": 128, "num_heads": 4, "num_kv_heads": 4, "rope_base": 10000.0, "dropout_p": 0.0}
+
+
 def default_kv_pca_config() -> dict[str, Any]:
     return {"head_dim": 64, "compressed_dim": 16}
 
@@ -808,6 +900,14 @@ def default_kv_quant_unpack_config() -> dict[str, Any]:
 
 def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
     cfg = dict(module_config or {})
+    if module_type == "fused_causal_attention":
+        return FusedCausalAttentionStage(
+            model_dim=int(cfg["model_dim"]),
+            num_heads=int(cfg["num_heads"]),
+            num_kv_heads=int(cfg.get("num_kv_heads", cfg["num_heads"])),
+            rope_base=float(cfg.get("rope_base", 10000.0)),
+            dropout_p=float(cfg.get("dropout_p", 0.0)),
+        )
     if module_type == "bitlinear_ternary":
         return BitLinearTernaryStage(
             input_dim=int(cfg["input_dim"]),
@@ -982,6 +1082,10 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
         return JEPAMaskStage(
             mask_ratio=float(cfg.get("mask_ratio", 0.5)),
             mask_token_id=int(cfg.get("mask_token_id", 0)),
+            mask_strategy=str(cfg.get("mask_strategy", "random")),
+            num_blocks=int(cfg.get("num_blocks", 4)),
+            min_block_ratio=float(cfg.get("min_block_ratio", 0.1)),
+            max_block_ratio=float(cfg.get("max_block_ratio", 0.25)),
         )
     if module_type == "latent_pool":
         return LatentPoolStage()
@@ -1413,9 +1517,12 @@ class TorchTrainer:
             for mod in compiled.modules():
                 pass
 
-        if self.config.compile:
+        template_runtime = str(template_spec.get("template", {}).get("runtime", "eager"))
+        if self.config.compile or template_runtime == "compile":
             run_graph = torch.compile(compiled)
-            
+        elif template_runtime == "megakernel":
+            run_graph = torch.compile(compiled, mode="max-autotune", fullgraph=True)
+
         if self.config.fsdp2_enabled:
             try:
                 from torch.distributed.fsdp import fully_shard

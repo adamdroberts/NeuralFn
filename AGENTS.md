@@ -20,3 +20,35 @@ Treat the documentation update requirement as mandatory for:
 ## Done criteria
 
 A meaningful feature change is not complete until the relevant `README.md` and `CHANGELOG.md` updates are included.
+
+## GPT template and variant library integrity
+
+Any change that touches template graph builders (`neuralfn/torch_templates.py`), block/attention graph construction, variant wiring, `BlockSpec` / `TemplateSpec` / `ModelSpec` fields, builtin neuron port definitions (`neuralfn/builtins.py`), or torch module stages (`neuralfn/torch_backend.py`) **must** verify that all shipped presets still work end-to-end before the task is considered done.
+
+### Required verification steps
+
+1. Run the preset test suite:
+
+```bash
+python -m pytest tests/test_template_presets.py -x -q
+```
+
+This covers:
+- `test_build_gpt_template_payload_supports_all_presets` — every preset produces a valid JSON payload with variant library and template_spec.
+- `test_reported_presets_resolve_variant_libraries` — every preset's variant library resolves without port-count or port-name mismatches.
+- `test_all_presets_compile_and_forward` — every preset builds, compiles to a `CompiledTorchGraph`, and runs a forward pass without errors.
+- `test_apply_gpt_template_supports_all_presets` — the server-side `apply_gpt_template` path works for all presets.
+
+2. If a new preset is added, append it to the `PRESETS` list in `tests/test_template_presets.py` so it is covered by all of the above tests.
+
+### Common failure modes to watch for
+
+- **Adding input/output ports to a subgraph** (e.g. attention graph) without updating the `input_aliases` / `output_aliases` passed by parent builders (`build_decoder_block_graph`, `build_model_stage_graph`, etc.). The frontend's `resolveVariantLibrary` will reject the mismatch.
+- **Changing a module's forward signature** (number of inputs/outputs) without updating the corresponding `module_neuron()` port list in `builtins.py`. `CompiledTorchGraph` will fail at execution time.
+- **Adding a new builtin neuron** without updating the expected-count list in `tests/test_builtin_neurons.py`.
+
+### Variant library cross-contamination
+
+All shipped presets share a flat variant-family namespace (`attention`, `mlp`, `attn_block`, etc.) at the root graph level. When the user loads template A and then template B, `mergeVariantLibrary` overwrites any family that both templates define. If a dense preset writes `mlp@default` with 1 output port and then an MoE preset overwrites it with 2 output ports, template A's block nodes still hold inline subgraph ports that no longer match the library entry.
+
+Both `neuralfn/graph.py` (`resolve_variant_library`) and `editor/src/store/graphUtils.ts` (`resolveVariantLibrary`) handle this by **falling back to the node's inline subgraph** when the variant library entry is port-incompatible, instead of throwing. **Never revert this to a hard error.** If you add a new variant family or change port counts on an existing family, verify that loading any two different presets back-to-back in the same session does not break. The `VARIANT_FAMILY_ALIASES` table in `graphUtils.ts` and the Python-side `VARIANT_FAMILY_ALIASES` in `graph.py` can also cause unexpected resolution when families share alias chains.

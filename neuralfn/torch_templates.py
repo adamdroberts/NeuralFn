@@ -4,7 +4,7 @@ from copy import deepcopy
 from typing import Any
 
 from .builtins import BuiltinNeurons
-from .config import BlockSpec, ModelSpec, model_spec_to_dict
+from .config import BlockSpec, ModelSpec, TemplateSpec, model_spec_to_dict
 from .graph import Edge, NeuronGraph, NeuronInstance
 from .neuron import NeuronDef, neuron_from_source, subgraph_neuron
 from .port import Port
@@ -78,30 +78,66 @@ def link_variant_neuron(
     )
 
 
-def build_dense_attention_graph(name: str, model_dim: int, spec: BlockSpec, *, is_cross: bool = False) -> NeuronGraph:
+def build_dense_attention_graph(
+    name: str,
+    model_dim: int,
+    spec: BlockSpec,
+    *,
+    is_cross: bool = False,
+    enable_cache: bool = False,
+    enable_pca: bool = False,
+    pca_compressed_dim: int | None = None,
+    fused_megakernel: bool = False,
+) -> NeuronGraph:
+    # Megakernel fused path: single node replaces the whole Q/K/V -> SDPA -> out chain.
+    # Only available for non-cross, RoPE-based causal attention (no cache/PCA in fused mode).
+    if fused_megakernel and not is_cross and spec.pos_encoding == "rope":
+        graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
+        num_heads = spec.num_heads
+        num_kv_heads = spec.num_kv_heads if spec.num_kv_heads is not None else num_heads
+        fused_cfg = {
+            "model_dim": model_dim,
+            "num_heads": num_heads,
+            "num_kv_heads": num_kv_heads,
+            "rope_base": spec.rope_theta,
+            "dropout_p": spec.dropout_p,
+        }
+        graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="x", dtype="tensor"), instance_id="x_in", position=(40, 180)))
+        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.fused_causal_attention_module, config=fused_cfg), instance_id="fused_attn", position=(300, 180)))
+        graph.add_edge(Edge(id="e_x_fused", src_node="x_in", src_port=0, dst_node="fused_attn", dst_port=0))
+        graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="attn_out", dtype="tensor"), instance_id="attn_out", position=(560, 180)))
+        graph.add_edge(Edge(id="e_fused_out", src_node="fused_attn", src_port=0, dst_node="attn_out", dst_port=0))
+        graph.input_node_ids = ["x_in"]
+        graph.output_node_ids = ["attn_out"]
+        return graph
+
     graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
-    
+
     num_heads = spec.num_heads
     num_kv_heads = spec.num_kv_heads if spec.num_kv_heads is not None else num_heads
     head_dim = model_dim // num_heads
     kv_dim = num_kv_heads * head_dim
+    compressed_dim = pca_compressed_dim or max(head_dim // 4, 1)
 
     # Input nodes
     graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="x", dtype="tensor"), instance_id="x_in", position=(40, 180)))
     if is_cross:
         graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="context", dtype="tensor"), instance_id="context_in", position=(40, 300)))
+    if enable_cache:
+        graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="cache_k", dtype="tensor"), instance_id="cache_k_in", position=(40, 420)))
+        graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="cache_v", dtype="tensor"), instance_id="cache_v_in", position=(40, 540)))
 
     # Q,K,V Projections
     graph.add_node(NeuronInstance(get_linear_module_def(model_dim, model_dim, spec), instance_id="q_proj", position=(220, 60)))
     graph.add_node(NeuronInstance(get_linear_module_def(model_dim, kv_dim, spec), instance_id="k_proj", position=(220, 180)))
     graph.add_node(NeuronInstance(get_linear_module_def(model_dim, kv_dim, spec), instance_id="v_proj", position=(220, 300)))
-    
+
     curr_q = maybe_wrap_with_adapter(graph, "q_proj", model_dim, spec, position=(340, 60))
     curr_k = maybe_wrap_with_adapter(graph, "k_proj", kv_dim, spec, position=(340, 180))
     curr_v = maybe_wrap_with_adapter(graph, "v_proj", kv_dim, spec, position=(340, 300))
 
     graph.add_edge(Edge(id="e_x_q", src_node="x_in", src_port=0, dst_node="q_proj", dst_port=0))
-    
+
     kv_src = "context_in" if is_cross else "x_in"
     graph.add_edge(Edge(id="e_kv_k", src_node=kv_src, src_port=0, dst_node="k_proj", dst_port=0))
     graph.add_edge(Edge(id="e_kv_v", src_node=kv_src, src_port=0, dst_node="v_proj", dst_port=0))
@@ -130,49 +166,108 @@ def build_dense_attention_graph(name: str, model_dim: int, spec: BlockSpec, *, i
         k_port = 0
         q_port = 0
 
+    # Track the K/V source nodes/ports feeding into attention (or into cache/PCA)
+    curr_k_pre = curr_k
+    k_pre_port = k_port
+    curr_v_pre = "v_heads"
+    v_pre_port = 0
+
+    # Optional PCA encode (compress K/V before cache)
+    if enable_pca:
+        pca_cfg = {"head_dim": head_dim, "compressed_dim": compressed_dim}
+        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.kv_pca_encode_module, config=pca_cfg), instance_id="pca_encode", position=(820, 240)))
+        graph.add_edge(Edge(id="e_k_pca_enc", src_node=curr_k_pre, src_port=k_pre_port, dst_node="pca_encode", dst_port=0))
+        graph.add_edge(Edge(id="e_v_pca_enc", src_node=curr_v_pre, src_port=v_pre_port, dst_node="pca_encode", dst_port=1))
+        curr_k_pre = "pca_encode"
+        k_pre_port = 0
+        curr_v_pre = "pca_encode"
+        v_pre_port = 1
+
+    # Optional KV cache: write current K/V then read with cached prefix
+    if enable_cache:
+        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.kv_cache_write_module), instance_id="kv_cache_write", position=(940, 420)))
+        graph.add_edge(Edge(id="e_k_cache_write", src_node=curr_k_pre, src_port=k_pre_port, dst_node="kv_cache_write", dst_port=0))
+        graph.add_edge(Edge(id="e_v_cache_write", src_node=curr_v_pre, src_port=v_pre_port, dst_node="kv_cache_write", dst_port=1))
+
+        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.kv_cache_read_module), instance_id="kv_cache_read", position=(940, 240)))
+        graph.add_edge(Edge(id="e_k_cache_read", src_node=curr_k_pre, src_port=k_pre_port, dst_node="kv_cache_read", dst_port=0))
+        graph.add_edge(Edge(id="e_v_cache_read", src_node=curr_v_pre, src_port=v_pre_port, dst_node="kv_cache_read", dst_port=1))
+        graph.add_edge(Edge(id="e_ck_cache_read", src_node="cache_k_in", src_port=0, dst_node="kv_cache_read", dst_port=2))
+        graph.add_edge(Edge(id="e_cv_cache_read", src_node="cache_v_in", src_port=0, dst_node="kv_cache_read", dst_port=3))
+
+        curr_k_pre = "kv_cache_read"
+        k_pre_port = 0
+        curr_v_pre = "kv_cache_read"
+        v_pre_port = 1
+
+    # Optional PCA decode (decompress K/V after cache read, before attention)
+    if enable_pca:
+        pca_cfg = {"head_dim": head_dim, "compressed_dim": compressed_dim}
+        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.kv_pca_decode_module, config=pca_cfg), instance_id="pca_decode", position=(1060, 240)))
+        graph.add_edge(Edge(id="e_k_pca_dec", src_node=curr_k_pre, src_port=k_pre_port, dst_node="pca_decode", dst_port=0))
+        graph.add_edge(Edge(id="e_v_pca_dec", src_node=curr_v_pre, src_port=v_pre_port, dst_node="pca_decode", dst_port=1))
+        curr_k_pre = "pca_decode"
+        k_pre_port = 0
+        curr_v_pre = "pca_decode"
+        v_pre_port = 1
+
     # Repeat KV for GQA
-    curr_k_attn = curr_k
-    curr_v_attn = "v_heads"
-    k_attn_port = k_port
-    v_attn_port = 0
+    curr_k_attn = curr_k_pre
+    curr_v_attn = curr_v_pre
+    k_attn_port = k_pre_port
+    v_attn_port = v_pre_port
     if num_kv_heads < num_heads:
-        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.repeat_kv_module, config={"num_heads": num_heads, "num_kv_heads": num_kv_heads}), instance_id="k_repeat", position=(940, 180)))
-        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.repeat_kv_module, config={"num_heads": num_heads, "num_kv_heads": num_kv_heads}), instance_id="v_repeat", position=(940, 300)))
-        graph.add_edge(Edge(id=f"e_{curr_k}_krepeat", src_node=curr_k, src_port=k_port, dst_node="k_repeat", dst_port=0))
-        graph.add_edge(Edge(id="e_vheads_vrepeat", src_node="v_heads", src_port=0, dst_node="v_repeat", dst_port=0))
+        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.repeat_kv_module, config={"num_heads": num_heads, "num_kv_heads": num_kv_heads}), instance_id="k_repeat", position=(1100, 180)))
+        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.repeat_kv_module, config={"num_heads": num_heads, "num_kv_heads": num_kv_heads}), instance_id="v_repeat", position=(1100, 300)))
+        graph.add_edge(Edge(id=f"e_{curr_k_attn}_krepeat", src_node=curr_k_attn, src_port=k_attn_port, dst_node="k_repeat", dst_port=0))
+        graph.add_edge(Edge(id=f"e_{curr_v_attn}_vrepeat", src_node=curr_v_attn, src_port=v_attn_port, dst_node="v_repeat", dst_port=0))
         curr_k_attn = "k_repeat"
         curr_v_attn = "v_repeat"
         k_attn_port = 0
         v_attn_port = 0
 
     # Attention Core
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.scaled_dot_product_attention_module, config={"is_causal": spec.is_causal and not is_cross, "backend": spec.attention_backend, "dropout_p": spec.dropout_p}), instance_id="sdpa", position=(1180, 180)))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.scaled_dot_product_attention_module, config={"is_causal": spec.is_causal and not is_cross, "backend": spec.attention_backend, "dropout_p": spec.dropout_p}), instance_id="sdpa", position=(1300, 180)))
     graph.add_edge(Edge(id=f"e_{curr_q}_sdpa_0", src_node=curr_q, src_port=q_port, dst_node="sdpa", dst_port=0))
     graph.add_edge(Edge(id=f"e_{curr_k_attn}_sdpa_1", src_node=curr_k_attn, src_port=k_attn_port, dst_node="sdpa", dst_port=1))
     graph.add_edge(Edge(id=f"e_{curr_v_attn}_sdpa_2", src_node=curr_v_attn, src_port=v_attn_port, dst_node="sdpa", dst_port=2))
     curr_out = "sdpa"
 
     # Merge Heads
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.merge_heads_module), instance_id="merge", position=(1420, 180)))
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.merge_heads_module), instance_id="merge", position=(1540, 180)))
     graph.add_edge(Edge(id="e_sdpa_merge", src_node=curr_out, src_port=0, dst_node="merge", dst_port=0))
 
     # Output Proj
-    graph.add_node(NeuronInstance(get_linear_module_def(model_dim, model_dim, spec), instance_id="out_proj", position=(1660, 180)))
-    curr_out = maybe_wrap_with_adapter(graph, "out_proj", model_dim, spec, position=(1780, 180))
+    graph.add_node(NeuronInstance(get_linear_module_def(model_dim, model_dim, spec), instance_id="out_proj", position=(1780, 180)))
+    curr_out = maybe_wrap_with_adapter(graph, "out_proj", model_dim, spec, position=(1900, 180))
     graph.add_edge(Edge(id="e_merge_outproj", src_node="merge", src_port=0, dst_node="out_proj", dst_port=0))
 
     # Optional Dropout
     if spec.dropout_p > 0.0:
-        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.dropout_module, config={"p": spec.dropout_p}), instance_id="attn_dropout", position=(1900, 180)))
+        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.dropout_module, config={"p": spec.dropout_p}), instance_id="attn_dropout", position=(2020, 180)))
         graph.add_edge(Edge(id="e_outproj_dropout", src_node=curr_out, src_port=0, dst_node="attn_dropout", dst_port=0))
         curr_out = "attn_dropout"
 
-    # Output Port
-    graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="attn_out", dtype="tensor"), instance_id="attn_out", position=(2140, 180)))
+    # Output Ports
+    graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="attn_out", dtype="tensor"), instance_id="attn_out", position=(2260, 180)))
     graph.add_edge(Edge(id="e_to_attn_out", src_node=curr_out, src_port=0, dst_node="attn_out", dst_port=0))
 
-    graph.input_node_ids = ["x_in", "context_in"] if is_cross else ["x_in"]
-    graph.output_node_ids = ["attn_out"]
+    output_ids = ["attn_out"]
+    if enable_cache:
+        graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="new_cache_k", dtype="tensor"), instance_id="new_cache_k", position=(2260, 420)))
+        graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="new_cache_v", dtype="tensor"), instance_id="new_cache_v", position=(2260, 540)))
+        graph.add_edge(Edge(id="e_cache_write_k_out", src_node="kv_cache_write", src_port=0, dst_node="new_cache_k", dst_port=0))
+        graph.add_edge(Edge(id="e_cache_write_v_out", src_node="kv_cache_write", src_port=1, dst_node="new_cache_v", dst_port=0))
+        output_ids.extend(["new_cache_k", "new_cache_v"])
+
+    input_ids = ["x_in"]
+    if is_cross:
+        input_ids.append("context_in")
+    if enable_cache:
+        input_ids.extend(["cache_k_in", "cache_v_in"])
+
+    graph.input_node_ids = input_ids
+    graph.output_node_ids = output_ids
     return graph
 
 
@@ -340,12 +435,28 @@ def build_decoder_block_graph(
     return graph
 
 
+def _attn_flags(model_spec: ModelSpec) -> dict[str, Any]:
+    """Derive enable_pca / fused_megakernel kwargs for build_dense_attention_graph.
+
+    ``enable_cache`` is intentionally **not** set here.  KV cache nodes add
+    extra input/output ports that break the single-alias subgraph wiring used
+    by the training graph builders.  Cache is an inference-time concern --
+    ``backend_capabilities["cache"]`` declares support, and the
+    ``InferenceCache`` class (or a dedicated inference graph) handles actual
+    cache management.
+    """
+    return {
+        "enable_pca": model_spec.block_spec.compression == "kv_pca",
+        "fused_megakernel": model_spec.template.runtime == "megakernel",
+    }
+
+
 def build_hidden_backbone_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
     spec = model_spec.block_spec
     graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
     block_family = "mixllama" if (spec.mlp_type == "mixllama" or spec.mlp_type == "moe") else "transformer_block"
 
-    attn_graph = build_dense_attention_graph("attention_engine", model_spec.model_dim, spec)
+    attn_graph = build_dense_attention_graph("attention_engine", model_spec.model_dim, spec, **_attn_flags(model_spec))
     mamba_graph = build_mamba_graph("mamba_engine", model_spec.model_dim, spec)
     if spec.mlp_type == "mixllama" or spec.mlp_type == "moe":
         mlp_graph = build_mixllama_mlp_graph("mlp_moe", model_spec.model_dim, spec)
@@ -505,9 +616,10 @@ def build_seq2seq_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronG
     # Use SWIGLU for dense encoder MLP if the base is Llama-style (moe/swiglu)
     encoder_spec.mlp_type = "swiglu" if spec.mlp_type in ["moe", "mixllama", "swiglu"] else "gelu"
     
-    enc_attn_graph = build_dense_attention_graph("enc_attention", model_spec.model_dim, encoder_spec)
-    dec_attn_graph = build_dense_attention_graph("dec_attention", model_spec.model_dim, spec)
-    cross_attn_graph = build_dense_attention_graph("cross_attention", model_spec.model_dim, spec, is_cross=True)
+    af = _attn_flags(model_spec)
+    enc_attn_graph = build_dense_attention_graph("enc_attention", model_spec.model_dim, encoder_spec, **af)
+    dec_attn_graph = build_dense_attention_graph("dec_attention", model_spec.model_dim, spec, **af)
+    cross_attn_graph = build_dense_attention_graph("cross_attention", model_spec.model_dim, spec, is_cross=True, **af)
     
     if spec.mlp_type == "mixllama" or spec.mlp_type == "moe":
         mlp_moe = build_mixllama_mlp_graph("mlp_moe", model_spec.model_dim, spec)
@@ -606,9 +718,9 @@ def build_seq2seq_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronG
 def build_diffusion_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
     spec = model_spec.block_spec
     graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
-    
+
     # Pre-build variant libraries
-    attn_graph = build_dense_attention_graph("attention_engine", model_spec.model_dim, spec)
+    attn_graph = build_dense_attention_graph("attention_engine", model_spec.model_dim, spec, **_attn_flags(model_spec))
     mlp_graph = build_dense_mlp_graph("mlp_dense", model_spec.model_dim, spec)
     block_graph = build_decoder_block_graph("decoder_block", model_spec.model_dim, spec, attn_graph, mlp_graph)
 
@@ -673,7 +785,14 @@ def build_jepa_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGrap
         NeuronInstance(
             clone_neuron_def(
                 BuiltinNeurons.jepa_mask_module,
-                config={"mask_ratio": model_spec.jepa_mask_ratio, "mask_token_id": 0},
+                config={
+                    "mask_ratio": model_spec.jepa_mask_ratio,
+                    "mask_token_id": 0,
+                    "mask_strategy": model_spec.jepa_mask_strategy,
+                    "num_blocks": model_spec.jepa_num_blocks,
+                    "min_block_ratio": model_spec.jepa_min_block_ratio,
+                    "max_block_ratio": model_spec.jepa_max_block_ratio,
+                },
             ),
             instance_id="mask",
             position=(260, 180),
@@ -829,7 +948,9 @@ def build_model_spec_from_config(config: dict[str, Any], *, preview_defaults: bo
         build_gpt2_spec,
         build_hnet_lm_spec,
         build_jamba_hybrid_spec,
+        build_kv_pca_llama_spec,
         build_llama_fast_spec,
+        build_llama_megakernel_spec,
         build_llama_spec,
         build_llm_jepa_spec,
         build_mixllama_fast_spec,
@@ -862,6 +983,10 @@ def build_model_spec_from_config(config: dict[str, Any], *, preview_defaults: bo
         return build_jamba_hybrid_spec(**normalized)
     if preset == "ternary_b158":
         return build_ternary_b158_spec(**normalized)
+    if preset == "llama_megakernel":
+        return build_llama_megakernel_spec(**normalized)
+    if preset == "kv_pca_llama":
+        return build_kv_pca_llama_spec(**normalized)
     if preset == "seq2seq":
         return build_decoder2encoder_moe_spec(**normalized)
     if preset == "diffusion":
@@ -880,11 +1005,11 @@ def build_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
     spec = model_spec.block_spec
     graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
     block_family = "mixllama" if (spec.mlp_type == "mixllama" or spec.mlp_type == "moe") else "transformer_block"
-    
+
     # Pre-build variant libraries
-    attn_graph = build_dense_attention_graph("attention_engine", model_spec.model_dim, spec)
+    attn_graph = build_dense_attention_graph("attention_engine", model_spec.model_dim, spec, **_attn_flags(model_spec))
     mamba_graph = build_mamba_graph("mamba_engine", model_spec.model_dim, spec)
-    
+
     if spec.mlp_type == "mixllama" or spec.mlp_type == "moe":
         mlp_graph = build_mixllama_mlp_graph("mlp_moe", model_spec.model_dim, spec)
     else:

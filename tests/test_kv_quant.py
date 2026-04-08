@@ -40,9 +40,8 @@ def test_kv_quant():
     
     assert out_k.shape == (1, 4, 64)
     assert out_v.shape == (1, 4, 64)
-    assert torch.allclose(out_k, k)
-    assert torch.allclose(out_v, v)
-    print("KV Quantization nodes verified successfully.")
+    assert torch.allclose(out_k, k, atol=0.02)
+    assert torch.allclose(out_v, v, atol=0.02)
 
 if __name__ == "__main__":
     test_kv_quant()

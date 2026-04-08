@@ -22,10 +22,25 @@ class TemplateSpec:
     backend_capabilities: dict[str, bool] = field(default_factory=lambda: {
         "compile": True,
         "sdpa": True,
-        "cache": False,
-        "quantized_export": False,
+        "cache": True,
+        "quantized_export": True,
         "megakernel": False,
     })
+
+
+def resolve_backend_capabilities(spec: "TemplateSpec") -> dict[str, bool]:
+    """Derive the correct ``backend_capabilities`` from the other fields on *spec*.
+
+    Called automatically by ``_base_model_spec`` so every preset gets a
+    consistent capability map without manual per-preset overrides.
+    """
+    return {
+        "compile": spec.runtime in ("compile", "megakernel"),
+        "sdpa": True,
+        "cache": True,
+        "quantized_export": True,
+        "megakernel": spec.runtime == "megakernel",
+    }
 
 
 @dataclass
@@ -66,6 +81,10 @@ class ModelSpec:
     template: TemplateSpec = field(default_factory=TemplateSpec)
     jepa_latent_dim: int = 128
     jepa_mask_ratio: float = 0.5
+    jepa_mask_strategy: str = "random"
+    jepa_num_blocks: int = 4
+    jepa_min_block_ratio: float = 0.1
+    jepa_max_block_ratio: float = 0.25
     ema_decay: float = 0.99
     max_recurrence_steps: int = 4
     halt_epsilon: float = 0.01
@@ -82,6 +101,7 @@ def _base_model_spec(
     block_spec: BlockSpec,
     default_tie_embeddings: bool,
 ) -> ModelSpec:
+    template.backend_capabilities = resolve_backend_capabilities(template)
     model_dim = int(kwargs.get("model_dim", kwargs.get("n_embd", 128)))
     return ModelSpec(
         model_dim=model_dim,
@@ -93,6 +113,10 @@ def _base_model_spec(
         template=template,
         jepa_latent_dim=int(kwargs.get("jepa_latent_dim", model_dim)),
         jepa_mask_ratio=float(kwargs.get("jepa_mask_ratio", 0.5)),
+        jepa_mask_strategy=str(kwargs.get("jepa_mask_strategy", "random")),
+        jepa_num_blocks=int(kwargs.get("jepa_num_blocks", 4)),
+        jepa_min_block_ratio=float(kwargs.get("jepa_min_block_ratio", 0.1)),
+        jepa_max_block_ratio=float(kwargs.get("jepa_max_block_ratio", 0.25)),
         ema_decay=float(kwargs.get("ema_decay", 0.99)),
         max_recurrence_steps=int(kwargs.get("max_recurrence_steps", 4)),
         halt_epsilon=float(kwargs.get("halt_epsilon", 0.01)),
@@ -391,6 +415,49 @@ def build_universal_llama_spec(**kwargs: Any) -> ModelSpec:
             num_heads=kwargs.get("num_heads", 4),
             num_kv_heads=kwargs.get("num_kv_heads", 2),
             attention_backend="sdpa",
+        ),
+        default_tie_embeddings=False,
+    )
+
+
+def build_llama_megakernel_spec(**kwargs: Any) -> ModelSpec:
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(backbone="llama", runtime="megakernel"),
+        block_spec=BlockSpec(
+            family="llama",
+            norm_type="rmsnorm",
+            mlp_type="swiglu",
+            pos_encoding="rope",
+            linear_bias=False,
+            dropout_p=0.0,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            multiple_of=kwargs.get("multiple_of", 256),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+            attention_backend="sdpa",
+        ),
+        default_tie_embeddings=False,
+    )
+
+
+def build_kv_pca_llama_spec(**kwargs: Any) -> ModelSpec:
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(backbone="llama", compression="kv_pca", runtime="compile"),
+        block_spec=BlockSpec(
+            family="llama",
+            norm_type="rmsnorm",
+            mlp_type="swiglu",
+            pos_encoding="rope",
+            linear_bias=False,
+            dropout_p=0.0,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            multiple_of=kwargs.get("multiple_of", 256),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+            attention_backend="sdpa",
+            compression="kv_pca",
         ),
         default_tie_embeddings=False,
     )

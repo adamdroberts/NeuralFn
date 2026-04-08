@@ -13,7 +13,7 @@ from neuralfn.config import (
     build_ttt_llama_spec,
     build_universal_llama_spec,
 )
-from neuralfn.torch_backend import CompiledTorchGraph, TorchTrainConfig, TorchTrainer
+from neuralfn.torch_backend import CompiledTorchGraph, JEPAMaskStage, TorchTrainConfig, TorchTrainer
 from neuralfn.torch_templates import build_gpt_root_graph, build_gpt_template_payload, build_model_spec_from_config
 from server.dataset_manager import DATASETS_DIR, load_dataset_bytes
 from server.models import GPTTemplateRequest, LoadDatasetRequest
@@ -35,6 +35,8 @@ PRESETS = [
     "llm_jepa",
     "hnet_lm",
     "universal_llama",
+    "llama_megakernel",
+    "kv_pca_llama",
 ]
 
 
@@ -107,10 +109,28 @@ def test_build_gpt_template_payload_supports_all_presets() -> None:
 
 
 def test_reported_presets_resolve_variant_libraries() -> None:
-    for preset in ["moe", "mixllama_fast", "jamba", "ternary_b158", "seq2seq"]:
+    for preset in PRESETS:
         spec = build_model_spec_from_config({"preset": preset, **_tiny_kwargs()}, preview_defaults=True)
         graph = build_gpt_root_graph(name=f"{preset}_resolve", model_spec=spec)
         graph.resolve_variant_library()
+
+
+def test_all_presets_compile_and_forward() -> None:
+    """Every shipped preset must build, resolve variants, compile, and run a forward pass."""
+    for preset in PRESETS:
+        spec = build_model_spec_from_config(
+            {"preset": preset, "vocab_size": 128, **_tiny_kwargs()}, preview_defaults=True,
+        )
+        graph = _cpu_graph(build_gpt_root_graph(name=f"{preset}_fwd", model_spec=spec))
+        compiled = CompiledTorchGraph(graph)
+        batch = 2
+        seq = 8
+        roles = []
+        for nid in graph.input_node_ids:
+            roles.extend(p.name for p in graph.nodes[nid].neuron_def.output_ports)
+        inputs = tuple(torch.randint(0, 128, (batch, seq)) for _ in roles)
+        outputs = compiled(*inputs)
+        assert len(outputs) >= 1, f"{preset}: expected at least 1 output"
 
 
 def test_seq2seq_blocks_reference_exported_variant_families() -> None:
@@ -186,6 +206,75 @@ def test_jepa_trainer_freezes_and_updates_ema_targets() -> None:
     tokens = torch.randint(0, 128, (4, 8))
     losses = trainer.train(tokens, tokens)
     assert len(losses) == 1
+
+
+def test_jepa_block_masking_produces_contiguous_spans() -> None:
+    torch.manual_seed(42)
+    batch, seq_len = 8, 64
+    tokens = torch.randint(0, 128, (batch, seq_len))
+
+    block_stage = JEPAMaskStage(
+        mask_ratio=0.5,
+        mask_strategy="block",
+        num_blocks=4,
+        min_block_ratio=0.1,
+        max_block_ratio=0.25,
+    )
+    masked_tokens, mask_float = block_stage(tokens)
+    mask = mask_float.bool()
+
+    assert mask.shape == tokens.shape
+    assert mask.any(), "block mask should mask at least some tokens"
+    assert not mask.all(), "block mask should leave some tokens unmasked"
+    assert (masked_tokens[mask] == 0).all(), "masked positions should be replaced with mask_token_id"
+    assert torch.equal(masked_tokens[~mask], tokens[~mask]), "unmasked positions should be unchanged"
+
+    for row in range(batch):
+        spans = []
+        row_mask = mask[row]
+        in_span = False
+        start = 0
+        for i in range(seq_len):
+            if row_mask[i] and not in_span:
+                in_span = True
+                start = i
+            elif not row_mask[i] and in_span:
+                in_span = False
+                spans.append((start, i))
+        if in_span:
+            spans.append((start, seq_len))
+        min_len = max(1, int(0.1 * seq_len))
+        for s, e in spans:
+            assert (e - s) >= min_len, f"span [{s}:{e}) length {e - s} < min_block_len {min_len}"
+
+    random_stage = JEPAMaskStage(mask_ratio=0.5, mask_strategy="random")
+    _, random_mask = random_stage(tokens)
+    diff = random_mask.bool()
+    transitions = (diff[:, 1:] != diff[:, :-1]).float().sum(dim=1).mean()
+    assert transitions > 5.0, "random masking should produce many transitions (scattered mask)"
+
+
+def test_jepa_block_masking_config_wires_through_template() -> None:
+    spec = build_llm_jepa_spec(
+        **_tiny_kwargs(),
+        vocab_size=128,
+        jepa_mask_strategy="block",
+        jepa_num_blocks=3,
+        jepa_min_block_ratio=0.15,
+        jepa_max_block_ratio=0.3,
+    )
+    assert spec.jepa_mask_strategy == "block"
+    assert spec.jepa_num_blocks == 3
+
+    graph = _cpu_graph(build_gpt_root_graph(name="jepa_block_cfg", model_spec=spec))
+    model_subgraph = graph.nodes["model"].neuron_def.subgraph
+    assert model_subgraph is not None
+    mask_node = model_subgraph.nodes["mask"]
+    cfg = mask_node.neuron_def.module_config
+    assert cfg["mask_strategy"] == "block"
+    assert cfg["num_blocks"] == 3
+    assert cfg["min_block_ratio"] == 0.15
+    assert cfg["max_block_ratio"] == 0.3
 
 
 def test_hnet_spec_enforces_byte_vocab_and_raw_byte_chunking() -> None:

@@ -282,27 +282,40 @@ function resolveVariantLibrary(root: GraphData): GraphData {
         const linked = resolveVariant(ndef.variant_ref.family, ndef.variant_ref.version);
         const expectedInputs = deriveExternalPorts(linked, ndef.input_aliases, "input");
         const expectedOutputs = deriveExternalPorts(linked, ndef.output_aliases, "output");
-        if (ndef.input_ports.length > 0 && !portsCompatible(ndef.input_ports, expectedInputs)) {
-          throw new Error(
-            `Variant '${ndef.variant_ref.family}@${ndef.variant_ref.version}' is incompatible with linked node '${nodeId}' inputs`,
-          );
+        const inputsOk = ndef.input_ports.length === 0 || portsCompatible(ndef.input_ports, expectedInputs);
+        const outputsOk = ndef.output_ports.length === 0 || portsCompatible(ndef.output_ports, expectedOutputs);
+        if (inputsOk && outputsOk) {
+          resolvedGraph.nodes[nodeId] = {
+            ...node,
+            neuron_def: {
+              ...ndef,
+              subgraph: linked,
+              input_ports: expectedInputs,
+              output_ports: expectedOutputs,
+              input_aliases: expectedInputs.map((port) => port.name),
+              output_aliases: expectedOutputs.map((port) => port.name),
+            },
+          };
+        } else if (ndef.subgraph) {
+          // Variant library entry is incompatible (e.g. stale from a
+          // different template loaded into the same session).  Fall back to
+          // the node's own inline subgraph so the graph stays usable.
+          const child = resolveGraph(ndef.subgraph);
+          const inputPorts = deriveExternalPorts(child, ndef.input_aliases, "input");
+          const outputPorts = deriveExternalPorts(child, ndef.output_aliases, "output");
+          resolvedGraph.nodes[nodeId] = {
+            ...node,
+            neuron_def: {
+              ...ndef,
+              subgraph: child,
+              input_ports: inputPorts,
+              output_ports: outputPorts,
+              input_aliases: inputPorts.map((port) => port.name),
+              output_aliases: outputPorts.map((port) => port.name),
+            },
+          };
         }
-        if (ndef.output_ports.length > 0 && !portsCompatible(ndef.output_ports, expectedOutputs)) {
-          throw new Error(
-            `Variant '${ndef.variant_ref.family}@${ndef.variant_ref.version}' is incompatible with linked node '${nodeId}' outputs`,
-          );
-        }
-        resolvedGraph.nodes[nodeId] = {
-          ...node,
-          neuron_def: {
-            ...ndef,
-            subgraph: linked,
-            input_ports: expectedInputs,
-            output_ports: expectedOutputs,
-            input_aliases: expectedInputs.map((port) => port.name),
-            output_aliases: expectedOutputs.map((port) => port.name),
-          },
-        };
+        // else: no inline subgraph and incompatible variant — leave node as-is
       } else if (ndef.subgraph) {
         const child = resolveGraph(ndef.subgraph);
         const inputPorts = deriveExternalPorts(child, ndef.input_aliases, "input");
