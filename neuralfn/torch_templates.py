@@ -891,8 +891,9 @@ def build_jepa_semantic_model_stage_graph(name: str, model_spec: ModelSpec) -> N
     graph.variant_library = deepcopy(encoder_graph.variant_library)
     encoder_graph.variant_library = {}
 
-    # -- Input --
-    graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="tokens", dtype="tokens"), instance_id="tokens_in", position=(40, 180)))
+    # -- Inputs: tokens from regular dataset + sem_targets from semantic data source --
+    graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="tokens", dtype="tokens"), instance_id="tokens_in", position=(40, 140)))
+    graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="sem_targets", dtype="tokens"), instance_id="sem_targets_in", position=(40, 320)))
 
     # -- JEPA mask --
     graph.add_node(
@@ -1013,13 +1014,27 @@ def build_jepa_semantic_model_stage_graph(name: str, model_spec: ModelSpec) -> N
     graph.add_edge(Edge(id="e_hash_decoder", src_node="hasher", src_port=0, dst_node="decoder", dst_port=0))
     graph.add_edge(Edge(id="e_dispatch_decoder", src_node="dispatch", src_port=0, dst_node="decoder", dst_port=1))
 
-    # -- Output: JEPA MSE loss is the primary training signal.
-    # The decoder/hasher/router paths are wired for inference and later
-    # distillation phases but do not contribute to the initial training loss.
-    graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="loss", dtype="loss"), instance_id="loss_out", position=(1260, 100)))
-    graph.add_edge(Edge(id="e_jepa_out", src_node="jepa_loss", src_port=0, dst_node="loss_out", dst_port=0))
+    # -- Semantic alignment loss (supervised: online_encoder semantic_vec vs sem_targets) --
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.semantic_alignment_loss_module), instance_id="sem_align_loss", position=(1020, 320)))
+    graph.add_edge(Edge(id="e_online_sem_align", src_node="online_encoder", src_port=0, dst_node="sem_align_loss", dst_port=0))
+    graph.add_edge(Edge(id="e_targets_sem_align", src_node="sem_targets_in", src_port=0, dst_node="sem_align_loss", dst_port=1))
 
-    graph.input_node_ids = ["tokens_in"]
+    # -- Combine JEPA loss + semantic alignment loss --
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.aux_loss_add_module, config={"coef": 1.0}),
+            instance_id="total_loss",
+            position=(1260, 180),
+        )
+    )
+    graph.add_edge(Edge(id="e_jepa_total", src_node="jepa_loss", src_port=0, dst_node="total_loss", dst_port=0))
+    graph.add_edge(Edge(id="e_semalign_total", src_node="sem_align_loss", src_port=0, dst_node="total_loss", dst_port=1))
+
+    # -- Output --
+    graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="loss", dtype="loss"), instance_id="loss_out", position=(1500, 180)))
+    graph.add_edge(Edge(id="e_total_out", src_node="total_loss", src_port=0, dst_node="loss_out", dst_port=0))
+
+    graph.input_node_ids = ["tokens_in", "sem_targets_in"]
     graph.output_node_ids = ["loss_out"]
     return graph
 
@@ -1363,10 +1378,24 @@ def build_gpt_root_graph(*, name: str = "model_root", model_spec: ModelSpec | No
         graph.variant_library = deepcopy(stage.variant_library)
         stage.variant_library = {}
 
-        graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="tokens", dtype="tokens"), instance_id="tokens_in", position=(40, 180)))
-        graph.add_node(NeuronInstance(subgraph_neuron(stage, name="model", input_aliases=["tokens"], output_aliases=["loss"]), instance_id="model", position=(280, 180)))
-        graph.add_edge(Edge(id="e_tokens_model", src_node="tokens_in", src_port=0, dst_node="model", dst_port=0))
-        graph.input_node_ids = ["tokens_in"]
+        dataset_def = clone_neuron_def(BuiltinNeurons.dataset_source_module, config={"dataset_names": [], "seq_len": 64})
+        dataset_def.output_ports = [
+            Port("tokens", range=(0, 65535), precision=1.0, dtype="tokens"),
+        ]
+        graph.add_node(NeuronInstance(
+            dataset_def,
+            instance_id="dataset_source",
+            position=(40, 120),
+        ))
+        graph.add_node(NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.semantic_data_source_module, config={"seq_len": model_spec.semantic_dim}),
+            instance_id="semantic_data_source",
+            position=(40, 300),
+        ))
+        graph.add_node(NeuronInstance(subgraph_neuron(stage, name="model", input_aliases=["tokens", "sem_targets"], output_aliases=["loss"]), instance_id="model", position=(380, 180)))
+        graph.add_edge(Edge(id="e_tokens_model", src_node="dataset_source", src_port=0, dst_node="model", dst_port=0))
+        graph.add_edge(Edge(id="e_semds_model", src_node="semantic_data_source", src_port=0, dst_node="model", dst_port=1))
+        graph.input_node_ids = ["dataset_source", "semantic_data_source"]
     elif model_spec.template.backbone == "hnet":
         stage = build_hnet_model_stage_graph("model_stage", model_spec)
         graph.variant_library = deepcopy(stage.variant_library)
@@ -1416,6 +1445,17 @@ def build_gpt_template_payload(name: str, config: dict[str, Any]) -> dict[str, A
 
     node_def = graph.nodes["model"].neuron_def
 
+    extra_nodes: list[dict[str, Any]] = []
+    for nid, node in graph.nodes.items():
+        if nid == "model":
+            continue
+        if node.neuron_def.kind == "module" or nid in graph.input_node_ids:
+            extra_nodes.append(node.to_dict())
+
+    extra_edges: list[dict[str, Any]] = []
+    for eid, edge in graph.edges.items():
+        extra_edges.append(edge.to_dict())
+
     return {
         "variant_library": {
             family: {version: vg.to_dict() for version, vg in versions.items()}
@@ -1427,4 +1467,6 @@ def build_gpt_template_payload(name: str, config: dict[str, Any]) -> dict[str, A
             "torch_config": graph.torch_config,
         },
         "node_def": node_def.to_dict(),
+        "extra_nodes": extra_nodes,
+        "extra_edges": extra_edges,
     }

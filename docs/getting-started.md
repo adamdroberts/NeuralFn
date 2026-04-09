@@ -15,6 +15,27 @@ From the repository root:
 pip install -r requirements.txt
 ```
 
+## Install the NeuralFn SDK package
+
+If you want to build against `neuralfn` from another project, install the repo
+in editable mode:
+
+From the NeuralFn repo root:
+
+```bash
+pip install -e .
+```
+
+From a sibling project outside the repo:
+
+```bash
+pip install -e /home/adam/dev/innovation/NeuralFn
+```
+
+The editable package install includes the shipped semantic vocabulary and
+training CSV under `neuralfn/data/semantic/` so SDK consumers can use the JEPA
+semantic hybrid without copying those assets manually.
+
 This pulls in the core stack used by the library and platform, including **torch**, **numpy**, **fastapi**, **uvicorn**, **networkx**, **pydantic**, **sqlalchemy**, **alembic**, **redis**, **datasets**, **tiktoken**, and **mcp** (plus helpers such as **python-multipart** and **PyMySQL**).
 
 ## Install the editor

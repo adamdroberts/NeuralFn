@@ -8,6 +8,16 @@ API reference for the `neuralfn` Python package.
 pip install -e .
 ```
 
+From a sibling project outside the repo:
+
+```bash
+pip install -e /home/adam/dev/innovation/NeuralFn
+```
+
+This editable install now packages the shipped semantic data files under
+`neuralfn/data/semantic/`, so SDK code that imports `neuralfn.semantic` can
+load `vocab_8d.json` and `training_100k_8d.csv` without extra setup.
+
 ## Package Exports
 
 All public symbols are available from the top-level `neuralfn` module:

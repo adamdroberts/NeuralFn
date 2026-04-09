@@ -33,7 +33,7 @@ NeuralFn now ships Torch-backed template presets for:
 
 > **Warning:** Experimental presets are research prototypes. Their APIs, performance targets, and architectural choices are exploratory and subject to change or removal. Do not depend on stability.
 
-- **`jepa_semantic_hybrid`** -- [Experimental] Hybrid JEPA Semantic LLM that fuses a Joint Embedding Predictive Architecture with a 9-dimensional grounded semantic space (8 vocabulary dimensions + 1 taxonomy hash), LSH-based O(1) nearest-neighbor lookup, semantic MoE routing (cosine similarity to learned centroids), and an attention-less decoder. The 8 vocabulary dimensions (`entity_type`, `action`, `property`, `emotion_sentiment`, `domain`, `temporal`, `causality`, `social_register`) are grounded in a 320-term vocabulary extracted from 100k matrix analysis. The 9th dimension compresses a taxonomy signature (entity+action+domain trigram) through learned softmax to a single float for O(1) topic matching. Ships with 100k training rows and the vocabulary in `neuralfn/data/semantic/`. See `neuralfn/semantic.py` for the data layer
+- **`jepa_semantic_hybrid`** -- [Experimental] Hybrid JEPA Semantic LLM that fuses a Joint Embedding Predictive Architecture with a 9-dimensional grounded semantic space (8 vocabulary dimensions + 1 taxonomy hash), LSH-based O(1) nearest-neighbor lookup, semantic MoE routing (cosine similarity to learned centroids), and an attention-less decoder. The 8 vocabulary dimensions (`entity_type`, `action`, `property`, `emotion_sentiment`, `domain`, `temporal`, `causality`, `social_register`) are grounded in a 320-term vocabulary extracted from 100k matrix analysis. The 9th dimension compresses a taxonomy signature (entity+action+domain trigram) through learned softmax to a single float for O(1) topic matching. Ships with a pre-wired `semantic_data_source` node that auto-loads 100k training rows at train time -- load the template and hit train, no manual dataset attachment needed. The editor now applies this preset through the session-scoped template API so the full backend-built root graph (including `tokens_in`, `semantic_data_source`, edges, and I/O wiring) loads correctly instead of being reconstructed piecemeal in the browser. Data and vocabulary in `neuralfn/data/semantic/`. See `neuralfn/semantic.py` for the data layer
 
 Backend capabilities (`TemplateSpec.backend_capabilities`) now drive runtime behavior:
 - **cache** -- KV cache nodes (`kv_cache_read` / `kv_cache_write`) can be inserted into attention graphs for inference-time autoregressive caching. `InferenceCache` in `neuralfn/inference.py` wraps a compiled graph for stateful step-by-step generation.
@@ -92,6 +92,23 @@ The platform foundation now adds:
 ```bash
 pip install -r requirements.txt
 ```
+
+### Install the SDK as a package
+
+From the repository root:
+
+```bash
+pip install -e .
+```
+
+From a sibling project outside the repo:
+
+```bash
+pip install -e /home/adam/dev/innovation/NeuralFn
+```
+
+This installs the `neuralfn` package in editable mode and includes the shipped
+semantic data files under `neuralfn/data/semantic/` as package data.
 
 ### Run the library examples
 

@@ -29,7 +29,7 @@ Any change to public API surfaces must also update the corresponding page in `do
 - **REST API changes** (new/changed endpoints in `server/routers/`): update the matching page in `docs/rest-api/`.
 - **MCP tool changes** (new/changed tools in `server/mcp_server.py`): update the matching page in `docs/mcp/` and the `.cursor/skills/neuralfn-mcp/SKILL.md` skill.
 - **New builtin neurons**: update `docs/python-sdk/builtins.md`.
-- **New template presets**: update `docs/python-sdk/config.md`, `docs/framework-guide/templates-and-presets.md`, and both the `neuralfn-torch` and `neuralfn-mcp` agent skills.
+- **New template presets**: update `docs/python-sdk/config.md`, `docs/framework-guide/templates-and-presets.md`, and both the `neuralfn-torch` and `neuralfn-mcp` agent skills. **Also add the new preset to the `<select>` dropdown in `editor/src/components/Toolbar.tsx`** — the frontend dropdown is hardcoded and will not show new presets unless a matching `<option>` element is added.
 - **Server/editor internals**: update the relevant `docs/server/` or `docs/editor/` page.
 
 Agent skills in `.cursor/skills/` should also be kept in sync when the tools or APIs they reference change.
@@ -64,6 +64,8 @@ This covers:
 - `test_apply_gpt_template_supports_all_presets` — the server-side `apply_gpt_template` path works for all presets.
 
 2. If a new preset is added, append it to the `PRESETS` list in `tests/test_template_presets.py` so it is covered by all of the above tests.
+
+3. If a new preset is added, add a corresponding `<option value="preset_name">Display Name</option>` entry to the GPT template dropdown `<select>` in `editor/src/components/Toolbar.tsx`. The dropdown is hardcoded — new backend presets will not appear in the editor UI unless this is done.
 
 ### Common failure modes to watch for
 

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import math
 import numpy as np
 import torch
+from unittest.mock import patch
 
 from neuralfn.config import build_jepa_semantic_hybrid_spec
 from neuralfn.semantic import (
@@ -25,13 +27,15 @@ from neuralfn.torch_backend import (
     TorchTrainConfig,
     TorchTrainer,
 )
+from neuralfn.inference import export_to_pt
+from neuralfn.serialization import save_graph
 from neuralfn.torch_templates import (
     build_gpt_root_graph,
     build_gpt_template_payload,
     build_model_spec_from_config,
 )
-from server.models import GPTTemplateRequest
-from server.services.graph_ops import apply_gpt_template
+from server.models import ExecuteRequest, GPTTemplateRequest, LoadDatasetRequest
+from server.services.graph_ops import apply_gpt_template, load_dataset_source_into_graph, trace_torch_graph
 
 
 def _tiny_kwargs() -> dict:
@@ -217,13 +221,17 @@ def test_jepa_semantic_hybrid_resolve_variants() -> None:
 
 def test_jepa_semantic_hybrid_compile_and_forward() -> None:
     spec = build_model_spec_from_config(
-        {"preset": "jepa_semantic_hybrid", "vocab_size": 128, **_tiny_kwargs()},
+        {"preset": "jepa_semantic_hybrid", "vocab_size": 256, **_tiny_kwargs()},
         preview_defaults=True,
     )
     graph = _cpu_graph(build_gpt_root_graph(name="jsh_fwd", model_spec=spec))
+    assert "semantic_data_source" in graph.nodes
+    assert "dataset_source" in graph.nodes
+    assert "tokens_in" not in graph.nodes
     compiled = CompiledTorchGraph(graph)
-    tokens = torch.randint(0, 128, (2, 8))
-    outputs = compiled(tokens)
+    tokens = torch.randint(0, 256, (2, 9))
+    sem_targets = torch.randint(0, 256, (2, 9))
+    outputs = compiled(tokens, sem_targets)
     assert len(outputs) >= 1
     assert outputs[0].ndim == 0
 
@@ -233,16 +241,148 @@ def test_jepa_semantic_hybrid_apply_template() -> None:
         GPTTemplateRequest(name="jsh_apply", config={"preset": "jepa_semantic_hybrid"})
     )
     assert "model" in graph.nodes
+    assert "semantic_data_source" in graph.nodes
+    assert "dataset_source" in graph.nodes
+    assert "tokens_in" not in graph.nodes
     assert graph.output_node_ids == ["loss_out"]
+    assert "dataset_source" in graph.input_node_ids
+    assert "semantic_data_source" in graph.input_node_ids
 
 
-def test_jepa_semantic_hybrid_ema_training() -> None:
-    spec = build_jepa_semantic_hybrid_spec(**_tiny_kwargs(), vocab_size=128, ema_decay=0.9)
+def test_jepa_semantic_hybrid_template_payload_includes_extra_nodes() -> None:
+    payload = build_gpt_template_payload(
+        name="jsh_extra", config={"preset": "jepa_semantic_hybrid"}
+    )
+    assert "extra_nodes" in payload
+    extra_ids = [n["instance_id"] for n in payload["extra_nodes"]]
+    assert "semantic_data_source" in extra_ids
+
+
+def test_jepa_semantic_hybrid_ema_training_with_shipped_data() -> None:
+    spec = build_jepa_semantic_hybrid_spec(**_tiny_kwargs(), vocab_size=256, ema_decay=0.9)
     graph = _cpu_graph(build_gpt_root_graph(name="jsh_train", model_spec=spec))
+    assert "semantic_data_source" in graph.nodes
+    assert "dataset_source" in graph.nodes
     trainer = TorchTrainer(
         graph,
-        TorchTrainConfig(epochs=1, batch_size=2, learning_rate=1e-3, max_steps=1, device="cpu"),
+        TorchTrainConfig(epochs=1, batch_size=4, learning_rate=1e-3, max_steps=1, device="cpu"),
     )
-    tokens = torch.randint(0, 128, (4, 8))
-    losses = trainer.train(tokens, tokens)
+    losses = trainer.train([], [])
     assert len(losses) == 1
+
+
+def test_jepa_semantic_hybrid_real_5epoch_training_regression(tmp_path) -> None:
+    ids, vecs = load_training_data()
+    tiny_ids = ids[:16]
+    tiny_vecs = vecs[:16]
+
+    spec = build_jepa_semantic_hybrid_spec(**_tiny_kwargs(), vocab_size=256, ema_decay=0.9)
+    graph = _cpu_graph(build_gpt_root_graph(name="jsh_train_5ep", model_spec=spec))
+    trainer = TorchTrainer(
+        graph,
+        TorchTrainConfig(epochs=5, batch_size=4, learning_rate=1e-3, device="cpu"),
+    )
+
+    with patch("neuralfn.semantic.load_training_data", return_value=(tiny_ids, tiny_vecs)):
+        losses = trainer.train([], [])
+
+    assert len(losses) == 5
+    assert all(math.isfinite(float(loss)) for loss in losses)
+    export_path = tmp_path / "jsh_train_5ep.pt"
+    export_to_pt(graph, export_path)
+    assert export_path.exists()
+
+
+def test_jepa_semantic_hybrid_trace_uses_builtin_semantic_preview() -> None:
+    spec = build_model_spec_from_config(
+        {"preset": "jepa_semantic_hybrid", "vocab_size": 256, **_tiny_kwargs()},
+        preview_defaults=True,
+    )
+    graph = _cpu_graph(build_gpt_root_graph(name="jsh_trace", model_spec=spec))
+    result = trace_torch_graph(graph, ExecuteRequest())
+    assert result["source"] == "dataset"
+    assert "trace" in result
+    assert "sample_inputs" in result
+
+
+def test_jepa_semantic_hybrid_trace_uses_text_plus_semantic_preview() -> None:
+    spec = build_model_spec_from_config(
+        {"preset": "jepa_semantic_hybrid", "vocab_size": 256, **_tiny_kwargs()},
+        preview_defaults=True,
+    )
+    graph = _cpu_graph(build_gpt_root_graph(name="jsh_trace_dual", model_spec=spec))
+    load_dataset_source_into_graph(graph, LoadDatasetRequest(dataset_names=["dummy"], seq_len=8))
+
+    tiny_text_inputs = [[1, 2, 3, 4, 5, 6, 7, 8], [2, 3, 4, 5, 6, 7, 8, 9]]
+    tiny_text_targets = [[2, 3, 4, 5, 6, 7, 8, 9], [3, 4, 5, 6, 7, 8, 9, 10]]
+    ids, vecs = load_training_data()
+    tiny_ids = ids[:4]
+    tiny_vecs = vecs[:4]
+
+    with patch("server.services.graph_ops.load_dataset_tokens", return_value=(tiny_text_inputs, tiny_text_targets)):
+        with patch("neuralfn.semantic.load_training_data", return_value=(tiny_ids, tiny_vecs)):
+            result = trace_torch_graph(graph, ExecuteRequest())
+
+    assert result["source"] == "dataset"
+    assert "trace" in result
+    assert "sample_inputs" in result
+
+
+def test_jepa_semantic_hybrid_real_5epoch_hybrid_training_regression() -> None:
+    spec = build_jepa_semantic_hybrid_spec(**_tiny_kwargs(), vocab_size=256, ema_decay=0.9)
+    graph = _cpu_graph(build_gpt_root_graph(name="jsh_train_dual_5ep", model_spec=spec))
+    load_dataset_source_into_graph(graph, LoadDatasetRequest(dataset_names=["dummy"], seq_len=8))
+
+    text_x = torch.randint(0, 128, (16, 8), dtype=torch.long)
+    text_y = torch.randint(0, 128, (16, 8), dtype=torch.long)
+    sem_x = torch.randint(0, 256, (16, 9), dtype=torch.long)
+
+    trainer = TorchTrainer(
+        graph,
+        TorchTrainConfig(epochs=5, batch_size=4, learning_rate=1e-3, device="cpu"),
+    )
+
+    with patch.object(TorchTrainer, "_load_dataset_for_graph", return_value=torch.utils.data.TensorDataset(text_x, text_y)) as text_mock:
+        with patch.object(TorchTrainer, "_load_semantic_dataset", return_value=torch.utils.data.TensorDataset(sem_x)) as sem_mock:
+            losses = trainer.train([], [])
+
+    assert text_mock.called
+    assert sem_mock.called
+    assert len(losses) == 5
+    assert all(math.isfinite(float(loss)) for loss in losses)
+
+
+def test_jepa_semantic_hybrid_early_stop_still_syncs_and_exports(tmp_path) -> None:
+    spec = build_jepa_semantic_hybrid_spec(**_tiny_kwargs(), vocab_size=256, ema_decay=0.9)
+    graph = _cpu_graph(build_gpt_root_graph(name="jsh_train_stop", model_spec=spec))
+    load_dataset_source_into_graph(graph, LoadDatasetRequest(dataset_names=["dummy"], seq_len=8))
+
+    text_x = torch.randint(0, 128, (16, 8), dtype=torch.long)
+    text_y = torch.randint(0, 128, (16, 8), dtype=torch.long)
+    sem_x = torch.randint(0, 256, (16, 9), dtype=torch.long)
+
+    trainer = TorchTrainer(
+        graph,
+        TorchTrainConfig(epochs=5, batch_size=4, learning_rate=1e-3, device="cpu"),
+    )
+
+    def on_epoch(epoch: int, _loss: float) -> None:
+        if epoch == 0:
+            trainer.stop()
+
+    with patch.object(TorchTrainer, "_load_dataset_for_graph", return_value=torch.utils.data.TensorDataset(text_x, text_y)):
+        with patch.object(TorchTrainer, "_load_semantic_dataset", return_value=torch.utils.data.TensorDataset(sem_x)):
+            losses = trainer.train([], [], on_epoch=on_epoch)
+
+    assert len(losses) == 1
+    model_graph = graph.nodes["model"].neuron_def.subgraph
+    assert model_graph is not None
+    predictor_state = model_graph.nodes["predictor"].neuron_def.module_state
+    assert predictor_state not in ("", None)
+
+    pt_path = tmp_path / "jsh_interrupted.pt"
+    json_path = tmp_path / "jsh_interrupted.json"
+    export_to_pt(graph, pt_path)
+    save_graph(graph, json_path)
+    assert pt_path.exists()
+    assert json_path.exists()

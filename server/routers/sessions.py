@@ -387,12 +387,13 @@ def run_trace_torch(
         bundle = get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
         graph = NeuronGraph.from_dict(bundle.graph_state.graph)
         dataset_names = list(body.dataset_names or (find_attached_dataset_config(graph) or {}).get("dataset_names") or [])
-        if dataset_names:
+        real_ds = [name for name in dataset_names if name != "__semantic_builtin__"]
+        if real_ds:
             get_dataset_service().ensure_dataset_access(
                 db,
                 auth.user,
                 project_id=project_id,
-                dataset_names=dataset_names,
+                dataset_names=real_ds,
             )
         return trace_torch_graph(graph, body)
     except PermissionDenied as exc:

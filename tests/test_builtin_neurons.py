@@ -97,6 +97,7 @@ EXPECTED_BUILTINS = [
     "act_weighted_sum_module",
     "universal_transformer_module",
     "ttt_linear_module",
+    "semantic_data_source_module",
     "semantic_projector_module",
     "semantic_alignment_loss_module",
     "semantic_hasher_module",

@@ -47,29 +47,32 @@ function stripGraphForTrace(graph: any): any {
 }
 
 function findTraceDatasetConfig(graph: any): { datasetNames: string[]; seqLen: number } | null {
-  const search = (current: any): { datasetNames: string[]; seqLen: number } | null => {
+  const search = (
+    current: any,
+    preferredType: "dataset_source" | "semantic_data_source",
+  ): { datasetNames: string[]; seqLen: number } | null => {
     for (const node of Object.values(current.nodes ?? {}) as any[]) {
       const neuronDef = node?.neuron_def;
-      if (neuronDef?.module_type === "dataset_source") {
+      if (neuronDef?.module_type === preferredType) {
         const datasetNames = Array.isArray(neuronDef.module_config?.dataset_names)
           ? neuronDef.module_config.dataset_names.filter(Boolean)
           : [];
-        if (datasetNames.length > 0) {
+        if (datasetNames.length > 0 || neuronDef?.module_type === "semantic_data_source") {
           return {
-            datasetNames,
-            seqLen: Number(neuronDef.module_config?.seq_len) || 64,
+            datasetNames: datasetNames.length > 0 ? datasetNames : ["__semantic_builtin__"],
+            seqLen: Number(neuronDef.module_config?.seq_len) || 9,
           };
         }
       }
       if (neuronDef?.kind === "subgraph" && neuronDef.subgraph) {
-        const nested = search(neuronDef.subgraph);
+        const nested = search(neuronDef.subgraph, preferredType);
         if (nested) return nested;
       }
     }
     return null;
   };
 
-  return search(graph);
+  return search(graph, "dataset_source") ?? search(graph, "semantic_data_source");
 }
 
 export default function TrainingPanel() {

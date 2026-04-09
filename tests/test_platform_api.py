@@ -237,6 +237,32 @@ class PlatformApiTest(unittest.TestCase):
         self.assertEqual(1, len(session_payload))
         self.assertEqual(payload["default_session"]["id"], session_payload[0]["id"])
 
+    def test_session_apply_endpoint_loads_full_jepa_semantic_root_graph(self) -> None:
+        self._bootstrap_admin()
+        payload = self.client.get("/api/bootstrap").json()
+        project_id = payload["active_project_id"]
+        session_id = payload["active_session_id"]
+
+        applied = self.client.post(
+            f"/api/projects/{project_id}/sessions/{session_id}/templates/gpt/apply",
+            json={"name": "jepa_semantic", "config": {"preset": "jepa_semantic_hybrid"}},
+        )
+        self.assertEqual(200, applied.status_code, applied.text)
+        graph = applied.json()["graph"]
+
+        self.assertIn("dataset_source", graph["nodes"])
+        self.assertIn("semantic_data_source", graph["nodes"])
+        self.assertIn("model", graph["nodes"])
+        self.assertIn("loss_out", graph["nodes"])
+        self.assertNotIn("tokens_in", graph["nodes"])
+        self.assertEqual(["dataset_source", "semantic_data_source"], graph["input_node_ids"])
+        self.assertEqual(["loss_out"], graph["output_node_ids"])
+
+        root_edges_to_model = [
+            edge for edge in graph["edges"].values() if edge["dst_node"] == "model"
+        ]
+        self.assertEqual(2, len(root_edges_to_model))
+
     def test_dataset_access_filtering_and_graph_driven_run_resolution(self) -> None:
         self._bootstrap_admin()
         self._create_user(email="datasets@example.com", display_name="Datasets User")

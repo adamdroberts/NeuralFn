@@ -141,6 +141,8 @@ export interface GPTTemplateResponse {
   node_def: NeuronDefData;
   variant_library: VariantLibraryData;
   graph_settings: Pick<GraphData, "training_method" | "runtime" | "torch_config">;
+  extra_nodes?: Array<{ instance_id: string; position: [number, number]; neuron_def: NeuronDefData }>;
+  extra_edges?: Array<{ id: string; src_node: string; src_port: number; dst_node: string; dst_port: number; weight: number; bias: number }>;
 }
 
 export interface DatasetInfo {
@@ -376,6 +378,16 @@ export const api = {
 
   buildGPTTemplate: (body?: { name?: string; config?: Record<string, unknown> }) =>
     json<GPTTemplateResponse>("/templates/gpt", {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
+    }),
+
+  applyGPTTemplate: (
+    projectId: string,
+    sessionId: string,
+    body?: { name?: string; config?: Record<string, unknown> },
+  ) =>
+    json<{ revision: number; graph: GraphData }>(`${sessionBase(projectId, sessionId)}/templates/gpt/apply`, {
       method: "POST",
       body: JSON.stringify(body ?? {}),
     }),

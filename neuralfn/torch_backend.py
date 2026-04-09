@@ -665,6 +665,22 @@ class DatasetSourceStage(nn.Module):
         return args if len(args) > 1 else (args[0],)
 
 
+class SemanticDataSourceStage(nn.Module):
+    """Experimental: source node that auto-loads the shipped semantic training CSV.
+
+    Like ``DatasetSourceStage`` this is a passthrough -- the trainer detects
+    ``module_type == "semantic_data_source"`` and loads the 100k-row CSV
+    from ``neuralfn/data/semantic/training_100k_8d.csv`` automatically.
+    """
+
+    def __init__(self, seq_len: int = 9) -> None:
+        super().__init__()
+        self.seq_len: int = seq_len
+
+    def forward(self, *args: Tensor) -> tuple[Tensor, ...]:
+        return args if len(args) > 1 else (args[0],)
+
+
 class RandomTimestepsStage(nn.Module):
     def forward(self, tokens: Tensor) -> Tensor:
         return torch.rand(tokens.size(0), device=tokens.device, dtype=torch.float32)
@@ -881,6 +897,28 @@ class RoleMappedDataset(torch.utils.data.Dataset):
             else:
                 raise ValueError(f"Unsupported dataset role '{role}'")
         return tuple(mapped)
+
+
+class DualSourceTokenDataset(torch.utils.data.Dataset):
+    """Pair a normal text token dataset with semantic target tokens."""
+
+    def __init__(self, text_dataset: torch.utils.data.Dataset, semantic_tokens: torch.Tensor) -> None:
+        self.text_dataset = text_dataset
+        self.semantic_tokens = semantic_tokens
+        self.length = min(len(text_dataset), int(semantic_tokens.size(0)))
+
+    def __len__(self) -> int:
+        return self.length
+
+    def __getitem__(self, idx: int) -> tuple[Tensor, Tensor]:
+        sample = self.text_dataset[idx]
+        if isinstance(sample, Tensor):
+            x = sample
+        else:
+            values = tuple(sample)
+            x = values[0]
+        return x, self.semantic_tokens[idx]
+
 
 def default_dataset_source_config() -> dict[str, Any]:
     return {"dataset_names": [], "seq_len": 64}
@@ -1150,6 +1188,8 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
         )
     if module_type == "softmax_distillation_loss":
         return SoftmaxDistillationLossStage()
+    if module_type == "semantic_data_source":
+        return SemanticDataSourceStage(seq_len=int(cfg.get("seq_len", 9)))
     raise KeyError(f"Unsupported module type: {module_type}")
 
 
@@ -1390,6 +1430,33 @@ class TorchTrainer:
 
         return load_dataset_tensors(dataset_names, seq_len=seq_len)
 
+    @staticmethod
+    def _load_semantic_dataset() -> torch.utils.data.Dataset:
+        """Load the shipped 100k semantic CSV as a token dataset."""
+        import numpy as np
+        from .semantic import load_training_data
+
+        _ids, vecs = load_training_data()
+        tokens = torch.from_numpy(
+            ((vecs + 1.0) / 2.0 * 255).clip(0, 255).astype(np.int64)
+        )
+        return torch.utils.data.TensorDataset(tokens)
+
+    @staticmethod
+    def _required_vocab_for_text_dataset(base_dataset: torch.utils.data.Dataset) -> int:
+        """Return the max token id + 1 for a text dataset when possible."""
+        arrays = getattr(base_dataset, "arrays", None)
+        if arrays:
+            return max(int(arr.max()) for arr in arrays) + 1
+        if len(base_dataset) == 0:
+            return 0
+        sample = base_dataset[0]
+        if isinstance(sample, Tensor):
+            sample_tensors = (sample,)
+        else:
+            sample_tensors = tuple(sample)
+        return max(int(t.max()) for t in sample_tensors) + 1
+
     @classmethod
     def _build_manual_dataset(
         cls,
@@ -1494,7 +1561,13 @@ class TorchTrainer:
         template_spec = self._template_spec(self.graph)
         objective = str(template_spec.get("template", {}).get("objective", "ar"))
         ema_decay = float(template_spec.get("ema_decay", 0.99))
-        # ── 1. Resolve dataset_source nodes BEFORE compiling ──────────
+        # ── 1. Resolve data source nodes BEFORE compiling ──────────
+        semantic_source_node = None
+        for nid, node in self.graph.nodes.items():
+            if getattr(node.neuron_def, 'module_type', '') == 'semantic_data_source':
+                semantic_source_node = (nid, node.neuron_def.module_config or {})
+                break
+
         dataset_source_node = None
         for nid, node in self.graph.nodes.items():
             if getattr(node.neuron_def, 'module_type', '') == 'dataset_source':
@@ -1505,20 +1578,49 @@ class TorchTrainer:
                     break
 
         dataset = None
-        if dataset_source_node is not None:
+        if semantic_source_node is not None and dataset_source_node is not None:
+            sem_nid, _sem_cfg = semantic_source_node
             ds_nid, ds_cfg = dataset_source_node
             ds_names = ds_cfg.get('dataset_names', [])
             ds_seq_len = int(ds_cfg.get('seq_len', 64))
             base_dataset = self._load_dataset_for_graph(self.graph, ds_names, seq_len=ds_seq_len)
+            sem_dataset = self._load_semantic_dataset()
+            sem_tokens = sem_dataset.tensors[0]
+            max_text = self._required_vocab_for_text_dataset(base_dataset) - 1
+            max_sem = int(sem_tokens.max()) if sem_tokens.numel() > 0 else -1
+            self._adjust_vocab_size(self.graph, max(max_text, max_sem) + 1)
 
-            if len(base_dataset) > 0:
-                sample = base_dataset[0]
-                if isinstance(sample, Tensor):
-                    sample_tensors = (sample,)
-                else:
-                    sample_tensors = tuple(sample)
-                max_token = max(int(t.max()) for t in sample_tensors)
-                required_vocab = max_token + 1
+            dataset = DualSourceTokenDataset(base_dataset, sem_tokens)
+            self.graph.input_node_ids = [ds_nid, sem_nid]
+            if not self.graph.output_node_ids:
+                self._auto_detect_outputs(self.graph, ds_nid)
+        elif semantic_source_node is not None:
+            sem_nid, _sem_cfg = semantic_source_node
+            sem_dataset = self._load_semantic_dataset()
+            self._adjust_vocab_size(self.graph, 256)
+            tokens_nid = None
+            for nid in self.graph.input_node_ids:
+                if nid != sem_nid:
+                    tokens_nid = nid
+                    break
+            if tokens_nid is not None:
+                self.graph.input_node_ids = [tokens_nid, sem_nid]
+            else:
+                self.graph.input_node_ids = [sem_nid]
+            base_t = sem_dataset.tensors[0]
+            if tokens_nid is not None:
+                dataset = torch.utils.data.TensorDataset(base_t, base_t)
+            else:
+                dataset = sem_dataset
+            if not self.graph.output_node_ids:
+                self._auto_detect_outputs(self.graph, sem_nid)
+        elif dataset_source_node is not None:
+            ds_nid, ds_cfg = dataset_source_node
+            ds_names = ds_cfg.get('dataset_names', [])
+            ds_seq_len = int(ds_cfg.get('seq_len', 64))
+            base_dataset = self._load_dataset_for_graph(self.graph, ds_names, seq_len=ds_seq_len)
+            required_vocab = self._required_vocab_for_text_dataset(base_dataset)
+            if required_vocab > 0:
                 self._adjust_vocab_size(self.graph, required_vocab)
             dataset = RoleMappedDataset(base_dataset, roles)
 
@@ -1573,57 +1675,57 @@ class TorchTrainer:
         self._stop = False
         self.loss_history = []
         run_graph.train()
-        
+
         global_step = 0
-
-        for epoch in range(self.config.epochs):
-            if self._stop:
-                break
-            total_loss = 0.0
-            total_rows = 0
-            for batch in loader:
-                if self._stop or (self.config.max_steps is not None and global_step >= self.config.max_steps):
-                    self._stop = True
+        try:
+            for epoch in range(self.config.epochs):
+                if self._stop:
                     break
-                    
-                if isinstance(batch, Tensor):
-                    batch = (batch,)
-                if len(batch) == 1:
-                    flat_inputs = (batch[0].to(device),)
-                else:
-                    flat_inputs = tuple(item.to(device) for item in batch)
-                with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
-                    outputs = run_graph(*flat_inputs)
-                    if len(outputs) != 1:
-                        raise ValueError(
-                            f"Torch training graph '{self.graph.name}' must expose exactly one scalar loss output"
-                        )
-                    loss = outputs[0]
-                if loss.ndim != 0:
-                    raise ValueError("Torch training output must be a scalar loss tensor")
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                if objective in ("jepa", "jepa_semantic"):
-                    self._ema_update_targets(compiled, ema_decay)
-                batch_rows = int(flat_inputs[0].size(0))
-                total_loss += float(loss.item()) * batch_rows
-                total_rows += batch_rows
-                global_step += 1
+                total_loss = 0.0
+                total_rows = 0
+                for batch in loader:
+                    if self._stop or (self.config.max_steps is not None and global_step >= self.config.max_steps):
+                        self._stop = True
+                        break
 
-            avg_loss = total_loss / max(total_rows, 1)
-            self.loss_history.append(avg_loss)
-            if on_epoch is not None:
-                on_epoch(epoch, avg_loss)
+                    if isinstance(batch, Tensor):
+                        batch = (batch,)
+                    if len(batch) == 1:
+                        flat_inputs = (batch[0].to(device),)
+                    else:
+                        flat_inputs = tuple(item.to(device) for item in batch)
+                    with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
+                        outputs = run_graph(*flat_inputs)
+                        if len(outputs) != 1:
+                            raise ValueError(
+                                f"Torch training graph '{self.graph.name}' must expose exactly one scalar loss output"
+                            )
+                        loss = outputs[0]
+                    if loss.ndim != 0:
+                        raise ValueError("Torch training output must be a scalar loss tensor")
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    if objective in ("jepa", "jepa_semantic"):
+                        self._ema_update_targets(compiled, ema_decay)
+                    batch_rows = int(flat_inputs[0].size(0))
+                    total_loss += float(loss.item()) * batch_rows
+                    total_rows += batch_rows
+                    global_step += 1
 
-        compiled.sync_state_back(self.graph)
-        self.graph.training_method = "torch"
-        self.graph.runtime = "torch"
-        self.graph.torch_config = {
-            **self.graph.torch_config,
-            "device": device.type,
-            "amp_dtype": amp_name,
-        }
+                avg_loss = total_loss / max(total_rows, 1)
+                self.loss_history.append(avg_loss)
+                if on_epoch is not None:
+                    on_epoch(epoch, avg_loss)
+        finally:
+            compiled.sync_state_back(self.graph)
+            self.graph.training_method = "torch"
+            self.graph.runtime = "torch"
+            self.graph.torch_config = {
+                **self.graph.torch_config,
+                "device": device.type,
+                "amp_dtype": amp_name,
+            }
         return self.loss_history
 
 
@@ -1693,10 +1795,26 @@ class SemanticProjectorStage(nn.Module):
 
 
 class SemanticAlignmentLossStage(nn.Module):
-    """Experimental: MSE loss between predicted and ground-truth 15-D vectors."""
+    """Experimental: MSE loss between predicted semantic vectors and targets.
+
+    Targets may arrive as quantized integers [0, 255] from the semantic data
+    source.  If so they are dequantized to [-1, 1] before computing MSE.
+    Handles shape mismatches by truncating or zero-padding the target to match
+    the prediction's last dimension.
+    """
 
     def forward(self, pred: Tensor, target: Tensor) -> Tensor:
-        return F.mse_loss(pred.float(), target.detach().float())
+        t = target.detach().float()
+        if not torch.is_floating_point(target) or t.max() > 2.0:
+            t = t / 127.5 - 1.0
+        p = pred.float()
+        if t.shape[-1] != p.shape[-1]:
+            if t.shape[-1] > p.shape[-1]:
+                t = t[..., : p.shape[-1]]
+            else:
+                pad = torch.zeros(*t.shape[:-1], p.shape[-1] - t.shape[-1], device=t.device, dtype=t.dtype)
+                t = torch.cat([t, pad], dim=-1)
+        return F.mse_loss(p, t)
 
 
 class SemanticHasherStage(nn.Module):

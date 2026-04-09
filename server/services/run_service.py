@@ -20,7 +20,7 @@ from ..db import get_session_factory
 from ..db_models import EditorSession, TrainingRun, User, ensure_utc, utcnow
 from ..models import TrainRequest
 from .dataset_service import get_dataset_service
-from .graph_ops import find_attached_dataset_config
+from .graph_ops import find_attached_dataset_config, find_attached_text_dataset_config
 from .live_state import get_live_state_store
 from .session_service import get_workspace_service
 
@@ -127,17 +127,18 @@ class RunService:
     ) -> tuple[list[str], int]:
         dataset_names = [name for name in list(body.dataset_names or []) if name]
         if not dataset_names:
-            dataset_cfg = find_attached_dataset_config(graph) or {}
+            dataset_cfg = find_attached_text_dataset_config(graph) or find_attached_dataset_config(graph) or {}
             dataset_names = [name for name in list(dataset_cfg.get("dataset_names") or []) if name]
             seq_len = int(body.seq_len or dataset_cfg.get("seq_len") or 64)
         else:
             seq_len = int(body.seq_len or 64)
-        if dataset_names:
+        real_ds = [name for name in dataset_names if name != "__semantic_builtin__"]
+        if real_ds:
             self._datasets.ensure_dataset_access(
                 db,
                 user,
                 project_id=project_id,
-                dataset_names=dataset_names,
+                dataset_names=real_ds,
             )
         return dataset_names, seq_len
 
@@ -377,13 +378,14 @@ class RunService:
         
         # Optimization: Don't load full dataset into memory if we are using TorchTrainer
         # and there is an attached dataset_source node.
-        attached_ds_cfg = find_attached_dataset_config(graph)
+        attached_ds_cfg = find_attached_text_dataset_config(graph) or find_attached_dataset_config(graph)
         if use_torch and attached_ds_cfg and not body.dataset_names:
             train_in, train_tgt = np.array([]), np.array([])
             dataset_names = attached_ds_cfg.get("dataset_names", [])
             seq_len = int(body.seq_len or attached_ds_cfg.get("seq_len") or 64)
-            # Just ensure access
-            self._datasets.ensure_dataset_access(db, user, project_id=project_id, dataset_names=dataset_names)
+            real_ds = [n for n in dataset_names if n != "__semantic_builtin__"]
+            if real_ds:
+                self._datasets.ensure_dataset_access(db, user, project_id=project_id, dataset_names=real_ds)
         else:
             train_in, train_tgt, dataset_names, seq_len = self._load_training_arrays(
                 db,
