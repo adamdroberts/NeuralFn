@@ -20,7 +20,7 @@ Tutorial-oriented walkthroughs with runnable Python code. Start here if you want
 - [**Building graphs**](framework-guide/building-graphs.md) -- `NeuronGraph`, nodes, edges, wiring, execution.
 - [**Subgraphs and variants**](framework-guide/subgraphs-and-variants.md) -- Nested composition, the variant library, alias resolution.
 - [**Torch models**](framework-guide/torch-models.md) -- Module neurons, `CompiledTorchGraph`, tensor-native architectures.
-- [**Templates and presets**](framework-guide/templates-and-presets.md) -- All 16 presets, `ModelSpec`, `BlockSpec`, `TemplateSpec`.
+- [**Templates and presets**](framework-guide/templates-and-presets.md) -- All 17 presets, `ModelSpec`, `BlockSpec`, `TemplateSpec`.
 - [**Training workflows**](framework-guide/training-workflows.md) -- Surrogate, evolutionary, hybrid, and torch training end-to-end.
 - [**Inference and export**](framework-guide/inference-and-export.md) -- Weight I/O, quantization, autoregressive generation.
 - [**Datasets**](framework-guide/datasets.md) -- Download, upload, wiring to `dataset_source`, byte vs tokenized paths.

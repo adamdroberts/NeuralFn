@@ -78,6 +78,7 @@ EXPECTED_BUILTINS = [
     "expert_combine_module",
     "load_balance_loss_module",
     "aux_loss_add_module",
+    "loss_scale_module",
     "token_cross_entropy_module",
     "dataset_source_module",
     "bitlinear_ternary_module",
@@ -102,6 +103,9 @@ EXPECTED_BUILTINS = [
     "semantic_alignment_loss_module",
     "semantic_hasher_module",
     "semantic_moe_router_module",
+    "semantic_hash_router_module",
+    "broadcast_expert_routes_module",
+    "routed_attention_experts_module",
     "attentionless_decoder_module",
     "softmax_distillation_loss_module",
 ]

@@ -142,7 +142,7 @@ That's it -- four tool calls for a complete train run.
 | `set_dataset_access(ds_name, project_ids)` | Update which projects can use a dataset. |
 | `delete_dataset(ds_name)` | Delete a local dataset. |
 
-## All 16 GPT template presets
+## All 17 GPT template presets
 
 | Preset | Architecture | Objective |
 |--------|-------------|-----------|
@@ -158,6 +158,7 @@ That's it -- four tool calls for a complete train run.
 | `diffusion` | Discrete diffusion with denoising head | Diffusion |
 | `ttt_llama` | Test-Time Training layers | AR |
 | `llm_jepa` | JEPA with EMA target encoder | JEPA |
+| `semantic_router_moe` | AR-only semantic router control with shared routed MoE blocks | AR |
 | `hnet_lm` | Raw-byte input, byte patches | AR |
 | `universal_llama` | ACT-based universal transformer | AR |
 | `llama_megakernel` | Fused attention, max-autotune compile | AR |
@@ -244,9 +245,9 @@ The following MCP tools are **[Experimental]** and target the `jepa_semantic_hyb
 
 | Tool | Parameters [Experimental] | Purpose |
 |------|---------------------------|---------|
-| `reverse_engineer_to_semantic` | `project_id`, `session_id`, `text` | Encode `text` to a 15-D semantic vector using the session graph’s JEPA semantic path. |
-| `semantic_search` | `project_id`, `session_id`, `vector` (list of floats), `k` (default `10`) | k-nearest-neighbour lookup for a 15-D `vector`. |
+| `reverse_engineer_to_semantic` | `project_id`, `session_id`, `text` | Encode `text` to the vocab-grounded 9-D semantic space used by the session graph’s JEPA semantic path. |
+| `semantic_search` | `project_id`, `session_id`, `vector` (list of floats), `k` (default `10`) | k-nearest-neighbour lookup for a 9-D semantic vector. |
 | `train_jepa_semantic` | `project_id`, `session_id`, `dataset_names` (optional list), `epochs` (default `10`), `learning_rate` (default `3e-4`) | Start torch training (same entry as `train_start`) intended for graphs using the **[Experimental]** `jepa_semantic_hybrid` template. |
-| `generate_with_semantics` | `project_id`, `session_id`, `prompt`, `target_vector` (optional 15-D list), `max_tokens` (default `100`) | Generate with the attentionless semantic decoder; optional `target_vector` steers toward a semantic target. |
+| `generate_with_semantics` | `project_id`, `session_id`, `prompt`, `target_vector` (optional 9-D list), `max_tokens` (default `100`) | Generate with the experimental semantic stack; optional `target_vector` steers toward a semantic target. |
 
 **Disclaimer [Experimental]:** These tools are research prototypes; prefer the stable graph/dataset/training tools for production-like workflows.

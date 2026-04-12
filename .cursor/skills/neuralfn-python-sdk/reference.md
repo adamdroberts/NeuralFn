@@ -235,7 +235,7 @@ from neuralfn import BuiltinNeurons
 
 BuiltinNeurons.sigmoid          # NeuronDef (scalar)
 BuiltinNeurons.linear_module    # NeuronDef (torch module)
-BuiltinNeurons.all()            # list[NeuronDef] -- all 58 builtins
+BuiltinNeurons.all()            # list[NeuronDef] -- all 91 builtins
 BuiltinNeurons.get("relu")      # lookup by name
 ```
 

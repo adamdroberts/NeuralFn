@@ -66,9 +66,10 @@ This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_me
 
 | Preset [Experimental] | Builder [Experimental] | Backbone | Objective [Experimental] | Sparsity | Key features [Experimental] |
 |-----------------------|------------------------|----------|----------------------------|----------|----------------------------|
-| `jepa_semantic_hybrid` | `build_jepa_semantic_hybrid_spec` | llama | `jepa_semantic` | moe | JEPA + 15D semantic vectors + LSH + semantic MoE routing + attentionless decoder (research prototype). |
+| `semantic_router_moe` | `build_semantic_router_moe_spec` | mixllama | `semantic_router` | moe | AR-only control experiment: vocab-grounded semantic projection + LSH + fixed 8-expert topic routing shared across all MoE blocks. |
+| `jepa_semantic_hybrid` | `build_jepa_semantic_hybrid_spec` | llama | `jepa_semantic` | moe | JEPA + 9D vocab-grounded semantic state + LSH + fixed 8-expert topic routing + full-sequence attention experts (research prototype). |
 
-**Disclaimer [Experimental]:** The `jepa_semantic_hybrid` preset is experimental; graph layout, config keys, and training APIs may change.
+**Disclaimer [Experimental]:** The semantic routing presets are experimental; graph layout, config keys, and training APIs may change. Both `semantic_router_moe` and `jepa_semantic_hybrid` use the root/data contract text `tokens` + text `targets` plus a separate `semantic_data_source` that provides vocab-topic `sem_targets`. Both presets require exactly 8 experts, one for each vocabulary dimension. `semantic_router_moe` is the router-only control; `jepa_semantic_hybrid` adds the JEPA path on top.
 
 ---
 
@@ -87,9 +88,14 @@ These keys can be passed in the `config` dict to any preset builder. Aliases are
 | `multiple_of` | -- | `256` | Round FFN hidden dim to this multiple (Llama-family). |
 | `experts` | -- | `8` | Number of MoE experts (MoE presets). |
 | `top_k` | -- | `2` | Top-K expert routing (MoE presets). |
+| `rope_base` / `rope_theta` | -- | `10000.0` | RoPE base for attention-enabled presets, including hybrid routed experts. |
+| `qk_gain_init` | -- | `1.0` | Initial query scaling for attention-enabled presets. |
 | `dropout_p` | -- | `0.0`-`0.1` | Dropout probability. |
 | `tie_embeddings` | -- | varies | Tie input embedding and output projection weights. |
 | `logit_softcap` | -- | `0.0` | Tanh softcap on logits (0 = disabled). |
+| `ar_loss_coef` | -- | `1.0` | Scalar for routed AR loss on semantic routing presets. |
+| `jepa_loss_coef` | -- | `0.25` | Scalar for the hybrid preset's JEPA latent loss. |
+| `semantic_align_loss_coef` | -- | `0.5` | Scalar for semantic-alignment loss on semantic routing presets. |
 | `ttt_hidden_dim` | -- | `32` | Hidden dim for TTT layers. |
 | `byte_patch_size` | -- | `4` | Byte patch window for H-Net. |
 | `max_recurrence_steps` | -- | `4` | Max ACT recurrence steps (universal transformer). |

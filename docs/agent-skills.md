@@ -14,7 +14,7 @@ NeuralFn ships with agent skills that teach AI coding assistants (Cursor, Codex,
 
 - **neuralfn-python-sdk** covers the core graph framework: how to define neurons with `@neuron` and `Port`, build `NeuronGraph` instances, wire edges, create subgraphs, use the variant library, serialize graphs, and run all four training methods. It includes quick-reference tables for every class and common builtin IDs.
 
-- **neuralfn-torch** covers the torch template system: `ModelSpec` / `BlockSpec` / `TemplateSpec` configuration, all 16 presets with config keys, `build_gpt_root_graph()` and `build_model_stage_graph()`, `CompiledTorchGraph` compilation, `TorchTrainer` for training, dataset loading, weight export/import, and `InferenceCache` for autoregressive generation.
+- **neuralfn-torch** covers the torch template system: `ModelSpec` / `BlockSpec` / `TemplateSpec` configuration, all 17 presets with config keys, `build_gpt_root_graph()` and `build_model_stage_graph()`, `CompiledTorchGraph` compilation, `TorchTrainer` for training, dataset loading, weight export/import, and `InferenceCache` for autoregressive generation.
 
 - **neuralfn-mcp** covers the MCP tool interface: how to use tools like `get_graph`, `add_node`, `add_edge`, `load_gpt_template`, `train_start`, and `download_dataset` to build and train models through the MCP server. Includes end-to-end workflow examples.
 

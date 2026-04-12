@@ -1,6 +1,6 @@
 # neuralfn.builtins
 
-Library of 58 built-in neuron definitions ready to drop into a graph.
+Library of 91 built-in neuron definitions ready to drop into a graph.
 
 ## Class: BuiltinNeurons
 
@@ -8,7 +8,7 @@ Library of 58 built-in neuron definitions ready to drop into a graph.
 class BuiltinNeurons:
     sigmoid = ...       # NeuronDef
     relu = ...          # NeuronDef
-    # ... all 58 builtins as class attributes
+    # ... all 91 builtins as class attributes
 ```
 
 Each built-in neuron is exposed as a class attribute of type `NeuronDef`.
@@ -17,7 +17,7 @@ Each built-in neuron is exposed as a class attribute of type `NeuronDef`.
 
 #### `BuiltinNeurons.all() -> list[NeuronDef]`
 
-Return the full built-in neuron catalog (all 58 entries).
+Return the full built-in neuron catalog (all 91 entries).
 
 #### `BuiltinNeurons.get(name: str) -> NeuronDef`
 
@@ -151,9 +151,11 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | `router_logits_module` | router_logits | module | 1 | 1 |
 | `topk_route_module` | topk_route | module | 1 | 2 |
 | `expert_dispatch_module` | expert_dispatch | module | 3 | 1 |
+| `broadcast_expert_routes_module` | broadcast_expert_routes | module | 3 | 2 |
 | `expert_combine_module` | expert_combine | module | 1 | 1 |
 | `load_balance_loss_module` | load_balance_loss | module | 3 | 2 |
 | `aux_loss_add_module` | aux_loss_add | module | 2 | 1 |
+| `loss_scale_module` | loss_scale | module | 1 | 1 |
 
 ### Torch -- Data / Special
 
@@ -186,11 +188,17 @@ The module neurons below are **[Experimental]** (JEPA semantic hybrid stack). Po
 
 | Attribute [Experimental] | `module_type` [Experimental] | Inputs [Experimental] | Outputs [Experimental] |
 |--------------------------|------------------------------|------------------------|-------------------------|
-| `semantic_projector_module` | `semantic_projector` | `hidden` | `semantic_vec`, `residual` |
-| `semantic_alignment_loss_module` | `semantic_alignment_loss` | `pred`, `target` | `loss` |
+| `semantic_data_source_module` | `semantic_data_source` | -- | `sem_targets` |
+| `semantic_projector_module` | `semantic_projector` | `hidden` | `semantic_vec`, `residual`, `topic_logits` |
+| `semantic_alignment_loss_module` | `semantic_alignment_loss` | `pred_logits`, `target` | `loss` |
 | `semantic_hasher_module` | `semantic_hasher` | `semantic_vec` | `bucket_indices` |
 | `semantic_moe_router_module` | `semantic_moe_router` | `semantic_vec` | `expert_weights`, `expert_indices` |
+| `semantic_hash_router_module` | `semantic_hash_router` | `semantic_vec`, `bucket_indices`, `topic_logits`, `sem_targets` | `expert_weights`, `expert_indices` |
+| `broadcast_expert_routes_module` | `broadcast_expert_routes` | `hidden`, `expert_weights`, `expert_indices` | `routing_weights`, `routing_indices` |
+| `routed_attention_experts_module` | `routed_attention_experts` | `hidden`, `expert_weights`, `expert_indices` | `hidden_out` |
 | `attentionless_decoder_module` | `attentionless_decoder` | `bucket_indices`, `expert_output` | `logits` |
 | `softmax_distillation_loss_module` | `softmax_distillation_loss` | `teacher_logits`, `student_logits` | `loss` |
+
+`semantic_data_source_module` now emits categorical vocab-topic targets. The first 8 positions correspond to the fixed expert map, and inactive dimensions use `-100` ignore sentinels. `broadcast_expert_routes_module` is used by `semantic_router_moe` to turn the shared batch-level semantic route into per-token routing tensors for the standard MoE dispatcher.
 
 **Disclaimer [Experimental]:** These builtins are tied to a research prototype; port semantics and `module_config` keys may change.

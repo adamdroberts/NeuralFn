@@ -60,6 +60,45 @@ Sets this session as the user's active session (also sets the parent project as 
 }
 ```
 
+---
+
+## Experimental semantic endpoints
+
+These endpoints are research-only surfaces for the `jepa_semantic_hybrid` stack.
+
+### POST /{session_id}/semantic/encode
+
+Returns a placeholder 9-D semantic response keyed by the vocab-grounded dimension names.
+
+### POST /{session_id}/semantic/search
+
+Accepts a 9-D semantic vector and returns placeholder nearest-neighbour rows.
+
+### GET /{session_id}/semantic/dimensions
+
+Returns the semantic dimension metadata used by the hybrid preset.
+
+`num_topics` is dynamic and comes from the current canonical `vocab_8d.json`. It
+is no longer a fixed 40 for each routed dimension.
+
+**Response element shape:**
+
+```json
+{
+  "index": 0,
+  "name": "entity_type",
+  "meaning": "who or what (person, object, abstract)",
+  "expert_id": 0,
+  "num_topics": 266
+}
+```
+
+`expert_id` is `null` for the derived `taxonomy_hash` slot because it does not own an expert.
+
+### POST /{session_id}/semantic/generate
+
+Reserved for future semantic-conditioned generation. The current response remains a placeholder.
+
 ### GET /{session_id}
 
 Returns session details including graph metadata (node/edge counts, revision).

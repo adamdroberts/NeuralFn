@@ -92,7 +92,7 @@ ModelSpec(
 
 ---
 
-## All 16 presets -- detailed
+## All 17 presets -- detailed
 
 ### `nanogpt` -- `build_nanogpt_spec(**kwargs)`
 - Backbone: nanogpt, Objective: ar, Runtime: eager
@@ -152,6 +152,12 @@ ModelSpec(
 - JEPA with EMA target encoder, latent prediction
 - `jepa_mask_strategy`: `"random"` (default) or `"block"`
 - Dataset role: `tokens` only
+
+### `semantic_router_moe` -- `build_semantic_router_moe_spec(**kwargs)`
+- Objective: semantic_router, Backbone: mixllama, Runtime: compile
+- AR-only semantic router control: shared vocab-grounded route broadcast across every MoE block
+- Dataset roles: `tokens`, `targets`, plus `semantic_data_source -> sem_targets`
+- Requires exactly `8` experts; trains next-token CE + semantic alignment
 
 ### `hnet_lm` -- `build_hnet_lm_spec(**kwargs)`
 - Backbone: hnet, Tokenization: byte_hnet, Runtime: compile

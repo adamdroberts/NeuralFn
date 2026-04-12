@@ -6,6 +6,7 @@ import math
 
 from .neuron import NeuronDef, module_neuron, neuron
 from .port import Port
+from .semantic import DEFAULT_SEMANTIC_VOCAB_REF, NUM_SEMANTIC_DIMS, NUM_VOCAB_DIMS
 from .torch_backend import (
     default_attention_config,
     default_fused_attention_config,
@@ -13,6 +14,7 @@ from .torch_backend import (
     default_kv_pca_config,
     default_kv_quant_unpack_config,
     default_linear_config,
+    default_loss_scale_config,
     default_lm_head_config,
     default_logit_softcap_config,
     default_merge_heads_config,
@@ -620,7 +622,7 @@ topk_route_module = module_neuron(
         Port("weights", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
         Port("indices", range=(0, 100), precision=1.0, dtype="tensor"),
     ],
-    module_config={"top_k": 2},
+    module_config={"top_k": 2, "experts": 8},
 )
 
 expert_dispatch_module = module_neuron(
@@ -667,6 +669,14 @@ aux_loss_add_module = module_neuron(
     ],
     output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
     module_config={"coef": 0.01},
+)
+
+loss_scale_module = module_neuron(
+    name="loss_scale",
+    module_type="loss_scale",
+    input_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    output_ports=[Port("scaled_loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    module_config=default_loss_scale_config(),
 )
 
 dataset_source_module = module_neuron(
@@ -842,9 +852,14 @@ semantic_data_source_module = module_neuron(
     module_type="semantic_data_source",
     input_ports=[],
     output_ports=[
-        Port("tokens", range=(0, 65535), precision=1.0, dtype="tokens"),
+        Port("sem_targets", range=(-100, 65535), precision=1.0, dtype="tokens"),
     ],
-    module_config={"seq_len": 9},
+    module_config={
+        "seq_len": NUM_SEMANTIC_DIMS,
+        "semantic_vocab_ref": DEFAULT_SEMANTIC_VOCAB_REF,
+        "emit_router_vecs": False,
+        "router_vec_dim": NUM_VOCAB_DIMS,
+    },
 )
 
 semantic_projector_module = module_neuron(
@@ -854,19 +869,26 @@ semantic_projector_module = module_neuron(
     output_ports=[
         Port("semantic_vec", range=(-1, 1), precision=0.001, dtype="tensor"),
         Port("residual", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("topic_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
     ],
-    module_config={"input_dim": 128, "semantic_dim": 9, "residual_dim": 64, "n_sig_buckets": 4096},
+    module_config={
+        "input_dim": 128,
+        "semantic_dim": NUM_SEMANTIC_DIMS,
+        "residual_dim": 64,
+        "n_sig_buckets": 4096,
+        "semantic_vocab_ref": DEFAULT_SEMANTIC_VOCAB_REF,
+    },
 )
 
 semantic_alignment_loss_module = module_neuron(
     name="semantic_alignment_loss",
     module_type="semantic_alignment_loss",
     input_ports=[
-        Port("pred", range=(-1, 1), precision=0.001, dtype="tensor"),
-        Port("target", range=(-1, 1), precision=0.001, dtype="tensor"),
+        Port("pred_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("target", range=(-100, 65535), precision=1.0, dtype="tokens"),
     ],
     output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
-    module_config={},
+    module_config={"ignore_index": -100, "semantic_vocab_ref": DEFAULT_SEMANTIC_VOCAB_REF},
 )
 
 semantic_hasher_module = module_neuron(
@@ -874,7 +896,7 @@ semantic_hasher_module = module_neuron(
     module_type="semantic_hasher",
     input_ports=[Port("semantic_vec", range=(-1, 1), precision=0.001, dtype="tensor")],
     output_ports=[Port("bucket_indices", range=(0, 1_000_000), precision=1.0, dtype="tensor")],
-    module_config={"dim": 9, "tables": 8, "planes": 12, "seed": 42},
+    module_config={"dim": NUM_SEMANTIC_DIMS, "tables": 8, "planes": 12, "seed": 42},
 )
 
 semantic_moe_router_module = module_neuron(
@@ -885,7 +907,68 @@ semantic_moe_router_module = module_neuron(
         Port("expert_weights", range=(0, 1), precision=0.001, dtype="tensor"),
         Port("expert_indices", range=(0, 100), precision=1.0, dtype="tensor"),
     ],
-    module_config={"n_experts": 32, "semantic_dim": 9, "top_k": 2},
+    module_config={"n_experts": 32, "semantic_dim": NUM_SEMANTIC_DIMS, "top_k": 2},
+)
+
+semantic_hash_router_module = module_neuron(
+    name="semantic_hash_router",
+    module_type="semantic_hash_router",
+    input_ports=[
+        Port("semantic_vec", range=(-1, 1), precision=0.001, dtype="tensor"),
+        Port("bucket_indices", range=(0, 1_000_000), precision=1.0, dtype="tensor"),
+        Port("topic_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("sem_targets", range=(-100, 65535), precision=1.0, dtype="tokens"),
+    ],
+    output_ports=[
+        Port("expert_weights", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("expert_indices", range=(0, 100), precision=1.0, dtype="tensor"),
+    ],
+    module_config={
+        "n_experts": NUM_VOCAB_DIMS,
+        "semantic_dim": NUM_SEMANTIC_DIMS,
+        "top_k": 2,
+        "tables": 8,
+        "n_buckets": 4096,
+        "ignore_index": -100,
+        "semantic_vocab_ref": DEFAULT_SEMANTIC_VOCAB_REF,
+        "routing_source": "topic_logits",
+    },
+)
+
+broadcast_expert_routes_module = module_neuron(
+    name="broadcast_expert_routes",
+    module_type="broadcast_expert_routes",
+    input_ports=[
+        Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("expert_weights", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("expert_indices", range=(0, 100), precision=1.0, dtype="tensor"),
+    ],
+    output_ports=[
+        Port("routing_weights", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("routing_indices", range=(0, 100), precision=1.0, dtype="tensor"),
+    ],
+    module_config={},
+)
+
+routed_attention_experts_module = module_neuron(
+    name="routed_attention_experts",
+    module_type="routed_attention_experts",
+    input_ports=[
+        Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("expert_weights", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("expert_indices", range=(0, 100), precision=1.0, dtype="tensor"),
+    ],
+    output_ports=[Port("hidden_out", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={
+        "model_dim": 128,
+        "num_heads": 4,
+        "num_kv_heads": 4,
+        "rope_base": 10000.0,
+        "qk_gain_init": 1.0,
+        "experts": NUM_VOCAB_DIMS,
+        "top_k": 2,
+        "is_causal": True,
+    },
 )
 
 attentionless_decoder_module = module_neuron(
@@ -896,7 +979,7 @@ attentionless_decoder_module = module_neuron(
         Port("expert_output", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
     ],
     output_ports=[Port("logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
-    module_config={"semantic_dim": 9, "residual_dim": 64, "vocab_size": 256, "n_buckets": 256},
+    module_config={"semantic_dim": NUM_SEMANTIC_DIMS, "residual_dim": 64, "vocab_size": 256, "n_buckets": 256},
 )
 
 softmax_distillation_loss_module = module_neuron(
@@ -972,6 +1055,7 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "expert_combine_module": expert_combine_module,
     "load_balance_loss_module": load_balance_loss_module,
     "aux_loss_add_module": aux_loss_add_module,
+    "loss_scale_module": loss_scale_module,
     "token_cross_entropy_module": token_cross_entropy_module,
     "dataset_source_module": dataset_source_module,
     "bitlinear_ternary_module": bitlinear_ternary_module,
@@ -996,6 +1080,9 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "semantic_alignment_loss_module": semantic_alignment_loss_module,
     "semantic_hasher_module": semantic_hasher_module,
     "semantic_moe_router_module": semantic_moe_router_module,
+    "semantic_hash_router_module": semantic_hash_router_module,
+    "broadcast_expert_routes_module": broadcast_expert_routes_module,
+    "routed_attention_experts_module": routed_attention_experts_module,
     "attentionless_decoder_module": attentionless_decoder_module,
     "softmax_distillation_loss_module": softmax_distillation_loss_module,
 }
@@ -1065,6 +1152,7 @@ class BuiltinNeurons:
     expert_combine_module = expert_combine_module
     load_balance_loss_module = load_balance_loss_module
     aux_loss_add_module = aux_loss_add_module
+    loss_scale_module = loss_scale_module
     token_cross_entropy_module = token_cross_entropy_module
     dataset_source_module = dataset_source_module
     bitlinear_ternary_module = bitlinear_ternary_module
@@ -1089,6 +1177,9 @@ class BuiltinNeurons:
     semantic_alignment_loss_module = semantic_alignment_loss_module
     semantic_hasher_module = semantic_hasher_module
     semantic_moe_router_module = semantic_moe_router_module
+    semantic_hash_router_module = semantic_hash_router_module
+    broadcast_expert_routes_module = broadcast_expert_routes_module
+    routed_attention_experts_module = routed_attention_experts_module
     attentionless_decoder_module = attentionless_decoder_module
     softmax_distillation_loss_module = softmax_distillation_loss_module
 
@@ -1183,6 +1274,7 @@ __all__ = [
     "expert_combine_module",
     "load_balance_loss_module",
     "aux_loss_add_module",
+    "loss_scale_module",
     "token_cross_entropy_module",
     "dataset_source_module",
     "bitlinear_ternary_module",
@@ -1207,6 +1299,9 @@ __all__ = [
     "semantic_alignment_loss_module",
     "semantic_hasher_module",
     "semantic_moe_router_module",
+    "semantic_hash_router_module",
+    "broadcast_expert_routes_module",
+    "routed_attention_experts_module",
     "attentionless_decoder_module",
     "softmax_distillation_loss_module",
 ]

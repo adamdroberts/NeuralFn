@@ -7,7 +7,7 @@ Type aliases, configuration dataclasses, and preset builder functions for model 
 ## Type Aliases
 
 ```python
-ObjectiveType    = Literal["ar", "diffusion", "jepa", "seq2seq"]
+ObjectiveType    = Literal["ar", "diffusion", "jepa", "jepa_semantic", "seq2seq"]
 BackboneType     = Literal["gpt2", "nanogpt", "llama", "mixllama", "jamba", "universal", "ttt", "hnet"]
 TokenizationType = Literal["sp", "byte_hnet"]
 SparsityType     = Literal["dense", "moe"]
@@ -210,22 +210,46 @@ All preset builders accept `**kwargs` to override default values. Common kwargs 
 | `build_universal_llama_spec(**kwargs)` | universal | dense | compile | Universal transformer with ACT |
 | `build_llama_megakernel_spec(**kwargs)` | llama | dense | megakernel | Fused attention megakernel |
 | `build_kv_pca_llama_spec(**kwargs)` | llama | dense | compile | KV cache PCA compression |
+| `build_semantic_router_moe_spec(**kwargs)` | mixllama | moe | compile | **[Experimental]** AR-only semantic-router control with shared routed MoE blocks |
 
 ---
 
-## [Experimental] JEPA semantic hybrid fields and builder
+## [Experimental] Semantic routing fields and builders
 
 ### Additional `ModelSpec` fields [Experimental]
 
-These fields exist on `ModelSpec` for the **[Experimental]** semantic hybrid preset and related graphs:
+These fields exist on `ModelSpec` for the **[Experimental]** semantic routing presets (`semantic_router_moe` and `jepa_semantic_hybrid`) and related graphs:
 
 | Field [Experimental] | Type | Default | Description |
 |----------------------|------|---------|-------------|
-| `semantic_dim` | `int` | `15` | Dimensionality of the interpretable semantic vector (default 15-D). |
-| `semantic_residual_dim` | `int` | `64` | Residual stream width paired with the semantic projection. |
+| `semantic_dim` | `int` | `9` | Dimensionality of the grounded semantic vector (8 vocabulary dimensions + 1 taxonomy hash). |
+| `semantic_residual_dim` | `int` | `64` | Residual projector width used by the semantic projector module. |
 | `semantic_n_lsh_tables` | `int` | `8` | Number of LSH tables for bucketing semantic vectors. |
 | `semantic_n_lsh_planes` | `int` | `12` | Number of hyperplanes per table (hash width). |
 | `semantic_table_path` | `str` | `""` | Optional filesystem path for persistent LSH / semantic table data (empty = in-memory default). |
+| `ar_loss_coef` | `float` | `1.0` | Scalar applied to the routed autoregressive loss term. |
+| `jepa_loss_coef` | `float` | `0.25` | Scalar applied to the JEPA latent MSE term (`jepa_semantic_hybrid` only). |
+| `semantic_align_loss_coef` | `float` | `0.5` | Scalar applied to the masked semantic topic cross-entropy term. |
+
+### `build_semantic_router_moe_spec` [Experimental]
+
+```python
+def build_semantic_router_moe_spec(**kwargs: Any) -> ModelSpec
+```
+
+**[Experimental]** Factory for the `semantic_router_moe` template: AR-only MixLLaMA/MoE with vocab-topic semantic projection, LSH hashing, a fixed 8-expert dimension map, and a shared externally supplied MoE route reused across every decoder block. The generated stage trains two connected losses: next-token CE and masked semantic topic cross-entropy.
+
+**Breaking-change note [Experimental]:**
+- `semantic_router_moe` requires exactly `8` experts so the routed semantic dimensions line up one-to-one with the expert map.
+- The compiled/root input contract is `(tokens, targets, sem_targets)`.
+
+In addition to the usual LLaMA/MoE overrides (`n_layer` / `num_layers`, `n_embd` / `model_dim`, `experts`, `top_k`, etc.), this builder also recognizes:
+
+- `rope_base` / `rope_theta` for the normal attention path
+- `qk_gain_init` for attention query scaling
+- `ar_loss_coef` and `semantic_align_loss_coef` for the two loss terms
+
+**Disclaimer [Experimental]:** This builder is a research-control preset intended to isolate the semantic router hypothesis without JEPA. The graph shape and tuning knobs may change.
 
 ### `build_jepa_semantic_hybrid_spec` [Experimental]
 
@@ -233,6 +257,18 @@ These fields exist on `ModelSpec` for the **[Experimental]** semantic hybrid pre
 def build_jepa_semantic_hybrid_spec(**kwargs: Any) -> ModelSpec
 ```
 
-**[Experimental]** Factory for the `jepa_semantic_hybrid` template: JEPA objective with LLaMA-style blocks, MoE sparsity, `torch.compile` runtime, plus semantic projection, LSH hashing, semantic MoE routing, and an attentionless decoder in the generated graph. Same `**kwargs` overrides as other preset builders (`n_layer` / `num_layers`, `n_embd` / `model_dim`, `semantic_*`, MoE keys such as `experts` / `top_k`, etc.).
+**[Experimental]** Factory for the `jepa_semantic_hybrid` template: JEPA objective with LLaMA-style blocks, MoE sparsity, `torch.compile` runtime, plus vocab-topic semantic projection, LSH hashing, a fixed dimension-to-expert router, and routed attention experts over the full hidden sequence. The generated stage trains three connected losses: AR next-token CE, JEPA latent MSE, and masked semantic topic cross-entropy.
+
+**Breaking-change note [Experimental]:**
+- `jepa_semantic_hybrid` now requires exactly `8` experts.
+- `sem_targets` are categorical topic IDs with `-100` ignore sentinels in the first 8 positions plus a derived taxonomy-hash slot, not quantized semantic vectors.
+
+In addition to the usual LLaMA/MoE overrides (`n_layer` / `num_layers`, `n_embd` / `model_dim`, `experts`, `top_k`, etc.), this builder also recognizes:
+
+- `rope_base` / `rope_theta` for routed expert attention
+- `qk_gain_init` for expert-attention query scaling
+- `ar_loss_coef`, `jepa_loss_coef`, and `semantic_align_loss_coef` for the three loss terms
+
+**Breaking-change note [Experimental]:** The hybrid preset's compiled/root input contract is now `(tokens, targets, sem_targets)` instead of `(tokens, sem_targets)`.
 
 **Disclaimer [Experimental]:** This builder and its `ModelSpec` fields are research prototypes and may change.

@@ -75,6 +75,10 @@ Build the hidden-state backbone: stacked decoder blocks with a final normalizati
 
 Build a JEPA encoder: token embedding, position embedding, stacked blocks, final norm.
 
+### `build_jepa_semantic_encoder_graph(name, model_spec) -> NeuronGraph` [Experimental]
+
+Build the experimental hybrid JEPA encoder: hidden backbone + masked latent pool + semantic projector. Outputs `(semantic_vec, hidden, topic_logits)` so the routed expert branch can attend over the full hidden sequence while JEPA losses operate on the pooled semantic state and vocab-topic head.
+
 ---
 
 ## Model Stage Graphs
@@ -90,6 +94,10 @@ Build a discrete diffusion model: random timesteps, mask scheduler, backbone, de
 ### `build_jepa_model_stage_graph(name, model_spec) -> NeuronGraph`
 
 Build a JEPA model: online encoder, target encoder (EMA), JEPA mask, projector, predictor, latent pool, and latent MSE loss.
+
+### `build_jepa_semantic_model_stage_graph(name, model_spec) -> NeuronGraph` [Experimental]
+
+Build the experimental JEPA semantic hybrid stage. Inputs are `tokens`, `targets`, and `sem_targets`. The stage performs JEPA masking and EMA target encoding, hashes the pooled semantic vector, routes the full masked hidden sequence through `semantic_hash_router` + `routed_attention_experts`, and uses the same 8-dimension vocab map for both training-time teacher forcing and inference-time auto routing. `sem_targets` carry categorical topic IDs in the first 8 positions plus a derived taxonomy-hash slot.
 
 ### `build_hnet_model_stage_graph(name, model_spec) -> NeuronGraph`
 
@@ -115,7 +123,7 @@ def build_model_spec_from_config(
 
 Dispatch to the appropriate `build_*_spec()` function based on `config["preset"]`. Normalizes legacy key names (`n_layer` -> `num_layers`, `n_embd` -> `model_dim`, `n_head` -> `num_heads`).
 
-Recognized presets: `"nanogpt"`, `"gpt2"`, `"llama"`, `"mixllama"` / `"moe"`, `"llama_fast"`, `"mixllama_fast"`, `"jamba"`, `"ternary_b158"`, `"llama_megakernel"`, `"kv_pca_llama"`, `"seq2seq"`, `"diffusion"`, `"ttt_llama"`, `"llm_jepa"`, `"hnet_lm"`, `"universal_llama"`.
+Recognized presets: `"nanogpt"`, `"gpt2"`, `"llama"`, `"mixllama"` / `"moe"`, `"llama_fast"`, `"mixllama_fast"`, `"jamba"`, `"ternary_b158"`, `"llama_megakernel"`, `"kv_pca_llama"`, `"seq2seq"`, `"diffusion"`, `"ttt_llama"`, `"llm_jepa"`, `"semantic_router_moe"`, `"jepa_semantic_hybrid"`, `"hnet_lm"`, `"universal_llama"`.
 
 ### `build_model_stage_graph(name, model_spec) -> NeuronGraph`
 
@@ -138,6 +146,14 @@ def build_gpt_root_graph(
 Build the top-level root graph that wraps a model stage subgraph. Dispatches to the appropriate stage builder based on `model_spec.template.objective` and `model_spec.template.backbone`. If `model_spec` is None, uses default `ModelSpec()`.
 
 The root graph's `torch_config` is populated with device, AMP dtype, and the full `template_spec`.
+
+For `semantic_router_moe` and `jepa_semantic_hybrid`, the root graph now exposes:
+
+- `dataset_source` with output roles `tokens`, `targets`
+- `semantic_data_source` with output role `sem_targets` generated from `vocab_8d.json`
+- a compiled flat input contract of `(tokens, targets, sem_targets)`
+
+`semantic_router_moe` builds an AR-only stage that reuses normal LLaMA attention, computes one shared semantic route from the pre-block hidden state, broadcasts that route across the full sequence, and feeds the same routed experts into every MoE block. `jepa_semantic_hybrid` keeps its separate JEPA path on top of that semantic routing stack.
 
 ### `build_gpt_template_payload(name, config) -> dict`
 

@@ -9,16 +9,44 @@ from .graph import NeuronGraph
 from .torch_backend import CompiledTorchGraph
 
 
+def _checkpoint_metadata_for_graph(graph: NeuronGraph) -> dict[str, Any]:
+    torch_config = dict(getattr(graph, "torch_config", {}) or {})
+    template_spec = dict(torch_config.get("template_spec", {}) or {})
+    template = dict(template_spec.get("template", {}) or {})
+    runtime = str(template.get("runtime", "")).strip().lower()
+    metadata: dict[str, Any] = {}
+    if runtime:
+        metadata["template_runtime"] = runtime
+    return metadata
+
+
+def load_pt_checkpoint(
+    path: str | Path,
+    *,
+    map_location: str | torch.device | None = "cpu",
+) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
+    checkpoint = torch.load(path, map_location=map_location, weights_only=False)
+    if isinstance(checkpoint, dict) and isinstance(checkpoint.get("state_dict"), dict):
+        return dict(checkpoint["state_dict"]), dict(checkpoint.get("checkpoint_metadata", {}) or {})
+    if isinstance(checkpoint, dict):
+        return dict(checkpoint), {}
+    raise TypeError(f"Unsupported checkpoint payload type {type(checkpoint)!r} in {path!r}.")
+
+
 def export_to_pt(graph: NeuronGraph, path: str | Path) -> None:
     """Export the weights of a compiled or uncompiled torch-based NeuronGraph to a .pt file."""
     compiled = CompiledTorchGraph(graph)
     state_dict = compiled.state_dict()
-    torch.save(state_dict, path)
+    checkpoint = {
+        "state_dict": state_dict,
+        "checkpoint_metadata": _checkpoint_metadata_for_graph(graph),
+    }
+    torch.save(checkpoint, path)
 
 
 def import_from_pt(graph: NeuronGraph, path: str | Path) -> None:
     """Import weights from a .pt file into a NeuronGraph's module_state."""
-    state_dict = torch.load(path, weights_only=True)
+    state_dict, _checkpoint_metadata = load_pt_checkpoint(path)
     compiled = CompiledTorchGraph(graph)
     compiled.load_state_dict(state_dict)
     compiled.sync_state_back(graph)
@@ -156,7 +184,7 @@ class InferenceCache:
 class SemanticInferenceCache(InferenceCache):
     """Experimental: inference cache for the JEPA semantic hybrid preset.
 
-    Extends ``InferenceCache`` to also expose the 15-D semantic vector
+    Extends ``InferenceCache`` to also expose the 9-D semantic vector
     produced by the encoder for inspection / conditioned generation.
     """
 
@@ -175,7 +203,7 @@ class SemanticInferenceCache(InferenceCache):
 
 
 def export_semantic_tables(graph: NeuronGraph, path: str | Path) -> None:
-    """Experimental: export lookup tables for the attentionless decoder."""
+    """Experimental: export semantic routing and legacy decoder lookup tables."""
     compiled = CompiledTorchGraph(graph)
     state = compiled.state_dict()
     semantic_keys = {k: v for k, v in state.items() if "decoder" in k or "hasher" in k or "sem_router" in k}
@@ -183,7 +211,7 @@ def export_semantic_tables(graph: NeuronGraph, path: str | Path) -> None:
 
 
 def import_semantic_tables(graph: NeuronGraph, path: str | Path) -> None:
-    """Experimental: import lookup tables for the attentionless decoder."""
+    """Experimental: import semantic routing and legacy decoder lookup tables."""
     checkpoint = torch.load(path, weights_only=True)
     compiled = CompiledTorchGraph(graph)
     tables = checkpoint.get("semantic_tables", {})

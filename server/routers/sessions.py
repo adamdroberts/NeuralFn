@@ -515,6 +515,24 @@ def get_agent_status(
     return {"active": get_live_state_store().is_agent_active(session_id)}
 
 
+def _session_semantic_vocab_context(graph: NeuronGraph):
+    from neuralfn.semantic import ConversationalVocabulary, semantic_dims_for_vocab, semantic_vocab_ref_for_graph
+
+    vocab_ref = semantic_vocab_ref_for_graph(graph)
+    vocab = ConversationalVocabulary(vocab_ref)
+    return vocab_ref, vocab, semantic_dims_for_vocab(vocab_ref)
+
+
+def _graph_uses_semantic_router_vecs(graph: NeuronGraph) -> bool:
+    template_spec = dict(graph.torch_config.get("template_spec", {}) or {})
+    if bool(template_spec.get("experimental_semantic_router_vecs", False)):
+        return True
+    sem_node = graph.nodes.get("semantic_data_source")
+    if sem_node is None:
+        return False
+    return any(port.name == "semantic_router_vecs" for port in sem_node.neuron_def.output_ports)
+
+
 @router.post("/{session_id}/semantic/encode")
 def semantic_encode(
     project_id: str,
@@ -523,14 +541,15 @@ def semantic_encode(
     auth: AuthContext = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> dict:
-    """[Experimental] Encode text to a 15-D semantic vector."""
-    from neuralfn.semantic import SEMANTIC_DIM_NAMES
+    """[Experimental] Encode text against the graph's vocab-grounded semantic space."""
+    from neuralfn.semantic import SEMANTIC_IGNORE_INDEX
 
     try:
         bundle = get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
     except PermissionDenied as exc:
         raise _wrap_permission(exc) from exc
     graph = NeuronGraph.from_dict(bundle.graph_state.graph)
+    _vocab_ref, vocab, semantic_dims = _session_semantic_vocab_context(graph)
     text = body.get("text", "")
 
     import torch
@@ -542,9 +561,29 @@ def semantic_encode(
     enc = tiktoken.get_encoding("gpt2")
     token_ids = enc.encode(text)[:64]
     tokens = torch.tensor([token_ids], dtype=torch.long)
+    template_spec = dict(graph.torch_config.get("template_spec", {}))
+    objective = str(template_spec.get("template", {}).get("objective", "ar"))
+    sem_len = vocab.vector_dim
+    router_vec_dim = vocab.num_vocab_dims
+    if "semantic_data_source" in graph.nodes:
+        sem_cfg = dict(graph.nodes["semantic_data_source"].neuron_def.module_config or {})
+        sem_len = int(sem_cfg.get("seq_len", sem_len))
+        router_vec_dim = int(sem_cfg.get("router_vec_dim", router_vec_dim))
     with torch.no_grad():
-        outputs = compiled(tokens)
-    return {"text": text, "dimensions": {name: 0.0 for name in SEMANTIC_DIM_NAMES}}
+        if objective in {"jepa_semantic", "semantic_router"}:
+            dummy_targets = torch.zeros_like(tokens)
+            dummy_sem_targets = torch.full((1, sem_len), SEMANTIC_IGNORE_INDEX, dtype=torch.long)
+            if _graph_uses_semantic_router_vecs(graph):
+                dummy_router_vecs = torch.zeros((1, router_vec_dim), dtype=torch.float32)
+                compiled(tokens, dummy_targets, dummy_sem_targets, dummy_router_vecs)
+            else:
+                compiled(tokens, dummy_targets, dummy_sem_targets)
+        elif len(graph.input_node_ids) >= 2:
+            dummy_targets = torch.zeros_like(tokens)
+            compiled(tokens, dummy_targets)
+        else:
+            compiled(tokens)
+    return {"text": text, "dimensions": {dim.name: 0.0 for dim in semantic_dims}}
 
 
 @router.post("/{session_id}/semantic/search")
@@ -555,13 +594,15 @@ def semantic_search_endpoint(
     auth: AuthContext = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> list:
-    """[Experimental] Search the semantic index for neighbours to a 15-D vector."""
+    """[Experimental] Search the semantic index for neighbours to a graph-shaped semantic vector."""
     try:
-        get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
+        bundle = get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
     except PermissionDenied as exc:
         raise _wrap_permission(exc) from exc
 
-    vector = body.get("vector", [0.0] * 15)
+    graph = NeuronGraph.from_dict(bundle.graph_state.graph)
+    _vocab_ref, vocab, _semantic_dims = _session_semantic_vocab_context(graph)
+    vector = body.get("vector", [0.0] * vocab.vector_dim)
     k = int(body.get("k", 10))
     return [{"token_id": i, "score": 0.0} for i in range(min(k, 10))]
 
@@ -573,14 +614,24 @@ def semantic_dimensions(
     auth: AuthContext = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> list:
-    """[Experimental] Return the 15 semantic dimension definitions."""
+    """[Experimental] Return the vocab-backed semantic dimensions and expert map."""
     try:
-        get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
+        bundle = get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
     except PermissionDenied as exc:
         raise _wrap_permission(exc) from exc
 
-    from neuralfn.semantic import SEMANTIC_DIMS
-    return [{"index": d.index, "name": d.name, "meaning": d.meaning} for d in SEMANTIC_DIMS]
+    graph = NeuronGraph.from_dict(bundle.graph_state.graph)
+    _vocab_ref, vocab, semantic_dims = _session_semantic_vocab_context(graph)
+    return [
+        {
+            "index": d.index,
+            "name": d.name,
+            "meaning": d.meaning,
+            "expert_id": d.index if d.index < vocab.num_vocab_dims else None,
+            "num_topics": len(vocab.terms(d.name)) if d.name in vocab.dim_names else 0,
+        }
+        for d in semantic_dims
+    ]
 
 
 @router.post("/{session_id}/semantic/generate")

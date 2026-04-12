@@ -1,7 +1,9 @@
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-ObjectiveType = Literal["ar", "diffusion", "jepa", "jepa_semantic", "seq2seq"]
+from .semantic import DEFAULT_SEMANTIC_VOCAB_REF, NUM_SEMANTIC_DIMS, NUM_VOCAB_DIMS
+
+ObjectiveType = Literal["ar", "diffusion", "jepa", "jepa_semantic", "semantic_router", "seq2seq"]
 BackboneType = Literal["gpt2", "nanogpt", "llama", "mixllama", "jamba", "universal", "ttt", "hnet"]
 TokenizationType = Literal["sp", "byte_hnet"]
 SparsityType = Literal["dense", "moe"]
@@ -68,6 +70,7 @@ class BlockSpec:
     ttt_hidden_dim: int = 16
     byte_patch_size: int = 4
     byte_patch_stride: int = 4
+    qk_gain_init: float = 1.0
 
 
 @dataclass
@@ -88,11 +91,16 @@ class ModelSpec:
     ema_decay: float = 0.99
     max_recurrence_steps: int = 4
     halt_epsilon: float = 0.01
-    semantic_dim: int = 9
+    semantic_dim: int = NUM_SEMANTIC_DIMS
     semantic_residual_dim: int = 64
     semantic_n_lsh_tables: int = 8
     semantic_n_lsh_planes: int = 12
     semantic_table_path: str = ""
+    semantic_vocab_ref: str = DEFAULT_SEMANTIC_VOCAB_REF
+    experimental_semantic_router_vecs: bool = False
+    ar_loss_coef: float = 1.0
+    jepa_loss_coef: float = 0.25
+    semantic_align_loss_coef: float = 0.5
 
 
 def model_spec_to_dict(spec: ModelSpec) -> dict[str, Any]:
@@ -125,18 +133,23 @@ def _base_model_spec(
         ema_decay=float(kwargs.get("ema_decay", 0.99)),
         max_recurrence_steps=int(kwargs.get("max_recurrence_steps", 4)),
         halt_epsilon=float(kwargs.get("halt_epsilon", 0.01)),
-        semantic_dim=int(kwargs.get("semantic_dim", 9)),
+        semantic_dim=int(kwargs.get("semantic_dim", NUM_SEMANTIC_DIMS)),
         semantic_residual_dim=int(kwargs.get("semantic_residual_dim", 64)),
         semantic_n_lsh_tables=int(kwargs.get("semantic_n_lsh_tables", 8)),
         semantic_n_lsh_planes=int(kwargs.get("semantic_n_lsh_planes", 12)),
         semantic_table_path=str(kwargs.get("semantic_table_path", "")),
+        semantic_vocab_ref=str(kwargs.get("semantic_vocab_ref", DEFAULT_SEMANTIC_VOCAB_REF)),
+        experimental_semantic_router_vecs=bool(kwargs.get("experimental_semantic_router_vecs", False)),
+        ar_loss_coef=float(kwargs.get("ar_loss_coef", 1.0)),
+        jepa_loss_coef=float(kwargs.get("jepa_loss_coef", 0.25)),
+        semantic_align_loss_coef=float(kwargs.get("semantic_align_loss_coef", 0.5)),
     )
 
 
-def build_nanogpt_spec(**kwargs: Any) -> ModelSpec:
+def _build_nanogpt_runtime_spec(*, runtime: str, **kwargs: Any) -> ModelSpec:
     return _base_model_spec(
         kwargs=kwargs,
-        template=TemplateSpec(backbone="nanogpt", runtime="eager"),
+        template=TemplateSpec(backbone="nanogpt", runtime=runtime),
         block_spec=BlockSpec(
             family="nanogpt",
             norm_type="layernorm",
@@ -150,10 +163,18 @@ def build_nanogpt_spec(**kwargs: Any) -> ModelSpec:
     )
 
 
-def build_gpt2_spec(**kwargs: Any) -> ModelSpec:
+def build_nanogpt_spec(**kwargs: Any) -> ModelSpec:
+    return _build_nanogpt_runtime_spec(runtime="eager", **kwargs)
+
+
+def build_nanogpt_megakernel_spec(**kwargs: Any) -> ModelSpec:
+    return _build_nanogpt_runtime_spec(runtime="megakernel", **kwargs)
+
+
+def _build_gpt2_runtime_spec(*, runtime: str, **kwargs: Any) -> ModelSpec:
     return _base_model_spec(
         kwargs=kwargs,
-        template=TemplateSpec(backbone="gpt2", runtime="eager"),
+        template=TemplateSpec(backbone="gpt2", runtime=runtime),
         block_spec=BlockSpec(
             family="gpt2",
             norm_type="layernorm",
@@ -164,6 +185,14 @@ def build_gpt2_spec(**kwargs: Any) -> ModelSpec:
         ),
         default_tie_embeddings=True,
     )
+
+
+def build_gpt2_spec(**kwargs: Any) -> ModelSpec:
+    return _build_gpt2_runtime_spec(runtime="eager", **kwargs)
+
+
+def build_gpt2_megakernel_spec(**kwargs: Any) -> ModelSpec:
+    return _build_gpt2_runtime_spec(runtime="megakernel", **kwargs)
 
 
 def build_llama_spec(**kwargs: Any) -> ModelSpec:
@@ -208,7 +237,7 @@ def build_mixllama_spec(**kwargs: Any) -> ModelSpec:
     )
 
 
-def build_llama_fast_spec(**kwargs: Any) -> ModelSpec:
+def _build_llama_fast_runtime_spec(*, runtime: RuntimeType, **kwargs: Any) -> ModelSpec:
     return _base_model_spec(
         kwargs=kwargs,
         template=TemplateSpec(
@@ -218,7 +247,7 @@ def build_llama_fast_spec(**kwargs: Any) -> ModelSpec:
             sparsity="dense",
             compression="none",
             adapter="none",
-            runtime="compile",
+            runtime=runtime,
         ),
         block_spec=BlockSpec(
             family="llama",
@@ -231,13 +260,23 @@ def build_llama_fast_spec(**kwargs: Any) -> ModelSpec:
             multiple_of=kwargs.get("multiple_of", 256),
             num_heads=kwargs.get("num_heads", 4),
             num_kv_heads=kwargs.get("num_kv_heads", 2),
+            rope_theta=kwargs.get("rope_base", kwargs.get("rope_theta", 10_000.0)),
+            qk_gain_init=kwargs.get("qk_gain_init", 1.0),
             attention_backend="sdpa",
         ),
         default_tie_embeddings=False,
     )
 
 
-def build_mixllama_fast_spec(**kwargs: Any) -> ModelSpec:
+def build_llama_fast_spec(**kwargs: Any) -> ModelSpec:
+    return _build_llama_fast_runtime_spec(runtime="compile", **kwargs)
+
+
+def build_llama_fast_megakernel_spec(**kwargs: Any) -> ModelSpec:
+    return _build_llama_fast_runtime_spec(runtime="megakernel", **kwargs)
+
+
+def _build_mixllama_fast_runtime_spec(*, runtime: RuntimeType, **kwargs: Any) -> ModelSpec:
     return _base_model_spec(
         kwargs=kwargs,
         template=TemplateSpec(
@@ -247,7 +286,7 @@ def build_mixllama_fast_spec(**kwargs: Any) -> ModelSpec:
             sparsity="moe",
             compression="none",
             adapter="none",
-            runtime="compile",
+            runtime=runtime,
         ),
         block_spec=BlockSpec(
             family="mixllama",
@@ -262,10 +301,20 @@ def build_mixllama_fast_spec(**kwargs: Any) -> ModelSpec:
             router_aux_loss_coef=kwargs.get("router_aux_loss_coef", 0.01),
             num_heads=kwargs.get("num_heads", 4),
             num_kv_heads=kwargs.get("num_kv_heads", 2),
+            rope_theta=kwargs.get("rope_base", kwargs.get("rope_theta", 10_000.0)),
+            qk_gain_init=kwargs.get("qk_gain_init", 1.0),
             attention_backend="sdpa",
         ),
         default_tie_embeddings=False,
     )
+
+
+def build_mixllama_fast_spec(**kwargs: Any) -> ModelSpec:
+    return _build_mixllama_fast_runtime_spec(runtime="compile", **kwargs)
+
+
+def build_mixllama_fast_megakernel_spec(**kwargs: Any) -> ModelSpec:
+    return _build_mixllama_fast_runtime_spec(runtime="megakernel", **kwargs)
 
 
 def build_jamba_hybrid_spec(**kwargs: Any) -> ModelSpec:
@@ -473,15 +522,21 @@ def build_kv_pca_llama_spec(**kwargs: Any) -> ModelSpec:
     )
 
 
-def build_jepa_semantic_hybrid_spec(**kwargs: Any) -> ModelSpec:
+def _build_jepa_semantic_hybrid_runtime_spec(*, runtime: RuntimeType, **kwargs: Any) -> ModelSpec:
     """Experimental: Hybrid JEPA Semantic LLM preset."""
+    experts = int(kwargs.get("experts", NUM_VOCAB_DIMS))
+    if experts != NUM_VOCAB_DIMS:
+        raise ValueError(
+            f"jepa_semantic_hybrid requires exactly {NUM_VOCAB_DIMS} experts (one per vocab dimension)"
+        )
+    top_k = min(int(kwargs.get("top_k", 2)), NUM_VOCAB_DIMS)
     return _base_model_spec(
         kwargs=kwargs,
         template=TemplateSpec(
             objective="jepa_semantic",
             backbone="llama",
             sparsity="moe",
-            runtime="compile",
+            runtime=runtime,
         ),
         block_spec=BlockSpec(
             family="llama",
@@ -495,9 +550,67 @@ def build_jepa_semantic_hybrid_spec(**kwargs: Any) -> ModelSpec:
             num_heads=kwargs.get("num_heads", 4),
             num_kv_heads=kwargs.get("num_kv_heads", 2),
             attention_backend="sdpa",
-            experts=kwargs.get("experts", 32),
-            top_k=kwargs.get("top_k", 2),
+            experts=experts,
+            top_k=top_k,
             router_aux_loss_coef=kwargs.get("router_aux_loss_coef", 0.01),
+            rope_theta=kwargs.get("rope_base", kwargs.get("rope_theta", 10000.0)),
+            qk_gain_init=kwargs.get("qk_gain_init", 1.0),
         ),
         default_tie_embeddings=False,
     )
+
+
+def build_jepa_semantic_hybrid_spec(**kwargs: Any) -> ModelSpec:
+    return _build_jepa_semantic_hybrid_runtime_spec(runtime="compile", **kwargs)
+
+
+def build_jepa_semantic_hybrid_megakernel_spec(**kwargs: Any) -> ModelSpec:
+    return _build_jepa_semantic_hybrid_runtime_spec(runtime="megakernel", **kwargs)
+
+
+def _build_semantic_router_moe_runtime_spec(*, runtime: RuntimeType, **kwargs: Any) -> ModelSpec:
+    """Experimental: AR MixLLaMA with shared semantic hash routing into MoE experts."""
+    experts = int(kwargs.get("experts", NUM_VOCAB_DIMS))
+    if experts != NUM_VOCAB_DIMS:
+        raise ValueError(
+            f"semantic_router_moe requires exactly {NUM_VOCAB_DIMS} experts (one per vocab dimension)"
+        )
+    top_k = min(int(kwargs.get("top_k", 2)), NUM_VOCAB_DIMS)
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(
+            objective="semantic_router",
+            backbone="mixllama",
+            tokenization="sp",
+            sparsity="moe",
+            compression="none",
+            adapter="none",
+            runtime=runtime,
+        ),
+        block_spec=BlockSpec(
+            family="mixllama",
+            norm_type="rmsnorm",
+            mlp_type="moe",
+            pos_encoding="rope",
+            linear_bias=False,
+            dropout_p=0.0,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            experts=experts,
+            top_k=top_k,
+            router_aux_loss_coef=0.0,
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+            attention_backend="sdpa",
+            rope_theta=kwargs.get("rope_base", kwargs.get("rope_theta", 10000.0)),
+            qk_gain_init=kwargs.get("qk_gain_init", 1.0),
+        ),
+        default_tie_embeddings=False,
+    )
+
+
+def build_semantic_router_moe_spec(**kwargs: Any) -> ModelSpec:
+    return _build_semantic_router_moe_runtime_spec(runtime="compile", **kwargs)
+
+
+def build_semantic_router_moe_megakernel_spec(**kwargs: Any) -> ModelSpec:
+    return _build_semantic_router_moe_runtime_spec(runtime="megakernel", **kwargs)

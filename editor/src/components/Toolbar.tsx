@@ -222,6 +222,7 @@ export default function Toolbar() {
             <option value="llama_megakernel">LLaMA Megakernel</option>
             <option value="kv_pca_llama">KV PCA LLaMA</option>
             <option value="jepa_semantic_hybrid">JEPA Semantic Hybrid</option>
+            <option value="semantic_router_moe">Semantic Router MoE</option>
           </select>
         </div>
 

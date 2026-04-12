@@ -26,7 +26,9 @@ PRESETS = [
     "llama",
     "moe",
     "llama_fast",
+    "llama_fast_megakernel",
     "mixllama_fast",
+    "mixllama_fast_megakernel",
     "jamba",
     "ternary_b158",
     "seq2seq",
@@ -38,6 +40,9 @@ PRESETS = [
     "llama_megakernel",
     "kv_pca_llama",
     "jepa_semantic_hybrid",
+    "jepa_semantic_hybrid_megakernel",
+    "semantic_router_moe",
+    "semantic_router_moe_megakernel",
 ]
 
 
@@ -371,5 +376,5 @@ def test_dataset_source_role_wiring_covers_single_and_multi_input_templates() ->
         port.name for port in hybrid_graph.nodes[hybrid_ds_id].neuron_def.output_ports
     ]
     assert "semantic_data_source" in hybrid_graph.nodes
-    assert hybrid_ports == ["tokens"]
+    assert hybrid_ports == ["tokens", "targets"]
     assert hybrid_graph.input_node_ids == [hybrid_ds_id, "semantic_data_source"]

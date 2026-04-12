@@ -15,7 +15,13 @@ from neuralfn.surrogate import probe_neuron
 from neuralfn.torch_backend import CompiledTorchGraph, TorchTrainer
 from neuralfn.torch_templates import build_gpt_root_graph, build_gpt_template_payload, build_model_spec_from_config
 
-from ..dataset_manager import download_hf_dataset, load_dataset_bytes, load_dataset_tokens
+from ..dataset_manager import (
+    download_hf_dataset,
+    load_dataset_bytes,
+    load_dataset_tokens,
+    raw_text_encoding_name_for_template_spec,
+    validate_cached_tokenizer_contract,
+)
 from ..models import DownloadDatasetRequest, EdgeModel, EdgeUpdateModel, ExecuteRequest, GPTTemplateRequest, LoadDatasetRequest, NeuronDefModel, NodeModel
 
 
@@ -234,11 +240,13 @@ def find_attached_text_dataset_config(graph: NeuronGraph) -> dict[str, Any] | No
 
 
 def find_attached_semantic_source_config(graph: NeuronGraph) -> dict[str, Any] | None:
+    from neuralfn.semantic import NUM_SEMANTIC_DIMS
+
     for node in graph.nodes.values():
         if getattr(node.neuron_def, "module_type", "") != "semantic_data_source":
             continue
         cfg = dict(node.neuron_def.module_config or {})
-        return {"dataset_names": ["__semantic_builtin__"], "seq_len": int(cfg.get("seq_len", 9))}
+        return {"dataset_names": ["__semantic_builtin__"], "seq_len": int(cfg.get("seq_len", NUM_SEMANTIC_DIMS))}
     return None
 
 
@@ -289,7 +297,11 @@ def _build_dataset_trace_inputs(
     if tokenization == "byte_hnet":
         inputs_list, targets_list = load_dataset_bytes(dataset_names, seq_len=seq_len)
     else:
-        inputs_list, targets_list = load_dataset_tokens(dataset_names, seq_len=seq_len)
+        inputs_list, targets_list = load_dataset_tokens(
+            dataset_names,
+            seq_len=seq_len,
+            encoding_name=raw_text_encoding_name_for_template_spec(template_spec),
+        )
     batch_size = max(1, min(int(preview_batch_size or 1), len(inputs_list)))
     x = torch.tensor(inputs_list[:batch_size], dtype=torch.long)
     y = torch.tensor(targets_list[:batch_size], dtype=torch.long)
@@ -327,40 +339,44 @@ def _build_hybrid_trace_inputs(
 ) -> tuple[dict[str, tuple[torch.Tensor, ...]], dict[str, list[int]]]:
     template_spec = dict(graph.torch_config.get("template_spec", {}))
     tokenization = str(template_spec.get("template", {}).get("tokenization", "sp"))
+    active_dims = max(1, min(int((template_spec.get("block_spec") or {}).get("top_k", 2) or 2), 8))
     if tokenization == "byte_hnet":
-        inputs_list, _targets_list = load_dataset_bytes(text_dataset_names, seq_len=seq_len)
+        inputs_list, targets_list = load_dataset_bytes(text_dataset_names, seq_len=seq_len)
     else:
-        inputs_list, _targets_list = load_dataset_tokens(text_dataset_names, seq_len=seq_len)
+        inputs_list, targets_list = load_dataset_tokens(
+            text_dataset_names,
+            seq_len=seq_len,
+            encoding_name=raw_text_encoding_name_for_template_spec(template_spec),
+        )
 
-    from neuralfn.semantic import load_training_data
+    from neuralfn.semantic import load_training_targets
 
-    _ids, vecs = load_training_data()
-    sem_tokens = torch.from_numpy(((vecs + 1.0) / 2.0 * 255).clip(0, 255).astype("int64"))
+    _ids, sem_targets = load_training_targets(active_dims=active_dims)
+    sem_tokens = torch.from_numpy(sem_targets.astype("int64"))
 
     batch_size = max(1, min(int(preview_batch_size or 1), len(inputs_list), len(sem_tokens)))
     x = torch.tensor(inputs_list[:batch_size], dtype=torch.long)
+    y = torch.tensor(targets_list[:batch_size], dtype=torch.long)
     sem = sem_tokens[:batch_size]
+    role_tensors = {
+        "tokens": x,
+        "targets": y,
+        "sem_targets": sem,
+    }
 
     provided: dict[str, tuple[torch.Tensor, ...]] = {}
     sample_inputs: dict[str, list[int]] = {}
     for nid in graph.input_node_ids:
         node = graph.nodes[nid]
-        mtype = getattr(node.neuron_def, "module_type", "")
         node_values: list[torch.Tensor] = []
-        if mtype == "semantic_data_source":
-            for port in node.neuron_def.output_ports:
-                tensor = sem if port.dtype == "tokens" else sem.float()
-                node_values.append(tensor)
-                sample_inputs.setdefault(port.name, sem[0].tolist())
-        else:
-            for port in node.neuron_def.output_ports:
-                if port.name != "tokens":
-                    raise GraphOperationError(
-                        f"Hybrid dataset-backed tracing does not know how to populate graph input role '{port.name}'"
-                    )
-                tensor = x if port.dtype == "tokens" else x.float()
-                node_values.append(tensor)
-                sample_inputs.setdefault(port.name, x[0].tolist())
+        for port in node.neuron_def.output_ports:
+            tensor = role_tensors.get(port.name)
+            if tensor is None:
+                raise GraphOperationError(
+                    f"Hybrid dataset-backed tracing does not know how to populate graph input role '{port.name}'"
+                )
+            node_values.append(tensor if port.dtype == "tokens" else tensor.float())
+            sample_inputs.setdefault(port.name, tensor[0].tolist())
         provided[nid] = tuple(node_values)
 
     return provided, sample_inputs
@@ -371,18 +387,23 @@ def _build_semantic_trace_inputs(
     *,
     preview_batch_size: int,
 ) -> tuple[dict[str, tuple[torch.Tensor, ...]], dict[str, list[int]]]:
-    from neuralfn.semantic import load_training_data
+    template_spec = dict(graph.torch_config.get("template_spec", {}))
+    active_dims = max(1, min(int((template_spec.get("block_spec") or {}).get("top_k", 2) or 2), 8))
+    from neuralfn.semantic import load_training_targets
 
-    _ids, vecs = load_training_data()
-    tokens = torch.from_numpy(((vecs + 1.0) / 2.0 * 255).clip(0, 255).astype("int64"))
-    batch_size = max(1, min(int(preview_batch_size or 1), len(tokens)))
-    x = tokens[:batch_size]
+    _ids, targets = load_training_targets(active_dims=active_dims)
+    sem = torch.from_numpy(targets.astype("int64"))
+    batch_size = max(1, min(int(preview_batch_size or 1), len(sem)))
+    sem = sem[:batch_size]
+    seq_len = sem.shape[1]
+    x = torch.arange(seq_len, dtype=torch.long).unsqueeze(0).expand(batch_size, seq_len).clone()
+    y = torch.roll(x, shifts=-1, dims=1)
     role_tensors = {
         "tokens": x,
         "enc_tokens": x,
         "dec_tokens": x,
-        "targets": x,
-        "sem_targets": x,
+        "targets": y,
+        "sem_targets": sem,
     }
 
     provided: dict[str, tuple[torch.Tensor, ...]] = {}
@@ -449,20 +470,37 @@ def _resolve_torch_trace_inputs(
     return provided, "dataset", sample_inputs
 
 
+def _max_text_token_id(
+    graph: NeuronGraph,
+    provided_inputs: dict[str, tuple[torch.Tensor, ...]],
+) -> int:
+    max_token = -1
+    text_roles = {"tokens", "targets", "enc_tokens", "dec_tokens"}
+    for node_id in graph.input_node_ids:
+        node = graph.nodes[node_id]
+        values = provided_inputs.get(node_id, ())
+        for port, tensor in zip(node.neuron_def.output_ports, values):
+            if port.name not in text_roles or tensor.dtype != torch.long or tensor.numel() == 0:
+                continue
+            max_token = max(max_token, int(tensor.max().item()))
+    return max_token
+
+
 def trace_torch_graph(graph: NeuronGraph, body: ExecuteRequest) -> dict[str, Any]:
     if graph.runtime != "torch" and not graph.has_module_nodes():
         raise GraphOperationError("Active graph is not a torch graph")
     try:
+        text_cfg = find_attached_text_dataset_config(graph)
+        text_dataset_names = list(body.dataset_names or (text_cfg or {}).get("dataset_names") or [])
+        if text_dataset_names:
+            model_vocab_size = TorchTrainer._configured_vocab_size(graph)
+            for dataset_name in text_dataset_names:
+                validate_cached_tokenizer_contract(
+                    dataset_name,
+                    model_vocab_size=model_vocab_size if model_vocab_size > 0 else None,
+                )
         provided_inputs, trace_source, sample_inputs = _resolve_torch_trace_inputs(graph, body)
-        max_token = max(
-            (
-                int(tensor.max().item())
-                for values in provided_inputs.values()
-                for tensor in values
-                if tensor.dtype == torch.long and tensor.numel() > 0
-            ),
-            default=-1,
-        )
+        max_token = _max_text_token_id(graph, provided_inputs)
         if max_token >= 0:
             TorchTrainer._adjust_vocab_size(graph, max_token + 1)
         compiled = CompiledTorchGraph(graph)

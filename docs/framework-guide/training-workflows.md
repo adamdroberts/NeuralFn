@@ -134,7 +134,19 @@ trainer = TorchTrainer(graph, TorchTrainConfig(
     batch_size=2,
     device="cuda",
 ))
-losses = trainer.train(tokens, targets)
+
+def log_progress(info: dict[str, object]) -> None:
+    if info["phase"] == "warmup":
+        print(f"warmup {info['step']}/{info['warmup_steps']} loss={info['loss']:.4f}")
+        return
+    if info["step"] % 50 == 0:
+        print(
+            f"step {info['step']}/{info['max_steps']} "
+            f"epoch {info['epoch']}/{info['max_epochs']} "
+            f"loss={info['loss']:.4f}"
+        )
+
+losses = trainer.train(tokens, targets, on_step=log_progress)
 print(f"Final loss: {losses[-1]:.4f}")
 ```
 
@@ -152,8 +164,20 @@ print(f"Final loss: {losses[-1]:.4f}")
 | `activation_checkpointing` | `bool` | `False` | Enable gradient checkpointing to save memory. |
 | `fsdp2_enabled` | `bool` | `False` | Enable FSDP2 for multi-GPU data parallelism. |
 | `max_steps` | `int` | `None` | Stop after this many steps regardless of epochs. `None` = unlimited. |
+| `respect_epoch_boundaries` | `bool` | `False` | Keeps epochs aligned to one loader pass and allows a short final accumulation step instead of cycling into the next epoch. |
+| `optimizer_profile` | `str` | `"adamw"` | `"adamw"` for the legacy single-optimizer path or `"parameter_golf"` for split optimizers + Muon. |
+| `train_batch_tokens` | `int \| None` | `None` | Token budget per optimizer step. Enables gradient accumulation by token count instead of raw batch count. |
+| `beta1`, `beta2`, `adam_eps` | floats | `0.9`, `0.95`, `1e-8` | Adam-family optimizer hyperparameters. |
+| `embed_lr`, `head_lr`, `tied_embed_lr`, `matrix_lr`, `scalar_lr` | floats / `None` | `None` | Optional split learning rates for the parameter-golf profile. |
+| `muon_momentum`, `muon_backend_steps`, `muon_momentum_warmup_start`, `muon_momentum_warmup_steps` | float/int | `0.95`, `5`, `0.85`, `500` | Muon optimizer controls for matrix-shaped parameters. |
+| `warmup_steps`, `warmdown_iters`, `lr_decay_iters`, `min_lr`, `max_wallclock_seconds` | int/float | `0`, `0`, `None`, `None`, `0.0` | Schedule controls for warmup priming, legacy tail warmdown, cosine LR decay, LR floor, and wallclock cutoffs. When `lr_decay_iters` is set, cosine decay overrides `warmdown_iters`; omitting `min_lr` uses `learning_rate / 10`. `max_wallclock_seconds` only stops training early; it does not change the LR schedule. |
+| `grad_clip_norm` | `float` | `0.0` | Global grad clipping threshold. |
 
 `TorchTrainer` automatically adjusts `vocab_size` when the training data's token range exceeds the graph's configured vocabulary, ensuring the embedding and output layers are compatible.
+
+For long CUDA runs, `on_step` is usually the right hook for live CLI progress because it fires once per warmup step and once per optimizer step instead of waiting for epoch boundaries.
+
+For the experimental semantic routing presets, dataset-backed training now resolves a three-role flat input contract: `(tokens, targets, sem_targets)`. `semantic_router_moe` uses that contract for an AR-only router-control experiment, while `jepa_semantic_hybrid` adds JEPA loss on top of the same routed branch. `semantic_data_source` generates categorical vocab-topic targets from `vocab_8d.json`; inactive dimensions use `-100` ignore sentinels, and the first 8 dimensions line up exactly with the preset's fixed 8-expert routing map. When only semantic data is available, the trainer synthesizes safe placeholder `tokens` / `targets` tensors instead of feeding `sem_targets` into the embedding path.
 
 ---
 
@@ -165,6 +189,8 @@ The relationship is straightforward:
 - A graph with `runtime="torch"` holds module neurons and compiles to a PyTorch module. Set `training_method="torch"` and use `TorchTrainer`.
 - A graph with `training_method="frozen"` is never trained, regardless of runtime. It acts as a fixed-function block.
 - `HybridTrainer` handles the case where a root graph contains subgraphs with different `training_method` values.
+
+For torch graphs that read from a tokenizer-backed cached `dataset_source`, `TorchTrainer` now validates the cached shard ids and tokenizer artifacts before training starts. Manual tensors and tokenizer-less datasets can still trigger the old vocab auto-expand path when needed, but cached aliases that advertise tokenizer artifacts now fail fast if their shard ids or graph vocab disagree with that tokenizer contract.
 
 ---
 

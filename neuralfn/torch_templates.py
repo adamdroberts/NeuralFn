@@ -8,6 +8,7 @@ from .config import BlockSpec, ModelSpec, TemplateSpec, model_spec_to_dict
 from .graph import Edge, NeuronGraph, NeuronInstance
 from .neuron import NeuronDef, neuron_from_source, subgraph_neuron
 from .port import Port
+from .semantic import NUM_VOCAB_DIMS
 
 
 def make_terminal_def(
@@ -315,7 +316,16 @@ def build_mixllama_mlp_graph(name: str, model_dim: int, spec: BlockSpec) -> Neur
     graph.add_edge(Edge(id="e_x_router", src_node="x_in", src_port=0, dst_node="router", dst_port=0))
 
     # Top-K
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.topk_route_module, config={"top_k": spec.top_k}), instance_id="topk", position=(480, 60)))
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.topk_route_module,
+                config={"top_k": spec.top_k, "experts": spec.experts},
+            ),
+            instance_id="topk",
+            position=(480, 60),
+        )
+    )
     graph.add_edge(Edge(id="e_router_topk", src_node="router", src_port=0, dst_node="topk", dst_port=0))
 
     # Dispatch
@@ -343,6 +353,41 @@ def build_mixllama_mlp_graph(name: str, model_dim: int, spec: BlockSpec) -> Neur
 
     graph.input_node_ids = ["x_in"]
     graph.output_node_ids = ["y_out", "aux_loss_out"]
+    return graph
+
+
+def build_semantic_router_mlp_graph(name: str, model_dim: int, spec: BlockSpec) -> NeuronGraph:
+    graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
+    graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="x", dtype="tensor"), instance_id="x_in", position=(40, 180)))
+    graph.add_node(
+        NeuronInstance(make_terminal_def(role="input", port_name="routing_weights", dtype="tensor"), instance_id="routing_weights_in", position=(40, 60))
+    )
+    graph.add_node(
+        NeuronInstance(make_terminal_def(role="input", port_name="routing_indices", dtype="tensor"), instance_id="routing_indices_in", position=(40, 300))
+    )
+
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.expert_dispatch_module,
+                config={"model_dim": model_dim, "experts": spec.experts, "mlp_mult": spec.mlp_multiplier},
+            ),
+            instance_id="dispatch",
+            position=(320, 180),
+        )
+    )
+    graph.add_edge(Edge(id="e_x_dispatch", src_node="x_in", src_port=0, dst_node="dispatch", dst_port=0))
+    graph.add_edge(Edge(id="e_weights_dispatch", src_node="routing_weights_in", src_port=0, dst_node="dispatch", dst_port=1))
+    graph.add_edge(Edge(id="e_indices_dispatch", src_node="routing_indices_in", src_port=0, dst_node="dispatch", dst_port=2))
+
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.expert_combine_module), instance_id="combine", position=(560, 180)))
+    graph.add_edge(Edge(id="e_dispatch_combine", src_node="dispatch", src_port=0, dst_node="combine", dst_port=0))
+
+    graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="y", dtype="tensor"), instance_id="y_out", position=(780, 180)))
+    graph.add_edge(Edge(id="e_combine_y_out", src_node="combine", src_port=0, dst_node="y_out", dst_port=0))
+
+    graph.input_node_ids = ["x_in", "routing_weights_in", "routing_indices_in"]
+    graph.output_node_ids = ["y_out"]
     return graph
 
 def build_mamba_graph(name: str, model_dim: int, spec: BlockSpec) -> NeuronGraph:
@@ -432,6 +477,84 @@ def build_decoder_block_graph(
         graph.output_node_ids = ["x_out"]
 
     graph.input_node_ids = ["x_in", "context_in"] if cross_attention_graph else ["x_in"]
+    return graph
+
+
+def build_semantic_router_decoder_block_graph(
+    name: str,
+    model_dim: int,
+    spec: BlockSpec,
+    attention_graph: NeuronGraph,
+    mlp_graph: NeuronGraph,
+    *,
+    attention_family: str = "attention",
+    mlp_family: str = "semantic_router_mlp",
+) -> NeuronGraph:
+    graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
+
+    graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="x", dtype="tensor"), instance_id="x_in", position=(40, 160)))
+    graph.add_node(
+        NeuronInstance(make_terminal_def(role="input", port_name="routing_weights", dtype="tensor"), instance_id="routing_weights_in", position=(40, 40))
+    )
+    graph.add_node(
+        NeuronInstance(make_terminal_def(role="input", port_name="routing_indices", dtype="tensor"), instance_id="routing_indices_in", position=(40, 280))
+    )
+
+    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+
+    graph.add_node(NeuronInstance(clone_neuron_def(norm_module, config={"model_dim": model_dim}), instance_id="attn_norm", position=(260, 100)))
+    graph.add_edge(Edge(id="e_x_attn_norm", src_node="x_in", src_port=0, dst_node="attn_norm", dst_port=0))
+
+    graph.add_node(
+        NeuronInstance(
+            link_variant_neuron(
+                attention_graph,
+                family=attention_family,
+                version="default",
+                name="attention",
+                input_aliases=["x"],
+                output_aliases=["attn_out"],
+            ),
+            instance_id="attention",
+            position=(480, 100),
+        )
+    )
+    graph.add_edge(Edge(id="e_norm_attn", src_node="attn_norm", src_port=0, dst_node="attention", dst_port=0))
+
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.add), instance_id="attn_add", position=(700, 160)))
+    graph.add_edge(Edge(id="e_x_attn_add", src_node="x_in", src_port=0, dst_node="attn_add", dst_port=0))
+    graph.add_edge(Edge(id="e_attn_attn_add", src_node="attention", src_port=0, dst_node="attn_add", dst_port=1))
+
+    graph.add_node(NeuronInstance(clone_neuron_def(norm_module, config={"model_dim": model_dim}), instance_id="mlp_norm", position=(920, 100)))
+    graph.add_edge(Edge(id="e_attn_add_mlp_norm", src_node="attn_add", src_port=0, dst_node="mlp_norm", dst_port=0))
+
+    graph.add_node(
+        NeuronInstance(
+            link_variant_neuron(
+                mlp_graph,
+                family=mlp_family,
+                version="default",
+                name="mlp",
+                input_aliases=["x", "routing_weights", "routing_indices"],
+                output_aliases=["y"],
+            ),
+            instance_id="mlp",
+            position=(1140, 100),
+        )
+    )
+    graph.add_edge(Edge(id="e_mlp_norm_mlp", src_node="mlp_norm", src_port=0, dst_node="mlp", dst_port=0))
+    graph.add_edge(Edge(id="e_routing_weights_mlp", src_node="routing_weights_in", src_port=0, dst_node="mlp", dst_port=1))
+    graph.add_edge(Edge(id="e_routing_indices_mlp", src_node="routing_indices_in", src_port=0, dst_node="mlp", dst_port=2))
+
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.add), instance_id="mlp_add", position=(1360, 160)))
+    graph.add_edge(Edge(id="e_attn_add_mlp_add", src_node="attn_add", src_port=0, dst_node="mlp_add", dst_port=0))
+    graph.add_edge(Edge(id="e_mlp_mlp_add", src_node="mlp", src_port=0, dst_node="mlp_add", dst_port=1))
+
+    graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="x", dtype="tensor"), instance_id="x_out", position=(1580, 160)))
+    graph.add_edge(Edge(id="e_mlp_add_x_out", src_node="mlp_add", src_port=0, dst_node="x_out", dst_port=0))
+
+    graph.input_node_ids = ["x_in", "routing_weights_in", "routing_indices_in"]
+    graph.output_node_ids = ["x_out"]
     return graph
 
 
@@ -841,7 +964,7 @@ def build_jepa_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGrap
 
 
 def build_jepa_semantic_encoder_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
-    """Experimental: JEPA encoder with 15-D semantic projector + residual output."""
+    """Experimental: JEPA encoder with pooled semantic vector + full hidden sequence."""
     graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
     hidden_graph = build_hidden_backbone_graph("hidden_backbone", model_spec)
     graph.variant_library = deepcopy(hidden_graph.variant_library)
@@ -864,6 +987,7 @@ def build_jepa_semantic_encoder_graph(name: str, model_spec: ModelSpec) -> Neuro
                     "input_dim": model_spec.model_dim,
                     "semantic_dim": model_spec.semantic_dim,
                     "residual_dim": model_spec.semantic_residual_dim,
+                    "semantic_vocab_ref": model_spec.semantic_vocab_ref,
                 },
             ),
             instance_id="sem_proj",
@@ -875,25 +999,38 @@ def build_jepa_semantic_encoder_graph(name: str, model_spec: ModelSpec) -> Neuro
     graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="semantic_vec", dtype="tensor"), instance_id="sem_out", position=(980, 80)))
     graph.add_edge(Edge(id="e_semproj_semout", src_node="sem_proj", src_port=0, dst_node="sem_out", dst_port=0))
 
-    graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="residual", dtype="tensor"), instance_id="res_out", position=(980, 200)))
-    graph.add_edge(Edge(id="e_semproj_resout", src_node="sem_proj", src_port=1, dst_node="res_out", dst_port=0))
+    graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="hidden", dtype="tensor"), instance_id="hidden_out", position=(980, 220)))
+    graph.add_edge(Edge(id="e_backbone_hiddenout", src_node="backbone", src_port=0, dst_node="hidden_out", dst_port=0))
+
+    graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="topic_logits", dtype="tensor"), instance_id="topic_logits_out", position=(980, 340)))
+    graph.add_edge(Edge(id="e_semproj_topic_logits", src_node="sem_proj", src_port=2, dst_node="topic_logits_out", dst_port=0))
 
     graph.input_node_ids = ["tokens_in", "mask_in"]
-    graph.output_node_ids = ["sem_out", "res_out"]
+    graph.output_node_ids = ["sem_out", "hidden_out", "topic_logits_out"]
     return graph
 
 
 def build_jepa_semantic_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
-    """Experimental: full JEPA semantic hybrid stage -- JEPA + semantic MoE + attentionless decode."""
+    """Experimental: JEPA semantic hybrid with hash routing into attention experts."""
     spec = model_spec.block_spec
+    use_router_vecs = bool(model_spec.experimental_semantic_router_vecs)
     graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
     encoder_graph = build_jepa_semantic_encoder_graph("jepa_sem_encoder", model_spec)
     graph.variant_library = deepcopy(encoder_graph.variant_library)
     encoder_graph.variant_library = {}
 
-    # -- Inputs: tokens from regular dataset + sem_targets from semantic data source --
+    # -- Inputs: text tokens/targets plus semantic supervision --
     graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="tokens", dtype="tokens"), instance_id="tokens_in", position=(40, 140)))
-    graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="sem_targets", dtype="tokens"), instance_id="sem_targets_in", position=(40, 320)))
+    graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="targets", dtype="tokens"), instance_id="targets_in", position=(40, 260)))
+    graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="sem_targets", dtype="tokens"), instance_id="sem_targets_in", position=(40, 380)))
+    if use_router_vecs:
+        graph.add_node(
+            NeuronInstance(
+                make_terminal_def(role="input", port_name="semantic_router_vecs", dtype="tensor"),
+                instance_id="semantic_router_vecs_in",
+                position=(40, 500),
+            )
+        )
 
     # -- JEPA mask --
     graph.add_node(
@@ -918,7 +1055,7 @@ def build_jepa_semantic_model_stage_graph(name: str, model_spec: ModelSpec) -> N
     # -- Online encoder (masked tokens) --
     graph.add_node(
         NeuronInstance(
-            subgraph_neuron(encoder_graph, name="online_encoder", input_aliases=["tokens", "mask"], output_aliases=["semantic_vec", "residual"]),
+            subgraph_neuron(encoder_graph, name="online_encoder", input_aliases=["tokens", "mask"], output_aliases=["semantic_vec", "hidden", "topic_logits"]),
             instance_id="online_encoder",
             position=(520, 100),
         )
@@ -929,7 +1066,7 @@ def build_jepa_semantic_model_stage_graph(name: str, model_spec: ModelSpec) -> N
     # -- Target encoder (full tokens, frozen via EMA) --
     graph.add_node(
         NeuronInstance(
-            subgraph_neuron(encoder_graph, name="target_encoder", input_aliases=["tokens", "mask"], output_aliases=["semantic_vec", "residual"]),
+            subgraph_neuron(encoder_graph, name="target_encoder", input_aliases=["tokens", "mask"], output_aliases=["semantic_vec", "hidden", "topic_logits"]),
             instance_id="target_encoder",
             position=(520, 320),
         )
@@ -952,7 +1089,7 @@ def build_jepa_semantic_model_stage_graph(name: str, model_spec: ModelSpec) -> N
     graph.add_edge(Edge(id="e_pred_jloss", src_node="predictor", src_port=0, dst_node="jepa_loss", dst_port=0))
     graph.add_edge(Edge(id="e_target_jloss", src_node="target_encoder", src_port=0, dst_node="jepa_loss", dst_port=1))
 
-    # -- Semantic hasher --
+    # -- Hash-aware routing query --
     graph.add_node(
         NeuronInstance(
             clone_neuron_def(
@@ -965,76 +1102,434 @@ def build_jepa_semantic_model_stage_graph(name: str, model_spec: ModelSpec) -> N
     )
     graph.add_edge(Edge(id="e_sem_hasher", src_node="online_encoder", src_port=0, dst_node="hasher", dst_port=0))
 
-    # -- Semantic MoE router --
-    n_experts = spec.experts or 8
+    n_experts = spec.experts or NUM_VOCAB_DIMS
     top_k = spec.top_k or 2
     graph.add_node(
         NeuronInstance(
             clone_neuron_def(
-                BuiltinNeurons.semantic_moe_router_module,
-                config={"n_experts": n_experts, "semantic_dim": model_spec.semantic_dim, "top_k": top_k},
+                BuiltinNeurons.semantic_hash_router_module,
+                config={
+                    "n_experts": n_experts,
+                    "semantic_dim": model_spec.semantic_dim,
+                    "top_k": top_k,
+                    "tables": model_spec.semantic_n_lsh_tables,
+                    "n_buckets": 2 ** min(model_spec.semantic_n_lsh_planes, 12),
+                    "semantic_vocab_ref": model_spec.semantic_vocab_ref,
+                    "routing_source": "semantic_vec" if use_router_vecs else "topic_logits",
+                },
             ),
-            instance_id="sem_router",
-            position=(780, 260),
-        )
-    )
-    graph.add_edge(Edge(id="e_sem_router", src_node="online_encoder", src_port=0, dst_node="sem_router", dst_port=0))
-
-    # -- Expert dispatch on residual --
-    graph.add_node(
-        NeuronInstance(
-            clone_neuron_def(
-                BuiltinNeurons.expert_dispatch_module,
-                config={"model_dim": model_spec.semantic_residual_dim, "experts": n_experts, "mlp_mult": 4},
-            ),
-            instance_id="dispatch",
+            instance_id="hash_router",
             position=(1020, 220),
         )
     )
-    graph.add_edge(Edge(id="e_res_dispatch", src_node="online_encoder", src_port=1, dst_node="dispatch", dst_port=0))
-    graph.add_edge(Edge(id="e_weights_dispatch", src_node="sem_router", src_port=0, dst_node="dispatch", dst_port=1))
-    graph.add_edge(Edge(id="e_indices_dispatch", src_node="sem_router", src_port=1, dst_node="dispatch", dst_port=2))
+    if use_router_vecs:
+        graph.add_edge(
+            Edge(
+                id="e_sem_router_vec_hash_router",
+                src_node="semantic_router_vecs_in",
+                src_port=0,
+                dst_node="hash_router",
+                dst_port=0,
+            )
+        )
+    else:
+        graph.add_edge(Edge(id="e_online_hash_router", src_node="online_encoder", src_port=0, dst_node="hash_router", dst_port=0))
+    graph.add_edge(Edge(id="e_hasher_hash_router", src_node="hasher", src_port=0, dst_node="hash_router", dst_port=1))
+    graph.add_edge(Edge(id="e_topic_logits_hash_router", src_node="online_encoder", src_port=2, dst_node="hash_router", dst_port=2))
+    graph.add_edge(Edge(id="e_sem_targets_hash_router", src_node="sem_targets_in", src_port=0, dst_node="hash_router", dst_port=3))
 
-    # -- Attentionless decoder --
+    # -- Expert attention over the full masked hidden sequence --
     graph.add_node(
         NeuronInstance(
             clone_neuron_def(
-                BuiltinNeurons.attentionless_decoder_module,
+                BuiltinNeurons.routed_attention_experts_module,
                 config={
-                    "semantic_dim": model_spec.semantic_dim,
-                    "residual_dim": model_spec.semantic_residual_dim,
-                    "vocab_size": model_spec.vocab_size,
-                    "n_buckets": 2 ** min(model_spec.semantic_n_lsh_planes, 10),
+                    "model_dim": model_spec.model_dim,
+                    "num_heads": spec.num_heads,
+                    "num_kv_heads": spec.num_kv_heads if spec.num_kv_heads is not None else spec.num_heads,
+                    "rope_base": spec.rope_theta,
+                    "qk_gain_init": spec.qk_gain_init,
+                    "experts": n_experts,
+                    "top_k": top_k,
                 },
             ),
-            instance_id="decoder",
+            instance_id="routed_experts",
             position=(1260, 220),
         )
     )
-    graph.add_edge(Edge(id="e_hash_decoder", src_node="hasher", src_port=0, dst_node="decoder", dst_port=0))
-    graph.add_edge(Edge(id="e_dispatch_decoder", src_node="dispatch", src_port=0, dst_node="decoder", dst_port=1))
+    graph.add_edge(Edge(id="e_hidden_routed_experts", src_node="online_encoder", src_port=1, dst_node="routed_experts", dst_port=0))
+    graph.add_edge(Edge(id="e_weights_routed_experts", src_node="hash_router", src_port=0, dst_node="routed_experts", dst_port=1))
+    graph.add_edge(Edge(id="e_indices_routed_experts", src_node="hash_router", src_port=1, dst_node="routed_experts", dst_port=2))
 
-    # -- Semantic alignment loss (supervised: online_encoder semantic_vec vs sem_targets) --
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.semantic_alignment_loss_module), instance_id="sem_align_loss", position=(1020, 320)))
-    graph.add_edge(Edge(id="e_online_sem_align", src_node="online_encoder", src_port=0, dst_node="sem_align_loss", dst_port=0))
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.residual_add_module, config={"dim": model_spec.model_dim}),
+            instance_id="expert_residual",
+            position=(1480, 220),
+        )
+    )
+    graph.add_edge(Edge(id="e_hidden_expert_residual", src_node="online_encoder", src_port=1, dst_node="expert_residual", dst_port=0))
+    graph.add_edge(Edge(id="e_routed_expert_residual", src_node="routed_experts", src_port=0, dst_node="expert_residual", dst_port=1))
+
+    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}),
+            instance_id="final_norm",
+            position=(1700, 220),
+        )
+    )
+    graph.add_edge(Edge(id="e_expert_residual_norm", src_node="expert_residual", src_port=0, dst_node="final_norm", dst_port=0))
+
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.lm_head_module, config={"model_dim": model_spec.model_dim, "vocab_size": model_spec.vocab_size}),
+            instance_id="lm_head",
+            position=(1920, 220),
+        )
+    )
+    graph.add_edge(Edge(id="e_norm_lm_head", src_node="final_norm", src_port=0, dst_node="lm_head", dst_port=0))
+
+    ce_input = "lm_head"
+    if model_spec.logit_softcap > 0.0:
+        graph.add_node(
+            NeuronInstance(
+                clone_neuron_def(BuiltinNeurons.logit_softcap_module, config={"softcap": model_spec.logit_softcap}),
+                instance_id="softcap",
+                position=(2140, 220),
+            )
+        )
+        graph.add_edge(Edge(id="e_lm_head_softcap", src_node="lm_head", src_port=0, dst_node="softcap", dst_port=0))
+        ce_input = "softcap"
+
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module), instance_id="ar_loss", position=(2360, 220)))
+    graph.add_edge(Edge(id="e_logits_ar_loss", src_node=ce_input, src_port=0, dst_node="ar_loss", dst_port=0))
+    graph.add_edge(Edge(id="e_targets_ar_loss", src_node="targets_in", src_port=0, dst_node="ar_loss", dst_port=1))
+
+    # -- Semantic alignment loss (supervised: online vocab-topic logits vs sem_targets) --
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.semantic_alignment_loss_module,
+                config={"semantic_vocab_ref": model_spec.semantic_vocab_ref},
+            ),
+            instance_id="sem_align_loss",
+            position=(1260, 360),
+        )
+    )
+    graph.add_edge(Edge(id="e_online_sem_align", src_node="online_encoder", src_port=2, dst_node="sem_align_loss", dst_port=0))
     graph.add_edge(Edge(id="e_targets_sem_align", src_node="sem_targets_in", src_port=0, dst_node="sem_align_loss", dst_port=1))
 
-    # -- Combine JEPA loss + semantic alignment loss --
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.loss_scale_module, config={"coef": model_spec.ar_loss_coef}),
+            instance_id="ar_scaled",
+            position=(2580, 220),
+        )
+    )
+    graph.add_edge(Edge(id="e_ar_loss_scaled", src_node="ar_loss", src_port=0, dst_node="ar_scaled", dst_port=0))
+
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.loss_scale_module, config={"coef": model_spec.jepa_loss_coef}),
+            instance_id="jepa_scaled",
+            position=(1260, 100),
+        )
+    )
+    graph.add_edge(Edge(id="e_jepa_loss_scaled", src_node="jepa_loss", src_port=0, dst_node="jepa_scaled", dst_port=0))
+
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.loss_scale_module, config={"coef": model_spec.semantic_align_loss_coef}),
+            instance_id="sem_align_scaled",
+            position=(1480, 360),
+        )
+    )
+    graph.add_edge(Edge(id="e_sem_align_scaled", src_node="sem_align_loss", src_port=0, dst_node="sem_align_scaled", dst_port=0))
+
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.aux_loss_add_module, config={"coef": 1.0}),
+            instance_id="ar_plus_jepa",
+            position=(2800, 180),
+        )
+    )
+    graph.add_edge(Edge(id="e_ar_plus_jepa_main", src_node="ar_scaled", src_port=0, dst_node="ar_plus_jepa", dst_port=0))
+    graph.add_edge(Edge(id="e_ar_plus_jepa_aux", src_node="jepa_scaled", src_port=0, dst_node="ar_plus_jepa", dst_port=1))
+
     graph.add_node(
         NeuronInstance(
             clone_neuron_def(BuiltinNeurons.aux_loss_add_module, config={"coef": 1.0}),
             instance_id="total_loss",
-            position=(1260, 180),
+            position=(3020, 180),
         )
     )
-    graph.add_edge(Edge(id="e_jepa_total", src_node="jepa_loss", src_port=0, dst_node="total_loss", dst_port=0))
-    graph.add_edge(Edge(id="e_semalign_total", src_node="sem_align_loss", src_port=0, dst_node="total_loss", dst_port=1))
+    graph.add_edge(Edge(id="e_total_loss_main", src_node="ar_plus_jepa", src_port=0, dst_node="total_loss", dst_port=0))
+    graph.add_edge(Edge(id="e_total_loss_aux", src_node="sem_align_scaled", src_port=0, dst_node="total_loss", dst_port=1))
 
     # -- Output --
-    graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="loss", dtype="loss"), instance_id="loss_out", position=(1500, 180)))
+    graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="loss", dtype="loss"), instance_id="loss_out", position=(3240, 180)))
     graph.add_edge(Edge(id="e_total_out", src_node="total_loss", src_port=0, dst_node="loss_out", dst_port=0))
 
-    graph.input_node_ids = ["tokens_in", "sem_targets_in"]
+    graph.input_node_ids = ["tokens_in", "targets_in", "sem_targets_in"]
+    if use_router_vecs:
+        graph.input_node_ids.append("semantic_router_vecs_in")
+    graph.output_node_ids = ["loss_out"]
+    return graph
+
+
+def build_semantic_router_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
+    """Experimental: AR MixLLaMA with one shared semantic router reused by every MoE block."""
+
+    spec = model_spec.block_spec
+    use_router_vecs = bool(model_spec.experimental_semantic_router_vecs)
+    graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
+
+    attn_graph = build_dense_attention_graph("attention_engine", model_spec.model_dim, spec, **_attn_flags(model_spec))
+    mlp_graph = build_semantic_router_mlp_graph("semantic_router_mlp", model_spec.model_dim, spec)
+    block_graph = build_semantic_router_decoder_block_graph(
+        "semantic_router_block",
+        model_spec.model_dim,
+        spec,
+        attn_graph,
+        mlp_graph,
+    )
+    graph.variant_library = {
+        "attention": {"default": attn_graph},
+        "semantic_router_mlp": {"default": mlp_graph},
+        "semantic_router_block": {"default": block_graph},
+    }
+
+    graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="tokens", dtype="tokens"), instance_id="tokens_in", position=(40, 140)))
+    graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="targets", dtype="tokens"), instance_id="targets_in", position=(40, 340)))
+    graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="sem_targets", dtype="tokens"), instance_id="sem_targets_in", position=(40, 540)))
+    if use_router_vecs:
+        graph.add_node(
+            NeuronInstance(
+                make_terminal_def(role="input", port_name="semantic_router_vecs", dtype="tensor"),
+                instance_id="semantic_router_vecs_in",
+                position=(40, 740),
+            )
+        )
+
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.token_embedding_module,
+                config={"vocab_size": model_spec.vocab_size, "model_dim": model_spec.model_dim},
+            ),
+            instance_id="token_embed",
+            position=(260, 140),
+        )
+    )
+    graph.add_edge(Edge(id="e_tokens_embed", src_node="tokens_in", src_port=0, dst_node="token_embed", dst_port=0))
+    curr_out = "token_embed"
+
+    if spec.pos_encoding == "absolute":
+        graph.add_node(
+            NeuronInstance(
+                clone_neuron_def(BuiltinNeurons.absolute_position_embedding_module, config={"model_dim": model_spec.model_dim}),
+                instance_id="pos_embed",
+                position=(260, 260),
+            )
+        )
+        graph.add_edge(Edge(id="e_tokens_pos", src_node="tokens_in", src_port=0, dst_node="pos_embed", dst_port=0))
+        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.add), instance_id="embed_add", position=(480, 140)))
+        graph.add_edge(Edge(id="e_embed_add_a", src_node="token_embed", src_port=0, dst_node="embed_add", dst_port=0))
+        graph.add_edge(Edge(id="e_pos_add_b", src_node="pos_embed", src_port=0, dst_node="embed_add", dst_port=1))
+        curr_out = "embed_add"
+
+    if spec.dropout_p > 0.0:
+        graph.add_node(
+            NeuronInstance(
+                clone_neuron_def(BuiltinNeurons.dropout_module, config={"p": spec.dropout_p}),
+                instance_id="embed_dropout",
+                position=(700, 140),
+            )
+        )
+        graph.add_edge(Edge(id="e_embed_dropout", src_node=curr_out, src_port=0, dst_node="embed_dropout", dst_port=0))
+        curr_out = "embed_dropout"
+
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.semantic_projector_module,
+                config={
+                    "input_dim": model_spec.model_dim,
+                    "semantic_dim": model_spec.semantic_dim,
+                    "residual_dim": model_spec.semantic_residual_dim,
+                    "n_sig_buckets": 2 ** min(model_spec.semantic_n_lsh_planes, 12),
+                    "semantic_vocab_ref": model_spec.semantic_vocab_ref,
+                },
+            ),
+            instance_id="semantic_projector",
+            position=(700, 380),
+        )
+    )
+    graph.add_edge(Edge(id="e_hidden_semantic_projector", src_node=curr_out, src_port=0, dst_node="semantic_projector", dst_port=0))
+
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.semantic_hasher_module,
+                config={
+                    "dim": model_spec.semantic_dim,
+                    "tables": model_spec.semantic_n_lsh_tables,
+                    "planes": model_spec.semantic_n_lsh_planes,
+                },
+            ),
+            instance_id="semantic_hasher",
+            position=(940, 320),
+        )
+    )
+    graph.add_edge(Edge(id="e_semantic_projector_hasher", src_node="semantic_projector", src_port=0, dst_node="semantic_hasher", dst_port=0))
+
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.semantic_hash_router_module,
+                config={
+                    "n_experts": spec.experts or NUM_VOCAB_DIMS,
+                    "semantic_dim": model_spec.semantic_dim,
+                    "top_k": spec.top_k or 2,
+                    "tables": model_spec.semantic_n_lsh_tables,
+                    "n_buckets": 2 ** min(model_spec.semantic_n_lsh_planes, 12),
+                    "semantic_vocab_ref": model_spec.semantic_vocab_ref,
+                    "routing_source": "semantic_vec" if use_router_vecs else "topic_logits",
+                },
+            ),
+            instance_id="semantic_hash_router",
+            position=(1160, 380),
+        )
+    )
+    if use_router_vecs:
+        graph.add_edge(
+            Edge(
+                id="e_semantic_router_vec_router",
+                src_node="semantic_router_vecs_in",
+                src_port=0,
+                dst_node="semantic_hash_router",
+                dst_port=0,
+            )
+        )
+    else:
+        graph.add_edge(Edge(id="e_semantic_vec_router", src_node="semantic_projector", src_port=0, dst_node="semantic_hash_router", dst_port=0))
+    graph.add_edge(Edge(id="e_bucket_indices_router", src_node="semantic_hasher", src_port=0, dst_node="semantic_hash_router", dst_port=1))
+    graph.add_edge(Edge(id="e_topic_logits_router", src_node="semantic_projector", src_port=2, dst_node="semantic_hash_router", dst_port=2))
+    graph.add_edge(Edge(id="e_sem_targets_router", src_node="sem_targets_in", src_port=0, dst_node="semantic_hash_router", dst_port=3))
+
+    graph.add_node(
+        NeuronInstance(clone_neuron_def(BuiltinNeurons.broadcast_expert_routes_module), instance_id="broadcast_routes", position=(1380, 380))
+    )
+    graph.add_edge(Edge(id="e_hidden_broadcast_routes", src_node=curr_out, src_port=0, dst_node="broadcast_routes", dst_port=0))
+    graph.add_edge(Edge(id="e_weights_broadcast_routes", src_node="semantic_hash_router", src_port=0, dst_node="broadcast_routes", dst_port=1))
+    graph.add_edge(Edge(id="e_indices_broadcast_routes", src_node="semantic_hash_router", src_port=1, dst_node="broadcast_routes", dst_port=2))
+
+    block_input = curr_out
+    for i in range(model_spec.num_layers):
+        bname = f"block_{i}"
+        graph.add_node(
+            NeuronInstance(
+                link_variant_neuron(
+                    block_graph,
+                    family="semantic_router_block",
+                    version="default",
+                    name=bname,
+                    input_aliases=["x", "routing_weights", "routing_indices"],
+                    output_aliases=["x"],
+                ),
+                instance_id=bname,
+                position=(940 + i * 220, 140),
+            )
+        )
+        graph.add_edge(Edge(id=f"e_{block_input}_{bname}", src_node=block_input, src_port=0, dst_node=bname, dst_port=0))
+        graph.add_edge(Edge(id=f"e_broadcast_weights_{bname}", src_node="broadcast_routes", src_port=0, dst_node=bname, dst_port=1))
+        graph.add_edge(Edge(id=f"e_broadcast_indices_{bname}", src_node="broadcast_routes", src_port=1, dst_node=bname, dst_port=2))
+        block_input = bname
+
+    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}),
+            instance_id="final_norm",
+            position=(1160 + model_spec.num_layers * 220, 140),
+        )
+    )
+    graph.add_edge(Edge(id="e_blocks_norm", src_node=block_input, src_port=0, dst_node="final_norm", dst_port=0))
+
+    head_id = "tied_lm_head" if model_spec.tie_embeddings else "lm_head"
+    head_def = clone_neuron_def(BuiltinNeurons.tied_lm_head_module) if model_spec.tie_embeddings else clone_neuron_def(
+        BuiltinNeurons.lm_head_module,
+        config={"model_dim": model_spec.model_dim, "vocab_size": model_spec.vocab_size},
+    )
+    graph.add_node(NeuronInstance(head_def, instance_id=head_id, position=(1380 + model_spec.num_layers * 220, 140)))
+    graph.add_edge(Edge(id="e_norm_head", src_node="final_norm", src_port=0, dst_node=head_id, dst_port=0))
+    if model_spec.tie_embeddings:
+        graph.add_edge(Edge(id="e_tie", src_node="token_embed", src_port=1, dst_node=head_id, dst_port=1))
+
+    ce_input = head_id
+    if model_spec.logit_softcap > 0.0:
+        graph.add_node(
+            NeuronInstance(
+                clone_neuron_def(BuiltinNeurons.logit_softcap_module, config={"softcap": model_spec.logit_softcap}),
+                instance_id="softcap",
+                position=(1600 + model_spec.num_layers * 220, 140),
+            )
+        )
+        graph.add_edge(Edge(id="e_head_softcap", src_node=head_id, src_port=0, dst_node="softcap", dst_port=0))
+        ce_input = "softcap"
+
+    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.token_cross_entropy_module), instance_id="ar_loss", position=(1820 + model_spec.num_layers * 220, 220)))
+    graph.add_edge(Edge(id="e_logits_ar_loss", src_node=ce_input, src_port=0, dst_node="ar_loss", dst_port=0))
+    graph.add_edge(Edge(id="e_targets_ar_loss", src_node="targets_in", src_port=0, dst_node="ar_loss", dst_port=1))
+
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(
+                BuiltinNeurons.semantic_alignment_loss_module,
+                config={"semantic_vocab_ref": model_spec.semantic_vocab_ref},
+            ),
+            instance_id="sem_align_loss",
+            position=(1380, 520),
+        )
+    )
+    graph.add_edge(Edge(id="e_topic_logits_sem_align", src_node="semantic_projector", src_port=2, dst_node="sem_align_loss", dst_port=0))
+    graph.add_edge(Edge(id="e_sem_targets_sem_align", src_node="sem_targets_in", src_port=0, dst_node="sem_align_loss", dst_port=1))
+
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.loss_scale_module, config={"coef": model_spec.ar_loss_coef}),
+            instance_id="ar_scaled",
+            position=(2040 + model_spec.num_layers * 220, 220),
+        )
+    )
+    graph.add_edge(Edge(id="e_ar_loss_scaled", src_node="ar_loss", src_port=0, dst_node="ar_scaled", dst_port=0))
+
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.loss_scale_module, config={"coef": model_spec.semantic_align_loss_coef}),
+            instance_id="sem_align_scaled",
+            position=(1600, 520),
+        )
+    )
+    graph.add_edge(Edge(id="e_sem_align_scaled", src_node="sem_align_loss", src_port=0, dst_node="sem_align_scaled", dst_port=0))
+
+    graph.add_node(
+        NeuronInstance(
+            clone_neuron_def(BuiltinNeurons.aux_loss_add_module, config={"coef": 1.0}),
+            instance_id="total_loss",
+            position=(2260 + model_spec.num_layers * 220, 220),
+        )
+    )
+    graph.add_edge(Edge(id="e_total_loss_main", src_node="ar_scaled", src_port=0, dst_node="total_loss", dst_port=0))
+    graph.add_edge(Edge(id="e_total_loss_aux", src_node="sem_align_scaled", src_port=0, dst_node="total_loss", dst_port=1))
+
+    graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="loss", dtype="loss"), instance_id="loss_out", position=(2480 + model_spec.num_layers * 220, 220)))
+    graph.add_edge(Edge(id="e_total_loss_out", src_node="total_loss", src_port=0, dst_node="loss_out", dst_port=0))
+
+    graph.input_node_ids = ["tokens_in", "targets_in", "sem_targets_in"]
+    if use_router_vecs:
+        graph.input_node_ids.append("semantic_router_vecs_in")
     graph.output_node_ids = ["loss_out"]
     return graph
 
@@ -1144,18 +1639,25 @@ def build_model_spec_from_config(config: dict[str, Any], *, preview_defaults: bo
     from neuralfn.config import (
         build_decoder2encoder_moe_spec,
         build_diffllama_spec,
+        build_gpt2_megakernel_spec,
         build_gpt2_spec,
         build_hnet_lm_spec,
         build_jamba_hybrid_spec,
+        build_jepa_semantic_hybrid_megakernel_spec,
         build_jepa_semantic_hybrid_spec,
         build_kv_pca_llama_spec,
         build_llama_fast_spec,
+        build_llama_fast_megakernel_spec,
         build_llama_megakernel_spec,
         build_llama_spec,
         build_llm_jepa_spec,
+        build_mixllama_fast_megakernel_spec,
         build_mixllama_fast_spec,
         build_mixllama_spec,
+        build_nanogpt_megakernel_spec,
         build_nanogpt_spec,
+        build_semantic_router_moe_megakernel_spec,
+        build_semantic_router_moe_spec,
         build_ternary_b158_spec,
         build_ttt_llama_spec,
         build_universal_llama_spec,
@@ -1165,20 +1667,36 @@ def build_model_spec_from_config(config: dict[str, Any], *, preview_defaults: bo
     preset = normalized.get("preset", "nanogpt")
     if preview_defaults and "num_layers" not in normalized:
         normalized["num_layers"] = 2 if preset == "jamba" else 1
-    if preview_defaults and preset in {"mixllama", "moe", "mixllama_fast", "jamba", "seq2seq", "jepa_semantic_hybrid"}:
+    if preview_defaults and preset in {"mixllama", "moe", "mixllama_fast", "mixllama_fast_megakernel", "jamba", "seq2seq"}:
         normalized.setdefault("experts", 4)
         normalized.setdefault("top_k", 2)
+    if preview_defaults and preset in {"jepa_semantic_hybrid", "jepa_semantic_hybrid_megakernel"}:
+        normalized.setdefault("experts", NUM_VOCAB_DIMS)
+        normalized.setdefault("top_k", 2)
+    if preview_defaults and preset in {"semantic_router_moe", "semantic_router_moe_megakernel"}:
+        normalized.setdefault("experts", NUM_VOCAB_DIMS)
+        normalized.setdefault("top_k", 2)
 
+    if preset == "gpt2_megakernel":
+        return build_gpt2_megakernel_spec(**normalized)
     if preset == "gpt2":
         return build_gpt2_spec(**normalized)
+    if preset == "nanogpt_megakernel":
+        return build_nanogpt_megakernel_spec(**normalized)
+    if preset == "nanogpt":
+        return build_nanogpt_spec(**normalized)
     if preset == "llama":
         return build_llama_spec(**normalized)
     if preset in {"mixllama", "moe"}:
         return build_mixllama_spec(**normalized)
     if preset == "llama_fast":
         return build_llama_fast_spec(**normalized)
+    if preset == "llama_fast_megakernel":
+        return build_llama_fast_megakernel_spec(**normalized)
     if preset == "mixllama_fast":
         return build_mixllama_fast_spec(**normalized)
+    if preset == "mixllama_fast_megakernel":
+        return build_mixllama_fast_megakernel_spec(**normalized)
     if preset == "jamba":
         return build_jamba_hybrid_spec(**normalized)
     if preset == "ternary_b158":
@@ -1197,6 +1715,12 @@ def build_model_spec_from_config(config: dict[str, Any], *, preview_defaults: bo
         return build_llm_jepa_spec(**normalized)
     if preset == "jepa_semantic_hybrid":
         return build_jepa_semantic_hybrid_spec(**normalized)
+    if preset == "jepa_semantic_hybrid_megakernel":
+        return build_jepa_semantic_hybrid_megakernel_spec(**normalized)
+    if preset == "semantic_router_moe":
+        return build_semantic_router_moe_spec(**normalized)
+    if preset == "semantic_router_moe_megakernel":
+        return build_semantic_router_moe_megakernel_spec(**normalized)
     if preset == "hnet_lm":
         return build_hnet_lm_spec(**normalized)
     if preset == "universal_llama":
@@ -1377,10 +1901,27 @@ def build_gpt_root_graph(*, name: str = "model_root", model_spec: ModelSpec | No
         stage = build_jepa_semantic_model_stage_graph("model_stage", model_spec)
         graph.variant_library = deepcopy(stage.variant_library)
         stage.variant_library = {}
+        semantic_input_aliases = ["tokens", "targets", "sem_targets"]
+        semantic_source_def = clone_neuron_def(
+            BuiltinNeurons.semantic_data_source_module,
+            config={
+                "seq_len": model_spec.semantic_dim,
+                "semantic_vocab_ref": model_spec.semantic_vocab_ref,
+                "emit_router_vecs": model_spec.experimental_semantic_router_vecs,
+                "router_vec_dim": max(model_spec.semantic_dim - 1, 0),
+            },
+        )
+        if model_spec.experimental_semantic_router_vecs:
+            semantic_source_def.output_ports = [
+                Port("sem_targets", range=(-100, 65535), precision=1.0, dtype="tokens"),
+                Port("semantic_router_vecs", range=(0, 1), precision=0.001, dtype="tensor"),
+            ]
+            semantic_input_aliases.append("semantic_router_vecs")
 
         dataset_def = clone_neuron_def(BuiltinNeurons.dataset_source_module, config={"dataset_names": [], "seq_len": 64})
         dataset_def.output_ports = [
             Port("tokens", range=(0, 65535), precision=1.0, dtype="tokens"),
+            Port("targets", range=(0, 65535), precision=1.0, dtype="tokens"),
         ]
         graph.add_node(NeuronInstance(
             dataset_def,
@@ -1388,13 +1929,69 @@ def build_gpt_root_graph(*, name: str = "model_root", model_spec: ModelSpec | No
             position=(40, 120),
         ))
         graph.add_node(NeuronInstance(
-            clone_neuron_def(BuiltinNeurons.semantic_data_source_module, config={"seq_len": model_spec.semantic_dim}),
+            semantic_source_def,
             instance_id="semantic_data_source",
             position=(40, 300),
         ))
-        graph.add_node(NeuronInstance(subgraph_neuron(stage, name="model", input_aliases=["tokens", "sem_targets"], output_aliases=["loss"]), instance_id="model", position=(380, 180)))
+        graph.add_node(
+            NeuronInstance(
+                subgraph_neuron(stage, name="model", input_aliases=semantic_input_aliases, output_aliases=["loss"]),
+                instance_id="model",
+                position=(380, 180),
+            )
+        )
         graph.add_edge(Edge(id="e_tokens_model", src_node="dataset_source", src_port=0, dst_node="model", dst_port=0))
-        graph.add_edge(Edge(id="e_semds_model", src_node="semantic_data_source", src_port=0, dst_node="model", dst_port=1))
+        graph.add_edge(Edge(id="e_targets_model", src_node="dataset_source", src_port=1, dst_node="model", dst_port=1))
+        graph.add_edge(Edge(id="e_semds_model", src_node="semantic_data_source", src_port=0, dst_node="model", dst_port=2))
+        if model_spec.experimental_semantic_router_vecs:
+            graph.add_edge(Edge(id="e_semvec_model", src_node="semantic_data_source", src_port=1, dst_node="model", dst_port=3))
+        graph.input_node_ids = ["dataset_source", "semantic_data_source"]
+    elif model_spec.template.objective == "semantic_router":
+        stage = build_semantic_router_model_stage_graph("model_stage", model_spec)
+        graph.variant_library = deepcopy(stage.variant_library)
+        stage.variant_library = {}
+        semantic_input_aliases = ["tokens", "targets", "sem_targets"]
+        semantic_source_def = clone_neuron_def(
+            BuiltinNeurons.semantic_data_source_module,
+            config={
+                "seq_len": model_spec.semantic_dim,
+                "semantic_vocab_ref": model_spec.semantic_vocab_ref,
+                "emit_router_vecs": model_spec.experimental_semantic_router_vecs,
+                "router_vec_dim": max(model_spec.semantic_dim - 1, 0),
+            },
+        )
+        if model_spec.experimental_semantic_router_vecs:
+            semantic_source_def.output_ports = [
+                Port("sem_targets", range=(-100, 65535), precision=1.0, dtype="tokens"),
+                Port("semantic_router_vecs", range=(0, 1), precision=0.001, dtype="tensor"),
+            ]
+            semantic_input_aliases.append("semantic_router_vecs")
+
+        dataset_def = clone_neuron_def(BuiltinNeurons.dataset_source_module, config={"dataset_names": [], "seq_len": 64})
+        dataset_def.output_ports = [
+            Port("tokens", range=(0, 65535), precision=1.0, dtype="tokens"),
+            Port("targets", range=(0, 65535), precision=1.0, dtype="tokens"),
+        ]
+        graph.add_node(NeuronInstance(dataset_def, instance_id="dataset_source", position=(40, 120)))
+        graph.add_node(
+            NeuronInstance(
+                semantic_source_def,
+                instance_id="semantic_data_source",
+                position=(40, 300),
+            )
+        )
+        graph.add_node(
+            NeuronInstance(
+                subgraph_neuron(stage, name="model", input_aliases=semantic_input_aliases, output_aliases=["loss"]),
+                instance_id="model",
+                position=(380, 180),
+            )
+        )
+        graph.add_edge(Edge(id="e_tokens_model", src_node="dataset_source", src_port=0, dst_node="model", dst_port=0))
+        graph.add_edge(Edge(id="e_targets_model", src_node="dataset_source", src_port=1, dst_node="model", dst_port=1))
+        graph.add_edge(Edge(id="e_semds_model", src_node="semantic_data_source", src_port=0, dst_node="model", dst_port=2))
+        if model_spec.experimental_semantic_router_vecs:
+            graph.add_edge(Edge(id="e_semvec_model", src_node="semantic_data_source", src_port=1, dst_node="model", dst_port=3))
         graph.input_node_ids = ["dataset_source", "semantic_data_source"]
     elif model_spec.template.backbone == "hnet":
         stage = build_hnet_model_stage_graph("model_stage", model_spec)

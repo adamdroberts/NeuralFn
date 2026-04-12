@@ -31,5 +31,4 @@ include = ["neuralfn*", "server*"]
 [tool.setuptools.package-data]
 neuralfn = [
   "data/semantic/*.json",
-  "data/semantic/*.csv",
 ]

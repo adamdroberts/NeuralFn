@@ -788,7 +788,7 @@ def delete_dataset(project_id: str, ds_name: str) -> dict:
 
 @mcp.tool()
 def reverse_engineer_to_semantic(project_id: str, session_id: str, text: str) -> dict:
-    """[Experimental] Map text to a 15-D semantic vector using the session's JEPA semantic encoder."""
+    """[Experimental] Map text to the 9-D vocab-grounded semantic space."""
     with AgentSession(project_id, session_id):
         return _request(
             "POST",
@@ -799,7 +799,7 @@ def reverse_engineer_to_semantic(project_id: str, session_id: str, text: str) ->
 
 @mcp.tool()
 def semantic_search(project_id: str, session_id: str, vector: list[float], k: int = 10) -> list:
-    """[Experimental] Find nearest neighbours to a 15-D semantic vector."""
+    """[Experimental] Find nearest neighbours to a 9-D semantic vector."""
     with AgentSession(project_id, session_id):
         return _request(
             "POST",
@@ -835,7 +835,7 @@ def generate_with_semantics(
     target_vector: list[float] | None = None,
     max_tokens: int = 100,
 ) -> dict:
-    """[Experimental] Generate tokens using the attention-less semantic decoder."""
+    """[Experimental] Generate tokens using the semantic hybrid inference stack."""
     with AgentSession(project_id, session_id):
         return _request(
             "POST",

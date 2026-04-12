@@ -99,6 +99,8 @@ InferenceCache(graph, device=None)
 
 For training graphs that take two inputs (tokens + targets), `InferenceCache.step()` automatically generates dummy target tensors so the forward pass runs without modification. The loss output is returned as-is, which can be useful for perplexity evaluation.
 
+If you export or probe a tokenizer-backed cached dataset alias, keep the tokenizer contract intact: NeuralFn now preflights tokenizer-backed aliases before generation and stops early when the cached tokenizer vocab, shard ids, and checkpoint vocab disagree. This avoids the previous failure mode where decoding crashed after generation had already emitted out-of-range token ids.
+
 ---
 
 ## Typical workflow

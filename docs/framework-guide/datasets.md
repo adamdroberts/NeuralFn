@@ -31,6 +31,8 @@ Request body:
 
 The server downloads the file, stores it in the project's dataset directory, and registers it in the catalog.
 
+For tokenizer-backed cached shard aliases (`data_format="uint16_shards"`), the download step now validates the shard ids against the downloaded tokenizer artifacts before the alias is accepted. If any cached token id is outside the tokenizer vocab, NeuralFn rejects the alias and asks you to re-download or rebuild it with matching tokenizer files.
+
 ---
 
 ## Uploading local files
@@ -76,6 +78,7 @@ Different template objectives require different data shapes. The `dataset_source
 | Seq2Seq | `enc_tokens`, `dec_tokens`, `targets` | Encoder input, decoder input, and decoder targets. |
 | Diffusion | `tokens` | Single token sequence. Timestep sampling is internal. |
 | JEPA | `tokens` | Single token sequence. Masking and target generation are internal. |
+| Semantic routing presets (`semantic_router_moe`, `jepa_semantic_hybrid`) | `tokens`, `targets` | Text next-token inputs come from `dataset_source`; the shipped `semantic_data_source` provides vocab-derived `sem_targets` separately. |
 
 ---
 
@@ -87,6 +90,11 @@ The `hnet_lm` preset is the exception. It operates on raw bytes:
 - `vocab_size` is locked to 256.
 - The dataset pipeline skips tokenization and feeds raw byte values directly.
 - The `byte_patch_size` config key controls how bytes are grouped into patches for the model.
+
+Tokenizer-backed cached shard aliases are now treated as strict contracts:
+- cached token ids must stay within the tokenizer vocab
+- the graph/checkpoint vocab must match that tokenizer vocab
+- bad aliases are considered invalid cache artifacts and must be deleted and rebuilt or re-downloaded
 
 ---
 
