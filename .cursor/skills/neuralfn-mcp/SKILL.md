@@ -142,7 +142,7 @@ That's it -- four tool calls for a complete train run.
 | `set_dataset_access(ds_name, project_ids)` | Update which projects can use a dataset. |
 | `delete_dataset(ds_name)` | Delete a local dataset. |
 
-## All 18 GPT template presets
+## Shipped GPT template presets
 
 | Preset | Architecture | Objective |
 |--------|-------------|-----------|

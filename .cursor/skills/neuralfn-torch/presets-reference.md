@@ -8,11 +8,11 @@ This is the detailed reference for agents building torch-backed models with Neur
 
 Three dataclasses configure a model:
 
-1. **`TemplateSpec`** -- high-level architecture switches (objective, backbone, sparsity, compression, adapter, runtime)
+1. **`TemplateSpec`** -- high-level architecture switches (objective, backbone, sparsity, router, compression, adapter, runtime)
 2. **`BlockSpec`** -- per-transformer-block settings (norm, MLP type, position encoding, attention, heads, MoE params)
 3. **`ModelSpec`** -- top-level dimensions (model_dim, num_layers, vocab_size) plus block_spec and template
 
-The chain: `preset name` -> `build_*_spec(**config)` -> `ModelSpec` -> `build_model_stage_graph(spec)` or `build_gpt_root_graph(name, preset, config)`.
+The chain: preset config -> `build_model_spec_from_config(config)` or `build_*_spec(**kwargs)` -> `ModelSpec` -> `build_model_stage_graph(name, spec)` or `build_gpt_root_graph(name=name, model_spec=spec)`.
 
 ---
 
@@ -22,12 +22,13 @@ The chain: `preset name` -> `build_*_spec(**config)` -> `ModelSpec` -> `build_mo
 from neuralfn.config import TemplateSpec
 
 TemplateSpec(
-    objective: ObjectiveType = "ar",              # "ar" | "diffusion" | "jepa" | "seq2seq"
+    objective: ObjectiveType = "ar",              # "ar" | "diffusion" | "jepa" | "seq2seq" | "sft" | "dpo" | "ppo" | "reward_model" | semantic variants
     backbone: BackboneType = "gpt2",              # "gpt2" | "nanogpt" | "llama" | "mixllama" | "jamba" | "universal" | "ttt" | "hnet"
     tokenization: TokenizationType = "sp",        # "sp" | "byte_hnet"
     sparsity: SparsityType = "dense",             # "dense" | "moe"
     compression: CompressionType = "none",        # "none" | "ternary_b158" | "binary_1bit" | "kv_pca"
-    adapter: AdapterType = "none",                # "none" | "lora" | "randmap"
+    adapter: AdapterType = "none",                # "none" | "lora" | "qlora" | "randmap"
+    router_mode: RouterModeType = "none",         # "none" | "standard" | "semantic"
     runtime: RuntimeType = "eager",               # "eager" | "compile" | "sdpa" | "megakernel"
     backend_capabilities: dict[str, bool] = {...}, # auto-resolved by resolve_backend_capabilities()
 )
@@ -59,6 +60,15 @@ BlockSpec(
     router_aux_loss_coef: float = 0.0,
     compression: str = "none",
     adapter_dim: int = 0,
+    adapter_type: str = "none",
+    lora_rank: int = 8,
+    lora_alpha: float = 16.0,
+    lora_dropout: float = 0.0,
+    lora_targets: tuple[str, ...] = ("q_proj", "v_proj"),
+    lora_bias: bool = False,
+    qlora_group_size: int = 64,
+    qlora_compute_dtype: str = "bf16",
+    qk_gain_init: float = 1.0,
     ttt_hidden_dim: int = 16,
     byte_patch_size: int = 4,
     byte_patch_stride: int = 4,
@@ -97,12 +107,16 @@ ModelSpec(
     route_evo_population: int = 8,
     route_evo_mutation_scale: float = 0.05,
     route_evo_seed: int | None = None,
+    ar_loss_coef: float = 1.0,
+    jepa_loss_coef: float = 0.25,
+    semantic_align_loss_coef: float = 0.5,
+    finetune: FineTuneSpec | None = None,
 )
 ```
 
 ---
 
-## All 18 presets -- detailed
+## Shipped presets -- detailed
 
 ### `nanogpt` -- `build_nanogpt_spec(**kwargs)`
 - Backbone: nanogpt, Objective: ar, Runtime: eager
@@ -169,6 +183,12 @@ ModelSpec(
 - Dataset roles: `tokens`, `targets`, plus `semantic_data_source -> sem_targets`
 - Requires one expert per semantic vocabulary dimension; trains next-token CE + semantic alignment
 
+### `jepa_semantic_hybrid` -- `build_jepa_semantic_hybrid_spec(**kwargs)`
+- Objective: jepa_semantic, Backbone: llama, Runtime: compile
+- Experimental JEPA + vocab-grounded semantic router hybrid with one expert per semantic vocabulary dimension
+- Dataset roles: `tokens`, `targets`, plus `semantic_data_source -> sem_targets`
+- Trains AR next-token CE, JEPA latent alignment, and masked semantic topic loss
+
 ### `semantic_moe_jepa_evo` -- `build_semantic_moe_jepa_evo_spec(**kwargs)`
 - Objective: semantic_moe_jepa_evo, Backbone: mixllama, Runtime: compile
 - Full Semantic MoE JEPA Evo prototype: dense AR attention, chunk-level causal semantic planner, JEPA target supervision, route balance/selection/distillation losses, and lightweight route evolution.
@@ -196,11 +216,19 @@ ModelSpec(
 - Inserts `kv_pca_encode`/`kv_pca_decode` around KV path in attention
 - BlockSpec has `compression="kv_pca"`
 
+### Megakernel/config-dispatch variants
+- `nanogpt_megakernel` -- `build_nanogpt_megakernel_spec(**kwargs)`
+- `gpt2_megakernel` -- `build_gpt2_megakernel_spec(**kwargs)`
+- `llama_fast_megakernel` -- `build_llama_fast_megakernel_spec(**kwargs)`
+- `mixllama_fast_megakernel` -- `build_mixllama_fast_megakernel_spec(**kwargs)`
+- `semantic_router_moe_megakernel` -- `build_semantic_router_moe_megakernel_spec(**kwargs)` [Experimental]
+- `jepa_semantic_hybrid_megakernel` -- `build_jepa_semantic_hybrid_megakernel_spec(**kwargs)` [Experimental]
+
 ---
 
 ## Config key reference
 
-All keys can be passed in the `config` dict to `build_gpt_root_graph()` or any `build_*_spec()`.
+Config-dict keys can be passed to `build_model_spec_from_config(config)` and server/editor template APIs. Direct `build_*_spec()` calls accept the canonical keyword names shown below; for example, use `num_heads` for direct calls and `n_head` only in config-dict dispatch.
 
 | Key | Aliases | Default | Applies to | Description |
 |-----|---------|---------|------------|-------------|
@@ -218,6 +246,11 @@ All keys can be passed in the `config` dict to `build_gpt_root_graph()` or any `
 | `experts` | -- | `8` | moe presets | Number of MoE experts |
 | `top_k` | -- | `2` | moe presets | Active experts per token |
 | `router_aux_loss_coef` | -- | `0.01` | moe presets | Load-balance loss coefficient |
+| `router_mode` | -- | `"none"` | composed recipes | Disabled, standard learned, or semantic router composition |
+| `adapter_type` | -- | `"none"` | composed recipes/fine-tuning | `"none"`, `"lora"`, `"qlora"`, or `"randmap"` |
+| `lora_rank` / `lora_alpha` | -- | `8` / `16.0` | lora/qlora | Adapter rank and scaling |
+| `lora_targets` | -- | `("q_proj", "v_proj")` | lora/qlora | Projection roles wrapped by adapters |
+| `qlora_group_size` | -- | `64` | qlora | NF4 quantization group size |
 | `ttt_hidden_dim` | -- | `32` | ttt_llama | TTT hidden dimension |
 | `byte_patch_size` | -- | `4` | hnet_lm | Byte patch window size |
 | `byte_patch_stride` | -- | `byte_patch_size` | hnet_lm | Byte patch stride |
@@ -247,23 +280,23 @@ All keys can be passed in the `config` dict to `build_gpt_root_graph()` or any `
 
 ```python
 from neuralfn import build_gpt_root_graph, build_model_stage_graph
+from neuralfn.config import build_llama_spec
 
 # Complete graph with dataset_source, model stage, loss -- ready for TorchTrainer
-graph = build_gpt_root_graph(name="model", preset="llama", config={...})
+spec = build_llama_spec(n_layer=4, n_embd=128, num_heads=4, num_kv_heads=2)
+graph = build_gpt_root_graph(name="model", model_spec=spec)
 
 # Just the model stage subgraph (no I/O wiring)
-from neuralfn.config import build_llama_spec
-spec = build_llama_spec(n_layer=4, n_embd=128)
-stage = build_model_stage_graph(spec)
+stage = build_model_stage_graph("model_stage", spec)
 ```
 
-### build_gpt_template_payload(name, preset, config) -> dict
+### build_gpt_template_payload(name, config) -> dict
 
-Returns a JSON dict with keys `graph` (serialized NeuronGraph), `variant_library`, and `template_spec`. Used by the server API.
+Returns a JSON dict with `variant_library`, `graph_settings`, `node_def`, `extra_nodes`, and `extra_edges`. Used by the server/editor template API.
 
-### build_model_spec_from_config(preset, config) -> ModelSpec
+### build_model_spec_from_config(config, *, preview_defaults=False) -> ModelSpec
 
-Dispatches `preset` string to the correct `build_*_spec()` function with the config dict unpacked as kwargs. Handles preset aliases (e.g., `"moe"` -> `build_mixllama_spec`).
+Dispatches `config["preset"]` to the correct `build_*_spec()` function. Handles preset aliases such as `"moe"` -> `build_mixllama_spec`, and routes composed recipes through `build_composed_lm_spec()`.
 
 ### Subgraph builders
 

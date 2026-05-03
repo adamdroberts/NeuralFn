@@ -58,7 +58,7 @@ from neuralfn import (
 ```python
 import neuralfn as nf
 
-# Build a NanoGPT model graph
+# Build the default GPT-style model graph
 graph = nf.build_gpt_root_graph(name="my_model")
 
 # Save / load

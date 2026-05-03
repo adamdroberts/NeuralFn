@@ -1,14 +1,16 @@
-# NeuralFn SDK Harness
+# NeuralFn CLI
 
-Minimal sibling project that imports the NeuralFn SDK from the parent repo and
-exercises the experimental `jepa_semantic_hybrid` preset outside the
-editor/session workflow.
+The in-repo CLI package exposes the `nfn` command for CUDA-oriented training,
+inference, and evaluation flows outside the web editor. It builds composed
+language-model recipes from a base model, topology, router mode, optional JEPA
+objective, runtime, dataset, tokenizer, and run preset. It shares the same
+graph builders, dataset manager, semantic vocabulary files, and artifact format
+as the Python SDK and platform server.
 
 ## Setup
 
-Create a virtualenv in the CLI folder, install the NeuralFn repo root as an
-editable dependency, then install the current package so the `nfn` CLI is
-available:
+Create a virtualenv if needed, then install the repo root and CLI package in
+editable mode:
 
 ```bash
 cd ./cli
@@ -18,30 +20,34 @@ pip install -e ..
 pip install -e .
 ```
 
-The editable install in the current folder registers the `nfn` entrypoint from
-this package:
+The editable install in `./cli` registers the `nfn` entrypoint:
 
 ```bash
 nfn --help
 ```
 
-## What changed
+## Workflow model
 
-The harness is now centered on a CUDA-only, `max_steps`-driven training flow
-instead of a tiny outer epoch loop. It builds the new hybrid root graph
-contract:
+Training is CUDA-only in practice and driven by `max_steps`, run presets, and
+token-budgeted accumulation. The CLI builds graph contracts that match the
+selected recipe:
 
 - text `dataset_source` -> `tokens`, `targets`
 - shipped `semantic_data_source` -> vocab-topic `sem_targets`
 
-The semantic data path is now vocab-only: the expanded canonical `vocab_8d.json` is the source of truth, `semantic_data_source` materializes categorical topic IDs on the fly, and the preset uses a fixed 8-expert dimension map. Topic counts are now uneven per dimension because the router vocab is broader than the older 40-term-per-dimension file.
+The semantic data path is vocab-only. The active `vocab_86d_*.json` file is the
+source of truth, `semantic_data_source` materializes categorical topic IDs on
+the fly, and semantic router recipes use one expert per semantic vocabulary
+dimension. The `semantic_moe_jepa_evo` template adds shared and free experts
+around that semantic bank, but the master CLI currently composes the
+router-only and JEPA hybrid semantic recipes.
 
 The low-level taxonomy-hash helpers still use `n_buckets` as their canonical
 parameter, but the higher-level semantic APIs keep `n_sig_buckets`. The
 compatibility alias is intentional, and the harness now uses the resolved
 `--top-k` value when it estimates semantic rows and derived schedule metadata.
 
-The underlying model now trains:
+Semantic JEPA recipes train:
 
 - routed autoregressive next-token loss
 - JEPA latent loss
@@ -51,7 +57,7 @@ It also exposes the parameter-golf-inspired trainer knobs that NeuralFn now
 supports through `TorchTrainConfig`, while printing which reference knobs are
 adapted versus only logged.
 
-## Run the harness
+## Run the CLI
 
 CUDA only:
 
@@ -59,9 +65,8 @@ CUDA only:
 nfn train --model llama --device cuda
 ```
 
-The master CLI is now the preferred entrypoint. It keeps the existing script
-families, but lets you select a base model first and optionally open an
-interactive planner:
+The master CLI is the preferred entrypoint. Select a base model first and
+optionally open the interactive planner:
 
 ```bash
 nfn train --plan
@@ -330,8 +335,10 @@ The script will:
 
 - reuse the cached dataset from `~/.cache/nfn/datasets/` when it already exists
 - auto-download a missing cached alias by default when its download contract can
-- honor `--all-train-rows` by keeping partial final batches, finishing full epochs, and rounding `--max-steps` up to the next epoch boundary, with a 2-epoch floor when the script defaults are left unchanged
   be derived from the alias or explicit flags
+- honor `--all-train-rows` by keeping partial final batches, finishing full
+  epochs, and rounding `--max-steps` up to the next epoch boundary, with a
+  2-epoch floor when the script defaults are left unchanged
 - surface tokenizer-backed alias mismatches directly instead of replacing them
   with a generic missing-alias error
 - log explicit startup, schedule, training, validation, and export stages
@@ -348,7 +355,7 @@ The script will:
 
 ## Artifacts
 
-By default the harness writes to `~/NeuralFn/artifacts`. Set
+By default the CLI and helper scripts write to `~/NeuralFn/artifacts`. Set
 `NEURALFN_ARTIFACTS_DIR` to use a different shared artifact directory for CLI
 training, inference, and graph-run defaults.
 

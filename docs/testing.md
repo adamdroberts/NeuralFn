@@ -33,7 +33,15 @@ python -m pytest tests/ -x -q
 | `test_kv_quant.py` | KV quantization path |
 | `test_kv_pca.py` | PCA KV cache path |
 | `test_adapters.py` | RandMap adapter in LLaMA-fast attention subgraph |
+| `test_finetune.py` | LoRA/qLoRA, adapter checkpoints, SFT/DPO/PPO/reward graph wiring |
+| `test_composed_recipes.py` | `build_composed_lm_spec()` dense/MoE/semantic recipe construction |
+| `test_routing_diagnostics.py` | MoE routing diagnostics and traced route summaries |
 | `test_pt_export.py` | `export_to_pt` / `import_from_pt` round-trip |
+
+CLI-specific tests live under `cli/tests/` and cover `nfn` help behavior,
+artifact defaults, composed train/infer/eval flows, dataset shortcuts,
+pretraining-file handling, tokenizer promotion, validation fallback, and
+megakernel artifact selection.
 
 ## Targeted checks
 
@@ -72,6 +80,14 @@ pnpm build
 ```
 
 Validates TypeScript types and Vite build without runtime.
+
+### CLI checks
+
+```bash
+conda run -n NeuralFn python cli/nfn.py --help
+conda run -n NeuralFn python -m pytest cli/tests/test_nfn_cli.py -q
+conda run -n NeuralFn python -m pytest cli/tests/test_train_pretraining_file_flags.py -q
+```
 
 ## Adding new presets
 

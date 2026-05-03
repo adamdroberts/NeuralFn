@@ -13,6 +13,7 @@ NeuralFn supports both a scalar graph runtime and a PyTorch-backed `torch` runti
 | Section | What it covers |
 |---------|---------------|
 | [Getting Started](docs/getting-started.md) | Installation, quickstart, your first graph |
+| [CLI Workflows](docs/cli.md) | `nfn` train/infer/eval workflows, datasets, tokenizers, artifacts |
 | [Framework Guide](docs/framework-guide/README.md) | How to build with NeuralFn in Python -- neurons, graphs, subgraphs, training, inference |
 | [Python SDK Reference](docs/python-sdk/README.md) | Every class, function, method, and type in the `neuralfn` package |
 | [REST API Reference](docs/rest-api/README.md) | All HTTP endpoints with request/response shapes |
@@ -37,7 +38,9 @@ NeuralFn now ships Torch-backed template presets for:
 - **`jepa_semantic_hybrid`** -- [Experimental] Hybrid JEPA Semantic LLM that fuses a Joint Embedding Predictive Architecture with a grounded semantic vocabulary, LSH bucketing, a fixed dimension-to-expert router, and attention-capable experts that operate over the full masked hidden sequence before the LM head. Training combines three connected losses: autoregressive next-token CE, JEPA latent MSE, and masked semantic topic cross-entropy. The root graph is pre-wired with a text `dataset_source` that emits `tokens` and `targets`, plus a `semantic_data_source` that emits vocab-derived `sem_targets`. Semantic vocabulary and routing metadata live in `neuralfn/data/semantic/vocab_86d_*.json`. See `neuralfn/semantic.py` for the data layer.
 - **`semantic_moe_jepa_evo`** -- [Experimental] full Semantic MoE JEPA Evo template. It keeps the autoregressive decoder dense through attention, updates a causal semantic planner at chunk boundaries, routes the next chunk through 2 always-on shared experts, 86 interpretable semantic experts, and 8 free learned experts, then applies a lightweight route-evolution controller to router bias state on a configurable fraction of batches. Its root graph uses the same flat compiled contract `(tokens, targets, sem_targets)` and adds route balance, route selection, route distillation, JEPA latent alignment, semantic alignment, and AR CE losses.
 
-![Semantic MoE JEPA Evo architecture](docs/assets/semantic_moe_jepa_evo_architecture.svg)
+![Semantic MoE JEPA Evo architecture](docs/assets/semantic_moe_jepa_evo_architecture.png)
+
+The architecture diagram is kept as the original PNG asset so the pasted layout and formatting render as intended.
 
 Backend capabilities (`TemplateSpec.backend_capabilities`) now drive runtime behavior:
 - **cache** -- KV cache nodes (`kv_cache_read` / `kv_cache_write`) can be inserted into attention graphs for inference-time autoregressive caching. `InferenceCache` in `neuralfn/inference.py` wraps a compiled graph for stateful step-by-step generation.
@@ -126,6 +129,21 @@ pip install -e ../NeuralFn
 
 This installs the `neuralfn` package in editable mode and includes the shipped
 semantic vocabulary files under `neuralfn/data/semantic/` as package data.
+
+### Install the local CLI
+
+The repo also includes the `nfn` CLI package under `cli/`:
+
+```bash
+cd cli
+pip install -e ..
+pip install -e .
+nfn --help
+```
+
+The CLI provides composed `train`, `infer`, and `eval` workflows with dataset
+shortcuts, tokenizer selection, graph-linked artifacts, and optional interactive
+planning. See [CLI Workflows](docs/cli.md) and [cli/README.md](cli/README.md).
 
 ### Run the library examples
 

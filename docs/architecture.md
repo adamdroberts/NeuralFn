@@ -1,6 +1,6 @@
 # Architecture overview
 
-NeuralFn is split into a Python graph framework, a FastAPI platform, and a React editor. This page describes how those layers compose, the main data abstractions, execution and training paths, and how templates, the server, MCP, and the editor cooperate.
+NeuralFn is split into a Python graph framework, a FastAPI platform, a React editor, and a local CLI harness. This page describes how those layers compose, the main data abstractions, execution and training paths, and how templates, the server, MCP, CLI, and editor cooperate.
 
 For installation and first graphs in code, see [Getting started](getting-started.md). For hands-on framework tutorials, see the [Framework Guide](framework-guide/README.md).
 
@@ -17,6 +17,15 @@ The backend adds **authentication** (session cookies), **projects** and **sessio
 ### `editor/` — React / Vite web app
 
 The frontend is a **React** single-page app with **React Flow** for the canvas, **Zustand** for graph and UI state, and routed pages for Editor, Datasets, Runs, Analytics, and Admin. It talks to the platform over fetch with credentials for cookie auth.
+
+### `cli/` — local training, inference, and evaluation
+
+The CLI package installs `nfn`, a composed-recipe runner for CUDA-oriented
+training, graph-first inference, and evaluation. It uses the same `ModelSpec`
+builders, `TorchTrainer`, dataset manager, tokenizer cache, and artifact
+metadata as the SDK/server path, but runs outside the authenticated web
+workspace. CLI and server artifacts default to the shared
+`~/NeuralFn/artifacts` root.
 
 ## Core abstractions
 
@@ -88,6 +97,14 @@ More detail: [Server internals](server/README.md), [Authentication](server/authe
 ## MCP bridge
 
 The **MCP server** (see `server/mcp_server.py` and [MCP overview](mcp/README.md)) uses **FastMCP** to expose tools that call the same **REST** APIs the editor uses. Tools are **project- and session-scoped**: agents authenticate with platform credentials (`NEURALFN_MCP_EMAIL` / `NEURALFN_MCP_PASSWORD`) and operate on an existing workspace. Optional **`NEURALFN_BASE_URL`** points at a non-default API base.
+
+## CLI bridge
+
+The **CLI** (see [CLI Workflows](cli.md) and `cli/nfn_impl.py`) composes a
+`ModelSpec` from base-model/topology/router/objective choices, builds a
+`NeuronGraph`, wires dataset sources, trains with `TorchTrainer`, and saves
+graph-linked artifacts. It is the preferred route for local CUDA training runs
+that do not need authenticated project/session persistence.
 
 ## Editor architecture
 

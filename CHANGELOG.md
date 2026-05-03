@@ -6,6 +6,38 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-05-03 Semantic MoE JEPA Evo architecture image correction
+
+#### Changed
+
+- **Architecture image reference** -- restored the Semantic MoE JEPA Evo documentation to use the original PNG asset at `docs/assets/semantic_moe_jepa_evo_architecture.png` after the SVG conversion lost formatting.
+
+#### Verification
+
+- `file docs/assets/semantic_moe_jepa_evo_architecture.png`
+- `rg -n "semantic_moe_jepa_evo_architecture\\.svg|semantic_moe_jepa_evo_architecture\\.png" README.md CHANGELOG.md docs .cursor llms-full.txt`
+
+### 2026-05-03 Deep documentation sync for CLI, fine-tuning, and torch templates
+
+#### Changed
+
+- **CLI documentation surface** -- added `docs/cli.md`, refreshed `cli/README.md`, linked CLI workflows from `README.md`, `docs/README.md`, `llms.txt`, and `docs/agent-skills.md`, and documented the current `nfn train`, `nfn infer`, and `nfn eval` workflow model.
+- **Current SDK and torch-template references** -- updated Python SDK, framework-guide, and repo-local agent-skill docs for the current `ModelSpec`-first builder API, composed recipe/fine-tuning roots, qLoRA/LoRA fields, adapter checkpoint helpers, fine-tuning stages, and the 115-builtin catalog.
+- **LLM and agent artifacts** -- added the `.cursor/skills/neuralfn-cli` skill, refreshed the Torch and Python SDK skills, and regenerated `llms-full.txt` from README, changelog, docs, CLI docs, and repo-local skills.
+- **Example API drift cleanup** -- updated `examples/gpt_graph.py` to build a `ModelSpec` with `build_llama_spec()` and pass it to `build_gpt_root_graph(model_spec=...)`.
+
+#### Verification
+
+- `conda run -n NeuralFn python cli/nfn.py --help`
+- `conda run -n NeuralFn python cli/nfn.py train --help`
+- `conda run -n NeuralFn python cli/nfn.py infer --help`
+- `conda run -n NeuralFn python cli/nfn.py eval --help`
+- `conda run -n NeuralFn python examples/gpt_graph.py`
+- `conda run -n NeuralFn python -m pytest cli/tests/test_nfn_cli.py -q` -> `58 passed`
+- `conda run -n NeuralFn python -m py_compile examples/gpt_graph.py neuralfn/config.py neuralfn/torch_templates.py`
+- Stale-reference scan over `README.md`, `docs/`, `.cursor/skills/`, `cli/README.md`, `llms.txt`, and examples found no current API-artifact hits for the old template signatures or artifact defaults.
+- Known residual test failures outside this documentation pass: `conda run -n NeuralFn python -m pytest cli/tests/test_nfn_cli.py cli/tests/test_train_pretraining_file_flags.py cli/tests/test_train_tinystories_flags.py -q` currently fails in `test_pretraining_file_explicit_sentencepiece_requires_shared_model` and `test_load_val_token_dataset_falls_back_to_train_holdout_without_val_file`.
+
 ### 2026-05-03 Script path cleanup before push
 
 #### Changed
@@ -48,7 +80,7 @@ Future updates should append new entries here rather than replacing older notes.
 - **`semantic_moe_jepa_evo` objective and preset** -- added a full Semantic MoE JEPA Evo GPT template that combines an autoregressive decoder, chunk-level causal semantic planner, JEPA training-only target path, and a hybrid expert bank with 2 shared experts, one expert per semantic vocabulary dimension, and 8 free learned experts.
 - **Chunk router module stack** -- added builtin/stage coverage for causal chunk state extraction, chunk semantic projection, chunk LSH hashing, chunk-to-token route broadcasting, semantic MoE JEPA Evo routing, route balance loss, route selection loss, and route distillation loss.
 - **Route-evolution controller** -- `TorchTrainer` can now periodically run lightweight evolutionary search over the new router bias/table parameters during normal gradient training. `route_evo_fraction`, `route_evo_population`, `route_evo_mutation_scale`, and `route_evo_seed` control the cadence and search shape.
-- **Architecture asset** -- added `docs/assets/semantic_moe_jepa_evo_architecture.svg`, a single-image architecture infographic for the new template.
+- **Architecture asset** -- added `docs/assets/semantic_moe_jepa_evo_architecture.png`, a single-image architecture infographic for the new template.
 
 #### Changed
 

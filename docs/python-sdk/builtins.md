@@ -1,6 +1,6 @@
 # neuralfn.builtins
 
-Library of 91 built-in neuron definitions ready to drop into a graph.
+Library of 115 built-in neuron definitions ready to drop into a graph.
 
 ## Class: BuiltinNeurons
 
@@ -8,7 +8,7 @@ Library of 91 built-in neuron definitions ready to drop into a graph.
 class BuiltinNeurons:
     sigmoid = ...       # NeuronDef
     relu = ...          # NeuronDef
-    # ... all 91 builtins as class attributes
+    # ... all 115 builtins as class attributes
 ```
 
 Each built-in neuron is exposed as a class attribute of type `NeuronDef`.
@@ -17,7 +17,7 @@ Each built-in neuron is exposed as a class attribute of type `NeuronDef`.
 
 #### `BuiltinNeurons.all() -> list[NeuronDef]`
 
-Return the full built-in neuron catalog (all 91 entries).
+Return the full built-in neuron catalog (all 115 entries).
 
 #### `BuiltinNeurons.get(name: str) -> NeuronDef`
 
@@ -102,6 +102,8 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | Attribute | Display Name | Kind | Inputs | Outputs |
 |-----------|-------------|------|--------|---------|
 | `linear_module` | linear | module | 1 | 1 |
+| `lora_linear_module` | lora_linear | module | 1 | 1 |
+| `nf4_linear_module` | nf4_linear | module | 1 | 1 |
 | `mlp_relu2_module` | mlp_relu2 | module | 1 | 1 |
 | `gelu_module` | gelu | module | 1 | 1 |
 | `swiglu_module` | swiglu | module | 1 | 1 |
@@ -143,6 +145,25 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | `lm_head_module` | lm_head | module | 1 | 1 |
 | `logit_softcap_module` | logit_softcap | module | 1 | 1 |
 | `token_cross_entropy_module` | token_cross_entropy | module | 2 | 1 |
+| `masked_token_cross_entropy_module` | masked_token_cross_entropy | module | 3 | 1 |
+
+### Torch -- Fine-tuning / Preference Optimization
+
+| Attribute | Display Name | Kind | Inputs | Outputs |
+|-----------|-------------|------|--------|---------|
+| `reference_forward_module` | reference_forward | module | 1 | 1 |
+| `sft_dataset_source_module` | sft_dataset_source | module | 0 | 3 |
+| `sequence_logp_module` | sequence_logp | module | 3 | 1 |
+| `dpo_pairwise_loss_module` | dpo_pairwise_loss | module | 4 | 3 |
+| `dpo_dataset_source_module` | dpo_dataset_source | module | 0 | 6 |
+| `reward_head_module` | reward_head | module | 1 | 1 |
+| `preference_bce_loss_module` | preference_bce_loss | module | 2 | 1 |
+| `value_head_module` | value_head | module | 1 | 1 |
+| `ppo_clipped_loss_module` | ppo_clipped_loss | module | 6 | 1 |
+| `kl_penalty_module` | kl_penalty | module | 3 | 1 |
+| `reward_forward_module` | reward_forward | module | 1 | 1 |
+| `ppo_rollout_source_module` | ppo_rollout_source | module | 0 | 7 |
+| `gae_compute_module` | gae_compute | module | 2 | 2 |
 
 ### Torch -- MoE (Mixture of Experts)
 

@@ -16,8 +16,11 @@ BackboneType     = Literal["gpt2", "nanogpt", "llama", "mixllama", "jamba", "uni
 TokenizationType = Literal["sp", "byte_hnet"]
 SparsityType     = Literal["dense", "moe"]
 CompressionType  = Literal["none", "ternary_b158", "binary_1bit", "kv_pca"]
-AdapterType      = Literal["none", "lora", "randmap"]
+AdapterType      = Literal["none", "lora", "qlora", "randmap"]
 RuntimeType      = Literal["eager", "compile", "sdpa", "megakernel"]
+RouterModeType   = Literal["none", "standard", "semantic"]
+FineTuneObjective = Literal["pretrain", "sft", "dpo", "ppo", "reward_model"]
+DPOLossType       = Literal["sigmoid", "hinge", "ipo"]
 ```
 
 ---
@@ -31,6 +34,7 @@ class TemplateSpec:
     backbone: BackboneType = "gpt2"
     tokenization: TokenizationType = "sp"
     sparsity: SparsityType = "dense"
+    router_mode: RouterModeType = "none"
     compression: CompressionType = "none"
     adapter: AdapterType = "none"
     runtime: RuntimeType = "eager"
@@ -53,6 +57,7 @@ High-level description of a model architecture template. Controls which graph bu
 | `backbone` | `BackboneType` | `"gpt2"` | Transformer backbone variant |
 | `tokenization` | `TokenizationType` | `"sp"` | Tokenization mode |
 | `sparsity` | `SparsityType` | `"dense"` | Dense or MoE |
+| `router_mode` | `RouterModeType` | `"none"` | MoE router family: none, learned standard routing, or semantic routing |
 | `compression` | `CompressionType` | `"none"` | Weight compression scheme |
 | `adapter` | `AdapterType` | `"none"` | Adapter type |
 | `runtime` | `RuntimeType` | `"eager"` | Execution runtime |
@@ -97,9 +102,18 @@ class BlockSpec:
     router_aux_loss_coef: float = 0.0
     compression: str = "none"
     adapter_dim: int = 0
+    adapter_type: str = "none"
+    lora_rank: int = 8
+    lora_alpha: float = 16.0
+    lora_dropout: float = 0.0
+    lora_targets: tuple[str, ...] = ("q_proj", "v_proj")
+    lora_bias: bool = False
+    qlora_group_size: int = 64
+    qlora_compute_dtype: str = "bf16"
     ttt_hidden_dim: int = 16
     byte_patch_size: int = 4
     byte_patch_stride: int = 4
+    qk_gain_init: float = 1.0
 ```
 
 Specifies the architecture of a single transformer block.
@@ -128,9 +142,70 @@ Specifies the architecture of a single transformer block.
 | `router_aux_loss_coef` | `float` | `0.0` | Router auxiliary loss coefficient |
 | `compression` | `str` | `"none"` | Per-block compression: `"none"`, `"ternary_b158"`, `"kv_pca"` |
 | `adapter_dim` | `int` | `0` | Adapter bottleneck dimension (0=disabled) |
+| `adapter_type` | `str` | `"none"` | Adapter implementation: `"none"`, `"lora"`, `"qlora"`, or `"randmap"` |
+| `lora_rank` | `int` | `8` | LoRA rank for `lora` / `qlora` projections |
+| `lora_alpha` | `float` | `16.0` | LoRA scaling alpha |
+| `lora_dropout` | `float` | `0.0` | Dropout applied to LoRA inputs |
+| `lora_targets` | `tuple[str, ...]` | `("q_proj", "v_proj")` | Projection node roles to wrap with LoRA/qLoRA |
+| `lora_bias` | `bool` | `False` | Whether LoRA-wrapped projections include bias |
+| `qlora_group_size` | `int` | `64` | qLoRA NF4 quantization group size along input dim |
+| `qlora_compute_dtype` | `str` | `"bf16"` | qLoRA dequantization compute dtype |
 | `ttt_hidden_dim` | `int` | `16` | TTT layer hidden dimension |
 | `byte_patch_size` | `int` | `4` | Byte-level patch size (HNet) |
 | `byte_patch_stride` | `int` | `4` | Byte-level patch stride (HNet) |
+| `qk_gain_init` | `float` | `1.0` | Initial query/key gain used by routed semantic attention variants |
+
+---
+
+## FineTuneSpec
+
+```python
+@dataclass
+class FineTuneSpec:
+    objective: str = "pretrain"
+    base_checkpoint: str = ""
+    ref_checkpoint: str = ""
+    reward_checkpoint: str = ""
+    adapter_only_save: bool = False
+    beta: float = 0.1
+    dpo_loss_type: str = "sigmoid"
+    dpo_label_smoothing: float = 0.0
+    kl_coef: float = 0.1
+    ppo_clip: float = 0.2
+    ppo_vf_coef: float = 0.5
+    ppo_ent_coef: float = 0.0
+    rollout_length: int = 64
+    ppo_epochs_per_rollout: int = 4
+    ppo_minibatch_size: int = 4
+    gae_gamma: float = 1.0
+    gae_lambda: float = 0.95
+```
+
+Fine-tuning metadata attached to `ModelSpec.finetune`. `build_gpt_root_graph()`
+uses `model_spec.template.objective` to dispatch to the SFT, DPO, PPO, or
+reward-model root graph builders. `base_checkpoint` initializes the policy/base
+weights, `ref_checkpoint` is used by DPO/PPO reference forwards, and
+`reward_checkpoint` is used by PPO reward scoring.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `objective` | `str` | `"pretrain"` | `"sft"`, `"dpo"`, `"ppo"`, or `"reward_model"` for fine-tuning graphs |
+| `base_checkpoint` | `str` | `""` | Pretrained base weights path |
+| `ref_checkpoint` | `str` | `""` | Frozen reference weights for DPO/PPO |
+| `reward_checkpoint` | `str` | `""` | Frozen reward model weights for PPO |
+| `adapter_only_save` | `bool` | `False` | Save only adapter/head state when requested by caller |
+| `beta` | `float` | `0.1` | DPO reward-temperature parameter |
+| `dpo_loss_type` | `str` | `"sigmoid"` | DPO loss variant: `"sigmoid"`, `"hinge"`, or `"ipo"` |
+| `dpo_label_smoothing` | `float` | `0.0` | Label smoothing for DPO preference labels |
+| `kl_coef` | `float` | `0.1` | PPO KL-to-reference coefficient |
+| `ppo_clip` | `float` | `0.2` | PPO clipping range |
+| `ppo_vf_coef` | `float` | `0.5` | PPO value-loss coefficient |
+| `ppo_ent_coef` | `float` | `0.0` | PPO entropy bonus coefficient |
+| `rollout_length` | `int` | `64` | PPO rollout length in tokens |
+| `ppo_epochs_per_rollout` | `int` | `4` | PPO optimization epochs per collected rollout |
+| `ppo_minibatch_size` | `int` | `4` | PPO minibatch size for rollout optimization |
+| `gae_gamma` | `float` | `1.0` | Discount factor for generalized advantage estimation |
+| `gae_lambda` | `float` | `0.95` | Lambda parameter for generalized advantage estimation |
 
 ---
 
@@ -170,6 +245,10 @@ class ModelSpec:
     route_evo_population: int = 8
     route_evo_mutation_scale: float = 0.05
     route_evo_seed: int | None = None
+    ar_loss_coef: float = 1.0
+    jepa_loss_coef: float = 0.25
+    semantic_align_loss_coef: float = 0.5
+    finetune: FineTuneSpec | None = None
 ```
 
 Complete model architecture specification.
@@ -204,6 +283,10 @@ Complete model architecture specification.
 | `route_evo_population` | `int` | `8` | Candidate count for route evolution |
 | `route_evo_mutation_scale` | `float` | `0.05` | Gaussian mutation scale for route-evolution candidates |
 | `route_evo_seed` | `int \| None` | `None` | Optional deterministic route-evolution seed |
+| `ar_loss_coef` | `float` | `1.0` | Autoregressive loss scale on composed/semantic objectives |
+| `jepa_loss_coef` | `float` | `0.25` | JEPA latent loss scale |
+| `semantic_align_loss_coef` | `float` | `0.5` | Semantic topic-alignment loss scale |
+| `finetune` | `FineTuneSpec \| None` | `None` | Optional fine-tuning objective/checkpoint metadata |
 
 ---
 
@@ -221,14 +304,40 @@ Convert a `ModelSpec` to a plain dictionary via `dataclasses.asdict`.
 
 All preset builders accept `**kwargs` to override default values. Common kwargs include `model_dim` (or `n_embd`), `num_layers` (or `n_layer`), `vocab_size`, `num_heads`, `num_kv_heads`, `tie_embeddings`, `logit_softcap`, and block-specific parameters.
 
+### `build_composed_lm_spec`
+
+```python
+def build_composed_lm_spec(
+    *,
+    base_model: str = "llama",
+    topology: str = "dense",
+    router_mode: str = "none",
+    use_jepa: bool = False,
+    runtime: str | None = None,
+    **kwargs: Any,
+) -> ModelSpec
+```
+
+Build a `ModelSpec` from the same recipe vocabulary used by the `nfn` CLI:
+`base_model` is `llama`, `gpt2`, or `nanogpt`; `topology` is `dense` or `moe`;
+`router_mode` is `standard` or `semantic` for MoE graphs; `use_jepa` overlays
+the additive JEPA objective; and `runtime` can be default, `eager`, `compile`,
+or `megakernel`. Pass adapter options such as `adapter_type="lora"` or
+`adapter_type="qlora"` through `**kwargs`; attach `finetune=FineTuneSpec(...)`
+when constructing fine-tuning graphs.
+
 | Function | Backbone | Sparsity | Runtime | Notes |
 |----------|----------|----------|---------|-------|
 | `build_nanogpt_spec(**kwargs)` | nanogpt | dense | eager | LayerNorm, GELU MLP, absolute pos |
+| `build_nanogpt_megakernel_spec(**kwargs)` | nanogpt | dense | megakernel | NanoGPT shape with megakernel runtime metadata |
 | `build_gpt2_spec(**kwargs)` | gpt2 | dense | eager | LayerNorm, GELU MLP, absolute pos, linear bias |
+| `build_gpt2_megakernel_spec(**kwargs)` | gpt2 | dense | megakernel | GPT-2 shape with megakernel runtime metadata |
 | `build_llama_spec(**kwargs)` | llama | dense | eager | RMSNorm, SwiGLU, RoPE, GQA |
 | `build_mixllama_spec(**kwargs)` | mixllama | moe | eager | RMSNorm, MoE MLP, RoPE, GQA |
 | `build_llama_fast_spec(**kwargs)` | llama | dense | compile | Llama with torch.compile |
+| `build_llama_fast_megakernel_spec(**kwargs)` | llama | dense | megakernel | LLaMA-fast shape with fused runtime metadata |
 | `build_mixllama_fast_spec(**kwargs)` | mixllama | moe | compile | MoE Llama with torch.compile |
+| `build_mixllama_fast_megakernel_spec(**kwargs)` | mixllama | moe | megakernel | MoE LLaMA-fast shape with fused runtime metadata |
 | `build_jamba_hybrid_spec(**kwargs)` | jamba | moe | compile | Jamba hybrid (attention + Mamba interleaved) |
 | `build_ternary_b158_spec(**kwargs)` | llama | dense | compile | BitLinear ternary compression |
 | `build_decoder2encoder_moe_spec(**kwargs)` | llama | moe | compile | Seq2seq with MoE decoder |
@@ -240,6 +349,9 @@ All preset builders accept `**kwargs` to override default values. Common kwargs 
 | `build_llama_megakernel_spec(**kwargs)` | llama | dense | megakernel | Fused attention megakernel |
 | `build_kv_pca_llama_spec(**kwargs)` | llama | dense | compile | KV cache PCA compression |
 | `build_semantic_router_moe_spec(**kwargs)` | mixllama | moe | compile | **[Experimental]** AR-only semantic-router control with shared routed MoE blocks |
+| `build_semantic_router_moe_megakernel_spec(**kwargs)` | mixllama | moe | megakernel | **[Experimental]** semantic-router control with megakernel runtime metadata |
+| `build_jepa_semantic_hybrid_spec(**kwargs)` | llama | moe | compile | **[Experimental]** JEPA semantic hybrid with fixed dimension-to-expert routing |
+| `build_jepa_semantic_hybrid_megakernel_spec(**kwargs)` | llama | moe | megakernel | **[Experimental]** JEPA semantic hybrid with megakernel runtime metadata |
 | `build_semantic_moe_jepa_evo_spec(**kwargs)` | mixllama | moe | compile | **[Experimental]** chunk-routed Semantic MoE JEPA Evo with route evolution |
 
 ---

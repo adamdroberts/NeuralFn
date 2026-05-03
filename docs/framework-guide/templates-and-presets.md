@@ -8,7 +8,7 @@ Three dataclasses define a model:
 
 - **`ModelSpec`** -- top-level model dimensions: `model_dim`, `num_layers`, `vocab_size`, `tie_embeddings`, `logit_softcap`, plus the block and template specs.
 - **`BlockSpec`** -- per-block architecture: norm type, MLP type, positional encoding, attention backend, head counts, MoE settings, compression, adapter.
-- **`TemplateSpec`** -- high-level switches: `objective` (ar, diffusion, jepa, seq2seq), `backbone`, `tokenization`, `sparsity` (dense, moe), `compression`, `adapter`, `runtime` (eager, compile, megakernel), and `backend_capabilities`.
+- **`TemplateSpec`** -- high-level switches: `objective` (ar, diffusion, jepa, seq2seq, sft, dpo, ppo, reward_model), `backbone`, `tokenization`, `sparsity` (dense, moe), `router_mode`, `compression`, `adapter`, `runtime` (eager, compile, megakernel), and `backend_capabilities`.
 
 ---
 
@@ -18,14 +18,16 @@ The simplest entry point:
 
 ```python
 from neuralfn import build_gpt_root_graph
+from neuralfn.config import build_llama_spec
 
-graph = build_gpt_root_graph(name="my_llama", preset="llama", config={
-    "n_layer": 6,
-    "n_embd": 256,
-    "num_heads": 8,
-    "num_kv_heads": 4,
-    "vocab_size": 32000,
-})
+spec = build_llama_spec(
+    n_layer=6,
+    n_embd=256,
+    num_heads=8,
+    num_kv_heads=4,
+    vocab_size=32000,
+)
+graph = build_gpt_root_graph(name="my_llama", model_spec=spec)
 ```
 
 This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_method="torch"`, ready for `TorchTrainer`.
@@ -34,10 +36,10 @@ This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_me
 
 | Function | Returns | Use case |
 |----------|---------|----------|
-| `build_gpt_root_graph(name, preset, config)` | `NeuronGraph` | Complete graph with I/O nodes. |
-| `build_model_stage_graph(spec)` | `NeuronGraph` | Just the model-stage subgraph (no dataset_source or loss). |
-| `build_gpt_template_payload(name, preset, config)` | `dict` | JSON payload with `graph`, `variant_library`, and `template_spec` for the server/editor API. |
-| `build_model_spec_from_config(preset, config)` | `ModelSpec` | Dispatches to the right `build_*_spec()` function. |
+| `build_gpt_root_graph(name, model_spec)` | `NeuronGraph` | Complete graph with I/O nodes from an existing `ModelSpec`. |
+| `build_model_stage_graph(name, model_spec)` | `NeuronGraph` | Just the named model-stage subgraph (no dataset_source or loss). |
+| `build_gpt_template_payload(name, config)` | `dict` | JSON payload with `variant_library`, graph settings, model node, extra nodes, and extra edges for the server/editor API. |
+| `build_model_spec_from_config(config)` | `ModelSpec` | Dispatches to the right `build_*_spec()` function based on `config["preset"]`. |
 
 ---
 
@@ -76,7 +78,7 @@ This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_me
 
 ## Common config keys
 
-These keys can be passed in the `config` dict to any preset builder. Aliases are shown where applicable.
+These keys can be passed in config-dict flows such as `build_model_spec_from_config()` and the server/editor template APIs. Direct `build_*_spec()` calls use the canonical Python keyword names; aliases are shown where applicable.
 
 | Key | Alias | Default | Description |
 |-----|-------|---------|-------------|
@@ -108,17 +110,56 @@ These keys can be passed in the `config` dict to any preset builder. Aliases are
 | `ttt_hidden_dim` | -- | `32` | Hidden dim for TTT layers. |
 | `byte_patch_size` | -- | `4` | Byte patch window for H-Net. |
 | `max_recurrence_steps` | -- | `4` | Max ACT recurrence steps (universal transformer). |
+| `adapter_type` | -- | `"none"` | Adapter implementation: `"none"`, `"lora"`, `"qlora"`, or `"randmap"`. |
+| `lora_rank` / `lora_alpha` | -- | `8` / `16.0` | LoRA/qLoRA rank and scaling. |
+| `lora_targets` | -- | `("q_proj", "v_proj")` | Projection roles wrapped by LoRA/qLoRA. |
+| `qlora_group_size` | -- | `64` | NF4 group size for qLoRA base projections. |
+
+---
+
+## Composed recipes and fine-tuning roots
+
+The `nfn` CLI and lower-level Python callers can use `build_composed_lm_spec()`
+to build a `ModelSpec` from base-model/topology/router choices instead of a
+single named preset:
+
+```python
+from neuralfn.config import FineTuneSpec, build_composed_lm_spec
+from neuralfn.torch_templates import build_gpt_root_graph
+
+spec = build_composed_lm_spec(
+    base_model="llama",
+    topology="moe",
+    router_mode="semantic",
+    use_jepa=True,
+    adapter_type="lora",
+    lora_rank=8,
+    finetune=FineTuneSpec(objective="sft", base_checkpoint="base.pt"),
+)
+spec.template.objective = "sft"
+graph = build_gpt_root_graph(name="sft_model", model_spec=spec)
+```
+
+Fine-tuning objectives dispatch to dedicated roots:
+
+| Objective | Root graph | Dataset source | Loss path |
+|-----------|------------|----------------|-----------|
+| `sft` | `build_sft_root_graph` | `sft_dataset_source` | masked token CE |
+| `dpo` | `build_dpo_root_graph` | `dpo_dataset_source` | policy/reference logp -> DPO loss |
+| `ppo` | `build_ppo_root_graph` | `ppo_rollout_source` | clipped policy/value loss plus KL/reward shaping |
+| `reward_model` | `build_reward_model_root_graph` | `dpo_dataset_source` | reward heads -> preference BCE |
 
 ---
 
 ## Dispatching to the right builder
 
-`build_model_spec_from_config()` maps a preset name to its builder function:
+`build_model_spec_from_config()` maps `config["preset"]` to its builder function:
 
 ```python
-from neuralfn.config import build_model_spec_from_config
+from neuralfn.torch_templates import build_model_spec_from_config
 
-spec = build_model_spec_from_config("llama", {
+spec = build_model_spec_from_config({
+    "preset": "llama",
     "n_layer": 8,
     "n_embd": 512,
     "num_heads": 8,
@@ -126,7 +167,7 @@ spec = build_model_spec_from_config("llama", {
 })
 ```
 
-This returns a `ModelSpec` that can be passed to `build_model_stage_graph(spec)` for lower-level graph construction.
+This returns a `ModelSpec` that can be passed to `build_model_stage_graph("model_stage", spec)` for lower-level graph construction.
 
 ---
 
@@ -135,22 +176,20 @@ This returns a `ModelSpec` that can be passed to `build_model_stage_graph(spec)`
 ```python
 from neuralfn import build_gpt_root_graph
 from neuralfn.torch_backend import CompiledTorchGraph
+from neuralfn.config import build_llama_spec
 import torch
 
-graph = build_gpt_root_graph(
-    name="llama_small",
-    preset="llama",
-    config={
-        "n_layer": 4,
-        "n_embd": 128,
-        "num_heads": 4,
-        "num_kv_heads": 2,
-        "vocab_size": 256,
-        "mlp_multiplier": 8.0 / 3.0,
-        "multiple_of": 64,
-        "tie_embeddings": False,
-    },
+spec = build_llama_spec(
+    n_layer=4,
+    n_embd=128,
+    num_heads=4,
+    num_kv_heads=2,
+    vocab_size=256,
+    mlp_multiplier=8.0 / 3.0,
+    multiple_of=64,
+    tie_embeddings=False,
 )
+graph = build_gpt_root_graph(name="llama_small", model_spec=spec)
 
 compiled = CompiledTorchGraph(graph)
 n_params = sum(p.numel() for p in compiled.parameters())

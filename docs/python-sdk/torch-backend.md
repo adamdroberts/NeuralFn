@@ -55,7 +55,7 @@ class TorchTrainConfig:
     batch_size: int = 8
     weight_decay: float = 0.01
     device: str = "cuda"
-    amp_dtype: str = "bfloat16"
+    amp_dtype: str = "float32"
     compile: bool = False
     activation_checkpointing: bool = False
     fsdp2_enabled: bool = False
@@ -101,7 +101,7 @@ class TorchTrainConfig:
 | `batch_size` | `int` | `8` | Batch size |
 | `weight_decay` | `float` | `0.01` | AdamW weight decay |
 | `device` | `str` | `"cuda"` | Device string |
-| `amp_dtype` | `str` | `"bfloat16"` | AMP dtype (`"bfloat16"`, `"float16"`, or `"float32"`) |
+| `amp_dtype` | `str` | `"float32"` | AMP dtype (`"bfloat16"`, `"float16"`, or `"float32"`). `"float32"` disables autocast. |
 | `compile` | `bool` | `False` | Enable `torch.compile` |
 | `activation_checkpointing` | `bool` | `False` | Enable activation checkpointing |
 | `fsdp2_enabled` | `bool` | `False` | Enable FSDP2 sharding |
@@ -256,6 +256,22 @@ Each `*Stage` class is an `nn.Module` implementing a single computational step. 
 | `TokenCrossEntropyStage` | `token_cross_entropy` | Cross-entropy loss for token prediction |
 | `LinearStage` | `linear` | General linear projection |
 | `BitLinearTernaryStage` | `bitlinear_ternary` | 1.58-bit ternary quantized linear |
+| `LoRALinearStage` | `lora_linear` | Frozen/base linear projection plus trainable low-rank LoRA delta |
+| `NF4LinearStage` | `nf4_linear` | qLoRA-style NF4 quantized base projection plus trainable LoRA delta |
+| `MaskedTokenCrossEntropyStage` | `masked_token_cross_entropy` | Token CE with an explicit loss mask for SFT/preference batches |
+| `SFTDatasetSourceStage` | `sft_dataset_source` | Supervised fine-tuning dataset source emitting tokens, targets, and loss mask |
+| `ReferenceForwardStage` | `reference_forward` | Frozen reference-model forward for DPO/PPO graphs |
+| `SequenceLogpStage` | `sequence_logp` | Masked sequence log-probability reducer |
+| `DPOPairwiseLossStage` | `dpo_pairwise_loss` | DPO pairwise preference loss |
+| `DPODatasetSourceStage` | `dpo_dataset_source` | Preference-pair dataset source for DPO/reward-model graphs |
+| `RewardHeadStage` | `reward_head` | Scalar reward head over hidden states |
+| `PreferenceBCELossStage` | `preference_bce_loss` | Bradley-Terry / BCE preference loss |
+| `ValueHeadStage` | `value_head` | Per-token value head for PPO |
+| `PPOClippedLossStage` | `ppo_clipped_loss` | PPO clipped policy/value loss |
+| `KLPenaltyStage` | `kl_penalty` | KL penalty against reference logits |
+| `RewardForwardStage` | `reward_forward` | Frozen reward-model forward for PPO scoring |
+| `PPORolloutSourceStage` | `ppo_rollout_source` | Rollout-buffer source for PPO inner-loop batches |
+| `GAEComputeStage` | `gae_compute` | Generalized advantage estimation helper |
 | `RandMapAdapterStage` | `randmap_adapter` | Random-map adapter (fixed random proj + learnable) |
 | `MambaStage` | `mamba` | Mamba SSM block |
 | `ReshapeHeadsStage` | `reshape_heads` | Reshape tensor to multi-head format |
@@ -314,6 +330,27 @@ Each `*Stage` class is an `nn.Module` implementing a single computational step. 
 | `RoutedAttentionExpertsStage` | `routed_attention_experts` | Attention-capable experts applied to the full hidden sequence |
 | `AttentionlessDecoderStage` | `attentionless_decoder` | Legacy decoder stage retained for compatibility |
 | `SoftmaxDistillationLossStage` | `softmax_distillation_loss` | Distillation loss for experimental semantic workflows |
+
+---
+
+## PPOTrainer [Experimental]
+
+```python
+class PPOTrainer:
+    def __init__(
+        self,
+        graph: NeuronGraph,
+        config: TorchTrainConfig,
+        *,
+        prompt_batches: Iterable[Tensor],
+    ) -> None
+```
+
+Orchestrates PPO rollout collection, reward/reference scoring, GAE advantage
+calculation, and inner optimization against the PPO root graph emitted by
+`build_ppo_root_graph()`. This is an experimental training orchestrator for the
+fine-tuning surface; the root graph still contains the trainable PPO loss
+modules that `CompiledTorchGraph` executes.
 
 ---
 

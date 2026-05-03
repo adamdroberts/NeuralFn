@@ -32,9 +32,9 @@ From a sibling project checked out next to the repo:
 pip install -e ../NeuralFn
 ```
 
-The editable package install includes the shipped semantic vocabulary and
-training CSV under `neuralfn/data/semantic/` so SDK consumers can use the JEPA
-semantic hybrid without copying those assets manually.
+The editable package install includes the shipped semantic vocabulary JSON
+files under `neuralfn/data/semantic/`, so SDK consumers can use the semantic
+routing presets without copying those assets manually.
 
 This pulls in the core stack used by the library and platform, including **torch**, **numpy**, **fastapi**, **uvicorn**, **networkx**, **pydantic**, **sqlalchemy**, **alembic**, **redis**, **datasets**, **tiktoken**, and **mcp** (plus helpers such as **python-multipart** and **PyMySQL**).
 
@@ -177,22 +177,22 @@ A minimal GPT-style graph trains tensor-native module nodes through the PyTorch 
 
 ```python
 from neuralfn import TorchTrainConfig, TorchTrainer, build_gpt_root_graph
+from neuralfn.config import build_llama_spec
 
-graph = build_gpt_root_graph(
-    config={
-        "vocab_size": 16,
-        "num_layers": 4,
-        "model_dim": 32,
-        "num_heads": 4,
-        "num_kv_heads": 2,
-        "mlp_mult": 2,
-        "tie_embeddings": True,
-        "logit_softcap": 30.0,
-    }
+spec = build_llama_spec(
+    vocab_size=16,
+    num_layers=4,
+    model_dim=32,
+    num_heads=4,
+    num_kv_heads=2,
+    mlp_mult=2,
+    tie_embeddings=True,
+    logit_softcap=30.0,
 )
+graph = build_gpt_root_graph(model_spec=spec)
 trainer = TorchTrainer(
     graph,
-    TorchTrainConfig(epochs=10, learning_rate=5e-3, batch_size=2),
+    TorchTrainConfig(epochs=10, learning_rate=5e-3, batch_size=2, device="cpu"),
 )
 losses = trainer.train(
     [[0, 1, 2, 3], [1, 2, 3, 4]],
