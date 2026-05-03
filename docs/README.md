@@ -20,7 +20,7 @@ Tutorial-oriented walkthroughs with runnable Python code. Start here if you want
 - [**Building graphs**](framework-guide/building-graphs.md) -- `NeuronGraph`, nodes, edges, wiring, execution.
 - [**Subgraphs and variants**](framework-guide/subgraphs-and-variants.md) -- Nested composition, the variant library, alias resolution.
 - [**Torch models**](framework-guide/torch-models.md) -- Module neurons, `CompiledTorchGraph`, tensor-native architectures.
-- [**Templates and presets**](framework-guide/templates-and-presets.md) -- All 17 presets, `ModelSpec`, `BlockSpec`, `TemplateSpec`.
+- [**Templates and presets**](framework-guide/templates-and-presets.md) -- All 18 presets, `ModelSpec`, `BlockSpec`, `TemplateSpec`.
 - [**Training workflows**](framework-guide/training-workflows.md) -- Surrogate, evolutionary, hybrid, and torch training end-to-end.
 - [**Inference and export**](framework-guide/inference-and-export.md) -- Weight I/O, quantization, autoregressive generation.
 - [**Datasets**](framework-guide/datasets.md) -- Download, upload, wiring to `dataset_source`, byte vs tokenized paths.
@@ -33,7 +33,7 @@ Complete API reference for every public class, function, method, and type in the
 - [**Port**](python-sdk/port.md) -- `Port` dataclass.
 - [**Neuron**](python-sdk/neuron.md) -- `NeuronDef`, `@neuron`, `neuron_from_source`, `module_neuron`, `subgraph_neuron`.
 - [**Graph**](python-sdk/graph.md) -- `NeuronGraph`, `NeuronInstance`, `Edge`.
-- [**Builtins**](python-sdk/builtins.md) -- `BuiltinNeurons` class and the full 58-entry catalog.
+- [**Builtins**](python-sdk/builtins.md) -- `BuiltinNeurons` class and the builtin catalog.
 - [**Config**](python-sdk/config.md) -- `TemplateSpec`, `BlockSpec`, `ModelSpec`, type aliases, all preset builders.
 - [**Torch backend**](python-sdk/torch-backend.md) -- `CompiledTorchGraph`, `TorchTrainConfig`, `TorchTrainer`, all `*Stage` modules.
 - [**Torch templates**](python-sdk/torch-templates.md) -- Template and graph builder functions.

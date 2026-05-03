@@ -71,8 +71,8 @@ export function createCustomNeuronDef(name = "custom"): NeuronDefData {
     id: "",
     name,
     kind: "function",
-    input_ports: [{ name: "x", range: [-10, 10], precision: 0.001, dtype: "float" }],
-    output_ports: [{ name: "y", range: [-10, 10], precision: 0.001, dtype: "float" }],
+    input_ports: [{ name: "x", range: null, precision: null, dtype: "float" }],
+    output_ports: [{ name: "y", range: null, precision: null, dtype: "float" }],
     source_code: `def ${name}(x):\n    return x\n`,
     subgraph: null,
     module_type: "",
@@ -88,8 +88,8 @@ const DEFAULT_INPUT_DEF: NeuronDefData = {
   id: "builtin-input",
   name: "input",
   kind: "function",
-  input_ports: [{ name: "in", range: [-100, 100], precision: 0.001, dtype: "float" }],
-  output_ports: [{ name: "out", range: [-100, 100], precision: 0.001, dtype: "float" }],
+  input_ports: [{ name: "in", range: null, precision: null, dtype: "tensor" }],
+  output_ports: [{ name: "out", range: null, precision: null, dtype: "tensor" }],
   source_code: "def input_node(x):\n    return x\n",
   subgraph: null,
   module_type: "",
@@ -104,8 +104,8 @@ const DEFAULT_OUTPUT_DEF: NeuronDefData = {
   id: "builtin-output",
   name: "output",
   kind: "function",
-  input_ports: [{ name: "in", range: [-100, 100], precision: 0.001, dtype: "float" }],
-  output_ports: [{ name: "out", range: [-100, 100], precision: 0.001, dtype: "float" }],
+  input_ports: [{ name: "in", range: null, precision: null, dtype: "tensor" }],
+  output_ports: [{ name: "out", range: null, precision: null, dtype: "tensor" }],
   source_code: "def output_node(x):\n    return x\n",
   subgraph: null,
   module_type: "",
@@ -232,13 +232,17 @@ function portsCompatible(current: PortData[], target: PortData[]): boolean {
   }
   return current.every((port, index) => {
     const other = target[index];
-    return (
-      port.name === other.name &&
-      port.dtype === other.dtype &&
-      port.precision === other.precision &&
-      port.range[0] === other.range[0] &&
-      port.range[1] === other.range[1]
-    );
+    if (
+      port.name !== other.name ||
+      port.dtype !== other.dtype ||
+      port.precision !== other.precision
+    ) {
+      return false;
+    }
+    if (port.range === null || other.range === null) {
+      return port.range === other.range;
+    }
+    return port.range[0] === other.range[0] && port.range[1] === other.range[1];
   });
 }
 
@@ -716,4 +720,97 @@ export function graphContainsSubgraphs(graph: GraphData): boolean {
     const child = node.neuron_def.subgraph;
     return node.neuron_def.kind === "subgraph" || (child ? graphContainsSubgraphs(child) : false);
   });
+}
+
+function portsEqual(a: PortData, b: PortData): boolean {
+  if (a.name !== b.name || a.dtype !== b.dtype || a.precision !== b.precision) {
+    return false;
+  }
+  if (a.range === null || b.range === null) {
+    return a.range === b.range;
+  }
+  return a.range[0] === b.range[0] && a.range[1] === b.range[1];
+}
+
+function portListsEqual(a: PortData[], b: PortData[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((port, i) => portsEqual(port, b[i]));
+}
+
+export function refreshBuiltinNodesInGraph(
+  graph: GraphData,
+  builtinsByName: Map<string, NeuronDefData>,
+): { graph: GraphData; changed: boolean } {
+  if (builtinsByName.size === 0) {
+    return { graph, changed: false };
+  }
+  let anyChanged = false;
+
+  const refreshGraph = (g: GraphData): GraphData => {
+    let nodesChanged = false;
+    const nextNodes: Record<string, NodeData> = {};
+    for (const [id, node] of Object.entries(g.nodes)) {
+      const ndef = node.neuron_def;
+      let nextNdef = ndef;
+
+      if (ndef.kind === "function") {
+        const builtin = builtinsByName.get(ndef.name);
+        if (builtin && ndef.source_code.trimStart().startsWith("@neuron(")) {
+          const sourceMatches = ndef.source_code === builtin.source_code;
+          const inputsMatch = portListsEqual(ndef.input_ports, builtin.input_ports);
+          const outputsMatch = portListsEqual(ndef.output_ports, builtin.output_ports);
+          if (!sourceMatches || !inputsMatch || !outputsMatch) {
+            nextNdef = {
+              ...ndef,
+              source_code: builtin.source_code,
+              input_ports: builtin.input_ports.map((p) => ({ ...p })),
+              output_ports: builtin.output_ports.map((p) => ({ ...p })),
+            };
+          }
+        }
+      }
+
+      if (ndef.subgraph) {
+        const refreshedSub = refreshGraph(ndef.subgraph);
+        if (refreshedSub !== ndef.subgraph) {
+          nextNdef = { ...nextNdef, subgraph: refreshedSub };
+        }
+      }
+
+      if (nextNdef !== ndef) {
+        nodesChanged = true;
+        nextNodes[id] = { ...node, neuron_def: nextNdef };
+      } else {
+        nextNodes[id] = node;
+      }
+    }
+
+    let nextLibrary = g.variant_library;
+    let libraryChanged = false;
+    if (g.variant_library && Object.keys(g.variant_library).length > 0) {
+      nextLibrary = {};
+      for (const [family, versions] of Object.entries(g.variant_library)) {
+        nextLibrary[family] = {};
+        for (const [version, variantGraph] of Object.entries(versions)) {
+          const refreshed = refreshGraph(variantGraph);
+          nextLibrary[family][version] = refreshed;
+          if (refreshed !== variantGraph) {
+            libraryChanged = true;
+          }
+        }
+      }
+      if (!libraryChanged) {
+        nextLibrary = g.variant_library;
+      }
+    }
+
+    if (nodesChanged || libraryChanged) {
+      anyChanged = true;
+      return { ...g, nodes: nextNodes, variant_library: nextLibrary };
+    }
+    return g;
+  };
+
+  const result = refreshGraph(graph);
+  return { graph: result, changed: anyChanged };
 }

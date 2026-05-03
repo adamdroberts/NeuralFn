@@ -64,21 +64,21 @@ Sets this session as the user's active session (also sets the parent project as 
 
 ## Experimental semantic endpoints
 
-These endpoints are research-only surfaces for the `jepa_semantic_hybrid` stack.
+These endpoints are research-only surfaces for the semantic routing stack.
 
 ### POST /{session_id}/semantic/encode
 
-Returns a placeholder 9-D semantic response keyed by the vocab-grounded dimension names.
+Returns a placeholder semantic response keyed by the vocab-grounded dimension names.
 
 ### POST /{session_id}/semantic/search
 
-Accepts a 9-D semantic vector and returns placeholder nearest-neighbour rows.
+Accepts a semantic vector and returns placeholder nearest-neighbour rows.
 
 ### GET /{session_id}/semantic/dimensions
 
-Returns the semantic dimension metadata used by the hybrid preset.
+Returns the semantic dimension metadata used by the semantic routing presets.
 
-`num_topics` is dynamic and comes from the current canonical `vocab_8d.json`. It
+`num_topics` is dynamic and comes from the current semantic vocabulary reference. It
 is no longer a fixed 40 for each routed dimension.
 
 **Response element shape:**

@@ -1,6 +1,6 @@
 """Dataset manager for loading HuggingFace and local datasets.
 
-Handles downloading HuggingFace datasets into server/datasets/,
+Handles downloading HuggingFace datasets into ~/.cache/nfn/datasets/,
 listing available local datasets, and tokenizing text data into
 integer sequences suitable for GPT-style training.
 """
@@ -17,13 +17,21 @@ from typing import Any
 import numpy as np
 import tiktoken
 
-DATASETS_DIR = Path(__file__).resolve().parent / "datasets"
+NFN_CACHE_DIR = Path.home() / ".cache" / "nfn"
+DATASETS_DIR = NFN_CACHE_DIR / "datasets"
+SENTENCEPIECE_TOKENIZERS_DIR = NFN_CACHE_DIR / "tokenizers"
 TIKTOKEN_ENCODINGS_DIR = Path("/home/adam/tiktoken_encodings")
 RAW_TEXT_GPT2_BACKBONES = frozenset({"gpt2", "nanogpt"})
 RAW_TEXT_DEFAULT_ENCODING = "o200k_base"
 RAW_TEXT_CL100K_ENCODING = "cl100k_base"
 RAW_TEXT_EOT_TOKEN = "<|endoftext|>"
 RAW_TEXT_FILE_SUFFIXES = frozenset({".txt", ".json", ".jsonl", ".csv"})
+SENTENCEPIECE_TOKENIZER_VARIANTS = (
+    "sp1024",
+    "sp2048",
+    "sp4096",
+    "sp8192",
+)
 RAW_TEXT_ENCODING_ALIASES = {
     "gpt2": "gpt2",
     "tokgpt2": "gpt2",
@@ -31,10 +39,23 @@ RAW_TEXT_ENCODING_ALIASES = {
     RAW_TEXT_CL100K_ENCODING: RAW_TEXT_CL100K_ENCODING,
     "o200k": RAW_TEXT_DEFAULT_ENCODING,
     RAW_TEXT_DEFAULT_ENCODING: RAW_TEXT_DEFAULT_ENCODING,
+    **{name: name for name in SENTENCEPIECE_TOKENIZER_VARIANTS},
 }
 _LOCAL_TIKTOKEN_FILES = {
     "cl100k_base": "cl100k_base.tiktoken",
     "o200k_base": "o200k_base.tiktoken",
+}
+_SHARED_SENTENCEPIECE_MODEL_FILENAMES = {
+    "sp1024": ("sp1024.model", "fineweb_1024_bpe.model"),
+    "sp2048": ("sp2048.model", "fineweb_2048_bpe.model"),
+    "sp4096": ("sp4096.model", "fineweb_4096_bpe.model"),
+    "sp8192": ("sp8192.model", "fineweb_8192_bpe.model"),
+}
+_SHARED_SENTENCEPIECE_VOCAB_FILENAMES = {
+    "sp1024": ("sp1024.vocab", "fineweb_1024_bpe.vocab"),
+    "sp2048": ("sp2048.vocab", "fineweb_2048_bpe.vocab"),
+    "sp4096": ("sp4096.vocab", "fineweb_4096_bpe.vocab"),
+    "sp8192": ("sp8192.vocab", "fineweb_8192_bpe.vocab"),
 }
 _LOCAL_TIKTOKEN_SPECS: dict[str, dict[str, Any]] = {
     "cl100k_base": {
@@ -77,6 +98,131 @@ def _ensure_datasets_dir() -> None:
     DATASETS_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _ensure_sentencepiece_tokenizers_dir() -> None:
+    SENTENCEPIECE_TOKENIZERS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def is_sentencepiece_tokenizer_name(encoding_name: str | None) -> bool:
+    normalized = str(encoding_name or "").strip().lower()
+    return normalized in SENTENCEPIECE_TOKENIZER_VARIANTS
+
+
+def _sentencepiece_vocab_size(encoding_name: str) -> int:
+    normalized = normalize_raw_text_encoding_name(encoding_name)
+    if normalized not in SENTENCEPIECE_TOKENIZER_VARIANTS:
+        raise ValueError(f"Unsupported sentencepiece tokenizer {encoding_name!r}")
+    return int(str(normalized).removeprefix("sp"))
+
+
+def shared_sentencepiece_artifact_filenames(encoding_name: str | None) -> dict[str, tuple[str, ...]]:
+    normalized = normalize_raw_text_encoding_name(encoding_name)
+    if normalized not in SENTENCEPIECE_TOKENIZER_VARIANTS:
+        return {"model": (), "vocab": ()}
+    return {
+        "model": _SHARED_SENTENCEPIECE_MODEL_FILENAMES[str(normalized)],
+        "vocab": _SHARED_SENTENCEPIECE_VOCAB_FILENAMES[str(normalized)],
+    }
+
+
+def _shared_sentencepiece_artifact_path(
+    encoding_name: str | None,
+    *,
+    filenames: dict[str, tuple[str, ...]],
+) -> Path | None:
+    normalized = normalize_raw_text_encoding_name(encoding_name)
+    if normalized not in SENTENCEPIECE_TOKENIZER_VARIANTS:
+        return None
+    for filename in filenames[str(normalized)]:
+        candidate = SENTENCEPIECE_TOKENIZERS_DIR / filename
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def shared_sentencepiece_model_path(encoding_name: str | None) -> Path | None:
+    return _shared_sentencepiece_artifact_path(
+        encoding_name,
+        filenames=_SHARED_SENTENCEPIECE_MODEL_FILENAMES,
+    )
+
+
+def shared_sentencepiece_vocab_path(encoding_name: str | None) -> Path | None:
+    return _shared_sentencepiece_artifact_path(
+        encoding_name,
+        filenames=_SHARED_SENTENCEPIECE_VOCAB_FILENAMES,
+    )
+
+
+def shared_sentencepiece_remote_artifact_paths(encoding_name: str | None) -> dict[str, tuple[str, ...]]:
+    encoding_filenames = shared_sentencepiece_artifact_filenames(encoding_name)
+    remote_root = "datasets/tokenizers"
+    return {
+        "model": tuple(f"{remote_root}/{name}" for name in encoding_filenames["model"]),
+        "vocab": tuple(f"{remote_root}/{name}" for name in encoding_filenames["vocab"]),
+    }
+
+
+def resolve_sentencepiece_model_path(encoding_name: str) -> Path:
+    normalized = normalize_raw_text_encoding_name(encoding_name)
+    if normalized not in SENTENCEPIECE_TOKENIZER_VARIANTS:
+        raise ValueError(f"Unsupported sentencepiece tokenizer {encoding_name!r}")
+    model_path = shared_sentencepiece_model_path(normalized)
+    if model_path is not None:
+        return model_path
+    expected = ", ".join(str(SENTENCEPIECE_TOKENIZERS_DIR / name) for name in _SHARED_SENTENCEPIECE_MODEL_FILENAMES[str(normalized)])
+    raise FileNotFoundError(
+        f"Raw-text tokenizer {normalized!r} requires a shared sentencepiece model under "
+        f"{SENTENCEPIECE_TOKENIZERS_DIR}. Looked for: {expected}."
+    )
+
+
+@lru_cache(maxsize=None)
+def resolve_sentencepiece_encoding(encoding_name: str):
+    normalized = normalize_raw_text_encoding_name(encoding_name)
+    if normalized not in SENTENCEPIECE_TOKENIZER_VARIANTS:
+        raise ValueError(f"Unsupported sentencepiece tokenizer {encoding_name!r}")
+    try:
+        import sentencepiece as spm  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            f"Raw-text tokenizer {normalized!r} requires the sentencepiece package to be installed."
+        ) from exc
+    processor = spm.SentencePieceProcessor()
+    model_path = resolve_sentencepiece_model_path(normalized)
+    processor.load(str(model_path))
+    expected_vocab_size = _sentencepiece_vocab_size(normalized)
+    actual_vocab_size = int(processor.get_piece_size())
+    if actual_vocab_size != expected_vocab_size:
+        raise ValueError(
+            f"Sentencepiece tokenizer {normalized!r} loaded from {model_path} reports vocab size "
+            f"{actual_vocab_size}, expected {expected_vocab_size}."
+        )
+    return processor
+
+
+def _raw_text_tokenizer_metadata_fields(encoding_name: str) -> dict[str, Any]:
+    normalized = normalize_raw_text_encoding_name(encoding_name)
+    if normalized is None:
+        return {}
+    metadata: dict[str, Any] = {
+        "tokenizer_vocab_size": raw_text_encoding_vocab_size(normalized),
+    }
+    if is_sentencepiece_tokenizer_name(normalized):
+        metadata["tokenizer_name"] = normalized
+        model_path = shared_sentencepiece_model_path(normalized)
+        vocab_path = shared_sentencepiece_vocab_path(normalized)
+        tokenizer_files = [
+            path.name
+            for path in (model_path, vocab_path)
+            if path is not None
+        ]
+        if tokenizer_files:
+            metadata["tokenizer_files"] = tokenizer_files
+    else:
+        metadata["tokenizer_encoding"] = normalized
+    return metadata
+
+
 def normalize_raw_text_encoding_name(encoding_name: str | None) -> str | None:
     normalized = str(encoding_name or "").strip().lower()
     if not normalized:
@@ -112,11 +258,16 @@ def raw_text_encoding_name_for_template_spec(
     prefer_cl100k: bool = False,
     encoding_override: str | None = None,
 ) -> str:
+    resolved_override = normalize_raw_text_encoding_name(encoding_override)
+    if resolved_override is not None:
+        return resolved_override
+    resolved_template_name = normalize_raw_text_encoding_name((template_spec or {}).get("raw_text_encoding_name"))
+    if resolved_template_name is not None:
+        return resolved_template_name
     template = dict((template_spec or {}).get("template", {}) or {})
     return raw_text_encoding_name_for_backbone(
         str(template.get("backbone", "")),
         prefer_cl100k=prefer_cl100k,
-        encoding_override=encoding_override,
     )
 
 
@@ -141,7 +292,12 @@ def resolve_tiktoken_encoding(encoding_name: str) -> tiktoken.Encoding:
 
 
 def raw_text_encoding_vocab_size(encoding_name: str) -> int:
-    return int(resolve_tiktoken_encoding(encoding_name).n_vocab)
+    normalized = normalize_raw_text_encoding_name(encoding_name)
+    if normalized is None:
+        raise ValueError("encoding_name must be non-empty")
+    if is_sentencepiece_tokenizer_name(normalized):
+        return _sentencepiece_vocab_size(normalized)
+    return int(resolve_tiktoken_encoding(normalized).n_vocab)
 
 
 def _raw_text_allowed_special_tokens(encoding: tiktoken.Encoding) -> set[str]:
@@ -155,9 +311,19 @@ def encode_raw_text(
     text: str,
     *,
     encoding_name: str = "gpt2",
-    encoding: tiktoken.Encoding | None = None,
+    encoding: Any | None = None,
 ) -> list[int]:
-    resolved = encoding or resolve_tiktoken_encoding(encoding_name)
+    normalized = normalize_raw_text_encoding_name(encoding_name) or "gpt2"
+    if is_sentencepiece_tokenizer_name(normalized):
+        resolved = encoding or resolve_sentencepiece_encoding(normalized)
+        encode = getattr(resolved, "encode", None)
+        if not callable(encode):
+            raise RuntimeError(f"Sentencepiece tokenizer {normalized!r} does not expose encode().")
+        try:
+            return list(encode(text, out_type=int))
+        except TypeError:
+            return [int(token) for token in encode(text)]
+    resolved = encoding or resolve_tiktoken_encoding(normalized)
     return resolved.encode(
         text,
         allowed_special=_raw_text_allowed_special_tokens(resolved),
@@ -369,13 +535,14 @@ def _meta_to_summary(name: str, meta: dict[str, Any], *, default_source: str) ->
         "remote_root_prefix": meta.get("remote_root_prefix"),
         "train_file": meta.get("train_file"),
         "val_file": meta.get("val_file"),
+        "tokenizer_name": meta.get("tokenizer_name"),
         "tokenizer_encoding": meta.get("tokenizer_encoding"),
         "tokenizer_vocab_size": meta.get("tokenizer_vocab_size"),
     }
 
 
 def get_local_dataset_info(name: str) -> dict[str, Any] | None:
-    """Return metadata for one dataset stored under server/datasets/."""
+    """Return metadata for one dataset stored under ~/.cache/nfn/datasets/."""
     _ensure_datasets_dir()
     ds_dir = DATASETS_DIR / name
     if ds_dir.is_dir():
@@ -390,7 +557,7 @@ def get_local_dataset_info(name: str) -> dict[str, Any] | None:
 
 
 def list_local_datasets() -> list[dict[str, Any]]:
-    """Return metadata about locally available datasets in server/datasets/."""
+    """Return metadata about locally available datasets in ~/.cache/nfn/datasets/."""
     _ensure_datasets_dir()
     results: list[dict[str, Any]] = []
     for entry in sorted(DATASETS_DIR.iterdir()):
@@ -479,8 +646,7 @@ def download_hf_dataset(
                 "train_file": train_file,
                 "val_file": val_file,
                 "val_rows": val_rows,
-                "tokenizer_encoding": encoding_name,
-                "tokenizer_vocab_size": raw_text_encoding_vocab_size(encoding_name),
+                **_raw_text_tokenizer_metadata_fields(encoding_name),
             }
             (ds_dir / "meta.json").write_text(json.dumps(meta, indent=2))
             return {"name": ds_name, **meta}
@@ -513,8 +679,7 @@ def download_hf_dataset(
             "text_column": text_column,
             "num_rows": num_rows,
             "num_tokens": num_tokens,
-            "tokenizer_encoding": encoding_name,
-            "tokenizer_vocab_size": raw_text_encoding_vocab_size(encoding_name),
+            **_raw_text_tokenizer_metadata_fields(encoding_name),
         }
         (ds_dir / "meta.json").write_text(json.dumps(meta, indent=2))
         return {"name": ds_name, **meta}
@@ -532,7 +697,13 @@ def _dataset_dir_for_variant(name: str) -> str:
     raise ValueError(f"unsupported variant {name!r}; expected byte260 or sp<VOCAB_SIZE>")
 
 
-def _download_hf_file(repo_id: str, relative_path: str, destination: Path) -> Path:
+def _download_hf_file(
+    repo_id: str,
+    relative_path: str,
+    destination: Path,
+    *,
+    repo_type: str = "dataset",
+) -> Path:
     from huggingface_hub import hf_hub_download
 
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -545,7 +716,7 @@ def _download_hf_file(repo_id: str, relative_path: str, destination: Path) -> Pa
             repo_id=repo_id,
             filename=remote_path.name,
             subfolder=remote_path.parent.as_posix() if remote_path.parent != Path(".") else None,
-            repo_type="dataset",
+            repo_type=repo_type,
         )
     )
     cached_source = cached_path.resolve(strict=True)
@@ -799,11 +970,19 @@ def refresh_raw_text_dataset_metadata(
         return meta
 
     tokenizer_vocab_size = raw_text_encoding_vocab_size(encoding_name)
-    if (
-        meta.get("tokenizer_encoding") == encoding_name
-        and int(meta.get("tokenizer_vocab_size") or 0) == tokenizer_vocab_size
-        and meta.get("num_tokens") is not None
-    ):
+    normalized_encoding = normalize_raw_text_encoding_name(encoding_name) or "gpt2"
+    tokenizer_matches = False
+    if is_sentencepiece_tokenizer_name(normalized_encoding):
+        tokenizer_matches = (
+            str(meta.get("tokenizer_name") or "").strip().lower() == normalized_encoding
+            and int(meta.get("tokenizer_vocab_size") or 0) == tokenizer_vocab_size
+        )
+    else:
+        tokenizer_matches = (
+            meta.get("tokenizer_encoding") == normalized_encoding
+            and int(meta.get("tokenizer_vocab_size") or 0) == tokenizer_vocab_size
+        )
+    if tokenizer_matches and meta.get("num_tokens") is not None:
         return meta
 
     data_file = _raw_text_data_file_for_path(ds_path)
@@ -811,9 +990,17 @@ def refresh_raw_text_dataset_metadata(
         raise FileNotFoundError(f"No raw-text data file found in dataset {dataset_name!r}")
 
     full_text = data_file.read_text(encoding="utf-8")
-    meta["num_tokens"] = len(encode_raw_text(full_text, encoding_name=encoding_name))
-    meta["tokenizer_encoding"] = encoding_name
+    meta["num_tokens"] = len(encode_raw_text(full_text, encoding_name=normalized_encoding))
     meta["tokenizer_vocab_size"] = tokenizer_vocab_size
+    if is_sentencepiece_tokenizer_name(normalized_encoding):
+        meta["tokenizer_name"] = normalized_encoding
+        meta.pop("tokenizer_encoding", None)
+        tokenizer_files = _raw_text_tokenizer_metadata_fields(normalized_encoding).get("tokenizer_files")
+        if tokenizer_files is not None:
+            meta["tokenizer_files"] = tokenizer_files
+    else:
+        meta["tokenizer_encoding"] = normalized_encoding
+        meta.pop("tokenizer_name", None)
     meta.setdefault("num_rows", full_text.count("\n"))
 
     val_path = ds_path / "val.txt"
@@ -838,7 +1025,7 @@ def load_dataset_tokens(
     length `seq_len`.  targets are inputs shifted by one token.
     """
     _ensure_datasets_dir()
-    enc: tiktoken.Encoding | None = None
+    enc: Any | None = None
 
     all_tokens: list[int] = []
     for ds_name in dataset_names:
@@ -1013,7 +1200,7 @@ def _data_file_for(ds_name: str) -> Path | None:
 
 def _load_tokens_for(
     ds_name: str,
-    enc: tiktoken.Encoding | None,
+    enc: Any | None,
     *,
     encoding_name: str = "gpt2",
 ) -> list[int]:
@@ -1046,7 +1233,10 @@ def _load_tokens_for(
             raise FileNotFoundError(f"No data file found in dataset '{ds_name}'")
         text = data_file.read_text(encoding="utf-8")
         if enc is None:
-            enc = resolve_tiktoken_encoding(encoding_name)
+            if is_sentencepiece_tokenizer_name(encoding_name):
+                enc = resolve_sentencepiece_encoding(encoding_name)
+            else:
+                enc = resolve_tiktoken_encoding(encoding_name)
         return encode_raw_text(text, encoding_name=encoding_name, encoding=enc)
 
     # Case 2: it's a plain file in the datasets dir
@@ -1055,7 +1245,10 @@ def _load_tokens_for(
         if file_path.exists():
             text = file_path.read_text(encoding="utf-8")
             if enc is None:
-                enc = resolve_tiktoken_encoding(encoding_name)
+                if is_sentencepiece_tokenizer_name(encoding_name):
+                    enc = resolve_sentencepiece_encoding(encoding_name)
+                else:
+                    enc = resolve_tiktoken_encoding(encoding_name)
             return encode_raw_text(text, encoding_name=encoding_name, encoding=enc)
 
     raise FileNotFoundError(f"Dataset '{ds_name}' not found in {DATASETS_DIR}")

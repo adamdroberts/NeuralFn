@@ -14,7 +14,7 @@ from neuralfn.config import (
     build_universal_llama_spec,
 )
 from neuralfn.torch_backend import CompiledTorchGraph, JEPAMaskStage, TorchTrainConfig, TorchTrainer
-from neuralfn.torch_templates import build_gpt_root_graph, build_gpt_template_payload, build_model_spec_from_config
+from neuralfn.torch_templates import build_gpt_root_graph, build_gpt_template_payload, build_model_spec_from_config, make_terminal_def
 from server.dataset_manager import DATASETS_DIR, load_dataset_bytes
 from server.models import ExecuteRequest, GPTTemplateRequest, LoadDatasetRequest
 from server.services.graph_ops import apply_gpt_template, load_dataset_source_into_graph, trace_torch_graph
@@ -43,6 +43,7 @@ PRESETS = [
     "jepa_semantic_hybrid_megakernel",
     "semantic_router_moe",
     "semantic_router_moe_megakernel",
+    "semantic_moe_jepa_evo",
 ]
 
 
@@ -112,6 +113,21 @@ def test_build_gpt_template_payload_supports_all_presets() -> None:
         assert payload["node_def"]["kind"] == "subgraph"
         assert isinstance(payload["variant_library"], dict)
         assert payload["graph_settings"]["torch_config"]["template_spec"]["template"]
+
+
+def test_root_graph_defaults_to_float32_amp() -> None:
+    graph = build_gpt_root_graph(name="float32_default")
+    assert graph.torch_config["amp_dtype"] == "float32"
+
+
+def test_template_terminals_only_quantize_discrete_token_ports() -> None:
+    tensor_terminal = make_terminal_def(role="input", port_name="x", dtype="tensor")
+    token_terminal = make_terminal_def(role="input", port_name="tokens", dtype="tokens")
+
+    assert tensor_terminal.input_ports[0].precision is None
+    assert tensor_terminal.output_ports[0].precision is None
+    assert token_terminal.input_ports[0].precision == 1.0
+    assert token_terminal.output_ports[0].precision == 1.0
 
 
 def test_reported_presets_resolve_variant_libraries() -> None:

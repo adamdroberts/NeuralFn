@@ -1780,7 +1780,7 @@ from neuralfn import (
 | [port](port.md) | `Port` dataclass -- declares input/output slots on neurons |
 | [neuron](neuron.md) | `NeuronDef` and factory functions for defining neurons |
 | [graph](graph.md) | `NeuronInstance`, `Edge`, and `NeuronGraph` -- the core graph data model |
-| [builtins](builtins.md) | 58 built-in neuron definitions (scalar activations, torch modules, MoE, etc.) |
+| [builtins](builtins.md) | Built-in neuron definitions (scalar activations, torch modules, MoE, semantic routing, etc.) |
 | [config](config.md) | `TemplateSpec`, `BlockSpec`, `ModelSpec` and preset builder functions |
 | [torch-backend](torch-backend.md) | `CompiledTorchGraph`, `TorchTrainer`, `TorchTrainConfig`, and all `*Stage` modules |
 | [torch-templates](torch-templates.md) | Graph builders for attention, MLP, decoder blocks, and full model architectures |
@@ -2422,7 +2422,7 @@ Raw deserialization without variant resolution or validation. Raises `ValueError
 
 # neuralfn.builtins
 
-Library of 58 built-in neuron definitions ready to drop into a graph.
+Library of built-in neuron definitions ready to drop into a graph.
 
 ## Class: BuiltinNeurons
 
@@ -2430,7 +2430,7 @@ Library of 58 built-in neuron definitions ready to drop into a graph.
 class BuiltinNeurons:
     sigmoid = ...       # NeuronDef
     relu = ...          # NeuronDef
-    # ... all 58 builtins as class attributes
+    # ... all builtins as class attributes
 ```
 
 Each built-in neuron is exposed as a class attribute of type `NeuronDef`.
@@ -2439,7 +2439,7 @@ Each built-in neuron is exposed as a class attribute of type `NeuronDef`.
 
 #### `BuiltinNeurons.all() -> list[NeuronDef]`
 
-Return the full built-in neuron catalog (all 58 entries).
+Return the full built-in neuron catalog.
 
 #### `BuiltinNeurons.get(name: str) -> NeuronDef`
 
@@ -3199,7 +3199,7 @@ def build_model_spec_from_config(
 
 Dispatch to the appropriate `build_*_spec()` function based on `config["preset"]`. Normalizes legacy key names (`n_layer` -> `num_layers`, `n_embd` -> `model_dim`, `n_head` -> `num_heads`).
 
-Recognized presets: `"nanogpt"`, `"gpt2"`, `"llama"`, `"mixllama"` / `"moe"`, `"llama_fast"`, `"mixllama_fast"`, `"jamba"`, `"ternary_b158"`, `"llama_megakernel"`, `"kv_pca_llama"`, `"seq2seq"`, `"diffusion"`, `"ttt_llama"`, `"llm_jepa"`, `"hnet_lm"`, `"universal_llama"`.
+Recognized presets: `"nanogpt"`, `"gpt2"`, `"llama"`, `"mixllama"` / `"moe"`, `"llama_fast"`, `"mixllama_fast"`, `"jamba"`, `"ternary_b158"`, `"llama_megakernel"`, `"kv_pca_llama"`, `"seq2seq"`, `"diffusion"`, `"ttt_llama"`, `"llm_jepa"`, `"semantic_router_moe"`, `"jepa_semantic_hybrid"`, `"semantic_moe_jepa_evo"`, `"hnet_lm"`, `"universal_llama"`.
 
 ### `build_model_stage_graph(name, model_spec) -> NeuronGraph`
 
@@ -7419,7 +7419,7 @@ NeuralFn ships with agent skills that teach AI coding assistants (Cursor, Codex,
 
 - **neuralfn-python-sdk** covers the core graph framework: how to define neurons with `@neuron` and `Port`, build `NeuronGraph` instances, wire edges, create subgraphs, use the variant library, serialize graphs, and run all four training methods. It includes quick-reference tables for every class and common builtin IDs.
 
-- **neuralfn-torch** covers the torch template system: `ModelSpec` / `BlockSpec` / `TemplateSpec` configuration, all 16 presets with config keys, `build_gpt_root_graph()` and `build_model_stage_graph()`, `CompiledTorchGraph` compilation, `TorchTrainer` for training, dataset loading, weight export/import, and `InferenceCache` for autoregressive generation.
+- **neuralfn-torch** covers the torch template system: `ModelSpec` / `BlockSpec` / `TemplateSpec` configuration, all 18 presets with config keys, `build_gpt_root_graph()` and `build_model_stage_graph()`, `CompiledTorchGraph` compilation, `TorchTrainer` for training, dataset loading, weight export/import, and `InferenceCache` for autoregressive generation.
 
 - **neuralfn-mcp** covers the MCP tool interface: how to use tools like `get_graph`, `add_node`, `add_edge`, `load_gpt_template`, `train_start`, and `download_dataset` to build and train models through the MCP server. Includes end-to-end workflow examples.
 

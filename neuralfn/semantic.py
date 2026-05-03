@@ -13,6 +13,7 @@ import hashlib
 import json
 from collections import defaultdict
 from pathlib import Path
+import re
 from typing import Any, NamedTuple
 
 import numpy as np
@@ -22,15 +23,55 @@ _DATA_DIR = Path(__file__).resolve().parent / "data" / "semantic"
 DEFAULT_SEMANTIC_VOCAB_REF = "vocab_86d_o200k.json"
 LEGACY_81D_SEMANTIC_VOCAB_REF = "vocab_81d.json"
 LEGACY_SEMANTIC_VOCAB_REF = "vocab_8d.json"
+TOKENIZER_SEMANTIC_VOCAB_REFS = {
+    "cl100k": "vocab_86d_cl100k.json",
+    "cl100k_base": "vocab_86d_cl100k.json",
+    "o200k": "vocab_86d_o200k.json",
+    "o200k_base": "vocab_86d_o200k.json",
+    "sp1024": "vocab_86d_sp1024.json",
+    "sp2048": "vocab_86d_sp2048.json",
+    "sp4096": "vocab_86d_sp4096.json",
+    "sp8192": "vocab_86d_sp8192.json",
+}
+OPTIONAL_TOKENIZER_SEMANTIC_VOCAB_REFS = {
+    "gpt2": "vocab_86d_gpt2.json",
+    "tokgpt2": "vocab_86d_gpt2.json",
+}
+LEGACY_VOCAB_DIM_COUNTS = {
+    LEGACY_SEMANTIC_VOCAB_REF: 8,
+    LEGACY_81D_SEMANTIC_VOCAB_REF: 81,
+}
 TAXONOMY_HASH_NAME = "taxonomy_hash"
 TAXONOMY_HASH_MEANING = "signature hash (entity+action+domain trigram)"
 _SIGNATURE_DIMS = ("entity_type", "action", "domain")
+_ASCII_WORD_RE = re.compile(r"[a-z0-9]+")
 
 
 class SemanticDim(NamedTuple):
     index: int
     name: str
     meaning: str
+
+
+def semantic_text_words(text: str | None) -> tuple[str, ...]:
+    """Normalize text into ASCII word groups for semantic phrase matching."""
+    lowered = str(text or "").strip().lower()
+    if not lowered:
+        return ()
+    lowered = (
+        lowered
+        .replace("’", " ")
+        .replace("'", " ")
+        .replace("_", " ")
+        .replace("-", " ")
+        .replace("/", " ")
+    )
+    return tuple(_ASCII_WORD_RE.findall(lowered))
+
+
+def normalize_semantic_term(term: str | None) -> str:
+    """Canonicalize a semantic term to the vocab's underscore-separated form."""
+    return "_".join(semantic_text_words(term))
 
 
 def resolve_semantic_vocab_path(path_or_ref: str | Path | None = None) -> Path:
@@ -61,10 +102,60 @@ def normalize_semantic_vocab_ref(path_or_ref: str | Path | None = None) -> str:
     return str(raw)
 
 
+def semantic_vocab_ref_for_tokenizer(tokenizer_name: str | None) -> str:
+    normalized = str(tokenizer_name or "").strip().lower()
+    if not normalized:
+        return DEFAULT_SEMANTIC_VOCAB_REF
+
+    optional_ref = OPTIONAL_TOKENIZER_SEMANTIC_VOCAB_REFS.get(normalized)
+    if optional_ref is not None and (_DATA_DIR / optional_ref).exists():
+        return optional_ref
+
+    ref = TOKENIZER_SEMANTIC_VOCAB_REFS.get(normalized)
+    if ref is None:
+        return DEFAULT_SEMANTIC_VOCAB_REF
+    if (_DATA_DIR / ref).exists():
+        return ref
+    return DEFAULT_SEMANTIC_VOCAB_REF
+
+
+def _legacy_fallback_dim_count(path_or_ref: str | Path | None = None) -> int | None:
+    if path_or_ref in (None, ""):
+        return None
+    return LEGACY_VOCAB_DIM_COUNTS.get(Path(path_or_ref).name)
+
+
+def _build_legacy_vocab_payload(path_or_ref: str | Path) -> dict[str, Any]:
+    fallback_dim_count = _legacy_fallback_dim_count(path_or_ref)
+    if fallback_dim_count is None:
+        raise FileNotFoundError(path_or_ref)
+
+    data = dict(_load_vocab_payload(DEFAULT_SEMANTIC_VOCAB_REF))
+    vocab_items = list(dict(data["vocabulary"]).items())[:fallback_dim_count]
+    vocab = {dim_name: list(terms) for dim_name, terms in vocab_items}
+    data["vocabulary"] = vocab
+
+    descriptions = data.get("dimension_descriptions")
+    if isinstance(descriptions, dict):
+        data["dimension_descriptions"] = {
+            dim_name: str(descriptions.get(dim_name, dim_name.replace("_", " ")))
+            for dim_name in vocab
+        }
+
+    term_counts = {dim_name: len(terms) for dim_name, terms in vocab.items()}
+    data["term_counts"] = term_counts
+    data["total_terms"] = sum(term_counts.values())
+    data["legacy_fallback_ref"] = Path(path_or_ref).name
+    return data
+
+
 def _load_vocab_payload(path_or_ref: str | Path | None = None) -> dict[str, Any]:
     path = resolve_semantic_vocab_path(path_or_ref)
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        data = _build_legacy_vocab_payload(path_or_ref or path.name)
     if not isinstance(data, dict):
         raise ValueError(f"Semantic vocabulary file {path} must contain a JSON object")
     raw_vocab = data.get("vocabulary")
@@ -128,6 +219,17 @@ def semantic_vocab_ref_for_graph(graph: Any) -> str:
     ref = sem_cfg.get("semantic_vocab_ref")
     if isinstance(ref, str) and ref.strip():
         return normalize_semantic_vocab_ref(ref)
+
+    tokenizer_manifest = dict(torch_config.get("tokenizer_manifest", {}) or {})
+    tokenizer_name = tokenizer_manifest.get("tokenizer_name") or tokenizer_manifest.get("encoding_name")
+    if isinstance(tokenizer_name, str) and tokenizer_name.strip():
+        return semantic_vocab_ref_for_tokenizer(tokenizer_name)
+
+    training_manifest = dict(torch_config.get("training_manifest", {}) or {})
+    dataset_manifest = dict(training_manifest.get("dataset", {}) or {})
+    dataset_tokenizer = dataset_manifest.get("tokenizer_name") or dataset_manifest.get("tokenizer_encoding")
+    if isinstance(dataset_tokenizer, str) and dataset_tokenizer.strip():
+        return semantic_vocab_ref_for_tokenizer(dataset_tokenizer)
 
     semantic_dim = sem_cfg.get("seq_len", template_spec.get("semantic_dim"))
     return semantic_vocab_ref_for_dim(semantic_dim)
@@ -224,8 +326,25 @@ class ConversationalVocabulary:
         self._semantic_dims = semantic_dims_for_vocab(resolved)
         self._dimension_to_expert = {name: idx for idx, name in enumerate(self._vocab.keys())}
         self._term_index: dict[str, dict[str, int]] = {}
+        self._canonical_terms: dict[str, list[str]] = {}
+        self._phrase_terms_by_first_word: dict[str, dict[str, list[tuple[tuple[str, ...], str, int]]]] = {}
         for dim_name, terms in self._vocab.items():
-            self._term_index[dim_name] = {t.lower(): i for i, t in enumerate(terms)}
+            idx_map: dict[str, int] = {}
+            canonical_terms: list[str] = []
+            phrase_terms_by_first_word: dict[str, list[tuple[tuple[str, ...], str, int]]] = defaultdict(list)
+            for idx, term in enumerate(terms):
+                canonical = normalize_semantic_term(term)
+                canonical_terms.append(canonical)
+                if canonical:
+                    idx_map.setdefault(canonical, idx)
+                words = tuple(part for part in canonical.split("_") if part)
+                if len(words) > 1:
+                    phrase_terms_by_first_word[words[0]].append((words, term, idx))
+            for first_word, items in phrase_terms_by_first_word.items():
+                items.sort(key=lambda item: (-len(item[0]), item[2]))
+            self._term_index[dim_name] = idx_map
+            self._canonical_terms[dim_name] = canonical_terms
+            self._phrase_terms_by_first_word[dim_name] = dict(phrase_terms_by_first_word)
 
     @property
     def dim_names(self) -> list[str]:
@@ -271,7 +390,51 @@ class ConversationalVocabulary:
         idx_map = self._term_index.get(dim_name)
         if idx_map is None:
             return -1
-        return idx_map.get(term.lower(), -1)
+        return idx_map.get(normalize_semantic_term(term), -1)
+
+    def resolve_term(self, dim_name: str, term: str) -> str | None:
+        """Return the canonical vocab term for *term* in *dim_name*, or None if unknown."""
+        idx = self.term_to_index(dim_name, term)
+        if idx < 0:
+            return None
+        terms = self._vocab.get(dim_name, [])
+        if idx >= len(terms):
+            return None
+        return terms[idx]
+
+    def match_topics_in_text(self, text: str) -> dict[str, str]:
+        """Match underscore-joined multiword semantic terms against contiguous words in *text*."""
+        words = semantic_text_words(text)
+        if not words:
+            return {}
+
+        matches: dict[str, str] = {}
+        for dim_name in self.dim_names:
+            candidates_by_first_word = self._phrase_terms_by_first_word.get(dim_name, {})
+            if not candidates_by_first_word:
+                continue
+
+            best_term: str | None = None
+            best_length = 0
+            best_position = len(words) + 1
+            for position, word in enumerate(words):
+                candidates = candidates_by_first_word.get(word)
+                if not candidates:
+                    continue
+                for phrase_words, term, _idx in candidates:
+                    phrase_length = len(phrase_words)
+                    if position + phrase_length > len(words):
+                        continue
+                    if tuple(words[position : position + phrase_length]) != phrase_words:
+                        continue
+                    if phrase_length > best_length or (phrase_length == best_length and position < best_position):
+                        best_term = term
+                        best_length = phrase_length
+                        best_position = position
+                    break
+            if best_term is not None:
+                matches[dim_name] = best_term
+        return matches
 
     def encode_row(
         self,
@@ -332,6 +495,36 @@ def build_semantic_signature(
     return "_".join(parts)
 
 
+def resolve_semantic_topics(
+    topics: dict[str, str],
+    *,
+    vocab: ConversationalVocabulary | None = None,
+) -> dict[str, str]:
+    """Resolve human-readable topic names to canonical semantic vocabulary terms."""
+    if vocab is None:
+        vocab = ConversationalVocabulary()
+    resolved_topics: dict[str, str] = {}
+    for dim_name, topic in topics.items():
+        if dim_name not in vocab.dimension_to_expert:
+            raise ValueError(f"Unknown semantic dimension {dim_name!r}")
+        resolved_topic = vocab.resolve_term(dim_name, topic)
+        if resolved_topic is None:
+            raise ValueError(f"Unknown topic {topic!r} for dimension {dim_name!r}")
+        resolved_topics[dim_name] = resolved_topic
+    return resolved_topics
+
+
+def extract_semantic_topics_from_text(
+    text: str,
+    *,
+    vocab: ConversationalVocabulary | None = None,
+) -> dict[str, str]:
+    """Extract canonical semantic topics from contiguous multiword phrase matches in *text*."""
+    if vocab is None:
+        vocab = ConversationalVocabulary()
+    return vocab.match_topics_in_text(text)
+
+
 def build_semantic_targets_from_topics(
     topics: dict[str, str],
     *,
@@ -341,13 +534,10 @@ def build_semantic_targets_from_topics(
     """Resolve a dimension/topic map to categorical semantic targets."""
     if vocab is None:
         vocab = ConversationalVocabulary()
+    resolved_topics = resolve_semantic_topics(topics, vocab=vocab)
     target = np.full(vocab.vector_dim, SEMANTIC_IGNORE_INDEX, dtype=np.int64)
-    for dim_name, topic in topics.items():
-        if dim_name not in vocab.dimension_to_expert:
-            raise ValueError(f"Unknown semantic dimension {dim_name!r}")
+    for dim_name, topic in resolved_topics.items():
         topic_idx = vocab.term_to_index(dim_name, topic)
-        if topic_idx < 0:
-            raise ValueError(f"Unknown topic {topic!r} for dimension {dim_name!r}")
         target[vocab.dimension_to_expert[dim_name]] = topic_idx
     target[vocab.num_vocab_dims] = signature_to_bucket(
         build_semantic_signature(target, vocab=vocab),

@@ -19,7 +19,7 @@ This is a pre-alpha project. All APIs are subject to rapid breaking changes.
 - [Building Graphs](docs/framework-guide/building-graphs.md): NeuronGraph, NeuronInstance, Edge, wiring, I/O, execution, full XOR example.
 - [Subgraphs and Variants](docs/framework-guide/subgraphs-and-variants.md): Nested composition, variant library, alias resolution, fallback behavior.
 - [Torch Models](docs/framework-guide/torch-models.md): Module neurons, CompiledTorchGraph, building tensor-native architectures.
-- [Templates and Presets](docs/framework-guide/templates-and-presets.md): All 16 presets, ModelSpec, BlockSpec, TemplateSpec, config keys.
+- [Templates and Presets](docs/framework-guide/templates-and-presets.md): All 18 presets, ModelSpec, BlockSpec, TemplateSpec, config keys.
 - [Training Workflows](docs/framework-guide/training-workflows.md): Surrogate, evolutionary, hybrid, and torch training end-to-end.
 - [Inference and Export](docs/framework-guide/inference-and-export.md): Weight I/O, quantization, InferenceCache for autoregressive generation.
 - [Datasets](docs/framework-guide/datasets.md): Download, upload, dataset_source node, byte vs tokenized paths.
@@ -30,8 +30,8 @@ This is a pre-alpha project. All APIs are subject to rapid breaking changes.
 - [Port](docs/python-sdk/port.md): Port dataclass -- fields, clamp, quantize, condition.
 - [Neuron](docs/python-sdk/neuron.md): NeuronDef, @neuron, neuron_from_source, module_neuron, subgraph_neuron.
 - [Graph](docs/python-sdk/graph.md): NeuronGraph, NeuronInstance, Edge -- all methods, execution, serialization.
-- [Builtins](docs/python-sdk/builtins.md): BuiltinNeurons class and the full 58-entry catalog.
-- [Config](docs/python-sdk/config.md): TemplateSpec, BlockSpec, ModelSpec, type aliases, all 16 build_*_spec presets.
+- [Builtins](docs/python-sdk/builtins.md): BuiltinNeurons class and the builtin catalog.
+- [Config](docs/python-sdk/config.md): TemplateSpec, BlockSpec, ModelSpec, type aliases, all 18 build_*_spec presets.
 - [Torch Backend](docs/python-sdk/torch-backend.md): CompiledTorchGraph, TorchTrainConfig, TorchTrainer, all Stage classes.
 - [Torch Templates](docs/python-sdk/torch-templates.md): Template and graph builder functions.
 - [Training Overview](docs/python-sdk/training/README.md): When to use each training method.

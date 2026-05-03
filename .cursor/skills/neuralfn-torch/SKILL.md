@@ -65,7 +65,7 @@ graph = build_gpt_root_graph(name="model", preset="nanogpt", config={
 
 The graph has `runtime="torch"`, `training_method="torch"`, and a populated `variant_library` with attention and MLP subgraph variants.
 
-## All 17 presets
+## All 18 presets
 
 | Preset | Architecture | Key features |
 |--------|-------------|--------------|
@@ -82,6 +82,7 @@ The graph has `runtime="torch"`, `training_method="torch"`, and a populated `var
 | `ttt_llama` | TTT-Linear | Test-time training attention replacement |
 | `llm_jepa` | LLM-JEPA | JEPA with EMA target encoder |
 | `semantic_router_moe` | Semantic Router MoE | AR-only semantic router control with shared routed MoE blocks |
+| `semantic_moe_jepa_evo` | Semantic MoE JEPA Evo | Chunk-level semantic router, shared/semantic/free experts, JEPA supervision, route evolution |
 | `hnet_lm` | H-Net | Raw byte input, byte patch embedding |
 | `universal_llama` | Universal TX | ACT-based adaptive recurrence |
 | `llama_megakernel` | Fused LLaMA | FusedCausalAttention, max-autotune compile |
@@ -123,7 +124,7 @@ stage_graph = build_model_stage_graph(spec)
 payload = build_gpt_template_payload("my_model", "llama", {"n_layer": 6, "n_embd": 256})
 ```
 
-Spec builders: `build_nanogpt_spec`, `build_gpt2_spec`, `build_llama_spec`, `build_mixllama_spec`, `build_llama_fast_spec`, `build_mixllama_fast_spec`, `build_jamba_hybrid_spec`, `build_ternary_b158_spec`, `build_decoder2encoder_moe_spec`, `build_diffllama_spec`, `build_ttt_llama_spec`, `build_llm_jepa_spec`, `build_semantic_router_moe_spec`, `build_hnet_lm_spec`, `build_universal_llama_spec`, `build_llama_megakernel_spec`, `build_kv_pca_llama_spec`.
+Spec builders: `build_nanogpt_spec`, `build_gpt2_spec`, `build_llama_spec`, `build_mixllama_spec`, `build_llama_fast_spec`, `build_mixllama_fast_spec`, `build_jamba_hybrid_spec`, `build_ternary_b158_spec`, `build_decoder2encoder_moe_spec`, `build_diffllama_spec`, `build_ttt_llama_spec`, `build_llm_jepa_spec`, `build_semantic_router_moe_spec`, `build_semantic_moe_jepa_evo_spec`, `build_hnet_lm_spec`, `build_universal_llama_spec`, `build_llama_megakernel_spec`, `build_kv_pca_llama_spec`.
 
 ## TorchTrainConfig
 
@@ -157,6 +158,7 @@ Dataset roles by objective:
 - AR / H-Net / Universal: `tokens`, `targets`
 - Seq2Seq: `enc_tokens`, `dec_tokens`, `targets`
 - Diffusion / JEPA: `tokens`
+- Semantic routing presets: `tokens`, `targets`, plus `semantic_data_source -> sem_targets`
 
 ## CompiledTorchGraph
 
@@ -211,13 +213,22 @@ Works with graphs that have `kv_cache_read` / `kv_cache_write` nodes. For traini
 - **Preset:** `semantic_router_moe` [Experimental]
 - **Load in Python:** `from neuralfn.config import build_semantic_router_moe_spec` then `build_semantic_router_moe_spec(**kwargs)`, or `build_gpt_root_graph(..., preset="semantic_router_moe", config={...})`.
 - **Load via MCP / server:** `load_gpt_template(name=..., preset="semantic_router_moe", config={...})` [Experimental].
-- **What it does [Experimental]:** AR-only MixLLaMA/MoE control preset that computes a vocab-grounded semantic route once from the pre-block hidden state, hashes it, teacher-forces/auto-selects the fixed 8-expert topic map, broadcasts that route across the whole sequence, and applies it to every MoE block. Trains next-token CE plus semantic-alignment loss, with no JEPA encoder/EMA path.
+- **What it does [Experimental]:** AR-only MixLLaMA/MoE control preset that computes a vocab-grounded semantic route once from the pre-block hidden state, hashes it, teacher-forces/auto-selects one expert per semantic vocabulary dimension, broadcasts that route across the whole sequence, and applies it to every MoE block. Trains next-token CE plus semantic-alignment loss, with no JEPA encoder/EMA path.
 - **Disclaimer [Experimental]:** Research-control preset only. It exists to isolate the router hypothesis before adding JEPA complexity.
+
+### `semantic_moe_jepa_evo` [Experimental]
+
+- **Preset:** `semantic_moe_jepa_evo` [Experimental]
+- **Load in Python:** `from neuralfn.config import build_semantic_moe_jepa_evo_spec` then `build_semantic_moe_jepa_evo_spec(**kwargs)`, or `build_gpt_root_graph(..., preset="semantic_moe_jepa_evo", config={...})`.
+- **Load via MCP / server:** `load_gpt_template(name=..., preset="semantic_moe_jepa_evo", config={...})` [Experimental].
+- **What it does [Experimental]:** Full Semantic MoE JEPA Evo architecture. Dense causal attention stays on the AR path; a prefix-safe chunk planner predicts semantic latents and route distributions; routes combine always-on shared experts, semantic-vocabulary experts, and free learned experts; and the trainer can periodically evolve route bias/table state.
+- **Config rules [Experimental]:** `experts` must equal `semantic_shared_experts + NUM_VOCAB_DIMS + semantic_free_experts`. Defaults are `route_chunk_size=32`, `semantic_shared_experts=2`, `semantic_free_experts=8`, `route_evo_fraction=0.10`, and `route_evo_population=8`.
+- **Disclaimer [Experimental]:** Research prototype only. Graph shape, loss mix, and route-evolution behavior may change.
 
 ### `jepa_semantic_hybrid` [Experimental]
 
 - **Preset:** `jepa_semantic_hybrid` [Experimental]
 - **Load in Python:** `from neuralfn.config import build_jepa_semantic_hybrid_spec` then `build_jepa_semantic_hybrid_spec(**kwargs)`, or `build_gpt_root_graph(..., preset="jepa_semantic_hybrid", config={...})`.
 - **Load via MCP / server:** `load_gpt_template(name=..., preset="jepa_semantic_hybrid", config={...})` [Experimental].
-- **What it does [Experimental]:** Joint Embedding Predictive Architecture (JEPA) combined with a **9D vocab-grounded semantic state** (8 topic dimensions + taxonomy hash), **LSH** bucketing, a **fixed 8-expert topic router**, and routed full-sequence attention experts. `sem_targets` are categorical topic IDs with ignore sentinels, not quantized semantic vectors.
+- **What it does [Experimental]:** Joint Embedding Predictive Architecture (JEPA) combined with a vocab-grounded semantic state, **LSH** bucketing, a fixed dimension-to-expert semantic router, and routed full-sequence attention experts. `sem_targets` are categorical topic IDs with ignore sentinels, not quantized semantic vectors.
 - **Disclaimer [Experimental]:** Research prototype only—APIs, graph shape, and training behavior may change without notice.

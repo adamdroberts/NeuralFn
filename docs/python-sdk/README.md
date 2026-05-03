@@ -16,7 +16,7 @@ pip install -e /home/adam/dev/innovation/NeuralFn
 
 This editable install now packages the shipped semantic vocabulary files under
 `neuralfn/data/semantic/`, so SDK code that imports `neuralfn.semantic` can
-load `vocab_8d.json` without extra setup.
+load the `vocab_86d_*.json` semantic vocabularies without extra setup.
 
 ## Package Exports
 
@@ -45,7 +45,7 @@ from neuralfn import (
 | [port](port.md) | `Port` dataclass -- declares input/output slots on neurons |
 | [neuron](neuron.md) | `NeuronDef` and factory functions for defining neurons |
 | [graph](graph.md) | `NeuronInstance`, `Edge`, and `NeuronGraph` -- the core graph data model |
-| [builtins](builtins.md) | 58 built-in neuron definitions (scalar activations, torch modules, MoE, etc.) |
+| [builtins](builtins.md) | Built-in neuron definitions (scalar activations, torch modules, MoE, semantic routing, etc.) |
 | [config](config.md) | `TemplateSpec`, `BlockSpec`, `ModelSpec` and preset builder functions |
 | [torch-backend](torch-backend.md) | `CompiledTorchGraph`, `TorchTrainer`, `TorchTrainConfig`, and all `*Stage` modules |
 | [torch-templates](torch-templates.md) | Graph builders for attention, MLP, decoder blocks, and full model architectures |

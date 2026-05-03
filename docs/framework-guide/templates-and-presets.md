@@ -66,10 +66,11 @@ This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_me
 
 | Preset [Experimental] | Builder [Experimental] | Backbone | Objective [Experimental] | Sparsity | Key features [Experimental] |
 |-----------------------|------------------------|----------|----------------------------|----------|----------------------------|
-| `semantic_router_moe` | `build_semantic_router_moe_spec` | mixllama | `semantic_router` | moe | AR-only control experiment: vocab-grounded semantic projection + LSH + fixed 8-expert topic routing shared across all MoE blocks. |
-| `jepa_semantic_hybrid` | `build_jepa_semantic_hybrid_spec` | llama | `jepa_semantic` | moe | JEPA + 9D vocab-grounded semantic state + LSH + fixed 8-expert topic routing + full-sequence attention experts (research prototype). |
+| `semantic_router_moe` | `build_semantic_router_moe_spec` | mixllama | `semantic_router` | moe | AR-only control experiment: vocab-grounded semantic projection + LSH + one expert per semantic vocabulary dimension shared across all MoE blocks. |
+| `jepa_semantic_hybrid` | `build_jepa_semantic_hybrid_spec` | llama | `jepa_semantic` | moe | JEPA + vocab-grounded semantic state + LSH + fixed dimension-to-expert topic routing + full-sequence attention experts (research prototype). |
+| `semantic_moe_jepa_evo` | `build_semantic_moe_jepa_evo_spec` | mixllama | `semantic_moe_jepa_evo` | moe | Full chunk-routed Semantic MoE JEPA Evo: 2 shared experts, semantic-vocab experts, 8 free experts, JEPA target supervision, and periodic route evolution. |
 
-**Disclaimer [Experimental]:** The semantic routing presets are experimental; graph layout, config keys, and training APIs may change. Both `semantic_router_moe` and `jepa_semantic_hybrid` use the root/data contract text `tokens` + text `targets` plus a separate `semantic_data_source` that provides vocab-topic `sem_targets`. Both presets require exactly 8 experts, one for each vocabulary dimension. `semantic_router_moe` is the router-only control; `jepa_semantic_hybrid` adds the JEPA path on top.
+**Disclaimer [Experimental]:** The semantic routing presets are experimental; graph layout, config keys, and training APIs may change. `semantic_router_moe`, `jepa_semantic_hybrid`, and `semantic_moe_jepa_evo` use the root/data contract text `tokens` + text `targets` plus a separate `semantic_data_source` that provides vocab-topic `sem_targets`. The router-only and hybrid presets require one expert per semantic vocabulary dimension. `semantic_moe_jepa_evo` adds shared and free experts around the semantic expert bank, so `experts` must equal `semantic_shared_experts + NUM_VOCAB_DIMS + semantic_free_experts`.
 
 ---
 
@@ -94,8 +95,16 @@ These keys can be passed in the `config` dict to any preset builder. Aliases are
 | `tie_embeddings` | -- | varies | Tie input embedding and output projection weights. |
 | `logit_softcap` | -- | `0.0` | Tanh softcap on logits (0 = disabled). |
 | `ar_loss_coef` | -- | `1.0` | Scalar for routed AR loss on semantic routing presets. |
-| `jepa_loss_coef` | -- | `0.25` | Scalar for the hybrid preset's JEPA latent loss. |
+| `jepa_loss_coef` | -- | `0.25` | Scalar for JEPA latent loss on JEPA semantic presets. |
 | `semantic_align_loss_coef` | -- | `0.5` | Scalar for semantic-alignment loss on semantic routing presets. |
+| `semantic_vocab_ref` | -- | default vocab | Semantic vocabulary file used by semantic projector/router stages. |
+| `route_chunk_size` | -- | `32` | Chunk size for `semantic_moe_jepa_evo` route updates. |
+| `semantic_shared_experts` | -- | `2` | Always-on shared experts for `semantic_moe_jepa_evo`. |
+| `semantic_free_experts` | -- | `8` | Free learned experts for `semantic_moe_jepa_evo`. |
+| `route_evo_enabled` | -- | `true` | Enable periodic route-evolution search for `semantic_moe_jepa_evo`. |
+| `route_evo_fraction` | -- | `0.10` | Approximate fraction of optimizer steps that run route evolution. |
+| `route_evo_population` | -- | `8` | Candidate count for route evolution. |
+| `route_evo_mutation_scale` | -- | `0.05` | Mutation scale for route-evolution candidates. |
 | `ttt_hidden_dim` | -- | `32` | Hidden dim for TTT layers. |
 | `byte_patch_size` | -- | `4` | Byte patch window for H-Net. |
 | `max_recurrence_steps` | -- | `4` | Max ACT recurrence steps (universal transformer). |

@@ -1,0 +1,201 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1030" viewBox="0 0 1600 1030" role="img" aria-labelledby="title desc">
+  <title id="title">Semantic MoE JEPA Evo GPT template architecture</title>
+  <desc id="desc">Infographic showing the Semantic MoE JEPA Evo template: inputs, autoregressive backbone, chunk-level semantic planner, expert bank, JEPA target path, route evolution controller, and outputs/losses.</desc>
+  <defs>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#174ea6" />
+    </marker>
+    <marker id="arrow-teal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#007a7a" />
+    </marker>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#f25c05" />
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#6d28d9" />
+    </marker>
+    <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#d11f1f" />
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .title { font: 700 42px Inter, Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 600 22px Inter, Arial, sans-serif; fill: #334155; }
+      .num { font: 700 22px Inter, Arial, sans-serif; fill: white; }
+      .section-title { font: 700 18px Inter, Arial, sans-serif; letter-spacing: .04em; }
+      .label { font: 600 15px Inter, Arial, sans-serif; fill: #0f172a; }
+      .small { font: 500 12px Inter, Arial, sans-serif; fill: #334155; }
+      .tiny { font: 500 11px Inter, Arial, sans-serif; fill: #334155; }
+      .blue { stroke: #174ea6; fill: #eef4ff; }
+      .teal { stroke: #007a7a; fill: #ecfeff; }
+      .orange { stroke: #f25c05; fill: #fff7ed; }
+      .purple { stroke: #6d28d9; fill: #f5f3ff; }
+      .red { stroke: #d11f1f; fill: #fff5f5; }
+      .gray { stroke: #64748b; fill: #ffffff; }
+      .box { stroke-width: 2; rx: 8; ry: 8; }
+      .soft { stroke-width: 1.5; rx: 7; ry: 7; }
+      .dash { stroke-dasharray: 7 5; }
+      .arrow-blue { stroke: #174ea6; stroke-width: 2.4; fill: none; marker-end: url(#arrow-blue); }
+      .arrow-teal { stroke: #007a7a; stroke-width: 2.4; fill: none; marker-end: url(#arrow-teal); }
+      .arrow-orange { stroke: #f25c05; stroke-width: 2.4; fill: none; marker-end: url(#arrow-orange); }
+      .arrow-purple { stroke: #6d28d9; stroke-width: 2.4; fill: none; marker-end: url(#arrow-purple); stroke-dasharray: 7 5; }
+      .arrow-red { stroke: #d11f1f; stroke-width: 2.2; fill: none; marker-end: url(#arrow-red); stroke-dasharray: 7 5; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="1030" />
+  <text class="title" x="800" y="50" text-anchor="middle">Semantic MoE JEPA Evo GPT Template</text>
+  <text class="subtitle" x="800" y="85" text-anchor="middle">Autoregressive backbone + chunk-level semantic planner + JEPA target supervision + lightweight route evolution</text>
+
+  <!-- Inputs -->
+  <rect class="box blue" x="24" y="120" width="155" height="590" />
+  <circle cx="52" cy="148" r="16" fill="#174ea6" /><text class="num" x="52" y="155" text-anchor="middle">1</text>
+  <text class="section-title" x="80" y="154" fill="#174ea6">INPUTS</text>
+  <rect class="soft gray" x="38" y="184" width="105" height="68" />
+  <text class="label" x="92" y="214" text-anchor="middle">tokens</text>
+  <text class="small" x="92" y="234" text-anchor="middle">[B,S]</text>
+  <rect class="soft gray" x="38" y="288" width="105" height="68" />
+  <text class="label" x="92" y="318" text-anchor="middle">targets</text>
+  <text class="small" x="92" y="338" text-anchor="middle">[B,S]</text>
+  <rect class="soft gray dash" x="38" y="392" width="112" height="118" />
+  <text class="small" x="94" y="422" text-anchor="middle">semantic</text>
+  <text class="small" x="94" y="442" text-anchor="middle">metadata /</text>
+  <text class="small" x="94" y="462" text-anchor="middle">sem_targets</text>
+  <text class="tiny" x="94" y="488" text-anchor="middle">optional</text>
+
+  <!-- Backbone -->
+  <circle cx="215" cy="134" r="16" fill="#174ea6" /><text class="num" x="215" y="141" text-anchor="middle">2</text>
+  <text class="section-title" x="245" y="140" fill="#174ea6">AUTOREGRESSIVE BACKBONE</text>
+  <rect class="soft blue" x="205" y="180" width="72" height="58" /><text class="small" x="241" y="205" text-anchor="middle">token</text><text class="small" x="241" y="225" text-anchor="middle">embed</text>
+  <rect class="soft blue" x="300" y="180" width="62" height="58" /><text class="small" x="331" y="215" text-anchor="middle">RoPE</text>
+  <rect class="soft blue" x="385" y="180" width="72" height="58" /><text class="small" x="421" y="215" text-anchor="middle">RMSNorm</text>
+  <rect class="soft blue" x="480" y="180" width="74" height="58" /><text class="small" x="517" y="205" text-anchor="middle">causal</text><text class="small" x="517" y="225" text-anchor="middle">attention</text>
+  <rect class="soft blue" x="575" y="180" width="64" height="58" /><text class="small" x="607" y="205" text-anchor="middle">residual</text><text class="small" x="607" y="225" text-anchor="middle">add</text>
+  <path class="arrow-blue" d="M178 218 L205 218" />
+  <path class="arrow-blue" d="M277 209 L300 209" />
+  <path class="arrow-blue" d="M362 209 L385 209" />
+  <path class="arrow-blue" d="M457 209 L480 209" />
+  <path class="arrow-blue" d="M554 209 L575 209" />
+
+  <rect class="box blue" x="205" y="382" width="430" height="305" />
+  <text class="label" x="420" y="410" text-anchor="middle" fill="#174ea6">N x semantic_moe_jepa_evo_block</text>
+  <rect class="soft blue" x="220" y="430" width="395" height="95" />
+  <text class="label" x="239" y="455" fill="#174ea6">(a) LLaMA attention path stays dense</text>
+  <rect class="soft blue" x="242" y="475" width="74" height="38" /><text class="tiny" x="279" y="499" text-anchor="middle">RMSNorm</text>
+  <rect class="soft blue" x="345" y="475" width="116" height="38" /><text class="tiny" x="403" y="493" text-anchor="middle">causal</text><text class="tiny" x="403" y="508" text-anchor="middle">attention</text>
+  <rect class="soft blue" x="490" y="475" width="78" height="38" /><text class="tiny" x="529" y="493" text-anchor="middle">residual</text><text class="tiny" x="529" y="508" text-anchor="middle">add</text>
+  <path class="arrow-blue" d="M316 494 L345 494" /><path class="arrow-blue" d="M461 494 L490 494" />
+
+  <rect class="soft orange" x="220" y="540" width="395" height="125" />
+  <text class="label" x="239" y="565" fill="#f25c05">(b) Semantic MoE FFN</text>
+  <rect class="soft orange" x="236" y="585" width="70" height="48" /><text class="tiny" x="271" y="604" text-anchor="middle">route</text><text class="tiny" x="271" y="619" text-anchor="middle">adapter</text>
+  <rect class="soft orange" x="325" y="585" width="80" height="48" /><text class="tiny" x="365" y="604" text-anchor="middle">expert</text><text class="tiny" x="365" y="619" text-anchor="middle">dispatch</text>
+  <rect class="soft orange" x="425" y="585" width="110" height="48" /><text class="tiny" x="480" y="602" text-anchor="middle">2 shared +</text><text class="tiny" x="480" y="617" text-anchor="middle">86 semantic + 8 free</text>
+  <rect class="soft orange" x="552" y="585" width="48" height="48" /><text class="tiny" x="576" y="604" text-anchor="middle">expert</text><text class="tiny" x="576" y="619" text-anchor="middle">combine</text>
+  <path class="arrow-orange" d="M306 609 L325 609" /><path class="arrow-orange" d="M405 609 L425 609" /><path class="arrow-orange" d="M535 609 L552 609" />
+  <path class="arrow-blue" d="M245 238 L245 382" />
+  <path class="arrow-blue" d="M607 238 C607 315 607 350 625 350 L664 350" />
+
+  <!-- Semantic planner -->
+  <circle cx="665" cy="134" r="16" fill="#007a7a" /><text class="num" x="665" y="141" text-anchor="middle">3</text>
+  <text class="section-title" x="695" y="140" fill="#007a7a">CAUSAL SEMANTIC PLANNER</text>
+  <text class="small" x="908" y="140" fill="#007a7a">(chunk-level routing, no future-token leakage)</text>
+  <rect class="soft teal" x="690" y="165" width="150" height="54" /><text class="small" x="765" y="187" text-anchor="middle">prefix hidden state /</text><text class="small" x="765" y="205" text-anchor="middle">chunk boundary state</text>
+  <rect class="soft teal" x="690" y="245" width="150" height="54" /><text class="small" x="765" y="267" text-anchor="middle">online causal</text><text class="small" x="765" y="285" text-anchor="middle">semantic encoder</text>
+  <rect class="soft teal" x="690" y="325" width="150" height="54" /><text class="small" x="765" y="356" text-anchor="middle">semantic projector</text>
+  <rect class="soft teal" x="690" y="405" width="150" height="54" /><text class="small" x="765" y="426" text-anchor="middle">predicted future</text><text class="small" x="765" y="444" text-anchor="middle">semantic latent</text>
+  <rect class="soft teal" x="690" y="485" width="150" height="54" /><text class="small" x="765" y="506" text-anchor="middle">predicted route</text><text class="small" x="765" y="524" text-anchor="middle">distribution</text>
+  <rect class="soft teal" x="690" y="565" width="150" height="54" /><text class="small" x="765" y="586" text-anchor="middle">top-k experts</text><text class="small" x="765" y="604" text-anchor="middle">for next chunk</text>
+  <path class="arrow-teal" d="M765 219 L765 245" /><path class="arrow-teal" d="M765 299 L765 325" /><path class="arrow-teal" d="M765 379 L765 405" /><path class="arrow-teal" d="M765 459 L765 485" /><path class="arrow-teal" d="M765 539 L765 565" />
+  <rect class="soft teal dash" x="875" y="265" width="118" height="62" />
+  <text class="small" x="934" y="290" text-anchor="middle">prefix-safe:</text>
+  <text class="tiny" x="934" y="309" text-anchor="middle">planner sees</text>
+  <text class="tiny" x="934" y="324" text-anchor="middle">only past tokens</text>
+  <path class="arrow-teal" d="M639 350 L690 192" />
+  <path class="arrow-teal" d="M635 618 C650 618 666 592 690 592" />
+
+  <!-- Expert bank -->
+  <circle cx="1055" cy="194" r="16" fill="#f25c05" /><text class="num" x="1055" y="201" text-anchor="middle">4</text>
+  <text class="section-title" x="1085" y="200" fill="#f25c05">EXPERT BANK</text>
+  <rect class="box orange" x="1025" y="230" width="205" height="360" />
+  <rect class="soft orange" x="1040" y="250" width="175" height="75" /><text class="small" x="1128" y="274" text-anchor="middle">shared experts</text><text class="tiny" x="1128" y="291" text-anchor="middle">(always on)</text>
+  <rect class="soft orange" x="1060" y="300" width="52" height="30" /><text class="tiny" x="1086" y="320" text-anchor="middle">S1</text>
+  <rect class="soft orange" x="1140" y="300" width="52" height="30" /><text class="tiny" x="1166" y="320" text-anchor="middle">S2</text>
+  <rect class="soft orange" x="1040" y="342" width="175" height="130" /><text class="small" x="1128" y="365" text-anchor="middle">semantic experts</text>
+  <text class="tiny" x="1128" y="383" text-anchor="middle">(86 vocab dimensions)</text>
+  <rect class="soft orange" x="1050" y="398" width="50" height="31" /><text class="tiny" x="1075" y="418" text-anchor="middle">math</text>
+  <rect class="soft orange" x="1110" y="398" width="50" height="31" /><text class="tiny" x="1135" y="418" text-anchor="middle">code</text>
+  <rect class="soft orange" x="1170" y="398" width="36" height="31" /><text class="tiny" x="1188" y="418" text-anchor="middle">law</text>
+  <rect class="soft orange" x="1050" y="438" width="50" height="31" /><text class="tiny" x="1075" y="458" text-anchor="middle">bio</text>
+  <rect class="soft orange" x="1110" y="438" width="50" height="31" /><text class="tiny" x="1135" y="458" text-anchor="middle">dialog</text>
+  <rect class="soft orange" x="1170" y="438" width="36" height="31" /><text class="tiny" x="1188" y="458" text-anchor="middle">...</text>
+  <rect class="soft orange" x="1040" y="490" width="175" height="75" /><text class="small" x="1128" y="514" text-anchor="middle">free learned experts</text>
+  <rect class="soft orange" x="1050" y="535" width="50" height="30" /><text class="tiny" x="1075" y="555" text-anchor="middle">syntax</text>
+  <rect class="soft orange" x="1110" y="535" width="50" height="30" /><text class="tiny" x="1135" y="555" text-anchor="middle">format</text>
+  <rect class="soft orange" x="1170" y="535" width="36" height="30" /><text class="tiny" x="1188" y="555" text-anchor="middle">repair</text>
+  <text class="small" x="1130" y="612" text-anchor="middle" fill="#f25c05">semantic experts are interpretable;</text>
+  <text class="small" x="1130" y="632" text-anchor="middle" fill="#f25c05">free experts discover compute clusters</text>
+  <path class="arrow-orange" d="M840 592 C915 592 942 471 1025 471" />
+  <path class="arrow-orange" d="M615 610 C760 610 875 520 1025 520" />
+
+  <!-- JEPA target path -->
+  <circle cx="1264" cy="146" r="16" fill="#6d28d9" /><text class="num" x="1264" y="153" text-anchor="middle">5</text>
+  <text class="section-title" x="1294" y="152" fill="#6d28d9">JEPA TRAINING-ONLY TARGET PATH</text>
+  <rect class="box purple dash" x="1240" y="120" width="330" height="235" />
+  <rect class="soft purple" x="1270" y="182" width="110" height="62" /><text class="small" x="1325" y="205" text-anchor="middle">future chunk /</text><text class="small" x="1325" y="223" text-anchor="middle">full clean span</text>
+  <rect class="soft purple" x="1420" y="182" width="110" height="62" /><text class="small" x="1475" y="203" text-anchor="middle">target semantic</text><text class="small" x="1475" y="221" text-anchor="middle">encoder</text>
+  <rect class="soft purple" x="1270" y="278" width="110" height="62" /><text class="small" x="1325" y="301" text-anchor="middle">target future</text><text class="small" x="1325" y="319" text-anchor="middle">latent</text>
+  <rect class="soft purple" x="1420" y="278" width="110" height="62" /><text class="small" x="1475" y="301" text-anchor="middle">target route</text>
+  <path class="arrow-purple" d="M1380 213 L1420 213" />
+  <path class="arrow-purple" d="M1325 244 L1325 278" />
+  <path class="arrow-purple" d="M1475 244 L1475 278" />
+  <path class="arrow-purple" d="M1270 309 C1110 309 1010 427 840 432" />
+  <path class="arrow-purple" d="M1420 309 C1210 309 1045 507 840 512" />
+
+  <!-- Evo controller -->
+  <circle cx="490" cy="765" r="17" fill="#d11f1f" /><text class="num" x="490" y="772" text-anchor="middle">6</text>
+  <text class="section-title" x="530" y="772" fill="#d11f1f">EVOLUTIONARY OPTIMIZATION CONTROLLER</text>
+  <rect class="box red dash" x="440" y="750" width="465" height="150" />
+  <rect class="soft red" x="462" y="802" width="120" height="55" /><text class="small" x="522" y="825" text-anchor="middle">route candidate</text><text class="small" x="522" y="843" text-anchor="middle">exploration</text>
+  <rect class="soft red" x="622" y="802" width="120" height="55" /><text class="small" x="682" y="825" text-anchor="middle">expert-map</text><text class="small" x="682" y="843" text-anchor="middle">evolution</text>
+  <rect class="soft red" x="782" y="802" width="100" height="55" /><text class="small" x="832" y="825" text-anchor="middle">data /</text><text class="small" x="832" y="843" text-anchor="middle">curriculum</text>
+  <path class="arrow-red" d="M582 829 L622 829" /><path class="arrow-red" d="M742 829 L782 829" />
+  <text class="tiny" x="682" y="882" text-anchor="middle">runs periodically on 5-10% of batches; mutates router bias tables only</text>
+  <path class="arrow-red" d="M640 750 C640 700 625 675 615 650" />
+  <path class="arrow-red" d="M905 825 C1000 825 1050 780 1110 650" />
+
+  <!-- Outputs -->
+  <circle cx="1285" cy="606" r="16" fill="#174ea6" /><text class="num" x="1285" y="613" text-anchor="middle">7</text>
+  <text class="section-title" x="1315" y="612" fill="#174ea6">OUTPUTS AND TRAINING OBJECTIVE</text>
+  <rect class="box blue" x="1250" y="630" width="315" height="230" />
+  <rect class="soft blue" x="1270" y="675" width="95" height="52" /><text class="small" x="1318" y="705" text-anchor="middle">final RMSNorm</text>
+  <rect class="soft blue" x="1270" y="748" width="95" height="52" /><text class="small" x="1318" y="771" text-anchor="middle">LM head /</text><text class="small" x="1318" y="789" text-anchor="middle">tied head</text>
+  <rect class="soft blue" x="1270" y="820" width="95" height="52" /><text class="small" x="1318" y="843" text-anchor="middle">next-token</text><text class="small" x="1318" y="861" text-anchor="middle">logits</text>
+  <path class="arrow-blue" d="M1230 710 L1270 701" />
+  <path class="arrow-blue" d="M1318 727 L1318 748" /><path class="arrow-blue" d="M1318 800 L1318 820" />
+  <rect class="soft purple" x="1405" y="674" width="120" height="38" /><text class="tiny" x="1465" y="698" text-anchor="middle">AR CE loss</text>
+  <rect class="soft purple" x="1405" y="723" width="120" height="38" /><text class="tiny" x="1465" y="747" text-anchor="middle">JEPA loss</text>
+  <rect class="soft purple" x="1405" y="772" width="120" height="38" /><text class="tiny" x="1465" y="796" text-anchor="middle">semantic align</text>
+  <rect class="soft purple" x="1405" y="821" width="120" height="38" /><text class="tiny" x="1465" y="845" text-anchor="middle">route balance</text>
+  <path class="arrow-purple" d="M1365 846 L1405 840" />
+  <rect class="soft purple" x="1360" y="875" width="120" height="36" /><text class="tiny" x="1420" y="898" text-anchor="middle">total_loss</text>
+
+  <!-- Bottom notes and legend -->
+  <rect class="soft gray" x="24" y="735" width="250" height="155" />
+  <text class="label" x="42" y="762">LEGEND</text>
+  <line x1="42" y1="790" x2="88" y2="790" class="arrow-blue" /><text class="tiny" x="98" y="794">main inference path</text>
+  <line x1="42" y1="815" x2="88" y2="815" class="arrow-purple" /><text class="tiny" x="98" y="819">training-only target path</text>
+  <line x1="42" y1="840" x2="88" y2="840" class="arrow-red" /><text class="tiny" x="98" y="844">periodic route evolution</text>
+  <rect x="42" y="858" width="20" height="14" class="soft teal" /><text class="tiny" x="74" y="869">semantic planner / router</text>
+  <rect x="42" y="878" width="20" height="14" class="soft orange" /><text class="tiny" x="74" y="889">MoE expert bank</text>
+
+  <rect class="soft blue" x="110" y="935" width="320" height="62" />
+  <text class="label" x="180" y="963" fill="#174ea6">No future-token leakage</text>
+  <text class="small" x="180" y="985">Chunk router sees prefix state only.</text>
+  <rect class="soft teal" x="470" y="935" width="475" height="62" />
+  <text class="label" x="545" y="963" fill="#007a7a">Efficient chunk-level routing</text>
+  <text class="small" x="545" y="985">Routes update every N tokens and are reused inside the chunk.</text>
+  <rect class="soft red" x="1035" y="935" width="420" height="62" />
+  <text class="label" x="1110" y="963" fill="#d11f1f">Evolution where it pays off</text>
+  <text class="small" x="1110" y="985">Lightweight periodic search tunes router bias state.</text>
+</svg>

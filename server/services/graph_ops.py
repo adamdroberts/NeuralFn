@@ -30,7 +30,12 @@ class GraphOperationError(ValueError):
 
 
 def port_from_model(pm: Any) -> Port:
-    return Port(name=pm.name, range=tuple(pm.range), precision=pm.precision, dtype=pm.dtype)
+    return Port(
+        name=pm.name,
+        range=tuple(pm.range) if pm.range is not None else None,
+        precision=pm.precision,
+        dtype=pm.dtype,
+    )
 
 
 def neuron_def_from_model(nm: Any) -> NeuronDef:
@@ -584,7 +589,12 @@ def ensure_dataset_source_node(graph: NeuronGraph, *, node_id: str, seq_len: int
     dataset_def = clone_neuron_def(BuiltinNeurons.dataset_source_module)
     dataset_def.module_config = {"dataset_names": [], "seq_len": seq_len}
     dataset_def.output_ports = [
-        Port(port.name, range=tuple(port.range), precision=port.precision, dtype=port.dtype)
+        Port(
+            port.name,
+            range=tuple(port.range) if port.range is not None else None,
+            precision=port.precision,
+            dtype=port.dtype,
+        )
         for _, port in input_ports
     ]
     graph.add_node(

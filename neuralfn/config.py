@@ -3,13 +3,30 @@ from typing import Any, Literal
 
 from .semantic import DEFAULT_SEMANTIC_VOCAB_REF, NUM_SEMANTIC_DIMS, NUM_VOCAB_DIMS
 
-ObjectiveType = Literal["ar", "diffusion", "jepa", "jepa_semantic", "semantic_router", "seq2seq"]
+ObjectiveType = Literal[
+    "ar",
+    "diffusion",
+    "jepa",
+    "ar_jepa",
+    "jepa_semantic",
+    "semantic_router",
+    "semantic_router_jepa",
+    "semantic_moe_jepa_evo",
+    "seq2seq",
+    "sft",
+    "dpo",
+    "ppo",
+    "reward_model",
+]
 BackboneType = Literal["gpt2", "nanogpt", "llama", "mixllama", "jamba", "universal", "ttt", "hnet"]
 TokenizationType = Literal["sp", "byte_hnet"]
 SparsityType = Literal["dense", "moe"]
 CompressionType = Literal["none", "ternary_b158", "binary_1bit", "kv_pca"]
-AdapterType = Literal["none", "lora", "randmap"]
+AdapterType = Literal["none", "lora", "qlora", "randmap"]
 RuntimeType = Literal["eager", "compile", "sdpa", "megakernel"]
+RouterModeType = Literal["none", "standard", "semantic"]
+FineTuneObjective = Literal["pretrain", "sft", "dpo", "ppo", "reward_model"]
+DPOLossType = Literal["sigmoid", "hinge", "ipo"]
 
 
 @dataclass
@@ -18,6 +35,7 @@ class TemplateSpec:
     backbone: BackboneType = "gpt2"
     tokenization: TokenizationType = "sp"
     sparsity: SparsityType = "dense"
+    router_mode: RouterModeType = "none"
     compression: CompressionType = "none"
     adapter: AdapterType = "none"
     runtime: RuntimeType = "eager"
@@ -67,10 +85,48 @@ class BlockSpec:
     router_aux_loss_coef: float = 0.0
     compression: str = "none"
     adapter_dim: int = 0
+    adapter_type: str = "none"  # "none" | "lora" | "qlora" | "randmap"
+    lora_rank: int = 8
+    lora_alpha: float = 16.0
+    lora_dropout: float = 0.0
+    lora_targets: tuple[str, ...] = ("q_proj", "v_proj")
+    lora_bias: bool = False
+    qlora_group_size: int = 64
+    qlora_compute_dtype: str = "bf16"
     ttt_hidden_dim: int = 16
     byte_patch_size: int = 4
     byte_patch_stride: int = 4
     qk_gain_init: float = 1.0
+
+
+@dataclass
+class FineTuneSpec:
+    """Configuration for a fine-tuning run.
+
+    ``objective`` selects the training objective. ``base_checkpoint`` points
+    at the pretrained weights to initialize from (frozen for LoRA/qLoRA).
+    ``ref_checkpoint`` is used by DPO/PPO for the frozen reference model.
+    ``reward_checkpoint`` is used by PPO for the frozen reward model.
+    """
+    objective: str = "pretrain"  # "pretrain" | "sft" | "dpo" | "ppo" | "reward_model"
+    base_checkpoint: str = ""
+    ref_checkpoint: str = ""
+    reward_checkpoint: str = ""
+    adapter_only_save: bool = False
+    # DPO knobs
+    beta: float = 0.1
+    dpo_loss_type: str = "sigmoid"
+    dpo_label_smoothing: float = 0.0
+    # PPO knobs
+    kl_coef: float = 0.1
+    ppo_clip: float = 0.2
+    ppo_vf_coef: float = 0.5
+    ppo_ent_coef: float = 0.0
+    rollout_length: int = 64
+    ppo_epochs_per_rollout: int = 4
+    ppo_minibatch_size: int = 4
+    gae_gamma: float = 1.0
+    gae_lambda: float = 0.95
 
 
 @dataclass
@@ -98,9 +154,18 @@ class ModelSpec:
     semantic_table_path: str = ""
     semantic_vocab_ref: str = DEFAULT_SEMANTIC_VOCAB_REF
     experimental_semantic_router_vecs: bool = False
+    route_chunk_size: int = 32
+    semantic_shared_experts: int = 2
+    semantic_free_experts: int = 8
+    route_evo_enabled: bool = True
+    route_evo_fraction: float = 0.10
+    route_evo_population: int = 8
+    route_evo_mutation_scale: float = 0.05
+    route_evo_seed: int | None = None
     ar_loss_coef: float = 1.0
     jepa_loss_coef: float = 0.25
     semantic_align_loss_coef: float = 0.5
+    finetune: FineTuneSpec | None = None
 
 
 def model_spec_to_dict(spec: ModelSpec) -> dict[str, Any]:
@@ -140,6 +205,14 @@ def _base_model_spec(
         semantic_table_path=str(kwargs.get("semantic_table_path", "")),
         semantic_vocab_ref=str(kwargs.get("semantic_vocab_ref", DEFAULT_SEMANTIC_VOCAB_REF)),
         experimental_semantic_router_vecs=bool(kwargs.get("experimental_semantic_router_vecs", False)),
+        route_chunk_size=int(kwargs.get("route_chunk_size", 32)),
+        semantic_shared_experts=int(kwargs.get("semantic_shared_experts", 2)),
+        semantic_free_experts=int(kwargs.get("semantic_free_experts", 8)),
+        route_evo_enabled=bool(kwargs.get("route_evo_enabled", True)),
+        route_evo_fraction=float(kwargs.get("route_evo_fraction", 0.10)),
+        route_evo_population=int(kwargs.get("route_evo_population", 8)),
+        route_evo_mutation_scale=float(kwargs.get("route_evo_mutation_scale", 0.05)),
+        route_evo_seed=kwargs.get("route_evo_seed"),
         ar_loss_coef=float(kwargs.get("ar_loss_coef", 1.0)),
         jepa_loss_coef=float(kwargs.get("jepa_loss_coef", 0.25)),
         semantic_align_loss_coef=float(kwargs.get("semantic_align_loss_coef", 0.5)),
@@ -161,6 +234,169 @@ def _build_nanogpt_runtime_spec(*, runtime: str, **kwargs: Any) -> ModelSpec:
         ),
         default_tie_embeddings=True,
     )
+
+
+def _resolve_composed_runtime(base_model: str, runtime: str | None) -> RuntimeType:
+    normalized = str(runtime or "default").strip().lower()
+    if normalized == "default":
+        return "compile" if base_model == "llama" else "eager"
+    if normalized not in {"eager", "compile", "megakernel"}:
+        raise ValueError(f"Unsupported composed runtime {runtime!r}")
+    return normalized  # type: ignore[return-value]
+
+
+def _resolve_composed_objective(*, router_mode: RouterModeType, use_jepa: bool) -> ObjectiveType:
+    if router_mode == "semantic":
+        return "semantic_router_jepa" if use_jepa else "semantic_router"
+    return "ar_jepa" if use_jepa else "ar"
+
+
+def build_composed_lm_spec(
+    *,
+    base_model: str = "llama",
+    topology: str = "dense",
+    router_mode: str = "none",
+    use_jepa: bool = False,
+    runtime: str | None = None,
+    **kwargs: Any,
+) -> ModelSpec:
+    normalized_model = str(base_model or "llama").strip().lower()
+    if normalized_model == "mixllama":
+        normalized_model = "llama"
+    if normalized_model not in {"llama", "gpt2", "nanogpt"}:
+        raise ValueError(f"Unsupported composed base model {base_model!r}")
+
+    normalized_topology = str(topology or "dense").strip().lower()
+    if normalized_topology not in {"dense", "moe"}:
+        raise ValueError(f"Unsupported composed topology {topology!r}")
+
+    normalized_router = str(router_mode or "none").strip().lower()
+    if normalized_topology == "dense":
+        normalized_router = "none"
+    elif normalized_router == "none":
+        normalized_router = "standard"
+    if normalized_router not in {"none", "standard", "semantic"}:
+        raise ValueError(f"Unsupported composed router mode {router_mode!r}")
+
+    resolved_runtime = _resolve_composed_runtime(normalized_model, runtime)
+    resolved_objective = _resolve_composed_objective(
+        router_mode=normalized_router,  # type: ignore[arg-type]
+        use_jepa=bool(use_jepa),
+    )
+
+    family = normalized_model
+    norm_type = "layernorm"
+    dense_mlp_type = "gelu"
+    pos_encoding = "absolute"
+    linear_bias = True
+    dropout_p = float(kwargs.get("dropout_p", 0.0))
+    mlp_multiplier = float(kwargs.get("mlp_multiplier", kwargs.get("mlp_mult", 4.0)))
+    multiple_of = kwargs.get("multiple_of")
+    num_kv_heads = None
+    tie_embeddings = True
+    tokenization: TokenizationType = "sp"
+
+    if normalized_model == "llama":
+        norm_type = "rmsnorm"
+        dense_mlp_type = "swiglu"
+        pos_encoding = "rope"
+        linear_bias = False
+        dropout_p = float(kwargs.get("dropout_p", 0.0))
+        mlp_multiplier = float(kwargs.get("mlp_multiplier", kwargs.get("mlp_mult", 8.0 / 3.0)))
+        multiple_of = int(kwargs.get("multiple_of", 256))
+        requested_kv_heads = kwargs.get("num_kv_heads")
+        if requested_kv_heads is not None:
+            num_kv_heads = int(requested_kv_heads)
+        tie_embeddings = bool(kwargs.get("tie_embeddings", False))
+    elif normalized_model == "nanogpt":
+        linear_bias = bool(kwargs.get("bias", False))
+        dropout_p = float(kwargs.get("dropout_p", 0.1))
+        tie_embeddings = bool(kwargs.get("tie_embeddings", True))
+    else:
+        tie_embeddings = bool(kwargs.get("tie_embeddings", True))
+
+    experts: int | None = None
+    top_k: int | None = None
+    router_aux_loss_coef = float(kwargs.get("router_aux_loss_coef", 0.0))
+    if normalized_topology == "moe":
+        default_experts = NUM_VOCAB_DIMS if normalized_router == "semantic" else 8
+        experts = int(kwargs.get("experts", default_experts))
+        if normalized_router == "semantic" and experts != NUM_VOCAB_DIMS:
+            raise ValueError(
+                f"Semantic MoE router requires exactly {NUM_VOCAB_DIMS} experts (one per vocab dimension)"
+            )
+        top_k = int(kwargs.get("top_k", 2))
+        if normalized_router == "semantic":
+            top_k = min(top_k, NUM_VOCAB_DIMS)
+            router_aux_loss_coef = float(kwargs.get("router_aux_loss_coef", 0.01 if use_jepa else 0.0))
+        else:
+            router_aux_loss_coef = float(kwargs.get("router_aux_loss_coef", 0.01))
+
+    adapter_type_kw = str(kwargs.get("adapter_type", "none")).strip().lower()
+    if adapter_type_kw not in {"none", "lora", "qlora", "randmap"}:
+        raise ValueError(f"Unsupported adapter_type {adapter_type_kw!r}")
+    template_adapter: AdapterType = adapter_type_kw  # type: ignore[assignment]
+
+    lora_targets_kw = kwargs.get("lora_targets")
+    if lora_targets_kw is None:
+        lora_targets_tuple: tuple[str, ...] = ("q_proj", "v_proj")
+    elif isinstance(lora_targets_kw, str):
+        lora_targets_tuple = tuple(t.strip() for t in lora_targets_kw.split(",") if t.strip())
+    else:
+        lora_targets_tuple = tuple(str(t).strip() for t in lora_targets_kw if str(t).strip())
+
+    template = TemplateSpec(
+        objective=resolved_objective,
+        backbone=normalized_model,  # type: ignore[arg-type]
+        tokenization=tokenization,
+        sparsity=normalized_topology,  # type: ignore[arg-type]
+        router_mode=normalized_router,  # type: ignore[arg-type]
+        compression="none",
+        adapter=template_adapter,
+        runtime=resolved_runtime,
+    )
+    block_spec = BlockSpec(
+        family=family,
+        norm_type=norm_type,
+        mlp_type="moe" if normalized_topology == "moe" else dense_mlp_type,
+        pos_encoding=pos_encoding,
+        attention_backend="sdpa",
+        num_heads=int(kwargs.get("num_heads", 4)),
+        num_kv_heads=num_kv_heads,
+        is_causal=True,
+        linear_bias=linear_bias,
+        dropout_p=dropout_p,
+        rope_theta=float(kwargs.get("rope_base", kwargs.get("rope_theta", 10_000.0))),
+        mlp_multiplier=mlp_multiplier,
+        multiple_of=multiple_of,
+        experts=experts,
+        top_k=top_k,
+        shared_experts=int(kwargs.get("shared_experts", 0)),
+        router_aux_loss_coef=router_aux_loss_coef,
+        compression="none",
+        adapter_dim=int(kwargs.get("adapter_dim", 0)),
+        adapter_type=adapter_type_kw,
+        lora_rank=int(kwargs.get("lora_rank", 8)),
+        lora_alpha=float(kwargs.get("lora_alpha", 16.0)),
+        lora_dropout=float(kwargs.get("lora_dropout", 0.0)),
+        lora_targets=lora_targets_tuple,
+        lora_bias=bool(kwargs.get("lora_bias", False)),
+        qlora_group_size=int(kwargs.get("qlora_group_size", 64)),
+        qlora_compute_dtype=str(kwargs.get("qlora_compute_dtype", "bf16")),
+        qk_gain_init=float(kwargs.get("qk_gain_init", 1.0)),
+    )
+    spec = _base_model_spec(
+        kwargs=kwargs,
+        template=template,
+        block_spec=block_spec,
+        default_tie_embeddings=tie_embeddings,
+    )
+    finetune_kw = kwargs.get("finetune")
+    if isinstance(finetune_kw, FineTuneSpec):
+        spec.finetune = finetune_kw
+    elif isinstance(finetune_kw, dict):
+        spec.finetune = FineTuneSpec(**finetune_kw)
+    return spec
 
 
 def build_nanogpt_spec(**kwargs: Any) -> ModelSpec:
@@ -614,3 +850,53 @@ def build_semantic_router_moe_spec(**kwargs: Any) -> ModelSpec:
 
 def build_semantic_router_moe_megakernel_spec(**kwargs: Any) -> ModelSpec:
     return _build_semantic_router_moe_runtime_spec(runtime="megakernel", **kwargs)
+
+
+def build_semantic_moe_jepa_evo_spec(**kwargs: Any) -> ModelSpec:
+    """Experimental: chunk-routed semantic MoE with JEPA supervision and route evolution."""
+    shared_experts = int(kwargs.get("semantic_shared_experts", 2))
+    free_experts = int(kwargs.get("semantic_free_experts", 8))
+    if shared_experts < 0:
+        raise ValueError("semantic_moe_jepa_evo requires semantic_shared_experts >= 0")
+    if free_experts < 0:
+        raise ValueError("semantic_moe_jepa_evo requires semantic_free_experts >= 0")
+    total_experts = shared_experts + NUM_VOCAB_DIMS + free_experts
+    experts = int(kwargs.get("experts", total_experts))
+    if experts != total_experts:
+        raise ValueError(
+            "semantic_moe_jepa_evo requires experts to equal "
+            f"semantic_shared_experts + {NUM_VOCAB_DIMS} vocab experts + semantic_free_experts "
+            f"({total_experts}), got {experts}"
+        )
+    top_k = min(int(kwargs.get("top_k", 2)), NUM_VOCAB_DIMS + free_experts)
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(
+            objective="semantic_moe_jepa_evo",
+            backbone="mixllama",
+            tokenization="sp",
+            sparsity="moe",
+            router_mode="semantic",
+            compression="none",
+            adapter="none",
+            runtime="compile",
+        ),
+        block_spec=BlockSpec(
+            family="mixllama",
+            norm_type="rmsnorm",
+            mlp_type="moe",
+            pos_encoding="rope",
+            linear_bias=False,
+            dropout_p=0.0,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            experts=experts,
+            top_k=top_k,
+            router_aux_loss_coef=float(kwargs.get("router_aux_loss_coef", 0.01)),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+            attention_backend="sdpa",
+            rope_theta=kwargs.get("rope_base", kwargs.get("rope_theta", 10000.0)),
+            qk_gain_init=kwargs.get("qk_gain_init", 1.0),
+        ),
+        default_tie_embeddings=False,
+    )

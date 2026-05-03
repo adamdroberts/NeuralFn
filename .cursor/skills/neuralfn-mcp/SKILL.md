@@ -142,7 +142,7 @@ That's it -- four tool calls for a complete train run.
 | `set_dataset_access(ds_name, project_ids)` | Update which projects can use a dataset. |
 | `delete_dataset(ds_name)` | Delete a local dataset. |
 
-## All 17 GPT template presets
+## All 18 GPT template presets
 
 | Preset | Architecture | Objective |
 |--------|-------------|-----------|
@@ -159,6 +159,7 @@ That's it -- four tool calls for a complete train run.
 | `ttt_llama` | Test-Time Training layers | AR |
 | `llm_jepa` | JEPA with EMA target encoder | JEPA |
 | `semantic_router_moe` | AR-only semantic router control with shared routed MoE blocks | AR |
+| `semantic_moe_jepa_evo` | Chunk-level Semantic MoE JEPA Evo with route evolution | Semantic MoE JEPA |
 | `hnet_lm` | Raw-byte input, byte patches | AR |
 | `universal_llama` | ACT-based universal transformer | AR |
 | `llama_megakernel` | Fused attention, max-autotune compile | AR |
@@ -178,6 +179,14 @@ That's it -- four tool calls for a complete train run.
 | `experts` | 8 | MoE: number of experts |
 | `top_k` | 2 | MoE: active experts per token |
 | `router_aux_loss_coef` | 0.01 | MoE load-balance loss coefficient |
+| `semantic_vocab_ref` | default vocab | Semantic vocabulary file for semantic routing presets |
+| `route_chunk_size` | 32 | Chunk interval for `semantic_moe_jepa_evo` route updates |
+| `semantic_shared_experts` | 2 | Always-on shared experts for `semantic_moe_jepa_evo` |
+| `semantic_free_experts` | 8 | Free learned experts for `semantic_moe_jepa_evo` |
+| `route_evo_enabled` | true | Enable periodic route evolution for `semantic_moe_jepa_evo` |
+| `route_evo_fraction` | 0.10 | Fraction of optimizer steps that run route evolution |
+| `route_evo_population` | 8 | Route-evolution candidate count |
+| `route_evo_mutation_scale` | 0.05 | Mutation scale for route-evolution candidates |
 | `dropout_p` | 0.0 | Dropout rate |
 | `tie_embeddings` | varies | Tie embedding and LM head weights |
 | `logit_softcap` | 0.0 | Tanh softcap value (>0 enables) |

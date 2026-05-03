@@ -375,6 +375,27 @@ def test_save_artifacts_records_weights_file_in_graph(
     graph = _make_graph(vocab_size=16, preset="llama_fast")
     weights_path = tmp_path / "toy_weights.pt"
     graph_path = tmp_path / "toy_graph.json"
+    sentinel_state = "encoded-module-state"
+
+    def apply_module_state(payload_graph) -> None:
+        for node in payload_graph.nodes.values():
+            neuron_def = node.neuron_def
+            if neuron_def.kind == "module":
+                neuron_def.module_state = sentinel_state
+            elif neuron_def.kind == "subgraph" and neuron_def.subgraph is not None:
+                apply_module_state(neuron_def.subgraph)
+
+    def collect_module_states(payload: dict[str, object]) -> list[str]:
+        states: list[str] = []
+        for node in payload.get("nodes", {}).values():
+            neuron_def = dict(node.get("neuron_def", {}) or {})
+            states.append(str(neuron_def.get("module_state", "")))
+            subgraph = neuron_def.get("subgraph")
+            if isinstance(subgraph, dict):
+                states.extend(collect_module_states(subgraph))
+        return states
+
+    apply_module_state(graph)
 
     monkeypatch.setattr(
         train_module,
@@ -382,10 +403,29 @@ def test_save_artifacts_records_weights_file_in_graph(
         lambda _graph, path: Path(path).write_bytes(b"pt"),
     )
 
-    train_module.save_artifacts(graph, weights_path, graph_path)
+    train_module.save_artifacts(
+        graph,
+        weights_path,
+        graph_path,
+        training_manifest={"run_id": "unit-test", "trainer": {"max_steps": 10}},
+        dataset_name="tiny_raw",
+        dataset_meta={
+            "source": "huggingface",
+            "hf_path": "roneneldan/TinyStories",
+            "tokenizer_encoding": "o200k_base",
+            "tokenizer_vocab_size": dm.raw_text_encoding_vocab_size("o200k_base"),
+        },
+        raw_text_encoding_name="o200k_base",
+    )
 
     payload = json.loads(graph_path.read_text(encoding="utf-8"))
     assert payload["torch_config"]["artifact_metadata"]["weights_file"] == "toy_weights.pt"
+    assert payload["torch_config"]["artifact_metadata"]["stores_embedded_module_state"] is False
+    assert payload["torch_config"]["tokenizer_manifest"]["backend"] == "tiktoken"
+    assert payload["torch_config"]["tokenizer_manifest"]["encoding_name"] == "o200k_base"
+    assert payload["torch_config"]["training_manifest"]["run_id"] == "unit-test"
+    assert payload["torch_config"]["training_manifest"]["dataset"]["dataset_alias"] == "tiny_raw"
+    assert sentinel_state not in collect_module_states(payload)
 
 
 def test_infer_llama_preflight_rejects_model_vocab_mismatch(tmp_path: Path) -> None:
@@ -688,6 +728,7 @@ def test_train_mixllama_main_uses_shared_dataset_resolver_before_missing_alias_f
         {
             "alias": "custom_alias",
             "download_if_missing": True,
+            "raw_text_encoding_name": "gpt2",
             "dataset_hf_path": None,
             "dataset_variant": None,
             "dataset_train_shards": None,
@@ -730,6 +771,7 @@ def test_train_llama_main_uses_shared_dataset_resolver_before_missing_alias_fail
         {
             "alias": "custom_alias",
             "download_if_missing": True,
+            "raw_text_encoding_name": "gpt2",
             "dataset_hf_path": None,
             "dataset_variant": None,
             "dataset_train_shards": None,
@@ -772,6 +814,7 @@ def test_train_llama_megakernel_main_uses_shared_dataset_resolver_before_missing
         {
             "alias": "custom_alias",
             "download_if_missing": True,
+            "raw_text_encoding_name": "gpt2",
             "dataset_hf_path": None,
             "dataset_variant": None,
             "dataset_train_shards": None,
@@ -892,6 +935,7 @@ def test_infer_mixllama_main_resolves_dataset_before_tokenizer_loading(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     infer_module = _load_infer_mixllama_module()
+    shared_infer = sys.modules["infer_jepa_semantic"]
     graph_path = tmp_path / "graph.json"
     weights_path = tmp_path / "weights.pt"
     graph_path.write_text("{}", encoding="utf-8")
@@ -899,33 +943,28 @@ def test_infer_mixllama_main_resolves_dataset_before_tokenizer_loading(
     sentinel = RuntimeError("tokenizer reached")
     resolved_calls: list[dict[str, object]] = []
 
-    class FakeCompiledGraph:
-        def __init__(self, _graph):
-            pass
-
-        def load_state_dict(self, _state_dict):
-            return None
-
-        def to(self, _device):
-            return self
-
-        def eval(self):
-            return self
-
     def fake_resolve(alias: str, **kwargs):
         resolved_calls.append({"alias": alias, **kwargs})
         return alias, tmp_path / alias, {"tokenizer_files": []}
 
-    def fake_load_sentencepiece_model(dataset_path: Path, dataset_meta: dict[str, object]):
+    def fake_load_sentencepiece_model(
+        dataset_path: Path,
+        dataset_meta: dict[str, object],
+        *,
+        raw_text_encoding_name: str = "gpt2",
+    ):
         assert dataset_path == tmp_path / "custom_alias"
         assert dataset_meta == {"tokenizer_files": []}
+        assert raw_text_encoding_name
         raise sentinel
 
-    monkeypatch.setattr(infer_module, "resolve_or_download_dataset", fake_resolve)
-    monkeypatch.setattr(infer_module, "load_sentencepiece_model", fake_load_sentencepiece_model)
-    monkeypatch.setattr(infer_module, "load_graph", lambda _path: SimpleNamespace(torch_config={}, nodes={}))
-    monkeypatch.setattr(infer_module, "CompiledTorchGraph", FakeCompiledGraph)
-    monkeypatch.setattr(infer_module.torch, "load", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(shared_infer, "resolve_or_download_dataset", fake_resolve)
+    monkeypatch.setattr(shared_infer, "load_sentencepiece_model", fake_load_sentencepiece_model)
+    monkeypatch.setattr(
+        infer_module,
+        "load_compiled_inference_graph",
+        lambda **_kwargs: (SimpleNamespace(torch_config={}, nodes={}), SimpleNamespace(), {}, weights_path),
+    )
     monkeypatch.setattr(infer_module.torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(
         sys,
@@ -947,6 +986,7 @@ def test_infer_mixllama_main_resolves_dataset_before_tokenizer_loading(
         {
             "alias": "custom_alias",
             "download_if_missing": True,
+            "raw_text_encoding_name": "gpt2",
             "dataset_hf_path": None,
             "dataset_variant": None,
             "dataset_train_shards": None,
@@ -963,6 +1003,7 @@ def test_infer_llama_main_resolves_dataset_before_tokenizer_loading(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     infer_module = _load_infer_llama_module()
+    shared_infer = sys.modules["infer_jepa_semantic"]
     graph_path = tmp_path / "graph.json"
     weights_path = tmp_path / "weights.pt"
     graph_path.write_text("{}", encoding="utf-8")
@@ -970,33 +1011,28 @@ def test_infer_llama_main_resolves_dataset_before_tokenizer_loading(
     sentinel = RuntimeError("tokenizer reached")
     resolved_calls: list[dict[str, object]] = []
 
-    class FakeCompiledGraph:
-        def __init__(self, _graph):
-            pass
-
-        def load_state_dict(self, _state_dict):
-            return None
-
-        def to(self, _device):
-            return self
-
-        def eval(self):
-            return self
-
     def fake_resolve(alias: str, **kwargs):
         resolved_calls.append({"alias": alias, **kwargs})
         return alias, tmp_path / alias, {"tokenizer_files": []}
 
-    def fake_load_sentencepiece_model(dataset_path: Path, dataset_meta: dict[str, object]):
+    def fake_load_sentencepiece_model(
+        dataset_path: Path,
+        dataset_meta: dict[str, object],
+        *,
+        raw_text_encoding_name: str = "gpt2",
+    ):
         assert dataset_path == tmp_path / "custom_alias"
         assert dataset_meta == {"tokenizer_files": []}
+        assert raw_text_encoding_name
         raise sentinel
 
-    monkeypatch.setattr(infer_module, "resolve_or_download_dataset", fake_resolve)
-    monkeypatch.setattr(infer_module, "load_sentencepiece_model", fake_load_sentencepiece_model)
-    monkeypatch.setattr(infer_module, "load_graph", lambda _path: SimpleNamespace(torch_config={}, nodes={}))
-    monkeypatch.setattr(infer_module, "CompiledTorchGraph", FakeCompiledGraph)
-    monkeypatch.setattr(infer_module.torch, "load", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(shared_infer, "resolve_or_download_dataset", fake_resolve)
+    monkeypatch.setattr(shared_infer, "load_sentencepiece_model", fake_load_sentencepiece_model)
+    monkeypatch.setattr(
+        infer_module,
+        "load_compiled_inference_graph",
+        lambda **_kwargs: (SimpleNamespace(torch_config={}, nodes={}), SimpleNamespace(), {}, weights_path),
+    )
     monkeypatch.setattr(infer_module.torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(
         sys,
@@ -1018,6 +1054,7 @@ def test_infer_llama_main_resolves_dataset_before_tokenizer_loading(
         {
             "alias": "custom_alias",
             "download_if_missing": True,
+            "raw_text_encoding_name": "gpt2",
             "dataset_hf_path": None,
             "dataset_variant": None,
             "dataset_train_shards": None,
@@ -1034,6 +1071,7 @@ def test_infer_llama_megakernel_main_resolves_dataset_before_tokenizer_loading(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     infer_module = _load_infer_llama_megakernel_module()
+    shared_infer = sys.modules["infer_jepa_semantic"]
     graph_path = tmp_path / "graph.json"
     weights_path = tmp_path / "weights.pt"
     graph_path.write_text("{}", encoding="utf-8")
@@ -1041,33 +1079,28 @@ def test_infer_llama_megakernel_main_resolves_dataset_before_tokenizer_loading(
     sentinel = RuntimeError("tokenizer reached")
     resolved_calls: list[dict[str, object]] = []
 
-    class FakeCompiledGraph:
-        def __init__(self, _graph):
-            pass
-
-        def load_state_dict(self, _state_dict):
-            return None
-
-        def to(self, _device):
-            return self
-
-        def eval(self):
-            return self
-
     def fake_resolve(alias: str, **kwargs):
         resolved_calls.append({"alias": alias, **kwargs})
         return alias, tmp_path / alias, {"tokenizer_files": []}
 
-    def fake_load_sentencepiece_model(dataset_path: Path, dataset_meta: dict[str, object]):
+    def fake_load_sentencepiece_model(
+        dataset_path: Path,
+        dataset_meta: dict[str, object],
+        *,
+        raw_text_encoding_name: str = "gpt2",
+    ):
         assert dataset_path == tmp_path / "custom_alias"
         assert dataset_meta == {"tokenizer_files": []}
+        assert raw_text_encoding_name
         raise sentinel
 
-    monkeypatch.setattr(infer_module, "resolve_or_download_dataset", fake_resolve)
-    monkeypatch.setattr(infer_module, "load_sentencepiece_model", fake_load_sentencepiece_model)
-    monkeypatch.setattr(infer_module, "load_graph", lambda _path: SimpleNamespace(torch_config={}, nodes={}))
-    monkeypatch.setattr(infer_module, "CompiledTorchGraph", FakeCompiledGraph)
-    monkeypatch.setattr(infer_module.torch, "load", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(shared_infer, "resolve_or_download_dataset", fake_resolve)
+    monkeypatch.setattr(shared_infer, "load_sentencepiece_model", fake_load_sentencepiece_model)
+    monkeypatch.setattr(
+        infer_module,
+        "load_compiled_inference_graph",
+        lambda **_kwargs: (SimpleNamespace(torch_config={}, nodes={}), SimpleNamespace(), {}, weights_path),
+    )
     monkeypatch.setattr(infer_module.torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(
         sys,
@@ -1089,6 +1122,7 @@ def test_infer_llama_megakernel_main_resolves_dataset_before_tokenizer_loading(
         {
             "alias": "custom_alias",
             "download_if_missing": True,
+            "raw_text_encoding_name": "gpt2",
             "dataset_hf_path": None,
             "dataset_variant": None,
             "dataset_train_shards": None,

@@ -102,6 +102,19 @@ export default function TrainingPanel() {
   const [dataTarget, setDataTarget] = useState("[[1,2,3,4],[2,3,4,5],[3,4,5,6],[4,5,6,7]]");
   const [isTorchTraceMinimized, setIsTorchTraceMinimized] = useState(false);
   const ctrlRef = useRef<AbortController | null>(null);
+  // ── Fine-tuning controls ──────────────────────────────────────────
+  const [trainingMode, setTrainingMode] = useState<"pretrain" | "sft" | "dpo" | "ppo" | "reward_model">("pretrain");
+  const [adapterType, setAdapterType] = useState<"none" | "lora" | "qlora" | "randmap">("none");
+  const [loraRank, setLoraRank] = useState(8);
+  const [loraAlpha, setLoraAlpha] = useState(16);
+  const [loraTargets, setLoraTargets] = useState("q_proj,v_proj");
+  const [baseCheckpoint, setBaseCheckpoint] = useState("");
+  const [refCheckpoint, setRefCheckpoint] = useState("");
+  const [rewardCheckpoint, setRewardCheckpoint] = useState("");
+  const [dpoBeta, setDpoBeta] = useState(0.1);
+  const [ppoClip, setPpoClip] = useState(0.2);
+  const [rolloutLength, setRolloutLength] = useState(64);
+  const [adapterOnlySave, setAdapterOnlySave] = useState(true);
 
   const traceGraphSignature = useMemo(
     () => JSON.stringify(stripGraphForTrace(rootGraph)),
@@ -160,6 +173,27 @@ export default function TrainingPanel() {
         generations: epochs,
         batch_size: batchSize,
         weight_decay: weightDecay,
+        // ── Fine-tuning ───────────────────────────────────────────────
+        training_mode: trainingMode,
+        base_checkpoint_path: baseCheckpoint || undefined,
+        ref_checkpoint_path: refCheckpoint || undefined,
+        reward_checkpoint_path: rewardCheckpoint || undefined,
+        adapter_only_save: adapterOnlySave,
+        finetune_config:
+          trainingMode === "pretrain" && adapterType === "none"
+            ? undefined
+            : {
+                adapter_type: adapterType,
+                lora_rank: loraRank,
+                lora_alpha: loraAlpha,
+                lora_targets: loraTargets
+                  .split(",")
+                  .map((t) => t.trim())
+                  .filter(Boolean),
+                beta: dpoBeta,
+                ppo_clip: ppoClip,
+                rollout_length: rolloutLength,
+              },
       },
       (msg) => {
         if (msg.done) {
@@ -353,6 +387,35 @@ export default function TrainingPanel() {
           />
         </label>
 
+        <label className="text-[10px] text-gray-400">
+          Mode
+          <select
+            value={trainingMode}
+            onChange={(e) => setTrainingMode(e.target.value as any)}
+            className="ml-1 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+          >
+            <option value="pretrain">pretrain</option>
+            <option value="sft">sft</option>
+            <option value="dpo">dpo</option>
+            <option value="ppo">ppo</option>
+            <option value="reward_model">reward_model</option>
+          </select>
+        </label>
+
+        <label className="text-[10px] text-gray-400">
+          Adapter
+          <select
+            value={adapterType}
+            onChange={(e) => setAdapterType(e.target.value as any)}
+            className="ml-1 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-xs"
+          >
+            <option value="none">none</option>
+            <option value="lora">lora</option>
+            <option value="qlora">qlora</option>
+            <option value="randmap">randmap</option>
+          </select>
+        </label>
+
         {!isTraining ? (
           <button
             onClick={start}
@@ -379,6 +442,121 @@ export default function TrainingPanel() {
       {hasNestedGraphs && (
         <div className="mt-2 text-[10px] text-gray-500">
           Nested networks use each graph&apos;s own training method. Set root and subgraph methods from the side panel.
+        </div>
+      )}
+
+      {trainingMode !== "pretrain" && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 bg-gray-900/50 rounded p-2 border border-gray-800">
+          <span className="text-[10px] font-bold text-amber-300">Fine-tune</span>
+          <label className="text-[10px] text-gray-400">
+            Base ckpt
+            <input
+              type="text"
+              value={baseCheckpoint}
+              onChange={(e) => setBaseCheckpoint(e.target.value)}
+              placeholder="artifacts/base.pt"
+              className="ml-1 w-40 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-[10px]"
+            />
+          </label>
+          {(trainingMode === "dpo" || trainingMode === "ppo") && (
+            <label className="text-[10px] text-gray-400">
+              Ref ckpt
+              <input
+                type="text"
+                value={refCheckpoint}
+                onChange={(e) => setRefCheckpoint(e.target.value)}
+                placeholder="artifacts/ref.pt"
+                className="ml-1 w-40 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-[10px]"
+              />
+            </label>
+          )}
+          {trainingMode === "ppo" && (
+            <label className="text-[10px] text-gray-400">
+              Reward ckpt
+              <input
+                type="text"
+                value={rewardCheckpoint}
+                onChange={(e) => setRewardCheckpoint(e.target.value)}
+                placeholder="artifacts/reward.pt"
+                className="ml-1 w-40 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-[10px]"
+              />
+            </label>
+          )}
+          {(adapterType === "lora" || adapterType === "qlora") && (
+            <>
+              <label className="text-[10px] text-gray-400">
+                Rank
+                <input
+                  type="number"
+                  value={loraRank}
+                  onChange={(e) => setLoraRank(parseInt(e.target.value) || 8)}
+                  className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-[10px]"
+                />
+              </label>
+              <label className="text-[10px] text-gray-400">
+                Alpha
+                <input
+                  type="number"
+                  value={loraAlpha}
+                  onChange={(e) => setLoraAlpha(parseFloat(e.target.value) || 16)}
+                  className="ml-1 w-16 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-[10px]"
+                />
+              </label>
+              <label className="text-[10px] text-gray-400">
+                Targets
+                <input
+                  type="text"
+                  value={loraTargets}
+                  onChange={(e) => setLoraTargets(e.target.value)}
+                  className="ml-1 w-40 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-[10px]"
+                />
+              </label>
+            </>
+          )}
+          {trainingMode === "dpo" && (
+            <label className="text-[10px] text-gray-400">
+              β
+              <input
+                type="number"
+                value={dpoBeta}
+                step={0.01}
+                onChange={(e) => setDpoBeta(parseFloat(e.target.value) || 0.1)}
+                className="ml-1 w-20 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-[10px]"
+              />
+            </label>
+          )}
+          {trainingMode === "ppo" && (
+            <>
+              <label className="text-[10px] text-gray-400">
+                Clip
+                <input
+                  type="number"
+                  value={ppoClip}
+                  step={0.01}
+                  onChange={(e) => setPpoClip(parseFloat(e.target.value) || 0.2)}
+                  className="ml-1 w-20 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-[10px]"
+                />
+              </label>
+              <label className="text-[10px] text-gray-400">
+                Rollout
+                <input
+                  type="number"
+                  value={rolloutLength}
+                  onChange={(e) => setRolloutLength(parseInt(e.target.value) || 64)}
+                  className="ml-1 w-20 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200 text-[10px]"
+                />
+              </label>
+            </>
+          )}
+          <label className="text-[10px] text-gray-400">
+            <input
+              type="checkbox"
+              checked={adapterOnlySave}
+              onChange={(e) => setAdapterOnlySave(e.target.checked)}
+              className="mr-1"
+            />
+            Adapter-only save
+          </label>
         </div>
       )}
 

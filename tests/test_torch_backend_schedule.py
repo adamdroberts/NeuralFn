@@ -46,7 +46,7 @@ class _PerfCounter:
         return self.current
 
 
-def test_lr_warmdown_uses_tail_steps_even_with_wallclock_cap() -> None:
+def test_lr_warmdown_uses_fractional_tail_span_even_with_wallclock_cap() -> None:
     graph = _make_gpt_graph()
     train_inputs, train_targets = _toy_text_dataset()
     learning_rates: list[float] = []
@@ -58,7 +58,7 @@ def test_lr_warmdown_uses_tail_steps_even_with_wallclock_cap() -> None:
             learning_rate=1e-3,
             weight_decay=0.0,
             max_steps=5,
-            warmdown_iters=4,
+            warmdown_fraction=0.75,
             max_wallclock_seconds=999.0,
             device="cpu",
         ),
@@ -91,7 +91,7 @@ def test_wallclock_cap_stops_early_without_triggering_early_lr_decay() -> None:
             learning_rate=1e-3,
             weight_decay=0.0,
             max_steps=5,
-            warmdown_iters=4,
+            warmdown_fraction=0.75,
             max_wallclock_seconds=0.11,
             device="cpu",
         ),
@@ -143,7 +143,7 @@ def test_cosine_lr_decay_reaches_min_lr_and_stays_there() -> None:
     assert learning_rates[5] == pytest.approx(1e-4)
 
 
-def test_legacy_warmdown_still_applies_when_cosine_decay_is_unset() -> None:
+def test_fractional_warmdown_still_applies_when_cosine_decay_is_unset() -> None:
     graph = _make_gpt_graph()
     train_inputs, train_targets = _toy_text_dataset()
     learning_rates: list[float] = []
@@ -155,7 +155,7 @@ def test_legacy_warmdown_still_applies_when_cosine_decay_is_unset() -> None:
             learning_rate=1e-3,
             weight_decay=0.0,
             max_steps=5,
-            warmdown_iters=2,
+            warmdown_fraction=0.4,
             lr_decay_iters=None,
             min_lr=1e-5,
             device="cpu",
@@ -175,6 +175,22 @@ def test_legacy_warmdown_still_applies_when_cosine_decay_is_unset() -> None:
     assert learning_rates[2] == pytest.approx(1e-3)
     assert learning_rates[3] == pytest.approx(1e-3)
     assert learning_rates[4] < learning_rates[3]
+
+
+def test_invalid_warmdown_fraction_is_rejected() -> None:
+    graph = _make_gpt_graph()
+    with pytest.raises(ValueError, match="warmdown_fraction must be within \\[0.0, 1.0\\]"):
+        TorchTrainer(
+            graph,
+            TorchTrainConfig(
+                epochs=1,
+                batch_size=1,
+                learning_rate=1e-3,
+                weight_decay=0.0,
+                warmdown_fraction=1.1,
+                device="cpu",
+            ),
+        )
 
 
 def test_respect_epoch_boundaries_uses_short_tail_step_without_wrapping_loader() -> None:

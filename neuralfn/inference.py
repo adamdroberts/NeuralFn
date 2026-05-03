@@ -53,6 +53,114 @@ def import_from_pt(graph: NeuronGraph, path: str | Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Adapter-only checkpointing (LoRA / qLoRA)
+# ---------------------------------------------------------------------------
+
+_ADAPTER_KEY_MARKERS: tuple[str, ...] = (
+    "lora_A",
+    "lora_B",
+    ".middle.",  # randmap_adapter trainable middle
+    ".scale",    # randmap_adapter residual scale
+    "value_head",
+    "reward_head",
+    "reward_proj",
+)
+
+
+def _is_adapter_key(key: str) -> bool:
+    return any(marker in key for marker in _ADAPTER_KEY_MARKERS)
+
+
+def save_adapter_checkpoint(graph: NeuronGraph, path: str | Path) -> None:
+    """Write only the LoRA / adapter / head parameters for ``graph`` to ``path``.
+
+    The resulting artifact is orders of magnitude smaller than a full-model
+    checkpoint — typically a few MB even for large bases — because the frozen
+    base weights are assumed to live in a separate ``base_checkpoint`` file.
+    """
+    compiled = CompiledTorchGraph(graph)
+    full_state = compiled.state_dict()
+    adapter_state = {key: tensor for key, tensor in full_state.items() if _is_adapter_key(key)}
+    torch.save(
+        {
+            "state_dict": adapter_state,
+            "checkpoint_metadata": {
+                **_checkpoint_metadata_for_graph(graph),
+                "adapter_only": True,
+            },
+        },
+        path,
+    )
+
+
+def load_adapter_checkpoint(graph: NeuronGraph, path: str | Path) -> None:
+    """Load an adapter-only checkpoint (from ``save_adapter_checkpoint``) into ``graph``."""
+    state_dict, _meta = load_pt_checkpoint(path)
+    compiled = CompiledTorchGraph(graph)
+    compiled.load_state_dict(state_dict, strict=False)
+    compiled.sync_state_back(graph)
+
+
+def merge_adapter_into_base(
+    base_path: str | Path,
+    adapter_path: str | Path,
+    out_path: str | Path,
+) -> None:
+    """Bake LoRA ``A`` / ``B`` into the frozen base weight and write a plain ``.pt``.
+
+    Computes ``W ← W_base + (alpha/rank) * B @ A`` per LoRA site. The result is
+    a standard checkpoint with no adapter state, suitable for ordinary
+    inference with no runtime LoRA dispatch.
+    """
+    base_state, base_meta = load_pt_checkpoint(base_path)
+    adapter_state, adapter_meta = load_pt_checkpoint(adapter_path)
+
+    # Group adapter keys by their module prefix so we can find pairs of A/B
+    # plus optionally alpha/rank metadata.
+    merged = dict(base_state)
+    prefixes: set[str] = set()
+    for key in adapter_state:
+        if ".lora_A" in key:
+            prefixes.add(key.rsplit(".lora_A", 1)[0])
+        elif ".lora_B" in key:
+            prefixes.add(key.rsplit(".lora_B", 1)[0])
+
+    for prefix in prefixes:
+        a_key = f"{prefix}.lora_A"
+        b_key = f"{prefix}.lora_B"
+        base_key = f"{prefix}.base.weight"
+        if a_key not in adapter_state or b_key not in adapter_state:
+            continue
+        if base_key not in base_state:
+            # The pretrained checkpoint may encode the base as ``.proj.weight``
+            # (plain LinearStage). Try that remap.
+            alt = f"{prefix}.proj.weight"
+            if alt in base_state:
+                base_weight = base_state[alt]
+                out_key = alt
+            else:
+                continue
+        else:
+            base_weight = base_state[base_key]
+            out_key = base_key
+        A = adapter_state[a_key].float()
+        B = adapter_state[b_key].float()
+        rank = A.shape[0]
+        # Adapter metadata may record alpha; fall back to alpha=rank (scaling=1).
+        alpha = float(adapter_meta.get("lora_alpha", rank))
+        scaling = alpha / max(rank, 1)
+        merged[out_key] = (base_weight.float() + scaling * (B @ A)).to(base_weight.dtype)
+
+    torch.save(
+        {
+            "state_dict": merged,
+            "checkpoint_metadata": {**base_meta, "merged_from_adapter": True},
+        },
+        out_path,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Quantized export / import
 # ---------------------------------------------------------------------------
 

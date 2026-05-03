@@ -67,7 +67,7 @@ class TorchTrainConfig:
     optimizer_profile: str = "adamw"
     train_batch_tokens: int | None = None
     warmup_steps: int = 0
-    warmdown_iters: int = 0
+    warmdown_fraction: float = 0.75
     lr_decay_iters: int | None = None
     min_lr: float | None = None
     max_wallclock_seconds: float = 0.0
@@ -113,8 +113,8 @@ class TorchTrainConfig:
 | `optimizer_profile` | `str` | `"adamw"` | `"adamw"` for the legacy single-optimizer path or `"parameter_golf"` for split optimizers + Muon |
 | `train_batch_tokens` | `int \| None` | `None` | Target token budget per optimization step; drives gradient accumulation |
 | `warmup_steps` | `int` | `0` | Optional warmup-priming steps for the parameter-golf profile |
-| `warmdown_iters` | `int` | `0` | Number of tail optimizer steps used for LR warmdown; remains step-based even when `max_wallclock_seconds` is set |
-| `lr_decay_iters` | `int \| None` | `None` | When set, enables cosine LR decay across this many optimizer steps and overrides `warmdown_iters` |
+| `warmdown_fraction` | `float` | `0.75` | Fraction of total optimizer steps used for linear LR warmdown at the tail of training |
+| `lr_decay_iters` | `int \| None` | `None` | When set, enables cosine LR decay across this many optimizer steps and overrides `warmdown_fraction` |
 | `min_lr` | `float \| None` | `None` | LR floor used by cosine decay; when omitted and `lr_decay_iters` is set, defaults to `learning_rate / 10` |
 | `max_wallclock_seconds` | `float` | `0.0` | Optional wallclock cap for early stopping only; does not change LR schedule semantics |
 | `embed_lr` | `float \| None` | `None` | Learning rate for embedding parameters |
@@ -184,7 +184,9 @@ def train(
 
 Run the training loop. Expects integer token arrays of shape `[batch, seq_len]`.
 
-If the graph contains a `dataset_source` node with configured `dataset_names`, the dataset is loaded automatically and `train_inputs`/`train_targets` are ignored. Role-aware dataset loading now supports semantic routing layouts as well, including `semantic_router_moe` and `jepa_semantic_hybrid` graphs whose flat compiled input contract is `(tokens, targets, sem_targets)`. For these presets, `sem_targets` are categorical vocab-topic IDs rather than quantized semantic vectors. When a graph only has `semantic_data_source`, the trainer now synthesizes safe placeholder `tokens` / `targets` tensors instead of feeding categorical semantic IDs into the token embedding path.
+If the graph contains a `dataset_source` node with configured `dataset_names`, the dataset is loaded automatically and `train_inputs`/`train_targets` are ignored. Role-aware dataset loading now supports semantic routing layouts as well, including `semantic_router_moe`, `jepa_semantic_hybrid`, and `semantic_moe_jepa_evo` graphs whose flat compiled input contract is `(tokens, targets, sem_targets)`. For these presets, `sem_targets` are categorical vocab-topic IDs rather than quantized semantic vectors. When a graph only has `semantic_data_source`, the trainer now synthesizes safe placeholder `tokens` / `targets` tensors instead of feeding categorical semantic IDs into the token embedding path.
+
+For `semantic_moe_jepa_evo`, normal gradient training can run periodic route evolution after optimizer steps. The trainer evaluates a small population of router-bias/table candidates on recent macro-batches and writes the best candidate back to the route-only parameters; the main model weights still train through the configured optimizer.
 
 When `config.evolutionary` is `True`, the trainer keeps the same dataset loading, epoch accounting, `max_steps`, `train_batch_tokens`, wallclock cap, callbacks, and export flow, but replaces optimizer steps with generation-based selection, crossover, and mutation over the flattened trainable parameter vector. In this mode, `max_steps` counts generations and the gradient-only optimizer knobs (`optimizer_profile`, learning-rate settings, Muon, Adam betas/epsilon, warmup/warmdown, and grad clipping) are ignored.
 
@@ -300,7 +302,15 @@ Each `*Stage` class is an `nn.Module` implementing a single computational step. 
 | `SemanticAlignmentLossStage` | `semantic_alignment_loss` | Masked categorical loss over vocab-topic logits |
 | `SemanticHasherStage` | `semantic_hasher` | In-graph LSH bucketing |
 | `SemanticMoERouterStage` | `semantic_moe_router` | Legacy cosine-router stage kept for compatibility |
-| `SemanticHashRouterStage` | `semantic_hash_router` | Hash-aware router that maps the 8 vocab dimensions onto 8 fixed experts |
+| `SemanticHashRouterStage` | `semantic_hash_router` | Hash-aware router that maps semantic vocabulary dimensions onto fixed experts |
+| `CausalChunkStateStage` | `causal_chunk_state` | Prefix-safe chunk state extraction for chunk-level semantic routing |
+| `SemanticChunkProjectorStage` | `semantic_chunk_projector` | Chunk semantic projection with topic logits and residual state |
+| `SemanticChunkHasherStage` | `semantic_chunk_hasher` | LSH bucketing for chunk semantic vectors |
+| `SemanticMoeJepaEvoRouterStage` | `semantic_moe_jepa_evo_router` | Chunk-level semantic/free expert router with shared experts and route-evolution parameters |
+| `BroadcastChunkRoutesStage` | `broadcast_chunk_routes` | Expand chunk-level expert routes to per-token MoE routes |
+| `RouteBalanceLossStage` | `route_balance_loss` | Balance loss over route logits |
+| `RouteSelectionLossStage` | `route_selection_loss` | Supervised route loss against semantic targets |
+| `RouteDistillationLossStage` | `route_distillation_loss` | Distill target semantic topic distributions into route logits |
 | `RoutedAttentionExpertsStage` | `routed_attention_experts` | Attention-capable experts applied to the full hidden sequence |
 | `AttentionlessDecoderStage` | `attentionless_decoder` | Legacy decoder stage retained for compatibility |
 | `SoftmaxDistillationLossStage` | `softmax_distillation_loss` | Distillation loss for experimental semantic workflows |

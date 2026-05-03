@@ -87,12 +87,22 @@ ModelSpec(
     ema_decay: float = 0.99,
     max_recurrence_steps: int = 4,
     halt_epsilon: float = 0.01,
+    semantic_dim: int = NUM_SEMANTIC_DIMS,
+    semantic_vocab_ref: str = DEFAULT_SEMANTIC_VOCAB_REF,
+    route_chunk_size: int = 32,
+    semantic_shared_experts: int = 2,
+    semantic_free_experts: int = 8,
+    route_evo_enabled: bool = True,
+    route_evo_fraction: float = 0.10,
+    route_evo_population: int = 8,
+    route_evo_mutation_scale: float = 0.05,
+    route_evo_seed: int | None = None,
 )
 ```
 
 ---
 
-## All 17 presets -- detailed
+## All 18 presets -- detailed
 
 ### `nanogpt` -- `build_nanogpt_spec(**kwargs)`
 - Backbone: nanogpt, Objective: ar, Runtime: eager
@@ -157,7 +167,14 @@ ModelSpec(
 - Objective: semantic_router, Backbone: mixllama, Runtime: compile
 - AR-only semantic router control: shared vocab-grounded route broadcast across every MoE block
 - Dataset roles: `tokens`, `targets`, plus `semantic_data_source -> sem_targets`
-- Requires exactly `8` experts; trains next-token CE + semantic alignment
+- Requires one expert per semantic vocabulary dimension; trains next-token CE + semantic alignment
+
+### `semantic_moe_jepa_evo` -- `build_semantic_moe_jepa_evo_spec(**kwargs)`
+- Objective: semantic_moe_jepa_evo, Backbone: mixllama, Runtime: compile
+- Full Semantic MoE JEPA Evo prototype: dense AR attention, chunk-level causal semantic planner, JEPA target supervision, route balance/selection/distillation losses, and lightweight route evolution.
+- Dataset roles: `tokens`, `targets`, plus `semantic_data_source -> sem_targets`
+- Expert bank defaults: `semantic_shared_experts=2`, `NUM_VOCAB_DIMS` semantic experts, `semantic_free_experts=8`; `experts` must equal their sum.
+- Route evolution defaults: `route_chunk_size=32`, `route_evo_fraction=0.10`, `route_evo_population=8`, `route_evo_mutation_scale=0.05`
 
 ### `hnet_lm` -- `build_hnet_lm_spec(**kwargs)`
 - Backbone: hnet, Tokenization: byte_hnet, Runtime: compile
@@ -213,6 +230,14 @@ All keys can be passed in the `config` dict to `build_gpt_root_graph()` or any `
 | `jepa_min_block_ratio` | -- | `0.1` | llm_jepa | Min block length as fraction of seq |
 | `jepa_max_block_ratio` | -- | `0.25` | llm_jepa | Max block length as fraction of seq |
 | `ema_decay` | -- | `0.99` | llm_jepa | EMA target encoder decay |
+| `semantic_vocab_ref` | -- | default vocab | semantic routing | Semantic vocabulary file for topic targets and routing |
+| `route_chunk_size` | -- | `32` | semantic_moe_jepa_evo | Tokens per chunk route update |
+| `semantic_shared_experts` | -- | `2` | semantic_moe_jepa_evo | Always-on shared experts |
+| `semantic_free_experts` | -- | `8` | semantic_moe_jepa_evo | Free learned experts after semantic experts |
+| `route_evo_enabled` | -- | `True` | semantic_moe_jepa_evo | Enable periodic route-evolution search |
+| `route_evo_fraction` | -- | `0.10` | semantic_moe_jepa_evo | Fraction of steps that run route evolution |
+| `route_evo_population` | -- | `8` | semantic_moe_jepa_evo | Route-evolution candidate count |
+| `route_evo_mutation_scale` | -- | `0.05` | semantic_moe_jepa_evo | Route-evolution mutation scale |
 
 ---
 
@@ -378,6 +403,18 @@ Each maps to a `module_type` string and is instantiated by `build_module()`:
 | `JEPAProjectorStage` | `jepa_projector` | 1 in, 1 out | JEPA projection head |
 | `JEPAPredictorStage` | `jepa_predictor` | 1 in, 1 out | JEPA predictor head |
 | `LatentMSELossStage` | `latent_mse_loss` | 2 in, 1 out | Latent MSE loss |
+| `SemanticProjectorStage` | `semantic_projector` | 1 in, 3 out | Semantic vector, residual, topic logits |
+| `SemanticAlignmentLossStage` | `semantic_alignment_loss` | 2 in, 1 out | Masked semantic topic CE |
+| `SemanticHasherStage` | `semantic_hasher` | 1 in, 1 out | Semantic LSH buckets |
+| `SemanticHashRouterStage` | `semantic_hash_router` | 4 in, 2 out | Semantic-vocab expert routing |
+| `CausalChunkStateStage` | `causal_chunk_state` | 1 in, 1 out | Prefix-safe chunk states |
+| `SemanticChunkProjectorStage` | `semantic_chunk_projector` | 1 in, 3 out | Chunk semantic vector, residual, topic logits |
+| `SemanticChunkHasherStage` | `semantic_chunk_hasher` | 1 in, 1 out | Chunk semantic LSH buckets |
+| `SemanticMoeJepaEvoRouterStage` | `semantic_moe_jepa_evo_router` | 4 in, 3 out | Chunk shared/semantic/free expert routing |
+| `BroadcastChunkRoutesStage` | `broadcast_chunk_routes` | 3 in, 2 out | Chunk routes expanded to token routes |
+| `RouteBalanceLossStage` | `route_balance_loss` | 1 in, 1 out | Route-density balance loss |
+| `RouteSelectionLossStage` | `route_selection_loss` | 2 in, 1 out | Semantic target route supervision |
+| `RouteDistillationLossStage` | `route_distillation_loss` | 2 in, 1 out | Target-topic route distillation |
 | `BytePatchEmbedStage` | `byte_patch_embed` | 1 in, 1 out | Byte patch embedding |
 | `BytePatchMergeStage` | `byte_patch_merge` | 1 in, 1 out | Byte patch merge |
 | `ACTHaltGateStage` | `act_halt_gate` | 1 in, 2 out | ACT halt gate |

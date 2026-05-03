@@ -356,9 +356,15 @@ class NeuronGraph:
         def ports_compatible(current: list[Port], target: list[Port]) -> bool:
             if len(current) != len(target):
                 return False
+
+            def ranges_equal(a: tuple[float, float] | None, b: tuple[float, float] | None) -> bool:
+                if a is None or b is None:
+                    return a is b
+                return tuple(a) == tuple(b)
+
             return all(
                 left.name == right.name
-                and tuple(left.range) == tuple(right.range)
+                and ranges_equal(left.range, right.range)
                 and left.precision == right.precision
                 and left.dtype == right.dtype
                 for left, right in zip(current, target)

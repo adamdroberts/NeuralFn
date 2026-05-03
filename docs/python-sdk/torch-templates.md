@@ -97,7 +97,11 @@ Build a JEPA model: online encoder, target encoder (EMA), JEPA mask, projector, 
 
 ### `build_jepa_semantic_model_stage_graph(name, model_spec) -> NeuronGraph` [Experimental]
 
-Build the experimental JEPA semantic hybrid stage. Inputs are `tokens`, `targets`, and `sem_targets`. The stage performs JEPA masking and EMA target encoding, hashes the pooled semantic vector, routes the full masked hidden sequence through `semantic_hash_router` + `routed_attention_experts`, and uses the same 8-dimension vocab map for both training-time teacher forcing and inference-time auto routing. `sem_targets` carry categorical topic IDs in the first 8 positions plus a derived taxonomy-hash slot.
+Build the experimental JEPA semantic hybrid stage. Inputs are `tokens`, `targets`, and `sem_targets`. The stage performs JEPA masking and EMA target encoding, hashes the pooled semantic vector, routes the full masked hidden sequence through `semantic_hash_router` + `routed_attention_experts`, and uses the semantic vocabulary dimension map for both training-time teacher forcing and inference-time auto routing. `sem_targets` carry categorical topic IDs with `-100` ignore sentinels.
+
+### `build_semantic_moe_jepa_evo_model_stage_graph(name, model_spec) -> NeuronGraph` [Experimental]
+
+Build the full Semantic MoE JEPA Evo stage. Inputs are `tokens`, `targets`, and `sem_targets`. The stage keeps dense causal attention on the AR path, builds prefix-safe chunk semantic states, selects shared/semantic/free experts for each chunk, broadcasts chunk routes to token routes for the MoE FFN, and trains AR CE plus JEPA latent, semantic alignment, route balance, route selection, and route distillation losses.
 
 ### `build_hnet_model_stage_graph(name, model_spec) -> NeuronGraph`
 
@@ -123,7 +127,7 @@ def build_model_spec_from_config(
 
 Dispatch to the appropriate `build_*_spec()` function based on `config["preset"]`. Normalizes legacy key names (`n_layer` -> `num_layers`, `n_embd` -> `model_dim`, `n_head` -> `num_heads`).
 
-Recognized presets: `"nanogpt"`, `"gpt2"`, `"llama"`, `"mixllama"` / `"moe"`, `"llama_fast"`, `"mixllama_fast"`, `"jamba"`, `"ternary_b158"`, `"llama_megakernel"`, `"kv_pca_llama"`, `"seq2seq"`, `"diffusion"`, `"ttt_llama"`, `"llm_jepa"`, `"semantic_router_moe"`, `"jepa_semantic_hybrid"`, `"hnet_lm"`, `"universal_llama"`.
+Recognized presets: `"nanogpt"`, `"gpt2"`, `"llama"`, `"mixllama"` / `"moe"`, `"llama_fast"`, `"mixllama_fast"`, `"jamba"`, `"ternary_b158"`, `"llama_megakernel"`, `"kv_pca_llama"`, `"seq2seq"`, `"diffusion"`, `"ttt_llama"`, `"llm_jepa"`, `"semantic_router_moe"`, `"jepa_semantic_hybrid"`, `"semantic_moe_jepa_evo"`, `"hnet_lm"`, `"universal_llama"`.
 
 ### `build_model_stage_graph(name, model_spec) -> NeuronGraph`
 
@@ -147,13 +151,13 @@ Build the top-level root graph that wraps a model stage subgraph. Dispatches to 
 
 The root graph's `torch_config` is populated with device, AMP dtype, and the full `template_spec`.
 
-For `semantic_router_moe` and `jepa_semantic_hybrid`, the root graph now exposes:
+For `semantic_router_moe`, `jepa_semantic_hybrid`, and `semantic_moe_jepa_evo`, the root graph exposes:
 
 - `dataset_source` with output roles `tokens`, `targets`
-- `semantic_data_source` with output role `sem_targets` generated from `vocab_8d.json`
+- `semantic_data_source` with output role `sem_targets` generated from the active semantic vocabulary reference
 - a compiled flat input contract of `(tokens, targets, sem_targets)`
 
-`semantic_router_moe` builds an AR-only stage that reuses normal LLaMA attention, computes one shared semantic route from the pre-block hidden state, broadcasts that route across the full sequence, and feeds the same routed experts into every MoE block. `jepa_semantic_hybrid` keeps its separate JEPA path on top of that semantic routing stack.
+`semantic_router_moe` builds an AR-only stage that reuses normal LLaMA attention, computes one shared semantic route from the pre-block hidden state, broadcasts that route across the full sequence, and feeds the same routed experts into every MoE block. `jepa_semantic_hybrid` keeps its separate JEPA path on top of that semantic routing stack. `semantic_moe_jepa_evo` is the full chunk-routed architecture: it updates semantic routes at chunk boundaries, prepends always-on shared experts, selects semantic/free experts for the next chunk, and wires route balance/selection/distillation losses into the total loss.
 
 ### `build_gpt_template_payload(name, config) -> dict`
 

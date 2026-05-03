@@ -100,6 +100,21 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
                cache:on
             </span>
           )}
+          {(neuronDef.module_type === "lora_linear" || neuronDef.module_type === "nf4_linear") && (
+            <span className="text-[10px] font-mono px-1 rounded bg-pink-900 text-pink-100" title="LoRA adapter (trainable low-rank delta on frozen base)">
+              {neuronDef.module_type === "nf4_linear" ? "qLoRA" : "LoRA"}
+            </span>
+          )}
+          {(neuronDef.module_type === "reference_forward" || neuronDef.module_type === "reward_forward") && (
+            <span className="text-[10px] font-mono px-1 rounded bg-slate-800 text-slate-200" title="Frozen forward-only stage">
+              frozen
+            </span>
+          )}
+          {(neuronDef.module_type === "dpo_pairwise_loss" || neuronDef.module_type === "ppo_clipped_loss" || neuronDef.module_type === "preference_bce_loss" || neuronDef.module_type === "masked_token_cross_entropy") && (
+            <span className="text-[10px] font-mono px-1 rounded bg-fuchsia-900 text-fuchsia-100" title="Fine-tuning objective">
+              ft-loss
+            </span>
+          )}
         </div>
       </div>
 
@@ -160,7 +175,7 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
                 className="!w-2.5 !h-2.5 !bg-green-400 !border-green-600 shadow-[0_0_5px_rgba(74,222,128,0.5)]"
                 style={{ top: "auto", position: "relative", left: -6 }}
               />
-              <span className="ml-1 flex items-center gap-1" title={`[${p.range[0]}, ${p.range[1]}] p=${p.precision}`}>
+              <span className="ml-1 flex items-center gap-1" title={`${p.range ? `[${p.range[0]}, ${p.range[1]}]` : "unbounded"} p=${p.precision ?? "none"}`}>
                 {p.name}
                 {shape && <span className="text-[8px] opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 px-1 rounded text-cyan-300 pointer-events-none">{shape}</span>}
               </span>
@@ -177,7 +192,7 @@ function NeuronNodeInner({ id, data, selected }: NodeProps & { data: NeuronNodeD
 
             return (
             <div key={p.name} className="relative flex items-center group">
-              <span className="mr-1 flex items-center gap-1 flex-row-reverse" title={`[${p.range[0]}, ${p.range[1]}] p=${p.precision}`}>
+              <span className="mr-1 flex items-center gap-1 flex-row-reverse" title={`${p.range ? `[${p.range[0]}, ${p.range[1]}]` : "unbounded"} p=${p.precision ?? "none"}`}>
                 {p.name}
                 {shape && <span className="text-[8px] opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 px-1 rounded text-orange-300 pointer-events-none">{shape}</span>}
               </span>

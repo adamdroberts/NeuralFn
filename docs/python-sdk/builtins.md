@@ -195,10 +195,18 @@ The module neurons below are **[Experimental]** (JEPA semantic hybrid stack). Po
 | `semantic_moe_router_module` | `semantic_moe_router` | `semantic_vec` | `expert_weights`, `expert_indices` |
 | `semantic_hash_router_module` | `semantic_hash_router` | `semantic_vec`, `bucket_indices`, `topic_logits`, `sem_targets` | `expert_weights`, `expert_indices` |
 | `broadcast_expert_routes_module` | `broadcast_expert_routes` | `hidden`, `expert_weights`, `expert_indices` | `routing_weights`, `routing_indices` |
+| `causal_chunk_state_module` | `causal_chunk_state` | `hidden` | `chunk_state` |
+| `semantic_chunk_projector_module` | `semantic_chunk_projector` | `chunk_state` | `semantic_vec`, `residual`, `topic_logits` |
+| `semantic_chunk_hasher_module` | `semantic_chunk_hasher` | `semantic_vec` | `bucket_indices` |
+| `semantic_moe_jepa_evo_router_module` | `semantic_moe_jepa_evo_router` | `semantic_vec`, `bucket_indices`, `topic_logits`, `sem_targets` | `expert_weights`, `expert_indices`, `route_logits` |
+| `broadcast_chunk_routes_module` | `broadcast_chunk_routes` | `hidden`, `expert_weights`, `expert_indices` | `routing_weights`, `routing_indices` |
+| `route_balance_loss_module` | `route_balance_loss` | `route_logits` | `loss` |
+| `route_selection_loss_module` | `route_selection_loss` | `route_logits`, `sem_targets` | `loss` |
+| `route_distillation_loss_module` | `route_distillation_loss` | `student_route_logits`, `target_topic_logits` | `loss` |
 | `routed_attention_experts_module` | `routed_attention_experts` | `hidden`, `expert_weights`, `expert_indices` | `hidden_out` |
 | `attentionless_decoder_module` | `attentionless_decoder` | `bucket_indices`, `expert_output` | `logits` |
 | `softmax_distillation_loss_module` | `softmax_distillation_loss` | `teacher_logits`, `student_logits` | `loss` |
 
-`semantic_data_source_module` now emits categorical vocab-topic targets. The first 8 positions correspond to the fixed expert map, and inactive dimensions use `-100` ignore sentinels. `broadcast_expert_routes_module` is used by `semantic_router_moe` to turn the shared batch-level semantic route into per-token routing tensors for the standard MoE dispatcher.
+`semantic_data_source_module` now emits categorical vocab-topic targets. The first `NUM_VOCAB_DIMS` positions correspond to semantic vocabulary dimensions, and inactive dimensions use `-100` ignore sentinels. `broadcast_expert_routes_module` is used by `semantic_router_moe` to turn the shared batch-level semantic route into per-token routing tensors for the standard MoE dispatcher. `semantic_moe_jepa_evo_router_module` works at chunk granularity, emits route logits for auxiliary losses, and pairs with `broadcast_chunk_routes_module` before standard MoE dispatch.
 
 **Disclaimer [Experimental]:** These builtins are tied to a research prototype; port semantics and `module_config` keys may change.

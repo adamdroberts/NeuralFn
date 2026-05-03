@@ -49,6 +49,23 @@ const DESCRIPTIONS: Record<string, string> = {
   lm_head: "Untied language-model head",
   logit_softcap: "Softcap the logits before loss",
   token_cross_entropy: "Token cross-entropy loss stage",
+  // ── Fine-tuning operators ─────────────────────────────────────────
+  lora_linear: "LoRA linear: frozen base weight + trainable low-rank delta",
+  nf4_linear: "qLoRA linear: nf4-packed base weight + trainable LoRA delta",
+  masked_token_cross_entropy: "Response-only cross-entropy (SFT loss with prompt mask)",
+  reference_forward: "Frozen reference model forward (DPO / RLHF ref logits)",
+  sft_dataset_source: "SFT data source: (tokens, targets, loss_mask) triples",
+  sequence_logp: "Sum of target logprobs under logits, masked per-token",
+  dpo_pairwise_loss: "Direct Preference Optimization loss (sigmoid/hinge/ipo)",
+  dpo_dataset_source: "DPO pair source: (chosen, rejected) × (tokens, targets, mask)",
+  reward_head: "Scalar reward head (linear-to-1 pooled over the sequence)",
+  preference_bce_loss: "Bradley-Terry preference loss for reward-model training",
+  value_head: "Per-token value head for PPO critic",
+  ppo_clipped_loss: "PPO clipped policy-and-value loss",
+  kl_penalty: "Shapes rewards with a KL penalty against the reference model",
+  reward_forward: "Frozen reward-model forward (PPO)",
+  ppo_rollout_source: "Rollout buffer source emitted by PPOTrainer",
+  gae_compute: "Generalized Advantage Estimation over a rollout",
 };
 
 export default function Toolbar() {
@@ -86,8 +103,8 @@ export default function Toolbar() {
         id: "override-" + Date.now().toString(36),
         name: "override",
         kind: "function",
-        input_ports: [{ name: "x", range: [-1, 1], precision: 0.1, dtype: "float" }],
-        output_ports: [{ name: "y", range: [-1, 1], precision: 0.1, dtype: "float" }],
+        input_ports: [{ name: "x", range: null, precision: null, dtype: "float" }],
+        output_ports: [{ name: "y", range: null, precision: null, dtype: "float" }],
         source_code: "def override(x):\n    return 0.0\n",
         subgraph: null,
         module_type: "",
@@ -223,6 +240,7 @@ export default function Toolbar() {
             <option value="kv_pca_llama">KV PCA LLaMA</option>
             <option value="jepa_semantic_hybrid">JEPA Semantic Hybrid</option>
             <option value="semantic_router_moe">Semantic Router MoE</option>
+            <option value="semantic_moe_jepa_evo">Semantic MoE JEPA Evo</option>
           </select>
         </div>
 

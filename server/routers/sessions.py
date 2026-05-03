@@ -655,6 +655,116 @@ def semantic_generate(
     }
 
 
+@router.post("/{session_id}/chat/generate")
+def chat_generate(
+    project_id: str,
+    session_id: str,
+    body: dict,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Run autoregressive text generation against the session graph.
+
+    Body:
+      - ``prompt``: str (required) — raw text prompt
+      - ``max_new_tokens``: int = 64
+      - ``temperature``: float = 0.8
+      - ``top_k``: int | None = 32
+      - ``base_checkpoint``: str | None — optional .pt path loaded into the graph before generation
+      - ``adapter_checkpoint``: str | None — optional adapter .pt loaded on top of base
+
+    Returns ``{prompt, generated, tokens}`` where ``generated`` is the decoded
+    continuation and ``tokens`` is the full token id sequence.
+    """
+    try:
+        bundle = get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
+    except PermissionDenied as exc:
+        raise _wrap_permission(exc) from exc
+
+    prompt_text = str(body.get("prompt") or "").strip()
+    if not prompt_text:
+        raise HTTPException(status_code=400, detail="'prompt' must be a non-empty string")
+    max_new = int(body.get("max_new_tokens", 64))
+    temperature = float(body.get("temperature", 0.8))
+    top_k_raw = body.get("top_k", 32)
+    top_k = int(top_k_raw) if top_k_raw is not None else None
+    base_ckpt = str(body.get("base_checkpoint") or "").strip()
+    adapter_ckpt = str(body.get("adapter_checkpoint") or "").strip()
+
+    try:
+        import torch
+    except ImportError as exc:
+        raise HTTPException(status_code=503, detail="Torch runtime is unavailable on the server") from exc
+
+    from neuralfn.inference import (
+        InferenceCache,
+        load_pt_checkpoint,
+        load_adapter_checkpoint,
+    )
+    from neuralfn.torch_backend import CompiledTorchGraph
+
+    graph = NeuronGraph.from_dict(bundle.graph_state.graph)
+    compiled = CompiledTorchGraph(graph)
+    if base_ckpt:
+        state, _meta = load_pt_checkpoint(base_ckpt)
+        compiled.load_state_dict(state, strict=False)
+    if adapter_ckpt:
+        # load_adapter_checkpoint round-trips through CompiledTorchGraph; apply to the graph.
+        load_adapter_checkpoint(graph, adapter_ckpt)
+
+    device = torch.device(str(graph.torch_config.get("device", "cpu")))
+    if device.type == "cuda" and not torch.cuda.is_available():
+        device = torch.device("cpu")
+    compiled.to(device)
+    compiled.train(False)
+
+    # Tokenize prompt. Use utf-8 byte encoding as a fallback when the graph's
+    # tokenization is unknown — works for byte-level / char-level models;
+    # richer tokenization can be piped in later.
+    prompt_bytes = prompt_text.encode("utf-8", errors="replace")
+    prompt_ids = [b for b in prompt_bytes][:512]
+    if not prompt_ids:
+        prompt_ids = [0]
+
+    tokens = torch.tensor([prompt_ids], dtype=torch.long, device=device)
+    cache = InferenceCache(graph, device=str(device))
+    generated_ids: list[int] = list(prompt_ids)
+    with torch.no_grad():
+        for _ in range(max_new):
+            logits = cache.step(tokens)
+            if logits.ndim == 2:
+                last_logits = logits[0]
+            else:
+                last_logits = logits.reshape(-1)
+            if temperature > 0:
+                scaled = last_logits / max(temperature, 1e-6)
+                if top_k is not None and top_k > 0:
+                    topv, topi = torch.topk(scaled, k=min(top_k, scaled.numel()))
+                    probs = torch.softmax(topv, dim=-1)
+                    pick = torch.multinomial(probs, num_samples=1)
+                    next_id = int(topi[pick].item())
+                else:
+                    probs = torch.softmax(scaled, dim=-1)
+                    pick = torch.multinomial(probs, num_samples=1)
+                    next_id = int(pick.item())
+            else:
+                next_id = int(torch.argmax(last_logits).item())
+            generated_ids.append(next_id)
+            tokens = torch.tensor([[next_id]], dtype=torch.long, device=device)
+
+    continuation_ids = generated_ids[len(prompt_ids):]
+    try:
+        generated_text = bytes(b & 0xFF for b in continuation_ids).decode("utf-8", errors="replace")
+    except Exception:
+        generated_text = ""
+    return {
+        "prompt": prompt_text,
+        "generated": generated_text,
+        "tokens": generated_ids,
+        "prompt_length": len(prompt_ids),
+    }
+
+
 @router.post("/{session_id}/agent/status")
 def set_agent_status(
     project_id: str,

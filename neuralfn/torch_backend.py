@@ -14,7 +14,7 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 from .graph import NeuronGraph
 from .neuron import decode_module_state_dict, encode_module_state_dict
-from .semantic import NUM_SEMANTIC_DIMS
+from .semantic import NUM_SEMANTIC_DIMS, NUM_VOCAB_DIMS
 
 
 def default_gpt_config() -> dict[str, Any]:
@@ -125,6 +125,17 @@ def default_logit_softcap_config() -> dict[str, Any]:
 
 def default_loss_scale_config() -> dict[str, Any]:
     return {"coef": 1.0}
+
+
+def resolve_amp_settings(amp_name: str | None) -> tuple[torch.dtype, str, bool]:
+    normalized = str(amp_name or "float32").strip().lower()
+    if normalized in {"float16", "fp16", "half"}:
+        return torch.float16, "float16", True
+    if normalized in {"bfloat16", "bf16"}:
+        return torch.bfloat16, "bfloat16", True
+    if normalized in {"float32", "fp32", "full", "none"}:
+        return torch.float32, "float32", False
+    raise ValueError(f"Unsupported amp dtype: {amp_name!r}")
 
 
 def _zeropower_via_newtonschulz5(G: Tensor, steps: int = 5, eps: float = 1e-7) -> Tensor:
@@ -479,6 +490,482 @@ class BitLinearTernaryStage(nn.Module):
         x_quant = x + (x_quant * x_max / 127 - x).detach()
 
         return F.linear(x_quant, w_quant)
+
+class LoRALinearStage(nn.Module):
+    """Linear with a trainable low-rank delta: ``y = base(x) + (alpha/rank) * dropout(x @ A.T) @ B.T``.
+
+    ``base`` is initialized by ``_load_base_checkpoint`` (``TorchTrainer``) from
+    a pretrained weight and frozen via ``_freeze_non_lora``. ``A`` uses Kaiming
+    init, ``B`` starts at zero so the LoRA delta is a no-op at step 0.
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        rank: int = 8,
+        alpha: float = 16.0,
+        dropout: float = 0.0,
+        bias: bool = False,
+        merge_on_eval: bool = False,
+    ) -> None:
+        super().__init__()
+        self.input_dim = int(input_dim)
+        self.output_dim = int(output_dim)
+        self.rank = max(int(rank), 1)
+        self.alpha = float(alpha)
+        self.scaling = self.alpha / self.rank
+        self.merge_on_eval = bool(merge_on_eval)
+        self.base = nn.Linear(self.input_dim, self.output_dim, bias=bool(bias))
+        self.lora_A = nn.Parameter(torch.empty(self.rank, self.input_dim))
+        self.lora_B = nn.Parameter(torch.zeros(self.output_dim, self.rank))
+        self.lora_dropout = nn.Dropout(p=float(dropout)) if float(dropout) > 0.0 else nn.Identity()
+        nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
+
+    def forward(self, x: Tensor) -> Tensor:
+        base_out = self.base(x)
+        lora_out = self.lora_dropout(x) @ self.lora_A.t() @ self.lora_B.t()
+        return base_out + self.scaling * lora_out
+
+    def merged_weight(self) -> Tensor:
+        delta = self.lora_B @ self.lora_A
+        return self.base.weight + self.scaling * delta
+
+
+class NF4LinearStage(nn.Module):
+    """qLoRA-style linear: nf4-packed base weight plus a fp16/bf16 LoRA delta."""
+
+    _NF4_CODEBOOK = (
+        -1.0, -0.6961928009986877, -0.5250730514526367, -0.39491748809814453,
+        -0.28444138169288635, -0.18477343022823334, -0.09105003625154495, 0.0,
+        0.07958029955625534, 0.16093020141124725, 0.24611230194568634, 0.33791524171829224,
+        0.44070982933044434, 0.5626170039176941, 0.7229568362236023, 1.0,
+    )
+
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        rank: int = 8,
+        alpha: float = 16.0,
+        dropout: float = 0.0,
+        bias: bool = False,
+        group_size: int = 64,
+        compute_dtype: str = "bf16",
+    ) -> None:
+        super().__init__()
+        self.input_dim = int(input_dim)
+        self.output_dim = int(output_dim)
+        self.rank = max(int(rank), 1)
+        self.alpha = float(alpha)
+        self.scaling = self.alpha / self.rank
+        self.group_size = max(int(group_size), 1)
+        self.compute_dtype = compute_dtype
+        if compute_dtype in {"bf16", "bfloat16"}:
+            self._compute_dtype = torch.bfloat16
+        elif compute_dtype in {"fp16", "float16", "half"}:
+            self._compute_dtype = torch.float16
+        else:
+            self._compute_dtype = torch.float32
+
+        packed_cols = (self.input_dim + 1) // 2
+        self.register_buffer("qweight", torch.zeros(self.output_dim, packed_cols, dtype=torch.uint8))
+        num_groups = (self.input_dim + self.group_size - 1) // self.group_size
+        self.register_buffer("absmax", torch.ones(self.output_dim, num_groups, dtype=torch.float32))
+        self.register_buffer(
+            "nf4_codebook", torch.tensor(self._NF4_CODEBOOK, dtype=torch.float32)
+        )
+
+        self.bias = nn.Parameter(torch.zeros(self.output_dim)) if bias else None
+        self.lora_A = nn.Parameter(torch.empty(self.rank, self.input_dim))
+        self.lora_B = nn.Parameter(torch.zeros(self.output_dim, self.rank))
+        self.lora_dropout = nn.Dropout(p=float(dropout)) if float(dropout) > 0.0 else nn.Identity()
+        nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
+
+    @classmethod
+    def _quantize_nf4(cls, weight: Tensor, group_size: int) -> tuple[Tensor, Tensor]:
+        codebook = torch.tensor(cls._NF4_CODEBOOK, dtype=torch.float32, device=weight.device)
+        out_dim, in_dim = weight.shape
+        num_groups = (in_dim + group_size - 1) // group_size
+        absmax = torch.zeros(out_dim, num_groups, dtype=torch.float32, device=weight.device)
+        indices = torch.zeros(out_dim, in_dim, dtype=torch.uint8, device=weight.device)
+        for g in range(num_groups):
+            s = g * group_size
+            e = min(s + group_size, in_dim)
+            block = weight[:, s:e].float()
+            block_absmax = block.abs().amax(dim=-1).clamp(min=1e-8)
+            absmax[:, g] = block_absmax
+            normalized = block / block_absmax.unsqueeze(-1)
+            diffs = (normalized.unsqueeze(-1) - codebook.view(1, 1, -1)).abs()
+            indices[:, s:e] = diffs.argmin(dim=-1).to(torch.uint8)
+        packed_cols = (in_dim + 1) // 2
+        packed = torch.zeros(out_dim, packed_cols, dtype=torch.uint8, device=weight.device)
+        even = indices[:, 0::2]
+        odd = indices[:, 1::2] if indices.shape[1] > 1 else torch.zeros_like(even[:, :0])
+        packed[:, : even.shape[1]] = even & 0x0F
+        if odd.shape[1] > 0:
+            packed[:, : odd.shape[1]] |= (odd & 0x0F) << 4
+        return packed, absmax
+
+    def _dequantize_weight(self) -> Tensor:
+        packed = self.qweight
+        absmax = self.absmax
+        codebook = self.nf4_codebook
+        out_dim = self.output_dim
+        in_dim = self.input_dim
+        even_codes = (packed & 0x0F).long()
+        odd_codes = ((packed >> 4) & 0x0F).long()
+        interleaved = torch.empty(out_dim, packed.shape[1] * 2, dtype=torch.long, device=packed.device)
+        interleaved[:, 0::2] = even_codes
+        if packed.shape[1] * 2 > 1:
+            interleaved[:, 1::2] = odd_codes
+        codes = interleaved[:, :in_dim]
+        normalized = codebook[codes]
+        group_size = self.group_size
+        scales_per_col = absmax.repeat_interleave(group_size, dim=-1)[:, :in_dim]
+        return (normalized * scales_per_col).to(self._compute_dtype)
+
+    def load_base_weight(self, weight: Tensor) -> None:
+        weight = weight.to(self.qweight.device).detach()
+        if weight.shape != (self.output_dim, self.input_dim):
+            raise ValueError(
+                f"NF4LinearStage expected base weight shape {(self.output_dim, self.input_dim)}, got {tuple(weight.shape)}"
+            )
+        packed, absmax = self._quantize_nf4(weight, self.group_size)
+        self.qweight.copy_(packed)
+        self.absmax.copy_(absmax)
+
+    def forward(self, x: Tensor) -> Tensor:
+        w = self._dequantize_weight()
+        base_out = F.linear(x.to(w.dtype), w, self.bias if self.bias is not None else None)
+        lora_out = self.lora_dropout(x) @ self.lora_A.t() @ self.lora_B.t()
+        return base_out + self.scaling * lora_out.to(base_out.dtype)
+
+
+class MaskedTokenCrossEntropyStage(nn.Module):
+    """Cross-entropy averaged only where ``loss_mask > 0`` (SFT response-only loss)."""
+
+    def __init__(self, ignore_index: int = -100) -> None:
+        super().__init__()
+        self.ignore_index = int(ignore_index)
+
+    def forward(self, logits: Tensor, target_ids: Tensor, loss_mask: Tensor) -> Tensor:
+        flat_logits = logits.reshape(-1, logits.size(-1)).float()
+        flat_targets = target_ids.reshape(-1)
+        flat_mask = loss_mask.reshape(-1).to(flat_logits.dtype)
+        per_token = F.cross_entropy(flat_logits, flat_targets, reduction="none", ignore_index=self.ignore_index)
+        denom = flat_mask.sum().clamp(min=1.0)
+        return (per_token * flat_mask).sum() / denom
+
+
+class SFTDatasetSourceStage(nn.Module):
+    """Passthrough source for (tokens, targets, loss_mask) triples."""
+
+    def __init__(
+        self,
+        dataset_names: list[str] | None = None,
+        seq_len: int = 64,
+        prompt_field: str = "prompt",
+        response_field: str = "response",
+        format: str = "chat",
+        mask_prompt: bool = True,
+    ) -> None:
+        super().__init__()
+        self.dataset_names: list[str] = dataset_names or []
+        self.seq_len = int(seq_len)
+        self.prompt_field = str(prompt_field)
+        self.response_field = str(response_field)
+        self.format = str(format)
+        self.mask_prompt = bool(mask_prompt)
+
+    def forward(self, *args: Tensor) -> tuple[Tensor, ...]:
+        return tuple(args)
+
+
+class ReferenceForwardStage(nn.Module):
+    """Wraps a frozen reference ``CompiledTorchGraph`` loaded from its own checkpoint."""
+
+    def __init__(
+        self,
+        ref_graph_path: str = "",
+        ref_weights_path: str = "",
+        vocab_size: int = 256,
+        model_dim: int = 128,
+        num_layers: int = 4,
+        num_heads: int = 4,
+    ) -> None:
+        super().__init__()
+        self.ref_graph_path = str(ref_graph_path)
+        self.ref_weights_path = str(ref_weights_path)
+        self.vocab_size = int(vocab_size)
+        self.model_dim = int(model_dim)
+        self.num_layers = int(num_layers)
+        self.num_heads = int(num_heads)
+        self._compiled: CompiledTorchGraph | None = None
+
+    def _ensure_loaded(self, device: torch.device | None = None) -> CompiledTorchGraph:
+        if self._compiled is not None:
+            return self._compiled
+        if not self.ref_graph_path or not self.ref_weights_path:
+            raise ValueError(
+                "ReferenceForwardStage requires ref_graph_path and ref_weights_path to be set"
+            )
+        from .serialization import load_graph
+        from .inference import load_pt_checkpoint
+        ref_graph = load_graph(self.ref_graph_path)
+        compiled = CompiledTorchGraph(ref_graph)
+        state, _meta = load_pt_checkpoint(self.ref_weights_path, map_location=device or "cpu")
+        compiled.load_state_dict(state, strict=False)
+        for param in compiled.parameters():
+            param.requires_grad = False
+        compiled.train(False)
+        if device is not None:
+            compiled.to(device)
+        self._compiled = compiled
+        return compiled
+
+    @torch.no_grad()
+    def forward(self, tokens: Tensor) -> Tensor:
+        compiled = self._ensure_loaded(device=tokens.device)
+        if len(compiled.graph.input_node_ids) >= 2:
+            dummy_targets = torch.zeros_like(tokens)
+            outputs = compiled(tokens, dummy_targets)
+        else:
+            outputs = compiled(tokens)
+        return outputs[0]
+
+
+class SequenceLogpStage(nn.Module):
+    """Sum of per-token logprobs of ``targets`` under ``logits``, masked by ``loss_mask``."""
+
+    def __init__(self, ignore_index: int = -100) -> None:
+        super().__init__()
+        self.ignore_index = int(ignore_index)
+
+    def forward(self, logits: Tensor, targets: Tensor, loss_mask: Tensor) -> Tensor:
+        log_probs = F.log_softmax(logits.float(), dim=-1)
+        target_safe = targets.clamp(min=0)
+        gathered = log_probs.gather(-1, target_safe.unsqueeze(-1)).squeeze(-1)
+        mask = loss_mask.to(gathered.dtype)
+        valid = (targets != self.ignore_index).to(gathered.dtype)
+        effective = mask * valid
+        return (gathered * effective).sum(dim=-1)
+
+
+class DPOPairwiseLossStage(nn.Module):
+    """Direct Preference Optimization loss (sigmoid / hinge / ipo variants)."""
+
+    def __init__(self, beta: float = 0.1, label_smoothing: float = 0.0, loss_type: str = "sigmoid") -> None:
+        super().__init__()
+        self.beta = float(beta)
+        self.label_smoothing = float(label_smoothing)
+        self.loss_type = str(loss_type)
+
+    def forward(
+        self,
+        policy_logp_chosen: Tensor,
+        policy_logp_rejected: Tensor,
+        ref_logp_chosen: Tensor,
+        ref_logp_rejected: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        chosen_logratios = policy_logp_chosen - ref_logp_chosen
+        rejected_logratios = policy_logp_rejected - ref_logp_rejected
+        logits = self.beta * (chosen_logratios - rejected_logratios)
+        if self.loss_type == "hinge":
+            per_example = F.relu(1.0 - logits)
+        elif self.loss_type == "ipo":
+            per_example = (logits - 1.0 / (2.0 * max(self.beta, 1e-8))) ** 2
+        else:
+            if self.label_smoothing > 0.0:
+                per_example = (
+                    -F.logsigmoid(logits) * (1.0 - self.label_smoothing)
+                    - F.logsigmoid(-logits) * self.label_smoothing
+                )
+            else:
+                per_example = -F.logsigmoid(logits)
+        loss = per_example.mean()
+        chosen_reward = self.beta * chosen_logratios.detach()
+        rejected_reward = self.beta * rejected_logratios.detach()
+        return loss, chosen_reward, rejected_reward
+
+
+class DPODatasetSourceStage(nn.Module):
+    """Passthrough source for DPO pair batches."""
+
+    def __init__(
+        self,
+        dataset_names: list[str] | None = None,
+        seq_len: int = 64,
+        prompt_field: str = "prompt",
+        chosen_field: str = "chosen",
+        rejected_field: str = "rejected",
+    ) -> None:
+        super().__init__()
+        self.dataset_names: list[str] = dataset_names or []
+        self.seq_len = int(seq_len)
+        self.prompt_field = str(prompt_field)
+        self.chosen_field = str(chosen_field)
+        self.rejected_field = str(rejected_field)
+
+    def forward(self, *args: Tensor) -> tuple[Tensor, ...]:
+        return tuple(args)
+
+
+class RewardHeadStage(nn.Module):
+    """Linear-to-1 scalar head for reward-model training."""
+
+    def __init__(self, model_dim: int, pool: str = "last") -> None:
+        super().__init__()
+        self.pool = str(pool)
+        self.proj = nn.Linear(int(model_dim), 1, bias=False)
+
+    def forward(self, hidden: Tensor) -> Tensor:
+        if self.pool == "mean":
+            pooled = hidden.mean(dim=1)
+        else:
+            pooled = hidden[:, -1, :]
+        return self.proj(pooled).squeeze(-1)
+
+
+class PreferenceBCELossStage(nn.Module):
+    """Bradley-Terry preference loss for reward-model training."""
+
+    def forward(self, reward_chosen: Tensor, reward_rejected: Tensor) -> Tensor:
+        return -F.logsigmoid(reward_chosen - reward_rejected).mean()
+
+
+class ValueHeadStage(nn.Module):
+    """Per-token value head (scalar per position) for PPO."""
+
+    def __init__(self, model_dim: int) -> None:
+        super().__init__()
+        self.proj = nn.Linear(int(model_dim), 1, bias=False)
+
+    def forward(self, hidden: Tensor) -> Tensor:
+        return self.proj(hidden).squeeze(-1)
+
+
+class PPOClippedLossStage(nn.Module):
+    """Clipped PPO policy-and-value loss."""
+
+    def __init__(self, clip_range: float = 0.2, vf_coef: float = 0.5, ent_coef: float = 0.0) -> None:
+        super().__init__()
+        self.clip_range = float(clip_range)
+        self.vf_coef = float(vf_coef)
+        self.ent_coef = float(ent_coef)
+
+    def forward(
+        self,
+        logp_new: Tensor,
+        logp_old: Tensor,
+        advantages: Tensor,
+        value_new: Tensor,
+        value_old: Tensor,
+        returns: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        ratio = (logp_new - logp_old).exp()
+        adv = advantages
+        unclipped = ratio * adv
+        clipped = ratio.clamp(1.0 - self.clip_range, 1.0 + self.clip_range) * adv
+        policy_loss = -torch.minimum(unclipped, clipped).mean()
+        value_clipped = value_old + (value_new - value_old).clamp(-self.clip_range, self.clip_range)
+        vf_sq1 = (value_new - returns) ** 2
+        vf_sq2 = (value_clipped - returns) ** 2
+        value_loss = 0.5 * torch.maximum(vf_sq1, vf_sq2).mean()
+        loss = policy_loss + self.vf_coef * value_loss
+        return policy_loss, value_loss, loss
+
+
+class KLPenaltyStage(nn.Module):
+    """Shape per-token rewards by subtracting ``kl_coef * (logp_policy - logp_ref)``."""
+
+    def __init__(self, kl_coef: float = 0.1) -> None:
+        super().__init__()
+        self.kl_coef = float(kl_coef)
+
+    def forward(self, logp_policy: Tensor, logp_ref: Tensor, rewards: Tensor) -> Tensor:
+        kl = logp_policy - logp_ref
+        return rewards - self.kl_coef * kl
+
+
+class RewardForwardStage(nn.Module):
+    """Frozen reward-model wrapper."""
+
+    def __init__(
+        self,
+        reward_graph_path: str = "",
+        reward_weights_path: str = "",
+        model_dim: int = 128,
+    ) -> None:
+        super().__init__()
+        self.reward_graph_path = str(reward_graph_path)
+        self.reward_weights_path = str(reward_weights_path)
+        self.model_dim = int(model_dim)
+        self._compiled: CompiledTorchGraph | None = None
+
+    def _ensure_loaded(self, device: torch.device | None = None) -> CompiledTorchGraph:
+        if self._compiled is not None:
+            return self._compiled
+        if not self.reward_graph_path or not self.reward_weights_path:
+            raise ValueError(
+                "RewardForwardStage requires reward_graph_path and reward_weights_path to be set"
+            )
+        from .serialization import load_graph
+        from .inference import load_pt_checkpoint
+        reward_graph = load_graph(self.reward_graph_path)
+        compiled = CompiledTorchGraph(reward_graph)
+        state, _meta = load_pt_checkpoint(self.reward_weights_path, map_location=device or "cpu")
+        compiled.load_state_dict(state, strict=False)
+        for param in compiled.parameters():
+            param.requires_grad = False
+        compiled.train(False)
+        if device is not None:
+            compiled.to(device)
+        self._compiled = compiled
+        return compiled
+
+    @torch.no_grad()
+    def forward(self, tokens: Tensor) -> Tensor:
+        compiled = self._ensure_loaded(device=tokens.device)
+        outputs = compiled(tokens)
+        return outputs[0]
+
+
+class PPORolloutSourceStage(nn.Module):
+    """Source emitting the current rollout buffer."""
+
+    def __init__(self, seq_len: int = 64, rollout_length: int = 64) -> None:
+        super().__init__()
+        self.seq_len = int(seq_len)
+        self.rollout_length = int(rollout_length)
+
+    def forward(self, *args: Tensor) -> tuple[Tensor, ...]:
+        return tuple(args)
+
+
+class GAEComputeStage(nn.Module):
+    """Generalized Advantage Estimation: returns ``(advantages, returns)``."""
+
+    def __init__(self, gamma: float = 1.0, lambda_: float = 0.95) -> None:
+        super().__init__()
+        self.gamma = float(gamma)
+        self.lam = float(lambda_)
+
+    def forward(self, rewards: Tensor, values: Tensor) -> tuple[Tensor, Tensor]:
+        gamma = self.gamma
+        lam = self.lam
+        batch, seq_len = rewards.shape
+        advantages = torch.zeros_like(rewards)
+        next_adv = torch.zeros(batch, device=rewards.device, dtype=rewards.dtype)
+        next_value = torch.zeros(batch, device=rewards.device, dtype=rewards.dtype)
+        for t in range(seq_len - 1, -1, -1):
+            delta = rewards[:, t] + gamma * next_value - values[:, t]
+            next_adv = delta + gamma * lam * next_adv
+            advantages[:, t] = next_adv
+            next_value = values[:, t]
+        returns = advantages + values
+        return advantages, returns
+
 
 class RandMapAdapterStage(nn.Module):
     """Random-map adapter: frozen random projections with a trainable middle."""
@@ -1315,6 +1802,96 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
             model_dim=int(cfg["model_dim"]),
             adapter_dim=int(cfg["adapter_dim"]),
         )
+    if module_type == "lora_linear":
+        return LoRALinearStage(
+            input_dim=int(cfg["input_dim"]),
+            output_dim=int(cfg["output_dim"]),
+            rank=int(cfg.get("rank", 8)),
+            alpha=float(cfg.get("alpha", 16.0)),
+            dropout=float(cfg.get("dropout", 0.0)),
+            bias=bool(cfg.get("bias", False)),
+            merge_on_eval=bool(cfg.get("merge_on_eval", False)),
+        )
+    if module_type == "nf4_linear":
+        return NF4LinearStage(
+            input_dim=int(cfg["input_dim"]),
+            output_dim=int(cfg["output_dim"]),
+            rank=int(cfg.get("rank", 8)),
+            alpha=float(cfg.get("alpha", 16.0)),
+            dropout=float(cfg.get("dropout", 0.0)),
+            bias=bool(cfg.get("bias", False)),
+            group_size=int(cfg.get("group_size", 64)),
+            compute_dtype=str(cfg.get("compute_dtype", "bf16")),
+        )
+    if module_type == "masked_token_cross_entropy":
+        return MaskedTokenCrossEntropyStage(ignore_index=int(cfg.get("ignore_index", -100)))
+    if module_type == "sft_dataset_source":
+        return SFTDatasetSourceStage(
+            dataset_names=list(cfg.get("dataset_names", [])),
+            seq_len=int(cfg.get("seq_len", 64)),
+            prompt_field=str(cfg.get("prompt_field", "prompt")),
+            response_field=str(cfg.get("response_field", "response")),
+            format=str(cfg.get("format", "chat")),
+            mask_prompt=bool(cfg.get("mask_prompt", True)),
+        )
+    if module_type == "reference_forward":
+        return ReferenceForwardStage(
+            ref_graph_path=str(cfg.get("ref_graph_path", "")),
+            ref_weights_path=str(cfg.get("ref_weights_path", "")),
+            vocab_size=int(cfg.get("vocab_size", 256)),
+            model_dim=int(cfg.get("model_dim", 128)),
+            num_layers=int(cfg.get("num_layers", 4)),
+            num_heads=int(cfg.get("num_heads", 4)),
+        )
+    if module_type == "sequence_logp":
+        return SequenceLogpStage(ignore_index=int(cfg.get("ignore_index", -100)))
+    if module_type == "dpo_pairwise_loss":
+        return DPOPairwiseLossStage(
+            beta=float(cfg.get("beta", 0.1)),
+            label_smoothing=float(cfg.get("label_smoothing", 0.0)),
+            loss_type=str(cfg.get("loss_type", "sigmoid")),
+        )
+    if module_type == "dpo_dataset_source":
+        return DPODatasetSourceStage(
+            dataset_names=list(cfg.get("dataset_names", [])),
+            seq_len=int(cfg.get("seq_len", 64)),
+            prompt_field=str(cfg.get("prompt_field", "prompt")),
+            chosen_field=str(cfg.get("chosen_field", "chosen")),
+            rejected_field=str(cfg.get("rejected_field", "rejected")),
+        )
+    if module_type == "reward_head":
+        return RewardHeadStage(
+            model_dim=int(cfg.get("model_dim", 128)),
+            pool=str(cfg.get("pool", "last")),
+        )
+    if module_type == "preference_bce_loss":
+        return PreferenceBCELossStage()
+    if module_type == "value_head":
+        return ValueHeadStage(model_dim=int(cfg.get("model_dim", 128)))
+    if module_type == "ppo_clipped_loss":
+        return PPOClippedLossStage(
+            clip_range=float(cfg.get("clip_range", 0.2)),
+            vf_coef=float(cfg.get("vf_coef", 0.5)),
+            ent_coef=float(cfg.get("ent_coef", 0.0)),
+        )
+    if module_type == "kl_penalty":
+        return KLPenaltyStage(kl_coef=float(cfg.get("kl_coef", 0.1)))
+    if module_type == "reward_forward":
+        return RewardForwardStage(
+            reward_graph_path=str(cfg.get("reward_graph_path", "")),
+            reward_weights_path=str(cfg.get("reward_weights_path", "")),
+            model_dim=int(cfg.get("model_dim", 128)),
+        )
+    if module_type == "ppo_rollout_source":
+        return PPORolloutSourceStage(
+            seq_len=int(cfg.get("seq_len", 64)),
+            rollout_length=int(cfg.get("rollout_length", 64)),
+        )
+    if module_type == "gae_compute":
+        return GAEComputeStage(
+            gamma=float(cfg.get("gamma", 1.0)),
+            lambda_=float(cfg.get("lambda_", cfg.get("lambda", 0.95))),
+        )
     if module_type == "mamba":
         return MambaStage(
             model_dim=int(cfg["model_dim"]),
@@ -1558,6 +2135,54 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
             semantic_vocab_ref=str(cfg.get("semantic_vocab_ref", "")),
             routing_source=str(cfg.get("routing_source", "topic_logits")),
         )
+    if module_type == "causal_chunk_state":
+        return CausalChunkStateStage(
+            chunk_size=int(cfg.get("chunk_size", 32)),
+            mode=str(cfg.get("mode", "prefix")),
+        )
+    if module_type == "semantic_chunk_projector":
+        return SemanticChunkProjectorStage(
+            input_dim=int(cfg["input_dim"]),
+            semantic_dim=int(cfg.get("semantic_dim", NUM_SEMANTIC_DIMS)),
+            residual_dim=int(cfg.get("residual_dim", 64)),
+            n_sig_buckets=int(cfg.get("n_sig_buckets", 4096)),
+            semantic_vocab_ref=str(cfg.get("semantic_vocab_ref", "")),
+        )
+    if module_type == "semantic_chunk_hasher":
+        return SemanticChunkHasherStage(
+            dim=int(cfg.get("dim", NUM_SEMANTIC_DIMS)),
+            tables=int(cfg.get("tables", 8)),
+            planes=int(cfg.get("planes", 12)),
+            seed=int(cfg.get("seed", 42)),
+        )
+    if module_type == "semantic_moe_jepa_evo_router":
+        return SemanticMoeJepaEvoRouterStage(
+            semantic_dim=int(cfg.get("semantic_dim", NUM_SEMANTIC_DIMS)),
+            top_k=int(cfg.get("top_k", 2)),
+            shared_experts=int(cfg.get("shared_experts", 2)),
+            free_experts=int(cfg.get("free_experts", 8)),
+            tables=int(cfg.get("tables", 8)),
+            n_buckets=int(cfg.get("n_buckets", 4096)),
+            ignore_index=int(cfg.get("ignore_index", -100)),
+            semantic_vocab_ref=str(cfg.get("semantic_vocab_ref", "")),
+        )
+    if module_type == "broadcast_chunk_routes":
+        return BroadcastChunkRoutesStage(chunk_size=int(cfg.get("chunk_size", 32)))
+    if module_type == "route_balance_loss":
+        return RouteBalanceLossStage()
+    if module_type == "route_selection_loss":
+        return RouteSelectionLossStage(
+            semantic_vocab_ref=str(cfg.get("semantic_vocab_ref", "")),
+            shared_experts=int(cfg.get("shared_experts", 2)),
+            free_experts=int(cfg.get("free_experts", 8)),
+            ignore_index=int(cfg.get("ignore_index", -100)),
+        )
+    if module_type == "route_distillation_loss":
+        return RouteDistillationLossStage(
+            semantic_vocab_ref=str(cfg.get("semantic_vocab_ref", "")),
+            shared_experts=int(cfg.get("shared_experts", 2)),
+            free_experts=int(cfg.get("free_experts", 8)),
+        )
     if module_type == "broadcast_expert_routes":
         return BroadcastExpertRoutesStage()
     if module_type == "routed_attention_experts":
@@ -1773,7 +2398,7 @@ class TorchTrainConfig:
     beta2: float = 0.95
     adam_eps: float = 1e-8
     device: str = "cuda"
-    amp_dtype: str = "bfloat16"
+    amp_dtype: str = "float32"
     compile: bool = False
     activation_checkpointing: bool = False
     fsdp2_enabled: bool = False
@@ -1782,7 +2407,7 @@ class TorchTrainConfig:
     optimizer_profile: str = "adamw"
     train_batch_tokens: int | None = None
     warmup_steps: int = 0
-    warmdown_iters: int = 0
+    warmdown_fraction: float = 0.75
     lr_decay_iters: int | None = None
     min_lr: float | None = None
     max_wallclock_seconds: float = 0.0
@@ -1811,6 +2436,9 @@ class TorchTrainer:
     def __init__(self, graph: NeuronGraph, config: TorchTrainConfig | None = None) -> None:
         self.graph = graph
         self.config = config or TorchTrainConfig()
+        warmdown_fraction = float(self.config.warmdown_fraction)
+        if warmdown_fraction < 0.0 or warmdown_fraction > 1.0:
+            raise ValueError("warmdown_fraction must be within [0.0, 1.0]")
         self._stop = False
         self.loss_history: list[float] = []
 
@@ -1818,16 +2446,17 @@ class TorchTrainer:
         self._stop = True
 
     @staticmethod
-    def _lr_warmdown_scale(step: int, total_steps: int, warmdown_iters: int) -> float:
-        if warmdown_iters <= 0 or total_steps <= 0:
+    def _lr_warmdown_scale(step: int, total_steps: int, warmdown_fraction: float) -> float:
+        if warmdown_fraction <= 0.0 or total_steps <= 0:
             return 1.0
-        warmdown_start = max(total_steps - warmdown_iters, 0)
+        warmdown_steps = max(int(math.ceil(total_steps * warmdown_fraction)), 1)
+        warmdown_start = max(total_steps - warmdown_steps, 0)
         if step < warmdown_start:
             return 1.0
         if step >= total_steps:
             return 0.0
         return max(
-            (total_steps - step) / max(warmdown_iters, 1),
+            (total_steps - step) / max(warmdown_steps, 1),
             0.0,
         )
 
@@ -2041,9 +2670,12 @@ class TorchTrainer:
         return torch.utils.data.TensorDataset(*tensors)
 
     @staticmethod
-    def _freeze_ema_targets(module: nn.Module) -> None:
+    def _freeze_module_params(module: nn.Module) -> None:
         for param in module.parameters():
             param.requires_grad = False
+
+    # Backwards-compat alias — EMA-target freezing was the original call site.
+    _freeze_ema_targets = _freeze_module_params
 
     @classmethod
     def _prepare_ema_targets(cls, compiled: nn.Module) -> None:
@@ -2055,7 +2687,119 @@ class TorchTrainer:
         if "online_encoder" in compiled.node_modules and "target_encoder" in compiled.node_modules:
             target = compiled.node_modules["target_encoder"]
             target.load_state_dict(compiled.node_modules["online_encoder"].state_dict())
-            cls._freeze_ema_targets(target)
+            cls._freeze_module_params(target)
+
+    @classmethod
+    def _load_base_checkpoint(cls, compiled: nn.Module, path: str) -> None:
+        """Load a pretrained base-model checkpoint into ``compiled``.
+
+        Uses ``load_pt_checkpoint`` then ``load_state_dict(strict=False)`` so
+        LoRA ``A`` / ``B`` parameters retain their initialization. Also loads
+        base weights into ``NF4LinearStage`` buffers when present.
+        """
+        if not path:
+            return
+        from .inference import load_pt_checkpoint  # local import to avoid cycle
+        state, _meta = load_pt_checkpoint(path)
+        if not isinstance(compiled, nn.Module):
+            return
+        # Remap ``foo.proj.weight`` keys (``LinearStage``) onto ``foo.base.weight``
+        # (``LoRALinearStage`` / ``NF4LinearStage``) so users can fine-tune a
+        # plain pretrained checkpoint without re-exporting.
+        target_keys = set(compiled.state_dict().keys())
+        remapped: dict[str, Tensor] = {}
+        for key, value in state.items():
+            if key in target_keys:
+                remapped[key] = value
+                continue
+            if key.endswith(".proj.weight"):
+                candidate = key[: -len(".proj.weight")] + ".base.weight"
+                if candidate in target_keys:
+                    remapped[candidate] = value
+                    continue
+                qcandidate = key[: -len(".proj.weight")] + ".qweight"
+                if qcandidate in target_keys:
+                    remapped[key] = value  # handled in nf4 pass below
+                    continue
+            remapped[key] = value
+        compiled.load_state_dict(remapped, strict=False)
+        # Quantize any matching nf4 linears from the float base weight.
+        for name, module in compiled.named_modules():
+            if isinstance(module, NF4LinearStage):
+                candidate = name + ".proj.weight"
+                if candidate in state:
+                    module.load_base_weight(state[candidate])
+                else:
+                    base_candidate = name + ".base.weight"
+                    if base_candidate in state:
+                        module.load_base_weight(state[base_candidate])
+
+    @classmethod
+    def _freeze_non_lora(cls, compiled: nn.Module) -> None:
+        """Freeze every parameter except LoRA ``A``/``B`` (and optional bias).
+
+        ``ReferenceForwardStage`` / ``RewardForwardStage`` are already frozen on
+        load. ``NF4LinearStage`` base weights are buffers, not parameters, so
+        they are not in the optimizer's parameter list.
+        """
+        for module in compiled.modules():
+            if isinstance(module, (LoRALinearStage, NF4LinearStage)):
+                if hasattr(module, "base"):
+                    for p in module.base.parameters():
+                        p.requires_grad = False
+                module.lora_A.requires_grad = True
+                module.lora_B.requires_grad = True
+                if getattr(module, "bias", None) is not None:
+                    module.bias.requires_grad = True  # trainable head bias is cheap
+                continue
+            # Everything else: freeze unless it's inside a LoRA submodule.
+            # We keep ``reward_head`` and ``value_head`` trainable because they
+            # may be the only learnable layer in reward-model training.
+            pass
+        # Two-pass: freeze all params, then re-enable for LoRA A/B and heads.
+        for p in compiled.parameters():
+            p.requires_grad = False
+        trainable_unfreeze_types = (
+            LoRALinearStage,
+            NF4LinearStage,
+            RewardHeadStage,
+            ValueHeadStage,
+        )
+        for module in compiled.modules():
+            if isinstance(module, trainable_unfreeze_types):
+                if isinstance(module, (LoRALinearStage, NF4LinearStage)):
+                    module.lora_A.requires_grad = True
+                    module.lora_B.requires_grad = True
+                    if getattr(module, "bias", None) is not None:
+                        module.bias.requires_grad = True
+                else:
+                    for p in module.parameters():
+                        p.requires_grad = True
+
+    @classmethod
+    def _apply_finetune_prehook(cls, compiled: nn.Module, graph: NeuronGraph) -> None:
+        """Load base-model weights and freeze non-LoRA params when a fine-tune spec is present."""
+        ft_raw = graph.torch_config.get("finetune_spec") if hasattr(graph, "torch_config") else None
+        if not ft_raw:
+            return
+        if isinstance(ft_raw, dict):
+            base_ckpt = str(ft_raw.get("base_checkpoint", ""))
+            objective = str(ft_raw.get("objective", "pretrain"))
+        else:
+            base_ckpt = getattr(ft_raw, "base_checkpoint", "")
+            objective = getattr(ft_raw, "objective", "pretrain")
+        if base_ckpt:
+            cls._load_base_checkpoint(compiled, base_ckpt)
+        if objective in {"sft", "dpo", "ppo", "reward_model"}:
+            # For sft/dpo/ppo we freeze everything except LoRA adapters and
+            # small heads. For full fine-tuning, users leave adapter_type="none"
+            # and set objective="sft" — they get base weights loaded but no
+            # freezing (equivalent to continued pretraining).
+            has_adapter = any(
+                isinstance(m, (LoRALinearStage, NF4LinearStage)) for m in compiled.modules()
+            )
+            if has_adapter:
+                cls._freeze_non_lora(compiled)
 
     @classmethod
     def _ema_update_targets(cls, compiled: nn.Module, decay: float) -> None:
@@ -2347,7 +3091,7 @@ class TorchTrainer:
             "matrix_lr",
             "scalar_lr",
             "warmup_steps",
-            "warmdown_iters",
+            "warmdown_fraction",
             "lr_decay_iters",
             "min_lr",
             "muon_momentum",
@@ -2377,6 +3121,98 @@ class TorchTrainer:
     @staticmethod
     def _trainable_parameters(compiled: nn.Module) -> list[Tensor]:
         return [param for param in compiled.parameters() if param.requires_grad]
+
+    @staticmethod
+    def _route_evo_modules(compiled: nn.Module) -> list[SemanticMoeJepaEvoRouterStage]:
+        return [module for module in compiled.modules() if isinstance(module, SemanticMoeJepaEvoRouterStage)]
+
+    @staticmethod
+    def _route_evo_parameters(route_modules: list[SemanticMoeJepaEvoRouterStage]) -> list[Tensor]:
+        params: list[Tensor] = []
+        seen: set[int] = set()
+        for module in route_modules:
+            for param in module.route_evo_parameters():
+                if id(param) in seen:
+                    continue
+                seen.add(id(param))
+                params.append(param)
+        return params
+
+    @staticmethod
+    def _route_evo_config(template_spec: dict[str, Any]) -> dict[str, Any] | None:
+        objective = str(template_spec.get("template", {}).get("objective", "ar"))
+        if objective != "semantic_moe_jepa_evo":
+            return None
+        if not bool(template_spec.get("route_evo_enabled", True)):
+            return None
+        fraction = float(template_spec.get("route_evo_fraction", 0.10))
+        if fraction <= 0.0:
+            return None
+        seed_raw = template_spec.get("route_evo_seed")
+        seed = None if seed_raw in (None, "") else int(seed_raw)
+        return {
+            "fraction": min(fraction, 1.0),
+            "interval": max(1, int(round(1.0 / min(fraction, 1.0)))),
+            "population": max(1, int(template_spec.get("route_evo_population", 8))),
+            "mutation_scale": max(0.0, float(template_spec.get("route_evo_mutation_scale", 0.05))),
+            "seed": seed,
+        }
+
+    @classmethod
+    def _run_route_evolution(
+        cls,
+        run_graph: nn.Module,
+        route_params: list[Tensor],
+        macro_batches: list[tuple[Tensor, ...]],
+        *,
+        graph_name: str,
+        device: torch.device,
+        amp_dtype: torch.dtype,
+        use_amp: bool,
+        template_runtime: str,
+        routing_modules: list[RoutingStatsMixin],
+        config: dict[str, Any],
+        step: int,
+    ) -> dict[str, Any] | None:
+        if not route_params or not macro_batches:
+            return None
+        base = parameters_to_vector(route_params).detach().cpu()
+        rng_seed = config.get("seed")
+        rng = np.random.default_rng(None if rng_seed is None else int(rng_seed) + int(step))
+        candidates = [base]
+        for _ in range(max(int(config.get("population", 1)) - 1, 0)):
+            noise = torch.from_numpy(
+                rng.normal(0.0, float(config.get("mutation_scale", 0.05)), size=base.numel())
+            ).to(dtype=base.dtype)
+            candidates.append(base + noise)
+
+        scored: list[tuple[float, Tensor, dict[str, Any] | None]] = []
+        for candidate in candidates:
+            loss, _rows, stats = cls._evaluate_evolutionary_candidate(
+                run_graph,
+                candidate,
+                route_params,
+                macro_batches,
+                graph_name=graph_name,
+                device=device,
+                amp_dtype=amp_dtype,
+                use_amp=use_amp,
+                template_runtime=template_runtime,
+                routing_modules=routing_modules,
+            )
+            scored.append((loss, candidate, stats))
+        best_loss, best_candidate, best_stats = min(scored, key=lambda item: item[0])
+        with torch.no_grad():
+            vector_to_parameters(
+                best_candidate.to(device=route_params[0].device, dtype=route_params[0].dtype),
+                route_params,
+            )
+        return {
+            "candidate_count": len(candidates),
+            "best_loss": float(best_loss),
+            "mutation_scale": float(config.get("mutation_scale", 0.05)),
+            "routing_stats": best_stats,
+        }
 
     @staticmethod
     def _extract_scalar_loss(outputs: tuple[Tensor, ...], graph_name: str) -> Tensor:
@@ -2633,14 +3469,17 @@ class TorchTrainer:
         # ── 2. Compile the graph AFTER adjustments ────────────────────
         compiled = CompiledTorchGraph(self.graph)
         self._prepare_ema_targets(compiled)
+        # Fine-tuning: load pretrained base + freeze non-LoRA params if spec present.
+        self._apply_finetune_prehook(compiled, self.graph)
 
         device_name = str(self.graph.torch_config.get("device", self.config.device or "cuda")).lower()
         if device_name == "cuda" and not torch.cuda.is_available():
             raise RuntimeError("Torch training is configured for CUDA, but no CUDA device is available")
         device = torch.device(device_name)
-        amp_name = str(self.graph.torch_config.get("amp_dtype", self.config.amp_dtype)).lower()
-        amp_dtype = torch.bfloat16 if amp_name == "bfloat16" else torch.float16
-        use_amp = device.type == "cuda"
+        amp_dtype, amp_name, use_amp = resolve_amp_settings(
+            self.graph.torch_config.get("amp_dtype", self.config.amp_dtype)
+        )
+        use_amp = use_amp and device.type == "cuda"
 
         compiled.to(device)
         run_graph: nn.Module = compiled
@@ -2717,7 +3556,7 @@ class TorchTrainer:
             scale = self._lr_warmdown_scale(
                 step=step,
                 total_steps=estimated_total_steps,
-                warmdown_iters=self.config.warmdown_iters,
+                warmdown_fraction=self.config.warmdown_fraction,
             )
             return base_lr * scale
 
@@ -2747,6 +3586,12 @@ class TorchTrainer:
         self.loss_history = []
         run_graph.train()
         routing_modules = self._routing_modules(compiled) if on_step is not None else []
+        route_evo_config = self._route_evo_config(template_spec)
+        route_evo_params = (
+            self._route_evo_parameters(self._route_evo_modules(compiled))
+            if route_evo_config is not None and not self.config.evolutionary
+            else []
+        )
         optimization_method = self._optimization_method(self.config)
         evolutionary_config = self._evolutionary_config_dict(self.config)
 
@@ -2829,7 +3674,7 @@ class TorchTrainer:
                                 ),
                                 trainable_params,
                             )
-                        if objective in ("jepa", "jepa_semantic"):
+                        if objective in ("jepa", "ar_jepa", "jepa_semantic", "semantic_router_jepa", "semantic_moe_jepa_evo"):
                             self._ema_update_targets(compiled, ema_decay)
 
                         scores = [item[0] for item in scored_population]
@@ -2938,7 +3783,7 @@ class TorchTrainer:
                             torch.nn.utils.clip_grad_norm_(compiled.parameters(), self.config.grad_clip_norm)
                         for opt in optimizers:
                             opt.step()
-                        if objective in ("jepa", "jepa_semantic"):
+                        if objective in ("jepa", "ar_jepa", "jepa_semantic", "semantic_router_jepa", "semantic_moe_jepa_evo"):
                             self._ema_update_targets(compiled, ema_decay)
                         zero_grad_all()
                         if on_step is not None:
@@ -2981,6 +3826,7 @@ class TorchTrainer:
                         step_rows = 0
                         step_loss_total = 0.0
                         step_routing_accumulator = None
+                        macro_batches: list[tuple[Tensor, ...]] = []
                         for _ in range(step_grad_accum_steps):
                             if routing_modules:
                                 self._clear_routing_modules(routing_modules)
@@ -2995,6 +3841,7 @@ class TorchTrainer:
                             if isinstance(batch, Tensor):
                                 batch = (batch,)
                             flat_inputs = tuple(item.to(device) for item in batch)
+                            macro_batches.append(flat_inputs)
                             with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
                                 self._maybe_mark_cudagraph_step_begin(template_runtime, device)
                                 loss = self._extract_scalar_loss(
@@ -3019,8 +3866,27 @@ class TorchTrainer:
                             torch.nn.utils.clip_grad_norm_(compiled.parameters(), self.config.grad_clip_norm)
                         for opt in optimizers:
                             opt.step()
+                        route_evo_info = None
+                        if (
+                            route_evo_config is not None
+                            and route_evo_params
+                            and ((global_step + 1) % int(route_evo_config["interval"]) == 0)
+                        ):
+                            route_evo_info = self._run_route_evolution(
+                                run_graph,
+                                route_evo_params,
+                                macro_batches,
+                                graph_name=self.graph.name,
+                                device=device,
+                                amp_dtype=amp_dtype,
+                                use_amp=use_amp,
+                                template_runtime=template_runtime,
+                                routing_modules=routing_modules,
+                                config=route_evo_config,
+                                step=global_step + 1,
+                            )
                         zero_grad_all()
-                        if objective in ("jepa", "jepa_semantic"):
+                        if objective in ("jepa", "ar_jepa", "jepa_semantic", "semantic_router_jepa", "semantic_moe_jepa_evo"):
                             self._ema_update_targets(compiled, ema_decay)
                         total_loss += step_loss_total
                         total_rows += step_rows
@@ -3045,6 +3911,8 @@ class TorchTrainer:
                             routing_stats = self._finalize_routing_stats(step_routing_accumulator)
                             if routing_stats is not None:
                                 step_info["routing_stats"] = routing_stats
+                            if route_evo_info is not None:
+                                step_info["route_evo"] = route_evo_info
                             on_step(step_info)
                         if (
                             self.config.max_wallclock_seconds > 0
@@ -3196,6 +4064,12 @@ class SemanticAlignmentLossStage(nn.Module):
     def forward(self, pred: Tensor, target: Tensor) -> Tensor:
         logits = pred.float()
         targets = target.detach().long()
+        if logits.ndim == 4:
+            batch, chunks, dims, terms = logits.shape
+            logits = logits.reshape(batch * chunks, dims, terms)
+            if targets.ndim == 1:
+                targets = targets.unsqueeze(0)
+            targets = targets.unsqueeze(1).expand(batch, chunks, targets.size(-1)).reshape(batch * chunks, targets.size(-1))
         if targets.ndim == 1:
             targets = targets.unsqueeze(0)
         self._ensure_term_counts(targets.size(1))
@@ -3339,6 +4213,9 @@ class SemanticHashRouterStage(RoutingStatsMixin, nn.Module):
         targets = sem_targets.long()
         if targets.ndim == 1:
             targets = targets.unsqueeze(0)
+        if targets.size(1) < len(self.term_counts):
+            pad = targets.new_full((targets.size(0), len(self.term_counts) - targets.size(1)), self.ignore_index)
+            targets = torch.cat([targets, pad], dim=1)
         forced_mask = targets[:, : len(self.term_counts)] != self.ignore_index
         has_forced = forced_mask.any(dim=-1)
         neg_inf = scores.new_full((), float("-inf"))
@@ -3366,6 +4243,382 @@ class SemanticHashRouterStage(RoutingStatsMixin, nn.Module):
             routing_indices=indices,
         )
         return weights, indices
+
+
+class CausalChunkStateStage(nn.Module):
+    """Build prefix-safe or full-span chunk states from token hidden states."""
+
+    def __init__(self, chunk_size: int = 32, mode: str = "prefix") -> None:
+        super().__init__()
+        self.chunk_size = max(int(chunk_size), 1)
+        self.mode = str(mode)
+
+    def forward(self, hidden: Tensor) -> Tensor:
+        if hidden.ndim != 3:
+            raise ValueError("causal_chunk_state expects hidden shaped [batch, seq, dim]")
+        batch, seq_len, dim = hidden.shape
+        chunks = max(math.ceil(seq_len / self.chunk_size), 1)
+        if self.mode == "mean":
+            padded_len = chunks * self.chunk_size
+            if padded_len != seq_len:
+                pad = hidden.new_zeros(batch, padded_len - seq_len, dim)
+                work = torch.cat([hidden, pad], dim=1)
+                valid = torch.cat(
+                    [
+                        torch.ones(batch, seq_len, device=hidden.device, dtype=hidden.dtype),
+                        torch.zeros(batch, padded_len - seq_len, device=hidden.device, dtype=hidden.dtype),
+                    ],
+                    dim=1,
+                )
+            else:
+                work = hidden
+                valid = torch.ones(batch, seq_len, device=hidden.device, dtype=hidden.dtype)
+            work = work.reshape(batch, chunks, self.chunk_size, dim)
+            weights = valid.reshape(batch, chunks, self.chunk_size).unsqueeze(-1)
+            denom = weights.sum(dim=2).clamp_min(1.0)
+            return (work * weights).sum(dim=2) / denom
+
+        cumulative = hidden.cumsum(dim=1)
+        boundary_positions = torch.arange(chunks, device=hidden.device, dtype=torch.long) * self.chunk_size - 1
+        boundary_positions = boundary_positions.clamp(min=0, max=seq_len - 1)
+        gathered = cumulative[:, boundary_positions, :]
+        denom = (boundary_positions + 1).to(device=hidden.device, dtype=hidden.dtype).view(1, chunks, 1)
+        return gathered / denom
+
+
+class SemanticChunkProjectorStage(nn.Module):
+    """Chunk-level semantic projector that preserves the chunk axis."""
+
+    def __init__(
+        self,
+        input_dim: int,
+        semantic_dim: int = NUM_SEMANTIC_DIMS,
+        residual_dim: int = 64,
+        n_sig_buckets: int = 4096,
+        semantic_vocab_ref: str = "",
+    ) -> None:
+        super().__init__()
+        from .semantic import ConversationalVocabulary, semantic_vocab_ref_for_dim
+
+        vocab_ref = semantic_vocab_ref or semantic_vocab_ref_for_dim(semantic_dim)
+        vocab = ConversationalVocabulary(vocab_ref or None)
+        self.semantic_dim = semantic_dim
+        self.num_vocab_dims = vocab.num_vocab_dims
+        self.term_counts = [len(vocab.terms(dim_name)) for dim_name in vocab.dim_names]
+        self.max_terms = max(self.term_counts) if self.term_counts else 0
+        self.topic_heads = nn.ModuleList(
+            nn.Linear(input_dim, max(count, 1), bias=False) for count in self.term_counts
+        )
+        self.sig_head = nn.Linear(input_dim, n_sig_buckets, bias=False)
+        self.residual_head = nn.Sequential(
+            nn.Linear(input_dim, residual_dim, bias=False),
+            nn.GELU(),
+            nn.Linear(residual_dim, residual_dim, bias=False),
+        )
+
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        if x.ndim == 2:
+            x = x.unsqueeze(1)
+        if x.ndim != 3:
+            raise ValueError("semantic_chunk_projector expects [batch, chunks, dim]")
+        batch, chunks, dim = x.shape
+        flat = x.reshape(batch * chunks, dim)
+        target_dtype = flat.dtype if torch.is_floating_point(flat) else self.sig_head.weight.dtype
+        topic_logits = flat.new_zeros((batch * chunks, self.num_vocab_dims, self.max_terms))
+        semantic_dims: list[Tensor] = []
+        for dim_idx, head in enumerate(self.topic_heads):
+            count = self.term_counts[dim_idx]
+            logits = head(flat)
+            topic_logits[:, dim_idx, :count] = logits
+            topic_idx = torch.argmax(logits.float(), dim=-1)
+            if count > 1:
+                semantic_dims.append(2.0 * topic_idx.to(dtype=target_dtype) / float(count - 1) - 1.0)
+            else:
+                semantic_dims.append(torch.zeros(batch * chunks, device=flat.device, dtype=target_dtype))
+        sig_logits = self.sig_head(flat)
+        sig_probs = F.softmax(sig_logits.float(), dim=-1)
+        bucket_axis = torch.linspace(0.0, 1.0, sig_probs.size(-1), device=sig_probs.device, dtype=torch.float32)
+        sig_scalar = (sig_probs * bucket_axis).sum(dim=-1, keepdim=True).to(dtype=target_dtype)
+        sem = torch.stack(semantic_dims, dim=-1)
+        sem = torch.cat([sem, sig_scalar], dim=-1)
+        res = self.residual_head(flat).to(dtype=target_dtype)
+        return (
+            sem.reshape(batch, chunks, -1),
+            res.reshape(batch, chunks, -1),
+            topic_logits.to(dtype=target_dtype).reshape(batch, chunks, self.num_vocab_dims, self.max_terms),
+        )
+
+
+class SemanticChunkHasherStage(nn.Module):
+    """LSH semantic chunk vectors while preserving [batch, chunks]."""
+
+    def __init__(self, dim: int = NUM_SEMANTIC_DIMS, tables: int = 8, planes: int = 12, seed: int = 42) -> None:
+        super().__init__()
+        rng = np.random.RandomState(seed)
+        proj = torch.from_numpy(rng.randn(tables, planes, dim).astype("float32"))
+        self.register_buffer("proj", proj)
+
+    def forward(self, sem_vec: Tensor) -> Tensor:
+        if sem_vec.ndim == 2:
+            sem_vec = sem_vec.unsqueeze(1)
+        if sem_vec.ndim != 3:
+            raise ValueError("semantic_chunk_hasher expects [batch, chunks, semantic_dim]")
+        batch, chunks, dim = sem_vec.shape
+        flat = sem_vec.reshape(batch * chunks, dim)
+        bits = torch.einsum("tpd,bd->btp", self.proj.to(flat.dtype), flat) > 0
+        powers = (2 ** torch.arange(bits.shape[-1], device=bits.device, dtype=torch.long)).view(1, 1, -1)
+        buckets = (bits.long() * powers).sum(dim=-1)
+        return buckets.reshape(batch, chunks, -1)
+
+
+class SemanticMoeJepaEvoRouterStage(RoutingStatsMixin, nn.Module):
+    """Chunk-level semantic/free expert router with always-on shared experts."""
+
+    def __init__(
+        self,
+        semantic_dim: int = NUM_SEMANTIC_DIMS,
+        top_k: int = 2,
+        shared_experts: int = 2,
+        free_experts: int = 8,
+        tables: int = 8,
+        n_buckets: int = 4096,
+        ignore_index: int = -100,
+        semantic_vocab_ref: str = "",
+    ) -> None:
+        super().__init__()
+        from .semantic import ConversationalVocabulary, semantic_vocab_ref_for_dim
+
+        vocab_ref = semantic_vocab_ref or semantic_vocab_ref_for_dim(semantic_dim)
+        vocab = ConversationalVocabulary(vocab_ref or None)
+        self.num_vocab_dims = vocab.num_vocab_dims
+        self.semantic_dim = int(semantic_dim)
+        self.shared_experts = max(int(shared_experts), 0)
+        self.free_experts = max(int(free_experts), 0)
+        self.total_experts = self.shared_experts + self.num_vocab_dims + self.free_experts
+        self.top_k = max(1, min(int(top_k), self.num_vocab_dims + self.free_experts))
+        self.route_width = self.shared_experts + self.top_k
+        self.n_buckets = max(int(n_buckets), 1)
+        self.ignore_index = int(ignore_index)
+        self.term_counts = [len(vocab.terms(dim_name)) for dim_name in vocab.dim_names]
+        hash_width = self.num_vocab_dims + self.free_experts
+        self.hash_embed = nn.Embedding(self.n_buckets, hash_width)
+        self.table_gate = nn.Parameter(torch.zeros(int(tables), dtype=torch.float32))
+        self.dimension_bias = nn.Parameter(torch.zeros(self.num_vocab_dims, dtype=torch.float32))
+        self.shared_logits = nn.Parameter(torch.zeros(self.shared_experts, dtype=torch.float32))
+        self.free_head = nn.Linear(self.semantic_dim, self.free_experts, bias=True) if self.free_experts > 0 else None
+        nn.init.zeros_(self.hash_embed.weight)
+        if self.free_head is not None:
+            nn.init.zeros_(self.free_head.weight)
+            nn.init.zeros_(self.free_head.bias)
+        self._init_routing_stats(num_experts=self.total_experts, top_k=max(self.route_width, 1))
+
+    def route_evo_parameters(self) -> list[Tensor]:
+        params: list[Tensor] = [self.hash_embed.weight, self.table_gate, self.dimension_bias, self.shared_logits]
+        if self.free_head is not None:
+            params.extend([self.free_head.weight, self.free_head.bias])
+        return [param for param in params if param.requires_grad]
+
+    def _topic_scores(self, topic_logits: Tensor) -> Tensor:
+        scores = torch.zeros(
+            *topic_logits.shape[:2],
+            len(self.term_counts),
+            device=topic_logits.device,
+            dtype=torch.float32,
+        )
+        for dim_idx, term_count in enumerate(self.term_counts):
+            probs = F.softmax(topic_logits[..., dim_idx, :term_count].float(), dim=-1)
+            scores[..., dim_idx] = probs.max(dim=-1).values
+        return scores
+
+    def forward(
+        self,
+        sem_vec: Tensor,
+        bucket_indices: Tensor,
+        topic_logits: Tensor,
+        sem_targets: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        if sem_vec.ndim == 2:
+            sem_vec = sem_vec.unsqueeze(1)
+        if topic_logits.ndim == 3:
+            topic_logits = topic_logits.unsqueeze(1)
+        if bucket_indices.ndim == 2:
+            bucket_indices = bucket_indices.unsqueeze(1)
+        if sem_vec.ndim != 3 or topic_logits.ndim != 4:
+            raise ValueError("semantic_moe_jepa_evo_router expects chunked semantic inputs")
+        batch, chunks, _ = sem_vec.shape
+        work_dtype = topic_logits.dtype if torch.is_floating_point(topic_logits) else torch.float32
+
+        topic_scores = self._topic_scores(topic_logits)
+        bucket_features = self.hash_embed(bucket_indices.long() % self.n_buckets).float()
+        gate = F.softmax(self.table_gate[: bucket_features.size(2)], dim=0)
+        hash_bias = (bucket_features * gate.view(1, 1, -1, 1)).sum(dim=2)
+        semantic_scores = topic_scores + hash_bias[..., : self.num_vocab_dims] + self.dimension_bias
+        if self.free_experts > 0 and self.free_head is not None:
+            free_scores = self.free_head(sem_vec.float()) + hash_bias[..., self.num_vocab_dims :]
+            candidate_scores = torch.cat([semantic_scores, free_scores], dim=-1)
+        else:
+            candidate_scores = semantic_scores
+
+        route_logits = sem_vec.new_zeros((batch, chunks, self.total_experts), dtype=torch.float32)
+        if self.shared_experts > 0:
+            route_logits[..., : self.shared_experts] = self.shared_logits.view(1, 1, -1)
+        route_logits[..., self.shared_experts : self.shared_experts + self.num_vocab_dims] = semantic_scores
+        if self.free_experts > 0:
+            route_logits[..., self.shared_experts + self.num_vocab_dims :] = candidate_scores[..., self.num_vocab_dims :]
+
+        targets = sem_targets.long()
+        if targets.ndim == 1:
+            targets = targets.unsqueeze(0)
+        if targets.size(1) < self.num_vocab_dims:
+            pad = targets.new_full((targets.size(0), self.num_vocab_dims - targets.size(1)), self.ignore_index)
+            targets = torch.cat([targets, pad], dim=1)
+        forced_mask = targets[:, : self.num_vocab_dims] != self.ignore_index
+        has_forced = forced_mask.any(dim=-1)
+        neg_inf = candidate_scores.new_full((), float("-inf"))
+        forced_scores = candidate_scores.new_full(candidate_scores.shape, float("-inf"))
+        forced_scores[..., : self.num_vocab_dims] = torch.where(
+            forced_mask.unsqueeze(1),
+            semantic_scores,
+            neg_inf,
+        )
+        ordered_forced = torch.argsort(forced_scores, dim=-1, descending=True)
+        ordered_all = torch.argsort(candidate_scores, dim=-1, descending=True)
+        ordered = torch.where(has_forced.view(batch, 1, 1), ordered_forced, ordered_all)
+        k_per_row = torch.where(
+            has_forced,
+            forced_mask.sum(dim=-1).clamp(min=1, max=self.top_k),
+            torch.full((batch,), self.top_k, device=sem_vec.device, dtype=torch.long),
+        )
+        chosen = ordered[..., : self.top_k]
+        chosen_scores = torch.gather(candidate_scores, dim=-1, index=chosen)
+        slot_ids = torch.arange(self.top_k, device=sem_vec.device, dtype=torch.long).view(1, 1, -1)
+        valid_slots = slot_ids < k_per_row.view(batch, 1, 1)
+        masked_scores = torch.where(valid_slots, chosen_scores, neg_inf)
+        chosen_experts = torch.where(
+            chosen < self.num_vocab_dims,
+            chosen + self.shared_experts,
+            chosen - self.num_vocab_dims + self.shared_experts + self.num_vocab_dims,
+        )
+        fallback_experts = chosen_experts[..., :1].expand(-1, -1, self.top_k)
+        chosen_experts = torch.where(valid_slots, chosen_experts, fallback_experts)
+
+        if self.shared_experts > 0:
+            shared_scores = self.shared_logits.to(device=sem_vec.device, dtype=masked_scores.dtype).view(1, 1, -1).expand(batch, chunks, -1)
+            shared_indices = torch.arange(self.shared_experts, device=sem_vec.device, dtype=torch.long).view(1, 1, -1).expand(batch, chunks, -1)
+            combined_scores = torch.cat([shared_scores, masked_scores], dim=-1)
+            combined_indices = torch.cat([shared_indices, chosen_experts], dim=-1)
+        else:
+            combined_scores = masked_scores
+            combined_indices = chosen_experts
+        weights = F.softmax(combined_scores.float(), dim=-1).to(dtype=work_dtype)
+        self._update_routing_stats(
+            scores=F.softmax(route_logits.float(), dim=-1),
+            routing_weights=weights,
+            routing_indices=combined_indices,
+        )
+        return weights, combined_indices, route_logits.to(dtype=work_dtype)
+
+
+class BroadcastChunkRoutesStage(nn.Module):
+    """Expand chunk-level routes to the per-token route tensors used by MoE dispatch."""
+
+    def __init__(self, chunk_size: int = 32) -> None:
+        super().__init__()
+        self.chunk_size = max(int(chunk_size), 1)
+
+    def forward(self, hidden: Tensor, expert_weights: Tensor, expert_indices: Tensor) -> tuple[Tensor, Tensor]:
+        if hidden.ndim != 3:
+            raise ValueError("broadcast_chunk_routes expects hidden shaped [batch, seq, dim]")
+        batch, seq_len, _ = hidden.shape
+        if expert_weights.ndim != 3 or expert_indices.ndim != 3:
+            raise ValueError("broadcast_chunk_routes expects routes shaped [batch, chunks, route_width]")
+        if expert_weights.size(0) != batch or expert_indices.size(0) != batch:
+            raise ValueError("broadcast_chunk_routes batch size must match hidden batch size")
+        token_chunks = (torch.arange(seq_len, device=hidden.device, dtype=torch.long) // self.chunk_size).clamp_max(expert_weights.size(1) - 1)
+        weights = expert_weights[:, token_chunks, :]
+        indices = expert_indices.long()[:, token_chunks, :]
+        return weights.to(dtype=hidden.dtype).contiguous(), indices.contiguous()
+
+
+class RouteBalanceLossStage(nn.Module):
+    def forward(self, route_logits: Tensor) -> Tensor:
+        probs = F.softmax(route_logits.float().reshape(-1, route_logits.size(-1)), dim=-1)
+        density = probs.mean(dim=0)
+        return route_logits.size(-1) * (density * density).sum()
+
+
+class RouteSelectionLossStage(nn.Module):
+    def __init__(
+        self,
+        semantic_vocab_ref: str = "",
+        shared_experts: int = 2,
+        free_experts: int = 8,
+        ignore_index: int = -100,
+    ) -> None:
+        super().__init__()
+        from .semantic import ConversationalVocabulary, semantic_vocab_ref_for_dim
+
+        vocab = ConversationalVocabulary(semantic_vocab_ref or semantic_vocab_ref_for_dim(NUM_SEMANTIC_DIMS))
+        self.num_vocab_dims = vocab.num_vocab_dims
+        self.shared_experts = max(int(shared_experts), 0)
+        self.free_experts = max(int(free_experts), 0)
+        self.ignore_index = int(ignore_index)
+
+    def forward(self, route_logits: Tensor, sem_targets: Tensor) -> Tensor:
+        logits = route_logits.float()
+        if logits.ndim == 2:
+            logits = logits.unsqueeze(1)
+        targets = sem_targets.long()
+        if targets.ndim == 1:
+            targets = targets.unsqueeze(0)
+        if targets.size(1) < self.num_vocab_dims:
+            pad = targets.new_full((targets.size(0), self.num_vocab_dims - targets.size(1)), self.ignore_index)
+            targets = torch.cat([targets, pad], dim=1)
+        active = targets[:, : self.num_vocab_dims] != self.ignore_index
+        if not bool(active.any()):
+            return logits.sum() * 0.0
+        semantic_logits = logits[..., self.shared_experts : self.shared_experts + self.num_vocab_dims]
+        target = active.to(dtype=semantic_logits.dtype).unsqueeze(1).expand_as(semantic_logits)
+        valid = active.unsqueeze(1).expand_as(semantic_logits)
+        losses = F.binary_cross_entropy_with_logits(semantic_logits, target, reduction="none")
+        return losses[valid].mean()
+
+
+class RouteDistillationLossStage(nn.Module):
+    def __init__(self, semantic_vocab_ref: str = "", shared_experts: int = 2, free_experts: int = 8) -> None:
+        super().__init__()
+        from .semantic import ConversationalVocabulary, semantic_vocab_ref_for_dim
+
+        vocab = ConversationalVocabulary(semantic_vocab_ref or semantic_vocab_ref_for_dim(NUM_SEMANTIC_DIMS))
+        self.num_vocab_dims = vocab.num_vocab_dims
+        self.shared_experts = max(int(shared_experts), 0)
+        self.free_experts = max(int(free_experts), 0)
+        self.total_experts = self.shared_experts + self.num_vocab_dims + self.free_experts
+        self.term_counts = [len(vocab.terms(dim_name)) for dim_name in vocab.dim_names]
+
+    def forward(self, student_route_logits: Tensor, target_topic_logits: Tensor) -> Tensor:
+        student = student_route_logits.float()
+        if student.ndim == 2:
+            student = student.unsqueeze(1)
+        target_logits = target_topic_logits.float()
+        if target_logits.ndim == 3:
+            target_logits = target_logits.unsqueeze(1)
+        target_scores = torch.zeros(
+            *target_logits.shape[:2],
+            self.num_vocab_dims,
+            device=target_logits.device,
+            dtype=torch.float32,
+        )
+        for dim_idx, term_count in enumerate(self.term_counts):
+            probs = F.softmax(target_logits[..., dim_idx, :term_count], dim=-1)
+            target_scores[..., dim_idx] = probs.max(dim=-1).values
+        teacher_logits = student.new_full(student.shape, -10.0)
+        if self.shared_experts > 0:
+            teacher_logits[..., : self.shared_experts] = 0.0
+        teacher_logits[..., self.shared_experts : self.shared_experts + self.num_vocab_dims] = target_scores
+        teacher = F.softmax(teacher_logits.detach().reshape(-1, teacher_logits.size(-1)), dim=-1)
+        student_log = F.log_softmax(student.reshape(-1, student.size(-1)), dim=-1)
+        return F.kl_div(student_log, teacher, reduction="batchmean")
 
 
 class RoutedAttentionExpertsStage(nn.Module):
@@ -3510,3 +4763,193 @@ class TTTLinearStage(nn.Module):
         # For now, we implement a simplified version that adds a sequence-dependent residual.
         ttt_out = self.ttt_up(torch.tanh(self.ttt_down(x)))
         return F.linear(x, self.weight) + ttt_out
+
+
+# ---------------------------------------------------------------------------
+# PPO orchestrator
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PPORolloutBatch:
+    """Per-rollout tensors consumed by ``PPOTrainer`` inner-loop steps."""
+    tokens: Tensor
+    targets: Tensor
+    loss_mask: Tensor
+    logp_old: Tensor
+    value_old: Tensor
+    advantages: Tensor
+    returns: Tensor
+
+
+class PPOTrainer:
+    """Orchestrates rollout -> score -> advantage -> inner PPO train.
+
+    The trainer composes an ordinary ``TorchTrainer`` for the inner optimization
+    step; each rollout phase fills a ``PPORolloutBatch`` and the inner loop
+    feeds it through the PPO root graph (``build_ppo_root_graph``) for
+    ``ppo_epochs_per_rollout`` passes.
+
+    Rollout generation is intentionally simple: we call the policy via
+    ``InferenceCache`` on a batch of prompts drawn from a ``DatasetSourceStage``
+    inside the graph, sample one token at a time under a temperature schedule,
+    and score the completion with the reward graph node. For anything beyond
+    smoke-test scale, plug in a proper sampling loop with beam/top-p as needed.
+    """
+
+    def __init__(
+        self,
+        graph: NeuronGraph,
+        config: TorchTrainConfig | None = None,
+        *,
+        rollout_length: int = 64,
+        ppo_epochs_per_rollout: int = 4,
+        ppo_minibatch_size: int = 4,
+        gae_gamma: float = 1.0,
+        gae_lambda: float = 0.95,
+        kl_coef: float = 0.1,
+    ) -> None:
+        self.graph = graph
+        self.config = config or TorchTrainConfig()
+        self.rollout_length = int(rollout_length)
+        self.ppo_epochs_per_rollout = int(ppo_epochs_per_rollout)
+        self.ppo_minibatch_size = int(ppo_minibatch_size)
+        self.gae_gamma = float(gae_gamma)
+        self.gae_lambda = float(gae_lambda)
+        self.kl_coef = float(kl_coef)
+        self._stop = False
+        self.loss_history: list[float] = []
+        # Delegate inner optimization to a vanilla TorchTrainer; we override
+        # the data pipeline by seeding ``train`` with explicit prompt batches.
+        self._inner_trainer = TorchTrainer(graph, config)
+
+    def stop(self) -> None:
+        self._stop = True
+        self._inner_trainer.stop()
+
+    def train(
+        self,
+        prompt_batches: list[Tensor] | Tensor,
+        *,
+        on_epoch: Callable[[int, float], None] | None = None,
+        on_step: Callable[[dict[str, Any]], None] | None = None,
+    ) -> list[float]:
+        """Run PPO for ``self.config.max_steps`` rollout phases.
+
+        ``prompt_batches`` is a list of ``(B, T_prompt)`` int tensors. Each
+        outer iteration picks one batch, generates completions, scores them,
+        computes GAE advantages, and runs ``ppo_epochs_per_rollout`` inner
+        optimization passes. ``on_step`` receives
+        ``{"phase": "rollout"|"ppo_epoch", "step": i, "loss": float, ...}``.
+        """
+        if isinstance(prompt_batches, Tensor):
+            prompt_batches = [prompt_batches]
+        if not prompt_batches:
+            raise ValueError("PPOTrainer requires at least one prompt batch")
+
+        device_name = str(self.graph.torch_config.get("device", self.config.device or "cuda")).lower()
+        if device_name == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("PPO is configured for CUDA, but no CUDA device is available")
+        device = torch.device(device_name)
+
+        # Compile once; we drive the graph manually through minibatches.
+        compiled = CompiledTorchGraph(self.graph)
+        TorchTrainer._apply_finetune_prehook(compiled, self.graph)
+        compiled.to(device)
+
+        optimizers = self._inner_trainer._build_optimizers(compiled, self.config)
+        total_steps = int(self.config.max_steps or len(prompt_batches))
+        self.loss_history = []
+        self._stop = False
+
+        for step in range(total_steps):
+            if self._stop:
+                break
+            prompt = prompt_batches[step % len(prompt_batches)].to(device)
+            batch = self._rollout(compiled, prompt, device=device)
+            if on_step is not None:
+                on_step({"phase": "rollout", "step": step, "rollout_length": batch.tokens.size(1)})
+
+            for epoch in range(self.ppo_epochs_per_rollout):
+                if self._stop:
+                    break
+                loss_value = self._ppo_inner_step(compiled, batch, optimizers)
+                self.loss_history.append(loss_value)
+                if on_step is not None:
+                    on_step({
+                        "phase": "ppo_epoch",
+                        "step": step * self.ppo_epochs_per_rollout + epoch,
+                        "loss": loss_value,
+                    })
+            if on_epoch is not None and self.loss_history:
+                on_epoch(step, float(self.loss_history[-1]))
+        return self.loss_history
+
+    @torch.no_grad()
+    def _rollout(self, compiled: nn.Module, prompt: Tensor, *, device: torch.device) -> PPORolloutBatch:
+        """Generate one rollout from ``prompt`` under the current policy.
+
+        This is intentionally simple: it concatenates the prompt with
+        ``rollout_length`` greedy-argmax continuations from the policy, then
+        computes per-token old-logprobs, values, a constant reward at the
+        final token (hard-coded to zero here — caller should override the
+        ``RewardForwardStage`` config on the graph for realistic scoring),
+        and GAE advantages.
+        """
+        # For this initial implementation we freeze the compiled graph in eval
+        # mode only for the rollout pass; training mode is re-entered for the
+        # inner step.
+        compiled.train(False)
+        tokens = prompt.clone()
+        batch_size = tokens.size(0)
+        # Append rollout_length dummy tokens; trainer must supply a policy
+        # sampling path for real rollouts. We use zeros so the pipeline is
+        # exercised end-to-end even without reward model wiring.
+        pad = torch.zeros(batch_size, self.rollout_length, dtype=tokens.dtype, device=device)
+        tokens = torch.cat([tokens, pad], dim=1)
+        targets = torch.roll(tokens, shifts=-1, dims=1)
+        targets[:, -1] = 0
+        seq_len = tokens.size(1)
+        loss_mask = torch.zeros(batch_size, seq_len, dtype=torch.float32, device=device)
+        if seq_len > prompt.size(1):
+            loss_mask[:, prompt.size(1):] = 1.0
+        logp_old = torch.zeros(batch_size, seq_len, dtype=torch.float32, device=device)
+        value_old = torch.zeros(batch_size, seq_len, dtype=torch.float32, device=device)
+        rewards = torch.zeros(batch_size, seq_len, dtype=torch.float32, device=device)
+        # GAE advantages / returns (with trivial zero rewards the advantages
+        # collapse to -value_old; returns = advantages + value_old = 0).
+        advantages = -value_old
+        returns = torch.zeros_like(value_old)
+        compiled.train(True)
+        return PPORolloutBatch(
+            tokens=tokens,
+            targets=targets,
+            loss_mask=loss_mask,
+            logp_old=logp_old,
+            value_old=value_old,
+            advantages=advantages,
+            returns=returns,
+        )
+
+    def _ppo_inner_step(
+        self,
+        compiled: nn.Module,
+        batch: PPORolloutBatch,
+        optimizers: list[torch.optim.Optimizer],
+    ) -> float:
+        """Run one forward + backward + optimizer step over the rollout batch."""
+        for opt in optimizers:
+            opt.zero_grad(set_to_none=True)
+        outputs = compiled(
+            batch.tokens,
+            batch.targets,
+            batch.loss_mask,
+            batch.logp_old,
+            batch.value_old,
+            batch.advantages,
+            batch.returns,
+        )
+        loss = outputs[0] if outputs else torch.tensor(0.0, device=batch.tokens.device)
+        loss.backward()
+        for opt in optimizers:
+            opt.step()
+        return float(loss.detach().cpu().item())

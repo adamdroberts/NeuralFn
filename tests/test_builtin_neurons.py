@@ -104,10 +104,34 @@ EXPECTED_BUILTINS = [
     "semantic_hasher_module",
     "semantic_moe_router_module",
     "semantic_hash_router_module",
+    "causal_chunk_state_module",
+    "semantic_chunk_projector_module",
+    "semantic_chunk_hasher_module",
+    "semantic_moe_jepa_evo_router_module",
+    "broadcast_chunk_routes_module",
+    "route_balance_loss_module",
+    "route_selection_loss_module",
+    "route_distillation_loss_module",
     "broadcast_expert_routes_module",
     "routed_attention_experts_module",
     "attentionless_decoder_module",
     "softmax_distillation_loss_module",
+    "lora_linear_module",
+    "nf4_linear_module",
+    "masked_token_cross_entropy_module",
+    "reference_forward_module",
+    "sft_dataset_source_module",
+    "sequence_logp_module",
+    "dpo_pairwise_loss_module",
+    "dpo_dataset_source_module",
+    "reward_head_module",
+    "preference_bce_loss_module",
+    "value_head_module",
+    "ppo_clipped_loss_module",
+    "kl_penalty_module",
+    "reward_forward_module",
+    "ppo_rollout_source_module",
+    "gae_compute_module",
 ]
 
 
@@ -160,6 +184,40 @@ class BuiltinNeuronsTest(unittest.TestCase):
 
         self.assertIn("out", result)
         self.assertAlmostEqual(0.5, result["out"][0], places=6)
+
+    def test_builtin_ports_default_to_unquantized_precision_except_discrete_contracts(self) -> None:
+        self.assertIsNone(BuiltinNeurons.add.input_ports[0].precision)
+        self.assertIsNone(BuiltinNeurons.add.output_ports[0].precision)
+        self.assertIsNone(BuiltinNeurons.residual_add_module.input_ports[0].precision)
+        self.assertIsNone(BuiltinNeurons.token_cross_entropy_module.output_ports[0].precision)
+        self.assertEqual(1.0, BuiltinNeurons.token_embedding_module.input_ports[0].precision)
+        self.assertEqual(1.0, BuiltinNeurons.threshold.output_ports[0].precision)
+        self.assertEqual("bool", BuiltinNeurons.threshold.output_ports[0].dtype)
+
+    def test_port_round_trip_supports_unquantized_precision(self) -> None:
+        port = Port("x", range=(-10, 10), precision=None)
+        self.assertAlmostEqual(0.123456, port.condition(0.123456))
+
+        payload = port.to_dict()
+        self.assertIsNone(payload["precision"])
+        loaded = Port.from_dict(payload)
+        self.assertIsNone(loaded.precision)
+        self.assertAlmostEqual(0.123456, loaded.condition(0.123456))
+
+        legacy = Port.from_dict({"name": "x", "range": [-10, 10], "dtype": "float"})
+        self.assertIsNone(legacy.precision)
+        self.assertAlmostEqual(0.1234, legacy.condition(0.1234))
+
+    def test_port_round_trip_supports_unbounded_range(self) -> None:
+        port = Port("x", precision=None)
+        self.assertIsNone(port.range)
+        self.assertEqual(1_000_000.0, port.condition(1_000_000.0))
+
+        payload = port.to_dict()
+        self.assertIsNone(payload["range"])
+        loaded = Port.from_dict(payload)
+        self.assertIsNone(loaded.range)
+        self.assertEqual(-1_000_000.0, loaded.condition(-1_000_000.0))
 
     def test_save_load_round_trip_preserves_builtin_serialized_names(self) -> None:
         graph = NeuronGraph()
