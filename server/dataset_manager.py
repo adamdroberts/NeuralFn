@@ -20,7 +20,7 @@ import tiktoken
 NFN_CACHE_DIR = Path.home() / ".cache" / "nfn"
 DATASETS_DIR = NFN_CACHE_DIR / "datasets"
 SENTENCEPIECE_TOKENIZERS_DIR = NFN_CACHE_DIR / "tokenizers"
-TIKTOKEN_ENCODINGS_DIR = Path("/home/adam/tiktoken_encodings")
+TIKTOKEN_ENCODINGS_DIR = Path.home() / "tiktoken_encodings"
 RAW_TEXT_GPT2_BACKBONES = frozenset({"gpt2", "nanogpt"})
 RAW_TEXT_DEFAULT_ENCODING = "o200k_base"
 RAW_TEXT_CL100K_ENCODING = "cl100k_base"

@@ -26,10 +26,10 @@ From the NeuralFn repo root:
 pip install -e .
 ```
 
-From a sibling project outside the repo:
+From a sibling project checked out next to the repo:
 
 ```bash
-pip install -e /home/adam/dev/innovation/NeuralFn
+pip install -e ../NeuralFn
 ```
 
 The editable package install includes the shipped semantic vocabulary and
@@ -211,7 +211,7 @@ This mirrors `examples/gpt_graph.py`. Template fields (`ModelSpec`, `BlockSpec`,
 | `NEURALFN_REDIS_URL` | Redis URL for shared live state (session graph cache, run events). If Redis is unreachable, the server falls back to in-memory live state | `redis://localhost:6379/1` |
 | `NEURALFN_CREATE_SCHEMA_ON_STARTUP` | When not `0`, create DB tables on startup | `1` |
 | `NEURALFN_SNAPSHOTS_DIR` | Directory for persisted session snapshots | `server/session_snapshots` |
-| `NEURALFN_ARTIFACTS_DIR` | Directory for saved artifacts | `server/artifacts` |
+| `NEURALFN_ARTIFACTS_DIR` | Directory for saved artifacts | `~/NeuralFn/artifacts` |
 | `NEURALFN_ALLOW_ORIGINS` | Comma-separated CORS origins (must include the editor origin when using cookies) | `http://127.0.0.1:5173,http://localhost:5173` |
 | `NEURALFN_SESSION_COOKIE_NAME` | HTTP session cookie name | `neuralfn_session` |
 | `NEURALFN_SESSION_TTL_SECONDS` | Session lifetime in seconds | `1209600` |

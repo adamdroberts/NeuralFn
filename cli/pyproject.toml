@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neuralfn-sdk-harness"
+version = "0.0.0"
+description = "External SDK harness for training the NeuralFn JEPA Semantic Hybrid."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["rich>=13"]
+
+[project.scripts]
+nfn = "nfn:main"
+
+[tool.setuptools]
+py-modules = ["cli_utils", "nfn", "nfn_impl"]

@@ -13,6 +13,20 @@ from fastapi.testclient import TestClient
 from neuralfn.semantic import ConversationalVocabulary, NUM_SEMANTIC_DIMS
 
 
+class SettingsDefaultsTest(unittest.TestCase):
+    def test_artifacts_dir_defaults_to_home_neuralfn_artifacts(self) -> None:
+        import server.settings as settings_module
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("NEURALFN_ARTIFACTS_DIR", None)
+            settings_module.get_settings.cache_clear()
+            try:
+                settings = settings_module.get_settings()
+                self.assertEqual(Path.home() / "NeuralFn" / "artifacts", settings.artifacts_dir)
+            finally:
+                settings_module.get_settings.cache_clear()
+
+
 class PlatformApiTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.mkdtemp(prefix="neuralfn-platform-api-")

@@ -13,7 +13,7 @@ All server configuration is managed through the `Settings` dataclass in `server/
 | `session_cookie_name` | `NEURALFN_SESSION_COOKIE_NAME` | `neuralfn_session` | Name of the HTTP-only cookie used for session authentication. |
 | `session_ttl_seconds` | `NEURALFN_SESSION_TTL_SECONDS` | `1209600` (14 days) | Lifetime of an authentication session in seconds. |
 | `snapshots_dir` | `NEURALFN_SNAPSHOTS_DIR` | `server/session_snapshots` | Directory where session snapshot JSON files are stored. |
-| `artifacts_dir` | `NEURALFN_ARTIFACTS_DIR` | `server/artifacts` | Directory for training artifacts (checkpoints, logs). |
+| `artifacts_dir` | `NEURALFN_ARTIFACTS_DIR` | `~/NeuralFn/artifacts` | Directory for training artifacts (checkpoints, logs). |
 | `create_schema_on_startup` | `NEURALFN_CREATE_SCHEMA_ON_STARTUP` | `"1"` | When truthy, the database schema is created automatically on application startup. Set to `"0"` to disable (useful when relying on Alembic migrations). |
 | `allow_origins` | `NEURALFN_ALLOW_ORIGINS` | Vite dev URLs | Comma-separated list of allowed CORS origins. Defaults include the standard Vite dev server addresses. |
 | `mcp_email` | `NEURALFN_MCP_EMAIL` | `None` | Email address used by the MCP bridge to authenticate against the REST API. |
@@ -31,7 +31,7 @@ settings = get_settings()
 
 ## Root Directory
 
-`Settings` computes `root_dir` from `__file__`, resolving to the repository root (the parent of the `server/` package directory). Relative paths such as `snapshots_dir` and `artifacts_dir` are resolved against `root_dir` at runtime.
+`Settings` computes `root_dir` from `__file__`, resolving to the repository root (the parent of the `server/` package directory). Relative paths such as `snapshots_dir` are resolved against `root_dir` at runtime. Artifacts default to `~/NeuralFn/artifacts` so CLI and graph-run outputs share one local store unless `NEURALFN_ARTIFACTS_DIR` overrides it.
 
 ## Example `.env`
 

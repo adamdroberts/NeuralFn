@@ -6,6 +6,41 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-05-03 Script path cleanup before push
+
+#### Changed
+
+- **Portable CLI run scripts** -- removed workstation-specific absolute `PYTHONPATH` values from the 5090 helper scripts. They now derive the project root from the script location, run from `./cli`, and keep artifact paths under `$HOME/NeuralFn/artifacts`.
+- **Portable setup, cache, and history examples** -- replaced local absolute setup and verification paths in docs/changelog examples with repo-relative paths, and changed the tiktoken encoding cache default to `~/tiktoken_encodings`.
+
+#### Verification
+
+- Workstation-path scan over shell scripts, Python files, Markdown, and changelog examples -> no local absolute path matches.
+- `bash -n 5090-mini-run.sh 5090-llama-smoke.sh 5090-llama-baseline.sh 5090-llama-overnight.sh`
+- `conda run -n NeuralFn python -m py_compile ../server/dataset_manager.py`
+- `conda run -n NeuralFn python -m pytest tests/test_dataset_manager_downloads.py ../tests/test_dataset_manager_variants.py -q` -> `5 passed`
+- `git diff --check`
+
+### 2026-05-03 CLI and graph-run artifact store migration
+
+#### Breaking changes
+
+- **Default artifact paths moved** -- implicit CLI training outputs, CLI inference graph/weights defaults, interactive inference graph picking, eval reports, and server/editor graph-run artifacts now use `~/NeuralFn/artifacts` instead of repo-local `cli/artifacts` or `server/artifacts`. Callers with hardcoded old paths should pass explicit `--output`, `--graph`, `--weights`, or `--report-path` values, or update scripts to the new shared directory.
+
+#### Changed
+
+- **Shared artifact root** -- CLI helpers and standalone training/inference scripts now resolve default artifacts through a shared `NEURALFN_ARTIFACTS_DIR` override, defaulting to `~/NeuralFn/artifacts`.
+- **Current artifact migration** -- existing CLI graph/checkpoint/eval files were moved from `cli/artifacts` into `~/NeuralFn/artifacts`; no compatibility copy or symlink was left behind.
+- **In-repo CLI import roots** -- the CLI import bootstrap now points at the enclosing NeuralFn repo and the local `cli/scripts` directory, matching the relocated in-repo CLI layout.
+- **Platform artifact default** -- `server/settings.py` now defaults `NEURALFN_ARTIFACTS_DIR` to `~/NeuralFn/artifacts`, so graph-run artifacts share the same local artifact store as CLI runs.
+
+#### Verification
+
+- `conda run -n NeuralFn python -m pytest tests/test_nfn_cli.py tests/test_infer_megakernel_artifacts.py ../tests/test_platform_api.py::SettingsDefaultsTest -q` -> `79 passed, 68 subtests passed`
+- `conda run -n NeuralFn python -m py_compile cli_utils.py scripts/cli_utils.py nfn_impl.py scripts/train_jepa_semantic.py scripts/infer_jepa_semantic.py scripts/train_llama_fast.py scripts/infer_llama_fast.py scripts/train_gpt2.py scripts/infer_gpt2.py scripts/train_nanogpt.py scripts/infer_nanogpt.py scripts/train_mixllama_fast.py scripts/infer_mixllama_fast.py scripts/train_semantic_router_moe.py scripts/train_semantic_router_moe-overnight.py scripts/infer_semantic_router_moe.py scripts/train_llama_megakernel.py scripts/infer_llama_megakernel.py ../server/settings.py ../tests/test_platform_api.py`
+- `conda run -n NeuralFn python -c "..."` graph metadata check -> `checked=21 missing=0`
+- `conda run -n NeuralFn python scripts/infer_jepa_semantic.py --help` and `conda run -n NeuralFn python nfn.py infer --help` both rendered help successfully.
+
 ### 2026-05-03 [Experimental] Semantic MoE JEPA Evo GPT template
 
 #### Added
@@ -41,7 +76,7 @@ Future updates should append new entries here rather than replacing older notes.
 #### Verification
 
 - `conda run -n NeuralFn python -m pytest tests/test_tokenizer_vocab_contract.py -q`
-- `conda run -n NeuralFn python -m py_compile /home/adam/dev/innovation/neuralfn-sdk-harness/scripts/train_jepa_semantic.py /home/adam/dev/innovation/neuralfn-sdk-harness/scripts/train_mixllama_fast.py /home/adam/dev/innovation/neuralfn-sdk-harness/scripts/train_semantic_router_moe.py /home/adam/dev/innovation/neuralfn-sdk-harness/scripts/infer_jepa_semantic.py /home/adam/dev/innovation/neuralfn-sdk-harness/scripts/infer_mixllama_fast.py /home/adam/dev/innovation/neuralfn-sdk-harness/scripts/infer_semantic_router_moe.py`
+- `conda run -n NeuralFn python -m py_compile cli/scripts/train_jepa_semantic.py cli/scripts/train_mixllama_fast.py cli/scripts/train_semantic_router_moe.py cli/scripts/infer_jepa_semantic.py cli/scripts/infer_mixllama_fast.py cli/scripts/infer_semantic_router_moe.py`
 
 ### 2026-04-10 Cached tokenizer contract validation and fail-fast vocab checks
 
@@ -57,7 +92,7 @@ Future updates should append new entries here rather than replacing older notes.
 - `conda run -n NeuralFn python -m pytest tests/test_dataset_manager_variants.py -q`
 - `conda run -n NeuralFn python -m pytest tests/test_tokenizer_vocab_contract.py -q`
 - `conda run -n NeuralFn python -m pytest tests/test_template_presets.py -x -q`
-- `conda run -n NeuralFn python -m py_compile /home/adam/dev/innovation/neuralfn-sdk-harness/scripts/infer_jepa_semantic.py /home/adam/dev/innovation/neuralfn-sdk-harness/scripts/infer_semantic_router_moe.py /home/adam/dev/innovation/neuralfn-sdk-harness/scripts/infer_mixllama_fast.py`
+- `conda run -n NeuralFn python -m py_compile cli/scripts/infer_jepa_semantic.py cli/scripts/infer_semantic_router_moe.py cli/scripts/infer_mixllama_fast.py`
 
 ### 2026-04-10 [Experimental] semantic_router_moe preset and router-only harness
 
@@ -193,7 +228,7 @@ This is still a **research prototype**. The architecture and trainer surface rem
 - `conda run -n NeuralFn python -m pytest tests/test_jepa_semantic.py -q` -> `29 passed`
 - `conda run -n NeuralFn python -m pytest tests/test_template_presets.py -x -q` -> `15 passed`
 - `conda run -n NeuralFn python -m pytest tests/test_builtin_neurons.py -q` -> `4 passed`
-- `PYTHONPATH=/home/adam/dev/innovation/NeuralFn conda run -n NeuralFn python /home/adam/dev/innovation/neuralfn-sdk-harness/scripts/train_jepa_semantic.py --help` -> CLI import and argument surface verified
+- `PYTHONPATH=. conda run -n NeuralFn python cli/scripts/train_jepa_semantic.py --help` -> CLI import and argument surface verified
 - `conda run -n NeuralFn python -c "import torch; print(torch.cuda.is_available())"` -> `True`
 
 ### 2026-04-08 [Experimental] Hybrid JEPA Semantic LLM preset

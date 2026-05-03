@@ -118,10 +118,10 @@ From the repository root:
 pip install -e .
 ```
 
-From a sibling project outside the repo:
+From a sibling project checked out next to the repo:
 
 ```bash
-pip install -e /home/adam/dev/innovation/NeuralFn
+pip install -e ../NeuralFn
 ```
 
 This installs the `neuralfn` package in editable mode and includes the shipped
@@ -146,7 +146,7 @@ pnpm install
 
 ### Platform configuration
 
-By default, the backend starts with a local SQLite database at `neuralfn.db`, stores snapshots in `server/session_snapshots`, stores artifacts in `server/artifacts`, and allows the standard Vite dev origins. Configure the platform with environment variables as needed:
+By default, the backend starts with a local SQLite database at `neuralfn.db`, stores snapshots in `server/session_snapshots`, stores artifacts in `~/NeuralFn/artifacts`, and allows the standard Vite dev origins. Configure the platform with environment variables as needed:
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
@@ -154,7 +154,7 @@ By default, the backend starts with a local SQLite database at `neuralfn.db`, st
 | `NEURALFN_REDIS_URL` | Optional Redis live state/event store. If unset, the server uses in-memory live state. | unset |
 | `NEURALFN_CREATE_SCHEMA_ON_STARTUP` | Auto-create tables on app startup. Set to `0` if you want migration-only schema management. | `1` |
 | `NEURALFN_SNAPSHOTS_DIR` | Filesystem location for persisted session snapshots. | `server/session_snapshots` |
-| `NEURALFN_ARTIFACTS_DIR` | Filesystem location for saved artifacts. | `server/artifacts` |
+| `NEURALFN_ARTIFACTS_DIR` | Filesystem location for saved artifacts. | `~/NeuralFn/artifacts` |
 | `NEURALFN_ALLOW_ORIGINS` | Comma-separated CORS origins. Must include the frontend origin when using cookies. | `http://127.0.0.1:5173,http://localhost:5173` |
 | `NEURALFN_SESSION_COOKIE_NAME` | Session cookie name used by the web app and API. | `neuralfn_session` |
 | `NEURALFN_SESSION_TTL_SECONDS` | Session lifetime in seconds. | `1209600` |

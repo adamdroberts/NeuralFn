@@ -8,10 +8,10 @@ API reference for the `neuralfn` Python package.
 pip install -e .
 ```
 
-From a sibling project outside the repo:
+From a sibling project checked out next to the repo:
 
 ```bash
-pip install -e /home/adam/dev/innovation/NeuralFn
+pip install -e ../NeuralFn
 ```
 
 This editable install now packages the shipped semantic vocabulary files under
