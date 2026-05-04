@@ -27,7 +27,7 @@ the repo root. The second installs the CLI entrypoint declared by
 | Command | Purpose |
 |---------|---------|
 | `nfn train` | Train a composed recipe and export `.pt` weights plus graph `.json`. |
-| `nfn infer` | Load an exported graph and generate text from a prompt. |
+| `nfn infer` | Load an exported graph or supported graphless checkpoint and generate text from a prompt. |
 | `nfn eval` | Run validation batches and prompt probes, then write a JSON report. |
 
 Every command accepts `--plan` for an interactive questionnaire and
@@ -69,6 +69,7 @@ nfn train --plan
 nfn train --pretraining-file ./pretraining-data.txt
 nfn train --base-model llama --topology moe --router-mode semantic --jepa
 nfn infer --graph ~/NeuralFn/artifacts/llama_fast.json --prompt "Once upon a time"
+nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer ~/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model
 nfn eval --base-model gpt2 --dataset shakespeare
 ```
 
@@ -112,6 +113,68 @@ Training saves:
 The graph JSON records `artifact_metadata.weights_file`, tokenizer metadata,
 and training metadata so inference can load graph-first and treat `--weights`
 as an override.
+
+`nfn infer` also has a graphless compatibility path for flat Parameter Golf
+root-GPT `.pt` checkpoints. Use `--checkpoint` with the matching SentencePiece
+`.model` file, and optionally pass the training log so non-tensor hints can be
+read from its `Hyperparameters` block:
+
+```bash
+nfn infer \
+  --checkpoint ~/NeuralFn/artifacts/final_model.pt \
+  --checkpoint-tokenizer ~/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model \
+  --checkpoint-log ~/Downloads/a54a53b3-7d6e-461c-975a-590030e61bd0.txt
+```
+
+Passing `--weights <checkpoint>.pt` without `--graph` routes to the same
+graphless loader. NeuralFn graph exports remain the primary format and should
+continue to use `--graph`.
+
+For flat Parameter Golf checkpoints, architecture comes from tensor shapes plus
+compatible metadata. A supplied training log may provide safe runtime hints
+such as context window or logit softcap, but newer experimental structural
+hints are ignored when the tensors are not present in the checkpoint. CaseOps
+SentencePiece models use display cleanup that hides private-use case markers
+and suppresses reconstruction-only tokens during sampling, including byte
+fallback, ellipsis artifacts, and the high-id single-character fallback band
+that can otherwise look like masked or gapped output in chat.
+
+Graphless Parameter Golf sampling uses a conservative repeat guard by default:
+`--no-repeat-ngram-size 4`, `--repeat-run-limit 3`, and the balanced
+repetition-penalty preset. Lower `--no-repeat-ngram-size` to `3` or raise the
+chat setting with `/repeat 1.15` when a checkpoint drifts into repeated
+punctuation or phrase loops.
+
+In interactive `nfn infer`, slash completion is live. A buffer beginning with
+`/` shows matching commands in the status line as you type; unique prefixes
+complete in place on Tab, ambiguous prefixes list matches, and value commands
+show their expected argument after the command name. `/autocomplete n` enables
+inline typing predictions for `n` words. The predicted text is rendered as a
+50% gray ghost suffix after the cursor. The suffix preserves the model's
+generated word boundary: a leading space starts a new word, and no leading
+space completes the current word. Tab accepts the visible prediction. Use
+`/autocomplete 0` to disable inline predictions and return non-command prompts
+to the token-preview behavior: press Tab once to preview the next token and Tab
+again to insert it when safe. Wrapped prompts and ghost predictions are
+repainted as a full multi-row block so stale rows are cleared as the input
+changes.
+
+## Presets
+
+The CLI includes a preset stack for the supplied lossless-caps Parameter Golf
+training run:
+
+```bash
+nfn train \
+  --model-preset parameter_golf_caseops_8192 \
+  --run-preset parameter_golf_10min \
+  --optimizer-preset parameter_golf_muon \
+  --tokenizer sp8192
+```
+
+When `parameter_golf_caseops_8192` is selected, the planner recommends
+`parameter_golf_10min`, `parameter_golf_muon`, and `sp8192` unless those values
+were passed explicitly.
 
 ## Fine-tuning flags
 

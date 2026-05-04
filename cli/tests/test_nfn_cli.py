@@ -26,6 +26,12 @@ import nfn
 import nfn_impl
 from cli_utils import artifact_path, artifact_root
 from infer_jepa_semantic import resolve_autocast_settings
+from parameter_golf_runtime import (
+    ParameterGolfConfig,
+    ParameterGolfGPT,
+    ParameterGolfSentencePieceTokenizer,
+    sanitize_caseops_decoded_text,
+)
 from train_jepa_semantic import dataset_download_kwargs_from_args, parameter_golf_dataset_alias
 
 
@@ -208,6 +214,30 @@ class NfnCliTest(unittest.TestCase):
         self.assertIn("pop 50", optimizer_choices["evolutionary_balanced"].description)
         self.assertIn("mut 0.1", optimizer_choices["evolutionary_balanced"].description)
         self.assertIn("elite 2", optimizer_choices["evolutionary_balanced"].description)
+        self.assertIn(nfn_impl.PARAMETER_GOLF_CASEOPS_MODEL_PRESET, model_choices)
+        self.assertIn("11 layers", model_choices[nfn_impl.PARAMETER_GOLF_CASEOPS_MODEL_PRESET].description)
+        self.assertIn("Parameter Golf 10min", run_choices["parameter_golf_10min"].label)
+        self.assertIn("Parameter Golf Muon", optimizer_choices["parameter_golf_muon"].label)
+
+    def test_parameter_golf_model_preset_fills_training_stack(self) -> None:
+        state: dict[str, object] = {
+            "base_model": "llama",
+            "topology": "dense",
+            "router_mode": "standard",
+            "use_jepa": False,
+            "megakernel": False,
+            "model_preset": nfn_impl.PARAMETER_GOLF_CASEOPS_MODEL_PRESET,
+        }
+        resolved = nfn_impl.apply_recommended_presets("train", state, {"model_preset"})
+
+        self.assertEqual("parameter_golf_10min", resolved["run_preset"])
+        self.assertEqual("parameter_golf_muon", resolved["optimizer_preset"])
+        self.assertEqual("sp8192", resolved["tokenizer"])
+        self.assertEqual(8192, resolved["vocab_size"])
+        self.assertEqual(11, resolved["num_layers"])
+        self.assertEqual(512, resolved["model_dim"])
+        self.assertEqual(8, resolved["num_heads"])
+        self.assertEqual(4, resolved["num_kv_heads"])
 
     def test_next_visible_question_key_reveals_raw_text_tokenizer_after_dataset_choice(self) -> None:
         questions = nfn_impl.training_questionnaire(set())
@@ -673,6 +703,41 @@ class NfnCliTest(unittest.TestCase):
         self.assertEqual("nanogpt", calls[0][1]["base_model"])
         self.assertFalse(calls[0][1]["_tty"])
 
+    def test_main_infer_checkpoint_dispatches_without_planner(self) -> None:
+        calls: list[tuple[str, dict[str, object]]] = []
+
+        def fake_execute(command: str, state: dict[str, object]) -> int:
+            calls.append((command, dict(state)))
+            return 0
+
+        with patch.object(nfn_impl, "execute", side_effect=fake_execute), patch.object(
+            nfn_impl,
+            "maybe_plan",
+            side_effect=AssertionError("infer should not route through maybe_plan"),
+        ):
+            rc = nfn.main(
+                [
+                    "infer",
+                    "--checkpoint",
+                    "/tmp/final_model.pt",
+                    "--checkpoint-tokenizer",
+                    "/tmp/tokenizer.model",
+                    "--checkpoint-log",
+                    "/tmp/train.log",
+                    "--prompt",
+                    "hi",
+                ],
+                stdin_isatty=False,
+                stdout_isatty=False,
+            )
+        self.assertEqual(0, rc)
+        self.assertEqual("infer", calls[0][0])
+        self.assertEqual("/tmp/final_model.pt", calls[0][1]["checkpoint"])
+        self.assertEqual("/tmp/tokenizer.model", calls[0][1]["checkpoint_tokenizer"])
+        self.assertEqual("/tmp/train.log", calls[0][1]["checkpoint_log"])
+        self.assertEqual("hi", calls[0][1]["prompt"])
+        self.assertFalse(calls[0][1]["_tty"])
+
     def test_main_infer_plan_flags_are_ignored(self) -> None:
         calls: list[tuple[str, dict[str, object]]] = []
 
@@ -685,14 +750,92 @@ class NfnCliTest(unittest.TestCase):
             rc = nfn.main(["infer", "--graph", "/tmp/model.json", "--plan-auto"], stdin_isatty=False, stdout_isatty=False)
         self.assertEqual(0, rc)
         self.assertEqual("infer", calls[0][0])
-        self.assertIn("graph-first; ignoring --plan/--plan-auto", stderr.getvalue())
+        self.assertIn("artifact-first; ignoring --plan/--plan-auto", stderr.getvalue())
 
     def test_main_infer_without_graph_fails_cleanly_when_noninteractive(self) -> None:
         stderr = io.StringIO()
         with redirect_stderr(stderr):
             rc = nfn.main(["infer", "--prompt", "hello"], stdin_isatty=False, stdout_isatty=False)
         self.assertEqual(1, rc)
-        self.assertIn("Non-interactive infer requires --graph.", stderr.getvalue())
+        self.assertIn("Non-interactive infer requires --graph or --checkpoint/--weights.", stderr.getvalue())
+
+    def test_resolve_graphless_checkpoint_path_accepts_weights_without_graph(self) -> None:
+        args = argparse.Namespace(graph=None, checkpoint=None, weights="~/NeuralFn/artifacts/final_model.pt")
+        resolved = nfn_impl.resolve_graphless_checkpoint_path(args)
+        self.assertEqual(Path("~/NeuralFn/artifacts/final_model.pt").expanduser().resolve(), resolved)
+
+    def test_parameter_golf_generation_suppresses_artifact_tokens(self) -> None:
+        logits = torch.tensor([[1.0, 9.0, 2.0, 8.0]])
+        masked = nfn_impl.suppress_parameter_golf_token_ids(logits, token_ids=(1, 3), stop_token=None)
+        self.assertTrue(torch.isneginf(masked[0, 1]))
+        self.assertTrue(torch.isneginf(masked[0, 3]))
+        self.assertEqual(2, int(torch.argmax(masked, dim=-1).item()))
+
+        with_stop = nfn_impl.suppress_parameter_golf_token_ids(logits, token_ids=(1, 3), stop_token=3)
+        self.assertTrue(torch.isneginf(with_stop[0, 1]))
+        self.assertFalse(torch.isneginf(with_stop[0, 3]))
+
+    def test_parameter_golf_repeat_bans_catches_runs_and_ngrams(self) -> None:
+        self.assertEqual(
+            [7],
+            nfn_impl.parameter_golf_repeat_bans(
+                [1, 2, 7, 7, 7],
+                repeat_run_limit=3,
+                no_repeat_ngram_size=0,
+            ),
+        )
+        self.assertEqual(
+            [3],
+            nfn_impl.parameter_golf_repeat_bans(
+                [1, 2, 3, 1, 2],
+                repeat_run_limit=0,
+                no_repeat_ngram_size=3,
+            ),
+        )
+
+    def test_caseops_decode_sanitizer_hides_private_use_markers(self) -> None:
+        self.assertEqual(
+            "hello world",
+            sanitize_caseops_decoded_text("\ue001hello   \ufffdworld\ue004"),
+        )
+
+    def test_caseops_tokenizer_suppresses_lossless_artifact_pieces(self) -> None:
+        class FakeProcessor:
+            pieces = ["<pad>", "<s>", "<0xE2>", "...", "▁...", "word", "", "a", "b"]
+
+            def vocab_size(self):
+                return len(self.pieces)
+
+            def is_unknown(self, token_id):
+                return False
+
+            def is_unused(self, token_id):
+                return False
+
+            def is_byte(self, token_id):
+                return token_id == 2
+
+            def id_to_piece(self, token_id):
+                return self.pieces[token_id]
+
+            def pad_id(self):
+                return 0
+
+            def bos_id(self):
+                return 1
+
+        tokenizer = ParameterGolfSentencePieceTokenizer(
+            FakeProcessor(),
+            tokenizer_path=Path("caseops.model"),
+            caseops=True,
+        )
+        self.assertIn(2, tokenizer.suppressed_token_ids)
+        self.assertIn(3, tokenizer.suppressed_token_ids)
+        self.assertIn(4, tokenizer.suppressed_token_ids)
+        self.assertIn(6, tokenizer.suppressed_token_ids)
+        self.assertNotIn(5, tokenizer.suppressed_token_ids)
+        self.assertIn(7, tokenizer.lossless_fallback_token_ids)
+        self.assertIn(8, tokenizer.lossless_fallback_token_ids)
 
     def test_run_infer_noninteractive_graph_prompt_uses_single_turn_flow(self) -> None:
         class FakeTokenizer:
@@ -754,6 +897,60 @@ class NfnCliTest(unittest.TestCase):
         self.assertIn("Prompt token ids: [104, 105]", rendered)
         self.assertIn("Generated text:", rendered)
         self.assertIn("hi!", rendered)
+
+    def test_run_infer_noninteractive_parameter_golf_checkpoint_generates(self) -> None:
+        class FakeTokenizer:
+            def encode(self, text, out_type=int):
+                return [int(part) for part in text.split(",") if part]
+
+            def decode(self, token_ids):
+                return "<" + ",".join(str(int(token_id)) for token_id in token_ids) + ">"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            checkpoint_path = root / "tiny_parameter_golf.pt"
+            tokenizer_path = root / "tiny.model"
+            config = ParameterGolfConfig(
+                vocab_size=16,
+                num_layers=2,
+                model_dim=8,
+                num_heads=2,
+                num_kv_heads=1,
+                mlp_mult=2,
+                tie_embeddings=True,
+                context_window=8,
+            )
+            torch.save(ParameterGolfGPT(config).state_dict(), checkpoint_path)
+            stdout = io.StringIO()
+
+            with patch.object(nfn_impl, "configure_console_logging"), patch.object(
+                nfn_impl,
+                "resolve_parameter_golf_tokenizer_path",
+                return_value=tokenizer_path,
+            ), patch.object(
+                nfn_impl,
+                "load_sentencepiece_tokenizer",
+                return_value=FakeTokenizer(),
+            ):
+                with redirect_stdout(stdout):
+                    rc = nfn_impl.run_infer(
+                        {
+                            "checkpoint": str(checkpoint_path),
+                            "prompt_tokens": "1,2",
+                            "device": "cpu",
+                            "max_new_tokens": 1,
+                            "temperature": 0.0,
+                            "top_k": 0,
+                            "top_p": 1.0,
+                            "_tty": False,
+                        }
+                    )
+
+        self.assertEqual(0, rc)
+        rendered = stdout.getvalue()
+        self.assertIn("Prompt token ids: [1, 2]", rendered)
+        self.assertIn("Generated token ids:", rendered)
+        self.assertIn("Full text:", rendered)
 
     def test_infer_graph_picker_filters_eval_reports_and_missing_weights(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -891,9 +1088,36 @@ class NfnCliTest(unittest.TestCase):
         new_buffer, _status = nfn_impl.complete_infer_slash_command("/te")
         self.assertEqual("/temp ", new_buffer)
 
+    def test_complete_infer_slash_command_settings_prefix(self) -> None:
+        new_buffer, _status = nfn_impl.complete_infer_slash_command("/sett")
+        self.assertEqual("/settings", new_buffer)
+
     def test_complete_infer_slash_command_no_value_no_trailing_space(self) -> None:
         new_buffer, _status = nfn_impl.complete_infer_slash_command("/he")
         self.assertEqual("/help", new_buffer)
+
+    def test_infer_slash_status_for_buffer_suggests_settings_prefix(self) -> None:
+        status = nfn_impl.infer_slash_status_for_buffer("/sett")
+        self.assertIsNotNone(status)
+        self.assertIn("/settings", status)
+        self.assertIn("Open interactive settings menu", status)
+
+    def test_infer_slash_status_for_buffer_lists_multiple_matches(self) -> None:
+        status = nfn_impl.infer_slash_status_for_buffer("/t")
+        self.assertIsNotNone(status)
+        self.assertIn("/temp", status)
+        self.assertIn("/top_k", status)
+        self.assertIn("/top_p", status)
+
+    def test_infer_slash_status_for_buffer_unknown_prefix(self) -> None:
+        status = nfn_impl.infer_slash_status_for_buffer("/xyzzy")
+        self.assertIsNotNone(status)
+        self.assertIn("No command matches", status)
+
+    def test_infer_slash_status_for_buffer_value_hint(self) -> None:
+        status = nfn_impl.infer_slash_status_for_buffer("/temp")
+        self.assertIsNotNone(status)
+        self.assertIn("<float>", status)
 
     def test_complete_infer_slash_command_lists_multiple_matches(self) -> None:
         new_buffer, status = nfn_impl.complete_infer_slash_command("/t")
@@ -915,6 +1139,10 @@ class NfnCliTest(unittest.TestCase):
     def test_complete_infer_slash_command_alias(self) -> None:
         new_buffer, _status = nfn_impl.complete_infer_slash_command("/temperatu")
         self.assertEqual("/temperature ", new_buffer)
+
+    def test_complete_infer_slash_command_autocomplete_prefix(self) -> None:
+        new_buffer, _status = nfn_impl.complete_infer_slash_command("/auto")
+        self.assertEqual("/autocomplete ", new_buffer)
 
     def test_apply_infer_setting_command_updates_temperature(self) -> None:
         settings = nfn_impl.InferChatSettings(
@@ -945,6 +1173,34 @@ class NfnCliTest(unittest.TestCase):
         updated, _status = result
         self.assertEqual(128, updated.max_new_tokens)
 
+    def test_apply_infer_setting_command_updates_repetition_penalty(self) -> None:
+        settings = nfn_impl.InferChatSettings(
+            top_k=32, top_p=0.95, temperature=0.8, max_new_tokens=64
+        )
+        result = nfn_impl.apply_infer_setting_command("/repeat 1.15", settings)
+        self.assertIsNotNone(result)
+        updated, _status = result
+        self.assertAlmostEqual(1.15, updated.repetition_penalty)
+
+    def test_apply_infer_setting_command_updates_autocomplete_words(self) -> None:
+        settings = nfn_impl.InferChatSettings(
+            top_k=32, top_p=0.95, temperature=0.8, max_new_tokens=64
+        )
+        result = nfn_impl.apply_infer_setting_command("/autocomplete 3", settings)
+        self.assertIsNotNone(result)
+        updated, _status = result
+        self.assertEqual(3, updated.autocomplete_words)
+
+    def test_apply_infer_setting_command_rejects_negative_autocomplete_words(self) -> None:
+        settings = nfn_impl.InferChatSettings(
+            top_k=32, top_p=0.95, temperature=0.8, max_new_tokens=64
+        )
+        result = nfn_impl.apply_infer_setting_command("/autocomplete -1", settings)
+        self.assertIsNotNone(result)
+        updated, status = result
+        self.assertEqual(settings, updated)
+        self.assertIn("Invalid", status)
+
     def test_apply_infer_setting_command_invalid_value_preserves_settings(self) -> None:
         settings = nfn_impl.InferChatSettings(
             top_k=32, top_p=0.95, temperature=0.8, max_new_tokens=64
@@ -971,6 +1227,235 @@ class NfnCliTest(unittest.TestCase):
         )
         self.assertIsNone(nfn_impl.apply_infer_setting_command("/help", settings))
         self.assertIsNone(nfn_impl.apply_infer_setting_command("hello world", settings))
+
+    def test_trim_infer_autocomplete_words_preserves_leading_space(self) -> None:
+        self.assertEqual(
+            " quick brown",
+            nfn_impl.trim_infer_autocomplete_words(" quick brown fox jumps", 2),
+        )
+
+    def test_build_infer_inline_autocomplete_trims_to_word_count(self) -> None:
+        class FakeTokenizer:
+            def encode(self, text, out_type=int):
+                return [ord(ch) for ch in text]
+
+            def decode(self, token_ids):
+                return "".join(chr(int(token_id)) for token_id in token_ids)
+
+        context = nfn_impl.InferRuntimeContext(
+            args=argparse.Namespace(repetition_penalty=1.0, log_every=0, stop_token=None, logits_node="auto", seed=1337),
+            graph_path=Path("/tmp/model.json"),
+            resolved_weights_path=Path("/tmp/model.pt"),
+            graph=SimpleNamespace(nodes={}),
+            compiled=object(),
+            state_dict={},
+            tokenizer=FakeTokenizer(),
+            tokenizer_path=None,
+            tokenizer_name="fake",
+            raw_text_encoding_name="fake",
+            dataset_alias="fake",
+            device=torch.device("cpu"),
+            generator=torch.Generator(),
+            amp_dtype=torch.float32,
+            amp_name="float32",
+            context_window=90,
+        )
+        settings = nfn_impl.InferChatSettings(
+            top_k=32,
+            top_p=0.95,
+            temperature=0.8,
+            max_new_tokens=64,
+            autocomplete_words=2,
+        )
+        with patch.object(
+            nfn_impl,
+            "build_infer_generation",
+            return_value=({"generated_text": " quick brown fox jumps"}, {}),
+        ):
+            suggestion, dropped_turns = nfn_impl.build_infer_inline_autocomplete(
+                context,
+                settings=settings,
+                mode="stateless",
+                history=[],
+                buffer_text="the",
+            )
+
+        self.assertEqual(0, dropped_turns)
+        self.assertIsNotNone(suggestion)
+        self.assertEqual(" quick brown", suggestion.text)
+        self.assertTrue(suggestion.insertable)
+
+    def test_build_infer_inline_autocomplete_preserves_unspaced_continuation(self) -> None:
+        class FakeTokenizer:
+            def encode(self, text, out_type=int):
+                return [ord(ch) for ch in text]
+
+            def decode(self, token_ids):
+                return "".join(chr(int(token_id)) for token_id in token_ids)
+
+        context = nfn_impl.InferRuntimeContext(
+            args=argparse.Namespace(repetition_penalty=1.0, log_every=0, stop_token=None, logits_node="auto", seed=1337),
+            graph_path=Path("/tmp/model.json"),
+            resolved_weights_path=Path("/tmp/model.pt"),
+            graph=SimpleNamespace(nodes={}),
+            compiled=object(),
+            state_dict={},
+            tokenizer=FakeTokenizer(),
+            tokenizer_path=None,
+            tokenizer_name="fake",
+            raw_text_encoding_name="fake",
+            dataset_alias="fake",
+            device=torch.device("cpu"),
+            generator=torch.Generator(),
+            amp_dtype=torch.float32,
+            amp_name="float32",
+            context_window=90,
+        )
+        settings = nfn_impl.InferChatSettings(
+            top_k=32,
+            top_p=0.95,
+            temperature=0.8,
+            max_new_tokens=64,
+            autocomplete_words=2,
+        )
+        with patch.object(
+            nfn_impl,
+            "build_infer_generation",
+            return_value=({"generated_text": "quick brown fox jumps"}, {}),
+        ):
+            suggestion, _dropped_turns = nfn_impl.build_infer_inline_autocomplete(
+                context,
+                settings=settings,
+                mode="stateless",
+                history=[],
+                buffer_text="the",
+            )
+
+        self.assertIsNotNone(suggestion)
+        self.assertEqual("quick brown", suggestion.text)
+
+    def test_render_infer_input_line_appends_inline_ghost(self) -> None:
+        output = io.StringIO()
+        console = nfn_impl.Console(
+            file=io.StringIO(),
+            width=80,
+            color_system=None,
+            theme=nfn_impl.INFER_THEME,
+        )
+        with patch.object(nfn_impl.sys, "stdout", output):
+            nfn_impl._render_infer_input_line(
+                console,
+                "You ",
+                "the",
+                3,
+                "status",
+                ghost_text=" cat",
+            )
+        self.assertIn("the cat", output.getvalue())
+        self.assertIn("\r\n", output.getvalue())
+
+    def test_render_infer_input_line_tracks_wrapped_rows(self) -> None:
+        output = io.StringIO()
+        console = nfn_impl.Console(
+            file=io.StringIO(),
+            width=16,
+            color_system=None,
+            theme=nfn_impl.INFER_THEME,
+            soft_wrap=False,
+        )
+        with patch.object(nfn_impl.sys, "stdout", output):
+            rows, cursor_row = nfn_impl._render_infer_input_line(
+                console,
+                "You ",
+                "this lead me to a place called the house",
+                len("this lead me to a place called the house"),
+                "status",
+                ghost_text=" of the sinner",
+            )
+
+        self.assertGreater(rows, 2)
+        self.assertGreater(cursor_row, 0)
+        self.assertNotIn(nfn_impl.INFER_INPUT_CURSOR_MARK, output.getvalue())
+
+    def test_render_infer_input_line_clears_previous_wrapped_rows(self) -> None:
+        output = io.StringIO()
+        console = nfn_impl.Console(
+            file=io.StringIO(),
+            width=16,
+            color_system=None,
+            theme=nfn_impl.INFER_THEME,
+            soft_wrap=False,
+        )
+        with patch.object(nfn_impl.sys, "stdout", output):
+            rows, cursor_row = nfn_impl._render_infer_input_line(
+                console,
+                "You ",
+                "this lead me to a place called the house",
+                len("this lead me to a place called the house"),
+                "status",
+                ghost_text=" of the sinner",
+            )
+            output.seek(0)
+            output.truncate(0)
+            nfn_impl._render_infer_input_line(
+                console,
+                "You ",
+                "short",
+                len("short"),
+                "status",
+                previous_rows=rows,
+                previous_cursor_row=cursor_row,
+            )
+
+        self.assertGreater(rows, 2)
+        self.assertGreaterEqual(output.getvalue().count("\033[2K"), rows)
+        self.assertIn("\r\n", output.getvalue())
+
+    def test_read_infer_chat_line_tab_accepts_inline_autocomplete(self) -> None:
+        settings = nfn_impl.InferChatSettings(
+            top_k=32,
+            top_p=0.95,
+            temperature=0.8,
+            max_new_tokens=64,
+            autocomplete_words=1,
+        )
+        suggestion = nfn_impl.InferInlineAutocomplete(
+            text="ello",
+            display_text="ello",
+            insertable=True,
+            buffer_snapshot="h",
+            mode="stateless",
+            settings_signature=nfn_impl.infer_settings_signature(settings),
+        )
+        fake_stdin = SimpleNamespace(fileno=lambda: 0)
+        console = nfn_impl.Console(
+            file=io.StringIO(),
+            width=80,
+            color_system=None,
+            theme=nfn_impl.INFER_THEME,
+        )
+        with (
+            patch.object(nfn_impl.sys, "stdin", fake_stdin),
+            patch.object(nfn_impl.sys, "stdout", io.StringIO()),
+            patch.object(nfn_impl.termios, "tcgetattr", return_value=[]),
+            patch.object(nfn_impl.termios, "tcsetattr"),
+            patch.object(nfn_impl.tty_module, "setraw"),
+            patch.object(nfn_impl, "_read_infer_tty_key", side_effect=["h", "\t", "\n"]),
+            patch.object(
+                nfn_impl,
+                "build_infer_inline_autocomplete",
+                return_value=(suggestion, 0),
+            ),
+        ):
+            line = nfn_impl.read_infer_chat_line(
+                SimpleNamespace(),
+                settings=settings,
+                mode="stateless",
+                history=[],
+                console=console,
+            )
+
+        self.assertEqual("hello", line)
 
     def test_render_infer_help_table_contains_emoji_title(self) -> None:
         table = nfn_impl.render_infer_help_table()

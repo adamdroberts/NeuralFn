@@ -9,12 +9,14 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import shlex
 import signal
 import sys
 import termios
 import time
 import tty as tty_module
+from types import SimpleNamespace
 import uuid
 from typing import Any, Callable, Sequence
 
@@ -85,6 +87,18 @@ from neuralfn.config import build_composed_lm_spec, model_spec_to_dict
 from neuralfn.semantic import ConversationalVocabulary, semantic_vocab_ref_for_graph, semantic_vocab_ref_for_tokenizer
 from neuralfn.torch_backend import TorchTrainConfig
 from neuralfn.torch_templates import build_gpt_root_graph
+from parameter_golf_runtime import (
+    PARAMETER_GOLF_CHECKPOINT_FORMAT,
+    build_parameter_golf_model,
+    checkpoint_metadata_path,
+    infer_config_from_state_dict,
+    is_parameter_golf_flat_state_dict,
+    load_checkpoint_metadata,
+    load_parameter_golf_state_dict,
+    load_sentencepiece_tokenizer,
+    load_training_log_hparams,
+    resolve_parameter_golf_tokenizer_path,
+)
 from server.dataset_manager import normalize_raw_text_encoding_name, raw_text_encoding_name_for_backbone, raw_text_encoding_vocab_size
 from server.models import LoadDatasetRequest
 from server.services.graph_ops import load_dataset_source_into_graph
@@ -187,6 +201,18 @@ RUN_PRESET_VALUES = {
         "warmup_steps": 32,
         "warmdown_fraction": 0.75,
     },
+    "parameter_golf_10min": {
+        "max_steps": 2_500,
+        "train_seq_len": 2_048,
+        "batch_size": 4,
+        "train_batch_tokens": 786_432,
+        "eval_batches": 8,
+        "eval_batch_size": 4,
+        "train_log_every": 500,
+        "max_wallclock_seconds": 600.0,
+        "warmup_steps": 20,
+        "warmdown_fraction": 0.75,
+    },
 }
 
 OPTIMIZER_PRESET_VALUES = {
@@ -236,6 +262,38 @@ OPTIMIZER_PRESET_VALUES = {
         "evo_tournament_size": 5,
         "evo_elite_count": 4,
     },
+    "parameter_golf_muon": {
+        "evolutionary": False,
+        "optimizer_profile": "parameter_golf",
+        "learning_rate": 3e-4,
+        "weight_decay": 0.02,
+        "embed_lr": 0.6,
+        "head_lr": 0.008,
+        "tied_embed_lr": 0.03,
+        "matrix_lr": 0.026,
+        "scalar_lr": 0.02,
+        "muon_momentum": 0.97,
+        "muon_backend_steps": 5,
+        "muon_momentum_warmup_start": 0.92,
+        "muon_momentum_warmup_steps": 1_500,
+        "beta1": 0.9,
+        "beta2": 0.99,
+        "adam_eps": 1e-8,
+        "grad_clip_norm": 0.3,
+    },
+}
+
+PARAMETER_GOLF_CASEOPS_MODEL_PRESET = "parameter_golf_caseops_8192"
+PARAMETER_GOLF_CASEOPS_MODEL_VALUES = {
+    "vocab_size": 8_192,
+    "num_layers": 11,
+    "model_dim": 512,
+    "num_heads": 8,
+    "num_kv_heads": 4,
+    "mlp_mult": 4.0,
+    "rope_base": 10_000.0,
+    "qk_gain_init": 5.25,
+    "logit_softcap": 30.0,
 }
 
 INFER_PROMPT_PRESETS = {
@@ -245,14 +303,16 @@ INFER_PROMPT_PRESETS = {
 }
 
 INFER_GENERATION_PRESETS = {
-    "balanced": {"max_new_tokens": 64, "temperature": 0.8, "top_k": 32, "top_p": 1.0, "repetition_penalty": 1.0},
-    "focused": {"max_new_tokens": 64, "temperature": 0.4, "top_k": 16, "top_p": 0.9, "repetition_penalty": 1.05},
-    "explore": {"max_new_tokens": 128, "temperature": 0.95, "top_k": 64, "top_p": 0.95, "repetition_penalty": 1.0},
+    "balanced": {"max_new_tokens": 64, "temperature": 0.8, "top_k": 32, "top_p": 1.0, "repetition_penalty": 1.08},
+    "focused": {"max_new_tokens": 64, "temperature": 0.4, "top_k": 16, "top_p": 0.9, "repetition_penalty": 1.12},
+    "explore": {"max_new_tokens": 128, "temperature": 0.95, "top_k": 64, "top_p": 0.95, "repetition_penalty": 1.05},
 }
 
 INFER_CHAT_MODES = ("stateless", "transcript")
 INFER_RECIPE_KEYS = ("base_model", "topology", "router_mode", "use_jepa", "megakernel")
 DEFAULT_INFER_TOP_P = 1.0
+DEFAULT_PARAMETER_GOLF_NO_REPEAT_NGRAM_SIZE = 4
+DEFAULT_PARAMETER_GOLF_REPEAT_RUN_LIMIT = 3
 
 EVAL_PRESET_VALUES = {
     "smoke": {"eval_batches": 2, "eval_batch_size": 4, "max_new_tokens": 32},
@@ -338,6 +398,8 @@ class InferChatSettings:
     top_p: float
     temperature: float
     max_new_tokens: int
+    repetition_penalty: float = 1.0
+    autocomplete_words: int = 0
 
 
 @dataclass
@@ -358,6 +420,7 @@ class InferRuntimeContext:
     amp_dtype: torch.dtype
     amp_name: str
     context_window: int
+    generation_backend: str = "graph"
 
 
 @dataclass(frozen=True)
@@ -368,7 +431,17 @@ class InferAutocompletePreview:
     insertable: bool
     buffer_snapshot: str
     mode: str
-    settings_signature: tuple[int, float, float, int]
+    settings_signature: tuple[int, float, float, int, float, int]
+
+
+@dataclass(frozen=True)
+class InferInlineAutocomplete:
+    text: str
+    display_text: str
+    insertable: bool
+    buffer_snapshot: str
+    mode: str
+    settings_signature: tuple[int, float, float, int, float, int]
 
 
 HELP_COPY: dict[str, tuple[str, str, str]] = {
@@ -627,9 +700,12 @@ def command_description(command: str, style: str) -> str:
             return f"{base} Choose a base model first, then topology, router mode, JEPA, megakernel, and preset stacks."
         return base
     if command == "infer":
-        base = "Run generation from an exported graph artifact."
+        base = "Run generation from an exported graph artifact or supported graphless checkpoint."
         if style == "verbose":
-            return f"{base} Pass --graph to load the exported model directly, or pick a local artifact interactively and chat with it."
+            return (
+                f"{base} Pass --graph for NeuralFn exports, --checkpoint for flat Parameter Golf .pt files, "
+                "or pick a local graph artifact interactively and chat with it."
+            )
         return base
     base = "Evaluate a composed NeuralFn recipe."
     if style == "verbose":
@@ -653,7 +729,9 @@ def command_epilog(command: str, style: str) -> str:
             "Examples:\n"
             "  nfn infer --graph ~/NeuralFn/artifacts/llama_fast.json\n"
             "  nfn infer --graph ~/NeuralFn/artifacts/llama_fast.json --prompt \"Once upon a time\"\n"
-            "  nfn infer --graph ~/NeuralFn/artifacts/semantic_router_moe.json --weights ~/NeuralFn/artifacts/semantic_router_moe.pt"
+            "  nfn infer --graph ~/NeuralFn/artifacts/semantic_router_moe.json --weights ~/NeuralFn/artifacts/semantic_router_moe.pt\n"
+            "  nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt "
+            "--checkpoint-tokenizer ~/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model"
         )
     return (
         "Examples:\n"
@@ -727,7 +805,7 @@ def add_recipe_arguments(parser: argparse.ArgumentParser, style: str) -> None:
     ft_group.add_argument("--ppo-epochs-per-rollout", type=int, default=None, help="PPO inner-loop epochs per rollout (default 4).")
     group.add_argument(
         "--model-preset",
-        choices=("harness_default", "compact", "jepa_tuned", "jepa_reference"),
+        choices=("harness_default", "compact", "jepa_tuned", "jepa_reference", PARAMETER_GOLF_CASEOPS_MODEL_PRESET),
         default=None,
         help=help_text("model_preset", style),
     )
@@ -833,6 +911,21 @@ def build_command_parser(command: str, style: str) -> argparse.ArgumentParser:
     elif command == "infer":
         parser.add_argument("--graph", default=None, help="Graph artifact path.")
         parser.add_argument("--weights", default=None, help="Weights artifact path.")
+        parser.add_argument(
+            "--checkpoint",
+            default=None,
+            help="Graphless Parameter Golf .pt checkpoint path. Equivalent to --weights without --graph for supported checkpoints.",
+        )
+        parser.add_argument(
+            "--checkpoint-tokenizer",
+            default=None,
+            help="SentencePiece .model path for graphless Parameter Golf checkpoints.",
+        )
+        parser.add_argument(
+            "--checkpoint-log",
+            default=None,
+            help="Optional Parameter Golf training log whose Hyperparameters block supplies non-tensor runtime hints.",
+        )
         parser.add_argument("--prompt", default=None, help="Text prompt.")
         parser.add_argument("--prompt-tokens", default=None, help="Comma-separated token ids that override --prompt.")
         parser.add_argument("--sem-targets", default=None, help="Optional comma-separated semantic target ids.")
@@ -843,6 +936,18 @@ def build_command_parser(command: str, style: str) -> argparse.ArgumentParser:
         parser.add_argument("--top-k", type=int, default=None, help="Top-k sampling cutoff.")
         parser.add_argument("--top-p", type=top_p_arg, default=None, help="Nucleus sampling cutoff.")
         parser.add_argument("--repetition-penalty", type=repetition_penalty_arg, default=None, help="Penalty applied to tokens already seen in the prompt or continuation.")
+        parser.add_argument(
+            "--no-repeat-ngram-size",
+            type=lambda raw: _infer_nonnegative_int(raw, flag_name="no_repeat_ngram_size"),
+            default=None,
+            help="Graphless checkpoint repeat guard. Ban tokens that would repeat an n-gram of this size; 0 disables.",
+        )
+        parser.add_argument(
+            "--repeat-run-limit",
+            type=lambda raw: _infer_nonnegative_int(raw, flag_name="repeat_run_limit"),
+            default=None,
+            help="Graphless checkpoint repeat guard. Ban a token after this many consecutive repeats; 0 disables.",
+        )
         parser.add_argument("--log-every", type=int, default=None, help="Generation logging interval.")
         parser.add_argument("--stop-token", type=int, default=None, help="Optional stop token id.")
         parser.add_argument("--logits-node", default=None, help="Optional traced logits node override.")
@@ -1249,7 +1354,7 @@ def resolve_infer_graph_path(args: argparse.Namespace, *, interactive: bool) -> 
     if graph_value:
         return Path(graph_value).expanduser().resolve()
     if not interactive:
-        raise FileNotFoundError("Non-interactive infer requires --graph.")
+        raise FileNotFoundError("Non-interactive infer requires --graph or --checkpoint/--weights.")
     graph_path = choose_infer_graph_path()
     args.graph = str(graph_path)
     return graph_path
@@ -1282,15 +1387,19 @@ def infer_settings_from_args(args: argparse.Namespace) -> InferChatSettings:
         top_p=float(getattr(args, "top_p", None) or DEFAULT_INFER_TOP_P),
         temperature=float(getattr(args, "temperature", None) or 0.0),
         max_new_tokens=int(getattr(args, "max_new_tokens", None) or 1),
+        repetition_penalty=float(getattr(args, "repetition_penalty", None) or 1.0),
+        autocomplete_words=int(getattr(args, "autocomplete_words", None) or 0),
     )
 
 
-def infer_settings_signature(settings: InferChatSettings) -> tuple[int, float, float, int]:
+def infer_settings_signature(settings: InferChatSettings) -> tuple[int, float, float, int, float, int]:
     return (
         int(settings.top_k),
         round(float(settings.top_p), 6),
         round(float(settings.temperature), 6),
         int(settings.max_new_tokens),
+        round(float(settings.repetition_penalty), 6),
+        int(settings.autocomplete_words),
     )
 
 
@@ -1299,6 +1408,40 @@ def infer_prompt_was_supplied(args: argparse.Namespace) -> bool:
         str(getattr(args, "prompt", None) or "").strip()
         or str(getattr(args, "prompt_tokens", None) or "").strip()
     )
+
+
+def resolve_graphless_checkpoint_path(args: argparse.Namespace) -> Path | None:
+    checkpoint_value = str(getattr(args, "checkpoint", None) or "").strip()
+    if checkpoint_value:
+        return Path(checkpoint_value).expanduser().resolve()
+    weights_value = str(getattr(args, "weights", None) or "").strip()
+    graph_value = str(getattr(args, "graph", None) or "").strip()
+    if weights_value and not graph_value and Path(weights_value).suffix.lower() == ".pt":
+        return Path(weights_value).expanduser().resolve()
+    return None
+
+
+def resolve_parameter_golf_device(device_arg: str) -> torch.device:
+    raw = str(device_arg or "cuda").strip().lower()
+    if raw == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(raw)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA device is not available in this environment.")
+    return device
+
+
+def _amp_dtype_from_name(name: str | None, *, device: torch.device) -> tuple[torch.dtype, str]:
+    raw = str(name or ("bfloat16" if device.type == "cuda" else "float32")).strip().lower()
+    if raw == "bf16":
+        raw = "bfloat16"
+    if raw in {"float32", "fp32"}:
+        return torch.float32, "float32"
+    if raw in {"bfloat16", "bf16"}:
+        return torch.bfloat16, "bfloat16"
+    if raw in {"float16", "fp16"}:
+        return torch.float16, "float16"
+    raise ValueError(f"Unsupported AMP dtype for Parameter Golf checkpoint inference: {name!r}")
 
 
 def _infer_nonnegative_int(raw: str, *, flag_name: str) -> int:
@@ -1322,12 +1465,25 @@ def _infer_temperature_arg(raw: str) -> float:
     return value
 
 
+def _infer_repetition_penalty_arg(raw: str) -> float:
+    value = float(raw)
+    if value < 1.0:
+        raise ValueError("repetition_penalty must be greater than or equal to 1.0.")
+    return value
+
+
+def _infer_autocomplete_words_arg(raw: str) -> int:
+    return _infer_nonnegative_int(raw, flag_name="autocomplete_words")
+
+
 def edit_infer_settings(settings: InferChatSettings) -> InferChatSettings:
     state: dict[str, Any] = {
         "top_k": int(settings.top_k),
         "top_p": float(settings.top_p),
         "temperature": float(settings.temperature),
         "max_new_tokens": int(settings.max_new_tokens),
+        "repetition_penalty": float(settings.repetition_penalty),
+        "autocomplete_words": int(settings.autocomplete_words),
     }
     current = lambda key: state[key]
     questions = [
@@ -1430,6 +1586,55 @@ def edit_infer_settings(settings: InferChatSettings) -> InferChatSettings:
             ],
             lambda _state, _explicit: True,
         ),
+        Question(
+            "repetition_penalty",
+            "Choose the repetition penalty.",
+            lambda _state: [
+                _option_with_value(
+                    "Keep current",
+                    _format_menu_number(float(current("repetition_penalty"))),
+                    "Leave repetition penalty unchanged for this session.",
+                    float(current("repetition_penalty")),
+                    recommended=True,
+                ),
+                _option_with_value("Off", "1.0", "Disable repetition penalty.", 1.0),
+                _option_with_value("Balanced", "1.08", "Lightly discourage repeated tokens.", 1.08),
+                _option_with_value("Stronger", "1.15", "Push harder against loops.", 1.15),
+                OptionChoice(
+                    "Custom...",
+                    "Enter repetition_penalty >= 1.0.",
+                    {},
+                    custom_prompt="repetition_penalty",
+                    parser=lambda raw: {"repetition_penalty": _infer_repetition_penalty_arg(raw)},
+                ),
+            ],
+            lambda _state, _explicit: True,
+        ),
+        Question(
+            "autocomplete_words",
+            "Choose the inline autocomplete word count.",
+            lambda _state: [
+                _option_with_value(
+                    "Keep current",
+                    _format_menu_number(int(current("autocomplete_words"))),
+                    "Leave inline autocomplete unchanged for this session.",
+                    int(current("autocomplete_words")),
+                    recommended=True,
+                ),
+                _option_with_value("Off", "0", "Disable inline typing predictions.", 0),
+                _option_with_value("Single word", "1", "Ghost one predicted word.", 1),
+                _option_with_value("Short phrase", "3", "Ghost three predicted words.", 3),
+                _option_with_value("Longer phrase", "5", "Ghost five predicted words.", 5),
+                OptionChoice(
+                    "Custom...",
+                    "Enter autocomplete_words >= 0.",
+                    {},
+                    custom_prompt="autocomplete_words",
+                    parser=lambda raw: {"autocomplete_words": _infer_autocomplete_words_arg(raw)},
+                ),
+            ],
+            lambda _state, _explicit: True,
+        ),
     ]
     resolved = run_curses_questionnaire("Infer settings", questions, state)
     return InferChatSettings(
@@ -1437,6 +1642,8 @@ def edit_infer_settings(settings: InferChatSettings) -> InferChatSettings:
         top_p=float(resolved["top_p"]),
         temperature=float(resolved["temperature"]),
         max_new_tokens=int(resolved["max_new_tokens"]),
+        repetition_penalty=float(resolved["repetition_penalty"]),
+        autocomplete_words=int(resolved["autocomplete_words"]),
     )
 
 
@@ -1448,6 +1655,9 @@ def build_infer_runtime_context(
 ) -> InferRuntimeContext:
     args.dataset_alias = str(getattr(args, "dataset_alias", None) or DEFAULT_DATASET_ALIAS)
     ensure_infer_defaults(args, interactive=interactive)
+    checkpoint_path = resolve_graphless_checkpoint_path(args)
+    if checkpoint_path is not None:
+        return build_parameter_golf_infer_runtime_context(args, checkpoint_path=checkpoint_path)
     apply_tinystories_dataset_defaults(args)
     resolve_dataset_selector_args(args)
 
@@ -1511,6 +1721,73 @@ def build_infer_runtime_context(
         amp_dtype=amp_dtype,
         amp_name=amp_name,
         context_window=context_window,
+    )
+
+
+def build_parameter_golf_infer_runtime_context(
+    args: argparse.Namespace,
+    *,
+    checkpoint_path: Path,
+) -> InferRuntimeContext:
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"Checkpoint artifact not found: {checkpoint_path}")
+    device = resolve_parameter_golf_device(str(getattr(args, "device", "cuda") or "cuda"))
+    torch.manual_seed(int(args.seed))
+    generator = torch.Generator(device="cuda" if device.type == "cuda" else "cpu")
+    generator.manual_seed(int(args.seed))
+
+    state_dict = load_parameter_golf_state_dict(checkpoint_path)
+    if not is_parameter_golf_flat_state_dict(state_dict):
+        raise RuntimeError(
+            "Graphless inference currently supports flat Parameter Golf root GPT checkpoints only. "
+            "Pass NeuralFn exports with --graph, or pass a supported Parameter Golf .pt checkpoint with --checkpoint."
+        )
+    metadata = load_checkpoint_metadata(checkpoint_path)
+    training_hparams = load_training_log_hparams(getattr(args, "checkpoint_log", None))
+    config = infer_config_from_state_dict(
+        state_dict,
+        metadata=metadata,
+        training_hparams=training_hparams,
+        context_window=getattr(args, "context_window", None),
+    )
+    tokenizer_path = resolve_parameter_golf_tokenizer_path(
+        checkpoint_path=checkpoint_path,
+        tokenizer_path=getattr(args, "checkpoint_tokenizer", None),
+        metadata=metadata,
+        training_hparams=training_hparams,
+    )
+    tokenizer = load_sentencepiece_tokenizer(tokenizer_path, expected_vocab_size=config.vocab_size)
+    amp_dtype, amp_name = _amp_dtype_from_name(getattr(args, "amp_dtype", None), device=device)
+    model = build_parameter_golf_model(state_dict, config, device=device)
+
+    graph_info = SimpleNamespace(
+        name=PARAMETER_GOLF_CHECKPOINT_FORMAT,
+        nodes={},
+        torch_config={
+            "artifact_metadata": {
+                "checkpoint_format": PARAMETER_GOLF_CHECKPOINT_FORMAT,
+                "metadata_file": str(checkpoint_metadata_path(checkpoint_path)),
+            }
+        },
+    )
+    return InferRuntimeContext(
+        args=args,
+        graph_path=checkpoint_path,
+        resolved_weights_path=checkpoint_path,
+        graph=graph_info,
+        compiled=model,
+        state_dict=state_dict,
+        tokenizer=tokenizer,
+        tokenizer_path=tokenizer_path,
+        tokenizer_name=tokenizer_path.name,
+        raw_text_encoding_name="sentencepiece",
+        dataset_alias="parameter_golf_checkpoint",
+        device=device,
+        generator=generator,
+        amp_dtype=amp_dtype,
+        amp_name=amp_name,
+        context_window=int(config.context_window),
+        generation_backend="parameter_golf",
     )
 
 
@@ -1584,7 +1861,154 @@ def resolve_infer_chat_prompt(
 
 
 def infer_graph_uses_semantics(context: InferRuntimeContext) -> bool:
+    if context.generation_backend != "graph":
+        return False
     return "semantic_data_source" in context.graph.nodes
+
+
+def resolve_parameter_golf_logits_key(requested: str) -> str:
+    if requested == "auto":
+        return "parameter_golf/softcap"
+    allowed = {
+        "parameter_golf/softcap",
+        "softcap",
+        "logits",
+        "model/softcap",
+        "model/lm_head",
+        "model/tied_lm_head",
+    }
+    if requested in allowed:
+        return requested
+    raise KeyError(
+        "Graphless Parameter Golf inference does not expose traced graph nodes. "
+        "Use --logits-node auto, parameter_golf/softcap, softcap, or logits."
+    )
+
+
+def suppress_parameter_golf_token_ids(
+    logits: torch.Tensor,
+    *,
+    token_ids: Sequence[int],
+    stop_token: int | None,
+) -> torch.Tensor:
+    suppressed = {int(token_id) for token_id in token_ids if 0 <= int(token_id) < logits.size(-1)}
+    if stop_token is not None:
+        suppressed.discard(int(stop_token))
+    if not suppressed:
+        return logits
+    masked = logits.clone()
+    masked[:, sorted(suppressed)] = float("-inf")
+    if not torch.isfinite(masked).any(dim=-1).all():
+        return logits
+    return masked
+
+
+def parameter_golf_repeat_bans(
+    generated: Sequence[int],
+    *,
+    repeat_run_limit: int,
+    no_repeat_ngram_size: int,
+) -> list[int]:
+    bans: set[int] = set()
+    if repeat_run_limit > 0 and generated:
+        last_token = int(generated[-1])
+        run_length = 1
+        for token_id in reversed(generated[:-1]):
+            if int(token_id) != last_token:
+                break
+            run_length += 1
+        if run_length >= repeat_run_limit:
+            bans.add(last_token)
+
+    ngram_size = int(no_repeat_ngram_size)
+    if ngram_size > 1 and len(generated) >= ngram_size - 1:
+        prefix = tuple(int(token_id) for token_id in generated[-(ngram_size - 1):])
+        for idx in range(0, len(generated) - ngram_size + 1):
+            if tuple(int(token_id) for token_id in generated[idx : idx + ngram_size - 1]) == prefix:
+                bans.add(int(generated[idx + ngram_size - 1]))
+    return sorted(bans)
+
+
+def build_parameter_golf_generation(
+    context: InferRuntimeContext,
+    *,
+    prompt_ids: list[int],
+    settings: InferChatSettings,
+    generator: torch.Generator,
+    log_every: int,
+    log: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    generated = list(prompt_ids)
+    resolved_logits_key = resolve_parameter_golf_logits_key(str(getattr(context.args, "logits_node", None) or "auto"))
+    use_amp = autocast_enabled_for(context.device, context.amp_dtype)
+    repeat_run_limit = int(
+        getattr(context.args, "repeat_run_limit", None)
+        if getattr(context.args, "repeat_run_limit", None) is not None
+        else DEFAULT_PARAMETER_GOLF_REPEAT_RUN_LIMIT
+    )
+    no_repeat_ngram_size = int(
+        getattr(context.args, "no_repeat_ngram_size", None)
+        if getattr(context.args, "no_repeat_ngram_size", None) is not None
+        else DEFAULT_PARAMETER_GOLF_NO_REPEAT_NGRAM_SIZE
+    )
+    with torch.no_grad():
+        for step_idx in range(int(settings.max_new_tokens)):
+            context_ids = generated[-context.context_window:]
+            tokens = torch.tensor([context_ids], dtype=torch.long, device=context.device)
+            with torch.autocast(device_type=context.device.type, dtype=context.amp_dtype, enabled=use_amp):
+                logits = context.compiled.forward_logits(tokens)
+            stop_token = getattr(context.args, "stop_token", None)
+            next_logits = suppress_parameter_golf_token_ids(
+                logits[:, -1, :],
+                token_ids=[
+                    *getattr(context.tokenizer, "suppressed_token_ids", ()),
+                    *getattr(context.tokenizer, "lossless_fallback_token_ids", ()),
+                    *parameter_golf_repeat_bans(
+                        generated,
+                        repeat_run_limit=repeat_run_limit,
+                        no_repeat_ngram_size=no_repeat_ngram_size,
+                    ),
+                ],
+                stop_token=stop_token,
+            )
+            next_token = sample_next_token(
+                next_logits,
+                temperature=float(settings.temperature),
+                top_k=int(settings.top_k),
+                top_p=float(settings.top_p),
+                token_history=generated,
+                repetition_penalty=float(settings.repetition_penalty),
+                generator=generator,
+            )
+            generated.append(next_token)
+            should_log = (
+                log is not None
+                and log_every > 0
+                and (
+                    step_idx == 0
+                    or (step_idx + 1) % max(log_every, 1) == 0
+                    or step_idx + 1 >= int(settings.max_new_tokens)
+                )
+            )
+            if should_log:
+                token_piece = describe_token(context.tokenizer, next_token)
+                log(
+                    f"Generation step {step_idx + 1}/{int(settings.max_new_tokens)}: "
+                    f"token={next_token} piece={token_piece!r}"
+                )
+            if stop_token is not None and next_token == int(stop_token):
+                if log is not None:
+                    log(f"Stop token {stop_token} reached; ending generation early")
+                break
+
+    generated_tail = generated[len(prompt_ids):]
+    return {
+        "generated_token_ids": generated_tail,
+        "all_token_ids": generated,
+        "generated_text": decode_tokens(context.tokenizer, generated_tail) if context.tokenizer is not None else "",
+        "full_text": decode_tokens(context.tokenizer, generated) if context.tokenizer is not None else "",
+        "resolved_logits_key": resolved_logits_key,
+    }
 
 
 def build_infer_generation(
@@ -1598,6 +2022,16 @@ def build_infer_generation(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     active_generator = context.generator if generator is None else generator
     log_every = int(getattr(context.args, "log_every", 0) or 0)
+    if context.generation_backend == "parameter_golf":
+        result = build_parameter_golf_generation(
+            context,
+            prompt_ids=prompt_ids,
+            settings=settings,
+            generator=active_generator,
+            log_every=log_every,
+            log=log,
+        )
+        return result, {}
     if infer_graph_uses_semantics(context):
         vocab = ConversationalVocabulary(semantic_vocab_ref_for_graph(context.graph))
         sem_cfg = dict(context.graph.nodes["semantic_data_source"].neuron_def.module_config or {})
@@ -1625,7 +2059,7 @@ def build_infer_generation(
             temperature=float(settings.temperature),
             top_k=int(settings.top_k),
             top_p=float(settings.top_p),
-            repetition_penalty=float(getattr(context.args, "repetition_penalty", 1.0)),
+            repetition_penalty=float(settings.repetition_penalty),
             stop_token=getattr(context.args, "stop_token", None),
             logits_node=str(getattr(context.args, "logits_node", None) or "auto"),
             context_window=context.context_window,
@@ -1651,7 +2085,7 @@ def build_infer_generation(
         max_new_tokens=int(settings.max_new_tokens),
         temperature=float(settings.temperature),
         top_k=int(settings.top_k),
-        repetition_penalty=float(getattr(context.args, "repetition_penalty", 1.0)),
+        repetition_penalty=float(settings.repetition_penalty),
         top_p=float(settings.top_p),
         stop_token=getattr(context.args, "stop_token", None),
         logits_node=str(getattr(context.args, "logits_node", None) or "auto"),
@@ -1671,6 +2105,7 @@ INFER_THEME = Theme(
         "infer.accent": "bright_yellow",
         "infer.status": "dim",
         "infer.preview": "italic bright_green",
+        "infer.ghost": "italic #808080",
         "infer.error": "bold red",
     }
 )
@@ -1678,8 +2113,14 @@ INFER_THEME = Theme(
 INFER_IDLE_STATUS = (
     ":sparkles: [infer.status]Tab[/] preview/insert  "
     "[infer.accent]/help[/]  :gear: /settings  :compass: /mode  "
-    ":eye: /show  :broom: /reset  :wastebasket: /clear  :door: /exit"
+    ":sparkles: /autocomplete  :eye: /show  :broom: /reset  "
+    ":wastebasket: /clear  :door: /exit"
 )
+
+INFER_AUTOCOMPLETE_MAX_TOKENS = 128
+INFER_AUTOCOMPLETE_WORD_RE = re.compile(r"\S+")
+INFER_INPUT_CURSOR_MARK = "\u2060"
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 def make_infer_console() -> Console:
@@ -1697,17 +2138,31 @@ def render_infer_banner(
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style="infer.accent", justify="right", no_wrap=True)
     grid.add_column(overflow="fold")
-    grid.add_row(":brain: Graph", f"{graph_name}  [dim]({context.graph_path})[/dim]")
-    grid.add_row(":floppy_disk: Weights", context.resolved_weights_path.name)
-    grid.add_row(":gear: Runtime", runtime)
+    if context.generation_backend == "parameter_golf":
+        grid.add_row(":brain: Checkpoint", f"{context.graph_path.name}  [dim]({context.graph_path})[/dim]")
+        grid.add_row(":floppy_disk: Format", PARAMETER_GOLF_CHECKPOINT_FORMAT)
+        grid.add_row(":gear: Runtime", f"{context.amp_name} on {context.device}")
+    else:
+        grid.add_row(":brain: Graph", f"{graph_name}  [dim]({context.graph_path})[/dim]")
+        grid.add_row(":floppy_disk: Weights", context.resolved_weights_path.name)
+        grid.add_row(":gear: Runtime", runtime)
     grid.add_row(":abc: Tokenizer", context.tokenizer_name or "unavailable")
     grid.add_row(":straight_ruler: Context", f"{context.context_window} tokens")
     grid.add_row(":compass: Mode", f"[infer.accent]{mode}[/]")
     grid.add_row(
+        ":sparkles: Autocomplete",
+        (
+            "off"
+            if int(settings.autocomplete_words) <= 0
+            else f"{int(settings.autocomplete_words)} word{'s' if int(settings.autocomplete_words) != 1 else ''}"
+        ),
+    )
+    grid.add_row(
         ":control_knobs: Sampling",
         (
             f"top_k={settings.top_k}  top_p={settings.top_p:g}  "
-            f"temp={settings.temperature:g}  max_new={settings.max_new_tokens}"
+            f"temp={settings.temperature:g}  max_new={settings.max_new_tokens}  "
+            f"repeat={settings.repetition_penalty:g}"
         ),
     )
     console.print(
@@ -1757,6 +2212,8 @@ def render_infer_settings_table(settings: "InferChatSettings") -> Table:
     table.add_row("top_p", f"{settings.top_p:g}")
     table.add_row("temperature", f"{settings.temperature:g}")
     table.add_row("max_new_tokens", str(settings.max_new_tokens))
+    table.add_row("repetition_penalty", f"{settings.repetition_penalty:g}")
+    table.add_row("autocomplete_words", str(settings.autocomplete_words))
     return table
 
 
@@ -1767,7 +2224,7 @@ class InferSlashCommand:
     aliases: tuple[str, ...] = ()
     value_hint: str = ""
     setting_field: str | None = None
-    value_type: type | None = None
+    value_type: Callable[[str], Any] | None = None
 
     @property
     def takes_value(self) -> bool:
@@ -1826,6 +2283,21 @@ INFER_SLASH_COMMANDS: tuple[InferSlashCommand, ...] = (
         setting_field="max_new_tokens",
         value_type=int,
     ),
+    InferSlashCommand(
+        "/repeat",
+        "Set repetition penalty",
+        aliases=("/repetition_penalty",),
+        value_hint="<float>",
+        setting_field="repetition_penalty",
+        value_type=_infer_repetition_penalty_arg,
+    ),
+    InferSlashCommand(
+        "/autocomplete",
+        "Set inline autocomplete word count",
+        value_hint="<words>",
+        setting_field="autocomplete_words",
+        value_type=_infer_autocomplete_words_arg,
+    ),
     InferSlashCommand("/exit", "Leave the chat", aliases=("/quit",)),
 )
 
@@ -1847,6 +2319,51 @@ def _infer_slash_candidates(prefix: str) -> list[tuple[InferSlashCommand, str]]:
                 out.append((cmd, name))
                 break
     return out
+
+
+def infer_slash_status_for_buffer(buffer_text: str) -> str | None:
+    if not buffer_text.startswith("/"):
+        return None
+    if " " in buffer_text:
+        head, _ = buffer_text.split(" ", 1)
+        cmd = _infer_slash_lookup(head)
+        if cmd is not None and cmd.takes_value:
+            return (
+                f":sparkles: [infer.preview]{cmd.name}[/] "
+                f"[infer.status]{_rich_escape(cmd.value_hint)}[/]"
+            )
+        return None
+
+    candidates = _infer_slash_candidates(buffer_text)
+    if not candidates:
+        return (
+            f":warning: [infer.error]No command matches[/] "
+            f"{_rich_escape(repr(buffer_text))}"
+        )
+    if len(candidates) == 1:
+        cmd, match = candidates[0]
+        hint = f" {_rich_escape(cmd.value_hint)}" if cmd.takes_value else ""
+        if match == buffer_text:
+            return (
+                f":sparkles: [infer.preview]{match}{hint}[/] "
+                f"[infer.status]{_rich_escape(cmd.description)}[/]"
+            )
+        return (
+            f":sparkles: [infer.preview]Tab[/] "
+            f"[infer.status]complete to[/] [infer.accent]{match}{hint}[/] "
+            f"[infer.status]{_rich_escape(cmd.description)}[/]"
+        )
+
+    names = [match for _, match in candidates]
+    common = os.path.commonprefix(names)
+    listing = "  ".join(names)
+    if len(common) > len(buffer_text):
+        return (
+            f":sparkles: [infer.preview]Tab[/] "
+            f"[infer.status]complete to[/] [infer.accent]{common}[/]  "
+            f"[infer.status]{_rich_escape(listing)}[/]"
+        )
+    return f":sparkles: [infer.preview]Options:[/] {_rich_escape(listing)}"
 
 
 def complete_infer_slash_command(buffer_text: str) -> tuple[str | None, str]:
@@ -1944,7 +2461,7 @@ def render_infer_help_table() -> Table:
     table.add_column("Description")
     for cmd in INFER_SLASH_COMMANDS:
         table.add_row(cmd.display_name(), cmd.description)
-    table.add_row("Tab", "Autocomplete /command or preview/insert next token")
+    table.add_row("Tab", "Complete /command, accept inline autocomplete, or preview/insert next token")
     return table
 
 
@@ -1960,10 +2477,16 @@ def render_infer_show_panel(
     info = Table.grid(padding=(0, 2))
     info.add_column(style="infer.accent", justify="right", no_wrap=True)
     info.add_column(overflow="fold")
-    info.add_row(":brain: Graph", f"{graph_name}")
-    info.add_row(":page_facing_up: Graph path", str(context.graph_path))
-    info.add_row(":floppy_disk: Weights", str(context.resolved_weights_path))
-    info.add_row(":gear: Runtime", runtime)
+    if context.generation_backend == "parameter_golf":
+        info.add_row(":brain: Checkpoint", context.graph_path.name)
+        info.add_row(":page_facing_up: Checkpoint path", str(context.graph_path))
+        info.add_row(":floppy_disk: Format", PARAMETER_GOLF_CHECKPOINT_FORMAT)
+        info.add_row(":gear: Runtime", f"{context.amp_name} on {context.device}")
+    else:
+        info.add_row(":brain: Graph", f"{graph_name}")
+        info.add_row(":page_facing_up: Graph path", str(context.graph_path))
+        info.add_row(":floppy_disk: Weights", str(context.resolved_weights_path))
+        info.add_row(":gear: Runtime", runtime)
     info.add_row(":abc: Tokenizer", context.tokenizer_name or "unavailable")
     info.add_row(":page_with_curl: Raw-text encoding", context.raw_text_encoding_name)
     info.add_row(":card_index: Dataset alias", context.dataset_alias or "—")
@@ -1987,33 +2510,89 @@ def _render_infer_input_line(
     buffer_text: str,
     cursor: int,
     status: str,
-) -> None:
+    ghost_text: str = "",
+    previous_rows: int = 0,
+    previous_cursor_row: int = 0,
+) -> tuple[int, int]:
     line1 = Text()
     line1.append(prompt_label, style="infer.user")
-    line1.append(_rich_escape(buffer_text))
+    line1.append(_rich_escape(buffer_text[:cursor]))
+    line1.append(INFER_INPUT_CURSOR_MARK)
+    line1.append(_rich_escape(buffer_text[cursor:]))
+    if ghost_text:
+        line1.append(_rich_escape(ghost_text), style="infer.ghost")
     with console.capture() as cap1:
         console.print(line1, end="")
-    line1_ansi = cap1.get()
+    marked_line_ansi = cap1.get()
+    line1_ansi, cursor_row, cursor_col = _resolve_infer_input_cursor(marked_line_ansi)
     status_text = Text.from_markup(status, emoji=True)
     with console.capture() as cap2:
         console.print(status_text, end="")
     status_ansi = cap2.get()
-    sys.stdout.write("\r\033[2K" + line1_ansi + "\n\033[2K" + status_ansi + "\033[1A\r")
-    visible_col = cell_len(prompt_label) + cell_len(buffer_text[:cursor])
-    if visible_col > 0:
-        sys.stdout.write(f"\033[{visible_col}C")
+    rendered_rows = len((line1_ansi + "\n" + status_ansi).split("\n"))
+    _clear_rendered_infer_input(previous_rows, previous_cursor_row)
+    sys.stdout.write(_tty_newlines(line1_ansi) + "\r\n" + _tty_newlines(status_ansi))
+    rows_below_cursor = max(0, rendered_rows - cursor_row - 1)
+    sys.stdout.write("\r")
+    if rows_below_cursor:
+        sys.stdout.write(f"\033[{rows_below_cursor}A")
+    if cursor_col > 0:
+        sys.stdout.write(f"\033[{cursor_col}C")
     sys.stdout.flush()
+    return rendered_rows, cursor_row
+
+
+def _clear_rendered_infer_input(previous_rows: int, previous_cursor_row: int) -> None:
+    rows = max(0, int(previous_rows))
+    if rows <= 0:
+        sys.stdout.write("\r")
+        return
+    cursor_row = max(0, min(int(previous_cursor_row), rows - 1))
+    sys.stdout.write("\r")
+    if cursor_row:
+        sys.stdout.write(f"\033[{cursor_row}A")
+    for idx in range(rows):
+        sys.stdout.write("\033[2K")
+        if idx < rows - 1:
+            sys.stdout.write("\r\n")
+    if rows > 1:
+        sys.stdout.write(f"\033[{rows - 1}A")
+    sys.stdout.write("\r")
+
+
+def _tty_newlines(text: str) -> str:
+    return text.replace("\n", "\r\n")
+
+
+def _resolve_infer_input_cursor(marked_ansi: str) -> tuple[str, int, int]:
+    lines = marked_ansi.split("\n")
+    for row_idx, line in enumerate(lines):
+        marker_idx = line.find(INFER_INPUT_CURSOR_MARK)
+        if marker_idx >= 0:
+            before = ANSI_ESCAPE_RE.sub("", line[:marker_idx])
+            return (
+                marked_ansi.replace(INFER_INPUT_CURSOR_MARK, ""),
+                row_idx,
+                cell_len(before),
+            )
+    return marked_ansi, 0, 0
 
 
 def _commit_infer_input_line(
-    console: Console, prompt_label: str, buffer_text: str
+    console: Console,
+    prompt_label: str,
+    buffer_text: str,
+    *,
+    previous_rows: int = 0,
+    previous_cursor_row: int = 0,
 ) -> None:
     line = Text()
     line.append(prompt_label, style="infer.user")
     line.append(_rich_escape(buffer_text))
     with console.capture() as cap:
         console.print(line, end="")
-    sys.stdout.write("\r\033[2K" + cap.get() + "\n\033[2K\r")
+    _clear_rendered_infer_input(previous_rows, previous_cursor_row)
+    sys.stdout.write(_tty_newlines(cap.get()) + "\r\n\033[2K\r")
     sys.stdout.flush()
 
 
@@ -2057,10 +2636,15 @@ def run_infer_generation_with_spinner(
 def print_infer_show(context: InferRuntimeContext, settings: InferChatSettings, *, mode: str) -> None:
     runtime = infer_graph_template_runtime(context.graph) or "unknown"
     graph_name = str(getattr(context.graph, "name", context.graph_path.stem))
-    print(f"Graph: {context.graph_path}")
-    print(f"Weights: {context.resolved_weights_path}")
-    print(f"Graph name: {graph_name}")
-    print(f"Runtime: {runtime}")
+    if context.generation_backend == "parameter_golf":
+        print(f"Checkpoint: {context.graph_path}")
+        print(f"Checkpoint format: {PARAMETER_GOLF_CHECKPOINT_FORMAT}")
+        print(f"Runtime: {context.amp_name} on {context.device}")
+    else:
+        print(f"Graph: {context.graph_path}")
+        print(f"Weights: {context.resolved_weights_path}")
+        print(f"Graph name: {graph_name}")
+        print(f"Runtime: {runtime}")
     print(f"Tokenizer: {context.tokenizer_name or 'unavailable'}")
     print(f"Raw-text encoding: {context.raw_text_encoding_name}")
     print(f"Dataset alias: {context.dataset_alias}")
@@ -2069,7 +2653,8 @@ def print_infer_show(context: InferRuntimeContext, settings: InferChatSettings, 
     print(
         "Settings: "
         f"top_k={settings.top_k} top_p={settings.top_p:g} "
-        f"temperature={settings.temperature:g} max_new_tokens={settings.max_new_tokens}"
+        f"temperature={settings.temperature:g} max_new_tokens={settings.max_new_tokens} "
+        f"repetition_penalty={settings.repetition_penalty:g}"
     )
 
 
@@ -2124,6 +2709,81 @@ def infer_preview_display(tokenizer, token_id: int) -> tuple[str, str, bool]:
     return token_text, display_text, insertable
 
 
+def trim_infer_autocomplete_words(text: str, word_count: int) -> str:
+    if word_count <= 0:
+        return ""
+    matches = list(INFER_AUTOCOMPLETE_WORD_RE.finditer(text))
+    if not matches:
+        return ""
+    end = matches[min(word_count, len(matches)) - 1].end()
+    return text[:end]
+
+
+def infer_inline_autocomplete_display(text: str) -> tuple[str, str, bool]:
+    display_text = text.encode("unicode_escape").decode("ascii")
+    insertable = bool(text) and not any(ord(ch) < 32 or ch == "\x7f" for ch in text)
+    return text, display_text, insertable
+
+
+def build_infer_inline_autocomplete(
+    context: InferRuntimeContext,
+    *,
+    settings: InferChatSettings,
+    mode: str,
+    history: Sequence[tuple[str, str]],
+    buffer_text: str,
+) -> tuple[InferInlineAutocomplete | None, int]:
+    word_count = int(settings.autocomplete_words)
+    if word_count <= 0 or not buffer_text.strip() or buffer_text.startswith("/"):
+        return None, 0
+    prompt_text, prompt_ids, dropped_turns = resolve_infer_chat_prompt(
+        context,
+        mode=mode,
+        history=history,
+        draft=buffer_text,
+        include_assistant_prompt=False,
+    )
+    preview_settings = replace(
+        settings,
+        max_new_tokens=max(1, min(INFER_AUTOCOMPLETE_MAX_TOKENS, word_count * 8)),
+    )
+    preview_generator = torch.Generator(device=context.device.type)
+    preview_generator.manual_seed(
+        infer_preview_seed(
+            base_seed=int(getattr(context.args, "seed", 1337)),
+            prompt_ids=prompt_ids,
+            settings=preview_settings,
+            mode=f"{mode}:inline",
+        )
+    )
+    result, _extras = build_infer_generation(
+        context,
+        prompt_ids=prompt_ids,
+        prompt_text=prompt_text,
+        settings=preview_settings,
+        generator=preview_generator,
+        log=None,
+    )
+    prediction_text = trim_infer_autocomplete_words(
+        str(result.get("generated_text", "") or ""),
+        word_count,
+    )
+    token_text, display_text, insertable = infer_inline_autocomplete_display(prediction_text)
+    if not insertable:
+        return None, dropped_turns
+    return (
+        InferInlineAutocomplete(
+            text=token_text,
+            display_text=display_text,
+            insertable=insertable,
+            buffer_snapshot=buffer_text,
+            mode=mode,
+            settings_signature=infer_settings_signature(settings),
+        ),
+        dropped_turns,
+    )
+
+
 def build_infer_autocomplete_preview(
     context: InferRuntimeContext,
     *,
@@ -2144,6 +2804,7 @@ def build_infer_autocomplete_preview(
         top_p=settings.top_p,
         temperature=settings.temperature,
         max_new_tokens=1,
+        repetition_penalty=settings.repetition_penalty,
     )
     preview_generator = torch.Generator(device=context.device.type)
     preview_generator.manual_seed(
@@ -2247,16 +2908,92 @@ def read_infer_chat_line(
     buffer_text = ""
     cursor = 0
     pending_preview: InferAutocompletePreview | None = None
+    pending_inline: InferInlineAutocomplete | None = None
     status = INFER_IDLE_STATUS
-    prompt_label = ":bust_in_silhouette: You "
+    prompt_label = "You "
     line_console = console if console is not None else make_infer_console()
+    render_rows = 0
+    render_cursor_row = 0
 
     def clear_pending_preview() -> None:
         nonlocal pending_preview
         pending_preview = None
 
+    def clear_pending_inline() -> None:
+        nonlocal pending_inline
+        pending_inline = None
+
+    def active_inline_autocomplete() -> InferInlineAutocomplete | None:
+        if (
+            pending_inline is not None
+            and pending_inline.buffer_snapshot == buffer_text
+            and pending_inline.mode == mode
+            and pending_inline.settings_signature == infer_settings_signature(settings)
+        ):
+            return pending_inline
+        return None
+
+    def idle_status_for_buffer() -> str:
+        if cursor == len(buffer_text):
+            slash_status = infer_slash_status_for_buffer(buffer_text)
+            if slash_status is not None:
+                return slash_status
+        return INFER_IDLE_STATUS
+
+    def refresh_inline_autocomplete() -> None:
+        nonlocal pending_inline, status
+        clear_pending_inline()
+        status = idle_status_for_buffer()
+        if (
+            int(settings.autocomplete_words) <= 0
+            or cursor != len(buffer_text)
+            or buffer_text.startswith("/")
+            or not buffer_text.strip()
+        ):
+            return
+        try:
+            suggestion, dropped_turns = build_infer_inline_autocomplete(
+                context,
+                settings=settings,
+                mode=mode,
+                history=history,
+                buffer_text=buffer_text,
+            )
+        except Exception as exc:
+            status = f":warning: [infer.error]Autocomplete unavailable:[/] {_rich_escape(str(exc))}"
+            return
+        if suggestion is None:
+            return
+        pending_inline = suggestion
+        display_repr = _rich_escape(repr(suggestion.display_text))
+        trimmed = f" (dropped {dropped_turns} old turn{'s' if dropped_turns != 1 else ''})" if dropped_turns else ""
+        status = (
+            f":sparkles: [infer.preview]Inline autocomplete[/] "
+            f"{display_repr} "
+            f"[infer.status]\\[Tab accepts]{_rich_escape(trimmed)}[/]"
+        )
+
     def render() -> None:
-        _render_infer_input_line(line_console, prompt_label, buffer_text, cursor, status)
+        nonlocal render_rows, render_cursor_row
+        inline = active_inline_autocomplete()
+        render_rows, render_cursor_row = _render_infer_input_line(
+            line_console,
+            prompt_label,
+            buffer_text,
+            cursor,
+            status,
+            ghost_text=inline.text if inline is not None else "",
+            previous_rows=render_rows,
+            previous_cursor_row=render_cursor_row,
+        )
+
+    def clear_rendered_input_and_break_line() -> None:
+        nonlocal render_rows, render_cursor_row
+        _clear_rendered_infer_input(render_rows, render_cursor_row)
+        render_rows = 0
+        render_cursor_row = 0
+        sys.stdout.write("\r\n")
+        sys.stdout.flush()
 
     tty_module.setraw(fd)
     try:
@@ -2264,25 +3001,29 @@ def read_infer_chat_line(
         while True:
             key = _read_infer_tty_key(fd)
             if key in {"\r", "\n"}:
-                _commit_infer_input_line(line_console, prompt_label, buffer_text)
+                _commit_infer_input_line(
+                    line_console,
+                    prompt_label,
+                    buffer_text,
+                    previous_rows=render_rows,
+                    previous_cursor_row=render_cursor_row,
+                )
                 return buffer_text
             if key == "\x03":
                 raise KeyboardInterrupt
             if key == "eof":
                 if not buffer_text:
-                    sys.stdout.write("\r\033[2K\n")
-                    sys.stdout.flush()
+                    clear_rendered_input_and_break_line()
                     return None
                 continue
             if key == "\x04":
                 if not buffer_text:
-                    sys.stdout.write("\r\033[2K\n")
-                    sys.stdout.flush()
+                    clear_rendered_input_and_break_line()
                     return None
                 if cursor < len(buffer_text):
                     buffer_text = buffer_text[:cursor] + buffer_text[cursor + 1:]
                 clear_pending_preview()
-                status = ":scissors: [infer.status]Deleted character.[/]"
+                refresh_inline_autocomplete()
                 render()
                 continue
             if key in {"\x7f", "\b"}:
@@ -2290,33 +3031,42 @@ def read_infer_chat_line(
                     buffer_text = buffer_text[:cursor - 1] + buffer_text[cursor:]
                     cursor -= 1
                     clear_pending_preview()
-                status = INFER_IDLE_STATUS
+                refresh_inline_autocomplete()
                 render()
                 continue
             if key == "left":
                 cursor = max(0, cursor - 1)
                 clear_pending_preview()
+                clear_pending_inline()
+                status = idle_status_for_buffer()
                 render()
                 continue
             if key == "right":
                 cursor = min(len(buffer_text), cursor + 1)
                 clear_pending_preview()
+                clear_pending_inline()
+                status = idle_status_for_buffer()
                 render()
                 continue
             if key == "home" or key == "\x01":
                 cursor = 0
                 clear_pending_preview()
+                clear_pending_inline()
+                status = idle_status_for_buffer()
                 render()
                 continue
             if key == "end" or key == "\x05":
                 cursor = len(buffer_text)
                 clear_pending_preview()
+                clear_pending_inline()
+                status = idle_status_for_buffer()
                 render()
                 continue
             if key == "delete":
                 if cursor < len(buffer_text):
                     buffer_text = buffer_text[:cursor] + buffer_text[cursor + 1:]
                 clear_pending_preview()
+                refresh_inline_autocomplete()
                 render()
                 continue
             if key == "\t":
@@ -2327,11 +3077,26 @@ def read_infer_chat_line(
                     continue
                 if buffer_text.startswith("/"):
                     clear_pending_preview()
+                    clear_pending_inline()
                     new_buffer, slash_status = complete_infer_slash_command(buffer_text)
                     if new_buffer is not None:
                         buffer_text = new_buffer
                         cursor = len(buffer_text)
                     status = slash_status
+                    render()
+                    continue
+                if int(settings.autocomplete_words) > 0:
+                    inline = active_inline_autocomplete()
+                    if inline is not None:
+                        display_repr = _rich_escape(repr(inline.display_text))
+                        buffer_text += inline.text
+                        cursor = len(buffer_text)
+                        clear_pending_inline()
+                        clear_pending_preview()
+                        status = f":sparkles: [infer.preview]Accepted inline autocomplete[/] {display_repr}"
+                        render()
+                        continue
+                    refresh_inline_autocomplete()
                     render()
                     continue
                 if pending_preview is not None and pending_preview.buffer_snapshot == buffer_text and pending_preview.mode == mode and pending_preview.settings_signature == infer_settings_signature(settings):
@@ -2374,12 +3139,13 @@ def read_infer_chat_line(
                 continue
             if not key or ord(key[0]) < 32:
                 clear_pending_preview()
+                clear_pending_inline()
                 render()
                 continue
             buffer_text = buffer_text[:cursor] + key + buffer_text[cursor:]
             cursor += len(key)
             clear_pending_preview()
-            status = INFER_IDLE_STATUS
+            refresh_inline_autocomplete()
             render()
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, original)
@@ -2649,6 +3415,8 @@ def jepa_reference_defaults(recipe: ComposedRecipe) -> dict[str, Any]:
 
 
 def model_preset_values(recipe: ComposedRecipe, preset_name: str) -> dict[str, Any]:
+    if preset_name == PARAMETER_GOLF_CASEOPS_MODEL_PRESET:
+        return dict(PARAMETER_GOLF_CASEOPS_MODEL_VALUES)
     if preset_name == "compact":
         return compact_model_defaults(recipe)
     if preset_name == "jepa_tuned":
@@ -2675,6 +3443,13 @@ def apply_recommended_presets(command: str, state: dict[str, Any], explicit: set
     if command == "train":
         if "model_preset" not in explicit and not state.get("model_preset"):
             state["model_preset"] = "jepa_reference" if recipe.use_jepa and recipe.base_model == "llama" and recipe.uses_semantic else "harness_default"
+        if state.get("model_preset") == PARAMETER_GOLF_CASEOPS_MODEL_PRESET:
+            if "run_preset" not in explicit and not state.get("run_preset"):
+                state["run_preset"] = "parameter_golf_10min"
+            if "optimizer_preset" not in explicit and not state.get("optimizer_preset"):
+                state["optimizer_preset"] = "parameter_golf_muon"
+            if "tokenizer" not in explicit and "dataset_variant" not in explicit and not state.get("tokenizer"):
+                state["tokenizer"] = "sp8192"
         if "run_preset" not in explicit and not state.get("run_preset"):
             state["run_preset"] = "default"
         if "optimizer_preset" not in explicit and not state.get("optimizer_preset"):
@@ -2911,6 +3686,11 @@ def training_questionnaire(explicit: set[str]) -> list[Question]:
                     f"Reference-scale JEPA semantic preset from the existing harness. Enforces {_model_preset_summary(recipe_from_state(state), 'jepa_reference')}.",
                     "jepa_reference",
                 ),
+                OptionChoice(
+                    "Parameter Golf CaseOps 8192",
+                    f"Shape from the supplied lossless-caps Parameter Golf run. Enforces {_model_preset_summary(recipe_from_state(state), PARAMETER_GOLF_CASEOPS_MODEL_PRESET)}.",
+                    PARAMETER_GOLF_CASEOPS_MODEL_PRESET,
+                ),
             ],
             lambda _state, _explicit: "model_preset" not in explicit,
         ),
@@ -2921,6 +3701,7 @@ def training_questionnaire(explicit: set[str]) -> list[Question]:
                 OptionChoice("Smoke", f"Short sanity run. Enforces {_run_preset_summary('smoke')}.", "smoke"),
                 OptionChoice("Default", f"Balanced harness baseline. Enforces {_run_preset_summary('default')}.", "default", recommended=True),
                 OptionChoice("Overnight", f"Longer run with a larger token budget. Enforces {_run_preset_summary('overnight')}.", "overnight"),
+                OptionChoice("Parameter Golf 10min", f"10-minute Parameter Golf budget. Enforces {_run_preset_summary('parameter_golf_10min')}.", "parameter_golf_10min"),
             ],
             lambda _state, _explicit: "run_preset" not in explicit,
         ),
@@ -2933,6 +3714,11 @@ def training_questionnaire(explicit: set[str]) -> list[Question]:
                     f"Current parameter-golf gradient baseline. Enforces {_optimizer_preset_summary('gradient_default')}.",
                     "gradient_default",
                     recommended=not bool(state.get("evolutionary")),
+                ),
+                OptionChoice(
+                    "Parameter Golf Muon",
+                    f"Muon/Adam rates from the supplied Parameter Golf run. Enforces {_optimizer_preset_summary('parameter_golf_muon')}.",
+                    "parameter_golf_muon",
                 ),
                 OptionChoice(
                     "Evolutionary Lean",
@@ -3315,6 +4101,9 @@ def state_to_cli_args(command: str, state: dict[str, Any]) -> list[str]:
         "output",
         "graph",
         "weights",
+        "checkpoint",
+        "checkpoint_tokenizer",
+        "checkpoint_log",
         "report_path",
         "max_steps",
         "train_seq_len",
@@ -3844,7 +4633,7 @@ def run_infer(state: dict[str, Any]) -> int:
                 initial_prompt_tokens=str(getattr(args, "prompt_tokens", None) or ""),
             )
         if not infer_prompt_was_supplied(args):
-            print("Non-interactive infer requires --graph plus --prompt or --prompt-tokens.", file=sys.stderr)
+            print("Non-interactive infer requires --prompt or --prompt-tokens.", file=sys.stderr)
             return 2
         prompt_text, prompt_ids = infer_prompt_source(
             prompt=str(getattr(args, "prompt", None) or ""),
@@ -4115,7 +4904,7 @@ def main(
     state = {key: value for key, value in vars(args).items() if value is not None}
     if command == "infer":
         if args.plan or args.plan_auto:
-            print("nfn infer is graph-first; ignoring --plan/--plan-auto.", file=sys.stderr)
+            print("nfn infer is artifact-first; ignoring --plan/--plan-auto.", file=sys.stderr)
         state["_tty"] = tty
         return execute(command, state)
     if "base_model" not in state or args.plan or args.plan_auto:
