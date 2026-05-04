@@ -71,7 +71,8 @@ optionally open the interactive planner:
 ```bash
 nfn train --plan
 nfn train --pretraining-file ./pretraining-data.txt
-nfn infer --model nanogpt --prompt "Once upon a time"
+nfn infer --graph ~/NeuralFn/artifacts/nanogpt.json --prompt "Once upon a time"
+nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer ~/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model
 nfn eval --preset semantic_router_moe --dataset shakespeare
 ```
 
@@ -199,6 +200,49 @@ python scripts/infer_jepa_semantic.py \
   --repetition-penalty 1.1
 ```
 
+The master `nfn infer` entrypoint can also load supported graphless Parameter
+Golf root-GPT `.pt` checkpoints. These are not NeuralFn graph exports, so pass
+the checkpoint and the matching SentencePiece model directly:
+
+```bash
+nfn infer \
+  --checkpoint ~/NeuralFn/artifacts/final_model.pt \
+  --checkpoint-tokenizer ~/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model \
+  --checkpoint-log ~/Downloads/a54a53b3-7d6e-461c-975a-590030e61bd0.txt
+```
+
+`--weights ~/NeuralFn/artifacts/final_model.pt` is treated the same way when no
+`--graph` is present. The graphless loader currently targets flat Parameter
+Golf root-GPT checkpoints with `tok_emb.weight`, `skip_weights`, and
+`blocks.*` attention/MLP tensors. It infers the architecture from tensor
+shapes, uses the optional training log for safe non-structural hints such as
+context window or logit softcap, and ignores newer experimental structural
+hints that are not represented in the flat checkpoint tensors. CaseOps
+tokenizers are displayed through a small cleanup layer that hides private-use
+case markers and suppresses lossless reconstruction-only tokens during
+sampling, including byte fallback, ellipsis artifacts, and the high-id
+single-character fallback band. The chat UI and sampling flags are otherwise
+the same as graph-backed inference.
+Graphless sampling also enables a small repeat guard by default: it blocks the
+fourth repeated n-gram and a fourth consecutive copy of the same token. Tune
+loops with `--repetition-penalty`, `--no-repeat-ngram-size`, and
+`--repeat-run-limit`; inside chat, `/repeat 1.15` raises the repetition
+penalty without restarting the session.
+
+Interactive `nfn infer` uses Tab in two ways. If the input starts with `/`, the
+status line shows matching slash commands as you type, such as `/temp`,
+`/top_k`, `/repeat`, `/autocomplete`, `/settings`, and `/help`; Tab completes
+the visible match or lists ambiguous options, and value commands show their
+expected argument. Use `/autocomplete n` to enable inline typing predictions
+for `n` words, shown as 50% gray ghost text after the cursor. The prediction
+keeps the model's generated boundary: a leading space starts a new word, while
+no leading space completes the current word. Tab accepts the visible prediction.
+Long prompts and ghost predictions can wrap across terminal rows; the input
+repaint path clears the full wrapped block before drawing the next frame.
+`/autocomplete 0` disables the inline mode and restores the normal prompt
+behavior where Tab previews the next token and a second Tab inserts it when the
+token can be inserted safely.
+
 If `sentencepiece` is installed and the cached tokenizer model exists under the
 dataset alias, the script prints both token ids and decoded text. If not, it
 still runs in token-id mode and you can pass `--prompt-tokens 1,2,3`.
@@ -225,7 +269,10 @@ Useful inference knobs:
 - `--max-new-tokens`
 - `--temperature`
 - `--top-k`
+- `--top-p`
 - `--repetition-penalty`
+- `--no-repeat-ngram-size`
+- `--repeat-run-limit`
 - `--stop-token`
 - `--log-every`
 - `--context-window`
@@ -296,6 +343,20 @@ Trainer / optimizer:
 - `--adam-eps`
 - `--grad-clip-norm`
 - `--tokenizer`
+
+The supplied lossless-caps Parameter Golf run is available as a preset stack:
+
+```bash
+nfn train \
+  --model-preset parameter_golf_caseops_8192 \
+  --run-preset parameter_golf_10min \
+  --optimizer-preset parameter_golf_muon \
+  --tokenizer sp8192
+```
+
+Choosing `--model-preset parameter_golf_caseops_8192` automatically recommends
+the matching `parameter_golf_10min` run preset, `parameter_golf_muon` optimizer
+preset, and `sp8192` tokenizer unless those flags are passed explicitly.
 
 When `--evolutionary` is enabled, `--max-steps` counts generations and the
 trainer ignores the gradient-only optimizer knobs such as

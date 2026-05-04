@@ -6,6 +6,36 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-05-04 Graphless Parameter Golf checkpoint inference
+
+#### Added
+
+- **Graphless `.pt` checkpoint chat** -- `nfn infer` can now load flat Parameter Golf root-GPT `.pt` checkpoints directly with `--checkpoint` plus a matching `--checkpoint-tokenizer`, without requiring a NeuralFn graph JSON. Passing `--weights <checkpoint>.pt` without `--graph` routes to the same graphless loader.
+- **Parameter Golf CaseOps preset stack** -- added `parameter_golf_caseops_8192`, `parameter_golf_10min`, and `parameter_golf_muon` presets so the supplied lossless-caps training shape, budget, and optimizer settings can be selected from the CLI planner or flags.
+- **Checkpoint runtime packaging** -- the CLI package now includes the Parameter Golf runtime loader and declares `sentencepiece` for the graphless tokenizer path.
+- **Reference-compatible flat runtime** -- aligned graphless inference with the root Parameter Golf flat checkpoint architecture, including the ReLU-squared MLP and ignoring incompatible newer structural log hints when the flat tensors do not contain those features.
+- **CaseOps display cleanup** -- CaseOps SentencePiece checkpoints now hide private-use case markers in decoded chat text and suppress reconstruction-only tokenizer ids during graphless sampling, including byte fallback, ellipsis artifacts, and the high-id single-character fallback band.
+- **Graphless repeat controls** -- added default Parameter Golf repeat guards for repeated n-grams and consecutive token runs, exposed `--no-repeat-ngram-size` / `--repeat-run-limit`, and added the `/repeat` chat command for live repetition-penalty tuning.
+- **Infer slash-command autocomplete** -- interactive `nfn infer` now shows live slash-command suggestions while typing `/` commands and routes Tab through command completion, completing unique prefixes such as `/sett` -> `/settings`, listing ambiguous matches, and showing value hints for commands such as `/temp`, `/top_k`, and `/repeat`.
+- **Inline word autocomplete** -- added `/autocomplete <words>` for interactive `nfn infer`. Positive values show a 50% gray inline word prediction after the cursor, preserve the model's generated word boundary so predictions can either start a new word or complete the current word, and Tab accepts the visible prediction; `/autocomplete 0` disables the inline mode and restores the existing token-preview Tab flow.
+
+#### Fixed
+
+- **Wrapped infer input repainting** -- the interactive `nfn infer` input renderer now tracks how many terminal rows the current prompt, ghost prediction, and status line occupy, then clears the full wrapped block before drawing the next frame. Repaint output also writes explicit CRLF line breaks for raw TTY mode so status redraws return to column zero. This prevents long autocomplete sessions from leaving stale duplicate prompt rows on screen.
+
+#### Notes
+
+- Graphless inference is intentionally scoped to flat Parameter Golf root-GPT state dicts containing `tok_emb.weight`, `skip_weights`, and `blocks.*` attention/MLP tensors. NeuralFn exports remain graph-first and should still be loaded with `--graph`.
+- For the supplied artifact, use `nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer ~/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model --checkpoint-log ~/Downloads/a54a53b3-7d6e-461c-975a-590030e61bd0.txt`.
+
+#### Verification
+
+- `conda run -n NeuralFn python -m py_compile nfn_impl.py parameter_golf_runtime.py`
+- `conda run -n NeuralFn python -m unittest tests.test_nfn_cli`
+- `conda run -n NeuralFn python nfn.py infer --checkpoint /home/adam/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer /home/adam/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model --checkpoint-log /home/adam/Downloads/a54a53b3-7d6e-461c-975a-590030e61bd0.txt --prompt "a cat sat on the" --max-new-tokens 32 --temperature 0.8 --top-k 32 --top-p 1 --device cpu --seed 1337 --log-every 0` -> generated readable prose beginning with `table.`
+- `conda run -n NeuralFn python nfn.py infer --checkpoint /home/adam/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer /home/adam/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model --checkpoint-log /home/adam/Downloads/a54a53b3-7d6e-461c-975a-590030e61bd0.txt --prompt "the sky is" --max-new-tokens 64 --temperature 0.4 --top-k 32 --top-p 1 --device cuda --seed 1337 --log-every 0` -> generated prose beginning with `blue and the sun is shining` without the repeated quote loop.
+- `conda run -n NeuralFn python nfn.py infer --checkpoint /home/adam/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer /home/adam/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model --checkpoint-log /home/adam/Downloads/a54a53b3-7d6e-461c-975a-590030e61bd0.txt --prompt "the cat sat in the box and" --max-new-tokens 64 --temperature 0.4 --top-k 32 --top-p 1 --repetition-penalty 1.15 --device cuda --seed 1337 --log-every 0` -> generated prose without the prior CaseOps ellipsis/byte/fallback artifacts.
+
 ### 2026-05-03 Semantic MoE JEPA Evo architecture image correction
 
 #### Changed
