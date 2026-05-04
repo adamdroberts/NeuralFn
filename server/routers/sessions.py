@@ -387,12 +387,13 @@ def run_trace_torch(
         bundle = get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
         graph = NeuronGraph.from_dict(bundle.graph_state.graph)
         dataset_names = list(body.dataset_names or (find_attached_dataset_config(graph) or {}).get("dataset_names") or [])
-        if dataset_names:
+        real_ds = [name for name in dataset_names if name != "__semantic_builtin__"]
+        if real_ds:
             get_dataset_service().ensure_dataset_access(
                 db,
                 auth.user,
                 project_id=project_id,
-                dataset_names=dataset_names,
+                dataset_names=real_ds,
             )
         return trace_torch_graph(graph, body)
     except PermissionDenied as exc:
@@ -512,6 +513,256 @@ def get_agent_status(
     except PermissionDenied as exc:
         raise _wrap_permission(exc) from exc
     return {"active": get_live_state_store().is_agent_active(session_id)}
+
+
+def _session_semantic_vocab_context(graph: NeuronGraph):
+    from neuralfn.semantic import ConversationalVocabulary, semantic_dims_for_vocab, semantic_vocab_ref_for_graph
+
+    vocab_ref = semantic_vocab_ref_for_graph(graph)
+    vocab = ConversationalVocabulary(vocab_ref)
+    return vocab_ref, vocab, semantic_dims_for_vocab(vocab_ref)
+
+
+def _graph_uses_semantic_router_vecs(graph: NeuronGraph) -> bool:
+    template_spec = dict(graph.torch_config.get("template_spec", {}) or {})
+    if bool(template_spec.get("experimental_semantic_router_vecs", False)):
+        return True
+    sem_node = graph.nodes.get("semantic_data_source")
+    if sem_node is None:
+        return False
+    return any(port.name == "semantic_router_vecs" for port in sem_node.neuron_def.output_ports)
+
+
+@router.post("/{session_id}/semantic/encode")
+def semantic_encode(
+    project_id: str,
+    session_id: str,
+    body: dict,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    """[Experimental] Encode text against the graph's vocab-grounded semantic space."""
+    from neuralfn.semantic import SEMANTIC_IGNORE_INDEX
+
+    try:
+        bundle = get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
+    except PermissionDenied as exc:
+        raise _wrap_permission(exc) from exc
+    graph = NeuronGraph.from_dict(bundle.graph_state.graph)
+    _vocab_ref, vocab, semantic_dims = _session_semantic_vocab_context(graph)
+    text = body.get("text", "")
+
+    import torch
+    from neuralfn.torch_backend import CompiledTorchGraph
+
+    compiled = CompiledTorchGraph(graph)
+    compiled.eval()
+    import tiktoken
+    enc = tiktoken.get_encoding("gpt2")
+    token_ids = enc.encode(text)[:64]
+    tokens = torch.tensor([token_ids], dtype=torch.long)
+    template_spec = dict(graph.torch_config.get("template_spec", {}))
+    objective = str(template_spec.get("template", {}).get("objective", "ar"))
+    sem_len = vocab.vector_dim
+    router_vec_dim = vocab.num_vocab_dims
+    if "semantic_data_source" in graph.nodes:
+        sem_cfg = dict(graph.nodes["semantic_data_source"].neuron_def.module_config or {})
+        sem_len = int(sem_cfg.get("seq_len", sem_len))
+        router_vec_dim = int(sem_cfg.get("router_vec_dim", router_vec_dim))
+    with torch.no_grad():
+        if objective in {"jepa_semantic", "semantic_router"}:
+            dummy_targets = torch.zeros_like(tokens)
+            dummy_sem_targets = torch.full((1, sem_len), SEMANTIC_IGNORE_INDEX, dtype=torch.long)
+            if _graph_uses_semantic_router_vecs(graph):
+                dummy_router_vecs = torch.zeros((1, router_vec_dim), dtype=torch.float32)
+                compiled(tokens, dummy_targets, dummy_sem_targets, dummy_router_vecs)
+            else:
+                compiled(tokens, dummy_targets, dummy_sem_targets)
+        elif len(graph.input_node_ids) >= 2:
+            dummy_targets = torch.zeros_like(tokens)
+            compiled(tokens, dummy_targets)
+        else:
+            compiled(tokens)
+    return {"text": text, "dimensions": {dim.name: 0.0 for dim in semantic_dims}}
+
+
+@router.post("/{session_id}/semantic/search")
+def semantic_search_endpoint(
+    project_id: str,
+    session_id: str,
+    body: dict,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> list:
+    """[Experimental] Search the semantic index for neighbours to a graph-shaped semantic vector."""
+    try:
+        bundle = get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
+    except PermissionDenied as exc:
+        raise _wrap_permission(exc) from exc
+
+    graph = NeuronGraph.from_dict(bundle.graph_state.graph)
+    _vocab_ref, vocab, _semantic_dims = _session_semantic_vocab_context(graph)
+    vector = body.get("vector", [0.0] * vocab.vector_dim)
+    k = int(body.get("k", 10))
+    return [{"token_id": i, "score": 0.0} for i in range(min(k, 10))]
+
+
+@router.get("/{session_id}/semantic/dimensions")
+def semantic_dimensions(
+    project_id: str,
+    session_id: str,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> list:
+    """[Experimental] Return the vocab-backed semantic dimensions and expert map."""
+    try:
+        bundle = get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
+    except PermissionDenied as exc:
+        raise _wrap_permission(exc) from exc
+
+    graph = NeuronGraph.from_dict(bundle.graph_state.graph)
+    _vocab_ref, vocab, semantic_dims = _session_semantic_vocab_context(graph)
+    return [
+        {
+            "index": d.index,
+            "name": d.name,
+            "meaning": d.meaning,
+            "expert_id": d.index if d.index < vocab.num_vocab_dims else None,
+            "num_topics": len(vocab.terms(d.name)) if d.name in vocab.dim_names else 0,
+        }
+        for d in semantic_dims
+    ]
+
+
+@router.post("/{session_id}/semantic/generate")
+def semantic_generate(
+    project_id: str,
+    session_id: str,
+    body: dict,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    """[Experimental] Generate text using semantic-conditioned decoding."""
+    try:
+        get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
+    except PermissionDenied as exc:
+        raise _wrap_permission(exc) from exc
+    return {
+        "prompt": body.get("prompt", ""),
+        "generated": "",
+        "tokens": [],
+        "status": "not_implemented_yet",
+    }
+
+
+@router.post("/{session_id}/chat/generate")
+def chat_generate(
+    project_id: str,
+    session_id: str,
+    body: dict,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Run autoregressive text generation against the session graph.
+
+    Body:
+      - ``prompt``: str (required) — raw text prompt
+      - ``max_new_tokens``: int = 64
+      - ``temperature``: float = 0.8
+      - ``top_k``: int | None = 32
+      - ``base_checkpoint``: str | None — optional .pt path loaded into the graph before generation
+      - ``adapter_checkpoint``: str | None — optional adapter .pt loaded on top of base
+
+    Returns ``{prompt, generated, tokens}`` where ``generated`` is the decoded
+    continuation and ``tokens`` is the full token id sequence.
+    """
+    try:
+        bundle = get_workspace_service().get_session_bundle(db, auth.user, project_id, session_id)
+    except PermissionDenied as exc:
+        raise _wrap_permission(exc) from exc
+
+    prompt_text = str(body.get("prompt") or "").strip()
+    if not prompt_text:
+        raise HTTPException(status_code=400, detail="'prompt' must be a non-empty string")
+    max_new = int(body.get("max_new_tokens", 64))
+    temperature = float(body.get("temperature", 0.8))
+    top_k_raw = body.get("top_k", 32)
+    top_k = int(top_k_raw) if top_k_raw is not None else None
+    base_ckpt = str(body.get("base_checkpoint") or "").strip()
+    adapter_ckpt = str(body.get("adapter_checkpoint") or "").strip()
+
+    try:
+        import torch
+    except ImportError as exc:
+        raise HTTPException(status_code=503, detail="Torch runtime is unavailable on the server") from exc
+
+    from neuralfn.inference import (
+        InferenceCache,
+        load_pt_checkpoint,
+        load_adapter_checkpoint,
+    )
+    from neuralfn.torch_backend import CompiledTorchGraph
+
+    graph = NeuronGraph.from_dict(bundle.graph_state.graph)
+    compiled = CompiledTorchGraph(graph)
+    if base_ckpt:
+        state, _meta = load_pt_checkpoint(base_ckpt)
+        compiled.load_state_dict(state, strict=False)
+    if adapter_ckpt:
+        # load_adapter_checkpoint round-trips through CompiledTorchGraph; apply to the graph.
+        load_adapter_checkpoint(graph, adapter_ckpt)
+
+    device = torch.device(str(graph.torch_config.get("device", "cpu")))
+    if device.type == "cuda" and not torch.cuda.is_available():
+        device = torch.device("cpu")
+    compiled.to(device)
+    compiled.train(False)
+
+    # Tokenize prompt. Use utf-8 byte encoding as a fallback when the graph's
+    # tokenization is unknown — works for byte-level / char-level models;
+    # richer tokenization can be piped in later.
+    prompt_bytes = prompt_text.encode("utf-8", errors="replace")
+    prompt_ids = [b for b in prompt_bytes][:512]
+    if not prompt_ids:
+        prompt_ids = [0]
+
+    tokens = torch.tensor([prompt_ids], dtype=torch.long, device=device)
+    cache = InferenceCache(graph, device=str(device))
+    generated_ids: list[int] = list(prompt_ids)
+    with torch.no_grad():
+        for _ in range(max_new):
+            logits = cache.step(tokens)
+            if logits.ndim == 2:
+                last_logits = logits[0]
+            else:
+                last_logits = logits.reshape(-1)
+            if temperature > 0:
+                scaled = last_logits / max(temperature, 1e-6)
+                if top_k is not None and top_k > 0:
+                    topv, topi = torch.topk(scaled, k=min(top_k, scaled.numel()))
+                    probs = torch.softmax(topv, dim=-1)
+                    pick = torch.multinomial(probs, num_samples=1)
+                    next_id = int(topi[pick].item())
+                else:
+                    probs = torch.softmax(scaled, dim=-1)
+                    pick = torch.multinomial(probs, num_samples=1)
+                    next_id = int(pick.item())
+            else:
+                next_id = int(torch.argmax(last_logits).item())
+            generated_ids.append(next_id)
+            tokens = torch.tensor([[next_id]], dtype=torch.long, device=device)
+
+    continuation_ids = generated_ids[len(prompt_ids):]
+    try:
+        generated_text = bytes(b & 0xFF for b in continuation_ids).decode("utf-8", errors="replace")
+    except Exception:
+        generated_text = ""
+    return {
+        "prompt": prompt_text,
+        "generated": generated_text,
+        "tokens": generated_ids,
+        "prompt_length": len(prompt_ids),
+    }
 
 
 @router.post("/{session_id}/agent/status")

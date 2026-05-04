@@ -142,7 +142,7 @@ That's it -- four tool calls for a complete train run.
 | `set_dataset_access(ds_name, project_ids)` | Update which projects can use a dataset. |
 | `delete_dataset(ds_name)` | Delete a local dataset. |
 
-## All 16 GPT template presets
+## Shipped GPT template presets
 
 | Preset | Architecture | Objective |
 |--------|-------------|-----------|
@@ -158,6 +158,8 @@ That's it -- four tool calls for a complete train run.
 | `diffusion` | Discrete diffusion with denoising head | Diffusion |
 | `ttt_llama` | Test-Time Training layers | AR |
 | `llm_jepa` | JEPA with EMA target encoder | JEPA |
+| `semantic_router_moe` | AR-only semantic router control with shared routed MoE blocks | AR |
+| `semantic_moe_jepa_evo` | Chunk-level Semantic MoE JEPA Evo with route evolution | Semantic MoE JEPA |
 | `hnet_lm` | Raw-byte input, byte patches | AR |
 | `universal_llama` | ACT-based universal transformer | AR |
 | `llama_megakernel` | Fused attention, max-autotune compile | AR |
@@ -177,6 +179,14 @@ That's it -- four tool calls for a complete train run.
 | `experts` | 8 | MoE: number of experts |
 | `top_k` | 2 | MoE: active experts per token |
 | `router_aux_loss_coef` | 0.01 | MoE load-balance loss coefficient |
+| `semantic_vocab_ref` | default vocab | Semantic vocabulary file for semantic routing presets |
+| `route_chunk_size` | 32 | Chunk interval for `semantic_moe_jepa_evo` route updates |
+| `semantic_shared_experts` | 2 | Always-on shared experts for `semantic_moe_jepa_evo` |
+| `semantic_free_experts` | 8 | Free learned experts for `semantic_moe_jepa_evo` |
+| `route_evo_enabled` | true | Enable periodic route evolution for `semantic_moe_jepa_evo` |
+| `route_evo_fraction` | 0.10 | Fraction of optimizer steps that run route evolution |
+| `route_evo_population` | 8 | Route-evolution candidate count |
+| `route_evo_mutation_scale` | 0.05 | Mutation scale for route-evolution candidates |
 | `dropout_p` | 0.0 | Dropout rate |
 | `tie_embeddings` | varies | Tie embedding and LM head weights |
 | `logit_softcap` | 0.0 | Tanh softcap value (>0 enables) |
@@ -237,3 +247,16 @@ Dataset role: `tokens` only. Uses EMA target encoder, supports `jepa_mask_strate
 load_gpt_template(name="hnet", preset="hnet_lm", config={"n_layer": 4, "n_embd": 128})
 ```
 Uses raw bytes (vocab_size=256), byte patch embedding.
+
+## Experimental Tools
+
+The following MCP tools are **[Experimental]** and target the `jepa_semantic_hybrid` semantic stack. They may change or be removed.
+
+| Tool | Parameters [Experimental] | Purpose |
+|------|---------------------------|---------|
+| `reverse_engineer_to_semantic` | `project_id`, `session_id`, `text` | Encode `text` to the vocab-grounded 9-D semantic space used by the session graph’s JEPA semantic path. |
+| `semantic_search` | `project_id`, `session_id`, `vector` (list of floats), `k` (default `10`) | k-nearest-neighbour lookup for a 9-D semantic vector. |
+| `train_jepa_semantic` | `project_id`, `session_id`, `dataset_names` (optional list), `epochs` (default `10`), `learning_rate` (default `3e-4`) | Start torch training (same entry as `train_start`) intended for graphs using the **[Experimental]** `jepa_semantic_hybrid` template. |
+| `generate_with_semantics` | `project_id`, `session_id`, `prompt`, `target_vector` (optional 9-D list), `max_tokens` (default `100`) | Generate with the experimental semantic stack; optional `target_vector` steers toward a semantic target. |
+
+**Disclaimer [Experimental]:** These tools are research prototypes; prefer the stable graph/dataset/training tools for production-like workflows.

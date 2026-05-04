@@ -1,6 +1,6 @@
 # neuralfn.builtins
 
-Library of 58 built-in neuron definitions ready to drop into a graph.
+Library of 115 built-in neuron definitions ready to drop into a graph.
 
 ## Class: BuiltinNeurons
 
@@ -8,7 +8,7 @@ Library of 58 built-in neuron definitions ready to drop into a graph.
 class BuiltinNeurons:
     sigmoid = ...       # NeuronDef
     relu = ...          # NeuronDef
-    # ... all 58 builtins as class attributes
+    # ... all 115 builtins as class attributes
 ```
 
 Each built-in neuron is exposed as a class attribute of type `NeuronDef`.
@@ -17,7 +17,7 @@ Each built-in neuron is exposed as a class attribute of type `NeuronDef`.
 
 #### `BuiltinNeurons.all() -> list[NeuronDef]`
 
-Return the full built-in neuron catalog (all 58 entries).
+Return the full built-in neuron catalog (all 115 entries).
 
 #### `BuiltinNeurons.get(name: str) -> NeuronDef`
 
@@ -102,6 +102,8 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | Attribute | Display Name | Kind | Inputs | Outputs |
 |-----------|-------------|------|--------|---------|
 | `linear_module` | linear | module | 1 | 1 |
+| `lora_linear_module` | lora_linear | module | 1 | 1 |
+| `nf4_linear_module` | nf4_linear | module | 1 | 1 |
 | `mlp_relu2_module` | mlp_relu2 | module | 1 | 1 |
 | `gelu_module` | gelu | module | 1 | 1 |
 | `swiglu_module` | swiglu | module | 1 | 1 |
@@ -143,6 +145,25 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | `lm_head_module` | lm_head | module | 1 | 1 |
 | `logit_softcap_module` | logit_softcap | module | 1 | 1 |
 | `token_cross_entropy_module` | token_cross_entropy | module | 2 | 1 |
+| `masked_token_cross_entropy_module` | masked_token_cross_entropy | module | 3 | 1 |
+
+### Torch -- Fine-tuning / Preference Optimization
+
+| Attribute | Display Name | Kind | Inputs | Outputs |
+|-----------|-------------|------|--------|---------|
+| `reference_forward_module` | reference_forward | module | 1 | 1 |
+| `sft_dataset_source_module` | sft_dataset_source | module | 0 | 3 |
+| `sequence_logp_module` | sequence_logp | module | 3 | 1 |
+| `dpo_pairwise_loss_module` | dpo_pairwise_loss | module | 4 | 3 |
+| `dpo_dataset_source_module` | dpo_dataset_source | module | 0 | 6 |
+| `reward_head_module` | reward_head | module | 1 | 1 |
+| `preference_bce_loss_module` | preference_bce_loss | module | 2 | 1 |
+| `value_head_module` | value_head | module | 1 | 1 |
+| `ppo_clipped_loss_module` | ppo_clipped_loss | module | 6 | 1 |
+| `kl_penalty_module` | kl_penalty | module | 3 | 1 |
+| `reward_forward_module` | reward_forward | module | 1 | 1 |
+| `ppo_rollout_source_module` | ppo_rollout_source | module | 0 | 7 |
+| `gae_compute_module` | gae_compute | module | 2 | 2 |
 
 ### Torch -- MoE (Mixture of Experts)
 
@@ -151,9 +172,11 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | `router_logits_module` | router_logits | module | 1 | 1 |
 | `topk_route_module` | topk_route | module | 1 | 2 |
 | `expert_dispatch_module` | expert_dispatch | module | 3 | 1 |
+| `broadcast_expert_routes_module` | broadcast_expert_routes | module | 3 | 2 |
 | `expert_combine_module` | expert_combine | module | 1 | 1 |
 | `load_balance_loss_module` | load_balance_loss | module | 3 | 2 |
 | `aux_loss_add_module` | aux_loss_add | module | 2 | 1 |
+| `loss_scale_module` | loss_scale | module | 1 | 1 |
 
 ### Torch -- Data / Special
 
@@ -177,3 +200,34 @@ Maps Python attribute name to `NeuronDef`. Use this when the attribute name diff
 | `act_weighted_sum_module` | act_weighted_sum | module | 2 | 1 |
 | `universal_transformer_module` | universal_transformer | module | 1 | 2 |
 | `ttt_linear_module` | ttt_linear | module | 1 | 1 |
+
+---
+
+## Experimental Builtins [Experimental]
+
+The module neurons below are **[Experimental]** (JEPA semantic hybrid stack). Port names match `NeuronDef` I/O; shapes follow the active `module_config` on the node.
+
+| Attribute [Experimental] | `module_type` [Experimental] | Inputs [Experimental] | Outputs [Experimental] |
+|--------------------------|------------------------------|------------------------|-------------------------|
+| `semantic_data_source_module` | `semantic_data_source` | -- | `sem_targets` |
+| `semantic_projector_module` | `semantic_projector` | `hidden` | `semantic_vec`, `residual`, `topic_logits` |
+| `semantic_alignment_loss_module` | `semantic_alignment_loss` | `pred_logits`, `target` | `loss` |
+| `semantic_hasher_module` | `semantic_hasher` | `semantic_vec` | `bucket_indices` |
+| `semantic_moe_router_module` | `semantic_moe_router` | `semantic_vec` | `expert_weights`, `expert_indices` |
+| `semantic_hash_router_module` | `semantic_hash_router` | `semantic_vec`, `bucket_indices`, `topic_logits`, `sem_targets` | `expert_weights`, `expert_indices` |
+| `broadcast_expert_routes_module` | `broadcast_expert_routes` | `hidden`, `expert_weights`, `expert_indices` | `routing_weights`, `routing_indices` |
+| `causal_chunk_state_module` | `causal_chunk_state` | `hidden` | `chunk_state` |
+| `semantic_chunk_projector_module` | `semantic_chunk_projector` | `chunk_state` | `semantic_vec`, `residual`, `topic_logits` |
+| `semantic_chunk_hasher_module` | `semantic_chunk_hasher` | `semantic_vec` | `bucket_indices` |
+| `semantic_moe_jepa_evo_router_module` | `semantic_moe_jepa_evo_router` | `semantic_vec`, `bucket_indices`, `topic_logits`, `sem_targets` | `expert_weights`, `expert_indices`, `route_logits` |
+| `broadcast_chunk_routes_module` | `broadcast_chunk_routes` | `hidden`, `expert_weights`, `expert_indices` | `routing_weights`, `routing_indices` |
+| `route_balance_loss_module` | `route_balance_loss` | `route_logits` | `loss` |
+| `route_selection_loss_module` | `route_selection_loss` | `route_logits`, `sem_targets` | `loss` |
+| `route_distillation_loss_module` | `route_distillation_loss` | `student_route_logits`, `target_topic_logits` | `loss` |
+| `routed_attention_experts_module` | `routed_attention_experts` | `hidden`, `expert_weights`, `expert_indices` | `hidden_out` |
+| `attentionless_decoder_module` | `attentionless_decoder` | `bucket_indices`, `expert_output` | `logits` |
+| `softmax_distillation_loss_module` | `softmax_distillation_loss` | `teacher_logits`, `student_logits` | `loss` |
+
+`semantic_data_source_module` now emits categorical vocab-topic targets. The first `NUM_VOCAB_DIMS` positions correspond to semantic vocabulary dimensions, and inactive dimensions use `-100` ignore sentinels. `broadcast_expert_routes_module` is used by `semantic_router_moe` to turn the shared batch-level semantic route into per-token routing tensors for the standard MoE dispatcher. `semantic_moe_jepa_evo_router_module` works at chunk granularity, emits route logits for auxiliary losses, and pairs with `broadcast_chunk_routes_module` before standard MoE dispatch.
+
+**Disclaimer [Experimental]:** These builtins are tied to a research prototype; port semantics and `module_config` keys may change.

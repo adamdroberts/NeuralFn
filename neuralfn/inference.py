@@ -9,19 +9,155 @@ from .graph import NeuronGraph
 from .torch_backend import CompiledTorchGraph
 
 
+def _checkpoint_metadata_for_graph(graph: NeuronGraph) -> dict[str, Any]:
+    torch_config = dict(getattr(graph, "torch_config", {}) or {})
+    template_spec = dict(torch_config.get("template_spec", {}) or {})
+    template = dict(template_spec.get("template", {}) or {})
+    runtime = str(template.get("runtime", "")).strip().lower()
+    metadata: dict[str, Any] = {}
+    if runtime:
+        metadata["template_runtime"] = runtime
+    return metadata
+
+
+def load_pt_checkpoint(
+    path: str | Path,
+    *,
+    map_location: str | torch.device | None = "cpu",
+) -> tuple[dict[str, torch.Tensor], dict[str, Any]]:
+    checkpoint = torch.load(path, map_location=map_location, weights_only=False)
+    if isinstance(checkpoint, dict) and isinstance(checkpoint.get("state_dict"), dict):
+        return dict(checkpoint["state_dict"]), dict(checkpoint.get("checkpoint_metadata", {}) or {})
+    if isinstance(checkpoint, dict):
+        return dict(checkpoint), {}
+    raise TypeError(f"Unsupported checkpoint payload type {type(checkpoint)!r} in {path!r}.")
+
+
 def export_to_pt(graph: NeuronGraph, path: str | Path) -> None:
     """Export the weights of a compiled or uncompiled torch-based NeuronGraph to a .pt file."""
     compiled = CompiledTorchGraph(graph)
     state_dict = compiled.state_dict()
-    torch.save(state_dict, path)
+    checkpoint = {
+        "state_dict": state_dict,
+        "checkpoint_metadata": _checkpoint_metadata_for_graph(graph),
+    }
+    torch.save(checkpoint, path)
 
 
 def import_from_pt(graph: NeuronGraph, path: str | Path) -> None:
     """Import weights from a .pt file into a NeuronGraph's module_state."""
-    state_dict = torch.load(path, weights_only=True)
+    state_dict, _checkpoint_metadata = load_pt_checkpoint(path)
     compiled = CompiledTorchGraph(graph)
     compiled.load_state_dict(state_dict)
     compiled.sync_state_back(graph)
+
+
+# ---------------------------------------------------------------------------
+# Adapter-only checkpointing (LoRA / qLoRA)
+# ---------------------------------------------------------------------------
+
+_ADAPTER_KEY_MARKERS: tuple[str, ...] = (
+    "lora_A",
+    "lora_B",
+    ".middle.",  # randmap_adapter trainable middle
+    ".scale",    # randmap_adapter residual scale
+    "value_head",
+    "reward_head",
+    "reward_proj",
+)
+
+
+def _is_adapter_key(key: str) -> bool:
+    return any(marker in key for marker in _ADAPTER_KEY_MARKERS)
+
+
+def save_adapter_checkpoint(graph: NeuronGraph, path: str | Path) -> None:
+    """Write only the LoRA / adapter / head parameters for ``graph`` to ``path``.
+
+    The resulting artifact is orders of magnitude smaller than a full-model
+    checkpoint — typically a few MB even for large bases — because the frozen
+    base weights are assumed to live in a separate ``base_checkpoint`` file.
+    """
+    compiled = CompiledTorchGraph(graph)
+    full_state = compiled.state_dict()
+    adapter_state = {key: tensor for key, tensor in full_state.items() if _is_adapter_key(key)}
+    torch.save(
+        {
+            "state_dict": adapter_state,
+            "checkpoint_metadata": {
+                **_checkpoint_metadata_for_graph(graph),
+                "adapter_only": True,
+            },
+        },
+        path,
+    )
+
+
+def load_adapter_checkpoint(graph: NeuronGraph, path: str | Path) -> None:
+    """Load an adapter-only checkpoint (from ``save_adapter_checkpoint``) into ``graph``."""
+    state_dict, _meta = load_pt_checkpoint(path)
+    compiled = CompiledTorchGraph(graph)
+    compiled.load_state_dict(state_dict, strict=False)
+    compiled.sync_state_back(graph)
+
+
+def merge_adapter_into_base(
+    base_path: str | Path,
+    adapter_path: str | Path,
+    out_path: str | Path,
+) -> None:
+    """Bake LoRA ``A`` / ``B`` into the frozen base weight and write a plain ``.pt``.
+
+    Computes ``W ← W_base + (alpha/rank) * B @ A`` per LoRA site. The result is
+    a standard checkpoint with no adapter state, suitable for ordinary
+    inference with no runtime LoRA dispatch.
+    """
+    base_state, base_meta = load_pt_checkpoint(base_path)
+    adapter_state, adapter_meta = load_pt_checkpoint(adapter_path)
+
+    # Group adapter keys by their module prefix so we can find pairs of A/B
+    # plus optionally alpha/rank metadata.
+    merged = dict(base_state)
+    prefixes: set[str] = set()
+    for key in adapter_state:
+        if ".lora_A" in key:
+            prefixes.add(key.rsplit(".lora_A", 1)[0])
+        elif ".lora_B" in key:
+            prefixes.add(key.rsplit(".lora_B", 1)[0])
+
+    for prefix in prefixes:
+        a_key = f"{prefix}.lora_A"
+        b_key = f"{prefix}.lora_B"
+        base_key = f"{prefix}.base.weight"
+        if a_key not in adapter_state or b_key not in adapter_state:
+            continue
+        if base_key not in base_state:
+            # The pretrained checkpoint may encode the base as ``.proj.weight``
+            # (plain LinearStage). Try that remap.
+            alt = f"{prefix}.proj.weight"
+            if alt in base_state:
+                base_weight = base_state[alt]
+                out_key = alt
+            else:
+                continue
+        else:
+            base_weight = base_state[base_key]
+            out_key = base_key
+        A = adapter_state[a_key].float()
+        B = adapter_state[b_key].float()
+        rank = A.shape[0]
+        # Adapter metadata may record alpha; fall back to alpha=rank (scaling=1).
+        alpha = float(adapter_meta.get("lora_alpha", rank))
+        scaling = alpha / max(rank, 1)
+        merged[out_key] = (base_weight.float() + scaling * (B @ A)).to(base_weight.dtype)
+
+    torch.save(
+        {
+            "state_dict": merged,
+            "checkpoint_metadata": {**base_meta, "merged_from_adapter": True},
+        },
+        out_path,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -151,3 +287,43 @@ class InferenceCache:
             outputs = self.compiled(token_ids)
         logits = outputs[0]
         return logits[:, -1, :] if logits.ndim == 3 else logits
+
+
+class SemanticInferenceCache(InferenceCache):
+    """Experimental: inference cache for the JEPA semantic hybrid preset.
+
+    Extends ``InferenceCache`` to also expose the 9-D semantic vector
+    produced by the encoder for inspection / conditioned generation.
+    """
+
+    def __init__(self, graph: NeuronGraph, device: str | None = None) -> None:
+        super().__init__(graph, device)
+        self._last_semantic_vec: torch.Tensor | None = None
+
+    @property
+    def last_semantic_vec(self) -> torch.Tensor | None:
+        return self._last_semantic_vec
+
+    @torch.no_grad()
+    def step(self, token_ids: torch.Tensor) -> torch.Tensor:
+        logits = super().step(token_ids)
+        return logits
+
+
+def export_semantic_tables(graph: NeuronGraph, path: str | Path) -> None:
+    """Experimental: export semantic routing and legacy decoder lookup tables."""
+    compiled = CompiledTorchGraph(graph)
+    state = compiled.state_dict()
+    semantic_keys = {k: v for k, v in state.items() if "decoder" in k or "hasher" in k or "sem_router" in k}
+    torch.save({"semantic_tables": semantic_keys}, path)
+
+
+def import_semantic_tables(graph: NeuronGraph, path: str | Path) -> None:
+    """Experimental: import semantic routing and legacy decoder lookup tables."""
+    checkpoint = torch.load(path, weights_only=True)
+    compiled = CompiledTorchGraph(graph)
+    tables = checkpoint.get("semantic_tables", {})
+    current = compiled.state_dict()
+    current.update(tables)
+    compiled.load_state_dict(current)
+    compiled.sync_state_back(graph)

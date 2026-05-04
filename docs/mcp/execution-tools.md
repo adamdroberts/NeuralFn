@@ -153,3 +153,16 @@ Stops the currently active training run.
 | `session_id` | string | yes | Session ID. |
 
 **Returns:** confirmation that the run was stopped.
+
+---
+
+## Experimental semantic tools
+
+These research tools target the `jepa_semantic_hybrid` stack.
+
+| Tool | Description |
+|------|-------------|
+| `reverse_engineer_to_semantic` | Encodes text to the vocab-grounded 9-D semantic space exposed by the hybrid preset. |
+| `semantic_search` | Queries the experimental semantic search endpoint with a 9-D vector. |
+| `train_jepa_semantic` | Starts torch training for a `jepa_semantic_hybrid` graph. |
+| `generate_with_semantics` | Reserved for future semantic-conditioned generation workflows. |

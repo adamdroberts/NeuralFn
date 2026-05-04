@@ -8,11 +8,20 @@ import torch
 
 from neuralfn.config import (
     TemplateSpec,
+    build_gpt2_megakernel_spec,
+    build_jepa_semantic_hybrid_megakernel_spec,
+    build_jepa_semantic_hybrid_spec,
     build_kv_pca_llama_spec,
     build_llama_fast_spec,
+    build_llama_fast_megakernel_spec,
     build_llama_megakernel_spec,
     build_llama_spec,
+    build_mixllama_fast_megakernel_spec,
+    build_mixllama_fast_spec,
+    build_nanogpt_megakernel_spec,
     build_nanogpt_spec,
+    build_semantic_router_moe_megakernel_spec,
+    build_semantic_router_moe_spec,
     build_ternary_b158_spec,
     resolve_backend_capabilities,
 )
@@ -22,7 +31,9 @@ from neuralfn.inference import (
     export_to_pt,
     import_from_pt,
     import_quantized_pt,
+    load_pt_checkpoint,
 )
+from neuralfn.semantic import NUM_VOCAB_DIMS
 from neuralfn.torch_backend import CompiledTorchGraph, TorchTrainConfig, TorchTrainer
 from neuralfn.torch_templates import (
     build_dense_attention_graph,
@@ -75,6 +86,90 @@ class TestResolveBackendCapabilities:
         assert spec.template.backend_capabilities["compile"] is True
         assert spec.template.backend_capabilities["cache"] is True
         assert spec.template.backend_capabilities["quantized_export"] is True
+
+    def test_fast_presets_preserve_qk_gain_and_rope_overrides(self):
+        llama_spec = build_llama_fast_spec(**_tiny_kwargs(), rope_base=20_000.0, qk_gain_init=1.5)
+        llama_megakernel_spec = build_llama_fast_megakernel_spec(
+            **_tiny_kwargs(),
+            rope_base=20_000.0,
+            qk_gain_init=1.5,
+        )
+        mixllama_spec = build_mixllama_fast_spec(**_tiny_kwargs(), experts=4, top_k=2, rope_base=20_000.0, qk_gain_init=1.5)
+        mixllama_megakernel_spec = build_mixllama_fast_megakernel_spec(
+            **_tiny_kwargs(),
+            experts=4,
+            top_k=2,
+            rope_base=20_000.0,
+            qk_gain_init=1.5,
+        )
+        assert llama_spec.block_spec.rope_theta == 20_000.0
+        assert llama_spec.block_spec.qk_gain_init == 1.5
+        assert llama_megakernel_spec.block_spec.rope_theta == 20_000.0
+        assert llama_megakernel_spec.block_spec.qk_gain_init == 1.5
+        assert mixllama_spec.block_spec.rope_theta == 20_000.0
+        assert mixllama_spec.block_spec.qk_gain_init == 1.5
+        assert mixllama_megakernel_spec.block_spec.rope_theta == 20_000.0
+        assert mixllama_megakernel_spec.block_spec.qk_gain_init == 1.5
+
+    def test_moe_megakernel_presets_preserve_router_overrides(self):
+        jepa_spec = build_jepa_semantic_hybrid_spec(
+            **_tiny_kwargs(),
+            vocab_size=128,
+            experts=NUM_VOCAB_DIMS,
+            top_k=2,
+            rope_base=20_000.0,
+            qk_gain_init=1.5,
+            ema_decay=0.97,
+            ar_loss_coef=1.1,
+            jepa_loss_coef=0.3,
+            semantic_align_loss_coef=0.6,
+        )
+        jepa_megakernel_spec = build_jepa_semantic_hybrid_megakernel_spec(
+            **_tiny_kwargs(),
+            vocab_size=128,
+            experts=NUM_VOCAB_DIMS,
+            top_k=2,
+            rope_base=20_000.0,
+            qk_gain_init=1.5,
+            ema_decay=0.97,
+            ar_loss_coef=1.1,
+            jepa_loss_coef=0.3,
+            semantic_align_loss_coef=0.6,
+        )
+        router_spec = build_semantic_router_moe_spec(
+            **_tiny_kwargs(),
+            vocab_size=128,
+            experts=NUM_VOCAB_DIMS,
+            top_k=2,
+            rope_base=20_000.0,
+            qk_gain_init=1.5,
+            ar_loss_coef=1.1,
+            semantic_align_loss_coef=0.6,
+        )
+        router_megakernel_spec = build_semantic_router_moe_megakernel_spec(
+            **_tiny_kwargs(),
+            vocab_size=128,
+            experts=NUM_VOCAB_DIMS,
+            top_k=2,
+            rope_base=20_000.0,
+            qk_gain_init=1.5,
+            ar_loss_coef=1.1,
+            semantic_align_loss_coef=0.6,
+        )
+        assert jepa_spec.block_spec.rope_theta == 20_000.0
+        assert jepa_megakernel_spec.block_spec.rope_theta == 20_000.0
+        assert jepa_megakernel_spec.block_spec.qk_gain_init == 1.5
+        assert jepa_megakernel_spec.block_spec.experts == NUM_VOCAB_DIMS
+        assert jepa_megakernel_spec.block_spec.top_k == 2
+        assert jepa_megakernel_spec.ema_decay == 0.97
+        assert jepa_megakernel_spec.jepa_loss_coef == 0.3
+        assert router_spec.block_spec.rope_theta == 20_000.0
+        assert router_megakernel_spec.block_spec.rope_theta == 20_000.0
+        assert router_megakernel_spec.block_spec.qk_gain_init == 1.5
+        assert router_megakernel_spec.block_spec.experts == NUM_VOCAB_DIMS
+        assert router_megakernel_spec.block_spec.top_k == 2
+        assert router_megakernel_spec.ar_loss_coef == 1.1
+        assert router_megakernel_spec.semantic_align_loss_coef == 0.6
 
 
 # ---------------------------------------------------------------------------
@@ -224,12 +319,13 @@ class TestQuantizedExport:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "model.pt"
             export_to_pt(graph, path)
-            sd_before = torch.load(path, weights_only=True)
+            sd_before, metadata_before = load_pt_checkpoint(path)
             import_from_pt(graph, path)
             export_to_pt(graph, path)
-            sd_after = torch.load(path, weights_only=True)
+            sd_after, metadata_after = load_pt_checkpoint(path)
 
         assert set(sd_before.keys()) == set(sd_after.keys())
+        assert metadata_before == metadata_after
         for k in sd_before:
             assert torch.equal(sd_before[k], sd_after[k]), f"mismatch at {k}"
 
@@ -250,6 +346,33 @@ class TestRuntimeWiring:
     def test_megakernel_preset_sets_runtime(self):
         spec = build_llama_megakernel_spec(**_tiny_kwargs(), vocab_size=128)
         assert spec.template.runtime == "megakernel"
+
+    def test_fast_megakernel_preset_sets_runtime(self):
+        spec = build_llama_fast_megakernel_spec(**_tiny_kwargs(), vocab_size=128)
+        assert spec.template.runtime == "megakernel"
+
+    def test_other_megakernel_presets_set_runtime(self):
+        gpt2_spec = build_gpt2_megakernel_spec(**_tiny_kwargs(), vocab_size=128)
+        mixllama_spec = build_mixllama_fast_megakernel_spec(
+            **_tiny_kwargs(), vocab_size=128, experts=4, top_k=2,
+        )
+        nanogpt_spec = build_nanogpt_megakernel_spec(**_tiny_kwargs(), vocab_size=128)
+        jepa_spec = build_jepa_semantic_hybrid_megakernel_spec(
+            **_tiny_kwargs(), vocab_size=128, experts=NUM_VOCAB_DIMS, top_k=2,
+        )
+        router_spec = build_semantic_router_moe_megakernel_spec(
+            **_tiny_kwargs(), vocab_size=128, experts=NUM_VOCAB_DIMS, top_k=2,
+        )
+        assert gpt2_spec.template.runtime == "megakernel"
+        assert gpt2_spec.template.backend_capabilities["megakernel"] is True
+        assert mixllama_spec.template.runtime == "megakernel"
+        assert mixllama_spec.template.backend_capabilities["megakernel"] is True
+        assert nanogpt_spec.template.runtime == "megakernel"
+        assert nanogpt_spec.template.backend_capabilities["megakernel"] is True
+        assert jepa_spec.template.runtime == "megakernel"
+        assert jepa_spec.template.backend_capabilities["megakernel"] is True
+        assert router_spec.template.runtime == "megakernel"
+        assert router_spec.template.backend_capabilities["megakernel"] is True
 
     def test_trainer_reads_template_runtime(self):
         spec = build_llama_fast_spec(**_tiny_kwargs(), vocab_size=128)
@@ -301,6 +424,40 @@ class TestNewPresets:
     def test_megakernel_preset_via_config(self):
         spec = build_model_spec_from_config({"preset": "llama_megakernel", **_tiny_kwargs()})
         assert spec.template.runtime == "megakernel"
+
+    def test_fast_megakernel_preset_via_config(self):
+        spec = build_model_spec_from_config({"preset": "llama_fast_megakernel", **_tiny_kwargs()})
+        assert spec.template.runtime == "megakernel"
+        assert spec.block_spec.multiple_of == 16
+
+    def test_mixllama_fast_megakernel_preset_via_config(self):
+        spec = build_model_spec_from_config(
+            {"preset": "mixllama_fast_megakernel", **_tiny_kwargs(), "experts": 4, "top_k": 2}
+        )
+        assert spec.template.runtime == "megakernel"
+        assert spec.block_spec.experts == 4
+
+    def test_gpt_megakernel_presets_via_config(self):
+        gpt2_spec = build_model_spec_from_config({"preset": "gpt2_megakernel", **_tiny_kwargs()})
+        nanogpt_spec = build_model_spec_from_config({"preset": "nanogpt_megakernel", **_tiny_kwargs()})
+        assert gpt2_spec.template.runtime == "megakernel"
+        assert gpt2_spec.template.backbone == "gpt2"
+        assert nanogpt_spec.template.runtime == "megakernel"
+        assert nanogpt_spec.template.backbone == "nanogpt"
+
+    def test_jepa_semantic_hybrid_megakernel_preset_via_config(self):
+        spec = build_model_spec_from_config(
+            {"preset": "jepa_semantic_hybrid_megakernel", **_tiny_kwargs(), "experts": NUM_VOCAB_DIMS, "top_k": 2}
+        )
+        assert spec.template.runtime == "megakernel"
+        assert spec.block_spec.experts == NUM_VOCAB_DIMS
+
+    def test_semantic_router_moe_megakernel_preset_via_config(self):
+        spec = build_model_spec_from_config(
+            {"preset": "semantic_router_moe_megakernel", **_tiny_kwargs(), "experts": NUM_VOCAB_DIMS, "top_k": 2}
+        )
+        assert spec.template.runtime == "megakernel"
+        assert spec.block_spec.experts == NUM_VOCAB_DIMS
 
     def test_kv_pca_preset_via_config(self):
         spec = build_model_spec_from_config({"preset": "kv_pca_llama", **_tiny_kwargs()})

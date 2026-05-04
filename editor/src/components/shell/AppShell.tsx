@@ -4,6 +4,7 @@ import { api, type SessionSummary } from "../../api/client";
 import { useAppState } from "../../routes/AppState";
 
 function surfaceForPath(pathname: string) {
+  if (pathname.includes("/studio")) return "studio";
   if (pathname.includes("/datasets")) return "datasets";
   if (pathname.includes("/runs")) return "runs";
   if (pathname.includes("/analytics")) return "analytics";
@@ -174,6 +175,14 @@ export default function AppShell() {
                   }
                 >
                   Editor
+                </NavLink>
+                <NavLink
+                  to={scopedPath(activeProjectId, activeSessionId, "studio")}
+                  className={({ isActive }) =>
+                    `rounded px-3 py-1 ${isActive ? "bg-indigo-600 text-white" : "text-indigo-200 hover:bg-indigo-900/40"}`
+                  }
+                >
+                  🧪 Studio
                 </NavLink>
                 <NavLink
                   to={scopedPath(activeProjectId, activeSessionId, "datasets")}

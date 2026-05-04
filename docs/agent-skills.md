@@ -8,13 +8,18 @@ NeuralFn ships with agent skills that teach AI coding assistants (Cursor, Codex,
 |-------|------|---------|
 | **NeuralFn Python SDK** | [`.cursor/skills/neuralfn-python-sdk/SKILL.md`](../.cursor/skills/neuralfn-python-sdk/SKILL.md) | When writing Python code that imports and uses the `neuralfn` package directly -- building graphs, defining neurons, training, serialization. |
 | **NeuralFn Torch Models** | [`.cursor/skills/neuralfn-torch/SKILL.md`](../.cursor/skills/neuralfn-torch/SKILL.md) | When building, training, or exporting torch-backed neural network models (GPT, Llama, MoE, etc.) using the NeuralFn Python API. |
+| **NeuralFn CLI** | [`.cursor/skills/neuralfn-cli/SKILL.md`](../.cursor/skills/neuralfn-cli/SKILL.md) | When using or changing `nfn` CLI train/infer/eval workflows, dataset shortcuts, tokenizer options, artifacts, or CUDA harness scripts. |
 | **NeuralFn MCP** | [`.cursor/skills/neuralfn-mcp/SKILL.md`](../.cursor/skills/neuralfn-mcp/SKILL.md) | When using MCP tools to manipulate graphs, nodes, edges, datasets, and training runs through the NeuralFn MCP server. |
 
 ## What skills teach agents
 
 - **neuralfn-python-sdk** covers the core graph framework: how to define neurons with `@neuron` and `Port`, build `NeuronGraph` instances, wire edges, create subgraphs, use the variant library, serialize graphs, and run all four training methods. It includes quick-reference tables for every class and common builtin IDs.
 
-- **neuralfn-torch** covers the torch template system: `ModelSpec` / `BlockSpec` / `TemplateSpec` configuration, all 16 presets with config keys, `build_gpt_root_graph()` and `build_model_stage_graph()`, `CompiledTorchGraph` compilation, `TorchTrainer` for training, dataset loading, weight export/import, and `InferenceCache` for autoregressive generation.
+- **neuralfn-torch** covers the torch template system: `ModelSpec` / `BlockSpec` / `TemplateSpec` configuration, the shipped preset catalog with config keys, `build_gpt_root_graph()` and `build_model_stage_graph()`, `CompiledTorchGraph` compilation, `TorchTrainer` for training, dataset loading, weight export/import, and `InferenceCache` for autoregressive generation.
+
+- **neuralfn-cli** covers the local `nfn` command: composed recipes, `--plan`,
+  dataset/tokenizer separation, shared cache roots, graph-first artifacts,
+  fine-tuning flags, and safe verification commands.
 
 - **neuralfn-mcp** covers the MCP tool interface: how to use tools like `get_graph`, `add_node`, `add_edge`, `load_gpt_template`, `train_start`, and `download_dataset` to build and train models through the MCP server. Includes end-to-end workflow examples.
 
@@ -36,6 +41,7 @@ If you're using Cursor, skills in `.cursor/skills/` are automatically available.
 The skills draw from and link into the full documentation:
 
 - [Framework Guide](framework-guide/README.md) -- tutorial walkthroughs that the SDK and torch skills reference
+- [CLI Workflows](cli.md) -- `nfn` workflow reference that the CLI skill summarizes
 - [Python SDK Reference](python-sdk/README.md) -- complete API details for every class and function
 - [MCP Tools Reference](mcp/README.md) -- complete tool parameter reference that the MCP skill summarizes
 - [Templates and Presets](framework-guide/templates-and-presets.md) -- full preset table referenced by the torch skill

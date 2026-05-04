@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field
 
 class PortModel(BaseModel):
     name: str
-    range: list[float] = Field(default_factory=lambda: [-1.0, 1.0])
-    precision: float = 0.001
+    range: list[float] | None = None
+    precision: float | None = None
     dtype: str = "float"
 
 
@@ -70,6 +70,37 @@ class ExecuteRequest(BaseModel):
     preview_batch_size: int = 1
 
 
+class FineTuneConfigModel(BaseModel):
+    """Fine-tuning configuration attached to ``TrainRequest``.
+
+    ``adapter_type`` selects between ``"none"`` (full fine-tune),
+    ``"lora"``, ``"qlora"`` (int4 base + LoRA delta), or ``"randmap"``
+    (Johnson–Lindenstrauss residual adapter).
+    """
+    adapter_type: str = "none"
+    lora_rank: int = 8
+    lora_alpha: float = 16.0
+    lora_dropout: float = 0.0
+    lora_targets: list[str] = Field(default_factory=lambda: ["q_proj", "v_proj"])
+    lora_bias: bool = False
+    qlora_group_size: int = 64
+    qlora_compute_dtype: str = "bf16"
+    # DPO
+    beta: float = 0.1
+    dpo_loss_type: str = "sigmoid"
+    dpo_label_smoothing: float = 0.0
+    # PPO
+    kl_coef: float = 0.1
+    ppo_clip: float = 0.2
+    ppo_vf_coef: float = 0.5
+    ppo_ent_coef: float = 0.0
+    rollout_length: int = 64
+    ppo_epochs_per_rollout: int = 4
+    ppo_minibatch_size: int = 4
+    gae_gamma: float = 1.0
+    gae_lambda: float = 0.95
+
+
 class TrainRequest(BaseModel):
     method: str | None = "surrogate"
     train_inputs: list[list[float | int]] = Field(default_factory=list)
@@ -85,6 +116,16 @@ class TrainRequest(BaseModel):
     generations: int = 200
     batch_size: int = 8
     weight_decay: float = 0.01
+    # Fine-tuning fields (Phase 1-4). ``training_mode="pretrain"`` preserves
+    # the classic behaviour; other modes attach a ``FineTuneSpec`` dict to the
+    # graph's ``torch_config`` under ``finetune_spec`` so the trainer runs the
+    # pre-train hook (base-checkpoint load + freeze-non-LoRA).
+    training_mode: str = "pretrain"  # "pretrain" | "sft" | "dpo" | "ppo" | "reward_model"
+    base_checkpoint_path: str | None = None
+    ref_checkpoint_path: str | None = None
+    reward_checkpoint_path: str | None = None
+    adapter_only_save: bool = False
+    finetune_config: FineTuneConfigModel | None = None
 
 
 class DownloadDatasetRequest(BaseModel):

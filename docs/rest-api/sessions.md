@@ -60,6 +60,45 @@ Sets this session as the user's active session (also sets the parent project as 
 }
 ```
 
+---
+
+## Experimental semantic endpoints
+
+These endpoints are research-only surfaces for the semantic routing stack.
+
+### POST /{session_id}/semantic/encode
+
+Returns a placeholder semantic response keyed by the vocab-grounded dimension names.
+
+### POST /{session_id}/semantic/search
+
+Accepts a semantic vector and returns placeholder nearest-neighbour rows.
+
+### GET /{session_id}/semantic/dimensions
+
+Returns the semantic dimension metadata used by the semantic routing presets.
+
+`num_topics` is dynamic and comes from the current semantic vocabulary reference. It
+is no longer a fixed 40 for each routed dimension.
+
+**Response element shape:**
+
+```json
+{
+  "index": 0,
+  "name": "entity_type",
+  "meaning": "who or what (person, object, abstract)",
+  "expert_id": 0,
+  "num_topics": 266
+}
+```
+
+`expert_id` is `null` for the derived `taxonomy_hash` slot because it does not own an expert.
+
+### POST /{session_id}/semantic/generate
+
+Reserved for future semantic-conditioned generation. The current response remains a placeholder.
+
 ### GET /{session_id}
 
 Returns session details including graph metadata (node/edge counts, revision).

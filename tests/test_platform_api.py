@@ -10,6 +10,21 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from neuralfn.semantic import ConversationalVocabulary, NUM_SEMANTIC_DIMS
+
+
+class SettingsDefaultsTest(unittest.TestCase):
+    def test_artifacts_dir_defaults_to_home_neuralfn_artifacts(self) -> None:
+        import server.settings as settings_module
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("NEURALFN_ARTIFACTS_DIR", None)
+            settings_module.get_settings.cache_clear()
+            try:
+                settings = settings_module.get_settings()
+                self.assertEqual(Path.home() / "NeuralFn" / "artifacts", settings.artifacts_dir)
+            finally:
+                settings_module.get_settings.cache_clear()
 
 
 class PlatformApiTest(unittest.TestCase):
@@ -236,6 +251,53 @@ class PlatformApiTest(unittest.TestCase):
         session_payload = sessions.json()
         self.assertEqual(1, len(session_payload))
         self.assertEqual(payload["default_session"]["id"], session_payload[0]["id"])
+
+    def test_session_apply_endpoint_loads_full_jepa_semantic_root_graph(self) -> None:
+        self._bootstrap_admin()
+        payload = self.client.get("/api/bootstrap").json()
+        project_id = payload["active_project_id"]
+        session_id = payload["active_session_id"]
+
+        applied = self.client.post(
+            f"/api/projects/{project_id}/sessions/{session_id}/templates/gpt/apply",
+            json={"name": "jepa_semantic", "config": {"preset": "jepa_semantic_hybrid"}},
+        )
+        self.assertEqual(200, applied.status_code, applied.text)
+        graph = applied.json()["graph"]
+
+        self.assertIn("dataset_source", graph["nodes"])
+        self.assertIn("semantic_data_source", graph["nodes"])
+        self.assertIn("model", graph["nodes"])
+        self.assertIn("loss_out", graph["nodes"])
+        self.assertNotIn("tokens_in", graph["nodes"])
+        self.assertEqual(["dataset_source", "semantic_data_source"], graph["input_node_ids"])
+        self.assertEqual(["loss_out"], graph["output_node_ids"])
+
+        root_edges_to_model = [
+            edge for edge in graph["edges"].values() if edge["dst_node"] == "model"
+        ]
+        self.assertEqual(2, len(root_edges_to_model))
+
+    def test_semantic_dimensions_returns_dynamic_vocab_topic_counts(self) -> None:
+        self._bootstrap_admin()
+        payload = self.client.get("/api/bootstrap").json()
+        project_id = payload["active_project_id"]
+        session_id = payload["active_session_id"]
+
+        response = self.client.get(
+            f"/api/projects/{project_id}/sessions/{session_id}/semantic/dimensions"
+        )
+        self.assertEqual(200, response.status_code, response.text)
+        dims = response.json()
+        by_name = {item["name"]: item for item in dims}
+        self.assertEqual(NUM_SEMANTIC_DIMS, len(dims))
+
+        vocab = ConversationalVocabulary()
+        for dim_name in vocab.dim_names:
+            self.assertEqual(len(vocab.terms(dim_name)), by_name[dim_name]["num_topics"])
+        self.assertGreater(by_name["entity_type"]["num_topics"], 40)
+        self.assertIsNone(by_name["taxonomy_hash"]["expert_id"])
+        self.assertEqual(0, by_name["taxonomy_hash"]["num_topics"])
 
     def test_dataset_access_filtering_and_graph_driven_run_resolution(self) -> None:
         self._bootstrap_admin()

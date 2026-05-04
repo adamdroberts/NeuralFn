@@ -6,6 +6,7 @@ import AdminPage from "./pages/AdminPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import DatasetsPage from "./pages/DatasetsPage";
 import EditorPage from "./pages/EditorPage";
+import FineTuningStudio from "./pages/FineTuningStudio";
 import LoginPage from "./pages/LoginPage";
 import RunsPage from "./pages/RunsPage";
 
@@ -60,6 +61,7 @@ function RoutedApp() {
         <Route index element={<EmptyWorkspace />} />
         <Route path="admin" element={<AdminPage />} />
         <Route path="projects/:projectId/sessions/:sessionId/editor" element={<EditorPage />} />
+        <Route path="projects/:projectId/sessions/:sessionId/studio" element={<FineTuningStudio />} />
         <Route path="projects/:projectId/sessions/:sessionId/datasets" element={<DatasetsPage />} />
         <Route path="projects/:projectId/sessions/:sessionId/runs" element={<RunsPage />} />
         <Route path="projects/:projectId/sessions/:sessionId/analytics" element={<AnalyticsPage />} />

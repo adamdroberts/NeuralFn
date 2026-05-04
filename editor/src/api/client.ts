@@ -20,10 +20,31 @@ async function parseError(res: Response): Promise<never> {
   } catch {
     payload = text;
   }
-  const message =
+  const detail =
     typeof payload === "object" && payload !== null && "detail" in payload
-      ? String((payload as { detail: unknown }).detail)
-      : text || `Request failed with status ${res.status}`;
+      ? (payload as { detail: unknown }).detail
+      : undefined;
+  let message: string;
+  if (Array.isArray(detail)) {
+    message = detail
+      .map((entry) => {
+        if (typeof entry === "string") return entry;
+        if (entry && typeof entry === "object" && "msg" in entry) {
+          const obj = entry as { msg: unknown; loc?: unknown };
+          const loc = Array.isArray(obj.loc) ? obj.loc.join(".") : "";
+          const msg = String(obj.msg);
+          return loc ? `${loc}: ${msg}` : msg;
+        }
+        return JSON.stringify(entry);
+      })
+      .join("; ");
+  } else if (typeof detail === "string") {
+    message = detail;
+  } else if (detail !== undefined) {
+    message = JSON.stringify(detail);
+  } else {
+    message = text || `Request failed with status ${res.status}`;
+  }
   throw new ApiError(res.status, message, payload);
 }
 
@@ -45,8 +66,8 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 
 export interface PortData {
   name: string;
-  range: [number, number];
-  precision: number;
+  range: [number, number] | null;
+  precision: number | null;
   dtype: string;
 }
 
@@ -141,6 +162,8 @@ export interface GPTTemplateResponse {
   node_def: NeuronDefData;
   variant_library: VariantLibraryData;
   graph_settings: Pick<GraphData, "training_method" | "runtime" | "torch_config">;
+  extra_nodes?: Array<{ instance_id: string; position: [number, number]; neuron_def: NeuronDefData }>;
+  extra_edges?: Array<{ id: string; src_node: string; src_port: number; dst_node: string; dst_port: number; weight: number; bias: number }>;
 }
 
 export interface DatasetInfo {
@@ -380,8 +403,38 @@ export const api = {
       body: JSON.stringify(body ?? {}),
     }),
 
+  applyGPTTemplate: (
+    projectId: string,
+    sessionId: string,
+    body?: { name?: string; config?: Record<string, unknown> },
+  ) =>
+    json<{ revision: number; graph: GraphData }>(`${sessionBase(projectId, sessionId)}/templates/gpt/apply`, {
+      method: "POST",
+      body: JSON.stringify(body ?? {}),
+    }),
+
   getAgentStatus: (projectId: string, sessionId: string) =>
     json<{ active: boolean }>(`${sessionBase(projectId, sessionId)}/agent/status`),
+
+  chatGenerate: (
+    projectId: string,
+    sessionId: string,
+    body: {
+      prompt: string;
+      max_new_tokens?: number;
+      temperature?: number;
+      top_k?: number | null;
+      base_checkpoint?: string;
+      adapter_checkpoint?: string;
+    },
+  ) =>
+    json<{ prompt: string; generated: string; tokens: number[]; prompt_length: number }>(
+      `${sessionBase(projectId, sessionId)}/chat/generate`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+    ),
 
   startTraining: (
     projectId: string,
@@ -400,6 +453,34 @@ export const api = {
       generations?: number;
       batch_size?: number;
       weight_decay?: number;
+      // ── Fine-tuning ─────────────────────────────────────────────
+      training_mode?: "pretrain" | "sft" | "dpo" | "ppo" | "reward_model";
+      base_checkpoint_path?: string;
+      ref_checkpoint_path?: string;
+      reward_checkpoint_path?: string;
+      adapter_only_save?: boolean;
+      finetune_config?: {
+        adapter_type?: "none" | "lora" | "qlora" | "randmap";
+        lora_rank?: number;
+        lora_alpha?: number;
+        lora_dropout?: number;
+        lora_targets?: string[];
+        lora_bias?: boolean;
+        qlora_group_size?: number;
+        qlora_compute_dtype?: string;
+        beta?: number;
+        dpo_loss_type?: string;
+        dpo_label_smoothing?: number;
+        kl_coef?: number;
+        ppo_clip?: number;
+        ppo_vf_coef?: number;
+        ppo_ent_coef?: number;
+        rollout_length?: number;
+        ppo_epochs_per_rollout?: number;
+        ppo_minibatch_size?: number;
+        gae_gamma?: number;
+        gae_lambda?: number;
+      };
     },
     onMessage: (data: TrainingMessage) => void,
   ) => {

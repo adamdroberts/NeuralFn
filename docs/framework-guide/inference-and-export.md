@@ -24,6 +24,30 @@ Loads the state dict, rebuilds the compiled module, calls `load_state_dict()`, t
 
 ---
 
+## Adapter-only checkpoints
+
+For LoRA/qLoRA/RandMap fine-tuning runs, NeuralFn can save and reload only the
+adapter and head parameters:
+
+```python
+from neuralfn.inference import (
+    save_adapter_checkpoint,
+    load_adapter_checkpoint,
+    merge_adapter_into_base,
+)
+
+save_adapter_checkpoint(graph, "adapter.pt")
+load_adapter_checkpoint(graph, "adapter.pt")
+merge_adapter_into_base("base.pt", "adapter.pt", "merged.pt")
+```
+
+`save_adapter_checkpoint()` filters the compiled state dict to LoRA/qLoRA
+adapter tensors, RandMap adapter middle/scale tensors, and value/reward heads.
+`merge_adapter_into_base()` bakes LoRA deltas into a full checkpoint for
+ordinary inference.
+
+---
+
 ## Quantized export and import
 
 ### Export with quantization
@@ -99,18 +123,20 @@ InferenceCache(graph, device=None)
 
 For training graphs that take two inputs (tokens + targets), `InferenceCache.step()` automatically generates dummy target tensors so the forward pass runs without modification. The loss output is returned as-is, which can be useful for perplexity evaluation.
 
+If you export or probe a tokenizer-backed cached dataset alias, keep the tokenizer contract intact: NeuralFn now preflights tokenizer-backed aliases before generation and stops early when the cached tokenizer vocab, shard ids, and checkpoint vocab disagree. This avoids the previous failure mode where decoding crashed after generation had already emitted out-of-range token ids.
+
 ---
 
 ## Typical workflow
 
 ```python
 from neuralfn import build_gpt_root_graph, TorchTrainer, TorchTrainConfig
+from neuralfn.config import build_llama_spec
 from neuralfn.inference import export_to_pt, InferenceCache
 import torch
 
-graph = build_gpt_root_graph(preset="llama", config={
-    "n_layer": 4, "n_embd": 128, "vocab_size": 256,
-})
+spec = build_llama_spec(n_layer=4, n_embd=128, vocab_size=256)
+graph = build_gpt_root_graph(model_spec=spec)
 
 tokens = torch.randint(0, 256, (16, 64))
 targets = torch.randint(0, 256, (16, 64))

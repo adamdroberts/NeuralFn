@@ -142,7 +142,10 @@ losses = trainer.train(X, Y)
 ### Torch (tensor graphs, PyTorch training)
 
 ```python
-graph = build_gpt_root_graph(preset="nanogpt", config={"n_layer": 4, "n_embd": 128})
+from neuralfn.config import build_nanogpt_spec
+
+spec = build_nanogpt_spec(n_layer=4, n_embd=128, num_heads=4)
+graph = build_gpt_root_graph(name="nanogpt", model_spec=spec)
 trainer = TorchTrainer(graph, TorchTrainConfig(epochs=10, learning_rate=5e-3, device="cuda"))
 losses = trainer.train(train_inputs, train_targets)
 ```

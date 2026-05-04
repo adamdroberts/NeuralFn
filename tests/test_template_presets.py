@@ -14,10 +14,10 @@ from neuralfn.config import (
     build_universal_llama_spec,
 )
 from neuralfn.torch_backend import CompiledTorchGraph, JEPAMaskStage, TorchTrainConfig, TorchTrainer
-from neuralfn.torch_templates import build_gpt_root_graph, build_gpt_template_payload, build_model_spec_from_config
+from neuralfn.torch_templates import build_gpt_root_graph, build_gpt_template_payload, build_model_spec_from_config, make_terminal_def
 from server.dataset_manager import DATASETS_DIR, load_dataset_bytes
-from server.models import GPTTemplateRequest, LoadDatasetRequest
-from server.services.graph_ops import apply_gpt_template, load_dataset_source_into_graph
+from server.models import ExecuteRequest, GPTTemplateRequest, LoadDatasetRequest
+from server.services.graph_ops import apply_gpt_template, load_dataset_source_into_graph, trace_torch_graph
 
 
 PRESETS = [
@@ -26,7 +26,9 @@ PRESETS = [
     "llama",
     "moe",
     "llama_fast",
+    "llama_fast_megakernel",
     "mixllama_fast",
+    "mixllama_fast_megakernel",
     "jamba",
     "ternary_b158",
     "seq2seq",
@@ -37,6 +39,11 @@ PRESETS = [
     "universal_llama",
     "llama_megakernel",
     "kv_pca_llama",
+    "jepa_semantic_hybrid",
+    "jepa_semantic_hybrid_megakernel",
+    "semantic_router_moe",
+    "semantic_router_moe_megakernel",
+    "semantic_moe_jepa_evo",
 ]
 
 
@@ -108,6 +115,21 @@ def test_build_gpt_template_payload_supports_all_presets() -> None:
         assert payload["graph_settings"]["torch_config"]["template_spec"]["template"]
 
 
+def test_root_graph_defaults_to_float32_amp() -> None:
+    graph = build_gpt_root_graph(name="float32_default")
+    assert graph.torch_config["amp_dtype"] == "float32"
+
+
+def test_template_terminals_only_quantize_discrete_token_ports() -> None:
+    tensor_terminal = make_terminal_def(role="input", port_name="x", dtype="tensor")
+    token_terminal = make_terminal_def(role="input", port_name="tokens", dtype="tokens")
+
+    assert tensor_terminal.input_ports[0].precision is None
+    assert tensor_terminal.output_ports[0].precision is None
+    assert token_terminal.input_ports[0].precision == 1.0
+    assert token_terminal.output_ports[0].precision == 1.0
+
+
 def test_reported_presets_resolve_variant_libraries() -> None:
     for preset in PRESETS:
         spec = build_model_spec_from_config({"preset": preset, **_tiny_kwargs()}, preview_defaults=True)
@@ -163,6 +185,17 @@ def test_apply_gpt_template_supports_all_presets() -> None:
         graph = apply_gpt_template(GPTTemplateRequest(name=f"{preset}_graph", config={"preset": preset}))
         assert "model" in graph.nodes
         assert graph.output_node_ids == ["loss_out"]
+
+
+def test_jepa_semantic_hybrid_dataset_backed_trace_preview_smoke() -> None:
+    spec = build_model_spec_from_config(
+        {"preset": "jepa_semantic_hybrid", "vocab_size": 256, **_tiny_kwargs()},
+        preview_defaults=True,
+    )
+    graph = _cpu_graph(build_gpt_root_graph(name="jsh_trace_smoke", model_spec=spec))
+    response = trace_torch_graph(graph, ExecuteRequest())
+    assert response["source"] == "dataset"
+    assert response["trace"]
 
 
 def test_ttt_llama_forward_smoke() -> None:
@@ -342,3 +375,22 @@ def test_dataset_source_role_wiring_covers_single_and_multi_input_templates() ->
     jepa_result = load_dataset_source_into_graph(jepa_graph, LoadDatasetRequest(dataset_names=["dummy"], seq_len=8))
     jepa_ports = [port.name for port in jepa_graph.nodes[jepa_result["dataset_source_node_id"]].neuron_def.output_ports]
     assert jepa_ports == ["tokens"]
+
+    hybrid_graph = apply_gpt_template(
+        GPTTemplateRequest(name="jsh", config={"preset": "jepa_semantic_hybrid", "num_layers": 1})
+    )
+    assert "dataset_source" in hybrid_graph.nodes
+    assert "semantic_data_source" in hybrid_graph.nodes
+    assert "tokens_in" not in hybrid_graph.nodes
+    assert hybrid_graph.input_node_ids == ["dataset_source", "semantic_data_source"]
+    hybrid_result = load_dataset_source_into_graph(
+        hybrid_graph,
+        LoadDatasetRequest(dataset_names=["dummy"], seq_len=8),
+    )
+    hybrid_ds_id = hybrid_result["dataset_source_node_id"]
+    hybrid_ports = [
+        port.name for port in hybrid_graph.nodes[hybrid_ds_id].neuron_def.output_ports
+    ]
+    assert "semantic_data_source" in hybrid_graph.nodes
+    assert hybrid_ports == ["tokens", "targets"]
+    assert hybrid_graph.input_node_ids == [hybrid_ds_id, "semantic_data_source"]

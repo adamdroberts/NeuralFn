@@ -1,6 +1,6 @@
 # neuralfn.inference
 
-Weight export/import, quantized export/import, and autoregressive inference with KV caching.
+Weight export/import, adapter checkpoint helpers, quantized export/import, and autoregressive inference with KV caching.
 
 ---
 
@@ -11,6 +11,7 @@ def export_to_pt(graph: NeuronGraph, path: str | Path) -> None
 ```
 
 Export the weights of a torch-based `NeuronGraph` to a `.pt` file. Compiles the graph to `CompiledTorchGraph` and saves the full `state_dict`.
+The checkpoint payload is `{"state_dict": ..., "checkpoint_metadata": ...}`.
 
 ### Parameters
 
@@ -35,6 +36,60 @@ Import weights from a `.pt` file into a `NeuronGraph`. Loads the state_dict, com
 |-----------|------|-------------|
 | `graph` | `NeuronGraph` | The graph to load weights into |
 | `path` | `str \| Path` | Path to the `.pt` file |
+
+---
+
+## load_pt_checkpoint
+
+```python
+def load_pt_checkpoint(
+    path: str | Path,
+    *,
+    map_location: str | torch.device | None = "cpu",
+) -> tuple[dict[str, torch.Tensor], dict[str, Any]]
+```
+
+Load either a modern NeuralFn checkpoint payload with `state_dict` and
+`checkpoint_metadata`, or a legacy plain state-dict checkpoint. Returns
+`(state_dict, metadata)`.
+
+---
+
+## Adapter checkpoint helpers
+
+### save_adapter_checkpoint
+
+```python
+def save_adapter_checkpoint(graph: NeuronGraph, path: str | Path) -> None
+```
+
+Compile `graph`, filter the state dict down to LoRA/qLoRA adapter parameters,
+RandMap adapter middle/scale parameters, and value/reward head parameters, then
+write an adapter-only checkpoint. The metadata includes `adapter_only=True`.
+
+### load_adapter_checkpoint
+
+```python
+def load_adapter_checkpoint(graph: NeuronGraph, path: str | Path) -> None
+```
+
+Load an adapter-only checkpoint into `graph` with non-strict state-dict loading,
+then sync the loaded adapter/head tensors back to graph `module_state`.
+
+### merge_adapter_into_base
+
+```python
+def merge_adapter_into_base(
+    base_path: str | Path,
+    adapter_path: str | Path,
+    out_path: str | Path,
+) -> None
+```
+
+Merge LoRA `A` / `B` tensors into matching base projection weights and write a
+plain full checkpoint with `merged_from_adapter=True` metadata. This is useful
+when a small adapter artifact should be baked into a standalone inference
+checkpoint.
 
 ---
 
@@ -144,3 +199,16 @@ for _ in range(max_new_tokens):
 
 cache.reset()
 ```
+
+---
+
+## Semantic table helpers [Experimental]
+
+```python
+def export_semantic_tables(graph: NeuronGraph, path: str | Path) -> None
+def import_semantic_tables(graph: NeuronGraph, path: str | Path) -> None
+```
+
+Export or import semantic routing / legacy decoder lookup tensors whose state
+keys include semantic decoder, hasher, or semantic router components. These
+helpers are experimental and tied to the semantic routing research presets.

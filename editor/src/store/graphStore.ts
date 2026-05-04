@@ -35,6 +35,7 @@ import {
   mergeVariantLibraries,
   normalizeGraph,
   normalizeNeuronDef,
+  refreshBuiltinNodesInGraph,
   updateGraphAtPath,
 } from "./graphUtils";
 
@@ -368,16 +369,34 @@ export const useGraphStore = create<GraphState>((set) => ({
     null,
   ),
   hydrateSession: ({ projectId, sessionId, graph, revision }) =>
-    set((state) => ({
-      ...withSafety(state, () => ({ rootGraph: graph, currentPath: [], selectedNodeId: null })),
-      projectId,
-      sessionId,
-      revision,
-      hydrationState: "ready",
-      isDirty: false,
-      isSaving: false,
-      saveError: null,
-    })),
+    set((state) => {
+      const hydrated = withSafety(state, () => ({
+        rootGraph: graph,
+        currentPath: [],
+        selectedNodeId: null,
+      }));
+      let nextRoot = hydrated.rootGraph;
+      let refreshedDirty = false;
+      if (state.builtins.length > 0) {
+        const builtinsByName = new Map(state.builtins.map((b) => [b.name, b]));
+        const { graph: refreshed, changed } = refreshBuiltinNodesInGraph(nextRoot, builtinsByName);
+        if (changed) {
+          nextRoot = refreshed;
+          refreshedDirty = true;
+        }
+      }
+      return {
+        ...hydrated,
+        rootGraph: nextRoot,
+        projectId,
+        sessionId,
+        revision,
+        hydrationState: "ready",
+        isDirty: refreshedDirty,
+        isSaving: false,
+        saveError: null,
+      };
+    }),
 
   setHydrationState: (hydrationState) => set((state) => ({ ...state, hydrationState })),
   markSessionSaved: (revision) =>
@@ -652,7 +671,21 @@ export const useGraphStore = create<GraphState>((set) => ({
     ),
 
   selectNode: (selectedNodeId) => set((state) => ({ ...state, selectedNodeId })),
-  setBuiltins: (builtins) => set((state) => ({ ...state, builtins })),
+  setBuiltins: (builtins) =>
+    set((state) => {
+      const builtinsByName = new Map(builtins.map((b) => [b.name, b]));
+      const { graph: refreshed, changed } = refreshBuiltinNodesInGraph(state.rootGraph, builtinsByName);
+      if (!changed) {
+        return { ...state, builtins };
+      }
+      return {
+        ...state,
+        builtins,
+        rootGraph: refreshed,
+        isDirty: true,
+        saveError: null,
+      };
+    }),
   addLossPoint: (lossPoint) =>
     set((state) => ({ ...state, lossHistory: [...state.lossHistory, lossPoint] })),
   clearLoss: () => set((state) => ({ ...state, lossHistory: [] })),

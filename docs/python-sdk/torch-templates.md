@@ -16,11 +16,16 @@ Deep-clone a `NeuronDef` via round-trip serialization. Optionally merge extra ke
 
 ### `get_linear_module_def(input_dim, output_dim, spec) -> NeuronDef`
 
-Return the appropriate linear module def based on the `BlockSpec` compression and family settings. Dispatches to `bitlinear_ternary`, `ttt_linear`, or standard `linear`.
+Return the appropriate linear module def based on the `BlockSpec` compression,
+adapter, and family settings. Dispatches to `bitlinear_ternary`, `ttt_linear`,
+`lora_linear`, `nf4_linear`, or standard `linear`.
 
 ### `maybe_wrap_with_adapter(graph, node_id, model_dim, spec, *, position) -> str`
 
-If `spec.adapter_dim > 0`, insert a `randmap_adapter` node after `node_id` and rewire downstream edges. Returns the new output node ID (or the original if no adapter was added).
+If `spec.adapter_type == "randmap"` and `spec.adapter_dim > 0`, insert a
+`randmap_adapter` node after `node_id` and rewire downstream edges. LoRA and
+qLoRA are handled by `get_linear_module_def()` at projection creation time.
+Returns the new output node ID (or the original if no adapter was added).
 
 ### `link_variant_neuron(graph, *, family, version, name, input_aliases=None, output_aliases=None) -> NeuronDef`
 
@@ -75,6 +80,10 @@ Build the hidden-state backbone: stacked decoder blocks with a final normalizati
 
 Build a JEPA encoder: token embedding, position embedding, stacked blocks, final norm.
 
+### `build_jepa_semantic_encoder_graph(name, model_spec) -> NeuronGraph` [Experimental]
+
+Build the experimental hybrid JEPA encoder: hidden backbone + masked latent pool + semantic projector. Outputs `(semantic_vec, hidden, topic_logits)` so the routed expert branch can attend over the full hidden sequence while JEPA losses operate on the pooled semantic state and vocab-topic head.
+
 ---
 
 ## Model Stage Graphs
@@ -90,6 +99,43 @@ Build a discrete diffusion model: random timesteps, mask scheduler, backbone, de
 ### `build_jepa_model_stage_graph(name, model_spec) -> NeuronGraph`
 
 Build a JEPA model: online encoder, target encoder (EMA), JEPA mask, projector, predictor, latent pool, and latent MSE loss.
+
+### `build_jepa_semantic_model_stage_graph(name, model_spec) -> NeuronGraph` [Experimental]
+
+Build the experimental JEPA semantic hybrid stage. Inputs are `tokens`, `targets`, and `sem_targets`. The stage performs JEPA masking and EMA target encoding, hashes the pooled semantic vector, routes the full masked hidden sequence through `semantic_hash_router` + `routed_attention_experts`, and uses the semantic vocabulary dimension map for both training-time teacher forcing and inference-time auto routing. `sem_targets` carry categorical topic IDs with `-100` ignore sentinels.
+
+### `build_semantic_moe_jepa_evo_model_stage_graph(name, model_spec) -> NeuronGraph` [Experimental]
+
+Build the full Semantic MoE JEPA Evo stage. Inputs are `tokens`, `targets`, and `sem_targets`. The stage keeps dense causal attention on the AR path, builds prefix-safe chunk semantic states, selects shared/semantic/free experts for each chunk, broadcasts chunk routes to token routes for the MoE FFN, and trains AR CE plus JEPA latent, semantic alignment, route balance, route selection, and route distillation losses.
+
+### `build_sft_model_stage_graph(name, model_spec) -> NeuronGraph`
+
+Build a supervised fine-tuning stage with `(tokens, targets, loss_mask) -> loss`.
+It mirrors the autoregressive decoder body but uses
+`masked_token_cross_entropy` so prompt tokens can be excluded from loss.
+
+### `build_sft_root_graph(*, name="model_root", model_spec=None) -> NeuronGraph`
+
+Build the root graph for SFT: `sft_dataset_source -> model -> loss`.
+
+### `build_dpo_root_graph(*, name="model_root", model_spec=None) -> NeuronGraph`
+
+Build the Direct Preference Optimization root graph. It consumes chosen/rejected
+token pairs from `dpo_dataset_source`, runs policy and frozen-reference forwards,
+reduces sequence log probabilities, and feeds `dpo_pairwise_loss`.
+
+### `build_reward_model_root_graph(*, name="model_root", model_spec=None) -> NeuronGraph`
+
+Build the reward-model root graph. It consumes chosen/rejected preference pairs,
+runs a body subgraph, applies reward heads, and optimizes
+`preference_bce_loss`.
+
+### `build_ppo_root_graph(*, name="model_root", model_spec=None) -> NeuronGraph`
+
+Build the PPO inner-loop root graph. It consumes rollout-buffer tensors,
+combines policy, reference, reward/value heads, and emits a clipped PPO loss.
+`PPOTrainer` in `neuralfn.torch_backend` orchestrates rollout collection and
+inner optimization around this graph.
 
 ### `build_hnet_model_stage_graph(name, model_spec) -> NeuronGraph`
 
@@ -115,7 +161,15 @@ def build_model_spec_from_config(
 
 Dispatch to the appropriate `build_*_spec()` function based on `config["preset"]`. Normalizes legacy key names (`n_layer` -> `num_layers`, `n_embd` -> `model_dim`, `n_head` -> `num_heads`).
 
-Recognized presets: `"nanogpt"`, `"gpt2"`, `"llama"`, `"mixllama"` / `"moe"`, `"llama_fast"`, `"mixllama_fast"`, `"jamba"`, `"ternary_b158"`, `"llama_megakernel"`, `"kv_pca_llama"`, `"seq2seq"`, `"diffusion"`, `"ttt_llama"`, `"llm_jepa"`, `"hnet_lm"`, `"universal_llama"`.
+Recognized presets: `"nanogpt"`, `"nanogpt_megakernel"`, `"gpt2"`,
+`"gpt2_megakernel"`, `"llama"`, `"mixllama"` / `"moe"`, `"llama_fast"`,
+`"llama_fast_megakernel"`, `"mixllama_fast"`,
+`"mixllama_fast_megakernel"`, `"jamba"`, `"ternary_b158"`,
+`"llama_megakernel"`, `"kv_pca_llama"`, `"seq2seq"`, `"diffusion"`,
+`"ttt_llama"`, `"llm_jepa"`, `"semantic_router_moe"`,
+`"semantic_router_moe_megakernel"`, `"jepa_semantic_hybrid"`,
+`"jepa_semantic_hybrid_megakernel"`, `"semantic_moe_jepa_evo"`,
+`"hnet_lm"`, and `"universal_llama"`.
 
 ### `build_model_stage_graph(name, model_spec) -> NeuronGraph`
 
@@ -135,9 +189,21 @@ def build_gpt_root_graph(
 ) -> NeuronGraph
 ```
 
-Build the top-level root graph that wraps a model stage subgraph. Dispatches to the appropriate stage builder based on `model_spec.template.objective` and `model_spec.template.backbone`. If `model_spec` is None, uses default `ModelSpec()`.
+Build the top-level root graph that wraps a model stage subgraph. Dispatches to
+the appropriate stage builder based on `model_spec.template.objective` and
+`model_spec.template.backbone`. If `model_spec` is None, uses default
+`ModelSpec()`. Objectives `sft`, `dpo`, `ppo`, and `reward_model` dispatch to
+their dedicated fine-tuning root graph builders.
 
 The root graph's `torch_config` is populated with device, AMP dtype, and the full `template_spec`.
+
+For `semantic_router_moe`, `jepa_semantic_hybrid`, and `semantic_moe_jepa_evo`, the root graph exposes:
+
+- `dataset_source` with output roles `tokens`, `targets`
+- `semantic_data_source` with output role `sem_targets` generated from the active semantic vocabulary reference
+- a compiled flat input contract of `(tokens, targets, sem_targets)`
+
+`semantic_router_moe` builds an AR-only stage that reuses normal LLaMA attention, computes one shared semantic route from the pre-block hidden state, broadcasts that route across the full sequence, and feeds the same routed experts into every MoE block. `jepa_semantic_hybrid` keeps its separate JEPA path on top of that semantic routing stack. `semantic_moe_jepa_evo` is the full chunk-routed architecture: it updates semantic routes at chunk boundaries, prepends always-on shared experts, selects semantic/free experts for the next chunk, and wires route balance/selection/distillation losses into the total loss.
 
 ### `build_gpt_template_payload(name, config) -> dict`
 

@@ -27,7 +27,7 @@ def probe_neuron(
 
     xs = np.empty((n_samples, n_in), dtype=np.float32)
     for i, port in enumerate(neuron_def.input_ports):
-        lo, hi = port.range
+        lo, hi = port.range if port.range is not None else (-1.0, 1.0)
         xs[:, i] = rng.uniform(lo, hi, size=n_samples).astype(np.float32)
 
     ys = np.empty((n_samples, n_out), dtype=np.float32)

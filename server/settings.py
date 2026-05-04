@@ -12,6 +12,10 @@ def _default_database_url(root_dir: Path) -> str:
     return f"sqlite:///{root_dir / 'neuralfn.db'}"
 
 
+def _default_artifacts_dir() -> Path:
+    return Path.home() / "NeuralFn" / "artifacts"
+
+
 def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
@@ -52,7 +56,7 @@ def get_settings() -> Settings:
         session_cookie_name=os.getenv("NEURALFN_SESSION_COOKIE_NAME", "neuralfn_session"),
         session_ttl_seconds=int(os.getenv("NEURALFN_SESSION_TTL_SECONDS", "1209600")),
         snapshots_dir=Path(os.getenv("NEURALFN_SNAPSHOTS_DIR", root_dir / "server" / "session_snapshots")),
-        artifacts_dir=Path(os.getenv("NEURALFN_ARTIFACTS_DIR", root_dir / "server" / "artifacts")),
+        artifacts_dir=Path(os.getenv("NEURALFN_ARTIFACTS_DIR", str(_default_artifacts_dir()))).expanduser(),
         create_schema_on_startup=os.getenv("NEURALFN_CREATE_SCHEMA_ON_STARTUP", "1") != "0",
         allow_origins=_split_csv(allow_origins_raw),
         mcp_email=os.getenv("NEURALFN_MCP_EMAIL"),

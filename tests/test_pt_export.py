@@ -5,7 +5,7 @@ import pytest
 
 from neuralfn.config import build_llama_fast_spec
 from neuralfn.torch_templates import build_gpt_root_graph
-from neuralfn.inference import export_to_pt, import_from_pt
+from neuralfn.inference import export_to_pt, import_from_pt, load_pt_checkpoint
 from neuralfn.torch_backend import CompiledTorchGraph
 
 def test_pt_export_import_roundtrip():
@@ -35,6 +35,9 @@ def test_pt_export_import_roundtrip():
         export_to_pt(graph, pt_path)
         
         assert os.path.exists(pt_path)
+        state_dict, checkpoint_metadata = load_pt_checkpoint(pt_path)
+        assert state_dict
+        assert checkpoint_metadata.get("template_runtime") == "compile"
         
         # Load into a fresh graph (which should have random weights initially)
         raw_graph_2 = build_gpt_root_graph(name="test_llama", model_spec=spec)

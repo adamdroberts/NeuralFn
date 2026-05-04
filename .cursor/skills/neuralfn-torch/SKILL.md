@@ -21,15 +21,13 @@ Full API documentation lives in the repo at `docs/` ([index](../../../docs/READM
 
 ```python
 from neuralfn import build_gpt_root_graph, TorchTrainer, TorchTrainConfig
+from neuralfn.config import build_llama_spec
 from neuralfn.inference import export_to_pt, InferenceCache
 import torch
 
 # 1. Build model graph
-graph = build_gpt_root_graph(
-    name="my_llama",
-    preset="llama",
-    config={"n_layer": 4, "n_head": 4, "n_embd": 128, "num_kv_heads": 2}
-)
+spec = build_llama_spec(n_layer=4, num_heads=4, n_embd=128, num_kv_heads=2)
+graph = build_gpt_root_graph(name="my_llama", model_spec=spec)
 
 # 2. Train
 trainer = TorchTrainer(graph, TorchTrainConfig(
@@ -54,18 +52,20 @@ next_token = logits.argmax(dim=-1)
 
 ```python
 from neuralfn import build_gpt_root_graph
+from neuralfn.config import build_nanogpt_spec
 
-graph = build_gpt_root_graph(name="model", preset="nanogpt", config={
-    "n_layer": 4,      # transformer layers
-    "n_head": 4,       # attention heads
-    "n_embd": 128,     # model dimension
-    "vocab_size": 256,  # auto-adjusted by trainer
-})
+spec = build_nanogpt_spec(
+    n_layer=4,      # transformer layers
+    num_heads=4,    # attention heads
+    n_embd=128,     # model dimension
+    vocab_size=256, # auto-adjusted by trainer
+)
+graph = build_gpt_root_graph(name="model", model_spec=spec)
 ```
 
 The graph has `runtime="torch"`, `training_method="torch"`, and a populated `variant_library` with attention and MLP subgraph variants.
 
-## All 16 presets
+## Shipped preset catalog
 
 | Preset | Architecture | Key features |
 |--------|-------------|--------------|
@@ -81,6 +81,8 @@ The graph has `runtime="torch"`, `training_method="torch"`, and a populated `var
 | `diffusion` | Discrete diffusion | Diffusion objective with denoising head |
 | `ttt_llama` | TTT-Linear | Test-time training attention replacement |
 | `llm_jepa` | LLM-JEPA | JEPA with EMA target encoder |
+| `semantic_router_moe` | Semantic Router MoE | AR-only semantic router control with shared routed MoE blocks |
+| `semantic_moe_jepa_evo` | Semantic MoE JEPA Evo | Chunk-level semantic router, shared/semantic/free experts, JEPA supervision, route evolution |
 | `hnet_lm` | H-Net | Raw byte input, byte patch embedding |
 | `universal_llama` | Universal TX | ACT-based adaptive recurrence |
 | `llama_megakernel` | Fused LLaMA | FusedCausalAttention, max-autotune compile |
@@ -116,24 +118,24 @@ from neuralfn.torch_templates import build_model_stage_graph, build_gpt_template
 spec = build_llama_spec(n_layer=6, n_embd=256, num_heads=8, num_kv_heads=4)
 
 # Build just the model stage subgraph
-stage_graph = build_model_stage_graph(spec)
+stage_graph = build_model_stage_graph("model_stage", spec)
 
-# Build a full payload (graph + variant library + template_spec)
-payload = build_gpt_template_payload("my_model", "llama", {"n_layer": 6, "n_embd": 256})
+# Build a full payload for server/editor template APIs
+payload = build_gpt_template_payload("my_model", {"preset": "llama", "n_layer": 6, "n_embd": 256})
 ```
 
-Spec builders: `build_nanogpt_spec`, `build_gpt2_spec`, `build_llama_spec`, `build_mixllama_spec`, `build_llama_fast_spec`, `build_mixllama_fast_spec`, `build_jamba_hybrid_spec`, `build_ternary_b158_spec`, `build_decoder2encoder_moe_spec`, `build_diffllama_spec`, `build_ttt_llama_spec`, `build_llm_jepa_spec`, `build_hnet_lm_spec`, `build_universal_llama_spec`, `build_llama_megakernel_spec`, `build_kv_pca_llama_spec`.
+Spec builders: `build_nanogpt_spec`, `build_nanogpt_megakernel_spec`, `build_gpt2_spec`, `build_gpt2_megakernel_spec`, `build_llama_spec`, `build_mixllama_spec`, `build_llama_fast_spec`, `build_llama_fast_megakernel_spec`, `build_mixllama_fast_spec`, `build_mixllama_fast_megakernel_spec`, `build_jamba_hybrid_spec`, `build_ternary_b158_spec`, `build_decoder2encoder_moe_spec`, `build_diffllama_spec`, `build_ttt_llama_spec`, `build_llm_jepa_spec`, `build_semantic_router_moe_spec`, `build_semantic_router_moe_megakernel_spec`, `build_jepa_semantic_hybrid_spec`, `build_jepa_semantic_hybrid_megakernel_spec`, `build_semantic_moe_jepa_evo_spec`, `build_hnet_lm_spec`, `build_universal_llama_spec`, `build_llama_megakernel_spec`, `build_kv_pca_llama_spec`, and `build_composed_lm_spec`.
 
 ## TorchTrainConfig
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `learning_rate` | 3e-4 | Adam learning rate |
-| `epochs` | 10 | Training epochs |
-| `batch_size` | 32 | Batch size |
-| `weight_decay` | 0.1 | AdamW weight decay |
+| `epochs` | 50 | Training epochs |
+| `batch_size` | 8 | Batch size |
+| `weight_decay` | 0.01 | AdamW weight decay |
 | `device` | "cuda" | Device ("cuda", "cpu") |
-| `amp_dtype` | None | AMP dtype (e.g. torch.float16) |
+| `amp_dtype` | "float32" | AMP dtype; float32 disables autocast |
 | `compile` | False | Use torch.compile |
 | `activation_checkpointing` | False | Gradient checkpointing |
 | `fsdp2_enabled` | False | FSDP2 sharding |
@@ -156,6 +158,7 @@ Dataset roles by objective:
 - AR / H-Net / Universal: `tokens`, `targets`
 - Seq2Seq: `enc_tokens`, `dec_tokens`, `targets`
 - Diffusion / JEPA: `tokens`
+- Semantic routing presets: `tokens`, `targets`, plus `semantic_data_source -> sem_targets`
 
 ## CompiledTorchGraph
 
@@ -202,3 +205,30 @@ cache.reset()                       # clear for new sequence
 ```
 
 Works with graphs that have `kv_cache_read` / `kv_cache_write` nodes. For training graphs (2 inputs), dummy targets are supplied automatically.
+
+## Experimental Presets
+
+### `semantic_router_moe` [Experimental]
+
+- **Preset:** `semantic_router_moe` [Experimental]
+- **Load in Python:** `from neuralfn.config import build_semantic_router_moe_spec`; then `spec = build_semantic_router_moe_spec(**kwargs)` and `build_gpt_root_graph(name=..., model_spec=spec)`.
+- **Load via MCP / server:** `load_gpt_template(name=..., preset="semantic_router_moe", config={...})` [Experimental].
+- **What it does [Experimental]:** AR-only MixLLaMA/MoE control preset that computes a vocab-grounded semantic route once from the pre-block hidden state, hashes it, teacher-forces/auto-selects one expert per semantic vocabulary dimension, broadcasts that route across the whole sequence, and applies it to every MoE block. Trains next-token CE plus semantic-alignment loss, with no JEPA encoder/EMA path.
+- **Disclaimer [Experimental]:** Research-control preset only. It exists to isolate the router hypothesis before adding JEPA complexity.
+
+### `semantic_moe_jepa_evo` [Experimental]
+
+- **Preset:** `semantic_moe_jepa_evo` [Experimental]
+- **Load in Python:** `from neuralfn.config import build_semantic_moe_jepa_evo_spec`; then `spec = build_semantic_moe_jepa_evo_spec(**kwargs)` and `build_gpt_root_graph(name=..., model_spec=spec)`.
+- **Load via MCP / server:** `load_gpt_template(name=..., preset="semantic_moe_jepa_evo", config={...})` [Experimental].
+- **What it does [Experimental]:** Full Semantic MoE JEPA Evo architecture. Dense causal attention stays on the AR path; a prefix-safe chunk planner predicts semantic latents and route distributions; routes combine always-on shared experts, semantic-vocabulary experts, and free learned experts; and the trainer can periodically evolve route bias/table state.
+- **Config rules [Experimental]:** `experts` must equal `semantic_shared_experts + NUM_VOCAB_DIMS + semantic_free_experts`. Defaults are `route_chunk_size=32`, `semantic_shared_experts=2`, `semantic_free_experts=8`, `route_evo_fraction=0.10`, and `route_evo_population=8`.
+- **Disclaimer [Experimental]:** Research prototype only. Graph shape, loss mix, and route-evolution behavior may change.
+
+### `jepa_semantic_hybrid` [Experimental]
+
+- **Preset:** `jepa_semantic_hybrid` [Experimental]
+- **Load in Python:** `from neuralfn.config import build_jepa_semantic_hybrid_spec`; then `spec = build_jepa_semantic_hybrid_spec(**kwargs)` and `build_gpt_root_graph(name=..., model_spec=spec)`.
+- **Load via MCP / server:** `load_gpt_template(name=..., preset="jepa_semantic_hybrid", config={...})` [Experimental].
+- **What it does [Experimental]:** Joint Embedding Predictive Architecture (JEPA) combined with a vocab-grounded semantic state, **LSH** bucketing, a fixed dimension-to-expert semantic router, and routed full-sequence attention experts. `sem_targets` are categorical topic IDs with ignore sentinels, not quantized semantic vectors.
+- **Disclaimer [Experimental]:** Research prototype only—APIs, graph shape, and training behavior may change without notice.

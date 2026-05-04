@@ -356,9 +356,15 @@ class NeuronGraph:
         def ports_compatible(current: list[Port], target: list[Port]) -> bool:
             if len(current) != len(target):
                 return False
+
+            def ranges_equal(a: tuple[float, float] | None, b: tuple[float, float] | None) -> bool:
+                if a is None or b is None:
+                    return a is b
+                return tuple(a) == tuple(b)
+
             return all(
                 left.name == right.name
-                and tuple(left.range) == tuple(right.range)
+                and ranges_equal(left.range, right.range)
                 and left.precision == right.precision
                 and left.dtype == right.dtype
                 for left, right in zip(current, target)
@@ -376,8 +382,14 @@ class NeuronGraph:
                     if not family or not version:
                         raise ValueError(f"Subgraph node '{ndef.name}' has an incomplete variant_ref")
                     resolved = clone_graph(resolve_variant_graph(family, version))
-                    expected_inputs = resolved.flattened_input_ports(ndef.input_aliases or None)
-                    expected_outputs = resolved.flattened_output_ports(ndef.output_aliases or None)
+                    try:
+                        expected_inputs = resolved.flattened_input_ports(ndef.input_aliases or None)
+                        expected_outputs = resolved.flattened_output_ports(ndef.output_aliases or None)
+                    except ValueError:
+                        if ndef.subgraph is not None:
+                            resolve_graph(ndef.subgraph)
+                            ndef.refresh_interface_ports()
+                        continue
                     inputs_ok = not ndef.input_ports or ports_compatible(ndef.input_ports, expected_inputs)
                     outputs_ok = not ndef.output_ports or ports_compatible(ndef.output_ports, expected_outputs)
                     if inputs_ok and outputs_ok:

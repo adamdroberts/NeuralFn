@@ -6,6 +6,7 @@ import math
 
 from .neuron import NeuronDef, module_neuron, neuron
 from .port import Port
+from .semantic import DEFAULT_SEMANTIC_VOCAB_REF, NUM_SEMANTIC_DIMS, NUM_VOCAB_DIMS
 from .torch_backend import (
     default_attention_config,
     default_fused_attention_config,
@@ -13,6 +14,7 @@ from .torch_backend import (
     default_kv_pca_config,
     default_kv_quant_unpack_config,
     default_linear_config,
+    default_loss_scale_config,
     default_lm_head_config,
     default_logit_softcap_config,
     default_merge_heads_config,
@@ -29,33 +31,49 @@ from .torch_backend import (
 )
 
 
+def _normalized_builtin_port(port: Port) -> Port:
+    keep_constraints = port.dtype in {"tokens", "bool"}
+    return Port(
+        name=port.name,
+        range=port.range if keep_constraints else None,
+        precision=port.precision if keep_constraints else None,
+        dtype=port.dtype,
+    )
+
+
+def _normalize_builtin_ports(*neurons: NeuronDef) -> None:
+    for neuron_def in neurons:
+        neuron_def.input_ports = [_normalized_builtin_port(port) for port in neuron_def.input_ports]
+        neuron_def.output_ports = [_normalized_builtin_port(port) for port in neuron_def.output_ports]
+
+
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(0, 1), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
 )
 def sigmoid(x):
     return 1.0 / (1.0 + math.exp(-x))
 
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(0, 10), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
 )
 def relu(x):
     return max(0.0, x)
 
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(-1, 1), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
 )
 def tanh_neuron(x):
     return math.tanh(x)
 
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(0, 1), precision=1.0)],
+    inputs=[Port("x")],
+    outputs=[Port("y", range=(0, 1), precision=1.0, dtype="bool")],
     name="threshold",
 )
 def threshold(x):
@@ -63,8 +81,8 @@ def threshold(x):
 
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(-10, 10), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="identity",
 )
 def identity(x):
@@ -72,8 +90,8 @@ def identity(x):
 
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(-10, 10), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="negate",
 )
 def negate(x):
@@ -81,11 +99,8 @@ def negate(x):
 
 
 @neuron(
-    inputs=[
-        Port("a", range=(-10, 10), precision=0.001),
-        Port("b", range=(-10, 10), precision=0.001),
-    ],
-    outputs=[Port("sum", range=(-20, 20), precision=0.001)],
+    inputs=[Port("a"), Port("b")],
+    outputs=[Port("sum")],
     name="add",
 )
 def add(a, b):
@@ -93,11 +108,8 @@ def add(a, b):
 
 
 @neuron(
-    inputs=[
-        Port("a", range=(-10, 10), precision=0.001),
-        Port("b", range=(-10, 10), precision=0.001),
-    ],
-    outputs=[Port("product", range=(-100, 100), precision=0.001)],
+    inputs=[Port("a"), Port("b")],
+    outputs=[Port("product")],
     name="multiply",
 )
 def multiply(a, b):
@@ -105,8 +117,8 @@ def multiply(a, b):
 
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(0, 10), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="gaussian",
 )
 def gaussian(x):
@@ -114,8 +126,8 @@ def gaussian(x):
 
 
 @neuron(
-    inputs=[Port("x", range=(0.001, 10), precision=0.001)],
-    outputs=[Port("y", range=(-5, 5), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="log",
 )
 def log_neuron(x):
@@ -125,8 +137,8 @@ def log_neuron(x):
 # ── ReLU variants ─────────────────────────────────────────────────────
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(-0.1, 10), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="leaky_relu",
 )
 def leaky_relu(x):
@@ -134,8 +146,8 @@ def leaky_relu(x):
 
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(-2.5, 10), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="prelu",
 )
 def prelu(x):
@@ -143,8 +155,8 @@ def prelu(x):
 
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(0, 6), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="relu6",
 )
 def relu6(x):
@@ -154,8 +166,8 @@ def relu6(x):
 # ── Exponential linear units ─────────────────────────────────────────
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(-1, 10), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="elu",
 )
 def elu(x):
@@ -167,8 +179,8 @@ _SELU_LAMBDA = 1.0507009873554805
 
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(-2, 20), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="selu",
 )
 def selu(x):
@@ -178,8 +190,8 @@ def selu(x):
 # ── Smooth alternatives ──────────────────────────────────────────────
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(-1, 10), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="gelu",
 )
 def gelu(x):
@@ -187,8 +199,8 @@ def gelu(x):
 
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(-1, 10), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="silu",
 )
 def silu(x):
@@ -196,8 +208,8 @@ def silu(x):
 
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(-1, 10), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="mish",
 )
 def mish(x):
@@ -208,8 +220,8 @@ def mish(x):
 # ── Classic smooth ────────────────────────────────────────────────────
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(0, 10), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="softplus",
 )
 def softplus(x):
@@ -217,8 +229,8 @@ def softplus(x):
 
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(-1, 1), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="softsign",
 )
 def softsign(x):
@@ -228,8 +240,8 @@ def softsign(x):
 # ── Hard approximations ──────────────────────────────────────────────
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(0, 1), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="hard_sigmoid",
 )
 def hard_sigmoid(x):
@@ -237,8 +249,8 @@ def hard_sigmoid(x):
 
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(-1, 1), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="hard_tanh",
 )
 def hard_tanh(x):
@@ -246,8 +258,8 @@ def hard_tanh(x):
 
 
 @neuron(
-    inputs=[Port("x", range=(-10, 10), precision=0.001)],
-    outputs=[Port("y", range=(-1, 10), precision=0.001)],
+    inputs=[Port("x")],
+    outputs=[Port("y")],
     name="hard_swish",
 )
 def hard_swish(x):
@@ -257,14 +269,8 @@ def hard_swish(x):
 # ── Output-layer activations ─────────────────────────────────────────
 
 @neuron(
-    inputs=[
-        Port("a", range=(-10, 10), precision=0.001),
-        Port("b", range=(-10, 10), precision=0.001),
-    ],
-    outputs=[
-        Port("p_a", range=(0, 1), precision=0.001),
-        Port("p_b", range=(0, 1), precision=0.001),
-    ],
+    inputs=[Port("a"), Port("b")],
+    outputs=[Port("p_a"), Port("p_b")],
     name="softmax_2",
 )
 def softmax_2(a, b):
@@ -276,14 +282,8 @@ def softmax_2(a, b):
 
 
 @neuron(
-    inputs=[
-        Port("a", range=(-10, 10), precision=0.001),
-        Port("b", range=(-10, 10), precision=0.001),
-    ],
-    outputs=[
-        Port("lp_a", range=(-20, 0), precision=0.001),
-        Port("lp_b", range=(-20, 0), precision=0.001),
-    ],
+    inputs=[Port("a"), Port("b")],
+    outputs=[Port("lp_a"), Port("lp_b")],
     name="logsoftmax_2",
 )
 def logsoftmax_2(a, b):
@@ -296,8 +296,8 @@ def logsoftmax_2(a, b):
 
 # passthrough nodes used as graph I/O terminals
 @neuron(
-    inputs=[Port("in", range=(-100, 100), precision=0.001)],
-    outputs=[Port("out", range=(-100, 100), precision=0.001)],
+    inputs=[Port("in")],
+    outputs=[Port("out")],
     name="input",
 )
 def input_node(x):
@@ -305,8 +305,8 @@ def input_node(x):
 
 
 @neuron(
-    inputs=[Port("in", range=(-100, 100), precision=0.001)],
-    outputs=[Port("out", range=(-100, 100), precision=0.001)],
+    inputs=[Port("in")],
+    outputs=[Port("out")],
     name="output",
 )
 def output_node(x):
@@ -620,7 +620,7 @@ topk_route_module = module_neuron(
         Port("weights", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
         Port("indices", range=(0, 100), precision=1.0, dtype="tensor"),
     ],
-    module_config={"top_k": 2},
+    module_config={"top_k": 2, "experts": 8},
 )
 
 expert_dispatch_module = module_neuron(
@@ -667,6 +667,14 @@ aux_loss_add_module = module_neuron(
     ],
     output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
     module_config={"coef": 0.01},
+)
+
+loss_scale_module = module_neuron(
+    name="loss_scale",
+    module_type="loss_scale",
+    input_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    output_ports=[Port("scaled_loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    module_config=default_loss_scale_config(),
 )
 
 dataset_source_module = module_neuron(
@@ -837,6 +845,496 @@ ttt_linear_module = module_neuron(
     module_config={"input_dim": 128, "output_dim": 128, "hidden_dim": 16},
 )
 
+semantic_data_source_module = module_neuron(
+    name="semantic_data_source",
+    module_type="semantic_data_source",
+    input_ports=[],
+    output_ports=[
+        Port("sem_targets", range=(-100, 65535), precision=1.0, dtype="tokens"),
+    ],
+    module_config={
+        "seq_len": NUM_SEMANTIC_DIMS,
+        "semantic_vocab_ref": DEFAULT_SEMANTIC_VOCAB_REF,
+        "emit_router_vecs": False,
+        "router_vec_dim": NUM_VOCAB_DIMS,
+    },
+)
+
+semantic_projector_module = module_neuron(
+    name="semantic_projector",
+    module_type="semantic_projector",
+    input_ports=[Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[
+        Port("semantic_vec", range=(-1, 1), precision=0.001, dtype="tensor"),
+        Port("residual", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("topic_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config={
+        "input_dim": 128,
+        "semantic_dim": NUM_SEMANTIC_DIMS,
+        "residual_dim": 64,
+        "n_sig_buckets": 4096,
+        "semantic_vocab_ref": DEFAULT_SEMANTIC_VOCAB_REF,
+    },
+)
+
+semantic_alignment_loss_module = module_neuron(
+    name="semantic_alignment_loss",
+    module_type="semantic_alignment_loss",
+    input_ports=[
+        Port("pred_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("target", range=(-100, 65535), precision=1.0, dtype="tokens"),
+    ],
+    output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    module_config={"ignore_index": -100, "semantic_vocab_ref": DEFAULT_SEMANTIC_VOCAB_REF},
+)
+
+semantic_hasher_module = module_neuron(
+    name="semantic_hasher",
+    module_type="semantic_hasher",
+    input_ports=[Port("semantic_vec", range=(-1, 1), precision=0.001, dtype="tensor")],
+    output_ports=[Port("bucket_indices", range=(0, 1_000_000), precision=1.0, dtype="tensor")],
+    module_config={"dim": NUM_SEMANTIC_DIMS, "tables": 8, "planes": 12, "seed": 42},
+)
+
+semantic_moe_router_module = module_neuron(
+    name="semantic_moe_router",
+    module_type="semantic_moe_router",
+    input_ports=[Port("semantic_vec", range=(-1, 1), precision=0.001, dtype="tensor")],
+    output_ports=[
+        Port("expert_weights", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("expert_indices", range=(0, 100), precision=1.0, dtype="tensor"),
+    ],
+    module_config={"n_experts": 32, "semantic_dim": NUM_SEMANTIC_DIMS, "top_k": 2},
+)
+
+semantic_hash_router_module = module_neuron(
+    name="semantic_hash_router",
+    module_type="semantic_hash_router",
+    input_ports=[
+        Port("semantic_vec", range=(-1, 1), precision=0.001, dtype="tensor"),
+        Port("bucket_indices", range=(0, 1_000_000), precision=1.0, dtype="tensor"),
+        Port("topic_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("sem_targets", range=(-100, 65535), precision=1.0, dtype="tokens"),
+    ],
+    output_ports=[
+        Port("expert_weights", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("expert_indices", range=(0, 100), precision=1.0, dtype="tensor"),
+    ],
+    module_config={
+        "n_experts": NUM_VOCAB_DIMS,
+        "semantic_dim": NUM_SEMANTIC_DIMS,
+        "top_k": 2,
+        "tables": 8,
+        "n_buckets": 4096,
+        "ignore_index": -100,
+        "semantic_vocab_ref": DEFAULT_SEMANTIC_VOCAB_REF,
+        "routing_source": "topic_logits",
+    },
+)
+
+causal_chunk_state_module = module_neuron(
+    name="causal_chunk_state",
+    module_type="causal_chunk_state",
+    input_ports=[Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("chunk_state", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"chunk_size": 32, "mode": "prefix"},
+)
+
+semantic_chunk_projector_module = module_neuron(
+    name="semantic_chunk_projector",
+    module_type="semantic_chunk_projector",
+    input_ports=[Port("chunk_state", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[
+        Port("semantic_vec", range=(-1, 1), precision=0.001, dtype="tensor"),
+        Port("residual", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("topic_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config={
+        "input_dim": 128,
+        "semantic_dim": NUM_SEMANTIC_DIMS,
+        "residual_dim": 64,
+        "n_sig_buckets": 4096,
+        "semantic_vocab_ref": DEFAULT_SEMANTIC_VOCAB_REF,
+    },
+)
+
+semantic_chunk_hasher_module = module_neuron(
+    name="semantic_chunk_hasher",
+    module_type="semantic_chunk_hasher",
+    input_ports=[Port("semantic_vec", range=(-1, 1), precision=0.001, dtype="tensor")],
+    output_ports=[Port("bucket_indices", range=(0, 1_000_000), precision=1.0, dtype="tensor")],
+    module_config={"dim": NUM_SEMANTIC_DIMS, "tables": 8, "planes": 12, "seed": 42},
+)
+
+semantic_moe_jepa_evo_router_module = module_neuron(
+    name="semantic_moe_jepa_evo_router",
+    module_type="semantic_moe_jepa_evo_router",
+    input_ports=[
+        Port("semantic_vec", range=(-1, 1), precision=0.001, dtype="tensor"),
+        Port("bucket_indices", range=(0, 1_000_000), precision=1.0, dtype="tensor"),
+        Port("topic_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("sem_targets", range=(-100, 65535), precision=1.0, dtype="tokens"),
+    ],
+    output_ports=[
+        Port("expert_weights", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("expert_indices", range=(0, 1000), precision=1.0, dtype="tensor"),
+        Port("route_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config={
+        "semantic_dim": NUM_SEMANTIC_DIMS,
+        "top_k": 2,
+        "shared_experts": 2,
+        "free_experts": 8,
+        "tables": 8,
+        "n_buckets": 4096,
+        "ignore_index": -100,
+        "semantic_vocab_ref": DEFAULT_SEMANTIC_VOCAB_REF,
+    },
+)
+
+broadcast_chunk_routes_module = module_neuron(
+    name="broadcast_chunk_routes",
+    module_type="broadcast_chunk_routes",
+    input_ports=[
+        Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("expert_weights", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("expert_indices", range=(0, 1000), precision=1.0, dtype="tensor"),
+    ],
+    output_ports=[
+        Port("routing_weights", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("routing_indices", range=(0, 1000), precision=1.0, dtype="tensor"),
+    ],
+    module_config={"chunk_size": 32},
+)
+
+route_balance_loss_module = module_neuron(
+    name="route_balance_loss",
+    module_type="route_balance_loss",
+    input_ports=[Port("route_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    module_config={},
+)
+
+route_selection_loss_module = module_neuron(
+    name="route_selection_loss",
+    module_type="route_selection_loss",
+    input_ports=[
+        Port("route_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("sem_targets", range=(-100, 65535), precision=1.0, dtype="tokens"),
+    ],
+    output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    module_config={"semantic_vocab_ref": DEFAULT_SEMANTIC_VOCAB_REF, "shared_experts": 2, "free_experts": 8, "ignore_index": -100},
+)
+
+route_distillation_loss_module = module_neuron(
+    name="route_distillation_loss",
+    module_type="route_distillation_loss",
+    input_ports=[
+        Port("student_route_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("target_topic_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    module_config={"semantic_vocab_ref": DEFAULT_SEMANTIC_VOCAB_REF, "shared_experts": 2, "free_experts": 8},
+)
+
+broadcast_expert_routes_module = module_neuron(
+    name="broadcast_expert_routes",
+    module_type="broadcast_expert_routes",
+    input_ports=[
+        Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("expert_weights", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("expert_indices", range=(0, 100), precision=1.0, dtype="tensor"),
+    ],
+    output_ports=[
+        Port("routing_weights", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("routing_indices", range=(0, 100), precision=1.0, dtype="tensor"),
+    ],
+    module_config={},
+)
+
+routed_attention_experts_module = module_neuron(
+    name="routed_attention_experts",
+    module_type="routed_attention_experts",
+    input_ports=[
+        Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("expert_weights", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("expert_indices", range=(0, 100), precision=1.0, dtype="tensor"),
+    ],
+    output_ports=[Port("hidden_out", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={
+        "model_dim": 128,
+        "num_heads": 4,
+        "num_kv_heads": 4,
+        "rope_base": 10000.0,
+        "qk_gain_init": 1.0,
+        "experts": NUM_VOCAB_DIMS,
+        "top_k": 2,
+        "is_causal": True,
+    },
+)
+
+attentionless_decoder_module = module_neuron(
+    name="attentionless_decoder",
+    module_type="attentionless_decoder",
+    input_ports=[
+        Port("bucket_indices", range=(0, 1_000_000), precision=1.0, dtype="tensor"),
+        Port("expert_output", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"semantic_dim": NUM_SEMANTIC_DIMS, "residual_dim": 64, "vocab_size": 256, "n_buckets": 256},
+)
+
+softmax_distillation_loss_module = module_neuron(
+    name="softmax_distillation_loss",
+    module_type="softmax_distillation_loss",
+    input_ports=[
+        Port("teacher_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("student_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    module_config={},
+)
+
+# ── Fine-tuning operators ─────────────────────────────────────────────
+# Parameter-efficient fine-tuning (LoRA, qLoRA), SFT, DPO, and RLHF/PPO.
+# These auto-populate the editor node library and are wired into graphs
+# by ``neuralfn/torch_templates.py`` via the ``adapter_type`` branch on
+# ``BlockSpec`` and the objective-aware root-graph builders.
+
+lora_linear_module = module_neuron(
+    name="lora_linear",
+    module_type="lora_linear",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={
+        "input_dim": 128,
+        "output_dim": 128,
+        "rank": 8,
+        "alpha": 16.0,
+        "dropout": 0.0,
+        "bias": False,
+        "merge_on_eval": False,
+    },
+)
+
+nf4_linear_module = module_neuron(
+    name="nf4_linear",
+    module_type="nf4_linear",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={
+        "input_dim": 128,
+        "output_dim": 128,
+        "rank": 8,
+        "alpha": 16.0,
+        "dropout": 0.0,
+        "bias": False,
+        "group_size": 64,
+        "compute_dtype": "bf16",
+    },
+)
+
+masked_token_cross_entropy_module = module_neuron(
+    name="masked_token_cross_entropy",
+    module_type="masked_token_cross_entropy",
+    input_ports=[
+        Port("logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("targets", range=(0, 65535), precision=1.0, dtype="tokens"),
+        Port("loss_mask", range=(0, 1), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    module_config={"ignore_index": -100},
+)
+
+reference_forward_module = module_neuron(
+    name="reference_forward",
+    module_type="reference_forward",
+    input_ports=[Port("tokens", range=(0, 65535), precision=1.0, dtype="tokens")],
+    output_ports=[Port("ref_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={
+        "ref_graph_path": "",
+        "ref_weights_path": "",
+        "vocab_size": 256,
+        "model_dim": 128,
+        "num_layers": 4,
+        "num_heads": 4,
+    },
+)
+
+sft_dataset_source_module = module_neuron(
+    name="sft_dataset_source",
+    module_type="sft_dataset_source",
+    input_ports=[],
+    output_ports=[
+        Port("tokens", range=(0, 65535), precision=1.0, dtype="tokens"),
+        Port("targets", range=(0, 65535), precision=1.0, dtype="tokens"),
+        Port("loss_mask", range=(0, 1), precision=0.001, dtype="tensor"),
+    ],
+    module_config={
+        "dataset_names": [],
+        "seq_len": 64,
+        "prompt_field": "prompt",
+        "response_field": "response",
+        "format": "chat",
+        "mask_prompt": True,
+    },
+)
+
+# DPO / reward-model operators --------------------------------------------------
+
+sequence_logp_module = module_neuron(
+    name="sequence_logp",
+    module_type="sequence_logp",
+    input_ports=[
+        Port("logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("targets", range=(0, 65535), precision=1.0, dtype="tokens"),
+        Port("loss_mask", range=(0, 1), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("logp", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"ignore_index": -100},
+)
+
+dpo_pairwise_loss_module = module_neuron(
+    name="dpo_pairwise_loss",
+    module_type="dpo_pairwise_loss",
+    input_ports=[
+        Port("policy_logp_chosen", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("policy_logp_rejected", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("ref_logp_chosen", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("ref_logp_rejected", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[
+        Port("loss", range=(0, 100), precision=0.0001, dtype="loss"),
+        Port("chosen_reward", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("rejected_reward", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config={"beta": 0.1, "label_smoothing": 0.0, "loss_type": "sigmoid"},
+)
+
+dpo_dataset_source_module = module_neuron(
+    name="dpo_dataset_source",
+    module_type="dpo_dataset_source",
+    input_ports=[],
+    output_ports=[
+        Port("tokens_chosen", range=(0, 65535), precision=1.0, dtype="tokens"),
+        Port("tokens_rejected", range=(0, 65535), precision=1.0, dtype="tokens"),
+        Port("targets_chosen", range=(0, 65535), precision=1.0, dtype="tokens"),
+        Port("targets_rejected", range=(0, 65535), precision=1.0, dtype="tokens"),
+        Port("mask_chosen", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("mask_rejected", range=(0, 1), precision=0.001, dtype="tensor"),
+    ],
+    module_config={
+        "dataset_names": [],
+        "seq_len": 64,
+        "prompt_field": "prompt",
+        "chosen_field": "chosen",
+        "rejected_field": "rejected",
+    },
+)
+
+reward_head_module = module_neuron(
+    name="reward_head",
+    module_type="reward_head",
+    input_ports=[Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("scalar", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"model_dim": 128, "pool": "last"},
+)
+
+preference_bce_loss_module = module_neuron(
+    name="preference_bce_loss",
+    module_type="preference_bce_loss",
+    input_ports=[
+        Port("reward_chosen", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("reward_rejected", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("loss", range=(0, 100), precision=0.0001, dtype="loss")],
+    module_config={},
+)
+
+# PPO operators ----------------------------------------------------------------
+
+value_head_module = module_neuron(
+    name="value_head",
+    module_type="value_head",
+    input_ports=[Port("hidden", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("value", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"model_dim": 128},
+)
+
+ppo_clipped_loss_module = module_neuron(
+    name="ppo_clipped_loss",
+    module_type="ppo_clipped_loss",
+    input_ports=[
+        Port("logp_new", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("logp_old", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("advantages", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("value_new", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("value_old", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("returns", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[
+        Port("policy_loss", range=(0, 100), precision=0.0001, dtype="tensor"),
+        Port("value_loss", range=(0, 100), precision=0.0001, dtype="tensor"),
+        Port("loss", range=(0, 100), precision=0.0001, dtype="loss"),
+    ],
+    module_config={"clip_range": 0.2, "vf_coef": 0.5, "ent_coef": 0.0},
+)
+
+kl_penalty_module = module_neuron(
+    name="kl_penalty",
+    module_type="kl_penalty",
+    input_ports=[
+        Port("logp_policy", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("logp_ref", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("rewards", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("shaped_rewards", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"kl_coef": 0.1},
+)
+
+reward_forward_module = module_neuron(
+    name="reward_forward",
+    module_type="reward_forward",
+    input_ports=[Port("tokens", range=(0, 65535), precision=1.0, dtype="tokens")],
+    output_ports=[Port("reward", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={
+        "reward_graph_path": "",
+        "reward_weights_path": "",
+        "model_dim": 128,
+    },
+)
+
+ppo_rollout_source_module = module_neuron(
+    name="ppo_rollout_source",
+    module_type="ppo_rollout_source",
+    input_ports=[],
+    output_ports=[
+        Port("tokens", range=(0, 65535), precision=1.0, dtype="tokens"),
+        Port("targets", range=(0, 65535), precision=1.0, dtype="tokens"),
+        Port("loss_mask", range=(0, 1), precision=0.001, dtype="tensor"),
+        Port("logp_old", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("value_old", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("advantages", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("returns", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config={"seq_len": 64, "rollout_length": 64},
+)
+
+gae_compute_module = module_neuron(
+    name="gae_compute",
+    module_type="gae_compute",
+    input_ports=[
+        Port("rewards", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("values", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[
+        Port("advantages", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("returns", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config={"gamma": 1.0, "lambda_": 0.95},
+)
+
 _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "sigmoid": sigmoid,
     "relu": relu,
@@ -899,6 +1397,7 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "expert_combine_module": expert_combine_module,
     "load_balance_loss_module": load_balance_loss_module,
     "aux_loss_add_module": aux_loss_add_module,
+    "loss_scale_module": loss_scale_module,
     "token_cross_entropy_module": token_cross_entropy_module,
     "dataset_source_module": dataset_source_module,
     "bitlinear_ternary_module": bitlinear_ternary_module,
@@ -918,7 +1417,43 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "act_weighted_sum_module": act_weighted_sum_module,
     "universal_transformer_module": universal_transformer_module,
     "ttt_linear_module": ttt_linear_module,
+    "semantic_data_source_module": semantic_data_source_module,
+    "semantic_projector_module": semantic_projector_module,
+    "semantic_alignment_loss_module": semantic_alignment_loss_module,
+    "semantic_hasher_module": semantic_hasher_module,
+    "semantic_moe_router_module": semantic_moe_router_module,
+    "semantic_hash_router_module": semantic_hash_router_module,
+    "causal_chunk_state_module": causal_chunk_state_module,
+    "semantic_chunk_projector_module": semantic_chunk_projector_module,
+    "semantic_chunk_hasher_module": semantic_chunk_hasher_module,
+    "semantic_moe_jepa_evo_router_module": semantic_moe_jepa_evo_router_module,
+    "broadcast_chunk_routes_module": broadcast_chunk_routes_module,
+    "route_balance_loss_module": route_balance_loss_module,
+    "route_selection_loss_module": route_selection_loss_module,
+    "route_distillation_loss_module": route_distillation_loss_module,
+    "broadcast_expert_routes_module": broadcast_expert_routes_module,
+    "routed_attention_experts_module": routed_attention_experts_module,
+    "attentionless_decoder_module": attentionless_decoder_module,
+    "softmax_distillation_loss_module": softmax_distillation_loss_module,
+    "lora_linear_module": lora_linear_module,
+    "nf4_linear_module": nf4_linear_module,
+    "masked_token_cross_entropy_module": masked_token_cross_entropy_module,
+    "reference_forward_module": reference_forward_module,
+    "sft_dataset_source_module": sft_dataset_source_module,
+    "sequence_logp_module": sequence_logp_module,
+    "dpo_pairwise_loss_module": dpo_pairwise_loss_module,
+    "dpo_dataset_source_module": dpo_dataset_source_module,
+    "reward_head_module": reward_head_module,
+    "preference_bce_loss_module": preference_bce_loss_module,
+    "value_head_module": value_head_module,
+    "ppo_clipped_loss_module": ppo_clipped_loss_module,
+    "kl_penalty_module": kl_penalty_module,
+    "reward_forward_module": reward_forward_module,
+    "ppo_rollout_source_module": ppo_rollout_source_module,
+    "gae_compute_module": gae_compute_module,
 }
+
+_normalize_builtin_ports(*_BUILTIN_ATTR_MAP.values())
 
 
 class BuiltinNeurons:
@@ -985,6 +1520,7 @@ class BuiltinNeurons:
     expert_combine_module = expert_combine_module
     load_balance_loss_module = load_balance_loss_module
     aux_loss_add_module = aux_loss_add_module
+    loss_scale_module = loss_scale_module
     token_cross_entropy_module = token_cross_entropy_module
     dataset_source_module = dataset_source_module
     bitlinear_ternary_module = bitlinear_ternary_module
@@ -1004,6 +1540,40 @@ class BuiltinNeurons:
     act_weighted_sum_module = act_weighted_sum_module
     universal_transformer_module = universal_transformer_module
     ttt_linear_module = ttt_linear_module
+    semantic_data_source_module = semantic_data_source_module
+    semantic_projector_module = semantic_projector_module
+    semantic_alignment_loss_module = semantic_alignment_loss_module
+    semantic_hasher_module = semantic_hasher_module
+    semantic_moe_router_module = semantic_moe_router_module
+    semantic_hash_router_module = semantic_hash_router_module
+    causal_chunk_state_module = causal_chunk_state_module
+    semantic_chunk_projector_module = semantic_chunk_projector_module
+    semantic_chunk_hasher_module = semantic_chunk_hasher_module
+    semantic_moe_jepa_evo_router_module = semantic_moe_jepa_evo_router_module
+    broadcast_chunk_routes_module = broadcast_chunk_routes_module
+    route_balance_loss_module = route_balance_loss_module
+    route_selection_loss_module = route_selection_loss_module
+    route_distillation_loss_module = route_distillation_loss_module
+    broadcast_expert_routes_module = broadcast_expert_routes_module
+    routed_attention_experts_module = routed_attention_experts_module
+    attentionless_decoder_module = attentionless_decoder_module
+    softmax_distillation_loss_module = softmax_distillation_loss_module
+    lora_linear_module = lora_linear_module
+    nf4_linear_module = nf4_linear_module
+    masked_token_cross_entropy_module = masked_token_cross_entropy_module
+    reference_forward_module = reference_forward_module
+    sft_dataset_source_module = sft_dataset_source_module
+    sequence_logp_module = sequence_logp_module
+    dpo_pairwise_loss_module = dpo_pairwise_loss_module
+    dpo_dataset_source_module = dpo_dataset_source_module
+    reward_head_module = reward_head_module
+    preference_bce_loss_module = preference_bce_loss_module
+    value_head_module = value_head_module
+    ppo_clipped_loss_module = ppo_clipped_loss_module
+    kl_penalty_module = kl_penalty_module
+    reward_forward_module = reward_forward_module
+    ppo_rollout_source_module = ppo_rollout_source_module
+    gae_compute_module = gae_compute_module
 
     @classmethod
     def all(cls) -> list[NeuronDef]:
@@ -1096,6 +1666,7 @@ __all__ = [
     "expert_combine_module",
     "load_balance_loss_module",
     "aux_loss_add_module",
+    "loss_scale_module",
     "token_cross_entropy_module",
     "dataset_source_module",
     "bitlinear_ternary_module",
@@ -1115,4 +1686,38 @@ __all__ = [
     "act_weighted_sum_module",
     "universal_transformer_module",
     "ttt_linear_module",
+    "semantic_data_source_module",
+    "semantic_projector_module",
+    "semantic_alignment_loss_module",
+    "semantic_hasher_module",
+    "semantic_moe_router_module",
+    "semantic_hash_router_module",
+    "causal_chunk_state_module",
+    "semantic_chunk_projector_module",
+    "semantic_chunk_hasher_module",
+    "semantic_moe_jepa_evo_router_module",
+    "broadcast_chunk_routes_module",
+    "route_balance_loss_module",
+    "route_selection_loss_module",
+    "route_distillation_loss_module",
+    "broadcast_expert_routes_module",
+    "routed_attention_experts_module",
+    "attentionless_decoder_module",
+    "softmax_distillation_loss_module",
+    "lora_linear_module",
+    "nf4_linear_module",
+    "masked_token_cross_entropy_module",
+    "reference_forward_module",
+    "sft_dataset_source_module",
+    "sequence_logp_module",
+    "dpo_pairwise_loss_module",
+    "dpo_dataset_source_module",
+    "reward_head_module",
+    "preference_bce_loss_module",
+    "value_head_module",
+    "ppo_clipped_loss_module",
+    "kl_penalty_module",
+    "reward_forward_module",
+    "ppo_rollout_source_module",
+    "gae_compute_module",
 ]

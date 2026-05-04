@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
+import ChatPanel from "../components/ChatPanel";
 import CodePanel from "../components/CodePanel";
 import GraphCanvas from "../components/GraphCanvas";
 import LibraryPanel from "../components/LibraryPanel";
@@ -118,10 +119,11 @@ export default function EditorPage() {
           {statusText}
         </div>
         <Toolbar />
-        <div className="flex flex-1 min-h-0">
+        <div className="flex flex-1 min-h-0 relative">
           <LibraryPanel />
           <GraphCanvas />
           <CodePanel />
+          <ChatPanel />
         </div>
         <TrainingPanel />
       </div>

@@ -37,37 +37,53 @@ export default function PortConfig({ node }: Props) {
             <input
               type="number"
               className="w-14 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200"
-              value={p.range[0]}
+              value={p.range ? p.range[0] : ""}
               step={0.1}
-              onChange={(e) =>
-                updatePort(kind, i, {
-                  range: [parseFloat(e.target.value) || 0, p.range[1]],
-                })
-              }
+              placeholder="lo"
+              title="lower bound (blank = unbounded)"
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === "") {
+                  updatePort(kind, i, { range: null });
+                } else {
+                  const lo = parseFloat(raw) || 0;
+                  const hi = p.range ? p.range[1] : lo + 1;
+                  updatePort(kind, i, { range: [lo, hi] });
+                }
+              }}
             />
             <span className="text-gray-600">..</span>
             <input
               type="number"
               className="w-14 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200"
-              value={p.range[1]}
+              value={p.range ? p.range[1] : ""}
               step={0.1}
-              onChange={(e) =>
-                updatePort(kind, i, {
-                  range: [p.range[0], parseFloat(e.target.value) || 0],
-                })
-              }
+              placeholder="hi"
+              title="upper bound (blank = unbounded)"
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === "") {
+                  updatePort(kind, i, { range: null });
+                } else {
+                  const hi = parseFloat(raw) || 0;
+                  const lo = p.range ? p.range[0] : hi - 1;
+                  updatePort(kind, i, { range: [lo, hi] });
+                }
+              }}
             />
             <input
               type="number"
               className="w-14 bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-gray-200"
-              value={p.precision}
+              value={p.precision ?? ""}
               step={0.001}
-              title="precision"
-              onChange={(e) =>
+              title="precision (blank = unquantized)"
+              placeholder="none"
+              onChange={(e) => {
+                const raw = e.target.value;
                 updatePort(kind, i, {
-                  precision: parseFloat(e.target.value) || 0.001,
-                })
-              }
+                  precision: raw === "" ? null : parseFloat(raw),
+                });
+              }}
             />
           </div>
         ))}

@@ -49,16 +49,34 @@ const DESCRIPTIONS: Record<string, string> = {
   lm_head: "Untied language-model head",
   logit_softcap: "Softcap the logits before loss",
   token_cross_entropy: "Token cross-entropy loss stage",
+  // ── Fine-tuning operators ─────────────────────────────────────────
+  lora_linear: "LoRA linear: frozen base weight + trainable low-rank delta",
+  nf4_linear: "qLoRA linear: nf4-packed base weight + trainable LoRA delta",
+  masked_token_cross_entropy: "Response-only cross-entropy (SFT loss with prompt mask)",
+  reference_forward: "Frozen reference model forward (DPO / RLHF ref logits)",
+  sft_dataset_source: "SFT data source: (tokens, targets, loss_mask) triples",
+  sequence_logp: "Sum of target logprobs under logits, masked per-token",
+  dpo_pairwise_loss: "Direct Preference Optimization loss (sigmoid/hinge/ipo)",
+  dpo_dataset_source: "DPO pair source: (chosen, rejected) × (tokens, targets, mask)",
+  reward_head: "Scalar reward head (linear-to-1 pooled over the sequence)",
+  preference_bce_loss: "Bradley-Terry preference loss for reward-model training",
+  value_head: "Per-token value head for PPO critic",
+  ppo_clipped_loss: "PPO clipped policy-and-value loss",
+  kl_penalty: "Shapes rewards with a KL penalty against the reference model",
+  reward_forward: "Frozen reward-model forward (PPO)",
+  ppo_rollout_source: "Rollout buffer source emitted by PPOTrainer",
+  gae_compute: "Generalized Advantage Estimation over a rollout",
 };
 
 export default function Toolbar() {
+  const projectId = useGraphStore((state) => state.projectId);
+  const sessionId = useGraphStore((state) => state.sessionId);
+  const hydrateSession = useGraphStore((state) => state.hydrateSession);
   const builtins = useGraphStore((state) => state.builtins);
   const setBuiltins = useGraphStore((state) => state.setBuiltins);
   const addBuiltinNode = useGraphStore((state) => state.addBuiltinNode);
   const addCustomNode = useGraphStore((state) => state.addCustomNode);
   const addSubgraphNode = useGraphStore((state) => state.addSubgraphNode);
-  const updateActiveGraphSettings = useGraphStore((state) => state.updateActiveGraphSettings);
-  const mergeVariantLibrary = useGraphStore((state) => state.mergeVariantLibrary);
   const rootGraph = useGraphStore((state) => state.rootGraph);
   const breadcrumbs = useGraphStore(selectBreadcrumbs);
   const setPath = useGraphStore((state) => state.setPath);
@@ -85,8 +103,8 @@ export default function Toolbar() {
         id: "override-" + Date.now().toString(36),
         name: "override",
         kind: "function",
-        input_ports: [{ name: "x", range: [-1, 1], precision: 0.1, dtype: "float" }],
-        output_ports: [{ name: "y", range: [-1, 1], precision: 0.1, dtype: "float" }],
+        input_ports: [{ name: "x", range: null, precision: null, dtype: "float" }],
+        output_ports: [{ name: "y", range: null, precision: null, dtype: "float" }],
         source_code: "def override(x):\n    return 0.0\n",
         subgraph: null,
         module_type: "",
@@ -106,12 +124,33 @@ export default function Toolbar() {
   const [gptType, setGptType] = useState("nanogpt");
 
   const onAddGPT = useCallback(() => {
+    if (projectId && sessionId) {
+      api.applyGPTTemplate(projectId, sessionId, { name: "gpt", config: { preset: gptType } })
+        .then((detail) => {
+          hydrateSession({
+            projectId,
+            sessionId,
+            graph: detail.graph,
+            revision: detail.revision,
+          });
+        })
+        .catch(() => {});
+      return;
+    }
+
+    // Fallback for non-session contexts: preview payload + local insertion.
     api.buildGPTTemplate({ name: "gpt", config: { preset: gptType } }).then((template) => {
-      mergeVariantLibrary(template.variant_library);
-      updateActiveGraphSettings(template.graph_settings);
       addBuiltinNode(template.node_def);
+      if (template.extra_nodes?.length) {
+        for (const node of template.extra_nodes) {
+          addBuiltinNode(node.neuron_def, {
+            x: node.position?.[0] ?? 0,
+            y: node.position?.[1] ?? 0,
+          });
+        }
+      }
     }).catch(() => {});
-  }, [addBuiltinNode, mergeVariantLibrary, updateActiveGraphSettings, gptType]);
+  }, [addBuiltinNode, gptType, hydrateSession, projectId, sessionId]);
 
   const onSave = useCallback(() => {
     const data = JSON.stringify(rootGraph, null, 2);
@@ -197,6 +236,11 @@ export default function Toolbar() {
             <option value="llm_jepa">LLM JEPA</option>
             <option value="hnet_lm">H-Net LM</option>
             <option value="universal_llama">Universal LLaMA</option>
+            <option value="llama_megakernel">LLaMA Megakernel</option>
+            <option value="kv_pca_llama">KV PCA LLaMA</option>
+            <option value="jepa_semantic_hybrid">JEPA Semantic Hybrid</option>
+            <option value="semantic_router_moe">Semantic Router MoE</option>
+            <option value="semantic_moe_jepa_evo">Semantic MoE JEPA Evo</option>
           </select>
         </div>
 

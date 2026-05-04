@@ -20,7 +20,7 @@ from ..db import get_session_factory
 from ..db_models import EditorSession, TrainingRun, User, ensure_utc, utcnow
 from ..models import TrainRequest
 from .dataset_service import get_dataset_service
-from .graph_ops import find_attached_dataset_config
+from .graph_ops import find_attached_dataset_config, find_attached_text_dataset_config
 from .live_state import get_live_state_store
 from .session_service import get_workspace_service
 
@@ -127,17 +127,18 @@ class RunService:
     ) -> tuple[list[str], int]:
         dataset_names = [name for name in list(body.dataset_names or []) if name]
         if not dataset_names:
-            dataset_cfg = find_attached_dataset_config(graph) or {}
+            dataset_cfg = find_attached_text_dataset_config(graph) or find_attached_dataset_config(graph) or {}
             dataset_names = [name for name in list(dataset_cfg.get("dataset_names") or []) if name]
             seq_len = int(body.seq_len or dataset_cfg.get("seq_len") or 64)
         else:
             seq_len = int(body.seq_len or 64)
-        if dataset_names:
+        real_ds = [name for name in dataset_names if name != "__semantic_builtin__"]
+        if real_ds:
             self._datasets.ensure_dataset_access(
                 db,
                 user,
                 project_id=project_id,
-                dataset_names=dataset_names,
+                dataset_names=real_ds,
             )
         return dataset_names, seq_len
 
@@ -367,23 +368,39 @@ class RunService:
                 raise ValueError("A training run is already active for this session")
 
         graph = NeuronGraph.from_dict(bundle.graph_state.graph)
-        
+
+        # Fine-tuning: attach finetune_spec to torch_config so TorchTrainer's
+        # pre-train hook loads the base checkpoint and freezes non-LoRA params
+        # before optimizer construction.
+        if body.training_mode and body.training_mode != "pretrain":
+            ft_cfg = body.finetune_config.model_dump() if body.finetune_config is not None else {}
+            graph.torch_config["finetune_spec"] = {
+                "objective": body.training_mode,
+                "base_checkpoint": body.base_checkpoint_path or "",
+                "ref_checkpoint": body.ref_checkpoint_path or "",
+                "reward_checkpoint": body.reward_checkpoint_path or "",
+                "adapter_only_save": bool(body.adapter_only_save),
+                **ft_cfg,
+            }
+
         use_torch = (
             body.method == "torch"
             or graph.training_method == "torch"
             or graph.runtime == "torch"
             or graph.has_module_nodes()
+            or (body.training_mode or "pretrain") != "pretrain"
         )
         
         # Optimization: Don't load full dataset into memory if we are using TorchTrainer
         # and there is an attached dataset_source node.
-        attached_ds_cfg = find_attached_dataset_config(graph)
+        attached_ds_cfg = find_attached_text_dataset_config(graph) or find_attached_dataset_config(graph)
         if use_torch and attached_ds_cfg and not body.dataset_names:
             train_in, train_tgt = np.array([]), np.array([])
             dataset_names = attached_ds_cfg.get("dataset_names", [])
             seq_len = int(body.seq_len or attached_ds_cfg.get("seq_len") or 64)
-            # Just ensure access
-            self._datasets.ensure_dataset_access(db, user, project_id=project_id, dataset_names=dataset_names)
+            real_ds = [n for n in dataset_names if n != "__semantic_builtin__"]
+            if real_ds:
+                self._datasets.ensure_dataset_access(db, user, project_id=project_id, dataset_names=real_ds)
         else:
             train_in, train_tgt, dataset_names, seq_len = self._load_training_arrays(
                 db,
@@ -504,10 +521,48 @@ class RunService:
             handle.trainer = trainer
             trainer.train(train_in, train_tgt, on_epoch=on_progress)
 
+        def run_ppo() -> None:
+            from neuralfn.torch_backend import PPOTrainer
+            ft_cfg = body.finetune_config.model_dump() if body.finetune_config is not None else {}
+            cfg = TorchTrainConfig(
+                learning_rate=body.learning_rate,
+                epochs=body.epochs,
+                batch_size=body.batch_size,
+                weight_decay=body.weight_decay,
+                device=str(graph.torch_config.get("device", "cuda")),
+                amp_dtype=str(graph.torch_config.get("amp_dtype", "bfloat16")),
+                max_steps=int(body.epochs),
+            )
+            trainer = PPOTrainer(
+                graph,
+                cfg,
+                rollout_length=int(ft_cfg.get("rollout_length", 64)),
+                ppo_epochs_per_rollout=int(ft_cfg.get("ppo_epochs_per_rollout", 4)),
+                ppo_minibatch_size=int(ft_cfg.get("ppo_minibatch_size", 4)),
+                gae_gamma=float(ft_cfg.get("gae_gamma", 1.0)),
+                gae_lambda=float(ft_cfg.get("gae_lambda", 0.95)),
+                kl_coef=float(ft_cfg.get("kl_coef", 0.1)),
+            )
+            handle.trainer = trainer
+            # Trainer expects a list of prompt batches. When caller provides
+            # train_inputs we use those as prompts; otherwise the graph must
+            # carry a dataset_source whose prompts the trainer reads.
+            import torch as _torch
+            if len(train_in) > 0:
+                prompts = _torch.as_tensor(train_in, dtype=_torch.long)
+                trainer.train([prompts], on_step=lambda info: on_hybrid_progress(info))
+            else:
+                trainer.train([_torch.zeros(1, 4, dtype=_torch.long)], on_step=lambda info: on_hybrid_progress(info))
+
+        is_ppo = body.training_mode == "ppo"
+
         target = (
-            run_torch
-            if use_torch
-            else (run_surrogate if use_legacy and body.method == "surrogate" else run_evolutionary if use_legacy else run_hybrid)
+            run_ppo if is_ppo
+            else (
+                run_torch
+                if use_torch
+                else (run_surrogate if use_legacy and body.method == "surrogate" else run_evolutionary if use_legacy else run_hybrid)
+            )
         )
 
         def runner() -> None:
