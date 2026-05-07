@@ -81,7 +81,10 @@ The graph has `runtime="torch"`, `training_method="torch"`, and a populated `var
 | `diffusion` | Discrete diffusion | Diffusion objective with denoising head |
 | `ttt_llama` | TTT-Linear | Test-time training attention replacement |
 | `llm_jepa` | LLM-JEPA | JEPA with EMA target encoder |
+| `dense_jepa_evo` | Dense JEPA Evo | Non-semantic AR+JEPA control with dense FFNs |
+| `moe_jepa_evo` | MoE JEPA Evo | Non-semantic AR+JEPA control with standard MoE routing |
 | `semantic_router_moe` | Semantic Router MoE | AR-only semantic router control with shared routed MoE blocks |
+| `semantic_dense_jepa_evo` | Semantic Dense JEPA Evo | Chunk-level semantic planner, dense FFNs, JEPA supervision, no route evolution |
 | `semantic_moe_jepa_evo` | Semantic MoE JEPA Evo | Chunk-level semantic router, shared/semantic/free experts, JEPA supervision, route evolution |
 | `hnet_lm` | H-Net | Raw byte input, byte patch embedding |
 | `universal_llama` | Universal TX | ACT-based adaptive recurrence |
@@ -124,7 +127,7 @@ stage_graph = build_model_stage_graph("model_stage", spec)
 payload = build_gpt_template_payload("my_model", {"preset": "llama", "n_layer": 6, "n_embd": 256})
 ```
 
-Spec builders: `build_nanogpt_spec`, `build_nanogpt_megakernel_spec`, `build_gpt2_spec`, `build_gpt2_megakernel_spec`, `build_llama_spec`, `build_mixllama_spec`, `build_llama_fast_spec`, `build_llama_fast_megakernel_spec`, `build_mixllama_fast_spec`, `build_mixllama_fast_megakernel_spec`, `build_jamba_hybrid_spec`, `build_ternary_b158_spec`, `build_decoder2encoder_moe_spec`, `build_diffllama_spec`, `build_ttt_llama_spec`, `build_llm_jepa_spec`, `build_semantic_router_moe_spec`, `build_semantic_router_moe_megakernel_spec`, `build_jepa_semantic_hybrid_spec`, `build_jepa_semantic_hybrid_megakernel_spec`, `build_semantic_moe_jepa_evo_spec`, `build_hnet_lm_spec`, `build_universal_llama_spec`, `build_llama_megakernel_spec`, `build_kv_pca_llama_spec`, and `build_composed_lm_spec`.
+Spec builders: `build_nanogpt_spec`, `build_nanogpt_megakernel_spec`, `build_gpt2_spec`, `build_gpt2_megakernel_spec`, `build_llama_spec`, `build_mixllama_spec`, `build_llama_fast_spec`, `build_llama_fast_megakernel_spec`, `build_mixllama_fast_spec`, `build_mixllama_fast_megakernel_spec`, `build_jamba_hybrid_spec`, `build_ternary_b158_spec`, `build_decoder2encoder_moe_spec`, `build_diffllama_spec`, `build_ttt_llama_spec`, `build_llm_jepa_spec`, `build_dense_jepa_evo_spec`, `build_moe_jepa_evo_spec`, `build_semantic_router_moe_spec`, `build_semantic_router_moe_megakernel_spec`, `build_jepa_semantic_hybrid_spec`, `build_jepa_semantic_hybrid_megakernel_spec`, `build_semantic_dense_jepa_evo_spec`, `build_semantic_moe_jepa_evo_spec`, `build_hnet_lm_spec`, `build_universal_llama_spec`, `build_llama_megakernel_spec`, `build_kv_pca_llama_spec`, and `build_composed_lm_spec`.
 
 ## TorchTrainConfig
 
@@ -224,6 +227,15 @@ Works with graphs that have `kv_cache_read` / `kv_cache_write` nodes. For traini
 - **What it does [Experimental]:** Full Semantic MoE JEPA Evo architecture. Dense causal attention stays on the AR path; a prefix-safe chunk planner predicts semantic latents and route distributions; routes combine always-on shared experts, semantic-vocabulary experts, and free learned experts; and the trainer can periodically evolve route bias/table state.
 - **Config rules [Experimental]:** `experts` must equal `semantic_shared_experts + NUM_VOCAB_DIMS + semantic_free_experts`. Defaults are `route_chunk_size=32`, `semantic_shared_experts=2`, `semantic_free_experts=8`, `route_evo_fraction=0.10`, and `route_evo_population=8`.
 - **Disclaimer [Experimental]:** Research prototype only. Graph shape, loss mix, and route-evolution behavior may change.
+
+### `semantic_dense_jepa_evo` [Experimental]
+
+- **Preset:** `semantic_dense_jepa_evo` [Experimental]
+- **Load in Python:** `from neuralfn.config import build_semantic_dense_jepa_evo_spec`; then `spec = build_semantic_dense_jepa_evo_spec(**kwargs)` and `build_gpt_root_graph(name=..., model_spec=spec)`.
+- **Load via MCP / server:** `load_gpt_template(name=..., preset="semantic_dense_jepa_evo", config={...})` [Experimental].
+- **What it does [Experimental]:** Dense control for the Semantic JEPA Evo architecture. It keeps the prefix-safe chunk planner, JEPA target supervision, AR CE, JEPA latent alignment, and semantic-alignment losses, but uses dense LLaMA FFNs with no expert dispatch, route losses, or route-evolution loop.
+- **Config rules [Experimental]:** `route_chunk_size` controls planner chunk boundaries. Expert-count and route-evolution fields are ignored by the dense decoder path.
+- **Disclaimer [Experimental]:** Dense comparison/control preset only. Graph layout and tuning knobs may change.
 
 ### `jepa_semantic_hybrid` [Experimental]
 

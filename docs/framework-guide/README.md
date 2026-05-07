@@ -12,7 +12,7 @@ This guide walks through the core concepts with runnable Python examples. It ass
 | [Building Graphs](building-graphs.md) | `NeuronGraph` construction, adding nodes and edges, execution, tracing, topology queries, cyclic graphs, edge parameters, and serialization. Full XOR walkthrough. |
 | [Subgraphs and Variants](subgraphs-and-variants.md) | Nested graphs, port aliasing, the variant library, variant references, resolution and fallback behavior, family aliases. |
 | [Torch Models](torch-models.md) | Module neurons, built-in module types, `CompiledTorchGraph`, and building tensor-native graphs by hand. |
-| [Templates and Presets](templates-and-presets.md) | `ModelSpec` / `BlockSpec` / `TemplateSpec`, the 16 shipped presets, config keys, and building custom model variants. |
+| [Templates and Presets](templates-and-presets.md) | `ModelSpec` / `BlockSpec` / `TemplateSpec`, architecture diagrams for shipped GPT presets, config keys, and building custom model variants. |
 | [Training Workflows](training-workflows.md) | Surrogate, evolutionary, hybrid, and torch training with complete examples and config references. |
 | [Inference and Export](inference-and-export.md) | Weight export/import, quantized checkpoints, and autoregressive generation with `InferenceCache`. |
 | [Datasets](datasets.md) | Dataset management, HuggingFace downloads, upload, the `dataset_source` node, role adaptation by template shape, and byte-level paths. |

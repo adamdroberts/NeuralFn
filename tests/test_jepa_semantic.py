@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from neuralfn.config import (
     build_jepa_semantic_hybrid_spec,
+    build_semantic_dense_jepa_evo_spec,
     build_semantic_moe_jepa_evo_spec,
     build_semantic_router_moe_megakernel_spec,
     build_semantic_router_moe_spec,
@@ -93,6 +94,14 @@ def _tiny_evo_kwargs() -> dict:
     kwargs["route_chunk_size"] = 4
     kwargs["route_evo_population"] = 2
     kwargs["route_evo_fraction"] = 1.0
+    return kwargs
+
+
+def _tiny_dense_evo_kwargs() -> dict:
+    kwargs = dict(_tiny_kwargs())
+    kwargs.pop("experts", None)
+    kwargs.pop("top_k", None)
+    kwargs["route_chunk_size"] = 4
     return kwargs
 
 
@@ -492,12 +501,27 @@ def test_semantic_moe_jepa_evo_spec_defaults() -> None:
     assert spec.block_spec.top_k == 2
 
 
+def test_semantic_dense_jepa_evo_spec_defaults() -> None:
+    spec = build_semantic_dense_jepa_evo_spec(**_tiny_dense_evo_kwargs(), vocab_size=128)
+    assert spec.template.objective == "semantic_dense_jepa_evo"
+    assert spec.template.router_mode == "semantic"
+    assert spec.template.sparsity == "dense"
+    assert spec.route_chunk_size == 4
+    assert spec.route_evo_enabled is False
+    assert spec.block_spec.mlp_type == "swiglu"
+    assert spec.block_spec.experts is None
+    assert spec.block_spec.top_k is None
+
+
 def test_semantic_preset_preview_defaults_use_vocab_expert_count() -> None:
     jepa_spec = build_model_spec_from_config({"preset": "jepa_semantic_hybrid"}, preview_defaults=True)
     router_spec = build_model_spec_from_config({"preset": "semantic_router_moe"}, preview_defaults=True)
+    dense_evo_spec = build_model_spec_from_config({"preset": "semantic_dense_jepa_evo"}, preview_defaults=True)
     evo_spec = build_model_spec_from_config({"preset": "semantic_moe_jepa_evo"}, preview_defaults=True)
     assert jepa_spec.block_spec.experts == NUM_VOCAB_DIMS
     assert router_spec.block_spec.experts == NUM_VOCAB_DIMS
+    assert dense_evo_spec.block_spec.experts is None
+    assert dense_evo_spec.route_chunk_size == 32
     assert evo_spec.block_spec.experts == 2 + NUM_VOCAB_DIMS + 8
 
 
@@ -521,6 +545,12 @@ def test_semantic_moe_jepa_evo_payload() -> None:
     assert isinstance(payload["variant_library"], dict)
 
 
+def test_semantic_dense_jepa_evo_payload() -> None:
+    payload = build_gpt_template_payload(name="sdje_payload", config={"preset": "semantic_dense_jepa_evo"})
+    assert payload["node_def"]["kind"] == "subgraph"
+    assert isinstance(payload["variant_library"], dict)
+
+
 def test_jepa_semantic_hybrid_resolve_variants() -> None:
     spec = build_model_spec_from_config(
         {"preset": "jepa_semantic_hybrid", **_tiny_kwargs()}, preview_defaults=True
@@ -535,6 +565,95 @@ def test_semantic_router_moe_resolve_variants() -> None:
     )
     graph = build_gpt_root_graph(name="srm_resolve", model_spec=spec)
     graph.resolve_variant_library()
+
+
+def test_semantic_dense_jepa_evo_compile_and_forward() -> None:
+    spec = build_model_spec_from_config(
+        {"preset": "semantic_dense_jepa_evo", "vocab_size": 256, **_tiny_dense_evo_kwargs()},
+        preview_defaults=True,
+    )
+    graph = _cpu_graph(build_gpt_root_graph(name="sdje_fwd", model_spec=spec))
+    compiled = CompiledTorchGraph(graph)
+    tokens = torch.randint(0, 256, (2, 9))
+    targets = torch.randint(0, 256, (2, 9))
+    _ids, sem_array = load_training_targets(n=2, active_dims=2)
+    sem_targets = torch.from_numpy(sem_array)
+    outputs = compiled(tokens, targets, sem_targets)
+    assert len(outputs) >= 1
+    assert outputs[0].ndim == 0
+
+
+def test_semantic_dense_jepa_evo_graph_uses_dense_decoder_without_route_nodes() -> None:
+    spec = build_model_spec_from_config(
+        {"preset": "semantic_dense_jepa_evo", "vocab_size": 128, **_tiny_dense_evo_kwargs()},
+        preview_defaults=True,
+    )
+    graph = build_gpt_root_graph(name="sdje_structure", model_spec=spec)
+    assert graph.input_node_ids == ["dataset_source", "semantic_data_source"]
+    assert graph.output_node_ids == ["loss_out"]
+    assert "semantic_dense_jepa_evo_block" in graph.variant_library
+    assert "semantic_router_mlp" not in graph.variant_library
+
+    model = graph.nodes["model"].neuron_def.subgraph
+    assert model is not None
+    module_types = {
+        getattr(node.neuron_def, "module_type", "")
+        for node in model.nodes.values()
+    }
+    assert "causal_chunk_state" in module_types
+    assert "semantic_chunk_projector" in module_types
+    assert "jepa_predictor" in module_types
+    assert "semantic_alignment_loss" in module_types
+    assert "semantic_moe_jepa_evo_router" not in module_types
+    assert "broadcast_chunk_routes" not in module_types
+    assert "route_balance_loss" not in module_types
+    assert "route_selection_loss" not in module_types
+    assert "route_distillation_loss" not in module_types
+
+    block = graph.variant_library["semantic_dense_jepa_evo_block"]["default"]
+    assert block.nodes["mlp"].neuron_def.variant_ref == {
+        "family": "semantic_dense_mlp",
+        "version": "default",
+    }
+
+
+def test_semantic_moe_jepa_evo_graph_matches_chunk_routed_architecture() -> None:
+    spec = build_model_spec_from_config(
+        {"preset": "semantic_moe_jepa_evo", "vocab_size": 128, **_tiny_evo_kwargs()},
+        preview_defaults=True,
+    )
+    graph = build_gpt_root_graph(name="smje_structure", model_spec=spec)
+    assert graph.input_node_ids == ["dataset_source", "semantic_data_source"]
+    assert graph.output_node_ids == ["loss_out"]
+    assert "semantic_moe_jepa_evo_block" in graph.variant_library
+    assert "semantic_router_mlp" in graph.variant_library
+
+    model = graph.nodes["model"].neuron_def.subgraph
+    assert model is not None
+    module_types = {
+        getattr(node.neuron_def, "module_type", "")
+        for node in model.nodes.values()
+    }
+    for expected in {
+        "causal_chunk_state",
+        "semantic_chunk_projector",
+        "semantic_chunk_hasher",
+        "semantic_moe_jepa_evo_router",
+        "broadcast_chunk_routes",
+        "jepa_predictor",
+        "semantic_alignment_loss",
+        "route_balance_loss",
+        "route_selection_loss",
+        "route_distillation_loss",
+    }:
+        assert expected in module_types
+
+    mlp = graph.variant_library["semantic_router_mlp"]["default"]
+    mlp_module_types = {
+        getattr(node.neuron_def, "module_type", "")
+        for node in mlp.nodes.values()
+    }
+    assert {"expert_dispatch", "expert_combine"} <= mlp_module_types
 
 
 def test_semantic_moe_jepa_evo_compile_and_forward() -> None:

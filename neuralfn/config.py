@@ -11,6 +11,7 @@ ObjectiveType = Literal[
     "jepa_semantic",
     "semantic_router",
     "semantic_router_jepa",
+    "semantic_dense_jepa_evo",
     "semantic_moe_jepa_evo",
     "seq2seq",
     "sft",
@@ -669,6 +670,74 @@ def build_llm_jepa_spec(**kwargs: Any) -> ModelSpec:
     )
 
 
+def build_dense_jepa_evo_spec(**kwargs: Any) -> ModelSpec:
+    """Experimental: dense autoregressive decoder with JEPA target supervision."""
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(
+            objective="ar_jepa",
+            backbone="llama",
+            tokenization="sp",
+            sparsity="dense",
+            router_mode="none",
+            compression="none",
+            adapter="none",
+            runtime="compile",
+        ),
+        block_spec=BlockSpec(
+            family="llama",
+            norm_type="rmsnorm",
+            mlp_type="swiglu",
+            pos_encoding="rope",
+            linear_bias=False,
+            dropout_p=0.0,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            multiple_of=kwargs.get("multiple_of", 256),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+            attention_backend="sdpa",
+            rope_theta=kwargs.get("rope_base", kwargs.get("rope_theta", 10000.0)),
+            qk_gain_init=kwargs.get("qk_gain_init", 1.0),
+        ),
+        default_tie_embeddings=False,
+    )
+
+
+def build_moe_jepa_evo_spec(**kwargs: Any) -> ModelSpec:
+    """Experimental: standard MoE autoregressive decoder with JEPA target supervision."""
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(
+            objective="ar_jepa",
+            backbone="mixllama",
+            tokenization="sp",
+            sparsity="moe",
+            router_mode="standard",
+            compression="none",
+            adapter="none",
+            runtime="compile",
+        ),
+        block_spec=BlockSpec(
+            family="mixllama",
+            norm_type="rmsnorm",
+            mlp_type="moe",
+            pos_encoding="rope",
+            linear_bias=False,
+            dropout_p=0.0,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            experts=int(kwargs.get("experts", 8)),
+            top_k=int(kwargs.get("top_k", 2)),
+            router_aux_loss_coef=float(kwargs.get("router_aux_loss_coef", 0.01)),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+            attention_backend="sdpa",
+            rope_theta=kwargs.get("rope_base", kwargs.get("rope_theta", 10000.0)),
+            qk_gain_init=kwargs.get("qk_gain_init", 1.0),
+        ),
+        default_tie_embeddings=False,
+    )
+
+
 def build_hnet_lm_spec(**kwargs: Any) -> ModelSpec:
     effective_kwargs = dict(kwargs)
     effective_kwargs["vocab_size"] = 256
@@ -850,6 +919,41 @@ def build_semantic_router_moe_spec(**kwargs: Any) -> ModelSpec:
 
 def build_semantic_router_moe_megakernel_spec(**kwargs: Any) -> ModelSpec:
     return _build_semantic_router_moe_runtime_spec(runtime="megakernel", **kwargs)
+
+
+def build_semantic_dense_jepa_evo_spec(**kwargs: Any) -> ModelSpec:
+    """Experimental: dense decoder with chunk semantic JEPA planning."""
+    dense_kwargs = dict(kwargs)
+    dense_kwargs.setdefault("route_evo_enabled", False)
+    return _base_model_spec(
+        kwargs=dense_kwargs,
+        template=TemplateSpec(
+            objective="semantic_dense_jepa_evo",
+            backbone="llama",
+            tokenization="sp",
+            sparsity="dense",
+            router_mode="semantic",
+            compression="none",
+            adapter="none",
+            runtime="compile",
+        ),
+        block_spec=BlockSpec(
+            family="llama",
+            norm_type="rmsnorm",
+            mlp_type="swiglu",
+            pos_encoding="rope",
+            linear_bias=False,
+            dropout_p=0.0,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            multiple_of=kwargs.get("multiple_of", 256),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+            attention_backend="sdpa",
+            rope_theta=kwargs.get("rope_base", kwargs.get("rope_theta", 10000.0)),
+            qk_gain_init=kwargs.get("qk_gain_init", 1.0),
+        ),
+        default_tie_embeddings=False,
+    )
 
 
 def build_semantic_moe_jepa_evo_spec(**kwargs: Any) -> ModelSpec:

@@ -177,6 +177,18 @@ ModelSpec(
 - `jepa_mask_strategy`: `"random"` (default) or `"block"`
 - Dataset role: `tokens` only
 
+### `dense_jepa_evo` -- `build_dense_jepa_evo_spec(**kwargs)`
+- Objective: ar_jepa, Backbone: llama, Runtime: compile
+- Non-semantic AR+JEPA Evo control with dense LLaMA FFNs.
+- Dataset roles: `tokens`, `targets`; no `semantic_data_source` or semantic router.
+- Trains next-token CE plus JEPA latent alignment.
+
+### `moe_jepa_evo` -- `build_moe_jepa_evo_spec(**kwargs)`
+- Objective: ar_jepa, Backbone: mixllama, Runtime: compile
+- Non-semantic AR+JEPA Evo control with standard MoE routing and load-balance loss.
+- Dataset roles: `tokens`, `targets`; no `semantic_data_source` or semantic router.
+- Config keys include `experts`, `top_k`, and `router_aux_loss_coef`.
+
 ### `semantic_router_moe` -- `build_semantic_router_moe_spec(**kwargs)`
 - Objective: semantic_router, Backbone: mixllama, Runtime: compile
 - AR-only semantic router control: shared vocab-grounded route broadcast across every MoE block
@@ -195,6 +207,12 @@ ModelSpec(
 - Dataset roles: `tokens`, `targets`, plus `semantic_data_source -> sem_targets`
 - Expert bank defaults: `semantic_shared_experts=2`, `NUM_VOCAB_DIMS` semantic experts, `semantic_free_experts=8`; `experts` must equal their sum.
 - Route evolution defaults: `route_chunk_size=32`, `route_evo_fraction=0.10`, `route_evo_population=8`, `route_evo_mutation_scale=0.05`
+
+### `semantic_dense_jepa_evo` -- `build_semantic_dense_jepa_evo_spec(**kwargs)`
+- Objective: semantic_dense_jepa_evo, Backbone: llama, Runtime: compile
+- Dense control for Semantic JEPA Evo: chunk-level causal semantic planner, JEPA target supervision, dense LLaMA FFNs, and no route evolution.
+- Dataset roles: `tokens`, `targets`, plus `semantic_data_source -> sem_targets`
+- Uses `route_chunk_size` for planner updates; expert-count and route-evolution fields are ignored by the dense decoder path.
 
 ### `hnet_lm` -- `build_hnet_lm_spec(**kwargs)`
 - Backbone: hnet, Tokenization: byte_hnet, Runtime: compile
@@ -264,7 +282,7 @@ Config-dict keys can be passed to `build_model_spec_from_config(config)` and ser
 | `jepa_max_block_ratio` | -- | `0.25` | llm_jepa | Max block length as fraction of seq |
 | `ema_decay` | -- | `0.99` | llm_jepa | EMA target encoder decay |
 | `semantic_vocab_ref` | -- | default vocab | semantic routing | Semantic vocabulary file for topic targets and routing |
-| `route_chunk_size` | -- | `32` | semantic_moe_jepa_evo | Tokens per chunk route update |
+| `route_chunk_size` | -- | `32` | semantic_dense_jepa_evo, semantic_moe_jepa_evo | Tokens per chunk planner/route update |
 | `semantic_shared_experts` | -- | `2` | semantic_moe_jepa_evo | Always-on shared experts |
 | `semantic_free_experts` | -- | `8` | semantic_moe_jepa_evo | Free learned experts after semantic experts |
 | `route_evo_enabled` | -- | `True` | semantic_moe_jepa_evo | Enable periodic route-evolution search |

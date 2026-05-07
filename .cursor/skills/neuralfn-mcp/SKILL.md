@@ -158,7 +158,10 @@ That's it -- four tool calls for a complete train run.
 | `diffusion` | Discrete diffusion with denoising head | Diffusion |
 | `ttt_llama` | Test-Time Training layers | AR |
 | `llm_jepa` | JEPA with EMA target encoder | JEPA |
+| `dense_jepa_evo` | Non-semantic AR+JEPA Evo control with dense FFNs | AR+JEPA |
+| `moe_jepa_evo` | Non-semantic AR+JEPA Evo control with standard MoE routing | AR+JEPA |
 | `semantic_router_moe` | AR-only semantic router control with shared routed MoE blocks | AR |
+| `semantic_dense_jepa_evo` | Dense Semantic JEPA Evo control with chunk planner and no expert routing | Semantic JEPA |
 | `semantic_moe_jepa_evo` | Chunk-level Semantic MoE JEPA Evo with route evolution | Semantic MoE JEPA |
 | `hnet_lm` | Raw-byte input, byte patches | AR |
 | `universal_llama` | ACT-based universal transformer | AR |
@@ -180,7 +183,7 @@ That's it -- four tool calls for a complete train run.
 | `top_k` | 2 | MoE: active experts per token |
 | `router_aux_loss_coef` | 0.01 | MoE load-balance loss coefficient |
 | `semantic_vocab_ref` | default vocab | Semantic vocabulary file for semantic routing presets |
-| `route_chunk_size` | 32 | Chunk interval for `semantic_moe_jepa_evo` route updates |
+| `route_chunk_size` | 32 | Chunk interval for `semantic_dense_jepa_evo` planner updates and `semantic_moe_jepa_evo` route updates |
 | `semantic_shared_experts` | 2 | Always-on shared experts for `semantic_moe_jepa_evo` |
 | `semantic_free_experts` | 8 | Free learned experts for `semantic_moe_jepa_evo` |
 | `route_evo_enabled` | true | Enable periodic route evolution for `semantic_moe_jepa_evo` |

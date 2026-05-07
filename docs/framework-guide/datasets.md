@@ -78,7 +78,7 @@ Different template objectives require different data shapes. The `dataset_source
 | Seq2Seq | `enc_tokens`, `dec_tokens`, `targets` | Encoder input, decoder input, and decoder targets. |
 | Diffusion | `tokens` | Single token sequence. Timestep sampling is internal. |
 | JEPA | `tokens` | Single token sequence. Masking and target generation are internal. |
-| Semantic routing presets (`semantic_router_moe`, `jepa_semantic_hybrid`, `semantic_moe_jepa_evo`) | `tokens`, `targets` | Text next-token inputs come from `dataset_source`; the shipped `semantic_data_source` provides vocab-derived `sem_targets` separately. |
+| Semantic routing presets (`semantic_router_moe`, `jepa_semantic_hybrid`, `semantic_dense_jepa_evo`, `semantic_moe_jepa_evo`) | `tokens`, `targets` | Text next-token inputs come from `dataset_source`; the shipped `semantic_data_source` provides vocab-derived `sem_targets` separately. |
 
 ---
 

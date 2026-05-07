@@ -35,6 +35,8 @@ PRESETS = [
     "diffusion",
     "ttt_llama",
     "llm_jepa",
+    "dense_jepa_evo",
+    "moe_jepa_evo",
     "hnet_lm",
     "universal_llama",
     "llama_megakernel",
@@ -43,6 +45,7 @@ PRESETS = [
     "jepa_semantic_hybrid_megakernel",
     "semantic_router_moe",
     "semantic_router_moe_megakernel",
+    "semantic_dense_jepa_evo",
     "semantic_moe_jepa_evo",
 ]
 
@@ -196,6 +199,38 @@ def test_jepa_semantic_hybrid_dataset_backed_trace_preview_smoke() -> None:
     response = trace_torch_graph(graph, ExecuteRequest())
     assert response["source"] == "dataset"
     assert response["trace"]
+
+
+def test_nonsemantic_jepa_evo_presets_do_not_use_semantic_router() -> None:
+    for preset, expected_sparsity in [
+        ("dense_jepa_evo", "dense"),
+        ("moe_jepa_evo", "moe"),
+    ]:
+        spec = build_model_spec_from_config(
+            {"preset": preset, "vocab_size": 128, **_tiny_kwargs()},
+            preview_defaults=True,
+        )
+        graph = build_gpt_root_graph(name=f"{preset}_no_semantic_router", model_spec=spec)
+        assert spec.template.objective == "ar_jepa"
+        assert spec.template.sparsity == expected_sparsity
+        assert graph.input_node_ids == ["tokens_in", "targets_in"]
+
+        module_types = {
+            getattr(node.neuron_def, "module_type", "")
+            for node in graph.nodes.values()
+        }
+        assert "semantic_data_source" not in module_types
+        assert "semantic_moe_jepa_evo_router" not in module_types
+        assert "semantic_hash_router" not in module_types
+        assert "semantic_moe_router" not in module_types
+        if preset == "moe_jepa_evo":
+            assert "mlp" in graph.variant_library
+            mlp = graph.variant_library["mlp"]["default"]
+            mlp_module_types = {
+                getattr(node.neuron_def, "module_type", "")
+                for node in mlp.nodes.values()
+            }
+            assert {"router_logits", "topk_route", "expert_dispatch", "expert_combine"} <= mlp_module_types
 
 
 def test_ttt_llama_forward_smoke() -> None:

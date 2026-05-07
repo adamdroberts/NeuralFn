@@ -108,6 +108,10 @@ Build the experimental JEPA semantic hybrid stage. Inputs are `tokens`, `targets
 
 Build the full Semantic MoE JEPA Evo stage. Inputs are `tokens`, `targets`, and `sem_targets`. The stage keeps dense causal attention on the AR path, builds prefix-safe chunk semantic states, selects shared/semantic/free experts for each chunk, broadcasts chunk routes to token routes for the MoE FFN, and trains AR CE plus JEPA latent, semantic alignment, route balance, route selection, and route distillation losses.
 
+### `build_semantic_dense_jepa_evo_model_stage_graph(name, model_spec) -> NeuronGraph` [Experimental]
+
+Build the dense control for the Semantic JEPA Evo stack. Inputs are `tokens`, `targets`, and `sem_targets`. The stage keeps the prefix-safe chunk semantic planner and JEPA target path, uses dense LLaMA decoder FFNs instead of routed experts, and trains AR CE plus JEPA latent and semantic-alignment losses.
+
 ### `build_sft_model_stage_graph(name, model_spec) -> NeuronGraph`
 
 Build a supervised fine-tuning stage with `(tokens, targets, loss_mask) -> loss`.
@@ -166,9 +170,11 @@ Recognized presets: `"nanogpt"`, `"nanogpt_megakernel"`, `"gpt2"`,
 `"llama_fast_megakernel"`, `"mixllama_fast"`,
 `"mixllama_fast_megakernel"`, `"jamba"`, `"ternary_b158"`,
 `"llama_megakernel"`, `"kv_pca_llama"`, `"seq2seq"`, `"diffusion"`,
-`"ttt_llama"`, `"llm_jepa"`, `"semantic_router_moe"`,
+`"ttt_llama"`, `"llm_jepa"`, `"dense_jepa_evo"`, `"moe_jepa_evo"`,
+`"semantic_router_moe"`,
 `"semantic_router_moe_megakernel"`, `"jepa_semantic_hybrid"`,
-`"jepa_semantic_hybrid_megakernel"`, `"semantic_moe_jepa_evo"`,
+`"jepa_semantic_hybrid_megakernel"`, `"semantic_dense_jepa_evo"`,
+`"semantic_moe_jepa_evo"`,
 `"hnet_lm"`, and `"universal_llama"`.
 
 ### `build_model_stage_graph(name, model_spec) -> NeuronGraph`
@@ -197,13 +203,15 @@ their dedicated fine-tuning root graph builders.
 
 The root graph's `torch_config` is populated with device, AMP dtype, and the full `template_spec`.
 
-For `semantic_router_moe`, `jepa_semantic_hybrid`, and `semantic_moe_jepa_evo`, the root graph exposes:
+For `semantic_router_moe`, `jepa_semantic_hybrid`, `semantic_dense_jepa_evo`, and `semantic_moe_jepa_evo`, the root graph exposes:
 
 - `dataset_source` with output roles `tokens`, `targets`
 - `semantic_data_source` with output role `sem_targets` generated from the active semantic vocabulary reference
 - a compiled flat input contract of `(tokens, targets, sem_targets)`
 
-`semantic_router_moe` builds an AR-only stage that reuses normal LLaMA attention, computes one shared semantic route from the pre-block hidden state, broadcasts that route across the full sequence, and feeds the same routed experts into every MoE block. `jepa_semantic_hybrid` keeps its separate JEPA path on top of that semantic routing stack. `semantic_moe_jepa_evo` is the full chunk-routed architecture: it updates semantic routes at chunk boundaries, prepends always-on shared experts, selects semantic/free experts for the next chunk, and wires route balance/selection/distillation losses into the total loss.
+`semantic_router_moe` builds an AR-only stage that reuses normal LLaMA attention, computes one shared semantic route from the pre-block hidden state, broadcasts that route across the full sequence, and feeds the same routed experts into every MoE block. `jepa_semantic_hybrid` keeps its separate JEPA path on top of that semantic routing stack. `semantic_dense_jepa_evo` is the dense chunk-planner control with normal FFNs and no route-evolution loop. `semantic_moe_jepa_evo` is the full chunk-routed architecture: it updates semantic routes at chunk boundaries, prepends always-on shared experts, selects semantic/free experts for the next chunk, and wires route balance/selection/distillation losses into the total loss.
+
+`dense_jepa_evo` and `moe_jepa_evo` use the non-semantic `ar_jepa` root contract `(tokens, targets)`. They reuse `build_ar_jepa_model_stage_graph()` with dense LLaMA FFNs or standard MoE routing respectively, so no `semantic_data_source` or semantic router is added.
 
 ### `build_gpt_template_payload(name, config) -> dict`
 
