@@ -80,7 +80,7 @@ Loads a GPT template preset into the session, replacing the current graph.
 | `project_id` | string | yes | | Project ID. |
 | `session_id` | string | yes | | Session ID. |
 | `name` | string | no | `"gpt"` | Template name. |
-| `preset` | string | no | `"nanogpt"` | Preset configuration (e.g. `"nanogpt"`, `"gpt2"`, `"llama"`, `"moe"`). |
+| `preset` | string | no | `"nanogpt"` | Preset configuration (e.g. `"nanogpt"`, `"gpt2"`, `"llama"`, `"moe"`, `"dense_jepa_evo"`, `"moe_jepa_evo"`, `"semantic_dense_jepa_evo"`, `"semantic_moe_jepa_evo"`). |
 | `config` | dict | no | | Additional configuration overrides (e.g. `n_layer`, `n_head`, `n_embd`). |
 
 **Returns:** a summary of the generated graph.

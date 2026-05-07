@@ -9,7 +9,8 @@ Type aliases, configuration dataclasses, and preset builder functions for model 
 ```python
 ObjectiveType    = Literal[
     "ar", "diffusion", "jepa", "ar_jepa", "jepa_semantic",
-    "semantic_router", "semantic_router_jepa", "semantic_moe_jepa_evo",
+    "semantic_router", "semantic_router_jepa", "semantic_dense_jepa_evo",
+    "semantic_moe_jepa_evo",
     "seq2seq", "sft", "dpo", "ppo", "reward_model",
 ]
 BackboneType     = Literal["gpt2", "nanogpt", "llama", "mixllama", "jamba", "universal", "ttt", "hnet"]
@@ -275,7 +276,7 @@ Complete model architecture specification.
 | `halt_epsilon` | `float` | `0.01` | ACT halting threshold |
 | `semantic_dim` | `int` | `NUM_SEMANTIC_DIMS` | Grounded semantic vector width for semantic routing presets |
 | `semantic_vocab_ref` | `str` | default semantic vocab | Semantic vocabulary reference used by projector/router stages |
-| `route_chunk_size` | `int` | `32` | Chunk size for `semantic_moe_jepa_evo` route updates |
+| `route_chunk_size` | `int` | `32` | Chunk size for `semantic_dense_jepa_evo` planner updates and `semantic_moe_jepa_evo` route updates |
 | `semantic_shared_experts` | `int` | `2` | Always-on shared experts for `semantic_moe_jepa_evo` |
 | `semantic_free_experts` | `int` | `8` | Free learned experts for `semantic_moe_jepa_evo` |
 | `route_evo_enabled` | `bool` | `True` | Enable periodic route-evolution search for `semantic_moe_jepa_evo` |
@@ -344,6 +345,8 @@ when constructing fine-tuning graphs.
 | `build_diffllama_spec(**kwargs)` | llama | dense | compile | Discrete diffusion objective |
 | `build_ttt_llama_spec(**kwargs)` | ttt | dense | compile | Test-time training linear layers |
 | `build_llm_jepa_spec(**kwargs)` | llama | dense | compile | JEPA self-supervised objective |
+| `build_dense_jepa_evo_spec(**kwargs)` | llama | dense | compile | **[Experimental]** non-semantic AR+JEPA Evo control with dense FFNs |
+| `build_moe_jepa_evo_spec(**kwargs)` | mixllama | moe | compile | **[Experimental]** non-semantic AR+JEPA Evo control with standard MoE routing |
 | `build_hnet_lm_spec(**kwargs)` | hnet | dense | compile | Byte-level hierarchical tokenization |
 | `build_universal_llama_spec(**kwargs)` | universal | dense | compile | Universal transformer with ACT |
 | `build_llama_megakernel_spec(**kwargs)` | llama | dense | megakernel | Fused attention megakernel |
@@ -352,7 +355,26 @@ when constructing fine-tuning graphs.
 | `build_semantic_router_moe_megakernel_spec(**kwargs)` | mixllama | moe | megakernel | **[Experimental]** semantic-router control with megakernel runtime metadata |
 | `build_jepa_semantic_hybrid_spec(**kwargs)` | llama | moe | compile | **[Experimental]** JEPA semantic hybrid with fixed dimension-to-expert routing |
 | `build_jepa_semantic_hybrid_megakernel_spec(**kwargs)` | llama | moe | megakernel | **[Experimental]** JEPA semantic hybrid with megakernel runtime metadata |
+| `build_semantic_dense_jepa_evo_spec(**kwargs)` | llama | dense | compile | **[Experimental]** dense Semantic JEPA Evo control with chunk planner and no expert routing |
 | `build_semantic_moe_jepa_evo_spec(**kwargs)` | mixllama | moe | compile | **[Experimental]** chunk-routed Semantic MoE JEPA Evo with route evolution |
+
+---
+
+### `build_dense_jepa_evo_spec` [Experimental]
+
+```python
+def build_dense_jepa_evo_spec(**kwargs: Any) -> ModelSpec
+```
+
+Build a non-semantic AR+JEPA Evo control using dense LLaMA decoder blocks. The root graph uses `(tokens, targets)`, trains next-token CE plus JEPA latent alignment, and does not attach `semantic_data_source` or semantic router modules.
+
+### `build_moe_jepa_evo_spec` [Experimental]
+
+```python
+def build_moe_jepa_evo_spec(**kwargs: Any) -> ModelSpec
+```
+
+Build the non-semantic MoE counterpart. It uses the same `(tokens, targets)` AR+JEPA contract as `dense_jepa_evo`, but swaps dense FFNs for standard MoE blocks with `experts`, `top_k`, and `router_aux_loss_coef`.
 
 ---
 
@@ -360,7 +382,7 @@ when constructing fine-tuning graphs.
 
 ### Additional `ModelSpec` fields [Experimental]
 
-These fields exist on `ModelSpec` for the **[Experimental]** semantic routing presets (`semantic_router_moe`, `jepa_semantic_hybrid`, and `semantic_moe_jepa_evo`) and related graphs:
+These fields exist on `ModelSpec` for the **[Experimental]** semantic routing presets (`semantic_router_moe`, `jepa_semantic_hybrid`, `semantic_dense_jepa_evo`, and `semantic_moe_jepa_evo`) and related graphs:
 
 | Field [Experimental] | Type | Default | Description |
 |----------------------|------|---------|-------------|
@@ -370,7 +392,7 @@ These fields exist on `ModelSpec` for the **[Experimental]** semantic routing pr
 | `semantic_n_lsh_planes` | `int` | `12` | Number of hyperplanes per table (hash width). |
 | `semantic_table_path` | `str` | `""` | Optional filesystem path for persistent LSH / semantic table data (empty = in-memory default). |
 | `semantic_vocab_ref` | `str` | default vocab ref | Semantic vocabulary file such as `vocab_86d_o200k.json`. |
-| `route_chunk_size` | `int` | `32` | Chunk boundary interval used by `semantic_moe_jepa_evo`. |
+| `route_chunk_size` | `int` | `32` | Chunk boundary interval used by `semantic_dense_jepa_evo` and `semantic_moe_jepa_evo`. |
 | `semantic_shared_experts` | `int` | `2` | Always-on shared experts prepended to each selected route. |
 | `semantic_free_experts` | `int` | `8` | Learned free experts appended after semantic experts. |
 | `route_evo_enabled` | `bool` | `True` | Enables periodic evolutionary search over route bias/table parameters. |
@@ -418,6 +440,22 @@ Builder-specific rules:
 - `route_evo_enabled` and the `route_evo_*` fields control lightweight evolutionary search over router bias/table parameters during `TorchTrainer.train()`.
 
 **Disclaimer [Experimental]:** This is the full architecture prototype for the semantic MoE router, not a stable production preset.
+
+### `build_semantic_dense_jepa_evo_spec` [Experimental]
+
+```python
+def build_semantic_dense_jepa_evo_spec(**kwargs: Any) -> ModelSpec
+```
+
+**[Experimental]** Factory for the `semantic_dense_jepa_evo` template: dense LLaMA-style decoder blocks with the same chunk-level causal semantic planner and JEPA target path used by `semantic_moe_jepa_evo`. The generated stage trains AR CE, JEPA latent alignment, and semantic topic alignment losses, but does not build expert routes or run route evolution.
+
+Builder-specific notes:
+
+- `route_chunk_size` controls how often the causal planner summarizes prefix state.
+- `experts`, `top_k`, `semantic_shared_experts`, `semantic_free_experts`, and route-evolution fields are not used by the dense decoder path.
+- The compiled/root input contract is `(tokens, targets, sem_targets)`.
+
+**Disclaimer [Experimental]:** This is a dense comparison/control preset for the Semantic JEPA Evo architecture, not a stable production preset.
 
 ### `build_jepa_semantic_hybrid_spec` [Experimental]
 

@@ -59,6 +59,8 @@ This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_me
 | `diffusion` | `build_diffllama_spec` | llama | diffusion | dense | Discrete diffusion objective |
 | `ttt_llama` | `build_ttt_llama_spec` | ttt | ar | dense | Test-Time Training layers |
 | `llm_jepa` | `build_llm_jepa_spec` | llama | jepa | dense | JEPA with EMA target encoder |
+| `dense_jepa_evo` | `build_dense_jepa_evo_spec` | llama | `ar_jepa` | dense | Non-semantic AR+JEPA Evo control with dense FFNs and no semantic router. |
+| `moe_jepa_evo` | `build_moe_jepa_evo_spec` | mixllama | `ar_jepa` | moe | Non-semantic AR+JEPA Evo control with standard MoE routing and no semantic router. |
 | `hnet_lm` | `build_hnet_lm_spec` | hnet | ar | dense | Raw-byte vocab (256), byte patches |
 | `universal_llama` | `build_universal_llama_spec` | universal | ar | dense | ACT-based universal transformer |
 | `llama_megakernel` | `build_llama_megakernel_spec` | llama | ar | dense | Fused attention, max-autotune compile |
@@ -70,9 +72,57 @@ This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_me
 |-----------------------|------------------------|----------|----------------------------|----------|----------------------------|
 | `semantic_router_moe` | `build_semantic_router_moe_spec` | mixllama | `semantic_router` | moe | AR-only control experiment: vocab-grounded semantic projection + LSH + one expert per semantic vocabulary dimension shared across all MoE blocks. |
 | `jepa_semantic_hybrid` | `build_jepa_semantic_hybrid_spec` | llama | `jepa_semantic` | moe | JEPA + vocab-grounded semantic state + LSH + fixed dimension-to-expert topic routing + full-sequence attention experts (research prototype). |
+| `semantic_dense_jepa_evo` | `build_semantic_dense_jepa_evo_spec` | llama | `semantic_dense_jepa_evo` | dense | Dense control for the Semantic JEPA Evo stack: chunk-level causal semantic planner, JEPA target supervision, dense LLaMA FFNs, and no route evolution. |
 | `semantic_moe_jepa_evo` | `build_semantic_moe_jepa_evo_spec` | mixllama | `semantic_moe_jepa_evo` | moe | Full chunk-routed Semantic MoE JEPA Evo: 2 shared experts, semantic-vocab experts, 8 free experts, JEPA target supervision, and periodic route evolution. |
 
-**Disclaimer [Experimental]:** The semantic routing presets are experimental; graph layout, config keys, and training APIs may change. `semantic_router_moe`, `jepa_semantic_hybrid`, and `semantic_moe_jepa_evo` use the root/data contract text `tokens` + text `targets` plus a separate `semantic_data_source` that provides vocab-topic `sem_targets`. The router-only and hybrid presets require one expert per semantic vocabulary dimension. `semantic_moe_jepa_evo` adds shared and free experts around the semantic expert bank, so `experts` must equal `semantic_shared_experts + NUM_VOCAB_DIMS + semantic_free_experts`.
+**Disclaimer [Experimental]:** The semantic routing presets are experimental; graph layout, config keys, and training APIs may change. `semantic_router_moe`, `jepa_semantic_hybrid`, `semantic_dense_jepa_evo`, and `semantic_moe_jepa_evo` use the root/data contract text `tokens` + text `targets` plus a separate `semantic_data_source` that provides vocab-topic `sem_targets`. The router-only and hybrid presets require one expert per semantic vocabulary dimension. `semantic_dense_jepa_evo` keeps dense FFNs for comparison, while `semantic_moe_jepa_evo` adds shared and free experts around the semantic expert bank, so `experts` must equal `semantic_shared_experts + NUM_VOCAB_DIMS + semantic_free_experts`.
+
+---
+
+## Architecture diagrams
+
+The architecture sheets below cover every shipped GPT template preset. They are visual summaries; the preset tables on this page remain the source of truth for exact builder names, objectives, sparsity, and config fields.
+
+### Core autoregressive templates
+
+![Core GPT template architectures](../assets/gpt_template_architectures_core.png)
+
+| Diagram area | Presets covered |
+|--------------|-----------------|
+| NanoGPT / GPT-2 decoder | `nanogpt`, `gpt2` |
+| LLaMA decoder and compiled variants | `llama`, `llama_fast`, `llama_fast_megakernel` |
+| MoE / MixLLaMA decoder | `moe`, `mixllama_fast`, `mixllama_fast_megakernel` |
+| Megakernel fused attention | `llama_megakernel` |
+| PCA-compressed KV cache | `kv_pca_llama` |
+| Hybrid and alternate block families | `jamba`, `ternary_b158`, `universal_llama` |
+
+### Objective and research templates
+
+![Objective and research GPT template architectures](../assets/gpt_template_architectures_research.png)
+
+| Diagram area | Presets covered |
+|--------------|-----------------|
+| Encoder-decoder MoE | `seq2seq` |
+| Diffusion objective | `diffusion` |
+| Test-Time Training layers | `ttt_llama` |
+| EMA-target JEPA | `llm_jepa` |
+| Non-semantic JEPA Evo controls | `dense_jepa_evo`, `moe_jepa_evo` |
+| Byte-patched language model | `hnet_lm` |
+
+### Semantic routing templates
+
+![Semantic GPT template architectures](../assets/gpt_template_architectures_semantic.png)
+
+| Diagram area | Presets covered |
+|--------------|-----------------|
+| Semantic router MoE | `semantic_router_moe`, `semantic_router_moe_megakernel` |
+| JEPA semantic hybrid | `jepa_semantic_hybrid`, `jepa_semantic_hybrid_megakernel` |
+| Dense Semantic JEPA Evo control | `semantic_dense_jepa_evo` |
+| Full Semantic MoE JEPA Evo | `semantic_moe_jepa_evo` |
+
+The detailed Semantic MoE JEPA Evo reference diagram remains available as a standalone asset:
+
+![Semantic MoE JEPA Evo architecture](../assets/semantic_moe_jepa_evo_architecture.png)
 
 ---
 
@@ -100,7 +150,7 @@ These keys can be passed in config-dict flows such as `build_model_spec_from_con
 | `jepa_loss_coef` | -- | `0.25` | Scalar for JEPA latent loss on JEPA semantic presets. |
 | `semantic_align_loss_coef` | -- | `0.5` | Scalar for semantic-alignment loss on semantic routing presets. |
 | `semantic_vocab_ref` | -- | default vocab | Semantic vocabulary file used by semantic projector/router stages. |
-| `route_chunk_size` | -- | `32` | Chunk size for `semantic_moe_jepa_evo` route updates. |
+| `route_chunk_size` | -- | `32` | Chunk size for `semantic_dense_jepa_evo` planner updates and `semantic_moe_jepa_evo` route updates. |
 | `semantic_shared_experts` | -- | `2` | Always-on shared experts for `semantic_moe_jepa_evo`. |
 | `semantic_free_experts` | -- | `8` | Free learned experts for `semantic_moe_jepa_evo`. |
 | `route_evo_enabled` | -- | `true` | Enable periodic route-evolution search for `semantic_moe_jepa_evo`. |

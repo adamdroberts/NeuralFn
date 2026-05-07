@@ -338,6 +338,7 @@ Probes a single node by running multiple forward passes and collecting statistic
 ### POST /{session_id}/templates/gpt/apply
 
 Applies a GPT template to the session's graph, replacing its contents.
+The `preset` name uses the same catalog as the Python SDK, editor toolbar, and MCP `load_gpt_template`, including experimental JEPA Evo presets such as `dense_jepa_evo`, `moe_jepa_evo`, `semantic_dense_jepa_evo`, and `semantic_moe_jepa_evo`.
 
 **Request Body:**
 

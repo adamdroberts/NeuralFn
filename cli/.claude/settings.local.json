@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ':*)",
+      "Bash(python3 -c \"import sys,json; doc=json.loads\\(sys.stdin.readline\\(\\)\\); print\\(list\\(doc.keys\\(\\)\\)\\); print\\(doc.get\\('text',''\\)[:200]\\)\")",
+      "Bash(conda env:*)",
+      "Bash(mamba env:*)",
+      "Bash(/home/adam/miniconda3/envs/NeuralFn/bin/python -c \"import sentencepiece as spm; sp = spm.SentencePieceProcessor\\(\\); sp.load\\('/home/adam/.cache/huggingface/hub/datasets--willdepueoai--parameter-golf/snapshots/a85b0e6035c3c94bc23685a07c81a8f3bf89db80/datasets/tokenizers/fineweb_1024_bpe.model'\\); print\\('Vocab size:', sp.get_piece_size\\(\\)\\); print\\('BOS:', sp.bos_id\\(\\)\\); print\\('EOS:', sp.eos_id\\(\\)\\)\")",
+      "Bash(/home/adam/miniconda3/envs/NeuralFn/bin/python -c \"from server.dataset_manager import DatasetTokenizerMismatchError; print\\(DatasetTokenizerMismatchError.__mro__\\)\")",
+      "Bash(xxd -l 64 /home/adam/.cache/huggingface/hub/datasets--willdepueoai--parameter-golf/snapshots/a85b0e6035c3c94bc23685a07c81a8f3bf89db80/datasets/datasets/fineweb10B_sp1024/fineweb_train_000000.bin)",
+      "Bash(xxd -l 1040 /home/adam/.cache/huggingface/hub/datasets--willdepueoai--parameter-golf/snapshots/a85b0e6035c3c94bc23685a07c81a8f3bf89db80/datasets/datasets/fineweb10B_sp1024/fineweb_train_000000.bin)",
+      "Bash(xxd -s 0x400 -l 64 /home/adam/.cache/huggingface/hub/datasets--willdepueoai--parameter-golf/snapshots/a85b0e6035c3c94bc23685a07c81a8f3bf89db80/datasets/datasets/fineweb10B_sp1024/fineweb_train_000000.bin)",
+      "Bash(xxd -l 16 /home/adam/.cache/huggingface/hub/datasets--willdepueoai--parameter-golf/snapshots/a85b0e6035c3c94bc23685a07c81a8f3bf89db80/datasets/datasets/fineweb10B_sp1024/fineweb_val_000000.bin)",
+      "Bash(xxd -s 0x400 -l 32 /home/adam/.cache/huggingface/hub/datasets--willdepueoai--parameter-golf/snapshots/a85b0e6035c3c94bc23685a07c81a8f3bf89db80/datasets/datasets/fineweb10B_sp1024/fineweb_val_000000.bin)",
+      "Bash(python -m pytest tests/test_dataset_manager_variants.py -x -v)",
+      "Bash(python -c \"import pytest; print\\(pytest.__file__\\)\")",
+      "Bash(pip list:*)",
+      "Bash(python3 -c \"import numpy; print\\(numpy.__file__\\)\")",
+      "Bash(conda run:*)",
+      "Bash(grep -E \"\\\\.py$\")",
+      "Bash(python -c \"from server.models import PortModel; print\\(PortModel\\(name='x', range=[-1,1], precision=None, dtype='float'\\)\\); print\\(PortModel\\(name='y', range=[-1,1], dtype='float'\\)\\)\")",
+      "Bash(python -m pytest tests/test_builtin_neurons.py -x -q)",
+      "Bash(python -c \"from server.models import PortModel; from neuralfn.port import Port; from neuralfn.builtins import BuiltinNeurons; print\\('PortModel none:', PortModel\\(name='x'\\)\\); print\\('Port none:', Port\\('x'\\)\\); print\\('add input precision:', BuiltinNeurons.add.input_ports[0].precision, 'range:', BuiltinNeurons.add.input_ports[0].range\\); print\\('threshold output dtype:', BuiltinNeurons.threshold.output_ports[0].dtype, 'range:', BuiltinNeurons.threshold.output_ports[0].range, 'precision:', BuiltinNeurons.threshold.output_ports[0].precision\\)\")",
+      "Bash(python -m pytest tests/test_builtin_neurons.py tests/test_template_presets.py -x -q)",
+      "Bash(python -m pytest tests/test_builtin_neurons.py tests/test_template_presets.py -q --deselect tests/test_template_presets.py::test_all_presets_compile_and_forward)",
+      "Bash(python -m pytest tests/ -q --deselect tests/test_template_presets.py::test_all_presets_compile_and_forward --ignore=tests/test_jepa_semantic.py)",
+      "Bash(python -m pytest tests/test_builtin_neurons.py tests/test_template_presets.py tests/test_torch_backend_schedule.py tests/test_tokenizer_vocab_contract.py -q --deselect tests/test_template_presets.py::test_all_presets_compile_and_forward)",
+      "Bash(npx tsc *)",
+      "Bash(python -c ' *)",
+      "Bash(ls -lt /home/adam/dev/innovation/neuralfn-sdk-harness/*.py)",
+      "Bash(grep -r \"codex\\\\|inference\" /home/adam/dev/innovation/neuralfn-sdk-harness/*.py)",
+      "Bash(python3 -c \"import sys; print\\(sys.version\\)\")",
+      "Bash(python3 -c \"import rich; print\\('rich', rich.__version__\\)\")",
+      "Bash(python3 -c \"import prompt_toolkit; print\\('prompt_toolkit', prompt_toolkit.__version__\\)\")",
+      "Bash(python3 *)"
+    ]
+  }
+}

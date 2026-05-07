@@ -6,6 +6,57 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-05-07 GPT template architecture diagrams
+
+#### Added
+
+- **Architecture diagram catalog** -- generated documentation PNGs for all shipped GPT template presets and added them to the framework guide:
+  - `docs/assets/gpt_template_architectures_core.png`
+  - `docs/assets/gpt_template_architectures_research.png`
+  - `docs/assets/gpt_template_architectures_semantic.png`
+- **Docs navigation** -- linked the diagram catalog from `README.md`, `docs/README.md`, and the framework guide index, while keeping the detailed Semantic MoE JEPA Evo PNG as a standalone reference.
+
+#### Verification
+
+- `file docs/assets/gpt_template_architectures_core.png docs/assets/gpt_template_architectures_research.png docs/assets/gpt_template_architectures_semantic.png`
+- `rg -n "gpt_template_architectures|Architecture diagrams" README.md docs`
+- `git diff --check`
+
+### 2026-05-07 Non-semantic JEPA Evo control templates
+
+#### Added
+
+- **`dense_jepa_evo` and `moe_jepa_evo` presets** -- added non-semantic AR+JEPA Evo controls that remove the semantic router and semantic data source. Both use the existing `(tokens, targets)` contract and train next-token CE plus JEPA latent alignment; the MoE variant uses standard MoE routing and load-balance loss.
+- **Public template wiring** -- added `build_dense_jepa_evo_spec()` and `build_moe_jepa_evo_spec()`, preset dispatch, all-preset coverage, and editor dropdown options.
+
+#### Verification
+
+- `python -m py_compile neuralfn/config.py neuralfn/torch_templates.py tests/test_template_presets.py`
+- Direct smoke script building payloads, resolving variants, compiling on CPU, and forwarding `dense_jepa_evo`, `moe_jepa_evo`, `semantic_dense_jepa_evo`, and `semantic_moe_jepa_evo` -> all returned scalar losses.
+- `npm run build` from `editor/` -> build succeeded.
+- Required preset gate `python -m pytest tests/test_template_presets.py -x -q` is currently blocked in this environment because `/home/adam/miniconda3/envs/NeuralFn/bin/python` has no `pytest` module installed.
+
+### 2026-05-07 Semantic Dense JEPA Evo template
+
+#### Added
+
+- **`semantic_dense_jepa_evo` preset** -- added a dense control companion to `semantic_moe_jepa_evo`. It keeps the chunk-level causal semantic planner, JEPA target encoder, AR CE, JEPA latent alignment, and semantic-alignment losses, but uses dense LLaMA FFNs instead of semantic expert dispatch and does not run route evolution.
+- **Dense stage builder** -- added `build_semantic_dense_jepa_evo_spec()` and `build_semantic_dense_jepa_evo_model_stage_graph()` so Python, REST/editor template routes, and MCP `load_gpt_template` can build the dense variant by preset name.
+- **Preset coverage and UI wiring** -- added the dense preset to the all-preset test catalog and the editor GPT template dropdown.
+
+#### Changed
+
+- **Semantic template runtime handling** -- semantic utility execution now treats the chunk-level JEPA Evo objectives as semantic-input templates, so dummy semantic targets are supplied when probing/generating against these graphs.
+- **Semantic Evo regression coverage** -- added tests that check the dense variant omits route/expert nodes while the MoE variant retains chunk routing, expert dispatch/combine, route losses, and the shared/semantic/free expert path described by the architecture image.
+
+#### Verification
+
+- `python -m py_compile neuralfn/config.py neuralfn/torch_templates.py neuralfn/torch_backend.py server/routers/sessions.py tests/test_jepa_semantic.py tests/test_template_presets.py`
+- Direct smoke script building payloads, resolving variants, compiling on CPU, and forwarding both `semantic_dense_jepa_evo` and `semantic_moe_jepa_evo` with `(tokens, targets, sem_targets)` -> both returned scalar losses.
+- `npm run build` from `editor/` -> build succeeded.
+- Intended pytest gate `python -m pytest tests/test_jepa_semantic.py -q -k "semantic_moe_jepa_evo or semantic_dense_jepa_evo"` is currently blocked in this environment because `/home/adam/miniconda3/envs/NeuralFn/bin/python` has no `pytest` module installed.
+- Required preset gate `python -m pytest tests/test_template_presets.py -x -q` is blocked for the same missing-`pytest` reason.
+
 ### 2026-05-04 Graphless Parameter Golf checkpoint inference
 
 #### Added

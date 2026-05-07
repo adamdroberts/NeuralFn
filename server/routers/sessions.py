@@ -570,7 +570,13 @@ def semantic_encode(
         sem_len = int(sem_cfg.get("seq_len", sem_len))
         router_vec_dim = int(sem_cfg.get("router_vec_dim", router_vec_dim))
     with torch.no_grad():
-        if objective in {"jepa_semantic", "semantic_router"}:
+        if objective in {
+            "jepa_semantic",
+            "semantic_router",
+            "semantic_router_jepa",
+            "semantic_dense_jepa_evo",
+            "semantic_moe_jepa_evo",
+        }:
             dummy_targets = torch.zeros_like(tokens)
             dummy_sem_targets = torch.full((1, sem_len), SEMANTIC_IGNORE_INDEX, dtype=torch.long)
             if _graph_uses_semantic_router_vecs(graph):

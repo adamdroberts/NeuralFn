@@ -3674,7 +3674,7 @@ class TorchTrainer:
                                 ),
                                 trainable_params,
                             )
-                        if objective in ("jepa", "ar_jepa", "jepa_semantic", "semantic_router_jepa", "semantic_moe_jepa_evo"):
+                        if objective in ("jepa", "ar_jepa", "jepa_semantic", "semantic_router_jepa", "semantic_dense_jepa_evo", "semantic_moe_jepa_evo"):
                             self._ema_update_targets(compiled, ema_decay)
 
                         scores = [item[0] for item in scored_population]
@@ -3783,7 +3783,7 @@ class TorchTrainer:
                             torch.nn.utils.clip_grad_norm_(compiled.parameters(), self.config.grad_clip_norm)
                         for opt in optimizers:
                             opt.step()
-                        if objective in ("jepa", "ar_jepa", "jepa_semantic", "semantic_router_jepa", "semantic_moe_jepa_evo"):
+                        if objective in ("jepa", "ar_jepa", "jepa_semantic", "semantic_router_jepa", "semantic_dense_jepa_evo", "semantic_moe_jepa_evo"):
                             self._ema_update_targets(compiled, ema_decay)
                         zero_grad_all()
                         if on_step is not None:
@@ -3886,7 +3886,7 @@ class TorchTrainer:
                                 step=global_step + 1,
                             )
                         zero_grad_all()
-                        if objective in ("jepa", "ar_jepa", "jepa_semantic", "semantic_router_jepa", "semantic_moe_jepa_evo"):
+                        if objective in ("jepa", "ar_jepa", "jepa_semantic", "semantic_router_jepa", "semantic_dense_jepa_evo", "semantic_moe_jepa_evo"):
                             self._ema_update_targets(compiled, ema_decay)
                         total_loss += step_loss_total
                         total_rows += step_rows

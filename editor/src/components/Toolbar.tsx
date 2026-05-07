@@ -234,12 +234,15 @@ export default function Toolbar() {
             <option value="diffusion">DiffLLaMA</option>
             <option value="ttt_llama">TTT LLaMA</option>
             <option value="llm_jepa">LLM JEPA</option>
+            <option value="dense_jepa_evo">Dense JEPA Evo</option>
+            <option value="moe_jepa_evo">MoE JEPA Evo</option>
             <option value="hnet_lm">H-Net LM</option>
             <option value="universal_llama">Universal LLaMA</option>
             <option value="llama_megakernel">LLaMA Megakernel</option>
             <option value="kv_pca_llama">KV PCA LLaMA</option>
             <option value="jepa_semantic_hybrid">JEPA Semantic Hybrid</option>
             <option value="semantic_router_moe">Semantic Router MoE</option>
+            <option value="semantic_dense_jepa_evo">Semantic Dense JEPA Evo</option>
             <option value="semantic_moe_jepa_evo">Semantic MoE JEPA Evo</option>
           </select>
         </div>
