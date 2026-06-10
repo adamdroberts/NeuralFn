@@ -469,7 +469,13 @@ class MLAStage(nn.Module):
         k_full = torch.cat([k_nope.transpose(1, 2), k_rope_h], dim=-1)
         v = v.transpose(1, 2)
         drop = self.dropout_p if self.training else 0.0
-        attn = F.scaled_dot_product_attention(q_full, k_full, v, dropout_p=drop, is_causal=True)
+        attn = F.scaled_dot_product_attention(
+            q_full.contiguous(),
+            k_full.contiguous(),
+            v.contiguous(),
+            dropout_p=drop,
+            is_causal=True,
+        )
         out = attn.transpose(1, 2).contiguous().reshape(batch, seq_len, h * self.v_head_dim)
         return self.out_proj(out)
 
@@ -573,6 +579,70 @@ class SoftplusFunctionStage(nn.Module):
 class HardTanhFunctionStage(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         return F.hardtanh(_ensure_float_tensor(x))
+
+
+class GaussianFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        x = _ensure_float_tensor(x)
+        return torch.exp(-(x * x))
+
+
+class LogFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return torch.log(torch.clamp_min(_ensure_float_tensor(x), 1e-7))
+
+
+class PReluFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        x = _ensure_float_tensor(x)
+        return torch.where(x >= 0, x, x * 0.25)
+
+
+class Relu6FunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return torch.clamp(_ensure_float_tensor(x), min=0.0, max=6.0)
+
+
+class EluFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return F.elu(_ensure_float_tensor(x))
+
+
+class SeluFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return F.selu(_ensure_float_tensor(x))
+
+
+class MishFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return F.mish(_ensure_float_tensor(x))
+
+
+class SoftsignFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return F.softsign(_ensure_float_tensor(x))
+
+
+class HardSigmoidFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return F.hardsigmoid(_ensure_float_tensor(x))
+
+
+class HardSwishFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return F.hardswish(_ensure_float_tensor(x))
+
+
+class Softmax2FunctionStage(nn.Module):
+    def forward(self, a: Tensor, b: Tensor) -> tuple[Tensor, Tensor]:
+        probs = torch.softmax(torch.stack((_ensure_float_tensor(a), _ensure_float_tensor(b)), dim=0), dim=0)
+        return probs[0], probs[1]
+
+
+class LogSoftmax2FunctionStage(nn.Module):
+    def forward(self, a: Tensor, b: Tensor) -> tuple[Tensor, Tensor]:
+        log_probs = torch.log_softmax(torch.stack((_ensure_float_tensor(a), _ensure_float_tensor(b)), dim=0), dim=0)
+        return log_probs[0], log_probs[1]
 
 
 class TokenCrossEntropyStage(nn.Module):
@@ -2088,8 +2158,21 @@ class SemanticDataSourceStage(nn.Module):
 
 
 class RandomTimestepsStage(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("_rng_counter", torch.zeros((), dtype=torch.long), persistent=False)
+
     def forward(self, tokens: Tensor) -> Tensor:
-        return torch.rand(tokens.size(0), device=tokens.device, dtype=torch.float32)
+        out = _deterministic_uniform((tokens.size(0),), tokens.device, self._rng_counter, 17)
+        self._rng_counter.add_(1)
+        return out
+
+
+def _deterministic_uniform(shape: tuple[int, ...], device: torch.device, counter: Tensor, salt: int) -> Tensor:
+    n = math.prod(shape)
+    idx = torch.arange(n, device=device, dtype=torch.long)
+    value = (idx * 1_103_515_245 + counter.to(device=device, dtype=torch.long) * 12_345 + int(salt)) % 16_777_216
+    return (value.to(dtype=torch.float32) / 16_777_216.0).reshape(shape)
 
 
 class JEPAMaskStage(nn.Module):
@@ -2109,9 +2192,10 @@ class JEPAMaskStage(nn.Module):
         self.num_blocks = int(num_blocks)
         self.min_block_ratio = float(min_block_ratio)
         self.max_block_ratio = float(max_block_ratio)
+        self.register_buffer("_rng_counter", torch.zeros((), dtype=torch.long), persistent=False)
 
     def _random_mask(self, tokens: Tensor) -> Tensor:
-        noise = torch.rand(tokens.shape, device=tokens.device)
+        noise = _deterministic_uniform(tuple(tokens.shape), tokens.device, self._rng_counter, 29)
         return noise < self.mask_ratio
 
     def _block_mask(self, tokens: Tensor) -> Tensor:
@@ -2120,13 +2204,16 @@ class JEPAMaskStage(nn.Module):
         min_len = max(1, int(self.min_block_ratio * seq_len))
         max_len = max(min_len, int(self.max_block_ratio * seq_len))
         positions = torch.arange(seq_len, device=tokens.device).unsqueeze(0)
-        for _ in range(self.num_blocks):
-            block_len = torch.randint(min_len, max_len + 1, (batch,), device=tokens.device)
+        len_span = max(max_len - min_len + 1, 1)
+        for block_idx in range(self.num_blocks):
+            block_noise = _deterministic_uniform((batch,), tokens.device, self._rng_counter, 101 + block_idx * 2)
+            start_noise = _deterministic_uniform((batch,), tokens.device, self._rng_counter, 102 + block_idx * 2)
+            block_len = (block_noise * len_span).long().clamp(max=len_span - 1) + min_len
             max_start = (seq_len - block_len).clamp_min(0)
-            start = (torch.rand(batch, device=tokens.device) * (max_start.float() + 1.0)).long().clamp_max(max_start)
+            start = (start_noise * (max_start.float() + 1.0)).long().clamp_max(max_start)
             end = start + block_len
-            span = (positions >= start.unsqueeze(1)) & (positions < end.unsqueeze(1))
-            mask = mask | span
+            block_span = (positions >= start.unsqueeze(1)) & (positions < end.unsqueeze(1))
+            mask = mask | block_span
         return mask
 
     def forward(self, tokens: Tensor) -> tuple[Tensor, Tensor]:
@@ -2136,6 +2223,7 @@ class JEPAMaskStage(nn.Module):
             mask = self._random_mask(tokens)
         masked_tokens = tokens.clone()
         masked_tokens[mask] = self.mask_token_id
+        self._rng_counter.add_(1)
         return masked_tokens, mask.to(dtype=torch.float32)
 
 
@@ -2356,8 +2444,16 @@ def default_kv_quant_unpack_config() -> dict[str, Any]:
     return {"head_dim": 64}
 
 
-def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
+def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_config: Any | None = None) -> nn.Module:
     cfg = dict(module_config or {})
+    if tile_cuda_config is not None:
+        from .tile_cuda.modules import build_tile_module
+        from .tile_cuda.runtime import resolve_backend
+
+        if resolve_backend(tile_cuda_config) != "torch":
+            tile_module = build_tile_module(module_type, cfg, tile_cuda_config)
+            if tile_module is not None:
+                return tile_module
     if module_type == "fused_causal_attention":
         return FusedCausalAttentionStage(
             model_dim=int(cfg["model_dim"]),
@@ -2882,7 +2978,15 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
     raise KeyError(f"Unsupported module type: {module_type}")
 
 
-def build_function_module(name: str) -> nn.Module:
+def build_function_module(name: str, tile_cuda_config: Any | None = None) -> nn.Module:
+    if tile_cuda_config is not None:
+        from .tile_cuda.modules import build_tile_function_module
+        from .tile_cuda.runtime import resolve_backend
+
+        if resolve_backend(tile_cuda_config) != "torch":
+            tile_module = build_tile_function_module(name, tile_cuda_config)
+            if tile_module is not None:
+                return tile_module
     if name in {"input", "output", "identity"}:
         return PassthroughFunctionStage()
     if name == "add":
@@ -2907,6 +3011,30 @@ def build_function_module(name: str) -> nn.Module:
         return SoftplusFunctionStage()
     if name == "hard_tanh":
         return HardTanhFunctionStage()
+    if name == "gaussian":
+        return GaussianFunctionStage()
+    if name == "log":
+        return LogFunctionStage()
+    if name == "prelu":
+        return PReluFunctionStage()
+    if name == "relu6":
+        return Relu6FunctionStage()
+    if name == "elu":
+        return EluFunctionStage()
+    if name == "selu":
+        return SeluFunctionStage()
+    if name == "mish":
+        return MishFunctionStage()
+    if name == "softsign":
+        return SoftsignFunctionStage()
+    if name == "hard_sigmoid":
+        return HardSigmoidFunctionStage()
+    if name == "hard_swish":
+        return HardSwishFunctionStage()
+    if name == "softmax_2":
+        return Softmax2FunctionStage()
+    if name == "logsoftmax_2":
+        return LogSoftmax2FunctionStage()
     raise TypeError(f"Function node '{name}' is not supported by the torch runtime")
 
 
@@ -2916,6 +3044,32 @@ def _wrap_output(value: Any) -> tuple[Tensor, ...]:
     if isinstance(value, list):
         return tuple(value)
     return (value,)
+
+
+@dataclass(frozen=True)
+class _FlatInputPlan:
+    node_id: str
+    output_count: int
+
+
+@dataclass(frozen=True)
+class _EdgeInputPlan:
+    src_node: str
+    src_port: int
+    dst_port: int
+    edge_id: str
+
+
+@dataclass(frozen=True)
+class _NodeExecutionPlan:
+    node_id: str
+    kind: str
+    inputs: tuple[_EdgeInputPlan, ...]
+
+
+@dataclass(frozen=True)
+class _FlatOutputPlan:
+    node_id: str
 
 
 def resolve_torch_train_drop_last(
@@ -2935,24 +3089,111 @@ def resolve_torch_train_drop_last(
 
 
 class CompiledTorchGraph(nn.Module):
-    def __init__(self, graph: NeuronGraph) -> None:
+    def __init__(
+        self,
+        graph: NeuronGraph,
+        *,
+        kernel_backend: str = "auto",
+        tile_cuda_strict: bool = False,
+        tile_cuda_report_path: str | None = None,
+    ) -> None:
         super().__init__()
+        from .tile_cuda.config import TileCudaConfig
+        from .tile_cuda.runtime import resolve_backend, write_tile_cuda_report
+
         self.graph = graph
+        self.tile_cuda_config = TileCudaConfig(
+            backend=kernel_backend, strict=tile_cuda_strict, report_path=tile_cuda_report_path
+        )
+        self.resolved_kernel_backend = resolve_backend(self.tile_cuda_config)
+        if self.resolved_kernel_backend == "tile_cuda":
+            self._validate_tile_cuda_coverage(graph)
+        if self.tile_cuda_config.report_file is not None:
+            write_tile_cuda_report(self.tile_cuda_config.report_file, self.tile_cuda_config)
         if graph.has_cycles():
             raise ValueError(f"Torch runtime does not support cyclic graphs: '{graph.name}'")
-        self.order = graph.topological_order() if graph.nodes else []
+        self.order = tuple(graph.topological_order() if graph.nodes else [])
         self.node_modules = nn.ModuleDict()
         for nid, node in graph.nodes.items():
             ndef = node.neuron_def
             if ndef.kind == "module":
-                module = build_module(ndef.module_type, ndef.module_config)
+                module = build_module(ndef.module_type, ndef.module_config, self.tile_cuda_config)
                 if ndef.module_state:
                     module.load_state_dict(decode_module_state_dict(ndef.module_state))
                 self.node_modules[nid] = module
             elif ndef.kind == "subgraph" and ndef.subgraph is not None:
-                self.node_modules[nid] = CompiledTorchGraph(ndef.subgraph)
+                self.node_modules[nid] = CompiledTorchGraph(
+                    ndef.subgraph,
+                    kernel_backend=kernel_backend,
+                    tile_cuda_strict=tile_cuda_strict,
+                    tile_cuda_report_path=tile_cuda_report_path,
+                )
             elif ndef.kind == "function":
-                self.node_modules[nid] = build_function_module(ndef.name)
+                self.node_modules[nid] = build_function_module(ndef.name, self.tile_cuda_config)
+        self._flat_input_plan = tuple(
+            _FlatInputPlan(nid, graph.nodes[nid].neuron_def.n_outputs)
+            for nid in graph.input_node_ids
+        )
+        self._flat_output_plan = tuple(_FlatOutputPlan(nid) for nid in graph.output_node_ids)
+        self._expected_flat_inputs = sum(item.output_count for item in self._flat_input_plan)
+        self._execution_plan = self._compile_execution_plan(graph)
+
+    @staticmethod
+    def _validate_tile_cuda_coverage(graph: NeuronGraph) -> None:
+        from .tile_cuda.registry import tile_kernel_spec_for
+
+        missing: list[str] = []
+        for nid, node in graph.nodes.items():
+            ndef = node.neuron_def
+            if ndef.kind == "subgraph" and ndef.subgraph is not None:
+                CompiledTorchGraph._validate_tile_cuda_coverage(ndef.subgraph)
+                continue
+            spec = tile_kernel_spec_for(ndef)
+            if spec is None:
+                missing.append(f"{nid}:{ndef.kind}:{ndef.name}")
+                continue
+            if spec.status in {"torch_fallback", "planned"}:
+                missing.append(f"{nid}:{spec.kind}:{spec.name}:{spec.status}")
+        if missing:
+            joined = ", ".join(missing[:12])
+            suffix = "" if len(missing) <= 12 else f", ... +{len(missing) - 12} more"
+            raise RuntimeError(f"CUDA Tile strict mode cannot compile uncovered graph nodes: {joined}{suffix}")
+
+    @staticmethod
+    def _compile_execution_plan(graph: NeuronGraph) -> tuple[_NodeExecutionPlan, ...]:
+        input_nodes = set(graph.input_node_ids)
+        plan: list[_NodeExecutionPlan] = []
+        for nid in graph.topological_order() if graph.nodes else []:
+            if nid in input_nodes:
+                continue
+            node = graph.nodes[nid]
+            input_count = node.neuron_def.n_inputs
+            gathered: list[_EdgeInputPlan | None] = [None] * input_count
+            for edge in graph._incoming(nid):
+                if edge.dst_port >= input_count:
+                    raise ValueError(f"Edge '{edge.id}' dst_port={edge.dst_port} exceeds destination inputs")
+                if gathered[edge.dst_port] is not None:
+                    raise ValueError(
+                        f"Torch graph '{graph.name}' has multiple incoming edges into "
+                        f"node '{nid}' port {edge.dst_port}; use an explicit combine node instead"
+                    )
+                gathered[edge.dst_port] = _EdgeInputPlan(
+                    src_node=edge.src_node,
+                    src_port=edge.src_port,
+                    dst_port=edge.dst_port,
+                    edge_id=edge.id,
+                )
+            missing = [idx for idx, value in enumerate(gathered) if value is None]
+            if missing:
+                raise ValueError(f"Node '{nid}' is missing required torch inputs at ports {missing}")
+            plan.append(
+                _NodeExecutionPlan(
+                    node_id=nid,
+                    kind=node.neuron_def.kind,
+                    inputs=tuple(value for value in gathered if value is not None),
+                )
+            )
+        return tuple(plan)
 
     def forward(self, *flat_inputs: Tensor) -> tuple[Tensor, ...]:
         outputs, _trace = self._run(flat_inputs, want_trace=False)
@@ -2974,23 +3215,21 @@ class CompiledTorchGraph(nn.Module):
             values[nid] = tensor_tuple
             traces[nid] = tensor_tuple
 
-        for nid in self.order:
-            if nid in values and nid in provided:
-                continue
-            node = self.graph.nodes[nid]
-            args = self._gather_inputs(nid, values)
-            if node.neuron_def.kind == "subgraph" and want_trace:
-                child_outputs, child_trace = self.node_modules[nid].trace(*args)
-                values[nid] = _wrap_output(child_outputs)
-                traces[nid] = values[nid]
+        for node_plan in self._execution_plan:
+            args = self._gather_inputs(node_plan, values)
+            module = self.node_modules[node_plan.node_id]
+            if node_plan.kind == "subgraph" and want_trace:
+                child_outputs, child_trace = module.trace(*args)
+                values[node_plan.node_id] = _wrap_output(child_outputs)
+                traces[node_plan.node_id] = values[node_plan.node_id]
                 for child_key, child_value in child_trace.items():
-                    traces[f"{nid}/{child_key}"] = child_value
+                    traces[f"{node_plan.node_id}/{child_key}"] = child_value
             else:
                 # Use the node's fixed child module directly so torch.compile does
                 # not have to specialize one generic dispatcher across mixed node
                 # arities and dtypes.
-                values[nid] = _wrap_output(self.node_modules[nid](*args))
-                traces[nid] = values[nid]
+                values[node_plan.node_id] = _wrap_output(module(*args))
+                traces[node_plan.node_id] = values[node_plan.node_id]
 
         outputs = self._flatten_outputs(values)
         return outputs, traces if want_trace else {}
@@ -2998,17 +3237,15 @@ class CompiledTorchGraph(nn.Module):
     def _expand_flat_inputs(self, flat_inputs: tuple[Tensor, ...]) -> dict[str, tuple[Tensor, ...]]:
         expanded: dict[str, tuple[Tensor, ...]] = {}
         idx = 0
-        for nid in self.graph.input_node_ids:
-            node = self.graph.nodes[nid]
-            n_out = node.neuron_def.n_outputs
-            chunk = flat_inputs[idx : idx + n_out]
-            if len(chunk) != n_out:
+        for item in self._flat_input_plan:
+            chunk = flat_inputs[idx : idx + item.output_count]
+            if len(chunk) != item.output_count:
                 raise ValueError(
-                    f"Graph '{self.graph.name}' expected {len(self.graph.interface_input_layout())} "
+                    f"Graph '{self.graph.name}' expected {self._expected_flat_inputs} "
                     f"flattened inputs but received {len(flat_inputs)}"
                 )
-            expanded[nid] = tuple(chunk)
-            idx += n_out
+            expanded[item.node_id] = tuple(chunk)
+            idx += item.output_count
         if idx != len(flat_inputs):
             raise ValueError(
                 f"Graph '{self.graph.name}' expected {idx} flattened inputs but received {len(flat_inputs)}"
@@ -3017,29 +3254,23 @@ class CompiledTorchGraph(nn.Module):
 
     def _flatten_outputs(self, values: dict[str, tuple[Tensor, ...]]) -> tuple[Tensor, ...]:
         flattened: list[Tensor] = []
-        for nid in self.graph.output_node_ids:
-            flattened.extend(values.get(nid, ()))
+        for item in self._flat_output_plan:
+            flattened.extend(values.get(item.node_id, ()))
         return tuple(flattened)
 
-    def _gather_inputs(self, node_id: str, values: dict[str, tuple[Tensor, ...]]) -> tuple[Tensor, ...]:
-        node = self.graph.nodes[node_id]
-        gathered: list[Tensor | None] = [None] * node.neuron_def.n_inputs
-        for edge in self.graph._incoming(node_id):
+    def _gather_inputs(self, node_plan: _NodeExecutionPlan, values: dict[str, tuple[Tensor, ...]]) -> tuple[Tensor, ...]:
+        gathered: list[Tensor | None] = [None] * len(node_plan.inputs)
+        for edge in node_plan.inputs:
             src_vals = values.get(edge.src_node)
             if src_vals is None:
-                raise ValueError(f"Node '{node_id}' is missing source values from '{edge.src_node}'")
+                raise ValueError(f"Node '{node_plan.node_id}' is missing source values from '{edge.src_node}'")
             if edge.src_port >= len(src_vals):
-                raise ValueError(f"Edge '{edge.id}' src_port={edge.src_port} exceeds source outputs")
-            if gathered[edge.dst_port] is not None:
-                raise ValueError(
-                    f"Torch graph '{self.graph.name}' has multiple incoming edges into "
-                    f"node '{node_id}' port {edge.dst_port}; use an explicit combine node instead"
-                )
+                raise ValueError(f"Edge '{edge.edge_id}' src_port={edge.src_port} exceeds source outputs")
             gathered[edge.dst_port] = src_vals[edge.src_port]
 
         missing = [idx for idx, value in enumerate(gathered) if value is None]
         if missing:
-            raise ValueError(f"Node '{node_id}' is missing required torch inputs at ports {missing}")
+            raise ValueError(f"Node '{node_plan.node_id}' is missing required torch inputs at ports {missing}")
         return tuple(value for value in gathered if value is not None)
 
     def sync_state_back(self, graph: NeuronGraph | None = None) -> None:
@@ -3089,6 +3320,9 @@ class TorchTrainConfig:
     muon_momentum_warmup_steps: int = 500
     drop_last: bool | None = None
     respect_epoch_boundaries: bool = False
+    kernel_backend: str = "auto"
+    tile_cuda_strict: bool = False
+    tile_cuda_report_path: str | None = None
     evolutionary: bool = False
     evo_population_size: int = 50
     evo_mutation_rate: float = 0.1
@@ -4220,7 +4454,12 @@ class TorchTrainer:
         else:
             dataset = self._build_manual_dataset(self.graph, train_inputs, train_targets)
         # ── 2. Compile the graph AFTER adjustments ────────────────────
-        compiled = CompiledTorchGraph(self.graph)
+        compiled = CompiledTorchGraph(
+            self.graph,
+            kernel_backend=self.config.kernel_backend,
+            tile_cuda_strict=self.config.tile_cuda_strict,
+            tile_cuda_report_path=self.config.tile_cuda_report_path,
+        )
         self._prepare_ema_targets(compiled)
         # Fine-tuning: load pretrained base + freeze non-LoRA params if spec present.
         self._apply_finetune_prehook(compiled, self.graph)
@@ -4721,6 +4960,7 @@ class MaskSchedulerStage(nn.Module):
         super().__init__()
         self.vocab_size = vocab_size
         self.mask_token_id = mask_token_id
+        self.register_buffer("_rng_counter", torch.zeros((), dtype=torch.long), persistent=False)
         
     def forward(self, tokens: Tensor, timesteps: Tensor) -> Tensor:
         # tokens: [batch, seq]
@@ -4728,11 +4968,12 @@ class MaskSchedulerStage(nn.Module):
         # Simple random masking based on timestep
         batch, seq = tokens.shape
         mask_probs = timesteps.view(-1, 1).expand(batch, seq)
-        noise = torch.rand(batch, seq, device=tokens.device)
+        noise = _deterministic_uniform((batch, seq), tokens.device, self._rng_counter, 53)
         mask = noise < mask_probs
         
         noisy_tokens = tokens.clone()
         noisy_tokens[mask] = self.mask_token_id
+        self._rng_counter.add_(1)
         return noisy_tokens
 
 
@@ -5605,7 +5846,12 @@ class PPOTrainer:
         device = torch.device(device_name)
 
         # Compile once; we drive the graph manually through minibatches.
-        compiled = CompiledTorchGraph(self.graph)
+        compiled = CompiledTorchGraph(
+            self.graph,
+            kernel_backend=self.config.kernel_backend,
+            tile_cuda_strict=self.config.tile_cuda_strict,
+            tile_cuda_report_path=self.config.tile_cuda_report_path,
+        )
         TorchTrainer._apply_finetune_prehook(compiled, self.graph)
         compiled.to(device)
 

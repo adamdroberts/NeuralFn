@@ -6,6 +6,108 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-10 CUDA Tile backend plan and compiled training hot path
+
+#### Added
+
+- Added `todo-tile-cuda.md` as the authoritative CUDA Tile C++ implementation checklist. It inventories every current NeuralFn scalar builtin and module builtin, defines coverage gates for `BuiltinNeurons`, `build_module()`, and `build_function_module()`, and records CUDA Tile requirements, SDK/CLI work, examples, docs, and verification tasks.
+- Added the initial `neuralfn.tile_cuda` SDK package with backend config, runtime diagnostics, a kernel registry, coverage reports, autograd wrappers, and an optional CUDA Tile PyTorch extension source build path. The registry accounts for every current builtin, module dispatch entry, scalar function dispatch entry, and optimizer/runtime kernel target without claiming incomplete CUDA Tile kernels are implemented.
+- Added `TorchTrainConfig.kernel_backend`, `tile_cuda_strict`, and `tile_cuda_report_path` fields so the training API has a stable place to select CUDA Tile behavior as kernels land.
+- Added real CUDA Tile float32 scalar fast-path kernels for `identity`, `negate`, `add`, `multiply`, `sigmoid`, `relu`, `tanh_neuron`, `gaussian`, `log`, `leaky_relu`, `prelu`, `relu6`, `elu`, `selu`, `silu`, `mish`, `softplus`, `softsign`, `hard_sigmoid`, `hard_tanh`, `hard_swish`, `softmax_2`, and `logsoftmax_2`, with PyTorch fallback for unsupported tensors.
+- Added CUDA Tile scalar and module `gelu` coverage using the shared unary Tile path and autograd-composed exact GELU gradients.
+- Added CUDA Tile elementwise module kernels for `logit_softcap`, `loss_scale`, `aux_loss_add`, `kl_penalty`, `residual_add`, `residual_mix`, `manifold_hyper_connection`, `qk_gain`, and `dyt`, including input and parameter gradients for the vector-scale modules.
+- Added CUDA Tile layout kernels for `reshape_heads`, `merge_heads`, and `repeat_kv`, with inverse-layout autograd wrappers and CPU/GPU drift tests.
+- Added CUDA Tile module kernels for `expert_combine`, `kv_cache_write`, `broadcast_expert_routes`, `broadcast_chunk_routes`, `byte_patch_merge`, and `latent_mse_loss`. The route kernels cover float32 route-weight expansion with int64 route-index outputs, `byte_patch_merge` covers nearest interpolation back to token length, and `latent_mse_loss` uses a Tile reduction for detached-target MSE.
+- Added CUDA Tile `byte_patch_embed` coverage for byte-token embedding plus bias-free Conv1d patch projection, preserving `embedding.weight` and `proj.weight` state dict keys with PyTorch-composed gradients.
+- Added CUDA Tile coverage for `threshold`, `kv_cache_read`, and `absolute_position_embedding`. `threshold` is a zero-gradient no-grad-style step function, `kv_cache_read` concatenates cached and current K/V tensors along the sequence dimension, and absolute position embeddings use a Tile gather-copy with explicit embedding-weight gradients.
+- Added CUDA Tile `token_embedding` coverage with native int64 token lookup and indexed embedding-weight gradient accumulation while preserving the stage's `(hidden, embedding_weight)` output contract.
+- Added CUDA Tile `rotary_embedding` coverage for Q/K RoPE forward math with inverse-rotation backward gradients and support for different query and KV head counts.
+- Added CUDA Tile `causal_chunk_state` coverage for prefix and mean chunk-state construction with native Tile forward accumulation and PyTorch-composed gradients.
+- Added CUDA Tile `rms_norm` and `qk_norm` coverage for contiguous float32 rows with last dimension up to 1024.
+- Added CUDA Tile `layer_norm` coverage for contiguous float32 rows with last dimension up to 1024 and affine weight/bias gradients.
+- Added CUDA Tile `group_norm` coverage for `[B,S,D]` tensors when `S * group_dim <= 1024`, preserving `norm.weight` and `norm.bias` state dict keys with PyTorch-composed gradients.
+- Added CUDA Tile projection coverage for `linear`, `lm_head`, and `tied_lm_head`, with native forward dot products and autograd-composed input/weight/bias gradients.
+- Added CUDA Tile composition coverage for `bitlinear_ternary`, preserving the PyTorch-reference ternary weight and activation STE while running the quantized projection through the Tile linear path.
+- Added CUDA Tile composition coverage for `fp8_linear`, preserving the reference FP8 weight STE and `amax_history` update while running the dequantized projection through the Tile linear path.
+- Added CUDA Tile composition coverage for `mx_linear`, preserving the reference MXFP4/MXFP8 block-scale weight STE while running the dequantized projection through the Tile linear path.
+- Added CUDA Tile composition coverage for `nf4_linear` when `compute_dtype="fp32"` and `dropout=0`, preserving packed NF4 buffers, LoRA parameters, and `load_base_weight()` while running dequantized base and LoRA projections through Tile linear paths.
+- Added CUDA Tile composition coverage for `randmap_adapter`, including a native trainable scaled residual add primitive for the adapter scale parameter while preserving frozen `down_proj`/`up_proj` maps and trainable `middle.weight`.
+- Added CUDA Tile projection-composition coverage for `kv_pca_encode` and `kv_pca_decode`, preserving the PyTorch stage parameter names (`k_proj`, `v_proj`, `k_unproj`, and `v_unproj`) for checkpoint-compatible KV cache compression.
+- Added CUDA Tile KV quantization coverage for `kv_quant_pack` and `kv_quant_unpack`, covering same-shaped float32 K/V rows with `head_dim <= 512`, per-row scale packing, dequantized unpacking, and PyTorch-compatible autograd for the non-smooth quantization contract.
+- Added CUDA Tile composition coverage for `ttt_linear`, using Tile base projection, down projection, tanh activation, up projection, and residual add while preserving the existing TTT state dict keys.
+- Added CUDA Tile composition coverage for deterministic `lora_linear` stages with `dropout=0`, using Tile base projection, low-rank A/B projections, and scaled residual add while preserving the existing LoRA state dict keys.
+- Added CUDA Tile composition coverage for `mlp_relu2`, `swiglu`, `geglu`, and `reglu` using Tile linear, unary activation, and multiply primitives while preserving the original stage parameter names.
+- Added CUDA Tile `solu` coverage using Tile linear projections plus a native row-wise softmax gate primitive for the softmax-gated GLU path.
+- Added CUDA Tile composition coverage for `jepa_projector` and `jepa_predictor`, using Tile linear, LayerNorm, and GELU primitives while preserving the original `net.*` state dict keys.
+- Added CUDA Tile projection-family wrappers for `router_logits`, `value_head`, `reward_head`, and `denoise_head` using the shared Tile linear primitive while preserving their original state dict keys and output shapes.
+- Added CUDA Tile `act_halt_gate` coverage by composing Tile mean-pool/projection/sigmoid behavior while preserving the stage's `proj.*` state dict keys.
+- Added CUDA Tile `act_weighted_sum` coverage for deterministic ACT recurrent-state accumulation with gradients for states and weights.
+- Added CUDA Tile `latent_pool` coverage for JEPA masked latent pooling, including mean fallback for empty masks and gradients for both latent states and floating masks.
+- Added CUDA Tile `token_cross_entropy` and `masked_token_cross_entropy` coverage with numerically stable native reductions, ignore-index support for the masked variant, and autograd-composed logits/mask gradients.
+- Added CUDA Tile `sequence_logp` coverage for DPO-style masked sequence log-probability reduction with ignore-index support and gradients for logits and floating masks.
+- Added CUDA Tile `dpo_pairwise_loss` coverage for sigmoid, hinge, and IPO pairwise preference losses. The Tile kernel reduces the scalar loss and emits detached chosen/rejected rewards to preserve the PyTorch stage contract.
+- Added CUDA Tile `ppo_clipped_loss` coverage for PPO policy/value loss reductions, returning policy loss, value loss, and combined loss with PyTorch-composed gradients for clipping-branch parity.
+- Added CUDA Tile `gae_compute` coverage for reverse-time generalized advantage estimation, returning advantages and returns with PyTorch-composed gradients for the scan contract.
+- Added CUDA Tile `preference_bce_loss` coverage for Bradley-Terry preference-model loss reduction with gradients for chosen and rejected rewards.
+- Added CUDA Tile `load_balance_loss` coverage by reusing the native route-balance reduction while preserving the stage's `(aux_loss, router_logits)` passthrough output and gradients.
+- Added CUDA Tile `auxfree_load_balancing` coverage for per-expert bias addition while preserving the stage's no-grad device-side bias update.
+- Added CUDA Tile `topk_route` coverage for normalized top-k routing weights and expert indices, preserving routing telemetry buffers and recomputing the selected-softmax path for gradients.
+- Added CUDA Tile `route_balance_loss` coverage for router softmax-density balance loss with a native Tile density/reduction forward and autograd-composed gradients.
+- Added CUDA Tile `route_selection_loss` coverage for supervised semantic-route BCE over the semantic expert slice, using the same semantic vocabulary dimension lookup as the PyTorch stage and PyTorch-composed gradients for parity.
+- Added CUDA Tile composition coverage for `route_distillation_loss`, building detached teacher route logits from semantic topic confidence scores and using the native Tile softmax-distillation reduction for the student route KL objective.
+- Added CUDA Tile `semantic_alignment_loss` coverage for masked semantic topic cross-entropy over per-dimension vocabulary logits, using native Tile item losses with PyTorch-composed logits gradients.
+- Added CUDA Tile composition coverage for `semantic_projector`, using Tile topic heads, signature projection, row-softmax signature scalar, and residual MLP while preserving all projector state dict keys.
+- Added CUDA Tile composition coverage for `semantic_chunk_projector`, flattening chunk states through Tile topic heads, signature projection, row-softmax signature scalar, and residual MLP before restoring the chunk-axis output contract.
+- Added CUDA Tile `semantic_hasher` and `semantic_chunk_hasher` coverage for deterministic LSH bucket ID generation from flat and chunked semantic vectors.
+- Added CUDA Tile composition coverage for `semantic_moe_router`, using native top-k route selection over cosine similarity while preserving the router centroids and telemetry buffers.
+- Added CUDA Tile composition coverage for `semantic_hash_router`, using native top-k route selection for unforced hash/topic routing while preserving the PyTorch forced-target ordering path.
+- Added CUDA Tile composition coverage for `semantic_moe_jepa_evo_router`, preserving shared/semantic/free route logits and forced-target ordering while routing the free expert head through Tile projection.
+- Added CUDA Tile composition coverage for `expert_dispatch`, preserving the token-to-expert routing loop while using Tile linear and SiLU primitives for each selected expert MLP.
+- Added CUDA Tile `scaled_dot_product_attention` coverage for contiguous float32 `[B,H,S,D]` attention with causal/non-causal masking, grouped-query head mapping, PyTorch-composed gradients, and CPU fallback.
+- Extended the CUDA Tile attention kernel to cover `sliding_window_attention`, `block_sparse_attention`, `streaming_attention_sinks`, and deterministic `native_sparse_attention` sparse-mask patterns with right-aligned causal masking.
+- Added CUDA Tile composition coverage for `differential_attention`, using split Q/K Tile SDPA branches, lambda subtraction, and Tile RMSNorm while preserving PyTorch-compatible gradients.
+- Added CUDA Tile composition coverage for `causal_self_attention`, `fused_causal_attention`, `multi_latent_attention`, and `routed_attention_experts` using Tile projection, RoPE, SDPA, normalization, and output-projection primitives where each stage requires them.
+- Added CUDA Tile `attentionless_decoder` coverage for bucket-conditioned expert-output decoding, preserving `bucket_embed.weight` and `out_proj.weight` gradients.
+- Added CUDA Tile `dropout` coverage for deterministic `p=0` and inference passthrough via the Tile identity path while leaving stochastic training masks on the PyTorch RNG path.
+- Added CUDA Tile `softmax_distillation_loss` coverage for teacher/student KL distillation with teacher-detached gradients and PyTorch-compatible `batchmean` scaling.
+- Added CUDA Tile optimizer/runtime coverage for `adamw_step`, exposing a tensor-level AdamW update with decoupled weight decay, bias correction, CPU fallback, and GPU parity coverage.
+- Added CUDA Tile optimizer/runtime coverage for `ema_update`, exposing an in-place no-grad target/source weighted-average helper with CPU fallback and GPU parity coverage.
+- Added CUDA Tile optimizer/runtime coverage for `gradient_accumulate`, exposing an in-place scaled add-into-buffer helper with CPU fallback and GPU parity coverage.
+- Added CUDA Tile optimizer/runtime coverage for `gradient_clip_norm`, exposing multi-tensor global L2 norm reduction plus in-place gradient scaling with CPU fallback and GPU parity coverage.
+- Added CUDA Tile composition coverage for `mamba`, routing the input/output projections and gating through Tile primitives while preserving the depthwise convolution contract.
+- Added CUDA Tile deterministic counter-random coverage for `random_timesteps`, `mask_scheduler`, and random/block `jepa_mask`.
+- Added CUDA Tile composition coverage for `universal_transformer`, including recurrent attention, MLP, and ACT halt-gate paths.
+- Added CUDA Tile optimizer/runtime helpers for `muon_newton_schulz`, `muon_step`, and `split_optimizer_step`.
+- Added `nfn kernels list`, `nfn kernels doctor`, `nfn kernels bench`, and `nfn kernels examples` with optional `--json` output for CUDA Tile registry coverage, diagnostics, benchmark comparison, and example generation.
+- Added `examples/tile_cuda/` with smoke examples and generated one-file SDK snippets for all 138 registry entries.
+- Added `nfn train`, `nfn infer`, and `nfn eval` support for `--kernel-backend {auto,torch,tile-cuda}`, `--tile-cuda-strict`, and `--tile-cuda-report PATH`.
+- Added the `tile-cuda` optional dependency extra for the `ninja` build tool required by PyTorch C++/CUDA extension builds.
+
+#### Changed
+
+- `CompiledTorchGraph` now precomputes flat input/output routing and node edge inputs during initialization. Forward and trace execution use that immutable execution plan instead of walking graph-editor node and edge metadata for every batch, keeping real training tensors on the compiled backend hot path.
+- `CompiledTorchGraph` now consumes CUDA Tile backend settings. Strict Tile mode validates graph coverage before batches run, and optional report paths write diagnostics plus coverage JSON.
+- The optional CUDA Tile extension build is opt-in via `NFN_TILE_CUDA_BUILD=1` or `TileCudaConfig(build_enabled=True)`, with `NFN_TILE_CUDA_ARCH` available for explicit architecture selection.
+- `MLAStage` now passes contiguous Q/K/V tensors into CUDA SDPA to avoid misaligned-address faults from transposed views on GPU.
+- The CUDA Tile registry now accounts for all 138 training-relevant NeuralFn entries: 129 Tile-covered kernels/compositions, 7 host-only source/interface entries, and 2 delegated compiled-graph calls. The default registry has no `torch_fallback` entries.
+
+#### Breaking changes
+
+- `RandomTimestepsStage`, `MaskSchedulerStage`, and `JEPAMaskStage` no longer draw from the global PyTorch RNG in their Tile-compatible paths. They now use deterministic counter-based random generation so CPU/GPU parity and compiled execution are reproducible. Tests or callers that asserted exact global-RNG side effects should assert output shape/range or stage-local determinism instead.
+
+#### Verification
+
+- Added regression coverage that compiles a graph, disables graph edge traversal after compilation, and verifies the compiled forward pass still succeeds from the static execution plan.
+- Added `tests/test_tile_cuda_registry.py` to verify the CUDA Tile registry covers the current NeuralFn builtin and dispatch inventory and reports explicit fallback/delegation reasons for unfinished kernels.
+- Added `tests/test_tile_cuda_ops.py` for deterministic CPU and GPU forward/backward parity across the implemented unary, binary, and binary-pair scalar family.
+- Added `tests/test_tile_cuda_modules.py` for deterministic CPU and GPU forward/backward parity across the implemented elementwise module family.
+- Added `tests/test_tile_cuda_coverage.py`, `tests/test_tile_cuda_static_plan.py`, and `tests/test_tile_cuda_examples.py` for the final coverage gate, training hot-path invariant, and checked-in/generated examples.
+- Added CLI coverage for `nfn kernels list --json`, `nfn kernels doctor --json`, `nfn kernels bench --json`, and `nfn kernels examples --json --write`.
+- Verified the CUDA Tile translation unit with `/usr/local/cuda/bin/nvcc -std=c++20 --enable-tile -arch=sm_80 -c neuralfn/csrc/tile_cuda/kernels.cu -o /tmp/neuralfn_tile_kernels.o`.
+- Verified focused Python coverage with `python -m pytest tests/test_tile_cuda_registry.py tests/test_tile_cuda_ops.py tests/test_tile_cuda_modules.py tests/test_tile_cuda_optimizer.py tests/test_torch_gpt.py cli/tests/test_nfn_cli.py -q` (`239 passed, 133 skipped, 1 warning, 4 subtests passed`). The skipped cases are GPU drift tests skipped inside the sandboxed process.
+- Installed `ninja` in the active Python environment because PyTorch requires it for JIT C++/CUDA extension builds, then verified GPU drift with `NFN_TILE_CUDA_TEST=1 NFN_TILE_CUDA_BUILD=1 NFN_TILE_CUDA_ARCH=sm_120 python -m pytest tests/test_tile_cuda_ops.py tests/test_tile_cuda_modules.py tests/test_tile_cuda_optimizer.py tests/test_tile_cuda_gpu.py -q -rs` (`269 passed, 2 warnings`).
+- Re-ran the required preset gate after Tile module wiring with `HOME=/tmp/neuralfn-home python -m pytest tests/test_template_presets.py -x -q` (`18 passed, 15 warnings`). The redirected `HOME` keeps the test dataset cache writable inside the sandbox.
+
 ### 2026-05-28 Frontier GPT templates (modern-kernel × existing-template combinations)
 
 #### Added

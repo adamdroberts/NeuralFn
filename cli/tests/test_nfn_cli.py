@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import os
 from pathlib import Path
 import sys
@@ -75,6 +76,69 @@ class NfnCliTest(unittest.TestCase):
         self.assertIn("--model-preset", help_text)
         self.assertIn("--optimizer-preset", help_text)
         self.assertIn("--pretraining-file", help_text)
+
+    def test_kernels_list_json_reports_complete_registry(self) -> None:
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = nfn_impl.main(["kernels", "list", "--json"], stdin_isatty=False, stdout_isatty=False)
+
+        self.assertEqual(0, rc)
+        payload = json.loads(out.getvalue())
+        self.assertTrue(payload["complete"])
+        self.assertEqual([], payload["missing"])
+        self.assertEqual(payload["total_inventory"], payload["accounted"])
+        keys = {spec["inventory_key"] for spec in payload["specs"]}
+        self.assertIn("function:gelu", keys)
+        self.assertIn("module:gelu", keys)
+
+    def test_kernels_doctor_json_reports_diagnostics_and_coverage_summary(self) -> None:
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = nfn_impl.main(["kernels", "doctor", "--json"], stdin_isatty=False, stdout_isatty=False)
+
+        self.assertEqual(0, rc)
+        payload = json.loads(out.getvalue())
+        self.assertIn("diagnostics", payload)
+        self.assertIn("coverage", payload)
+        self.assertTrue(payload["coverage"]["complete"])
+        self.assertIn("cuda_tile_header", payload["diagnostics"])
+
+    def test_kernels_bench_json_reports_execution_modes(self) -> None:
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = nfn_impl.main(
+                ["kernels", "bench", "--json", "--device", "cpu", "--iterations", "1", "--warmup", "0"],
+                stdin_isatty=False,
+                stdout_isatty=False,
+            )
+
+        self.assertEqual(0, rc)
+        payload = json.loads(out.getvalue())
+        self.assertEqual("cpu", payload["device"])
+        self.assertEqual(1, payload["iterations"])
+        self.assertEqual(0, payload["warmup"])
+        self.assertIn("graph_walk_pytorch", payload["seconds"])
+        self.assertIn("compiled_pytorch", payload["seconds"])
+        self.assertIn("compiled_tile_cuda_requested", payload["seconds"])
+
+    def test_kernels_examples_json_lists_and_writes_examples(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = io.StringIO()
+            with redirect_stdout(out):
+                rc = nfn_impl.main(
+                    ["kernels", "examples", "--json", "--write", "--output-dir", tmp],
+                    stdin_isatty=False,
+                    stdout_isatty=False,
+                )
+
+            self.assertEqual(0, rc)
+            payload = json.loads(out.getvalue())
+            self.assertTrue(payload["written"])
+            self.assertGreater(payload["generated_count"], 0)
+            self.assertTrue((Path(tmp) / "scalar_add_train.py").exists())
+            generated_dir = Path(payload["generated_dir"])
+            self.assertTrue(generated_dir.exists())
+            self.assertTrue(any(generated_dir.glob("function_*.py")))
 
     def test_raw_text_tokenizer_choices_show_sentencepiece_variants_even_when_missing(self) -> None:
         recipe = nfn.recipe_from_state({"base_model": "gpt2", "topology": "dense"})
@@ -585,6 +649,28 @@ class NfnCliTest(unittest.TestCase):
         self.assertAlmostEqual(0.5, trainer_cfg.evo_crossover_rate)
         self.assertEqual(3, trainer_cfg.evo_tournament_size)
         self.assertEqual(2, trainer_cfg.evo_elite_count)
+
+    def test_build_trainer_config_hydrates_tile_cuda_flags(self) -> None:
+        planned = nfn.maybe_plan(
+            "train",
+            {
+                "base_model": "llama",
+                "kernel_backend": "tile-cuda",
+                "tile_cuda_strict": True,
+                "tile_cuda_report": "/tmp/nfn-tile-report.json",
+            },
+            {"base_model", "kernel_backend", "tile_cuda_strict", "tile_cuda_report"},
+            interactive=False,
+        )
+        args = nfn_impl.namespace_from_state("train", planned)
+        trainer_cfg = nfn_impl.build_trainer_config(
+            args,
+            resolved_epochs=1,
+            derived={"drop_last": True, "respect_epoch_boundaries": False},
+        )
+        self.assertEqual("tile-cuda", trainer_cfg.kernel_backend)
+        self.assertTrue(trainer_cfg.tile_cuda_strict)
+        self.assertEqual("/tmp/nfn-tile-report.json", trainer_cfg.tile_cuda_report_path)
 
     def test_namespace_from_state_hydrates_train_parser_defaults(self) -> None:
         args = nfn_impl.namespace_from_state(
