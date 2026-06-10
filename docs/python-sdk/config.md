@@ -155,6 +155,24 @@ Specifies the architecture of a single transformer block.
 | `byte_patch_size` | `int` | `4` | Byte-level patch size (HNet) |
 | `byte_patch_stride` | `int` | `4` | Byte-level patch stride (HNet) |
 | `qk_gain_init` | `float` | `1.0` | Initial query/key gain used by routed semantic attention variants |
+| `attention_variant` | `str` | `"dense"` | Attention core: `"dense"`, `"differential"`, `"sliding_window"`, `"block_sparse"`, `"nsa"`, `"streaming"`, `"mla"` |
+| `use_qk_norm` | `bool` | `False` | Fused RMSNorm on Q and K before SDPA (DeepSeek-V3, Gemma-3) |
+| `dyt_alpha_init` | `float` | `1.0` | Initial alpha for `norm_type="dyt"` (Dynamic Tanh) |
+| `group_norm_groups` | `int` | `1` | Groups for `norm_type="group_norm"` |
+| `diff_lambda_init` | `float` | `0.8` | Initial lambda for differential attention |
+| `moe_balance_mode` | `str` | `"aux_loss"` | MoE load balancing: `"aux_loss"` or `"auxfree"` (DeepSeek-V3 bias-adjusted) |
+| `auxfree_bias_lr` | `float` | `0.001` | Update rate for the auxfree expert-load bias |
+| `router_score_fn` | `str` | `"softmax"` | Router affinity scoring (`softmax`/`sigmoid`/`sqrt_softplus`) |
+| `residual_type` | `str` | `"add"` | Residual mix: `"add"` or `"mhc"` (Manifold-Constrained Hyper-Connection) |
+| `window_size` | `int \| None` | `None` | Local window for sliding-window / streaming / NSA attention |
+| `sparse_block_size` | `int` | `64` | Block size for block-sparse attention |
+| `num_sinks` | `int` | `0` | Persistent attention-sink tokens (StreamingLLM / NSA) |
+| `nsa_compress_stride` | `int` | `16` | CSA "compress every m KV" stride for native-sparse attention |
+| `mx_block_size` | `int` | `32` | OCP microscaling block size for `compression` in `{mxfp4, mxfp8}` |
+| `fp8_amax_history_len` | `int` | `16` | Amax-history length for FP8 delayed scaling |
+| `fp8_use_stochastic_rounding` | `bool` | `True` | Stochastic-rounding intent flag for FP8 weight updates |
+
+`norm_type` also accepts `"dyt"` and `"group_norm"`; `mlp_type` also accepts `"geglu"`, `"reglu"`, `"solu"`; `compression` also accepts `"fp8_e4m3"`, `"fp8_e5m2"`, `"mxfp4"`, `"mxfp8"`. See the frontier presets in `docs/framework-guide/templates-and-presets.md`.
 
 ---
 

@@ -8,6 +8,7 @@ from neuralfn.graph import Edge, NeuronGraph, NeuronInstance
 from neuralfn.neuron import neuron_from_source, subgraph_neuron
 from neuralfn.port import Port
 from neuralfn.config import (
+    MODERN_BASE_PRESETS,
     build_hnet_lm_spec,
     build_llm_jepa_spec,
     build_ttt_llama_spec,
@@ -23,7 +24,9 @@ from server.services.graph_ops import apply_gpt_template, load_dataset_source_in
 PRESETS = [
     "nanogpt",
     "gpt2",
+    "gpt2_moa",
     "llama",
+    "modern_norms_llama",
     "moe",
     "llama_fast",
     "llama_fast_megakernel",
@@ -31,6 +34,11 @@ PRESETS = [
     "mixllama_fast_megakernel",
     "jamba",
     "ternary_b158",
+    "fp8_llama",
+    "mxfp4_llama",
+    "gemma3",
+    "diff_transformer",
+    "longctx_sparse_llama",
     "seq2seq",
     "diffusion",
     "ttt_llama",
@@ -47,7 +55,13 @@ PRESETS = [
     "semantic_router_moe_megakernel",
     "semantic_dense_jepa_evo",
     "semantic_moe_jepa_evo",
-]
+    "deepseek_v3",
+    "deepseek_v4",
+    "qwen3_longctx",
+    "auxfree_moe_jepa_evo",
+    "diff_semantic_moe_jepa_evo",
+    "dyt_geglu_semantic_dense_jepa_evo",
+] + [f"{p}_modern" for p in MODERN_BASE_PRESETS]
 
 
 def _cpu_graph(graph):

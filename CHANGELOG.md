@@ -6,6 +6,54 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-05-28 Frontier GPT templates (modern-kernel × existing-template combinations)
+
+#### Added
+
+- **16 new builtin ops** (PyTorch-reference Stages first, per `todo-kernels.md`, to be repointed at `llm.kittens` kernels later), registered in `neuralfn/builtins.py` + `neuralfn/torch_backend.py`:
+  - Norms/gates: `dyt` (Dynamic Tanh), `group_norm`, `qk_norm` (fused RMSNorm on Q/K), `geglu`, `reglu`, `solu`.
+  - Attention cores (preserve the `forward(q,k,v) -> [B,H,S,head_dim]` SDPA-core contract, masks built internally): `sliding_window_attention`, `block_sparse_attention`, `streaming_attention_sinks`, `native_sparse_attention` (NSA / CSA-spirit), `differential_attention`; plus self-contained `multi_latent_attention` (MLA, owns its decoupled RoPE).
+  - MoE: `auxfree_load_balancing` (DeepSeek-V3 bias-adjusted routing; keeps the `aux_loss` port at 0 so MoE block arity is unchanged).
+  - Precision: `fp8_linear` (E4M3/E5M2) and `mx_linear` (OCP MXFP4/MXFP8), via the existing compression seam in `get_linear_module_def`.
+  - Residual: `manifold_hyper_connection` (single-stream mHC, non-expansive).
+  - RoPE scaling: `rope_scaling` (`linear`/`ntk`/`yarn`) is now honored by `RotaryEmbeddingStage` (the `BlockSpec.rope_scaling` field was previously dormant).
+- **12 new flagship/precision/cross presets**: `deepseek_v3`, `deepseek_v4`, `gemma3`, `diff_transformer`, `qwen3_longctx`, `longctx_sparse_llama`, `modern_norms_llama`, `fp8_llama`, `mxfp4_llama`, `auxfree_moe_jepa_evo`, `diff_semantic_moe_jepa_evo`, `dyt_geglu_semantic_dense_jepa_evo`.
+- **Modernization overlay**: `_apply_modern_profile` + generated `<preset>_modern` for every preset in `MODERN_BASE_PRESETS` (19 variants) — RMSNorm + QK-norm + RoPE/YaRN + GeGLU + auxfree MoE, additive and topology-preserving.
+- **Additive `BlockSpec`/`ModelSpec` knobs** (all defaults preserve the existing 26 presets): `attention_variant`, `use_qk_norm`, `norm_type` (+`dyt`/`group_norm`), `mlp_type` (+`geglu`/`reglu`/`solu`), `moe_balance_mode`, `residual_type`, `compression` (+fp8/mx), `window_size`, `sparse_block_size`, `num_sinks`, `nsa_compress_stride`, `mx_block_size`, `diff_lambda_init`, `dyt_alpha_init`, `auxfree_bias_lr`.
+- **`select_norm_module` helper** centralises norm selection across all block builders so `dyt`/`group_norm` propagate into the dense, semantic-router, and JEPA/evo stacks (previously the norm choice was duplicated and would silently fall back to LayerNorm).
+- Editor `Toolbar.tsx` dropdown gains grouped `<optgroup>` entries for the new presets.
+
+#### Context
+
+DeepSeek-V4-Pro was used as a recognizable-SOTA anchor: its hybrid CSA/HCA attention maps onto the NSA/sparse cores, its **domain-specific experts** are the post-training analog of NeuralFn's architectural semantic per-dimension experts, and its mHC residuals + FP4/FP8 mixed precision motivate the `manifold_hyper_connection` and precision presets. MLA-into-`kv_pca`, Mixture-of-Depths, `soft_moe`, FP8-inside-megakernel, and FP4 MoE experts are documented as out-of-scope follow-ups.
+
+#### Verification
+
+- `tests/test_template_presets.py` builds + CPU-forwards all presets (existing 26 + 12 flagship/precision/cross + 19 `_modern`).
+- New `tests/test_frontier_kernels.py` adds per-Stage parity/correctness tests (sliding-window vs manual masked SDPA, differential attention even-head-dim guard, FP8/MXFP4 round-trip bounds + STE grads, auxfree load-rebalancing, mHC non-expansiveness, MLA fwd/bwd, RoPE-scaling variants).
+- `tests/test_builtin_neurons.py` catalog expectation extended to 131 builtins.
+
+### 2026-05-20 Electron desktop application wrapping
+
+#### Added
+
+- **Unified Electron Desktop App** -- wrapped NeuralFn (FastAPI backend + React frontend) into a unified desktop application packaging structure inside `desktop/` targeting Windows, macOS, and Linux.
+- **SPA Production Serving in FastAPI** -- added production static file hosting and catch-all SPA fallback routing to `server/app.py` when frontend assets are built, allowing Electron to load the app directly via standard HTTP, bypassing all CORS and router history API breaks.
+- **Dynamic Free Port Discovery** -- implemented automatic free port discovery on startup (scanning starting at 8000) inside `desktop/main.js` to ensure the app never conflicts with local development or server environments.
+- **Zero-Config Persistent Storage** -- passed custom environment variables to the FastAPI child process pointing the SQLite database, snapshots, and artifacts to the user's OS application data directory (`app.getPath('userData')`), ensuring safe read-write permissions and data persistence across updates.
+- **Redis-Free Offline State Store** -- forced `NEURALFN_REDIS_URL` to an empty string in the spawned child process, automatically engaging the robust local SQLite + background thread persistence and MemoryLiveStateStore.
+- **Automated Monorepo Build Scripts** -- added `package.json` at the root directory containing unified orchestrations to build the editor, copy resources to the sandbox, and start or build/package the Electron distribution.
+
+#### Verification
+
+- Developed and executed an automated end-to-end integration test harness (`desktop-test-data`) that mimics the desktop app startup environment:
+  - Spawned the uvicorn server under dynamic SQLite environment routing and zero-Redis.
+  - Verified static index.html is served successfully at root `/`.
+  - Verified catch-all client router fallback serving on sub-paths like `/app/admin`.
+  - Verified REST API bootstrap initializes SQLite tables and returns valid JSON.
+  - Confirmed database (`neuralfn.db`) is correctly written under the sandbox directory.
+- Installed `pytest` in the conda environment and ran the full template preset test suite `python -m pytest tests/test_template_presets.py -x -q` to verify zero regression across all templates (18 passed successfully).
+
 ### 2026-05-07 GPT template architecture diagrams
 
 #### Added

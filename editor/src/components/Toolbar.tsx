@@ -244,6 +244,45 @@ export default function Toolbar() {
             <option value="semantic_router_moe">Semantic Router MoE</option>
             <option value="semantic_dense_jepa_evo">Semantic Dense JEPA Evo</option>
             <option value="semantic_moe_jepa_evo">Semantic MoE JEPA Evo</option>
+            <optgroup label="Frontier (recognizable SOTA)">
+              <option value="deepseek_v3">DeepSeek-V3 (MLA + auxfree MoE)</option>
+              <option value="deepseek_v4">DeepSeek-V4 (CSA/NSA + mHC + FP8)</option>
+              <option value="gemma3">Gemma-3 (sliding window + GeGLU)</option>
+              <option value="diff_transformer">Differential Transformer</option>
+              <option value="qwen3_longctx">Qwen3 Long-Context (YaRN)</option>
+              <option value="longctx_sparse_llama">Long-Context Sparse LLaMA (NSA)</option>
+              <option value="modern_norms_llama">Modern-Norms LLaMA (DyT + QK-norm + GeGLU)</option>
+            </optgroup>
+            <optgroup label="Blackwell precision">
+              <option value="fp8_llama">FP8 LLaMA (E4M3)</option>
+              <option value="mxfp4_llama">MXFP4 LLaMA (microscaled)</option>
+            </optgroup>
+            <optgroup label="NeuralFn crosses">
+              <option value="auxfree_moe_jepa_evo">Auxfree MoE JEPA Evo</option>
+              <option value="diff_semantic_moe_jepa_evo">Differential Semantic MoE JEPA Evo</option>
+              <option value="dyt_geglu_semantic_dense_jepa_evo">DyT+GeGLU Semantic Dense JEPA Evo</option>
+            </optgroup>
+            <optgroup label="Modernized (+QK-norm +RoPE/YaRN +GeGLU +auxfree)">
+              <option value="nanogpt_modern">NanoGPT (modern)</option>
+              <option value="gpt2_modern">GPT-2 (modern)</option>
+              <option value="llama_modern">LLaMA (modern)</option>
+              <option value="moe_modern">MoE (modern)</option>
+              <option value="jamba_modern">Jamba Hybrid (modern)</option>
+              <option value="ternary_b158_modern">Ternary b1.58 (modern)</option>
+              <option value="seq2seq_modern">Seq2Seq MoE (modern)</option>
+              <option value="diffusion_modern">DiffLLaMA (modern)</option>
+              <option value="ttt_llama_modern">TTT LLaMA (modern)</option>
+              <option value="llm_jepa_modern">LLM JEPA (modern)</option>
+              <option value="dense_jepa_evo_modern">Dense JEPA Evo (modern)</option>
+              <option value="moe_jepa_evo_modern">MoE JEPA Evo (modern)</option>
+              <option value="hnet_lm_modern">H-Net LM (modern)</option>
+              <option value="universal_llama_modern">Universal LLaMA (modern)</option>
+              <option value="kv_pca_llama_modern">KV PCA LLaMA (modern)</option>
+              <option value="jepa_semantic_hybrid_modern">JEPA Semantic Hybrid (modern)</option>
+              <option value="semantic_router_moe_modern">Semantic Router MoE (modern)</option>
+              <option value="semantic_dense_jepa_evo_modern">Semantic Dense JEPA Evo (modern)</option>
+              <option value="semantic_moe_jepa_evo_modern">Semantic MoE JEPA Evo (modern)</option>
+            </optgroup>
           </select>
         </div>
 

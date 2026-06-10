@@ -1,0 +1,12 @@
+{
+  "name": "neuralfn-monorepo",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "editor:install": "cd editor && npm install",
+    "editor:build": "cd editor && npm run build",
+    "desktop:install": "cd desktop && npm install",
+    "desktop:start": "npm run editor:build && mkdir -p desktop/editor/dist && rm -rf desktop/editor/dist/* && cp -r editor/dist/* desktop/editor/dist/ && cd desktop && npm start",
+    "desktop:build": "npm run editor:build && mkdir -p desktop/editor/dist && rm -rf desktop/editor/dist/* && cp -r editor/dist/* desktop/editor/dist/ && mkdir -p desktop/server && rm -rf desktop/server/* && cp -r server/* desktop/server/ && mkdir -p desktop/neuralfn && rm -rf desktop/neuralfn/* && cp -r neuralfn/* desktop/neuralfn/ && cp requirements.txt desktop/ && cd desktop && npm run dist"
+  }
+}

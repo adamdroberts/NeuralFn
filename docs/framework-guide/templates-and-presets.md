@@ -77,6 +77,39 @@ This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_me
 
 **Disclaimer [Experimental]:** The semantic routing presets are experimental; graph layout, config keys, and training APIs may change. `semantic_router_moe`, `jepa_semantic_hybrid`, `semantic_dense_jepa_evo`, and `semantic_moe_jepa_evo` use the root/data contract text `tokens` + text `targets` plus a separate `semantic_data_source` that provides vocab-topic `sem_targets`. The router-only and hybrid presets require one expert per semantic vocabulary dimension. `semantic_dense_jepa_evo` keeps dense FFNs for comparison, while `semantic_moe_jepa_evo` adds shared and free experts around the semantic expert bank, so `experts` must equal `semantic_shared_experts + NUM_VOCAB_DIMS + semantic_free_experts`.
 
+### Frontier presets (modern-kernel combinations)
+
+These presets combine the modern-LLM kernels (§21–§33 in `todo-kernels.md`) with the existing block builders. Each new op ships first as a **PyTorch-reference Stage** in `neuralfn/torch_backend.py` and is later repointed at an `llm.kittens` kernel (the FP8/MX paths are numerics/format demonstrators — no SM120 speedup until the kernel swap lands).
+
+| Preset | Builder | Mirrors | Key features |
+|--------|---------|---------|--------------|
+| `deepseek_v3` | `build_deepseek_v3_spec` | DeepSeek-V3 | Multi-head Latent Attention (compressed-KV + decoupled RoPE) + auxiliary-loss-free balanced MoE + shared experts |
+| `deepseek_v4` | `build_deepseek_v4_spec` | DeepSeek-V4-Pro | Native-sparse (CSA-spirit) attention + auxfree MoE + Manifold-Constrained Hyper-Connection residuals + QK-norm + FP8 dense/attention linears |
+| `gemma3` | `build_gemma3_spec` | Gemma-2/3 | Sliding-window attention + GeGLU + QK-norm + logit softcap |
+| `diff_transformer` | `build_diff_transformer_spec` | Differential Transformer | Two-softmax-branch differential attention + head-wise norm |
+| `qwen3_longctx` | `build_qwen3_longctx_spec` | Qwen/Llama long-ctx | GQA + YaRN RoPE scaling + QK-norm |
+| `longctx_sparse_llama` | `build_longctx_sparse_llama_spec` | NSA / long-context | Native-sparse attention (local window + sinks + strided compression); `attention_variant` selectable (`block_sparse`/`sliding_window`/`streaming`) |
+| `modern_norms_llama` | `build_modern_norms_llama_spec` | — | Dynamic Tanh (DyT) norm + QK-norm + GeGLU on a Llama backbone |
+| `fp8_llama` | `build_fp8_llama_spec` | Blackwell FP8 | FP8 (E4M3) weight-quantized linears via the compression seam |
+| `mxfp4_llama` | `build_mxfp4_llama_spec` | OCP MXFP4 | Per-32-block E8M0 microscaled FP4 weight linears |
+| `auxfree_moe_jepa_evo` | `build_auxfree_moe_jepa_evo_spec` | DeepSeek balancing × NeuralFn | Auxiliary-loss-free balancing crossed with route-evolution + JEPA |
+| `diff_semantic_moe_jepa_evo` | `build_diff_semantic_moe_jepa_evo_spec` | — | Differential attention crossed with the semantic chunk-routed MoE + JEPA stack |
+| `dyt_geglu_semantic_dense_jepa_evo` | `build_dyt_geglu_semantic_dense_jepa_evo_spec` | — | DyT + GeGLU crossed with the semantic dense JEPA Evo stack |
+
+**DeepSeek-V4 mapping note:** V4-Pro's *domain-specific experts* (independently cultivated per math/code/agent/instruction, then consolidated) are the post-training analog of NeuralFn's architectural **semantic vocab-grounded per-dimension experts** (`semantic_router_moe`, `semantic_moe_jepa_evo`) — one expert per semantic dimension at routing time.
+
+#### Modernized presets (`<preset>_modern`)
+
+Every base preset in `MODERN_BASE_PRESETS` has a `<preset>_modern` variant that overlays a uniform modern recipe via `_apply_modern_profile`: **LayerNorm → RMSNorm, GELU → GeGLU, absolute positions → RoPE + YaRN, fused QK-norm on, and MoE blocks → auxiliary-loss-free balancing** (mHC residuals and FP8 stay opt-in). For example `nanogpt_modern`, `gpt2_modern`, `llama_modern`, `moe_modern`, … `semantic_moe_jepa_evo_modern`. The overlay is additive and preserves each preset's objective/backbone/expert topology.
+
+#### New `BlockSpec` knobs
+
+`attention_variant` (`dense`/`differential`/`sliding_window`/`block_sparse`/`nsa`/`streaming`/`mla`), `use_qk_norm`, `norm_type` (`+dyt`/`+group_norm`), `mlp_type` (`+geglu`/`+reglu`/`+solu`), `moe_balance_mode` (`aux_loss`/`auxfree`), `residual_type` (`add`/`mhc`), `compression` (`+fp8_e4m3`/`fp8_e5m2`/`mxfp4`/`mxfp8`), `rope_scaling` (now honored: `linear`/`ntk`/`yarn`), plus geometry knobs `window_size`, `sparse_block_size`, `num_sinks`, `nsa_compress_stride`, `mx_block_size`, `diff_lambda_init`, `dyt_alpha_init`.
+
+**Optimizer note:** DeepSeek-V3/V4 train with the **Muon** optimizer. Optimizers are training-time choices (trainer/optimizer config), not `BlockSpec` fields, so they are not presets — see the training workflow docs for the optimizer menu (Muon/Lion/Sophia/…).
+
+**Out of scope (documented):** MLA is not stacked onto `kv_pca`; Mixture-of-Depths and `soft_moe` are not implemented (they break the shape-stable `[B,T,D]` / top-k dispatch contracts); FP8 does not reach the fused-megakernel attention or the MoE expert parameters in this reference (experts stay bf16).
+
 ---
 
 ## Architecture diagrams

@@ -90,6 +90,16 @@ The graph has `runtime="torch"`, `training_method="torch"`, and a populated `var
 | `universal_llama` | Universal TX | ACT-based adaptive recurrence |
 | `llama_megakernel` | Fused LLaMA | FusedCausalAttention, max-autotune compile |
 | `kv_pca_llama` | PCA KV cache | PCA-compressed keys/values |
+| `deepseek_v3` | DeepSeek-V3 | MLA + auxfree-balanced MoE + shared experts |
+| `deepseek_v4` | DeepSeek-V4-Pro | NSA attention + auxfree MoE + mHC residuals + QK-norm + FP8 |
+| `gemma3` | Gemma-2/3 | Sliding-window attention + GeGLU + QK-norm + softcap |
+| `diff_transformer` | Differential TX | Two-softmax differential attention + head-wise norm |
+| `qwen3_longctx` | Qwen long-ctx | GQA + YaRN RoPE scaling + QK-norm |
+| `longctx_sparse_llama` | Long-ctx sparse | NSA / block-sparse / sliding-window / streaming |
+| `modern_norms_llama` | Modern norms | DyT + QK-norm + GeGLU |
+| `fp8_llama` / `mxfp4_llama` | Blackwell precision | FP8 E4M3 / MXFP4 microscaled weight linears |
+| `auxfree_moe_jepa_evo`, `diff_semantic_moe_jepa_evo`, `dyt_geglu_semantic_dense_jepa_evo` | NeuralFn crosses | Modern kernels × JEPA/semantic/route-evo stacks |
+| `<preset>_modern` | Modernized | Any base preset + RMSNorm/QK-norm/RoPE-YaRN/GeGLU/auxfree (see `MODERN_BASE_PRESETS`) |
 
 ## Common config keys
 
@@ -127,7 +137,7 @@ stage_graph = build_model_stage_graph("model_stage", spec)
 payload = build_gpt_template_payload("my_model", {"preset": "llama", "n_layer": 6, "n_embd": 256})
 ```
 
-Spec builders: `build_nanogpt_spec`, `build_nanogpt_megakernel_spec`, `build_gpt2_spec`, `build_gpt2_megakernel_spec`, `build_llama_spec`, `build_mixllama_spec`, `build_llama_fast_spec`, `build_llama_fast_megakernel_spec`, `build_mixllama_fast_spec`, `build_mixllama_fast_megakernel_spec`, `build_jamba_hybrid_spec`, `build_ternary_b158_spec`, `build_decoder2encoder_moe_spec`, `build_diffllama_spec`, `build_ttt_llama_spec`, `build_llm_jepa_spec`, `build_dense_jepa_evo_spec`, `build_moe_jepa_evo_spec`, `build_semantic_router_moe_spec`, `build_semantic_router_moe_megakernel_spec`, `build_jepa_semantic_hybrid_spec`, `build_jepa_semantic_hybrid_megakernel_spec`, `build_semantic_dense_jepa_evo_spec`, `build_semantic_moe_jepa_evo_spec`, `build_hnet_lm_spec`, `build_universal_llama_spec`, `build_llama_megakernel_spec`, `build_kv_pca_llama_spec`, and `build_composed_lm_spec`.
+Spec builders: `build_nanogpt_spec`, `build_nanogpt_megakernel_spec`, `build_gpt2_spec`, `build_gpt2_megakernel_spec`, `build_llama_spec`, `build_mixllama_spec`, `build_llama_fast_spec`, `build_llama_fast_megakernel_spec`, `build_mixllama_fast_spec`, `build_mixllama_fast_megakernel_spec`, `build_jamba_hybrid_spec`, `build_ternary_b158_spec`, `build_decoder2encoder_moe_spec`, `build_diffllama_spec`, `build_ttt_llama_spec`, `build_llm_jepa_spec`, `build_dense_jepa_evo_spec`, `build_moe_jepa_evo_spec`, `build_semantic_router_moe_spec`, `build_semantic_router_moe_megakernel_spec`, `build_jepa_semantic_hybrid_spec`, `build_jepa_semantic_hybrid_megakernel_spec`, `build_semantic_dense_jepa_evo_spec`, `build_semantic_moe_jepa_evo_spec`, `build_hnet_lm_spec`, `build_universal_llama_spec`, `build_llama_megakernel_spec`, `build_kv_pca_llama_spec`, and `build_composed_lm_spec`. Frontier builders: `build_deepseek_v3_spec`, `build_deepseek_v4_spec`, `build_gemma3_spec`, `build_diff_transformer_spec`, `build_qwen3_longctx_spec`, `build_longctx_sparse_llama_spec`, `build_modern_norms_llama_spec`, `build_fp8_llama_spec`, `build_mxfp4_llama_spec`, `build_auxfree_moe_jepa_evo_spec`, `build_diff_semantic_moe_jepa_evo_spec`, `build_dyt_geglu_semantic_dense_jepa_evo_spec`. Modernized variants are generated as `<preset>_modern` (dispatch strips the suffix and applies `_apply_modern_profile`).
 
 ## TorchTrainConfig
 

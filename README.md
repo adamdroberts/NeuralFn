@@ -216,6 +216,30 @@ pnpm dev
 
 Open <http://localhost:5173>.
 
+### Running in Desktop Mode (Electron)
+
+NeuralFn can also be run as a unified desktop application. In desktop mode, it runs completely offline, storing its database (`neuralfn.db`), snapshots, and training artifacts securely inside the user's OS application data directory. **No Redis or external service is required**—the app automatically boots with zero-config local Memory and SQLite storage.
+
+#### Install Desktop dependencies:
+```bash
+# Install desktop packages
+npm run desktop:install
+```
+
+#### Start the Desktop App locally:
+To compile the React editor, copy assets, scan and bind to an open port, and launch the Electron frame:
+```bash
+npm run desktop:start
+```
+
+#### Package for Windows, Mac, and Linux:
+To bundle everything (backend scripts, assets, electron launcher) into a standalone production installer or executable:
+```bash
+npm run desktop:build
+```
+The compiled artifacts will be generated in `desktop/dist/`.
+
+
 ### First-run workflow
 
 1. On the first launch, the app checks `/api/bootstrap`. If no users exist, the login screen switches into **Create Admin Workspace** mode.

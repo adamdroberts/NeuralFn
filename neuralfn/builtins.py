@@ -398,6 +398,60 @@ scaled_dot_product_attention_module = module_neuron(
     module_config=default_scaled_dot_product_attention_config(),
 )
 
+
+def _attn_core_ports() -> tuple[list[Port], list[Port]]:
+    return (
+        [
+            Port("q", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+            Port("k", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+            Port("v", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        ],
+        [Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    )
+
+
+_attn_in_ports, _attn_out_ports = _attn_core_ports()
+
+sliding_window_attention_module = module_neuron(
+    name="sliding_window_attention",
+    module_type="sliding_window_attention",
+    input_ports=_attn_core_ports()[0],
+    output_ports=_attn_core_ports()[1],
+    module_config={"window_size": 256, "is_causal": True, "dropout_p": 0.0},
+)
+
+block_sparse_attention_module = module_neuron(
+    name="block_sparse_attention",
+    module_type="block_sparse_attention",
+    input_ports=_attn_core_ports()[0],
+    output_ports=_attn_core_ports()[1],
+    module_config={"sparse_block_size": 64, "num_sinks": 0, "is_causal": True, "dropout_p": 0.0},
+)
+
+streaming_attention_sinks_module = module_neuron(
+    name="streaming_attention_sinks",
+    module_type="streaming_attention_sinks",
+    input_ports=_attn_core_ports()[0],
+    output_ports=_attn_core_ports()[1],
+    module_config={"window_size": 256, "num_sinks": 4, "is_causal": True, "dropout_p": 0.0},
+)
+
+native_sparse_attention_module = module_neuron(
+    name="native_sparse_attention",
+    module_type="native_sparse_attention",
+    input_ports=_attn_core_ports()[0],
+    output_ports=_attn_core_ports()[1],
+    module_config={"window_size": 128, "sparse_block_size": 64, "num_sinks": 0, "compress_stride": 16, "is_causal": True, "dropout_p": 0.0},
+)
+
+differential_attention_module = module_neuron(
+    name="differential_attention",
+    module_type="differential_attention",
+    input_ports=_attn_core_ports()[0],
+    output_ports=_attn_core_ports()[1],
+    module_config={"lambda_init": 0.8, "is_causal": True, "dropout_p": 0.0},
+)
+
 residual_mix_module = module_neuron(
     name="residual_mix",
     module_type="residual_mix",
@@ -425,6 +479,14 @@ fused_causal_attention_module = module_neuron(
     module_config=default_fused_attention_config(),
 )
 
+multi_latent_attention_module = module_neuron(
+    name="multi_latent_attention",
+    module_type="multi_latent_attention",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("attn_out", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"model_dim": 128, "num_heads": 4, "rope_base": 10000.0, "dropout_p": 0.0},
+)
+
 residual_add_module = module_neuron(
     name="residual_add",
     module_type="residual_add",
@@ -434,6 +496,17 @@ residual_add_module = module_neuron(
     ],
     output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
     module_config=default_residual_add_config(),
+)
+
+manifold_hyper_connection_module = module_neuron(
+    name="manifold_hyper_connection",
+    module_type="manifold_hyper_connection",
+    input_ports=[
+        Port("residual", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("delta", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"dim": 128, "beta_init": 0.1},
 )
 
 mlp_relu2_module = module_neuron(
@@ -514,6 +587,60 @@ swiglu_module = module_neuron(
     input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
     output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
     module_config={"model_dim": 128, "mlp_mult": 4, "multiple_of": 256},
+)
+
+geglu_module = module_neuron(
+    name="geglu",
+    module_type="geglu",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"model_dim": 128, "mlp_mult": 4, "multiple_of": 256},
+)
+
+reglu_module = module_neuron(
+    name="reglu",
+    module_type="reglu",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"model_dim": 128, "mlp_mult": 4, "multiple_of": 256},
+)
+
+solu_module = module_neuron(
+    name="solu",
+    module_type="solu",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"model_dim": 128, "mlp_mult": 4, "multiple_of": 256},
+)
+
+dyt_module = module_neuron(
+    name="dyt",
+    module_type="dyt",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"model_dim": 128, "alpha_init": 1.0},
+)
+
+group_norm_module = module_neuron(
+    name="group_norm",
+    module_type="group_norm",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"model_dim": 128, "num_groups": 1, "eps": 1e-5},
+)
+
+qk_norm_module = module_neuron(
+    name="qk_norm",
+    module_type="qk_norm",
+    input_ports=[
+        Port("q", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("k", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    output_ports=[
+        Port("q_norm", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+        Port("k_norm", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor"),
+    ],
+    module_config={"eps": 1e-6},
 )
 
 absolute_position_embedding_module = module_neuron(
@@ -612,6 +739,14 @@ router_logits_module = module_neuron(
     module_config={"model_dim": 128, "experts": 8},
 )
 
+auxfree_load_balancing_module = module_neuron(
+    name="auxfree_load_balancing",
+    module_type="auxfree_load_balancing",
+    input_ports=[Port("logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("biased_logits", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"experts": 8, "top_k": 2, "bias_lr": 0.001},
+)
+
 topk_route_module = module_neuron(
     name="topk_route",
     module_type="topk_route",
@@ -694,6 +829,22 @@ bitlinear_ternary_module = module_neuron(
     input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
     output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
     module_config={"input_dim": 128, "output_dim": 128},
+)
+
+fp8_linear_module = module_neuron(
+    name="fp8_linear",
+    module_type="fp8_linear",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"input_dim": 128, "output_dim": 128, "bias": False, "fp8_format": "e4m3", "amax_history_len": 16, "use_stochastic_rounding": True},
+)
+
+mx_linear_module = module_neuron(
+    name="mx_linear",
+    module_type="mx_linear",
+    input_ports=[Port("x", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    output_ports=[Port("y", range=(-1_000_000, 1_000_000), precision=0.001, dtype="tensor")],
+    module_config={"input_dim": 128, "output_dim": 128, "bias": False, "mx_format": "mxfp4", "mx_block_size": 32},
 )
 
 randmap_adapter_module = module_neuron(
@@ -1372,10 +1523,17 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "rotary_embedding_module": rotary_embedding_module,
     "qk_gain_module": qk_gain_module,
     "scaled_dot_product_attention_module": scaled_dot_product_attention_module,
+    "sliding_window_attention_module": sliding_window_attention_module,
+    "block_sparse_attention_module": block_sparse_attention_module,
+    "streaming_attention_sinks_module": streaming_attention_sinks_module,
+    "native_sparse_attention_module": native_sparse_attention_module,
+    "differential_attention_module": differential_attention_module,
     "residual_mix_module": residual_mix_module,
     "causal_self_attention_module": causal_self_attention_module,
     "fused_causal_attention_module": fused_causal_attention_module,
+    "multi_latent_attention_module": multi_latent_attention_module,
     "residual_add_module": residual_add_module,
+    "manifold_hyper_connection_module": manifold_hyper_connection_module,
     "mlp_relu2_module": mlp_relu2_module,
     "tied_lm_head_module": tied_lm_head_module,
     "lm_head_module": lm_head_module,
@@ -1384,6 +1542,12 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "dropout_module": dropout_module,
     "gelu_module": gelu_module,
     "swiglu_module": swiglu_module,
+    "geglu_module": geglu_module,
+    "reglu_module": reglu_module,
+    "solu_module": solu_module,
+    "dyt_module": dyt_module,
+    "group_norm_module": group_norm_module,
+    "qk_norm_module": qk_norm_module,
     "absolute_position_embedding_module": absolute_position_embedding_module,
     "kv_cache_read_module": kv_cache_read_module,
     "kv_cache_write_module": kv_cache_write_module,
@@ -1392,6 +1556,7 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "kv_quant_pack_module": kv_quant_pack_module,
     "kv_quant_unpack_module": kv_quant_unpack_module,
     "router_logits_module": router_logits_module,
+    "auxfree_load_balancing_module": auxfree_load_balancing_module,
     "topk_route_module": topk_route_module,
     "expert_dispatch_module": expert_dispatch_module,
     "expert_combine_module": expert_combine_module,
@@ -1401,6 +1566,8 @@ _BUILTIN_ATTR_MAP: dict[str, NeuronDef] = {
     "token_cross_entropy_module": token_cross_entropy_module,
     "dataset_source_module": dataset_source_module,
     "bitlinear_ternary_module": bitlinear_ternary_module,
+    "fp8_linear_module": fp8_linear_module,
+    "mx_linear_module": mx_linear_module,
     "randmap_adapter_module": randmap_adapter_module,
     "mamba_module": mamba_module,
     "denoise_head_module": denoise_head_module,
@@ -1495,10 +1662,17 @@ class BuiltinNeurons:
     rotary_embedding_module = rotary_embedding_module
     qk_gain_module = qk_gain_module
     scaled_dot_product_attention_module = scaled_dot_product_attention_module
+    sliding_window_attention_module = sliding_window_attention_module
+    block_sparse_attention_module = block_sparse_attention_module
+    streaming_attention_sinks_module = streaming_attention_sinks_module
+    native_sparse_attention_module = native_sparse_attention_module
+    differential_attention_module = differential_attention_module
     residual_mix_module = residual_mix_module
     causal_self_attention_module = causal_self_attention_module
     fused_causal_attention_module = fused_causal_attention_module
+    multi_latent_attention_module = multi_latent_attention_module
     residual_add_module = residual_add_module
+    manifold_hyper_connection_module = manifold_hyper_connection_module
     mlp_relu2_module = mlp_relu2_module
     tied_lm_head_module = tied_lm_head_module
     lm_head_module = lm_head_module
@@ -1507,6 +1681,12 @@ class BuiltinNeurons:
     dropout_module = dropout_module
     gelu_module = gelu_module
     swiglu_module = swiglu_module
+    geglu_module = geglu_module
+    reglu_module = reglu_module
+    solu_module = solu_module
+    dyt_module = dyt_module
+    group_norm_module = group_norm_module
+    qk_norm_module = qk_norm_module
     absolute_position_embedding_module = absolute_position_embedding_module
     kv_cache_read_module = kv_cache_read_module
     kv_cache_write_module = kv_cache_write_module
@@ -1515,6 +1695,7 @@ class BuiltinNeurons:
     kv_quant_pack_module = kv_quant_pack_module
     kv_quant_unpack_module = kv_quant_unpack_module
     router_logits_module = router_logits_module
+    auxfree_load_balancing_module = auxfree_load_balancing_module
     topk_route_module = topk_route_module
     expert_dispatch_module = expert_dispatch_module
     expert_combine_module = expert_combine_module
@@ -1524,6 +1705,8 @@ class BuiltinNeurons:
     token_cross_entropy_module = token_cross_entropy_module
     dataset_source_module = dataset_source_module
     bitlinear_ternary_module = bitlinear_ternary_module
+    fp8_linear_module = fp8_linear_module
+    mx_linear_module = mx_linear_module
     randmap_adapter_module = randmap_adapter_module
     mamba_module = mamba_module
     denoise_head_module = denoise_head_module
@@ -1641,10 +1824,17 @@ __all__ = [
     "rotary_embedding_module",
     "qk_gain_module",
     "scaled_dot_product_attention_module",
+    "sliding_window_attention_module",
+    "block_sparse_attention_module",
+    "streaming_attention_sinks_module",
+    "native_sparse_attention_module",
+    "differential_attention_module",
     "residual_mix_module",
     "causal_self_attention_module",
     "fused_causal_attention_module",
+    "multi_latent_attention_module",
     "residual_add_module",
+    "manifold_hyper_connection_module",
     "mlp_relu2_module",
     "tied_lm_head_module",
     "lm_head_module",
@@ -1653,6 +1843,12 @@ __all__ = [
     "dropout_module",
     "gelu_module",
     "swiglu_module",
+    "geglu_module",
+    "reglu_module",
+    "solu_module",
+    "dyt_module",
+    "group_norm_module",
+    "qk_norm_module",
     "absolute_position_embedding_module",
     "kv_cache_read_module",
     "kv_cache_write_module",
@@ -1661,6 +1857,7 @@ __all__ = [
     "kv_quant_pack_module",
     "kv_quant_unpack_module",
     "router_logits_module",
+    "auxfree_load_balancing_module",
     "topk_route_module",
     "expert_dispatch_module",
     "expert_combine_module",
@@ -1670,6 +1867,8 @@ __all__ = [
     "token_cross_entropy_module",
     "dataset_source_module",
     "bitlinear_ternary_module",
+    "fp8_linear_module",
+    "mx_linear_module",
     "randmap_adapter_module",
     "mamba_module",
     "denoise_head_module",

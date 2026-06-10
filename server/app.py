@@ -31,3 +31,33 @@ app.add_middleware(
 )
 
 app.include_router(router)
+
+# Mount static files and handle catch-all SPA routing when built in production
+import os
+from pathlib import Path
+
+dist_dir = Path(__file__).resolve().parent.parent / "editor" / "dist"
+if dist_dir.exists():
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse
+
+    # Mount static assets directory
+    assets_dir = dist_dir / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    # Catch-all handler for React Router HTML5 History mode (BrowserRouter)
+    @app.get("/{path:path}")
+    async def serve_spa(path: str):
+        # Let API routes handle themselves, if they reached here, they don't exist
+        if path.startswith("api"):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="API route not found")
+            
+        index_file = dist_dir / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file))
+        
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Frontend index.html not found")
+
