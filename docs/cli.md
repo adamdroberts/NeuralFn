@@ -1,7 +1,7 @@
 # CLI Workflows
 
-The `cli/` package installs the `nfn` command for training, inference, and
-evaluation outside the web editor. It is an in-repo companion to the Python SDK:
+The `cli/` package installs the `nfn` command for training, inference,
+evaluation, and backend diagnostics outside the web editor. It is an in-repo companion to the Python SDK:
 it builds real `ModelSpec` objects, exports graph JSON plus `.pt` weights, uses
 the shared dataset manager, and defaults artifacts to `~/NeuralFn/artifacts`.
 
@@ -29,6 +29,7 @@ the repo root. The second installs the CLI entrypoint declared by
 | `nfn train` | Train a composed recipe and export `.pt` weights plus graph `.json`. |
 | `nfn infer` | Load an exported graph or supported graphless checkpoint and generate text from a prompt. |
 | `nfn eval` | Run validation batches and prompt probes, then write a JSON report. |
+| `nfn kernels` | Inspect CUDA Tile kernel coverage and local CUDA Tile diagnostics. |
 
 Every command accepts `--plan` for an interactive questionnaire and
 `--plan-auto` for recommended defaults without prompting. Help output supports
@@ -71,7 +72,18 @@ nfn train --base-model llama --topology moe --router-mode semantic --jepa
 nfn infer --graph ~/NeuralFn/artifacts/llama_fast.json --prompt "Once upon a time"
 nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer ~/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model
 nfn eval --base-model gpt2 --dataset shakespeare
+nfn train --kernel-backend tile-cuda --tile-cuda-report ./tile-report.json
+nfn kernels list --json
+nfn kernels doctor
+nfn kernels bench --device auto --iterations 200
+nfn kernels examples
 ```
+
+## Kernel diagnostics
+
+`nfn kernels list` prints the CUDA Tile registry coverage generated from the live NeuralFn builtin and torch-backend dispatch surfaces. `nfn kernels doctor` also reports the local `nvcc`, CUDA Tile header, `torch.cuda`, and compute-capability status. `nfn kernels bench` compares the old graph-walk helper, the static compiled PyTorch plan, and the Tile-requested compiled plan on a small scalar graph. `nfn kernels examples` lists checked-in examples and `nfn kernels examples --write --output-dir examples/tile_cuda` regenerates the per-registry SDK snippets. These commands accept `--json` for automation.
+
+`nfn train`, `nfn infer`, and `nfn eval` accept `--kernel-backend {auto,torch,tile-cuda}`, `--tile-cuda-strict`, and `--tile-cuda-report PATH`. `tile-cuda` requests the implemented CUDA Tile fast path; the registry currently accounts for all 138 training-relevant entries with 129 Tile-covered kernels/compositions, 7 host-only entries, and 2 delegated graph calls. `--tile-cuda-strict` fails graph compilation if selected nodes are uncovered or if the Tile runtime is unavailable. Building the optional extension from source is opt-in with `NFN_TILE_CUDA_BUILD=1`, and `NFN_TILE_CUDA_ARCH` can override the architecture flag passed to `nvcc`. Install `pip install -e ".[tile-cuda]"` if the active environment does not already provide `ninja` for PyTorch extension builds.
 
 ## Datasets and tokenizers
 

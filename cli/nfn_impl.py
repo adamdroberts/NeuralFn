@@ -154,7 +154,7 @@ from train_gpt2 import GPT2_DEFAULTS
 from train_semantic_router_moe import ROUTER_DEFAULTS
 
 HELP_STYLES = ("short", "long", "verbose")
-COMMANDS = ("train", "infer", "eval")
+COMMANDS = ("train", "infer", "eval", "kernels")
 BASE_MODELS = ("llama", "gpt2", "nanogpt")
 TOPOLOGIES = ("dense", "moe")
 ROUTER_MODES = ("standard", "semantic")
@@ -707,6 +707,11 @@ def command_description(command: str, style: str) -> str:
                 "or pick a local graph artifact interactively and chat with it."
             )
         return base
+    if command == "kernels":
+        base = "Inspect NeuralFn CUDA Tile kernel coverage and runtime diagnostics."
+        if style == "verbose":
+            return f"{base} Use 'list' to print registry coverage or 'doctor' to inspect the local CUDA Tile toolchain."
+        return base
     base = "Evaluate a composed NeuralFn recipe."
     if style == "verbose":
         return f"{base} Validation and prompt probes use the same composed recipe flow as training and inference."
@@ -732,6 +737,13 @@ def command_epilog(command: str, style: str) -> str:
             "  nfn infer --graph ~/NeuralFn/artifacts/semantic_router_moe.json --weights ~/NeuralFn/artifacts/semantic_router_moe.pt\n"
             "  nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt "
             "--checkpoint-tokenizer ~/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model"
+        )
+    if command == "kernels":
+        return (
+            "Examples:\n"
+            "  nfn kernels list\n"
+            "  nfn kernels list --json\n"
+            "  nfn kernels doctor --json"
         )
     return (
         "Examples:\n"
@@ -836,12 +848,31 @@ def build_command_parser(command: str, style: str) -> argparse.ArgumentParser:
         description=command_description(command, style),
         epilog=command_epilog(command, style),
     )
+    if command == "kernels":
+        parser.add_argument("-h", "--help", action="store_true", help="Show help for this command.")
+        parser.add_argument("--help-style", choices=HELP_STYLES, default=None, help=help_text("help_style", style))
+        parser.add_argument("kernel_action", choices=("list", "doctor", "bench", "examples"), nargs="?", default="list")
+        parser.add_argument("--json", action="store_true", dest="json_output", help="Print machine-readable JSON.")
+        parser.add_argument("--iterations", type=int, default=200, help="Benchmark iterations for 'kernels bench'.")
+        parser.add_argument("--warmup", type=int, default=20, help="Warmup iterations for 'kernels bench'.")
+        parser.add_argument("--device", default="auto", help="Benchmark device: auto, cpu, cuda, or cuda:N.")
+        parser.add_argument("--output-dir", default=None, help="Directory for 'kernels examples --write'.")
+        parser.add_argument("--write", action="store_true", help="Write CUDA Tile example files for 'kernels examples'.")
+        return parser
     add_shared_control_arguments(parser, style)
     add_recipe_arguments(parser, style)
     parser.add_argument("--run-id", default=None, help="Optional run identifier for training.")
     parser.add_argument("--seed", type=int, default=None, help="Random seed.")
     parser.add_argument("--device", default="cuda", help="Torch device. The harness expects CUDA in practice.")
     parser.add_argument("--amp-dtype", choices=("float32", "bfloat16", "float16"), default=None, help="Autocast dtype. Defaults to float32.")
+    parser.add_argument(
+        "--kernel-backend",
+        choices=("auto", "torch", "tile-cuda"),
+        default=None,
+        help="Kernel backend selector. auto keeps PyTorch fallback; tile-cuda requests CUDA Tile fast paths.",
+    )
+    parser.add_argument("--tile-cuda-strict", action="store_true", help="Fail instead of falling back when requested CUDA Tile coverage is missing.")
+    parser.add_argument("--tile-cuda-report", default=None, help="Optional CUDA Tile diagnostics and coverage JSON report path.")
     add_dataset_arguments(parser)
     if command == "train":
         add_pretraining_file_argument(parser, help_text=help_text("pretraining_file", style))
@@ -4301,6 +4332,9 @@ def build_trainer_config(args: argparse.Namespace, *, resolved_epochs: int, deri
         grad_clip_norm=float(args.grad_clip_norm),
         drop_last=bool(derived["drop_last"]),
         respect_epoch_boundaries=bool(derived["respect_epoch_boundaries"]),
+        kernel_backend=str(getattr(args, "kernel_backend", None) or "auto"),
+        tile_cuda_strict=bool(getattr(args, "tile_cuda_strict", False)),
+        tile_cuda_report_path=getattr(args, "tile_cuda_report", None),
         evolutionary=bool(args.evolutionary),
         evo_population_size=int(args.evo_population_size if args.evo_population_size is not None else evo_defaults["evo_population_size"]),
         evo_mutation_rate=float(args.evo_mutation_rate if args.evo_mutation_rate is not None else evo_defaults["evo_mutation_rate"]),
@@ -4853,11 +4887,340 @@ def run_eval(state: dict[str, Any]) -> int:
     return 0
 
 
+def run_kernels(state: dict[str, Any]) -> int:
+    from neuralfn.tile_cuda import coverage_report, tile_cuda_diagnostics
+
+    action = str(state.get("kernel_action") or "list")
+    json_output = bool(state.get("json_output", False))
+    report = coverage_report()
+    diagnostics = tile_cuda_diagnostics()
+    if action == "bench":
+        payload = run_kernel_benchmark(state)
+        if json_output:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print("CUDA Tile benchmark:")
+            print(f"  device: {payload['device']}")
+            print(f"  iterations: {payload['iterations']}")
+            print(f"  warmup: {payload['warmup']}")
+            print(f"  tile_backend_resolved: {payload['tile_backend_resolved']}")
+            for name, value in payload["seconds"].items():
+                print(f"  {name}: {value:.6f}s")
+        return 0
+    if action == "examples":
+        payload = kernel_examples_payload(
+            output_dir=state.get("output_dir"),
+            write=bool(state.get("write", False)),
+        )
+        if json_output:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print("CUDA Tile examples:")
+            for path in payload["examples"]:
+                print(f"  {path}")
+            print(f"Generated registry examples: {payload['generated_count']}")
+            if payload["written"]:
+                print(f"Wrote examples to: {payload['output_dir']}")
+        return 0
+    if action == "doctor":
+        payload = {
+            "diagnostics": diagnostics.to_dict(),
+            "coverage": {
+                "total_inventory": report.total_inventory,
+                "accounted": report.accounted,
+                "missing": list(report.missing),
+                "by_status": report.by_status,
+                "complete": report.complete,
+            },
+        }
+        if json_output:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print("CUDA Tile diagnostics:")
+            for key, value in payload["diagnostics"].items():
+                print(f"  {key}: {value}")
+            print("Kernel coverage:")
+            print(f"  accounted: {report.accounted}/{report.total_inventory}")
+            print(f"  missing: {len(report.missing)}")
+            for status, count in sorted(report.by_status.items()):
+                print(f"  {status}: {count}")
+        return 0
+
+    payload = report.to_dict()
+    if json_output:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(f"NeuralFn CUDA Tile kernel coverage: {report.accounted}/{report.total_inventory} accounted")
+        for status, count in sorted(report.by_status.items()):
+            print(f"  {status}: {count}")
+        if report.missing:
+            print("Missing:")
+            for name in report.missing:
+                print(f"  {name}")
+        else:
+            print("Missing: none")
+    return 0
+
+
+def _tile_benchmark_graph() -> Any:
+    from neuralfn import BuiltinNeurons, Edge, NeuronGraph, NeuronInstance
+
+    graph = NeuronGraph(name="tile_cuda_benchmark", training_method="torch", runtime="torch")
+    graph.add_node(NeuronInstance(BuiltinNeurons.input_node, instance_id="x"))
+    graph.add_node(NeuronInstance(BuiltinNeurons.input_node, instance_id="y"))
+    graph.add_node(NeuronInstance(BuiltinNeurons.add, instance_id="add"))
+    graph.add_node(NeuronInstance(BuiltinNeurons.relu, instance_id="relu"))
+    graph.add_node(NeuronInstance(BuiltinNeurons.output_node, instance_id="out"))
+    graph.add_edge(Edge(src_node="x", src_port=0, dst_node="add", dst_port=0))
+    graph.add_edge(Edge(src_node="y", src_port=0, dst_node="add", dst_port=1))
+    graph.add_edge(Edge(src_node="add", src_port=0, dst_node="relu", dst_port=0))
+    graph.add_edge(Edge(src_node="relu", src_port=0, dst_node="out", dst_port=0))
+    graph.input_node_ids = ["x", "y"]
+    graph.output_node_ids = ["out"]
+    return graph
+
+
+def _wrap_benchmark_output(value: Any) -> tuple[torch.Tensor, ...]:
+    if isinstance(value, tuple):
+        return value
+    return (value,)
+
+
+def _run_graph_walk_for_benchmark(compiled: Any, *flat_inputs: torch.Tensor) -> tuple[torch.Tensor, ...]:
+    graph = compiled.graph
+    values: dict[str, tuple[torch.Tensor, ...]] = {}
+    input_idx = 0
+    for node_id in graph.input_node_ids:
+        output_count = graph.nodes[node_id].neuron_def.n_outputs
+        values[node_id] = tuple(flat_inputs[input_idx : input_idx + output_count])
+        input_idx += output_count
+
+    for node_id in graph.topological_order():
+        if node_id in graph.input_node_ids:
+            continue
+        incoming = sorted(graph._incoming(node_id), key=lambda edge: edge.dst_port)
+        args = tuple(values[edge.src_node][edge.src_port] for edge in incoming)
+        values[node_id] = _wrap_benchmark_output(compiled.node_modules[node_id](*args))
+
+    outputs: list[torch.Tensor] = []
+    for node_id in graph.output_node_ids:
+        outputs.extend(values[node_id])
+    return tuple(outputs)
+
+
+def _benchmark_callable(fn: Callable[[], Any], *, iterations: int, warmup: int, device: torch.device) -> float:
+    for _ in range(max(0, warmup)):
+        fn()
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    start = time.perf_counter()
+    for _ in range(max(1, iterations)):
+        fn()
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    return time.perf_counter() - start
+
+
+def run_kernel_benchmark(state: dict[str, Any]) -> dict[str, Any]:
+    from neuralfn.torch_backend import CompiledTorchGraph
+
+    requested_device = str(state.get("device") or "auto")
+    if requested_device == "auto":
+        requested_device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device(requested_device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA benchmark requested, but CUDA is not available.")
+
+    iterations_raw = state.get("iterations")
+    warmup_raw = state.get("warmup")
+    iterations = max(1, int(200 if iterations_raw is None else iterations_raw))
+    warmup = max(0, int(20 if warmup_raw is None else warmup_raw))
+    graph = _tile_benchmark_graph()
+    x = torch.randn(8192, device=device)
+    y = torch.randn(8192, device=device)
+    compiled_torch = CompiledTorchGraph(graph, kernel_backend="torch").to(device)
+    compiled_tile = CompiledTorchGraph(graph, kernel_backend="tile_cuda", tile_cuda_strict=False).to(device)
+
+    with torch.no_grad():
+        graph_walk_seconds = _benchmark_callable(
+            lambda: _run_graph_walk_for_benchmark(compiled_torch, x, y),
+            iterations=iterations,
+            warmup=warmup,
+            device=device,
+        )
+        compiled_torch_seconds = _benchmark_callable(
+            lambda: compiled_torch(x, y),
+            iterations=iterations,
+            warmup=warmup,
+            device=device,
+        )
+        compiled_tile_seconds = _benchmark_callable(
+            lambda: compiled_tile(x, y),
+            iterations=iterations,
+            warmup=warmup,
+            device=device,
+        )
+
+    return {
+        "device": str(device),
+        "iterations": iterations,
+        "warmup": warmup,
+        "tile_backend_resolved": compiled_tile.resolved_kernel_backend,
+        "seconds": {
+            "graph_walk_pytorch": graph_walk_seconds,
+            "compiled_pytorch": compiled_torch_seconds,
+            "compiled_tile_cuda_requested": compiled_tile_seconds,
+        },
+    }
+
+
+_TILE_CUDA_EXAMPLE_NAMES = (
+    "scalar_add_train.py",
+    "dense_llm_smoke_train.py",
+    "moe_router_smoke_train.py",
+    "jepa_smoke_train.py",
+    "strict_mode_report.py",
+    "kernel_bench.py",
+)
+
+
+def _example_source(name: str) -> str:
+    header = '''"""NeuralFn CUDA Tile example."""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "cli"))
+
+'''
+    if name == "scalar_add_train.py":
+        return header + """import torch
+from neuralfn import BuiltinNeurons, Edge, NeuronGraph, NeuronInstance
+from neuralfn.torch_backend import CompiledTorchGraph
+
+
+def build_graph() -> NeuronGraph:
+    graph = NeuronGraph(name="tile_scalar_add")
+    graph.add_node(NeuronInstance(BuiltinNeurons.input_node, instance_id="x"))
+    graph.add_node(NeuronInstance(BuiltinNeurons.input_node, instance_id="y"))
+    graph.add_node(NeuronInstance(BuiltinNeurons.add, instance_id="add"))
+    graph.add_node(NeuronInstance(BuiltinNeurons.output_node, instance_id="out"))
+    graph.add_edge(Edge(src_node="x", src_port=0, dst_node="add", dst_port=0))
+    graph.add_edge(Edge(src_node="y", src_port=0, dst_node="add", dst_port=1))
+    graph.add_edge(Edge(src_node="add", src_port=0, dst_node="out", dst_port=0))
+    graph.input_node_ids = ["x", "y"]
+    graph.output_node_ids = ["out"]
+    return graph
+
+
+compiled = CompiledTorchGraph(build_graph(), kernel_backend="tile_cuda")
+x = torch.tensor([1.0, 2.0])
+y = torch.tensor([3.0, 4.0])
+print(compiled(x, y)[0])
+"""
+    if name == "kernel_bench.py":
+        return header + """from cli.nfn_impl import main
+
+
+raise SystemExit(main(["kernels", "bench", "--iterations", "200"]))
+"""
+    if name == "strict_mode_report.py":
+        return header + """from neuralfn import BuiltinNeurons, Edge, NeuronGraph, NeuronInstance
+from neuralfn.torch_backend import CompiledTorchGraph
+
+
+graph = NeuronGraph(name="tile_strict_report")
+graph.add_node(NeuronInstance(BuiltinNeurons.input_node, instance_id="x"))
+graph.add_node(NeuronInstance(BuiltinNeurons.relu, instance_id="relu"))
+graph.add_node(NeuronInstance(BuiltinNeurons.output_node, instance_id="out"))
+graph.add_edge(Edge(src_node="x", src_port=0, dst_node="relu", dst_port=0))
+graph.add_edge(Edge(src_node="relu", src_port=0, dst_node="out", dst_port=0))
+graph.input_node_ids = ["x"]
+graph.output_node_ids = ["out"]
+CompiledTorchGraph(
+    graph,
+    kernel_backend="tile_cuda",
+    tile_cuda_strict=False,
+    tile_cuda_report_path="tile_cuda_report.json",
+)
+print("wrote tile_cuda_report.json with fallback-safe diagnostics")
+try:
+    CompiledTorchGraph(graph, kernel_backend="tile_cuda", tile_cuda_strict=True)
+except RuntimeError as exc:
+    print(f"strict mode rejected unavailable or uncovered Tile backend: {exc}")
+"""
+    if name == "dense_llm_smoke_train.py":
+        preset = "gpt2"
+    elif name == "moe_router_smoke_train.py":
+        preset = "moe"
+    else:
+        preset = "llm_jepa"
+    return header + f"""from neuralfn.torch_backend import CompiledTorchGraph
+from neuralfn.torch_templates import build_gpt_root_graph, build_model_spec_from_config
+
+
+spec = build_model_spec_from_config({{"preset": "{preset}", "vocab_size": 128, "num_layers": 1, "model_dim": 32, "num_heads": 4}}, preview_defaults=True)
+graph = build_gpt_root_graph(name="{preset}_tile_cuda_smoke", model_spec=spec)
+compiled = CompiledTorchGraph(graph, kernel_backend="tile_cuda")
+print(f"prepared {{graph.name}} with {{len(graph.nodes)}} nodes via {{compiled.resolved_kernel_backend}}")
+"""
+
+
+def _generated_example_source(inventory_key: str) -> str:
+    safe_name = inventory_key.replace(":", "_")
+    return f'''"""Generated CUDA Tile SDK example for {inventory_key}."""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from neuralfn.tile_cuda import DEFAULT_TILE_KERNEL_REGISTRY
+
+
+spec = DEFAULT_TILE_KERNEL_REGISTRY.specs.get("{inventory_key}")
+if spec is None:
+    raise SystemExit("missing registry spec: {inventory_key}")
+
+print("{safe_name}", spec.status, spec.shape_contract)
+'''
+
+
+def kernel_examples_payload(*, output_dir: Any, write: bool) -> dict[str, Any]:
+    from neuralfn.tile_cuda import coverage_report
+
+    target_dir = Path(output_dir or "examples/tile_cuda").expanduser()
+    examples = [str(target_dir / name) for name in _TILE_CUDA_EXAMPLE_NAMES]
+    report = coverage_report()
+    generated_names = [
+        f"{spec.inventory_key.replace(':', '_').replace('/', '_')}.py"
+        for spec in report.specs
+    ]
+    if write:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for name in _TILE_CUDA_EXAMPLE_NAMES:
+            (target_dir / name).write_text(_example_source(name), encoding="utf-8")
+        generated_dir = target_dir / "generated"
+        generated_dir.mkdir(parents=True, exist_ok=True)
+        for spec, file_name in zip(report.specs, generated_names):
+            (generated_dir / file_name).write_text(_generated_example_source(spec.inventory_key), encoding="utf-8")
+    return {
+        "output_dir": str(target_dir),
+        "written": write,
+        "examples": examples,
+        "generated_count": len(generated_names),
+        "generated_dir": str(target_dir / "generated"),
+    }
+
+
 def execute(command: str, state: dict[str, Any]) -> int:
     if command == "train":
         return run_train(state)
     if command == "infer":
         return run_infer(state)
+    if command == "kernels":
+        return run_kernels(state)
     return run_eval(state)
 
 
@@ -4885,6 +5248,7 @@ def main(
                     OptionChoice("Train", "Train a composed recipe.", "train", recommended=True),
                     OptionChoice("Infer", "Load an exported graph and start infer chat.", "infer"),
                     OptionChoice("Eval", "Run validation and prompt probes.", "eval"),
+                    OptionChoice("Kernels", "Inspect CUDA Tile kernel coverage.", "kernels"),
                 ],
             )
             command = str(choice)
@@ -4902,6 +5266,8 @@ def main(
         return 0
 
     state = {key: value for key, value in vars(args).items() if value is not None}
+    if command == "kernels":
+        return execute(command, state)
     if command == "infer":
         if args.plan or args.plan_auto:
             print("nfn infer is artifact-first; ignoring --plan/--plan-auto.", file=sys.stderr)

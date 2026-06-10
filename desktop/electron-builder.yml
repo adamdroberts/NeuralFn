@@ -1,0 +1,35 @@
+appId: com.neuralfn.desktop
+productName: NeuralFn
+copyright: Copyright © 2026 NeuralFn Authors
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - package.json
+  - main.js
+  - editor/dist/**/*
+  - server/**/*
+  - neuralfn/**/*
+  - requirements.txt
+
+win:
+  target:
+    - portable
+    - nsis
+  icon: build/icon.ico
+
+mac:
+  target:
+    - dmg
+    - zip
+  icon: build/icon.icns
+  category: public.app-category.developer-tools
+
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: build/icons
+  category: Development

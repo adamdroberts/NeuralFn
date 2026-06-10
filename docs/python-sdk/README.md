@@ -48,6 +48,7 @@ from neuralfn import (
 | [builtins](builtins.md) | Built-in neuron definitions (scalar activations, torch modules, MoE, semantic routing, etc.) |
 | [config](config.md) | `TemplateSpec`, `BlockSpec`, `ModelSpec` and preset builder functions |
 | [torch-backend](torch-backend.md) | `CompiledTorchGraph`, `TorchTrainer`, `TorchTrainConfig`, and all `*Stage` modules |
+| [tile-cuda](tile-cuda.md) | Optional CUDA Tile backend configuration, diagnostics, and kernel coverage registry |
 | [torch-templates](torch-templates.md) | Graph builders for attention, MLP, decoder blocks, and full model architectures |
 | [training/](training/README.md) | Training methods: surrogate, evolutionary, and hybrid |
 | [inference](inference.md) | Weight export/import, quantization, and `InferenceCache` for autoregressive generation |

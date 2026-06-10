@@ -242,6 +242,26 @@ ModelSpec(
 - `semantic_router_moe_megakernel` -- `build_semantic_router_moe_megakernel_spec(**kwargs)` [Experimental]
 - `jepa_semantic_hybrid_megakernel` -- `build_jepa_semantic_hybrid_megakernel_spec(**kwargs)` [Experimental]
 
+### Frontier presets (modern-kernel combinations)
+Each new op ships as a PyTorch-reference Stage in `torch_backend.py` (repointed at `llm.kittens` later); FP8/MX are numerics/format demonstrators (no SM120 speedup yet).
+- `deepseek_v3` -- `build_deepseek_v3_spec` -- MLA (`attention_variant="mla"`) + auxfree MoE (`moe_balance_mode="auxfree"`) + shared experts
+- `deepseek_v4` -- `build_deepseek_v4_spec` -- NSA attention + auxfree MoE + mHC residuals (`residual_type="mhc"`) + QK-norm + FP8 (`compression="fp8_e4m3"`)
+- `gemma3` -- `build_gemma3_spec` -- sliding-window attention + GeGLU + QK-norm + logit softcap
+- `diff_transformer` -- `build_diff_transformer_spec` -- differential attention + head-wise norm (even head_dim)
+- `qwen3_longctx` -- `build_qwen3_longctx_spec` -- GQA + YaRN `rope_scaling` + QK-norm
+- `longctx_sparse_llama` -- `build_longctx_sparse_llama_spec` -- NSA (or `block_sparse`/`sliding_window`/`streaming` via `attention_variant`)
+- `modern_norms_llama` -- `build_modern_norms_llama_spec` -- DyT norm + QK-norm + GeGLU
+- `fp8_llama` -- `build_fp8_llama_spec` -- FP8 E4M3 weight linears
+- `mxfp4_llama` -- `build_mxfp4_llama_spec` -- MXFP4 microscaled weight linears
+- `auxfree_moe_jepa_evo` -- `build_auxfree_moe_jepa_evo_spec` -- auxfree balancing × route-evo × JEPA
+- `diff_semantic_moe_jepa_evo` -- `build_diff_semantic_moe_jepa_evo_spec` -- differential attention × semantic MoE JEPA evo
+- `dyt_geglu_semantic_dense_jepa_evo` -- `build_dyt_geglu_semantic_dense_jepa_evo_spec` -- DyT + GeGLU × semantic dense JEPA evo
+
+### Modernized presets (`<preset>_modern`)
+Every base preset in `MODERN_BASE_PRESETS` (config.py) has a `<preset>_modern` variant: dispatch strips `_modern`, builds the base spec, and applies `_apply_modern_profile` (RMSNorm + QK-norm + RoPE/YaRN + GeGLU + auxfree MoE; mHC/FP8 stay opt-in). E.g. `nanogpt_modern`, `llama_modern`, `semantic_moe_jepa_evo_modern`.
+
+New BlockSpec knobs: `attention_variant`, `use_qk_norm`, `moe_balance_mode`, `residual_type`, `norm_type(+dyt/group_norm)`, `mlp_type(+geglu/reglu/solu)`, `compression(+fp8_e4m3/fp8_e5m2/mxfp4/mxfp8)`, `rope_scaling(linear/ntk/yarn, now honored)`, `window_size`, `sparse_block_size`, `num_sinks`, `nsa_compress_stride`, `mx_block_size`, `diff_lambda_init`, `dyt_alpha_init`.
+
 ---
 
 ## Config key reference

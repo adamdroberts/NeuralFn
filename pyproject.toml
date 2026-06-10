@@ -25,10 +25,17 @@ dependencies = [
   "mcp>=1.0.0",
 ]
 
+[project.optional-dependencies]
+tile-cuda = [
+  "ninja>=1.11",
+]
+
 [tool.setuptools.packages.find]
 include = ["neuralfn*", "server*"]
 
 [tool.setuptools.package-data]
 neuralfn = [
+  "csrc/tile_cuda/*.cpp",
+  "csrc/tile_cuda/*.cu",
   "data/semantic/*.json",
 ]

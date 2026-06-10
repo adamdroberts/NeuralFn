@@ -163,6 +163,7 @@ print(f"Final loss: {losses[-1]:.4f}")
 | `fsdp2_enabled` | `bool` | `False` | Enable FSDP2 for multi-GPU data parallelism. |
 | `max_steps` | `int` | `None` | Stop after this many steps regardless of epochs. `None` = unlimited. |
 | `respect_epoch_boundaries` | `bool` | `False` | Keeps epochs aligned to one loader pass and allows a short final accumulation step instead of cycling into the next epoch. |
+| `kernel_backend`, `tile_cuda_strict`, `tile_cuda_report_path` | str/bool/str | `"auto"`, `False`, `None` | Optional CUDA Tile backend selection and reporting fields. The current Tile registry accounts for all 138 training-relevant entries with 129 Tile-covered kernels/compositions, 7 host-only entries, and 2 delegated graph calls; PyTorch remains the fallback for unsupported tensor contracts unless strict mode is enabled. |
 | `optimizer_profile` | `str` | `"adamw"` | `"adamw"` for the legacy single-optimizer path or `"parameter_golf"` for split optimizers + Muon. |
 | `train_batch_tokens` | `int \| None` | `None` | Token budget per optimizer step. Enables gradient accumulation by token count instead of raw batch count. |
 | `beta1`, `beta2`, `adam_eps` | floats | `0.9`, `0.95`, `1e-8` | Adam-family optimizer hyperparameters. |
@@ -172,6 +173,8 @@ print(f"Final loss: {losses[-1]:.4f}")
 | `grad_clip_norm` | `float` | `0.0` | Global grad clipping threshold. |
 
 `TorchTrainer` automatically adjusts `vocab_size` when the training data's token range exceeds the graph's configured vocabulary, ensuring the embedding and output layers are compatible.
+
+Torch-runtime training compiles graph topology, input/output layout, and edge routing into a static execution plan before batches run. Real training tensors flow through fixed child modules and the precomputed plan; they do not pass through graph editor node objects, canvas positions, viewport state, or mutable editor metadata. CUDA Tile execution plans must preserve the same control-plane/data-plane split.
 
 For long CUDA runs, `on_step` is usually the right hook for live CLI progress because it fires once per warmup step and once per optimizer step instead of waiting for epoch boundaries.
 

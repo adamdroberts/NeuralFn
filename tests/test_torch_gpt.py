@@ -1,9 +1,22 @@
 import unittest
 from unittest.mock import patch
 
-from neuralfn import TorchTrainConfig, TorchTrainer, build_gpt_root_graph, load_graph, save_graph
+import torch
+
+from neuralfn import (
+    BuiltinNeurons,
+    Edge,
+    NeuronGraph,
+    NeuronInstance,
+    TorchTrainConfig,
+    TorchTrainer,
+    build_gpt_root_graph,
+    load_graph,
+    save_graph,
+)
 
 from neuralfn.config import build_gpt2_megakernel_spec, build_gpt2_spec, build_nanogpt_megakernel_spec
+from neuralfn.torch_backend import CompiledTorchGraph
 from neuralfn.torch_templates import build_model_spec_from_config
 
 
@@ -30,6 +43,30 @@ def make_megakernel_gpt_graph(*, device: str = "cpu"):
 
 
 class TorchGPTTest(unittest.TestCase):
+    def test_compiled_torch_graph_forward_uses_static_execution_plan(self) -> None:
+        graph = NeuronGraph(name="compiled_hot_path", training_method="torch", runtime="torch")
+        graph.add_node(NeuronInstance(BuiltinNeurons.input_node, instance_id="x"))
+        graph.add_node(NeuronInstance(BuiltinNeurons.input_node, instance_id="y"))
+        graph.add_node(NeuronInstance(BuiltinNeurons.add, instance_id="add"))
+        graph.add_node(NeuronInstance(BuiltinNeurons.output_node, instance_id="out"))
+        graph.add_edge(Edge(id="e1", src_node="x", src_port=0, dst_node="add", dst_port=0))
+        graph.add_edge(Edge(id="e2", src_node="y", src_port=0, dst_node="add", dst_port=1))
+        graph.add_edge(Edge(id="e3", src_node="add", src_port=0, dst_node="out", dst_port=0))
+        graph.input_node_ids = ["x", "y"]
+        graph.output_node_ids = ["out"]
+
+        compiled = CompiledTorchGraph(graph)
+
+        def fail_incoming(_node_id: str):
+            raise AssertionError("Compiled forward must not traverse graph editor edges")
+
+        graph._incoming = fail_incoming  # type: ignore[method-assign]
+        graph.nodes = None  # type: ignore[assignment]
+        result = compiled(torch.tensor([1.0, 2.0]), torch.tensor([3.0, 4.0]))
+
+        self.assertEqual(1, len(result))
+        self.assertTrue(torch.equal(result[0], torch.tensor([4.0, 6.0])))
+
     def test_gpt_megakernel_builders_set_backbone_and_runtime(self) -> None:
         cases = (
             (build_gpt2_megakernel_spec, "gpt2"),

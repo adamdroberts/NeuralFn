@@ -74,6 +74,9 @@ nfn train --pretraining-file ./pretraining-data.txt
 nfn infer --graph ~/NeuralFn/artifacts/nanogpt.json --prompt "Once upon a time"
 nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer ~/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model
 nfn eval --preset semantic_router_moe --dataset shakespeare
+nfn kernels list --json
+nfn kernels bench --device auto --iterations 200
+nfn kernels examples
 ```
 
 `-h` on `nfn train`, `nfn infer`, and `nfn eval` now supports `short`,
@@ -85,6 +88,8 @@ The legacy script entrypoints are still available:
 ```bash
 python scripts/train_jepa_semantic.py --device cuda --max-steps 400
 ```
+
+CUDA Tile diagnostics and example generation live under `nfn kernels`. `nfn kernels doctor` reports toolchain and coverage status, `nfn kernels bench` compares graph-walk PyTorch, static compiled PyTorch, and Tile-requested execution on a small scalar graph, and `nfn kernels examples --write --output-dir examples/tile_cuda` regenerates checked-in examples plus one generated SDK snippet per registry entry.
 
 If you launch through `conda run`, use `--no-capture-output` so the progress
 logs stream while the run is active:

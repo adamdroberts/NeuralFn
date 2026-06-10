@@ -50,6 +50,14 @@ Canonical docs:
 | CUDA infer scripts | `cli/scripts/infer_*.py` |
 | CLI tests | `cli/tests/` |
 
+## CUDA Tile commands
+
+- `nfn kernels list [--json]` reports live CUDA Tile registry coverage.
+- `nfn kernels doctor [--json]` reports CUDA Tile toolchain diagnostics plus coverage.
+- `nfn kernels bench [--device auto|cpu|cuda] [--iterations N] [--json]` compares old graph-walk PyTorch, static compiled PyTorch, and Tile-requested compiled execution on a small scalar graph.
+- `nfn kernels examples [--write --output-dir examples/tile_cuda] [--json]` lists or regenerates checked-in examples plus one generated SDK snippet per registry entry.
+- `nfn train`, `nfn infer`, and `nfn eval` accept `--kernel-backend {auto,torch,tile-cuda}`, `--tile-cuda-strict`, and `--tile-cuda-report PATH`.
+
 ## Verification
 
 Prefer non-training checks unless the user explicitly asks for a training run:

@@ -199,10 +199,40 @@ class Muon(torch.optim.Optimizer):
 
 
 class Rotary(nn.Module):
-    def __init__(self, dim: int, base: float) -> None:
+    def __init__(self, dim: int, base: float, scaling: dict[str, Any] | None = None) -> None:
         super().__init__()
-        inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2, dtype=torch.float32) / dim))
+        inv_freq = self._compute_inv_freq(dim, base, scaling)
         self.register_buffer("inv_freq", inv_freq, persistent=False)
+
+    @staticmethod
+    def _compute_inv_freq(dim: int, base: float, scaling: dict[str, Any] | None) -> Tensor:
+        idx = torch.arange(0, dim, 2, dtype=torch.float32)
+        inv_freq = 1.0 / (base ** (idx / dim))
+        if not scaling:
+            return inv_freq
+        stype = str(scaling.get("type", scaling.get("rope_type", "linear"))).lower()
+        factor = float(scaling.get("factor", 1.0)) or 1.0
+        if stype in ("linear", "pi"):
+            return inv_freq / factor
+        if stype in ("ntk", "ntk-aware", "dynamic"):
+            base2 = base * (factor ** (dim / max(dim - 2, 1)))
+            return 1.0 / (base2 ** (idx / dim))
+        if stype == "yarn":
+            orig = float(scaling.get("original_max_position", scaling.get("original_max_position_embeddings", 2048)))
+            beta_fast = float(scaling.get("beta_fast", 32.0))
+            beta_slow = float(scaling.get("beta_slow", 1.0))
+
+            def _corr_dim(num_rot: float) -> float:
+                return (dim * math.log(orig / (num_rot * 2 * math.pi))) / (2 * math.log(base))
+
+            low = max(math.floor(_corr_dim(beta_fast)), 0)
+            high = min(math.ceil(_corr_dim(beta_slow)), dim // 2 - 1)
+            if high <= low:
+                high = low + 1
+            ramp = ((torch.arange(dim // 2, dtype=torch.float32) - low) / (high - low)).clamp(0.0, 1.0)
+            # high-freq dims (small index, ramp~0) extrapolate; low-freq dims interpolate.
+            return inv_freq * (1.0 - ramp) + (inv_freq / factor) * ramp
+        return inv_freq
 
     def forward(self, seq_len: int, device: torch.device, dtype: torch.dtype) -> tuple[Tensor, Tensor]:
         t = torch.arange(seq_len, device=device, dtype=self.inv_freq.dtype)
@@ -256,6 +286,29 @@ class ResidualAddStage(nn.Module):
 
     def forward(self, residual: Tensor, delta: Tensor) -> Tensor:
         return residual + self.scale[None, None, :].to(dtype=residual.dtype) * delta
+
+
+class ManifoldHyperConnectionStage(nn.Module):
+    """Single-stream Manifold-Constrained Hyper-Connection (DeepSeek-V4, simplified).
+
+    Non-expansive residual mix ``out = sqrt(1 - beta^2) * residual + beta * delta``
+    with a per-channel learnable ``beta in (0, 1)``. The coefficient pair
+    ``(sqrt(1-b^2), b)`` has unit L2 norm, so the per-step spectral gain is bounded
+    by 1 -- the single-stream analog of the Birkhoff doubly-stochastic / Sinkhorn
+    constraint that mHC places on the full parallel-stream mixing matrix (which is a
+    documented follow-up). ``beta`` inits small so the block starts near a plain
+    residual."""
+
+    def __init__(self, dim: int, beta_init: float = 0.1) -> None:
+        super().__init__()
+        b = min(max(float(beta_init), 1e-3), 1.0 - 1e-3)
+        logit = math.log(b / (1.0 - b))
+        self.beta_logit = nn.Parameter(torch.full((dim,), float(logit), dtype=torch.float32))
+
+    def forward(self, residual: Tensor, delta: Tensor) -> Tensor:
+        beta = torch.sigmoid(self.beta_logit).to(dtype=residual.dtype)
+        alpha = torch.sqrt((1.0 - beta * beta).clamp(min=0.0))
+        return alpha[None, None, :] * residual + beta[None, None, :] * delta
 
 
 class CausalSelfAttentionStage(nn.Module):
@@ -350,6 +403,81 @@ class FusedCausalAttentionStage(nn.Module):
             is_causal=True, enable_gqa=self.num_heads != self.num_kv_heads,
         )
         return self.out_proj(y.transpose(1, 2).contiguous().reshape(batch, seq_len, model_dim))
+
+
+class MLAStage(nn.Module):
+    """Multi-head Latent Attention (DeepSeek-V2/V3), self-contained.
+
+    Owns its own projections via a low-rank joint KV latent and applies *decoupled*
+    RoPE to a split of the head dim (the rest is un-rotated). Takes the normed
+    hidden ``[B, S, model_dim]`` and returns attention output ``[B, S, model_dim]``,
+    so it slots in as a single fused attention node (like FusedCausalAttentionStage)
+    -- the graph's single 2-in/2-out rotary node cannot express MLA's
+    decoupled-RoPE-on-a-split topology, so MLA owns RoPE internally."""
+
+    def __init__(
+        self,
+        model_dim: int,
+        num_heads: int,
+        kv_lora_rank: int | None = None,
+        qk_rope_dim: int | None = None,
+        rope_base: float = 10000.0,
+        dropout_p: float = 0.0,
+    ) -> None:
+        super().__init__()
+        if model_dim % num_heads != 0:
+            raise ValueError("model_dim must be divisible by num_heads")
+        head_dim = model_dim // num_heads
+        rope_dim = qk_rope_dim if qk_rope_dim is not None else max(head_dim // 2, 2)
+        if rope_dim % 2 != 0:
+            rope_dim -= 1
+        rope_dim = max(rope_dim, 2)
+        nope_dim = head_dim - rope_dim
+        if nope_dim <= 0:
+            raise ValueError("qk_rope_dim must be smaller than head_dim")
+        lora_rank = kv_lora_rank if kv_lora_rank is not None else max(2 * head_dim, model_dim // 2)
+        self.num_heads = num_heads
+        self.head_dim = head_dim
+        self.rope_dim = rope_dim
+        self.nope_dim = nope_dim
+        self.v_head_dim = head_dim
+        self.dropout_p = float(dropout_p)
+        self.q_proj = nn.Linear(model_dim, num_heads * head_dim, bias=False)
+        self.kv_a = nn.Linear(model_dim, lora_rank + rope_dim, bias=False)
+        self.kv_lora_rank = lora_rank
+        self.kv_b = nn.Linear(lora_rank, num_heads * (nope_dim + self.v_head_dim), bias=False)
+        self.out_proj = nn.Linear(num_heads * self.v_head_dim, model_dim, bias=False)
+        self.rotary = Rotary(rope_dim, rope_base)
+
+    def forward(self, x: Tensor) -> Tensor:
+        batch, seq_len, _ = x.shape
+        h = self.num_heads
+        q = self.q_proj(x).view(batch, seq_len, h, self.head_dim)
+        q_nope, q_rope = q.split([self.nope_dim, self.rope_dim], dim=-1)
+        kv = self.kv_a(x)
+        kv_c, k_rope = kv.split([self.kv_lora_rank, self.rope_dim], dim=-1)
+        kv_c = F.rms_norm(kv_c, (self.kv_lora_rank,))
+        kv = self.kv_b(kv_c).view(batch, seq_len, h, self.nope_dim + self.v_head_dim)
+        k_nope, v = kv.split([self.nope_dim, self.v_head_dim], dim=-1)
+        # decoupled RoPE on the rope split (k_rope shared across heads)
+        q_rope = q_rope.transpose(1, 2)
+        k_rope_h = k_rope.unsqueeze(2).expand(batch, seq_len, h, self.rope_dim).transpose(1, 2)
+        cos, sin = self.rotary(seq_len, x.device, q.dtype)
+        q_rope = apply_rotary_emb(q_rope, cos, sin)
+        k_rope_h = apply_rotary_emb(k_rope_h, cos, sin)
+        q_full = torch.cat([q_nope.transpose(1, 2), q_rope], dim=-1)
+        k_full = torch.cat([k_nope.transpose(1, 2), k_rope_h], dim=-1)
+        v = v.transpose(1, 2)
+        drop = self.dropout_p if self.training else 0.0
+        attn = F.scaled_dot_product_attention(
+            q_full.contiguous(),
+            k_full.contiguous(),
+            v.contiguous(),
+            dropout_p=drop,
+            is_causal=True,
+        )
+        out = attn.transpose(1, 2).contiguous().reshape(batch, seq_len, h * self.v_head_dim)
+        return self.out_proj(out)
 
 
 class MLPReluSquaredStage(nn.Module):
@@ -453,6 +581,70 @@ class HardTanhFunctionStage(nn.Module):
         return F.hardtanh(_ensure_float_tensor(x))
 
 
+class GaussianFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        x = _ensure_float_tensor(x)
+        return torch.exp(-(x * x))
+
+
+class LogFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return torch.log(torch.clamp_min(_ensure_float_tensor(x), 1e-7))
+
+
+class PReluFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        x = _ensure_float_tensor(x)
+        return torch.where(x >= 0, x, x * 0.25)
+
+
+class Relu6FunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return torch.clamp(_ensure_float_tensor(x), min=0.0, max=6.0)
+
+
+class EluFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return F.elu(_ensure_float_tensor(x))
+
+
+class SeluFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return F.selu(_ensure_float_tensor(x))
+
+
+class MishFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return F.mish(_ensure_float_tensor(x))
+
+
+class SoftsignFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return F.softsign(_ensure_float_tensor(x))
+
+
+class HardSigmoidFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return F.hardsigmoid(_ensure_float_tensor(x))
+
+
+class HardSwishFunctionStage(nn.Module):
+    def forward(self, x: Tensor) -> Tensor:
+        return F.hardswish(_ensure_float_tensor(x))
+
+
+class Softmax2FunctionStage(nn.Module):
+    def forward(self, a: Tensor, b: Tensor) -> tuple[Tensor, Tensor]:
+        probs = torch.softmax(torch.stack((_ensure_float_tensor(a), _ensure_float_tensor(b)), dim=0), dim=0)
+        return probs[0], probs[1]
+
+
+class LogSoftmax2FunctionStage(nn.Module):
+    def forward(self, a: Tensor, b: Tensor) -> tuple[Tensor, Tensor]:
+        log_probs = torch.log_softmax(torch.stack((_ensure_float_tensor(a), _ensure_float_tensor(b)), dim=0), dim=0)
+        return log_probs[0], log_probs[1]
+
+
 class TokenCrossEntropyStage(nn.Module):
     def forward(self, logits: Tensor, target_ids: Tensor) -> Tensor:
         flat_logits = logits.reshape(-1, logits.size(-1))
@@ -490,6 +682,114 @@ class BitLinearTernaryStage(nn.Module):
         x_quant = x + (x_quant * x_max / 127 - x).detach()
 
         return F.linear(x_quant, w_quant)
+
+
+class FP8LinearStage(nn.Module):
+    """FP8 (E4M3/E5M2) weight-quantized linear with a bf16/fp32 master weight + STE.
+
+    A PyTorch numerics/format *reference* for Blackwell FP8 training: the weight
+    is round-tripped through ``torch.float8_e4m3fn`` (or ``e5m2``) with per-tensor
+    delayed scaling, and the matmul runs in the activation dtype
+    (dequant-then-matmul). There is therefore **no** SM120 throughput gain here --
+    the optimised path is the llm.kittens FP8 GEMM that this Stage will later be
+    repointed at. ``amax_history`` tracks the per-tensor amax for delayed scaling.
+    """
+
+    _FMAX = {"e4m3": 448.0, "e5m2": 57344.0}
+
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        bias: bool = False,
+        fp8_format: str = "e4m3",
+        amax_history_len: int = 16,
+        use_stochastic_rounding: bool = True,
+    ) -> None:
+        super().__init__()
+        self.input_dim = int(input_dim)
+        self.output_dim = int(output_dim)
+        self.fp8_format = "e5m2" if str(fp8_format) == "e5m2" else "e4m3"
+        self._fp8_dtype = torch.float8_e5m2 if self.fp8_format == "e5m2" else torch.float8_e4m3fn
+        self._fmax = self._FMAX[self.fp8_format]
+        # SR is the correct tool for low-bit *weight updates* (optimizer step), not
+        # forward weight quant; we keep the intent flag but quantize round-to-nearest
+        # in the forward reference. The flag rides through to the kittens repoint.
+        self.use_stochastic_rounding = bool(use_stochastic_rounding)
+        self.weight = nn.Parameter(torch.empty(self.output_dim, self.input_dim))
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        self.bias = nn.Parameter(torch.zeros(self.output_dim)) if bias else None
+        self.register_buffer(
+            "amax_history", torch.zeros(max(int(amax_history_len), 1), dtype=torch.float32), persistent=False
+        )
+
+    def _quant_weight(self, w: Tensor) -> Tensor:
+        amax = w.detach().abs().amax().clamp(min=1e-12)
+        if self.training:
+            self.amax_history = torch.roll(self.amax_history, 1)
+            self.amax_history[0] = amax.to(self.amax_history.dtype)
+        scale = amax / self._fmax
+        w_q = (w / scale).to(self._fp8_dtype).to(w.dtype) * scale
+        return w + (w_q - w).detach()  # straight-through estimator
+
+    def forward(self, x: Tensor) -> Tensor:
+        return F.linear(x, self._quant_weight(self.weight), self.bias)
+
+
+class MXLinearStage(nn.Module):
+    """OCP microscaling (MXFP4 / MXFP8) weight-quantized linear, bf16 master + STE.
+
+    Each contiguous block of ``mx_block_size`` (32) input elements shares a
+    power-of-two (E8M0) scale; values are then quantized to the FP4 E2M1 grid
+    (MXFP4) or to E4M3 (MXFP8). PyTorch reference for the DeepSeek-V4 "FP4 experts"
+    path; matmul runs in the activation dtype (dequant-then-matmul).
+    """
+
+    _FP4_MAG = (0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0)  # E2M1 magnitudes
+    _EMAX = {"mxfp4": 6.0, "mxfp8": 448.0}
+
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        bias: bool = False,
+        mx_format: str = "mxfp4",
+        mx_block_size: int = 32,
+    ) -> None:
+        super().__init__()
+        self.input_dim = int(input_dim)
+        self.output_dim = int(output_dim)
+        self.mx_format = "mxfp8" if str(mx_format) == "mxfp8" else "mxfp4"
+        self.block = max(int(mx_block_size), 1)
+        self.weight = nn.Parameter(torch.empty(self.output_dim, self.input_dim))
+        nn.init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+        self.bias = nn.Parameter(torch.zeros(self.output_dim)) if bias else None
+        mag = torch.tensor(self._FP4_MAG, dtype=torch.float32)
+        grid = torch.cat([-mag.flip(0), mag[1:]])  # signed E2M1 grid (15 levels)
+        self.register_buffer("fp4_grid", grid, persistent=False)
+
+    def _quant_weight(self, w: Tensor) -> Tensor:
+        out_dim, in_dim = w.shape
+        pad = (self.block - in_dim % self.block) % self.block
+        wp = F.pad(w, (0, pad))
+        wb = wp.reshape(out_dim, -1, self.block)
+        amax = wb.detach().abs().amax(dim=-1, keepdim=True).clamp(min=1e-12)
+        emax = self._EMAX[self.mx_format]
+        exp = torch.floor(torch.log2(amax / emax)).clamp(-127, 127)
+        scale = torch.exp2(exp)
+        wn = wb / scale
+        if self.mx_format == "mxfp8":
+            q = wn.to(torch.float8_e4m3fn).to(w.dtype)
+        else:
+            grid = self.fp4_grid.to(w.dtype)
+            idx = (wn.unsqueeze(-1) - grid).abs().argmin(dim=-1)
+            q = grid[idx]
+        w_q = (q * scale).reshape(out_dim, -1)[:, :in_dim]
+        return w + (w_q - w).detach()  # straight-through estimator
+
+    def forward(self, x: Tensor) -> Tensor:
+        return F.linear(x, self._quant_weight(self.weight), self.bias)
+
 
 class LoRALinearStage(nn.Module):
     """Linear with a trainable low-rank delta: ``y = base(x) + (alpha/rank) * dropout(x @ A.T) @ B.T``.
@@ -1063,11 +1363,11 @@ class RepeatKVStage(nn.Module):
 
 
 class RotaryEmbeddingStage(nn.Module):
-    def __init__(self, head_dim: int, rope_base: float) -> None:
+    def __init__(self, head_dim: int, rope_base: float, rope_scaling: dict[str, Any] | None = None) -> None:
         super().__init__()
         if head_dim % 2 != 0:
             raise ValueError("head_dim must be even for rotary embeddings")
-        self.rotary = Rotary(head_dim, rope_base)
+        self.rotary = Rotary(head_dim, rope_base, scaling=rope_scaling)
 
     def forward(self, q: Tensor, k: Tensor) -> tuple[Tensor, Tensor]:
         cos, sin = self.rotary(q.size(2), q.device, q.dtype)
@@ -1109,6 +1409,174 @@ class ScaledDotProductAttentionStage(nn.Module):
             return F.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=drop, is_causal=self.is_causal)
 
 
+def _sparse_attn_mask(
+    seq_q: int,
+    seq_k: int,
+    *,
+    is_causal: bool,
+    window: int | None,
+    num_sinks: int,
+    block: int | None,
+    compress_stride: int | None,
+    device,
+    dtype,
+) -> Tensor:
+    """Additive attention mask ``[seq_q, seq_k]`` (0 where allowed, -inf where not).
+
+    Shared by the modern sparse-attention variants. Causality is encoded here, so
+    the variant Stages call SDPA with ``is_causal=False`` to avoid double-masking.
+    Queries are right-aligned to keys (``offset = seq_k - seq_q``) for KV-cache
+    compatibility. ``allowed = causal & (window | sinks | block | compressed)``.
+    """
+    i = torch.arange(seq_q, device=device).unsqueeze(1)
+    j = torch.arange(seq_k, device=device).unsqueeze(0)
+    offset = seq_k - seq_q
+    causal_ok = (j <= i + offset) if is_causal else torch.ones(seq_q, seq_k, dtype=torch.bool, device=device)
+
+    keep = torch.zeros(seq_q, seq_k, dtype=torch.bool, device=device)
+    any_rule = False
+    if window is not None and window > 0:
+        keep = keep | (j > (i + offset) - window)
+        any_rule = True
+    if num_sinks and num_sinks > 0:
+        keep = keep | (j < num_sinks)
+        any_rule = True
+    if block is not None and block > 0:
+        keep = keep | ((i + offset) // block == j // block)
+        any_rule = True
+    if compress_stride is not None and compress_stride > 1:
+        keep = keep | (j % compress_stride == 0)
+        any_rule = True
+    if not any_rule:
+        keep = torch.ones(seq_q, seq_k, dtype=torch.bool, device=device)
+
+    allowed = causal_ok & keep
+    mask = torch.zeros(seq_q, seq_k, dtype=dtype, device=device)
+    return mask.masked_fill(~allowed, float("-inf"))
+
+
+class _MaskedSDPAStage(nn.Module):
+    """Base for sparse-attention variants: build a banded/sparse mask internally
+    and run masked SDPA, preserving the ``forward(q, k, v) -> [B, H, S, head_dim]``
+    contract so ``merge_heads`` is unchanged."""
+
+    def __init__(self, *, is_causal: bool, dropout_p: float) -> None:
+        super().__init__()
+        self.is_causal = bool(is_causal)
+        self.dropout_p = float(dropout_p)
+
+    def _mask_kwargs(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def forward(self, q: Tensor, k: Tensor, v: Tensor) -> Tensor:
+        seq_q, seq_k = q.size(-2), k.size(-2)
+        mask = _sparse_attn_mask(
+            seq_q, seq_k, is_causal=self.is_causal, device=q.device, dtype=q.dtype, **self._mask_kwargs()
+        )
+        drop = self.dropout_p if self.training else 0.0
+        return F.scaled_dot_product_attention(
+            q, k, v, attn_mask=mask, dropout_p=drop, is_causal=False,
+            enable_gqa=q.size(1) != k.size(1),
+        )
+
+
+class SlidingWindowAttentionStage(_MaskedSDPAStage):
+    """Mistral/Gemma local sliding-window attention."""
+
+    def __init__(self, window_size: int = 256, is_causal: bool = True, dropout_p: float = 0.0) -> None:
+        super().__init__(is_causal=is_causal, dropout_p=dropout_p)
+        self.window_size = int(window_size)
+
+    def _mask_kwargs(self) -> dict[str, Any]:
+        return {"window": self.window_size, "num_sinks": 0, "block": None, "compress_stride": None}
+
+
+class BlockSparseAttentionStage(_MaskedSDPAStage):
+    """Longformer-style block-local + global-sink attention."""
+
+    def __init__(self, sparse_block_size: int = 64, num_sinks: int = 0, is_causal: bool = True, dropout_p: float = 0.0) -> None:
+        super().__init__(is_causal=is_causal, dropout_p=dropout_p)
+        self.sparse_block_size = int(sparse_block_size)
+        self.num_sinks = int(num_sinks)
+
+    def _mask_kwargs(self) -> dict[str, Any]:
+        return {"window": None, "num_sinks": self.num_sinks, "block": self.sparse_block_size, "compress_stride": None}
+
+
+class StreamingAttentionSinksStage(_MaskedSDPAStage):
+    """StreamingLLM: persistent attention-sink tokens + a recent local window."""
+
+    def __init__(self, window_size: int = 256, num_sinks: int = 4, is_causal: bool = True, dropout_p: float = 0.0) -> None:
+        super().__init__(is_causal=is_causal, dropout_p=dropout_p)
+        self.window_size = int(window_size)
+        self.num_sinks = int(num_sinks)
+
+    def _mask_kwargs(self) -> dict[str, Any]:
+        return {"window": self.window_size, "num_sinks": self.num_sinks, "block": None, "compress_stride": None}
+
+
+class NativeSparseAttentionStage(_MaskedSDPAStage):
+    """Simplified DeepSeek NSA / V4-CSA reference: local window + sink tokens +
+    a strided "compressed" set of historical keys. The faithful learned top-k
+    block-selection (Lightning Indexer) lands with the llm.kittens NSA kernel;
+    this deterministic reference keeps the (q,k,v) contract and is causal-safe."""
+
+    def __init__(
+        self,
+        window_size: int = 128,
+        sparse_block_size: int = 64,
+        num_sinks: int = 0,
+        compress_stride: int = 16,
+        is_causal: bool = True,
+        dropout_p: float = 0.0,
+    ) -> None:
+        super().__init__(is_causal=is_causal, dropout_p=dropout_p)
+        self.window_size = int(window_size)
+        self.num_sinks = int(num_sinks)
+        self.compress_stride = int(compress_stride)
+
+    def _mask_kwargs(self) -> dict[str, Any]:
+        return {
+            "window": self.window_size,
+            "num_sinks": self.num_sinks,
+            "block": None,
+            "compress_stride": self.compress_stride,
+        }
+
+
+class DifferentialAttentionStage(nn.Module):
+    """Differential Transformer (Ye et al. 2024): two softmax-attention branches
+    on split query/key channels, subtracted with a learnable per-head lambda to
+    cancel attention noise, then head-wise normalised. Keeps the
+    ``forward(q,k,v) -> [B, H, S, head_dim]`` contract; splits ``head_dim`` in two
+    internally, so ``head_dim`` must be even (already required by RoPE)."""
+
+    def __init__(self, lambda_init: float = 0.8, is_causal: bool = True, dropout_p: float = 0.0, eps: float = 1e-5) -> None:
+        super().__init__()
+        self.is_causal = bool(is_causal)
+        self.dropout_p = float(dropout_p)
+        self.eps = float(eps)
+        self.lambda_param = nn.Parameter(torch.tensor(float(lambda_init), dtype=torch.float32))
+        self.lambda_init = float(lambda_init)
+
+    def forward(self, q: Tensor, k: Tensor, v: Tensor) -> Tensor:
+        head_dim = q.size(-1)
+        if head_dim % 2 != 0:
+            raise ValueError("differential attention requires an even head_dim")
+        half = head_dim // 2
+        q1, q2 = q[..., :half], q[..., half:]
+        k1, k2 = k[..., :half], k[..., half:]
+        drop = self.dropout_p if self.training else 0.0
+        gqa = q.size(1) != k.size(1)
+        a1 = F.scaled_dot_product_attention(q1, k1, v, dropout_p=drop, is_causal=self.is_causal, enable_gqa=gqa)
+        a2 = F.scaled_dot_product_attention(q2, k2, v, dropout_p=drop, is_causal=self.is_causal, enable_gqa=gqa)
+        lam = self.lambda_param.to(dtype=a1.dtype)
+        out = a1 - lam * a2
+        # head-wise RMSNorm + (1 - lambda_init) scale, per the Diff-Transformer recipe
+        out = F.rms_norm(out, (out.size(-1),), eps=self.eps) * (1.0 - self.lambda_init)
+        return out
+
+
 class LayerNormStage(nn.Module):
     def __init__(self, model_dim: int, eps: float = 1e-5) -> None:
         super().__init__()
@@ -1138,6 +1606,92 @@ class SwiGLUStage(nn.Module):
         self.w3 = nn.Linear(model_dim, hidden, bias=False)
     def forward(self, x: Tensor) -> Tensor:
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
+
+
+class GLUStage(nn.Module):
+    """Gated linear unit family sharing SwiGLU's 3-matrix structure.
+
+    ``activation`` selects the gate non-linearity: ``gelu`` -> GeGLU,
+    ``relu`` -> ReGLU, ``softmax`` -> SoLU (softmax-gated linear unit). Sizing
+    matches ``SwiGLUStage`` so these are drop-in MLP replacements.
+    """
+
+    def __init__(
+        self,
+        model_dim: int,
+        mlp_mult: int,
+        multiple_of: int | None = None,
+        activation: str = "gelu",
+    ) -> None:
+        super().__init__()
+        hidden = int(8.0 * model_dim / 3.0)
+        if multiple_of is not None:
+            hidden = multiple_of * ((hidden + multiple_of - 1) // multiple_of)
+        self.activation = str(activation)
+        self.w1 = nn.Linear(model_dim, hidden, bias=False)
+        self.w2 = nn.Linear(hidden, model_dim, bias=False)
+        self.w3 = nn.Linear(model_dim, hidden, bias=False)
+
+    def forward(self, x: Tensor) -> Tensor:
+        gate = self.w1(x)
+        if self.activation == "relu":
+            gated = F.relu(gate)
+        elif self.activation == "softmax":
+            gated = F.softmax(gate, dim=-1)
+        else:  # gelu (GeGLU)
+            gated = F.gelu(gate)
+        return self.w2(gated * self.w3(x))
+
+
+class DyTStage(nn.Module):
+    """Dynamic Tanh (Zhu et al. 2025): ``weight * tanh(alpha * x) + bias``.
+
+    A learnable element-wise replacement for LayerNorm/RMSNorm with a scalar
+    ``alpha`` and per-channel affine ``weight``/``bias``.
+    """
+
+    def __init__(self, model_dim: int, alpha_init: float = 1.0) -> None:
+        super().__init__()
+        self.alpha = nn.Parameter(torch.tensor(float(alpha_init), dtype=torch.float32))
+        self.weight = nn.Parameter(torch.ones(model_dim, dtype=torch.float32))
+        self.bias = nn.Parameter(torch.zeros(model_dim, dtype=torch.float32))
+
+    def forward(self, x: Tensor) -> Tensor:
+        out = torch.tanh(self.alpha.to(dtype=x.dtype) * x)
+        return self.weight.to(dtype=x.dtype) * out + self.bias.to(dtype=x.dtype)
+
+
+class GroupNormStage(nn.Module):
+    """Per-group LayerNorm over the channel (model_dim) axis of ``[B, S, D]``."""
+
+    def __init__(self, model_dim: int, num_groups: int = 1, eps: float = 1e-5) -> None:
+        super().__init__()
+        groups = max(int(num_groups), 1)
+        while model_dim % groups != 0 and groups > 1:
+            groups -= 1
+        self.norm = nn.GroupNorm(groups, model_dim, eps=eps)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.norm(x.transpose(1, 2)).transpose(1, 2)
+
+
+class QKNormStage(nn.Module):
+    """Fused RMSNorm on Q and K (over head_dim) before SDPA (DeepSeek-V3, Gemma-3).
+
+    Operates on the 4-D head layout ``[B, H, S, head_dim]`` and is inserted
+    between reshape_heads and RoPE so keys/queries are normalised before
+    rotation, matching ``CausalSelfAttentionStage``.
+    """
+
+    def __init__(self, eps: float = 1e-6) -> None:
+        super().__init__()
+        self.eps = float(eps)
+
+    def forward(self, q: Tensor, k: Tensor) -> tuple[Tensor, Tensor]:
+        return (
+            F.rms_norm(q, (q.size(-1),), eps=self.eps),
+            F.rms_norm(k, (k.size(-1),), eps=self.eps),
+        )
 
 class AbsolutePositionEmbeddingStage(nn.Module):
     def __init__(self, max_seq_len: int, model_dim: int) -> None:
@@ -1200,6 +1754,11 @@ class KVQuantUnpackStage(nn.Module):
         return k, v
 
 
+def _clamp_unit_tensor(value: Tensor) -> Tensor:
+    """Device-side equivalent of last_routing_stats._clamp_unit: NaN/Inf -> 0, else clamp to [0, 1]."""
+    return torch.where(torch.isfinite(value), value.clamp(0.0, 1.0), torch.zeros_like(value))
+
+
 class RoutingStatsMixin:
     """Expose lightweight routing telemetry from routed expert stages."""
 
@@ -1221,6 +1780,26 @@ class RoutingStatsMixin:
         self.register_buffer("_routing_mean_router_entropy_norm", torch.zeros((), dtype=torch.float32), persistent=False)
         self.register_buffer("_routing_mean_topk_entropy", torch.zeros((), dtype=torch.float32), persistent=False)
         self.register_buffer("_routing_mean_topk_entropy_norm", torch.zeros((), dtype=torch.float32), persistent=False)
+        # On-device accumulators summed across the micro-batches of one optimizer step so
+        # per-step routing telemetry needs only a SINGLE device->host read per step (via
+        # add_to_routing_accum + TorchTrainer._merge_routing_accum) instead of reading
+        # last_routing_stats every micro-batch, which serialised the CUDA stream ~7x per
+        # routed module per micro-batch and pinned GPU utilisation near zero.
+        self.register_buffer("_routing_acc_route_rows", torch.zeros((), dtype=torch.long), persistent=False)
+        self.register_buffer(
+            "_routing_acc_selection_counts",
+            torch.zeros(self._routing_num_experts, dtype=torch.float32),
+            persistent=False,
+        )
+        self.register_buffer(
+            "_routing_acc_weight_mass",
+            torch.zeros(self._routing_num_experts, dtype=torch.float32),
+            persistent=False,
+        )
+        self.register_buffer("_routing_acc_router_entropy_sum", torch.zeros((), dtype=torch.float32), persistent=False)
+        self.register_buffer("_routing_acc_router_entropy_norm_sum", torch.zeros((), dtype=torch.float32), persistent=False)
+        self.register_buffer("_routing_acc_topk_entropy_sum", torch.zeros((), dtype=torch.float32), persistent=False)
+        self.register_buffer("_routing_acc_topk_entropy_norm_sum", torch.zeros((), dtype=torch.float32), persistent=False)
 
     def clear_routing_stats(self) -> None:
         with torch.no_grad():
@@ -1231,6 +1810,40 @@ class RoutingStatsMixin:
             self._routing_mean_router_entropy_norm.zero_()
             self._routing_mean_topk_entropy.zero_()
             self._routing_mean_topk_entropy_norm.zero_()
+
+    def reset_routing_accum(self) -> None:
+        """Zero the per-step on-device routing accumulators (call once per optimizer step)."""
+        with torch.no_grad():
+            self._routing_acc_route_rows.zero_()
+            self._routing_acc_selection_counts.zero_()
+            self._routing_acc_weight_mass.zero_()
+            self._routing_acc_router_entropy_sum.zero_()
+            self._routing_acc_router_entropy_norm_sum.zero_()
+            self._routing_acc_topk_entropy_sum.zero_()
+            self._routing_acc_topk_entropy_norm_sum.zero_()
+
+    def add_to_routing_accum(self) -> None:
+        """Fold the latest per-forward routing buffers into the on-device step accumulators.
+
+        Pure device->device tensor math (no host read), so it can run every micro-batch
+        without serialising the CUDA stream. Mirrors the row-weighted summation that
+        TorchTrainer._accumulate_routing_stats did on host-synced python values: entropies
+        are weighted by route_rows and the normalised entropies are clamped to [0, 1]
+        (NaN/Inf -> 0) exactly as last_routing_stats did per micro-batch.
+        """
+        with torch.no_grad():
+            rows_f = self._routing_route_rows.to(torch.float32)
+            self._routing_acc_route_rows += self._routing_route_rows
+            self._routing_acc_selection_counts += self._routing_selection_counts
+            self._routing_acc_weight_mass += self._routing_weight_mass
+            self._routing_acc_router_entropy_sum += self._routing_mean_router_entropy * rows_f
+            self._routing_acc_router_entropy_norm_sum += (
+                _clamp_unit_tensor(self._routing_mean_router_entropy_norm) * rows_f
+            )
+            self._routing_acc_topk_entropy_sum += self._routing_mean_topk_entropy * rows_f
+            self._routing_acc_topk_entropy_norm_sum += (
+                _clamp_unit_tensor(self._routing_mean_topk_entropy_norm) * rows_f
+            )
 
     def _update_routing_stats(
         self,
@@ -1354,6 +1967,37 @@ class RouterLogitsStage(nn.Module):
         self.gate = nn.Linear(model_dim, experts, bias=False)
     def forward(self, x: Tensor) -> Tensor:
         return self.gate(x)
+
+
+class AuxFreeBalancingStage(nn.Module):
+    """DeepSeek-V3 auxiliary-loss-free load balancing.
+
+    Adds a *detached* per-expert bias to the router logits before top-k so
+    under-loaded experts get selected more often, with no auxiliary loss term.
+    The bias is nudged each training step by the sign of (target - realised
+    load), mirroring the V3 bias-update rule. The realised load is estimated
+    from this Stage's own top-k of the biased logits (self-contained -- no graph
+    cycle). Shape-preserving: ``[..., experts] -> [..., experts]``."""
+
+    def __init__(self, experts: int, top_k: int, bias_lr: float = 0.001) -> None:
+        super().__init__()
+        self.experts = int(experts)
+        self.top_k = max(min(int(top_k), self.experts), 1)
+        self.bias_lr = float(bias_lr)
+        self.register_buffer("expert_bias", torch.zeros(self.experts, dtype=torch.float32))
+
+    def forward(self, logits: Tensor) -> Tensor:
+        biased = logits + self.expert_bias.to(dtype=logits.dtype)
+        if self.training:
+            with torch.no_grad():
+                flat = biased.reshape(-1, self.experts)
+                _, idx = torch.topk(flat, self.top_k, dim=-1)
+                counts = torch.zeros(self.experts, device=logits.device, dtype=torch.float32)
+                counts.scatter_add_(0, idx.reshape(-1), torch.ones(idx.numel(), device=logits.device, dtype=torch.float32))
+                load = counts / counts.sum().clamp(min=1.0)
+                target = 1.0 / self.experts
+                self.expert_bias += self.bias_lr * torch.sign(target - load)
+        return biased
 
 class TopKRouteStage(RoutingStatsMixin, nn.Module):
     def __init__(self, top_k: int, experts: int) -> None:
@@ -1514,8 +2158,21 @@ class SemanticDataSourceStage(nn.Module):
 
 
 class RandomTimestepsStage(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("_rng_counter", torch.zeros((), dtype=torch.long), persistent=False)
+
     def forward(self, tokens: Tensor) -> Tensor:
-        return torch.rand(tokens.size(0), device=tokens.device, dtype=torch.float32)
+        out = _deterministic_uniform((tokens.size(0),), tokens.device, self._rng_counter, 17)
+        self._rng_counter.add_(1)
+        return out
+
+
+def _deterministic_uniform(shape: tuple[int, ...], device: torch.device, counter: Tensor, salt: int) -> Tensor:
+    n = math.prod(shape)
+    idx = torch.arange(n, device=device, dtype=torch.long)
+    value = (idx * 1_103_515_245 + counter.to(device=device, dtype=torch.long) * 12_345 + int(salt)) % 16_777_216
+    return (value.to(dtype=torch.float32) / 16_777_216.0).reshape(shape)
 
 
 class JEPAMaskStage(nn.Module):
@@ -1535,9 +2192,10 @@ class JEPAMaskStage(nn.Module):
         self.num_blocks = int(num_blocks)
         self.min_block_ratio = float(min_block_ratio)
         self.max_block_ratio = float(max_block_ratio)
+        self.register_buffer("_rng_counter", torch.zeros((), dtype=torch.long), persistent=False)
 
     def _random_mask(self, tokens: Tensor) -> Tensor:
-        noise = torch.rand(tokens.shape, device=tokens.device)
+        noise = _deterministic_uniform(tuple(tokens.shape), tokens.device, self._rng_counter, 29)
         return noise < self.mask_ratio
 
     def _block_mask(self, tokens: Tensor) -> Tensor:
@@ -1546,13 +2204,16 @@ class JEPAMaskStage(nn.Module):
         min_len = max(1, int(self.min_block_ratio * seq_len))
         max_len = max(min_len, int(self.max_block_ratio * seq_len))
         positions = torch.arange(seq_len, device=tokens.device).unsqueeze(0)
-        for _ in range(self.num_blocks):
-            block_len = torch.randint(min_len, max_len + 1, (batch,), device=tokens.device)
+        len_span = max(max_len - min_len + 1, 1)
+        for block_idx in range(self.num_blocks):
+            block_noise = _deterministic_uniform((batch,), tokens.device, self._rng_counter, 101 + block_idx * 2)
+            start_noise = _deterministic_uniform((batch,), tokens.device, self._rng_counter, 102 + block_idx * 2)
+            block_len = (block_noise * len_span).long().clamp(max=len_span - 1) + min_len
             max_start = (seq_len - block_len).clamp_min(0)
-            start = (torch.rand(batch, device=tokens.device) * (max_start.float() + 1.0)).long().clamp_max(max_start)
+            start = (start_noise * (max_start.float() + 1.0)).long().clamp_max(max_start)
             end = start + block_len
-            span = (positions >= start.unsqueeze(1)) & (positions < end.unsqueeze(1))
-            mask = mask | span
+            block_span = (positions >= start.unsqueeze(1)) & (positions < end.unsqueeze(1))
+            mask = mask | block_span
         return mask
 
     def forward(self, tokens: Tensor) -> tuple[Tensor, Tensor]:
@@ -1562,6 +2223,7 @@ class JEPAMaskStage(nn.Module):
             mask = self._random_mask(tokens)
         masked_tokens = tokens.clone()
         masked_tokens[mask] = self.mask_token_id
+        self._rng_counter.add_(1)
         return masked_tokens, mask.to(dtype=torch.float32)
 
 
@@ -1782,8 +2444,16 @@ def default_kv_quant_unpack_config() -> dict[str, Any]:
     return {"head_dim": 64}
 
 
-def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
+def build_module(module_type: str, module_config: dict[str, Any], tile_cuda_config: Any | None = None) -> nn.Module:
     cfg = dict(module_config or {})
+    if tile_cuda_config is not None:
+        from .tile_cuda.modules import build_tile_module
+        from .tile_cuda.runtime import resolve_backend
+
+        if resolve_backend(tile_cuda_config) != "torch":
+            tile_module = build_tile_module(module_type, cfg, tile_cuda_config)
+            if tile_module is not None:
+                return tile_module
     if module_type == "fused_causal_attention":
         return FusedCausalAttentionStage(
             model_dim=int(cfg["model_dim"]),
@@ -1796,6 +2466,23 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
         return BitLinearTernaryStage(
             input_dim=int(cfg["input_dim"]),
             output_dim=int(cfg["output_dim"]),
+        )
+    if module_type == "fp8_linear":
+        return FP8LinearStage(
+            input_dim=int(cfg["input_dim"]),
+            output_dim=int(cfg["output_dim"]),
+            bias=bool(cfg.get("bias", False)),
+            fp8_format=str(cfg.get("fp8_format", "e4m3")),
+            amax_history_len=int(cfg.get("amax_history_len", 16)),
+            use_stochastic_rounding=bool(cfg.get("use_stochastic_rounding", True)),
+        )
+    if module_type == "mx_linear":
+        return MXLinearStage(
+            input_dim=int(cfg["input_dim"]),
+            output_dim=int(cfg["output_dim"]),
+            bias=bool(cfg.get("bias", False)),
+            mx_format=str(cfg.get("mx_format", "mxfp4")),
+            mx_block_size=int(cfg.get("mx_block_size", 32)),
         )
     if module_type == "randmap_adapter":
         return RandMapAdapterStage(
@@ -1944,6 +2631,26 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
             mlp_mult=int(cfg["mlp_mult"]),
             multiple_of=cfg.get("multiple_of"),
         )
+    if module_type in ("geglu", "reglu", "solu"):
+        return GLUStage(
+            model_dim=int(cfg["model_dim"]),
+            mlp_mult=int(cfg.get("mlp_mult", 4)),
+            multiple_of=cfg.get("multiple_of"),
+            activation={"geglu": "gelu", "reglu": "relu", "solu": "softmax"}[module_type],
+        )
+    if module_type == "dyt":
+        return DyTStage(
+            model_dim=int(cfg["model_dim"]),
+            alpha_init=float(cfg.get("alpha_init", 1.0)),
+        )
+    if module_type == "group_norm":
+        return GroupNormStage(
+            model_dim=int(cfg["model_dim"]),
+            num_groups=int(cfg.get("num_groups", 1)),
+            eps=float(cfg.get("eps", 1e-5)),
+        )
+    if module_type == "qk_norm":
+        return QKNormStage(eps=float(cfg.get("eps", 1e-6)))
     if module_type == "absolute_position_embedding":
         return AbsolutePositionEmbeddingStage(
             max_seq_len=int(cfg.get("max_seq_len", 1024)),
@@ -1957,6 +2664,12 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
         return RouterLogitsStage(
             model_dim=int(cfg["model_dim"]),
             experts=int(cfg["experts"]),
+        )
+    if module_type == "auxfree_load_balancing":
+        return AuxFreeBalancingStage(
+            experts=int(cfg["experts"]),
+            top_k=int(cfg.get("top_k", 2)),
+            bias_lr=float(cfg.get("bias_lr", 0.001)),
         )
     if module_type == "topk_route":
         return TopKRouteStage(
@@ -1996,6 +2709,7 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
         return RotaryEmbeddingStage(
             head_dim=int(cfg["head_dim"]),
             rope_base=float(cfg["rope_base"]),
+            rope_scaling=cfg.get("rope_scaling"),
         )
     if module_type == "qk_gain":
         return QKGainStage(
@@ -2006,6 +2720,41 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
         return ScaledDotProductAttentionStage(
             is_causal=bool(cfg.get("is_causal", True)),
             backend=str(cfg.get("backend", "sdpa")),
+            dropout_p=float(cfg.get("dropout_p", 0.0)),
+        )
+    if module_type == "sliding_window_attention":
+        return SlidingWindowAttentionStage(
+            window_size=int(cfg.get("window_size", 256)),
+            is_causal=bool(cfg.get("is_causal", True)),
+            dropout_p=float(cfg.get("dropout_p", 0.0)),
+        )
+    if module_type == "block_sparse_attention":
+        return BlockSparseAttentionStage(
+            sparse_block_size=int(cfg.get("sparse_block_size", 64)),
+            num_sinks=int(cfg.get("num_sinks", 0)),
+            is_causal=bool(cfg.get("is_causal", True)),
+            dropout_p=float(cfg.get("dropout_p", 0.0)),
+        )
+    if module_type == "streaming_attention_sinks":
+        return StreamingAttentionSinksStage(
+            window_size=int(cfg.get("window_size", 256)),
+            num_sinks=int(cfg.get("num_sinks", 4)),
+            is_causal=bool(cfg.get("is_causal", True)),
+            dropout_p=float(cfg.get("dropout_p", 0.0)),
+        )
+    if module_type == "native_sparse_attention":
+        return NativeSparseAttentionStage(
+            window_size=int(cfg.get("window_size", 128)),
+            sparse_block_size=int(cfg.get("sparse_block_size", 64)),
+            num_sinks=int(cfg.get("num_sinks", 0)),
+            compress_stride=int(cfg.get("compress_stride", 16)),
+            is_causal=bool(cfg.get("is_causal", True)),
+            dropout_p=float(cfg.get("dropout_p", 0.0)),
+        )
+    if module_type == "differential_attention":
+        return DifferentialAttentionStage(
+            lambda_init=float(cfg.get("lambda_init", 0.8)),
+            is_causal=bool(cfg.get("is_causal", True)),
             dropout_p=float(cfg.get("dropout_p", 0.0)),
         )
     if module_type == "token_embedding":
@@ -2025,6 +2774,20 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
         return ResidualAddStage(
             dim=int(cfg["dim"]),
             init_scale=float(cfg.get("init_scale", 1.0)),
+        )
+    if module_type == "manifold_hyper_connection":
+        return ManifoldHyperConnectionStage(
+            dim=int(cfg["dim"]),
+            beta_init=float(cfg.get("beta_init", 0.1)),
+        )
+    if module_type == "multi_latent_attention":
+        return MLAStage(
+            model_dim=int(cfg["model_dim"]),
+            num_heads=int(cfg["num_heads"]),
+            kv_lora_rank=cfg.get("kv_lora_rank"),
+            qk_rope_dim=cfg.get("qk_rope_dim"),
+            rope_base=float(cfg.get("rope_base", 10000.0)),
+            dropout_p=float(cfg.get("dropout_p", 0.0)),
         )
     if module_type == "causal_self_attention":
         return CausalSelfAttentionStage(
@@ -2215,7 +2978,15 @@ def build_module(module_type: str, module_config: dict[str, Any]) -> nn.Module:
     raise KeyError(f"Unsupported module type: {module_type}")
 
 
-def build_function_module(name: str) -> nn.Module:
+def build_function_module(name: str, tile_cuda_config: Any | None = None) -> nn.Module:
+    if tile_cuda_config is not None:
+        from .tile_cuda.modules import build_tile_function_module
+        from .tile_cuda.runtime import resolve_backend
+
+        if resolve_backend(tile_cuda_config) != "torch":
+            tile_module = build_tile_function_module(name, tile_cuda_config)
+            if tile_module is not None:
+                return tile_module
     if name in {"input", "output", "identity"}:
         return PassthroughFunctionStage()
     if name == "add":
@@ -2240,6 +3011,30 @@ def build_function_module(name: str) -> nn.Module:
         return SoftplusFunctionStage()
     if name == "hard_tanh":
         return HardTanhFunctionStage()
+    if name == "gaussian":
+        return GaussianFunctionStage()
+    if name == "log":
+        return LogFunctionStage()
+    if name == "prelu":
+        return PReluFunctionStage()
+    if name == "relu6":
+        return Relu6FunctionStage()
+    if name == "elu":
+        return EluFunctionStage()
+    if name == "selu":
+        return SeluFunctionStage()
+    if name == "mish":
+        return MishFunctionStage()
+    if name == "softsign":
+        return SoftsignFunctionStage()
+    if name == "hard_sigmoid":
+        return HardSigmoidFunctionStage()
+    if name == "hard_swish":
+        return HardSwishFunctionStage()
+    if name == "softmax_2":
+        return Softmax2FunctionStage()
+    if name == "logsoftmax_2":
+        return LogSoftmax2FunctionStage()
     raise TypeError(f"Function node '{name}' is not supported by the torch runtime")
 
 
@@ -2249,6 +3044,32 @@ def _wrap_output(value: Any) -> tuple[Tensor, ...]:
     if isinstance(value, list):
         return tuple(value)
     return (value,)
+
+
+@dataclass(frozen=True)
+class _FlatInputPlan:
+    node_id: str
+    output_count: int
+
+
+@dataclass(frozen=True)
+class _EdgeInputPlan:
+    src_node: str
+    src_port: int
+    dst_port: int
+    edge_id: str
+
+
+@dataclass(frozen=True)
+class _NodeExecutionPlan:
+    node_id: str
+    kind: str
+    inputs: tuple[_EdgeInputPlan, ...]
+
+
+@dataclass(frozen=True)
+class _FlatOutputPlan:
+    node_id: str
 
 
 def resolve_torch_train_drop_last(
@@ -2268,24 +3089,111 @@ def resolve_torch_train_drop_last(
 
 
 class CompiledTorchGraph(nn.Module):
-    def __init__(self, graph: NeuronGraph) -> None:
+    def __init__(
+        self,
+        graph: NeuronGraph,
+        *,
+        kernel_backend: str = "auto",
+        tile_cuda_strict: bool = False,
+        tile_cuda_report_path: str | None = None,
+    ) -> None:
         super().__init__()
+        from .tile_cuda.config import TileCudaConfig
+        from .tile_cuda.runtime import resolve_backend, write_tile_cuda_report
+
         self.graph = graph
+        self.tile_cuda_config = TileCudaConfig(
+            backend=kernel_backend, strict=tile_cuda_strict, report_path=tile_cuda_report_path
+        )
+        self.resolved_kernel_backend = resolve_backend(self.tile_cuda_config)
+        if self.resolved_kernel_backend == "tile_cuda":
+            self._validate_tile_cuda_coverage(graph)
+        if self.tile_cuda_config.report_file is not None:
+            write_tile_cuda_report(self.tile_cuda_config.report_file, self.tile_cuda_config)
         if graph.has_cycles():
             raise ValueError(f"Torch runtime does not support cyclic graphs: '{graph.name}'")
-        self.order = graph.topological_order() if graph.nodes else []
+        self.order = tuple(graph.topological_order() if graph.nodes else [])
         self.node_modules = nn.ModuleDict()
         for nid, node in graph.nodes.items():
             ndef = node.neuron_def
             if ndef.kind == "module":
-                module = build_module(ndef.module_type, ndef.module_config)
+                module = build_module(ndef.module_type, ndef.module_config, self.tile_cuda_config)
                 if ndef.module_state:
                     module.load_state_dict(decode_module_state_dict(ndef.module_state))
                 self.node_modules[nid] = module
             elif ndef.kind == "subgraph" and ndef.subgraph is not None:
-                self.node_modules[nid] = CompiledTorchGraph(ndef.subgraph)
+                self.node_modules[nid] = CompiledTorchGraph(
+                    ndef.subgraph,
+                    kernel_backend=kernel_backend,
+                    tile_cuda_strict=tile_cuda_strict,
+                    tile_cuda_report_path=tile_cuda_report_path,
+                )
             elif ndef.kind == "function":
-                self.node_modules[nid] = build_function_module(ndef.name)
+                self.node_modules[nid] = build_function_module(ndef.name, self.tile_cuda_config)
+        self._flat_input_plan = tuple(
+            _FlatInputPlan(nid, graph.nodes[nid].neuron_def.n_outputs)
+            for nid in graph.input_node_ids
+        )
+        self._flat_output_plan = tuple(_FlatOutputPlan(nid) for nid in graph.output_node_ids)
+        self._expected_flat_inputs = sum(item.output_count for item in self._flat_input_plan)
+        self._execution_plan = self._compile_execution_plan(graph)
+
+    @staticmethod
+    def _validate_tile_cuda_coverage(graph: NeuronGraph) -> None:
+        from .tile_cuda.registry import tile_kernel_spec_for
+
+        missing: list[str] = []
+        for nid, node in graph.nodes.items():
+            ndef = node.neuron_def
+            if ndef.kind == "subgraph" and ndef.subgraph is not None:
+                CompiledTorchGraph._validate_tile_cuda_coverage(ndef.subgraph)
+                continue
+            spec = tile_kernel_spec_for(ndef)
+            if spec is None:
+                missing.append(f"{nid}:{ndef.kind}:{ndef.name}")
+                continue
+            if spec.status in {"torch_fallback", "planned"}:
+                missing.append(f"{nid}:{spec.kind}:{spec.name}:{spec.status}")
+        if missing:
+            joined = ", ".join(missing[:12])
+            suffix = "" if len(missing) <= 12 else f", ... +{len(missing) - 12} more"
+            raise RuntimeError(f"CUDA Tile strict mode cannot compile uncovered graph nodes: {joined}{suffix}")
+
+    @staticmethod
+    def _compile_execution_plan(graph: NeuronGraph) -> tuple[_NodeExecutionPlan, ...]:
+        input_nodes = set(graph.input_node_ids)
+        plan: list[_NodeExecutionPlan] = []
+        for nid in graph.topological_order() if graph.nodes else []:
+            if nid in input_nodes:
+                continue
+            node = graph.nodes[nid]
+            input_count = node.neuron_def.n_inputs
+            gathered: list[_EdgeInputPlan | None] = [None] * input_count
+            for edge in graph._incoming(nid):
+                if edge.dst_port >= input_count:
+                    raise ValueError(f"Edge '{edge.id}' dst_port={edge.dst_port} exceeds destination inputs")
+                if gathered[edge.dst_port] is not None:
+                    raise ValueError(
+                        f"Torch graph '{graph.name}' has multiple incoming edges into "
+                        f"node '{nid}' port {edge.dst_port}; use an explicit combine node instead"
+                    )
+                gathered[edge.dst_port] = _EdgeInputPlan(
+                    src_node=edge.src_node,
+                    src_port=edge.src_port,
+                    dst_port=edge.dst_port,
+                    edge_id=edge.id,
+                )
+            missing = [idx for idx, value in enumerate(gathered) if value is None]
+            if missing:
+                raise ValueError(f"Node '{nid}' is missing required torch inputs at ports {missing}")
+            plan.append(
+                _NodeExecutionPlan(
+                    node_id=nid,
+                    kind=node.neuron_def.kind,
+                    inputs=tuple(value for value in gathered if value is not None),
+                )
+            )
+        return tuple(plan)
 
     def forward(self, *flat_inputs: Tensor) -> tuple[Tensor, ...]:
         outputs, _trace = self._run(flat_inputs, want_trace=False)
@@ -2307,23 +3215,21 @@ class CompiledTorchGraph(nn.Module):
             values[nid] = tensor_tuple
             traces[nid] = tensor_tuple
 
-        for nid in self.order:
-            if nid in values and nid in provided:
-                continue
-            node = self.graph.nodes[nid]
-            args = self._gather_inputs(nid, values)
-            if node.neuron_def.kind == "subgraph" and want_trace:
-                child_outputs, child_trace = self.node_modules[nid].trace(*args)
-                values[nid] = _wrap_output(child_outputs)
-                traces[nid] = values[nid]
+        for node_plan in self._execution_plan:
+            args = self._gather_inputs(node_plan, values)
+            module = self.node_modules[node_plan.node_id]
+            if node_plan.kind == "subgraph" and want_trace:
+                child_outputs, child_trace = module.trace(*args)
+                values[node_plan.node_id] = _wrap_output(child_outputs)
+                traces[node_plan.node_id] = values[node_plan.node_id]
                 for child_key, child_value in child_trace.items():
-                    traces[f"{nid}/{child_key}"] = child_value
+                    traces[f"{node_plan.node_id}/{child_key}"] = child_value
             else:
                 # Use the node's fixed child module directly so torch.compile does
                 # not have to specialize one generic dispatcher across mixed node
                 # arities and dtypes.
-                values[nid] = _wrap_output(self.node_modules[nid](*args))
-                traces[nid] = values[nid]
+                values[node_plan.node_id] = _wrap_output(module(*args))
+                traces[node_plan.node_id] = values[node_plan.node_id]
 
         outputs = self._flatten_outputs(values)
         return outputs, traces if want_trace else {}
@@ -2331,17 +3237,15 @@ class CompiledTorchGraph(nn.Module):
     def _expand_flat_inputs(self, flat_inputs: tuple[Tensor, ...]) -> dict[str, tuple[Tensor, ...]]:
         expanded: dict[str, tuple[Tensor, ...]] = {}
         idx = 0
-        for nid in self.graph.input_node_ids:
-            node = self.graph.nodes[nid]
-            n_out = node.neuron_def.n_outputs
-            chunk = flat_inputs[idx : idx + n_out]
-            if len(chunk) != n_out:
+        for item in self._flat_input_plan:
+            chunk = flat_inputs[idx : idx + item.output_count]
+            if len(chunk) != item.output_count:
                 raise ValueError(
-                    f"Graph '{self.graph.name}' expected {len(self.graph.interface_input_layout())} "
+                    f"Graph '{self.graph.name}' expected {self._expected_flat_inputs} "
                     f"flattened inputs but received {len(flat_inputs)}"
                 )
-            expanded[nid] = tuple(chunk)
-            idx += n_out
+            expanded[item.node_id] = tuple(chunk)
+            idx += item.output_count
         if idx != len(flat_inputs):
             raise ValueError(
                 f"Graph '{self.graph.name}' expected {idx} flattened inputs but received {len(flat_inputs)}"
@@ -2350,29 +3254,23 @@ class CompiledTorchGraph(nn.Module):
 
     def _flatten_outputs(self, values: dict[str, tuple[Tensor, ...]]) -> tuple[Tensor, ...]:
         flattened: list[Tensor] = []
-        for nid in self.graph.output_node_ids:
-            flattened.extend(values.get(nid, ()))
+        for item in self._flat_output_plan:
+            flattened.extend(values.get(item.node_id, ()))
         return tuple(flattened)
 
-    def _gather_inputs(self, node_id: str, values: dict[str, tuple[Tensor, ...]]) -> tuple[Tensor, ...]:
-        node = self.graph.nodes[node_id]
-        gathered: list[Tensor | None] = [None] * node.neuron_def.n_inputs
-        for edge in self.graph._incoming(node_id):
+    def _gather_inputs(self, node_plan: _NodeExecutionPlan, values: dict[str, tuple[Tensor, ...]]) -> tuple[Tensor, ...]:
+        gathered: list[Tensor | None] = [None] * len(node_plan.inputs)
+        for edge in node_plan.inputs:
             src_vals = values.get(edge.src_node)
             if src_vals is None:
-                raise ValueError(f"Node '{node_id}' is missing source values from '{edge.src_node}'")
+                raise ValueError(f"Node '{node_plan.node_id}' is missing source values from '{edge.src_node}'")
             if edge.src_port >= len(src_vals):
-                raise ValueError(f"Edge '{edge.id}' src_port={edge.src_port} exceeds source outputs")
-            if gathered[edge.dst_port] is not None:
-                raise ValueError(
-                    f"Torch graph '{self.graph.name}' has multiple incoming edges into "
-                    f"node '{node_id}' port {edge.dst_port}; use an explicit combine node instead"
-                )
+                raise ValueError(f"Edge '{edge.edge_id}' src_port={edge.src_port} exceeds source outputs")
             gathered[edge.dst_port] = src_vals[edge.src_port]
 
         missing = [idx for idx, value in enumerate(gathered) if value is None]
         if missing:
-            raise ValueError(f"Node '{node_id}' is missing required torch inputs at ports {missing}")
+            raise ValueError(f"Node '{node_plan.node_id}' is missing required torch inputs at ports {missing}")
         return tuple(value for value in gathered if value is not None)
 
     def sync_state_back(self, graph: NeuronGraph | None = None) -> None:
@@ -2422,6 +3320,9 @@ class TorchTrainConfig:
     muon_momentum_warmup_steps: int = 500
     drop_last: bool | None = None
     respect_epoch_boundaries: bool = False
+    kernel_backend: str = "auto"
+    tile_cuda_strict: bool = False
+    tile_cuda_report_path: str | None = None
     evolutionary: bool = False
     evo_population_size: int = 50
     evo_mutation_rate: float = 0.1
@@ -2990,6 +3891,92 @@ class TorchTrainer:
             "mean_topk_entropy_norm": float(accumulator["_topk_entropy_norm_sum"]) / route_rows,
         }
 
+    @staticmethod
+    def _merge_routing_accum(
+        routing_modules: list["RoutingStatsMixin"],
+    ) -> dict[str, Any] | None:
+        """Sum the per-step on-device routing accumulators across modules and read them to
+        host with a SINGLE device->host transfer. Returns the same dict shape as
+        _finalize_routing_stats but without the per-micro-batch .item()/.cpu() storm that
+        previously forced thousands of cudaStreamSynchronize calls per optimizer step."""
+        if not routing_modules:
+            return None
+        num_experts = int(routing_modules[0]._routing_num_experts)
+        device = routing_modules[0]._routing_acc_route_rows.device
+        route_rows_t = torch.zeros((), dtype=torch.float32, device=device)
+        selection_counts_t = torch.zeros(num_experts, dtype=torch.float32, device=device)
+        weight_mass_t = torch.zeros(num_experts, dtype=torch.float32, device=device)
+        router_entropy_sum_t = torch.zeros((), dtype=torch.float32, device=device)
+        router_entropy_norm_sum_t = torch.zeros((), dtype=torch.float32, device=device)
+        topk_entropy_sum_t = torch.zeros((), dtype=torch.float32, device=device)
+        topk_entropy_norm_sum_t = torch.zeros((), dtype=torch.float32, device=device)
+        for module in routing_modules:
+            if int(module._routing_num_experts) != num_experts:
+                # Mixed expert counts were treated as "_invalid" -> None by the old path.
+                return None
+            route_rows_t = route_rows_t + module._routing_acc_route_rows.to(torch.float32)
+            selection_counts_t = selection_counts_t + module._routing_acc_selection_counts
+            weight_mass_t = weight_mass_t + module._routing_acc_weight_mass
+            router_entropy_sum_t = router_entropy_sum_t + module._routing_acc_router_entropy_sum
+            router_entropy_norm_sum_t = router_entropy_norm_sum_t + module._routing_acc_router_entropy_norm_sum
+            topk_entropy_sum_t = topk_entropy_sum_t + module._routing_acc_topk_entropy_sum
+            topk_entropy_norm_sum_t = topk_entropy_norm_sum_t + module._routing_acc_topk_entropy_norm_sum
+
+        # ONE device->host copy for the whole step (vs ~7 per module per micro-batch before).
+        blob = torch.cat(
+            [
+                selection_counts_t,
+                weight_mass_t,
+                torch.stack(
+                    [
+                        route_rows_t,
+                        router_entropy_sum_t,
+                        router_entropy_norm_sum_t,
+                        topk_entropy_sum_t,
+                        topk_entropy_norm_sum_t,
+                    ]
+                ),
+            ]
+        )
+        values = blob.detach().cpu().tolist()
+        selection_counts = [int(round(v)) for v in values[:num_experts]]
+        weight_mass = [float(v) for v in values[num_experts : 2 * num_experts]]
+        (
+            route_rows_f,
+            router_entropy_sum,
+            router_entropy_norm_sum,
+            topk_entropy_sum,
+            topk_entropy_norm_sum,
+        ) = values[2 * num_experts :]
+        route_rows = int(round(route_rows_f))
+        if route_rows <= 0:
+            return None
+
+        selection_total = max(sum(selection_counts), 0)
+        weight_total = float(sum(weight_mass))
+        active_experts = [idx for idx, count in enumerate(selection_counts) if count > 0]
+
+        return {
+            "num_experts": num_experts,
+            "route_rows": route_rows,
+            "selection_counts": selection_counts,
+            "selection_shares": [
+                (count / selection_total) if selection_total > 0 else 0.0
+                for count in selection_counts
+            ],
+            "weight_mass": weight_mass,
+            "weight_mass_shares": [
+                (mass / weight_total) if weight_total > 0 else 0.0
+                for mass in weight_mass
+            ],
+            "active_experts": active_experts,
+            "active_expert_count": len(active_experts),
+            "mean_router_entropy": router_entropy_sum / route_rows,
+            "mean_router_entropy_norm": router_entropy_norm_sum / route_rows,
+            "mean_topk_entropy": topk_entropy_sum / route_rows,
+            "mean_topk_entropy_norm": topk_entropy_norm_sum / route_rows,
+        }
+
     @classmethod
     def _build_optimizers(
         cls,
@@ -3467,7 +4454,12 @@ class TorchTrainer:
         else:
             dataset = self._build_manual_dataset(self.graph, train_inputs, train_targets)
         # ── 2. Compile the graph AFTER adjustments ────────────────────
-        compiled = CompiledTorchGraph(self.graph)
+        compiled = CompiledTorchGraph(
+            self.graph,
+            kernel_backend=self.config.kernel_backend,
+            tile_cuda_strict=self.config.tile_cuda_strict,
+            tile_cuda_report_path=self.config.tile_cuda_report_path,
+        )
         self._prepare_ema_targets(compiled)
         # Fine-tuning: load pretrained base + freeze non-LoRA params if spec present.
         self._apply_finetune_prehook(compiled, self.graph)
@@ -3754,8 +4746,10 @@ class TorchTrainer:
                     for warmup_step in range(self.config.warmup_steps):
                         apply_step_schedule(0, 0.0)
                         step_rows = 0
-                        step_loss_total = 0.0
-                        step_routing_accumulator: dict[str, Any] | None = None
+                        step_loss_dev = torch.zeros((), device=device)
+                        if routing_modules:
+                            for module in routing_modules:
+                                module.reset_routing_accum()
                         for _ in range(grad_accum_steps):
                             if routing_modules:
                                 self._clear_routing_modules(routing_modules)
@@ -3772,13 +4766,11 @@ class TorchTrainer:
                             (loss / grad_accum_steps).backward()
                             if routing_modules:
                                 for module in routing_modules:
-                                    step_routing_accumulator = self._accumulate_routing_stats(
-                                        step_routing_accumulator,
-                                        module.last_routing_stats,
-                                    )
+                                    module.add_to_routing_accum()
                             batch_rows = int(flat_inputs[0].size(0))
                             step_rows += batch_rows
-                            step_loss_total += float(loss.item()) * batch_rows
+                            step_loss_dev += loss.detach().float() * batch_rows
+                        step_loss_total = float(step_loss_dev.item())
                         if self.config.grad_clip_norm > 0:
                             torch.nn.utils.clip_grad_norm_(compiled.parameters(), self.config.grad_clip_norm)
                         for opt in optimizers:
@@ -3797,7 +4789,7 @@ class TorchTrainer:
                                 "grad_accum_steps": grad_accum_steps,
                                 "learning_rates": current_lrs(),
                             }
-                            routing_stats = self._finalize_routing_stats(step_routing_accumulator)
+                            routing_stats = self._merge_routing_accum(routing_modules)
                             if routing_stats is not None:
                                 step_info["routing_stats"] = routing_stats
                             on_step(step_info)
@@ -3824,8 +4816,10 @@ class TorchTrainer:
                             step_grad_accum_steps = min(grad_accum_steps, remaining_loader_batches)
                         zero_grad_all()
                         step_rows = 0
-                        step_loss_total = 0.0
-                        step_routing_accumulator = None
+                        step_loss_dev = torch.zeros((), device=device)
+                        if routing_modules:
+                            for module in routing_modules:
+                                module.reset_routing_accum()
                         macro_batches: list[tuple[Tensor, ...]] = []
                         for _ in range(step_grad_accum_steps):
                             if routing_modules:
@@ -3851,15 +4845,13 @@ class TorchTrainer:
                             (loss / step_grad_accum_steps).backward()
                             if routing_modules:
                                 for module in routing_modules:
-                                    step_routing_accumulator = self._accumulate_routing_stats(
-                                        step_routing_accumulator,
-                                        module.last_routing_stats,
-                                    )
+                                    module.add_to_routing_accum()
                             batch_rows = int(flat_inputs[0].size(0))
                             step_rows += batch_rows
-                            step_loss_total += float(loss.item()) * batch_rows
+                            step_loss_dev += loss.detach().float() * batch_rows
                         if step_rows <= 0:
                             break
+                        step_loss_total = float(step_loss_dev.item())
 
                         apply_step_schedule(global_step, time.perf_counter() - start_time)
                         if self.config.grad_clip_norm > 0:
@@ -3908,7 +4900,7 @@ class TorchTrainer:
                             }
                             if step_grad_accum_steps != grad_accum_steps:
                                 step_info["actual_grad_accum_steps"] = step_grad_accum_steps
-                            routing_stats = self._finalize_routing_stats(step_routing_accumulator)
+                            routing_stats = self._merge_routing_accum(routing_modules)
                             if routing_stats is not None:
                                 step_info["routing_stats"] = routing_stats
                             if route_evo_info is not None:
@@ -3968,6 +4960,7 @@ class MaskSchedulerStage(nn.Module):
         super().__init__()
         self.vocab_size = vocab_size
         self.mask_token_id = mask_token_id
+        self.register_buffer("_rng_counter", torch.zeros((), dtype=torch.long), persistent=False)
         
     def forward(self, tokens: Tensor, timesteps: Tensor) -> Tensor:
         # tokens: [batch, seq]
@@ -3975,11 +4968,12 @@ class MaskSchedulerStage(nn.Module):
         # Simple random masking based on timestep
         batch, seq = tokens.shape
         mask_probs = timesteps.view(-1, 1).expand(batch, seq)
-        noise = torch.rand(batch, seq, device=tokens.device)
+        noise = _deterministic_uniform((batch, seq), tokens.device, self._rng_counter, 53)
         mask = noise < mask_probs
         
         noisy_tokens = tokens.clone()
         noisy_tokens[mask] = self.mask_token_id
+        self._rng_counter.add_(1)
         return noisy_tokens
 
 
@@ -4852,7 +5846,12 @@ class PPOTrainer:
         device = torch.device(device_name)
 
         # Compile once; we drive the graph manually through minibatches.
-        compiled = CompiledTorchGraph(self.graph)
+        compiled = CompiledTorchGraph(
+            self.graph,
+            kernel_backend=self.config.kernel_backend,
+            tile_cuda_strict=self.config.tile_cuda_strict,
+            tile_cuda_report_path=self.config.tile_cuda_report_path,
+        )
         TorchTrainer._apply_finetune_prehook(compiled, self.graph)
         compiled.to(device)
 

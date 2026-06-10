@@ -11,9 +11,9 @@ class CompiledTorchGraph(nn.Module):
     def __init__(self, graph: NeuronGraph) -> None
 ```
 
-Compiles a `NeuronGraph` into an `nn.Module` by walking the graph in topological order and instantiating a PyTorch module for each node. Raises `ValueError` if the graph has cycles.
+Compiles a `NeuronGraph` into an `nn.Module` by walking the graph in topological order once, instantiating a PyTorch module for each node, and precomputing the flat input/output and edge-routing execution plan. Raises `ValueError` if the graph has cycles.
 
-Function nodes are also materialized as fixed child `nn.Module` instances, so `torch.compile` sees per-node execution rather than a single generic dispatcher. That keeps compiled CUDA BF16 graphs from repeatedly recompiling when the graph mixes `Long`, BF16, and FP32 tensors. Loss stages still promote to FP32 only inside their scalar reduction.
+Function nodes are also materialized as fixed child `nn.Module` instances, so `torch.compile` sees per-node execution rather than a single generic dispatcher. Runtime tensor batches use the precomputed execution plan and do not walk graph-editor nodes, edge objects, positions, or mutable editor metadata. That keeps compiled CUDA BF16 graphs from repeatedly recompiling when the graph mixes `Long`, BF16, and FP32 tensors. Loss stages still promote to FP32 only inside their scalar reduction.
 
 ### Constructor
 
@@ -26,7 +26,7 @@ Function nodes are also materialized as fixed child `nn.Module` instances, so `t
 | Attribute | Type | Description |
 |-----------|------|-------------|
 | `graph` | `NeuronGraph` | The source graph |
-| `order` | `list[str]` | Topological node order |
+| `order` | `tuple[str, ...]` | Topological node order captured at compile time |
 | `node_modules` | `nn.ModuleDict` | Compiled modules keyed by node instance_id |
 
 ### Methods
@@ -82,6 +82,9 @@ class TorchTrainConfig:
     muon_momentum_warmup_steps: int = 500
     drop_last: bool | None = None
     respect_epoch_boundaries: bool = False
+    kernel_backend: str = "auto"
+    tile_cuda_strict: bool = False
+    tile_cuda_report_path: str | None = None
     evolutionary: bool = False
     evo_population_size: int = 50
     evo_mutation_rate: float = 0.1
@@ -128,6 +131,9 @@ class TorchTrainConfig:
 | `muon_momentum_warmup_steps` | `int` | `500` | Number of steps used to ramp Muon momentum to its final value |
 | `drop_last` | `bool \| None` | `None` | Override the runtime-specific drop-last policy |
 | `respect_epoch_boundaries` | `bool` | `False` | Keep each epoch to one loader pass and allow a short final accumulation step instead of cycling batches |
+| `kernel_backend` | `str` | `"auto"` | Backend selector: `"auto"`, `"torch"`, or `"tile_cuda"`. The current registry accounts for all 138 training-relevant entries with 129 Tile-covered kernels/compositions, 7 host-only entries, and 2 delegated graph calls; unsupported tensor contracts fall back unless strict mode is enabled. |
+| `tile_cuda_strict` | `bool` | `False` | When true, a requested CUDA Tile run fails at graph compile time for uncovered nodes and at runtime for unsupported Tile tensor contracts. |
+| `tile_cuda_report_path` | `str \| None` | `None` | Optional path for CUDA Tile diagnostics and coverage JSON reports emitted when compiling the graph. |
 | `evolutionary` | `bool` | `False` | Use population-based search over trainable torch parameters instead of gradient descent |
 | `evo_population_size` | `int` | `50` | Number of candidates scored each generation |
 | `evo_mutation_rate` | `float` | `0.1` | Probability of mutating each parameter during offspring generation |
@@ -312,6 +318,8 @@ Each `*Stage` class is an `nn.Module` implementing a single computational step. 
 | `ACTWeightedSumStage` | `act_weighted_sum` | ACT weighted state accumulation |
 | `UniversalTransformerStage` | `universal_transformer` | Universal transformer with ACT |
 | `DenoiseHeadStage` | `denoise_head` | Denoising prediction head (diffusion) |
+
+`RandomTimestepsStage`, `MaskSchedulerStage`, and `JEPAMaskStage` use deterministic counter-based random generation for Tile-compatible execution. This makes CPU/GPU drift tests reproducible and avoids coupling these stages to global PyTorch RNG state during compiled training.
 | `MaskSchedulerStage` | `mask_scheduler` | Mask-based noise scheduler (diffusion) |
 | `TTTLinearStage` | `ttt_linear` | Test-time training linear layer |
 | `SemanticProjectorStage` | `semantic_projector` | Semantic projection head that emits both the internal 9-D state and per-dimension topic logits |

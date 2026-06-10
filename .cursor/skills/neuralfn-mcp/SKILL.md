@@ -167,6 +167,18 @@ That's it -- four tool calls for a complete train run.
 | `universal_llama` | ACT-based universal transformer | AR |
 | `llama_megakernel` | Fused attention, max-autotune compile | AR |
 | `kv_pca_llama` | PCA-compressed KV cache | AR |
+| `deepseek_v3` | MLA + auxfree-balanced MoE + shared experts | AR (MoE) |
+| `deepseek_v4` | NSA + auxfree MoE + mHC residuals + QK-norm + FP8 | AR (MoE) |
+| `gemma3` | Sliding-window attention + GeGLU + QK-norm + softcap | AR |
+| `diff_transformer` | Differential (two-softmax) attention + head-wise norm | AR |
+| `qwen3_longctx` | GQA + YaRN RoPE scaling + QK-norm | AR |
+| `longctx_sparse_llama` | Native-sparse / block-sparse / sliding-window / streaming | AR |
+| `modern_norms_llama` | DyT + QK-norm + GeGLU | AR |
+| `fp8_llama` / `mxfp4_llama` | FP8 E4M3 / MXFP4 weight linears (Blackwell) | AR |
+| `auxfree_moe_jepa_evo` | Auxfree balancing × route-evo × JEPA | Semantic MoE JEPA |
+| `diff_semantic_moe_jepa_evo` | Differential attention × semantic MoE JEPA evo | Semantic MoE JEPA |
+| `dyt_geglu_semantic_dense_jepa_evo` | DyT + GeGLU × semantic dense JEPA evo | Semantic JEPA |
+| `<preset>_modern` | Any base preset + modern recipe (RMSNorm/QK-norm/RoPE-YaRN/GeGLU/auxfree) | (inherits base) |
 
 ## GPT template config keys
 

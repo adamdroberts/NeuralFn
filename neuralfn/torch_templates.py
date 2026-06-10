@@ -31,6 +31,83 @@ def clone_neuron_def(ndef: NeuronDef, *, config: dict[str, Any] | None = None) -
     return cloned
 
 
+def select_norm_module(spec: BlockSpec) -> NeuronDef:
+    """Pick the block-norm NeuronDef for ``spec.norm_type``.
+
+    Centralises the norm choice so every block builder (dense, semantic-router,
+    JEPA/evo final norms) honours the new ``dyt`` / ``group_norm`` variants
+    rather than silently falling back to LayerNorm. Spec-specific knobs
+    (``dyt_alpha_init``, ``group_norm_groups``) are pre-merged into the returned
+    def; downstream ``clone_neuron_def(..., config={"model_dim": d})`` merges the
+    model_dim without clobbering them.
+    """
+    norm_type = getattr(spec, "norm_type", "layernorm")
+    if norm_type == "rmsnorm":
+        return BuiltinNeurons.rms_norm_module
+    if norm_type == "dyt":
+        return clone_neuron_def(
+            BuiltinNeurons.dyt_module,
+            config={"alpha_init": float(getattr(spec, "dyt_alpha_init", 1.0))},
+        )
+    if norm_type == "group_norm":
+        return clone_neuron_def(
+            BuiltinNeurons.group_norm_module,
+            config={"num_groups": int(getattr(spec, "group_norm_groups", 1))},
+        )
+    return BuiltinNeurons.layer_norm_module
+
+
+def _residual_def(spec: BlockSpec, model_dim: int) -> NeuronDef:
+    """Residual-mix NeuronDef for ``spec.residual_type``: plain ``add`` or a
+    Manifold-Constrained Hyper-Connection (DeepSeek-V4). Both are 2-in (residual,
+    delta) / 1-out, so the swap is port-compatible at the block residual sites."""
+    if getattr(spec, "residual_type", "add") == "mhc":
+        return clone_neuron_def(BuiltinNeurons.manifold_hyper_connection_module, config={"dim": model_dim})
+    return clone_neuron_def(BuiltinNeurons.add)
+
+
+def _attention_core_def(spec: BlockSpec, *, is_cross: bool = False) -> NeuronDef:
+    """Pick the attention-core NeuronDef for ``spec.attention_variant``.
+
+    All variants share the dense SDPA 3-in/1-out port signature
+    (``q, k, v -> y``) and emit ``[B, H, S, head_dim]``, so they drop into the
+    ``sdpa`` node slot with the surrounding reshape/RoPE/GQA/merge wiring intact.
+    Cross-attention always uses dense SDPA (the sparse variants are self-attn
+    long-context patterns).
+    """
+    is_causal = spec.is_causal and not is_cross
+    variant = "dense" if is_cross else getattr(spec, "attention_variant", "dense")
+    if variant == "sliding_window":
+        return clone_neuron_def(
+            BuiltinNeurons.sliding_window_attention_module,
+            config={"window_size": int(spec.window_size or 256), "is_causal": is_causal, "dropout_p": spec.dropout_p},
+        )
+    if variant == "block_sparse":
+        return clone_neuron_def(
+            BuiltinNeurons.block_sparse_attention_module,
+            config={"sparse_block_size": int(spec.sparse_block_size), "num_sinks": int(spec.num_sinks), "is_causal": is_causal, "dropout_p": spec.dropout_p},
+        )
+    if variant == "streaming":
+        return clone_neuron_def(
+            BuiltinNeurons.streaming_attention_sinks_module,
+            config={"window_size": int(spec.window_size or 256), "num_sinks": int(spec.num_sinks or 4), "is_causal": is_causal, "dropout_p": spec.dropout_p},
+        )
+    if variant == "nsa":
+        return clone_neuron_def(
+            BuiltinNeurons.native_sparse_attention_module,
+            config={"window_size": int(spec.window_size or 128), "sparse_block_size": int(spec.sparse_block_size), "num_sinks": int(spec.num_sinks), "compress_stride": int(spec.nsa_compress_stride), "is_causal": is_causal, "dropout_p": spec.dropout_p},
+        )
+    if variant == "differential":
+        return clone_neuron_def(
+            BuiltinNeurons.differential_attention_module,
+            config={"lambda_init": float(spec.diff_lambda_init), "is_causal": is_causal, "dropout_p": spec.dropout_p},
+        )
+    return clone_neuron_def(
+        BuiltinNeurons.scaled_dot_product_attention_module,
+        config={"is_causal": is_causal, "backend": spec.attention_backend, "dropout_p": spec.dropout_p},
+    )
+
+
 def get_linear_module_def(
     input_dim: int,
     output_dim: int,
@@ -47,6 +124,29 @@ def get_linear_module_def(
     """
     if spec.compression == "ternary_b158":
         return clone_neuron_def(BuiltinNeurons.bitlinear_ternary_module, config={"input_dim": input_dim, "output_dim": output_dim})
+    if spec.compression in ("fp8_e4m3", "fp8_e5m2"):
+        return clone_neuron_def(
+            BuiltinNeurons.fp8_linear_module,
+            config={
+                "input_dim": input_dim,
+                "output_dim": output_dim,
+                "bias": spec.linear_bias,
+                "fp8_format": "e5m2" if spec.compression == "fp8_e5m2" else "e4m3",
+                "amax_history_len": int(getattr(spec, "fp8_amax_history_len", 16)),
+                "use_stochastic_rounding": bool(getattr(spec, "fp8_use_stochastic_rounding", True)),
+            },
+        )
+    if spec.compression in ("mxfp4", "mxfp8"):
+        return clone_neuron_def(
+            BuiltinNeurons.mx_linear_module,
+            config={
+                "input_dim": input_dim,
+                "output_dim": output_dim,
+                "bias": spec.linear_bias,
+                "mx_format": spec.compression,
+                "mx_block_size": int(getattr(spec, "mx_block_size", 32)),
+            },
+        )
     if spec.family == "ttt":
         return clone_neuron_def(
             BuiltinNeurons.ttt_linear_module,
@@ -123,6 +223,28 @@ def build_dense_attention_graph(
     pca_compressed_dim: int | None = None,
     fused_megakernel: bool = False,
 ) -> NeuronGraph:
+    # MLA fused path: Multi-head Latent Attention owns its own projections and
+    # decoupled RoPE, so it replaces the whole Q/K/V -> reshape -> rope -> SDPA ->
+    # merge -> out chain with a single node (the graph's single 2-in/2-out rotary
+    # node cannot express MLA's decoupled-RoPE-on-a-split topology). Self-attention,
+    # RoPE-based only; no cache/PCA in this mode.
+    if getattr(spec, "attention_variant", "dense") == "mla" and not is_cross and spec.pos_encoding == "rope":
+        graph = NeuronGraph(name=name, training_method="torch", runtime="torch")
+        mla_cfg = {
+            "model_dim": model_dim,
+            "num_heads": spec.num_heads,
+            "rope_base": spec.rope_theta,
+            "dropout_p": spec.dropout_p,
+        }
+        graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="x", dtype="tensor"), instance_id="x_in", position=(40, 180)))
+        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.multi_latent_attention_module, config=mla_cfg), instance_id="mla", position=(300, 180)))
+        graph.add_edge(Edge(id="e_x_mla", src_node="x_in", src_port=0, dst_node="mla", dst_port=0))
+        graph.add_node(NeuronInstance(make_terminal_def(role="output", port_name="attn_out", dtype="tensor"), instance_id="attn_out", position=(560, 180)))
+        graph.add_edge(Edge(id="e_mla_out", src_node="mla", src_port=0, dst_node="attn_out", dst_port=0))
+        graph.input_node_ids = ["x_in"]
+        graph.output_node_ids = ["attn_out"]
+        return graph
+
     # Megakernel fused path: single node replaces the whole Q/K/V -> SDPA -> out chain.
     # Only available for non-cross, RoPE-based causal attention (no cache/PCA in fused mode).
     if fused_megakernel and not is_cross and spec.pos_encoding == "rope":
@@ -185,20 +307,30 @@ def build_dense_attention_graph(
     graph.add_edge(Edge(id="e_k_kheads", src_node=curr_k, src_port=0, dst_node="k_heads", dst_port=0))
     graph.add_edge(Edge(id="e_v_vheads", src_node=curr_v, src_port=0, dst_node="v_heads", dst_port=0))
 
+    # Optional QK-norm: fused RMSNorm on Q and K before RoPE (DeepSeek-V3, Gemma-3).
+    q_src, q_src_port = "q_heads", 0
+    k_src, k_src_port = "k_heads", 0
+    if getattr(spec, "use_qk_norm", False):
+        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.qk_norm_module), instance_id="qk_norm", position=(620, 120)))
+        graph.add_edge(Edge(id="e_qheads_qknorm", src_node="q_heads", src_port=0, dst_node="qk_norm", dst_port=0))
+        graph.add_edge(Edge(id="e_kheads_qknorm", src_node="k_heads", src_port=0, dst_node="qk_norm", dst_port=1))
+        q_src, q_src_port = "qk_norm", 0
+        k_src, k_src_port = "qk_norm", 1
+
     # Optional Pos Encoding (RoPE)
-    curr_q = "q_heads"
-    curr_k = "k_heads"
+    curr_q = q_src
+    curr_k = k_src
     if spec.pos_encoding == "rope":
-        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.rotary_embedding_module, config={"head_dim": head_dim, "rope_base": spec.rope_theta}), instance_id="rope", position=(700, 120)))
-        graph.add_edge(Edge(id="e_qheads_rope", src_node="q_heads", src_port=0, dst_node="rope", dst_port=0))
-        graph.add_edge(Edge(id="e_kheads_rope", src_node="k_heads", src_port=0, dst_node="rope", dst_port=1))
+        graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.rotary_embedding_module, config={"head_dim": head_dim, "rope_base": spec.rope_theta, "rope_scaling": spec.rope_scaling}), instance_id="rope", position=(700, 120)))
+        graph.add_edge(Edge(id="e_qheads_rope", src_node=q_src, src_port=q_src_port, dst_node="rope", dst_port=0))
+        graph.add_edge(Edge(id="e_kheads_rope", src_node=k_src, src_port=k_src_port, dst_node="rope", dst_port=1))
         curr_q = "rope"
         curr_k = "rope"
         k_port = 1
         q_port = 0
     else:
-        k_port = 0
-        q_port = 0
+        k_port = k_src_port
+        q_port = q_src_port
 
     # Track the K/V source nodes/ports feeding into attention (or into cache/PCA)
     curr_k_pre = curr_k
@@ -261,7 +393,7 @@ def build_dense_attention_graph(
         v_attn_port = 0
 
     # Attention Core
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.scaled_dot_product_attention_module, config={"is_causal": spec.is_causal and not is_cross, "backend": spec.attention_backend, "dropout_p": spec.dropout_p}), instance_id="sdpa", position=(1300, 180)))
+    graph.add_node(NeuronInstance(_attention_core_def(spec, is_cross=is_cross), instance_id="sdpa", position=(1300, 180)))
     graph.add_edge(Edge(id=f"e_{curr_q}_sdpa_0", src_node=curr_q, src_port=q_port, dst_node="sdpa", dst_port=0))
     graph.add_edge(Edge(id=f"e_{curr_k_attn}_sdpa_1", src_node=curr_k_attn, src_port=k_attn_port, dst_node="sdpa", dst_port=1))
     graph.add_edge(Edge(id=f"e_{curr_v_attn}_sdpa_2", src_node=curr_v_attn, src_port=v_attn_port, dst_node="sdpa", dst_port=2))
@@ -324,6 +456,15 @@ def build_dense_mlp_graph(name: str, model_dim: int, spec: BlockSpec) -> NeuronG
         graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.swiglu_module, config={"model_dim": model_dim, "mlp_mult": spec.mlp_multiplier, "multiple_of": spec.multiple_of}), instance_id="swiglu", position=(480, 120)))
         curr_out = maybe_wrap_with_adapter(graph, "swiglu", model_dim, spec, position=(600, 120))
         graph.add_edge(Edge(id="e_x_swiglu", src_node="x_in", src_port=0, dst_node="swiglu", dst_port=0))
+    elif spec.mlp_type in ("geglu", "reglu", "solu"):
+        glu_module = {
+            "geglu": BuiltinNeurons.geglu_module,
+            "reglu": BuiltinNeurons.reglu_module,
+            "solu": BuiltinNeurons.solu_module,
+        }[spec.mlp_type]
+        graph.add_node(NeuronInstance(clone_neuron_def(glu_module, config={"model_dim": model_dim, "mlp_mult": spec.mlp_multiplier, "multiple_of": spec.multiple_of}), instance_id="glu", position=(480, 120)))
+        curr_out = maybe_wrap_with_adapter(graph, "glu", model_dim, spec, position=(600, 120))
+        graph.add_edge(Edge(id="e_x_glu", src_node="x_in", src_port=0, dst_node="glu", dst_port=0))
     else:
         raise ValueError(f"Unknown mlp_type: {spec.mlp_type}. Cannot build dense MLP.")
 
@@ -348,6 +489,25 @@ def build_mixllama_mlp_graph(name: str, model_dim: int, spec: BlockSpec) -> Neur
     graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.router_logits_module, config={"model_dim": model_dim, "experts": spec.experts}), instance_id="router", position=(260, 60)))
     graph.add_edge(Edge(id="e_x_router", src_node="x_in", src_port=0, dst_node="router", dst_port=0))
 
+    # Optional auxiliary-loss-free load balancing: detached per-expert bias added
+    # to the router logits before top-k (DeepSeek-V3). load_balance_loss below is
+    # still emitted on the aux_loss port but contributes nothing when the preset
+    # sets router_aux_loss_coef=0 -- so the MoE block's output arity is unchanged.
+    topk_src = "router"
+    if getattr(spec, "moe_balance_mode", "aux_loss") == "auxfree":
+        graph.add_node(
+            NeuronInstance(
+                clone_neuron_def(
+                    BuiltinNeurons.auxfree_load_balancing_module,
+                    config={"experts": spec.experts, "top_k": spec.top_k, "bias_lr": getattr(spec, "auxfree_bias_lr", 0.001)},
+                ),
+                instance_id="auxfree",
+                position=(370, 60),
+            )
+        )
+        graph.add_edge(Edge(id="e_router_auxfree", src_node="router", src_port=0, dst_node="auxfree", dst_port=0))
+        topk_src = "auxfree"
+
     # Top-K
     graph.add_node(
         NeuronInstance(
@@ -359,7 +519,7 @@ def build_mixllama_mlp_graph(name: str, model_dim: int, spec: BlockSpec) -> Neur
             position=(480, 60),
         )
     )
-    graph.add_edge(Edge(id="e_router_topk", src_node="router", src_port=0, dst_node="topk", dst_port=0))
+    graph.add_edge(Edge(id="e_router_topk", src_node=topk_src, src_port=0, dst_node="topk", dst_port=0))
 
     # Dispatch
     graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.expert_dispatch_module, config={"model_dim": model_dim, "experts": spec.experts, "mlp_mult": spec.mlp_multiplier}), instance_id="dispatch", position=(700, 160)))
@@ -455,7 +615,7 @@ def build_decoder_block_graph(
     if cross_attention_graph:
         graph.add_node(NeuronInstance(make_terminal_def(role="input", port_name="context", dtype="tensor"), instance_id="context_in", position=(40, 260)))
 
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
 
     # Attn Path
     graph.add_node(NeuronInstance(clone_neuron_def(norm_module, config={"model_dim": model_dim}), instance_id="attn_norm", position=(260, 80)))
@@ -464,7 +624,7 @@ def build_decoder_block_graph(
     graph.add_node(NeuronInstance(link_variant_neuron(attention_graph, family=attention_family, version="default", name="attention", input_aliases=["x"], output_aliases=["attn_out"]), instance_id="attention", position=(480, 80)))
     graph.add_edge(Edge(id="e_norm_attn", src_node="attn_norm", src_port=0, dst_node="attention", dst_port=0))
 
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.add), instance_id="attn_add", position=(700, 140)))
+    graph.add_node(NeuronInstance(_residual_def(spec, model_dim), instance_id="attn_add", position=(700, 140)))
     graph.add_edge(Edge(id="e_x_attn_add", src_node="x_in", src_port=0, dst_node="attn_add", dst_port=0))
     graph.add_edge(Edge(id="e_attn_attn_add", src_node="attention", src_port=0, dst_node="attn_add", dst_port=1))
 
@@ -495,7 +655,7 @@ def build_decoder_block_graph(
     graph.add_node(NeuronInstance(link_variant_neuron(mlp_graph, family=mlp_family, version="default", name="mlp", input_aliases=["x"], output_aliases=out_aliases), instance_id="mlp", position=(1140 if not cross_attention_graph else 1580, 80)))
     graph.add_edge(Edge(id="e_norm_mlp", src_node="mlp_norm", src_port=0, dst_node="mlp", dst_port=0))
 
-    graph.add_node(NeuronInstance(clone_neuron_def(BuiltinNeurons.add), instance_id="mlp_add", position=(1360 if not cross_attention_graph else 1800, 140)))
+    graph.add_node(NeuronInstance(_residual_def(spec, model_dim), instance_id="mlp_add", position=(1360 if not cross_attention_graph else 1800, 140)))
     graph.add_edge(Edge(id="e_attnadd_mlpadd", src_node=curr_out, src_port=0, dst_node="mlp_add", dst_port=0))
     graph.add_edge(Edge(id="e_mlp_mlpadd", src_node="mlp", src_port=0, dst_node="mlp_add", dst_port=1))
 
@@ -533,7 +693,7 @@ def build_semantic_router_decoder_block_graph(
         NeuronInstance(make_terminal_def(role="input", port_name="routing_indices", dtype="tensor"), instance_id="routing_indices_in", position=(40, 280))
     )
 
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
 
     graph.add_node(NeuronInstance(clone_neuron_def(norm_module, config={"model_dim": model_dim}), instance_id="attn_norm", position=(260, 100)))
     graph.add_edge(Edge(id="e_x_attn_norm", src_node="x_in", src_port=0, dst_node="attn_norm", dst_port=0))
@@ -713,7 +873,7 @@ def build_hidden_backbone_graph(name: str, model_spec: ModelSpec) -> NeuronGraph
         graph.add_edge(Edge(id=f"e_{curr_out}_{bname}", src_node=curr_out, src_port=0, dst_node=bname, dst_port=0))
         curr_out = bname
 
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
     graph.add_node(
         NeuronInstance(
             clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}),
@@ -853,7 +1013,7 @@ def build_seq2seq_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronG
             aux_losses.append(bname)
 
     # Output head
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
     graph.add_node(NeuronInstance(clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}), instance_id="final_norm", position=(700 + model_spec.num_layers*220, 300)))
     graph.add_edge(Edge(src_node=curr_dec, src_port=0, dst_node="final_norm", dst_port=0))
 
@@ -908,7 +1068,7 @@ def build_diffusion_model_stage_graph(name: str, model_spec: ModelSpec) -> Neuro
         curr_out = bname
 
     # Final Norm
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
     graph.add_node(NeuronInstance(clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}), instance_id="final_norm", position=(1140 + model_spec.num_layers*220, 140)))
     graph.add_edge(Edge(src_node=curr_out, src_port=0, dst_node="final_norm", dst_port=0))
 
@@ -1126,7 +1286,7 @@ def build_ar_jepa_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronG
         if spec.mlp_type == "mixllama" or spec.mlp_type == "moe":
             aux_losses.append(bname)
 
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
     graph.add_node(
         NeuronInstance(
             clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}),
@@ -1458,7 +1618,7 @@ def build_jepa_semantic_model_stage_graph(name: str, model_spec: ModelSpec) -> N
     graph.add_edge(Edge(id="e_hidden_expert_residual", src_node="online_encoder", src_port=1, dst_node="expert_residual", dst_port=0))
     graph.add_edge(Edge(id="e_routed_expert_residual", src_node="routed_experts", src_port=0, dst_node="expert_residual", dst_port=1))
 
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
     graph.add_node(
         NeuronInstance(
             clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}),
@@ -1734,7 +1894,7 @@ def build_semantic_router_model_stage_graph(name: str, model_spec: ModelSpec) ->
         graph.add_edge(Edge(id=f"e_broadcast_indices_{bname}", src_node="broadcast_routes", src_port=1, dst_node=bname, dst_port=2))
         block_input = bname
 
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
     graph.add_node(
         NeuronInstance(
             clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}),
@@ -2018,7 +2178,7 @@ def build_semantic_router_jepa_model_stage_graph(name: str, model_spec: ModelSpe
         graph.add_edge(Edge(id=f"e_broadcast_indices_{bname}", src_node="broadcast_routes", src_port=1, dst_node=bname, dst_port=2))
         block_input = bname
 
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
     graph.add_node(
         NeuronInstance(
             clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}),
@@ -2261,7 +2421,7 @@ def build_semantic_dense_jepa_evo_model_stage_graph(name: str, model_spec: Model
         graph.add_edge(Edge(id=f"e_{block_input}_{bname}", src_node=block_input, src_port=0, dst_node=bname, dst_port=0))
         block_input = bname
 
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
     graph.add_node(NeuronInstance(clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}), instance_id="final_norm", position=(1440 + model_spec.num_layers * 220, 120)))
     graph.add_edge(Edge(id="e_blocks_norm", src_node=block_input, src_port=0, dst_node="final_norm", dst_port=0))
 
@@ -2490,7 +2650,7 @@ def build_semantic_moe_jepa_evo_model_stage_graph(name: str, model_spec: ModelSp
         graph.add_edge(Edge(id=f"e_broadcast_indices_{bname}", src_node="broadcast_chunk_routes", src_port=1, dst_node=bname, dst_port=2))
         block_input = bname
 
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
     graph.add_node(NeuronInstance(clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}), instance_id="final_norm", position=(2100 + model_spec.num_layers * 220, 120)))
     graph.add_edge(Edge(id="e_blocks_norm", src_node=block_input, src_port=0, dst_node="final_norm", dst_port=0))
 
@@ -2637,7 +2797,7 @@ def build_universal_model_stage_graph(name: str, model_spec: ModelSpec) -> Neuro
     )
     graph.add_edge(Edge(id="e_embed_universal", src_node="token_embed", src_port=0, dst_node="universal", dst_port=0))
 
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
     graph.add_node(NeuronInstance(clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}), instance_id="final_norm", position=(760, 140)))
     graph.add_edge(Edge(id="e_universal_norm", src_node="universal", src_port=0, dst_node="final_norm", dst_port=0))
 
@@ -2672,11 +2832,24 @@ def _normalized_template_config(config: dict[str, Any]) -> dict[str, Any]:
 
 def build_model_spec_from_config(config: dict[str, Any], *, preview_defaults: bool = False) -> ModelSpec:
     from neuralfn.config import (
+        _apply_modern_profile,
         build_composed_lm_spec,
         build_decoder2encoder_moe_spec,
+        build_auxfree_moe_jepa_evo_spec,
+        build_deepseek_v3_spec,
+        build_deepseek_v4_spec,
+        build_diff_semantic_moe_jepa_evo_spec,
+        build_diff_transformer_spec,
         build_diffllama_spec,
+        build_dyt_geglu_semantic_dense_jepa_evo_spec,
+        build_fp8_llama_spec,
+        build_gemma3_spec,
         build_gpt2_megakernel_spec,
+        build_gpt2_moa_spec,
         build_gpt2_spec,
+        build_longctx_sparse_llama_spec,
+        build_mxfp4_llama_spec,
+        build_qwen3_longctx_spec,
         build_hnet_lm_spec,
         build_jamba_hybrid_spec,
         build_jepa_semantic_hybrid_megakernel_spec,
@@ -2691,6 +2864,7 @@ def build_model_spec_from_config(config: dict[str, Any], *, preview_defaults: bo
         build_mixllama_fast_megakernel_spec,
         build_mixllama_fast_spec,
         build_mixllama_spec,
+        build_modern_norms_llama_spec,
         build_moe_jepa_evo_spec,
         build_nanogpt_megakernel_spec,
         build_nanogpt_spec,
@@ -2715,12 +2889,18 @@ def build_model_spec_from_config(config: dict[str, Any], *, preview_defaults: bo
         return build_composed_lm_spec(**normalized)
 
     preset = normalized.get("preset", "nanogpt")
+    # Modernization overlay: "<base>_modern" builds the base preset then applies a
+    # uniform modern recipe (RMSNorm + QK-norm + RoPE/YaRN + GeGLU + auxfree MoE).
+    if isinstance(preset, str) and preset.endswith("_modern"):
+        base_cfg = {**config, "preset": preset[: -len("_modern")]}
+        base_spec = build_model_spec_from_config(base_cfg, preview_defaults=preview_defaults)
+        return _apply_modern_profile(base_spec)
     if preview_defaults and "num_layers" not in normalized:
         normalized["num_layers"] = 2 if preset == "jamba" else 1
-    if preview_defaults and preset in {"mixllama", "moe", "mixllama_fast", "mixllama_fast_megakernel", "jamba", "seq2seq"}:
+    if preview_defaults and preset in {"mixllama", "moe", "mixllama_fast", "mixllama_fast_megakernel", "jamba", "seq2seq", "deepseek_v3", "deepseek_v4"}:
         normalized.setdefault("experts", 4)
         normalized.setdefault("top_k", 2)
-    if preview_defaults and preset == "moe_jepa_evo":
+    if preview_defaults and preset in {"moe_jepa_evo", "auxfree_moe_jepa_evo"}:
         normalized.setdefault("experts", 4)
         normalized.setdefault("top_k", 2)
     if preview_defaults and preset in {"jepa_semantic_hybrid", "jepa_semantic_hybrid_megakernel"}:
@@ -2729,17 +2909,19 @@ def build_model_spec_from_config(config: dict[str, Any], *, preview_defaults: bo
     if preview_defaults and preset in {"semantic_router_moe", "semantic_router_moe_megakernel"}:
         normalized.setdefault("experts", NUM_VOCAB_DIMS)
         normalized.setdefault("top_k", 2)
-    if preview_defaults and preset == "semantic_moe_jepa_evo":
+    if preview_defaults and preset in {"semantic_moe_jepa_evo", "diff_semantic_moe_jepa_evo"}:
         normalized.setdefault("semantic_shared_experts", 2)
         normalized.setdefault("semantic_free_experts", 8)
         normalized.setdefault("experts", 2 + NUM_VOCAB_DIMS + 8)
         normalized.setdefault("top_k", 2)
         normalized.setdefault("route_chunk_size", 32)
-    if preview_defaults and preset == "semantic_dense_jepa_evo":
+    if preview_defaults and preset in {"semantic_dense_jepa_evo", "dyt_geglu_semantic_dense_jepa_evo"}:
         normalized.setdefault("route_chunk_size", 32)
 
     if preset == "gpt2_megakernel":
         return build_gpt2_megakernel_spec(**normalized)
+    if preset == "gpt2_moa":
+        return build_gpt2_moa_spec(**normalized)
     if preset == "gpt2":
         return build_gpt2_spec(**normalized)
     if preset == "nanogpt_megakernel":
@@ -2748,6 +2930,8 @@ def build_model_spec_from_config(config: dict[str, Any], *, preview_defaults: bo
         return build_nanogpt_spec(**normalized)
     if preset == "llama":
         return build_llama_spec(**normalized)
+    if preset == "modern_norms_llama":
+        return build_modern_norms_llama_spec(**normalized)
     if preset in {"mixllama", "moe"}:
         return build_mixllama_spec(**normalized)
     if preset == "llama_fast":
@@ -2762,6 +2946,28 @@ def build_model_spec_from_config(config: dict[str, Any], *, preview_defaults: bo
         return build_jamba_hybrid_spec(**normalized)
     if preset == "ternary_b158":
         return build_ternary_b158_spec(**normalized)
+    if preset == "fp8_llama":
+        return build_fp8_llama_spec(**normalized)
+    if preset == "mxfp4_llama":
+        return build_mxfp4_llama_spec(**normalized)
+    if preset == "deepseek_v3":
+        return build_deepseek_v3_spec(**normalized)
+    if preset == "deepseek_v4":
+        return build_deepseek_v4_spec(**normalized)
+    if preset == "gemma3":
+        return build_gemma3_spec(**normalized)
+    if preset == "diff_transformer":
+        return build_diff_transformer_spec(**normalized)
+    if preset == "longctx_sparse_llama":
+        return build_longctx_sparse_llama_spec(**normalized)
+    if preset == "qwen3_longctx":
+        return build_qwen3_longctx_spec(**normalized)
+    if preset == "auxfree_moe_jepa_evo":
+        return build_auxfree_moe_jepa_evo_spec(**normalized)
+    if preset == "diff_semantic_moe_jepa_evo":
+        return build_diff_semantic_moe_jepa_evo_spec(**normalized)
+    if preset == "dyt_geglu_semantic_dense_jepa_evo":
+        return build_dyt_geglu_semantic_dense_jepa_evo_spec(**normalized)
     if preset == "llama_megakernel":
         return build_llama_megakernel_spec(**normalized)
     if preset == "kv_pca_llama":
@@ -2867,7 +3073,7 @@ def build_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
         if spec.mlp_type == "mixllama" or spec.mlp_type == "moe":
             aux_losses.append(bname)
 
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
     graph.add_node(NeuronInstance(clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}), instance_id="final_norm", position=(1140 + model_spec.num_layers*220, 140)))
     graph.add_edge(Edge(id="e_blocks_norm", src_node=curr_out, src_port=0, dst_node="final_norm", dst_port=0))
 
@@ -2974,7 +3180,7 @@ def build_sft_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph
         graph.add_edge(Edge(id=f"e_{curr_out}_{bname}", src_node=curr_out, src_port=0, dst_node=bname, dst_port=0))
         curr_out = bname
 
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
     graph.add_node(NeuronInstance(clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}), instance_id="final_norm", position=(1140 + model_spec.num_layers*220, 140)))
     graph.add_edge(Edge(id="e_blocks_norm", src_node=curr_out, src_port=0, dst_node="final_norm", dst_port=0))
 
@@ -3111,7 +3317,7 @@ def _logits_model_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
         graph.add_edge(Edge(id=f"e_{curr_out}_{bname}", src_node=curr_out, src_port=0, dst_node=bname, dst_port=0))
         curr_out = bname
 
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
     graph.add_node(NeuronInstance(clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}), instance_id="final_norm", position=(1140 + model_spec.num_layers*220, 140)))
     graph.add_edge(Edge(id="e_blocks_norm", src_node=curr_out, src_port=0, dst_node="final_norm", dst_port=0))
 
@@ -3329,7 +3535,7 @@ def _body_only_stage_graph(name: str, model_spec: ModelSpec) -> NeuronGraph:
         graph.add_edge(Edge(id=f"e_{curr_out}_{bname}", src_node=curr_out, src_port=0, dst_node=bname, dst_port=0))
         curr_out = bname
 
-    norm_module = BuiltinNeurons.rms_norm_module if spec.norm_type == "rmsnorm" else BuiltinNeurons.layer_norm_module
+    norm_module = select_norm_module(spec)
     graph.add_node(NeuronInstance(clone_neuron_def(norm_module, config={"model_dim": model_spec.model_dim}), instance_id="final_norm", position=(1140 + model_spec.num_layers*220, 140)))
     graph.add_edge(Edge(id="e_blocks_norm", src_node=curr_out, src_port=0, dst_node="final_norm", dst_port=0))
 

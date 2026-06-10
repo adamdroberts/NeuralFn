@@ -22,7 +22,16 @@ ObjectiveType = Literal[
 BackboneType = Literal["gpt2", "nanogpt", "llama", "mixllama", "jamba", "universal", "ttt", "hnet"]
 TokenizationType = Literal["sp", "byte_hnet"]
 SparsityType = Literal["dense", "moe"]
-CompressionType = Literal["none", "ternary_b158", "binary_1bit", "kv_pca"]
+CompressionType = Literal[
+    "none",
+    "ternary_b158",
+    "binary_1bit",
+    "kv_pca",
+    "fp8_e4m3",
+    "fp8_e5m2",
+    "mxfp4",
+    "mxfp8",
+]
 AdapterType = Literal["none", "lora", "qlora", "randmap"]
 RuntimeType = Literal["eager", "compile", "sdpa", "megakernel"]
 RouterModeType = Literal["none", "standard", "semantic"]
@@ -67,8 +76,8 @@ def resolve_backend_capabilities(spec: "TemplateSpec") -> dict[str, bool]:
 @dataclass
 class BlockSpec:
     family: str  # "nanogpt" | "gpt2" | "llama" | "mixllama"
-    norm_type: str = "layernorm"  # "layernorm" | "rmsnorm"
-    mlp_type: str = "gelu"  # "gelu" | "swiglu" | "moe"
+    norm_type: str = "layernorm"  # "layernorm" | "rmsnorm" | "dyt" | "group_norm"
+    mlp_type: str = "gelu"  # "gelu" | "swiglu" | "moe" | "geglu" | "reglu" | "solu"
     pos_encoding: str = "absolute"  # "absolute" | "rope"
     attention_backend: str = "sdpa"  # "sdpa" | "flex" | "math"
     num_heads: int = 4
@@ -98,6 +107,39 @@ class BlockSpec:
     byte_patch_size: int = 4
     byte_patch_stride: int = 4
     qk_gain_init: float = 1.0
+    # --- Frontier-template knobs (additive; defaults preserve every existing preset) ---
+    # Attention core variant swapped in at the SDPA node in build_dense_attention_graph.
+    attention_variant: str = "dense"  # "dense" | "differential" | "sliding_window" | "block_sparse" | "nsa" | "streaming"
+    use_qk_norm: bool = False  # fused RMSNorm on Q and K before SDPA (DeepSeek-V3, Gemma-3)
+    dyt_alpha_init: float = 1.0  # Dynamic Tanh initial alpha (norm_type == "dyt")
+    group_norm_groups: int = 1  # groups for norm_type == "group_norm"
+    diff_lambda_init: float = 0.8  # Differential Transformer initial lambda
+    # MoE load balancing: "aux_loss" (classic) | "auxfree" (DeepSeek-V3 bias-adjusted, no aux loss)
+    moe_balance_mode: str = "aux_loss"
+    auxfree_bias_lr: float = 0.001  # update rate for the auxfree expert-load bias
+    router_score_fn: str = "softmax"  # "softmax" | "sigmoid" | "sqrt_softplus" (DeepSeek-V4)
+    # Residual mixing: "add" (classic) | "mhc" (Manifold-Constrained Hyper-Connections, DeepSeek-V4)
+    residual_type: str = "add"
+    # Sparse / long-context attention geometry (used by the windowed/sparse/streaming variants).
+    window_size: int | None = None
+    sparse_block_size: int = 64
+    num_sinks: int = 0
+    nsa_compress_stride: int = 16  # CSA "compress every m KV into one" stride
+    # Low-precision (FP8 / MX) linear knobs (compression in {fp8_*, mxfp4, mxfp8}).
+    mx_block_size: int = 32
+    fp8_amax_history_len: int = 16
+    fp8_use_stochastic_rounding: bool = True
+    # --- Mixture of Activations (MoA) knobs (additive; defaults preserve single-activation MLPs) ---
+    # When activation_mode == "moa", training probes each candidate activation's loss every
+    # moa_interval steps over a SHARED MLP backbone and trains with the lowest-loss one.
+    # Candidates are restricted to the weight-preserving pointwise activations
+    # (gelu/relu/silu/relu2) — they share the same fc/proj weights, so MoA needs no extra
+    # parameters and keeps pointwise training speed. Gated swiglu/geglu are intentionally
+    # excluded (they'd need a separate gate projection). Mirrors the llm.kittens
+    # train_gpt2cu `-af moa -ak <interval>` mode. See build_gpt2_moa_spec.
+    activation_mode: str = "single"  # "single" | "moa"
+    moa_activations: tuple[str, ...] = ("gelu", "relu", "silu", "relu2")
+    moa_interval: int = 50
 
 
 @dataclass
@@ -218,6 +260,57 @@ def _base_model_spec(
         jepa_loss_coef=float(kwargs.get("jepa_loss_coef", 0.25)),
         semantic_align_loss_coef=float(kwargs.get("semantic_align_loss_coef", 0.5)),
     )
+
+
+MODERN_BASE_PRESETS: tuple[str, ...] = (
+    "nanogpt",
+    "gpt2",
+    "llama",
+    "moe",
+    "jamba",
+    "ternary_b158",
+    "seq2seq",
+    "diffusion",
+    "ttt_llama",
+    "llm_jepa",
+    "dense_jepa_evo",
+    "moe_jepa_evo",
+    "hnet_lm",
+    "universal_llama",
+    "kv_pca_llama",
+    "jepa_semantic_hybrid",
+    "semantic_router_moe",
+    "semantic_dense_jepa_evo",
+    "semantic_moe_jepa_evo",
+)
+
+
+def _apply_modern_profile(spec: ModelSpec) -> ModelSpec:
+    """Overlay a uniform 2026 "modern" recipe onto any base preset's ModelSpec.
+
+    Additive, in-place tweaks only -- preserves objective/backbone/expert topology:
+      - LayerNorm -> RMSNorm (keeps dyt/group_norm/rmsnorm)
+      - GELU MLP -> GeGLU (keeps swiglu/moe/other gates)
+      - absolute positions -> RoPE + YaRN long-context scaling
+      - fused QK-norm on
+      - MoE blocks -> DeepSeek-V3 auxiliary-loss-free load balancing
+    mHC residuals and FP8 are intentionally NOT enabled here (opt-in via the
+    deepseek_v4 preset / explicit kwargs). Used by the generated ``<preset>_modern``
+    presets (see MODERN_BASE_PRESETS)."""
+    bs = spec.block_spec
+    if bs.norm_type == "layernorm":
+        bs.norm_type = "rmsnorm"
+    if bs.mlp_type == "gelu":
+        bs.mlp_type = "geglu"
+    if bs.pos_encoding == "absolute":
+        bs.pos_encoding = "rope"
+    bs.use_qk_norm = True
+    if bs.pos_encoding == "rope" and not bs.rope_scaling:
+        bs.rope_scaling = {"type": "yarn", "factor": 2.0, "original_max_position": 2048}
+    if bs.mlp_type in ("moe", "mixllama"):
+        bs.moe_balance_mode = "auxfree"
+        bs.router_aux_loss_coef = 0.0
+    return spec
 
 
 def _build_nanogpt_runtime_spec(*, runtime: str, **kwargs: Any) -> ModelSpec:
@@ -432,6 +525,38 @@ def build_gpt2_megakernel_spec(**kwargs: Any) -> ModelSpec:
     return _build_gpt2_runtime_spec(runtime="megakernel", **kwargs)
 
 
+def build_gpt2_moa_spec(**kwargs: Any) -> ModelSpec:
+    """GPT-2 with a Mixture of Activations (MoA) MLP.
+
+    Every ``moa_interval`` steps the trainer probes each candidate activation's
+    loss on the current batch and trains with the lowest-loss one. Candidates are
+    the weight-preserving pointwise activations (gelu/relu/silu/relu2): they all
+    share one MLP backbone (up-proj C->4C, down-proj 4C->C), so MoA adds no extra
+    parameters and runs at full pointwise training speed. Gated swiglu/geglu are
+    excluded (they'd need a separate gate projection / different weights). The
+    backbone graph is a standard GPT-2 MLP (``mlp_type`` below); the per-window
+    activation selection is a training-loop behaviour carried by the MoA block-spec
+    fields. Mirrors the llm.kittens train_gpt2cu ``-af moa -ak <interval>`` mode.
+    """
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(backbone="gpt2", runtime=kwargs.get("runtime", "eager")),
+        block_spec=BlockSpec(
+            family="gpt2",
+            norm_type="layernorm",
+            mlp_type=str(kwargs.get("mlp_type", "gelu")),  # shared backbone graph
+            pos_encoding="absolute",
+            linear_bias=True,
+            num_heads=kwargs.get("num_heads", 4),
+            activation_mode="moa",
+            moa_activations=tuple(kwargs.get(
+                "moa_activations", ("gelu", "relu", "silu", "relu2"))),
+            moa_interval=int(kwargs.get("moa_interval", 50)),
+        ),
+        default_tie_embeddings=True,
+    )
+
+
 def build_llama_spec(**kwargs: Any) -> ModelSpec:
     return _base_model_spec(
         kwargs=kwargs,
@@ -441,6 +566,31 @@ def build_llama_spec(**kwargs: Any) -> ModelSpec:
             norm_type="rmsnorm",
             mlp_type="swiglu",
             pos_encoding="rope",
+            linear_bias=False,
+            dropout_p=0.0,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            multiple_of=kwargs.get("multiple_of", 256),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+        ),
+        default_tie_embeddings=False,
+    )
+
+
+def build_modern_norms_llama_spec(**kwargs: Any) -> ModelSpec:
+    """Llama backbone modernised with Dynamic Tanh (DyT) norm, fused QK-norm,
+    and a GeGLU MLP gate. Proves the norm/gate/qk-norm seams; all kernels have a
+    complete CUDA reference in llm.kittens (no stubs)."""
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(backbone="llama", runtime="eager"),
+        block_spec=BlockSpec(
+            family="llama",
+            norm_type=str(kwargs.get("norm_type", "dyt")),
+            mlp_type=str(kwargs.get("mlp_type", "geglu")),
+            pos_encoding="rope",
+            use_qk_norm=bool(kwargs.get("use_qk_norm", True)),
+            dyt_alpha_init=float(kwargs.get("dyt_alpha_init", 1.0)),
             linear_bias=False,
             dropout_p=0.0,
             mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
@@ -586,6 +736,266 @@ def build_ternary_b158_spec(**kwargs: Any) -> ModelSpec:
             num_heads=kwargs.get("num_heads", 4),
             num_kv_heads=kwargs.get("num_kv_heads", 2),
             compression="ternary_b158",
+        ),
+        default_tie_embeddings=False,
+    )
+
+
+def build_fp8_llama_spec(**kwargs: Any) -> ModelSpec:
+    """Llama backbone with FP8 (E4M3) weight-quantized linears (Blackwell format
+    demonstrator). Uses the same compression seam as ternary_b158. PyTorch
+    reference does dequant-then-bf16 matmul -- no SM120 speedup until the
+    llm.kittens FP8 GEMM is wired in."""
+    fp8_format = str(kwargs.get("fp8_format", "e4m3")).lower()
+    compression = "fp8_e5m2" if fp8_format == "e5m2" else "fp8_e4m3"
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(backbone="llama", compression=compression, runtime="eager"),
+        block_spec=BlockSpec(
+            family="llama",
+            norm_type="rmsnorm",
+            mlp_type="swiglu",
+            pos_encoding="rope",
+            use_qk_norm=bool(kwargs.get("use_qk_norm", True)),
+            linear_bias=False,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            multiple_of=kwargs.get("multiple_of", 256),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+            compression=compression,
+            fp8_amax_history_len=int(kwargs.get("fp8_amax_history_len", 16)),
+            fp8_use_stochastic_rounding=bool(kwargs.get("fp8_use_stochastic_rounding", True)),
+        ),
+        default_tie_embeddings=False,
+    )
+
+
+def build_mxfp4_llama_spec(**kwargs: Any) -> ModelSpec:
+    """Llama backbone with OCP MXFP4 microscaled weight linears (per-32-block
+    E8M0 scale + FP4 E2M1 mantissa). DeepSeek-V4 uses FP4 for MoE experts; this
+    is the dense-llama precision demonstrator."""
+    mx_format = str(kwargs.get("mx_format", "mxfp4")).lower()
+    compression = "mxfp8" if mx_format == "mxfp8" else "mxfp4"
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(backbone="llama", compression=compression, runtime="eager"),
+        block_spec=BlockSpec(
+            family="llama",
+            norm_type="rmsnorm",
+            mlp_type="swiglu",
+            pos_encoding="rope",
+            use_qk_norm=bool(kwargs.get("use_qk_norm", True)),
+            linear_bias=False,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            multiple_of=kwargs.get("multiple_of", 256),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+            compression=compression,
+            mx_block_size=int(kwargs.get("mx_block_size", 32)),
+        ),
+        default_tie_embeddings=False,
+    )
+
+
+def build_gemma3_spec(**kwargs: Any) -> ModelSpec:
+    """Gemma-2/3 style: sliding-window local attention + GeGLU + QK-norm +
+    logit softcap (already supported) on an RMSNorm/RoPE/GQA Llama backbone.
+    Ships windowed-every-layer; the full local/global i%n interleave is a
+    backbone-loop follow-up."""
+    kwargs = {**kwargs}
+    kwargs.setdefault("logit_softcap", 30.0)
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(backbone="llama", runtime="eager"),
+        block_spec=BlockSpec(
+            family="llama",
+            norm_type="rmsnorm",
+            mlp_type="geglu",
+            pos_encoding="rope",
+            attention_variant="sliding_window",
+            window_size=int(kwargs.get("window_size", 256)),
+            use_qk_norm=bool(kwargs.get("use_qk_norm", True)),
+            linear_bias=False,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            multiple_of=kwargs.get("multiple_of", 256),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+        ),
+        default_tie_embeddings=False,
+    )
+
+
+def build_diff_transformer_spec(**kwargs: Any) -> ModelSpec:
+    """Differential Transformer: two-softmax-branch differential attention (noise
+    cancellation) + head-wise norm on an RMSNorm/SwiGLU/RoPE/GQA backbone.
+    Requires an even head_dim (already enforced by RoPE)."""
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(backbone="llama", runtime="eager"),
+        block_spec=BlockSpec(
+            family="llama",
+            norm_type="rmsnorm",
+            mlp_type="swiglu",
+            pos_encoding="rope",
+            attention_variant="differential",
+            diff_lambda_init=float(kwargs.get("diff_lambda_init", 0.8)),
+            linear_bias=False,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            multiple_of=kwargs.get("multiple_of", 256),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+        ),
+        default_tie_embeddings=False,
+    )
+
+
+def build_longctx_sparse_llama_spec(**kwargs: Any) -> ModelSpec:
+    """Long-context efficiency backbone: native-sparse attention (local window +
+    sink tokens + strided compressed history, the DeepSeek NSA / V4-CSA spirit)
+    on an RMSNorm/SwiGLU/RoPE/GQA Llama. ``attention_variant`` may be set to
+    ``block_sparse``/``sliding_window``/``streaming`` for the simpler patterns."""
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(backbone="llama", runtime="eager"),
+        block_spec=BlockSpec(
+            family="llama",
+            norm_type="rmsnorm",
+            mlp_type="swiglu",
+            pos_encoding="rope",
+            attention_variant=str(kwargs.get("attention_variant", "nsa")),
+            window_size=int(kwargs.get("window_size", 128)),
+            sparse_block_size=int(kwargs.get("sparse_block_size", 64)),
+            num_sinks=int(kwargs.get("num_sinks", 4)),
+            nsa_compress_stride=int(kwargs.get("nsa_compress_stride", 16)),
+            use_qk_norm=bool(kwargs.get("use_qk_norm", True)),
+            linear_bias=False,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            multiple_of=kwargs.get("multiple_of", 256),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+        ),
+        default_tie_embeddings=False,
+    )
+
+
+def build_qwen3_longctx_spec(**kwargs: Any) -> ModelSpec:
+    """Qwen/Llama long-context: GQA + YaRN RoPE scaling (now honored) + QK-norm."""
+    scaling = kwargs.get("rope_scaling") or {
+        "type": "yarn",
+        "factor": float(kwargs.get("rope_factor", 4.0)),
+        "original_max_position": int(kwargs.get("original_max_position", 2048)),
+    }
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(backbone="llama", runtime="eager"),
+        block_spec=BlockSpec(
+            family="llama",
+            norm_type="rmsnorm",
+            mlp_type="swiglu",
+            pos_encoding="rope",
+            use_qk_norm=bool(kwargs.get("use_qk_norm", True)),
+            rope_scaling=scaling,
+            linear_bias=False,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            multiple_of=kwargs.get("multiple_of", 256),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+        ),
+        default_tie_embeddings=False,
+    )
+
+
+def build_auxfree_moe_jepa_evo_spec(**kwargs: Any) -> ModelSpec:
+    """MoE JEPA Evo with DeepSeek-V3 auxiliary-loss-free load balancing crossed
+    with route evolution -- "domain experts, evolved, balanced without aux loss"."""
+    spec = build_moe_jepa_evo_spec(**kwargs)
+    spec.block_spec.moe_balance_mode = "auxfree"
+    spec.block_spec.auxfree_bias_lr = float(kwargs.get("auxfree_bias_lr", 0.001))
+    spec.block_spec.router_aux_loss_coef = 0.0
+    return spec
+
+
+def build_diff_semantic_moe_jepa_evo_spec(**kwargs: Any) -> ModelSpec:
+    """Differential attention crossed with NeuralFn's semantic chunk-routed MoE +
+    JEPA + route evolution -- noise-cancelled attention feeding semantic routing."""
+    spec = build_semantic_moe_jepa_evo_spec(**kwargs)
+    spec.block_spec.attention_variant = "differential"
+    spec.block_spec.use_qk_norm = bool(kwargs.get("use_qk_norm", True))
+    spec.block_spec.diff_lambda_init = float(kwargs.get("diff_lambda_init", 0.8))
+    return spec
+
+
+def build_dyt_geglu_semantic_dense_jepa_evo_spec(**kwargs: Any) -> ModelSpec:
+    """Norm-free Dynamic Tanh + GeGLU crossed with the semantic dense JEPA Evo
+    research stack."""
+    spec = build_semantic_dense_jepa_evo_spec(**kwargs)
+    spec.block_spec.norm_type = str(kwargs.get("norm_type", "dyt"))
+    spec.block_spec.mlp_type = str(kwargs.get("mlp_type", "geglu"))
+    spec.block_spec.use_qk_norm = bool(kwargs.get("use_qk_norm", True))
+    return spec
+
+
+def build_deepseek_v3_spec(**kwargs: Any) -> ModelSpec:
+    """DeepSeek-V3 style: Multi-head Latent Attention (compressed-KV + decoupled
+    RoPE) + auxiliary-loss-free balanced fine-grained MoE with shared experts, on
+    an RMSNorm/SwiGLU/RoPE backbone. MLA owns its own attention path."""
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(backbone="mixllama", sparsity="moe", router_mode="standard", runtime="eager"),
+        block_spec=BlockSpec(
+            family="mixllama",
+            norm_type="rmsnorm",
+            mlp_type="moe",
+            pos_encoding="rope",
+            attention_variant="mla",
+            moe_balance_mode="auxfree",
+            auxfree_bias_lr=float(kwargs.get("auxfree_bias_lr", 0.001)),
+            router_aux_loss_coef=0.0,
+            experts=int(kwargs.get("experts", 8)),
+            top_k=int(kwargs.get("top_k", 2)),
+            shared_experts=int(kwargs.get("shared_experts", 1)),
+            linear_bias=False,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
+        ),
+        default_tie_embeddings=False,
+    )
+
+
+def build_deepseek_v4_spec(**kwargs: Any) -> ModelSpec:
+    """DeepSeek-V4-Pro style capstone: native-sparse (CSA-spirit) attention +
+    auxiliary-loss-free balanced MoE + Manifold-Constrained Hyper-Connection
+    residuals + QK-norm + FP8 (E4M3) dense/attention linears. (Per-tensor mixed
+    FP4-expert / FP8-rest and the CSA/HCA layer interleave are documented
+    follow-ups; experts remain bf16 in this reference.) Muon is the recommended
+    optimizer (training-time)."""
+    return _base_model_spec(
+        kwargs=kwargs,
+        template=TemplateSpec(backbone="mixllama", sparsity="moe", router_mode="standard", compression="fp8_e4m3", runtime="eager"),
+        block_spec=BlockSpec(
+            family="mixllama",
+            norm_type="rmsnorm",
+            mlp_type="moe",
+            pos_encoding="rope",
+            attention_variant="nsa",
+            window_size=int(kwargs.get("window_size", 128)),
+            sparse_block_size=int(kwargs.get("sparse_block_size", 64)),
+            num_sinks=int(kwargs.get("num_sinks", 4)),
+            nsa_compress_stride=int(kwargs.get("nsa_compress_stride", 16)),
+            use_qk_norm=bool(kwargs.get("use_qk_norm", True)),
+            residual_type="mhc",
+            moe_balance_mode="auxfree",
+            auxfree_bias_lr=float(kwargs.get("auxfree_bias_lr", 0.001)),
+            router_aux_loss_coef=0.0,
+            experts=int(kwargs.get("experts", 8)),
+            top_k=int(kwargs.get("top_k", 2)),
+            shared_experts=int(kwargs.get("shared_experts", 1)),
+            compression="fp8_e4m3",
+            linear_bias=False,
+            mlp_multiplier=kwargs.get("mlp_multiplier", 8.0 / 3.0),
+            num_heads=kwargs.get("num_heads", 4),
+            num_kv_heads=kwargs.get("num_kv_heads", 2),
         ),
         default_tie_embeddings=False,
     )
