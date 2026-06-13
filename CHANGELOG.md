@@ -54,7 +54,8 @@ Future updates should append new entries here rather than replacing older notes.
   configurations. The tool alternates baseline/candidate order across samples
   and reports paired candidate-over-baseline ratios. It now accepts
   `--json-out PATH` so paired benchmark evidence can be saved without shell
-  redirection.
+  redirection, and `--cuda-visible-devices DEVICE_LIST` so both commands can be
+  pinned to the same dedicated CUDA GPU.
 
 #### Verification
 
@@ -63,6 +64,12 @@ Future updates should append new entries here rather than replacing older notes.
 - Verified `python -m pytest tests/test_tile_cuda_examples.py -q -k
   paired_kernel_speed_tool_compiles_and_smokes`.
 - Verified `python -m py_compile tools/paired_kernel_speed.py`.
+- Verified dedicated RTX 5090 pinning with
+  `CUDA_VISIBLE_DEVICES=0 build/nfn_gpt_native_train --tinystories --max-steps
+  1 --batch-size 64 --train-seq-len 1024 --train-batch-tokens 524288
+  --eval-every-steps 0 --no-checkpoint`, where the first cold run took
+  `121063 ms` train compute and the immediate warm run took `3756.39 ms`;
+  paired benchmarks should keep warmup enabled.
 
 ### 2026-06-13 Native GPT packed attention backward chunking
 

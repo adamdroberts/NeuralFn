@@ -30,8 +30,11 @@ to the compiled C++ trainer to skip final trained-checkpoint export. Default
 training still writes the final native checkpoint.
 
 Use `python tools/paired_kernel_speed.py --baseline "OLD_COMMAND"
---candidate "NEW_COMMAND" --samples N --json-out /tmp/result.json` for
-candidate-vs-current CUDA timing under the same external GPU load window.
+--candidate "NEW_COMMAND" --samples N --cuda-visible-devices 0 --json-out
+/tmp/result.json` for candidate-vs-current CUDA timing pinned to the dedicated
+5090 while still alternating pairs in the same sampling window. The helper runs
+one warmup pair by default so first-use CUDA/kernel load does not contaminate
+reported samples.
 
 ## Current state of play
 

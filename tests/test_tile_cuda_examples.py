@@ -46,9 +46,9 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
             sys.executable,
             str(script),
             "--baseline",
-            f"{sys.executable} -c pass",
+            f"{sys.executable} -c \"import os; print(os.environ.get('CUDA_VISIBLE_DEVICES', ''))\"",
             "--candidate",
-            f"{sys.executable} -c pass",
+            f"{sys.executable} -c \"import os; print(os.environ.get('CUDA_VISIBLE_DEVICES', ''))\"",
             "--samples",
             "1",
             "--warmup",
@@ -56,6 +56,8 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
             "--json",
             "--json-out",
             str(output_path),
+            "--cuda-visible-devices",
+            "test-device",
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -67,3 +69,5 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "paired_interleaved_commands" in proc.stdout
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["measurement"] == "paired_interleaved_commands"
+    assert payload["cuda_visible_devices"] == "test-device"
+    assert "test-device" in payload["paired_samples"][0]["baseline"]["stdout_tail"]

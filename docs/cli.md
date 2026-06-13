@@ -476,9 +476,11 @@ normal training leaves checkpoint export enabled.
 
 For native kernel candidate comparisons, use
 `python tools/paired_kernel_speed.py --baseline "OLD_COMMAND" --candidate
-"NEW_COMMAND" --samples N --json-out /tmp/result.json`. The helper alternates
-baseline/candidate order inside one script so unrelated external GPU load
-affects both measurements in the same sampling window.
+"NEW_COMMAND" --samples N --cuda-visible-devices 0 --json-out
+/tmp/result.json`. The helper alternates baseline/candidate order inside one
+script so unrelated external GPU load affects both measurements in the same
+sampling window, and it runs one warmup pair by default to keep first-use CUDA
+or kernel-load cost out of the reported samples.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, `NFN_NATIVE_GPT_BINDING`, and

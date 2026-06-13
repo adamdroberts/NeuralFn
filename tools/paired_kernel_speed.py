@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import shlex
 import subprocess
@@ -31,6 +32,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidate", required=True, help="Candidate command, shell-quoted as one string.")
     parser.add_argument("--samples", type=int, default=5, help="Paired samples to collect.")
     parser.add_argument("--warmup", type=int, default=1, help="Warmup command pairs before measurement.")
+    parser.add_argument(
+        "--cuda-visible-devices",
+        default="",
+        help="Set CUDA_VISIBLE_DEVICES for both commands, e.g. 0 for a dedicated RTX 5090.",
+    )
     parser.add_argument("--json", action="store_true", help="Print JSON instead of a text summary.")
     parser.add_argument("--json-out", default="", help="Write the JSON payload to this file.")
     parser.add_argument(
@@ -41,9 +47,21 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def run_once(command: TimedCommand, *, continue_on_error: bool) -> dict[str, object]:
+def run_once(
+    command: TimedCommand,
+    *,
+    continue_on_error: bool,
+    env: dict[str, str] | None,
+) -> dict[str, object]:
     start = time.perf_counter()
-    proc = subprocess.run(command.argv, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    proc = subprocess.run(
+        command.argv,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
     seconds = time.perf_counter() - start
     if proc.returncode != 0 and not continue_on_error:
         raise SystemExit(
@@ -81,10 +99,15 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     candidate = TimedCommand("candidate", shlex.split(args.candidate))
     samples = max(1, args.samples)
     warmup = max(0, args.warmup)
+    cuda_visible_devices = str(args.cuda_visible_devices or "").strip()
+    run_env = None
+    if cuda_visible_devices:
+        run_env = dict(os.environ)
+        run_env["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
 
     for warmup_index in range(warmup):
         for command in ordered_pair(warmup_index, baseline, candidate):
-            run_once(command, continue_on_error=args.continue_on_error)
+            run_once(command, continue_on_error=args.continue_on_error, env=run_env)
 
     sample_rows: list[dict[str, object]] = []
     baseline_seconds: list[float] = []
@@ -96,7 +119,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         by_name: dict[str, dict[str, object]] = {}
         for command in ordered_pair(sample_index, baseline, candidate):
             order_names.append(command.name)
-            result = run_once(command, continue_on_error=args.continue_on_error)
+            result = run_once(command, continue_on_error=args.continue_on_error, env=run_env)
             by_name[command.name] = result
         baseline_time = float(by_name["baseline"]["seconds"])
         candidate_time = float(by_name["candidate"]["seconds"])
@@ -112,6 +135,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "measurement": "paired_interleaved_commands",
         "samples": samples,
         "warmup": warmup,
+        "cuda_visible_devices": cuda_visible_devices,
         "baseline_command": baseline.argv,
         "candidate_command": candidate.argv,
         "baseline_seconds": summarize(baseline_seconds),
