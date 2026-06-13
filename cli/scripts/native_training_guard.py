@@ -58,6 +58,16 @@ def _resolve_family_native_cli(env_var: str, command_name: str) -> str | None:
     return None
 
 
+def _family_native_cli_env(model_family: str) -> str:
+    suffix = "".join(ch if ch.isalnum() else "_" for ch in model_family.upper()).strip("_")
+    return f"NFN_NATIVE_{suffix}_CLI"
+
+
+def _family_native_cli_name(model_family: str) -> str:
+    normalized = "".join(ch if ch.isalnum() else "_" for ch in model_family.lower()).strip("_")
+    return f"nfn_{normalized}_native_train"
+
+
 def _has_native_action(args: list[str]) -> bool:
     for arg in args:
         if arg in _NATIVE_ACTION_FLAGS:
@@ -71,8 +81,10 @@ def _forwarded_args(model_family: str, native_default_args: list[str]) -> list[s
     return [_resolve_native_train_cli(), "--base-model", model_family, *defaults, *args]
 
 
-def _family_forwarded_args(command: str) -> list[str]:
-    return [command, *sys.argv[1:]]
+def _family_forwarded_args(command: str, native_default_args: list[str]) -> list[str]:
+    args = list(sys.argv[1:])
+    defaults = [] if _has_native_action(args) else native_default_args
+    return [command, *defaults, *args]
 
 
 def reject_torch_training_by_default(
@@ -94,12 +106,15 @@ def reject_torch_training_by_default(
     if torch_training_allowed():
         return
     family = (model_family or native_target.rsplit(" ", 1)[-1]).strip()
+    resolved_family_env = family_native_cli_env or _family_native_cli_env(family)
+    resolved_family_name = family_native_cli_name or _family_native_cli_name(family)
     family_command = (
-        _resolve_family_native_cli(family_native_cli_env, family_native_cli_name)
-        if family_native_cli_env and family_native_cli_name
+        _resolve_family_native_cli(resolved_family_env, resolved_family_name)
+        if resolved_family_env and resolved_family_name
         else None
     )
-    command = _family_forwarded_args(family_command) if family_command else _forwarded_args(family, list(native_default_args or ()))
+    default_args = list(native_default_args or ())
+    command = _family_forwarded_args(family_command, default_args) if family_command else _forwarded_args(family, default_args)
     env = os.environ.copy()
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
     if any(flag in sys.argv[1:] for flag in ("--dry-run", "--native-cuda-dry-run", "--print-command", "--native-cuda-print-command")):

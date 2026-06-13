@@ -59,10 +59,14 @@ Canonical docs:
   runtime modules for help-only commands.
 - Keep `nfn kernels list [--json]` metadata-only: it should report registry
   coverage without importing `nfn_impl`, Torch, or graph-backed runtime modules.
-- Keep non-GPT-2 training commands and direct legacy training scripts on the
-  compiled native frontend by default before Torch import. They may enter their
-  graph-backed code only with `NFN_ALLOW_TORCH_TRAINING=1` for one-off
-  debugging until native C++ trainers exist for those model families.
+- Keep non-GPT-2 training commands and direct legacy training scripts on
+  compiled native binaries before Torch import. Direct scripts first try the
+  model-family binary via `NFN_NATIVE_<MODEL>_CLI`,
+  `build/nfn_<model>_native_train`, or an installed `nfn_<model>_native_train`;
+  they fall back to the generic `nfn-native-train --base-model <model>` registry
+  only when no family binary is available. They may enter graph-backed code only
+  with `NFN_ALLOW_TORCH_TRAINING=1` for one-off debugging until native C++
+  trainers exist for those model families.
 
 ## Entry points
 

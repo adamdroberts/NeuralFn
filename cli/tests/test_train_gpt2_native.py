@@ -912,15 +912,18 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
                     root = Path({str(NEURALFN_ROOT)!r})
                     script = root / "cli" / "scripts" / {script_name!r}
-                    native_train = Path(tempfile.mkdtemp()) / "nfn_native_train"
-                    native_train.write_text(
+                    model_family = {model_family!r}
+                    family_env = "NFN_NATIVE_" + "".join(ch if ch.isalnum() else "_" for ch in model_family.upper()).strip("_") + "_CLI"
+                    family_cli = Path(tempfile.mkdtemp()) / ("nfn_" + "".join(ch if ch.isalnum() else "_" for ch in model_family.lower()).strip("_") + "_native_train")
+                    family_cli.write_text(
                         "#!/usr/bin/env bash\\n"
+                        "printf 'FAMILY_NATIVE_DIRECT\\\\n'\\n"
                         "printf '%s\\\\n' \\"$@\\"\\n"
                         "exit 2\\n",
                         encoding="utf-8",
                     )
-                    native_train.chmod(0o755)
-                    os.environ["NFN_NATIVE_TRAIN_CLI"] = str(native_train)
+                    family_cli.chmod(0o755)
+                    os.environ[family_env] = str(family_cli)
                     sys.path.insert(0, str(root / "cli" / "scripts"))
                     sys.argv = [str(script), "--tinystories", "--native-cuda-dry-run"]
                     try:
@@ -948,8 +951,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 )
 
                 self.assertEqual(2, proc.returncode)
-                self.assertIn("--base-model", proc.stdout)
-                self.assertIn(model_family, proc.stdout)
+                self.assertIn("FAMILY_NATIVE_DIRECT", proc.stdout)
+                self.assertNotIn("--base-model", proc.stdout)
                 self.assertIn("--tinystories", proc.stdout)
                 self.assertIn("TORCH_LOADED False", proc.stdout)
                 self.assertIn("TRAIN_JEPA_LOADED False", proc.stdout)
@@ -1022,15 +1025,16 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
             root = Path({str(NEURALFN_ROOT)!r})
             script = root / "cli" / "scripts" / "train_nanogpt.py"
-            native_train = Path(tempfile.mkdtemp()) / "nfn_native_train"
-            native_train.write_text(
+            native_nanogpt = Path(tempfile.mkdtemp()) / "nfn_nanogpt_native_train"
+            native_nanogpt.write_text(
                 "#!/usr/bin/env bash\\n"
+                "printf 'NANOGPT_NATIVE_DIRECT\\\\n'\\n"
                 "printf '%s\\\\n' \\"$@\\"\\n"
                 "exit 23\\n",
                 encoding="utf-8",
             )
-            native_train.chmod(0o755)
-            os.environ["NFN_NATIVE_TRAIN_CLI"] = str(native_train)
+            native_nanogpt.chmod(0o755)
+            os.environ["NFN_NATIVE_NANOGPT_CLI"] = str(native_nanogpt)
             sys.path.insert(0, str(root / "cli" / "scripts"))
             sys.argv = [str(script), "--tinystories", "--max-steps", "2", "--native-cuda-dry-run"]
             runpy.run_path(str(script), run_name="__main__")
@@ -1050,8 +1054,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(23, proc.returncode)
-        self.assertIn("--base-model", proc.stdout)
-        self.assertIn("nanogpt", proc.stdout)
+        self.assertIn("NANOGPT_NATIVE_DIRECT", proc.stdout)
+        self.assertNotIn("--base-model", proc.stdout)
         self.assertIn("--train-token-lm", proc.stdout)
         self.assertIn("--tinystories", proc.stdout)
         self.assertIn("--max-steps", proc.stdout)
