@@ -111,9 +111,11 @@ Trainer-facing linear GEMMs use the same native ABI but first try a cached BF16
 workspace plus `cublasGemmEx` with FP32 outputs/accumulation. If that path is
 not available they fall back to the existing TF32 `cublasSgemm` route. The
 trainer build also keeps a multi-entry packed BF16 first-GEMM-operand cache for
-weight-forward and weight-dInput calls, then invalidates that cache after AdamW updates. GPT-2
-training JSON reports `linear_backend_strategy`, `linear_bf16_gemm_count`,
-`linear_sgemm_count`, `linear_bf16_a_pack_count`,
+weight-forward and weight-dInput calls, then invalidates that cache after AdamW
+updates. Set `NFN_TILE_CUDA_LINEAR_BF16=0` or `NFN_NATIVE_LINEAR_BF16=0` to
+force the optimized TF32 cuBLAS route for profiling or hardware-specific
+comparison. GPT-2 training JSON reports `linear_backend_strategy`,
+`linear_bf16_gemm_count`, `linear_sgemm_count`, `linear_bf16_a_pack_count`,
 `linear_bf16_a_cache_hit_count`, `linear_bf16_cache_reset_count`,
 `linear_bf16_cached_a_capacity`, and `linear_bf16_cache_entry_count`.
 

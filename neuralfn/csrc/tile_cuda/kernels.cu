@@ -16,6 +16,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <mutex>
 #include <vector>
@@ -474,6 +476,24 @@ cublasHandle_t trainer_linear_cublas_handle(cudaStream_t stream) {
   return handle;
 }
 
+bool trainer_linear_bf16_bridge_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_BF16");
+    }
+    if (value == nullptr) {
+      return true;
+    }
+    return std::strcmp(value, "0") != 0 &&
+        std::strcmp(value, "false") != 0 &&
+        std::strcmp(value, "FALSE") != 0 &&
+        std::strcmp(value, "off") != 0 &&
+        std::strcmp(value, "OFF") != 0;
+  }();
+  return enabled;
+}
+
 struct TrainerLinearBf16Workspace {
   struct CacheEntry {
     __nv_bfloat16* data = nullptr;
@@ -673,6 +693,9 @@ bool cublas_linear_gemm_ex_bf16_float32(
     float beta_value,
     bool cache_a_operand,
     cudaStream_t stream) {
+  if (!trainer_linear_bf16_bridge_enabled()) {
+    return false;
+  }
   TrainerLinearBf16Workspace* workspace = ensure_trainer_linear_bf16_workspace(a_elements, b_elements);
   if (workspace == nullptr) {
     return false;

@@ -266,11 +266,12 @@ fallback unless that macro is set. In the trainer build, the large linear GEMMs
 first try a cached BF16 workspace plus `cublasGemmEx` with FP32 outputs and
 accumulation before falling back to TF32 `cublasSgemm`; a multi-entry packed
 BF16 first-GEMM-operand cache is reused for weight-forward and weight-dInput
-calls until the AdamW boundary invalidates it. Native JSON reports
-`linear_backend_strategy`, `linear_bf16_gemm_count`, `linear_sgemm_count`,
-`linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
-`linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
-`linear_bf16_cache_entry_count`.
+calls until the AdamW boundary invalidates it. `NFN_TILE_CUDA_LINEAR_BF16=0`
+and `NFN_NATIVE_LINEAR_BF16=0` force the optimized TF32 cuBLAS route for
+profiling without rebuilding. Native JSON reports `linear_backend_strategy`,
+`linear_bf16_gemm_count`, `linear_sgemm_count`, `linear_bf16_a_pack_count`,
+`linear_bf16_a_cache_hit_count`, `linear_bf16_cache_reset_count`,
+`linear_bf16_cached_a_capacity`, and `linear_bf16_cache_entry_count`.
 The trainer-facing build also defaults to the SM120 ThunderKittens bf16
 attention bridge (`NFN_TILE_CUDA_USE_TK_ATTENTION=1`,
 `NFN_TILE_CUDA_ARCH=sm_120a`) for GPT-2-compatible causal SDPA. Keep

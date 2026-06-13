@@ -149,7 +149,9 @@ Canonical docs:
   `linear_bf16_cache_entry_count`. The intended optimized route is BF16
   `cublasGemmEx` before TF32 `cublasSgemm` fallback, with multi-entry packed
   first-GEMM-operand cache reuse until the AdamW boundary, not scalar Tile dot
-  products for dense GPT projections.
+  products for dense GPT projections. `NFN_TILE_CUDA_LINEAR_BF16=0` and
+  `NFN_NATIVE_LINEAR_BF16=0` are profiling controls that force the optimized
+  TF32 cuBLAS route without rebuilding.
 - The row-vector forward and query-row atomic backward float32 SDPA kernels are
   fallback/diagnostic paths for unsupported shapes or
   `NFN_TILE_CUDA_USE_TK_ATTENTION=0` builds. Do not make them the default dense

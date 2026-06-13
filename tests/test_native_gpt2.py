@@ -2762,6 +2762,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "cublas_linear_gemm_ex_bf16_float32" in kernels_text
     assert "CUDA_R_16BF" in kernels_text
     assert "CUBLAS_COMPUTE_32F" in kernels_text
+    assert "NFN_TILE_CUDA_LINEAR_BF16" in kernels_text
+    assert "NFN_NATIVE_LINEAR_BF16" in kernels_text
     assert "trainer_linear_bf16_gemm_count" in kernels_text
     assert "trainer_linear_bf16_a_operand" in kernels_text
     assert "cached-first-gemm-operand-with-optimizer-reset" in gpt2_source_text
