@@ -6472,6 +6472,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_linear_float32",
         "nfn_native_tile_linear_bf16_float32",
         "nfn_native_tile_linear_backward_input_float32",
+        "nfn_native_tile_linear_backward_input_bf16_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
         "nfn_native_tile_linear_backward_bias_accumulate_float32",
         "nfn_native_tile_gelu_float32",
@@ -6610,6 +6611,7 @@ int run_transformer_lm_training_json(
     LinearFn linear = nullptr;
     LinearFn linear_bf16 = nullptr;
     LinearBackwardInputFn linear_backward_input = nullptr;
+    LinearBackwardInputFn linear_backward_input_bf16 = nullptr;
     LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
     LinearBackwardBiasAccumulateFn linear_backward_bias_accumulate = nullptr;
     GeluAddBiasFn gelu_add_bias = nullptr;
@@ -6740,6 +6742,8 @@ int run_transformer_lm_training_json(
                 linear_bf16 = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_bf16_float32");
                 linear_backward_input = load_symbol<LinearBackwardInputFn>(
                     tile_handle, "nfn_native_tile_linear_backward_input_float32");
+                linear_backward_input_bf16 = load_symbol<LinearBackwardInputFn>(
+                    tile_handle, "nfn_native_tile_linear_backward_input_bf16_float32");
                 linear_backward_weight_accumulate = load_symbol<LinearBackwardWeightAccumulateFn>(
                     tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_float32");
                 linear_backward_bias_accumulate = load_symbol<LinearBackwardBiasAccumulateFn>(
@@ -7872,13 +7876,13 @@ int run_transformer_lm_training_json(
         run_timed_stage("block_backward.mlp_proj", [&]() {
             if (error.empty()) run(linear_backward_weight_accumulate(tape.act, incoming_grad, block.accum_grad_mlp_proj_weight, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_weight.accumulate");
             if (error.empty()) run(linear_backward_bias_accumulate(incoming_grad, block.accum_grad_mlp_proj_bias, rows, kDim, nullptr), label + ".mlp.proj.backward_bias.accumulate");
-            if (error.empty()) run(linear_backward_input(incoming_grad, block.mlp_proj_weight, grad_fc_out, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_input");
+            if (error.empty()) run(linear_backward_input_bf16(incoming_grad, block.mlp_proj_weight, grad_fc_out, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_input.bf16");
             if (error.empty()) run(gelu_backward_inplace(tape.fc_out, grad_fc_out, hidden_elements, nullptr), label + ".mlp.gelu.backward_inplace");
         });
         run_timed_stage("block_backward.mlp_fc", [&]() {
             if (error.empty()) run(linear_backward_weight_accumulate(tape.ln2_out, grad_fc_out, block.accum_grad_fc_weight, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight.accumulate");
             if (error.empty()) run(linear_backward_bias_accumulate(grad_fc_out, block.accum_grad_fc_bias, rows, kHidden, nullptr), label + ".mlp.fc.backward_bias.accumulate");
-            if (error.empty()) run(linear_backward_input(grad_fc_out, block.fc_weight, grad_ln2, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_input");
+            if (error.empty()) run(linear_backward_input_bf16(grad_fc_out, block.fc_weight, grad_ln2, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_input.bf16");
         });
         run_timed_stage("block_backward.ln2_residual", [&]() {
             if (error.empty()) run(layer_norm_backward_affine_accumulate(tape.residual1, grad_ln2, block.accum_grad_ln2_weight, block.accum_grad_ln2_bias, rows, kDim, kNormEps, nullptr), label + ".ln2.backward_affine.accumulate");
@@ -7888,7 +7892,7 @@ int run_transformer_lm_training_json(
         run_timed_stage("block_backward.attn_proj", [&]() {
             if (error.empty()) run(linear_backward_weight_accumulate(tape.attn_out, grad_residual1, block.accum_grad_attn_proj_weight, rows, kDim, kDim, nullptr), label + ".attn.out.backward_weight.accumulate");
             if (error.empty()) run(linear_backward_bias_accumulate(grad_residual1, block.accum_grad_attn_proj_bias, rows, kDim, nullptr), label + ".attn.out.backward_bias.accumulate");
-            if (error.empty()) run(linear_backward_input(grad_residual1, block.attn_proj_weight, grad_attn_out, rows, kDim, kDim, nullptr), label + ".attn.out.backward_input");
+            if (error.empty()) run(linear_backward_input_bf16(grad_residual1, block.attn_proj_weight, grad_attn_out, rows, kDim, kDim, nullptr), label + ".attn.out.backward_input.bf16");
         });
         run_timed_stage("block_backward.attn_sdpa", [&]() {
             if (error.empty()) run(attention_backward_to_qkv(tape.q_heads, tape.k_heads, tape.v_heads, grad_attn_out, grad_qkv, batch_size, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.backward_to_qkv_from_merged_grad");
@@ -7896,7 +7900,7 @@ int run_transformer_lm_training_json(
         run_timed_stage("block_backward.qkv", [&]() {
             if (error.empty()) run(linear_backward_weight_accumulate(tape.ln1_out, grad_qkv, block.accum_grad_qkv_weight, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_weight.accumulate");
             if (error.empty()) run(linear_backward_bias_accumulate(grad_qkv, block.accum_grad_qkv_bias, rows, kQkvDim, nullptr), label + ".attn.qkv.backward_bias.accumulate");
-            if (error.empty()) run(linear_backward_input(grad_qkv, block.qkv_weight, grad_ln1, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_input");
+            if (error.empty()) run(linear_backward_input_bf16(grad_qkv, block.qkv_weight, grad_ln1, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_input.bf16");
         });
         run_timed_stage("block_backward.ln1_residual", [&]() {
             if (error.empty()) run(layer_norm_backward_affine_accumulate(block_input, grad_ln1, block.accum_grad_ln1_weight, block.accum_grad_ln1_bias, rows, kDim, kNormEps, nullptr), label + ".ln1.backward_affine.accumulate");
@@ -8568,13 +8572,14 @@ int run_transformer_lm_training_json(
         << "  \"logit_workspace_elements\": " << logit_elements << ",\n"
         << "  \"linear_backend_strategy\": \""
         << (linear_bf16_gemm_count > 0 && linear_sgemm_count > 0
-                ? "block-forward-bf16-backward-tf32"
+                ? "block-forward-and-block-dinput-bf16-dweight-tf32"
                 : (linear_bf16_gemm_count > 0
                        ? "bf16-gemmex-float32-output"
                        : (linear_sgemm_count > 0 ? "tf32-sgemm-optimized" : "not-run")))
         << "\",\n"
         << "  \"block_forward_linear_strategy\": \"forced-bf16-gemmex-forward\",\n"
-        << "  \"non_block_forward_backward_linear_strategy\": \"tf32-sgemm-optimized-default\",\n"
+        << "  \"block_backward_input_linear_strategy\": \"forced-bf16-gemmex-dinput\",\n"
+        << "  \"non_block_forward_backward_linear_strategy\": \"lm-head-and-dweight-tf32-sgemm-optimized-default\",\n"
         << "  \"linear_bf16_gemm_count\": " << linear_bf16_gemm_count << ",\n"
         << "  \"linear_sgemm_count\": " << linear_sgemm_count << ",\n"
         << "  \"linear_bf16_a_pack_count\": " << linear_bf16_a_pack_count << ",\n"

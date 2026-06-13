@@ -147,10 +147,12 @@ Canonical docs:
   `linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
   `linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
   `linear_bf16_cache_entry_count`. Dense GPT transformer block forward/recompute
-  projections should use `nfn_native_tile_linear_bf16_float32` and report
-  `linear_backend_strategy: "block-forward-bf16-backward-tf32"`,
-  `block_forward_linear_strategy`, and
-  `non_block_forward_backward_linear_strategy`; LM-head and backward GEMMs
+  projections should use `nfn_native_tile_linear_bf16_float32`, block dInput
+  GEMMs should use `nfn_native_tile_linear_backward_input_bf16_float32`, and
+  the trainer should report `linear_backend_strategy:
+  "block-forward-and-block-dinput-bf16-dweight-tf32"`,
+  `block_forward_linear_strategy`, `block_backward_input_linear_strategy`, and
+  `non_block_forward_backward_linear_strategy`; LM-head and dWeight GEMMs
   should stay on optimized TF32 tensor-op `cublasSgemm`, not scalar Tile dot
   products.
 - The row-vector forward and query-row atomic backward float32 SDPA kernels are

@@ -810,6 +810,7 @@ bool cublas_linear_backward_input_float32(
     std::int64_t rows,
     std::int64_t input_dim,
     std::int64_t output_dim,
+    bool force_bf16,
     cudaStream_t stream) {
   if (!fits_cublas_int(rows) || !fits_cublas_int(input_dim) || !fits_cublas_int(output_dim)) {
     return false;
@@ -839,7 +840,7 @@ bool cublas_linear_backward_input_float32(
           m,
           0.0f,
           true,
-          false,
+          force_bf16,
           stream)) {
     return true;
   }
@@ -6335,13 +6336,29 @@ void launch_linear_backward_input_float32(
     cudaStream_t stream) {
   const std::int64_t n = rows * input_dim;
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
-  if (cublas_linear_backward_input_float32(grad_out, weight, grad_x, rows, input_dim, output_dim, stream)) {
+  if (cublas_linear_backward_input_float32(grad_out, weight, grad_x, rows, input_dim, output_dim, false, stream)) {
     return;
   }
 #endif
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   linear_backward_input_float32_kernel<<<blocks, 1, 0, stream>>>(
       grad_out, weight, grad_x, n, input_dim, output_dim);
+}
+
+void launch_linear_backward_input_bf16_float32(
+    const float* grad_out,
+    const float* weight,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (cublas_linear_backward_input_float32(grad_out, weight, grad_x, rows, input_dim, output_dim, true, stream)) {
+    return;
+  }
+#endif
+  launch_linear_backward_input_float32(grad_out, weight, grad_x, rows, input_dim, output_dim, stream);
 }
 
 void launch_linear_backward_weight_float32(

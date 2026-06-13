@@ -301,6 +301,15 @@ int nfn_native_tile_linear_backward_input_float32(
     std::int64_t output_dim,
     void* cuda_stream);
 
+int nfn_native_tile_linear_backward_input_bf16_float32(
+    const float* grad_out,
+    const float* weight,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    void* cuda_stream);
+
 int nfn_native_tile_linear_backward_weight_float32(
     const float* x,
     const float* grad_out,
