@@ -1004,6 +1004,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["mlp_fc_bias_gelu_kernel_launches_per_block"] == 1
     assert tile_payload["mlp_fc_bias_gelu_legacy_launches_per_block"] == 2
     assert tile_payload["mlp_fc_bias_gelu_launches_elided_per_block"] == 1
+    assert tile_payload["mlp_proj_forward_activation_strategy"] == "fused-gelu-bf16-act-direct-gemm"
+    assert tile_payload["mlp_forward_act_bf16_elements"] == 0
+    assert tile_payload["mlp_forward_act_bf16_bytes"] == 0
     assert tile_payload["projection_bias_residual_strategy"] == "fused-linear-bias-residual-add"
     assert tile_payload["projection_bias_residual_kernel_launches_per_block"] == 2
     assert tile_payload["projection_bias_residual_legacy_launches_per_block"] == 4
@@ -1702,6 +1705,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["mlp_fc_bias_gelu_kernel_launches_per_block"] == 1
     assert train_transformer_payload["mlp_fc_bias_gelu_legacy_launches_per_block"] == 2
     assert train_transformer_payload["mlp_fc_bias_gelu_launches_elided_per_block"] == 1
+    assert train_transformer_payload["mlp_proj_forward_activation_strategy"] == "fused-gelu-bf16-act-direct-gemm"
+    assert train_transformer_payload["mlp_forward_act_bf16_elements"] == 0
+    assert train_transformer_payload["mlp_forward_act_bf16_bytes"] == 0
     assert train_transformer_payload["projection_bias_residual_strategy"] == "fused-linear-bias-residual-add"
     assert train_transformer_payload["projection_bias_residual_kernel_launches_per_block"] == 2
     assert train_transformer_payload["projection_bias_residual_legacy_launches_per_block"] == 4
@@ -2808,6 +2814,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_bf16_bits_to_float32" in header_text
     assert "nfn_native_tile_store_mlp_activations_bf16_float32" in header_text
     assert "nfn_native_tile_restore_mlp_activations_bf16_float32" in header_text
+    assert "nfn_native_tile_linear_bf16_input_bits_float32" in header_text
+    assert "nfn_native_tile_gelu_add_bias_bf16_act_float32" in header_text
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32" in header_text
     assert "nfn_native_tile_linear_bf16_output_float32" in header_text
     assert "nfn_native_tile_linear_backward_input_bf16_bits_float32" in header_text
@@ -2826,6 +2834,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "launch_bf16_bits_to_float32" in source_text
     assert "launch_store_mlp_activations_bf16_float32" in source_text
     assert "launch_restore_mlp_activations_bf16_float32" in source_text
+    assert "launch_linear_bf16_input_bits_float32" in source_text
+    assert "launch_gelu_add_bias_bf16_act_float32" in source_text
     assert "launch_linear_backward_weight_accumulate_bf16_bits_float32" in source_text
     assert "launch_linear_bf16_output_float32" in source_text
     assert "launch_linear_backward_input_bf16_bits_float32" in source_text
@@ -2841,6 +2851,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "cublas_linear_gemm_ex_bf16_float32_to_bf16_bits" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_bits_b_float32" in kernels_text
     assert "linear_bf16_output_float32_kernel" in kernels_text
+    assert "linear_bf16_input_bits_float32_kernel" in kernels_text
+    assert "gelu_add_bias_bf16_act_float32_kernel" in kernels_text
+    assert "fused-gelu-bf16-act-direct-gemm" in gpt2_source_text
+    assert ".mlp.proj.forward.no_bias.bf16_act" in gpt2_source_text
+    assert ".mlp.bias_gelu.forward.bf16_act" in gpt2_source_text
     assert "nfn_native_tile_linear_bf16_float32" in header_text
     assert "nfn_native_tile_linear_bf16_float32" in source_text
     assert "launch_linear_backward_input_bf16_float32" in kernels_text
@@ -3659,8 +3674,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_float32_to_bf16_bits_many" in exported
         assert "nfn_native_tile_linear_bf16_float32" in exported
         assert "nfn_native_tile_linear_bf16_output_float32" in exported
+        assert "nfn_native_tile_linear_bf16_input_bits_float32" in exported
         assert "nfn_native_tile_linear_backward_input_bf16_float32" in exported
         assert "nfn_native_tile_linear_backward_input_bf16_bits_float32" in exported
+        assert "nfn_native_tile_gelu_add_bias_bf16_act_float32" in exported
         assert "nfn_native_tile_trainer_linear_stats_reset" in exported
         assert "nfn_native_tile_trainer_linear_bf16_cache_reset" in exported
         assert "nfn_native_tile_trainer_linear_bf16_gemm_count" in exported

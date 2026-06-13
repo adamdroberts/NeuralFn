@@ -3997,6 +3997,29 @@ __global__ void linear_bf16_output_float32_kernel(
   out_bf16_bits[idx] = f32_to_bf16_bits_device(acc);
 }
 
+__global__ void linear_bf16_input_bits_float32_kernel(
+    const std::uint16_t* __restrict__ x_bf16_bits,
+    const float* __restrict__ weight,
+    const float* __restrict__ bias,
+    float* __restrict__ out,
+    std::int64_t n,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const std::int64_t row = idx / output_dim;
+  const std::int64_t col = idx % output_dim;
+  const float* w_row = weight + col * input_dim;
+  float acc = has_bias ? bias[col] : 0.0f;
+  for (std::int64_t i = 0; i < input_dim; ++i) {
+    acc += bf16_bits_to_f32_device(x_bf16_bits[row * input_dim + i]) * w_row[i];
+  }
+  out[idx] = acc;
+}
+
 __tile_global__ void linear_backward_bias_float32_kernel(
     const float* __restrict__ grad_out,
     float* __restrict__ grad_bias,
@@ -4132,6 +4155,28 @@ __tile_global__ void gelu_add_bias_float32_kernel(
   auto result = half * x_tile * (one + ct::tanh(tanh_arg));
   ct::store_masked(biased_out + idx, x_tile, mask);
   ct::store_masked(gelu_out + idx, result, mask);
+}
+
+__global__ void gelu_add_bias_bf16_act_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ bias,
+    float* __restrict__ biased_out,
+    float* __restrict__ gelu_out,
+    std::uint16_t* __restrict__ gelu_bf16_bits,
+    std::int64_t n,
+    std::int64_t output_dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const std::int64_t out_col = idx % output_dim;
+  const float biased = x[idx] + bias[out_col];
+  const float x2 = biased * biased;
+  const float tanh_out = tanhf(0.7978845608028654f * (biased + 0.044715f * biased * x2));
+  const float result = 0.5f * biased * (1.0f + tanh_out);
+  biased_out[idx] = biased;
+  gelu_out[idx] = result;
+  gelu_bf16_bits[idx] = f32_to_bf16_bits_device(result);
 }
 
 __tile_global__ void linear_bias_residual_add_float32_kernel(
@@ -7249,6 +7294,48 @@ void launch_linear_bf16_output_float32(
       x, weight, bias, out_bf16_bits, n, input_dim, output_dim, has_bias);
 }
 
+void launch_linear_bf16_input_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    const float* weight,
+    const float* bias,
+    float* out,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * output_dim;
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
+      cublas_linear_gemm_ex_bf16_bits_b_float32(
+          weight,
+          x_bf16_bits,
+          out,
+          output_dim * input_dim,
+          static_cast<int>(output_dim),
+          static_cast<int>(rows),
+          static_cast<int>(input_dim),
+          CUBLAS_OP_T,
+          CUBLAS_OP_N,
+          static_cast<int>(input_dim),
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          0.0f,
+          true,
+          true,
+          stream)) {
+    if (has_bias) {
+      linear_add_bias_float32_kernel<<<blocks, 1, 0, stream>>>(out, bias, n, output_dim);
+    }
+    return;
+  }
+#endif
+  linear_bf16_input_bits_float32_kernel<<<blocks, threads, 0, stream>>>(
+      x_bf16_bits, weight, bias, out, n, input_dim, output_dim, has_bias);
+}
+
 void launch_linear_backward_input_float32(
     const float* grad_out,
     const float* weight,
@@ -7554,6 +7641,22 @@ void launch_gelu_add_bias_float32(
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   gelu_add_bias_float32_kernel<<<blocks, 1, 0, stream>>>(
       x, bias, biased_out, gelu_out, n, output_dim);
+}
+
+void launch_gelu_add_bias_bf16_act_float32(
+    const float* x,
+    const float* bias,
+    float* biased_out,
+    float* gelu_out,
+    std::uint16_t* gelu_bf16_bits,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * output_dim;
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  gelu_add_bias_bf16_act_float32_kernel<<<blocks, threads, 0, stream>>>(
+      x, bias, biased_out, gelu_out, gelu_bf16_bits, n, output_dim);
 }
 
 void launch_linear_bias_residual_add_float32(

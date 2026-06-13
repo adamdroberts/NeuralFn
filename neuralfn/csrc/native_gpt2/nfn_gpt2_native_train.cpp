@@ -1007,6 +1007,9 @@ bool print_tile_plan(
         << "  \"mlp_fc_bias_gelu_kernel_launches_per_block\": 1,\n"
         << "  \"mlp_fc_bias_gelu_legacy_launches_per_block\": 2,\n"
         << "  \"mlp_fc_bias_gelu_launches_elided_per_block\": 1,\n"
+        << "  \"mlp_proj_forward_activation_strategy\": \"fused-gelu-bf16-act-direct-gemm\",\n"
+        << "  \"mlp_forward_act_bf16_elements\": 0,\n"
+        << "  \"mlp_forward_act_bf16_bytes\": 0,\n"
         << "  \"projection_bias_residual_strategy\": \"fused-linear-bias-residual-add\",\n"
         << "  \"projection_bias_residual_kernel_launches_per_block\": 2,\n"
         << "  \"projection_bias_residual_legacy_launches_per_block\": 4,\n"
@@ -6502,6 +6505,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_linear_float32",
         "nfn_native_tile_linear_bf16_float32",
         "nfn_native_tile_linear_bf16_output_float32",
+        "nfn_native_tile_linear_bf16_input_bits_float32",
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_input_bf16_float32",
         "nfn_native_tile_linear_backward_input_bf16_bits_float32",
@@ -6511,6 +6515,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits",
         "nfn_native_tile_gelu_float32",
         "nfn_native_tile_gelu_add_bias_float32",
+        "nfn_native_tile_gelu_add_bias_bf16_act_float32",
         "nfn_native_tile_gelu_backward_inplace_float32",
         "nfn_native_tile_scaled_dot_product_attention_float32",
         "nfn_native_tile_attention_forward_tk_launch_count",
@@ -6581,6 +6586,9 @@ int run_transformer_lm_training_json(
     using LinearBf16OutputFn = int (*)(
         const float*, const float*, const float*, std::uint16_t*,
         std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearBf16InputBitsFn = int (*)(
+        const std::uint16_t*, const float*, const float*, float*,
+        std::int64_t, std::int64_t, std::int64_t, bool, void*);
     using LinearBackwardInputFn = int (*)(
         const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardInputBf16BitsFn = int (*)(
@@ -6592,7 +6600,8 @@ int run_transformer_lm_training_json(
     using LinearBackwardWeightAccumulateFloat32Bf16BitsFn = int (*)(
         const float*, const std::uint16_t*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardBiasAccumulateFn = int (*)(const float*, float*, std::int64_t, std::int64_t, void*);
-    using GeluAddBiasFn = int (*)(const float*, const float*, float*, float*, std::int64_t, std::int64_t, void*);
+    using GeluAddBiasBf16ActFn =
+        int (*)(const float*, const float*, float*, float*, std::uint16_t*, std::int64_t, std::int64_t, void*);
     using GeluBackwardInplaceFn = int (*)(const float*, float*, std::int64_t, void*);
     using GeluBackwardInplaceBf16BitsFn = int (*)(const std::uint16_t*, float*, std::int64_t, void*);
     using AttentionFn = int (*)(
@@ -6663,6 +6672,7 @@ int run_transformer_lm_training_json(
     LinearFn linear = nullptr;
     LinearFn linear_bf16 = nullptr;
     LinearBf16OutputFn linear_bf16_output = nullptr;
+    LinearBf16InputBitsFn linear_bf16_input_bits = nullptr;
     LinearBackwardInputFn linear_backward_input = nullptr;
     LinearBackwardInputFn linear_backward_input_bf16 = nullptr;
     LinearBackwardInputBf16BitsFn linear_backward_input_bf16_bits = nullptr;
@@ -6671,7 +6681,7 @@ int run_transformer_lm_training_json(
     LinearBackwardWeightAccumulateBf16BitsFn linear_backward_weight_accumulate_bf16_bits = nullptr;
     LinearBackwardWeightAccumulateFloat32Bf16BitsFn linear_backward_weight_accumulate_float32_bf16_bits = nullptr;
     LinearBackwardBiasAccumulateFn linear_backward_bias_accumulate = nullptr;
-    GeluAddBiasFn gelu_add_bias = nullptr;
+    GeluAddBiasBf16ActFn gelu_add_bias_bf16_act = nullptr;
     GeluBackwardInplaceFn gelu_backward_inplace = nullptr;
     GeluBackwardInplaceBf16BitsFn gelu_backward_inplace_bf16_bits = nullptr;
     AttentionFn attention = nullptr;
@@ -6804,6 +6814,8 @@ int run_transformer_lm_training_json(
                 linear_bf16 = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_bf16_float32");
                 linear_bf16_output =
                     load_symbol<LinearBf16OutputFn>(tile_handle, "nfn_native_tile_linear_bf16_output_float32");
+                linear_bf16_input_bits =
+                    load_symbol<LinearBf16InputBitsFn>(tile_handle, "nfn_native_tile_linear_bf16_input_bits_float32");
                 linear_backward_input = load_symbol<LinearBackwardInputFn>(
                     tile_handle, "nfn_native_tile_linear_backward_input_float32");
                 linear_backward_input_bf16 = load_symbol<LinearBackwardInputFn>(
@@ -6822,7 +6834,8 @@ int run_transformer_lm_training_json(
                         tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits");
                 linear_backward_bias_accumulate = load_symbol<LinearBackwardBiasAccumulateFn>(
                     tile_handle, "nfn_native_tile_linear_backward_bias_accumulate_float32");
-                gelu_add_bias = load_symbol<GeluAddBiasFn>(tile_handle, "nfn_native_tile_gelu_add_bias_float32");
+                gelu_add_bias_bf16_act =
+                    load_symbol<GeluAddBiasBf16ActFn>(tile_handle, "nfn_native_tile_gelu_add_bias_bf16_act_float32");
                 gelu_backward_inplace = load_symbol<GeluBackwardInplaceFn>(
                     tile_handle, "nfn_native_tile_gelu_backward_inplace_float32");
                 gelu_backward_inplace_bf16_bits = load_symbol<GeluBackwardInplaceBf16BitsFn>(
@@ -7325,6 +7338,9 @@ int run_transformer_lm_training_json(
     std::uint16_t* lm_head_bf16_logits = nullptr;
     std::int64_t lm_head_bf16_logit_elements = 0;
     std::int64_t lm_head_bf16_logit_bytes = 0;
+    std::uint16_t* mlp_forward_act_bf16 = nullptr;
+    std::int64_t mlp_forward_act_bf16_elements = 0;
+    std::int64_t mlp_forward_act_bf16_bytes = 0;
 
     float *token_weight = nullptr, *position_weight = nullptr, *residual_scale = nullptr;
     float *lnf_weight = nullptr, *lnf_bias = nullptr;
@@ -7463,6 +7479,27 @@ int run_transformer_lm_training_json(
         uint16_ptrs.push_back(lm_head_bf16_logits);
         lm_head_bf16_logit_elements = logit_elements;
         lm_head_bf16_logit_bytes = static_cast<std::int64_t>(bytes);
+    };
+    auto allocate_mlp_forward_act_bf16 = [&]() {
+        if (!error.empty()) {
+            return;
+        }
+        if (hidden_elements <= 0 ||
+            hidden_elements > static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
+            error = "MLP forward bf16 activation scratch allocation byte size overflow";
+            return;
+        }
+        void* raw = nullptr;
+        const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(hidden_elements);
+        const int status = cuda_malloc(&raw, bytes);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc mlp_forward_act_bf16");
+            return;
+        }
+        mlp_forward_act_bf16 = static_cast<std::uint16_t*>(raw);
+        uint16_ptrs.push_back(mlp_forward_act_bf16);
+        mlp_forward_act_bf16_elements = hidden_elements;
+        mlp_forward_act_bf16_bytes = static_cast<std::int64_t>(bytes);
     };
 
     auto visit_block_parameter_ptrs = [&](auto&& visit) {
@@ -7606,6 +7643,7 @@ int run_transformer_lm_training_json(
     allocate_token_arenas();
     allocate_stored_mlp_activation_arena();
     allocate_lm_head_bf16_logits();
+    allocate_mlp_forward_act_bf16();
     const std::int64_t startup_per_buffer_zero_fill_launches_elided =
         1 + trained_layers * 6 + 8 + trained_layers * kPerBlockAdamWStateBuffers;
     const std::int64_t nonzero_parameter_fill_buffer_count = 3 + trained_layers * 6;
@@ -8120,14 +8158,14 @@ int run_transformer_lm_training_json(
                     if (error.empty()) run(linear_bf16(tape.ln2_out, block.fc_weight, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias.bf16");
                 });
                 run_timed_stage(stage_name + ".mlp_fc_gelu.gelu", [&]() {
-                    if (error.empty()) run(gelu_add_bias(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward");
+                    if (error.empty()) run(gelu_add_bias_bf16_act(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, mlp_forward_act_bf16, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward.bf16_act");
                 });
             });
         }
         if (compute_final_output) {
             run_timed_stage(stage_name + ".mlp_proj", [&]() {
                 run_timed_stage(stage_name + ".mlp_proj.proj", [&]() {
-                    if (error.empty()) run(linear_bf16(tape.act, block.mlp_proj_weight, nullptr, tape.mlp_out, rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias.bf16");
+                    if (error.empty()) run(linear_bf16_input_bits(mlp_forward_act_bf16, block.mlp_proj_weight, nullptr, tape.mlp_out, rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias.bf16_act");
                 });
                 run_timed_stage(stage_name + ".mlp_proj.residual", [&]() {
                     if (error.empty()) run(linear_bias_residual_add(tape.residual1, tape.mlp_out, block.mlp_proj_bias, residual_scale, tape.residual2, rows, kDim, nullptr), label + ".mlp.bias_residual");
@@ -9023,6 +9061,9 @@ int run_transformer_lm_training_json(
         << "  \"mlp_fc_bias_gelu_kernel_launches_per_block\": 1,\n"
         << "  \"mlp_fc_bias_gelu_legacy_launches_per_block\": 2,\n"
         << "  \"mlp_fc_bias_gelu_launches_elided_per_block\": 1,\n"
+        << "  \"mlp_proj_forward_activation_strategy\": \"fused-gelu-bf16-act-direct-gemm\",\n"
+        << "  \"mlp_forward_act_bf16_elements\": " << mlp_forward_act_bf16_elements << ",\n"
+        << "  \"mlp_forward_act_bf16_bytes\": " << mlp_forward_act_bf16_bytes << ",\n"
         << "  \"projection_bias_residual_strategy\": \"fused-linear-bias-residual-add\",\n"
         << "  \"projection_bias_residual_kernel_launches_per_block\": 2,\n"
         << "  \"projection_bias_residual_legacy_launches_per_block\": 4,\n"
