@@ -178,7 +178,7 @@ bridge. GPT-2 training JSON reports `linear_backend_strategy:
 `linear_bf16_gemm_count`, `linear_sgemm_count`, `linear_bf16_a_pack_count`,
 `linear_bf16_a_cache_hit_count`, `linear_bf16_cache_reset_count`,
 `linear_bf16_cached_a_capacity`, and `linear_bf16_cache_entry_count`.
-The tied LM-head row chunk defaults to 2048 rows and can be overridden with
+The tied LM-head row chunk defaults to 8192 rows and can be overridden with
 `--lm-head-row-chunk-size` on the compiled C++ entrypoint or
 `--native-cuda-lm-head-row-chunk-size` from the wrapper/root CLI. Loss partials
 are reduced on device before one host loss copy per forward loss, and tied

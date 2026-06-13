@@ -165,7 +165,7 @@ def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) ->
 
     argv = cfg.argv()
     assert cached_meta["token_cache_format"] == "raw_text_uint16_shards"
-    assert cfg.lm_head_row_chunk_size == 2048
+    assert cfg.lm_head_row_chunk_size == 8192
     assert argv[:3] == ["/opt/nfn/train_gpt2cu", "-i", str(dataset_path / "fineweb_train_000000.bin")]
     assert argv[argv.index("-j") + 1] == str(dataset_path / "fineweb_val_000000.bin")
     assert argv[argv.index("-v") + 1] == "1000"
@@ -185,7 +185,7 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
         executable="/opt/nfn/train_gpt2cu",
         output_dir=tmp_path / "log124M" / "5090_S",
         eval_every_steps=250,
-        lm_head_row_chunk_size=2048,
+        lm_head_row_chunk_size=8192,
         sample_every_steps=20000,
         generate_tokens=144,
         checkpoint_every_steps=200,
@@ -245,7 +245,7 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
     assert "--checkpoint-metadata-smoke" in argv
     assert argv[argv.index("--eval-batches") + 1] == "1"
     assert argv[argv.index("--eval-batch-size") + 1] == "0"
-    assert argv[argv.index("--lm-head-row-chunk-size") + 1] == "2048"
+    assert argv[argv.index("--lm-head-row-chunk-size") + 1] == "8192"
     assert argv[argv.index("--cuda-runtime-lib") + 1] == "/usr/local/cuda/lib64/libcudart.so"
 
 
