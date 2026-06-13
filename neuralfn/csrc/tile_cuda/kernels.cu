@@ -1475,6 +1475,91 @@ bool tk_linear_gemm_bf16_forward_to_bf16_bits(
 #endif
 }
 
+bool tk_linear_gemm_bf16_forward_gelu_to_bf16_bits(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    std::uint16_t* pre_gelu_bf16_bits,
+    std::uint16_t* gelu_bf16_bits,
+    std::int64_t x_elements,
+    std::int64_t weight_elements,
+    int rows,
+    int input_dim,
+    int output_dim,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  if (!trainer_linear_tk_gemm_enabled()) {
+    return false;
+  }
+  if (x == nullptr || weight == nullptr || bias == nullptr ||
+      pre_gelu_bf16_bits == nullptr || gelu_bf16_bits == nullptr) {
+    return false;
+  }
+  if (rows <= 0 || input_dim <= 0 || output_dim <= 0 ||
+      rows % 128 != 0 || input_dim % 64 != 0 || output_dim % 128 != 0) {
+    return false;
+  }
+  if (!matmul_forward_gelu_supported(1, rows, input_dim, output_dim)) {
+    return false;
+  }
+  TrainerLinearBf16Workspace* workspace =
+      ensure_trainer_linear_bf16_workspace(x_elements, weight_elements);
+  if (workspace == nullptr) {
+    return false;
+  }
+  __nv_bfloat16* x_bf16 = trainer_linear_bf16_b_operand(workspace, x, x_elements, false, stream);
+  if (x_bf16 == nullptr) {
+    return false;
+  }
+  __nv_bfloat16* weight_bf16 =
+      trainer_linear_bf16_a_operand(workspace, weight, weight_elements, true, stream);
+  if (weight_bf16 == nullptr) {
+    return false;
+  }
+  bool bias_cache_hit = false;
+  TrainerLinearBf16Workspace::CacheEntry* bias_entry =
+      trainer_linear_bf16_cache_entry_for(workspace, bias, output_dim, &bias_cache_hit);
+  if (bias_entry == nullptr || bias_entry->data == nullptr) {
+    return false;
+  }
+  if (!bias_cache_hit) {
+    constexpr int threads = 256;
+    const int blocks = static_cast<int>((output_dim + threads - 1) / threads);
+    f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(bias, bias_entry->data, output_dim);
+    g_linear_bf16_a_pack_count.fetch_add(1, std::memory_order_relaxed);
+  }
+  auto* out = reinterpret_cast<floatX*>(gelu_bf16_bits);
+  auto* pre_gelu = reinterpret_cast<floatX*>(pre_gelu_bf16_bits);
+  ::matmul_forward_gelu(
+      out,
+      pre_gelu,
+      reinterpret_cast<const floatX*>(x_bf16),
+      reinterpret_cast<const floatX*>(weight_bf16),
+      reinterpret_cast<const floatX*>(bias_entry->data),
+      1,
+      rows,
+      input_dim,
+      output_dim,
+      stream);
+  g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  return true;
+#else
+  (void)x;
+  (void)weight;
+  (void)bias;
+  (void)pre_gelu_bf16_bits;
+  (void)gelu_bf16_bits;
+  (void)x_elements;
+  (void)weight_elements;
+  (void)rows;
+  (void)input_dim;
+  (void)output_dim;
+  (void)stream;
+  return false;
+#endif
+}
+
 bool cublas_linear_gemm_ex_bf16_float32_to_bf16_bits(
     const float* a,
     const float* b,
@@ -4229,6 +4314,34 @@ __global__ void linear_bf16_output_float32_kernel(
     acc += x_row[i] * w_row[i];
   }
   out_bf16_bits[idx] = f32_to_bf16_bits_device(acc);
+}
+
+__global__ void linear_bf16_gelu_bf16_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ weight,
+    const float* __restrict__ bias,
+    std::uint16_t* __restrict__ pre_gelu_bf16_bits,
+    std::uint16_t* __restrict__ gelu_bf16_bits,
+    std::int64_t n,
+    std::int64_t input_dim,
+    std::int64_t output_dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const std::int64_t row = idx / output_dim;
+  const std::int64_t col = idx % output_dim;
+  const float* x_row = x + row * input_dim;
+  const float* w_row = weight + col * input_dim;
+  float acc = bias[col];
+  for (std::int64_t i = 0; i < input_dim; ++i) {
+    acc += x_row[i] * w_row[i];
+  }
+  const float x2 = acc * acc;
+  const float tanh_out = tanhf(0.7978845608028654f * (acc + 0.044715f * acc * x2));
+  const float gelu = 0.5f * acc * (1.0f + tanh_out);
+  pre_gelu_bf16_bits[idx] = f32_to_bf16_bits_device(acc);
+  gelu_bf16_bits[idx] = f32_to_bf16_bits_device(gelu);
 }
 
 __global__ void linear_bf16_input_bits_float32_kernel(
@@ -7679,6 +7792,40 @@ void launch_linear_bf16_input_bits_float32(
 #endif
   linear_bf16_input_bits_float32_kernel<<<blocks, threads, 0, stream>>>(
       x_bf16_bits, weight, bias, out, n, input_dim, output_dim, has_bias);
+}
+
+void launch_linear_bf16_gelu_bf16_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    std::uint16_t* pre_gelu_bf16_bits,
+    std::uint16_t* gelu_bf16_bits,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
+      tk_linear_gemm_bf16_forward_gelu_to_bf16_bits(
+          x,
+          weight,
+          bias,
+          pre_gelu_bf16_bits,
+          gelu_bf16_bits,
+          rows * input_dim,
+          output_dim * input_dim,
+          static_cast<int>(rows),
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          stream)) {
+    return;
+  }
+#endif
+  const std::int64_t n = rows * output_dim;
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  linear_bf16_gelu_bf16_float32_kernel<<<blocks, threads, 0, stream>>>(
+      x, weight, bias, pre_gelu_bf16_bits, gelu_bf16_bits, n, input_dim, output_dim);
 }
 
 void launch_linear_backward_input_float32(

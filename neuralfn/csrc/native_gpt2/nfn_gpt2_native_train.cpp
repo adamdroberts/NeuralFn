@@ -6521,6 +6521,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_linear_bf16_float32",
         "nfn_native_tile_linear_bf16_output_float32",
         "nfn_native_tile_linear_bf16_input_bits_float32",
+        "nfn_native_tile_linear_bf16_gelu_bf16_float32",
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_input_bf16_float32",
         "nfn_native_tile_linear_backward_input_bf16_bits_float32",
@@ -6570,6 +6571,7 @@ int run_transformer_lm_training_json(
     using CopyFn = int (*)(const float*, float*, std::int64_t, void*);
     using Uint16ToInt64Fn = int (*)(const std::uint16_t*, std::int64_t*, std::int64_t, void*);
     using Bf16BitsToFloat32Fn = int (*)(const std::uint16_t*, float*, std::int64_t, void*);
+    using Float32ToBf16BitsFn = int (*)(const float*, std::uint16_t*, std::int64_t, void*);
     using StoreMlpActivationsBf16Fn =
         int (*)(const float*, const float*, const float*, std::uint16_t*, std::int64_t, std::int64_t, void*);
     using Float32ToBf16BitsManyFn =
@@ -6608,6 +6610,9 @@ int run_transformer_lm_training_json(
     using LinearBf16InputBitsFn = int (*)(
         const std::uint16_t*, const float*, const float*, float*,
         std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearBf16GeluBf16Fn = int (*)(
+        const float*, const float*, const float*, std::uint16_t*, std::uint16_t*,
+        std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardInputFn = int (*)(
         const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardInputBf16BitsFn = int (*)(
@@ -6681,6 +6686,7 @@ int run_transformer_lm_training_json(
     CopyFn copy = nullptr;
     Uint16ToInt64Fn uint16_to_int64 = nullptr;
     Bf16BitsToFloat32Fn bf16_bits_to_float32 = nullptr;
+    Float32ToBf16BitsFn float32_to_bf16_bits = nullptr;
     StoreMlpActivationsBf16Fn store_mlp_activations_bf16 = nullptr;
     Float32ToBf16BitsManyFn float32_to_bf16_bits_many = nullptr;
     GradientAccumulateFn gradient_accumulate = nullptr;
@@ -6702,6 +6708,7 @@ int run_transformer_lm_training_json(
     LinearFn linear_bf16 = nullptr;
     LinearBf16OutputFn linear_bf16_output = nullptr;
     LinearBf16InputBitsFn linear_bf16_input_bits = nullptr;
+    LinearBf16GeluBf16Fn linear_bf16_gelu_bf16 = nullptr;
     LinearBackwardInputFn linear_backward_input = nullptr;
     LinearBackwardInputFn linear_backward_input_bf16 = nullptr;
     LinearBackwardInputBf16BitsFn linear_backward_input_bf16_bits = nullptr;
@@ -6814,6 +6821,8 @@ int run_transformer_lm_training_json(
                 uint16_to_int64 = load_symbol<Uint16ToInt64Fn>(tile_handle, "nfn_native_tile_uint16_to_int64");
                 bf16_bits_to_float32 =
                     load_symbol<Bf16BitsToFloat32Fn>(tile_handle, "nfn_native_tile_bf16_bits_to_float32");
+                float32_to_bf16_bits =
+                    load_symbol<Float32ToBf16BitsFn>(tile_handle, "nfn_native_tile_float32_to_bf16_bits");
                 store_mlp_activations_bf16 = load_symbol<StoreMlpActivationsBf16Fn>(
                     tile_handle, "nfn_native_tile_store_mlp_activations_bf16_float32");
                 float32_to_bf16_bits_many = load_symbol<Float32ToBf16BitsManyFn>(
@@ -6850,6 +6859,8 @@ int run_transformer_lm_training_json(
                     load_symbol<LinearBf16OutputFn>(tile_handle, "nfn_native_tile_linear_bf16_output_float32");
                 linear_bf16_input_bits =
                     load_symbol<LinearBf16InputBitsFn>(tile_handle, "nfn_native_tile_linear_bf16_input_bits_float32");
+                linear_bf16_gelu_bf16 =
+                    load_symbol<LinearBf16GeluBf16Fn>(tile_handle, "nfn_native_tile_linear_bf16_gelu_bf16_float32");
                 linear_backward_input = load_symbol<LinearBackwardInputFn>(
                     tile_handle, "nfn_native_tile_linear_backward_input_float32");
                 linear_backward_input_bf16 = load_symbol<LinearBackwardInputFn>(
@@ -8270,7 +8281,8 @@ int run_transformer_lm_training_json(
                              const float* block_input,
                              const std::string& label,
                              bool compute_final_output,
-                             bool compute_mlp_activations) {
+                             bool compute_mlp_activations,
+                             StoredMlpActivations* fused_mlp_store) {
         const std::string stage_name = label.find("recompute") == std::string::npos ? "block_forward" : "block_recompute";
         const std::int64_t stage_event = stage_begin(stage_name);
         run_timed_stage(stage_name + ".attention", [&]() {
@@ -8301,18 +8313,42 @@ int run_transformer_lm_training_json(
                 run_timed_stage(stage_name + ".mlp_fc_gelu.ln2", [&]() {
                     if (error.empty()) run(layer_norm(tape.residual1, block.ln2_weight, block.ln2_bias, tape.ln2_out, rows, kDim, kNormEps, nullptr), label + ".ln2.forward");
                 });
-                run_timed_stage(stage_name + ".mlp_fc_gelu.fc", [&]() {
-                    if (error.empty()) run(linear_bf16(tape.ln2_out, block.fc_weight, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias.bf16");
-                });
-                run_timed_stage(stage_name + ".mlp_fc_gelu.gelu", [&]() {
-                    if (error.empty()) run(gelu_add_bias_bf16_act(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, mlp_forward_act_bf16, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward.bf16_act");
-                });
+                if (fused_mlp_store != nullptr) {
+                    run_timed_stage(stage_name + ".mlp_fc_gelu.pack_ln2", [&]() {
+                        if (error.empty()) run(float32_to_bf16_bits(tape.ln2_out, fused_mlp_store->ln2_out, activation_elements, nullptr), label + ".mlp.ln2.store_bf16");
+                    });
+                    run_timed_stage(stage_name + ".mlp_fc_gelu.fc_gelu", [&]() {
+                        if (error.empty()) {
+                            run(linear_bf16_gelu_bf16(
+                                    tape.ln2_out,
+                                    block.fc_weight,
+                                    block.fc_bias,
+                                    fused_mlp_store->fc_out,
+                                    fused_mlp_store->act,
+                                    rows,
+                                    kDim,
+                                    kHidden,
+                                    nullptr),
+                                label + ".mlp.fc_bias_gelu.forward.bf16_fused");
+                            if (error.empty()) stored_mlp_activation_store_kernel_launches += 1;
+                        }
+                    });
+                } else {
+                    run_timed_stage(stage_name + ".mlp_fc_gelu.fc", [&]() {
+                        if (error.empty()) run(linear_bf16(tape.ln2_out, block.fc_weight, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias.bf16");
+                    });
+                    run_timed_stage(stage_name + ".mlp_fc_gelu.gelu", [&]() {
+                        if (error.empty()) run(gelu_add_bias_bf16_act(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, mlp_forward_act_bf16, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward.bf16_act");
+                    });
+                }
             });
         }
         if (compute_final_output) {
             run_timed_stage(stage_name + ".mlp_proj", [&]() {
                 run_timed_stage(stage_name + ".mlp_proj.proj", [&]() {
-                    if (error.empty()) run(linear_bf16_input_bits(mlp_forward_act_bf16, block.mlp_proj_weight, nullptr, tape.mlp_out, rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias.bf16_act");
+                    const std::uint16_t* act_bits =
+                        fused_mlp_store != nullptr ? fused_mlp_store->act : mlp_forward_act_bf16;
+                    if (error.empty()) run(linear_bf16_input_bits(act_bits, block.mlp_proj_weight, nullptr, tape.mlp_out, rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias.bf16_act");
                 });
                 run_timed_stage(stage_name + ".mlp_proj.residual", [&]() {
                     if (error.empty()) run(linear_bias_residual_add(tape.residual1, tape.mlp_out, block.mlp_proj_bias, residual_scale, tape.residual2, rows, kDim, nullptr), label + ".mlp.bias_residual");
@@ -8497,11 +8533,15 @@ int run_transformer_lm_training_json(
         float* final_block_output = x;
         for (std::size_t i = 0; i < blocks.size(); ++i) {
             TransformerBlockActivations& tape = block_tapes[0];
-            forward_block(blocks[i], tape, block_input, label + ".block" + std::to_string(i), true, true);
+            StoredMlpActivations* fused_mlp_store =
+                preserve_block_outputs && i < stored_mlp_activations.size() ? &stored_mlp_activations[i] : nullptr;
+            forward_block(blocks[i], tape, block_input, label + ".block" + std::to_string(i), true, true, fused_mlp_store);
             final_block_output = tape.residual2;
             if (error.empty() && preserve_block_outputs && i + 1 < blocks.size()) {
                 store_attention_activations(i);
-                store_mlp_activations(i, tape);
+                if (fused_mlp_store == nullptr) {
+                    store_mlp_activations(i, tape);
+                }
                 run(copy(tape.residual2, block_outputs[i], activation_elements, nullptr),
                     label + ".block" + std::to_string(i) + ".output.copy");
                 block_input = block_outputs[i];
@@ -8562,7 +8602,8 @@ int run_transformer_lm_training_json(
                         block_input,
                         "block" + std::to_string(i) + ".recompute",
                         false,
-                        !use_stored_mlp_activations);
+                        !use_stored_mlp_activations,
+                        nullptr);
                 }
             }
             const StoredMlpActivations* stored_mlp =
@@ -9370,6 +9411,9 @@ int run_transformer_lm_training_json(
         << "  \"position_gradient_microbatch_zero_elided\": true,\n"
         << "  \"mlp_activation_storage_strategy\": \""
         << (stored_mlp_activation_block_count > 0 ? "bf16-forward-store-direct-backward-opt-in" : "disabled")
+        << "\",\n"
+        << "  \"stored_mlp_forward_strategy\": \""
+        << (stored_mlp_activation_block_count > 0 ? "tk-sm120-fused-fc-bias-gelu-bf16-store" : "disabled")
         << "\",\n"
         << "  \"stored_mlp_activation_blocks\": " << stored_mlp_activation_block_count << ",\n"
         << "  \"stored_mlp_activation_elements\": " << stored_mlp_activation_arena_elements << ",\n"

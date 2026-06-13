@@ -189,7 +189,7 @@ gradient zero/clip, and AdamW update. Diagnostic runs also emit nested entries
 for LM-head logits/CE/dHidden/dWeight, block forward/recompute attention
 substeps such as `block_forward.attention.qkv`,
 `block_forward.attention.sdpa`, and `block_forward.attention.proj`, forward MLP
-substeps such as `block_forward.mlp_fc_gelu.fc` and
+substeps such as `block_forward.mlp_fc_gelu.fc_gelu` and
 `block_forward.mlp_proj.proj`, and block backward MLP projection, MLP fc,
 LayerNorm/residual, attention projection, attention SDPA, and QKV phases. The
 block backward records include individual dWeight, bias, dInput, activation,
@@ -300,8 +300,12 @@ the default JSON reports `backward_recompute_blocks: 11` and
 `final_block_backward_recompute_elided: true`. The default workstation path
 stores earlier-block `ln2_out`, MLP preactivation, and GELU activation tensors
 into a BF16 arena during forward,
-consumes them directly for MLP dWeight and GELU backward, and reports
-`mlp_activation_storage_strategy`, `stored_mlp_activation_blocks`,
+consumes them directly for MLP dWeight and GELU backward, and writes the stored
+preactivation plus GELU activation through
+`nfn_native_tile_linear_bf16_gelu_bf16_float32`. Supported SM120 GPT-2 shapes use
+the ThunderKittens fused FC+bias+GELU BF16 store; unsupported shapes fall back to
+the generic CUDA kernel. The trainer reports `mlp_activation_storage_strategy`,
+`stored_mlp_forward_strategy`, `stored_mlp_activation_blocks`,
 `stored_mlp_activation_elements`, `stored_mlp_activation_bytes`,
 `stored_mlp_activation_store_kernel_launches`,
 `stored_mlp_activation_restore_kernel_launches`, and

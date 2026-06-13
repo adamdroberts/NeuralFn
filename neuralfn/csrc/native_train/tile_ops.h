@@ -451,6 +451,17 @@ int nfn_native_tile_gelu_add_bias_bf16_act_float32(
     std::int64_t output_dim,
     void* cuda_stream);
 
+int nfn_native_tile_linear_bf16_gelu_bf16_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    std::uint16_t* pre_gelu_bf16_bits,
+    std::uint16_t* gelu_bf16_bits,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    void* cuda_stream);
+
 int nfn_native_tile_linear_bias_residual_add_float32(
     const float* residual,
     const float* linear_out,
