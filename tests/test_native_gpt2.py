@@ -1038,9 +1038,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["attention_backward_grad_layout_kernel_launches_per_block"] == 0
     assert tile_payload["attention_backward_grad_layout_legacy_launches_per_block"] == 1
     assert tile_payload["attention_backward_grad_layout_launches_elided_per_block"] == 1
-    assert tile_payload["attention_backward_strategy"] == "query-row-atomic-tile-score-reuse"
-    assert tile_payload["attention_backward_reuses_forward_workspace"] is False
-    assert tile_payload["attention_backward_recompute_forward_elided_per_block"] == 0
+    assert tile_payload["attention_backward_strategy"] == "tk-sm120-bf16-reuse-forward-workspace-bridge"
+    assert tile_payload["attention_backward_reuses_forward_workspace"] is True
+    assert tile_payload["attention_backward_uses_saved_forward_workspace"] is False
+    assert tile_payload["attention_activation_storage_strategy"] == "disabled-by-default-opt-in"
+    assert tile_payload["attention_backward_recompute_forward_elided_per_block"] == 1
     assert tile_payload["attention_backward_score_reuse_dim"] == 64
     assert tile_payload["attention_backward_scalar_cta_elision_factor"] == 192
     assert tile_payload["attention_backward_row_count"] * 192 == tile_payload["attention_backward_scalar_output_count"]
@@ -1746,6 +1748,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["attention_backward_grad_layout_launches_elided_per_block"] == 1
     assert train_transformer_payload["attention_backward_strategy"] == "query-row-atomic-tile-score-reuse"
     assert train_transformer_payload["attention_backward_reuses_forward_workspace"] is False
+    assert train_transformer_payload["attention_backward_uses_saved_forward_workspace"] is False
     assert train_transformer_payload["attention_backward_recompute_forward_elided_per_block"] == 0
     assert train_transformer_payload["attention_backward_score_reuse_dim"] == 64
     assert train_transformer_payload["attention_backward_scalar_cta_elision_factor"] == 192
@@ -1786,6 +1789,16 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["position_gradient_scratch_buffer_allocated"] is False
     assert train_transformer_payload["position_gradient_microbatch_full_copy_elided"] is True
     assert train_transformer_payload["position_gradient_microbatch_zero_elided"] is True
+    assert train_transformer_payload["attention_activation_storage_strategy"] == "disabled"
+    assert train_transformer_payload["stored_attention_activation_blocks"] == 0
+    assert train_transformer_payload["stored_attention_bf16_elements"] == 0
+    assert train_transformer_payload["stored_attention_bf16_bytes"] == 0
+    assert train_transformer_payload["stored_attention_lse_elements"] == 0
+    assert train_transformer_payload["stored_attention_lse_bytes"] == 0
+    assert train_transformer_payload["stored_attention_store_kernel_launches"] == 0
+    assert train_transformer_payload["stored_attention_restore_kernel_launches"] == 0
+    assert train_transformer_payload["stored_attention_backward_kernel_launches"] == 0
+    assert train_transformer_payload["stored_attention_backward_consumer_strategy"] == "disabled"
     assert train_transformer_payload["max_steps"] == 2
     assert train_transformer_payload["eval_every_steps"] == 1
     assert train_transformer_payload["eval_batches"] == 1
@@ -1872,6 +1885,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "backward_recompute_blocks": 11,
         "final_block_backward_recompute_elided": True,
         "backward_recompute_mlp_fc_gelu_elided": True,
+        "backward_recompute_attention_qkv_sdpa_elided": False,
+        "backward_recompute_attention_uses_saved_o": False,
         "backward_recompute_mlp_projection_elided": True,
         "backward_recompute_final_residual_elided": True,
         "mlp_proj_backward_gelu_inplace": True,
@@ -3124,7 +3139,15 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "stored_mlp_activation_backward_consumer_strategy" in gpt2_source_text
     assert "mlp.gelu.backward_inplace.bf16_bits" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_STORE_ATTENTION_ACTIVATIONS" in gpt2_source_text
+    assert "stored_attention_store_kernel_launches" in gpt2_source_text
+    assert "stored_attention_backward_kernel_launches" in gpt2_source_text
+    assert "stored_attention_backward_consumer_strategy" in gpt2_source_text
+    assert "recompute_block_from_saved_attention" in gpt2_source_text
+    assert "attention_backward_uses_saved_forward_workspace" in gpt2_source_text
     assert "backward_recompute_mlp_fc_gelu_elided" in gpt2_source_text
+    assert "backward_recompute_attention_qkv_sdpa_elided" in gpt2_source_text
+    assert "backward_recompute_attention_uses_saved_o" in gpt2_source_text
     assert "backward_recompute_mlp_projection_elided" in gpt2_source_text
     assert "backward_recompute_final_residual_elided" in gpt2_source_text
     assert "bool next_into(std::uint16_t* tokens, std::uint16_t* targets" in token_shards_header_text

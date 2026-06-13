@@ -1029,9 +1029,11 @@ bool print_tile_plan(
         << "  \"attention_backward_grad_layout_kernel_launches_per_block\": 0,\n"
         << "  \"attention_backward_grad_layout_legacy_launches_per_block\": 1,\n"
         << "  \"attention_backward_grad_layout_launches_elided_per_block\": 1,\n"
-        << "  \"attention_backward_strategy\": \"query-row-atomic-tile-score-reuse\",\n"
-        << "  \"attention_backward_reuses_forward_workspace\": false,\n"
-        << "  \"attention_backward_recompute_forward_elided_per_block\": 0,\n"
+        << "  \"attention_backward_strategy\": \"tk-sm120-bf16-reuse-forward-workspace-bridge\",\n"
+        << "  \"attention_backward_reuses_forward_workspace\": true,\n"
+        << "  \"attention_backward_uses_saved_forward_workspace\": false,\n"
+        << "  \"attention_activation_storage_strategy\": \"disabled-by-default-opt-in\",\n"
+        << "  \"attention_backward_recompute_forward_elided_per_block\": 1,\n"
         << "  \"attention_backward_row_count\": " << attention_row_count << ",\n"
         << "  \"attention_backward_scalar_output_count\": " << (attention_scalar_output_count * 3) << ",\n"
         << "  \"attention_backward_score_reuse_dim\": " << kAttentionBackwardDimReuse << ",\n"
@@ -6564,6 +6566,7 @@ int run_transformer_lm_training_json(
     using FillManyValuesFn = int (*)(float* const*, const std::int64_t*, const float*, std::int64_t, std::int64_t, void*);
     using CopyFn = int (*)(const float*, float*, std::int64_t, void*);
     using Uint16ToInt64Fn = int (*)(const std::uint16_t*, std::int64_t*, std::int64_t, void*);
+    using Bf16BitsToFloat32Fn = int (*)(const std::uint16_t*, float*, std::int64_t, void*);
     using StoreMlpActivationsBf16Fn =
         int (*)(const float*, const float*, const float*, std::uint16_t*, std::int64_t, std::int64_t, void*);
     using Float32ToBf16BitsManyFn =
@@ -6632,6 +6635,15 @@ int run_transformer_lm_training_json(
         std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t, std::int64_t, std::int64_t, float, bool, bool, bool,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using StoreAttentionTkWorkspaceFn = int (*)(
+        std::uint16_t*, std::uint16_t*, std::uint16_t*, std::uint16_t*, float*,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using AttentionBackwardToQkvFromSavedTkFn = int (*)(
+        const std::uint16_t*, const std::uint16_t*, const std::uint16_t*, const std::uint16_t*,
+        const float*, const float*, float*,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t,
+        std::int64_t, std::int64_t, std::int64_t, float, bool, bool, bool,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
     using TokenCrossEntropyPartialsFn = int (*)(
         const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
     using TokenCrossEntropyBackwardInplaceWorkspaceFn = int (*)(
@@ -6665,6 +6677,7 @@ int run_transformer_lm_training_json(
     InitGpt2TokenWeightFn init_gpt2_token_weight = nullptr;
     CopyFn copy = nullptr;
     Uint16ToInt64Fn uint16_to_int64 = nullptr;
+    Bf16BitsToFloat32Fn bf16_bits_to_float32 = nullptr;
     StoreMlpActivationsBf16Fn store_mlp_activations_bf16 = nullptr;
     Float32ToBf16BitsManyFn float32_to_bf16_bits_many = nullptr;
     GradientAccumulateFn gradient_accumulate = nullptr;
@@ -6734,6 +6747,8 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_bf16_cached_a_capacity_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_cache_entry_count_fn = nullptr;
     AttentionBackwardToQkvReuseForwardFn attention_backward_to_qkv_reuse_forward = nullptr;
+    StoreAttentionTkWorkspaceFn store_attention_tk_workspace = nullptr;
+    AttentionBackwardToQkvFromSavedTkFn attention_backward_to_qkv_from_saved_tk = nullptr;
     TokenCrossEntropyPartialsFn ce_partials = nullptr;
     TokenCrossEntropyBackwardInplaceWorkspaceFn ce_backward_inplace_workspace = nullptr;
     TokenCrossEntropyBackwardInplaceBf16BitsWorkspaceFn ce_backward_inplace_bf16_bits_workspace = nullptr;
@@ -6793,6 +6808,8 @@ int run_transformer_lm_training_json(
                     load_symbol<InitGpt2TokenWeightFn>(tile_handle, "nfn_native_tile_init_gpt2_token_weight_float32");
                 copy = load_symbol<CopyFn>(tile_handle, "nfn_native_tile_copy_float32");
                 uint16_to_int64 = load_symbol<Uint16ToInt64Fn>(tile_handle, "nfn_native_tile_uint16_to_int64");
+                bf16_bits_to_float32 =
+                    load_symbol<Bf16BitsToFloat32Fn>(tile_handle, "nfn_native_tile_bf16_bits_to_float32");
                 store_mlp_activations_bf16 = load_symbol<StoreMlpActivationsBf16Fn>(
                     tile_handle, "nfn_native_tile_store_mlp_activations_bf16_float32");
                 float32_to_bf16_bits_many = load_symbol<Float32ToBf16BitsManyFn>(
@@ -6928,6 +6945,11 @@ int run_transformer_lm_training_json(
                 trainer_linear_stats_reset();
                 attention_backward_to_qkv_reuse_forward = load_symbol<AttentionBackwardToQkvReuseForwardFn>(
                     tile_handle, "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32");
+                store_attention_tk_workspace = load_symbol<StoreAttentionTkWorkspaceFn>(
+                    tile_handle, "nfn_native_tile_attention_tk_store_forward_workspace_bf16");
+                attention_backward_to_qkv_from_saved_tk = load_symbol<AttentionBackwardToQkvFromSavedTkFn>(
+                    tile_handle,
+                    "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_merged_grad_float32");
                 ce_partials = load_symbol<TokenCrossEntropyPartialsFn>(
                     tile_handle, "nfn_native_tile_token_cross_entropy_partials_float32");
                 ce_backward_inplace_workspace = load_symbol<TokenCrossEntropyBackwardInplaceWorkspaceFn>(
@@ -7029,6 +7051,14 @@ int run_transformer_lm_training_json(
         store_mlp_activations_env == "TRUE" ||
         store_mlp_activations_env == "on" ||
         store_mlp_activations_env == "ON";
+    const std::string store_attention_activations_env =
+        env_or_empty("NFN_NATIVE_GPT2_STORE_ATTENTION_ACTIVATIONS");
+    const bool store_attention_activations_enabled =
+        store_attention_activations_env == "1" ||
+        store_attention_activations_env == "true" ||
+        store_attention_activations_env == "TRUE" ||
+        store_attention_activations_env == "on" ||
+        store_attention_activations_env == "ON";
     const std::string lm_head_bf16_logits_env = env_or_empty("NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS");
     const bool lm_head_bf16_logits_enabled =
         lm_head_bf16_logits_env.empty() ||
@@ -7333,6 +7363,13 @@ int run_transformer_lm_training_json(
         std::uint16_t* fc_out = nullptr;
         std::uint16_t* act = nullptr;
     };
+    struct StoredAttentionActivations {
+        std::uint16_t* q = nullptr;
+        std::uint16_t* k = nullptr;
+        std::uint16_t* v = nullptr;
+        std::uint16_t* o = nullptr;
+        float* lse = nullptr;
+    };
     std::vector<TransformerBlockParams> blocks(static_cast<std::size_t>(trained_layers));
     std::vector<TransformerBlockActivations> block_tapes(static_cast<std::size_t>(kActivationTapeCount));
     std::vector<float*> block_outputs(static_cast<std::size_t>(persistent_block_output_count), nullptr);
@@ -7348,6 +7385,26 @@ int run_transformer_lm_training_json(
     std::int64_t stored_mlp_activation_arena_bytes = 0;
     std::int64_t stored_mlp_activation_store_kernel_launches = 0;
     std::int64_t stored_mlp_activation_restore_kernel_launches = 0;
+    const std::int64_t stored_attention_block_count =
+        store_attention_activations_enabled && trained_layers > 0 ? trained_layers - 1 : 0;
+    const std::int64_t attention_lse_elements = batch_size * kHeads * seq_len;
+    const std::int64_t stored_attention_bf16_elements_per_block = activation_elements * 4;
+    const std::int64_t stored_attention_lse_elements_per_block = attention_lse_elements;
+    const std::int64_t stored_attention_bf16_elements =
+        stored_attention_block_count * stored_attention_bf16_elements_per_block;
+    const std::int64_t stored_attention_lse_elements =
+        stored_attention_block_count * stored_attention_lse_elements_per_block;
+    std::vector<StoredAttentionActivations> stored_attention_activations(
+        static_cast<std::size_t>(stored_attention_block_count));
+    std::uint16_t* stored_attention_bf16_arena = nullptr;
+    float* stored_attention_lse_arena = nullptr;
+    std::int64_t stored_attention_bf16_arena_elements = 0;
+    std::int64_t stored_attention_bf16_arena_bytes = 0;
+    std::int64_t stored_attention_lse_arena_elements = 0;
+    std::int64_t stored_attention_lse_arena_bytes = 0;
+    std::int64_t stored_attention_store_kernel_launches = 0;
+    std::int64_t stored_attention_restore_kernel_launches = 0;
+    std::int64_t stored_attention_backward_kernel_launches = 0;
     std::uint16_t* lm_head_bf16_logits = nullptr;
     std::int64_t lm_head_bf16_logit_elements = 0;
     std::int64_t lm_head_bf16_logit_bytes = 0;
@@ -7470,6 +7527,55 @@ int run_transformer_lm_training_json(
             stored.ln2_out = stored_mlp_activation_arena + base;
             stored.fc_out = stored_mlp_activation_arena + base + activation_elements;
             stored.act = stored_mlp_activation_arena + base + activation_elements + hidden_elements;
+        }
+    };
+    auto allocate_stored_attention_activation_arenas = [&]() {
+        if (!error.empty() || stored_attention_block_count <= 0) {
+            return;
+        }
+        if (stored_attention_bf16_elements <= 0 ||
+            stored_attention_bf16_elements >
+                static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t)) ||
+            stored_attention_lse_elements <= 0 ||
+            stored_attention_lse_elements >
+                static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(float))) {
+            error = "stored attention activation arena byte size overflow";
+            return;
+        }
+        void* raw_bf16 = nullptr;
+        const std::size_t bf16_bytes =
+            sizeof(std::uint16_t) * static_cast<std::size_t>(stored_attention_bf16_elements);
+        int status = cuda_malloc(&raw_bf16, bf16_bytes);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc stored_attention_bf16_arena");
+            return;
+        }
+        stored_attention_bf16_arena = static_cast<std::uint16_t*>(raw_bf16);
+        uint16_ptrs.push_back(stored_attention_bf16_arena);
+        stored_attention_bf16_arena_elements = stored_attention_bf16_elements;
+        stored_attention_bf16_arena_bytes = static_cast<std::int64_t>(bf16_bytes);
+
+        void* raw_lse = nullptr;
+        const std::size_t lse_bytes = sizeof(float) * static_cast<std::size_t>(stored_attention_lse_elements);
+        status = cuda_malloc(&raw_lse, lse_bytes);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc stored_attention_lse_arena");
+            return;
+        }
+        stored_attention_lse_arena = static_cast<float*>(raw_lse);
+        float_ptrs.push_back(stored_attention_lse_arena);
+        stored_attention_lse_arena_elements = stored_attention_lse_elements;
+        stored_attention_lse_arena_bytes = static_cast<std::int64_t>(lse_bytes);
+
+        for (std::int64_t i = 0; i < stored_attention_block_count; ++i) {
+            const std::int64_t bf16_base = i * stored_attention_bf16_elements_per_block;
+            const std::int64_t lse_base = i * stored_attention_lse_elements_per_block;
+            StoredAttentionActivations& stored = stored_attention_activations[static_cast<std::size_t>(i)];
+            stored.q = stored_attention_bf16_arena + bf16_base;
+            stored.k = stored_attention_bf16_arena + bf16_base + activation_elements;
+            stored.v = stored_attention_bf16_arena + bf16_base + activation_elements * 2;
+            stored.o = stored_attention_bf16_arena + bf16_base + activation_elements * 3;
+            stored.lse = stored_attention_lse_arena + lse_base;
         }
     };
     auto allocate_lm_head_bf16_logits = [&]() {
@@ -7655,6 +7761,7 @@ int run_transformer_lm_training_json(
     materialize_float_arena();
     allocate_token_arenas();
     allocate_stored_mlp_activation_arena();
+    allocate_stored_attention_activation_arenas();
     allocate_lm_head_bf16_logits();
     allocate_mlp_forward_act_bf16();
     const std::int64_t startup_per_buffer_zero_fill_launches_elided =
@@ -8131,6 +8238,27 @@ int run_transformer_lm_training_json(
             if (error.empty()) stored_mlp_activation_store_kernel_launches += 1;
         }
     };
+    auto store_attention_activations = [&](std::size_t block_index) {
+        if (block_index >= stored_attention_activations.size()) {
+            return;
+        }
+        StoredAttentionActivations& stored = stored_attention_activations[block_index];
+        if (error.empty()) {
+            run(store_attention_tk_workspace(
+                    stored.q,
+                    stored.k,
+                    stored.v,
+                    stored.o,
+                    stored.lse,
+                    batch_size,
+                    kHeads,
+                    seq_len,
+                    kHeadDim,
+                    nullptr),
+                "block" + std::to_string(block_index) + ".attention_activation_store.tk_bf16");
+            if (error.empty()) stored_attention_store_kernel_launches += 1;
+        }
+    };
     auto forward_block = [&](TransformerBlockParams& block,
                              TransformerBlockActivations& tape,
                              const float* block_input,
@@ -8187,9 +8315,48 @@ int run_transformer_lm_training_json(
         }
         stage_end(stage_event, stage_name);
     };
+    auto recompute_block_from_saved_attention = [&](TransformerBlockParams& block,
+                                                    TransformerBlockActivations& tape,
+                                                    const StoredAttentionActivations& stored_attention,
+                                                    const float* block_input,
+                                                    bool compute_mlp_activations,
+                                                    const std::string& label) {
+        const std::string stage_name = "block_recompute_saved_attention";
+        const std::int64_t stage_event = stage_begin(stage_name);
+        run_timed_stage(stage_name + ".ln1", [&]() {
+            if (error.empty()) run(layer_norm(block_input, block.ln1_weight, block.ln1_bias, tape.ln1_out, rows, kDim, kNormEps, nullptr), label + ".ln1.forward");
+        });
+        run_timed_stage(stage_name + ".attention.restore_o", [&]() {
+            if (error.empty()) run(bf16_bits_to_float32(stored_attention.o, tape.attn_heads, activation_elements, nullptr), label + ".attn.restore_o_bf16");
+        });
+        run_timed_stage(stage_name + ".attention.merge_heads", [&]() {
+            if (error.empty()) run(merge_heads(tape.attn_heads, tape.attn_out, batch_size, kHeads, seq_len, kHeadDim, nullptr), label + ".attn.merge_heads");
+        });
+        run_timed_stage(stage_name + ".attention.proj", [&]() {
+            if (error.empty()) run(linear_bf16(tape.attn_out, block.attn_proj_weight, nullptr, tape.attn_proj, rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.bf16");
+        });
+        run_timed_stage(stage_name + ".attention.residual", [&]() {
+            if (error.empty()) run(linear_bias_residual_add(block_input, tape.attn_proj, block.attn_proj_bias, residual_scale, tape.residual1, rows, kDim, nullptr), label + ".attn.bias_residual");
+        });
+        if (compute_mlp_activations) {
+            run_timed_stage(stage_name + ".mlp_fc_gelu", [&]() {
+                run_timed_stage(stage_name + ".mlp_fc_gelu.ln2", [&]() {
+                    if (error.empty()) run(layer_norm(tape.residual1, block.ln2_weight, block.ln2_bias, tape.ln2_out, rows, kDim, kNormEps, nullptr), label + ".ln2.forward");
+                });
+                run_timed_stage(stage_name + ".mlp_fc_gelu.fc", [&]() {
+                    if (error.empty()) run(linear_bf16(tape.ln2_out, block.fc_weight, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias.bf16");
+                });
+                run_timed_stage(stage_name + ".mlp_fc_gelu.gelu", [&]() {
+                    if (error.empty()) run(gelu_add_bias_bf16_act(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, mlp_forward_act_bf16, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward.bf16_act");
+                });
+            });
+        }
+        stage_end(stage_event, stage_name);
+    };
     auto backward_block = [&](TransformerBlockParams& block,
                               TransformerBlockActivations& tape,
                               const StoredMlpActivations* stored_mlp,
+                              const StoredAttentionActivations* stored_attention,
                               const float* block_input,
                               float* incoming_grad,
                               float* output_grad,
@@ -8256,7 +8423,38 @@ int run_transformer_lm_training_json(
         });
         run_timed_stage("block_backward.attn_sdpa", [&]() {
             run_timed_stage("block_backward.attn_sdpa.to_qkv", [&]() {
-                if (error.empty()) run(attention_backward_to_qkv_reuse_forward(grad_attn_out, grad_qkv, batch_size, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.backward_to_qkv_reuse_forward_from_merged_grad");
+                if (stored_attention != nullptr) {
+                    if (error.empty()) {
+                        run(attention_backward_to_qkv_from_saved_tk(
+                                stored_attention->q,
+                                stored_attention->k,
+                                stored_attention->v,
+                                stored_attention->o,
+                                stored_attention->lse,
+                                grad_attn_out,
+                                grad_qkv,
+                                batch_size,
+                                kHeads,
+                                kHeads,
+                                seq_len,
+                                seq_len,
+                                kHeadDim,
+                                kHeadDim,
+                                attention_scale,
+                                true,
+                                false,
+                                false,
+                                0,
+                                0,
+                                0,
+                                0,
+                                nullptr),
+                            label + ".attn.sdpa.backward_to_qkv_from_saved_tk_bf16");
+                        if (error.empty()) stored_attention_backward_kernel_launches += 1;
+                    }
+                } else {
+                    if (error.empty()) run(attention_backward_to_qkv_reuse_forward(grad_attn_out, grad_qkv, batch_size, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.backward_to_qkv_reuse_forward_from_merged_grad");
+                }
             });
         });
         run_timed_stage("block_backward.qkv", [&]() {
@@ -8296,6 +8494,7 @@ int run_transformer_lm_training_json(
             forward_block(blocks[i], tape, block_input, label + ".block" + std::to_string(i), true, true);
             final_block_output = tape.residual2;
             if (error.empty() && preserve_block_outputs && i + 1 < blocks.size()) {
+                store_attention_activations(i);
                 store_mlp_activations(i, tape);
                 run(copy(tape.residual2, block_outputs[i], activation_elements, nullptr),
                     label + ".block" + std::to_string(i) + ".output.copy");
@@ -8341,17 +8540,38 @@ int run_transformer_lm_training_json(
             const float* block_input = block_input_for(i);
             if (reverse_index != blocks.size()) {
                 const bool use_stored_mlp_activations = i < stored_mlp_activations.size();
-                forward_block(
-                    blocks[i],
-                    tape,
-                    block_input,
-                    "block" + std::to_string(i) + ".recompute",
-                    false,
-                    !use_stored_mlp_activations);
+                if (i < stored_attention_activations.size()) {
+                    recompute_block_from_saved_attention(
+                        blocks[i],
+                        tape,
+                        stored_attention_activations[i],
+                        block_input,
+                        !use_stored_mlp_activations,
+                        "block" + std::to_string(i) + ".recompute_saved_attention");
+                    if (error.empty()) stored_attention_restore_kernel_launches += 1;
+                } else {
+                    forward_block(
+                        blocks[i],
+                        tape,
+                        block_input,
+                        "block" + std::to_string(i) + ".recompute",
+                        false,
+                        !use_stored_mlp_activations);
+                }
             }
             const StoredMlpActivations* stored_mlp =
                 i < stored_mlp_activations.size() ? &stored_mlp_activations[i] : nullptr;
-            backward_block(blocks[i], tape, stored_mlp, block_input, incoming_grad, output_grad, "block" + std::to_string(i));
+            const StoredAttentionActivations* stored_attention =
+                i < stored_attention_activations.size() ? &stored_attention_activations[i] : nullptr;
+            backward_block(
+                blocks[i],
+                tape,
+                stored_mlp,
+                stored_attention,
+                block_input,
+                incoming_grad,
+                output_grad,
+                "block" + std::to_string(i));
             std::swap(incoming_grad, output_grad);
         }
         const std::int64_t embedding_backward_event = stage_begin("embedding_backward");
@@ -9086,12 +9306,16 @@ int run_transformer_lm_training_json(
         << "  \"attention_backward_grad_layout_legacy_launches_per_block\": 1,\n"
         << "  \"attention_backward_grad_layout_launches_elided_per_block\": 1,\n"
         << "  \"attention_backward_strategy\": \""
-        << (attention_backward_tk_launches > 0
+        << (stored_attention_backward_kernel_launches > 0
+                ? "tk-sm120-bf16-saved-forward-workspace-bridge"
+                : attention_backward_tk_launches > 0
                 ? "tk-sm120-bf16-reuse-forward-workspace-bridge"
                 : "query-row-atomic-tile-score-reuse")
         << "\",\n"
         << "  \"attention_backward_reuses_forward_workspace\": "
         << (attention_backward_tk_launches > 0 ? "true" : "false") << ",\n"
+        << "  \"attention_backward_uses_saved_forward_workspace\": "
+        << (stored_attention_backward_kernel_launches > 0 ? "true" : "false") << ",\n"
         << "  \"attention_backward_recompute_forward_elided_per_block\": "
         << (attention_backward_tk_launches > 0 ? 1 : 0) << ",\n"
         << "  \"attention_backward_tk_launch_count\": " << attention_backward_tk_launches << ",\n"
@@ -9133,6 +9357,20 @@ int run_transformer_lm_training_json(
         << "  \"stored_mlp_activation_restore_kernel_launches\": " << stored_mlp_activation_restore_kernel_launches << ",\n"
         << "  \"stored_mlp_activation_backward_consumer_strategy\": \""
         << (stored_mlp_activation_block_count > 0 ? "direct-bf16-dweight-and-gelu-backward" : "disabled")
+        << "\",\n"
+        << "  \"attention_activation_storage_strategy\": \""
+        << (stored_attention_block_count > 0 ? "tk-bf16-forward-store-saved-backward" : "disabled")
+        << "\",\n"
+        << "  \"stored_attention_activation_blocks\": " << stored_attention_block_count << ",\n"
+        << "  \"stored_attention_bf16_elements\": " << stored_attention_bf16_arena_elements << ",\n"
+        << "  \"stored_attention_bf16_bytes\": " << stored_attention_bf16_arena_bytes << ",\n"
+        << "  \"stored_attention_lse_elements\": " << stored_attention_lse_arena_elements << ",\n"
+        << "  \"stored_attention_lse_bytes\": " << stored_attention_lse_arena_bytes << ",\n"
+        << "  \"stored_attention_store_kernel_launches\": " << stored_attention_store_kernel_launches << ",\n"
+        << "  \"stored_attention_restore_kernel_launches\": " << stored_attention_restore_kernel_launches << ",\n"
+        << "  \"stored_attention_backward_kernel_launches\": " << stored_attention_backward_kernel_launches << ",\n"
+        << "  \"stored_attention_backward_consumer_strategy\": \""
+        << (stored_attention_block_count > 0 ? "saved-tk-bf16-qkvo-lse-backward-to-qkv" : "disabled")
         << "\",\n"
         << "  \"max_steps\": " << cfg.max_steps << ",\n"
         << "  \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
@@ -9229,12 +9467,18 @@ int run_transformer_lm_training_json(
         << "    \"final_block_backward_recompute_elided\": true,\n"
         << "    \"backward_recompute_mlp_fc_gelu_elided\": "
         << (stored_mlp_activation_block_count > 0 ? "true" : "false") << ",\n"
+        << "    \"backward_recompute_attention_qkv_sdpa_elided\": "
+        << (stored_attention_block_count > 0 ? "true" : "false") << ",\n"
+        << "    \"backward_recompute_attention_uses_saved_o\": "
+        << (stored_attention_block_count > 0 ? "true" : "false") << ",\n"
         << "    \"backward_recompute_mlp_projection_elided\": true,\n"
         << "    \"backward_recompute_final_residual_elided\": true,\n"
         << "    \"mlp_proj_backward_gelu_inplace\": true,\n"
         << "    \"mlp_proj_backward_grad_act_scratch_allocated\": false,\n"
         << "    \"activation_tape_strategy\": \""
-        << (stored_mlp_activation_block_count > 0
+        << (stored_attention_block_count > 0 && stored_mlp_activation_block_count > 0
+                ? "scratch-recompute-bf16-stored-attention-and-mlp-direct-backward"
+                : stored_mlp_activation_block_count > 0
                 ? "scratch-recompute-bf16-stored-mlp-direct-backward-opt-in"
                 : "scratch-recompute")
         << "\",\n"

@@ -207,6 +207,14 @@ Use the older
 `nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32`
 ABI for generic call sites that cannot guarantee the preceding matching forward.
 
+The dense GPT-2 trainer also has an opt-in saved-attention path behind
+`NFN_NATIVE_GPT2_STORE_ATTENTION_ACTIVATIONS=1`. It stores earlier-block TK BF16
+Q/K/V/O plus float LSE during forward, restores saved O for the attention
+projection recompute, and calls the saved-state backward ABI. This path is
+CUDA-only and avoids graph-editor tensors, but it is disabled by default because
+the 64x1024 TinyStories one-step probe regressed from about 74.4k tok/s to about
+12.6k tok/s from the added attention-state storage traffic.
+
 Native GPT-2 SDK config builders accept `template_name` and `graph_file`, which
 map to canonical compiled CLI `--template-name` and `--graph-file` arguments;
 Python CLI aliases such as `--template`, `--preset`, and `--graph` are
@@ -493,9 +501,11 @@ with the saved buffers and a row-major merged gradient to produce row-major
 `grad_qkv` without repacking Q/K/V or rerunning the forward pass. This ABI is
 shape-limited to the same TK SM120 causal attention constraints as the normal
 bridge and returns the native missing-kernel status when the build or shape is
-not TK-compatible.
+not TK-compatible. For dense GPT-2, set
+`NFN_NATIVE_GPT2_STORE_ATTENTION_ACTIVATIONS=1` only when profiling that saved
+path; the default remains the faster process-workspace reuse path.
 
-Full GPT-2 `--train-transformer-lm` fuses both attention QKV layout directions. It uses `nfn_native_tile_split_qkv_to_heads_add_bias_float32` after a no-bias QKV projection, applying Q/K/V bias while writing Q/K/V head-major buffers directly in one Tile launch per block instead of a separate QKV bias add, QKV split, and three reshape launches. It uses `nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32` so TK SDPA backward reads the row-major attention-output gradient directly and converts bf16 `dQ`/`dK`/`dV` head-major gradients directly into row-major `grad_qkv`, replacing three bf16-to-float gradient conversion launches plus the heads-to-QKV merge launch. The full trainer no longer allocates row-major `grad_q`/`grad_k`/`grad_v` or head-major `grad_q_heads`/`grad_k_heads`/`grad_v_heads` scratch buffers. Native plan and training JSON report `qkv_forward_layout_strategy: "fused-split-to-heads"`, `qkv_bias_layout_strategy: "fused-qkv-bias-split-to-heads"`, `attention_backward_grad_layout_strategy: "merged-grad-out-direct"`, `attention_backward_qkv_bridge_strategy: "fused-bf16-heads-to-row-qkv"`, `attention_backward_strategy: "query-row-atomic-tile-score-reuse"`, `qkv_backward_layout_strategy: "fused-heads-to-qkv"`, and the elided layout launches per block.
+Full GPT-2 `--train-transformer-lm` fuses both attention QKV layout directions. It uses `nfn_native_tile_split_qkv_to_heads_add_bias_float32` after a no-bias QKV projection, applying Q/K/V bias while writing Q/K/V head-major buffers directly in one Tile launch per block instead of a separate QKV bias add, QKV split, and three reshape launches. It uses the TK backward-to-QKV bridge so SDPA backward reads the row-major attention-output gradient directly and converts bf16 `dQ`/`dK`/`dV` head-major gradients directly into row-major `grad_qkv`, replacing three bf16-to-float gradient conversion launches plus the heads-to-QKV merge launch. The full trainer no longer allocates row-major `grad_q`/`grad_k`/`grad_v` or head-major `grad_q_heads`/`grad_k_heads`/`grad_v_heads` scratch buffers. Native plan and training JSON report `qkv_forward_layout_strategy: "fused-split-to-heads"`, `qkv_bias_layout_strategy: "fused-qkv-bias-split-to-heads"`, `attention_backward_grad_layout_strategy: "merged-grad-out-direct"`, `attention_backward_qkv_bridge_strategy: "fused-bf16-heads-to-row-qkv"`, `attention_backward_strategy: "tk-sm120-bf16-reuse-forward-workspace-bridge"` by default, `qkv_backward_layout_strategy: "fused-heads-to-qkv"`, and the elided layout launches per block. When `NFN_NATIVE_GPT2_STORE_ATTENTION_ACTIVATIONS=1` is set, runtime JSON switches `attention_backward_strategy` to `"tk-sm120-bf16-saved-forward-workspace-bridge"` and reports saved-attention arena sizes plus store/restore/backward counts.
 
 Full GPT-2 `--train-transformer-lm` also fuses the MLP `c_fc` bias add with
 GELU. `nfn_native_tile_gelu_add_bias_float32` consumes the no-bias CUBLAS
