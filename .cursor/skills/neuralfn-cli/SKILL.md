@@ -186,6 +186,15 @@ Canonical docs:
   attention-to-QKV records such as `block_backward.mlp_proj.dweight`,
   `block_backward.mlp_proj.dinput`, `block_backward.attn_sdpa.to_qkv`, and
   `block_backward.qkv.dweight`.
+- GPT-2 block backward should use
+  `nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32`
+  only after a matching TK attention forward has populated the process
+  workspace. JSON should report `attention_backward_strategy:
+  "tk-sm120-bf16-reuse-forward-workspace-bridge"`,
+  `attention_backward_reuses_forward_workspace: true`, and
+  `attention_backward_recompute_forward_elided_per_block: 1`; generic paths
+  that cannot prove the forward/backward ordering should keep using
+  `nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32`.
 - Full GPT-2 `--train-transformer-lm` should use
   `nfn_native_tile_split_qkv_to_heads_add_bias_float32` to apply Q/K/V bias and
   write Q/K/V head-major buffers in one launch per block. Keep

@@ -1011,6 +1011,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["attention_backward_grad_layout_legacy_launches_per_block"] == 1
     assert tile_payload["attention_backward_grad_layout_launches_elided_per_block"] == 1
     assert tile_payload["attention_backward_strategy"] == "query-row-atomic-tile-score-reuse"
+    assert tile_payload["attention_backward_reuses_forward_workspace"] is False
+    assert tile_payload["attention_backward_recompute_forward_elided_per_block"] == 0
     assert tile_payload["attention_backward_score_reuse_dim"] == 64
     assert tile_payload["attention_backward_scalar_cta_elision_factor"] == 192
     assert tile_payload["attention_backward_row_count"] * 192 == tile_payload["attention_backward_scalar_output_count"]
@@ -1026,6 +1028,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert (
         "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32"
+        in tile_payload["available_native_kernels"]
+    )
+    assert (
+        "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32"
         in tile_payload["available_native_kernels"]
     )
     assert "nfn_native_tile_attention_forward_stats_reset" in tile_payload["available_native_kernels"]
@@ -1685,6 +1691,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["attention_backward_grad_layout_legacy_launches_per_block"] == 1
     assert train_transformer_payload["attention_backward_grad_layout_launches_elided_per_block"] == 1
     assert train_transformer_payload["attention_backward_strategy"] == "query-row-atomic-tile-score-reuse"
+    assert train_transformer_payload["attention_backward_reuses_forward_workspace"] is False
+    assert train_transformer_payload["attention_backward_recompute_forward_elided_per_block"] == 0
     assert train_transformer_payload["attention_backward_score_reuse_dim"] == 64
     assert train_transformer_payload["attention_backward_scalar_cta_elision_factor"] == 192
     assert (
@@ -2873,6 +2881,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_scaled_dot_product_attention_backward_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_backward_from_merged_grad_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32" in header_text
+    assert (
+        "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32"
+        in header_text
+    )
     assert "linear_backward_weight_chunked_atomic_float32_kernel" in kernels_text
     assert "linear_backward_bias_chunked_atomic_float32_kernel" in kernels_text
     assert "cublas_linear_forward_float32" in kernels_text
@@ -2977,6 +2989,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "bf16_heads_to_qkv_float32_kernel" in kernels_text
     assert "launch_scaled_dot_product_attention_backward_from_merged_grad_float32" in kernels_text
     assert "launch_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32" in kernels_text
+    assert "launch_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32" in kernels_text
     assert "global_norm_clip_scale_float32_kernel" in kernels_text
     assert "scale_inplace_by_device_float32_kernel" in kernels_text
     assert "scaled_residual_add_float32_kernel" in kernels_text
@@ -3617,6 +3630,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32" in exported
         assert "nfn_native_tile_scaled_dot_product_attention_float32" in exported
         assert "nfn_native_tile_scaled_dot_product_attention_backward_float32" in exported
+        assert (
+            "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32"
+            in exported
+        )
 
 
 def test_cli_install_script_help_and_no_native_mode() -> None:

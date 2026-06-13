@@ -164,6 +164,19 @@ attention-to-QKV entries such as `block_backward.mlp_proj.dweight`,
 synchronizes before reading event timings, so leave it disabled for normal
 throughput runs.
 
+The GPT-2 block backward path uses
+`nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32`
+after a matching original or recomputed TK attention forward has populated the
+process attention workspace. That skips repacking Q/K/V and skips the duplicate
+TK forward inside attention backward. Training JSON reports
+`attention_backward_strategy:
+"tk-sm120-bf16-reuse-forward-workspace-bridge"`,
+`attention_backward_reuses_forward_workspace: true`, and
+`attention_backward_recompute_forward_elided_per_block: 1` when this path runs.
+Use the older
+`nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32`
+ABI for generic call sites that cannot guarantee the preceding matching forward.
+
 Native GPT-2 SDK config builders accept `template_name` and `graph_file`, which
 map to canonical compiled CLI `--template-name` and `--graph-file` arguments;
 Python CLI aliases such as `--template`, `--preset`, and `--graph` are
@@ -407,6 +420,10 @@ marker. Training JSON reports `checkpoint.payload_pack_strategy:
 `float32_d2h_bytes_elided`.
 
 `bash tools/build_native_train_tile_ops.sh` builds `libnfn_native_train_tile_ops.so`, a raw C ABI over CUDA Tile kernels from `neuralfn/csrc/tile_cuda/kernels.cu`. Native C++ trainers should link this library for single-buffer and multi-buffer fill/zeroing, single-buffer and multi-buffer sumsq partials, single-buffer and multi-buffer AdamW, gradient accumulation, deterministic GPT-2 token-weight initialization, device float32-to-bf16 checkpoint payload packing, device-side global-norm clip scale finalization, device-scalar gradient scaling, reductions, linear, forced-BF16 linear, linear input/forced-BF16 input/weight/weight-accumulate/forced-BF16 weight-accumulate/bias/bias-accumulate backward, scaled residual add, fused projection bias+residual add, fused QKV split/merge, fused GPT-2 QKV split-to-heads, fused GPT-2 QKV bias+split-to-heads, fused GPT-2 heads-to-QKV gradient merge, fused TK bf16 attention-gradient heads-to-QKV bridge, reshape-heads/merge-heads, GELU forward, fused bias+GELU forward, GELU backward, token embedding forward/weight backward, absolute-position embedding forward/backward/backward-accumulate, RMSNorm, RMSNorm input backward, LayerNorm, LayerNorm input/affine/affine-accumulate backward, softmax, token and masked token cross-entropy partials, token and masked token cross-entropy logits backward, and scaled dot-product attention forward/backward instead of importing the PyTorch extension binding. The trainer build defines `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1` and links `libcublas`, so the exported native linear forward, dInput, dWeight, and accumulate-dWeight ABI symbols use GPU GEMM, while bias and accumulate-bias backward use GPU GEMV over a cached device ones vector initialized by a Tile fill kernel. The generic Tile extension build keeps the pure Tile fallback. CE logits backward uses a row-wise Tile path for vocabularies up to 1024 and a chunked row-wise path with reusable row-stat workspace for full GPT-class vocabularies. Linear weight, accumulate-weight, bias, and accumulate-bias backward keep the row-chunked tiled atomic fallback for builds or shapes that do not use the trainer cuBLAS path.
+
+Trainer loops that own attention forward/backward ordering can use the raw TK
+attention backward-to-QKV forward-workspace reuse ABI; generic SDK callers should
+prefer the normal attention backward-to-QKV ABI.
 
 Full GPT-2 `--train-transformer-lm` fuses both attention QKV layout directions. It uses `nfn_native_tile_split_qkv_to_heads_add_bias_float32` after a no-bias QKV projection, applying Q/K/V bias while writing Q/K/V head-major buffers directly in one Tile launch per block instead of a separate QKV bias add, QKV split, and three reshape launches. It uses `nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32` so TK SDPA backward reads the row-major attention-output gradient directly and converts bf16 `dQ`/`dK`/`dV` head-major gradients directly into row-major `grad_qkv`, replacing three bf16-to-float gradient conversion launches plus the heads-to-QKV merge launch. The full trainer no longer allocates row-major `grad_q`/`grad_k`/`grad_v` or head-major `grad_q_heads`/`grad_k_heads`/`grad_v_heads` scratch buffers. Native plan and training JSON report `qkv_forward_layout_strategy: "fused-split-to-heads"`, `qkv_bias_layout_strategy: "fused-qkv-bias-split-to-heads"`, `attention_backward_grad_layout_strategy: "merged-grad-out-direct"`, `attention_backward_qkv_bridge_strategy: "fused-bf16-heads-to-row-qkv"`, `attention_backward_strategy: "query-row-atomic-tile-score-reuse"`, `qkv_backward_layout_strategy: "fused-heads-to-qkv"`, and the elided layout launches per block.
 

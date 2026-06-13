@@ -652,6 +652,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_scaled_dot_product_attention_backward_float32",
         "nfn_native_tile_scaled_dot_product_attention_backward_from_merged_grad_float32",
         "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32",
+        "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32",
         "nfn_native_tile_scaled_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_add_float32",
         "nfn_native_tile_gelu_float32",
@@ -1006,6 +1007,8 @@ bool print_tile_plan(
         << "  \"attention_backward_grad_layout_legacy_launches_per_block\": 1,\n"
         << "  \"attention_backward_grad_layout_launches_elided_per_block\": 1,\n"
         << "  \"attention_backward_strategy\": \"query-row-atomic-tile-score-reuse\",\n"
+        << "  \"attention_backward_reuses_forward_workspace\": false,\n"
+        << "  \"attention_backward_recompute_forward_elided_per_block\": 0,\n"
         << "  \"attention_backward_row_count\": " << attention_row_count << ",\n"
         << "  \"attention_backward_scalar_output_count\": " << (attention_scalar_output_count * 3) << ",\n"
         << "  \"attention_backward_score_reuse_dim\": " << kAttentionBackwardDimReuse << ",\n"
@@ -6501,7 +6504,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_trainer_linear_bf16_cache_entry_count",
         "nfn_native_tile_scaled_dot_product_attention_backward_float32",
         "nfn_native_tile_scaled_dot_product_attention_backward_from_merged_grad_float32",
-        "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32",
+        "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32",
         "nfn_native_tile_token_cross_entropy_partials_float32",
         "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32",
         "nfn_native_tile_adamw_step_float32",
@@ -6560,8 +6563,8 @@ int run_transformer_lm_training_json(
     using AttentionStatsErrorFn = int (*)();
     using TrainerLinearStatsResetFn = void (*)();
     using TrainerLinearStatsCountFn = std::int64_t (*)();
-    using AttentionBackwardToQkvFn = int (*)(
-        const float*, const float*, const float*, const float*, float*,
+    using AttentionBackwardToQkvReuseForwardFn = int (*)(
+        const float*, float*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t, std::int64_t, std::int64_t, float, bool, bool, bool,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
@@ -6655,7 +6658,7 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_bf16_workspace_b_capacity_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_cached_a_capacity_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_cache_entry_count_fn = nullptr;
-    AttentionBackwardToQkvFn attention_backward_to_qkv = nullptr;
+    AttentionBackwardToQkvReuseForwardFn attention_backward_to_qkv_reuse_forward = nullptr;
     TokenCrossEntropyPartialsFn ce_partials = nullptr;
     TokenCrossEntropyBackwardInplaceWorkspaceFn ce_backward_inplace_workspace = nullptr;
     FillManyFn fill_many = nullptr;
@@ -6828,8 +6831,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_trainer_linear_bf16_cache_entry_count");
                 attention_stats_reset();
                 trainer_linear_stats_reset();
-                attention_backward_to_qkv = load_symbol<AttentionBackwardToQkvFn>(
-                    tile_handle, "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32");
+                attention_backward_to_qkv_reuse_forward = load_symbol<AttentionBackwardToQkvReuseForwardFn>(
+                    tile_handle, "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32");
                 ce_partials = load_symbol<TokenCrossEntropyPartialsFn>(
                     tile_handle, "nfn_native_tile_token_cross_entropy_partials_float32");
                 ce_backward_inplace_workspace = load_symbol<TokenCrossEntropyBackwardInplaceWorkspaceFn>(
@@ -7927,7 +7930,7 @@ int run_transformer_lm_training_json(
         });
         run_timed_stage("block_backward.attn_sdpa", [&]() {
             run_timed_stage("block_backward.attn_sdpa.to_qkv", [&]() {
-                if (error.empty()) run(attention_backward_to_qkv(tape.q_heads, tape.k_heads, tape.v_heads, grad_attn_out, grad_qkv, batch_size, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.backward_to_qkv_from_merged_grad");
+                if (error.empty()) run(attention_backward_to_qkv_reuse_forward(grad_attn_out, grad_qkv, batch_size, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.backward_to_qkv_reuse_forward_from_merged_grad");
             });
         });
         run_timed_stage("block_backward.qkv", [&]() {
@@ -8717,9 +8720,13 @@ int run_transformer_lm_training_json(
         << "  \"attention_backward_grad_layout_launches_elided_per_block\": 1,\n"
         << "  \"attention_backward_strategy\": \""
         << (attention_backward_tk_launches > 0
-                ? "tk-sm120-bf16-recompute-forward-bridge"
+                ? "tk-sm120-bf16-reuse-forward-workspace-bridge"
                 : "query-row-atomic-tile-score-reuse")
         << "\",\n"
+        << "  \"attention_backward_reuses_forward_workspace\": "
+        << (attention_backward_tk_launches > 0 ? "true" : "false") << ",\n"
+        << "  \"attention_backward_recompute_forward_elided_per_block\": "
+        << (attention_backward_tk_launches > 0 ? 1 : 0) << ",\n"
         << "  \"attention_backward_tk_launch_count\": " << attention_backward_tk_launches << ",\n"
         << "  \"attention_backward_row_count\": " << (rows * kHeads) << ",\n"
         << "  \"attention_backward_scalar_output_count\": " << (rows * kDim * 3) << ",\n"

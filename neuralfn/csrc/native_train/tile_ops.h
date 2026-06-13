@@ -661,4 +661,24 @@ int nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_gra
     std::int64_t compress_stride,
     void* cuda_stream);
 
+int nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32(
+    const float* grad_out,
+    float* grad_qkv,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    void* cuda_stream);
+
 }

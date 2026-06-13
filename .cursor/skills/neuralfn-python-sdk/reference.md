@@ -299,6 +299,15 @@ dWeight, bias, dInput, activation, residual-add, and attention-to-QKV records
 such as `block_backward.mlp_proj.dweight`,
 `block_backward.mlp_proj.dinput`, `block_backward.attn_sdpa.to_qkv`, and
 `block_backward.qkv.dweight`.
+GPT-2 block backward should use
+`nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32`
+only after a matching TK attention forward has populated the process workspace.
+Native JSON should report `attention_backward_strategy:
+"tk-sm120-bf16-reuse-forward-workspace-bridge"`,
+`attention_backward_reuses_forward_workspace: true`, and
+`attention_backward_recompute_forward_elided_per_block: 1`; generic paths that
+cannot prove the forward/backward ordering should keep using
+`nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32`.
 The trainer-facing build also defaults to the SM120 ThunderKittens bf16
 attention bridge (`NFN_TILE_CUDA_USE_TK_ATTENTION=1`,
 `NFN_TILE_CUDA_ARCH=sm_120a`) for GPT-2-compatible causal SDPA. Keep
