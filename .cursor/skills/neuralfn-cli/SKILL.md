@@ -181,7 +181,11 @@ Canonical docs:
   gradient zero/clip, and AdamW update. Keep nested diagnostic records for
   LM-head logits/CE/dHidden/dWeight, block forward/recompute attention and MLP
   phases, and block backward MLP projection, MLP fc, LayerNorm/residual,
-  attention projection, attention SDPA, and QKV phases.
+  attention projection, attention SDPA, and QKV phases. Preserve individual
+  block-backward dWeight, bias, dInput, activation, residual-add, and
+  attention-to-QKV records such as `block_backward.mlp_proj.dweight`,
+  `block_backward.mlp_proj.dinput`, `block_backward.attn_sdpa.to_qkv`, and
+  `block_backward.qkv.dweight`.
 - Full GPT-2 `--train-transformer-lm` should use
   `nfn_native_tile_split_qkv_to_heads_add_bias_float32` to apply Q/K/V bias and
   write Q/K/V head-major buffers in one launch per block. Keep

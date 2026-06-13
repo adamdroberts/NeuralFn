@@ -7879,38 +7879,78 @@ int run_transformer_lm_training_json(
     auto backward_block = [&](TransformerBlockParams& block, TransformerBlockActivations& tape, const float* block_input, float* incoming_grad, float* output_grad, const std::string& label) {
         const std::int64_t stage_event = stage_begin("block_backward");
         run_timed_stage("block_backward.mlp_proj", [&]() {
-            if (error.empty()) run(linear_backward_weight_accumulate_bf16(tape.act, incoming_grad, block.accum_grad_mlp_proj_weight, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_weight.accumulate.bf16");
-            if (error.empty()) run(linear_backward_bias_accumulate(incoming_grad, block.accum_grad_mlp_proj_bias, rows, kDim, nullptr), label + ".mlp.proj.backward_bias.accumulate");
-            if (error.empty()) run(linear_backward_input_bf16(incoming_grad, block.mlp_proj_weight, grad_fc_out, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_input.bf16");
-            if (error.empty()) run(gelu_backward_inplace(tape.fc_out, grad_fc_out, hidden_elements, nullptr), label + ".mlp.gelu.backward_inplace");
+            run_timed_stage("block_backward.mlp_proj.dweight", [&]() {
+                if (error.empty()) run(linear_backward_weight_accumulate_bf16(tape.act, incoming_grad, block.accum_grad_mlp_proj_weight, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_weight.accumulate.bf16");
+            });
+            run_timed_stage("block_backward.mlp_proj.bias", [&]() {
+                if (error.empty()) run(linear_backward_bias_accumulate(incoming_grad, block.accum_grad_mlp_proj_bias, rows, kDim, nullptr), label + ".mlp.proj.backward_bias.accumulate");
+            });
+            run_timed_stage("block_backward.mlp_proj.dinput", [&]() {
+                if (error.empty()) run(linear_backward_input_bf16(incoming_grad, block.mlp_proj_weight, grad_fc_out, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_input.bf16");
+            });
+            run_timed_stage("block_backward.mlp_proj.gelu", [&]() {
+                if (error.empty()) run(gelu_backward_inplace(tape.fc_out, grad_fc_out, hidden_elements, nullptr), label + ".mlp.gelu.backward_inplace");
+            });
         });
         run_timed_stage("block_backward.mlp_fc", [&]() {
-            if (error.empty()) run(linear_backward_weight_accumulate_bf16(tape.ln2_out, grad_fc_out, block.accum_grad_fc_weight, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight.accumulate.bf16");
-            if (error.empty()) run(linear_backward_bias_accumulate(grad_fc_out, block.accum_grad_fc_bias, rows, kHidden, nullptr), label + ".mlp.fc.backward_bias.accumulate");
-            if (error.empty()) run(linear_backward_input_bf16(grad_fc_out, block.fc_weight, grad_ln2, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_input.bf16");
+            run_timed_stage("block_backward.mlp_fc.dweight", [&]() {
+                if (error.empty()) run(linear_backward_weight_accumulate_bf16(tape.ln2_out, grad_fc_out, block.accum_grad_fc_weight, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight.accumulate.bf16");
+            });
+            run_timed_stage("block_backward.mlp_fc.bias", [&]() {
+                if (error.empty()) run(linear_backward_bias_accumulate(grad_fc_out, block.accum_grad_fc_bias, rows, kHidden, nullptr), label + ".mlp.fc.backward_bias.accumulate");
+            });
+            run_timed_stage("block_backward.mlp_fc.dinput", [&]() {
+                if (error.empty()) run(linear_backward_input_bf16(grad_fc_out, block.fc_weight, grad_ln2, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_input.bf16");
+            });
         });
         run_timed_stage("block_backward.ln2_residual", [&]() {
-            if (error.empty()) run(layer_norm_backward_affine_accumulate(tape.residual1, grad_ln2, block.accum_grad_ln2_weight, block.accum_grad_ln2_bias, rows, kDim, kNormEps, nullptr), label + ".ln2.backward_affine.accumulate");
-            if (error.empty()) run(layer_norm_backward_input(tape.residual1, grad_ln2, block.ln2_weight, grad_residual1_from_mlp, rows, kDim, kNormEps, nullptr), label + ".ln2.backward_input");
-            if (error.empty()) run(residual_add(incoming_grad, grad_residual1_from_mlp, residual_scale, grad_residual1, activation_elements, nullptr), label + ".mlp.residual.backward_add");
+            run_timed_stage("block_backward.ln2_residual.affine", [&]() {
+                if (error.empty()) run(layer_norm_backward_affine_accumulate(tape.residual1, grad_ln2, block.accum_grad_ln2_weight, block.accum_grad_ln2_bias, rows, kDim, kNormEps, nullptr), label + ".ln2.backward_affine.accumulate");
+            });
+            run_timed_stage("block_backward.ln2_residual.dinput", [&]() {
+                if (error.empty()) run(layer_norm_backward_input(tape.residual1, grad_ln2, block.ln2_weight, grad_residual1_from_mlp, rows, kDim, kNormEps, nullptr), label + ".ln2.backward_input");
+            });
+            run_timed_stage("block_backward.ln2_residual.add", [&]() {
+                if (error.empty()) run(residual_add(incoming_grad, grad_residual1_from_mlp, residual_scale, grad_residual1, activation_elements, nullptr), label + ".mlp.residual.backward_add");
+            });
         });
         run_timed_stage("block_backward.attn_proj", [&]() {
-            if (error.empty()) run(linear_backward_weight_accumulate_bf16(tape.attn_out, grad_residual1, block.accum_grad_attn_proj_weight, rows, kDim, kDim, nullptr), label + ".attn.out.backward_weight.accumulate.bf16");
-            if (error.empty()) run(linear_backward_bias_accumulate(grad_residual1, block.accum_grad_attn_proj_bias, rows, kDim, nullptr), label + ".attn.out.backward_bias.accumulate");
-            if (error.empty()) run(linear_backward_input_bf16(grad_residual1, block.attn_proj_weight, grad_attn_out, rows, kDim, kDim, nullptr), label + ".attn.out.backward_input.bf16");
+            run_timed_stage("block_backward.attn_proj.dweight", [&]() {
+                if (error.empty()) run(linear_backward_weight_accumulate_bf16(tape.attn_out, grad_residual1, block.accum_grad_attn_proj_weight, rows, kDim, kDim, nullptr), label + ".attn.out.backward_weight.accumulate.bf16");
+            });
+            run_timed_stage("block_backward.attn_proj.bias", [&]() {
+                if (error.empty()) run(linear_backward_bias_accumulate(grad_residual1, block.accum_grad_attn_proj_bias, rows, kDim, nullptr), label + ".attn.out.backward_bias.accumulate");
+            });
+            run_timed_stage("block_backward.attn_proj.dinput", [&]() {
+                if (error.empty()) run(linear_backward_input_bf16(grad_residual1, block.attn_proj_weight, grad_attn_out, rows, kDim, kDim, nullptr), label + ".attn.out.backward_input.bf16");
+            });
         });
         run_timed_stage("block_backward.attn_sdpa", [&]() {
-            if (error.empty()) run(attention_backward_to_qkv(tape.q_heads, tape.k_heads, tape.v_heads, grad_attn_out, grad_qkv, batch_size, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.backward_to_qkv_from_merged_grad");
+            run_timed_stage("block_backward.attn_sdpa.to_qkv", [&]() {
+                if (error.empty()) run(attention_backward_to_qkv(tape.q_heads, tape.k_heads, tape.v_heads, grad_attn_out, grad_qkv, batch_size, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.backward_to_qkv_from_merged_grad");
+            });
         });
         run_timed_stage("block_backward.qkv", [&]() {
-            if (error.empty()) run(linear_backward_weight_accumulate_bf16(tape.ln1_out, grad_qkv, block.accum_grad_qkv_weight, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_weight.accumulate.bf16");
-            if (error.empty()) run(linear_backward_bias_accumulate(grad_qkv, block.accum_grad_qkv_bias, rows, kQkvDim, nullptr), label + ".attn.qkv.backward_bias.accumulate");
-            if (error.empty()) run(linear_backward_input_bf16(grad_qkv, block.qkv_weight, grad_ln1, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_input.bf16");
+            run_timed_stage("block_backward.qkv.dweight", [&]() {
+                if (error.empty()) run(linear_backward_weight_accumulate_bf16(tape.ln1_out, grad_qkv, block.accum_grad_qkv_weight, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_weight.accumulate.bf16");
+            });
+            run_timed_stage("block_backward.qkv.bias", [&]() {
+                if (error.empty()) run(linear_backward_bias_accumulate(grad_qkv, block.accum_grad_qkv_bias, rows, kQkvDim, nullptr), label + ".attn.qkv.backward_bias.accumulate");
+            });
+            run_timed_stage("block_backward.qkv.dinput", [&]() {
+                if (error.empty()) run(linear_backward_input_bf16(grad_qkv, block.qkv_weight, grad_ln1, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_input.bf16");
+            });
         });
         run_timed_stage("block_backward.ln1_residual", [&]() {
-            if (error.empty()) run(layer_norm_backward_affine_accumulate(block_input, grad_ln1, block.accum_grad_ln1_weight, block.accum_grad_ln1_bias, rows, kDim, kNormEps, nullptr), label + ".ln1.backward_affine.accumulate");
-            if (error.empty()) run(layer_norm_backward_input(block_input, grad_ln1, block.ln1_weight, grad_x_from_attn, rows, kDim, kNormEps, nullptr), label + ".ln1.backward_input");
-            if (error.empty()) run(residual_add(grad_residual1, grad_x_from_attn, residual_scale, output_grad, activation_elements, nullptr), label + ".attn.residual.backward_add");
+            run_timed_stage("block_backward.ln1_residual.affine", [&]() {
+                if (error.empty()) run(layer_norm_backward_affine_accumulate(block_input, grad_ln1, block.accum_grad_ln1_weight, block.accum_grad_ln1_bias, rows, kDim, kNormEps, nullptr), label + ".ln1.backward_affine.accumulate");
+            });
+            run_timed_stage("block_backward.ln1_residual.dinput", [&]() {
+                if (error.empty()) run(layer_norm_backward_input(block_input, grad_ln1, block.ln1_weight, grad_x_from_attn, rows, kDim, kNormEps, nullptr), label + ".ln1.backward_input");
+            });
+            run_timed_stage("block_backward.ln1_residual.add", [&]() {
+                if (error.empty()) run(residual_add(grad_residual1, grad_x_from_attn, residual_scale, output_grad, activation_elements, nullptr), label + ".attn.residual.backward_add");
+            });
         });
         stage_end(stage_event, "block_backward");
     };

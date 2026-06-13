@@ -156,7 +156,11 @@ forward/recompute/backward, LM-head backward, final-norm/embedding backward,
 gradient zero/clip, and AdamW update. Diagnostic runs also emit nested entries
 for LM-head logits/CE/dHidden/dWeight, block forward/recompute attention and
 MLP phases, and block backward MLP projection, MLP fc, LayerNorm/residual,
-attention projection, attention SDPA, and QKV phases. The stage profiler
+attention projection, attention SDPA, and QKV phases. The block backward
+records include individual dWeight, bias, dInput, activation, residual-add, and
+attention-to-QKV entries such as `block_backward.mlp_proj.dweight`,
+`block_backward.mlp_proj.dinput`, `block_backward.attn_sdpa.to_qkv`, and
+`block_backward.qkv.dweight`. The stage profiler
 synchronizes before reading event timings, so leave it disabled for normal
 throughput runs.
 
