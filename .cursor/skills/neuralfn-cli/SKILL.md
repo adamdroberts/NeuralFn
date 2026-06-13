@@ -42,8 +42,16 @@ Canonical docs:
   tokenizer, and training manifests; treat `--weights` as an override.
 - Save artifacts before validation; validation failures should not erase a
   successful training artifact.
-- Keep root `nfn --help` / no-argument startup and explicit dense GPT-2 native
+- Keep root `nfn --help` / no-argument startup and explicit dense GPT native
   training dispatch off the `nfn_impl` and Torch import path.
+- Treat `nfn train --base-model gpt` and `cli/scripts/train_gpt.py` as the
+  canonical dense GPT native trainer surface. `gpt2` and `gpt3` are dense GPT
+  aliases that route to the same CUDA Tile C++ trainer and must forward
+  `--model-family` into the compiled frontend.
+- GPT-3 does not need a separate architecture path. It defaults to a 2048-token
+  context only when the caller did not supply `--train-seq-len`,
+  `--template-name`/`--preset`, or `--graph-file`; otherwise the selected
+  template or graph remains the architecture source of truth.
 - Keep `cli/scripts/train_gpt2.py` native-only and lightweight: importing it,
   building its parser, resolving defaults, and running direct native dispatch
   must set up repo/script imports without requiring `PYTHONPATH` and without
@@ -109,6 +117,7 @@ Canonical docs:
 - Default `nfn train` commands go directly to a compiled native frontend before
   importing `train_gpt2_native`, `nfn_impl`, or Torch. GPT-2 reports
   `partial-native-trainer` and dispatches to the no-Python cached-shard CLI;
+  the canonical `gpt` alias does the same while reporting `model_family: gpt`;
   NanoGPT `--train-token-lm` dispatches to its partial native trainer; unsupported
   families fail from the native registry.
 - GPT-2 native training uses the SM120 AdamW schedule: 20,000 steps, seq len

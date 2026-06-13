@@ -235,7 +235,7 @@ The platform foundation now adds:
 pip install -r requirements.txt
 ```
 
-The default requirements intentionally do not install Torch. Native GPT-2
+The default requirements intentionally do not install Torch. Native dense GPT
 training and dataset-cache preparation do not require it. Install graph-backed
 Torch workflows explicitly when needed:
 
@@ -270,15 +270,20 @@ cd cli
 nfn --help
 ```
 
-The CLI installer keeps Torch optional, builds the native GPT-2 C++ binding,
+The CLI installer keeps Torch optional, builds the native GPT C++ binding,
 launcher, no-Python cached-shard CLI, and unified native training frontend, and
-links `nfn-gpt2-native` plus `nfn-native-train` into the active Python scripts
+links the compatibility `nfn-gpt2-native` command plus `nfn-native-train` into the active Python scripts
 directory. Pass `./install.sh --no-native` to skip native artifact builds. The
-GPT-2 native CLI exposes `--backend llm-kittens|tile-cuda`; `tile-cuda` is the
-default NeuralFn-owned path and runs the 12-layer `--train-transformer-lm`
+GPT native CLI exposes `--backend llm-kittens|tile-cuda`; `tile-cuda` is the
+default NeuralFn-owned path and runs the dense `--train-transformer-lm`
 trainer unless an introspection command such as `--print-plan`, `--check-tile-ops`,
 or `--no-train-transformer-lm` is used. `llm-kittens` remains an explicit
-external bridge. The Tile plan includes the GPT-2 parameter layout and
+external bridge. Use `nfn train --base-model gpt ...` as the canonical native
+trainer entrypoint. `--base-model gpt2` and `--base-model gpt3` are dense GPT
+aliases that route to the same CUDA Tile C++ trainer; `gpt3` defaults to a
+2048-token context only when no explicit template, custom graph, or
+`--train-seq-len` is supplied. Otherwise the selected GPT template or
+`--graph-file` is the architecture source of truth. The Tile plan includes the GPT parameter layout and
 forward/backward/optimizer stage sequence; the training JSON reports
 `block_state_layout` flags for per-block allocation, initialization, gradient
 zeroing, gradient clipping, AdamW update, checkpoint export, activation tape,

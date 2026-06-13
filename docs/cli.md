@@ -23,7 +23,7 @@ the repo root. The second installs the CLI entrypoint declared by
 `cli/pyproject.toml`.
 
 The default SDK install does not pull in Torch. Root `nfn --help` / no-argument
-startup, `nfn train|infer|eval --help`, `nfn kernels ... --help`, `nfn kernels list [--json]`, CUDA Tile registry metadata, and native GPT-2 training work without importing Torch; install
+startup, `nfn train|infer|eval --help`, `nfn kernels ... --help`, `nfn kernels list [--json]`, CUDA Tile registry metadata, and native GPT training work without importing Torch; install
 `pip install -e ".[torch]"` for graph-backed training or
 `pip install -e ".[tile-cuda]"` for Torch-free native CUDA Tile build tooling.
 
@@ -46,7 +46,7 @@ Recipes are composed from a small set of choices:
 
 | Choice | Values |
 |--------|--------|
-| Base model | `llama`, `gpt2`, `nanogpt` |
+| Base model | `gpt`, `gpt2`, `gpt3`, `llama`, `nanogpt` |
 | Topology | `dense`, `moe`, `semantic_router` |
 | Router mode | `standard`, `semantic` |
 | Objective overlay | `--jepa` |
@@ -72,8 +72,8 @@ Examples:
 
 ```bash
 nfn train --plan
-nfn train --base-model gpt2 --dataset tinystories --eval-every-steps 1000
-nfn train --base-model gpt2 --dataset tinystories --native-cuda-print-command --native-cuda-dry-run
+nfn train --base-model gpt --dataset tinystories --eval-every-steps 1000
+nfn train --base-model gpt3 --dataset tinystories --native-cuda-print-command --native-cuda-dry-run
 nfn infer --graph ~/NeuralFn/artifacts/llama_fast.json --prompt "Once upon a time"
 nfn infer --graph ~/NeuralFn/artifacts/gpt2_evo.json --weights ~/NeuralFn/artifacts/gpt2_evo.pt --prompt "Once upon a time"
 nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer ~/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model
@@ -90,10 +90,14 @@ nfn kernels examples
 
 `nfn train`, `nfn infer`, and `nfn eval` accept `--kernel-backend {auto,torch,tile-cuda}`, `--tile-cuda-strict` / `--no-tile-cuda-strict`, and `--tile-cuda-report PATH`. `tile-cuda` requests the implemented CUDA Tile fast path, build-loads the optional extension when needed, and defaults to strict kernel enforcement so unsupported graph nodes or tensor contracts fail instead of silently dropping to slower fallback paths. Pass `--no-tile-cuda-strict` only when intentionally debugging fallback behavior. The registry currently accounts for all 138 training-relevant entries with 129 Tile-covered kernels/compositions, 7 host-only entries, and 2 delegated graph calls. `NFN_TILE_CUDA_BUILD=1` enables extension builds for `auto` backend probes, and `NFN_TILE_CUDA_ARCH` can override the architecture flag passed to `nvcc`. Install `pip install -e ".[tile-cuda]"` if the active environment does not already provide `ninja` for native CUDA Tile builds; install `.[torch]` separately only for graph-backed PyTorch execution.
 
-The native GPT-2 compiled CLI has its own backend selector:
+The native GPT compiled CLI has its own backend selector:
 `--backend llm-kittens|tile-cuda` (or Python wrapper
 `--kernel-backend`). `llm-kittens` is the current external fast trainer.
-`tile-cuda` is the default NeuralFn-owned compiled trainer for dense GPT-2.
+`tile-cuda` is the default NeuralFn-owned compiled trainer for dense GPT.
+Use `--base-model gpt` as the canonical native trainer surface. `gpt2` and
+`gpt3` are dense GPT aliases that forward `--model-family` into the compiled
+C++ frontend; `gpt3` defaults to a 2048-token context only when no explicit
+template, graph, or `--train-seq-len` is supplied.
 `--native-cuda-print-plan` and `--native-cuda-check-tile-ops` still print the
 raw Tile ABI plan or check the trainer-facing library. The Tile plan includes
 the GPT-2 parameter layout and forward/backward/optimizer stage sequence that

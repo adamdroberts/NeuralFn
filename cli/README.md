@@ -20,8 +20,8 @@ source .venv/bin/activate
 ```
 
 The installer keeps Torch optional, registers the `nfn` entrypoint, builds the
-native GPT-2 C++ binding, launcher, no-Python cached-shard CLI, and unified
-native training frontend, then links `nfn-gpt2-native`,
+native GPT C++ binding, launcher, no-Python cached-shard CLI, and unified
+native training frontend, then links the compatibility `nfn-gpt2-native`,
 `nfn-gpt2-native-train`, `nfn-native-train`, and `nfn-gpt2-tile-launcher` into
 the active Python scripts directory. Use `./install.sh --no-native` to skip C++
 artifact builds.
@@ -35,7 +35,7 @@ nfn --help
 The root install no longer pulls in Torch by default. Root `nfn --help` /
 no-argument startup, `nfn train|infer|eval --help`, `nfn kernels ... --help`,
 `nfn kernels list [--json]`, CUDA Tile registry metadata, and native GPT-2
-training do not import it. Install
+compatibility training do not import it. Install
 `pip install -e ".[torch]"` for graph-backed training/inference and
 `pip install -e ".[tile-cuda]"` for Torch-free native CUDA Tile build tooling.
 Install both extras only when intentionally using the graph-backed PyTorch Tile
@@ -137,11 +137,12 @@ artifacts:
 - `scripts/infer_llama_fast.py`
 - `scripts/infer_nanogpt.py`
 
-The plain GPT-2 training script is native-only. It resolves the dataset cache,
+The plain GPT training script is native-only. It resolves the dataset cache,
 writes/uses uint16 token shards, and launches the compiled Tile-CUDA C++ trainer
 without importing Torch or sending training batches through graph nodes. Importing
-`scripts/train_gpt2.py`, building its parser, and resolving defaults are also
-Torch-free. Direct `python cli/scripts/train_gpt2.py ...` native runs set up
+`scripts/train_gpt.py` or the compatibility `scripts/train_gpt2.py`, building
+their parser, and resolving defaults are also Torch-free. Direct
+`python cli/scripts/train_gpt.py ...` native runs set up
 their own repo/script import path, so they do not need `PYTHONPATH`.
 The compiled trainer keeps per-block allocation, parameter initialization, and
 AdamW-state zeroing in the block-vector visitors, including block 0, and reports
@@ -158,27 +159,31 @@ dataset-manager, and NumPy import path; actual token generation still loads the
 graph-backed runtime after argument parsing until native GPT-2 inference exists:
 
 ```bash
-python scripts/train_gpt2.py --device cuda --tinystories --eval-every-steps 1000
-python scripts/train_gpt2.py --device cuda --tinystories --native-cuda-print-command --native-cuda-dry-run
+python scripts/train_gpt.py --device cuda --tinystories --eval-every-steps 1000
+python scripts/train_gpt.py --model-family gpt3 --device cuda --tinystories --native-cuda-print-command --native-cuda-dry-run
 python scripts/infer_gpt2.py --device cuda --evo --prompt "Once upon a time"
 python scripts/infer_nanogpt.py --device cuda --megakernel --prompt "Once upon a time"
 ```
 
 The master CLI uses the same no-Torch native dispatcher for explicit dense
-GPT-2 pretraining. With the default `compiled-cli` runner it goes directly to
+GPT pretraining. With the default `compiled-cli` runner it goes directly to
 the no-Python cached-shard C++ CLI before importing `train_gpt2_native`,
 `nfn_impl`, or Torch. `--template-name` / `--template` / `--preset` accepts
 every name in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, and
 `--graph-file` / `--graph` selects a custom graph JSON; wrappers canonicalize
 the aliases to `--template-name` and `--graph-file` at handoff. Unsupported
-template shapes fail with native missing-trainer JSON instead of falling back to Torch. Direct
+template shapes fail with native missing-trainer JSON instead of falling back to Torch.
+`--base-model gpt` is the canonical dense GPT surface. `gpt2` and `gpt3` route
+to the same C++ trainer and forward `--model-family`; `gpt3` defaults to a
+2048-token context only when no template, graph, or `--train-seq-len` is
+explicit. Direct
 `python cli/nfn.py ...` invocations use the same lightweight dispatcher:
 
 ```bash
-nfn train --base-model gpt2 --dataset tinystories --eval-every-steps 1000
-nfn train --base-model gpt2 --dataset tinystories --native-cuda-print-command --native-cuda-dry-run
-nfn train --base-model gpt2 --dataset tinystories --native-cuda-runner launcher
-nfn train --base-model gpt2 --dataset tinystories --native-cuda-runner binding
+nfn train --base-model gpt --dataset tinystories --eval-every-steps 1000
+nfn train --base-model gpt3 --dataset tinystories --native-cuda-print-command --native-cuda-dry-run
+nfn train --base-model gpt --dataset tinystories --native-cuda-runner launcher
+nfn train --base-model gpt --dataset tinystories --native-cuda-runner binding
 ```
 
 For an already-cached uint16 dataset, bypass Python entirely:
@@ -211,14 +216,14 @@ Build the SDK binding with `bash tools/build_native_gpt2_binding.sh`, the
 launcher with `bash tools/build_native_gpt2_launcher.sh`, and the no-Python
 cached-shard CLI with `bash tools/build_native_gpt2_cli.sh`; that CLI links the
 shared no-Torch `token_shards.cpp` resolver. Build the unified
-native frontend with `bash tools/build_native_train_cli.sh`; it dispatches GPT-2
+native frontend with `bash tools/build_native_train_cli.sh`; it dispatches dense GPT aliases
 to the cached-shard CLI and dispatches per-family native targets, including the
 partial NanoGPT token-LM trainer, in C++ before Python/Torch can start. Use
-`nfn-native-train --base-model gpt2 ...` when you
+`nfn-native-train --base-model gpt ...` when you
 want the compiled top-level training command, and `nfn-native-train
 --list-models --json` to inspect native coverage. Default `nfn train` commands
 hand off to this compiled frontend before graph-backed Python can start; dense
-GPT-2 is implemented, NanoGPT reports `partial-native-trainer` for
+GPT is implemented through the compatibility target, NanoGPT reports `partial-native-trainer` for
 `--train-token-lm`, and LLaMA, GPT-2 evo, JEPA, semantic/MoE, and DeepSeek
 variants intentionally report missing or preflight-only native trainers. Use `auto` to
 try the Python SDK binding, compiled CLI, launcher, then subprocess in order and
@@ -229,7 +234,7 @@ the external trainer binary path. Alias-only configs from
 through the SDK binding, so cached-shard resolution stays in C++ even when
 `runner="auto"` selects `neuralfn._native_gpt2`.
 
-Non-GPT-2 `nfn train` commands now fail from the compiled native registry by
+Non-dense-GPT `nfn train` commands now fail from the compiled native registry by
 default. Direct legacy training scripts hand off to the same native registry
 before they import Torch, because their internal implementation still uses the
 graph-backed `TorchTrainer` path. Set
