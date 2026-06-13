@@ -8,10 +8,12 @@
 #include "llmc/tk/attention_sm120.cuh"
 #endif
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+#include <cublasLt.h>
 #include <cublas_v2.h>
 #endif
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
@@ -56,6 +58,7 @@ std::atomic<std::int64_t> g_attention_forward_row_attr_const_size_bytes{0};
 std::atomic<std::int64_t> g_attention_forward_row_attr_local_size_bytes{0};
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
 std::atomic<std::int64_t> g_linear_bf16_gemm_count{0};
+std::atomic<std::int64_t> g_linear_cublaslt_gemm_count{0};
 std::atomic<std::int64_t> g_linear_sgemm_count{0};
 std::atomic<std::int64_t> g_linear_bf16_a_pack_count{0};
 std::atomic<std::int64_t> g_linear_bf16_a_cache_hit_count{0};
@@ -530,11 +533,280 @@ cublasHandle_t trainer_linear_cublas_handle(cudaStream_t stream) {
   return handle;
 }
 
+cublasLtHandle_t trainer_linear_cublaslt_handle() {
+  static cublasLtHandle_t handle = nullptr;
+  if (handle == nullptr && cublasLtCreate(&handle) != CUBLAS_STATUS_SUCCESS) {
+    handle = nullptr;
+  }
+  return handle;
+}
+
+struct TrainerLinearCublasLtPlanKey {
+  int m = 0;
+  int n = 0;
+  int k = 0;
+  int lda = 0;
+  int ldb = 0;
+  int ldc = 0;
+  int op_a = CUBLAS_OP_N;
+  int op_b = CUBLAS_OP_N;
+
+  bool operator==(const TrainerLinearCublasLtPlanKey& other) const {
+    return m == other.m && n == other.n && k == other.k && lda == other.lda &&
+        ldb == other.ldb && ldc == other.ldc && op_a == other.op_a && op_b == other.op_b;
+  }
+};
+
+struct TrainerLinearCublasLtPlan {
+  TrainerLinearCublasLtPlanKey key;
+  cublasLtMatmulAlgo_t algo{};
+  std::size_t workspace_size = 0;
+  bool valid = false;
+};
+
+struct TrainerLinearCublasLtWorkspace {
+  void* data = nullptr;
+  std::size_t capacity = 0;
+  std::vector<TrainerLinearCublasLtPlan> plans;
+};
+
+bool trainer_linear_cublaslt_enabled();
+
+TrainerLinearCublasLtWorkspace g_trainer_linear_cublaslt_workspace;
+std::mutex g_trainer_linear_cublaslt_workspace_mutex;
+constexpr std::size_t kTrainerLinearCublasLtWorkspaceBytes = 128ull * 1024ull * 1024ull;
+constexpr std::size_t kTrainerLinearCublasLtPlanLimit = 128;
+
+bool ensure_trainer_linear_cublaslt_workspace(std::size_t bytes) {
+  if (bytes == 0) {
+    return true;
+  }
+  if (g_trainer_linear_cublaslt_workspace.capacity >= bytes) {
+    return true;
+  }
+  void* next = nullptr;
+  if (cudaMalloc(&next, bytes) != cudaSuccess) {
+    return false;
+  }
+  if (g_trainer_linear_cublaslt_workspace.data != nullptr) {
+    cudaFree(g_trainer_linear_cublaslt_workspace.data);
+  }
+  g_trainer_linear_cublaslt_workspace.data = next;
+  g_trainer_linear_cublaslt_workspace.capacity = bytes;
+  return true;
+}
+
+bool create_trainer_linear_cublaslt_layouts(
+    cublasOperation_t op_a,
+    cublasOperation_t op_b,
+    int m,
+    int n,
+    int k,
+    int lda,
+    int ldb,
+    int ldc,
+    cublasLtMatmulDesc_t* matmul_desc,
+    cublasLtMatrixLayout_t* a_desc,
+    cublasLtMatrixLayout_t* b_desc,
+    cublasLtMatrixLayout_t* c_desc) {
+  *matmul_desc = nullptr;
+  *a_desc = nullptr;
+  *b_desc = nullptr;
+  *c_desc = nullptr;
+  if (cublasLtMatmulDescCreate(
+          matmul_desc, CUBLAS_COMPUTE_32F_FAST_TF32, CUDA_R_32F) != CUBLAS_STATUS_SUCCESS) {
+    return false;
+  }
+  if (cublasLtMatmulDescSetAttribute(
+          *matmul_desc, CUBLASLT_MATMUL_DESC_TRANSA, &op_a, sizeof(op_a)) != CUBLAS_STATUS_SUCCESS ||
+      cublasLtMatmulDescSetAttribute(
+          *matmul_desc, CUBLASLT_MATMUL_DESC_TRANSB, &op_b, sizeof(op_b)) != CUBLAS_STATUS_SUCCESS) {
+    return false;
+  }
+
+  const int a_rows = op_a == CUBLAS_OP_N ? m : k;
+  const int a_cols = op_a == CUBLAS_OP_N ? k : m;
+  const int b_rows = op_b == CUBLAS_OP_N ? k : n;
+  const int b_cols = op_b == CUBLAS_OP_N ? n : k;
+  if (cublasLtMatrixLayoutCreate(a_desc, CUDA_R_32F, a_rows, a_cols, lda) != CUBLAS_STATUS_SUCCESS ||
+      cublasLtMatrixLayoutCreate(b_desc, CUDA_R_32F, b_rows, b_cols, ldb) != CUBLAS_STATUS_SUCCESS ||
+      cublasLtMatrixLayoutCreate(c_desc, CUDA_R_32F, m, n, ldc) != CUBLAS_STATUS_SUCCESS) {
+    return false;
+  }
+  return true;
+}
+
+void destroy_trainer_linear_cublaslt_layouts(
+    cublasLtMatmulDesc_t matmul_desc,
+    cublasLtMatrixLayout_t a_desc,
+    cublasLtMatrixLayout_t b_desc,
+    cublasLtMatrixLayout_t c_desc) {
+  if (c_desc != nullptr) cublasLtMatrixLayoutDestroy(c_desc);
+  if (b_desc != nullptr) cublasLtMatrixLayoutDestroy(b_desc);
+  if (a_desc != nullptr) cublasLtMatrixLayoutDestroy(a_desc);
+  if (matmul_desc != nullptr) cublasLtMatmulDescDestroy(matmul_desc);
+}
+
+TrainerLinearCublasLtPlan* trainer_linear_cublaslt_plan_for(
+    cublasLtHandle_t handle,
+    const TrainerLinearCublasLtPlanKey& key,
+    cublasLtMatmulDesc_t matmul_desc,
+    cublasLtMatrixLayout_t a_desc,
+    cublasLtMatrixLayout_t b_desc,
+    cublasLtMatrixLayout_t c_desc) {
+  for (TrainerLinearCublasLtPlan& plan : g_trainer_linear_cublaslt_workspace.plans) {
+    if (plan.valid && plan.key == key) {
+      return &plan;
+    }
+  }
+  cublasLtMatmulPreference_t preference = nullptr;
+  if (cublasLtMatmulPreferenceCreate(&preference) != CUBLAS_STATUS_SUCCESS) {
+    return nullptr;
+  }
+  const std::size_t max_workspace = kTrainerLinearCublasLtWorkspaceBytes;
+  const cublasStatus_t pref_status = cublasLtMatmulPreferenceSetAttribute(
+      preference,
+      CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
+      &max_workspace,
+      sizeof(max_workspace));
+  if (pref_status != CUBLAS_STATUS_SUCCESS) {
+    cublasLtMatmulPreferenceDestroy(preference);
+    return nullptr;
+  }
+  std::array<cublasLtMatmulHeuristicResult_t, 32> results{};
+  int returned = 0;
+  const cublasStatus_t heuristic_status = cublasLtMatmulAlgoGetHeuristic(
+      handle,
+      matmul_desc,
+      a_desc,
+      b_desc,
+      c_desc,
+      c_desc,
+      preference,
+      static_cast<int>(results.size()),
+      results.data(),
+      &returned);
+  cublasLtMatmulPreferenceDestroy(preference);
+  if (heuristic_status != CUBLAS_STATUS_SUCCESS || returned <= 0) {
+    return nullptr;
+  }
+
+  int selected = 0;
+  for (int i = 1; i < returned; ++i) {
+    if (results[i].wavesCount < results[selected].wavesCount ||
+        (results[i].wavesCount == results[selected].wavesCount &&
+         results[i].workspaceSize < results[selected].workspaceSize)) {
+      selected = i;
+    }
+  }
+  if (!ensure_trainer_linear_cublaslt_workspace(results[selected].workspaceSize)) {
+    return nullptr;
+  }
+  if (g_trainer_linear_cublaslt_workspace.plans.size() >= kTrainerLinearCublasLtPlanLimit) {
+    g_trainer_linear_cublaslt_workspace.plans.erase(g_trainer_linear_cublaslt_workspace.plans.begin());
+  }
+  g_trainer_linear_cublaslt_workspace.plans.push_back(
+      TrainerLinearCublasLtPlan{key, results[selected].algo, results[selected].workspaceSize, true});
+  return &g_trainer_linear_cublaslt_workspace.plans.back();
+}
+
+bool cublaslt_linear_matmul_float32(
+    const float* a,
+    const float* b,
+    float* c,
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b,
+    int lda,
+    int ldb,
+    int ldc,
+    float beta_value,
+    cudaStream_t stream) {
+  if (!trainer_linear_cublaslt_enabled()) {
+    return false;
+  }
+  cublasLtHandle_t handle = trainer_linear_cublaslt_handle();
+  if (handle == nullptr) {
+    return false;
+  }
+
+  cublasLtMatmulDesc_t matmul_desc = nullptr;
+  cublasLtMatrixLayout_t a_desc = nullptr;
+  cublasLtMatrixLayout_t b_desc = nullptr;
+  cublasLtMatrixLayout_t c_desc = nullptr;
+  if (!create_trainer_linear_cublaslt_layouts(
+          op_a, op_b, m, n, k, lda, ldb, ldc, &matmul_desc, &a_desc, &b_desc, &c_desc)) {
+    destroy_trainer_linear_cublaslt_layouts(matmul_desc, a_desc, b_desc, c_desc);
+    return false;
+  }
+
+  TrainerLinearCublasLtPlanKey key{
+      m, n, k, lda, ldb, ldc, static_cast<int>(op_a), static_cast<int>(op_b)};
+  TrainerLinearCublasLtPlan plan_copy;
+  {
+    std::lock_guard<std::mutex> lock(g_trainer_linear_cublaslt_workspace_mutex);
+    TrainerLinearCublasLtPlan* plan =
+        trainer_linear_cublaslt_plan_for(handle, key, matmul_desc, a_desc, b_desc, c_desc);
+    if (plan == nullptr) {
+      destroy_trainer_linear_cublaslt_layouts(matmul_desc, a_desc, b_desc, c_desc);
+      return false;
+    }
+    plan_copy = *plan;
+  }
+
+  const float alpha = 1.0f;
+  const float beta = beta_value;
+  void* workspace = plan_copy.workspace_size > 0 ? g_trainer_linear_cublaslt_workspace.data : nullptr;
+  const cublasStatus_t status = cublasLtMatmul(
+      handle,
+      matmul_desc,
+      &alpha,
+      a,
+      a_desc,
+      b,
+      b_desc,
+      &beta,
+      c,
+      c_desc,
+      c,
+      c_desc,
+      &plan_copy.algo,
+      workspace,
+      plan_copy.workspace_size,
+      stream);
+  destroy_trainer_linear_cublaslt_layouts(matmul_desc, a_desc, b_desc, c_desc);
+  if (status == CUBLAS_STATUS_SUCCESS) {
+    g_linear_cublaslt_gemm_count.fetch_add(1, std::memory_order_relaxed);
+    return true;
+  }
+  return false;
+}
+
 bool trainer_linear_bf16_bridge_enabled() {
   static const bool enabled = []() {
     const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16");
     if (value == nullptr) {
       value = std::getenv("NFN_NATIVE_LINEAR_BF16");
+    }
+    if (value == nullptr) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
+bool trainer_linear_cublaslt_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_CUBLASLT");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_CUBLASLT");
     }
     if (value == nullptr) {
       return false;
@@ -835,6 +1107,22 @@ bool cublas_linear_forward_float32(
           stream)) {
     return true;
   }
+  if (cublaslt_linear_matmul_float32(
+          weight,
+          x,
+          out,
+          m,
+          n,
+          k,
+          CUBLAS_OP_T,
+          CUBLAS_OP_N,
+          k,
+          k,
+          m,
+          0.0f,
+          stream)) {
+    return true;
+  }
   const cublasStatus_t status = cublasSgemm(
       handle,
       CUBLAS_OP_T,
@@ -898,6 +1186,22 @@ bool cublas_linear_backward_input_float32(
           stream)) {
     return true;
   }
+  if (cublaslt_linear_matmul_float32(
+          weight,
+          grad_out,
+          grad_x,
+          m,
+          n,
+          k,
+          CUBLAS_OP_N,
+          CUBLAS_OP_N,
+          m,
+          k,
+          m,
+          0.0f,
+          stream)) {
+    return true;
+  }
   const cublasStatus_t status = cublasSgemm(
       handle,
       CUBLAS_OP_N,
@@ -958,6 +1262,22 @@ bool cublas_linear_backward_weight_float32(
           beta_value,
           false,
           false,
+          stream)) {
+    return true;
+  }
+  if (cublaslt_linear_matmul_float32(
+          x,
+          grad_out,
+          grad_weight,
+          m,
+          n,
+          k,
+          CUBLAS_OP_N,
+          CUBLAS_OP_T,
+          m,
+          n,
+          m,
+          beta_value,
           stream)) {
     return true;
   }
@@ -7103,6 +7423,7 @@ void reset_attention_forward_launch_stats() {
 void reset_trainer_linear_launch_stats() {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   g_linear_bf16_gemm_count.store(0, std::memory_order_relaxed);
+  g_linear_cublaslt_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_sgemm_count.store(0, std::memory_order_relaxed);
   g_linear_bf16_a_pack_count.store(0, std::memory_order_relaxed);
   g_linear_bf16_a_cache_hit_count.store(0, std::memory_order_relaxed);
@@ -7132,6 +7453,14 @@ std::int64_t trainer_linear_bf16_gemm_count() {
 std::int64_t trainer_linear_sgemm_count() {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   return g_linear_sgemm_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_cublaslt_gemm_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_cublaslt_gemm_count.load(std::memory_order_relaxed);
 #else
   return 0;
 #endif

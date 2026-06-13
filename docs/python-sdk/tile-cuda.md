@@ -126,16 +126,20 @@ cached. Transformer block dWeight accumulation calls
 logits, dHidden, and dWeight chunks stay on optimized TF32 tensor-op
 `cublasSgemm`. Set `NFN_TILE_CUDA_LINEAR_BF16=1` or
 `NFN_NATIVE_LINEAR_BF16=1` only when profiling the normal linear ABI's BF16
-bridge. The BF16 bridge keeps a multi-entry packed first-GEMM-operand cache for
-weight-forward and weight-dInput calls, then invalidates that cache after AdamW
-updates. GPT-2 training JSON reports `linear_backend_strategy:
-"block-forward-dinput-dweight-bf16-lm-head-tf32"`,
+bridge. Set `NFN_TILE_CUDA_LINEAR_CUBLASLT=1` or
+`NFN_NATIVE_LINEAR_CUBLASLT=1` only when profiling the normal linear ABI's
+cached cuBLASLt TF32 path; the current 5090 GPT-2 shape keeps SGEMM as the
+faster default. The BF16 bridge keeps a multi-entry packed first-GEMM-operand
+cache for weight-forward and weight-dInput calls, then invalidates that cache
+after AdamW updates. GPT-2 training JSON reports `linear_backend_strategy:
+"block-forward-dinput-dweight-bf16-lm-head-tf32-sgemm-default"`,
 `block_forward_linear_strategy`, `block_backward_input_linear_strategy`,
 `block_backward_weight_linear_strategy`,
 `non_block_forward_backward_linear_strategy`, `linear_bf16_gemm_count`,
-`linear_sgemm_count`, `linear_bf16_a_pack_count`,
-`linear_bf16_a_cache_hit_count`, `linear_bf16_cache_reset_count`,
-`linear_bf16_cached_a_capacity`, and `linear_bf16_cache_entry_count`.
+`linear_cublaslt_gemm_count`, `linear_sgemm_count`,
+`linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
+`linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
+`linear_bf16_cache_entry_count`.
 The default `non_block_forward_backward_linear_strategy` is
 `"padded-lm-head-tf32-sgemm-optimized-default"`.
 The full GPT-2 transformer-LM trainer also exposes
