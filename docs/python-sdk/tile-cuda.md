@@ -137,8 +137,12 @@ mode records `stage_timing_enabled`, `stage_timing_event_count`,
 `stage_timing_dropped_event_count`, and `stage_timing` entries with per-stage
 `total_ms`, `count`, and `avg_ms` values for token upload, model forward, block
 forward/recompute/backward, LM-head backward, final-norm/embedding backward,
-gradient zero/clip, and AdamW update. The stage profiler synchronizes before
-reading event timings, so leave it disabled for normal throughput runs.
+gradient zero/clip, and AdamW update. Diagnostic runs also emit nested entries
+for LM-head logits/CE/dHidden/dWeight, block forward/recompute attention and
+MLP phases, and block backward MLP projection, MLP fc, LayerNorm/residual,
+attention projection, attention SDPA, and QKV phases. The stage profiler
+synchronizes before reading event timings, so leave it disabled for normal
+throughput runs.
 
 Native GPT-2 SDK config builders accept `template_name` and `graph_file`, which
 map to canonical compiled CLI `--template-name` and `--graph-file` arguments;

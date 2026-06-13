@@ -6970,6 +6970,11 @@ int run_transformer_lm_training_json(
             error = cuda_error(status, "cudaEventRecord stage timing stop " + name);
         }
     };
+    auto run_timed_stage = [&](const std::string& name, const auto& fn) {
+        const std::int64_t event = stage_begin(name);
+        fn();
+        stage_end(event, name);
+    };
     auto finalize_stage_timing = [&]() {
         if (!stage_timing_enabled) {
             return;
@@ -7783,36 +7788,44 @@ int run_transformer_lm_training_json(
             const float* hidden_chunk = lnf_out + row_start * kDim;
             const std::int64_t* target_chunk = targets + row_start;
             float* grad_hidden_chunk = grad_lnf + row_start * kDim;
-            run(linear(hidden_chunk, token_weight, nullptr, logits, row_count, kDim, kVocab, false, nullptr),
-                "lm_head.forward.recompute");
-            if (error.empty()) {
-                run(ce_backward_workspace(
-                        logits,
-                        target_chunk,
-                        row_max,
-                        row_denom,
-                        grad_logits,
-                        row_count,
-                        kVocab,
-                        accumulation_scale / static_cast<float>(rows),
-                        nullptr),
-                    "ce.backward");
-            }
-            if (error.empty()) {
-                run(linear_backward_input(grad_logits, token_weight, grad_hidden_chunk, row_count, kDim, kVocab, nullptr),
-                    "lm_head.backward_input");
-            }
-            if (error.empty()) {
-                run(linear_backward_weight_accumulate(
-                        hidden_chunk,
-                        grad_logits,
-                        accum_grad_token_weight,
-                        row_count,
-                        kDim,
-                        kVocab,
-                        nullptr),
-                    "lm_head.backward_weight.accumulate");
-            }
+            run_timed_stage("lm_head_backward.logits", [&]() {
+                run(linear(hidden_chunk, token_weight, nullptr, logits, row_count, kDim, kVocab, false, nullptr),
+                    "lm_head.forward.recompute");
+            });
+            run_timed_stage("lm_head_backward.ce", [&]() {
+                if (error.empty()) {
+                    run(ce_backward_workspace(
+                            logits,
+                            target_chunk,
+                            row_max,
+                            row_denom,
+                            grad_logits,
+                            row_count,
+                            kVocab,
+                            accumulation_scale / static_cast<float>(rows),
+                            nullptr),
+                        "ce.backward");
+                }
+            });
+            run_timed_stage("lm_head_backward.dhidden", [&]() {
+                if (error.empty()) {
+                    run(linear_backward_input(grad_logits, token_weight, grad_hidden_chunk, row_count, kDim, kVocab, nullptr),
+                        "lm_head.backward_input");
+                }
+            });
+            run_timed_stage("lm_head_backward.dweight", [&]() {
+                if (error.empty()) {
+                    run(linear_backward_weight_accumulate(
+                            hidden_chunk,
+                            grad_logits,
+                            accum_grad_token_weight,
+                            row_count,
+                            kDim,
+                            kVocab,
+                            nullptr),
+                        "lm_head.backward_weight.accumulate");
+                }
+            });
         }
         stage_end(stage_event, "lm_head_backward");
     };
@@ -7827,44 +7840,64 @@ int run_transformer_lm_training_json(
                              bool compute_final_output) {
         const std::string stage_name = label.find("recompute") == std::string::npos ? "block_forward" : "block_recompute";
         const std::int64_t stage_event = stage_begin(stage_name);
-        if (error.empty()) run(layer_norm(block_input, block.ln1_weight, block.ln1_bias, tape.ln1_out, rows, kDim, kNormEps, nullptr), label + ".ln1.forward");
-        if (error.empty()) run(linear(tape.ln1_out, block.qkv_weight, nullptr, tape.qkv, rows, kDim, kQkvDim, false, nullptr), label + ".attn.qkv.forward.no_bias");
-        if (error.empty()) run(split_qkv_to_heads_add_bias(tape.qkv, block.qkv_bias, tape.q_heads, tape.k_heads, tape.v_heads, batch_size, seq_len, kHeads, kHeadDim, nullptr), label + ".attn.qkv.bias_split_to_heads");
-        if (error.empty()) run(attention(tape.q_heads, tape.k_heads, tape.v_heads, tape.attn_heads, activation_elements, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.forward");
-        if (error.empty()) run(merge_heads(tape.attn_heads, tape.attn_out, batch_size, kHeads, seq_len, kHeadDim, nullptr), label + ".attn.merge_heads");
-        if (error.empty()) run(linear(tape.attn_out, block.attn_proj_weight, nullptr, tape.attn_proj, rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias");
-        if (error.empty()) run(linear_bias_residual_add(block_input, tape.attn_proj, block.attn_proj_bias, residual_scale, tape.residual1, rows, kDim, nullptr), label + ".attn.bias_residual");
-        if (error.empty()) run(layer_norm(tape.residual1, block.ln2_weight, block.ln2_bias, tape.ln2_out, rows, kDim, kNormEps, nullptr), label + ".ln2.forward");
-        if (error.empty()) run(linear(tape.ln2_out, block.fc_weight, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias");
-        if (error.empty()) run(gelu_add_bias(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward");
+        run_timed_stage(stage_name + ".attention", [&]() {
+            if (error.empty()) run(layer_norm(block_input, block.ln1_weight, block.ln1_bias, tape.ln1_out, rows, kDim, kNormEps, nullptr), label + ".ln1.forward");
+            if (error.empty()) run(linear(tape.ln1_out, block.qkv_weight, nullptr, tape.qkv, rows, kDim, kQkvDim, false, nullptr), label + ".attn.qkv.forward.no_bias");
+            if (error.empty()) run(split_qkv_to_heads_add_bias(tape.qkv, block.qkv_bias, tape.q_heads, tape.k_heads, tape.v_heads, batch_size, seq_len, kHeads, kHeadDim, nullptr), label + ".attn.qkv.bias_split_to_heads");
+            if (error.empty()) run(attention(tape.q_heads, tape.k_heads, tape.v_heads, tape.attn_heads, activation_elements, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.forward");
+            if (error.empty()) run(merge_heads(tape.attn_heads, tape.attn_out, batch_size, kHeads, seq_len, kHeadDim, nullptr), label + ".attn.merge_heads");
+            if (error.empty()) run(linear(tape.attn_out, block.attn_proj_weight, nullptr, tape.attn_proj, rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias");
+            if (error.empty()) run(linear_bias_residual_add(block_input, tape.attn_proj, block.attn_proj_bias, residual_scale, tape.residual1, rows, kDim, nullptr), label + ".attn.bias_residual");
+        });
+        run_timed_stage(stage_name + ".mlp_fc_gelu", [&]() {
+            if (error.empty()) run(layer_norm(tape.residual1, block.ln2_weight, block.ln2_bias, tape.ln2_out, rows, kDim, kNormEps, nullptr), label + ".ln2.forward");
+            if (error.empty()) run(linear(tape.ln2_out, block.fc_weight, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias");
+            if (error.empty()) run(gelu_add_bias(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward");
+        });
         if (compute_final_output) {
-            if (error.empty()) run(linear(tape.act, block.mlp_proj_weight, nullptr, tape.mlp_out, rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias");
-            if (error.empty()) run(linear_bias_residual_add(tape.residual1, tape.mlp_out, block.mlp_proj_bias, residual_scale, tape.residual2, rows, kDim, nullptr), label + ".mlp.bias_residual");
+            run_timed_stage(stage_name + ".mlp_proj", [&]() {
+                if (error.empty()) run(linear(tape.act, block.mlp_proj_weight, nullptr, tape.mlp_out, rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias");
+                if (error.empty()) run(linear_bias_residual_add(tape.residual1, tape.mlp_out, block.mlp_proj_bias, residual_scale, tape.residual2, rows, kDim, nullptr), label + ".mlp.bias_residual");
+            });
         }
         stage_end(stage_event, stage_name);
     };
     auto backward_block = [&](TransformerBlockParams& block, TransformerBlockActivations& tape, const float* block_input, float* incoming_grad, float* output_grad, const std::string& label) {
         const std::int64_t stage_event = stage_begin("block_backward");
-        if (error.empty()) run(linear_backward_weight_accumulate(tape.act, incoming_grad, block.accum_grad_mlp_proj_weight, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_weight.accumulate");
-        if (error.empty()) run(linear_backward_bias_accumulate(incoming_grad, block.accum_grad_mlp_proj_bias, rows, kDim, nullptr), label + ".mlp.proj.backward_bias.accumulate");
-        if (error.empty()) run(linear_backward_input(incoming_grad, block.mlp_proj_weight, grad_act, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_input");
-        if (error.empty()) run(gelu_backward(tape.fc_out, grad_act, grad_fc_out, hidden_elements, nullptr), label + ".mlp.gelu.backward");
-        if (error.empty()) run(linear_backward_weight_accumulate(tape.ln2_out, grad_fc_out, block.accum_grad_fc_weight, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight.accumulate");
-        if (error.empty()) run(linear_backward_bias_accumulate(grad_fc_out, block.accum_grad_fc_bias, rows, kHidden, nullptr), label + ".mlp.fc.backward_bias.accumulate");
-        if (error.empty()) run(linear_backward_input(grad_fc_out, block.fc_weight, grad_ln2, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_input");
-        if (error.empty()) run(layer_norm_backward_affine_accumulate(tape.residual1, grad_ln2, block.accum_grad_ln2_weight, block.accum_grad_ln2_bias, rows, kDim, kNormEps, nullptr), label + ".ln2.backward_affine.accumulate");
-        if (error.empty()) run(layer_norm_backward_input(tape.residual1, grad_ln2, block.ln2_weight, grad_residual1_from_mlp, rows, kDim, kNormEps, nullptr), label + ".ln2.backward_input");
-        if (error.empty()) run(residual_add(incoming_grad, grad_residual1_from_mlp, residual_scale, grad_residual1, activation_elements, nullptr), label + ".mlp.residual.backward_add");
-        if (error.empty()) run(linear_backward_weight_accumulate(tape.attn_out, grad_residual1, block.accum_grad_attn_proj_weight, rows, kDim, kDim, nullptr), label + ".attn.out.backward_weight.accumulate");
-        if (error.empty()) run(linear_backward_bias_accumulate(grad_residual1, block.accum_grad_attn_proj_bias, rows, kDim, nullptr), label + ".attn.out.backward_bias.accumulate");
-        if (error.empty()) run(linear_backward_input(grad_residual1, block.attn_proj_weight, grad_attn_out, rows, kDim, kDim, nullptr), label + ".attn.out.backward_input");
-        if (error.empty()) run(attention_backward_to_qkv(tape.q_heads, tape.k_heads, tape.v_heads, grad_attn_out, grad_qkv, batch_size, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.backward_to_qkv_from_merged_grad");
-        if (error.empty()) run(linear_backward_weight_accumulate(tape.ln1_out, grad_qkv, block.accum_grad_qkv_weight, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_weight.accumulate");
-        if (error.empty()) run(linear_backward_bias_accumulate(grad_qkv, block.accum_grad_qkv_bias, rows, kQkvDim, nullptr), label + ".attn.qkv.backward_bias.accumulate");
-        if (error.empty()) run(linear_backward_input(grad_qkv, block.qkv_weight, grad_ln1, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_input");
-        if (error.empty()) run(layer_norm_backward_affine_accumulate(block_input, grad_ln1, block.accum_grad_ln1_weight, block.accum_grad_ln1_bias, rows, kDim, kNormEps, nullptr), label + ".ln1.backward_affine.accumulate");
-        if (error.empty()) run(layer_norm_backward_input(block_input, grad_ln1, block.ln1_weight, grad_x_from_attn, rows, kDim, kNormEps, nullptr), label + ".ln1.backward_input");
-        if (error.empty()) run(residual_add(grad_residual1, grad_x_from_attn, residual_scale, output_grad, activation_elements, nullptr), label + ".attn.residual.backward_add");
+        run_timed_stage("block_backward.mlp_proj", [&]() {
+            if (error.empty()) run(linear_backward_weight_accumulate(tape.act, incoming_grad, block.accum_grad_mlp_proj_weight, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_weight.accumulate");
+            if (error.empty()) run(linear_backward_bias_accumulate(incoming_grad, block.accum_grad_mlp_proj_bias, rows, kDim, nullptr), label + ".mlp.proj.backward_bias.accumulate");
+            if (error.empty()) run(linear_backward_input(incoming_grad, block.mlp_proj_weight, grad_act, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_input");
+        });
+        run_timed_stage("block_backward.mlp_fc", [&]() {
+            if (error.empty()) run(gelu_backward(tape.fc_out, grad_act, grad_fc_out, hidden_elements, nullptr), label + ".mlp.gelu.backward");
+            if (error.empty()) run(linear_backward_weight_accumulate(tape.ln2_out, grad_fc_out, block.accum_grad_fc_weight, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight.accumulate");
+            if (error.empty()) run(linear_backward_bias_accumulate(grad_fc_out, block.accum_grad_fc_bias, rows, kHidden, nullptr), label + ".mlp.fc.backward_bias.accumulate");
+            if (error.empty()) run(linear_backward_input(grad_fc_out, block.fc_weight, grad_ln2, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_input");
+        });
+        run_timed_stage("block_backward.ln2_residual", [&]() {
+            if (error.empty()) run(layer_norm_backward_affine_accumulate(tape.residual1, grad_ln2, block.accum_grad_ln2_weight, block.accum_grad_ln2_bias, rows, kDim, kNormEps, nullptr), label + ".ln2.backward_affine.accumulate");
+            if (error.empty()) run(layer_norm_backward_input(tape.residual1, grad_ln2, block.ln2_weight, grad_residual1_from_mlp, rows, kDim, kNormEps, nullptr), label + ".ln2.backward_input");
+            if (error.empty()) run(residual_add(incoming_grad, grad_residual1_from_mlp, residual_scale, grad_residual1, activation_elements, nullptr), label + ".mlp.residual.backward_add");
+        });
+        run_timed_stage("block_backward.attn_proj", [&]() {
+            if (error.empty()) run(linear_backward_weight_accumulate(tape.attn_out, grad_residual1, block.accum_grad_attn_proj_weight, rows, kDim, kDim, nullptr), label + ".attn.out.backward_weight.accumulate");
+            if (error.empty()) run(linear_backward_bias_accumulate(grad_residual1, block.accum_grad_attn_proj_bias, rows, kDim, nullptr), label + ".attn.out.backward_bias.accumulate");
+            if (error.empty()) run(linear_backward_input(grad_residual1, block.attn_proj_weight, grad_attn_out, rows, kDim, kDim, nullptr), label + ".attn.out.backward_input");
+        });
+        run_timed_stage("block_backward.attn_sdpa", [&]() {
+            if (error.empty()) run(attention_backward_to_qkv(tape.q_heads, tape.k_heads, tape.v_heads, grad_attn_out, grad_qkv, batch_size, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.backward_to_qkv_from_merged_grad");
+        });
+        run_timed_stage("block_backward.qkv", [&]() {
+            if (error.empty()) run(linear_backward_weight_accumulate(tape.ln1_out, grad_qkv, block.accum_grad_qkv_weight, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_weight.accumulate");
+            if (error.empty()) run(linear_backward_bias_accumulate(grad_qkv, block.accum_grad_qkv_bias, rows, kQkvDim, nullptr), label + ".attn.qkv.backward_bias.accumulate");
+            if (error.empty()) run(linear_backward_input(grad_qkv, block.qkv_weight, grad_ln1, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_input");
+        });
+        run_timed_stage("block_backward.ln1_residual", [&]() {
+            if (error.empty()) run(layer_norm_backward_affine_accumulate(block_input, grad_ln1, block.accum_grad_ln1_weight, block.accum_grad_ln1_bias, rows, kDim, kNormEps, nullptr), label + ".ln1.backward_affine.accumulate");
+            if (error.empty()) run(layer_norm_backward_input(block_input, grad_ln1, block.ln1_weight, grad_x_from_attn, rows, kDim, kNormEps, nullptr), label + ".ln1.backward_input");
+            if (error.empty()) run(residual_add(grad_residual1, grad_x_from_attn, residual_scale, output_grad, activation_elements, nullptr), label + ".attn.residual.backward_add");
+        });
         stage_end(stage_event, "block_backward");
     };
 

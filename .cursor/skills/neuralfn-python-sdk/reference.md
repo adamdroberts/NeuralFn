@@ -279,7 +279,10 @@ under `timing` should then include `stage_timing_enabled`,
 `stage_timing_event_count`, `stage_timing_dropped_event_count`, and
 `stage_timing` records for token upload, model/block forward, block
 recompute/backward, LM-head backward, final-norm/embedding backward, gradient
-zero/clip, and AdamW update.
+zero/clip, and AdamW update. Keep nested diagnostic records for LM-head
+logits/CE/dHidden/dWeight, block forward/recompute attention and MLP phases,
+and block backward MLP projection, MLP fc, LayerNorm/residual, attention
+projection, attention SDPA, and QKV phases.
 The trainer-facing build also defaults to the SM120 ThunderKittens bf16
 attention bridge (`NFN_TILE_CUDA_USE_TK_ATTENTION=1`,
 `NFN_TILE_CUDA_ARCH=sm_120a`) for GPT-2-compatible causal SDPA. Keep

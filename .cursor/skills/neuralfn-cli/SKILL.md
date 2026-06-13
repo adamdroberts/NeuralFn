@@ -167,7 +167,10 @@ Canonical docs:
   `stage_timing_event_count`, `stage_timing_dropped_event_count`, and
   `stage_timing` records for token upload, model/block forward, block
   recompute/backward, LM-head backward, final-norm/embedding backward,
-  gradient zero/clip, and AdamW update.
+  gradient zero/clip, and AdamW update. Keep nested diagnostic records for
+  LM-head logits/CE/dHidden/dWeight, block forward/recompute attention and MLP
+  phases, and block backward MLP projection, MLP fc, LayerNorm/residual,
+  attention projection, attention SDPA, and QKV phases.
 - Full GPT-2 `--train-transformer-lm` should use
   `nfn_native_tile_split_qkv_to_heads_add_bias_float32` to apply Q/K/V bias and
   write Q/K/V head-major buffers in one launch per block. Keep
