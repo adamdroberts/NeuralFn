@@ -857,6 +857,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         check=False,
     )
     assert help_proc.returncode == 0, help_proc.stderr
+    assert "Native no-Python dense GPT trainer entrypoint" in help_proc.stdout
     assert "--smoke-tile-ops" in help_proc.stdout
     assert "--smoke-optimizer-step" in help_proc.stdout
     assert "--smoke-lm-step" in help_proc.stdout
@@ -872,6 +873,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "--template-name NAME" in help_proc.stdout
     assert "--graph-file PATH" in help_proc.stdout
     assert "Tile-CUDA smokes/training" in help_proc.stdout
+    assert "dense GPT registered parameter layout" in help_proc.stdout
 
     dry_run = subprocess.run(
         [
@@ -891,6 +893,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert dry_run.returncode == 0, dry_run.stderr
     default_payload = json.loads(dry_run.stdout)
+    assert default_payload["model_family"] == "gpt"
     assert default_payload["backend"] == "tile-cuda"
     assert default_payload["status"] == "native-transformer-lm-ready"
     assert default_payload["template_name"] == "gpt2"
@@ -986,6 +989,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert tile_plan.returncode == 0, tile_plan.stderr
     tile_payload = json.loads(tile_plan.stdout)
+    assert tile_payload["model_family"] == "gpt"
     assert tile_payload["backend"] == "tile-cuda"
     assert tile_payload["status"] == "native-transformer-lm-ready"
     assert tile_payload["template_name"] == "gpt2"
@@ -1378,7 +1382,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert missing_smoke.returncode == 2
     smoke_payload = json.loads(missing_smoke.stdout)
-    assert smoke_payload["model_family"] == "gpt2"
+    assert smoke_payload["model_family"] == "gpt"
     assert smoke_payload["backend"] == "tile-cuda"
     assert smoke_payload["smoke"] == "tile_ops_fill"
     assert smoke_payload["loaded"] is False
@@ -1422,7 +1426,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert missing_optimizer_smoke.returncode == 2
     optimizer_payload = json.loads(missing_optimizer_smoke.stdout)
-    assert optimizer_payload["model_family"] == "gpt2"
+    assert optimizer_payload["model_family"] == "gpt"
     assert optimizer_payload["backend"] == "tile-cuda"
     assert optimizer_payload["smoke"] == "optimizer_step"
     assert optimizer_payload["loaded"] is False
@@ -1448,7 +1452,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert missing_lm_smoke.returncode == 2
     lm_payload = json.loads(missing_lm_smoke.stdout)
-    assert lm_payload["model_family"] == "gpt2"
+    assert lm_payload["model_family"] == "gpt"
     assert lm_payload["backend"] == "tile-cuda"
     assert lm_payload["smoke"] == "lm_step"
     assert lm_payload["loaded"] is False
@@ -1475,7 +1479,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert missing_attention_smoke.returncode == 2
     attention_payload = json.loads(missing_attention_smoke.stdout)
-    assert attention_payload["model_family"] == "gpt2"
+    assert attention_payload["model_family"] == "gpt"
     assert attention_payload["backend"] == "tile-cuda"
     assert attention_payload["smoke"] == "attention_step"
     assert attention_payload["loaded"] is False
@@ -1502,7 +1506,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert missing_mlp_smoke.returncode == 2
     mlp_payload = json.loads(missing_mlp_smoke.stdout)
-    assert mlp_payload["model_family"] == "gpt2"
+    assert mlp_payload["model_family"] == "gpt"
     assert mlp_payload["backend"] == "tile-cuda"
     assert mlp_payload["smoke"] == "mlp_step"
     assert mlp_payload["loaded"] is False
@@ -1528,7 +1532,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert missing_norm_residual_smoke.returncode == 2
     norm_residual_payload = json.loads(missing_norm_residual_smoke.stdout)
-    assert norm_residual_payload["model_family"] == "gpt2"
+    assert norm_residual_payload["model_family"] == "gpt"
     assert norm_residual_payload["backend"] == "tile-cuda"
     assert norm_residual_payload["smoke"] == "norm_residual_step"
     assert norm_residual_payload["loaded"] is False
@@ -1554,7 +1558,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert missing_transformer_block_smoke.returncode == 2
     transformer_block_payload = json.loads(missing_transformer_block_smoke.stdout)
-    assert transformer_block_payload["model_family"] == "gpt2"
+    assert transformer_block_payload["model_family"] == "gpt"
     assert transformer_block_payload["backend"] == "tile-cuda"
     assert transformer_block_payload["smoke"] == "transformer_block_step"
     assert transformer_block_payload["loaded"] is False
@@ -1588,7 +1592,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert missing_transformer_lm_smoke.returncode == 2
     transformer_lm_payload = json.loads(missing_transformer_lm_smoke.stdout)
-    assert transformer_lm_payload["model_family"] == "gpt2"
+    assert transformer_lm_payload["model_family"] == "gpt"
     assert transformer_lm_payload["backend"] == "tile-cuda"
     assert transformer_lm_payload["smoke"] == "transformer_lm_step"
     assert transformer_lm_payload["loaded"] is False
@@ -1624,7 +1628,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert missing_embedding_lm_smoke.returncode == 2
     embedding_lm_payload = json.loads(missing_embedding_lm_smoke.stdout)
-    assert embedding_lm_payload["model_family"] == "gpt2"
+    assert embedding_lm_payload["model_family"] == "gpt"
     assert embedding_lm_payload["backend"] == "tile-cuda"
     assert embedding_lm_payload["smoke"] == "embedding_lm_step"
     assert embedding_lm_payload["loaded"] is False
@@ -1669,7 +1673,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert missing_train_embedding_lm.returncode == 2
     train_embedding_payload = json.loads(missing_train_embedding_lm.stdout)
-    assert train_embedding_payload["model_family"] == "gpt2"
+    assert train_embedding_payload["model_family"] == "gpt"
     assert train_embedding_payload["backend"] == "tile-cuda"
     assert train_embedding_payload["status"] == "native-embedding-lm-failed"
     assert train_embedding_payload["loaded"] is False
@@ -1713,7 +1717,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert missing_train_transformer_lm.returncode == 2
     train_transformer_payload = json.loads(missing_train_transformer_lm.stdout)
-    assert train_transformer_payload["model_family"] == "gpt2"
+    assert train_transformer_payload["model_family"] == "gpt"
     assert train_transformer_payload["backend"] == "tile-cuda"
     assert train_transformer_payload["status"] == "native-transformer-lm-failed"
     assert train_transformer_payload["loaded"] is False
@@ -2158,7 +2162,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert checkpoint_metadata.returncode == 0, checkpoint_metadata.stderr
     checkpoint_payload = json.loads(checkpoint_metadata.stdout)
-    assert checkpoint_payload["model_family"] == "gpt2"
+    assert checkpoint_payload["model_family"] == "gpt"
     assert checkpoint_payload["backend"] == "tile-cuda"
     assert checkpoint_payload["status"] == "native-checkpoint-metadata-written"
     assert checkpoint_payload["checkpoint_metadata_smoke"] is True
@@ -4230,7 +4234,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
         check=False,
     )
     assert help_proc.returncode == 0, help_proc.stderr
-    assert "Native no-Python GPT trainer" in help_proc.stdout
+    assert "Native no-Python dense GPT trainer" in help_proc.stdout
 
     unified_help = subprocess.run(
         [str(linked_unified), "--help"],

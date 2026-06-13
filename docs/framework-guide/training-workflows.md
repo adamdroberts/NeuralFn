@@ -12,15 +12,17 @@ NeuralFn supports four training methods, each suited to different graph types. T
 For hierarchical graphs with mixed training methods, `HybridTrainer` orchestrates training across subgraph boundaries.
 
 Default CLI training now requires a compiled native CUDA/C++ entrypoint. Dense
-GPT-2 has that path through `nfn train --base-model gpt2`; other graph-backed
-`TorchTrainer` harnesses are disabled before Torch import unless
+GPT has that path through `nfn train --base-model gpt`; `gpt2` and `gpt3` are
+aliases for the same native trainer, and `gpt3` only changes the default
+context window to 2048 when no explicit template, graph, or `--train-seq-len`
+is supplied. Other graph-backed `TorchTrainer` harnesses are disabled before Torch import unless
 `NFN_ALLOW_TORCH_TRAINING=1` is set for one-off legacy debugging while native
 trainers are being added.
 
 GPT template selection is explicit on the native path. Pass
 `--template-name NAME` / `--preset NAME` to select any name in
 `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, or `--graph-file PATH` for a
-custom graph JSON. Dense GPT-2-compatible presets (`gpt2` and
+custom graph JSON. Dense GPT-compatible presets (`gpt2` and
 `gpt2_megakernel`, plus `gpt2_moa` with native MoA activation) use the
 implemented compiled CUDA Tile trainer; unsupported
 templates and graph files fail fast with native missing-trainer JSON instead of

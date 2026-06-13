@@ -103,13 +103,16 @@ These presets combine the modern-LLM kernels (§21–§33 in `todo-kernels.md`) 
 **DeepSeek-V4 mapping note:** V4-Pro's *domain-specific experts* (independently cultivated per math/code/agent/instruction, then consolidated) are the post-training analog of NeuralFn's architectural **semantic vocab-grounded per-dimension experts** (`semantic_router_moe`, `semantic_moe_jepa_evo`) — one expert per semantic dimension at routing time.
 
 **Native training selection:** `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS` is
-the canonical SDK catalog of names accepted by native GPT-2 training selectors.
-`train_gpt2.py` and the native GPT-2 SDK handoff accept `--template-name` /
-`--preset` for every shipped GPT template name, plus `--graph-file` for a
-custom graph JSON. Dense GPT-2-compatible presets (`gpt2`,
-`gpt2_megakernel`, and `gpt2_moa`) map to the implemented compiled CUDA Tile
-trainer today; `gpt2_moa` resolves to the native MoA activation mode
-automatically. Structurally different presets and custom graphs are selected and reported by the compiled frontend, then fail with
+the canonical SDK catalog of names accepted by native dense GPT training
+selectors. `train_gpt.py`, `nfn train --base-model gpt`, and the native GPT SDK
+handoff accept `--template-name` / `--preset` for every shipped GPT template
+name, plus `--graph-file` for a custom graph JSON. `gpt2` and `gpt3` are model
+family aliases for the same trainer; `gpt3` only defaults the context window to
+2048 when no explicit template, graph, or sequence length is provided. Dense
+GPT-compatible presets (`gpt2`, `gpt2_megakernel`, and `gpt2_moa`) map to the
+implemented compiled CUDA Tile trainer today; `gpt2_moa` resolves to the native
+MoA activation mode automatically. Structurally different presets and custom
+graphs are selected and reported by the compiled frontend, then fail with
 `selected-graph-native-trainer-missing` until their graph-specific C++ Tile
 trainer plans are implemented; they do not fall back to Torch by default.
 

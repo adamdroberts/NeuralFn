@@ -141,6 +141,16 @@ def _load_train_gpt2_script_module():
     return module
 
 
+def _load_train_gpt_script_module():
+    script = ROOT / "cli" / "scripts" / "train_gpt2.py"
+    spec = importlib.util.spec_from_file_location("train_gpt_template_pass_through_test", script)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_native_gpt2_compiled_cli_accepts_every_gpt_template_name() -> None:
     for preset in PRESETS:
         config = build_native_gpt2_compiled_cli_run_config(
@@ -214,6 +224,19 @@ def test_train_gpt2_fast_path_accepts_every_gpt_template_name() -> None:
             assert argv[argv.index("--template-name") + 1] == preset
 
 
+def test_train_gpt_fast_path_accepts_every_gpt_template_name() -> None:
+    module = _load_train_gpt_script_module()
+    for preset in PRESETS:
+        argv = module._fast_compiled_cli_argv(
+            ["--dataset-alias", "/tmp/native-cache", "--native-cuda-dry-run", "--template-name", preset]
+        )
+        assert argv is not None
+        assert "--model-family" in argv
+        assert argv[argv.index("--model-family") + 1] == "gpt"
+        assert "--template-name" in argv
+        assert argv[argv.index("--template-name") + 1] == preset
+
+
 def test_native_gpt2_compiled_cli_accepts_custom_graph_file() -> None:
     config = build_native_gpt2_compiled_cli_run_config(
         dataset_alias="/tmp/native-cache",
@@ -247,6 +270,18 @@ def test_train_gpt2_fast_path_accepts_custom_graph_file() -> None:
         assert argv is not None
         assert "--graph-file" in argv
         assert argv[argv.index("--graph-file") + 1] == "/tmp/custom-graph.json"
+
+
+def test_train_gpt_fast_path_accepts_custom_graph_file() -> None:
+    module = _load_train_gpt_script_module()
+    argv = module._fast_compiled_cli_argv(
+        ["--dataset-alias", "/tmp/native-cache", "--native-cuda-dry-run", "--graph-file", "/tmp/custom-graph.json"]
+    )
+    assert argv is not None
+    assert "--model-family" in argv
+    assert argv[argv.index("--model-family") + 1] == "gpt"
+    assert "--graph-file" in argv
+    assert argv[argv.index("--graph-file") + 1] == "/tmp/custom-graph.json"
 
 
 def test_build_gpt_template_payload_supports_all_presets() -> None:

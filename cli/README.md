@@ -167,7 +167,9 @@ python scripts/infer_nanogpt.py --device cuda --megakernel --prompt "Once upon a
 ```
 
 The master CLI uses the same no-Torch native dispatcher for explicit dense
-GPT pretraining. With the default `compiled-cli` runner it goes directly to
+GPT pretraining. Use `nfn train --base-model gpt` as the canonical command;
+`gpt2` and `gpt3` are aliases, and `gpt3` only changes the default context to
+2048 when no explicit template, graph, or sequence length is supplied. With the default `compiled-cli` runner it goes directly to
 the no-Python cached-shard C++ CLI before importing `train_gpt2_native`,
 `nfn_impl`, or Torch. `--template-name` / `--template` / `--preset` accepts
 every name in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, and

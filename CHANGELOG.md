@@ -10,6 +10,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 #### Changed
 
+- Tightened the universal dense GPT native trainer surface so the compiled
+  command defaults to `model_family: "gpt"` and `~/NeuralFn/artifacts/gpt`,
+  while `gpt2` and `gpt3` remain aliases for the same CUDA Tile C++ trainer.
+  `gpt3` still only defaults to a 2048-token context when no explicit template,
+  custom graph, or `--train-seq-len` is supplied. `cli/scripts/train_gpt.py`
+  now preserves its own command name when delegating through the compatibility
+  implementation, and native help/error text describes the trainer as dense GPT
+  rather than GPT-2-specific. Migration note: new commands and SDK code should
+  use `nfn train --base-model gpt`, `python cli/scripts/train_gpt.py`, or
+  `neuralfn.native_gpt`; the GPT-2 names remain compatibility wrappers around
+  the existing checkpoint/template implementation.
 - Promoted the dense GPT native trainer entrypoint from GPT-2-specific names to
   universal GPT names. `tools/build_native_gpt_cli.sh` now builds
   `nfn_gpt_native_train`, `nfn_native_train` defaults to `--base-model gpt`,

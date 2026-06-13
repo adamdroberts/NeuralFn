@@ -20,7 +20,7 @@
 #include <vector>
 
 #if defined(_WIN32)
-#error "nfn_gpt2_native_train currently targets POSIX execvp environments."
+#error "nfn_gpt_native_train currently targets POSIX execvp environments."
 #else
 #include <dlfcn.h>
 #include <unistd.h>
@@ -34,7 +34,7 @@ constexpr std::int64_t kAttentionForwardValueReuse = 64;
 constexpr std::int64_t kAttentionBackwardDimReuse = 64;
 
 struct Config {
-    std::string model_family = "gpt2";
+    std::string model_family = "gpt";
     std::string dataset_alias = "roneneldan__TinyStories__TinyStoriesV2-GPT4";
     std::string target;
     std::string output_dir;
@@ -177,7 +177,7 @@ std::string default_output_dir() {
     if (!env_output.empty()) {
         return env_output;
     }
-    return (home_dir() / "NeuralFn" / "artifacts" / "gpt2").string();
+    return (home_dir() / "NeuralFn" / "artifacts" / "gpt").string();
 }
 
 std::string shell_quote(const std::string& value) {
@@ -229,7 +229,7 @@ void print_invocation_command(int argc, char** argv) {
 void print_usage(const char* program) {
     std::cout
         << "Usage: " << program << " [options]\n\n"
-        << "Native no-Python GPT trainer entrypoint for cached uint16 NeuralFn datasets.\n"
+        << "Native no-Python dense GPT trainer entrypoint for cached uint16 NeuralFn datasets.\n"
         << "Requires fineweb_train_*.bin and fineweb_val_*.bin under the dataset directory.\n\n"
         << "Dataset options:\n"
         << "  --dataset-alias NAME_OR_PATH      Dataset alias under ~/.cache/nfn/datasets or absolute path\n"
@@ -245,18 +245,18 @@ void print_usage(const char* program) {
         << "  --tile-ops-lib PATH               libnfn_native_train_tile_ops.so path for --backend tile-cuda checks\n"
         << "  --check-tile-ops                  Verify raw NeuralFn Tile trainer ABI symbols and exit\n"
         << "  --smoke-tile-ops                  Launch nfn_native_tile_fill_float32 through CUDA runtime and verify copyback\n"
-        << "  --smoke-optimizer-step            Run one AdamW update over the GPT-2 registered parameter layout\n"
-        << "  --smoke-lm-step                   Run a tiny tied-embedding GPT-2 LM step through raw Tile kernels\n"
-        << "  --smoke-attention-step            Run a tiny GPT-2 attention stage through raw Tile kernels\n"
-        << "  --smoke-mlp-step                  Run a tiny GPT-2 MLP stage through raw Tile kernels\n"
-        << "  --smoke-norm-residual-step        Run a tiny GPT-2 LayerNorm/residual/backward stage through raw Tile kernels\n"
-        << "  --smoke-transformer-block-step    Run a tiny GPT-2 transformer block through raw Tile kernels\n"
+        << "  --smoke-optimizer-step            Run one AdamW update over the dense GPT registered parameter layout\n"
+        << "  --smoke-lm-step                   Run a tiny tied-embedding dense GPT LM step through raw Tile kernels\n"
+        << "  --smoke-attention-step            Run a tiny dense GPT attention stage through raw Tile kernels\n"
+        << "  --smoke-mlp-step                  Run a tiny dense GPT MLP stage through raw Tile kernels\n"
+        << "  --smoke-norm-residual-step        Run a tiny dense GPT LayerNorm/residual/backward stage through raw Tile kernels\n"
+        << "  --smoke-transformer-block-step    Run a tiny dense GPT transformer block through raw Tile kernels\n"
         << "  --smoke-transformer-lm-step       Sample cached tokens and run embeddings, one transformer block, final norm, tied LM head, CE, backward, and AdamW\n"
-        << "  --smoke-embedding-lm-step         Sample cached tokens and run GPT-2 embedding/final-norm/LM-head kernels\n"
-        << "  --train-embedding-lm              Train GPT-2 embedding/final-norm/LM-head path over cached shards with Tile kernels\n"
+        << "  --smoke-embedding-lm-step         Sample cached tokens and run dense GPT embedding/final-norm/LM-head kernels\n"
+        << "  --train-embedding-lm              Train dense GPT embedding/final-norm/LM-head path over cached shards with Tile kernels\n"
         << "  --train-transformer-lm            Run the dense GPT transformer/LM training loop with validation JSON (default)\n"
         << "  --no-train-transformer-lm         Disable the default transformer-LM loop for plan/check/debug commands\n"
-        << "  --checkpoint-metadata-smoke       Write a sparse native GPT-2 checkpoint-format artifact and DONE marker without CUDA/Torch\n"
+        << "  --checkpoint-metadata-smoke       Write a sparse native dense GPT checkpoint-format artifact and DONE marker without CUDA/Torch\n"
         << "  --cuda-runtime-lib PATH           libcudart path for Tile-CUDA smokes/training; defaults to NFN_CUDA_RUNTIME_LIB/libcudart.so\n"
         << "  --print-plan                      Print native backend JSON plan and exit\n"
         << "  --output-dir PATH                 Native output directory\n"
@@ -438,13 +438,13 @@ bool selected_template_is_shipped(const Config& cfg) {
     return std::find(presets.begin(), presets.end(), name) != presets.end();
 }
 
-bool selected_template_is_native_dense_gpt2_compatible(const Config& cfg) {
+bool selected_template_is_native_dense_gpt_compatible(const Config& cfg) {
     const std::string name = normalize_template_name(cfg.template_name);
     return name == "gpt2" || name == "gpt2_megakernel" || name == "gpt2_moa";
 }
 
 bool selected_graph_is_native_runnable(const Config& cfg) {
-    return cfg.graph_file.empty() && selected_template_is_native_dense_gpt2_compatible(cfg);
+    return cfg.graph_file.empty() && selected_template_is_native_dense_gpt_compatible(cfg);
 }
 
 std::string selected_graph_support_status(const Config& cfg) {
@@ -454,8 +454,8 @@ std::string selected_graph_support_status(const Config& cfg) {
     if (!selected_template_is_shipped(cfg)) {
         return "unknown-template";
     }
-    return selected_template_is_native_dense_gpt2_compatible(cfg) ? "native-transformer-lm"
-                                                                 : "template-native-trainer-missing";
+    return selected_template_is_native_dense_gpt_compatible(cfg) ? "native-transformer-lm"
+                                                                : "template-native-trainer-missing";
 }
 
 std::int64_t native_gpt2_parameter_count(
@@ -11268,7 +11268,7 @@ int main(int argc, char** argv) {
             return run_transformer_lm_training_json(cfg, dataset, argv[0]);
         }
         std::cerr
-            << "nfn_gpt2_native_train: NeuralFn Tile CUDA GPT-2 trainer loop is not implemented yet.\n"
+            << "nfn_gpt_native_train: NeuralFn Tile CUDA dense GPT trainer loop is not implemented yet.\n"
             << "Use --train-transformer-lm for the current NeuralFn-owned Tile trainer path, or --print-plan / "
             << "--check-tile-ops to inspect the Tile trainer requirements.\n";
         return 2;

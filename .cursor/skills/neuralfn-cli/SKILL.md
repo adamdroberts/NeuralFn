@@ -55,8 +55,9 @@ Canonical docs:
 - Keep the full `nfn train` parser and planner in sync with the lightweight
   dispatcher: `gpt`, `gpt2`, and `gpt3` must all be accepted, while graph-backed
   compatibility code canonicalizes them to the GPT-compatible template builder.
-- Keep `cli/scripts/train_gpt2.py` native-only and lightweight: importing it,
-  building its parser, resolving defaults, and running direct native dispatch
+- Keep `cli/scripts/train_gpt.py` as the canonical native-only dense GPT script
+  and keep `cli/scripts/train_gpt2.py` as a lightweight compatibility entrypoint:
+  importing either one, resolving defaults, and running direct native dispatch
   must set up repo/script imports without requiring `PYTHONPATH` and without
   importing Torch, `server.dataset_manager`, NumPy, or tiktoken.
 - Keep `cli/scripts/infer_gpt2.py` parser construction, `--help`, and
@@ -99,13 +100,14 @@ Canonical docs:
 - `nfn kernels bench [--device auto|cpu|cuda] [--iterations N] [--json]` compares old graph-walk PyTorch, static compiled PyTorch, and Tile-requested compiled execution on a small scalar graph.
 - `nfn kernels examples [--write --output-dir examples/tile_cuda] [--json]` lists or regenerates checked-in examples plus one generated SDK snippet per registry entry.
 - `nfn train`, `nfn infer`, and `nfn eval` accept `--kernel-backend {auto,torch,tile-cuda}`, `--tile-cuda-strict` / `--no-tile-cuda-strict`, and `--tile-cuda-report PATH`. Explicit `tile-cuda` requests CUDA Tile build tooling and now defaults to strict kernel enforcement; use `--no-tile-cuda-strict` only when intentionally debugging fallback behavior. `auto` still needs `NFN_TILE_CUDA_BUILD=1` to build on demand. The `tile-cuda` packaging extra must stay Torch-free; install `.[torch]` separately for graph-backed PyTorch execution or the legacy PyTorch Tile extension loader.
-- `cli/scripts/train_gpt2.py` is native-only: direct execution with the default
-  `compiled-cli` runner translates GPT-2 flags to the compiled C++ CLI before
+- `cli/scripts/train_gpt.py` is the canonical native-only dense GPT script, with
+  `cli/scripts/train_gpt2.py` kept as compatibility. Direct execution with the
+  default `compiled-cli` runner translates GPT flags to the compiled C++ CLI before
   importing `train_gpt2_native.py`; explicit non-compiled runners still use
   `train_gpt2_native.py`. Cached uint16 train/validation shards go straight to
-  the compiled GPT-2 Tile-CUDA trainer, so training token batches do not pass
+  the compiled dense GPT Tile-CUDA trainer, so training token batches do not pass
   through graph-editor nodes or `TorchTrainer`.
-- Cached native GPT-2 startup should avoid `server.dataset_manager`, NumPy,
+- Cached native GPT startup should avoid `server.dataset_manager`, NumPy,
   tiktoken, Torch, and pre-launch full-schedule estimation. Existing dataset
   directories are handed to C++ by alias/path without Python reading `meta.json`
   or revalidating shard metadata. The default dataset is
@@ -118,9 +120,9 @@ Canonical docs:
   should infer the sibling validation bin in C++, not through Python dataset
   materialization.
 - Default `nfn train` commands go directly to a compiled native frontend before
-  importing `train_gpt2_native`, `nfn_impl`, or Torch. GPT-2 reports
-  `partial-native-trainer` and dispatches to the no-Python cached-shard CLI;
-  the canonical `gpt` alias does the same while reporting `model_family: gpt`;
+  importing `train_gpt2_native`, `nfn_impl`, or Torch. The canonical `gpt` family
+  reports `model_family: gpt` and dispatches to the no-Python cached-shard CLI;
+  `gpt2` and `gpt3` are aliases for that same compiled dense GPT trainer;
   NanoGPT `--train-token-lm` dispatches to its partial native trainer; unsupported
   families fail from the native registry.
 - GPT-2 native training uses the SM120 AdamW schedule: 20,000 steps, seq len

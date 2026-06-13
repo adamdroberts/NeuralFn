@@ -1369,6 +1369,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             print("TRAIN_GPT2_NATIVE_LOADED", "train_gpt2_native" in sys.modules)
             print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
             print("NUMPY_LOADED", "numpy" in sys.modules)
+            print("ARGV0", Path(sys.argv[0]).name)
             raise SystemExit(exit_code)
             """
         )
@@ -1392,6 +1393,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("TRAIN_GPT2_NATIVE_LOADED False", proc.stdout)
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
         self.assertIn("NUMPY_LOADED False", proc.stdout)
+        self.assertIn("ARGV0 train_gpt.py", proc.stdout)
 
     def test_train_gpt2_module_import_and_parser_do_not_import_torch(self) -> None:
         code = textwrap.dedent(
