@@ -1153,21 +1153,25 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["attention_backward_grad_layout_launches_elided_per_block"] == 1
     assert tile_payload["attention_backward_strategy"] == "tk-sm120-packed-qkv-bf16-backward-bridge"
     assert tile_payload["attention_backward_reuses_forward_workspace"] is True
-    assert tile_payload["attention_backward_uses_saved_forward_workspace"] is False
+    assert tile_payload["attention_backward_uses_saved_forward_workspace"] is True
     assert tile_payload["attention_activation_storage_strategy"] == "disabled"
-    assert tile_payload["packed_attention_activation_storage_strategy"] == "disabled"
-    assert tile_payload["stored_packed_attention_activation_blocks"] == 0
-    assert tile_payload["stored_packed_attention_bf16_elements"] == 0
-    assert tile_payload["stored_packed_attention_bf16_bytes"] == 0
+    assert tile_payload["packed_attention_activation_storage_strategy"] == (
+        "packed-qkv-o-bf16-forward-store-direct-backward"
+    )
+    assert tile_payload["stored_packed_attention_activation_blocks"] == 3
+    assert tile_payload["stored_packed_attention_bf16_elements"] > 0
+    assert tile_payload["stored_packed_attention_bf16_bytes"] > 0
     assert tile_payload["stored_packed_attention_store_blocks"] == 0
     assert tile_payload["stored_packed_attention_restore_blocks"] == 0
     assert tile_payload["stored_packed_attention_backward_kernel_launches"] == 0
-    assert tile_payload["stored_packed_attention_backward_consumer_strategy"] == "disabled"
+    assert tile_payload["stored_packed_attention_backward_consumer_strategy"] == (
+        "saved-packed-qkv-o-bf16-backward-to-qkv"
+    )
     assert tile_payload["attention_backward_recompute_forward_elided_per_block"] == 1
     assert tile_payload["attention_backward_score_reuse_dim"] == 64
     assert tile_payload["attention_backward_scalar_cta_elision_factor"] == 192
     assert tile_payload["attention_backward_row_count"] * 192 == tile_payload["attention_backward_scalar_output_count"]
-    packed_store_plan = subprocess.run(
+    disabled_packed_store_plan = subprocess.run(
         [
             str(cli),
             "--dataset-alias",
@@ -1178,25 +1182,20 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         ],
         env={
             **os.environ,
-            "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS": "1",
-            "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS": "3",
+            "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS": "0",
         },
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert packed_store_plan.returncode == 0, packed_store_plan.stderr
-    packed_store_payload = json.loads(packed_store_plan.stdout)
-    assert packed_store_payload["packed_attention_activation_storage_strategy"] == (
-        "packed-qkv-o-bf16-forward-store-direct-backward"
-    )
-    assert packed_store_payload["stored_packed_attention_activation_blocks"] == 3
-    assert packed_store_payload["stored_packed_attention_bf16_elements"] > 0
-    assert packed_store_payload["stored_packed_attention_bf16_bytes"] > 0
-    assert packed_store_payload["stored_packed_attention_backward_consumer_strategy"] == (
-        "saved-packed-qkv-o-bf16-backward-to-qkv"
-    )
+    assert disabled_packed_store_plan.returncode == 0, disabled_packed_store_plan.stderr
+    disabled_packed_store_payload = json.loads(disabled_packed_store_plan.stdout)
+    assert disabled_packed_store_payload["packed_attention_activation_storage_strategy"] == "disabled"
+    assert disabled_packed_store_payload["stored_packed_attention_activation_blocks"] == 0
+    assert disabled_packed_store_payload["stored_packed_attention_bf16_elements"] == 0
+    assert disabled_packed_store_payload["stored_packed_attention_bf16_bytes"] == 0
+    assert disabled_packed_store_payload["stored_packed_attention_backward_consumer_strategy"] == "disabled"
     gpt2_stages_by_name = {stage["name"]: stage for stage in tile_payload["training_step_plan"]["stages"]}
     assert (
         gpt2_stages_by_name["lm_head.backward_weight_tied"]["kernel_abi"]
@@ -1977,14 +1976,18 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["stored_attention_restore_kernel_launches"] == 0
     assert train_transformer_payload["stored_attention_backward_kernel_launches"] == 0
     assert train_transformer_payload["stored_attention_backward_consumer_strategy"] == "disabled"
-    assert train_transformer_payload["packed_attention_activation_storage_strategy"] == "disabled"
-    assert train_transformer_payload["stored_packed_attention_activation_blocks"] == 0
+    assert train_transformer_payload["packed_attention_activation_storage_strategy"] == (
+        "packed-qkv-o-bf16-forward-store-direct-backward"
+    )
+    assert train_transformer_payload["stored_packed_attention_activation_blocks"] == 3
     assert train_transformer_payload["stored_packed_attention_bf16_elements"] == 0
     assert train_transformer_payload["stored_packed_attention_bf16_bytes"] == 0
     assert train_transformer_payload["stored_packed_attention_store_blocks"] == 0
     assert train_transformer_payload["stored_packed_attention_restore_blocks"] == 0
     assert train_transformer_payload["stored_packed_attention_backward_kernel_launches"] == 0
-    assert train_transformer_payload["stored_packed_attention_backward_consumer_strategy"] == "disabled"
+    assert train_transformer_payload["stored_packed_attention_backward_consumer_strategy"] == (
+        "saved-packed-qkv-o-bf16-backward-to-qkv"
+    )
     assert train_transformer_payload["max_steps"] == 2
     assert train_transformer_payload["eval_every_steps"] == 1
     assert train_transformer_payload["eval_batches"] == 1
@@ -2073,13 +2076,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "backward_recompute_blocks": 11,
         "final_block_backward_recompute_elided": True,
         "backward_recompute_mlp_fc_gelu_elided": True,
-        "backward_recompute_attention_qkv_sdpa_elided": False,
-        "backward_recompute_attention_uses_saved_o": False,
+        "backward_recompute_attention_qkv_sdpa_elided": True,
+        "backward_recompute_attention_uses_saved_o": True,
         "backward_recompute_mlp_projection_elided": True,
         "backward_recompute_final_residual_elided": True,
         "mlp_proj_backward_gelu_inplace": True,
         "mlp_proj_backward_grad_act_scratch_allocated": False,
-        "activation_tape_strategy": "scratch-recompute-bf16-stored-mlp-direct-backward-opt-in",
+        "activation_tape_strategy": "scratch-recompute-bf16-stored-packed-attention-and-mlp-direct-backward",
         "forward_row_qkv_scratch_allocated": False,
         "forward_row_qkv_scratch_buffers_elided": 3,
         "per_block_parameter_buffers": 12,

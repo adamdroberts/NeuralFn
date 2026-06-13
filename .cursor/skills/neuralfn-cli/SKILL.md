@@ -493,15 +493,16 @@ Canonical docs:
   `backward_recompute_mlp_projection_elided: true` and
   `backward_recompute_final_residual_elided: true`.
 - Packed-QKV attention activation storage in full GPT
-  `--train-transformer-lm` is opt-in because saving every earlier block currently
-  exceeds the default RTX 5090 memory budget. Preserve
-  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=1` plus optional
-  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N`; the GPT-2-prefixed names
-  remain fallbacks. Keep default JSON at
-  `packed_attention_activation_storage_strategy: "disabled"`. Opt-in runs should
-  report `stored_packed_attention_*` counters and
-  `block_recompute_saved_packed_attention` timings when the saved packed QKV/O
-  path is active.
+  `--train-transformer-lm` stores the first three earlier blocks by default.
+  Preserve `packed_attention_activation_storage_strategy:
+  "packed-qkv-o-bf16-forward-store-direct-backward"` and
+  `stored_packed_attention_activation_blocks: 3` for the default workstation
+  path. `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` restores the
+  previous lower-memory recompute path, and
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` tunes the cap. The
+  GPT-2-prefixed names remain fallbacks. Saved packed QKV/O runs should report
+  `stored_packed_attention_*` counters and
+  `block_recompute_saved_packed_attention` timings.
 - MLP projection backward in full GPT-2 `--train-transformer-lm` should write
   projection dInput directly into the MLP fc gradient buffer and then run
   `nfn_native_tile_gelu_backward_inplace_float32`. Do not reintroduce a

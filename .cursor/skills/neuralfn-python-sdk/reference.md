@@ -367,6 +367,12 @@ GPT-2-prefixed flag remains a fallback. Keep
 `packed_qkv_float_attention_tape_elided: true`,
 `packed_qkv_float_attention_tape_elements_elided`, and
 `packed_qkv_float_attention_tape_bytes_elided` in plan/training JSON.
+The default workstation path stores packed BF16 QKV plus O for the first three
+earlier blocks, so keep `packed_attention_activation_storage_strategy:
+"packed-qkv-o-bf16-forward-store-direct-backward"` and
+`stored_packed_attention_activation_blocks: 3` unless
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` is set for lower-memory
+recompute profiling.
 
 Full GPT-2 `--train-transformer-lm` should use
 the merged-gradient attention backward contract so SDPA backward reads

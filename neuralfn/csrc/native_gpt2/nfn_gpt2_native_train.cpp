@@ -32,6 +32,7 @@ namespace {
 
 constexpr std::int64_t kAttentionForwardValueReuse = 64;
 constexpr std::int64_t kAttentionBackwardDimReuse = 64;
+constexpr std::int64_t kDefaultStoredPackedAttentionBlocks = 3;
 
 struct Config {
     std::string model_family = "gpt";
@@ -137,6 +138,13 @@ bool env_flag_enabled(const std::string& value) {
            value == "TRUE" ||
            value == "on" ||
            value == "ON";
+}
+
+bool env_flag_enabled_or_default(const std::string& value, bool default_value) {
+    if (value.empty()) {
+        return default_value;
+    }
+    return env_flag_enabled(value);
 }
 
 std::int64_t env_nonnegative_i64_or(std::initializer_list<const char*> names, std::int64_t fallback) {
@@ -1039,7 +1047,7 @@ bool print_tile_plan(
                           "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS"});
     const bool store_packed_attention_activations_enabled =
         packed_qkv_attention_enabled &&
-        env_flag_enabled(store_packed_attention_activations_env);
+        env_flag_enabled_or_default(store_packed_attention_activations_env, true);
     constexpr std::int64_t activation_tape_count = 1;
     const std::int64_t packed_qkv_attention_bf16_elements =
         packed_qkv_attention_enabled ? (tokens * 768 * 4 * activation_tape_count) : 0;
@@ -1054,7 +1062,7 @@ bool print_tile_plan(
                   cfg.num_layers - 1,
                   env_nonnegative_i64_or({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS",
                                           "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS"},
-                                         cfg.num_layers - 1))
+                                         kDefaultStoredPackedAttentionBlocks))
             : 0;
     const std::int64_t stored_packed_attention_bf16_elements =
         stored_packed_attention_block_count * tokens * 768 * 4;
@@ -7335,7 +7343,7 @@ int run_transformer_lm_training_json(
                           "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS"});
     const bool store_packed_attention_activations_enabled =
         packed_qkv_attention_enabled &&
-        env_flag_enabled(store_packed_attention_activations_env);
+        env_flag_enabled_or_default(store_packed_attention_activations_env, true);
     const bool fuse_attention_residual_ln2_enabled = fuse_attention_residual_ln2_default_enabled();
     const bool packed_qkv_float_attention_tape_elided = packed_qkv_attention_enabled;
     const std::int64_t packed_qkv_float_attention_tape_elements_elided =
@@ -7713,7 +7721,7 @@ int run_transformer_lm_training_json(
                   trained_layers - 1,
                   env_nonnegative_i64_or({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS",
                                           "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS"},
-                                         trained_layers - 1))
+                                         kDefaultStoredPackedAttentionBlocks))
             : 0;
     const std::int64_t stored_packed_attention_bf16_elements_per_block =
         qkv_activation_elements + activation_elements;
