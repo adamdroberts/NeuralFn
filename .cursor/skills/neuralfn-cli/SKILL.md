@@ -473,6 +473,15 @@ Canonical docs:
   projection output or final residual output. Keep
   `backward_recompute_mlp_projection_elided: true` and
   `backward_recompute_final_residual_elided: true`.
+- Packed-QKV attention activation storage in full GPT-2
+  `--train-transformer-lm` is opt-in because saving every earlier block currently
+  exceeds the default RTX 5090 memory budget. Preserve
+  `NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS=1` plus optional
+  `NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS=N`, and keep default JSON at
+  `packed_attention_activation_storage_strategy: "disabled"`. Opt-in runs should
+  report `stored_packed_attention_*` counters and
+  `block_recompute_saved_packed_attention` timings when the saved packed QKV/O
+  path is active.
 - MLP projection backward in full GPT-2 `--train-transformer-lm` should write
   projection dInput directly into the MLP fc gradient buffer and then run
   `nfn_native_tile_gelu_backward_inplace_float32`. Do not reintroduce a
