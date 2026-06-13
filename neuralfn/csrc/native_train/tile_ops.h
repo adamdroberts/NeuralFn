@@ -660,6 +660,19 @@ int nfn_native_tile_layer_norm_backward_input_with_stats_float32(
     std::int64_t dim,
     void* cuda_stream);
 
+int nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32(
+    const float* x,
+    const float* grad_out,
+    const float* weight,
+    const float* mean,
+    const float* rstd,
+    const float* residual_grad,
+    const float* residual_scale,
+    float* out,
+    std::int64_t rows,
+    std::int64_t dim,
+    void* cuda_stream);
+
 int nfn_native_tile_layer_norm_backward_affine_float32(
     const float* x,
     const float* grad_out,

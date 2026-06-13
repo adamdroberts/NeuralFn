@@ -4370,6 +4370,52 @@ __tile_global__ void layer_norm_backward_input_with_stats_float32_kernel(
   ct::store_masked(grad_x + base + d, grad_x_tile, mask);
 }
 
+__tile_global__ void layer_norm_backward_input_residual_add_with_stats_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ grad_out,
+    const float* __restrict__ weight,
+    const float* __restrict__ mean,
+    const float* __restrict__ rstd,
+    const float* __restrict__ residual_grad,
+    const float* __restrict__ residual_scale,
+    float* __restrict__ out,
+    std::int64_t rows,
+    std::int64_t dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  weight = ct::assume_aligned(weight, 16_ic);
+  mean = ct::assume_aligned(mean, 16_ic);
+  rstd = ct::assume_aligned(rstd, 16_ic);
+  residual_grad = ct::assume_aligned(residual_grad, 16_ic);
+  residual_scale = ct::assume_aligned(residual_scale, 16_ic);
+  out = ct::assume_aligned(out, 16_ic);
+
+  const int row = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto d = ct::iota<IndexTile>();
+  auto mask = d < ct::full<IndexTile>(dim);
+  auto base = ct::full<IndexTile>(static_cast<std::int64_t>(row) * dim);
+  auto zero = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  auto x_tile = ct::load_masked(x + base + d, mask);
+  auto mean_tile = ct::full<decltype(zero)>(row < rows ? mean[row] : 0.0f);
+  auto inv_std = ct::full<decltype(zero)>(row < rows ? rstd[row] : 0.0f);
+  auto centered = ct::select(mask, x_tile - mean_tile, zero);
+  auto xhat = centered * inv_std;
+  auto grad_tile = ct::load_masked(grad_out + base + d, mask);
+  auto weight_tile = ct::load_masked(weight + d, mask);
+  auto grad_norm = ct::select(mask, grad_tile * weight_tile, zero);
+  auto sum_grad = ct::sum(grad_norm, 0_ic);
+  auto sum_grad_xhat = ct::sum(grad_norm * xhat, 0_ic);
+  auto dim_f = ct::full<decltype(sum_grad)>(static_cast<float>(dim));
+  auto grad_x_tile = (grad_norm * dim_f - sum_grad - xhat * sum_grad_xhat) * (inv_std / dim_f);
+  auto residual_tile = ct::load_masked(residual_grad + base + d, mask);
+  auto scale_tile = ct::full<decltype(grad_x_tile)>(*residual_scale);
+  ct::store_masked(out + base + d, residual_tile + scale_tile * grad_x_tile, mask);
+}
+
 __tile_global__ void layer_norm_backward_affine_float32_kernel(
     const float* __restrict__ x,
     const float* __restrict__ grad_out,
@@ -8493,6 +8539,22 @@ void launch_layer_norm_backward_input_with_stats_float32(
     cudaStream_t stream) {
   layer_norm_backward_input_with_stats_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
       x, grad_out, weight, mean, rstd, grad_x, rows, dim);
+}
+
+void launch_layer_norm_backward_input_residual_add_with_stats_float32(
+    const float* x,
+    const float* grad_out,
+    const float* weight,
+    const float* mean,
+    const float* rstd,
+    const float* residual_grad,
+    const float* residual_scale,
+    float* out,
+    std::int64_t rows,
+    std::int64_t dim,
+    cudaStream_t stream) {
+  layer_norm_backward_input_residual_add_with_stats_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      x, grad_out, weight, mean, rstd, residual_grad, residual_scale, out, rows, dim);
 }
 
 void launch_layer_norm_backward_affine_float32(

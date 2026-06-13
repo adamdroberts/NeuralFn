@@ -1361,6 +1361,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_bf16_bits_to_float32" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_store_mlp_activations_bf16_float32" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_restore_mlp_activations_bf16_float32" in tile_payload["available_native_kernels"]
+    assert (
+        "nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32"
+        in tile_payload["available_native_kernels"]
+    )
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32" in tile_payload["available_native_kernels"]
@@ -2262,10 +2266,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "position_gradient_scratch_buffer_allocated": False,
         "position_gradient_microbatch_full_copy_elided": True,
         "layer_norm_backward_affine_strategy": "auto-chunked-atomic-accumulate",
-        "layer_norm_stats_strategy": "forward-store-mean-rstd-backward-reuse",
-        "layer_norm_backward_reuses_forward_stats": True,
-        "layer_norm_stats_disabled_by_fused_residual_ln2": False,
-        "gradient_clip_loop": False,
+            "layer_norm_stats_strategy": "forward-store-mean-rstd-backward-reuse",
+            "layer_norm_backward_reuses_forward_stats": True,
+            "layer_norm_stats_disabled_by_fused_residual_ln2": False,
+            "layer_norm_backward_residual_fusion_enabled": True,
+            "layer_norm_backward_residual_strategy": "fused-dinput-residual-add-with-forward-stats",
+            "gradient_clip_loop": False,
         "gradient_clip_loop_elided": True,
         "gradient_clip_strategy": "fused-multi-buffer-sumsq-device-scale",
         "gradient_clip_descriptor_count": 0,
@@ -3441,12 +3447,16 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_layer_norm_with_stats_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_input_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_input_with_stats_float32" in header_text
+    assert "nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_affine_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_affine_accumulate_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_float32" in header_text
     assert "launch_layer_norm_with_stats_float32" in source_text
     assert "launch_layer_norm_backward_input_with_stats_float32" in source_text
+    assert "launch_layer_norm_backward_input_residual_add_with_stats_float32" in source_text
     assert "launch_layer_norm_backward_affine_accumulate_with_stats_float32" in source_text
+    assert "layer_norm_backward_input_residual_add_with_stats_float32_kernel" in kernels_text
+    assert "fused-dinput-residual-add-with-forward-stats" in gpt2_source_text
     assert "nfn_native_tile_rms_norm_float32" in header_text
     assert "nfn_native_tile_rms_norm_backward_input_float32" in header_text
     assert "nfn_native_tile_softmax_lastdim_float32" in header_text
@@ -4320,6 +4330,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_layer_norm_with_stats_float32" in exported
         assert "nfn_native_tile_layer_norm_backward_input_float32" in exported
         assert "nfn_native_tile_layer_norm_backward_input_with_stats_float32" in exported
+        assert "nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32" in exported
         assert "nfn_native_tile_layer_norm_backward_affine_float32" in exported
         assert "nfn_native_tile_layer_norm_backward_affine_accumulate_float32" in exported
         assert "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_float32" in exported

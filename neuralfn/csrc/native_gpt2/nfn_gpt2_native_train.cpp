@@ -739,6 +739,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_absolute_position_embedding_backward_accumulate_float32",
         "nfn_native_tile_layer_norm_float32",
         "nfn_native_tile_layer_norm_backward_input_float32",
+        "nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32",
         "nfn_native_tile_layer_norm_backward_affine_float32",
         "nfn_native_tile_layer_norm_backward_affine_accumulate_float32",
         "nfn_native_tile_linear_float32",
@@ -6758,6 +6759,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_layer_norm_with_stats_float32",
         "nfn_native_tile_layer_norm_backward_input_float32",
         "nfn_native_tile_layer_norm_backward_input_with_stats_float32",
+        "nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32",
         "nfn_native_tile_layer_norm_backward_affine_accumulate_float32",
         "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_float32",
         "nfn_native_tile_linear_float32",
@@ -6856,6 +6858,9 @@ int run_transformer_lm_training_json(
         const float*, const float*, const float*, float*, std::int64_t, std::int64_t, float, void*);
     using LayerNormBackwardInputWithStatsFn = int (*)(
         const float*, const float*, const float*, const float*, const float*, float*, std::int64_t, std::int64_t, void*);
+    using LayerNormBackwardInputResidualAddWithStatsFn = int (*)(
+        const float*, const float*, const float*, const float*, const float*,
+        const float*, const float*, float*, std::int64_t, std::int64_t, void*);
     using LayerNormBackwardAffineAccumulateFn = int (*)(
         const float*, const float*, float*, float*, std::int64_t, std::int64_t, float, void*);
     using LayerNormBackwardAffineAccumulateWithStatsFn = int (*)(
@@ -6986,6 +6991,7 @@ int run_transformer_lm_training_json(
     LayerNormWithStatsFn layer_norm_with_stats = nullptr;
     LayerNormBackwardInputFn layer_norm_backward_input = nullptr;
     LayerNormBackwardInputWithStatsFn layer_norm_backward_input_with_stats = nullptr;
+    LayerNormBackwardInputResidualAddWithStatsFn layer_norm_backward_input_residual_add_with_stats = nullptr;
     LayerNormBackwardAffineAccumulateFn layer_norm_backward_affine_accumulate = nullptr;
     LayerNormBackwardAffineAccumulateWithStatsFn layer_norm_backward_affine_accumulate_with_stats = nullptr;
     LinearFn linear = nullptr;
@@ -7146,6 +7152,9 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_layer_norm_backward_input_float32");
                 layer_norm_backward_input_with_stats = load_symbol<LayerNormBackwardInputWithStatsFn>(
                     tile_handle, "nfn_native_tile_layer_norm_backward_input_with_stats_float32");
+                layer_norm_backward_input_residual_add_with_stats =
+                    load_symbol<LayerNormBackwardInputResidualAddWithStatsFn>(
+                        tile_handle, "nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32");
                 layer_norm_backward_affine_accumulate = load_symbol<LayerNormBackwardAffineAccumulateFn>(
                     tile_handle, "nfn_native_tile_layer_norm_backward_affine_accumulate_float32");
                 layer_norm_backward_affine_accumulate_with_stats =
@@ -7413,6 +7422,12 @@ int run_transformer_lm_training_json(
             ? qkv_activation_elements + activation_elements * 5
             : 0;
     const bool layer_norm_stats_enabled = true;
+    const bool fuse_ln_backward_residual_enabled =
+        layer_norm_stats_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_FUSE_LN_BACKWARD_RESIDUAL",
+                              "NFN_NATIVE_GPT2_FUSE_LN_BACKWARD_RESIDUAL"}),
+            true);
     const std::string lm_head_bf16_logits_env =
         env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS", "NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS"});
     const bool lm_head_bf16_logits_enabled =
@@ -9265,12 +9280,32 @@ int run_transformer_lm_training_json(
             run_timed_stage("block_backward.ln2_residual.affine", [&]() {
                 run_layer_norm_backward_affine_accumulate(tape.residual1, grad_ln2, ln2_mean, ln2_rstd, block.accum_grad_ln2_weight, block.accum_grad_ln2_bias, label + ".ln2.backward_affine.accumulate");
             });
-            run_timed_stage("block_backward.ln2_residual.dinput", [&]() {
-                run_layer_norm_backward_input(tape.residual1, grad_ln2, block.ln2_weight, ln2_mean, ln2_rstd, grad_residual1_from_mlp, label + ".ln2.backward_input");
-            });
-            run_timed_stage("block_backward.ln2_residual.add", [&]() {
-                if (error.empty()) run(residual_add(incoming_grad, grad_residual1_from_mlp, residual_scale, grad_residual1, activation_elements, nullptr), label + ".mlp.residual.backward_add");
-            });
+            if (fuse_ln_backward_residual_enabled) {
+                run_timed_stage("block_backward.ln2_residual.dinput_add", [&]() {
+                    if (error.empty()) {
+                        run(layer_norm_backward_input_residual_add_with_stats(
+                                tape.residual1,
+                                grad_ln2,
+                                block.ln2_weight,
+                                ln2_mean,
+                                ln2_rstd,
+                                incoming_grad,
+                                residual_scale,
+                                grad_residual1,
+                                rows,
+                                kDim,
+                                nullptr),
+                            label + ".ln2.backward_input_residual_add.with_stats");
+                    }
+                });
+            } else {
+                run_timed_stage("block_backward.ln2_residual.dinput", [&]() {
+                    run_layer_norm_backward_input(tape.residual1, grad_ln2, block.ln2_weight, ln2_mean, ln2_rstd, grad_residual1_from_mlp, label + ".ln2.backward_input");
+                });
+                run_timed_stage("block_backward.ln2_residual.add", [&]() {
+                    if (error.empty()) run(residual_add(incoming_grad, grad_residual1_from_mlp, residual_scale, grad_residual1, activation_elements, nullptr), label + ".mlp.residual.backward_add");
+                });
+            }
         });
         run_timed_stage("block_backward.attn_proj", [&]() {
             run_timed_stage("block_backward.attn_proj.dweight_bias", [&]() {
@@ -9371,12 +9406,32 @@ int run_transformer_lm_training_json(
             run_timed_stage("block_backward.ln1_residual.affine", [&]() {
                 run_layer_norm_backward_affine_accumulate(block_input, grad_ln1, tape.ln1_mean, tape.ln1_rstd, block.accum_grad_ln1_weight, block.accum_grad_ln1_bias, label + ".ln1.backward_affine.accumulate");
             });
-            run_timed_stage("block_backward.ln1_residual.dinput", [&]() {
-                run_layer_norm_backward_input(block_input, grad_ln1, block.ln1_weight, tape.ln1_mean, tape.ln1_rstd, grad_x_from_attn, label + ".ln1.backward_input");
-            });
-            run_timed_stage("block_backward.ln1_residual.add", [&]() {
-                if (error.empty()) run(residual_add(grad_residual1, grad_x_from_attn, residual_scale, output_grad, activation_elements, nullptr), label + ".attn.residual.backward_add");
-            });
+            if (fuse_ln_backward_residual_enabled) {
+                run_timed_stage("block_backward.ln1_residual.dinput_add", [&]() {
+                    if (error.empty()) {
+                        run(layer_norm_backward_input_residual_add_with_stats(
+                                block_input,
+                                grad_ln1,
+                                block.ln1_weight,
+                                tape.ln1_mean,
+                                tape.ln1_rstd,
+                                grad_residual1,
+                                residual_scale,
+                                output_grad,
+                                rows,
+                                kDim,
+                                nullptr),
+                            label + ".ln1.backward_input_residual_add.with_stats");
+                    }
+                });
+            } else {
+                run_timed_stage("block_backward.ln1_residual.dinput", [&]() {
+                    run_layer_norm_backward_input(block_input, grad_ln1, block.ln1_weight, tape.ln1_mean, tape.ln1_rstd, grad_x_from_attn, label + ".ln1.backward_input");
+                });
+                run_timed_stage("block_backward.ln1_residual.add", [&]() {
+                    if (error.empty()) run(residual_add(grad_residual1, grad_x_from_attn, residual_scale, output_grad, activation_elements, nullptr), label + ".attn.residual.backward_add");
+                });
+            }
         });
         stage_end(stage_event, "block_backward");
     };
@@ -10594,6 +10649,13 @@ int run_transformer_lm_training_json(
         << (layer_norm_stats_enabled ? "true" : "false") << ",\n"
         << "    \"layer_norm_stats_disabled_by_fused_residual_ln2\": "
         << (fuse_attention_residual_ln2_enabled && !layer_norm_stats_enabled ? "true" : "false") << ",\n"
+        << "    \"layer_norm_backward_residual_fusion_enabled\": "
+        << (fuse_ln_backward_residual_enabled ? "true" : "false") << ",\n"
+        << "    \"layer_norm_backward_residual_strategy\": \""
+        << (fuse_ln_backward_residual_enabled
+                ? "fused-dinput-residual-add-with-forward-stats"
+                : "separate-dinput-plus-residual-add")
+        << "\",\n"
         << "    \"gradient_clip_loop\": false,\n"
         << "    \"gradient_clip_loop_elided\": true,\n"
         << "    \"gradient_clip_strategy\": \"fused-multi-buffer-sumsq-device-scale\",\n"

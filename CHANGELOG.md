@@ -6,6 +6,45 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT fused LayerNorm residual backward
+
+#### Changed
+
+- Added the raw Tile CUDA ABI
+  `nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32`.
+  The dense GPT native trainer now uses it for block LN1/LN2 backward when
+  forward LayerNorm stats are available, fusing LayerNorm dInput with the
+  residual-gradient add that previously ran as a separate Tile launch.
+- Added `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_RESIDUAL=0` and the
+  `NFN_NATIVE_GPT2_FUSE_LN_BACKWARD_RESIDUAL=0` compatibility fallback for
+  paired old-vs-new measurements. Runtime JSON now reports
+  `block_state_layout.layer_norm_backward_residual_fusion_enabled` and
+  `block_state_layout.layer_norm_backward_residual_strategy`.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Verified `python -m pytest tests/test_native_gpt2.py -q -k
+  native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`.
+- Verified `build/nfn_gpt_native_train --backend tile-cuda --check-tile-ops
+  --tile-ops-lib build/libnfn_native_train_tile_ops.so` on the RTX 5090; JSON
+  reported `all_required_symbols_found: true` and found
+  `nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32`.
+- Verified `git diff --check`.
+- Ran GPU-visible RTX 5090 one-step TinyStories stage probes for fused and
+  disabled routes. The fused route reported
+  `layer_norm_backward_residual_strategy` as
+  `"fused-dinput-residual-add-with-forward-stats"`, reduced the combined
+  LN1/LN2 residual buckets from about `237 ms` to about `184 ms`, and improved
+  stage-mode throughput from about `139,413` to `141,698` tokens/s.
+- Ran an interleaved paired benchmark with `tools/paired_kernel_speed.py`,
+  pinning both commands to `CUDA_VISIBLE_DEVICES=0`. The fused candidate
+  reported `candidate_over_baseline` mean `0.986385` across five samples
+  versus `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_RESIDUAL=0`.
+
 ### 2026-06-14 Native GPT fused MLP projection dGELU
 
 #### Changed
