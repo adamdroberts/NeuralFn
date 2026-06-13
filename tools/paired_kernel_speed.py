@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 import shlex
 import subprocess
 import time
@@ -31,6 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--samples", type=int, default=5, help="Paired samples to collect.")
     parser.add_argument("--warmup", type=int, default=1, help="Warmup command pairs before measurement.")
     parser.add_argument("--json", action="store_true", help="Print JSON instead of a text summary.")
+    parser.add_argument("--json-out", default="", help="Write the JSON payload to this file.")
     parser.add_argument(
         "--continue-on-error",
         action="store_true",
@@ -136,6 +138,10 @@ def print_text(payload: dict[str, object]) -> None:
 def main() -> int:
     args = parse_args()
     payload = build_payload(args)
+    if str(args.json_out or "").strip():
+        output_path = Path(args.json_out).expanduser()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:

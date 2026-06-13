@@ -29,6 +29,10 @@ Native GPT benchmark and preflight runs can pass
 to the compiled C++ trainer to skip final trained-checkpoint export. Default
 training still writes the final native checkpoint.
 
+Use `python tools/paired_kernel_speed.py --baseline "OLD_COMMAND"
+--candidate "NEW_COMMAND" --samples N --json-out /tmp/result.json` for
+candidate-vs-current CUDA timing under the same external GPU load window.
+
 ## Current state of play
 
 NeuralFn now ships Torch-backed template presets for:

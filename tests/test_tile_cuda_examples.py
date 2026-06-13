@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import py_compile
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -36,6 +38,7 @@ def test_generated_tile_cuda_registry_examples_are_present() -> None:
 
 def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired.json"
 
     py_compile.compile(str(script), doraise=True)
     proc = subprocess.run(
@@ -51,6 +54,8 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
             "--warmup",
             "0",
             "--json",
+            "--json-out",
+            str(output_path),
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -60,3 +65,5 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
 
     assert proc.returncode == 0, proc.stderr
     assert "paired_interleaved_commands" in proc.stdout
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["measurement"] == "paired_interleaved_commands"

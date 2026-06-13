@@ -52,7 +52,9 @@ Future updates should append new entries here rather than replacing older notes.
 - Added `tools/paired_kernel_speed.py` for native CUDA kernel experiments where
   the older and candidate paths are separate commands or environment
   configurations. The tool alternates baseline/candidate order across samples
-  and reports paired candidate-over-baseline ratios.
+  and reports paired candidate-over-baseline ratios. It now accepts
+  `--json-out PATH` so paired benchmark evidence can be saved without shell
+  redirection.
 
 #### Verification
 
@@ -60,6 +62,7 @@ Future updates should append new entries here rather than replacing older notes.
   kernels_bench_json_reports_execution_modes`.
 - Verified `python -m pytest tests/test_tile_cuda_examples.py -q -k
   paired_kernel_speed_tool_compiles_and_smokes`.
+- Verified `python -m py_compile tools/paired_kernel_speed.py`.
 
 ### 2026-06-13 Native GPT packed attention backward chunking
 

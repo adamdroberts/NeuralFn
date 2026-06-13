@@ -474,6 +474,12 @@ trained-checkpoint export. Runtime JSON then reports `checkpoint.enabled:
 false`, `checkpoint.checkpoint_written: false`, and zero checkpoint wall time;
 normal training leaves checkpoint export enabled.
 
+For native kernel candidate comparisons, use
+`python tools/paired_kernel_speed.py --baseline "OLD_COMMAND" --candidate
+"NEW_COMMAND" --samples N --json-out /tmp/result.json`. The helper alternates
+baseline/candidate order inside one script so unrelated external GPU load
+affects both measurements in the same sampling window.
+
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, `NFN_NATIVE_GPT_BINDING`, and
 `NFN_NATIVE_GPT_TRAIN_BIN`. Runtime tuning also prefers
