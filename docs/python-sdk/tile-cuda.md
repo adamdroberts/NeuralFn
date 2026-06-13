@@ -155,7 +155,7 @@ for tied LM-head CE backward. That ABI overwrites the logits chunk with dlogits,
 so the main trainer reports `grad_logit_workspace_elements: 0`,
 `lm_head_training_logits_dtype: "bf16"`,
 `lm_head_training_dlogits_dtype: "bf16"`,
-`lm_head_ce_backward_strategy: "inplace-bf16-logits-dlogits-workspace"`, and
+`lm_head_ce_backward_strategy: "fused-row-bf16-logits-dlogits"`, and
 `lm_head_grad_logits_workspace_allocated: false` instead of allocating a
 separate full-vocab `grad_logits` chunk. It also reports
 `lm_head_bf16_logits_enabled: true`, `lm_head_bf16_logit_elements`, and

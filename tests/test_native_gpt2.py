@@ -1642,7 +1642,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["lm_head_bf16_logits_enabled"] is True
     assert train_transformer_payload["lm_head_bf16_logit_elements"] == 0
     assert train_transformer_payload["lm_head_bf16_logit_bytes"] == 0
-    assert train_transformer_payload["lm_head_ce_backward_strategy"] == "inplace-bf16-logits-dlogits-workspace"
+    assert train_transformer_payload["lm_head_ce_backward_strategy"] == "fused-row-bf16-logits-dlogits"
     assert train_transformer_payload["lm_head_grad_logits_workspace_allocated"] is False
     assert train_transformer_payload["linear_backend_strategy"] == "not-run"
     assert train_transformer_payload["block_forward_linear_strategy"] == "forced-bf16-gemmex-forward"
@@ -2979,6 +2979,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "token_cross_entropy_backward_chunked_float32_kernel" in kernels_text
     assert "token_cross_entropy_backward_chunked_inplace_float32_kernel" in kernels_text
     assert "token_cross_entropy_backward_inplace_bf16_bits_kernel" in kernels_text
+    assert "token_cross_entropy_backward_inplace_bf16_bits_fused_kernel" in kernels_text
+    assert "block_reduce_max_f32" in kernels_text
+    assert "block_reduce_sum_f32" in kernels_text
     assert "token_cross_entropy_backward_elementwise_float32_kernel" not in kernels_text
     assert "gelu_float32_kernel" in kernels_text
     assert "gelu_backward_float32_kernel" in kernels_text

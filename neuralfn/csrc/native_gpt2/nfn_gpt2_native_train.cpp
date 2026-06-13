@@ -8955,7 +8955,7 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_bf16_logit_elements\": " << lm_head_bf16_logit_elements << ",\n"
         << "  \"lm_head_bf16_logit_bytes\": " << lm_head_bf16_logit_bytes << ",\n"
         << "  \"lm_head_ce_backward_strategy\": \""
-        << (lm_head_bf16_logits_enabled ? "inplace-bf16-logits-dlogits-workspace"
+        << (lm_head_bf16_logits_enabled ? "fused-row-bf16-logits-dlogits"
                                         : "inplace-logits-dlogits-workspace")
         << "\",\n"
         << "  \"lm_head_grad_logits_workspace_allocated\": false,\n"

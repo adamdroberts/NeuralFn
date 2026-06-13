@@ -4545,6 +4545,89 @@ __global__ void token_cross_entropy_backward_inplace_bf16_bits_kernel(
   logits[idx] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
 }
 
+__device__ __forceinline__ float block_reduce_max_f32(float value, float* shared) {
+  const int lane = threadIdx.x & 31;
+  const int warp = threadIdx.x >> 5;
+  const int warp_count = (blockDim.x + 31) >> 5;
+  for (int offset = 16; offset > 0; offset >>= 1) {
+    value = fmaxf(value, __shfl_xor_sync(0xffffffffu, value, offset));
+  }
+  if (lane == 0) {
+    shared[warp] = value;
+  }
+  __syncthreads();
+  value = lane < warp_count ? shared[lane] : -INFINITY;
+  if (warp == 0) {
+    for (int offset = 16; offset > 0; offset >>= 1) {
+      value = fmaxf(value, __shfl_xor_sync(0xffffffffu, value, offset));
+    }
+    if (lane == 0) {
+      shared[0] = value;
+    }
+  }
+  __syncthreads();
+  return shared[0];
+}
+
+__device__ __forceinline__ float block_reduce_sum_f32(float value, float* shared) {
+  const int lane = threadIdx.x & 31;
+  const int warp = threadIdx.x >> 5;
+  const int warp_count = (blockDim.x + 31) >> 5;
+  for (int offset = 16; offset > 0; offset >>= 1) {
+    value += __shfl_xor_sync(0xffffffffu, value, offset);
+  }
+  if (lane == 0) {
+    shared[warp] = value;
+  }
+  __syncthreads();
+  value = lane < warp_count ? shared[lane] : 0.0f;
+  if (warp == 0) {
+    for (int offset = 16; offset > 0; offset >>= 1) {
+      value += __shfl_xor_sync(0xffffffffu, value, offset);
+    }
+    if (lane == 0) {
+      shared[0] = value;
+    }
+  }
+  __syncthreads();
+  return shared[0];
+}
+
+__global__ void token_cross_entropy_backward_inplace_bf16_bits_fused_kernel(
+    std::uint16_t* __restrict__ logits,
+    const std::int64_t* __restrict__ targets,
+    std::int64_t rows,
+    std::int64_t vocab,
+    float loss_scale) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  if (row >= rows) {
+    return;
+  }
+  __shared__ float reduce_max_shared[32];
+  __shared__ float reduce_sum_shared[32];
+
+  std::uint16_t* row_logits = logits + row * vocab;
+  float thread_max = -INFINITY;
+  for (std::int64_t col = threadIdx.x; col < vocab; col += blockDim.x) {
+    thread_max = fmaxf(thread_max, bf16_bits_to_f32_device(row_logits[col]));
+  }
+  const float row_max = block_reduce_max_f32(thread_max, reduce_max_shared);
+
+  float thread_sum = 0.0f;
+  for (std::int64_t col = threadIdx.x; col < vocab; col += blockDim.x) {
+    thread_sum += expf(bf16_bits_to_f32_device(row_logits[col]) - row_max);
+  }
+  const float row_denom = block_reduce_sum_f32(thread_sum, reduce_sum_shared);
+  const std::int64_t target = targets[row];
+
+  for (std::int64_t col = threadIdx.x; col < vocab; col += blockDim.x) {
+    const float value = bf16_bits_to_f32_device(row_logits[col]);
+    const float prob = expf(value - row_max) / row_denom;
+    const float onehot = col == target ? 1.0f : 0.0f;
+    row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+  }
+}
+
 __tile_global__ void token_cross_entropy_backward_chunked_float32_kernel(
     const float* __restrict__ logits,
     const std::int64_t* __restrict__ targets,
@@ -7839,13 +7922,11 @@ void launch_token_cross_entropy_backward_inplace_bf16_bits_with_workspace(
     std::int64_t vocab,
     float loss_scale,
     cudaStream_t stream) {
-  constexpr int threads = 256;
-  token_cross_entropy_bf16_bits_row_stats_kernel<<<static_cast<int>(rows), threads, threads * sizeof(float), stream>>>(
-      logits, row_max, row_denom, rows, vocab);
-  const std::int64_t elements = rows * vocab;
-  const int blocks = static_cast<int>((elements + threads - 1) / threads);
-  token_cross_entropy_backward_inplace_bf16_bits_kernel<<<blocks, threads, 0, stream>>>(
-      logits, targets, row_max, row_denom, elements, vocab, loss_scale);
+  (void)row_max;
+  (void)row_denom;
+  constexpr int threads = 1024;
+  token_cross_entropy_backward_inplace_bf16_bits_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
+      logits, targets, rows, vocab, loss_scale);
 }
 
 void launch_masked_token_cross_entropy_backward_float32(

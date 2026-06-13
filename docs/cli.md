@@ -200,7 +200,7 @@ LM-head dWeight chunks accumulate directly into `accum_grad_token_weight` with
 full-vocab scratch gradient buffer per chunk or per microbatch. Default JSON
 reports `lm_head_training_logits_dtype: "bf16"`,
 `lm_head_bf16_logits_enabled: true`, `lm_head_bf16_logit_elements`, and
-`lm_head_ce_backward_strategy: "inplace-bf16-logits-dlogits-workspace"`.
+`lm_head_ce_backward_strategy: "fused-row-bf16-logits-dlogits"`.
 `--smoke-lm-step`, `--smoke-embedding-lm-step`, `--train-embedding-lm`, and
 `--smoke-transformer-lm-step` use that same 50,304-row padded tied token
 embedding/LM-head tensor while validating token IDs against public vocab 50,257.
