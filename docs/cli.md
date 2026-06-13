@@ -517,11 +517,17 @@ adds Q/K/V bias in-place, and
 attention directly over the packed row-major QKV tensor. Backward uses
 `nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32`
 to produce row-major `grad_qkv` for the existing linear dWeight/dInput path.
+The packed BF16 attention output is also consumed directly by
+`nfn_native_tile_linear_bf16_input_bits_float32` for the attention projection
+forward pass and by the BF16-bits dWeight accumulator for that projection, so
+the packed route does not unpack `O` to float32 before the projection.
 Set `NFN_NATIVE_GPT2_PACKED_QKV_ATTENTION=0` to force the older split bridge for
 profiling. Native plan and runtime JSON report `packed_qkv_attention_enabled`,
 `packed_qkv_attention_bf16_bytes`, `qkv_forward_layout_strategy:
 "packed-qkv-bf16-no-split"`, `qkv_bias_layout_strategy:
-"packed-qkv-bf16-bias-inplace"`, and `attention_backward_strategy:
+"packed-qkv-bf16-bias-inplace"`, `attention_projection_input_strategy:
+"packed-o-bf16-direct-gemm"`, `attention_packed_output_unpack_strategy:
+"elided-direct-bf16-projection"`, and `attention_backward_strategy:
 "tk-sm120-packed-qkv-bf16-backward-bridge"` when the default packed route is
 active.
 

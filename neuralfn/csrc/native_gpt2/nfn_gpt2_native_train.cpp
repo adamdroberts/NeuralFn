@@ -1064,6 +1064,12 @@ bool print_tile_plan(
         << (packed_qkv_attention_enabled ? 2 : 1) << ",\n"
         << "  \"attention_backward_qkv_bridge_legacy_launches_per_block\": 4,\n"
         << "  \"attention_backward_qkv_bridge_launches_elided_per_block\": 3,\n"
+        << "  \"attention_projection_input_strategy\": \""
+        << (packed_qkv_attention_enabled ? "packed-o-bf16-direct-gemm" : "float32-attention-output-bf16-gemm")
+        << "\",\n"
+        << "  \"attention_packed_output_unpack_strategy\": \""
+        << (packed_qkv_attention_enabled ? "elided-direct-bf16-projection" : "not-packed")
+        << "\",\n"
         << "  \"mlp_fc_bias_gelu_strategy\": \"fused-bias-preactivation-gelu\",\n"
         << "  \"mlp_fc_bias_gelu_kernel_launches_per_block\": 1,\n"
         << "  \"mlp_fc_bias_gelu_legacy_launches_per_block\": 2,\n"
@@ -8648,20 +8654,29 @@ int run_transformer_lm_training_json(
             });
             run_timed_stage(stage_name + ".attention.merge_heads", [&]() {
                 if (packed_qkv_attention_enabled) {
-                    if (error.empty()) {
-                        run(bf16_bits_to_float32(
-                                tape.packed_attn_out_bf16,
-                                tape.attn_out,
-                                activation_elements,
-                                nullptr),
-                            label + ".attn.unpack_packed_out_bf16");
-                    }
+                    return;
                 } else {
                     if (error.empty()) run(merge_heads(tape.attn_heads, tape.attn_out, batch_size, kHeads, seq_len, kHeadDim, nullptr), label + ".attn.merge_heads");
                 }
             });
             run_timed_stage(stage_name + ".attention.proj", [&]() {
-                if (error.empty()) run(linear_bf16(tape.attn_out, block.attn_proj_weight, nullptr, tape.attn_proj, rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.bf16");
+                if (packed_qkv_attention_enabled) {
+                    if (error.empty()) {
+                        run(linear_bf16_input_bits(
+                                tape.packed_attn_out_bf16,
+                                block.attn_proj_weight,
+                                nullptr,
+                                tape.attn_proj,
+                                rows,
+                                kDim,
+                                kDim,
+                                false,
+                                nullptr),
+                            label + ".attn.out.forward.no_bias.packed_o_bf16_bits");
+                    }
+                } else {
+                    if (error.empty()) run(linear_bf16(tape.attn_out, block.attn_proj_weight, nullptr, tape.attn_proj, rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.bf16");
+                }
             });
             run_timed_stage(stage_name + ".attention.residual", [&]() {
                 if (compute_mlp_activations && fuse_attention_residual_ln2_enabled) {
@@ -8839,7 +8854,21 @@ int run_transformer_lm_training_json(
         });
         run_timed_stage("block_backward.attn_proj", [&]() {
             run_timed_stage("block_backward.attn_proj.dweight", [&]() {
-                if (error.empty()) run(linear_backward_weight_accumulate_bf16(tape.attn_out, grad_residual1, block.accum_grad_attn_proj_weight, rows, kDim, kDim, nullptr), label + ".attn.out.backward_weight.accumulate.bf16");
+                if (packed_qkv_attention_enabled) {
+                    if (error.empty()) {
+                        run(linear_backward_weight_accumulate_bf16_bits(
+                                tape.packed_attn_out_bf16,
+                                grad_residual1,
+                                block.accum_grad_attn_proj_weight,
+                                rows,
+                                kDim,
+                                kDim,
+                                nullptr),
+                            label + ".attn.out.backward_weight.accumulate.packed_o_bf16_bits");
+                    }
+                } else {
+                    if (error.empty()) run(linear_backward_weight_accumulate_bf16(tape.attn_out, grad_residual1, block.accum_grad_attn_proj_weight, rows, kDim, kDim, nullptr), label + ".attn.out.backward_weight.accumulate.bf16");
+                }
             });
             run_timed_stage("block_backward.attn_proj.bias", [&]() {
                 if (error.empty()) run(linear_backward_bias_accumulate(grad_residual1, block.accum_grad_attn_proj_bias, rows, kDim, nullptr), label + ".attn.out.backward_bias.accumulate");
@@ -9803,6 +9832,12 @@ int run_transformer_lm_training_json(
         << "  \"attention_backward_qkv_bridge_kernel_launches_per_block\": " << (packed_qkv_attention_enabled ? 2 : 1) << ",\n"
         << "  \"attention_backward_qkv_bridge_legacy_launches_per_block\": 4,\n"
         << "  \"attention_backward_qkv_bridge_launches_elided_per_block\": 3,\n"
+        << "  \"attention_projection_input_strategy\": \""
+        << (packed_qkv_attention_enabled ? "packed-o-bf16-direct-gemm" : "float32-attention-output-bf16-gemm")
+        << "\",\n"
+        << "  \"attention_packed_output_unpack_strategy\": \""
+        << (packed_qkv_attention_enabled ? "elided-direct-bf16-projection" : "not-packed")
+        << "\",\n"
         << "  \"mlp_fc_bias_gelu_strategy\": \"fused-bias-preactivation-gelu\",\n"
         << "  \"mlp_fc_bias_gelu_kernel_launches_per_block\": 1,\n"
         << "  \"mlp_fc_bias_gelu_legacy_launches_per_block\": 2,\n"

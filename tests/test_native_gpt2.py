@@ -1026,6 +1026,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["attention_backward_qkv_bridge_kernel_launches_per_block"] == 2
     assert tile_payload["attention_backward_qkv_bridge_legacy_launches_per_block"] == 4
     assert tile_payload["attention_backward_qkv_bridge_launches_elided_per_block"] == 3
+    assert tile_payload["attention_projection_input_strategy"] == "packed-o-bf16-direct-gemm"
+    assert tile_payload["attention_packed_output_unpack_strategy"] == "elided-direct-bf16-projection"
     assert tile_payload["mlp_fc_bias_gelu_strategy"] == "fused-bias-preactivation-gelu"
     assert tile_payload["mlp_fc_bias_gelu_kernel_launches_per_block"] == 1
     assert tile_payload["mlp_fc_bias_gelu_legacy_launches_per_block"] == 2
@@ -1750,6 +1752,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["attention_backward_qkv_bridge_kernel_launches_per_block"] == 2
     assert train_transformer_payload["attention_backward_qkv_bridge_legacy_launches_per_block"] == 4
     assert train_transformer_payload["attention_backward_qkv_bridge_launches_elided_per_block"] == 3
+    assert train_transformer_payload["attention_projection_input_strategy"] == "packed-o-bf16-direct-gemm"
+    assert train_transformer_payload["attention_packed_output_unpack_strategy"] == "elided-direct-bf16-projection"
     assert train_transformer_payload["mlp_fc_bias_gelu_strategy"] == "fused-bias-preactivation-gelu"
     assert train_transformer_payload["mlp_fc_bias_gelu_kernel_launches_per_block"] == 1
     assert train_transformer_payload["mlp_fc_bias_gelu_legacy_launches_per_block"] == 2
@@ -3159,6 +3163,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "launch_backward_causal_packed_qkv_packed_grads" in kernels_text
     assert "packed-qkv-bf16-no-split" in gpt2_source_text
     assert "packed-qkv-bf16-bias-inplace" in gpt2_source_text
+    assert "packed-o-bf16-direct-gemm" in gpt2_source_text
+    assert "elided-direct-bf16-projection" in gpt2_source_text
+    assert ".attn.out.forward.no_bias.packed_o_bf16_bits" in gpt2_source_text
+    assert ".attn.out.backward_weight.accumulate.packed_o_bf16_bits" in gpt2_source_text
+    assert ".attn.unpack_packed_out_bf16" not in gpt2_source_text
     assert "tk-sm120-packed-qkv-bf16-backward-bridge" in gpt2_source_text
     assert "linear_backward_weight_chunked_atomic_float32_kernel" in kernels_text
     assert "linear_backward_bias_chunked_atomic_float32_kernel" in kernels_text
