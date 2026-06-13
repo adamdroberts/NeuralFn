@@ -1201,7 +1201,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["packed_attention_activation_storage_strategy"] == (
         "packed-qkv-o-bf16-forward-store-direct-backward"
     )
-    assert tile_payload["stored_packed_attention_activation_blocks"] == 3
+    assert tile_payload["stored_packed_attention_activation_blocks"] == 6
     assert tile_payload["stored_packed_attention_bf16_elements"] > 0
     assert tile_payload["stored_packed_attention_bf16_bytes"] > 0
     assert tile_payload["stored_packed_attention_store_blocks"] == 0
@@ -2022,7 +2022,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["packed_attention_activation_storage_strategy"] == (
         "packed-qkv-o-bf16-forward-store-direct-backward"
     )
-    assert train_transformer_payload["stored_packed_attention_activation_blocks"] == 3
+    assert train_transformer_payload["stored_packed_attention_activation_blocks"] == 6
     assert train_transformer_payload["stored_packed_attention_bf16_elements"] == 0
     assert train_transformer_payload["stored_packed_attention_bf16_bytes"] == 0
     assert train_transformer_payload["stored_packed_attention_store_blocks"] == 0

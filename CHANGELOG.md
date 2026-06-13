@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-13 Native GPT 5090 Tile-CUDA cache retune
+
+#### Changed
+
+- Increased the trainer-facing BF16 packed-operand cache from 64 entries to 128
+  entries. The cache still only stores stable operands such as weights and
+  biases; BF16-output GEMMs continue to repack mutable activation inputs so
+  reused scratch activation pointers cannot produce stale packed data.
+- Retuned the default packed-QKV attention activation storage cap from 3 earlier
+  blocks to 6 earlier blocks for the RTX 5090 workstation shape. Runtime JSON
+  now reports `stored_packed_attention_activation_blocks: 6` unless callers
+  override `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS` or disable packed
+  attention storage. Cap 8 was tested and rejected because it triggered a large
+  attention-backward regression.
+  Verification: rebuilt `libnfn_native_train_tile_ops.so`, ran GPU-visible
+  one-step TinyStories native CUDA profiles on the llm.kittens
+  `train-sm120.sh` shape, and compared `NFN_NATIVE_GPT_STAGE_TIMING=1`
+  outputs. The 128-entry cache with the old cap 3 reported 138,664
+  tokens/second with 996 BF16 packs and 1,132 cache hits. Cap 4 reported
+  140,169 tokens/second, cap 5 reported 140,714 tokens/second, cap 6 reported
+  141,660 tokens/second, and cap 8 regressed to 92,860 tokens/second. The
+  rebuilt default binary, with no packed-attention override, reported cap 6,
+  141,613 tokens/second, and zero SGEMM calls. All compared runs reported zero
+  SGEMM calls.
+
 ### 2026-06-13 Universal GPT native trainer contract
 
 #### Breaking changes

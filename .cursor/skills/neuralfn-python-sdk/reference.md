@@ -279,7 +279,7 @@ logits, dHidden, and dWeight chunks stay on optimized TF32 tensor-op
 `linear_bf16_gemm_count`, `linear_sgemm_count`, `linear_bf16_a_pack_count`,
 `linear_bf16_a_cache_hit_count`, `linear_bf16_cache_reset_count`,
 `linear_bf16_cached_a_capacity`, and `linear_bf16_cache_entry_count`.
-The BF16 operand cache is only for stable operands such as weights and biases;
+The BF16 operand cache keeps up to 128 stable operands such as weights and biases;
 do not cache mutable activation inputs in BF16-output GEMMs because native
 scratch activation pointers are reused with new contents.
 Full GPT-2 `--train-transformer-lm` reuses the tied LM-head logits chunk as
@@ -370,10 +370,10 @@ GPT-2-prefixed flag remains a fallback. Keep
 `packed_qkv_float_attention_tape_elided: true`,
 `packed_qkv_float_attention_tape_elements_elided`, and
 `packed_qkv_float_attention_tape_bytes_elided` in plan/training JSON.
-The default workstation path stores packed BF16 QKV plus O for the first three
-earlier blocks, so keep `packed_attention_activation_storage_strategy:
+The default workstation path stores packed BF16 QKV plus O for the first six
+earlier blocks on the RTX 5090 shape, so keep `packed_attention_activation_storage_strategy:
 "packed-qkv-o-bf16-forward-store-direct-backward"` and
-`stored_packed_attention_activation_blocks: 3` unless
+`stored_packed_attention_activation_blocks: 6` unless
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` is set for lower-memory
 recompute profiling.
 

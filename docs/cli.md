@@ -570,10 +570,10 @@ profiling. Native plan and runtime JSON report `packed_qkv_attention_enabled`,
 "tk-sm120-packed-qkv-bf16-backward-bridge"` when the default packed route is
 active.
 The default route also stores packed BF16 QKV plus packed BF16 O for the first
-three earlier blocks and reuses those saved tensors during backward. Runtime
+six earlier blocks on the RTX 5090 workstation shape and reuses those saved tensors during backward. Runtime
 JSON reports `packed_attention_activation_storage_strategy:
 "packed-qkv-o-bf16-forward-store-direct-backward"`,
-`stored_packed_attention_activation_blocks: 3`, and
+`stored_packed_attention_activation_blocks: 6`, and
 `stored_packed_attention_*` counters. Set
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` for the previous
 lower-memory recompute path, or set

@@ -496,10 +496,11 @@ Canonical docs:
   `backward_recompute_mlp_projection_elided: true` and
   `backward_recompute_final_residual_elided: true`.
 - Packed-QKV attention activation storage in full GPT
-  `--train-transformer-lm` stores the first three earlier blocks by default.
+  `--train-transformer-lm` stores the first six earlier blocks by default on
+  the RTX 5090 workstation shape.
   Preserve `packed_attention_activation_storage_strategy:
   "packed-qkv-o-bf16-forward-store-direct-backward"` and
-  `stored_packed_attention_activation_blocks: 3` for the default workstation
+  `stored_packed_attention_activation_blocks: 6` for the default workstation
   path. `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` restores the
   previous lower-memory recompute path, and
   `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` tunes the cap. The
