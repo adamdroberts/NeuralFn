@@ -168,6 +168,7 @@ after AdamW updates. GPT-2 training JSON reports `linear_backend_strategy:
 "block-bf16-cublaslt-shape-gated-lm-head-tk-sm120-default"` when the default
 block cuBLASLt plus TK LM-head path runs,
 `block_forward_linear_strategy`, `block_backward_input_linear_strategy`,
+`block_backward_mlp_proj_dgelu_strategy`,
 `block_backward_weight_linear_strategy`,
 `non_block_forward_backward_linear_strategy`, `lm_head_logits_linear_strategy`,
 `linear_bf16_gemm_count`, `linear_tk_gemm_count`,
@@ -177,6 +178,13 @@ block cuBLASLt plus TK LM-head path runs,
 `linear_bf16_cache_entry_count`.
 The default `non_block_forward_backward_linear_strategy` is
 `"padded-lm-head-tk-sm120-bf16-gemm-default"` when TK GEMM is available.
+The default dense GPT path also exposes
+`nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32`, which fuses the
+MLP projection dInput GEMM with saved-BF16 GELU backward. Active runs report
+`block_backward_mlp_proj_dgelu_strategy` as
+`"tk-sm120-fused-dinput-dgelu-bf16-store-float32-grad"`. Set
+`NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` to force the older separate dInput plus
+GELU-backward route for paired benchmarks.
 `NFN_TILE_CUDA_LINEAR_TK_FLOAT_OUT=1` or
 `NFN_NATIVE_LINEAR_TK_FLOAT_OUT=1` enables an opt-in diagnostic bridge that runs
 eligible BF16 linear forward GEMMs through the TK BF16-output path and converts
@@ -225,6 +233,7 @@ LayerNorm/residual, attention projection, attention SDPA, and QKV phases. The
 block backward records include individual dWeight+bias, dInput, activation,
 residual-add, and attention-to-QKV entries such as
 `block_backward.mlp_proj.dweight_bias`, `block_backward.mlp_proj.dinput`,
+`block_backward.mlp_proj.gelu`,
 `block_backward.attn_sdpa.to_qkv`, and `block_backward.qkv.dweight_bias`. The stage profiler
 synchronizes before reading event timings, so leave it disabled for normal
 throughput runs.

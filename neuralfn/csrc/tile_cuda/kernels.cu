@@ -2295,6 +2295,78 @@ bool tk_linear_gemm_bf16_forward_gelu_to_bf16_bits(
 #endif
 }
 
+bool tk_linear_backward_input_dgelu_bf16_bits_float32(
+    const float* grad_out,
+    const float* weight,
+    const std::uint16_t* pre_gelu_bf16_bits,
+    std::uint16_t* grad_x_bf16_bits,
+    float* grad_x,
+    std::int64_t grad_out_elements,
+    std::int64_t weight_elements,
+    int rows,
+    int input_dim,
+    int output_dim,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  if (!trainer_linear_tk_gemm_enabled()) {
+    return false;
+  }
+  if (grad_out == nullptr || weight == nullptr || pre_gelu_bf16_bits == nullptr ||
+      grad_x_bf16_bits == nullptr || grad_x == nullptr) {
+    return false;
+  }
+  if (rows <= 0 || input_dim <= 0 || output_dim <= 0 ||
+      rows % 128 != 0 || input_dim % 128 != 0 || output_dim % 64 != 0) {
+    return false;
+  }
+  TrainerLinearBf16Workspace* workspace =
+      ensure_trainer_linear_bf16_workspace(grad_out_elements, weight_elements);
+  if (workspace == nullptr) {
+    return false;
+  }
+  __nv_bfloat16* grad_out_bf16 =
+      trainer_linear_bf16_a_operand(workspace, grad_out, grad_out_elements, false, stream);
+  if (grad_out_bf16 == nullptr) {
+    return false;
+  }
+  __nv_bfloat16* weight_bf16 =
+      trainer_linear_bf16_b_operand(workspace, weight, weight_elements, true, stream);
+  if (weight_bf16 == nullptr) {
+    return false;
+  }
+  ::matmul_dispatch_tk_ab(
+      reinterpret_cast<floatX*>(grad_x_bf16_bits),
+      reinterpret_cast<const floatX*>(grad_out_bf16),
+      reinterpret_cast<const floatX*>(weight_bf16),
+      rows,
+      input_dim,
+      output_dim,
+      stream,
+      reinterpret_cast<const floatX*>(pre_gelu_bf16_bits),
+      true);
+  const std::int64_t elements = static_cast<std::int64_t>(rows) * input_dim;
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((elements + threads - 1) / threads);
+  bf16_bits_to_f32_kernel<<<blocks, threads, 0, stream>>>(grad_x_bf16_bits, grad_x, elements);
+  g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  return true;
+#else
+  (void)grad_out;
+  (void)weight;
+  (void)pre_gelu_bf16_bits;
+  (void)grad_x_bf16_bits;
+  (void)grad_x;
+  (void)grad_out_elements;
+  (void)weight_elements;
+  (void)rows;
+  (void)input_dim;
+  (void)output_dim;
+  (void)stream;
+  return false;
+#endif
+}
+
 bool cublas_linear_gemm_ex_bf16_float32_to_bf16_bits(
     const float* a,
     const float* b,
@@ -8928,6 +9000,43 @@ void launch_linear_backward_input_bf16_bits_float32(
   const int blocks = static_cast<int>((n + threads - 1) / threads);
   linear_backward_input_bf16_bits_float32_kernel<<<blocks, threads, 0, stream>>>(
       grad_out_bf16_bits, weight, grad_x, n, input_dim, output_dim);
+}
+
+void launch_gelu_backward_inplace_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    float* grad_in_out,
+    std::int64_t n,
+    cudaStream_t stream);
+
+void launch_linear_backward_input_dgelu_bf16_bits_float32(
+    const float* grad_out,
+    const float* weight,
+    const std::uint16_t* pre_gelu_bf16_bits,
+    std::uint16_t* grad_x_bf16_bits,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
+      tk_linear_backward_input_dgelu_bf16_bits_float32(
+          grad_out,
+          weight,
+          pre_gelu_bf16_bits,
+          grad_x_bf16_bits,
+          grad_x,
+          rows * output_dim,
+          output_dim * input_dim,
+          static_cast<int>(rows),
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          stream)) {
+    return;
+  }
+#endif
+  launch_linear_backward_input_bf16_float32(grad_out, weight, grad_x, rows, input_dim, output_dim, stream);
+  launch_gelu_backward_inplace_bf16_bits_float32(pre_gelu_bf16_bits, grad_x, rows * input_dim, stream);
 }
 
 void launch_linear_backward_weight_float32(

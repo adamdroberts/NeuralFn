@@ -6,6 +6,48 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT fused MLP projection dGELU
+
+#### Changed
+
+- Added the trainer-facing raw Tile CUDA ABI
+  `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32`. The default
+  dense GPT native trainer uses it for stored MLP activations to fuse the MLP
+  projection dInput GEMM with saved-BF16 GELU backward, then writes the fused
+  result into the float gradient buffer used by the existing block backward
+  pipeline.
+- Native GPT runtime JSON now reports
+  `block_backward_mlp_proj_dgelu_fusion_enabled` and
+  `block_backward_mlp_proj_dgelu_strategy`. Set
+  `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` or
+  `NFN_NATIVE_GPT2_FUSE_MLP_PROJ_DGELU=0` to force the older separate dInput
+  plus GELU-backward path for paired benchmarks and diagnostics.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Verified `python -m pytest tests/test_native_gpt2.py -q -k
+  native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`.
+- Verified `build/nfn_gpt_native_train --backend tile-cuda --print-plan`
+  advertises `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32`.
+- Verified `git diff --check`.
+- Ran a GPU-visible RTX 5090 paired one-step TinyStories benchmark with
+  `tools/paired_kernel_speed.py`, pinning both commands to
+  `CUDA_VISIBLE_DEVICES=0`. The fused candidate reported
+  `candidate_over_baseline` mean `0.9944107816` across five samples versus
+  `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0`.
+- Ran direct one-step probes for the disabled and enabled routes. The disabled
+  route reported `block_backward_mlp_proj_dgelu_fusion_enabled: false`,
+  `block_backward_mlp_proj_dgelu_strategy: "separate-dinput-plus-gelu"`, and
+  `linear_tk_gemm_count: 288`; the enabled route reported
+  `block_backward_mlp_proj_dgelu_fusion_enabled: true`,
+  `block_backward_mlp_proj_dgelu_strategy` as
+  `"tk-sm120-fused-dinput-dgelu-bf16-store-float32-grad"`, and
+  `linear_tk_gemm_count: 376`.
+
 ### 2026-06-13 Native GPT no-checkpoint benchmark mode
 
 #### Changed

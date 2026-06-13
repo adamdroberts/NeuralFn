@@ -196,6 +196,7 @@ cached cuBLASLt TF32 path; the current 5090 GPT-2 shape keeps SGEMM as the
 faster default. GPT-2 training JSON reports `linear_backend_strategy:
 "block-forward-dinput-dweight-bf16-lm-head-tf32-sgemm-default"`,
 `block_forward_linear_strategy`, `block_backward_input_linear_strategy`,
+`block_backward_mlp_proj_dgelu_strategy`,
 `block_backward_weight_linear_strategy`,
 `non_block_forward_backward_linear_strategy`,
 `linear_bf16_gemm_count`, `linear_cublaslt_gemm_count`, `linear_sgemm_count`,
@@ -205,6 +206,11 @@ faster default. GPT-2 training JSON reports `linear_backend_strategy:
 The BF16 operand cache is only for stable operands such as weights and biases;
 BF16-output GEMMs repack mutable activation inputs because native scratch
 activation pointers are reused with new contents.
+The default dense GPT route also uses
+`nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32` to fuse the MLP
+projection dInput GEMM with saved-BF16 GELU backward. Set
+`NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` to compare against the older separate
+MLP projection dInput plus GELU-backward launches.
 The default `non_block_forward_backward_linear_strategy` is
 `"padded-lm-head-tf32-sgemm-optimized-default"`.
 The public GPT-2 tokenizer vocab stays 50,257, while the native tied token
@@ -259,7 +265,8 @@ block forward/recompute, and block backward substages such as
 `lm_head_backward.dhidden`, `lm_head_backward.dweight`,
 `block_forward.attention.qkv`, `block_forward.attention.sdpa`,
 `block_forward.mlp_fc_gelu.fc`, `block_forward.mlp_proj.proj`,
-`block_backward.mlp_proj`, `block_backward.attn_sdpa`, and
+`block_backward.mlp_proj`, `block_backward.mlp_proj.dinput`,
+`block_backward.mlp_proj.gelu`, `block_backward.attn_sdpa`, and
 `block_backward.qkv`. This mode inserts event
 timing work and synchronizes before reporting, so keep it off for normal
 throughput or model-quality runs.

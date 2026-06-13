@@ -1362,6 +1362,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_store_mlp_activations_bf16_float32" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_restore_mlp_activations_bf16_float32" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_stats_reset" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_bf16_cache_reset" in tile_payload["available_native_kernels"]
@@ -3375,6 +3376,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block-forward-dinput-dweight-bf16-lm-head-tf32" in gpt2_source_text
     assert "shape-gated-bf16-cublaslt-forward" in gpt2_source_text
     assert "shape-gated-bf16-cublaslt-dinput" in gpt2_source_text
+    assert "block_backward_mlp_proj_dgelu_strategy" in gpt2_source_text
+    assert "tk-sm120-fused-dinput-dgelu-bf16-store-float32-grad" in gpt2_source_text
     assert "shape-gated-bf16-cublaslt-dweight-bgrad-accumulate" in gpt2_source_text
     assert "forced-bf16-gemmex-dweight-plus-bias-accumulate-fallback" in gpt2_source_text
     assert "forced-bf16-gemmex-forward" in gpt2_source_text
@@ -3387,6 +3390,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "trainer_linear_tk_float_out_gemm_count" in kernels_text
     assert "trainer_linear_bf16_b_operand" in kernels_text
     assert "trainer_linear_bf16_a_operand" in kernels_text
+    assert "tk_linear_backward_input_dgelu_bf16_bits_float32" in kernels_text
+    assert "matmul_dispatch_tk_ab" in kernels_text
     assert "kLinearBackwardBiasRowChunkSize = 1024" in kernels_text
     for function_name in (
         "launch_linear_backward_weight_accumulate_bf16_bits_float32",
@@ -3404,6 +3409,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_global_norm_clip_scale_float32" in header_text
     assert "nfn_native_tile_scale_inplace_by_device_float32" in header_text
     assert "nfn_native_tile_linear_backward_input_float32" in header_text
+    assert "nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32" in header_text
     assert "nfn_native_tile_split_qkv_float32" in header_text
     assert "nfn_native_tile_split_qkv_to_heads_float32" in header_text
     assert "nfn_native_tile_split_qkv_to_heads_add_bias_float32" in header_text

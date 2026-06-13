@@ -720,6 +720,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32",
         "nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32",
         "nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32",
+        "nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32",
         "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32",
         "nfn_native_tile_float32_to_bf16_bits_many",
         "nfn_native_tile_gradient_accumulate_float32",
@@ -6768,6 +6769,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_input_bf16_float32",
         "nfn_native_tile_linear_backward_input_bf16_bits_float32",
+        "nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32",
         "nfn_native_tile_linear_backward_bias_accumulate_float32",
@@ -6875,6 +6877,9 @@ int run_transformer_lm_training_json(
         const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardInputBf16BitsFn = int (*)(
         const std::uint16_t*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBackwardInputDgeluBf16BitsFn = int (*)(
+        const float*, const float*, const std::uint16_t*, std::uint16_t*, float*,
+        std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardWeightAccumulateFn = int (*)(
         const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardWeightBiasAccumulateFn = int (*)(
@@ -6992,6 +6997,7 @@ int run_transformer_lm_training_json(
     LinearBackwardInputFn linear_backward_input = nullptr;
     LinearBackwardInputFn linear_backward_input_bf16 = nullptr;
     LinearBackwardInputBf16BitsFn linear_backward_input_bf16_bits = nullptr;
+    LinearBackwardInputDgeluBf16BitsFn linear_backward_input_dgelu_bf16_bits = nullptr;
     LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
     LinearBackwardWeightBiasAccumulateFn linear_backward_weight_bias_accumulate_bf16 = nullptr;
     LinearBackwardWeightBiasAccumulateBf16BitsFn linear_backward_weight_bias_accumulate_bf16_bits = nullptr;
@@ -7161,6 +7167,9 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_linear_backward_input_bf16_float32");
                 linear_backward_input_bf16_bits = load_symbol<LinearBackwardInputBf16BitsFn>(
                     tile_handle, "nfn_native_tile_linear_backward_input_bf16_bits_float32");
+                linear_backward_input_dgelu_bf16_bits =
+                    load_symbol<LinearBackwardInputDgeluBf16BitsFn>(
+                        tile_handle, "nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32");
                 linear_backward_weight_accumulate = load_symbol<LinearBackwardWeightAccumulateFn>(
                     tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_float32");
                 linear_backward_weight_bias_accumulate_bf16 =
@@ -7388,6 +7397,16 @@ int run_transformer_lm_training_json(
         packed_qkv_attention_enabled &&
         env_flag_enabled_or_default(store_packed_attention_activations_env, true);
     const bool fuse_attention_residual_ln2_enabled = fuse_attention_residual_ln2_default_enabled();
+    const std::string fuse_mlp_proj_dgelu_env =
+        env_or_empty_any({"NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU",
+                          "NFN_NATIVE_GPT2_FUSE_MLP_PROJ_DGELU"});
+    const bool fuse_mlp_proj_dgelu_enabled =
+        fuse_mlp_proj_dgelu_env.empty() ||
+        fuse_mlp_proj_dgelu_env == "1" ||
+        fuse_mlp_proj_dgelu_env == "true" ||
+        fuse_mlp_proj_dgelu_env == "TRUE" ||
+        fuse_mlp_proj_dgelu_env == "on" ||
+        fuse_mlp_proj_dgelu_env == "ON";
     const bool packed_qkv_float_attention_tape_elided = packed_qkv_attention_enabled;
     const std::int64_t packed_qkv_float_attention_tape_elements_elided =
         packed_qkv_float_attention_tape_elided
@@ -9183,11 +9202,46 @@ int run_transformer_lm_training_json(
                 }
             });
             run_timed_stage("block_backward.mlp_proj.dinput", [&]() {
-                if (error.empty()) run(linear_backward_input_bf16(incoming_grad, block.mlp_proj_weight, grad_fc_out, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_input.bf16");
+                if (stored_mlp != nullptr && fuse_mlp_proj_dgelu_enabled) {
+                    if (error.empty()) {
+                        run(linear_backward_input_dgelu_bf16_bits(
+                                incoming_grad,
+                                block.mlp_proj_weight,
+                                stored_mlp->fc_out,
+                                mlp_forward_act_bf16,
+                                grad_fc_out,
+                                rows,
+                                kHidden,
+                                kDim,
+                                nullptr),
+                            label + ".mlp.proj.backward_input_dgelu.bf16_bits");
+                    }
+                } else {
+                    if (error.empty()) {
+                        run(linear_backward_input_bf16(
+                                incoming_grad,
+                                block.mlp_proj_weight,
+                                grad_fc_out,
+                                rows,
+                                kHidden,
+                                kDim,
+                                nullptr),
+                            label + ".mlp.proj.backward_input.bf16");
+                    }
+                }
             });
             run_timed_stage("block_backward.mlp_proj.gelu", [&]() {
-                if (stored_mlp != nullptr) {
-                    if (error.empty()) run(gelu_backward_inplace_bf16_bits(stored_mlp->fc_out, grad_fc_out, hidden_elements, nullptr), label + ".mlp.gelu.backward_inplace.bf16_bits");
+                if (stored_mlp != nullptr && fuse_mlp_proj_dgelu_enabled) {
+                    return;
+                } else if (stored_mlp != nullptr) {
+                    if (error.empty()) {
+                        run(gelu_backward_inplace_bf16_bits(
+                                stored_mlp->fc_out,
+                                grad_fc_out,
+                                hidden_elements,
+                                nullptr),
+                            label + ".mlp.gelu.backward_inplace.bf16_bits");
+                    }
                 } else {
                     if (error.empty()) run(gelu_backward_inplace(tape.fc_out, grad_fc_out, hidden_elements, nullptr), label + ".mlp.gelu.backward_inplace");
                 }
@@ -10107,6 +10161,13 @@ int run_transformer_lm_training_json(
         << "  \"block_backward_input_linear_strategy\": \""
         << (linear_cublaslt_gemm_count > 0 ? "shape-gated-bf16-cublaslt-dinput"
                                            : "forced-bf16-gemmex-dinput")
+        << "\",\n"
+        << "  \"block_backward_mlp_proj_dgelu_fusion_enabled\": "
+        << (fuse_mlp_proj_dgelu_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_mlp_proj_dgelu_strategy\": \""
+        << (fuse_mlp_proj_dgelu_enabled
+                ? "tk-sm120-fused-dinput-dgelu-bf16-store-float32-grad"
+                : "separate-dinput-plus-gelu")
         << "\",\n"
         << "  \"block_backward_weight_linear_strategy\": \""
         << (linear_cublaslt_gemm_count > 0 ? "shape-gated-bf16-cublaslt-dweight-bgrad-accumulate"
