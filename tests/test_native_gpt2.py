@@ -969,7 +969,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["val_shard"].endswith("fineweb_val_000000.bin")
     assert tile_payload["parameter_layout"]["buffer_count"] == 2 + (12 * 12) + 2
     assert tile_payload["parameter_layout"]["buffers"][0]["name"] == "wte.weight"
-    assert tile_payload["parameter_layout"]["buffers"][0]["shape"] == [50257, 768]
+    assert tile_payload["shape"]["vocab_size"] == 50257
+    assert tile_payload["shape"]["padded_vocab_size"] == 50304
+    assert tile_payload["parameter_layout"]["buffers"][0]["shape"] == [50304, 768]
     assert tile_payload["training_step_plan"]["status"] == "ready"
     assert tile_payload["training_step_plan"]["forward_stage_count"] > 0
     assert tile_payload["training_step_plan"]["backward_stage_count"] > 0
@@ -1613,12 +1615,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["trained_layers"] == 12
     assert train_transformer_payload["target_layers"] == 12
     assert train_transformer_payload["vocab"] == 50257
+    assert train_transformer_payload["padded_vocab"] == 50304
     assert train_transformer_payload["model_dim"] == 768
     assert train_transformer_payload["hidden_dim"] == 3072
     assert train_transformer_payload["lm_head_row_chunk_size"] == 2
     assert train_transformer_payload["lm_head_row_chunk_count"] == 1
     assert train_transformer_payload["loss_partial_count"] == 1
-    assert train_transformer_payload["logit_workspace_elements"] == 2 * 50257
+    assert train_transformer_payload["logit_workspace_elements"] == 2 * 50304
     assert train_transformer_payload["grad_logit_workspace_elements"] == 0
     assert train_transformer_payload["lm_head_ce_backward_strategy"] == "inplace-logits-dlogits-workspace"
     assert train_transformer_payload["lm_head_grad_logits_workspace_allocated"] is False
@@ -1631,7 +1634,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert (
         train_transformer_payload["non_block_forward_backward_linear_strategy"]
-        == "lm-head-tf32-sgemm-optimized-default"
+        == "padded-lm-head-tf32-sgemm-optimized-default"
     )
     assert train_transformer_payload["linear_bf16_gemm_count"] == 0
     assert train_transformer_payload["linear_sgemm_count"] == 0
@@ -1913,7 +1916,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "num_layers": 12,
         "num_heads": 12,
         "channels": 768,
-        "padded_vocab": 50257,
+        "padded_vocab": 50304,
         "payload_pack_strategy": "device-many-float32-to-bf16-bits-contiguous",
         "payload_pack_kernel": "nfn_native_tile_float32_to_bf16_bits_many",
         "payload_copy_strategy": "single-contiguous-device-payload-d2h",
@@ -1991,6 +1994,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert checkpoint_payload["num_layers"] == 12
     assert checkpoint_payload["num_heads"] == 12
     assert checkpoint_payload["vocab"] == 50257
+    assert checkpoint_payload["padded_vocab"] == 50304
     assert checkpoint_payload["model_dim"] == 768
     assert checkpoint_payload["max_seq_len"] == 8
     assert checkpoint_payload["checkpoint_step"] == 2
@@ -2005,7 +2009,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert checkpoint_info.num_layers == 12
     assert checkpoint_info.num_heads == 12
     assert checkpoint_info.channels == 768
-    assert checkpoint_info.padded_vocab_size == 50257
+    assert checkpoint_info.padded_vocab_size == 50304
     assert checkpoint_info.size_matches is True
     assert checkpoint_info.done_marker_exists is True
     assert latest_native_gpt2_checkpoint(checkpoint_out) == checkpoint_path

@@ -668,7 +668,7 @@ std::vector<BufferPlan> build_gpt2_parameter_layout(const Config& cfg) {
     std::vector<BufferPlan> layout;
     std::int64_t offset = 0;
     constexpr std::int64_t dim = 768;
-    constexpr std::int64_t vocab = 50257;
+    constexpr std::int64_t padded_vocab = 50304;
     const std::int64_t mlp_dim = dim * 4;
 
     auto add = [&](std::string name, std::vector<std::int64_t> shape, bool weight_decay) {
@@ -682,7 +682,7 @@ std::vector<BufferPlan> build_gpt2_parameter_layout(const Config& cfg) {
         layout.push_back(std::move(buffer));
     };
 
-    add("wte.weight", {vocab, dim}, true);
+    add("wte.weight", {padded_vocab, dim}, true);
     add("wpe.weight", {cfg.seq_len, dim}, true);
     for (int layer = 0; layer < cfg.num_layers; ++layer) {
         const std::string prefix = "h." + std::to_string(layer) + ".";
@@ -774,11 +774,11 @@ std::vector<StagePlan> build_gpt2_stage_plan(const Config& cfg) {
     std::vector<StagePlan> stages;
     const std::int64_t tokens = static_cast<std::int64_t>(cfg.batch_size) * cfg.seq_len;
     constexpr std::int64_t dim = 768;
-    constexpr std::int64_t vocab = 50257;
+    constexpr std::int64_t padded_vocab = 50304;
     const std::int64_t hidden = tokens * dim;
     const std::int64_t qkv = tokens * dim * 3;
     const std::int64_t mlp_hidden = tokens * dim * 4;
-    const std::int64_t logits = tokens * vocab;
+    const std::int64_t logits = tokens * padded_vocab;
     const std::int64_t parameters = layout_count(build_gpt2_parameter_layout(cfg));
 
     auto add = [&](std::string name, std::string phase, std::string kernel_abi, std::int64_t elements) {
@@ -813,7 +813,7 @@ std::vector<StagePlan> build_gpt2_stage_plan(const Config& cfg) {
     add("token_cross_entropy.forward", "forward", "nfn_native_tile_token_cross_entropy_partials_float32", tokens);
     add("token_cross_entropy.backward", "backward", "nfn_native_tile_token_cross_entropy_backward_with_workspace_float32", logits);
     add("lm_head.backward_input", "backward", "nfn_native_tile_linear_backward_input_float32", hidden);
-    add("lm_head.backward_weight_tied", "backward", "nfn_native_tile_linear_backward_weight_accumulate_float32", vocab * dim);
+    add("lm_head.backward_weight_tied", "backward", "nfn_native_tile_linear_backward_weight_accumulate_float32", padded_vocab * dim);
     for (int layer = cfg.num_layers - 1; layer >= 0; --layer) {
         const std::string prefix = "h." + std::to_string(layer) + ".";
         add(prefix + "mlp.c_proj.backward", "backward", "linear input/weight/weight-accumulate/bias/bias-accumulate backward native ABI", hidden + mlp_hidden);
@@ -905,7 +905,9 @@ bool print_tile_plan(
         cfg.lm_head_row_chunk_size > 0 ? cfg.lm_head_row_chunk_size : 1;
     const std::int64_t lm_head_chunk_rows =
         tokens < requested_lm_head_chunk_rows ? tokens : requested_lm_head_chunk_rows;
-    const std::int64_t logits = lm_head_chunk_rows * 50257;
+    constexpr std::int64_t public_vocab = 50257;
+    constexpr std::int64_t padded_vocab = 50304;
+    const std::int64_t logits = lm_head_chunk_rows * padded_vocab;
     const std::int64_t attention_row_count = tokens * 12;
     const std::int64_t attention_scalar_output_count = hidden;
     const std::string tile_ops = cfg.tile_ops_lib.empty() ? default_tile_ops_lib(program) : cfg.tile_ops_lib;
@@ -961,7 +963,8 @@ bool print_tile_plan(
         << "  \"val_shard\": \"" << json_escape(dataset.val_shards.empty() ? std::string() : dataset.val_shards[0].path.string()) << "\",\n"
         << "  \"tile_ops_library\": \"" << json_escape(tile_ops) << "\",\n"
         << "  \"shape\": {\"num_layers\": " << cfg.num_layers
-        << ", \"model_dim\": 768, \"num_heads\": 12, \"vocab_size\": 50257, \"seq_len\": "
+        << ", \"model_dim\": 768, \"num_heads\": 12, \"vocab_size\": " << public_vocab
+        << ", \"padded_vocab_size\": " << padded_vocab << ", \"seq_len\": "
         << cfg.seq_len << ", \"batch_size\": " << cfg.batch_size << "},\n"
         << "  \"schedule\": {\"max_steps\": " << cfg.max_steps
         << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
@@ -6186,6 +6189,7 @@ int write_checkpoint_metadata_smoke_json(
     const Config& cfg,
     const neuralfn::native_train::TokenShardDataset& dataset) {
     constexpr std::int64_t kVocab = 50257;
+    constexpr std::int64_t kPaddedVocab = 50304;
     constexpr std::int64_t kHeads = 12;
     constexpr std::int64_t kDim = 768;
     constexpr std::int64_t kVersion = 5;
@@ -6209,7 +6213,7 @@ int write_checkpoint_metadata_smoke_json(
         target_layers,
         kHeads,
         kDim,
-        kVocab,
+        kPaddedVocab,
         &error);
     bool done_written = false;
     if (checkpoint_written) {
@@ -6222,7 +6226,7 @@ int write_checkpoint_metadata_smoke_json(
     }
 
     const std::int64_t parameter_count =
-        native_gpt2_parameter_count(max_seq_len, kVocab, target_layers, kDim);
+        native_gpt2_parameter_count(max_seq_len, kPaddedVocab, target_layers, kDim);
     const std::int64_t parameter_bytes = parameter_count * kBytesPerParam;
     const std::int64_t expected_file_size = kHeaderBytes + parameter_bytes;
     const std::int64_t actual_file_size =
@@ -6250,7 +6254,7 @@ int write_checkpoint_metadata_smoke_json(
         << "  \"num_layers\": " << target_layers << ",\n"
         << "  \"num_heads\": " << kHeads << ",\n"
         << "  \"vocab\": " << kVocab << ",\n"
-        << "  \"padded_vocab\": " << kVocab << ",\n"
+        << "  \"padded_vocab\": " << kPaddedVocab << ",\n"
         << "  \"model_dim\": " << kDim << ",\n"
         << "  \"max_seq_len\": " << max_seq_len << ",\n"
         << "  \"parameter_count\": " << parameter_count << ",\n"
@@ -6278,11 +6282,12 @@ int run_transformer_lm_training_json(
     constexpr std::int64_t kDefaultTargetLayers = 12;
     constexpr std::int64_t kActivationTapeCount = 1;
     constexpr std::int64_t kVocab = 50257;
+    constexpr std::int64_t kPaddedVocab = 50304;
     constexpr std::int64_t kDim = 768;
     constexpr std::int64_t kHeadDim = kDim / kHeads;
     constexpr std::int64_t kHidden = kDim * 4;
     constexpr std::int64_t kQkvDim = kDim * 3;
-    constexpr std::int64_t kTokenWeightElements = kVocab * kDim;
+    constexpr std::int64_t kTokenWeightElements = kPaddedVocab * kDim;
     constexpr std::int64_t kQkvWeightElements = kQkvDim * kDim;
     constexpr std::int64_t kAttnProjWeightElements = kDim * kDim;
     constexpr std::int64_t kFcWeightElements = kHidden * kDim;
@@ -6336,7 +6341,7 @@ int run_transformer_lm_training_json(
         rows < requested_lm_head_chunk_rows ? rows : requested_lm_head_chunk_rows;
     const std::int64_t lm_head_chunk_count =
         (rows + lm_head_chunk_rows - 1) / lm_head_chunk_rows;
-    const std::int64_t logit_elements = lm_head_chunk_rows * kVocab;
+    const std::int64_t logit_elements = lm_head_chunk_rows * kPaddedVocab;
     const std::int64_t loss_partial_count = partial_count_for(lm_head_chunk_rows);
     constexpr std::int64_t kPerBlockParameterBuffers = 12;
     constexpr std::int64_t kPerBlockGradientBuffers = 0;
@@ -7765,10 +7770,10 @@ int run_transformer_lm_training_json(
                 (row_start + lm_head_chunk_rows < rows) ? lm_head_chunk_rows : (rows - row_start);
             const float* hidden_chunk = lnf_out + row_start * kDim;
             const std::int64_t* target_chunk = targets + row_start;
-            run(linear(hidden_chunk, token_weight, nullptr, logits, row_count, kDim, kVocab, false, nullptr),
+            run(linear(hidden_chunk, token_weight, nullptr, logits, row_count, kDim, kPaddedVocab, false, nullptr),
                 label + ".lm_head.forward");
             if (error.empty()) {
-                run(ce_partials(logits, target_chunk, loss_partials, row_count, kVocab, nullptr),
+                run(ce_partials(logits, target_chunk, loss_partials, row_count, kPaddedVocab, nullptr),
                     label + ".ce.forward");
             }
             if (error.empty()) {
@@ -7807,7 +7812,7 @@ int run_transformer_lm_training_json(
             const std::int64_t* target_chunk = targets + row_start;
             float* grad_hidden_chunk = grad_lnf + row_start * kDim;
             run_timed_stage("lm_head_backward.logits", [&]() {
-                run(linear(hidden_chunk, token_weight, nullptr, logits, row_count, kDim, kVocab, false, nullptr),
+                run(linear(hidden_chunk, token_weight, nullptr, logits, row_count, kDim, kPaddedVocab, false, nullptr),
                     "lm_head.forward.recompute");
             });
             run_timed_stage("lm_head_backward.ce", [&]() {
@@ -7818,7 +7823,7 @@ int run_transformer_lm_training_json(
                             row_max,
                             row_denom,
                             row_count,
-                            kVocab,
+                            kPaddedVocab,
                             accumulation_scale / static_cast<float>(rows),
                             nullptr),
                         "ce.backward.inplace");
@@ -7826,7 +7831,7 @@ int run_transformer_lm_training_json(
             });
             run_timed_stage("lm_head_backward.dhidden", [&]() {
                 if (error.empty()) {
-                    run(linear_backward_input(logits, token_weight, grad_hidden_chunk, row_count, kDim, kVocab, nullptr),
+                    run(linear_backward_input(logits, token_weight, grad_hidden_chunk, row_count, kDim, kPaddedVocab, nullptr),
                         "lm_head.backward_input");
                 }
             });
@@ -7838,7 +7843,7 @@ int run_transformer_lm_training_json(
                             accum_grad_token_weight,
                             row_count,
                             kDim,
-                            kVocab,
+                            kPaddedVocab,
                             nullptr),
                         "lm_head.backward_weight.accumulate");
                 }
@@ -8162,7 +8167,7 @@ int run_transformer_lm_training_json(
         checkpoint_path_json = checkpoint_path.string();
         done_marker_json = done_marker.string();
         const std::int64_t parameter_count =
-            native_gpt2_parameter_count(seq_len, kVocab, trained_layers, kDim);
+            native_gpt2_parameter_count(seq_len, kPaddedVocab, trained_layers, kDim);
         checkpoint_expected_file_size = kCheckpointHeaderBytes + parameter_count * kBytesPerParam;
 
         try {
@@ -8180,7 +8185,7 @@ int run_transformer_lm_training_json(
         header[4] = static_cast<std::int32_t>(trained_layers);
         header[5] = static_cast<std::int32_t>(kHeads);
         header[6] = static_cast<std::int32_t>(kDim);
-        header[7] = static_cast<std::int32_t>(kVocab);
+        header[7] = static_cast<std::int32_t>(kPaddedVocab);
 
         std::ofstream out(checkpoint_path, std::ios::binary | std::ios::trunc);
         if (!out) {
@@ -8612,6 +8617,7 @@ int run_transformer_lm_training_json(
         << "  \"trained_layers\": " << trained_layers << ",\n"
         << "  \"target_layers\": " << target_layers << ",\n"
         << "  \"vocab\": " << kVocab << ",\n"
+        << "  \"padded_vocab\": " << kPaddedVocab << ",\n"
         << "  \"model_dim\": " << kDim << ",\n"
         << "  \"hidden_dim\": " << kHidden << ",\n"
         << "  \"lm_head_row_chunk_size\": " << lm_head_chunk_rows << ",\n"
@@ -8631,7 +8637,7 @@ int run_transformer_lm_training_json(
         << "  \"block_forward_linear_strategy\": \"forced-bf16-gemmex-forward\",\n"
         << "  \"block_backward_input_linear_strategy\": \"forced-bf16-gemmex-dinput\",\n"
         << "  \"block_backward_weight_linear_strategy\": \"forced-bf16-gemmex-dweight-accumulate\",\n"
-        << "  \"non_block_forward_backward_linear_strategy\": \"lm-head-tf32-sgemm-optimized-default\",\n"
+        << "  \"non_block_forward_backward_linear_strategy\": \"padded-lm-head-tf32-sgemm-optimized-default\",\n"
         << "  \"linear_bf16_gemm_count\": " << linear_bf16_gemm_count << ",\n"
         << "  \"linear_sgemm_count\": " << linear_sgemm_count << ",\n"
         << "  \"linear_bf16_a_pack_count\": " << linear_bf16_a_pack_count << ",\n"
@@ -8950,7 +8956,7 @@ int run_transformer_lm_training_json(
         << "    \"num_layers\": " << trained_layers << ",\n"
         << "    \"num_heads\": " << kHeads << ",\n"
         << "    \"channels\": " << kDim << ",\n"
-        << "    \"padded_vocab\": " << kVocab << ",\n"
+        << "    \"padded_vocab\": " << kPaddedVocab << ",\n"
         << "    \"payload_pack_strategy\": \"device-many-float32-to-bf16-bits-contiguous\",\n"
         << "    \"payload_pack_kernel\": \"nfn_native_tile_float32_to_bf16_bits_many\",\n"
         << "    \"payload_copy_strategy\": \"single-contiguous-device-payload-d2h\",\n"
