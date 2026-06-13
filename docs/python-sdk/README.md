@@ -82,6 +82,12 @@ inspect/check or run the NeuralFn-owned raw Tile GPT plan. Set
 dense native loop, or pass another shipped GPT template name/custom `graph_file`
 to select that architecture and receive explicit
 `selected-graph-native-trainer-missing` JSON until its C++ Tile trainer exists.
+Compiled plan and runtime JSON also report `architecture_source`,
+`architecture_contract`, and `model_family_context_policy`, making the template
+or graph the architecture source of truth. The compatibility
+`NativeGpt2RunConfig` and `build_native_gpt2_*` helpers now default
+`model_family` to `"gpt"`; pass `model_family="gpt2"` only when a literal GPT-2
+metadata label is required.
 New code should import `neuralfn.native_gpt` for generic dense GPT names:
 `NativeGptRunConfig`, `build_native_gpt_compiled_cli_run_config()`,
 `build_native_gpt_run_config()`, `run_native_gpt()`, and related checkpoint/

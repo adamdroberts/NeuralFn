@@ -101,6 +101,9 @@ template, graph, or `--train-seq-len` is supplied.
 `nfn-native-train --list-models --json` reports all three dense GPT aliases as
 `implemented` because they share the same native trainer; template or graph
 selection determines whether the selected architecture can run on that trainer.
+Plan and runtime JSON include `architecture_source`,
+`architecture_contract`, and `model_family_context_policy` so a run makes clear
+that the graph/template, not the family label, chooses the architecture.
 `--native-cuda-print-plan` and `--native-cuda-check-tile-ops` still print the
 raw Tile ABI plan or check the trainer-facing library. The Tile plan includes
 the GPT-2 parameter layout and forward/backward/optimizer stage sequence that
@@ -294,6 +297,9 @@ commands, unless the command already requested a plan/check/smoke/train action.
 `--base-model gpt2` and `--base-model gpt3` are aliases for this same trainer;
 `gpt3` only defaults to a 2048-token context when no explicit template, graph,
 or `--train-seq-len` is present.
+For all other cases, including custom graphs and explicit templates, `gpt3`
+does not alter the architecture; the selected graph/template and sequence
+arguments are authoritative.
 The selector accepts every name in
 `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, and the compiled C++ plan JSON
 reports the synchronized `shipped_template_catalog`,

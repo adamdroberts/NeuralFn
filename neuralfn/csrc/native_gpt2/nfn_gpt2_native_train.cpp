@@ -482,6 +482,24 @@ std::string selected_graph_support_status(const Config& cfg) {
                                                                 : "template-native-trainer-missing";
 }
 
+std::string selected_architecture_source(const Config& cfg) {
+    return cfg.graph_file.empty() ? "template" : "custom_graph";
+}
+
+std::string dense_gpt_architecture_contract(const Config& cfg) {
+    if (!cfg.graph_file.empty()) {
+        return "custom-graph-file";
+    }
+    return "gpt-template-preset";
+}
+
+std::string model_family_context_policy(const Config& cfg) {
+    if (cfg.model_family == "gpt3") {
+        return "gpt3-label-defaults-to-2048-context-only-when-template-graph-and-seq-len-are-implicit";
+    }
+    return "model-family-label-does-not-select-architecture";
+}
+
 std::int64_t native_gpt2_parameter_count(
     std::int64_t max_seq_len,
     std::int64_t padded_vocab_size,
@@ -1105,6 +1123,9 @@ bool print_tile_plan(
         << "  \"status\": \"" << json_escape(plan_status) << "\",\n"
         << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
+        << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
+        << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
+        << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
         << "  \"native_cuda_activation\": \"" << json_escape(cfg.activation) << "\",\n"
         << "  \"template_known\": " << (shipped_template ? "true" : "false") << ",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
@@ -1303,6 +1324,9 @@ int print_selected_graph_unsupported_json(const Config& cfg, const neuralfn::nat
         << "  \"backend\": \"" << json_escape(cfg.backend) << "\",\n"
         << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
+        << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
+        << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
+        << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
         << "  \"native_cuda_activation\": \"" << json_escape(cfg.activation) << "\",\n"
         << "  \"template_known\": " << (shipped_template ? "true" : "false") << ",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
@@ -9979,6 +10003,9 @@ int run_transformer_lm_training_json(
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
+        << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
+        << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
+        << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
         << "  \"native_cuda_activation\": \"" << json_escape(cfg.activation) << "\",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(selected_graph_support_status(cfg)) << "\",\n"
         << "  \"selected_graph_native_runnable\": " << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ",\n"
@@ -11333,6 +11360,9 @@ int main(int argc, char** argv) {
             << "  \"status\": \"external-fast-path\",\n"
             << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
             << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
+            << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
+            << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
+            << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
             << "  \"dataset_path\": \"" << json_escape(dataset.dataset_path.string()) << "\",\n"
             << "  \"target\": \"" << json_escape(cfg.target) << "\"\n"
             << "}\n";

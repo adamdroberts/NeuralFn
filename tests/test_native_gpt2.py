@@ -246,7 +246,7 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
     assert argv[:9] == [
         "/opt/nfn/nfn_gpt2_native_train",
         "--model-family",
-        "gpt2",
+        "gpt",
         "--dataset-alias",
         "roneneldan__TinyStories__TinyStoriesV2-GPT4",
         "--backend",
@@ -659,7 +659,7 @@ def test_native_gpt2_compiled_cli_runner_executes_cli(
     args = output.read_text(encoding="utf-8").splitlines()
     assert args[:6] == [
         "--model-family",
-        "gpt2",
+        "gpt",
         "--dataset-alias",
         str(tmp_path / "dataset"),
         "--backend",
@@ -823,7 +823,7 @@ def test_native_gpt2_cpp_binding_uses_compiled_cli_for_alias_only_config(
     args = observed_args.read_text(encoding="utf-8").splitlines()
     assert args[:6] == [
         "--model-family",
-        "gpt2",
+        "gpt",
         "--dataset-alias",
         "cached-shards",
         "--backend",
@@ -989,6 +989,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["status"] == "native-transformer-lm-ready"
     assert default_payload["template_name"] == "gpt2"
     assert default_payload["graph_file"] == ""
+    assert default_payload["architecture_source"] == "template"
+    assert default_payload["architecture_contract"] == "gpt-template-preset"
+    assert default_payload["model_family_context_policy"] == "model-family-label-does-not-select-architecture"
     assert default_payload["selected_graph_native_runnable"] is True
     assert default_payload["train_shard"].endswith("fineweb_train_000000.bin")
     assert default_payload["val_shard"].endswith("fineweb_val_000000.bin")
@@ -1063,6 +1066,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert external_payload["status"] == "external-fast-path"
     assert external_payload["template_name"] == "gpt2"
     assert external_payload["graph_file"] == ""
+    assert external_payload["architecture_source"] == "template"
+    assert external_payload["architecture_contract"] == "gpt-template-preset"
 
     tile_plan = subprocess.run(
         [
@@ -1084,6 +1089,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["backend"] == "tile-cuda"
     assert tile_payload["status"] == "native-transformer-lm-ready"
     assert tile_payload["template_name"] == "gpt2"
+    assert tile_payload["architecture_source"] == "template"
+    assert tile_payload["architecture_contract"] == "gpt-template-preset"
+    assert tile_payload["model_family_context_policy"] == "model-family-label-does-not-select-architecture"
     assert tile_payload["template_known"] is True
     assert tile_payload["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert tile_payload["shipped_template_catalog"] == list(SHIPPED_GPT_TEMPLATE_PRESETS)

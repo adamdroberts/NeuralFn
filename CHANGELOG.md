@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-13 Universal GPT native trainer contract
+
+#### Breaking changes
+
+- `NativeGpt2RunConfig`, `build_native_gpt2_run_config()`, and
+  `build_native_gpt2_compiled_cli_run_config()` now default their
+  `model_family` metadata to `"gpt"` instead of `"gpt2"`. The default template
+  remains `"gpt2"` because that is the shipped dense decoder preset. Callers
+  that require a literal GPT-2 family label in emitted native CLI argv should
+  pass `model_family="gpt2"` explicitly. New SDK code should use
+  `neuralfn.native_gpt` and the `NativeGpt*` names.
+
+#### Changed
+
+- Made the compiled dense GPT trainer contract explicit in plan, unsupported
+  graph, external bridge, and training JSON. Runs now report
+  `architecture_source`, `architecture_contract`, and
+  `model_family_context_policy` so diagnostics show that `--template-name` or
+  `--graph-file` selects the architecture. `gpt`, `gpt2`, and `gpt3` remain
+  aliases of the same trainer; `gpt3` only supplies the 2048-token default
+  context when template, graph, and sequence length are all implicit.
+  Verification: `python -m pytest tests/test_native_gpt2.py -q` passed
+  (`30 passed, 1 skipped`), `python -m pytest tests/test_template_presets.py
+  -q -x` passed (`26 passed`), and `git diff --check` passed.
+
 ### 2026-06-12 Native GPT-2 Tile-CUDA default
 
 #### Breaking changes

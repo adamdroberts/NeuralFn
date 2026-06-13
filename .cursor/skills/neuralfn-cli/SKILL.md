@@ -123,6 +123,9 @@ Canonical docs:
   importing `train_gpt2_native`, `nfn_impl`, or Torch. The canonical `gpt` family
   reports `model_family: gpt` and dispatches to the no-Python cached-shard CLI;
   `gpt2` and `gpt3` are aliases for that same compiled dense GPT trainer;
+  plan/runtime JSON reports `architecture_source`, `architecture_contract`, and
+  `model_family_context_policy` so the selected template or custom graph is the
+  architecture source of truth;
   NanoGPT `--train-token-lm` dispatches to its partial native trainer; unsupported
   families fail from the native registry.
 - GPT-2 native training uses the SM120 AdamW schedule: 20,000 steps, seq len
