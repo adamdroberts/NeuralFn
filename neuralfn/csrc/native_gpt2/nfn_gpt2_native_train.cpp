@@ -7713,9 +7713,6 @@ int run_transformer_lm_training_json(
             const std::string prefix = "block" + std::to_string(i);
             visit(&tape.ln1_out, activation_elements, prefix + ".ln1.out");
             visit(&tape.qkv, qkv_activation_elements, prefix + ".attn.qkv");
-            visit(&tape.q, activation_elements, prefix + ".attn.q");
-            visit(&tape.k, activation_elements, prefix + ".attn.k");
-            visit(&tape.v, activation_elements, prefix + ".attn.v");
             visit(&tape.q_heads, activation_elements, prefix + ".attn.q_heads");
             visit(&tape.k_heads, activation_elements, prefix + ".attn.k_heads");
             visit(&tape.v_heads, activation_elements, prefix + ".attn.v_heads");
@@ -9524,6 +9521,8 @@ int run_transformer_lm_training_json(
         << "    \"allocated_block_count\": " << trained_layers << ",\n"
         << "    \"target_block_count\": " << target_layers << ",\n"
         << "    \"activation_tape_count\": " << kActivationTapeCount << ",\n"
+        << "    \"forward_row_qkv_scratch_allocated\": false,\n"
+        << "    \"forward_row_qkv_scratch_buffers_elided\": 3,\n"
         << "    \"persistent_block_outputs\": " << persistent_block_output_count << ",\n"
         << "    \"final_block_output_copy_elided\": true,\n"
         << "    \"validation_persistent_block_outputs\": 0,\n"

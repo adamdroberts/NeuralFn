@@ -1895,6 +1895,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "mlp_proj_backward_gelu_inplace": True,
         "mlp_proj_backward_grad_act_scratch_allocated": False,
         "activation_tape_strategy": "scratch-recompute-bf16-stored-mlp-direct-backward-opt-in",
+        "forward_row_qkv_scratch_allocated": False,
+        "forward_row_qkv_scratch_buffers_elided": 3,
         "per_block_parameter_buffers": 12,
         "per_block_gradient_buffers": 0,
         "per_block_direct_accum_gradient_buffers": 12,
@@ -3124,6 +3126,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "direct-sampler-to-pinned-arena" in gpt2_source_text
     assert "attention(tape.q_heads, tape.k_heads, tape.v_heads, tape.attn_heads, activation_elements" in gpt2_source_text
     assert "attention(tape.q_heads, tape.k_heads, tape.v_heads, tape.attn_heads, batch_size" not in gpt2_source_text
+    assert "forward_row_qkv_scratch_allocated" in gpt2_source_text
+    assert "forward_row_qkv_scratch_buffers_elided" in gpt2_source_text
+    assert 'visit(&tape.q, activation_elements, prefix + ".attn.q")' not in gpt2_source_text
+    assert 'visit(&tape.k, activation_elements, prefix + ".attn.k")' not in gpt2_source_text
+    assert 'visit(&tape.v, activation_elements, prefix + ".attn.v")' not in gpt2_source_text
     assert "steady_clock_host_wall_ms" in gpt2_source_text
     assert "setup_wall_ms" in gpt2_source_text
     assert "train_loop_wall_ms" in gpt2_source_text
