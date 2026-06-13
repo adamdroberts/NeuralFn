@@ -15,11 +15,15 @@ import pytest
 
 from neuralfn.config import SHIPPED_GPT_TEMPLATE_PRESETS
 from neuralfn.native_gpt import (
+    NativeGptRunConfig,
+    NativeGptRunnerStatus,
     build_native_gpt_compiled_cli_run_config,
     native_gpt_activation,
     native_gpt_encoding_vocab_size,
     native_gpt_kernel_backend,
+    native_gpt_runner_status,
     normalize_native_gpt_encoding_name,
+    read_native_gpt_checkpoint_info,
 )
 from neuralfn.native_gpt2 import (
     NativeGpt2RunConfig,
@@ -143,6 +147,17 @@ def test_read_native_gpt2_checkpoint_info_and_latest_done_marker(tmp_path: Path)
     assert info.done_marker_exists is True
     assert latest_native_gpt2_checkpoint(tmp_path) == checkpoint
     assert old_checkpoint.exists()
+
+
+def test_read_native_gpt_checkpoint_info_uses_generic_sdk_class(tmp_path: Path) -> None:
+    checkpoint = _write_native_checkpoint(tmp_path / "model_00000001.bin", step=1)
+
+    info = read_native_gpt_checkpoint_info(checkpoint)
+
+    assert type(info).__name__ == "NativeGptCheckpointInfo"
+    assert type(info) is neuralfn.NativeGptCheckpointInfo
+    assert info.path == str(checkpoint)
+    assert info.done_marker_exists is True
 
 
 def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) -> None:
@@ -309,6 +324,9 @@ def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path
 
     argv = cfg.compiled_cli_argv("/opt/nfn/nfn_gpt_native_train")
 
+    assert isinstance(cfg, NativeGptRunConfig)
+    assert type(cfg).__name__ == "NativeGptRunConfig"
+    assert repr(cfg).startswith("NativeGptRunConfig(")
     assert cfg.model_family == "gpt"
     assert cfg.template_name == "gpt2_megakernel"
     assert cfg.graph_file == "/tmp/custom-gpt.json"
@@ -491,6 +509,10 @@ def test_native_gpt_generic_env_names_take_precedence(
     status = native_gpt2_runner_status("auto")
     assert status.resolved == "compiled-cli"
     assert "NFN_NATIVE_GPT_BINDING" in status.reason
+    generic_status = native_gpt_runner_status("auto")
+    assert isinstance(generic_status, NativeGptRunnerStatus)
+    assert type(generic_status).__name__ == "NativeGptRunnerStatus"
+    assert generic_status.resolved == "compiled-cli"
 
 
 def test_native_gpt2_runner_status_uses_compiled_launcher_when_present(

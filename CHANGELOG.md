@@ -8,6 +8,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ### 2026-06-12 Native GPT-2 Tile-CUDA default
 
+#### Breaking changes
+
+- `neuralfn.native_gpt.NativeGptRunConfig`,
+  `NativeGptRunnerStatus`, and `NativeGptCheckpointInfo` are now real
+  GPT-native dataclass subclasses instead of direct aliases of the
+  `NativeGpt2*` compatibility classes. Code using generic SDK helpers should
+  migrate exact type-name or `type(obj) is NativeGpt2RunConfig` checks to the
+  `NativeGpt*` classes. `isinstance(obj, NativeGpt2RunConfig)` remains true for
+  the generic config objects because the GPT-native classes subclass the
+  compatibility classes.
+
 #### Changed
 
 - Promoted the dense GPT native C++ runtime toggles to generic
