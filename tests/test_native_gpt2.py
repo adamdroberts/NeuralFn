@@ -2934,14 +2934,19 @@ def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> N
     assert (Path(env["NFN_NATIVE_MISSING_TRAINERS_OUT_DIR"]) / "nfn_llama_native_train").exists()
 
 
-def test_bf16_bit_linear_dweight_accumulate_fallbacks_use_large_row_chunks() -> None:
+def test_large_row_reduction_fallbacks_use_shared_row_chunks() -> None:
     root = Path(__file__).resolve().parents[1]
     kernels_text = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text()
 
     assert "kLinearBackwardBiasRowChunkSize = 1024" in kernels_text
     for function_name in (
+        "launch_layer_norm_backward_affine_float32",
+        "launch_layer_norm_backward_affine_accumulate_float32",
+        "launch_layer_norm_backward_affine_accumulate_with_stats_float32",
         "launch_linear_backward_weight_accumulate_bf16_bits_float32",
         "launch_linear_backward_weight_accumulate_float32_bf16_bits",
+        "launch_linear_backward_bias_float32",
+        "launch_linear_backward_bias_accumulate_float32",
     ):
         function_body = kernels_text.split(f"void {function_name}", 1)[1].split("\nvoid ", 1)[0]
         assert "kRowChunkSize = kLinearBackwardBiasRowChunkSize" in function_body

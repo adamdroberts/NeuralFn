@@ -8212,7 +8212,7 @@ void launch_layer_norm_backward_affine_float32(
     float eps,
     cudaStream_t stream) {
   if (rows > 1024) {
-    constexpr std::int64_t kRowChunkSize = 256;
+    constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
     const std::int64_t dim_blocks = (dim + kTileSize - 1) / kTileSize;
     const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
     cudaMemsetAsync(grad_weight, 0, sizeof(float) * static_cast<std::size_t>(dim), stream);
@@ -8238,7 +8238,7 @@ void launch_layer_norm_backward_affine_accumulate_float32(
     float eps,
     cudaStream_t stream) {
   if (rows > 1024) {
-    constexpr std::int64_t kRowChunkSize = 256;
+    constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
     const std::int64_t dim_blocks = (dim + kTileSize - 1) / kTileSize;
     const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
     layer_norm_backward_affine_chunked_atomic_float32_kernel<<<
@@ -8263,7 +8263,7 @@ void launch_layer_norm_backward_affine_accumulate_with_stats_float32(
     std::int64_t dim,
     cudaStream_t stream) {
   if (rows > 1024) {
-    constexpr std::int64_t kRowChunkSize = 256;
+    constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
     const std::int64_t dim_blocks = (dim + kTileSize - 1) / kTileSize;
     const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
     layer_norm_backward_affine_chunked_atomic_with_stats_float32_kernel<<<
@@ -8889,7 +8889,7 @@ void launch_linear_backward_bias_float32(
     linear_backward_bias_float32_kernel<<<blocks, 1, 0, stream>>>(grad_out, grad_bias, output_dim, rows);
     return;
   }
-  constexpr std::int64_t kRowChunkSize = 256;
+  constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
   const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
   fill_float32_kernel<<<blocks, 1, 0, stream>>>(grad_bias, output_dim, 0.0f);
   dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
@@ -8914,7 +8914,7 @@ void launch_linear_backward_bias_accumulate_float32(
         grad_out, grad_bias, output_dim, rows);
     return;
   }
-  constexpr std::int64_t kRowChunkSize = 256;
+  constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
   const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
   dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
   linear_backward_bias_chunked_atomic_float32_kernel<<<grid, 1, 0, stream>>>(

@@ -21,13 +21,14 @@ Future updates should append new entries here rather than replacing older notes.
   fallbacks. New configuration should use `NFN_NATIVE_GPT_CLI` or
   `--native-gpt-cli`. Verification: added/updated native dispatcher,
   build-all, installer, SDK-default, and CLI regression coverage.
-- BF16-bit linear dWeight accumulate fallback launchers now use the same
-  `kLinearBackwardBiasRowChunkSize` 1024-row policy as the other native
-  large-row dWeight/bias reduction paths instead of retaining a local 256-row
-  chunk. cuBLAS-backed shapes still prefer the cuBLAS path; this reduces launch
-  grid and atomic-reduction overhead when the BF16-bit fallback kernels are
-  selected. Verification: added source assertions for both BF16-bit accumulate
-  launchers.
+- Remaining native large-row reduction fallback launchers now use the shared
+  `kLinearBackwardBiasRowChunkSize` 1024-row policy instead of retaining local
+  256-row chunks. This covers LayerNorm affine gradients, LayerNorm affine
+  accumulate, LayerNorm affine-with-stats accumulate, Linear bias gradients,
+  Linear bias accumulate, and BF16-bit Linear dWeight accumulate fallbacks.
+  cuBLAS-backed GEMM shapes still prefer the cuBLAS path; this reduces launch
+  grid and atomic-reduction overhead when fallback reductions are selected.
+  Verification: added source assertions for the affected fallback launchers.
 - Extended the universal dense GPT alias surface through the full `nfn train`
   parser, planner, compatibility spec builder, and public
   `build_composed_lm_spec()` API. `gpt`, `gpt2`, and `gpt3` now parse
