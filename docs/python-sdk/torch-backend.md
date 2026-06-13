@@ -43,6 +43,8 @@ Run a forward pass and return both the output tensors and a trace dict mapping e
 
 Write the current PyTorch state_dict back into each node's `module_state` field (base64-encoded). Recursively syncs nested subgraph nodes. If `graph` is None, syncs to `self.graph`.
 
+`TorchTrainer.active_compiled_graph` is set while `train()` is running and is cleared after final state sync. Long-running harnesses can use it inside `on_step` callbacks for live validation against the current in-memory weights without recompiling stale graph JSON. `TorchTrainer.last_compiled_graph` retains the most recent compiled graph after `train()` returns, so final validation can score the same trained weights used by the callback path.
+
 ---
 
 ## TorchTrainConfig
@@ -113,7 +115,7 @@ class TorchTrainConfig:
 | `beta2` | `float` | `0.95` | Adam-family beta2 for the split optimizer profile |
 | `adam_eps` | `float` | `1e-8` | Adam epsilon |
 | `grad_clip_norm` | `float` | `0.0` | Global grad clipping threshold (`0.0` disables clipping) |
-| `optimizer_profile` | `str` | `"adamw"` | `"adamw"` for the legacy single-optimizer path or `"parameter_golf"` for split optimizers + Muon |
+| `optimizer_profile` | `str` | `"adamw"` | `"adamw"` for the single-optimizer path; when `kernel_backend="tile_cuda"` it uses batched CUDA Tile AdamW steps, Tile gradient clipping, and default cosine decay to zero when no explicit LR schedule is supplied. Use `"parameter_golf"` only for split optimizers + Muon. |
 | `train_batch_tokens` | `int \| None` | `None` | Target token budget per optimization step; drives gradient accumulation |
 | `warmup_steps` | `int` | `0` | Optional warmup-priming steps for the parameter-golf profile |
 | `warmdown_fraction` | `float` | `0.75` | Fraction of total optimizer steps used for linear LR warmdown at the tail of training |
@@ -131,9 +133,11 @@ class TorchTrainConfig:
 | `muon_momentum_warmup_steps` | `int` | `500` | Number of steps used to ramp Muon momentum to its final value |
 | `drop_last` | `bool \| None` | `None` | Override the runtime-specific drop-last policy |
 | `respect_epoch_boundaries` | `bool` | `False` | Keep each epoch to one loader pass and allow a short final accumulation step instead of cycling batches |
-| `kernel_backend` | `str` | `"auto"` | Backend selector: `"auto"`, `"torch"`, or `"tile_cuda"`. The current registry accounts for all 138 training-relevant entries with 129 Tile-covered kernels/compositions, 7 host-only entries, and 2 delegated graph calls; unsupported tensor contracts fall back unless strict mode is enabled. |
+| `kernel_backend` | `str` | `"auto"` | Backend selector: `"auto"`, `"torch"`, or `"tile_cuda"`. Explicit `"tile_cuda"` build-loads the CUDA Tile extension when needed. The current registry accounts for all 138 training-relevant entries with 129 Tile-covered kernels/compositions, 7 host-only entries, and 2 delegated graph calls; unsupported tensor contracts fall back unless strict mode is enabled. |
 | `tile_cuda_strict` | `bool` | `False` | When true, a requested CUDA Tile run fails at graph compile time for uncovered nodes and at runtime for unsupported Tile tensor contracts. |
 | `tile_cuda_report_path` | `str \| None` | `None` | Optional path for CUDA Tile diagnostics and coverage JSON reports emitted when compiling the graph. |
+
+For graph-level CUDA Tile activation packing, set `graph.torch_config["tile_cuda_activation_dtype"] = "nvfp4"` before compiling or training. This packs only supported module activation inputs into `NVFP4Tensor` values and leaves `amp_dtype` as an independent autocast setting; large GPT-style harnesses can use `"bfloat16"` AMP to keep output projections on tensor-core GEMM. Weights, targets, masks, losses, optimizer state, and source/editor nodes remain normal tensors.
 | `evolutionary` | `bool` | `False` | Use population-based search over trainable torch parameters instead of gradient descent |
 | `evo_population_size` | `int` | `50` | Number of candidates scored each generation |
 | `evo_mutation_rate` | `float` | `0.1` | Probability of mutating each parameter during offspring generation |
@@ -191,6 +195,12 @@ def train(
 Run the training loop. Expects integer token arrays of shape `[batch, seq_len]`.
 
 If the graph contains a `dataset_source` node with configured `dataset_names`, the dataset is loaded automatically and `train_inputs`/`train_targets` are ignored. Role-aware dataset loading now supports semantic routing layouts as well, including `semantic_router_moe`, `jepa_semantic_hybrid`, `semantic_dense_jepa_evo`, and `semantic_moe_jepa_evo` graphs whose flat compiled input contract is `(tokens, targets, sem_targets)`. For these presets, `sem_targets` are categorical vocab-topic IDs rather than quantized semantic vectors. When a graph only has `semantic_data_source`, the trainer now synthesizes safe placeholder `tokens` / `targets` tensors instead of feeding categorical semantic IDs into the token embedding path.
+
+For large raw-text aliases, dataset loading materializes a local `uint16` token
+cache when the tokenizer ids fit that dtype. Later runs use memmapped token
+shards and metadata-based schedule estimates instead of re-tokenizing text.
+Graph nodes keep dataset references only; real text and token arrays stay in
+the dataset cache.
 
 For `semantic_moe_jepa_evo`, normal gradient training can run periodic route evolution after optimizer steps. The trainer evaluates a small population of router-bias/table candidates on recent macro-batches and writes the best candidate back to the route-only parameters; the main model weights still train through the configured optimizer.
 

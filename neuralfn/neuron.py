@@ -9,8 +9,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
-import torch
-
 from .port import Port
 
 if TYPE_CHECKING:
@@ -280,12 +278,16 @@ def subgraph_neuron(
 
 
 def encode_module_state_dict(state_dict: dict[str, Any]) -> str:
+    import torch
+
     buffer = io.BytesIO()
     torch.save(state_dict, buffer)
     return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
 def decode_module_state_dict(blob: str) -> dict[str, Any]:
+    import torch
+
     if not blob:
         return {}
     data = base64.b64decode(blob.encode("ascii"))

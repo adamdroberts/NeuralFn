@@ -96,6 +96,26 @@ Tokenizer-backed cached shard aliases are now treated as strict contracts:
 - the graph/checkpoint vocab must match that tokenizer vocab
 - bad aliases are considered invalid cache artifacts and must be deleted and rebuilt or re-downloaded
 
+Raw-text aliases also get a local training cache when the selected tokenizer can
+be stored in `uint16`. The first training load streams `data.txt` and optional
+`val.txt` into `fineweb_train_000000.bin` and `fineweb_val_000000.bin`, updates
+`meta.json` with `data_format="uint16_shards"` and
+`token_cache_format="raw_text_uint16_shards"`, and later training runs memmap
+those files directly. Schedule estimation reads token counts or shard sizes
+without constructing a dataset. Tokenizers whose ids exceed `uint16` remain raw
+text. The `dataset_source` node stores references and `seq_len`; real text and
+token arrays stay in the dataset cache rather than graph-editor node state.
+
+The compiled native GPT-2 resolver also accepts existing llm.kittens
+TinyStories token bins without converting them into NeuralFn cache shards. When
+`--tinystories` is used, `nfn_gpt2_native_train` checks
+`/mnt/disk2/dev/open-source/llm.kittens/dev/data/tinystories` for
+`TinyStories_train.bin` and `TinyStories_val.bin`; set
+`NFN_LLM_KITTENS_TINYSTORIES_DIR` to override that location. Passing a direct
+`TinyStories_train.bin` path as `--dataset-alias` infers the sibling validation
+bin in C++, so the startup path stays Torch-free and does not materialize
+raw-text shards first.
+
 ---
 
 ## MCP tools for datasets

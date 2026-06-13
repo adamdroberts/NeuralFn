@@ -1,6 +1,713 @@
-from nfn_impl import *  # noqa: F401,F403
-from nfn_impl import main
+from __future__ import annotations
+
+from pathlib import Path
+import os
+import subprocess
+import sys
+import textwrap
+
+
+ROOT = Path(__file__).resolve().parent
+SCRIPTS_DIR = ROOT / "scripts"
+for candidate in (SCRIPTS_DIR, ROOT.parent):
+    candidate_str = str(candidate)
+    if candidate_str not in sys.path:
+        sys.path.insert(0, candidate_str)
+
+
+def _arg_value(argv: list[str], *flags: str) -> str | None:
+    for idx, arg in enumerate(argv):
+        for flag in flags:
+            if arg == flag and idx + 1 < len(argv):
+                return argv[idx + 1]
+            if arg.startswith(flag + "="):
+                return arg.split("=", 1)[1]
+    return None
+
+
+def _has_any(argv: list[str], *flags: str) -> bool:
+    return any(arg in flags or any(arg.startswith(flag + "=") for flag in flags) for arg in argv)
+
+
+def _is_lightweight_root_help(argv: list[str]) -> bool:
+    if not argv:
+        return True
+    idx = 0
+    saw_help = False
+    while idx < len(argv):
+        arg = argv[idx]
+        if arg in {"-h", "--help"}:
+            saw_help = True
+            idx += 1
+            continue
+        if arg == "--help-style":
+            if idx + 1 >= len(argv) or argv[idx + 1] not in {"short", "long", "verbose"}:
+                return False
+            idx += 2
+            continue
+        if arg.startswith("--help-style="):
+            if arg.split("=", 1)[1] not in {"short", "long", "verbose"}:
+                return False
+            idx += 1
+            continue
+        return False
+    return saw_help or not argv
+
+
+def _print_lightweight_root_help() -> None:
+    print(
+        """usage: nfn [-h] [--help-style {short,long,verbose}]
+
+Master NeuralFn CLI for train, infer, and eval.
+
+options:
+  -h, --help            Show help for the master CLI. (default: False)
+  --help-style {short,long,verbose}
+                        Help detail level. (default: None)
+"""
+    )
+
+
+def _lightweight_root_main(_argv: list[str] | None = None) -> int:
+    _print_lightweight_root_help()
+    return 0
+
+
+_LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
+    "train": """\
+        usage: nfn train [options]
+
+        Train NeuralFn models.
+
+        common options:
+          -h, --help
+          --help-style {short,long,verbose}
+          --base-model, --model {gpt2,nanogpt,llama}
+          --topology {dense,moe,semantic_router}
+          --router-mode {standard,semantic,hash}
+          --dataset-alias NAME_OR_PATH
+          --tinystories
+          --pretraining-file PATH
+          --runtime native-cuda
+          --kernel-backend {auto,torch,tile-cuda}
+          --template-name NAME, --template NAME, --preset NAME
+          --graph-file PATH, --graph PATH
+          --tile-cuda-strict, --no-tile-cuda-strict
+          --eval-every-steps N
+          --native-cuda-lm-head-row-chunk-size N
+          --native-cuda-runner {auto,binding,compiled-cli,launcher,subprocess}
+          --native-cuda-dry-run
+
+        examples:
+          nfn train --base-model gpt2 --tinystories
+          nfn train --base-model gpt2 --tinystories --template-name gpt2_moa
+          nfn train --base-model gpt2 --dataset-alias /data/tokens --graph-file graph.json
+          nfn train --base-model gpt2 --tinystories --eval-every-steps 1000
+          nfn train --base-model gpt2 --native-cuda-runner compiled-cli
+
+        Explicit dense GPT-2 runs dispatch before importing the graph-backed runtime.
+        The compiled frontend records the selected template or custom graph and
+        fails fast when a matching CUDA Tile C++ trainer is not implemented.
+        """,
+    "infer": """\
+        usage: nfn infer [options]
+
+        Run inference from NeuralFn artifacts.
+
+        common options:
+          -h, --help
+          --help-style {short,long,verbose}
+          --graph PATH
+          --weights PATH
+          --checkpoint PATH
+          --checkpoint-tokenizer PATH
+          --native-info
+          --prompt TEXT
+          --prompt-tokens IDS
+          --max-new-tokens N
+          --temperature FLOAT
+          --top-k N
+          --top-p FLOAT
+          --kernel-backend {auto,torch,tile-cuda}
+          --tile-cuda-strict, --no-tile-cuda-strict
+
+        examples:
+          nfn infer --graph ~/NeuralFn/artifacts/gpt2_evo.json --weights ~/NeuralFn/artifacts/gpt2_evo.pt --prompt "Once upon a time"
+          nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --native-info
+          nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer tokenizer.model --prompt "Hello"
+        """,
+    "eval": """\
+        usage: nfn eval [options]
+
+        Evaluate NeuralFn artifacts.
+
+        common options:
+          -h, --help
+          --help-style {short,long,verbose}
+          --base-model, --model {gpt2,nanogpt,llama}
+          --graph PATH
+          --weights PATH
+          --dataset-alias NAME_OR_PATH
+          --eval-batches N
+          --eval-batch-size N
+          --prompt-suite {auto,general,shakespeare}
+          --report-path PATH
+          --kernel-backend {auto,torch,tile-cuda}
+          --tile-cuda-strict, --no-tile-cuda-strict
+
+        examples:
+          nfn eval --graph ~/NeuralFn/artifacts/gpt2_evo.json --weights ~/NeuralFn/artifacts/gpt2_evo.pt
+          nfn eval --base-model gpt2 --dataset-alias tinystories
+        """,
+    "kernels": """\
+        usage: nfn kernels [list|doctor|bench|examples] [options]
+
+        Inspect CUDA Tile kernel coverage and diagnostics.
+
+        actions:
+          list       Print metadata-only CUDA Tile registry coverage.
+          doctor     Print CUDA Tile toolchain diagnostics plus coverage.
+          bench      Compare graph-walk, compiled Torch, and Tile-requested execution.
+          examples   List or regenerate CUDA Tile SDK examples.
+
+        options:
+          -h, --help
+          --help-style {short,long,verbose}
+          --json
+          --iterations N
+          --warmup N
+          --device auto|cpu|cuda|cuda:N
+          --output-dir PATH
+          --write
+
+        examples:
+          nfn kernels list --json
+          nfn kernels doctor --json
+          nfn kernels examples --write --output-dir examples/tile_cuda
+        """,
+}
+
+
+def _is_lightweight_command_help(argv: list[str]) -> bool:
+    if not argv or argv[0] not in _LIGHTWEIGHT_COMMAND_HELP:
+        return False
+    if "-h" not in argv and "--help" not in argv:
+        return False
+    idx = 1
+    if argv[0] == "kernels" and idx < len(argv) and argv[idx] in {"list", "doctor", "bench", "examples"}:
+        idx += 1
+    while idx < len(argv):
+        arg = argv[idx]
+        if arg in {"-h", "--help"}:
+            idx += 1
+            continue
+        if arg == "--help-style":
+            if idx + 1 >= len(argv) or argv[idx + 1] not in {"short", "long", "verbose"}:
+                return False
+            idx += 2
+            continue
+        if arg.startswith("--help-style="):
+            if arg.split("=", 1)[1] not in {"short", "long", "verbose"}:
+                return False
+            idx += 1
+            continue
+        return False
+    return True
+
+
+def _lightweight_command_help_main(argv: list[str] | None = None) -> int:
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    command = tokens[0] if tokens else ""
+    help_text = _LIGHTWEIGHT_COMMAND_HELP.get(command)
+    if help_text is None:
+        return 2
+    print(textwrap.dedent(help_text).strip())
+    return 0
+
+
+def _is_lightweight_kernels_list(argv: list[str]) -> bool:
+    if not argv or argv[0] != "kernels":
+        return False
+    idx = 1
+    action_seen = False
+    while idx < len(argv):
+        arg = argv[idx]
+        if arg == "list" and not action_seen:
+            action_seen = True
+            idx += 1
+            continue
+        if arg == "--json":
+            idx += 1
+            continue
+        return False
+    return True
+
+
+def _lightweight_kernels_list_main(argv: list[str] | None = None) -> int:
+    import json
+
+    from neuralfn.tile_cuda.registry import coverage_report
+
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    json_output = "--json" in tokens
+    report = coverage_report()
+    if json_output:
+        print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    else:
+        print(f"NeuralFn CUDA Tile kernel coverage: {report.accounted}/{report.total_inventory} accounted")
+        for status, count in sorted(report.by_status.items()):
+            print(f"  {status}: {count}")
+        if report.missing:
+            print("Missing:")
+            for name in report.missing:
+                print(f"  {name}")
+        else:
+            print("Missing: none")
+    return 0
+
+
+def _is_explicit_native_gpt2_train(argv: list[str]) -> bool:
+    if not argv or argv[0] != "train":
+        return False
+    if _has_any(argv, "-h", "--help", "--plan", "--plan-auto", "--jepa"):
+        return False
+    base_model = (_arg_value(argv, "--base-model", "--model") or "").strip().lower()
+    if base_model != "gpt2":
+        return False
+    topology = (_arg_value(argv, "--topology") or "dense").strip().lower()
+    router_mode = (_arg_value(argv, "--router-mode") or "standard").strip().lower()
+    return topology == "dense" and router_mode == "standard"
+
+
+def _native_infer_checkpoint_arg(argv: list[str]) -> str | None:
+    if not argv or argv[0] != "infer":
+        return None
+    if _has_any(argv, "-h", "--help", "--graph", "--plan", "--plan-auto"):
+        return None
+    return _arg_value(argv, "--checkpoint", "--weights")
+
+
+def _is_lightweight_native_gpt2_infer(argv: list[str]) -> bool:
+    checkpoint = _native_infer_checkpoint_arg(argv)
+    if not checkpoint:
+        return False
+    try:
+        from neuralfn.native_gpt2 import is_native_gpt2_checkpoint
+
+        return is_native_gpt2_checkpoint(Path(checkpoint).expanduser())
+    except Exception:
+        return False
+
+
+def _lightweight_native_gpt2_infer_main(argv: list[str] | None = None) -> int:
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    checkpoint = _native_infer_checkpoint_arg(tokens)
+    if not checkpoint:
+        return 2
+    from neuralfn.native_gpt2 import read_native_gpt2_checkpoint_info
+
+    info = read_native_gpt2_checkpoint_info(Path(checkpoint).expanduser())
+    print("Native GPT-2 checkpoint detected")
+    print(f"  path: {info.path}")
+    print(f"  precision: {info.precision} (version {info.version})")
+    print(f"  shape: layers={info.num_layers} heads={info.num_heads} channels={info.channels} seq_len={info.max_seq_len}")
+    print(f"  vocab: vocab_size={info.vocab_size} padded_vocab_size={info.padded_vocab_size}")
+    if info.step is not None:
+        marker = "present" if info.done_marker_exists else "missing"
+        print(f"  checkpoint_step: {info.step} (DONE marker {marker})")
+    print()
+    print(
+        "Native GPT-2 prompt inference is not wired yet. This checkpoint is a "
+        "llm.kittens/NeuralFn native .bin artifact, not a graph-backed Torch .pt file. "
+        "Use train-time sampling with --native-cuda-sample-every today, or build the "
+        "native GPT-2 inference executable before using this checkpoint for prompt generation."
+    )
+    return 0 if _has_any(tokens, "--native-info") else 2
+
+
+def _native_gpt2_argv(argv: list[str]) -> list[str]:
+    forwarded: list[str] = []
+    drop_value_flags = {
+        "--base-model",
+        "--model",
+        "--topology",
+        "--router-mode",
+        "--model-preset",
+        "--run-preset",
+        "--optimizer-preset",
+        "--tile-cuda-report",
+        "--amp-dtype",
+    }
+    drop_bool_flags = {
+        "--no-tile-cuda-strict",
+        "--tile-cuda-strict",
+    }
+    idx = 1
+    while idx < len(argv):
+        arg = argv[idx]
+        if arg in drop_value_flags:
+            idx += 2
+            continue
+        if any(arg.startswith(flag + "=") for flag in drop_value_flags):
+            idx += 1
+            continue
+        if arg in drop_bool_flags:
+            idx += 1
+            continue
+        forwarded.append(arg)
+        idx += 1
+    return forwarded
+
+
+def _native_gpt2_requested_runner(argv: list[str]) -> str:
+    return (_arg_value(argv, "--native-cuda-runner") or "compiled-cli").strip().lower().replace("_", "-")
+
+
+def _native_gpt2_requested_runtime(argv: list[str]) -> str:
+    return (_arg_value(argv, "--runtime") or "native-cuda").strip().lower().replace("_", "-")
+
+
+def _is_direct_native_train_cli_train(argv: list[str]) -> bool:
+    if not argv or argv[0] != "train":
+        return False
+    if _has_any(argv, "-h", "--help", "--plan", "--plan-auto", "--jepa"):
+        return False
+    if _native_gpt2_requested_runtime(argv) != "native-cuda":
+        return False
+    base_model = (_arg_value(argv, "--base-model", "--model") or "gpt2").strip().lower()
+    if base_model == "gpt2":
+        if not _is_explicit_native_gpt2_train(argv):
+            return False
+        runner = _native_gpt2_requested_runner(argv)
+        return runner == "compiled-cli"
+    if _torch_training_allowed():
+        return False
+    return True
+
+
+def _resolve_direct_native_train_cli(model: str) -> str:
+    requested_train_cli = os.environ.get("NFN_NATIVE_TRAIN_CLI", "").strip()
+    if requested_train_cli:
+        return requested_train_cli
+    native_train = ROOT.parent / "build" / "nfn_native_train"
+    if native_train.exists():
+        return str(native_train)
+    if model == "gpt2":
+        requested = os.environ.get("NFN_NATIVE_GPT2_CLI", "").strip()
+        if requested:
+            return requested
+        return str(ROOT.parent / "build" / "nfn_gpt2_native_train")
+    return str(native_train)
+
+
+def _native_train_model(argv: list[str]) -> str:
+    return (_arg_value(argv, "--base-model", "--model") or "gpt2").strip().lower().replace("_", "-")
+
+
+_NATIVE_TRAIN_ACTION_FLAGS = {
+    "--check-tile-ops",
+    "--json",
+    "--print-plan",
+    "--native-cuda-check-tile-ops",
+    "--native-cuda-print-plan",
+    "--sample-token-batch",
+    "--smoke-attention-step",
+    "--smoke-embedding-lm-step",
+    "--smoke-embedding-norm-step",
+    "--smoke-fused-qkv-attention-step",
+    "--smoke-lm-step",
+    "--smoke-mlp-step",
+    "--smoke-norm-residual-step",
+    "--smoke-optimizer-step",
+    "--smoke-qkv-layout-step",
+    "--smoke-tile-ops",
+    "--smoke-token-train-step",
+    "--smoke-training-loop-step",
+    "--smoke-transformer-block-step",
+    "--smoke-transformer-lm-step",
+    "--native-cuda-smoke-attention-step",
+    "--native-cuda-smoke-embedding-lm-step",
+    "--native-cuda-smoke-lm-step",
+    "--native-cuda-smoke-mlp-step",
+    "--native-cuda-smoke-norm-residual-step",
+    "--native-cuda-smoke-optimizer-step",
+    "--native-cuda-smoke-tile-ops",
+    "--native-cuda-smoke-transformer-block-step",
+    "--native-cuda-smoke-transformer-lm-step",
+    "--train-embedding-lm",
+    "--train-transformer-lm",
+    "--train-token-lm",
+}
+
+
+def _has_native_train_action(args: list[str]) -> bool:
+    return any(arg in _NATIVE_TRAIN_ACTION_FLAGS for arg in args)
+
+
+def _native_template_name(argv: list[str]) -> str:
+    return (_arg_value(argv, "--template-name", "--template", "--preset") or "gpt2").strip().lower().replace("-", "_")
+
+
+def _has_native_activation(argv: list[str]) -> bool:
+    return any(
+        arg in {"--activation", "--native-cuda-activation"} or
+        arg.startswith("--activation=") or
+        arg.startswith("--native-cuda-activation=")
+        for arg in argv
+    )
+
+
+def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
+    model = _native_train_model(argv)
+    native_cli = _resolve_direct_native_train_cli(model)
+    out = [native_cli]
+    include_model = model != "gpt2"
+    if include_model:
+        out.extend(["--base-model", model])
+    if model == "nanogpt" and not _has_native_train_action(argv):
+        out.append("--train-token-lm")
+    if model == "gpt2" and not _has_native_train_action(argv):
+        out.append("--train-transformer-lm")
+    idx = 1
+    drop_value_flags = {
+        "--base-model",
+        "--model",
+        "--topology",
+        "--router-mode",
+        "--model-preset",
+        "--run-preset",
+        "--optimizer-preset",
+        "--tile-cuda-report",
+        "--amp-dtype",
+        "--runtime",
+        "--device",
+        "--dataset-hf-path",
+        "--dataset-variant",
+        "--dataset-train-shards",
+        "--dataset-train-file",
+        "--dataset-val-file",
+        "--tokenizer",
+        "--native-cuda-runner",
+    }
+    drop_bool_flags = {
+        "--no-tile-cuda-strict",
+        "--tile-cuda-strict",
+        "--download-if-missing",
+        "--no-download-if-missing",
+        "--tokgpt2",
+        "--cl100k",
+        "--o200k",
+    }
+    value_aliases = {
+        "--kernel-backend": "--backend",
+        "--native-cuda-executable": "--target",
+        "--native-cuda-output-dir": "--output-dir",
+        "--native-cuda-tile-ops-lib": "--tile-ops-lib",
+        "--native-cuda-cuda-runtime-lib": "--cuda-runtime-lib",
+        "--native-cuda-lm-head-row-chunk-size": "--lm-head-row-chunk-size",
+        "--template": "--template-name",
+        "--preset": "--template-name",
+        "--graph": "--graph-file",
+    }
+    bool_aliases = {
+        "--native-cuda-dry-run": "--dry-run",
+        "--native-cuda-print-command": "--print-command",
+        "--native-cuda-print-plan": "--print-plan",
+        "--native-cuda-check-tile-ops": "--check-tile-ops",
+        "--native-cuda-smoke-tile-ops": "--smoke-tile-ops",
+        "--native-cuda-smoke-optimizer-step": "--smoke-optimizer-step",
+        "--native-cuda-smoke-lm-step": "--smoke-lm-step",
+        "--native-cuda-smoke-attention-step": "--smoke-attention-step",
+        "--native-cuda-smoke-mlp-step": "--smoke-mlp-step",
+        "--native-cuda-smoke-norm-residual-step": "--smoke-norm-residual-step",
+        "--native-cuda-smoke-transformer-block-step": "--smoke-transformer-block-step",
+        "--native-cuda-smoke-transformer-lm-step": "--smoke-transformer-lm-step",
+        "--native-cuda-smoke-embedding-lm-step": "--smoke-embedding-lm-step",
+        "--native-cuda-allow-train-val-fallback": "--allow-train-val-fallback",
+    }
+    split_value_flags = {
+        "--dataset-alias",
+        "--dataset-path",
+        "--target",
+        "--output-dir",
+        "--eval-every-steps",
+        "--eval-batches",
+        "--eval-batch-size",
+        "--lm-head-row-chunk-size",
+        "--batch-size",
+        "--train-seq-len",
+        "--train-batch-tokens",
+        "--learning-rate",
+        "--final-lr-fraction",
+        "--weight-decay",
+        "--warmup-steps",
+        "--max-steps",
+        "--num-layers",
+        "--template-name",
+        "--template",
+        "--preset",
+        "--graph-file",
+        "--graph",
+        "--native-cuda-checkpoint-every",
+        "--native-cuda-sample-every",
+        "--native-cuda-generate-tokens",
+        "--cuda-runtime-lib",
+        "--activation",
+        "--native-cuda-activation",
+        "--moa-interval",
+        "--native-cuda-moa-interval",
+    }
+    while idx < len(argv):
+        arg = argv[idx]
+        if arg in drop_value_flags:
+            idx += 2
+            continue
+        if any(arg.startswith(flag + "=") for flag in drop_value_flags):
+            idx += 1
+            continue
+        if arg in drop_bool_flags:
+            idx += 1
+            continue
+        if arg == "--dataset":
+            if idx + 1 >= len(argv):
+                out.append(arg)
+                idx += 1
+                continue
+            dataset = argv[idx + 1].strip().lower()
+            if dataset == "tinystories":
+                out.append("--tinystories")
+            elif dataset in {"golf1", "golf10"}:
+                shard_count = "1" if dataset == "golf1" else "10"
+                _append_value_arg(out, "--dataset-alias", f"willdepueoai__parameter-golf__sp1024__train{shard_count}")
+            else:
+                _append_value_arg(out, "--dataset", argv[idx + 1])
+            idx += 2
+            continue
+        if arg.startswith("--dataset="):
+            dataset = arg.split("=", 1)[1].strip().lower()
+            if dataset == "tinystories":
+                out.append("--tinystories")
+            elif dataset in {"golf1", "golf10"}:
+                shard_count = "1" if dataset == "golf1" else "10"
+                _append_value_arg(out, "--dataset-alias", f"willdepueoai__parameter-golf__sp1024__train{shard_count}")
+            else:
+                out.append(arg)
+            idx += 1
+            continue
+        if arg == "--output":
+            if idx + 1 < len(argv):
+                _append_value_arg(out, "--output-dir", _native_output_dir_from_output(argv[idx + 1]))
+            else:
+                out.append(arg)
+            idx += 2
+            continue
+        if arg.startswith("--output="):
+            out.extend(["--output-dir", _native_output_dir_from_output(arg.split("=", 1)[1])])
+            idx += 1
+            continue
+        if arg in value_aliases:
+            if idx + 1 < len(argv):
+                _append_value_arg(out, value_aliases[arg], argv[idx + 1])
+            else:
+                out.append(value_aliases[arg])
+            idx += 2
+            continue
+        matched_value_alias = next((flag for flag in value_aliases if arg.startswith(flag + "=")), None)
+        if matched_value_alias is not None:
+            _append_value_arg(out, value_aliases[matched_value_alias], arg.split("=", 1)[1])
+            idx += 1
+            continue
+        if arg in bool_aliases:
+            out.append(bool_aliases[arg])
+            idx += 1
+            continue
+        matched_split_flag = next((flag for flag in split_value_flags if arg.startswith(flag + "=")), None)
+        if matched_split_flag is not None:
+            _append_value_arg(out, matched_split_flag, arg.split("=", 1)[1])
+            idx += 1
+            continue
+        out.append(arg)
+        idx += 1
+    if model == "gpt2" and _native_template_name(out) == "gpt2_moa" and not _has_native_activation(out):
+        _append_value_arg(out, "--native-cuda-activation", "moa")
+    return out
+
+
+def _direct_native_train_cli_main(argv: list[str] | None = None) -> int:
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    command = _direct_native_train_cli_argv(tokens)
+    env = os.environ.copy()
+    env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
+    if "--dry-run" in command or "--print-command" in command:
+        proc = subprocess.run(command, env=env, check=False)
+        return int(proc.returncode)
+    os.execvpe(command[0], command, env)
+    return 127
+
+
+def _append_value_arg(out: list[str], flag: str, value: str) -> None:
+    out.extend([flag, value])
+
+
+def _native_output_dir_from_output(value: str) -> str:
+    path = Path(value).expanduser()
+    if path.suffix:
+        path = path.with_suffix("")
+    return str(path)
+
+
+def _torch_training_allowed() -> bool:
+    return str(os.environ.get("NFN_ALLOW_TORCH_TRAINING", "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_legacy_graph_train(argv: list[str]) -> bool:
+    if not argv or argv[0] != "train":
+        return False
+    if _has_any(argv, "-h", "--help", "--plan", "--plan-auto"):
+        return False
+    if _is_explicit_native_gpt2_train(argv):
+        return False
+    return not _torch_training_allowed()
+
+
+def _legacy_graph_train_main(_argv: list[str] | None = None) -> int:
+    print(
+        "This training command would enter the graph-backed TorchTrainer path, which is disabled by default.\n"
+        "Default NeuralFn training must use compiled native CUDA/C++ entrypoints. Today the default compiled "
+        "training route is dense GPT-2: nfn train --base-model gpt2 --tinystories.\n"
+        "Build a matching native trainer for this model family before running it. For one-off legacy debugging "
+        "only, set NFN_ALLOW_TORCH_TRAINING=1.",
+        file=sys.stderr,
+    )
+    return 2
+
+
+if _is_direct_native_train_cli_train(sys.argv[1:]):
+    main = _direct_native_train_cli_main
+elif _is_explicit_native_gpt2_train(sys.argv[1:]):
+    from train_gpt2_native import main as main
+elif _is_lightweight_native_gpt2_infer(sys.argv[1:]):
+    main = _lightweight_native_gpt2_infer_main
+elif _is_lightweight_root_help(sys.argv[1:]):
+    main = _lightweight_root_main
+elif _is_lightweight_command_help(sys.argv[1:]):
+    main = _lightweight_command_help_main
+elif _is_lightweight_kernels_list(sys.argv[1:]):
+    main = _lightweight_kernels_list_main
+elif _is_legacy_graph_train(sys.argv[1:]):
+    main = _legacy_graph_train_main
+else:
+    from nfn_impl import *  # noqa: F401,F403
+    from nfn_impl import main
 
 
 if __name__ == "__main__":
+    if _is_direct_native_train_cli_train(sys.argv[1:]):
+        raise SystemExit(main(sys.argv[1:]))
+    if _is_explicit_native_gpt2_train(sys.argv[1:]):
+        raise SystemExit(main(_native_gpt2_argv(sys.argv[1:])))
+    if _is_lightweight_native_gpt2_infer(sys.argv[1:]):
+        raise SystemExit(main(sys.argv[1:]))
+    if _is_legacy_graph_train(sys.argv[1:]):
+        raise SystemExit(main(sys.argv[1:]))
     raise SystemExit(main())

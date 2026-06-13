@@ -8,6 +8,11 @@ import signal
 import sys
 import uuid
 
+from native_training_guard import reject_torch_training_by_default
+
+if __name__ == "__main__":
+    reject_torch_training_by_default("train_llama_megakernel.py", native_target="nfn train --base-model llama", model_family="llama")
+
 import numpy as np
 import torch
 
@@ -295,6 +300,7 @@ def main() -> int:
         template_runtime="megakernel",
         device=args.device,
         all_train_rows=bool(args.all_train_rows),
+        encoding_name=str(getattr(args, "raw_text_encoding_name", "gpt2")),
     )
     derived = {
         **derived,

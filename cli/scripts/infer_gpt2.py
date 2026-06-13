@@ -5,31 +5,20 @@ import logging
 from pathlib import Path
 import sys
 
-import torch
-
 from cli_utils import artifact_path, create_argument_parser
-from infer_jepa_semantic import (
-    add_dataset_download_arguments,
-    add_raw_text_tokenizer_arguments,
-    configure_console_logging,
-    dataset_download_kwargs_from_args,
-    decode_tokens,
-    load_compiled_inference_graph,
-    log_tokenizer_status,
-    repetition_penalty_arg,
-    resolve_autocast_dtype,
-    resolve_inference_dataset_alias,
-    resolve_inference_artifact_defaults,
-    resolve_inference_tokenizer_context,
-    resolve_raw_text_encoding_name,
-    resolve_prompt_tokens,
-)
-from infer_llama_fast import generate_sequence
-from train_jepa_semantic import add_dataset_selector_arguments, resolve_dataset_selector_args
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parents[1]
+for candidate in (SCRIPT_DIR, REPO_ROOT):
+    candidate_str = str(candidate)
+    if candidate_str not in sys.path:
+        sys.path.insert(0, candidate_str)
 
 DEFAULT_DATASET_ALIAS = "willdepueoai__parameter-golf__sp1024__train1"
 DEFAULT_WEIGHTS_ARTIFACT = artifact_path("gpt2.pt")
 DEFAULT_GRAPH_ARTIFACT = DEFAULT_WEIGHTS_ARTIFACT.with_suffix(".json")
+SUPPORTED_TOKENIZER_CHOICES = ("gpt2", "cl100k_base", "o200k_base", "sp1024", "sp2048", "sp4096", "sp8192")
 
 LOGGER = logging.getLogger("gpt2_infer")
 
@@ -38,27 +27,93 @@ def log_stage(message: str) -> None:
     LOGGER.info(message)
 
 
-def mode_name(*, megakernel: bool) -> str:
+def mode_name(*, megakernel: bool, evo: bool = False) -> str:
+    if evo:
+        if megakernel:
+            raise ValueError("gpt2_evo inference uses eager artifacts; --evo cannot be combined with --megakernel")
+        return "gpt2_evo"
     return "gpt2_megakernel" if megakernel else "gpt2"
 
 
-def default_weights_artifact(*, megakernel: bool) -> Path:
+def default_weights_artifact(*, megakernel: bool, evo: bool = False) -> Path:
+    if evo:
+        if megakernel:
+            raise ValueError("gpt2_evo inference uses eager artifacts; --evo cannot be combined with --megakernel")
+        return DEFAULT_WEIGHTS_ARTIFACT.with_name("gpt2_evo.pt")
     if megakernel:
         return DEFAULT_WEIGHTS_ARTIFACT.with_name("gpt2_megakernel.pt")
     return DEFAULT_WEIGHTS_ARTIFACT
 
 
-def default_graph_artifact(*, megakernel: bool) -> Path:
-    return default_weights_artifact(megakernel=megakernel).with_suffix(".json")
+def default_graph_artifact(*, megakernel: bool, evo: bool = False) -> Path:
+    return default_weights_artifact(megakernel=megakernel, evo=evo).with_suffix(".json")
 
 
 def resolve_mode_defaults(args: argparse.Namespace) -> argparse.Namespace:
-    return resolve_inference_artifact_defaults(args, mode_name=mode_name(megakernel=bool(args.megakernel)))
+    graph_was_explicit = bool(getattr(args, "graph", ""))
+    resolved_mode = mode_name(megakernel=bool(args.megakernel), evo=bool(getattr(args, "evo", False)))
+    if not graph_was_explicit:
+        args.graph = str(artifact_path(f"{resolved_mode}.json"))
+    if not getattr(args, "weights", "") and not graph_was_explicit:
+        args.weights = str(artifact_path(f"{resolved_mode}.pt"))
+    return args
+
+
+def add_dataset_selector_arguments(parser: argparse.ArgumentParser, *, default_alias: str) -> None:
+    parser.add_argument("--tinystories", action="store_true")
+    parser.add_argument(
+        "--dataset",
+        choices=("golf1", "golf10", "shakespear", "shakespeare", "tinystories"),
+        default=None,
+    )
+    parser.add_argument("--dataset-alias", default=default_alias)
+
+
+def add_dataset_download_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--download-if-missing", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--dataset-hf-path", default=None)
+    parser.add_argument("--dataset-variant", default=None)
+    parser.add_argument("--dataset-train-shards", type=int, default=None)
+    parser.add_argument("--dataset-repo-id", default=None)
+    parser.add_argument("--dataset-remote-root-prefix", default=None)
+    parser.add_argument("--dataset-train-file", default=None)
+    parser.add_argument("--dataset-val-file", default=None)
+
+
+def add_raw_text_tokenizer_arguments(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--tokenizer", choices=SUPPORTED_TOKENIZER_CHOICES, dest="raw_text_encoding_override", default=None)
+    group.add_argument("--tokgpt2", action="store_const", const="gpt2", dest="raw_text_encoding_override")
+    group.add_argument("--cl100k", action="store_const", const="cl100k_base", dest="raw_text_encoding_override")
+    group.add_argument("--o200k", action="store_const", const="o200k_base", dest="raw_text_encoding_override")
+    parser.add_argument("--tokenizer-hf-path", default=None)
+    parser.add_argument("--tokenizer-repo-id", default=None)
+    parser.add_argument("--tokenizer-remote-root-prefix", default=None)
+    parser.add_argument("--tokenizer-repo-type", choices=("model", "dataset"), default=None)
+    parser.set_defaults(tokenizer=None, raw_text_encoding_override=None)
+
+
+def repetition_penalty_arg(raw: str) -> float:
+    value = float(raw)
+    if value < 1.0:
+        raise argparse.ArgumentTypeError("--repetition-penalty must be greater than or equal to 1.0")
+    return value
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = create_argument_parser(description="Run text generation with exported gpt2 artifacts on CUDA.")
     parser.add_argument("--megakernel", action="store_true", help="Use the gpt2_megakernel artifacts.")
+    parser.add_argument("--evo", action="store_true", help="Use the gpt2_evo eager artifacts.")
+    parser.add_argument(
+        "--native-checkpoint",
+        default="",
+        help="Path to a native llm.kittens/NeuralFn GPT-2 model_*.bin checkpoint.",
+    )
+    parser.add_argument(
+        "--native-info",
+        action="store_true",
+        help="Print native GPT-2 checkpoint metadata without importing the graph-backed runtime.",
+    )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--graph", default="")
     parser.add_argument("--weights", default="")
@@ -97,13 +152,65 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def handle_native_checkpoint_request(args: argparse.Namespace) -> int | None:
+    native_checkpoint = str(getattr(args, "native_checkpoint", "") or "").strip()
+    if not native_checkpoint and not bool(getattr(args, "native_info", False)):
+        return None
+    if not native_checkpoint:
+        print("--native-info requires --native-checkpoint.", file=sys.stderr)
+        return 2
+    from neuralfn.native_gpt2 import read_native_gpt2_checkpoint_info
+
+    info = read_native_gpt2_checkpoint_info(Path(native_checkpoint).expanduser())
+    print("Native GPT-2 checkpoint detected")
+    print(f"  path: {info.path}")
+    print(f"  precision: {info.precision} (version {info.version})")
+    print(f"  shape: layers={info.num_layers} heads={info.num_heads} channels={info.channels} seq_len={info.max_seq_len}")
+    print(f"  vocab: vocab_size={info.vocab_size} padded_vocab_size={info.padded_vocab_size}")
+    if info.step is not None:
+        marker = "present" if info.done_marker_exists else "missing"
+        print(f"  checkpoint_step: {info.step} (DONE marker {marker})")
+    if bool(getattr(args, "native_info", False)):
+        return 0
+    print(
+        "Native GPT-2 prompt inference is not wired yet. This checkpoint is not a "
+        "graph-backed Torch artifact; use train-time sampling today or build the "
+        "native GPT-2 inference executable before prompt generation."
+    )
+    return 2
+
+
 def main() -> int:
-    configure_console_logging()
     args = build_parser().parse_args()
+    native_result = handle_native_checkpoint_request(args)
+    if native_result is not None:
+        return native_result
+
+    import torch
+
+    from infer_jepa_semantic import (
+        configure_console_logging,
+        dataset_download_kwargs_from_args,
+        decode_tokens,
+        load_compiled_inference_graph,
+        log_tokenizer_status,
+        resolve_autocast_dtype,
+        resolve_inference_dataset_alias,
+        resolve_inference_tokenizer_context,
+        resolve_raw_text_encoding_name,
+        resolve_prompt_tokens,
+    )
+    from infer_llama_fast import generate_sequence
+    from train_jepa_semantic import resolve_dataset_selector_args
+
+    configure_console_logging()
+    if args.evo and args.megakernel:
+        print("--evo cannot be combined with --megakernel; gpt2_evo exports eager artifacts.", file=sys.stderr)
+        return 2
     resolve_dataset_selector_args(args)
     resolve_mode_defaults(args)
 
-    run_label = mode_name(megakernel=bool(args.megakernel))
+    run_label = mode_name(megakernel=bool(args.megakernel), evo=bool(args.evo))
     log_stage(f"Starting {run_label} inference")
     if args.device != "cuda":
         print("This inference script is configured to run on CUDA only.", file=sys.stderr)

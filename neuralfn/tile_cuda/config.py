@@ -28,7 +28,11 @@ class TileCudaConfig:
     @property
     def build_is_enabled(self) -> bool:
         value = os.environ.get("NFN_TILE_CUDA_BUILD", "")
-        return bool(self.build_enabled or value.strip().lower() in {"1", "true", "yes", "on"})
+        return bool(
+            self.build_enabled
+            or self.normalized_backend() == "tile_cuda"
+            or value.strip().lower() in {"1", "true", "yes", "on"}
+        )
 
     @property
     def resolved_arch(self) -> str | None:

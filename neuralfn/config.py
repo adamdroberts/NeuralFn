@@ -205,6 +205,12 @@ class ModelSpec:
     route_evo_population: int = 8
     route_evo_mutation_scale: float = 0.05
     route_evo_seed: int | None = None
+    layer_evo_enabled: bool = False
+    layer_evo_index: int | None = None
+    layer_evo_fraction: float = 0.10
+    layer_evo_population: int = 8
+    layer_evo_mutation_scale: float = 0.02
+    layer_evo_seed: int | None = None
     ar_loss_coef: float = 1.0
     jepa_loss_coef: float = 0.25
     semantic_align_loss_coef: float = 0.5
@@ -256,6 +262,14 @@ def _base_model_spec(
         route_evo_population=int(kwargs.get("route_evo_population", 8)),
         route_evo_mutation_scale=float(kwargs.get("route_evo_mutation_scale", 0.05)),
         route_evo_seed=kwargs.get("route_evo_seed"),
+        layer_evo_enabled=bool(kwargs.get("layer_evo_enabled", False)),
+        layer_evo_index=(
+            None if kwargs.get("layer_evo_index") is None else int(kwargs["layer_evo_index"])
+        ),
+        layer_evo_fraction=float(kwargs.get("layer_evo_fraction", 0.10)),
+        layer_evo_population=int(kwargs.get("layer_evo_population", 8)),
+        layer_evo_mutation_scale=float(kwargs.get("layer_evo_mutation_scale", 0.02)),
+        layer_evo_seed=kwargs.get("layer_evo_seed"),
         ar_loss_coef=float(kwargs.get("ar_loss_coef", 1.0)),
         jepa_loss_coef=float(kwargs.get("jepa_loss_coef", 0.25)),
         semantic_align_loss_coef=float(kwargs.get("semantic_align_loss_coef", 0.5)),
@@ -282,6 +296,56 @@ MODERN_BASE_PRESETS: tuple[str, ...] = (
     "semantic_router_moe",
     "semantic_dense_jepa_evo",
     "semantic_moe_jepa_evo",
+)
+
+SHIPPED_GPT_TEMPLATE_BASE_PRESETS: tuple[str, ...] = (
+    "nanogpt",
+    "nanogpt_megakernel",
+    "gpt2",
+    "gpt2_megakernel",
+    "gpt2_moa",
+    "llama",
+    "modern_norms_llama",
+    "mixllama",
+    "moe",
+    "llama_fast",
+    "llama_fast_megakernel",
+    "mixllama_fast",
+    "mixllama_fast_megakernel",
+    "jamba",
+    "ternary_b158",
+    "fp8_llama",
+    "mxfp4_llama",
+    "deepseek_v3",
+    "deepseek_v4",
+    "gemma3",
+    "diff_transformer",
+    "longctx_sparse_llama",
+    "qwen3_longctx",
+    "auxfree_moe_jepa_evo",
+    "diff_semantic_moe_jepa_evo",
+    "dyt_geglu_semantic_dense_jepa_evo",
+    "llama_megakernel",
+    "kv_pca_llama",
+    "seq2seq",
+    "diffusion",
+    "ttt_llama",
+    "llm_jepa",
+    "dense_jepa_evo",
+    "moe_jepa_evo",
+    "jepa_semantic_hybrid",
+    "jepa_semantic_hybrid_megakernel",
+    "semantic_router_moe",
+    "semantic_router_moe_megakernel",
+    "semantic_moe_jepa_evo",
+    "semantic_dense_jepa_evo",
+    "hnet_lm",
+    "universal_llama",
+)
+
+SHIPPED_GPT_TEMPLATE_PRESETS: tuple[str, ...] = (
+    *SHIPPED_GPT_TEMPLATE_BASE_PRESETS,
+    *(f"{preset}_modern" for preset in MODERN_BASE_PRESETS),
 )
 
 
@@ -523,6 +587,24 @@ def build_gpt2_spec(**kwargs: Any) -> ModelSpec:
 
 def build_gpt2_megakernel_spec(**kwargs: Any) -> ModelSpec:
     return _build_gpt2_runtime_spec(runtime="megakernel", **kwargs)
+
+
+def build_gpt2_evo_spec(**kwargs: Any) -> ModelSpec:
+    """Dense GPT-2 where one transformer layer is trained by evolution.
+
+    The designated layer (``layer_evo_index``, default ``num_layers // 2``) is
+    excluded from gradient optimization; every ``round(1/layer_evo_fraction)``
+    steps an interleaved evolutionary search perturbs it with gaussian mutants
+    and adopts the best candidate (the current weights are always candidate 0,
+    so the candidate loss never regresses). All other layers, the embeddings,
+    and the head train normally with gradients.
+    """
+    kwargs.setdefault("num_layers", 10)
+    kwargs.setdefault("layer_evo_enabled", True)
+    kwargs.setdefault("layer_evo_fraction", 0.10)
+    kwargs.setdefault("layer_evo_population", 8)
+    kwargs.setdefault("layer_evo_mutation_scale", 0.02)
+    return _build_gpt2_runtime_spec(runtime="eager", **kwargs)
 
 
 def build_gpt2_moa_spec(**kwargs: Any) -> ModelSpec:

@@ -1,16 +1,64 @@
 """NeuralFn — a brain-inspired function-neuron graph framework."""
 
-from .port import Port
 from .neuron import NeuronDef, module_neuron, neuron, neuron_from_source, subgraph_neuron
-from .builtins import BuiltinNeurons
-from .graph import Edge, NeuronInstance, NeuronGraph
-from .surrogate import SurrogateModel, probe_neuron, build_surrogates
-from .trainer import SurrogateTrainer
-from .evolutionary import EvolutionaryTrainer
-from .hybrid import HybridConfig, HybridTrainer
-from .serialization import save_graph, load_graph
-from .torch_backend import TorchTrainConfig, TorchTrainer
-from .torch_templates import build_gpt_root_graph, build_model_stage_graph
+from .port import Port
+
+_LAZY_EXPORTS = {
+    "BuiltinNeurons": ("builtins", "BuiltinNeurons"),
+    "Edge": ("graph", "Edge"),
+    "NeuronInstance": ("graph", "NeuronInstance"),
+    "NeuronGraph": ("graph", "NeuronGraph"),
+    "SurrogateModel": ("surrogate", "SurrogateModel"),
+    "probe_neuron": ("surrogate", "probe_neuron"),
+    "build_surrogates": ("surrogate", "build_surrogates"),
+    "SurrogateTrainer": ("trainer", "SurrogateTrainer"),
+    "EvolutionaryTrainer": ("evolutionary", "EvolutionaryTrainer"),
+    "HybridConfig": ("hybrid", "HybridConfig"),
+    "HybridTrainer": ("hybrid", "HybridTrainer"),
+    "save_graph": ("serialization", "save_graph"),
+    "load_graph": ("serialization", "load_graph"),
+    "SHIPPED_GPT_TEMPLATE_BASE_PRESETS": ("config", "SHIPPED_GPT_TEMPLATE_BASE_PRESETS"),
+    "SHIPPED_GPT_TEMPLATE_PRESETS": ("config", "SHIPPED_GPT_TEMPLATE_PRESETS"),
+    "TorchTrainConfig": ("torch_backend", "TorchTrainConfig"),
+    "TorchTrainer": ("torch_backend", "TorchTrainer"),
+    "build_gpt_root_graph": ("torch_templates", "build_gpt_root_graph"),
+    "build_model_stage_graph": ("torch_templates", "build_model_stage_graph"),
+    "NativeGpt2RunConfig": ("native_gpt2", "NativeGpt2RunConfig"),
+    "NativeGpt2CheckpointInfo": ("native_gpt2", "NativeGpt2CheckpointInfo"),
+    "NativeGpt2RunnerStatus": ("native_gpt2", "NativeGpt2RunnerStatus"),
+    "NativeTrainRunConfig": ("native_train", "NativeTrainRunConfig"),
+    "NativeTrainRunnerStatus": ("native_train", "NativeTrainRunnerStatus"),
+    "build_native_train_run_config": ("native_train", "build_native_train_run_config"),
+    "build_native_gpt2_compiled_cli_run_config": ("native_gpt2", "build_native_gpt2_compiled_cli_run_config"),
+    "build_native_gpt2_run_config": ("native_gpt2", "build_native_gpt2_run_config"),
+    "is_native_gpt2_checkpoint": ("native_gpt2", "is_native_gpt2_checkpoint"),
+    "latest_native_gpt2_checkpoint": ("native_gpt2", "latest_native_gpt2_checkpoint"),
+    "native_gpt2_parameter_count": ("native_gpt2", "native_gpt2_parameter_count"),
+    "native_gpt2_runner_status": ("native_gpt2", "native_gpt2_runner_status"),
+    "native_train_model_registry": ("native_train", "native_train_model_registry"),
+    "native_train_runner_status": ("native_train", "native_train_runner_status"),
+    "read_native_gpt2_checkpoint_info": ("native_gpt2", "read_native_gpt2_checkpoint_info"),
+    "resolve_native_gpt2_cli": ("native_gpt2", "resolve_native_gpt2_cli"),
+    "resolve_native_gpt2_executable": ("native_gpt2", "resolve_native_gpt2_executable"),
+    "resolve_native_gpt2_launcher": ("native_gpt2", "resolve_native_gpt2_launcher"),
+    "resolve_native_gpt2_token_shards": ("native_gpt2", "resolve_native_gpt2_token_shards"),
+    "resolve_native_train_cli": ("native_train", "resolve_native_train_cli"),
+    "run_native_gpt2": ("native_gpt2", "run_native_gpt2"),
+    "run_native_train": ("native_train", "run_native_train"),
+    "write_native_gpt2_run_config": ("native_gpt2", "write_native_gpt2_run_config"),
+}
+
+
+def __getattr__(name: str):
+    if name in _LAZY_EXPORTS:
+        import importlib
+
+        module_name, attr_name = _LAZY_EXPORTS[name]
+        module = importlib.import_module(f".{module_name}", __name__)
+        value = getattr(module, attr_name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module 'neuralfn' has no attribute {name!r}")
 
 __all__ = [
     "Port",
@@ -19,21 +67,5 @@ __all__ = [
     "neuron",
     "neuron_from_source",
     "subgraph_neuron",
-    "BuiltinNeurons",
-    "Edge",
-    "NeuronInstance",
-    "NeuronGraph",
-    "SurrogateModel",
-    "probe_neuron",
-    "build_surrogates",
-    "SurrogateTrainer",
-    "EvolutionaryTrainer",
-    "HybridConfig",
-    "HybridTrainer",
-    "save_graph",
-    "load_graph",
-    "TorchTrainConfig",
-    "TorchTrainer",
-    "build_gpt_root_graph",
-    "build_model_stage_graph",
+    *_LAZY_EXPORTS,
 ]

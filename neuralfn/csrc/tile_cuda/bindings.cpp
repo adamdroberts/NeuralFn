@@ -2154,6 +2154,62 @@ std::vector<torch::Tensor> tile_adamw_step(
   return {param, exp_avg, exp_avg_sq};
 }
 
+std::vector<torch::Tensor> tile_adamw_step_batch(
+    std::vector<torch::Tensor> params,
+    std::vector<torch::Tensor> grads,
+    std::vector<torch::Tensor> exp_avgs,
+    std::vector<torch::Tensor> exp_avg_sqs,
+    double lr,
+    double beta1,
+    double beta2,
+    double eps,
+    double weight_decay,
+    std::int64_t step) {
+  TORCH_CHECK(!params.empty(), "tile_adamw_step_batch expects at least one tensor");
+  TORCH_CHECK(
+      params.size() == grads.size() && params.size() == exp_avgs.size() && params.size() == exp_avg_sqs.size(),
+      "tile_adamw_step_batch expects equally sized tensor lists");
+  TORCH_CHECK(step > 0, "tile_adamw_step_batch expects step > 0");
+  const float bias_correction1 = 1.0f - std::pow(static_cast<float>(beta1), static_cast<float>(step));
+  const float bias_correction2 = 1.0f - std::pow(static_cast<float>(beta2), static_cast<float>(step));
+  const float sqrt_bias_correction2 = std::sqrt(bias_correction2);
+  auto stream = at::cuda::getCurrentCUDAStream();
+  for (std::size_t i = 0; i < params.size(); ++i) {
+    auto& param = params[i];
+    auto& grad = grads[i];
+    auto& exp_avg = exp_avgs[i];
+    auto& exp_avg_sq = exp_avg_sqs[i];
+    TORCH_CHECK(param.is_cuda() && grad.is_cuda() && exp_avg.is_cuda() && exp_avg_sq.is_cuda(), "tile_adamw_step_batch expects CUDA tensors");
+    TORCH_CHECK(
+        param.scalar_type() == torch::kFloat32 && grad.scalar_type() == torch::kFloat32 &&
+        exp_avg.scalar_type() == torch::kFloat32 && exp_avg_sq.scalar_type() == torch::kFloat32,
+        "tile_adamw_step_batch only supports float32 tensors");
+    TORCH_CHECK(
+        param.is_contiguous() && grad.is_contiguous() && exp_avg.is_contiguous() && exp_avg_sq.is_contiguous(),
+        "tile_adamw_step_batch expects contiguous tensors");
+    TORCH_CHECK(
+        param.sizes() == grad.sizes() && param.sizes() == exp_avg.sizes() && param.sizes() == exp_avg_sq.sizes(),
+        "tile_adamw_step_batch expects same-shape tensors");
+    TORCH_CHECK(param.numel() > 0, "tile_adamw_step_batch expects non-empty tensors");
+    launch_adamw_step_float32(
+        param.data_ptr<float>(),
+        grad.data_ptr<float>(),
+        exp_avg.data_ptr<float>(),
+        exp_avg_sq.data_ptr<float>(),
+        param.numel(),
+        static_cast<float>(lr),
+        static_cast<float>(beta1),
+        static_cast<float>(beta2),
+        static_cast<float>(eps),
+        static_cast<float>(weight_decay),
+        bias_correction1,
+        sqrt_bias_correction2,
+        stream);
+  }
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  return params;
+}
+
 }  // namespace neuralfn::tile_cuda
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
@@ -2213,4 +2269,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("tile_gradient_accumulate", &neuralfn::tile_cuda::tile_gradient_accumulate);
   m.def("tile_gradient_clip_norm", &neuralfn::tile_cuda::tile_gradient_clip_norm);
   m.def("tile_adamw_step", &neuralfn::tile_cuda::tile_adamw_step);
+  m.def("tile_adamw_step_batch", &neuralfn::tile_cuda::tile_adamw_step_batch);
 }

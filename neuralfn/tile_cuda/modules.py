@@ -71,7 +71,20 @@ from .autograd import (
     tile_vector_binary_module,
 )
 from .config import TileCudaConfig
+from .dtypes import NVFP4Tensor, dequantize_nvfp4_reference
 from .runtime import load_tile_cuda_extension
+
+
+TileActivation = Tensor | NVFP4Tensor
+_TILE_FP8_DTYPES = {torch.float8_e4m3fn, torch.float8_e5m2}
+
+
+def _activation_work_tensor(x: TileActivation) -> Tensor:
+    if isinstance(x, NVFP4Tensor):
+        return dequantize_nvfp4_reference(x).contiguous()
+    if x.dtype in _TILE_FP8_DTYPES:
+        return x.to(dtype=torch.float32).contiguous()
+    return x
 
 
 def _deterministic_uniform(shape: tuple[int, ...], device: torch.device, counter: Tensor, salt: int) -> Tensor:
@@ -236,6 +249,7 @@ class TileCudaDropoutStage(nn.Module):
     def __init__(self, p: float, config: TileCudaConfig | None = None) -> None:
         super().__init__()
         self.p = float(p)
+        self.register_buffer("_rng_counter", torch.zeros((), dtype=torch.long), persistent=False)
         self.config = config or TileCudaConfig()
 
     def forward(self, x: Tensor) -> Tensor:
@@ -243,7 +257,19 @@ class TileCudaDropoutStage(nn.Module):
             return tile_identity_module("dropout", x, self.config)
         if self.p >= 1.0:
             return x * 0.0
-        return F.dropout(x, p=self.p, training=True)
+        can_use = torch.is_floating_point(x) and x.dtype in {torch.float32, torch.float16} and x.is_contiguous()
+        if not can_use:
+            if self.config.strict and x.is_cuda:
+                raise RuntimeError(
+                    "CUDA Tile module 'dropout' requires contiguous float32 or float16 activations for stochastic training masks"
+                )
+            return F.dropout(x, p=self.p, training=True)
+        keep_prob = 1.0 - self.p
+        noise = _deterministic_uniform(tuple(x.shape), x.device, self._rng_counter, 71)
+        self._rng_counter.add_(1)
+        mask = (noise >= self.p).to(dtype=torch.float32)
+        out = x.to(dtype=torch.float32) * mask / keep_prob
+        return out.to(dtype=x.dtype)
 
 
 class TileCudaRandomTimestepsStage(nn.Module):
@@ -425,22 +451,25 @@ class TileCudaScaledDotProductAttentionStage(nn.Module):
         self.dropout_p = float(dropout_p)
         self.config = config or TileCudaConfig()
 
-    def forward(self, q: Tensor, k: Tensor, v: Tensor) -> Tensor:
+    def forward(self, q: TileActivation, k: TileActivation, v: TileActivation) -> Tensor:
+        q_work = _activation_work_tensor(q)
+        k_work = _activation_work_tensor(k)
+        v_work = _activation_work_tensor(v)
         drop = self.dropout_p if self.training else 0.0
         if drop != 0.0 or self.backend == "flex":
             return F.scaled_dot_product_attention(
-                q,
-                k,
-                v,
+                q_work,
+                k_work,
+                v_work,
                 attn_mask=None,
                 dropout_p=drop,
                 is_causal=self.is_causal,
-                enable_gqa=q.size(1) != k.size(1),
+                enable_gqa=q_work.size(1) != k_work.size(1),
             )
         return tile_scaled_dot_product_attention_module(
-            q.contiguous(),
-            k.contiguous(),
-            v.contiguous(),
+            q_work.contiguous(),
+            k_work.contiguous(),
+            v_work.contiguous(),
             self.is_causal,
             self.config,
         )
@@ -500,14 +529,17 @@ class TileCudaSparseAttentionStage(nn.Module):
             enable_gqa=q.size(1) != k.size(1),
         )
 
-    def forward(self, q: Tensor, k: Tensor, v: Tensor) -> Tensor:
+    def forward(self, q: TileActivation, k: TileActivation, v: TileActivation) -> Tensor:
+        q_work = _activation_work_tensor(q)
+        k_work = _activation_work_tensor(k)
+        v_work = _activation_work_tensor(v)
         drop = self.dropout_p if self.training else 0.0
         if drop != 0.0:
-            return self._reference(q, k, v, drop)
+            return self._reference(q_work, k_work, v_work, drop)
         return tile_scaled_dot_product_attention_module(
-            q.contiguous(),
-            k.contiguous(),
-            v.contiguous(),
+            q_work.contiguous(),
+            k_work.contiguous(),
+            v_work.contiguous(),
             self.is_causal,
             self.config,
             right_align_causal=True,
@@ -535,7 +567,10 @@ class TileCudaDifferentialAttentionStage(nn.Module):
         self.lambda_init = float(lambda_init)
         self.config = config or TileCudaConfig()
 
-    def forward(self, q: Tensor, k: Tensor, v: Tensor) -> Tensor:
+    def forward(self, q: TileActivation, k: TileActivation, v: TileActivation) -> Tensor:
+        q = _activation_work_tensor(q)
+        k = _activation_work_tensor(k)
+        v = _activation_work_tensor(v)
         head_dim = q.size(-1)
         if head_dim % 2 != 0:
             raise ValueError("differential attention requires an even head_dim")
@@ -586,18 +621,19 @@ class TileCudaCausalSelfAttentionStage(nn.Module):
         self.register_buffer("inv_freq", inv_freq, persistent=False)
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
-        batch, seq_len, model_dim = x.shape
-        q = tile_linear_module(x, self.q_proj.weight, None, self.config, name="causal_self_attention.q_proj")
-        k = tile_linear_module(x, self.k_proj.weight, None, self.config, name="causal_self_attention.k_proj")
-        v = tile_linear_module(x, self.v_proj.weight, None, self.config, name="causal_self_attention.v_proj")
+    def forward(self, x: TileActivation) -> Tensor:
+        x_work = _activation_work_tensor(x)
+        batch, seq_len, model_dim = x_work.shape
+        q = tile_linear_module(x_work, self.q_proj.weight, None, self.config, name="causal_self_attention.q_proj")
+        k = tile_linear_module(x_work, self.k_proj.weight, None, self.config, name="causal_self_attention.k_proj")
+        v = tile_linear_module(x_work, self.v_proj.weight, None, self.config, name="causal_self_attention.v_proj")
         q = q.reshape(batch, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
         k = k.reshape(batch, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2).contiguous()
         v = v.reshape(batch, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2).contiguous()
         eps = torch.finfo(torch.float32).eps
         q = tile_rms_norm_module(q, eps, self.config)
         k = tile_rms_norm_module(k, eps, self.config)
-        q, k = tile_rotary_embedding_module(q.contiguous(), k.contiguous(), self.inv_freq.to(device=x.device), self.config)
+        q, k = tile_rotary_embedding_module(q.contiguous(), k.contiguous(), self.inv_freq.to(device=x_work.device), self.config)
         q = tile_qk_gain_module(q.contiguous(), self.q_gain, self.config)
         y = tile_scaled_dot_product_attention_module(q.contiguous(), k.contiguous(), v.contiguous(), True, self.config)
         y = y.transpose(1, 2).contiguous().reshape(batch, seq_len, model_dim)
@@ -635,15 +671,16 @@ class TileCudaFusedCausalAttentionStage(nn.Module):
         self.register_buffer("inv_freq", inv_freq, persistent=False)
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
-        batch, seq_len, model_dim = x.shape
-        q = tile_linear_module(x, self.q_proj.weight, None, self.config, name="fused_causal_attention.q_proj")
-        k = tile_linear_module(x, self.k_proj.weight, None, self.config, name="fused_causal_attention.k_proj")
-        v = tile_linear_module(x, self.v_proj.weight, None, self.config, name="fused_causal_attention.v_proj")
+    def forward(self, x: TileActivation) -> Tensor:
+        x_work = _activation_work_tensor(x)
+        batch, seq_len, model_dim = x_work.shape
+        q = tile_linear_module(x_work, self.q_proj.weight, None, self.config, name="fused_causal_attention.q_proj")
+        k = tile_linear_module(x_work, self.k_proj.weight, None, self.config, name="fused_causal_attention.k_proj")
+        v = tile_linear_module(x_work, self.v_proj.weight, None, self.config, name="fused_causal_attention.v_proj")
         q = q.reshape(batch, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
         k = k.reshape(batch, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2).contiguous()
         v = v.reshape(batch, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2).contiguous()
-        q, k = tile_rotary_embedding_module(q, k, self.inv_freq.to(device=x.device), self.config)
+        q, k = tile_rotary_embedding_module(q, k, self.inv_freq.to(device=x_work.device), self.config)
         drop = self.dropout_p if self.training else 0.0
         if drop != 0.0:
             y = F.scaled_dot_product_attention(
@@ -698,13 +735,14 @@ class TileCudaMLAStage(nn.Module):
         self.register_buffer("inv_freq", inv_freq, persistent=False)
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
-        batch, seq_len, _ = x.shape
+    def forward(self, x: TileActivation) -> Tensor:
+        x_work = _activation_work_tensor(x)
+        batch, seq_len, _ = x_work.shape
         h = self.num_heads
-        q = tile_linear_module(x, self.q_proj.weight, None, self.config, name="multi_latent_attention.q_proj")
+        q = tile_linear_module(x_work, self.q_proj.weight, None, self.config, name="multi_latent_attention.q_proj")
         q = q.view(batch, seq_len, h, self.head_dim)
         q_nope, q_rope = q.split([self.nope_dim, self.rope_dim], dim=-1)
-        kv = tile_linear_module(x, self.kv_a.weight, None, self.config, name="multi_latent_attention.kv_a")
+        kv = tile_linear_module(x_work, self.kv_a.weight, None, self.config, name="multi_latent_attention.kv_a")
         kv_c, k_rope = kv.split([self.kv_lora_rank, self.rope_dim], dim=-1)
         eps = torch.finfo(torch.float32).eps
         kv_c = tile_rms_norm_module(kv_c.contiguous(), eps, self.config)
@@ -713,7 +751,7 @@ class TileCudaMLAStage(nn.Module):
         k_nope, v = kv.split([self.nope_dim, self.v_head_dim], dim=-1)
         q_rope = q_rope.transpose(1, 2).contiguous()
         k_rope_h = k_rope.unsqueeze(2).expand(batch, seq_len, h, self.rope_dim).transpose(1, 2).contiguous()
-        q_rope, k_rope_h = tile_rotary_embedding_module(q_rope, k_rope_h, self.inv_freq.to(device=x.device), self.config)
+        q_rope, k_rope_h = tile_rotary_embedding_module(q_rope, k_rope_h, self.inv_freq.to(device=x_work.device), self.config)
         q_full = torch.cat([q_nope.transpose(1, 2).contiguous(), q_rope], dim=-1)
         k_full = torch.cat([k_nope.transpose(1, 2).contiguous(), k_rope_h], dim=-1)
         v = v.transpose(1, 2).contiguous()
@@ -768,38 +806,40 @@ class TileCudaRoutedAttentionExpertsStage(nn.Module):
         nn.init.normal_(self.out_proj, std=0.02)
         self.config = config or TileCudaConfig()
 
-    def _expert_attention(self, x: Tensor, expert_idx: int) -> Tensor:
-        batch, seq_len, model_dim = x.shape
-        q = tile_linear_module(x, self.q_proj[expert_idx].t().contiguous(), None, self.config, name="routed_attention_experts.q_proj")
-        k = tile_linear_module(x, self.k_proj[expert_idx].t().contiguous(), None, self.config, name="routed_attention_experts.k_proj")
-        v = tile_linear_module(x, self.v_proj[expert_idx].t().contiguous(), None, self.config, name="routed_attention_experts.v_proj")
+    def _expert_attention(self, x: TileActivation, expert_idx: int) -> Tensor:
+        x_work = _activation_work_tensor(x)
+        batch, seq_len, model_dim = x_work.shape
+        q = tile_linear_module(x_work, self.q_proj[expert_idx].t().contiguous(), None, self.config, name="routed_attention_experts.q_proj")
+        k = tile_linear_module(x_work, self.k_proj[expert_idx].t().contiguous(), None, self.config, name="routed_attention_experts.k_proj")
+        v = tile_linear_module(x_work, self.v_proj[expert_idx].t().contiguous(), None, self.config, name="routed_attention_experts.v_proj")
         q = q.reshape(batch, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
         k = k.reshape(batch, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2).contiguous()
         v = v.reshape(batch, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2).contiguous()
         eps = torch.finfo(torch.float32).eps
         q = tile_rms_norm_module(q, eps, self.config)
         k = tile_rms_norm_module(k, eps, self.config)
-        q, k = tile_rotary_embedding_module(q.contiguous(), k.contiguous(), self.inv_freq.to(device=x.device), self.config)
+        q, k = tile_rotary_embedding_module(q.contiguous(), k.contiguous(), self.inv_freq.to(device=x_work.device), self.config)
         q = tile_qk_gain_module(q.contiguous(), self.q_gain[expert_idx].contiguous(), self.config)
         y = tile_scaled_dot_product_attention_module(q.contiguous(), k.contiguous(), v.contiguous(), self.is_causal, self.config)
         y = y.transpose(1, 2).contiguous().reshape(batch, seq_len, model_dim)
         return tile_linear_module(y, self.out_proj[expert_idx].t().contiguous(), None, self.config, name="routed_attention_experts.out_proj")
 
-    def forward(self, x: Tensor, routing_weights: Tensor, routing_indices: Tensor) -> Tensor:
+    def forward(self, x: TileActivation, routing_weights: Tensor, routing_indices: Tensor) -> Tensor:
+        x_work = _activation_work_tensor(x)
         if routing_weights.ndim == 3:
             routing_weights = routing_weights.squeeze(1)
         if routing_indices.ndim == 3:
             routing_indices = routing_indices.squeeze(1)
-        out = torch.zeros_like(x)
+        out = torch.zeros_like(x_work)
         for expert_idx in range(self.experts):
             mask = routing_indices == expert_idx
             batch_idx, slot_idx = torch.where(mask)
             if batch_idx.numel() == 0:
                 continue
-            expert_inputs = x[batch_idx].contiguous()
+            expert_inputs = x_work[batch_idx].contiguous()
             expert_out = self._expert_attention(expert_inputs, expert_idx)
-            weights = routing_weights[batch_idx, slot_idx].to(dtype=x.dtype).view(-1, 1, 1)
-            out[batch_idx] += expert_out * weights
+            weights = routing_weights[batch_idx, slot_idx].to(dtype=torch.float32).view(-1, 1, 1)
+            out[batch_idx] += (expert_out.to(dtype=torch.float32) * weights).to(dtype=out.dtype)
         return out
 
 
@@ -1037,7 +1077,7 @@ class TileCudaLinearStage(nn.Module):
         self.proj = nn.Linear(input_dim, output_dim, bias=bias)
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: TileActivation) -> Tensor:
         return tile_linear_module(x, self.proj.weight, self.proj.bias, self.config, name="linear")
 
 
@@ -1047,7 +1087,7 @@ class TileCudaLMHeadStage(nn.Module):
         self.proj = nn.Linear(model_dim, vocab_size, bias=False)
         self.config = config or TileCudaConfig()
 
-    def forward(self, hidden: Tensor) -> Tensor:
+    def forward(self, hidden: TileActivation) -> Tensor:
         return tile_linear_module(hidden, self.proj.weight, None, self.config, name="lm_head")
 
 
@@ -1056,7 +1096,7 @@ class TileCudaTiedLMHeadStage(nn.Module):
         super().__init__()
         self.config = config or TileCudaConfig()
 
-    def forward(self, hidden: Tensor, tied_weight: Tensor) -> Tensor:
+    def forward(self, hidden: TileActivation, tied_weight: Tensor) -> Tensor:
         return tile_linear_module(hidden, tied_weight, None, self.config, name="tied_lm_head")
 
 
@@ -1066,7 +1106,7 @@ class TileCudaRouterLogitsStage(nn.Module):
         self.gate = nn.Linear(model_dim, experts, bias=False)
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: TileActivation) -> Tensor:
         return tile_linear_module(x, self.gate.weight, None, self.config, name="router_logits")
 
 
@@ -1076,7 +1116,7 @@ class TileCudaValueHeadStage(nn.Module):
         self.proj = nn.Linear(int(model_dim), 1, bias=False)
         self.config = config or TileCudaConfig()
 
-    def forward(self, hidden: Tensor) -> Tensor:
+    def forward(self, hidden: TileActivation) -> Tensor:
         return tile_linear_module(hidden, self.proj.weight, None, self.config, name="value_head").squeeze(-1)
 
 
@@ -1087,8 +1127,9 @@ class TileCudaRewardHeadStage(nn.Module):
         self.proj = nn.Linear(int(model_dim), 1, bias=False)
         self.config = config or TileCudaConfig()
 
-    def forward(self, hidden: Tensor) -> Tensor:
-        pooled = hidden.mean(dim=1) if self.pool == "mean" else hidden[:, -1, :]
+    def forward(self, hidden: TileActivation) -> Tensor:
+        hidden_work = _activation_work_tensor(hidden)
+        pooled = hidden_work.mean(dim=1) if self.pool == "mean" else hidden_work[:, -1, :]
         return tile_linear_module(pooled.contiguous(), self.proj.weight, None, self.config, name="reward_head").squeeze(-1)
 
 
@@ -1098,7 +1139,7 @@ class TileCudaDenoiseHeadStage(nn.Module):
         self.proj = nn.Linear(model_dim, vocab_size, bias=False)
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: TileActivation) -> Tensor:
         return tile_linear_module(x, self.proj.weight, None, self.config, name="denoise_head")
 
 
@@ -1109,7 +1150,7 @@ class TileCudaKVPCAEncodeStage(nn.Module):
         self.v_proj = nn.Linear(int(head_dim), int(compressed_dim), bias=False)
         self.config = config or TileCudaConfig()
 
-    def forward(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(self, k: TileActivation, v: TileActivation) -> tuple[Tensor, Tensor]:
         return (
             tile_linear_module(k, self.k_proj.weight, None, self.config, name="kv_pca_encode.k"),
             tile_linear_module(v, self.v_proj.weight, None, self.config, name="kv_pca_encode.v"),
@@ -1123,7 +1164,7 @@ class TileCudaKVPCADecodeStage(nn.Module):
         self.v_unproj = nn.Linear(int(compressed_dim), int(head_dim), bias=False)
         self.config = config or TileCudaConfig()
 
-    def forward(self, k: Tensor, v: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(self, k: TileActivation, v: TileActivation) -> tuple[Tensor, Tensor]:
         return (
             tile_linear_module(k, self.k_unproj.weight, None, self.config, name="kv_pca_decode.k"),
             tile_linear_module(v, self.v_unproj.weight, None, self.config, name="kv_pca_decode.v"),
@@ -1141,7 +1182,7 @@ class TileCudaJEPAProjectorStage(nn.Module):
         )
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: TileActivation) -> Tensor:
         h = tile_linear_module(x, self.net[0].weight, None, self.config, name="jepa_projector.in")
         h = tile_layer_norm_module(h, self.net[1].weight, self.net[1].bias, float(self.net[1].eps), self.config)
         h = tile_unary("gelu", h, self.config)
@@ -1159,7 +1200,7 @@ class TileCudaJEPAPredictorStage(nn.Module):
         )
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: TileActivation) -> Tensor:
         h = tile_linear_module(x, self.net[0].weight, None, self.config, name="jepa_predictor.in")
         h = tile_unary("gelu", h, self.config)
         return tile_linear_module(h, self.net[2].weight, None, self.config, name="jepa_predictor.out")
@@ -1176,9 +1217,10 @@ class TileCudaTTTLinearStage(nn.Module):
         self.ttt_up = nn.Linear(self.hidden_dim, self.output_dim, bias=False)
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
-        base = tile_linear_module(x, self.weight, None, self.config, name="ttt_linear.base")
-        ttt = tile_linear_module(x, self.ttt_down.weight, None, self.config, name="ttt_linear.down")
+    def forward(self, x: TileActivation) -> Tensor:
+        x_work = _activation_work_tensor(x)
+        base = tile_linear_module(x_work, self.weight, None, self.config, name="ttt_linear.base")
+        ttt = tile_linear_module(x_work, self.ttt_down.weight, None, self.config, name="ttt_linear.down")
         ttt = tile_unary("tanh_neuron", ttt, self.config)
         ttt = tile_linear_module(ttt, self.ttt_up.weight, None, self.config, name="ttt_linear.up")
         return tile_binary("add", base, ttt, self.config)
@@ -1206,9 +1248,10 @@ class TileCudaLoRALinearStage(nn.Module):
         nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
-        base = tile_linear_module(x, self.base.weight, self.base.bias, self.config, name="lora_linear.base")
-        lora = tile_linear_module(x, self.lora_A, None, self.config, name="lora_linear.A")
+    def forward(self, x: TileActivation) -> Tensor:
+        x_work = _activation_work_tensor(x)
+        base = tile_linear_module(x_work, self.base.weight, self.base.bias, self.config, name="lora_linear.base")
+        lora = tile_linear_module(x_work, self.lora_A, None, self.config, name="lora_linear.A")
         lora = tile_linear_module(lora, self.lora_B, None, self.config, name="lora_linear.B")
         return tile_scalar_binary_module("aux_loss_add", base, lora, self.scaling, self.config)
 
@@ -1221,14 +1264,15 @@ class TileCudaBitLinearTernaryStage(nn.Module):
         self.weight = nn.Parameter(torch.randn(self.output_dim, self.input_dim))
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: TileActivation) -> Tensor:
+        x_work = _activation_work_tensor(x)
         scale = self.weight.abs().mean()
         w_quant = torch.round(self.weight / (scale + 1e-7)).clamp(-1, 1)
         w_quant = self.weight + (w_quant - self.weight).detach()
 
-        x_max = x.abs().max(dim=-1, keepdim=True).values
-        x_quant = torch.round(x * 127 / (x_max + 1e-7)).clamp(-128, 127)
-        x_quant = x + (x_quant * x_max / 127 - x).detach()
+        x_max = x_work.abs().max(dim=-1, keepdim=True).values
+        x_quant = torch.round(x_work * 127 / (x_max + 1e-7)).clamp(-128, 127)
+        x_quant = x_work + (x_quant * x_max / 127 - x_work).detach()
         return tile_linear_module(x_quant, w_quant, None, self.config, name="bitlinear_ternary")
 
 
@@ -1269,7 +1313,7 @@ class TileCudaFP8LinearStage(nn.Module):
         weight_q = (weight / scale).to(self._fp8_dtype).to(weight.dtype) * scale
         return weight + (weight_q - weight).detach()
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: TileActivation) -> Tensor:
         return tile_linear_module(x, self._quant_weight(self.weight), self.bias, self.config, name="fp8_linear")
 
 
@@ -1318,7 +1362,7 @@ class TileCudaMXLinearStage(nn.Module):
         weight_q = (quantized * scale).reshape(out_dim, -1)[:, :in_dim]
         return weight + (weight_q - weight).detach()
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: TileActivation) -> Tensor:
         return tile_linear_module(x, self._quant_weight(self.weight), self.bias, self.config, name="mx_linear")
 
 
@@ -1450,11 +1494,12 @@ class TileCudaRandMapAdapterStage(nn.Module):
         nn.init.orthogonal_(self.up_proj.weight)
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
-        adapter = tile_linear_module(x, self.down_proj.weight, None, self.config, name="randmap_adapter.down")
+    def forward(self, x: TileActivation) -> Tensor:
+        x_work = _activation_work_tensor(x)
+        adapter = tile_linear_module(x_work, self.down_proj.weight, None, self.config, name="randmap_adapter.down")
         adapter = tile_linear_module(adapter, self.middle.weight, None, self.config, name="randmap_adapter.middle")
         adapter = tile_linear_module(adapter, self.up_proj.weight, None, self.config, name="randmap_adapter.up")
-        return tile_scaled_residual_add_module(x, adapter, self.scale, self.config)
+        return tile_scaled_residual_add_module(x_work, adapter.to(dtype=x_work.dtype).contiguous(), self.scale, self.config)
 
 
 class TileCudaMLPReluSquaredStage(nn.Module):
@@ -1465,8 +1510,9 @@ class TileCudaMLPReluSquaredStage(nn.Module):
         self.proj = nn.Linear(hidden, int(model_dim), bias=False)
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
-        h = tile_linear_module(x, self.fc.weight, None, self.config, name="mlp_relu2.fc")
+    def forward(self, x: TileActivation) -> Tensor:
+        x_work = _activation_work_tensor(x)
+        h = tile_linear_module(x_work, self.fc.weight, None, self.config, name="mlp_relu2.fc")
         h = tile_unary("relu", h, self.config)
         h = tile_binary("multiply", h, h, self.config)
         return tile_linear_module(h, self.proj.weight, None, self.config, name="mlp_relu2.proj")
@@ -1484,9 +1530,10 @@ class TileCudaSwiGLUStage(nn.Module):
         self.w3 = nn.Linear(int(model_dim), hidden, bias=False)
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
-        gate = tile_unary("silu", tile_linear_module(x, self.w1.weight, None, self.config, name="swiglu.w1"), self.config)
-        value = tile_linear_module(x, self.w3.weight, None, self.config, name="swiglu.w3")
+    def forward(self, x: TileActivation) -> Tensor:
+        x_work = _activation_work_tensor(x)
+        gate = tile_unary("silu", tile_linear_module(x_work, self.w1.weight, None, self.config, name="swiglu.w1"), self.config)
+        value = tile_linear_module(x_work, self.w3.weight, None, self.config, name="swiglu.w3")
         hidden = tile_binary("multiply", gate, value, self.config)
         return tile_linear_module(hidden, self.w2.weight, None, self.config, name="swiglu.w2")
 
@@ -1511,15 +1558,16 @@ class TileCudaGLUStage(nn.Module):
         self.w3 = nn.Linear(int(model_dim), hidden, bias=False)
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
-        gate = tile_linear_module(x, self.w1.weight, None, self.config, name=f"{self.activation}.w1")
+    def forward(self, x: TileActivation) -> Tensor:
+        x_work = _activation_work_tensor(x)
+        gate = tile_linear_module(x_work, self.w1.weight, None, self.config, name=f"{self.activation}.w1")
         if self.activation == "relu":
             gate = tile_unary("relu", gate, self.config)
         elif self.activation == "gelu":
             gate = tile_unary("gelu", gate, self.config)
         else:
             gate = tile_softmax_lastdim_module(gate, self.config)
-        value = tile_linear_module(x, self.w3.weight, None, self.config, name=f"{self.activation}.w3")
+        value = tile_linear_module(x_work, self.w3.weight, None, self.config, name=f"{self.activation}.w3")
         hidden = tile_binary("multiply", gate, value, self.config)
         return tile_linear_module(hidden, self.w2.weight, None, self.config, name=f"{self.activation}.w2")
 
@@ -1539,8 +1587,9 @@ class TileCudaACTHaltGateStage(nn.Module):
         self.proj = nn.Linear(int(model_dim), 1)
         self.config = config or TileCudaConfig()
 
-    def forward(self, x: Tensor) -> Tensor:
-        pooled = x.mean(dim=1).contiguous()
+    def forward(self, x: TileActivation) -> Tensor:
+        x_work = _activation_work_tensor(x)
+        pooled = x_work.mean(dim=1).contiguous()
         logits = tile_linear_module(pooled, self.proj.weight, self.proj.bias, self.config, name="act_halt_gate")
         return tile_unary("sigmoid", logits, self.config)
 

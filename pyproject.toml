@@ -9,7 +9,6 @@ description = "Graph-native neural network framework with torch-backed template 
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "torch>=2.0",
   "numpy>=1.24",
   "fastapi>=0.100",
   "uvicorn>=0.23",
@@ -26,6 +25,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+torch = [
+  "torch>=2.0",
+]
 tile-cuda = [
   "ninja>=1.11",
 ]
@@ -35,6 +37,10 @@ include = ["neuralfn*", "server*"]
 
 [tool.setuptools.package-data]
 neuralfn = [
+  "csrc/native_gpt2/*.cpp",
+  "csrc/native_train/*.cpp",
+  "csrc/native_train/*.cu",
+  "csrc/native_train/*.h",
   "csrc/tile_cuda/*.cpp",
   "csrc/tile_cuda/*.cu",
   "data/semantic/*.json",

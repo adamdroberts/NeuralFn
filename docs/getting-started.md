@@ -36,7 +36,36 @@ The editable package install includes the shipped semantic vocabulary JSON
 files under `neuralfn/data/semantic/`, so SDK consumers can use the semantic
 routing presets without copying those assets manually.
 
-This pulls in the core stack used by the library and platform, including **torch**, **numpy**, **fastapi**, **uvicorn**, **networkx**, **pydantic**, **sqlalchemy**, **alembic**, **redis**, **datasets**, **tiktoken**, and **mcp** (plus helpers such as **python-multipart** and **PyMySQL**).
+This pulls in the core stack used by the library and platform, including **numpy**, **fastapi**, **uvicorn**, **networkx**, **pydantic**, **sqlalchemy**, **alembic**, **redis**, **datasets**, **tiktoken**, and **mcp** (plus helpers such as **python-multipart** and **PyMySQL**). Torch is optional so native GPT-2 CUDA training can start without it. Install graph-backed Torch workflows explicitly:
+
+```bash
+pip install -e ".[torch]"
+```
+
+CUDA Tile native build tooling is separate from Torch and only adds the build
+helper dependency:
+
+```bash
+pip install -e ".[tile-cuda]"
+```
+
+Install both extras only when you intentionally need the graph-backed PyTorch
+Tile extension path:
+
+```bash
+pip install -e ".[torch,tile-cuda]"
+```
+
+For the no-Torch native GPT-2 training path, build the small C++ SDK binding,
+launcher, and no-Python cached-shard CLI once:
+
+```bash
+bash tools/build_native_gpt2_all.sh
+```
+
+Installing the local CLI with `cli/install.sh` runs that native build step
+automatically unless you pass `--no-native`, then links `nfn-gpt2-native` into
+the active Python scripts directory.
 
 ## Install the editor
 
@@ -58,7 +87,7 @@ Scalar graph with surrogate and evolutionary training on a small XOR network.
 python examples/gpt_graph.py
 ```
 
-Builds a torch GPT-style graph via `build_gpt_root_graph` and trains with `TorchTrainer`.
+Builds a torch GPT-style graph via `build_gpt_root_graph` and trains with `TorchTrainer`. Requires `pip install -e ".[torch]"`.
 
 ```bash
 python examples/nested_hybrid_graph.py

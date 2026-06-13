@@ -125,7 +125,7 @@ def infer_graph_template_runtime(graph) -> str | None:
     template_spec = dict(torch_config.get("template_spec", {}) or {})
     template = dict(template_spec.get("template", {}) or {})
     runtime = str(template.get("runtime", "")).lower()
-    if runtime in {"compile", "megakernel"}:
+    if runtime in {"eager", "compile", "megakernel"}:
         return runtime
     return None
 
@@ -145,7 +145,7 @@ def infer_checkpoint_runtime(
 ) -> str | None:
     metadata = dict(checkpoint_metadata or {})
     runtime = str(metadata.get("template_runtime", "")).strip().lower()
-    if runtime in {"compile", "megakernel"}:
+    if runtime in {"eager", "compile", "megakernel"}:
         return runtime
     return _infer_checkpoint_runtime_from_state_dict(state_dict)
 

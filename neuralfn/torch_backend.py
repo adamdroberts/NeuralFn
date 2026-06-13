@@ -198,6 +198,78 @@ class Muon(torch.optim.Optimizer):
         return loss
 
 
+class TileAdamW(torch.optim.Optimizer):
+    """AdamW optimizer wrapper whose parameter updates dispatch through CUDA Tile."""
+
+    def __init__(
+        self,
+        params: list[Tensor],
+        *,
+        lr: float,
+        betas: tuple[float, float],
+        eps: float,
+        weight_decay: float,
+        tile_cuda_config: Any,
+    ) -> None:
+        defaults = dict(
+            lr=float(lr),
+            base_lr=float(lr),
+            betas=(float(betas[0]), float(betas[1])),
+            eps=float(eps),
+            weight_decay=float(weight_decay),
+            step=0,
+        )
+        self.tile_cuda_config = tile_cuda_config
+        super().__init__(params, defaults)
+
+    @torch.no_grad()
+    def step(self, closure: Callable[[], Any] | None = None) -> Any:
+        loss = None
+        if closure is not None:
+            with torch.enable_grad():
+                loss = closure()
+
+        from .tile_cuda.optimizer import tile_adamw_step_batch
+
+        for group in self.param_groups:
+            group["step"] = int(group.get("step", 0)) + 1
+            beta1, beta2 = group["betas"]
+            params: list[Tensor] = []
+            grads: list[Tensor] = []
+            exp_avgs: list[Tensor] = []
+            exp_avg_sqs: list[Tensor] = []
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+                if not p.requires_grad:
+                    continue
+                grad = p.grad
+                state = self.state[p]
+                if "exp_avg" not in state:
+                    state["exp_avg"] = torch.zeros_like(p, dtype=torch.float32, memory_format=torch.preserve_format)
+                if "exp_avg_sq" not in state:
+                    state["exp_avg_sq"] = torch.zeros_like(p, dtype=torch.float32, memory_format=torch.preserve_format)
+                params.append(p)
+                grads.append(grad)
+                exp_avgs.append(state["exp_avg"])
+                exp_avg_sqs.append(state["exp_avg_sq"])
+            if params:
+                tile_adamw_step_batch(
+                    params,
+                    grads,
+                    exp_avgs,
+                    exp_avg_sqs,
+                    lr=float(group["lr"]),
+                    beta1=float(beta1),
+                    beta2=float(beta2),
+                    eps=float(group["eps"]),
+                    weight_decay=float(group["weight_decay"]),
+                    step=int(group["step"]),
+                    config=self.tile_cuda_config,
+                )
+        return loss
+
+
 class Rotary(nn.Module):
     def __init__(self, dim: int, base: float, scaling: dict[str, Any] | None = None) -> None:
         super().__init__()
@@ -3046,6 +3118,47 @@ def _wrap_output(value: Any) -> tuple[Tensor, ...]:
     return (value,)
 
 
+_TILE_CUDA_NVFP4_ACTIVATION_INPUTS: dict[str, tuple[int, ...]] = {
+    "linear": (0,),
+    "lm_head": (0,),
+    "tied_lm_head": (0,),
+    "router_logits": (0,),
+    "value_head": (0,),
+    "reward_head": (0,),
+    "denoise_head": (0,),
+    "kv_pca_encode": (0, 1),
+    "kv_pca_decode": (0, 1),
+    "jepa_projector": (0,),
+    "jepa_predictor": (0,),
+    "ttt_linear": (0,),
+    "lora_linear": (0,),
+    "bitlinear_ternary": (0,),
+    "fp8_linear": (0,),
+    "mx_linear": (0,),
+    "randmap_adapter": (0,),
+    "mlp_relu2": (0,),
+    "swiglu": (0,),
+    "geglu": (0,),
+    "reglu": (0,),
+    "solu": (0,),
+    "act_halt_gate": (0,),
+    "scaled_dot_product_attention": (0, 1, 2),
+    "sliding_window_attention": (0, 1, 2),
+    "block_sparse_attention": (0, 1, 2),
+    "streaming_attention_sinks": (0, 1, 2),
+    "native_sparse_attention": (0, 1, 2),
+    "differential_attention": (0, 1, 2),
+    "causal_self_attention": (0,),
+    "fused_causal_attention": (0,),
+    "multi_latent_attention": (0,),
+    "routed_attention_experts": (0,),
+}
+
+ADAMW_OPTIMIZER_PROFILE = "adamw"
+ADAMW_OPTIMIZER_PROFILES = frozenset({ADAMW_OPTIMIZER_PROFILE})
+PARAMETER_GOLF_OPTIMIZER_PROFILES = frozenset({"parameter_golf", "split_muon"})
+
+
 @dataclass(frozen=True)
 class _FlatInputPlan:
     node_id: str
@@ -3110,6 +3223,16 @@ class CompiledTorchGraph(nn.Module):
             self._validate_tile_cuda_coverage(graph)
         if self.tile_cuda_config.report_file is not None:
             write_tile_cuda_report(self.tile_cuda_config.report_file, self.tile_cuda_config)
+        self.tile_cuda_activation_dtype = str(
+            (graph.torch_config or {}).get("tile_cuda_activation_dtype", "")
+        ).strip().lower()
+        if self.tile_cuda_activation_dtype in {"none", "float32", "fp32"}:
+            self.tile_cuda_activation_dtype = ""
+        if self.tile_cuda_activation_dtype and self.tile_cuda_activation_dtype != "nvfp4":
+            raise ValueError(
+                "Unsupported tile_cuda_activation_dtype "
+                f"{self.tile_cuda_activation_dtype!r}; supported values are 'nvfp4' or unset"
+            )
         if graph.has_cycles():
             raise ValueError(f"Torch runtime does not support cyclic graphs: '{graph.name}'")
         self.order = tuple(graph.topological_order() if graph.nodes else [])
@@ -3122,8 +3245,14 @@ class CompiledTorchGraph(nn.Module):
                     module.load_state_dict(decode_module_state_dict(ndef.module_state))
                 self.node_modules[nid] = module
             elif ndef.kind == "subgraph" and ndef.subgraph is not None:
+                child_graph = ndef.subgraph
+                if self.tile_cuda_activation_dtype and not (child_graph.torch_config or {}).get("tile_cuda_activation_dtype"):
+                    child_graph.torch_config = {
+                        **(child_graph.torch_config or {}),
+                        "tile_cuda_activation_dtype": self.tile_cuda_activation_dtype,
+                    }
                 self.node_modules[nid] = CompiledTorchGraph(
-                    ndef.subgraph,
+                    child_graph,
                     kernel_backend=kernel_backend,
                     tile_cuda_strict=tile_cuda_strict,
                     tile_cuda_report_path=tile_cuda_report_path,
@@ -3228,6 +3357,7 @@ class CompiledTorchGraph(nn.Module):
                 # Use the node's fixed child module directly so torch.compile does
                 # not have to specialize one generic dispatcher across mixed node
                 # arities and dtypes.
+                args = self._maybe_pack_tile_cuda_activation_inputs(node_plan.node_id, args)
                 values[node_plan.node_id] = _wrap_output(module(*args))
                 traces[node_plan.node_id] = values[node_plan.node_id]
 
@@ -3272,6 +3402,37 @@ class CompiledTorchGraph(nn.Module):
         if missing:
             raise ValueError(f"Node '{node_plan.node_id}' is missing required torch inputs at ports {missing}")
         return tuple(value for value in gathered if value is not None)
+
+    def _maybe_pack_tile_cuda_activation_inputs(self, node_id: str, args: tuple[Any, ...]) -> tuple[Any, ...]:
+        if self.resolved_kernel_backend != "tile_cuda" or self.tile_cuda_activation_dtype != "nvfp4":
+            return args
+        node = self.graph.nodes.get(node_id)
+        if node is None or node.neuron_def.kind != "module":
+            return args
+        module_type = node.neuron_def.module_type
+        activation_ports = _TILE_CUDA_NVFP4_ACTIVATION_INPUTS.get(module_type)
+        if not activation_ports:
+            return args
+        try:
+            from .tile_cuda.registry import tile_kernel_spec_for
+            from .tile_cuda.dtypes import quantize_nvfp4_reference
+        except Exception:
+            return args
+        spec = tile_kernel_spec_for(node.neuron_def)
+        if spec is None or spec.dtype_support.get("nvfp4") != "supported":
+            return args
+
+        packed = list(args)
+        for port in activation_ports:
+            if port >= len(packed):
+                continue
+            value = packed[port]
+            if not isinstance(value, Tensor) or not torch.is_floating_point(value):
+                continue
+            if not value.is_contiguous():
+                continue
+            packed[port] = quantize_nvfp4_reference(value, preserve_grad=True)
+        return tuple(packed)
 
     def sync_state_back(self, graph: NeuronGraph | None = None) -> None:
         target_graph = graph or self.graph
@@ -3342,9 +3503,21 @@ class TorchTrainer:
             raise ValueError("warmdown_fraction must be within [0.0, 1.0]")
         self._stop = False
         self.loss_history: list[float] = []
+        self._active_compiled_graph: CompiledTorchGraph | None = None
+        self._last_compiled_graph: CompiledTorchGraph | None = None
 
     def stop(self) -> None:
         self._stop = True
+
+    @property
+    def active_compiled_graph(self) -> CompiledTorchGraph | None:
+        """Compiled graph currently being trained, exposed for live evaluation callbacks."""
+        return self._active_compiled_graph
+
+    @property
+    def last_compiled_graph(self) -> CompiledTorchGraph | None:
+        """Most recent compiled graph retained after train() for validation/inference handoff."""
+        return self._last_compiled_graph
 
     @staticmethod
     def _lr_warmdown_scale(step: int, total_steps: int, warmdown_fraction: float) -> float:
@@ -3781,7 +3954,15 @@ class TorchTrainer:
 
     @staticmethod
     def _is_parameter_golf_profile(config: TorchTrainConfig) -> bool:
-        return str(config.optimizer_profile).lower() in {"parameter_golf", "split_muon"}
+        return str(config.optimizer_profile).lower() in PARAMETER_GOLF_OPTIMIZER_PROFILES
+
+    @staticmethod
+    def _is_adamw_profile(config: TorchTrainConfig) -> bool:
+        return str(config.optimizer_profile).lower() in ADAMW_OPTIMIZER_PROFILES
+
+    @staticmethod
+    def _uses_tile_adamw(config: TorchTrainConfig) -> bool:
+        return TorchTrainer._is_adamw_profile(config) and str(config.kernel_backend).strip().lower().replace("-", "_") == "tile_cuda"
 
     @staticmethod
     def _control_tensor_patterns() -> tuple[str, ...]:
@@ -3983,15 +4164,43 @@ class TorchTrainer:
         compiled: CompiledTorchGraph,
         config: TorchTrainConfig,
     ) -> list[torch.optim.Optimizer]:
-        if not cls._is_parameter_golf_profile(config):
+        if cls._uses_tile_adamw(config):
+            from .tile_cuda.config import TileCudaConfig
+
+            params = [p for p in compiled.parameters() if p.requires_grad]
+            if not params:
+                return []
+            return [
+                TileAdamW(
+                    params,
+                    lr=config.learning_rate,
+                    weight_decay=config.weight_decay,
+                    betas=(config.beta1, config.beta2),
+                    eps=config.adam_eps,
+                    tile_cuda_config=TileCudaConfig(
+                        backend=config.kernel_backend,
+                        strict=config.tile_cuda_strict,
+                    ),
+                )
+            ]
+
+        if cls._is_adamw_profile(config):
+            params = [p for p in compiled.parameters() if p.requires_grad]
+            if not params:
+                return []
             return [
                 torch.optim.AdamW(
-                    [{"params": list(compiled.parameters()), "lr": config.learning_rate, "base_lr": config.learning_rate}],
+                    [{"params": params, "lr": config.learning_rate, "base_lr": config.learning_rate}],
                     weight_decay=config.weight_decay,
                     betas=(config.beta1, config.beta2),
                     eps=config.adam_eps,
                 )
             ]
+        if not cls._is_parameter_golf_profile(config):
+            raise ValueError(
+                f"Unsupported optimizer_profile={config.optimizer_profile!r}; "
+                "use 'adamw' or 'parameter_golf'"
+            )
 
         control_patterns = cls._control_tensor_patterns()
         embed_params: list[Tensor] = []
@@ -4061,6 +4270,31 @@ class TorchTrainer:
                 )
             )
         return optimizers
+
+    @classmethod
+    def _clip_grad_norm(
+        cls,
+        parameters: Any,
+        max_norm: float,
+        config: TorchTrainConfig,
+    ) -> None:
+        if max_norm <= 0:
+            return
+        params = list(parameters)
+        if cls._uses_tile_adamw(config):
+            from .tile_cuda.config import TileCudaConfig
+            from .tile_cuda.optimizer import tile_gradient_clip_norm
+
+            tile_gradient_clip_norm(
+                [p.grad for p in params if p.grad is not None],
+                float(max_norm),
+                config=TileCudaConfig(
+                    backend=config.kernel_backend,
+                    strict=config.tile_cuda_strict,
+                ),
+            )
+            return
+        torch.nn.utils.clip_grad_norm_(params, max_norm)
 
     @staticmethod
     def _optimization_method(config: TorchTrainConfig) -> str:
@@ -4144,6 +4378,38 @@ class TorchTrainer:
             "mutation_scale": max(0.0, float(template_spec.get("route_evo_mutation_scale", 0.05))),
             "seed": seed,
         }
+
+    @staticmethod
+    def _layer_evo_config(template_spec: dict[str, Any]) -> dict[str, Any] | None:
+        if not bool(template_spec.get("layer_evo_enabled", False)):
+            return None
+        fraction = float(template_spec.get("layer_evo_fraction", 0.10))
+        if fraction <= 0.0:
+            return None
+        num_layers = int(template_spec.get("num_layers", 0))
+        index_raw = template_spec.get("layer_evo_index")
+        layer_index = (num_layers // 2) if index_raw in (None, "") else int(index_raw)
+        seed_raw = template_spec.get("layer_evo_seed")
+        seed = None if seed_raw in (None, "") else int(seed_raw)
+        return {
+            "layer_index": layer_index,
+            "fraction": min(fraction, 1.0),
+            "interval": max(1, int(round(1.0 / min(fraction, 1.0)))),
+            "population": max(1, int(template_spec.get("layer_evo_population", 8))),
+            "mutation_scale": max(0.0, float(template_spec.get("layer_evo_mutation_scale", 0.02))),
+            "seed": seed,
+        }
+
+    @staticmethod
+    def _layer_evo_parameters(compiled: nn.Module, layer_index: int) -> list[Tensor]:
+        needle = f"node_modules.block_{int(layer_index)}."
+        params: list[Tensor] = []
+        seen: set[int] = set()
+        for name, param in compiled.named_parameters():
+            if needle in name and id(param) not in seen:
+                seen.add(id(param))
+                params.append(param)
+        return params
 
     @classmethod
     def _run_route_evolution(
@@ -4460,6 +4726,8 @@ class TorchTrainer:
             tile_cuda_strict=self.config.tile_cuda_strict,
             tile_cuda_report_path=self.config.tile_cuda_report_path,
         )
+        self._active_compiled_graph = compiled
+        self._last_compiled_graph = compiled
         self._prepare_ema_targets(compiled)
         # Fine-tuning: load pretrained base + freeze non-LoRA params if spec present.
         self._apply_finetune_prehook(compiled, self.graph)
@@ -4496,6 +4764,18 @@ class TorchTrainer:
                 except ImportError:
                     pass
 
+        layer_evo_config = None if self.config.evolutionary else self._layer_evo_config(template_spec)
+        layer_evo_params: list[Tensor] = []
+        if layer_evo_config is not None:
+            layer_evo_params = self._layer_evo_parameters(compiled, layer_evo_config["layer_index"])
+            if not layer_evo_params:
+                raise ValueError(
+                    f"layer_evo_index={layer_evo_config['layer_index']} matched no parameters; "
+                    f"expected a transformer block index in [0, {int(template_spec.get('num_layers', 0)) - 1}]"
+                )
+            for param in layer_evo_params:
+                param.requires_grad_(False)
+
         optimizers = [] if self.config.evolutionary else self._build_optimizers(compiled, self.config)
 
         # ── 3. Build DataLoader ───────────────────────────────────────
@@ -4522,18 +4802,24 @@ class TorchTrainer:
         grad_accum_steps = max(1, math.ceil(train_batch_tokens / microbatch_tokens))
         steps_per_epoch = max(1, math.ceil(len(loader) / grad_accum_steps))
         estimated_total_steps = int(self.config.max_steps or (self.config.epochs * steps_per_epoch))
+        schedule_lr_decay_iters = self.config.lr_decay_iters
+        schedule_min_lr = self.config.min_lr
+        if self._uses_tile_adamw(self.config) and schedule_lr_decay_iters is None:
+            schedule_lr_decay_iters = estimated_total_steps
+            if schedule_min_lr is None:
+                schedule_min_lr = 0.0
 
         def zero_grad_all() -> None:
             for opt in optimizers:
                 opt.zero_grad(set_to_none=True)
 
         resolved_min_lr = float(
-            self.config.min_lr if self.config.min_lr is not None else (self.config.learning_rate / 10.0)
+            schedule_min_lr if schedule_min_lr is not None else (self.config.learning_rate / 10.0)
         )
 
         def scheduled_group_lr(step: int, elapsed_s: float, *, base_lr: float) -> float:
             del elapsed_s
-            if self.config.lr_decay_iters is not None:
+            if schedule_lr_decay_iters is not None:
                 if self.config.learning_rate > 0:
                     min_lr_ratio = min(max(resolved_min_lr / self.config.learning_rate, 0.0), 1.0)
                     group_min_lr = base_lr * min_lr_ratio
@@ -4543,7 +4829,7 @@ class TorchTrainer:
                     step,
                     base_lr=base_lr,
                     min_lr=group_min_lr,
-                    lr_decay_iters=int(self.config.lr_decay_iters),
+                    lr_decay_iters=int(schedule_lr_decay_iters),
                 )
             scale = self._lr_warmdown_scale(
                 step=step,
@@ -4771,8 +5057,7 @@ class TorchTrainer:
                             step_rows += batch_rows
                             step_loss_dev += loss.detach().float() * batch_rows
                         step_loss_total = float(step_loss_dev.item())
-                        if self.config.grad_clip_norm > 0:
-                            torch.nn.utils.clip_grad_norm_(compiled.parameters(), self.config.grad_clip_norm)
+                        self._clip_grad_norm(compiled.parameters(), self.config.grad_clip_norm, self.config)
                         for opt in optimizers:
                             opt.step()
                         if objective in ("jepa", "ar_jepa", "jepa_semantic", "semantic_router_jepa", "semantic_dense_jepa_evo", "semantic_moe_jepa_evo"):
@@ -4854,8 +5139,7 @@ class TorchTrainer:
                         step_loss_total = float(step_loss_dev.item())
 
                         apply_step_schedule(global_step, time.perf_counter() - start_time)
-                        if self.config.grad_clip_norm > 0:
-                            torch.nn.utils.clip_grad_norm_(compiled.parameters(), self.config.grad_clip_norm)
+                        self._clip_grad_norm(compiled.parameters(), self.config.grad_clip_norm, self.config)
                         for opt in optimizers:
                             opt.step()
                         route_evo_info = None
@@ -4875,6 +5159,25 @@ class TorchTrainer:
                                 template_runtime=template_runtime,
                                 routing_modules=routing_modules,
                                 config=route_evo_config,
+                                step=global_step + 1,
+                            )
+                        layer_evo_info = None
+                        if (
+                            layer_evo_config is not None
+                            and layer_evo_params
+                            and ((global_step + 1) % int(layer_evo_config["interval"]) == 0)
+                        ):
+                            layer_evo_info = self._run_route_evolution(
+                                run_graph,
+                                layer_evo_params,
+                                macro_batches,
+                                graph_name=self.graph.name,
+                                device=device,
+                                amp_dtype=amp_dtype,
+                                use_amp=use_amp,
+                                template_runtime=template_runtime,
+                                routing_modules=routing_modules,
+                                config=layer_evo_config,
                                 step=global_step + 1,
                             )
                         zero_grad_all()
@@ -4905,6 +5208,11 @@ class TorchTrainer:
                                 step_info["routing_stats"] = routing_stats
                             if route_evo_info is not None:
                                 step_info["route_evo"] = route_evo_info
+                            if layer_evo_info is not None:
+                                step_info["layer_evo"] = {
+                                    **layer_evo_info,
+                                    "layer_index": int(layer_evo_config["layer_index"]),
+                                }
                             on_step(step_info)
                         if (
                             self.config.max_wallclock_seconds > 0
@@ -4935,12 +5243,16 @@ class TorchTrainer:
                 "drop_last": resolved_drop_last,
                 "respect_epoch_boundaries": respect_epoch_boundaries,
                 "optimization_method": optimization_method,
+                "resolved_lr_decay_iters": schedule_lr_decay_iters,
+                "resolved_min_lr": resolved_min_lr,
             }
             if evolutionary_config is not None:
                 final_torch_config["evolutionary"] = evolutionary_config
             else:
                 final_torch_config.pop("evolutionary", None)
             self.graph.torch_config = final_torch_config
+            self._last_compiled_graph = compiled
+            self._active_compiled_graph = None
         return self.loss_history
 
 

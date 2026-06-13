@@ -10,13 +10,12 @@ conda run -n NeuralFn python scripts/train_jepa_semantic.py \
   --run-id jepa-10min \
   --device cuda \
   --output "$HOME/NeuralFn/artifacts/jepa_semantic_hybrid_10min.pt" \
-  --max-steps 2500 \
-  --max-wallclock-seconds 600 \
-  --train-seq-len 192 \
-  --batch-size 8 \
-  --train-batch-tokens 24576 \
-  --eval-batches 4 \
-  --eval-batch-size 8 \
+  --max-steps 20000 \
+  --train-seq-len 1024 \
+  --batch-size 64 \
+  --train-batch-tokens 524288 \
+  --eval-batches 20 \
+  --eval-batch-size 64 \
   --num-layers 5 \
   --model-dim 320 \
   --num-heads 5 \
@@ -28,18 +27,11 @@ conda run -n NeuralFn python scripts/train_jepa_semantic.py \
   --qk-gain-init 1.5 \
   --rope-base 10000 \
   --logit-softcap 30 \
-  --optimizer-profile parameter_golf \
-  --embed-lr 0.02 \
-  --head-lr 0.005 \
-  --tied-embed-lr 0.01 \
-  --matrix-lr 0.008 \
-  --scalar-lr 0.004 \
-  --warmup-steps 20 \
-  --warmdown-fraction 0.1 \
-  --muon-momentum 0.95 \
-  --muon-backend-steps 5 \
-  --muon-momentum-warmup-start 0.85 \
-  --muon-momentum-warmup-steps 128 \
+  --optimizer-profile adamw \
+  --learning-rate 0.0006 \
+  --weight-decay 0.1 \
+  --warmup-steps 60 \
+  --warmdown-fraction 0.0 \
   --beta1 0.9 \
   --beta2 0.95 \
   --adam-eps 1e-8 \

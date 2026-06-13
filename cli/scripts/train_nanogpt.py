@@ -9,6 +9,16 @@ import signal
 import sys
 import uuid
 
+from native_training_guard import reject_torch_training_by_default
+
+if __name__ == "__main__":
+    reject_torch_training_by_default(
+        "train_nanogpt.py",
+        native_target="nfn train --base-model nanogpt",
+        model_family="nanogpt",
+        native_default_args=["--train-token-lm"],
+    )
+
 import numpy as np
 import torch
 
@@ -69,16 +79,16 @@ NANOGPT_DEFAULTS = {
     "run_id": str(uuid.uuid4()),
     "dataset_alias": DEFAULT_DATASET_ALIAS,
     "output": str(DEFAULT_ARTIFACT),
-    "max_steps": 400,
-    "train_seq_len": 192,
-    "batch_size": 8,
-    "train_batch_tokens": 24_576,
-    "eval_batches": 8,
-    "eval_batch_size": 8,
+    "max_steps": 20_000,
+    "train_seq_len": 1_024,
+    "batch_size": 64,
+    "train_batch_tokens": 524_288,
+    "eval_batches": 20,
+    "eval_batch_size": 64,
     "train_log_every": 1,
-    "max_wallclock_seconds": 900.0,
-    "warmup_steps": 8,
-    "warmdown_fraction": 0.75,
+    "max_wallclock_seconds": 0.0,
+    "warmup_steps": 60,
+    "warmdown_fraction": 0.0,
     "vocab_size": 1_024,
     "num_layers": 5,
     "model_dim": 320,
@@ -86,9 +96,9 @@ NANOGPT_DEFAULTS = {
     "bias": False,
     "dropout_p": 0.1,
     "logit_softcap": 0.0,
-    "optimizer_profile": "parameter_golf",
-    "learning_rate": 3e-4,
-    "weight_decay": 0.0,
+    "optimizer_profile": "adamw",
+    "learning_rate": 6e-4,
+    "weight_decay": 0.1,
     "embed_lr": 0.02,
     "head_lr": 0.005,
     "tied_embed_lr": 0.01,
@@ -295,6 +305,7 @@ def main() -> int:
         template_runtime="megakernel" if args.megakernel else "eager",
         device=args.device,
         all_train_rows=bool(args.all_train_rows),
+        encoding_name=str(getattr(args, "raw_text_encoding_name", "gpt2")),
     )
     derived = {**derived}
     (

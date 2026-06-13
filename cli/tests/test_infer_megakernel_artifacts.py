@@ -73,6 +73,17 @@ class InferMegakernelArtifactTest(unittest.TestCase):
                 self.assertEqual(Path(args.weights), module.default_weights_artifact(megakernel=True))
                 self.assertEqual(Path(args.graph), module.default_graph_artifact(megakernel=True))
 
+    def test_gpt2_inference_evo_defaults_follow_eager_artifacts(self) -> None:
+        module = self.load_module("infer_gpt2")
+
+        args = self.parse_args(module, ["--evo"])
+
+        self.assertTrue(args.evo)
+        self.assertFalse(args.megakernel)
+        self.assertEqual("gpt2_evo", module.mode_name(megakernel=False, evo=True))
+        self.assertEqual(artifact_path("gpt2_evo.pt"), Path(args.weights))
+        self.assertEqual(artifact_path("gpt2_evo.json"), Path(args.graph))
+
     def test_llama_megakernel_wrapper_defaults_stay_runtime_specific(self) -> None:
         module = self.load_module("infer_llama_megakernel")
 
@@ -299,6 +310,24 @@ class InferMegakernelArtifactTest(unittest.TestCase):
             state_dict=state_dict,
             graph_path=artifact_path("semantic_router_moe.json"),
             weights_path=artifact_path("semantic_router_moe.pt"),
+        )
+
+    def test_eager_runtime_metadata_is_recognized(self) -> None:
+        module = self.load_module("infer_jepa_semantic")
+        graph = SimpleNamespace(
+            name="gpt2_evo_sdk",
+            torch_config={"template_spec": {"template": {"runtime": "eager"}}},
+        )
+        state_dict = {"node_modules.model.node_modules.token_embed.weight": torch.zeros(1, 1)}
+
+        self.assertEqual("eager", module.infer_graph_template_runtime(graph))
+        self.assertEqual("eager", module.infer_checkpoint_runtime(state_dict, {"template_runtime": "eager"}))
+        module.validate_inference_artifact_runtime_compatibility(
+            graph=graph,
+            state_dict=state_dict,
+            checkpoint_metadata={"template_runtime": "eager"},
+            graph_path=artifact_path("gpt2_evo.json"),
+            weights_path=artifact_path("gpt2_evo.pt"),
         )
 
     def test_load_compiled_graph_uses_weights_referenced_by_graph_when_not_explicit(self) -> None:

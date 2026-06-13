@@ -11,6 +11,21 @@ NeuralFn supports four training methods, each suited to different graph types. T
 
 For hierarchical graphs with mixed training methods, `HybridTrainer` orchestrates training across subgraph boundaries.
 
+Default CLI training now requires a compiled native CUDA/C++ entrypoint. Dense
+GPT-2 has that path through `nfn train --base-model gpt2`; other graph-backed
+`TorchTrainer` harnesses are disabled before Torch import unless
+`NFN_ALLOW_TORCH_TRAINING=1` is set for one-off legacy debugging while native
+trainers are being added.
+
+GPT template selection is explicit on the native path. Pass
+`--template-name NAME` / `--preset NAME` to select any name in
+`neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, or `--graph-file PATH` for a
+custom graph JSON. Dense GPT-2-compatible presets (`gpt2` and
+`gpt2_megakernel`, plus `gpt2_moa` with native MoA activation) use the
+implemented compiled CUDA Tile trainer; unsupported
+templates and graph files fail fast with native missing-trainer JSON instead of
+falling back to Torch.
+
 ---
 
 ## 1. Surrogate training
@@ -164,12 +179,12 @@ print(f"Final loss: {losses[-1]:.4f}")
 | `max_steps` | `int` | `None` | Stop after this many steps regardless of epochs. `None` = unlimited. |
 | `respect_epoch_boundaries` | `bool` | `False` | Keeps epochs aligned to one loader pass and allows a short final accumulation step instead of cycling into the next epoch. |
 | `kernel_backend`, `tile_cuda_strict`, `tile_cuda_report_path` | str/bool/str | `"auto"`, `False`, `None` | Optional CUDA Tile backend selection and reporting fields. The current Tile registry accounts for all 138 training-relevant entries with 129 Tile-covered kernels/compositions, 7 host-only entries, and 2 delegated graph calls; PyTorch remains the fallback for unsupported tensor contracts unless strict mode is enabled. |
-| `optimizer_profile` | `str` | `"adamw"` | `"adamw"` for the legacy single-optimizer path or `"parameter_golf"` for split optimizers + Muon. |
+| `optimizer_profile` | `str` | `"adamw"` | `"adamw"` for the single-optimizer path; when `kernel_backend="tile_cuda"` it uses batched CUDA Tile AdamW steps, Tile gradient clipping, and default cosine decay to zero when no explicit LR schedule is supplied. Use `"parameter_golf"` only for split optimizers + Muon. |
 | `train_batch_tokens` | `int \| None` | `None` | Token budget per optimizer step. Enables gradient accumulation by token count instead of raw batch count. |
 | `beta1`, `beta2`, `adam_eps` | floats | `0.9`, `0.95`, `1e-8` | Adam-family optimizer hyperparameters. |
 | `embed_lr`, `head_lr`, `tied_embed_lr`, `matrix_lr`, `scalar_lr` | floats / `None` | `None` | Optional split learning rates for the parameter-golf profile. |
 | `muon_momentum`, `muon_backend_steps`, `muon_momentum_warmup_start`, `muon_momentum_warmup_steps` | float/int | `0.95`, `5`, `0.85`, `500` | Muon optimizer controls for matrix-shaped parameters. |
-| `warmup_steps`, `warmdown_fraction`, `lr_decay_iters`, `min_lr`, `max_wallclock_seconds` | int/float | `0`, `0.75`, `None`, `None`, `0.0` | Schedule controls for warmup priming, fractional tail warmdown, explicit cosine LR decay, LR floor, and wallclock cutoffs. `warmdown_fraction` controls the final share of optimizer steps used for linear warmdown. When `lr_decay_iters` is set, cosine decay overrides `warmdown_fraction`; omitting `min_lr` while cosine decay is enabled uses `learning_rate / 10`. `max_wallclock_seconds` only stops training early; it does not change the LR schedule. |
+| `warmup_steps`, `warmdown_fraction`, `lr_decay_iters`, `min_lr`, `max_wallclock_seconds` | int/float | `0`, `0.75`, `None`, `None`, `0.0` | Schedule controls for warmup priming, fractional tail warmdown, explicit cosine LR decay, LR floor, and wallclock cutoffs. `warmdown_fraction` controls the final share of optimizer steps used for linear warmdown. When `lr_decay_iters` is set, cosine decay overrides `warmdown_fraction`; omitting `min_lr` while cosine decay is enabled uses `learning_rate / 10`. On Tile CUDA `adamw` runs, missing `lr_decay_iters` defaults to the resolved training step count and missing `min_lr` defaults to `0.0`. `max_wallclock_seconds` only stops training early; it does not change the LR schedule. |
 | `grad_clip_norm` | `float` | `0.0` | Global grad clipping threshold. |
 
 `TorchTrainer` automatically adjusts `vocab_size` when the training data's token range exceeds the graph's configured vocabulary, ensuring the embedding and output layers are compatible.

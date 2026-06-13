@@ -4,6 +4,7 @@ import pytest
 
 from neuralfn import TorchTrainConfig, TorchTrainer, build_gpt_root_graph
 from neuralfn.config import build_gpt2_spec
+from neuralfn.torch_backend import CompiledTorchGraph
 
 
 def _make_gpt_graph():
@@ -139,8 +140,68 @@ def test_cosine_lr_decay_reaches_min_lr_and_stays_there() -> None:
     assert learning_rates[1] < learning_rates[0]
     assert learning_rates[2] < learning_rates[1]
     assert learning_rates[3] < learning_rates[2]
+    assert graph.torch_config["resolved_lr_decay_iters"] == 4
+    assert graph.torch_config["resolved_min_lr"] == pytest.approx(1e-4)
     assert learning_rates[4] == pytest.approx(1e-4)
     assert learning_rates[5] == pytest.approx(1e-4)
+
+
+def test_tile_adamw_profile_defaults_to_cosine_decay_to_zero() -> None:
+    graph = _make_gpt_graph()
+    train_inputs, train_targets = _toy_text_dataset()
+    learning_rates: list[float] = []
+    trainer = TorchTrainer(
+        graph,
+        TorchTrainConfig(
+            epochs=1,
+            batch_size=1,
+            learning_rate=6e-4,
+            weight_decay=0.1,
+            max_steps=4,
+            optimizer_profile="adamw",
+            kernel_backend="tile_cuda",
+            lr_decay_iters=None,
+            min_lr=None,
+            warmdown_fraction=0.0,
+            device="cpu",
+        ),
+    )
+
+    losses = trainer.train(
+        train_inputs,
+        train_targets,
+        on_step=lambda info: learning_rates.append(float(info["learning_rates"][0])),
+    )
+
+    assert len(losses) == 1
+    assert len(learning_rates) == 4
+    assert learning_rates[0] == pytest.approx(6e-4)
+    assert learning_rates[1] < learning_rates[0]
+    assert learning_rates[2] < learning_rates[1]
+    assert learning_rates[3] < learning_rates[2]
+    assert graph.torch_config["resolved_lr_decay_iters"] == 4
+    assert graph.torch_config["resolved_min_lr"] == pytest.approx(0.0)
+
+
+def test_adamw_profile_uses_tile_optimizer_wrapper_when_tile_backend_is_selected() -> None:
+    graph = _make_gpt_graph()
+    compiled = CompiledTorchGraph(graph)
+
+    optimizers = TorchTrainer._build_optimizers(
+        compiled,
+        TorchTrainConfig(
+            optimizer_profile="adamw",
+            learning_rate=1e-3,
+            kernel_backend="tile_cuda",
+            tile_cuda_strict=False,
+        ),
+    )
+
+    assert len(optimizers) == 1
+    optimizer = optimizers[0]
+    assert optimizer.__class__.__name__ == "TileAdamW"
+    assert optimizer.param_groups[0]["base_lr"] == pytest.approx(1e-3)
+    assert optimizer.tile_cuda_config.normalized_backend() == "tile_cuda"
 
 
 def test_fractional_warmdown_still_applies_when_cosine_decay_is_unset() -> None:

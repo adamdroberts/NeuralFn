@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import json
 import os
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -20,6 +22,7 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from neuralfn.torch_backend import resolve_torch_train_drop_last
+from server import dataset_manager as dm
 
 
 SCRIPT_CASES = [
@@ -127,6 +130,43 @@ class TrainDropLastTest(unittest.TestCase):
         self.assertTrue(derived["respect_epoch_boundaries"])
         self.assertTrue(derived["has_short_epoch_tail_step"])
         self.assertEqual(derived["epoch_tail_grad_accum_steps"], 1)
+
+    def test_text_schedule_uses_token_metadata_without_loading_dataset(self) -> None:
+        module = self.load_module("train_jepa_semantic")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            ds_dir = root / "tiny_gpt2"
+            ds_dir.mkdir()
+            (ds_dir / "data.txt").write_text("not tokenized by this test", encoding="utf-8")
+            (ds_dir / "meta.json").write_text(
+                json.dumps(
+                    {
+                        "source": "local",
+                        "num_tokens": 129,
+                        "tokenizer_encoding": "gpt2",
+                        "tokenizer_vocab_size": dm.raw_text_encoding_vocab_size("gpt2"),
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            def fail_load_dataset(*_args, **_kwargs):
+                raise AssertionError("estimate_text_schedule should not tokenize/load the dataset")
+
+            with patch.object(dm, "DATASETS_DIR", root):
+                with patch.object(module, "load_dataset_tensors", fail_load_dataset):
+                    derived = module.estimate_text_schedule(
+                        "tiny_gpt2",
+                        seq_len=16,
+                        batch_size=4,
+                        train_batch_tokens=64,
+                        encoding_name="gpt2",
+                    )
+
+        self.assertEqual(derived["source_train_rows"], 8)
+        self.assertEqual(derived["train_rows"], 8)
+        self.assertEqual(derived["loader_batches"], 2)
+        self.assertEqual(derived["steps_per_epoch"], 2)
 
     def test_semantic_schedule_keeps_partial_batch_out_of_megakernel_epochs(self) -> None:
         module = self.load_module("train_jepa_semantic")

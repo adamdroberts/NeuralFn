@@ -7,6 +7,7 @@ import torch
 import torch.nn.functional as F
 
 from .config import TileCudaConfig
+from .dtypes import NVFP4Tensor, dequantize_nvfp4_reference
 from .runtime import load_tile_cuda_extension
 
 
@@ -167,32 +168,177 @@ def require_tile_cuda_kernel(name: str) -> Callable[..., torch.Tensor]:
     return _missing
 
 
-def _can_use_tile_unary(x: torch.Tensor) -> bool:
-    return x.is_cuda and x.dtype == torch.float32 and x.is_contiguous()
+TILE_FLOAT_DTYPES = frozenset((torch.float32, torch.float16))
+TILE_FP8_DTYPES = frozenset((torch.float8_e4m3fn, torch.float8_e5m2))
+TILE_ELEMENTWISE_INPUT_DTYPES = frozenset((*TILE_FLOAT_DTYPES, *TILE_FP8_DTYPES))
+TILE_LINEAR_INPUT_DTYPES = frozenset((*TILE_FLOAT_DTYPES, *TILE_FP8_DTYPES))
 
 
-def _can_use_tile_binary(lhs: torch.Tensor, rhs: torch.Tensor) -> bool:
+def _dtype_name(dtype: torch.dtype) -> str:
+    return str(dtype).replace("torch.", "")
+
+
+def _supported_dtype_names(allow_fp16: bool = False, allow_fp8: bool = False) -> str:
+    dtypes = [torch.float32]
+    if allow_fp16:
+        dtypes.append(torch.float16)
+    if allow_fp8:
+        dtypes.extend((torch.float8_e4m3fn, torch.float8_e5m2))
+    return ", ".join(_dtype_name(dtype) for dtype in dtypes)
+
+
+def _tensor_contract_summary(name: str, tensor: torch.Tensor) -> str:
+    return (
+        f"{name}: device={tensor.device.type}, dtype={_dtype_name(tensor.dtype)}, "
+        f"contiguous={tensor.is_contiguous()}, shape={tuple(tensor.shape)}"
+    )
+
+
+def _linear_contract_summary(name: str, x: torch.Tensor | NVFP4Tensor) -> str:
+    if isinstance(x, NVFP4Tensor):
+        return (
+            f"{name}: device={x.packed.device.type}, dtype=nvfp4, "
+            f"contiguous={x.packed.is_contiguous()}, shape={x.shape}, block_size={x.block_size}"
+        )
+    return _tensor_contract_summary(name, x)
+
+
+def _strict_unary_contract_error(
+    kind: str,
+    name: str,
+    x: torch.Tensor,
+    *,
+    allow_fp16: bool = False,
+    allow_fp8: bool = False,
+) -> RuntimeError:
+    supported = _supported_dtype_names(allow_fp16=allow_fp16, allow_fp8=allow_fp8)
+    return RuntimeError(
+        f"CUDA Tile {kind} '{name}' requires contiguous CUDA input with supported dtypes {{{supported}}}; "
+        f"got {_tensor_contract_summary('x', x)}"
+    )
+
+
+def _strict_binary_contract_error(
+    kind: str,
+    name: str,
+    lhs: torch.Tensor,
+    rhs: torch.Tensor,
+    *,
+    allow_fp16: bool = False,
+    allow_fp8: bool = False,
+) -> RuntimeError:
+    supported = _supported_dtype_names(allow_fp16=allow_fp16, allow_fp8=allow_fp8)
+    return RuntimeError(
+        f"CUDA Tile {kind} '{name}' requires same-shape contiguous CUDA inputs with matching supported dtypes "
+        f"{{{supported}}}; got {_tensor_contract_summary('lhs', lhs)}; {_tensor_contract_summary('rhs', rhs)}"
+    )
+
+
+def _strict_ternary_contract_error(
+    kind: str,
+    name: str,
+    a: torch.Tensor,
+    b: torch.Tensor,
+    c: torch.Tensor,
+    *,
+    allow_fp16: bool = False,
+    allow_fp8: bool = False,
+) -> RuntimeError:
+    supported = _supported_dtype_names(allow_fp16=allow_fp16, allow_fp8=allow_fp8)
+    return RuntimeError(
+        f"CUDA Tile {kind} '{name}' requires same-shape contiguous CUDA inputs with matching supported dtypes "
+        f"{{{supported}}}; got {_tensor_contract_summary('a', a)}; "
+        f"{_tensor_contract_summary('b', b)}; {_tensor_contract_summary('c', c)}"
+    )
+
+
+def _tile_kernel_input(x: torch.Tensor) -> torch.Tensor:
+    return x if x.dtype == torch.float32 else x.to(dtype=torch.float32)
+
+
+def _linear_input_tensor(x: torch.Tensor | NVFP4Tensor) -> torch.Tensor:
+    if isinstance(x, NVFP4Tensor):
+        return dequantize_nvfp4_reference(x)
+    return x
+
+
+def _tile_kernel_output(out: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
+    return out if out.dtype == dtype else out.to(dtype=dtype)
+
+
+def _tile_linear_output(out: torch.Tensor, input_dtype: torch.dtype) -> torch.Tensor:
+    if input_dtype in TILE_FP8_DTYPES:
+        return out
+    return _tile_kernel_output(out, input_dtype)
+
+
+def _tile_attention_output(out: torch.Tensor, input_dtype: torch.dtype) -> torch.Tensor:
+    if input_dtype in TILE_FP8_DTYPES:
+        return out
+    return _tile_kernel_output(out, input_dtype)
+
+
+def _can_use_tile_unary(x: torch.Tensor, *, allow_fp16: bool = False, allow_fp8: bool = False) -> bool:
+    allowed = (
+        TILE_ELEMENTWISE_INPUT_DTYPES
+        if allow_fp16 and allow_fp8
+        else TILE_FLOAT_DTYPES
+        if allow_fp16
+        else frozenset((torch.float32,))
+    )
+    return x.is_cuda and x.dtype in allowed and x.is_contiguous()
+
+
+def _can_use_tile_binary(lhs: torch.Tensor, rhs: torch.Tensor, *, allow_fp16: bool = False, allow_fp8: bool = False) -> bool:
+    allowed = (
+        TILE_ELEMENTWISE_INPUT_DTYPES
+        if allow_fp16 and allow_fp8
+        else TILE_FLOAT_DTYPES
+        if allow_fp16
+        else frozenset((torch.float32,))
+    )
     return (
         lhs.is_cuda
         and rhs.is_cuda
-        and lhs.dtype == torch.float32
-        and rhs.dtype == torch.float32
+        and lhs.dtype in allowed
+        and rhs.dtype == lhs.dtype
         and lhs.is_contiguous()
         and rhs.is_contiguous()
         and lhs.shape == rhs.shape
     )
 
 
-def _can_use_tile_ternary(a: torch.Tensor, b: torch.Tensor, c: torch.Tensor) -> bool:
-    return _can_use_tile_binary(a, b) and c.is_cuda and c.dtype == torch.float32 and c.is_contiguous() and c.shape == a.shape
+def _can_use_tile_ternary(
+    a: torch.Tensor,
+    b: torch.Tensor,
+    c: torch.Tensor,
+    *,
+    allow_fp16: bool = False,
+    allow_fp8: bool = False,
+) -> bool:
+    return (
+        _can_use_tile_binary(a, b, allow_fp16=allow_fp16, allow_fp8=allow_fp8)
+        and c.is_cuda
+        and c.dtype == a.dtype
+        and c.is_contiguous()
+        and c.shape == a.shape
+    )
 
 
 def _can_use_tile_identity(x: torch.Tensor) -> bool:
-    return x.is_cuda and x.dtype == torch.float32 and x.is_contiguous()
+    return x.is_cuda and x.dtype in TILE_ELEMENTWISE_INPUT_DTYPES and x.is_contiguous()
 
 
-def _can_use_tile_vector_binary(lhs: torch.Tensor, rhs: torch.Tensor, scale0: torch.Tensor, scale1: torch.Tensor | None = None) -> bool:
-    if not _can_use_tile_binary(lhs, rhs):
+def _can_use_tile_vector_binary(
+    lhs: torch.Tensor,
+    rhs: torch.Tensor,
+    scale0: torch.Tensor,
+    scale1: torch.Tensor | None = None,
+    *,
+    allow_fp16: bool = False,
+    allow_fp8: bool = False,
+) -> bool:
+    if not _can_use_tile_binary(lhs, rhs, allow_fp16=allow_fp16, allow_fp8=allow_fp8):
         return False
     if lhs.ndim == 0:
         return False
@@ -230,49 +376,49 @@ def _float_outputs(value: torch.Tensor | tuple[torch.Tensor, ...]) -> tuple[torc
 
 
 def _fallback_unary(name: str, x: torch.Tensor) -> torch.Tensor:
-    x_float = x if torch.is_floating_point(x) else x.float()
+    x_float = _tile_kernel_input(x) if torch.is_floating_point(x) else x.float()
     if name == "identity":
         return x
     if name == "negate":
-        return -x
+        return _tile_kernel_output(-x_float, x.dtype)
     if name == "relu":
-        return torch.relu(x)
+        return _tile_kernel_output(torch.relu(x_float), x.dtype)
     if name == "sigmoid":
-        return torch.sigmoid(x_float)
+        return _tile_kernel_output(torch.sigmoid(x_float), x.dtype)
     if name == "tanh_neuron":
-        return torch.tanh(x_float)
+        return _tile_kernel_output(torch.tanh(x_float), x.dtype)
     if name == "leaky_relu":
-        return F.leaky_relu(x_float, negative_slope=0.01)
+        return _tile_kernel_output(F.leaky_relu(x_float, negative_slope=0.01), x.dtype)
     if name == "silu":
-        return F.silu(x_float)
+        return _tile_kernel_output(F.silu(x_float), x.dtype)
     if name == "softplus":
-        return F.softplus(x_float)
+        return _tile_kernel_output(F.softplus(x_float), x.dtype)
     if name == "hard_tanh":
-        return F.hardtanh(x_float)
+        return _tile_kernel_output(F.hardtanh(x_float), x.dtype)
     if name == "gaussian":
-        return torch.exp(-(x_float * x_float))
+        return _tile_kernel_output(torch.exp(-(x_float * x_float)), x.dtype)
     if name == "log":
-        return torch.log(torch.clamp_min(x_float, 1e-7))
+        return _tile_kernel_output(torch.log(torch.clamp_min(x_float, 1e-7)), x.dtype)
     if name == "prelu":
-        return torch.where(x_float >= 0, x_float, x_float * 0.25)
+        return _tile_kernel_output(torch.where(x_float >= 0, x_float, x_float * 0.25), x.dtype)
     if name == "relu6":
-        return torch.clamp(x_float, min=0.0, max=6.0)
+        return _tile_kernel_output(torch.clamp(x_float, min=0.0, max=6.0), x.dtype)
     if name == "elu":
-        return F.elu(x_float)
+        return _tile_kernel_output(F.elu(x_float), x.dtype)
     if name == "selu":
-        return F.selu(x_float)
+        return _tile_kernel_output(F.selu(x_float), x.dtype)
     if name == "mish":
-        return F.mish(x_float)
+        return _tile_kernel_output(F.mish(x_float), x.dtype)
     if name == "softsign":
-        return F.softsign(x_float)
+        return _tile_kernel_output(F.softsign(x_float), x.dtype)
     if name == "hard_sigmoid":
-        return F.hardsigmoid(x_float)
+        return _tile_kernel_output(F.hardsigmoid(x_float), x.dtype)
     if name == "hard_swish":
-        return F.hardswish(x_float)
+        return _tile_kernel_output(F.hardswish(x_float), x.dtype)
     if name == "threshold":
-        return x_float * 0.0 + (x_float >= 0.0).to(dtype=x_float.dtype)
+        return _tile_kernel_output(x_float * 0.0 + (x_float >= 0.0).to(dtype=x_float.dtype), x.dtype)
     if name == "gelu":
-        return F.gelu(x_float)
+        return _tile_kernel_output(F.gelu(x_float), x.dtype)
     raise KeyError(f"Unsupported CUDA Tile unary function: {name}")
 
 
@@ -286,11 +432,14 @@ class _TileUnaryFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError(f"CUDA Tile extension is unavailable for function '{op_name}'")
             return _fallback_unary(op_name, x)
-        return ext.tile_unary(x, int(op_code))
+        out = ext.tile_unary(_tile_kernel_input(x), int(op_code))
+        return _tile_kernel_output(out, x.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
-        (x,) = ctx.saved_tensors
+        (saved_x,) = ctx.saved_tensors
+        x = _tile_kernel_input(saved_x)
+        grad_output = _tile_kernel_input(grad_output)
         op_name = ctx.op_name
         if op_name == "identity":
             grad = grad_output
@@ -351,7 +500,7 @@ class _TileUnaryFunction(torch.autograd.Function):
             )
         else:
             raise KeyError(f"Unsupported CUDA Tile unary backward function: {op_name}")
-        return grad, None, None, None
+        return _tile_kernel_output(grad, saved_x.dtype), None, None, None
 
 
 class _TileBinaryFunction(torch.autograd.Function):
@@ -364,16 +513,26 @@ class _TileBinaryFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError(f"CUDA Tile extension is unavailable for function '{op_name}'")
             return lhs + rhs if op_name == "add" else lhs * rhs
-        return ext.tile_binary(lhs, rhs, int(op_code))
+        out = ext.tile_binary(_tile_kernel_input(lhs), _tile_kernel_input(rhs), int(op_code))
+        return _tile_kernel_output(out, lhs.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
-        lhs, rhs = ctx.saved_tensors
+        saved_lhs, saved_rhs = ctx.saved_tensors
+        lhs = _tile_kernel_input(saved_lhs)
+        rhs = _tile_kernel_input(saved_rhs)
+        grad_output = _tile_kernel_input(grad_output)
         op_name = ctx.op_name
         if op_name == "add":
-            return grad_output, grad_output, None, None, None
+            return _tile_kernel_output(grad_output, saved_lhs.dtype), _tile_kernel_output(grad_output, saved_rhs.dtype), None, None, None
         if op_name == "multiply":
-            return grad_output * rhs, grad_output * lhs, None, None, None
+            return (
+                _tile_kernel_output(grad_output * rhs, saved_lhs.dtype),
+                _tile_kernel_output(grad_output * lhs, saved_rhs.dtype),
+                None,
+                None,
+                None,
+            )
         raise KeyError(f"Unsupported CUDA Tile binary backward function: {op_name}")
 
 
@@ -387,56 +546,72 @@ class _TileBinaryPairFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError(f"CUDA Tile extension is unavailable for function '{op_name}'")
             return _fallback_binary_pair(op_name, lhs, rhs)
-        out0, out1 = ext.tile_binary_pair(lhs, rhs, int(op_code))
-        return out0, out1
+        out0, out1 = ext.tile_binary_pair(_tile_kernel_input(lhs), _tile_kernel_input(rhs), int(op_code))
+        return _tile_kernel_output(out0, lhs.dtype), _tile_kernel_output(out1, lhs.dtype)
 
     @staticmethod
     def backward(ctx, grad_output0: torch.Tensor, grad_output1: torch.Tensor):  # type: ignore[override]
-        lhs, rhs = ctx.saved_tensors
+        saved_lhs, saved_rhs = ctx.saved_tensors
+        lhs = _tile_kernel_input(saved_lhs)
+        rhs = _tile_kernel_input(saved_rhs)
+        grad_output0 = _tile_kernel_input(grad_output0)
+        grad_output1 = _tile_kernel_input(grad_output1)
         op_name = ctx.op_name
         stacked = torch.stack((lhs, rhs), dim=0)
         probs = torch.softmax(stacked, dim=0)
         p0, p1 = probs[0], probs[1]
         if op_name == "softmax_2":
             dot = grad_output0 * p0 + grad_output1 * p1
-            return p0 * (grad_output0 - dot), p1 * (grad_output1 - dot), None, None, None
+            return (
+                _tile_kernel_output(p0 * (grad_output0 - dot), saved_lhs.dtype),
+                _tile_kernel_output(p1 * (grad_output1 - dot), saved_rhs.dtype),
+                None,
+                None,
+                None,
+            )
         if op_name == "logsoftmax_2":
             grad_sum = grad_output0 + grad_output1
-            return grad_output0 - p0 * grad_sum, grad_output1 - p1 * grad_sum, None, None, None
+            return (
+                _tile_kernel_output(grad_output0 - p0 * grad_sum, saved_lhs.dtype),
+                _tile_kernel_output(grad_output1 - p1 * grad_sum, saved_rhs.dtype),
+                None,
+                None,
+                None,
+            )
         raise KeyError(f"Unsupported CUDA Tile binary-pair backward function: {op_name}")
 
 
 def tile_unary(name: str, x: torch.Tensor, config: TileCudaConfig) -> torch.Tensor:
-    if not _can_use_tile_unary(x):
+    if not _can_use_tile_unary(x, allow_fp16=True, allow_fp8=True):
         if config.strict and x.is_cuda:
-            raise RuntimeError(f"CUDA Tile function '{name}' requires contiguous CUDA float32 input")
+            raise _strict_unary_contract_error("function", name, x, allow_fp16=True, allow_fp8=True)
         return _fallback_unary(name, x)
     return _TileUnaryFunction.apply(x, name, UNARY_OPS[name], config)
 
 
 def tile_binary(name: str, lhs: torch.Tensor, rhs: torch.Tensor, config: TileCudaConfig) -> torch.Tensor:
-    if not _can_use_tile_binary(lhs, rhs):
+    if not _can_use_tile_binary(lhs, rhs, allow_fp16=True, allow_fp8=True):
         if config.strict and (lhs.is_cuda or rhs.is_cuda):
-            raise RuntimeError(f"CUDA Tile function '{name}' requires same-shape contiguous CUDA float32 inputs")
+            raise _strict_binary_contract_error("function", name, lhs, rhs, allow_fp16=True, allow_fp8=True)
         return lhs + rhs if name == "add" else lhs * rhs
     return _TileBinaryFunction.apply(lhs, rhs, name, BINARY_OPS[name], config)
 
 
 def _fallback_binary_pair(name: str, lhs: torch.Tensor, rhs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    stacked = torch.stack((lhs, rhs), dim=0)
+    stacked = torch.stack((_tile_kernel_input(lhs), _tile_kernel_input(rhs)), dim=0)
     if name == "softmax_2":
         out = torch.softmax(stacked, dim=0)
     elif name == "logsoftmax_2":
         out = torch.log_softmax(stacked, dim=0)
     else:
         raise KeyError(f"Unsupported CUDA Tile binary-pair function: {name}")
-    return out[0], out[1]
+    return _tile_kernel_output(out[0], lhs.dtype), _tile_kernel_output(out[1], rhs.dtype)
 
 
 def tile_binary_pair(name: str, lhs: torch.Tensor, rhs: torch.Tensor, config: TileCudaConfig) -> tuple[torch.Tensor, torch.Tensor]:
-    if not _can_use_tile_binary(lhs, rhs):
+    if not _can_use_tile_binary(lhs, rhs, allow_fp16=True, allow_fp8=True):
         if config.strict and (lhs.is_cuda or rhs.is_cuda):
-            raise RuntimeError(f"CUDA Tile function '{name}' requires same-shape contiguous CUDA float32 inputs")
+            raise _strict_binary_contract_error("function", name, lhs, rhs, allow_fp16=True, allow_fp8=True)
         return _fallback_binary_pair(name, lhs, rhs)
     return _TileBinaryPairFunction.apply(lhs, rhs, name, BINARY_PAIR_OPS[name], config)
 
@@ -452,21 +627,24 @@ class _TileScalarUnaryModuleFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError(f"CUDA Tile extension is unavailable for module '{op_name}'")
             return tile_scalar_unary_module_reference(op_name, x, float(value))
-        return ext.tile_scalar_unary(x, float(value), int(op_code))
+        out = ext.tile_scalar_unary(_tile_kernel_input(x), float(value), int(op_code))
+        return _tile_kernel_output(out, x.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         (x,) = ctx.saved_tensors
         op_name = ctx.op_name
         value = ctx.value
+        grad = grad_output if grad_output.dtype == torch.float32 else grad_output.to(dtype=torch.float32)
+        x_float = _tile_kernel_input(x)
         if op_name == "loss_scale":
-            grad = grad_output * value
+            grad_x = grad * value
         elif op_name == "logit_softcap":
-            t = torch.tanh(x / value)
-            grad = grad_output * (1.0 - t * t)
+            t = torch.tanh(x_float / value)
+            grad_x = grad * (1.0 - t * t)
         else:
             raise KeyError(f"Unsupported CUDA Tile scalar-unary module backward: {op_name}")
-        return grad, None, None, None, None
+        return _tile_kernel_output(grad_x, x.dtype), None, None, None, None
 
 
 class _TileScalarBinaryModuleFunction(torch.autograd.Function):
@@ -479,12 +657,14 @@ class _TileScalarBinaryModuleFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError(f"CUDA Tile extension is unavailable for module '{op_name}'")
             return tile_scalar_binary_module_reference(op_name, lhs, rhs, float(value))
-        return ext.tile_scalar_binary(lhs, rhs, float(value), int(op_code))
+        out = ext.tile_scalar_binary(_tile_kernel_input(lhs), _tile_kernel_input(rhs), float(value), int(op_code))
+        return _tile_kernel_output(out, lhs.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         op_name = ctx.op_name
         value = ctx.value
+        grad_output = _tile_kernel_input(grad_output)
         if op_name == "aux_loss_add":
             return grad_output, grad_output * value, None, None, None, None
         raise KeyError(f"Unsupported CUDA Tile scalar-binary module backward: {op_name}")
@@ -500,12 +680,20 @@ class _TileScalarTernaryModuleFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError(f"CUDA Tile extension is unavailable for module '{op_name}'")
             return tile_scalar_ternary_module_reference(op_name, a, b, c, float(value))
-        return ext.tile_scalar_ternary(a, b, c, float(value), int(op_code))
+        out = ext.tile_scalar_ternary(
+            _tile_kernel_input(a),
+            _tile_kernel_input(b),
+            _tile_kernel_input(c),
+            float(value),
+            int(op_code),
+        )
+        return _tile_kernel_output(out, a.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         op_name = ctx.op_name
         value = ctx.value
+        grad_output = _tile_kernel_input(grad_output)
         if op_name == "kl_penalty":
             return -value * grad_output, value * grad_output, grad_output, None, None, None, None
         raise KeyError(f"Unsupported CUDA Tile scalar-ternary module backward: {op_name}")
@@ -524,31 +712,44 @@ class _TileVectorBinaryModuleFunction(torch.autograd.Function):
         config: TileCudaConfig,
     ):  # type: ignore[override]
         ctx.op_name = op_name
-        ctx.save_for_backward(lhs, rhs, scale0, scale1 if scale1 is not None else torch.empty(0, device=lhs.device, dtype=lhs.dtype))
+        empty_scale = torch.empty(0, device=lhs.device, dtype=scale0.dtype)
+        ctx.save_for_backward(lhs, rhs, scale0, scale1 if scale1 is not None else empty_scale)
         ext = load_tile_cuda_extension(config)
         if ext is None:
             if config.strict:
                 raise RuntimeError(f"CUDA Tile extension is unavailable for module '{op_name}'")
             return tile_vector_binary_module_reference(op_name, lhs, rhs, scale0, scale1)
-        scale1_arg = scale1 if scale1 is not None else torch.empty(0, device=lhs.device, dtype=lhs.dtype)
-        return ext.tile_vector_binary(lhs, rhs, scale0, scale1_arg, int(op_code))
+        scale1_arg = scale1 if scale1 is not None else empty_scale
+        out = ext.tile_vector_binary(_tile_kernel_input(lhs), _tile_kernel_input(rhs), scale0, scale1_arg, int(op_code))
+        return _tile_kernel_output(out, lhs.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         lhs, rhs, scale0, scale1 = ctx.saved_tensors
         op_name = ctx.op_name
         view_shape = (1,) * (lhs.ndim - 1) + (-1,)
+        grad = _tile_kernel_input(grad_output)
+        lhs_float = _tile_kernel_input(lhs)
+        rhs_float = _tile_kernel_input(rhs)
         if op_name == "residual_add":
             s = scale0.reshape(view_shape)
-            return grad_output, grad_output * s, _sum_to_last_dim(grad_output * rhs), None, None, None, None
+            return (
+                _tile_kernel_output(grad, lhs.dtype),
+                _tile_kernel_output(grad * s, rhs.dtype),
+                _sum_to_last_dim(grad * rhs_float),
+                None,
+                None,
+                None,
+                None,
+            )
         if op_name == "residual_mix":
             p = scale0.reshape(view_shape)
             s = scale1.reshape(view_shape)
             return (
-                grad_output * p,
-                grad_output * s,
-                _sum_to_last_dim(grad_output * lhs),
-                _sum_to_last_dim(grad_output * rhs),
+                _tile_kernel_output(grad * p, lhs.dtype),
+                _tile_kernel_output(grad * s, rhs.dtype),
+                _sum_to_last_dim(grad * lhs_float),
+                _sum_to_last_dim(grad * rhs_float),
                 None,
                 None,
                 None,
@@ -558,9 +759,17 @@ class _TileVectorBinaryModuleFunction(torch.autograd.Function):
             alpha = torch.sqrt((1.0 - beta * beta).clamp(min=0.0))
             beta_view = beta.reshape(view_shape)
             alpha_view = alpha.reshape(view_shape)
-            grad_beta = _sum_to_last_dim(grad_output * (rhs - (beta_view / alpha_view.clamp_min(1e-12)) * lhs))
+            grad_beta = _sum_to_last_dim(grad * (rhs_float - (beta_view / alpha_view.clamp_min(1e-12)) * lhs_float))
             grad_logit = grad_beta * beta * (1.0 - beta)
-            return grad_output * alpha_view, grad_output * beta_view, grad_logit, None, None, None, None
+            return (
+                _tile_kernel_output(grad * alpha_view, lhs.dtype),
+                _tile_kernel_output(grad * beta_view, rhs.dtype),
+                grad_logit,
+                None,
+                None,
+                None,
+                None,
+            )
         raise KeyError(f"Unsupported CUDA Tile vector-binary module backward: {op_name}")
 
 
@@ -573,13 +782,16 @@ class _TileQKGainFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'qk_gain'")
             return tile_qk_gain_reference(q, gain)
-        return ext.tile_qk_gain(q, gain)
+        out = ext.tile_qk_gain(_tile_kernel_input(q), gain)
+        return _tile_kernel_output(out, q.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         q, gain = ctx.saved_tensors
         gain_view = gain.reshape((1, -1) + (1,) * (q.ndim - 2))
-        return grad_output * gain_view, _sum_to_head_dim(grad_output * q), None
+        grad = _tile_kernel_input(grad_output)
+        q_float = _tile_kernel_input(q)
+        return _tile_kernel_output(grad * gain_view, q.dtype), _sum_to_head_dim(grad * q_float), None
 
 
 class _TileDyTFunction(torch.autograd.Function):
@@ -591,39 +803,48 @@ class _TileDyTFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'dyt'")
             return tile_dyt_reference(x, alpha, weight, bias)
-        return ext.tile_dyt(x, weight, bias, alpha)
+        out = ext.tile_dyt(_tile_kernel_input(x), weight, bias, alpha)
+        return _tile_kernel_output(out, x.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         x, alpha, weight = ctx.saved_tensors
         view_shape = (1,) * (x.ndim - 1) + (-1,)
-        t = torch.tanh(alpha * x)
+        grad = _tile_kernel_input(grad_output)
+        x_float = _tile_kernel_input(x)
+        t = torch.tanh(alpha * x_float)
         dt = 1.0 - t * t
         weight_view = weight.reshape(view_shape)
-        grad_x = grad_output * weight_view * alpha * dt
-        grad_alpha = (grad_output * weight_view * x * dt).sum().reshape_as(alpha)
-        grad_weight = _sum_to_last_dim(grad_output * t)
-        grad_bias = _sum_to_last_dim(grad_output)
-        return grad_x, grad_alpha, grad_weight, grad_bias, None
+        grad_x = grad * weight_view * alpha * dt
+        grad_alpha = (grad * weight_view * x_float * dt).sum().reshape_as(alpha)
+        grad_weight = _sum_to_last_dim(grad * t)
+        grad_bias = _sum_to_last_dim(grad)
+        return _tile_kernel_output(grad_x, x.dtype), grad_alpha, grad_weight, grad_bias, None
 
 
 def tile_scalar_unary_module_reference(name: str, x: torch.Tensor, value: float) -> torch.Tensor:
+    x_float = _tile_kernel_input(x) if torch.is_floating_point(x) else x.float()
     if name == "loss_scale":
-        return x * value
+        return _tile_kernel_output(x_float * value, x.dtype)
     if name == "logit_softcap":
-        return value * torch.tanh(x / value)
+        return _tile_kernel_output(value * torch.tanh(x_float / value), x.dtype)
     raise KeyError(f"Unsupported scalar-unary Tile module: {name}")
 
 
 def tile_scalar_binary_module_reference(name: str, lhs: torch.Tensor, rhs: torch.Tensor, value: float) -> torch.Tensor:
+    lhs_float = _tile_kernel_input(lhs)
+    rhs_float = _tile_kernel_input(rhs)
     if name == "aux_loss_add":
-        return lhs + value * rhs
+        return _tile_kernel_output(lhs_float + value * rhs_float, lhs.dtype)
     raise KeyError(f"Unsupported scalar-binary Tile module: {name}")
 
 
 def tile_scalar_ternary_module_reference(name: str, a: torch.Tensor, b: torch.Tensor, c: torch.Tensor, value: float) -> torch.Tensor:
+    a_float = _tile_kernel_input(a)
+    b_float = _tile_kernel_input(b)
+    c_float = _tile_kernel_input(c)
     if name == "kl_penalty":
-        return c - value * (a - b)
+        return _tile_kernel_output(c_float - value * (a_float - b_float), a.dtype)
     raise KeyError(f"Unsupported scalar-ternary Tile module: {name}")
 
 
@@ -635,49 +856,52 @@ def tile_vector_binary_module_reference(
     scale1: torch.Tensor | None = None,
 ) -> torch.Tensor:
     view_shape = (1,) * (lhs.ndim - 1) + (-1,)
+    lhs_float = _tile_kernel_input(lhs)
+    rhs_float = _tile_kernel_input(rhs)
     if name == "residual_add":
-        return lhs + scale0.reshape(view_shape).to(dtype=lhs.dtype) * rhs
+        return _tile_kernel_output(lhs_float + scale0.reshape(view_shape) * rhs_float, lhs.dtype)
     if name == "residual_mix":
         if scale1 is None:
             raise ValueError("residual_mix requires scale1")
-        return scale0.reshape(view_shape).to(dtype=lhs.dtype) * lhs + scale1.reshape(view_shape).to(dtype=lhs.dtype) * rhs
+        return _tile_kernel_output(scale0.reshape(view_shape) * lhs_float + scale1.reshape(view_shape) * rhs_float, lhs.dtype)
     if name == "manifold_hyper_connection":
-        beta = torch.sigmoid(scale0).to(dtype=lhs.dtype)
+        beta = torch.sigmoid(scale0)
         alpha = torch.sqrt((1.0 - beta * beta).clamp(min=0.0))
-        return alpha.reshape(view_shape) * lhs + beta.reshape(view_shape) * rhs
+        return _tile_kernel_output(alpha.reshape(view_shape) * lhs_float + beta.reshape(view_shape) * rhs_float, lhs.dtype)
     raise KeyError(f"Unsupported vector-binary Tile module: {name}")
 
 
 def tile_qk_gain_reference(q: torch.Tensor, gain: torch.Tensor) -> torch.Tensor:
-    return q * gain.reshape((1, -1) + (1,) * (q.ndim - 2)).to(dtype=q.dtype)
+    return _tile_kernel_output(_tile_kernel_input(q) * gain.reshape((1, -1) + (1,) * (q.ndim - 2)), q.dtype)
 
 
 def tile_dyt_reference(x: torch.Tensor, alpha: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor) -> torch.Tensor:
     view_shape = (1,) * (x.ndim - 1) + (-1,)
-    t = torch.tanh(alpha.to(dtype=x.dtype) * x)
-    return weight.reshape(view_shape).to(dtype=x.dtype) * t + bias.reshape(view_shape).to(dtype=x.dtype)
+    x_float = _tile_kernel_input(x)
+    t = torch.tanh(alpha * x_float)
+    return _tile_kernel_output(weight.reshape(view_shape) * t + bias.reshape(view_shape), x.dtype)
 
 
 def tile_scalar_unary_module(name: str, x: torch.Tensor, value: float, config: TileCudaConfig) -> torch.Tensor:
-    if not _can_use_tile_unary(x):
+    if not _can_use_tile_unary(x, allow_fp16=True, allow_fp8=True):
         if config.strict and x.is_cuda:
-            raise RuntimeError(f"CUDA Tile module '{name}' requires contiguous CUDA float32 input")
+            raise _strict_unary_contract_error("module", name, x, allow_fp16=True, allow_fp8=True)
         return tile_scalar_unary_module_reference(name, x, value)
     return _TileScalarUnaryModuleFunction.apply(x, name, SCALAR_UNARY_MODULE_OPS[name], float(value), config)
 
 
 def tile_scalar_binary_module(name: str, lhs: torch.Tensor, rhs: torch.Tensor, value: float, config: TileCudaConfig) -> torch.Tensor:
-    if not _can_use_tile_binary(lhs, rhs):
+    if not _can_use_tile_binary(lhs, rhs, allow_fp16=True, allow_fp8=True):
         if config.strict and (lhs.is_cuda or rhs.is_cuda):
-            raise RuntimeError(f"CUDA Tile module '{name}' requires same-shape contiguous CUDA float32 inputs")
+            raise _strict_binary_contract_error("module", name, lhs, rhs, allow_fp16=True, allow_fp8=True)
         return tile_scalar_binary_module_reference(name, lhs, rhs, value)
     return _TileScalarBinaryModuleFunction.apply(lhs, rhs, name, SCALAR_BINARY_MODULE_OPS[name], float(value), config)
 
 
 def tile_scalar_ternary_module(name: str, a: torch.Tensor, b: torch.Tensor, c: torch.Tensor, value: float, config: TileCudaConfig) -> torch.Tensor:
-    if not _can_use_tile_ternary(a, b, c):
+    if not _can_use_tile_ternary(a, b, c, allow_fp16=True, allow_fp8=True):
         if config.strict and (a.is_cuda or b.is_cuda or c.is_cuda):
-            raise RuntimeError(f"CUDA Tile module '{name}' requires same-shape contiguous CUDA float32 inputs")
+            raise _strict_ternary_contract_error("module", name, a, b, c, allow_fp16=True, allow_fp8=True)
         return tile_scalar_ternary_module_reference(name, a, b, c, value)
     return _TileScalarTernaryModuleFunction.apply(a, b, c, name, SCALAR_TERNARY_MODULE_OPS[name], float(value), config)
 
@@ -690,9 +914,16 @@ def tile_vector_binary_module(
     scale1: torch.Tensor | None,
     config: TileCudaConfig,
 ) -> torch.Tensor:
-    if not _can_use_tile_vector_binary(lhs, rhs, scale0, scale1):
+    if not _can_use_tile_vector_binary(lhs, rhs, scale0, scale1, allow_fp16=True, allow_fp8=True):
         if config.strict and (lhs.is_cuda or rhs.is_cuda or scale0.is_cuda or (scale1 is not None and scale1.is_cuda)):
-            raise RuntimeError(f"CUDA Tile module '{name}' requires contiguous CUDA float32 inputs and a matching 1D scale")
+            scale_summary = _tensor_contract_summary("scale0", scale0)
+            if scale1 is not None:
+                scale_summary = f"{scale_summary}; {_tensor_contract_summary('scale1', scale1)}"
+            raise RuntimeError(
+                f"CUDA Tile module '{name}' requires same-shape contiguous CUDA activations with matching supported dtypes "
+                f"{{{_supported_dtype_names(allow_fp16=True, allow_fp8=True)}}} and float32 contiguous 1D scales matching the last activation dimension; "
+                f"got {_tensor_contract_summary('lhs', lhs)}; {_tensor_contract_summary('rhs', rhs)}; {scale_summary}"
+            )
         return tile_vector_binary_module_reference(name, lhs, rhs, scale0, scale1)
     return _TileVectorBinaryModuleFunction.apply(lhs, rhs, scale0, scale1, name, VECTOR_BINARY_MODULE_OPS[name], config)
 
@@ -701,7 +932,7 @@ def tile_qk_gain_module(q: torch.Tensor, gain: torch.Tensor, config: TileCudaCon
     can_use = (
         q.is_cuda
         and gain.is_cuda
-        and q.dtype == torch.float32
+        and q.dtype in TILE_ELEMENTWISE_INPUT_DTYPES
         and gain.dtype == torch.float32
         and q.is_contiguous()
         and gain.is_contiguous()
@@ -711,7 +942,11 @@ def tile_qk_gain_module(q: torch.Tensor, gain: torch.Tensor, config: TileCudaCon
     )
     if not can_use:
         if config.strict and (q.is_cuda or gain.is_cuda):
-            raise RuntimeError("CUDA Tile module 'qk_gain' requires contiguous CUDA float32 q shaped [B,H,...] and gain shaped [H]")
+            raise RuntimeError(
+                f"CUDA Tile module 'qk_gain' requires contiguous CUDA q shaped [B,H,...] with supported dtypes "
+                f"{{{_supported_dtype_names(allow_fp16=True, allow_fp8=True)}}} and float32 contiguous gain shaped [H]; "
+                f"got {_tensor_contract_summary('q', q)}; {_tensor_contract_summary('gain', gain)}"
+            )
         return tile_qk_gain_reference(q, gain)
     return _TileQKGainFunction.apply(q, gain, config)
 
@@ -722,7 +957,7 @@ def tile_dyt_module(x: torch.Tensor, alpha: torch.Tensor, weight: torch.Tensor, 
         and alpha.is_cuda
         and weight.is_cuda
         and bias.is_cuda
-        and x.dtype == torch.float32
+        and x.dtype in TILE_ELEMENTWISE_INPUT_DTYPES
         and alpha.dtype == torch.float32
         and weight.dtype == torch.float32
         and bias.dtype == torch.float32
@@ -737,7 +972,12 @@ def tile_dyt_module(x: torch.Tensor, alpha: torch.Tensor, weight: torch.Tensor, 
     )
     if not can_use:
         if config.strict and (x.is_cuda or alpha.is_cuda or weight.is_cuda or bias.is_cuda):
-            raise RuntimeError("CUDA Tile module 'dyt' requires contiguous CUDA float32 inputs and last-dim parameters")
+            raise RuntimeError(
+                f"CUDA Tile module 'dyt' requires contiguous CUDA activations with supported dtypes "
+                f"{{{_supported_dtype_names(allow_fp16=True, allow_fp8=True)}}}, scalar float32 alpha, and float32 contiguous last-dim weight/bias; "
+                f"got {_tensor_contract_summary('x', x)}; {_tensor_contract_summary('alpha', alpha)}; "
+                f"{_tensor_contract_summary('weight', weight)}; {_tensor_contract_summary('bias', bias)}"
+            )
         return tile_dyt_reference(x, alpha, weight, bias)
     return _TileDyTFunction.apply(x, alpha, weight, bias, config)
 
@@ -1009,8 +1249,10 @@ def tile_group_norm_reference(
     return F.group_norm(x.transpose(1, 2), int(num_groups), weight, bias, eps=float(eps)).transpose(1, 2)
 
 
-def tile_linear_reference(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor | None = None) -> torch.Tensor:
-    return F.linear(x, weight, bias)
+def tile_linear_reference(x: torch.Tensor | NVFP4Tensor, weight: torch.Tensor, bias: torch.Tensor | None = None) -> torch.Tensor:
+    x_tensor = _linear_input_tensor(x)
+    work_x = x_tensor.to(dtype=torch.float32) if x_tensor.dtype in TILE_FP8_DTYPES else x_tensor
+    return F.linear(work_x, weight, bias)
 
 
 def tile_scaled_residual_add_reference(lhs: torch.Tensor, rhs: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
@@ -1256,7 +1498,7 @@ def tile_repeat_kv_module(x: torch.Tensor, repeats: int, config: TileCudaConfig)
 def tile_identity_module(name: str, x: torch.Tensor, config: TileCudaConfig) -> torch.Tensor:
     if not _can_use_tile_identity(x):
         if config.strict and x.is_cuda:
-            raise RuntimeError(f"CUDA Tile module '{name}' requires contiguous CUDA float32 input")
+            raise RuntimeError(f"CUDA Tile module '{name}' requires contiguous CUDA float32 or float16 input")
         return x
     return _TileUnaryFunction.apply(x, "identity", UNARY_OPS["identity"], config)
 
@@ -1711,21 +1953,23 @@ class _TileLatentMSELossFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'latent_mse_loss'")
             return tile_latent_mse_loss_reference(pred, target)
-        return ext.tile_latent_mse_loss(pred, target)
+        return ext.tile_latent_mse_loss(_tile_kernel_input(pred), _tile_kernel_input(target))
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         pred, target = ctx.saved_tensors
-        grad_pred = grad_output.to(dtype=pred.dtype) * (2.0 / pred.numel()) * (pred - target.detach().to(dtype=pred.dtype))
-        return grad_pred, None, None
+        pred_float = _tile_kernel_input(pred)
+        target_float = _tile_kernel_input(target)
+        grad_pred = _tile_kernel_input(grad_output) * (2.0 / pred.numel()) * (pred_float - target_float.detach())
+        return _tile_kernel_output(grad_pred, pred.dtype), None, None
 
 
 def tile_latent_mse_loss_module(pred: torch.Tensor, target: torch.Tensor, config: TileCudaConfig) -> torch.Tensor:
     can_use = (
         pred.is_cuda
         and target.is_cuda
-        and pred.dtype == torch.float32
-        and target.dtype == torch.float32
+        and pred.dtype in TILE_FLOAT_DTYPES
+        and target.dtype == pred.dtype
         and pred.is_contiguous()
         and target.is_contiguous()
         and pred.shape == target.shape
@@ -1733,7 +1977,7 @@ def tile_latent_mse_loss_module(pred: torch.Tensor, target: torch.Tensor, config
     )
     if not can_use:
         if config.strict and (pred.is_cuda or target.is_cuda):
-            raise RuntimeError("CUDA Tile module 'latent_mse_loss' requires same-shape contiguous CUDA float32 inputs")
+            raise RuntimeError("CUDA Tile module 'latent_mse_loss' requires same-shape contiguous CUDA float32 or float16 inputs")
         return tile_latent_mse_loss_reference(pred, target)
     return _TileLatentMSELossFunction.apply(pred, target, config)
 
@@ -1827,8 +2071,8 @@ class _TileRotaryEmbeddingFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'rotary_embedding'")
             return tile_rotary_embedding_reference(q, k, inv_freq)
-        out_q, out_k = ext.tile_rotary_embedding(q, k, inv_freq)
-        return out_q, out_k
+        out_q, out_k = ext.tile_rotary_embedding(_tile_kernel_input(q), _tile_kernel_input(k), inv_freq)
+        return _tile_kernel_output(out_q, q.dtype), _tile_kernel_output(out_k, k.dtype)
 
     @staticmethod
     def backward(ctx, grad_q: torch.Tensor, grad_k: torch.Tensor):  # type: ignore[override]
@@ -1851,8 +2095,8 @@ def tile_rotary_embedding_module(q: torch.Tensor, k: torch.Tensor, inv_freq: tor
         q.is_cuda
         and k.is_cuda
         and inv_freq.is_cuda
-        and q.dtype == torch.float32
-        and k.dtype == torch.float32
+        and q.dtype in TILE_FLOAT_DTYPES
+        and k.dtype == q.dtype
         and inv_freq.dtype == torch.float32
         and q.is_contiguous()
         and k.is_contiguous()
@@ -1868,7 +2112,7 @@ def tile_rotary_embedding_module(q: torch.Tensor, k: torch.Tensor, inv_freq: tor
     )
     if not can_use:
         if config.strict and (q.is_cuda or k.is_cuda or inv_freq.is_cuda):
-            raise RuntimeError("CUDA Tile module 'rotary_embedding' requires contiguous CUDA float32 Q/K shaped [B,H,S,D] and inv_freq [D/2]")
+            raise RuntimeError("CUDA Tile module 'rotary_embedding' requires contiguous CUDA float32 or float16 Q/K shaped [B,H,S,D] and float32 inv_freq [D/2]")
         return tile_rotary_embedding_reference(q, k, inv_freq)
     return _TileRotaryEmbeddingFunction.apply(q, k, inv_freq, config)
 
@@ -1883,30 +2127,33 @@ class _TileRMSNormFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'rms_norm'")
             return tile_rms_norm_reference(x, float(eps))
-        return ext.tile_rms_norm(x, float(eps))
+        out = ext.tile_rms_norm(_tile_kernel_input(x), float(eps))
+        return _tile_kernel_output(out, x.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         (x,) = ctx.saved_tensors
         eps = ctx.eps
-        mean_sq = x.float().square().mean(dim=-1, keepdim=True)
-        rstd = torch.rsqrt(mean_sq + eps).to(dtype=x.dtype)
-        dot_mean = (grad_output * x).mean(dim=-1, keepdim=True)
-        grad_x = grad_output * rstd - x * (rstd ** 3) * dot_mean
-        return grad_x, None, None
+        x_float = _tile_kernel_input(x)
+        grad = _tile_kernel_input(grad_output)
+        mean_sq = x_float.square().mean(dim=-1, keepdim=True)
+        rstd = torch.rsqrt(mean_sq + eps)
+        dot_mean = (grad * x_float).mean(dim=-1, keepdim=True)
+        grad_x = grad * rstd - x_float * (rstd ** 3) * dot_mean
+        return _tile_kernel_output(grad_x, x.dtype), None, None
 
 
 def tile_rms_norm_module(x: torch.Tensor, eps: float, config: TileCudaConfig) -> torch.Tensor:
     can_use = (
         x.is_cuda
-        and x.dtype == torch.float32
+        and x.dtype in TILE_FLOAT_DTYPES
         and x.is_contiguous()
         and x.ndim >= 1
         and 0 < x.size(-1) <= 1024
     )
     if not can_use:
         if config.strict and x.is_cuda:
-            raise RuntimeError("CUDA Tile module 'rms_norm' requires contiguous CUDA float32 input with last dim <= 1024")
+            raise RuntimeError("CUDA Tile module 'rms_norm' requires contiguous CUDA float32 or float16 input with last dim <= 1024")
         return tile_rms_norm_reference(x, eps)
     return _TileRMSNormFunction.apply(x, float(eps), config)
 
@@ -1928,7 +2175,8 @@ class _TileLayerNormFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'layer_norm'")
             return tile_layer_norm_reference(x, weight, bias, float(eps))
-        return ext.tile_layer_norm(x, weight, bias, float(eps))
+        out = ext.tile_layer_norm(_tile_kernel_input(x), weight, bias, float(eps))
+        return _tile_kernel_output(out, x.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
@@ -1961,7 +2209,7 @@ def tile_layer_norm_module(
         x.is_cuda
         and weight.is_cuda
         and bias.is_cuda
-        and x.dtype == torch.float32
+        and x.dtype in TILE_FLOAT_DTYPES
         and weight.dtype == torch.float32
         and bias.dtype == torch.float32
         and x.is_contiguous()
@@ -1975,7 +2223,7 @@ def tile_layer_norm_module(
     )
     if not can_use:
         if config.strict and (x.is_cuda or weight.is_cuda or bias.is_cuda):
-            raise RuntimeError("CUDA Tile module 'layer_norm' requires contiguous CUDA float32 input and 1D affine parameters with last dim <= 1024")
+            raise RuntimeError("CUDA Tile module 'layer_norm' requires contiguous CUDA float32 or float16 input and float32 1D affine parameters with last dim <= 1024")
         return tile_layer_norm_reference(x, weight, bias, eps)
     return _TileLayerNormFunction.apply(x, weight, bias, float(eps), config)
 
@@ -1999,13 +2247,14 @@ class _TileGroupNormFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'group_norm'")
             return tile_group_norm_reference(x, weight, bias, int(num_groups), float(eps))
-        return ext.tile_group_norm(x, weight, bias, int(num_groups), float(eps))
+        out = ext.tile_group_norm(_tile_kernel_input(x), weight, bias, int(num_groups), float(eps))
+        return _tile_kernel_output(out, x.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         x, weight, bias = ctx.saved_tensors
         with torch.enable_grad():
-            work_x = x.detach().requires_grad_(True)
+            work_x = _tile_kernel_input(x).detach().requires_grad_(True)
             work_weight = weight.detach().requires_grad_(True)
             work_bias = bias.detach().requires_grad_(True)
             out = tile_group_norm_reference(work_x, work_weight, work_bias, ctx.num_groups, ctx.eps)
@@ -2031,7 +2280,7 @@ def tile_group_norm_module(
         x.is_cuda
         and weight.is_cuda
         and bias.is_cuda
-        and x.dtype == torch.float32
+        and x.dtype in TILE_FLOAT_DTYPES
         and weight.dtype == torch.float32
         and bias.dtype == torch.float32
         and x.is_contiguous()
@@ -2048,7 +2297,7 @@ def tile_group_norm_module(
     )
     if not can_use:
         if config.strict and (x.is_cuda or weight.is_cuda or bias.is_cuda):
-            raise RuntimeError("CUDA Tile module 'group_norm' requires contiguous CUDA float32 [B,S,D], affine [D], D divisible by groups, and S*group_dim <= 1024")
+            raise RuntimeError("CUDA Tile module 'group_norm' requires contiguous CUDA float32 or float16 [B,S,D], float32 affine [D], D divisible by groups, and S*group_dim <= 1024")
         return tile_group_norm_reference(x, weight, bias, groups, eps)
     return _TileGroupNormFunction.apply(x, weight, bias, groups, float(eps), config)
 
@@ -2066,13 +2315,14 @@ class _TileSoftmaxLastdimFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'solu'")
             return tile_softmax_lastdim_reference(x)
-        return ext.tile_softmax_lastdim(x)
+        out = ext.tile_softmax_lastdim(_tile_kernel_input(x))
+        return _tile_kernel_output(out, x.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         (x,) = ctx.saved_tensors
         with torch.enable_grad():
-            work_x = x.detach().requires_grad_(True)
+            work_x = _tile_kernel_input(x).detach().requires_grad_(True)
             out = tile_softmax_lastdim_reference(work_x)
             (grad_x,) = torch.autograd.grad(out, (work_x,), grad_output.to(dtype=out.dtype), allow_unused=False)
         return grad_x.to(dtype=x.dtype), None
@@ -2081,7 +2331,7 @@ class _TileSoftmaxLastdimFunction(torch.autograd.Function):
 def tile_softmax_lastdim_module(x: torch.Tensor, config: TileCudaConfig) -> torch.Tensor:
     can_use = (
         x.is_cuda
-        and x.dtype == torch.float32
+        and x.dtype in TILE_FLOAT_DTYPES
         and x.is_contiguous()
         and x.ndim >= 1
         and x.size(-1) > 0
@@ -2089,7 +2339,7 @@ def tile_softmax_lastdim_module(x: torch.Tensor, config: TileCudaConfig) -> torc
     )
     if not can_use:
         if config.strict and x.is_cuda:
-            raise RuntimeError("CUDA Tile module 'solu' requires contiguous CUDA float32 gate logits with last dim <= 1024")
+            raise RuntimeError("CUDA Tile module 'solu' requires contiguous CUDA float32 or float16 gate logits with last dim <= 1024")
         return tile_softmax_lastdim_reference(x)
     return _TileSoftmaxLastdimFunction.apply(x, config)
 
@@ -2195,6 +2445,10 @@ def tile_scaled_dot_product_attention_reference(
     compress_stride: int | None = None,
     right_align_causal: bool = False,
 ) -> torch.Tensor:
+    input_dtype = q.dtype
+    q_work = _tile_kernel_input(q)
+    k_work = _tile_kernel_input(k)
+    v_work = _tile_kernel_input(v)
     attn_mask = None
     ref_is_causal = bool(is_causal)
     use_sparse = (
@@ -2204,12 +2458,12 @@ def tile_scaled_dot_product_attention_reference(
         or (compress_stride is not None and int(compress_stride) > 1)
     )
     if use_sparse:
-        seq_q, seq_k = q.size(-2), k.size(-2)
-        i = torch.arange(seq_q, device=q.device).unsqueeze(1)
-        j = torch.arange(seq_k, device=q.device).unsqueeze(0)
+        seq_q, seq_k = q_work.size(-2), k_work.size(-2)
+        i = torch.arange(seq_q, device=q_work.device).unsqueeze(1)
+        j = torch.arange(seq_k, device=q_work.device).unsqueeze(0)
         offset = seq_k - seq_q if right_align_causal else 0
-        causal_ok = (j <= i + offset) if is_causal else torch.ones(seq_q, seq_k, dtype=torch.bool, device=q.device)
-        keep = torch.zeros(seq_q, seq_k, dtype=torch.bool, device=q.device)
+        causal_ok = (j <= i + offset) if is_causal else torch.ones(seq_q, seq_k, dtype=torch.bool, device=q_work.device)
+        keep = torch.zeros(seq_q, seq_k, dtype=torch.bool, device=q_work.device)
         any_rule = False
         if window is not None and int(window) > 0:
             keep = keep | (j > (i + offset) - int(window))
@@ -2225,17 +2479,18 @@ def tile_scaled_dot_product_attention_reference(
             any_rule = True
         if not any_rule:
             keep = torch.ones(seq_q, seq_k, dtype=torch.bool, device=q.device)
-        attn_mask = torch.zeros(seq_q, seq_k, dtype=q.dtype, device=q.device).masked_fill(~(causal_ok & keep), float("-inf"))
+        attn_mask = torch.zeros(seq_q, seq_k, dtype=q_work.dtype, device=q_work.device).masked_fill(~(causal_ok & keep), float("-inf"))
         ref_is_causal = False
-    return F.scaled_dot_product_attention(
-        q,
-        k,
-        v,
+    out = F.scaled_dot_product_attention(
+        q_work,
+        k_work,
+        v_work,
         attn_mask=attn_mask,
         dropout_p=0.0,
         is_causal=ref_is_causal,
-        enable_gqa=q.size(1) != k.size(1),
+        enable_gqa=q_work.size(1) != k_work.size(1),
     )
+    return _tile_attention_output(out, input_dtype)
 
 
 class _TileScaledDotProductAttentionFunction(torch.autograd.Function):
@@ -2277,10 +2532,10 @@ class _TileScaledDotProductAttentionFunction(torch.autograd.Function):
                 compress_stride=ctx.compress_stride if ctx.use_sparse_rules and ctx.compress_stride > 1 else None,
                 right_align_causal=ctx.right_align_causal,
             )
-        return ext.tile_scaled_dot_product_attention(
-            q,
-            k,
-            v,
+        out = ext.tile_scaled_dot_product_attention(
+            _tile_kernel_input(q),
+            _tile_kernel_input(k),
+            _tile_kernel_input(v),
             ctx.is_causal,
             ctx.right_align_causal,
             ctx.use_sparse_rules,
@@ -2289,14 +2544,15 @@ class _TileScaledDotProductAttentionFunction(torch.autograd.Function):
             ctx.block_size,
             ctx.compress_stride,
         )
+        return _tile_attention_output(out, q.dtype)
 
     @staticmethod
     def backward(ctx, grad: torch.Tensor):  # type: ignore[override]
         q, k, v = ctx.saved_tensors
         with torch.enable_grad():
-            work_q = q.detach().requires_grad_(q.requires_grad)
-            work_k = k.detach().requires_grad_(k.requires_grad)
-            work_v = v.detach().requires_grad_(v.requires_grad)
+            work_q = _tile_kernel_input(q).detach().requires_grad_(q.requires_grad)
+            work_k = _tile_kernel_input(k).detach().requires_grad_(k.requires_grad)
+            work_v = _tile_kernel_input(v).detach().requires_grad_(v.requires_grad)
             out = tile_scaled_dot_product_attention_reference(
                 work_q,
                 work_k,
@@ -2316,9 +2572,9 @@ class _TileScaledDotProductAttentionFunction(torch.autograd.Function):
             )
         grad_q, grad_k, grad_v = grads
         return (
-            None if grad_q is None else grad_q.to(dtype=q.dtype),
-            None if grad_k is None else grad_k.to(dtype=k.dtype),
-            None if grad_v is None else grad_v.to(dtype=v.dtype),
+            None if grad_q is None else _tile_kernel_output(grad_q, q.dtype),
+            None if grad_k is None else _tile_kernel_output(grad_k, k.dtype),
+            None if grad_v is None else _tile_kernel_output(grad_v, v.dtype),
             None,
             None,
             None,
@@ -2353,9 +2609,9 @@ def tile_scaled_dot_product_attention_module(
         q.is_cuda
         and k.is_cuda
         and v.is_cuda
-        and q.dtype == torch.float32
-        and k.dtype == torch.float32
-        and v.dtype == torch.float32
+        and q.dtype in TILE_ELEMENTWISE_INPUT_DTYPES
+        and k.dtype == q.dtype
+        and v.dtype == q.dtype
         and q.is_contiguous()
         and k.is_contiguous()
         and v.is_contiguous()
@@ -2373,7 +2629,7 @@ def tile_scaled_dot_product_attention_module(
     if not can_use:
         if config.strict and (q.is_cuda or k.is_cuda or v.is_cuda):
             raise RuntimeError(
-                "CUDA Tile module 'scaled_dot_product_attention' requires contiguous CUDA float32 q/k/v [B,H,S,D] with key sequence <= 1024"
+                "CUDA Tile module 'scaled_dot_product_attention' requires contiguous CUDA q/k/v [B,H,S,D] with supported dtypes {float32, float16, float8_e4m3fn, float8_e5m2} and key sequence <= 1024"
             )
         return tile_scaled_dot_product_attention_reference(
             q,
@@ -2554,7 +2810,7 @@ class _TileLinearFunction(torch.autograd.Function):
         config: TileCudaConfig,
     ):  # type: ignore[override]
         has_bias = bias is not None
-        bias_for_save = bias if bias is not None else torch.empty(0, device=x.device, dtype=x.dtype)
+        bias_for_save = bias if bias is not None else torch.empty(0, device=x.device, dtype=weight.dtype)
         ctx.has_bias = has_bias
         ctx.input_shape = tuple(x.shape)
         ctx.save_for_backward(x, weight, bias_for_save)
@@ -2563,44 +2819,55 @@ class _TileLinearFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'linear'")
             return tile_linear_reference(x, weight, bias)
-        return ext.tile_linear(x, weight, bias_for_save, bool(has_bias))
+        out = ext.tile_linear(_tile_kernel_input(x), weight, bias_for_save, bool(has_bias))
+        return _tile_linear_output(out, x.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         x, weight, _bias = ctx.saved_tensors
-        grad_flat = grad_output.reshape(-1, grad_output.size(-1))
-        x_flat = x.reshape(-1, x.size(-1))
+        grad = _tile_kernel_input(grad_output)
+        x_float = _tile_kernel_input(x)
+        grad_flat = grad.reshape(-1, grad.size(-1))
+        x_flat = x_float.reshape(-1, x_float.size(-1))
         grad_x = (grad_flat @ weight).reshape(ctx.input_shape)
         grad_weight = grad_flat.t() @ x_flat
         grad_bias = grad_flat.sum(dim=0) if ctx.has_bias else None
-        return grad_x, grad_weight, grad_bias, None
+        return _tile_kernel_output(grad_x, x.dtype), grad_weight, grad_bias, None
 
 
 def tile_linear_module(
-    x: torch.Tensor,
+    x: torch.Tensor | NVFP4Tensor,
     weight: torch.Tensor,
     bias: torch.Tensor | None,
     config: TileCudaConfig,
     *,
     name: str = "linear",
 ) -> torch.Tensor:
+    x_tensor = _linear_input_tensor(x)
+    is_nvfp4 = isinstance(x, NVFP4Tensor)
     can_use = (
-        x.is_cuda
+        x_tensor.is_cuda
         and weight.is_cuda
-        and x.dtype == torch.float32
+        and (is_nvfp4 or x_tensor.dtype in TILE_LINEAR_INPUT_DTYPES)
         and weight.dtype == torch.float32
-        and x.is_contiguous()
+        and x_tensor.is_contiguous()
         and weight.is_contiguous()
-        and x.ndim >= 1
+        and x_tensor.ndim >= 1
         and weight.ndim == 2
-        and x.size(-1) == weight.size(1)
+        and x_tensor.size(-1) == weight.size(1)
         and (bias is None or (bias.is_cuda and bias.dtype == torch.float32 and bias.is_contiguous() and bias.ndim == 1 and bias.numel() == weight.size(0)))
     )
     if not can_use:
-        if config.strict and (x.is_cuda or weight.is_cuda or (bias is not None and bias.is_cuda)):
-            raise RuntimeError(f"CUDA Tile module '{name}' requires contiguous CUDA float32 input, weight, and optional bias")
+        x_is_cuda = x.packed.is_cuda if is_nvfp4 else x_tensor.is_cuda
+        if config.strict and (x_is_cuda or weight.is_cuda or (bias is not None and bias.is_cuda)):
+            raise RuntimeError(
+                f"CUDA Tile module '{name}' requires contiguous CUDA input with supported dtypes "
+                "{float32, float16, float8_e4m3fn, float8_e5m2, nvfp4}, float32 weight, and optional float32 bias; "
+                f"got {_linear_contract_summary('x', x)}; {_tensor_contract_summary('weight', weight)}"
+                + (f"; {_tensor_contract_summary('bias', bias)}" if bias is not None else "")
+            )
         return tile_linear_reference(x, weight, bias)
-    return _TileLinearFunction.apply(x, weight, bias, config)
+    return _TileLinearFunction.apply(x_tensor, weight, bias, config)
 
 
 class _TileScaledResidualAddFunction(torch.autograd.Function):
@@ -2618,16 +2885,18 @@ class _TileScaledResidualAddFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'scaled_residual_add'")
             return tile_scaled_residual_add_reference(lhs, rhs, scale)
-        return ext.tile_scaled_residual_add(lhs, rhs, scale)
+        out = ext.tile_scaled_residual_add(_tile_kernel_input(lhs), _tile_kernel_input(rhs), scale)
+        return _tile_kernel_output(out, lhs.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         rhs, scale = ctx.saved_tensors
-        grad = grad_output.to(dtype=rhs.dtype)
+        grad = _tile_kernel_input(grad_output)
+        rhs_float = _tile_kernel_input(rhs)
         grad_lhs = grad
         grad_rhs = grad * scale.reshape(())
-        grad_scale = (grad * rhs).sum().reshape_as(scale)
-        return grad_lhs, grad_rhs, grad_scale.to(dtype=scale.dtype), None
+        grad_scale = (grad * rhs_float).sum().reshape_as(scale)
+        return _tile_kernel_output(grad_lhs, rhs.dtype), _tile_kernel_output(grad_rhs, rhs.dtype), grad_scale.to(dtype=scale.dtype), None
 
 
 def tile_scaled_residual_add_module(
@@ -2640,8 +2909,8 @@ def tile_scaled_residual_add_module(
         lhs.is_cuda
         and rhs.is_cuda
         and scale.is_cuda
-        and lhs.dtype == torch.float32
-        and rhs.dtype == torch.float32
+        and lhs.dtype in TILE_FLOAT_DTYPES
+        and rhs.dtype == lhs.dtype
         and scale.dtype == torch.float32
         and lhs.is_contiguous()
         and rhs.is_contiguous()
@@ -2651,7 +2920,7 @@ def tile_scaled_residual_add_module(
     )
     if not can_use:
         if config.strict and (lhs.is_cuda or rhs.is_cuda or scale.is_cuda):
-            raise RuntimeError("CUDA Tile module 'scaled_residual_add' requires same-shape contiguous CUDA float32 inputs and scalar scale")
+            raise RuntimeError("CUDA Tile module 'scaled_residual_add' requires same-shape contiguous CUDA float32 or float16 inputs and scalar float32 scale")
         return tile_scaled_residual_add_reference(lhs, rhs, scale)
     return _TileScaledResidualAddFunction.apply(lhs, rhs, scale, config)
 
@@ -2665,22 +2934,25 @@ class _TileACTWeightedSumFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'act_weighted_sum'")
             return tile_act_weighted_sum_reference(states, weights)
-        return ext.tile_act_weighted_sum(states, weights)
+        out = ext.tile_act_weighted_sum(_tile_kernel_input(states), weights)
+        return _tile_kernel_output(out, states.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         states, weights = ctx.saved_tensors
-        grad_states = grad_output.unsqueeze(1) * weights.to(dtype=grad_output.dtype).unsqueeze(-1).unsqueeze(-1)
+        grad = _tile_kernel_input(grad_output)
+        states_float = _tile_kernel_input(states)
+        grad_states = grad.unsqueeze(1) * weights.unsqueeze(-1).unsqueeze(-1)
         reduce_dims = tuple(range(2, states.ndim))
-        grad_weights = (grad_output.unsqueeze(1) * states).sum(dim=reduce_dims).to(dtype=weights.dtype)
-        return grad_states, grad_weights, None
+        grad_weights = (grad.unsqueeze(1) * states_float).sum(dim=reduce_dims).to(dtype=weights.dtype)
+        return _tile_kernel_output(grad_states, states.dtype), grad_weights, None
 
 
 def tile_act_weighted_sum_module(states: torch.Tensor, weights: torch.Tensor, config: TileCudaConfig) -> torch.Tensor:
     can_use = (
         states.is_cuda
         and weights.is_cuda
-        and states.dtype == torch.float32
+        and states.dtype in TILE_FLOAT_DTYPES
         and weights.dtype == torch.float32
         and states.is_contiguous()
         and weights.is_contiguous()
@@ -2691,7 +2963,7 @@ def tile_act_weighted_sum_module(states: torch.Tensor, weights: torch.Tensor, co
     )
     if not can_use:
         if config.strict and (states.is_cuda or weights.is_cuda):
-            raise RuntimeError("CUDA Tile module 'act_weighted_sum' requires contiguous CUDA float32 states [B,steps,...] and weights [B,steps]")
+            raise RuntimeError("CUDA Tile module 'act_weighted_sum' requires contiguous CUDA float32 or float16 states [B,steps,...] and float32 weights [B,steps]")
         return tile_act_weighted_sum_reference(states, weights)
     return _TileACTWeightedSumFunction.apply(states, weights, config)
 
@@ -2705,31 +2977,33 @@ class _TileLatentPoolFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'latent_pool'")
             return tile_latent_pool_reference(x, mask)
-        return ext.tile_latent_pool(x, mask)
+        out = ext.tile_latent_pool(_tile_kernel_input(x), mask)
+        return _tile_kernel_output(out, x.dtype)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
         x, mask = ctx.saved_tensors
-        weights = mask.to(dtype=x.dtype)
+        x_float = _tile_kernel_input(x)
+        weights = mask.to(dtype=torch.float32)
         denom_raw = weights.sum(dim=1, keepdim=True)
-        has_mask = (denom_raw > 0).to(dtype=x.dtype)
+        has_mask = (denom_raw > 0).to(dtype=torch.float32)
         denom = denom_raw.clamp_min(1.0)
-        sum_wx = (x * weights.unsqueeze(-1)).sum(dim=1)
+        sum_wx = (x_float * weights.unsqueeze(-1)).sum(dim=1)
         seq_len = x.size(1)
-        grad = grad_output.to(dtype=x.dtype)
+        grad = _tile_kernel_input(grad_output)
         grad_x_masked = grad.unsqueeze(1) * weights.unsqueeze(-1) / denom.unsqueeze(-1)
-        grad_x_fallback = grad.unsqueeze(1).expand_as(x) / float(seq_len)
+        grad_x_fallback = grad.unsqueeze(1).expand_as(x_float) / float(seq_len)
         grad_x = grad_x_masked * has_mask.unsqueeze(-1) + grad_x_fallback * (1.0 - has_mask.unsqueeze(-1))
-        grad_mask = ((grad.unsqueeze(1) * (x * denom.unsqueeze(-1) - sum_wx.unsqueeze(1))).sum(dim=-1) / (denom * denom))
+        grad_mask = ((grad.unsqueeze(1) * (x_float * denom.unsqueeze(-1) - sum_wx.unsqueeze(1))).sum(dim=-1) / (denom * denom))
         grad_mask = grad_mask * has_mask
-        return grad_x, grad_mask.to(dtype=mask.dtype), None
+        return _tile_kernel_output(grad_x, x.dtype), grad_mask.to(dtype=mask.dtype), None
 
 
 def tile_latent_pool_module(x: torch.Tensor, mask: torch.Tensor, config: TileCudaConfig) -> torch.Tensor:
     can_use = (
         x.is_cuda
         and mask.is_cuda
-        and x.dtype == torch.float32
+        and x.dtype in TILE_FLOAT_DTYPES
         and mask.dtype == torch.float32
         and x.is_contiguous()
         and mask.is_contiguous()
@@ -2741,7 +3015,7 @@ def tile_latent_pool_module(x: torch.Tensor, mask: torch.Tensor, config: TileCud
     )
     if not can_use:
         if config.strict and (x.is_cuda or mask.is_cuda):
-            raise RuntimeError("CUDA Tile module 'latent_pool' requires contiguous CUDA float32 x [B,S,D] and mask [B,S]")
+            raise RuntimeError("CUDA Tile module 'latent_pool' requires contiguous CUDA float32 or float16 x [B,S,D] and float32 mask [B,S]")
         return tile_latent_pool_reference(x, mask)
     return _TileLatentPoolFunction.apply(x, mask, config)
 
@@ -2755,7 +3029,7 @@ class _TileTokenCrossEntropyFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'token_cross_entropy'")
             return tile_token_cross_entropy_reference(logits, target_ids)
-        return ext.tile_token_cross_entropy(logits, target_ids)
+        return ext.tile_token_cross_entropy(_tile_kernel_input(logits), target_ids)
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
@@ -2772,7 +3046,7 @@ def tile_token_cross_entropy_module(logits: torch.Tensor, target_ids: torch.Tens
     can_use = (
         logits.is_cuda
         and target_ids.is_cuda
-        and logits.dtype == torch.float32
+        and logits.dtype in TILE_FLOAT_DTYPES
         and target_ids.dtype == torch.long
         and logits.is_contiguous()
         and target_ids.is_contiguous()
@@ -2782,7 +3056,7 @@ def tile_token_cross_entropy_module(logits: torch.Tensor, target_ids: torch.Tens
     )
     if not can_use:
         if config.strict and (logits.is_cuda or target_ids.is_cuda):
-            raise RuntimeError("CUDA Tile module 'token_cross_entropy' requires contiguous CUDA float32 logits and int64 targets")
+            raise RuntimeError("CUDA Tile module 'token_cross_entropy' requires contiguous CUDA float32 or float16 logits and int64 targets")
         return tile_token_cross_entropy_reference(logits, target_ids)
     return _TileTokenCrossEntropyFunction.apply(logits, target_ids, config)
 
@@ -2804,7 +3078,7 @@ class _TileMaskedTokenCrossEntropyFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'masked_token_cross_entropy'")
             return tile_masked_token_cross_entropy_reference(logits, target_ids, loss_mask, ignore_index)
-        return ext.tile_masked_token_cross_entropy(logits, target_ids, loss_mask, int(ignore_index))
+        return ext.tile_masked_token_cross_entropy(_tile_kernel_input(logits), target_ids, loss_mask, int(ignore_index))
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
@@ -2849,7 +3123,7 @@ def tile_masked_token_cross_entropy_module(
         logits.is_cuda
         and target_ids.is_cuda
         and loss_mask.is_cuda
-        and logits.dtype == torch.float32
+        and logits.dtype in TILE_FLOAT_DTYPES
         and target_ids.dtype == torch.long
         and loss_mask.dtype == torch.float32
         and logits.is_contiguous()
@@ -2863,7 +3137,7 @@ def tile_masked_token_cross_entropy_module(
     if not can_use:
         if config.strict and (logits.is_cuda or target_ids.is_cuda or loss_mask.is_cuda):
             raise RuntimeError(
-                "CUDA Tile module 'masked_token_cross_entropy' requires contiguous CUDA float32 logits, int64 targets, and float32 mask"
+                "CUDA Tile module 'masked_token_cross_entropy' requires contiguous CUDA float32 or float16 logits, int64 targets, and float32 mask"
             )
         return tile_masked_token_cross_entropy_reference(logits, target_ids, loss_mask, ignore_index)
     return _TileMaskedTokenCrossEntropyFunction.apply(logits, target_ids, loss_mask, int(ignore_index), config)
@@ -2886,7 +3160,7 @@ class _TileSequenceLogpFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'sequence_logp'")
             return tile_sequence_logp_reference(logits, targets, loss_mask, ignore_index)
-        return ext.tile_sequence_logp(logits, targets, loss_mask, int(ignore_index))
+        return ext.tile_sequence_logp(_tile_kernel_input(logits), targets, loss_mask, int(ignore_index))
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
@@ -2919,7 +3193,7 @@ def tile_sequence_logp_module(
         logits.is_cuda
         and targets.is_cuda
         and loss_mask.is_cuda
-        and logits.dtype == torch.float32
+        and logits.dtype in TILE_FLOAT_DTYPES
         and targets.dtype == torch.long
         and loss_mask.dtype == torch.float32
         and logits.is_contiguous()
@@ -2934,7 +3208,7 @@ def tile_sequence_logp_module(
     if not can_use:
         if config.strict and (logits.is_cuda or targets.is_cuda or loss_mask.is_cuda):
             raise RuntimeError(
-                "CUDA Tile module 'sequence_logp' requires contiguous CUDA float32 logits [B,S,V], int64 targets, and float32 mask with B<=1024"
+                "CUDA Tile module 'sequence_logp' requires contiguous CUDA float32 or float16 logits [B,S,V], int64 targets, and float32 mask with B<=1024"
             )
         return tile_sequence_logp_reference(logits, targets, loss_mask, ignore_index)
     return _TileSequenceLogpFunction.apply(logits, targets, loss_mask, int(ignore_index), config)
@@ -2949,7 +3223,7 @@ class _TilePreferenceBCELossFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'preference_bce_loss'")
             return tile_preference_bce_loss_reference(reward_chosen, reward_rejected)
-        return ext.tile_preference_bce_loss(reward_chosen, reward_rejected)
+        return ext.tile_preference_bce_loss(_tile_kernel_input(reward_chosen), _tile_kernel_input(reward_rejected))
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
@@ -2968,8 +3242,8 @@ def tile_preference_bce_loss_module(
     can_use = (
         reward_chosen.is_cuda
         and reward_rejected.is_cuda
-        and reward_chosen.dtype == torch.float32
-        and reward_rejected.dtype == torch.float32
+        and reward_chosen.dtype in TILE_FLOAT_DTYPES
+        and reward_rejected.dtype == reward_chosen.dtype
         and reward_chosen.is_contiguous()
         and reward_rejected.is_contiguous()
         and reward_chosen.shape == reward_rejected.shape
@@ -2977,7 +3251,7 @@ def tile_preference_bce_loss_module(
     )
     if not can_use:
         if config.strict and (reward_chosen.is_cuda or reward_rejected.is_cuda):
-            raise RuntimeError("CUDA Tile module 'preference_bce_loss' requires same-shape contiguous CUDA float32 rewards")
+            raise RuntimeError("CUDA Tile module 'preference_bce_loss' requires same-shape contiguous CUDA float32 or float16 rewards")
         return tile_preference_bce_loss_reference(reward_chosen, reward_rejected)
     return _TilePreferenceBCELossFunction.apply(reward_chosen, reward_rejected, config)
 
@@ -3007,7 +3281,14 @@ class _TilePPOClippedLossFunction(torch.autograd.Function):
                 logp_new, logp_old, advantages, value_new, value_old, returns, float(clip_range), float(vf_coef)
             )
         policy_loss, value_loss, loss = ext.tile_ppo_clipped_loss(
-            logp_new, logp_old, advantages, value_new, value_old, returns, float(clip_range), float(vf_coef)
+            _tile_kernel_input(logp_new),
+            _tile_kernel_input(logp_old),
+            _tile_kernel_input(advantages),
+            _tile_kernel_input(value_new),
+            _tile_kernel_input(value_old),
+            _tile_kernel_input(returns),
+            float(clip_range),
+            float(vf_coef),
         )
         return policy_loss, value_loss, loss
 
@@ -3042,13 +3323,13 @@ def tile_ppo_clipped_loss_module(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     tensors = (logp_new, logp_old, advantages, value_new, value_old, returns)
     can_use = (
-        all(t.is_cuda and t.dtype == torch.float32 and t.is_contiguous() for t in tensors)
+        all(t.is_cuda and t.dtype in TILE_FLOAT_DTYPES and t.dtype == logp_new.dtype and t.is_contiguous() for t in tensors)
         and all(t.shape == logp_new.shape for t in tensors[1:])
         and logp_new.numel() > 0
     )
     if not can_use:
         if config.strict and any(t.is_cuda for t in tensors):
-            raise RuntimeError("CUDA Tile module 'ppo_clipped_loss' requires same-shape contiguous CUDA float32 tensors")
+            raise RuntimeError("CUDA Tile module 'ppo_clipped_loss' requires same-shape contiguous CUDA float32 or float16 tensors")
         return tile_ppo_clipped_loss_reference(
             logp_new, logp_old, advantages, value_new, value_old, returns, clip_range, vf_coef
         )
@@ -3076,15 +3357,15 @@ class _TileGAEComputeFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'gae_compute'")
             return tile_gae_compute_reference(rewards, values, float(gamma), float(lambda_))
-        advantages, returns = ext.tile_gae_compute(rewards, values, float(gamma), float(lambda_))
-        return advantages, returns
+        advantages, returns = ext.tile_gae_compute(_tile_kernel_input(rewards), _tile_kernel_input(values), float(gamma), float(lambda_))
+        return _tile_kernel_output(advantages, rewards.dtype), _tile_kernel_output(returns, rewards.dtype)
 
     @staticmethod
     def backward(ctx, grad_advantages: torch.Tensor, grad_returns: torch.Tensor):  # type: ignore[override]
         rewards, values = ctx.saved_tensors
         with torch.enable_grad():
-            rewards_ref = rewards.detach().requires_grad_(True)
-            values_ref = values.detach().requires_grad_(True)
+            rewards_ref = _tile_kernel_input(rewards).detach().requires_grad_(True)
+            values_ref = _tile_kernel_input(values).detach().requires_grad_(True)
             advantages, returns = tile_gae_compute_reference(rewards_ref, values_ref, ctx.gamma, ctx.lambda_)
             grad_rewards, grad_values = torch.autograd.grad(
                 (advantages, returns),
@@ -3092,7 +3373,13 @@ class _TileGAEComputeFunction(torch.autograd.Function):
                 (grad_advantages, grad_returns),
                 allow_unused=True,
             )
-        return grad_rewards, grad_values, None, None, None
+        return (
+            None if grad_rewards is None else _tile_kernel_output(grad_rewards, rewards.dtype),
+            None if grad_values is None else _tile_kernel_output(grad_values, values.dtype),
+            None,
+            None,
+            None,
+        )
 
 
 def tile_gae_compute_module(
@@ -3105,8 +3392,8 @@ def tile_gae_compute_module(
     can_use = (
         rewards.is_cuda
         and values.is_cuda
-        and rewards.dtype == torch.float32
-        and values.dtype == torch.float32
+        and rewards.dtype in TILE_FLOAT_DTYPES
+        and values.dtype == rewards.dtype
         and rewards.is_contiguous()
         and values.is_contiguous()
         and rewards.shape == values.shape
@@ -3115,7 +3402,7 @@ def tile_gae_compute_module(
     )
     if not can_use:
         if config.strict and (rewards.is_cuda or values.is_cuda):
-            raise RuntimeError("CUDA Tile module 'gae_compute' requires same-shape contiguous CUDA float32 tensors shaped [B,S]")
+            raise RuntimeError("CUDA Tile module 'gae_compute' requires same-shape contiguous CUDA float32 or float16 tensors shaped [B,S]")
         return tile_gae_compute_reference(rewards, values, gamma, lambda_)
     return _TileGAEComputeFunction.apply(rewards, values, float(gamma), float(lambda_), config)
 
@@ -3142,7 +3429,13 @@ class _TileRouteSelectionLossFunction(torch.autograd.Function):
             return tile_route_selection_loss_reference(
                 route_logits, sem_targets, int(num_vocab_dims), int(shared_experts), int(ignore_index)
             )
-        return ext.tile_route_selection_loss(route_logits, sem_targets, int(num_vocab_dims), int(shared_experts), int(ignore_index))
+        return ext.tile_route_selection_loss(
+            _tile_kernel_input(route_logits),
+            sem_targets,
+            int(num_vocab_dims),
+            int(shared_experts),
+            int(ignore_index),
+        )
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
@@ -3171,7 +3464,7 @@ def tile_route_selection_loss_module(
     can_use = (
         route_logits.is_cuda
         and sem_targets.is_cuda
-        and route_logits.dtype == torch.float32
+        and route_logits.dtype in TILE_FLOAT_DTYPES
         and sem_targets.dtype == torch.long
         and route_logits.is_contiguous()
         and sem_targets.is_contiguous()
@@ -3186,7 +3479,7 @@ def tile_route_selection_loss_module(
     if not can_use:
         if config.strict and (route_logits.is_cuda or sem_targets.is_cuda):
             raise RuntimeError(
-                "CUDA Tile module 'route_selection_loss' requires CUDA float32 route_logits [B,S,E] and int64 sem_targets [B,D]"
+                "CUDA Tile module 'route_selection_loss' requires CUDA float32 or float16 route_logits [B,S,E] and int64 sem_targets [B,D]"
             )
         return tile_route_selection_loss_reference(
             route_logits, sem_targets, int(num_vocab_dims), int(shared_experts), int(ignore_index)
@@ -3242,16 +3535,16 @@ class _TileDPOPairwiseLossFunction(torch.autograd.Function):
             )
         else:
             loss, chosen_reward, rejected_reward = ext.tile_dpo_pairwise_loss(
-                policy_logp_chosen,
-                policy_logp_rejected,
-                ref_logp_chosen,
-                ref_logp_rejected,
+                _tile_kernel_input(policy_logp_chosen),
+                _tile_kernel_input(policy_logp_rejected),
+                _tile_kernel_input(ref_logp_chosen),
+                _tile_kernel_input(ref_logp_rejected),
                 float(beta),
                 float(label_smoothing),
                 int(loss_type_code),
             )
         ctx.mark_non_differentiable(chosen_reward, rejected_reward)
-        return loss, chosen_reward, rejected_reward
+        return loss, _tile_kernel_output(chosen_reward, policy_logp_chosen.dtype), _tile_kernel_output(rejected_reward, policy_logp_chosen.dtype)
 
     @staticmethod
     def backward(ctx, grad_loss: torch.Tensor, grad_chosen_reward: torch.Tensor, grad_rejected_reward: torch.Tensor):  # type: ignore[override]
@@ -3286,7 +3579,7 @@ def tile_dpo_pairwise_loss_module(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     tensors = (policy_logp_chosen, policy_logp_rejected, ref_logp_chosen, ref_logp_rejected)
     can_use = (
-        all(tensor.is_cuda and tensor.dtype == torch.float32 and tensor.is_contiguous() for tensor in tensors)
+        all(tensor.is_cuda and tensor.dtype in TILE_FLOAT_DTYPES and tensor.dtype == policy_logp_chosen.dtype and tensor.is_contiguous() for tensor in tensors)
         and policy_logp_chosen.numel() > 0
         and policy_logp_chosen.shape == policy_logp_rejected.shape == ref_logp_chosen.shape == ref_logp_rejected.shape
         and loss_type in {"sigmoid", "hinge", "ipo"}
@@ -3294,7 +3587,7 @@ def tile_dpo_pairwise_loss_module(
     if not can_use:
         if config.strict and any(tensor.is_cuda for tensor in tensors):
             raise RuntimeError(
-                "CUDA Tile module 'dpo_pairwise_loss' requires same-shape contiguous CUDA float32 log-prob tensors"
+                "CUDA Tile module 'dpo_pairwise_loss' requires same-shape contiguous CUDA float32 or float16 log-prob tensors"
             )
         return tile_dpo_pairwise_loss_reference(
             policy_logp_chosen,
@@ -3356,7 +3649,12 @@ class _TileSemanticAlignmentLossFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'semantic_alignment_loss'")
             return tile_semantic_alignment_loss_reference(pred, target, ctx.term_counts, int(ignore_index))
-        return ext.tile_semantic_alignment_loss(logits, targets, term_counts_tensor[: len(counts)].contiguous(), int(ignore_index))
+        return ext.tile_semantic_alignment_loss(
+            _tile_kernel_input(logits),
+            targets,
+            term_counts_tensor[: len(counts)].contiguous(),
+            int(ignore_index),
+        )
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
@@ -3381,7 +3679,7 @@ def tile_semantic_alignment_loss_module(
     can_use = (
         pred.is_cuda
         and target.is_cuda
-        and pred.dtype == torch.float32
+        and pred.dtype in TILE_FLOAT_DTYPES
         and target.dtype == torch.long
         and pred.is_contiguous()
         and target.is_contiguous()
@@ -3401,7 +3699,7 @@ def tile_semantic_alignment_loss_module(
     if not can_use:
         if config.strict and (pred.is_cuda or target.is_cuda):
             raise RuntimeError(
-                "CUDA Tile module 'semantic_alignment_loss' requires contiguous CUDA float32 logits [R,D,T] or [B,C,D,T] and int64 targets"
+                "CUDA Tile module 'semantic_alignment_loss' requires contiguous CUDA float32 or float16 logits [R,D,T] or [B,C,D,T] and int64 targets"
             )
         return tile_semantic_alignment_loss_reference(pred, target, term_counts_tuple, int(ignore_index))
     return _TileSemanticAlignmentLossFunction.apply(
@@ -3423,7 +3721,7 @@ class _TileRouteBalanceLossFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'route_balance_loss'")
             return tile_route_balance_loss_reference(route_logits)
-        return ext.tile_route_balance_loss(route_logits)
+        return ext.tile_route_balance_loss(_tile_kernel_input(route_logits))
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
@@ -3439,7 +3737,7 @@ class _TileRouteBalanceLossFunction(torch.autograd.Function):
 def tile_route_balance_loss_module(route_logits: torch.Tensor, config: TileCudaConfig) -> torch.Tensor:
     can_use = (
         route_logits.is_cuda
-        and route_logits.dtype == torch.float32
+        and route_logits.dtype in TILE_FLOAT_DTYPES
         and route_logits.is_contiguous()
         and route_logits.ndim >= 1
         and route_logits.numel() > 0
@@ -3450,7 +3748,7 @@ def tile_route_balance_loss_module(route_logits: torch.Tensor, config: TileCudaC
     if not can_use:
         if config.strict and route_logits.is_cuda:
             raise RuntimeError(
-                "CUDA Tile module 'route_balance_loss' requires contiguous CUDA float32 logits with rows<=1024 and experts<=1024"
+                "CUDA Tile module 'route_balance_loss' requires contiguous CUDA float32 or float16 logits with rows<=1024 and experts<=1024"
             )
         return tile_route_balance_loss_reference(route_logits)
     return _TileRouteBalanceLossFunction.apply(route_logits, config)
@@ -3472,7 +3770,7 @@ class _TileLoadBalanceLossFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'load_balance_loss'")
             return tile_route_balance_loss_reference(router_logits), router_logits
-        return ext.tile_route_balance_loss(router_logits), router_logits
+        return ext.tile_route_balance_loss(_tile_kernel_input(router_logits)), router_logits
 
     @staticmethod
     def backward(ctx, grad_loss: torch.Tensor, grad_router_passthrough: torch.Tensor):  # type: ignore[override]
@@ -3496,7 +3794,7 @@ def tile_load_balance_loss_module(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     can_use = (
         router_logits.is_cuda
-        and router_logits.dtype == torch.float32
+        and router_logits.dtype in TILE_FLOAT_DTYPES
         and router_logits.is_contiguous()
         and router_logits.ndim >= 1
         and router_logits.numel() > 0
@@ -3507,7 +3805,7 @@ def tile_load_balance_loss_module(
     if not can_use:
         if config.strict and router_logits.is_cuda:
             raise RuntimeError(
-                "CUDA Tile module 'load_balance_loss' requires contiguous CUDA float32 logits with rows<=1024 and experts<=1024"
+                "CUDA Tile module 'load_balance_loss' requires contiguous CUDA float32 or float16 logits with rows<=1024 and experts<=1024"
             )
         return tile_load_balance_loss_reference(router_logits, routing_weights, routing_indices)
     return _TileLoadBalanceLossFunction.apply(router_logits, routing_weights, routing_indices, config)
@@ -3522,7 +3820,7 @@ class _TileSoftmaxDistillationLossFunction(torch.autograd.Function):
             if config.strict:
                 raise RuntimeError("CUDA Tile extension is unavailable for module 'softmax_distillation_loss'")
             return tile_softmax_distillation_loss_reference(teacher_logits, student_logits)
-        return ext.tile_softmax_distillation_loss(teacher_logits, student_logits)
+        return ext.tile_softmax_distillation_loss(_tile_kernel_input(teacher_logits), _tile_kernel_input(student_logits))
 
     @staticmethod
     def backward(ctx, grad_output: torch.Tensor):  # type: ignore[override]
@@ -3541,8 +3839,8 @@ def tile_softmax_distillation_loss_module(
     can_use = (
         teacher_logits.is_cuda
         and student_logits.is_cuda
-        and teacher_logits.dtype == torch.float32
-        and student_logits.dtype == torch.float32
+        and teacher_logits.dtype in TILE_FLOAT_DTYPES
+        and student_logits.dtype == teacher_logits.dtype
         and teacher_logits.is_contiguous()
         and student_logits.is_contiguous()
         and teacher_logits.shape == student_logits.shape
@@ -3553,7 +3851,7 @@ def tile_softmax_distillation_loss_module(
     if not can_use:
         if config.strict and (teacher_logits.is_cuda or student_logits.is_cuda):
             raise RuntimeError(
-                "CUDA Tile module 'softmax_distillation_loss' requires same-shape contiguous CUDA float32 logits with vocab<=1024"
+                "CUDA Tile module 'softmax_distillation_loss' requires same-shape contiguous CUDA float32 or float16 logits with vocab<=1024"
             )
         return tile_softmax_distillation_loss_reference(teacher_logits, student_logits)
     return _TileSoftmaxDistillationLossFunction.apply(teacher_logits, student_logits, config)

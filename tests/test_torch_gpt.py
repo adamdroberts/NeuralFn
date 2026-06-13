@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 import torch
+from torch import nn
 
 from neuralfn import (
     BuiltinNeurons,
@@ -16,8 +17,9 @@ from neuralfn import (
 )
 
 from neuralfn.config import build_gpt2_megakernel_spec, build_gpt2_spec, build_nanogpt_megakernel_spec
+from neuralfn.tile_cuda import NVFP4Tensor, dequantize_nvfp4_reference
 from neuralfn.torch_backend import CompiledTorchGraph
-from neuralfn.torch_templates import build_model_spec_from_config
+from neuralfn.torch_templates import build_model_spec_from_config, clone_neuron_def
 
 
 def make_gpt_graph():
@@ -66,6 +68,59 @@ class TorchGPTTest(unittest.TestCase):
 
         self.assertEqual(1, len(result))
         self.assertTrue(torch.equal(result[0], torch.tensor([4.0, 6.0])))
+
+    def test_compiled_torch_graph_packs_nvfp4_tile_activation_inputs_only(self) -> None:
+        graph = NeuronGraph(name="compiled_nvfp4_pack", training_method="torch", runtime="torch")
+        graph.torch_config = {"tile_cuda_activation_dtype": "nvfp4"}
+        graph.add_node(NeuronInstance(BuiltinNeurons.input_node, instance_id="hidden"))
+        graph.add_node(NeuronInstance(BuiltinNeurons.input_node, instance_id="weight"))
+        graph.add_node(
+            NeuronInstance(
+                clone_neuron_def(BuiltinNeurons.tied_lm_head_module),
+                instance_id="tied_head",
+            )
+        )
+        graph.add_node(NeuronInstance(BuiltinNeurons.output_node, instance_id="out"))
+        graph.add_edge(Edge(id="e_hidden_head", src_node="hidden", src_port=0, dst_node="tied_head", dst_port=0))
+        graph.add_edge(Edge(id="e_weight_head", src_node="weight", src_port=0, dst_node="tied_head", dst_port=1))
+        graph.add_edge(Edge(id="e_head_out", src_node="tied_head", src_port=0, dst_node="out", dst_port=0))
+        graph.input_node_ids = ["hidden", "weight"]
+        graph.output_node_ids = ["out"]
+
+        class CaptureTiedHead(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.seen_hidden = None
+                self.seen_weight = None
+
+            def forward(self, hidden, tied_weight):
+                self.seen_hidden = hidden
+                self.seen_weight = tied_weight
+                hidden_tensor = dequantize_nvfp4_reference(hidden) if isinstance(hidden, NVFP4Tensor) else hidden
+                return hidden_tensor @ tied_weight.t()
+
+        compiled = CompiledTorchGraph(graph, kernel_backend="torch")
+        compiled.resolved_kernel_backend = "tile_cuda"
+        capture = CaptureTiedHead()
+        compiled.node_modules["tied_head"] = capture
+        hidden = torch.randn(2, 4).contiguous()
+        weight = torch.randn(3, 4).contiguous()
+
+        (logits,) = compiled(hidden, weight)
+
+        self.assertEqual((2, 3), tuple(logits.shape))
+        self.assertIsInstance(capture.seen_hidden, NVFP4Tensor)
+        self.assertIs(capture.seen_weight, weight)
+
+    def test_compiled_torch_graph_propagates_nvfp4_activation_config_to_subgraphs(self) -> None:
+        graph = make_gpt_graph()
+        graph.torch_config = {**graph.torch_config, "tile_cuda_activation_dtype": "nvfp4"}
+
+        compiled = CompiledTorchGraph(graph, kernel_backend="torch")
+
+        child = compiled.node_modules["model"]
+        self.assertIsInstance(child, CompiledTorchGraph)
+        self.assertEqual("nvfp4", child.tile_cuda_activation_dtype)
 
     def test_gpt_megakernel_builders_set_backbone_and_runtime(self) -> None:
         cases = (
@@ -153,6 +208,34 @@ class TorchGPTTest(unittest.TestCase):
         child = graph.nodes["model"].neuron_def.subgraph
         assert child is not None
         self.assertTrue(child.nodes["token_embed"].neuron_def.module_state)
+
+    def test_torch_trainer_exposes_active_compiled_graph_during_step_callbacks(self) -> None:
+        graph = make_gpt_graph()
+        trainer = TorchTrainer(
+            graph,
+            TorchTrainConfig(
+                epochs=1,
+                learning_rate=5e-3,
+                batch_size=2,
+                weight_decay=0.0,
+                device="cpu",
+                max_steps=1,
+            ),
+        )
+        seen_active = []
+
+        def on_step(_info):
+            seen_active.append(trainer.active_compiled_graph is not None)
+
+        trainer.train(
+            [[0, 1, 2, 3], [1, 2, 3, 4]],
+            [[1, 2, 3, 4], [2, 3, 4, 5]],
+            on_step=on_step,
+        )
+
+        self.assertEqual([True], seen_active)
+        self.assertIsNone(trainer.active_compiled_graph)
+        self.assertIsNotNone(trainer.last_compiled_graph)
 
     def test_cuda_config_does_not_fall_back_to_cpu(self) -> None:
         graph = make_gpt_graph()

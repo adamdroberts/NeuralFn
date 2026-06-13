@@ -17,6 +17,11 @@ import time
 import uuid
 from typing import Any, Callable
 
+from native_training_guard import reject_torch_training_by_default
+
+if __name__ == "__main__":
+    reject_torch_training_by_default("train_jepa_semantic.py", native_target="nfn train --base-model jepa", model_family="jepa")
+
 import numpy as np
 import torch
 
@@ -41,6 +46,7 @@ from server.dataset_manager import (
     _shard_header_offset_uint16,
     download_hf_dataset,
     encode_raw_text,
+    estimate_dataset_sequence_count,
     is_sentencepiece_tokenizer_name,
     load_dataset_tensors,
     normalize_raw_text_encoding_name,
@@ -535,7 +541,7 @@ REFERENCE_DEFAULTS = {
     "warmup_steps": 20,
     "train_batch_tokens": 524_288,
     "train_seq_len": 1_024,
-    "max_wallclock_seconds": 600.0,
+    "max_wallclock_seconds": 0.0,
     "qk_gain_init": 1.5,
     "vocab_size": 1_024,
     "num_layers": 9,
@@ -571,17 +577,17 @@ JEPA_DEFAULTS = {
     "run_id": str(uuid.uuid4()),
     "dataset_alias": DEFAULT_DATASET_ALIAS,
     "output": str(DEFAULT_ARTIFACT),
-    "max_steps": 400,
-    "train_seq_len": 128,
-    "batch_size": 8,
-    "train_batch_tokens": 8_192,
-    "eval_batches": 8,
-    "eval_batch_size": 8,
+    "max_steps": 20_000,
+    "train_seq_len": 1_024,
+    "batch_size": 64,
+    "train_batch_tokens": 524_288,
+    "eval_batches": 20,
+    "eval_batch_size": 64,
     "train_log_every": 1,
-    "val_loss_every": 200,
-    "max_wallclock_seconds": 900.0,
-    "warmup_steps": 8,
-    "warmdown_fraction": 0.75,
+    "val_loss_every": 250,
+    "max_wallclock_seconds": 0.0,
+    "warmup_steps": 60,
+    "warmdown_fraction": 0.0,
     "vocab_size": 1_024,
     "num_layers": 4,
     "model_dim": 256,
@@ -595,9 +601,9 @@ JEPA_DEFAULTS = {
     "rope_base": 10_000.0,
     "qk_gain_init": 1.5,
     "logit_softcap": 30.0,
-    "optimizer_profile": "parameter_golf",
-    "learning_rate": 3e-4,
-    "weight_decay": 0.0,
+    "optimizer_profile": "adamw",
+    "learning_rate": 6e-4,
+    "weight_decay": 0.1,
     "embed_lr": 0.02,
     "head_lr": 0.005,
     "tied_embed_lr": 0.01,
@@ -2296,9 +2302,18 @@ def estimate_text_schedule(
     device: str = "cuda",
     drop_last: bool | None = None,
     all_train_rows: bool = False,
+    encoding_name: str = "gpt2",
 ) -> dict[str, int | bool]:
-    text_dataset = load_dataset_tensors([dataset_name], seq_len=seq_len)
-    source_train_rows = len(text_dataset)
+    estimated_rows = estimate_dataset_sequence_count(
+        dataset_name,
+        seq_len=seq_len,
+        encoding_name=encoding_name,
+    )
+    if estimated_rows is None:
+        text_dataset = load_dataset_tensors([dataset_name], seq_len=seq_len, encoding_name=encoding_name)
+        source_train_rows = len(text_dataset)
+    else:
+        source_train_rows = int(estimated_rows)
     microbatch_tokens = max(batch_size * seq_len, 1)
     grad_accum_steps = max(1, math.ceil(train_batch_tokens / microbatch_tokens))
     layout = _resolve_schedule_layout(
@@ -2330,6 +2345,7 @@ def estimate_schedule(
     device: str = "cuda",
     drop_last: bool | None = None,
     all_train_rows: bool = False,
+    encoding_name: str = "gpt2",
 ) -> dict[str, int | bool]:
     base = estimate_text_schedule(
         dataset_name,
@@ -2340,6 +2356,7 @@ def estimate_schedule(
         device=device,
         drop_last=drop_last,
         all_train_rows=all_train_rows,
+        encoding_name=encoding_name,
     )
     vocab = semantic_module.ConversationalVocabulary(semantic_module.DEFAULT_SEMANTIC_VOCAB_REF)
     semantic_rows = int(

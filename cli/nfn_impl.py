@@ -218,9 +218,9 @@ RUN_PRESET_VALUES = {
 OPTIMIZER_PRESET_VALUES = {
     "gradient_default": {
         "evolutionary": False,
-        "optimizer_profile": "parameter_golf",
-        "learning_rate": 3e-4,
-        "weight_decay": 0.0,
+        "optimizer_profile": "adamw",
+        "learning_rate": 6e-4,
+        "weight_decay": 0.1,
         "embed_lr": 0.02,
         "head_lr": 0.005,
         "tied_embed_lr": 0.01,
@@ -871,7 +871,12 @@ def build_command_parser(command: str, style: str) -> argparse.ArgumentParser:
         default=None,
         help="Kernel backend selector. auto keeps PyTorch fallback; tile-cuda requests CUDA Tile fast paths.",
     )
-    parser.add_argument("--tile-cuda-strict", action="store_true", help="Fail instead of falling back when requested CUDA Tile coverage is missing.")
+    parser.add_argument(
+        "--tile-cuda-strict",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Fail instead of falling back when requested CUDA Tile coverage is missing.",
+    )
     parser.add_argument("--tile-cuda-report", default=None, help="Optional CUDA Tile diagnostics and coverage JSON report path.")
     add_dataset_arguments(parser)
     if command == "train":
@@ -3741,8 +3746,8 @@ def training_questionnaire(explicit: set[str]) -> list[Question]:
             "Choose an optimizer or search preset.",
             lambda state: [
                 OptionChoice(
-                    "Gradient Default",
-                    f"Current parameter-golf gradient baseline. Enforces {_optimizer_preset_summary('gradient_default')}.",
+                    "SM120 AdamW",
+                    f"RTX 5090/SM120 AdamW baseline. Enforces {_optimizer_preset_summary('gradient_default')}.",
                     "gradient_default",
                     recommended=not bool(state.get("evolutionary")),
                 ),
@@ -4129,6 +4134,9 @@ def state_to_cli_args(command: str, state: dict[str, Any]) -> list[str]:
         "seed",
         "device",
         "amp_dtype",
+        "kernel_backend",
+        "tile_cuda_strict",
+        "tile_cuda_report",
         "output",
         "graph",
         "weights",
@@ -4159,6 +4167,8 @@ def state_to_cli_args(command: str, state: dict[str, Any]) -> list[str]:
             args.append("--jepa")
         elif key == "megakernel":
             args.append("--megakernel")
+        elif key == "tile_cuda_strict":
+            args.append("--tile-cuda-strict")
         else:
             flag = "--" + key.replace("_", "-")
             args.extend([flag, str(value)])
@@ -4302,6 +4312,13 @@ def build_graph_for_training(args: argparse.Namespace, recipe: ComposedRecipe, d
 
 def build_trainer_config(args: argparse.Namespace, *, resolved_epochs: int, derived: dict[str, Any]) -> TorchTrainConfig:
     evo_defaults = OPTIMIZER_PRESET_VALUES["evolutionary_balanced"]
+    kernel_backend = str(getattr(args, "kernel_backend", None) or "auto")
+    tile_cuda_strict_arg = getattr(args, "tile_cuda_strict", None)
+    tile_cuda_strict = (
+        bool(tile_cuda_strict_arg)
+        if tile_cuda_strict_arg is not None
+        else kernel_backend.strip().lower().replace("-", "_") == "tile_cuda"
+    )
     return TorchTrainConfig(
         epochs=resolved_epochs,
         batch_size=int(args.batch_size),
@@ -4332,8 +4349,8 @@ def build_trainer_config(args: argparse.Namespace, *, resolved_epochs: int, deri
         grad_clip_norm=float(args.grad_clip_norm),
         drop_last=bool(derived["drop_last"]),
         respect_epoch_boundaries=bool(derived["respect_epoch_boundaries"]),
-        kernel_backend=str(getattr(args, "kernel_backend", None) or "auto"),
-        tile_cuda_strict=bool(getattr(args, "tile_cuda_strict", False)),
+        kernel_backend=kernel_backend,
+        tile_cuda_strict=tile_cuda_strict,
         tile_cuda_report_path=getattr(args, "tile_cuda_report", None),
         evolutionary=bool(args.evolutionary),
         evo_population_size=int(args.evo_population_size if args.evo_population_size is not None else evo_defaults["evo_population_size"]),
@@ -5266,6 +5283,12 @@ def main(
         return 0
 
     state = {key: value for key, value in vars(args).items() if value is not None}
+    if (
+        command in {"train", "infer", "eval"}
+        and str(state.get("kernel_backend", "")).strip().lower().replace("-", "_") == "tile_cuda"
+        and "tile_cuda_strict" not in state
+    ):
+        state["tile_cuda_strict"] = True
     if command == "kernels":
         return execute(command, state)
     if command == "infer":

@@ -33,6 +33,109 @@ Real training tensors must not pass through graph editor node objects.
 - [x] Add an assertion helper for tests: no training forward/backward path may read editor position, viewport, React store, or mutable graph-editor metadata.
 - [x] Keep editor graph objects as control-plane data only: authoring, serialization, validation, and compile-time planning.
 
+## Native C++ trainer ABI
+
+This section tracks the raw no-Torch C ABI used by compiled model trainers. It is separate from the PyTorch extension bindings and autograd wrappers.
+
+- [x] Build `libnfn_native_train_tile_ops.so` from CUDA Tile kernels without `torch/extension.h`.
+- [x] Expose AdamW, gradient accumulation, reductions, in-place scaling, and linear forward through `neuralfn/csrc/native_train/tile_ops.h`.
+- [x] Expose gradient/device-buffer fill through the native ABI for trainer-loop zeroing.
+- [x] Expose global gradient norm clip scale finalization and device-scalar gradient scaling through the native ABI.
+- [x] Expose token embedding, absolute position embedding, RMSNorm, LayerNorm, softmax, scaled dot-product attention, token CE partials, and masked token CE partials through the native ABI.
+- [x] Expose token CE logits backward and masked token CE logits backward through the native ABI.
+- [x] Add GPT-2 evo `--print-plan` compiled C++ preflight that reports the AdamW/NVFP4/evo-layer schedule and required candidate-evaluation kernels without Python/Torch.
+- [x] Add GPT-2 compiled-CLI SDK handoff config that passes cached dataset alias/path directly to the C++ shard resolver without Python `meta.json` or token-shard validation.
+- [x] Add GPT-2 native `--backend tile-cuda` / SDK `kernel_backend="tile-cuda"` preflight that reports required raw Tile ABI symbols and `--check-tile-ops` validation without Python/Torch.
+- [x] Run GPT-2 no-data Tile-CUDA preflights before token-shard resolution so `--check-tile-ops`, synthetic smoke steps, and ABI checks work without cached datasets and report `token_shards_resolved: false`.
+- [x] Add GPT-2 native Tile parameter layout and forward/backward/optimizer stage plan to the compiled `--backend tile-cuda --print-plan` JSON.
+- [x] Add GPT-2 `--smoke-optimizer-step` compiled C++ path that allocates GPT-2-sized param/grad/AdamW buffers, runs one raw Tile AdamW call per registered parameter buffer, and samples copyback values without Python/Torch.
+- [x] Add GPT-2 `--smoke-lm-step` compiled C++ path that runs tied token embedding, full-vocab LM logits, CE partials/backward, tied weight backward, and AdamW through raw Tile kernels without Python/Torch.
+- [x] Add GPT-2 `--smoke-embedding-lm-step` compiled C++ path that samples cached uint16 tokens and runs token/position embeddings, embedding residual add, final LayerNorm, tied LM head, CE backward, embedding/norm backward, and AdamW through raw Tile kernels without Python/Torch or graph-editor payloads.
+- [x] Add GPT-2 `--train-embedding-lm` compiled C++ path that runs the sampled token/position embedding, final LayerNorm, tied LM head, CE backward, embedding/norm backward, AdamW, and periodic validation loop over cached shards without Python/Torch or graph-editor payloads.
+- [x] Add GPT-2 `--smoke-attention-step` compiled C++ path that runs qkv projection, QKV split, scaled dot-product attention forward/backward, QKV gradient merge, projection backward, and AdamW through raw Tile kernels without Python/Torch.
+- [x] Add GPT-2 `--smoke-mlp-step` compiled C++ path that runs c_fc projection, GELU forward/backward, c_proj backward, and AdamW through raw Tile kernels without Python/Torch.
+- [x] Add GPT-2 `--smoke-norm-residual-step` compiled C++ path that runs LayerNorm, scaled residual add, LayerNorm backward, gradient accumulation, and AdamW through raw Tile kernels without Python/Torch.
+- [x] Add GPT-2 `--smoke-transformer-block-step` compiled C++ path that composes LayerNorm, fused QKV attention, real 12-head reshape/merge layout, residual adds, MLP, backward passes, gradient accumulation, projection bias gradients, and AdamW updates for all 12 GPT-2 block parameter buffers through raw Tile kernels without Python/Torch.
+- [x] Add GPT-2 `--smoke-transformer-lm-step` compiled C++ path that samples cached uint16 tokens, preserves range-checked GPT-2 token IDs, and runs token/position embeddings, one tiny transformer block, final LayerNorm, tied LM head, CE forward/backward, transformer backward, embedding backward, and AdamW for 16 parameter buffers through raw Tile kernels without Python/Torch.
+- [x] Implement GPT-2 `--train-transformer-lm` as an initial full-vocab real-dim single-layer multi-step compiled C++ loop over cached shards using token/position embeddings, one transformer block, final norm, a row-chunked tied LM-head/CE workspace, transformer backward, embedding backward, periodic validation, device-side global norm gradient clipping, and 16 AdamW parameter updates without Python/Torch.
+- [x] Report GPT-2 `--train-transformer-lm` `trained_layers` / `target_layers` in JSON so trained depth is directly testable.
+- [x] Report GPT-2 `--train-transformer-lm` `block_state_layout` in JSON and store trained block weights/gradients/AdamW state behind an explicit per-block C++ structure as the first step toward a 12-block array.
+- [x] Drive GPT-2 `--train-transformer-lm` block parameter allocation, initialization, gradient zeroing, gradient clipping, AdamW updates, and trained-weight checkpoint export from the per-block C++ state vector instead of direct `block0` optimizer wiring/export.
+- [x] Drive GPT-2 `--train-transformer-lm` block activation storage plus forward/backward execution through a per-block activation tape and block loops instead of a single inline block body.
+- [x] Raise GPT-2 `--train-transformer-lm` trained block count from 1 to 12 using a scratch-recompute activation tape plus persistent block outputs instead of allocating a full tape per layer.
+- [x] Add GPT-2 `--checkpoint-metadata-smoke` compiled C++ path that writes a sparse version-5 bf16 native checkpoint-format file plus `DONE_########` marker for the requested `--num-layers` target shape without Python/Torch/CUDA.
+- [x] Add GPT-2 `--train-transformer-lm` final trained-weight checkpoint export in native version-5 bf16 `.bin` format with `DONE_########` marker and JSON file-size accounting.
+- [x] Default dense GPT-2 Python and SDK compiled-CLI handoff to `kernel_backend="tile-cuda"` plus `--train-transformer-lm`, leaving `llm-kittens` as an explicit external bridge instead of the default training route.
+- [x] Keep GPT-2 wrapper `--native-cuda-dry-run --native-cuda-print-command` metadata-only on the default compiled CLI runner, with no dataset-manager/NumPy/tiktoken/Torch imports and no raw-text shard materialization.
+- [x] Add GPT-2 `--train-transformer-lm` CUDA runtime/driver preflight JSON and fail before allocation when the driver is unavailable or older than the loaded runtime, so SM120 benchmarking has a clear native gate.
+- [x] Teach the native C++ token resolver to accept llm.kittens `TinyStories_train.bin` / `TinyStories_val.bin` directly for `--tinystories`, with `NFN_LLM_KITTENS_TINYSTORIES_DIR` override and direct train-bin sibling validation inference, so GPT-2 startup can match `train-sm120.sh` without Python dataset scanning or raw-text shard materialization.
+- [x] Fuse GPT-2 `--train-transformer-lm` token/target upload into one contiguous pinned-to-device uint16 arena copy and one `nfn_native_tile_uint16_to_int64` launch per microbatch, instead of one copy and one widening launch for tokens plus another pair for targets.
+- [x] Add `SequentialTokenBatchSampler::next_into()` and use it in GPT-2 `--train-transformer-lm` train/validation loops so real batches write directly into pinned uint16 arenas without `TokenBatch` vector materialization or vector-to-pinned copies.
+- [x] Suballocate GPT-2 `--train-transformer-lm` widened int64 token/target buffers and compact uint16 H2D staging from one aligned device token arena, reducing two token device startup `cudaMalloc` calls to one.
+- [x] Replace GPT-2 `--train-transformer-lm` startup per-buffer zero fills for zero biases and AdamW state with one float-arena zero fill, eliding 369 zero-fill launches at the default 12-layer shape.
+- [x] Fuse GPT-2 `--train-transformer-lm` nonzero constant parameter initialization through `nfn_native_tile_fill_many_values_float32`, reducing the default 12-layer startup path from 75 per-buffer nonzero fill launches to one descriptor-driven Tile launch.
+- [x] Fuse GPT-2 `--train-transformer-lm` AdamW updates through `nfn_native_tile_adamw_step_many_with_device_scale_float32`, reducing the default 12-layer optimizer step from 148 per-buffer AdamW launches to one multi-buffer launch.
+- [x] Fuse GPT-2 `--train-transformer-lm` accumulation-gradient zeroing through `nfn_native_tile_fill_many_float32`, reducing the default 12-layer optimizer-step zeroing path from 148 per-buffer fill launches to one multi-buffer launch.
+- [x] Fuse GPT-2 `--train-transformer-lm` gradient-clipping sumsq partial generation through `nfn_native_tile_sumsq_partials_many_float32`, reducing the default 12-layer optimizer-step clipping path from 148 per-buffer sumsq launches to one multi-buffer launch before the device clip-scale reduction.
+- [x] Fuse GPT-2 `--train-transformer-lm` QKV projection split plus Q/K/V head reshape through `nfn_native_tile_split_qkv_to_heads_float32`, reducing the default forward layout path from four launches per block to one.
+- [x] Fuse GPT-2 `--train-transformer-lm` SDPA backward Q/K/V head-gradient merge plus QKV gradient assembly through `nfn_native_tile_merge_heads_to_qkv_float32`, reducing the default backward layout path from four launches per block to one and removing the full trainer's row-major `grad_q`, `grad_k`, and `grad_v` scratch buffers.
+- [x] Add `nfn_native_tile_scaled_dot_product_attention_backward_from_merged_grad_float32` and use it in GPT-2 `--train-transformer-lm` so SDPA backward reads row-major attention-output gradients directly, removing the pre-backward `reshape_heads` launch and `grad_attn_heads` scratch buffer from the full trainer.
+- [x] Suballocate GPT-2 `--train-transformer-lm` AdamW, gradient-zero, gradient-clip, and parameter-fill descriptor tables from one device descriptor arena, reducing ten small startup descriptor `cudaMalloc` calls to one.
+- [x] Pack GPT-2 `--train-transformer-lm` descriptor tables into one host descriptor arena and upload it with one H2D copy, reducing ten startup descriptor `cudaMemcpy` calls to one.
+- [ ] Live-validate GPT-2 `--train-transformer-lm` memory/runtime behavior at the SM120 default batch shape and compare throughput against `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`.
+- [ ] Finish replacing the dense GPT-2 external `llm.kittens` bridge by live-validating the NeuralFn-owned `libnfn_native_train_tile_ops.so` loop against the `llm.kittens` SM120 script and removing any remaining external bridge dependency.
+- [ ] Implement GPT-2 evo native layer-evolution candidate evaluation, device-side mutation, candidate loss reduction, and best-candidate adoption kernels without graph-editor tensor flow.
+- [x] Expose NanoGPT preflight JSON with separate `available_native_kernels` and `required_native_kernels` lists.
+- [x] Add NanoGPT `--check-tile-ops` compiled C++ path that `dlopen`s `libnfn_native_train_tile_ops.so` and verifies required raw ABI symbols without Python/Torch.
+- [x] Add NanoGPT `--smoke-tile-ops` compiled C++ path that dynamically loads CUDA runtime, executes `nfn_native_tile_fill_float32`, and verifies device-to-host copyback without Python/Torch.
+- [x] Add NanoGPT `--smoke-optimizer-step` compiled C++ path that builds the NanoGPT parameter layout, initializes contiguous param/grad/AdamW buffers, executes `nfn_native_tile_adamw_step_float32` once per registered parameter buffer, and verifies param/moment copyback without Python/Torch.
+- [x] Add NanoGPT `--smoke-training-loop-step` compiled C++ path that executes gradient zeroing, synthetic gradient fill, global-norm clip scale finalization, device-scalar gradient scaling, and per-buffer AdamW over the registered parameter layout without Python/Torch.
+- [x] Add NanoGPT `--smoke-lm-step` compiled C++ path that runs token embedding, tied LM-head linear logits, token CE loss/backward, tied weight backward, and AdamW update through raw native kernels without Python/Torch.
+- [x] Add NanoGPT `--smoke-token-train-step` compiled C++ path that samples a real native uint16 token/target batch from cached shards, runs tied-LM forward/backward/update kernels over those IDs, and verifies sampled-batch loss, gradient, and weight update values without Python/Torch.
+- [x] Add NanoGPT `--train-token-lm` compiled C++ path that runs a real multi-step tied token-embedding LM training loop over cached native token shards without Python/Torch.
+- [x] Add periodic native validation loss to NanoGPT `--train-token-lm` over resolved validation token shards without Torch, Python dataset payloads, or graph-editor node data flow.
+- [x] Route NanoGPT `--train-token-lm` through `nfn-native-train` and `neuralfn.native_train.run_native_train()` so CLI and SDK dispatch stay on compiled native artifacts.
+- [x] Make normal NanoGPT training entrypoints (`nfn train --base-model nanogpt ...` and `python cli/scripts/train_nanogpt.py ...`) select the partial native `--train-token-lm` mode before Torch imports, with `--dry-run` / `--print-command` inspecting that same route without starting the loop.
+- [x] Add NanoGPT `--smoke-embedding-norm-step` compiled C++ path that samples native tokens and runs token/position embeddings, residual add, LayerNorm forward/backward, tied logits, CE backward, embedding/position/norm gradients, and AdamW updates through raw native kernels without Python/Torch.
+- [x] Add NanoGPT `--smoke-mlp-step` compiled C++ path that runs MLP fc projection, GELU, output projection, backward, and AdamW updates through raw native kernels without Python/Torch.
+- [x] Add NanoGPT `--smoke-attention-step` compiled C++ path that runs Q/K/V projections, SDPA forward/backward, output projection, Q/K/V projection backward, and AdamW updates through raw native kernels without Python/Torch.
+- [x] Add NanoGPT native parameter/gradient buffer registry and contiguous AdamW-state layout to the C++ preflight.
+- [x] Add NanoGPT AdamW parameter-group metadata over the registered C++ buffers.
+- [x] Add NanoGPT native execution-stage plan with ready/requires-wiring/missing-ABI status per forward, backward, and optimizer stage.
+- [x] Expose scaled residual add through the raw no-Torch native trainer ABI.
+- [x] Expose fused QKV split/merge through the raw no-Torch native trainer ABI so NanoGPT can use one `qkv.weight` projection, feed contiguous Q/K/V buffers into SDPA, and pack Q/K/V gradients back into the fused projection gradient.
+- [x] Expose reshape-heads and merge-heads through the raw no-Torch native trainer ABI so GPT-style trainers can feed `[batch, heads, seq, head_dim]` attention kernels without PyTorch layout helpers.
+- [x] Add NanoGPT `--smoke-qkv-layout-step` compiled C++ path that executes fused-QKV split and merge kernels on device buffers and verifies exact layout copyback without Python/Torch.
+- [x] Add NanoGPT `--smoke-fused-qkv-attention-step` compiled C++ path that runs fused `attn.qkv.weight` projection, QKV split, SDPA forward/backward, QKV gradient merge, fused qkv weight backward, output projection backward, and AdamW updates through raw native kernels without Python/Torch.
+- [x] Add NanoGPT `--smoke-transformer-block-step` compiled C++ path that composes LayerNorm, fused-QKV attention, residual adds, MLP, backward passes, gradient accumulation, and AdamW updates for one tiny transformer block through raw native kernels without Python/Torch.
+- [x] Mark NanoGPT tied LM head input/weight backward as covered by the raw linear backward native ABI.
+- [x] Replace the NanoGPT-sized CE backward path (`vocab <= 1024`) with row-wise kernels that compute softmax statistics once per row instead of once per output element.
+- [x] Add chunked row-wise CE backward for larger vocabularies so full GPT-class vocabularies do not use the elementwise fallback.
+- [x] Expose absolute position embedding backward through the native ABI.
+- [x] Expose token embedding weight backward through the native ABI.
+- [x] Expose LayerNorm input and affine parameter backward through the native ABI.
+- [x] Expose RMSNorm input backward through the native ABI.
+- [x] Expose linear input backward through the native ABI.
+- [x] Expose linear weight and bias backward through the native ABI.
+- [x] Expose LayerNorm affine and Linear bias gradient-accumulate native ABI variants for optimizer-step accumulation buffers.
+- [x] Replace serial linear weight/bias backward row loops with row-chunked tiled atomic accumulation for large row counts.
+- [x] Remove GPT-2 full-trainer per-microbatch LayerNorm affine / Linear bias scratch buffers and copy loops by writing directly into accumulation buffers.
+- [x] Add trainer-build GPU GEMM fast path for native linear forward, dInput, and dWeight behind `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1` without importing Torch or the PyTorch Tile extension.
+- [x] Add trainer-build GPU GEMV fast path for native linear bias backward and accumulate-bias backward behind `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1`, using a cached device ones vector initialized by a Tile fill kernel instead of the row-chunked atomic bias fallback.
+- [ ] Replace fallback linear weight backward reduction kernels with GEMM-grade tiled kernels for large row counts when the trainer cuBLAS path is unavailable.
+- [x] Expose GELU activation forward/backward through the native ABI.
+- [ ] Add dropout forward/backward native Tile ABI if nonzero dropout training is re-enabled.
+- [x] Wire MLP-stage activation and projection backward through the native NanoGPT preflight/smoke path, including fc/proj input and weight backward, GELU backward, and AdamW updates.
+- [x] Expose scaled dot-product attention backward through the native ABI.
+- [x] Wire attention-stage QKV/output projection backward through the native NanoGPT preflight/smoke path, including fused QKV split, SDPA backward, QKV gradient merge, fused qkv backward, output projection backward, and AdamW updates.
+- [x] Replace GPT-2-compatible SDPA forward scalar-output Tile launch with a value-chunked row-vector Tile attempt for `seq_k <= 1024`, reusing each query row's score/softmax across a 2-channel value chunk when CUDA accepts the row kernel and falling back to scalar Tile attention when CUDA rejects that launch.
+- [x] Add GPT-2 `--train-transformer-lm` attention-forward launch telemetry and auto-disable repeated row-kernel attempts after the first CUDA launch rejection, so live runs report row attempts, row successes, row fallbacks, scalar launches, and avoid repeated failed-launch overhead.
+- [ ] Tune GPT-2 SDPA forward row-vector Tile resources until `attention_forward_row_launch_fallback_count` is zero on the live SM120 probe.
+- [ ] Tune the GPT-2-compatible row-vector SDPA Tile kernel so the live SM120 trainer no longer needs the scalar-launch safety fallback.
+- [x] Cover every shipped GPT template name in the native GPT-2 training selector via `--template-name` / `--preset`, and cover custom graph selection via `--graph-file`, returning explicit native-trainer-missing JSON for unsupported templates instead of falling back to Torch or graph-editor tensor flow.
+- [x] Update dense GPT-2 native dry-run/plan JSON to report `native-transformer-lm-ready` and `training_step_plan.status: "ready"` for the implemented compiled Tile-CUDA loop, leaving only live SM120 throughput comparison under `remaining_validation`.
+- [ ] Wire full NanoGPT transformer training loop to the token-shard sampler and the ready native forward/backward/optimizer stages without importing Torch.
+
 ## Backend scaffolding
 
 - [x] Add `neuralfn/tile_cuda/__init__.py`.
@@ -261,6 +364,17 @@ Per-kernel done criteria:
 - [x] Gradient clipping norm and scale kernels.
 - [x] EMA target update kernels for JEPA objectives.
 - [x] Route-evolution evaluation path audit for Tile compatibility or explicit fallback.
+- [x] GPT-2 compiled C++ `--smoke-tile-ops` path that loads raw Tile ops, launches `nfn_native_tile_fill_float32`, copies back, and reports JSON without Python/Torch.
+- [x] GPT-2 compiled C++ `--smoke-optimizer-step` path over the registered GPT-2 parameter layout.
+- [x] GPT-2 compiled C++ `--smoke-lm-step` path over a tiny tied embedding/LM-head forward/backward/update slice.
+- [x] GPT-2 compiled C++ `--smoke-embedding-lm-step` path over sampled cached uint16 tokens, token/position embeddings, final norm, tied LM head, CE backward, embedding/norm backward, and AdamW.
+- [x] GPT-2 compiled C++ `--train-embedding-lm` partial native loop over cached shards with periodic validation losses.
+- [x] GPT-2 compiled C++ `--smoke-attention-step` path over a tiny model-dim qkv/SDPA/projection backward/update slice.
+- [x] GPT-2 compiled C++ `--smoke-mlp-step` path over a tiny c_fc/GELU/c_proj backward/update slice.
+- [x] GPT-2 compiled C++ `--smoke-norm-residual-step` path over LayerNorm/residual/backward/gradient-accumulation/update block glue kernels.
+- [x] GPT-2 compiled C++ `--smoke-transformer-block-step` path over a composed LayerNorm/attention/residual/MLP/backward/update block, including projection bias gradients and AdamW updates for all 12 GPT-2 block parameter buffers.
+- [x] GPT-2 compiled C++ `--smoke-transformer-lm-step` path over sampled cached GPT-2 token IDs, embeddings, one transformer block, final norm, tied LM head, CE backward, transformer backward, embedding backward, and 16-buffer AdamW update coverage.
+- [x] GPT-2 compiled C++ `--train-transformer-lm` full-vocab real-dim 12-layer multi-step loop over cached train/validation shards with token-to-loss transformer kernels, row-chunked logits workspace, scratch-recompute activation tape, 148-buffer AdamW updates, validation JSON, and no Python/Torch fallback.
 
 ## Examples to add
 
@@ -303,3 +417,54 @@ Per-kernel done criteria:
 - [x] Do not change existing template preset names for Tile support.
 - [x] Do not turn variant-library port mismatch fallback back into a hard error.
 - [x] If a future public config or graph serialization field changes, add a clearly labeled breaking-change note to `CHANGELOG.md` and matching docs.
+
+## Dtype expansion: fp16, fp8, and NVFP4
+
+Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where the dtype is meaningful and safe. Keep explicit exclusions for host-only nodes, integer-output/hash kernels, source/orchestration nodes, and kernels whose state contract is inherently another quantization format such as NF4.
+
+### Dtype policy gates
+
+- [x] Add a per-kernel dtype support matrix to the registry instead of only a flat `dtypes` tuple.
+- [x] Add strict-mode errors that name the requested dtype and the supported dtype set for scalar functions, simple modules, and projection modules.
+- [x] Add dtype-specific coverage reports for `float32`, `float16`, `float8_e4m3fn`, `float8_e5m2`, and NVFP4.
+- [x] Keep fp8/NVFP4 accumulation in fp32 unless the kernel has a proven lower-precision accumulation contract.
+- [x] Add deterministic CPU reference quantize/dequantize helpers for fp8 and NVFP4.
+- [x] Add GPU parity tolerances per dtype family for verified fp16, fp8, and projection-family NVFP4 contracts.
+
+### fp16 coverage
+
+- [x] Scalar function kernels: unary, binary, and binary-pair function nodes use Tile float32 compute with fp16 cast-in/cast-out.
+- [x] Scalar module kernels: `loss_scale`, `logit_softcap`, `aux_loss_add`, and `kl_penalty` use Tile float32 compute with fp16 activation cast-in/cast-out.
+- [x] Simple vector/elementwise module kernels: `residual_add`, `residual_mix`, `manifold_hyper_connection`, `qk_gain`, and `dyt` support fp16 activations with float32 scale/parameter gradients.
+- [x] Reduction-adjacent elementwise module kernels: `act_weighted_sum` and `latent_pool` support fp16 activations with float32 weights or masks.
+- [x] Stateful stochastic elementwise module kernels: `dropout` fp16 training masks for `0 < p < 1`; deterministic eval and `p=0` already use the fp16 identity path.
+- [x] Norm kernels: `rms_norm`, `layer_norm`, `group_norm`, and `qk_norm` with fp32 reduction.
+- [x] Projection kernels: `linear`, `lm_head`, `tied_lm_head`, router/value/reward/denoise heads, KV PCA projections, JEPA heads, deterministic LoRA/TTT/adapter projections, quantized-weight `bitlinear_ternary`/`fp8_linear`/`mx_linear`, MLP projections, and ACT halt projection.
+- [x] Semantic projector fp16 discrete topic output contract: keep `semantic_projector` and `semantic_chunk_projector` float32-only because their argmax-derived topic/signature semantics can change under lower-precision activation quantization.
+- [x] Attention kernels: SDPA, sliding/window/block/native sparse variants, differential attention, causal/fused causal attention, MLA, and routed attention experts with fp32 score/softmax or route-weight accumulation and fp16 output.
+- [x] Routed attention experts fp16 route-weight accumulation contract.
+- [x] Loss/reduction kernels with fp32 accumulation and fp16-compatible logits or values: token CE, masked CE, sequence logp, latent MSE, semantic alignment, DPO, PPO, GAE, preference BCE, load/route balance, route selection/distillation, and softmax distillation.
+- [x] Optimizer/runtime kernels where fp16 parameter state is meaningful: `ema_update`, `gradient_accumulate`, `gradient_clip_norm`, and `adamw_step` with fp16 parameter/gradient buffers plus fp32 Adam moments.
+- [x] Muon and split-optimizer fp16 matrix-state semantics: support fp16 parameter/gradient tensors with float32 momentum/Adam state; keep standalone Newton-Schulz matrix orthogonalization float32-only.
+- [x] CPU registry and GPU parity tests for the fp16-supported scalar function, elementwise module, reduction-adjacent module, norm, projection, attention, loss/reduction, and optimizer/runtime families.
+- [x] CPU and GPU parity tests for each newly added fp16 family beyond scalar functions and simple modules.
+
+### fp8 coverage
+
+- [x] Define supported fp8 formats: `float8_e4m3fn` and `float8_e5m2`.
+- [x] Direct projection fp8 activation kernels with fp32 accumulation for `linear`, LM/router/value/reward/denoise heads, tied LM head, and KV PCA encode/decode.
+- [x] Composite projection-family fp8 activation kernels with fp32 accumulation and scale/amax handling for JEPA heads, LoRA/TTT/adapters, quantized-weight wrappers, MLP projections, and ACT halt projection.
+- [x] Attention fp8 Q/K/V input support with fp32 score/softmax accumulation where tensor-core or Tile support allows it.
+- [x] Elementwise fp8 pass-through/activation kernels where inputs can be safely dequantized to fp32 and requantized.
+- [x] Explicit no-fp8 reasons for losses, optimizers, integer/hash outputs, stochastic masks, and source/delegated nodes where fp8 is not meaningful.
+- [x] CPU and GPU parity tests with fp8 tolerances plus explicit boundary overflow checks for PyTorch fp8 E4M3FN/E5M2 reference behavior.
+
+### NVFP4 coverage
+
+- [x] Define the NeuralFn NVFP4 packed representation, scale metadata, and row/block granularity.
+- [x] Add pack/unpack helpers and CPU references for NVFP4.
+- [x] Projection-family NVFP4 activation kernels with fp32 accumulation for `linear`, LM/router/value/reward/denoise heads, tied LM head, KV PCA encode/decode, JEPA heads, deterministic LoRA/TTT/adapter projections, `bitlinear_ternary`, `fp8_linear`, `mx_linear`, MLP projections, and ACT halt projection; `nf4_linear` stays excluded because it owns a separate packed NF4 base-weight contract.
+- [x] Attention Q/K/V NVFP4 support for SDPA, sparse/window/native/streaming-sink attention variants, differential attention, causal/fused causal attention, MLA, and routed attention experts with fp32 score/softmax and route-weight accumulation.
+- [x] Explicit no-NVFP4 reasons for losses, optimizers, stochastic masks, integer/hash outputs, and source/delegated nodes where NVFP4 is not meaningful.
+- [x] CPU and GPU parity tests with NVFP4 tolerances for projection-family and attention-family activations plus source-gradient preservation.
+- [x] NVFP4 saturation-boundary tests for packed projection inputs.

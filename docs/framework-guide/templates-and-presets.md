@@ -48,7 +48,10 @@ This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_me
 | Preset | Builder | Backbone | Objective | Sparsity | Key features |
 |--------|---------|----------|-----------|----------|--------------|
 | `nanogpt` | `build_nanogpt_spec` | nanogpt | ar | dense | LayerNorm, GELU MLP, absolute position embeddings |
+| `nanogpt_megakernel` | `build_nanogpt_megakernel_spec` | nanogpt | ar | dense | NanoGPT with `runtime="megakernel"` |
 | `gpt2` | `build_gpt2_spec` | gpt2 | ar | dense | LayerNorm, GELU MLP, absolute position embeddings, bias |
+| `gpt2_megakernel` | `build_gpt2_megakernel_spec` | gpt2 | ar | dense | GPT-2 with `runtime="megakernel"`; native CUDA Tile trainer-compatible |
+| `gpt2_moa` | `build_gpt2_moa_spec` | gpt2 | ar | dense | GPT-2 with mixture-of-activations MLP selection |
 | `llama` | `build_llama_spec` | llama | ar | dense | RMSNorm, SwiGLU, RoPE, GQA |
 | `moe` / `mixllama` | `build_mixllama_spec` | mixllama | ar | moe | RMSNorm, MoE MLP, RoPE, GQA |
 | `llama_fast` | `build_llama_fast_spec` | llama | ar | dense | Like llama + `torch.compile` |
@@ -70,6 +73,7 @@ This returns a fully wired `NeuronGraph` with `runtime="torch"` and `training_me
 
 | Preset [Experimental] | Builder [Experimental] | Backbone | Objective [Experimental] | Sparsity | Key features [Experimental] |
 |-----------------------|------------------------|----------|----------------------------|----------|----------------------------|
+| `gpt2_evo` (SDK-only builder) | `build_gpt2_evo_spec` | gpt2 | ar | dense | Dense GPT-2 with one evolution-trained block: the `layer_evo_index` block (default middle) is excluded from gradient optimization and updated by an interleaved evolutionary search (`layer_evo_*` knobs) that always keeps the current weights as the elite candidate. Trained via `cli/scripts/train_gpt2_evo.py`, which defaults to a 12-layer SM120 AdamW run, the CUDA Tile kernel backend, NVFP4 activation packing, and live validation every 250 optimizer steps. Inference uses `cli/scripts/infer_gpt2.py --evo` or explicit `nfn infer --graph ...gpt2_evo.json --weights ...gpt2_evo.pt`. Not registered as an editor preset. |
 | `semantic_router_moe` | `build_semantic_router_moe_spec` | mixllama | `semantic_router` | moe | AR-only control experiment: vocab-grounded semantic projection + LSH + one expert per semantic vocabulary dimension shared across all MoE blocks. |
 | `jepa_semantic_hybrid` | `build_jepa_semantic_hybrid_spec` | llama | `jepa_semantic` | moe | JEPA + vocab-grounded semantic state + LSH + fixed dimension-to-expert topic routing + full-sequence attention experts (research prototype). |
 | `semantic_dense_jepa_evo` | `build_semantic_dense_jepa_evo_spec` | llama | `semantic_dense_jepa_evo` | dense | Dense control for the Semantic JEPA Evo stack: chunk-level causal semantic planner, JEPA target supervision, dense LLaMA FFNs, and no route evolution. |
@@ -97,6 +101,17 @@ These presets combine the modern-LLM kernels (§21–§33 in `todo-kernels.md`) 
 | `dyt_geglu_semantic_dense_jepa_evo` | `build_dyt_geglu_semantic_dense_jepa_evo_spec` | — | DyT + GeGLU crossed with the semantic dense JEPA Evo stack |
 
 **DeepSeek-V4 mapping note:** V4-Pro's *domain-specific experts* (independently cultivated per math/code/agent/instruction, then consolidated) are the post-training analog of NeuralFn's architectural **semantic vocab-grounded per-dimension experts** (`semantic_router_moe`, `semantic_moe_jepa_evo`) — one expert per semantic dimension at routing time.
+
+**Native training selection:** `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS` is
+the canonical SDK catalog of names accepted by native GPT-2 training selectors.
+`train_gpt2.py` and the native GPT-2 SDK handoff accept `--template-name` /
+`--preset` for every shipped GPT template name, plus `--graph-file` for a
+custom graph JSON. Dense GPT-2-compatible presets (`gpt2`,
+`gpt2_megakernel`, and `gpt2_moa`) map to the implemented compiled CUDA Tile
+trainer today; `gpt2_moa` resolves to the native MoA activation mode
+automatically. Structurally different presets and custom graphs are selected and reported by the compiled frontend, then fail with
+`selected-graph-native-trainer-missing` until their graph-specific C++ Tile
+trainer plans are implemented; they do not fall back to Torch by default.
 
 #### Modernized presets (`<preset>_modern`)
 

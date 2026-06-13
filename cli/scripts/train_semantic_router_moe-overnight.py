@@ -13,6 +13,15 @@ import time
 import uuid
 from typing import Any, Callable
 
+from native_training_guard import reject_torch_training_by_default
+
+if __name__ == "__main__":
+    reject_torch_training_by_default(
+        "train_semantic_router_moe-overnight.py",
+        native_target="nfn train --base-model semantic-router-moe",
+        model_family="semantic-router-moe",
+    )
+
 import numpy as np
 import torch
 
@@ -64,17 +73,17 @@ ROUTER_DEFAULTS = {
     "run_id": str(uuid.uuid4()),
     "dataset_alias": DEFAULT_DATASET_ALIAS,
     "output": str(DEFAULT_ARTIFACT),
-    "max_steps": 400,
-    "train_seq_len": 128,
-    "batch_size": 8,
-    "train_batch_tokens": 8_192,
-    "eval_batches": 8,
-    "eval_batch_size": 8,
+    "max_steps": 20_000,
+    "train_seq_len": 1_024,
+    "batch_size": 64,
+    "train_batch_tokens": 524_288,
+    "eval_batches": 20,
+    "eval_batch_size": 64,
     "train_log_every": 1,
-    "val_loss_every": 200,
-    "max_wallclock_seconds": 900.0,
-    "warmup_steps": 8,
-    "warmdown_fraction": 0.75,
+    "val_loss_every": 250,
+    "max_wallclock_seconds": 0.0,
+    "warmup_steps": 60,
+    "warmdown_fraction": 0.0,
     "vocab_size": 1_024,
     "num_layers": 4,
     "model_dim": 256,
@@ -87,9 +96,9 @@ ROUTER_DEFAULTS = {
     "rope_base": 10_000.0,
     "qk_gain_init": 1.5,
     "logit_softcap": 30.0,
-    "optimizer_profile": "parameter_golf",
-    "learning_rate": 3e-4,
-    "weight_decay": 0.0,
+    "optimizer_profile": "adamw",
+    "learning_rate": 6e-4,
+    "weight_decay": 0.1,
     "embed_lr": 0.02,
     "head_lr": 0.005,
     "tied_embed_lr": 0.01,

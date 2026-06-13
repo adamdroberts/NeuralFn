@@ -161,6 +161,42 @@ class DatasetManagerVariantsTest(unittest.TestCase):
         self.assertEqual(x.tolist(), expected_tokens[:1])
         self.assertEqual(y.tolist(), expected_tokens[1:2])
 
+    def test_load_dataset_tensors_materializes_gpt2_raw_text_uint16_cache(self) -> None:
+        text = "hello world\nsecond line\n"
+        expected_tokens = dm.encode_raw_text(text, encoding_name="gpt2")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ds_dir = Path(tmpdir) / "tiny_gpt2"
+            ds_dir.mkdir(parents=True, exist_ok=True)
+            (ds_dir / "data.txt").write_text(text, encoding="utf-8")
+            (ds_dir / "val.txt").write_text("validation line\n", encoding="utf-8")
+            (ds_dir / "meta.json").write_text(
+                json.dumps(
+                    {
+                        "source": "local",
+                        "tokenizer_encoding": "gpt2",
+                        "tokenizer_vocab_size": dm.raw_text_encoding_vocab_size("gpt2"),
+                        "num_tokens": len(expected_tokens),
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.object(dm, "DATASETS_DIR", Path(tmpdir)):
+                dataset = dm.load_dataset_tensors(["tiny_gpt2"], seq_len=2, encoding_name="gpt2")
+                meta = json.loads((ds_dir / "meta.json").read_text(encoding="utf-8"))
+                x, y = dataset[0]
+                train_cache_exists = (ds_dir / "fineweb_train_000000.bin").exists()
+                val_cache_exists = (ds_dir / "fineweb_val_000000.bin").exists()
+
+        self.assertEqual(meta["data_format"], "uint16_shards")
+        self.assertEqual(meta["token_cache_format"], "raw_text_uint16_shards")
+        self.assertTrue(train_cache_exists)
+        self.assertTrue(val_cache_exists)
+        self.assertEqual(x.tolist(), expected_tokens[:2])
+        self.assertEqual(y.tolist(), expected_tokens[1:3])
+
 
 if __name__ == "__main__":
     unittest.main()

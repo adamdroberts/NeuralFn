@@ -345,6 +345,20 @@ def _tokenizer_backed_uint16_shards(dataset_meta: dict[str, Any]) -> bool:
     return bool(tokenizer_name) or (isinstance(tokenizer_files, list) and len(tokenizer_files) > 0)
 
 
+def _raw_text_metadata_matches_encoding(dataset_meta: dict[str, Any], encoding_name: str) -> bool:
+    normalized_encoding = normalize_raw_text_encoding_name(encoding_name) or "gpt2"
+    tokenizer_vocab_size = raw_text_encoding_vocab_size(normalized_encoding)
+    if is_sentencepiece_tokenizer_name(normalized_encoding):
+        return (
+            str(dataset_meta.get("tokenizer_name") or "").strip().lower() == normalized_encoding
+            and int(dataset_meta.get("tokenizer_vocab_size") or 0) == tokenizer_vocab_size
+        )
+    return (
+        str(dataset_meta.get("tokenizer_encoding") or "").strip().lower() == normalized_encoding
+        and int(dataset_meta.get("tokenizer_vocab_size") or 0) == tokenizer_vocab_size
+    )
+
+
 def resolve_cached_tokenizer_artifacts(
     dataset_path: Path,
     dataset_meta: dict[str, Any],
@@ -436,6 +450,14 @@ def _max_token_id_in_uint16_shards(dataset_path: Path) -> int:
         if shard_max > max_token_id:
             max_token_id = shard_max
     return max_token_id
+
+
+def _uint16_shard_token_count(shard_path: Path) -> int:
+    return max(0, (shard_path.stat().st_size // 2) - _shard_header_offset_uint16(shard_path))
+
+
+def _uint16_shard_sequence_count(shard_paths: list[Path], seq_len: int) -> int:
+    return sum(max(0, (_uint16_shard_token_count(path) - 1) // seq_len) for path in shard_paths)
 
 
 def _tokenizer_mismatch_message(
@@ -1011,6 +1033,145 @@ def refresh_raw_text_dataset_metadata(
     return meta
 
 
+def _write_uint16_token_shard_from_text(
+    source_path: Path,
+    destination_path: Path,
+    *,
+    encoding_name: str,
+    encoding: Any | None = None,
+) -> int:
+    token_count = 0
+    tmp_path = destination_path.with_suffix(destination_path.suffix + ".tmp")
+    if tmp_path.exists():
+        tmp_path.unlink()
+    try:
+        with source_path.open("r", encoding="utf-8") as source, tmp_path.open("wb") as output:
+            for text in source:
+                tokens = encode_raw_text(text, encoding_name=encoding_name, encoding=encoding)
+                if not tokens:
+                    continue
+                if min(tokens) < 0 or max(tokens) > np.iinfo(np.uint16).max:
+                    raise ValueError(
+                        f"Raw-text token cache for {source_path} cannot be stored as uint16 with tokenizer {encoding_name!r}."
+                    )
+                np.asarray(tokens, dtype=np.uint16).tofile(output)
+                token_count += len(tokens)
+        tmp_path.replace(destination_path)
+    except Exception:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
+    return token_count
+
+
+def ensure_raw_text_token_cache(
+    dataset_name: str,
+    *,
+    dataset_path: Path | None = None,
+    dataset_meta: dict[str, Any] | None = None,
+    encoding_name: str = "gpt2",
+) -> dict[str, Any]:
+    """Materialize raw-text datasets as uint16 token shards when the tokenizer fits.
+
+    This keeps repeated training runs on large text corpora from re-reading and
+    re-tokenizing multi-GB text files during schedule estimation or DataLoader
+    construction. Tokenizers with ids outside uint16, such as o200k_base, are
+    intentionally left on the raw-text path.
+    """
+
+    _ensure_datasets_dir()
+    ds_path = dataset_path or (DATASETS_DIR / dataset_name)
+    meta = dict(dataset_meta or _load_dataset_meta(ds_path))
+    if not ds_path.is_dir():
+        return meta
+
+    normalized_encoding = normalize_raw_text_encoding_name(encoding_name) or "gpt2"
+    tokenizer_vocab_size = raw_text_encoding_vocab_size(normalized_encoding)
+    if tokenizer_vocab_size > int(np.iinfo(np.uint16).max) + 1:
+        return meta
+
+    train_files = sorted(ds_path.glob("fineweb_train_*.bin"))
+    if (
+        meta.get("data_format") == "uint16_shards"
+        and train_files
+        and _raw_text_metadata_matches_encoding(meta, normalized_encoding)
+    ):
+        return meta
+
+    data_file = _raw_text_data_file_for_path(ds_path)
+    if data_file is None:
+        return meta
+
+    if is_sentencepiece_tokenizer_name(normalized_encoding):
+        encoding = resolve_sentencepiece_encoding(normalized_encoding)
+    else:
+        encoding = resolve_tiktoken_encoding(normalized_encoding)
+
+    for stale_path in sorted(ds_path.glob("fineweb_train_*.bin")) + sorted(ds_path.glob("fineweb_val_*.bin")):
+        stale_path.unlink()
+
+    train_path = ds_path / "fineweb_train_000000.bin"
+    train_tokens = _write_uint16_token_shard_from_text(
+        data_file,
+        train_path,
+        encoding_name=normalized_encoding,
+        encoding=encoding,
+    )
+
+    val_shards = 0
+    val_tokens = 0
+    val_path = ds_path / "val.txt"
+    if val_path.exists():
+        val_tokens = _write_uint16_token_shard_from_text(
+            val_path,
+            ds_path / "fineweb_val_000000.bin",
+            encoding_name=normalized_encoding,
+            encoding=encoding,
+        )
+        val_shards = 1
+
+    meta.update(
+        {
+            "text_column": "tokens",
+            "num_tokens": int(train_tokens),
+            "raw_text_train_file": data_file.name,
+            "raw_text_val_file": val_path.name if val_path.exists() else None,
+            "train_shards": 1,
+            "val_shards": val_shards,
+            "data_format": "uint16_shards",
+            "token_cache_format": "raw_text_uint16_shards",
+            "token_cache_dtype": "uint16",
+            "token_cache_train_tokens": int(train_tokens),
+            "token_cache_val_tokens": int(val_tokens),
+            **_raw_text_tokenizer_metadata_fields(normalized_encoding),
+        }
+    )
+    (ds_path / "meta.json").write_text(json.dumps(meta, indent=2))
+    return meta
+
+
+def estimate_dataset_sequence_count(
+    dataset_name: str,
+    *,
+    seq_len: int,
+    encoding_name: str = "gpt2",
+) -> int | None:
+    """Return dataset row count from metadata/shard sizes without tokenizing text."""
+
+    _ensure_datasets_dir()
+    ds_path = DATASETS_DIR / dataset_name
+    if not ds_path.is_dir():
+        return None
+    meta = _load_dataset_meta(ds_path)
+    if meta.get("data_format") == "uint16_shards":
+        train_files = sorted(ds_path.glob("fineweb_train_*.bin"))
+        if train_files:
+            return _uint16_shard_sequence_count(train_files, seq_len)
+    if _raw_text_metadata_matches_encoding(meta, encoding_name) and meta.get("num_tokens") is not None:
+        return max(0, (int(meta["num_tokens"]) - 1) // seq_len)
+    return None
+
+
 # ── Loading for Training ─────────────────────────────────────────────
 
 def load_dataset_tokens(
@@ -1080,10 +1241,7 @@ def load_dataset_bytes(
 
     return inputs, targets
 
-import torch
-from torch.utils.data import Dataset
-
-class MemmapTokenDataset(Dataset):
+class MemmapTokenDataset:
     def __init__(self, token_arrays: list[np.ndarray], seq_len: int):
         self.seq_len = seq_len
         self.arrays = token_arrays
@@ -1100,7 +1258,9 @@ class MemmapTokenDataset(Dataset):
     def __len__(self) -> int:
         return self.total_chunks
         
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int):
+        import torch
+
         if idx < 0 or idx >= self.total_chunks:
             raise IndexError("Index out of bounds")
             
@@ -1121,7 +1281,7 @@ def load_dataset_tensors(
     *,
     seq_len: int = 64,
     encoding_name: str = "gpt2",
-) -> Dataset:
+) -> MemmapTokenDataset:
     """Load one or more local datasets efficiently using MemmapTokenDataset."""
     _ensure_datasets_dir()
     
@@ -1132,6 +1292,13 @@ def load_dataset_tensors(
             meta_file = ds_path / "meta.json"
             if meta_file.exists():
                 meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                if meta.get("data_format") != "uint16_shards":
+                    meta = ensure_raw_text_token_cache(
+                        ds_name,
+                        dataset_path=ds_path,
+                        dataset_meta=meta,
+                        encoding_name=encoding_name,
+                    )
                 if meta.get("data_format") == "uint16_shards":
                     validate_cached_tokenizer_contract(ds_name, dataset_path=ds_path, dataset_meta=meta)
                     train_files = sorted(ds_path.glob("fineweb_train_*.bin"))

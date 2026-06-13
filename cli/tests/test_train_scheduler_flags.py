@@ -61,7 +61,7 @@ class TrainSchedulerFlagTest(unittest.TestCase):
                 args = self.parse_args(module, ["--max-steps", "123", "--learning-rate", "0.002"])
                 self.assertIsNone(args.lr_decay_iters)
                 self.assertIsNone(args.min_lr)
-                self.assertAlmostEqual(args.warmdown_fraction, 0.75)
+                self.assertAlmostEqual(args.warmdown_fraction, 0.0)
 
     def test_scheduler_value_precedence_prefers_cli_then_env_then_computed_default(self) -> None:
         for module_name in SCRIPT_CASES:
@@ -121,7 +121,7 @@ class TrainSchedulerFlagTest(unittest.TestCase):
                 self.assertEqual(trainer_cfg.max_steps, 123)
                 self.assertEqual(trainer_cfg.lr_decay_iters, 55)
                 self.assertAlmostEqual(trainer_cfg.min_lr, 0.00003)
-                self.assertAlmostEqual(trainer_cfg.warmdown_fraction, 0.75)
+                self.assertAlmostEqual(trainer_cfg.warmdown_fraction, 0.0)
                 self.assertIsNone(trainer_cfg.drop_last)
 
     def test_resolved_summary_includes_scheduler_fields(self) -> None:

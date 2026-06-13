@@ -1,13 +1,968 @@
 #include <cuda_tile.h>
 
+#include <cuda_runtime_api.h>
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) || defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+#include <cuda_bf16.h>
+#endif
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+#include "llmc/tk/attention_sm120.cuh"
+#endif
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+#include <cublas_v2.h>
+#endif
+
+#include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <mutex>
+#include <vector>
 
 namespace neuralfn::tile_cuda {
 
 namespace {
 
 constexpr int kTileSize = 1024;
+constexpr int kAttentionValueChunkSize = 64;
+constexpr int kGpt2AttentionHeads = 12;
+constexpr int kGpt2AttentionHeadDim = 64;
+constexpr int kGpt2AttentionValueChunks = kGpt2AttentionHeadDim / kAttentionValueChunkSize;
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+std::atomic<std::int64_t> g_attention_forward_tk_launch_count{0};
+std::atomic<std::int64_t> g_attention_backward_tk_launch_count{0};
+std::atomic<std::int64_t> g_attention_tk_workspace_allocation_count{0};
+std::atomic<std::int64_t> g_attention_tk_workspace_element_capacity{0};
+std::atomic<std::int64_t> g_attention_tk_workspace_row_capacity{0};
+#endif
+std::atomic<std::int64_t> g_attention_forward_row_launch_count{0};
+std::atomic<std::int64_t> g_attention_forward_row_fallback_count{0};
+std::atomic<std::int64_t> g_attention_forward_scalar_launch_count{0};
+std::atomic<int> g_attention_forward_row_last_error{0};
+std::atomic<int> g_attention_forward_row_prelaunch_clear_error{0};
+std::atomic<int> g_attention_forward_row_prelaunch_peek_error{0};
+std::atomic<std::int64_t> g_attention_forward_row_grid_x{0};
+std::atomic<std::int64_t> g_attention_forward_row_grid_y{0};
+std::atomic<std::int64_t> g_attention_forward_row_grid_z{0};
+std::atomic<std::int64_t> g_attention_forward_row_block_x{0};
+std::atomic<int> g_attention_forward_row_attr_status{-1};
+std::atomic<int> g_attention_forward_row_attr_max_threads_per_block{0};
+std::atomic<int> g_attention_forward_row_attr_num_regs{0};
+std::atomic<std::int64_t> g_attention_forward_row_attr_shared_size_bytes{0};
+std::atomic<std::int64_t> g_attention_forward_row_attr_const_size_bytes{0};
+std::atomic<std::int64_t> g_attention_forward_row_attr_local_size_bytes{0};
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+std::atomic<std::int64_t> g_linear_bf16_gemm_count{0};
+std::atomic<std::int64_t> g_linear_sgemm_count{0};
+std::atomic<std::int64_t> g_linear_bf16_a_pack_count{0};
+std::atomic<std::int64_t> g_linear_bf16_a_cache_hit_count{0};
+std::atomic<std::int64_t> g_linear_bf16_cache_reset_count{0};
+std::atomic<std::int64_t> g_linear_bf16_workspace_allocation_count{0};
+std::atomic<std::int64_t> g_linear_bf16_workspace_a_capacity{0};
+std::atomic<std::int64_t> g_linear_bf16_workspace_b_capacity{0};
+std::atomic<std::int64_t> g_linear_bf16_cached_a_capacity{0};
+std::atomic<std::int64_t> g_linear_bf16_cache_entry_count{0};
+#endif
+std::atomic<bool> g_attention_forward_row_launch_disabled{false};
+
+__tile_global__ void fill_float32_kernel(
+    float* __restrict__ values,
+    std::int64_t n,
+    float value);
+
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) || defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+__global__ void f32_to_bf16_kernel(
+    const float* __restrict__ src,
+    __nv_bfloat16* __restrict__ dst,
+    std::int64_t n) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx < n) {
+    dst[idx] = __float2bfloat16(src[idx]);
+  }
+}
+#endif
+
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+struct TkAttentionWorkspace {
+  __nv_bfloat16* q_bf = nullptr;
+  __nv_bfloat16* k_bf = nullptr;
+  __nv_bfloat16* v_bf = nullptr;
+  __nv_bfloat16* o_bf = nullptr;
+  __nv_bfloat16* go_bf = nullptr;
+  __nv_bfloat16* gq_bf = nullptr;
+  __nv_bfloat16* gk_bf = nullptr;
+  __nv_bfloat16* gv_bf = nullptr;
+  float* lse = nullptr;
+  float* d = nullptr;
+  std::int64_t element_capacity = 0;
+  std::int64_t row_capacity = 0;
+};
+
+TkAttentionWorkspace g_tk_attention_workspace;
+std::mutex g_tk_attention_workspace_mutex;
+
+void release_tk_attention_workspace(TkAttentionWorkspace& workspace) {
+  if (workspace.q_bf != nullptr) cudaFree(workspace.q_bf);
+  if (workspace.k_bf != nullptr) cudaFree(workspace.k_bf);
+  if (workspace.v_bf != nullptr) cudaFree(workspace.v_bf);
+  if (workspace.o_bf != nullptr) cudaFree(workspace.o_bf);
+  if (workspace.go_bf != nullptr) cudaFree(workspace.go_bf);
+  if (workspace.gq_bf != nullptr) cudaFree(workspace.gq_bf);
+  if (workspace.gk_bf != nullptr) cudaFree(workspace.gk_bf);
+  if (workspace.gv_bf != nullptr) cudaFree(workspace.gv_bf);
+  if (workspace.lse != nullptr) cudaFree(workspace.lse);
+  if (workspace.d != nullptr) cudaFree(workspace.d);
+  workspace = {};
+}
+
+bool cuda_malloc_bf16(__nv_bfloat16** ptr, std::int64_t elements) {
+  return cudaMalloc(
+      reinterpret_cast<void**>(ptr),
+      sizeof(__nv_bfloat16) * static_cast<std::size_t>(elements)) == cudaSuccess;
+}
+
+bool cuda_malloc_float(float** ptr, std::int64_t elements) {
+  return cudaMalloc(
+      reinterpret_cast<void**>(ptr),
+      sizeof(float) * static_cast<std::size_t>(elements)) == cudaSuccess;
+}
+
+TkAttentionWorkspace* ensure_tk_attention_workspace(
+    std::int64_t elements,
+    std::int64_t row_elements,
+    cudaStream_t stream) {
+  std::lock_guard<std::mutex> lock(g_tk_attention_workspace_mutex);
+  if (g_tk_attention_workspace.element_capacity >= elements &&
+      g_tk_attention_workspace.row_capacity >= row_elements) {
+    return &g_tk_attention_workspace;
+  }
+  cudaStreamSynchronize(stream);
+  release_tk_attention_workspace(g_tk_attention_workspace);
+  TkAttentionWorkspace next;
+  if (!cuda_malloc_bf16(&next.q_bf, elements) ||
+      !cuda_malloc_bf16(&next.k_bf, elements) ||
+      !cuda_malloc_bf16(&next.v_bf, elements) ||
+      !cuda_malloc_bf16(&next.o_bf, elements) ||
+      !cuda_malloc_bf16(&next.go_bf, elements) ||
+      !cuda_malloc_bf16(&next.gq_bf, elements) ||
+      !cuda_malloc_bf16(&next.gk_bf, elements) ||
+      !cuda_malloc_bf16(&next.gv_bf, elements) ||
+      !cuda_malloc_float(&next.lse, row_elements) ||
+      !cuda_malloc_float(&next.d, row_elements)) {
+    release_tk_attention_workspace(next);
+    return nullptr;
+  }
+  next.element_capacity = elements;
+  next.row_capacity = row_elements;
+  g_tk_attention_workspace = next;
+  g_attention_tk_workspace_allocation_count.fetch_add(1, std::memory_order_relaxed);
+  g_attention_tk_workspace_element_capacity.store(elements, std::memory_order_relaxed);
+  g_attention_tk_workspace_row_capacity.store(row_elements, std::memory_order_relaxed);
+  return &g_tk_attention_workspace;
+}
+
+__global__ void f32_to_bf16_bits_kernel(
+    const float* __restrict__ src,
+    std::uint16_t* __restrict__ dst,
+    std::int64_t n) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx < n) {
+    const unsigned int bits = __float_as_uint(src[idx]);
+    const unsigned int rounding_bias = ((bits >> 16) & 1u) + 0x7fffu;
+    dst[idx] = static_cast<std::uint16_t>((bits + rounding_bias) >> 16);
+  }
+}
+
+__global__ void f32_to_bf16_bits_many_kernel(
+    const float* const* __restrict__ sources,
+    const std::int64_t* __restrict__ elements,
+    const std::int64_t* __restrict__ offsets,
+    std::uint16_t* __restrict__ dst,
+    std::int64_t buffer_count,
+    std::int64_t max_elements) {
+  const std::int64_t buffer = static_cast<std::int64_t>(blockIdx.y);
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (buffer >= buffer_count || idx >= max_elements) {
+    return;
+  }
+  const std::int64_t n = elements[buffer];
+  if (idx >= n) {
+    return;
+  }
+  const float* src = sources[buffer];
+  const unsigned int bits = __float_as_uint(src[idx]);
+  const unsigned int rounding_bias = ((bits >> 16) & 1u) + 0x7fffu;
+  dst[offsets[buffer] + idx] = static_cast<std::uint16_t>((bits + rounding_bias) >> 16);
+}
+
+__global__ void f32_to_bf16_attention_grad_kernel(
+    const float* __restrict__ src,
+    __nv_bfloat16* __restrict__ dst,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    bool src_merged) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t n = batch * heads * seq_len * head_dim;
+  if (idx >= n) {
+    return;
+  }
+  if (!src_merged) {
+    dst[idx] = __float2bfloat16(src[idx]);
+    return;
+  }
+  const std::int64_t d = idx % head_dim;
+  const std::int64_t t = (idx / head_dim) % seq_len;
+  const std::int64_t h = (idx / (head_dim * seq_len)) % heads;
+  const std::int64_t b = idx / (head_dim * seq_len * heads);
+  const std::int64_t merged_idx = ((b * seq_len + t) * heads + h) * head_dim + d;
+  dst[idx] = __float2bfloat16(src[merged_idx]);
+}
+
+__global__ void bf16_to_f32_kernel(
+    const __nv_bfloat16* __restrict__ src,
+    float* __restrict__ dst,
+    std::int64_t n) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx < n) {
+    dst[idx] = __bfloat162float(src[idx]);
+  }
+}
+
+__global__ void bf16_heads_to_qkv_float32_kernel(
+    const __nv_bfloat16* __restrict__ q_heads,
+    const __nv_bfloat16* __restrict__ k_heads,
+    const __nv_bfloat16* __restrict__ v_heads,
+    float* __restrict__ qkv,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t heads,
+    std::int64_t head_dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t dim = heads * head_dim;
+  const std::int64_t n = batch * seq_len * dim;
+  if (idx >= n) {
+    return;
+  }
+  const std::int64_t d = idx % head_dim;
+  const std::int64_t h = (idx / head_dim) % heads;
+  const std::int64_t s = (idx / (head_dim * heads)) % seq_len;
+  const std::int64_t b = idx / (head_dim * heads * seq_len);
+  const std::int64_t src = ((b * heads + h) * seq_len + s) * head_dim + d;
+  const std::int64_t row = b * seq_len + s;
+  const std::int64_t col = h * head_dim + d;
+  const std::int64_t qkv_base = row * (3 * dim) + col;
+  qkv[qkv_base] = __bfloat162float(q_heads[src]);
+  qkv[qkv_base + dim] = __bfloat162float(k_heads[src]);
+  qkv[qkv_base + 2 * dim] = __bfloat162float(v_heads[src]);
+}
+
+bool use_tk_sm120_attention(
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride) {
+  return query_heads == key_heads &&
+      (qk_dim == 64 || qk_dim == 128) &&
+      value_dim == qk_dim &&
+      seq_q == seq_k &&
+      seq_q > 0 &&
+      (seq_q % 16) == 0 &&
+      is_causal &&
+      !right_align_causal &&
+      !use_sparse_rules &&
+      window <= 0 &&
+      num_sinks <= 0 &&
+      block_size <= 0 &&
+      compress_stride <= 1;
+}
+
+int launch_tk_attention_forward_float32(
+    const float* q,
+    const float* k,
+    const float* v,
+    float* out,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    cudaStream_t stream) {
+  const std::int64_t elements = batch * heads * seq_len * head_dim;
+  const std::int64_t lse_elements = batch * heads * seq_len;
+  TkAttentionWorkspace* workspace = ensure_tk_attention_workspace(elements, lse_elements, stream);
+  if (workspace == nullptr) {
+    return 2;
+  }
+  const int threads = 256;
+  const int blocks = static_cast<int>((elements + threads - 1) / threads);
+  f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(q, workspace->q_bf, elements);
+  f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(k, workspace->k_bf, elements);
+  f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(v, workspace->v_bf, elements);
+  if (head_dim == 64) {
+    llmk::attention::launch_forward_causal<64>(
+        llmk::to_bf16(workspace->q_bf), llmk::to_bf16(workspace->k_bf),
+        llmk::to_bf16(workspace->v_bf), workspace->lse,
+        llmk::to_bf16(workspace->o_bf), static_cast<int>(batch), static_cast<int>(heads),
+        static_cast<int>(seq_len), stream);
+  } else {
+    llmk::attention::launch_forward_causal<128>(
+        llmk::to_bf16(workspace->q_bf), llmk::to_bf16(workspace->k_bf),
+        llmk::to_bf16(workspace->v_bf), workspace->lse,
+        llmk::to_bf16(workspace->o_bf), static_cast<int>(batch), static_cast<int>(heads),
+        static_cast<int>(seq_len), stream);
+  }
+  bf16_to_f32_kernel<<<blocks, threads, 0, stream>>>(workspace->o_bf, out, elements);
+  g_attention_forward_tk_launch_count.fetch_add(1, std::memory_order_relaxed);
+  return static_cast<int>(cudaPeekAtLastError());
+}
+
+int launch_tk_attention_backward_float32(
+    const float* q,
+    const float* k,
+    const float* v,
+    const float* grad_out,
+    float* grad_q,
+    float* grad_k,
+    float* grad_v,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    bool grad_out_merged,
+    cudaStream_t stream) {
+  const std::int64_t elements = batch * heads * seq_len * head_dim;
+  const std::int64_t row_elements = batch * heads * seq_len;
+  TkAttentionWorkspace* workspace = ensure_tk_attention_workspace(elements, row_elements, stream);
+  if (workspace == nullptr) {
+    return 2;
+  }
+  const int threads = 256;
+  const int blocks = static_cast<int>((elements + threads - 1) / threads);
+  f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(q, workspace->q_bf, elements);
+  f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(k, workspace->k_bf, elements);
+  f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(v, workspace->v_bf, elements);
+  f32_to_bf16_attention_grad_kernel<<<blocks, threads, 0, stream>>>(
+      grad_out, workspace->go_bf, batch, heads, seq_len, head_dim, grad_out_merged);
+  if (head_dim == 64) {
+    llmk::attention::launch_forward_causal<64>(
+        llmk::to_bf16(workspace->q_bf), llmk::to_bf16(workspace->k_bf),
+        llmk::to_bf16(workspace->v_bf), workspace->lse,
+        llmk::to_bf16(workspace->o_bf), static_cast<int>(batch), static_cast<int>(heads),
+        static_cast<int>(seq_len), stream);
+    llmk::attention::launch_backward_causal<64>(
+        llmk::to_bf16(workspace->q_bf), llmk::to_bf16(workspace->k_bf),
+        llmk::to_bf16(workspace->v_bf), llmk::to_bf16(workspace->o_bf),
+        workspace->lse, llmk::to_bf16(workspace->go_bf), workspace->d,
+        llmk::to_bf16(workspace->gq_bf), llmk::to_bf16(workspace->gk_bf),
+        llmk::to_bf16(workspace->gv_bf), static_cast<int>(batch), static_cast<int>(heads),
+        static_cast<int>(seq_len), stream);
+  } else {
+    llmk::attention::launch_forward_causal<128>(
+        llmk::to_bf16(workspace->q_bf), llmk::to_bf16(workspace->k_bf),
+        llmk::to_bf16(workspace->v_bf), workspace->lse,
+        llmk::to_bf16(workspace->o_bf), static_cast<int>(batch), static_cast<int>(heads),
+        static_cast<int>(seq_len), stream);
+    llmk::attention::launch_backward_causal<128>(
+        llmk::to_bf16(workspace->q_bf), llmk::to_bf16(workspace->k_bf),
+        llmk::to_bf16(workspace->v_bf), llmk::to_bf16(workspace->o_bf),
+        workspace->lse, llmk::to_bf16(workspace->go_bf), workspace->d,
+        llmk::to_bf16(workspace->gq_bf), llmk::to_bf16(workspace->gk_bf),
+        llmk::to_bf16(workspace->gv_bf), static_cast<int>(batch), static_cast<int>(heads),
+        static_cast<int>(seq_len), stream);
+  }
+  bf16_to_f32_kernel<<<blocks, threads, 0, stream>>>(workspace->gq_bf, grad_q, elements);
+  bf16_to_f32_kernel<<<blocks, threads, 0, stream>>>(workspace->gk_bf, grad_k, elements);
+  bf16_to_f32_kernel<<<blocks, threads, 0, stream>>>(workspace->gv_bf, grad_v, elements);
+  g_attention_backward_tk_launch_count.fetch_add(1, std::memory_order_relaxed);
+  return static_cast<int>(cudaPeekAtLastError());
+}
+
+int launch_tk_attention_backward_to_qkv_float32(
+    const float* q,
+    const float* k,
+    const float* v,
+    const float* grad_out,
+    float* grad_qkv,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    bool grad_out_merged,
+    cudaStream_t stream) {
+  const std::int64_t elements = batch * heads * seq_len * head_dim;
+  const std::int64_t row_elements = batch * heads * seq_len;
+  TkAttentionWorkspace* workspace = ensure_tk_attention_workspace(elements, row_elements, stream);
+  if (workspace == nullptr) {
+    return 2;
+  }
+  const int threads = 256;
+  const int blocks = static_cast<int>((elements + threads - 1) / threads);
+  f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(q, workspace->q_bf, elements);
+  f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(k, workspace->k_bf, elements);
+  f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(v, workspace->v_bf, elements);
+  f32_to_bf16_attention_grad_kernel<<<blocks, threads, 0, stream>>>(
+      grad_out, workspace->go_bf, batch, heads, seq_len, head_dim, grad_out_merged);
+  if (head_dim == 64) {
+    llmk::attention::launch_forward_causal<64>(
+        llmk::to_bf16(workspace->q_bf), llmk::to_bf16(workspace->k_bf),
+        llmk::to_bf16(workspace->v_bf), workspace->lse,
+        llmk::to_bf16(workspace->o_bf), static_cast<int>(batch), static_cast<int>(heads),
+        static_cast<int>(seq_len), stream);
+    llmk::attention::launch_backward_causal<64>(
+        llmk::to_bf16(workspace->q_bf), llmk::to_bf16(workspace->k_bf),
+        llmk::to_bf16(workspace->v_bf), llmk::to_bf16(workspace->o_bf),
+        workspace->lse, llmk::to_bf16(workspace->go_bf), workspace->d,
+        llmk::to_bf16(workspace->gq_bf), llmk::to_bf16(workspace->gk_bf),
+        llmk::to_bf16(workspace->gv_bf), static_cast<int>(batch), static_cast<int>(heads),
+        static_cast<int>(seq_len), stream);
+  } else {
+    llmk::attention::launch_forward_causal<128>(
+        llmk::to_bf16(workspace->q_bf), llmk::to_bf16(workspace->k_bf),
+        llmk::to_bf16(workspace->v_bf), workspace->lse,
+        llmk::to_bf16(workspace->o_bf), static_cast<int>(batch), static_cast<int>(heads),
+        static_cast<int>(seq_len), stream);
+    llmk::attention::launch_backward_causal<128>(
+        llmk::to_bf16(workspace->q_bf), llmk::to_bf16(workspace->k_bf),
+        llmk::to_bf16(workspace->v_bf), llmk::to_bf16(workspace->o_bf),
+        workspace->lse, llmk::to_bf16(workspace->go_bf), workspace->d,
+        llmk::to_bf16(workspace->gq_bf), llmk::to_bf16(workspace->gk_bf),
+        llmk::to_bf16(workspace->gv_bf), static_cast<int>(batch), static_cast<int>(heads),
+        static_cast<int>(seq_len), stream);
+  }
+  bf16_heads_to_qkv_float32_kernel<<<blocks, threads, 0, stream>>>(
+      workspace->gq_bf,
+      workspace->gk_bf,
+      workspace->gv_bf,
+      grad_qkv,
+      batch,
+      seq_len,
+      heads,
+      head_dim);
+  g_attention_backward_tk_launch_count.fetch_add(1, std::memory_order_relaxed);
+  return static_cast<int>(cudaPeekAtLastError());
+}
+#endif
+
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+bool fits_cublas_int(std::int64_t value) {
+  return value > 0 && value <= static_cast<std::int64_t>(std::numeric_limits<int>::max());
+}
+
+cublasHandle_t trainer_linear_cublas_handle(cudaStream_t stream) {
+  static cublasHandle_t handle = nullptr;
+  if (handle == nullptr) {
+    if (cublasCreate(&handle) != CUBLAS_STATUS_SUCCESS) {
+      handle = nullptr;
+      return nullptr;
+    }
+    cublasSetMathMode(handle, CUBLAS_TF32_TENSOR_OP_MATH);
+  }
+  if (cublasSetStream(handle, stream) != CUBLAS_STATUS_SUCCESS) {
+    return nullptr;
+  }
+  return handle;
+}
+
+struct TrainerLinearBf16Workspace {
+  struct CacheEntry {
+    __nv_bfloat16* data = nullptr;
+    const float* source = nullptr;
+    std::int64_t capacity = 0;
+    std::int64_t elements = 0;
+    std::uint64_t last_use = 0;
+    bool valid = false;
+  };
+
+  __nv_bfloat16* a = nullptr;
+  __nv_bfloat16* b = nullptr;
+  std::int64_t a_capacity = 0;
+  std::int64_t b_capacity = 0;
+  std::uint64_t cache_clock = 0;
+  std::vector<CacheEntry> cached_a_entries;
+};
+
+TrainerLinearBf16Workspace g_trainer_linear_bf16_workspace;
+std::mutex g_trainer_linear_bf16_workspace_mutex;
+constexpr std::size_t kTrainerLinearBf16CacheEntryLimit = 64;
+
+std::int64_t trainer_linear_bf16_cached_a_total_capacity(const TrainerLinearBf16Workspace& workspace) {
+  std::int64_t total = 0;
+  for (const TrainerLinearBf16Workspace::CacheEntry& entry : workspace.cached_a_entries) {
+    total += entry.capacity;
+  }
+  return total;
+}
+
+void update_trainer_linear_bf16_cache_stats(const TrainerLinearBf16Workspace& workspace) {
+  g_linear_bf16_cache_entry_count.store(
+      static_cast<std::int64_t>(workspace.cached_a_entries.size()),
+      std::memory_order_relaxed);
+  g_linear_bf16_cached_a_capacity.store(
+      trainer_linear_bf16_cached_a_total_capacity(workspace),
+      std::memory_order_relaxed);
+}
+
+void release_trainer_linear_bf16_workspace(TrainerLinearBf16Workspace& workspace) {
+  if (workspace.a != nullptr) cudaFree(workspace.a);
+  if (workspace.b != nullptr) cudaFree(workspace.b);
+  for (TrainerLinearBf16Workspace::CacheEntry& entry : workspace.cached_a_entries) {
+    if (entry.data != nullptr) {
+      cudaFree(entry.data);
+    }
+  }
+  workspace = TrainerLinearBf16Workspace{};
+  update_trainer_linear_bf16_cache_stats(workspace);
+}
+
+void invalidate_trainer_linear_bf16_cache(TrainerLinearBf16Workspace& workspace) {
+  for (TrainerLinearBf16Workspace::CacheEntry& entry : workspace.cached_a_entries) {
+    entry.source = nullptr;
+    entry.elements = 0;
+    entry.valid = false;
+  }
+}
+
+TrainerLinearBf16Workspace* ensure_trainer_linear_bf16_workspace(
+    std::int64_t a_elements,
+    std::int64_t b_elements) {
+  if (a_elements <= 0 || b_elements <= 0) {
+    return nullptr;
+  }
+  std::lock_guard<std::mutex> lock(g_trainer_linear_bf16_workspace_mutex);
+  if (g_trainer_linear_bf16_workspace.a_capacity >= a_elements &&
+      g_trainer_linear_bf16_workspace.b_capacity >= b_elements) {
+    return &g_trainer_linear_bf16_workspace;
+  }
+  TrainerLinearBf16Workspace next;
+  next.a_capacity = std::max(a_elements, g_trainer_linear_bf16_workspace.a_capacity);
+  next.b_capacity = std::max(b_elements, g_trainer_linear_bf16_workspace.b_capacity);
+  if (cudaMalloc(
+          reinterpret_cast<void**>(&next.a),
+          sizeof(__nv_bfloat16) * static_cast<std::size_t>(next.a_capacity)) != cudaSuccess ||
+      cudaMalloc(
+          reinterpret_cast<void**>(&next.b),
+          sizeof(__nv_bfloat16) * static_cast<std::size_t>(next.b_capacity)) != cudaSuccess) {
+    release_trainer_linear_bf16_workspace(next);
+    return nullptr;
+  }
+  next.cache_clock = g_trainer_linear_bf16_workspace.cache_clock;
+  next.cached_a_entries = std::move(g_trainer_linear_bf16_workspace.cached_a_entries);
+  g_trainer_linear_bf16_workspace.cached_a_entries.clear();
+  release_trainer_linear_bf16_workspace(g_trainer_linear_bf16_workspace);
+  g_trainer_linear_bf16_workspace = next;
+  g_linear_bf16_workspace_allocation_count.fetch_add(1, std::memory_order_relaxed);
+  g_linear_bf16_workspace_a_capacity.store(next.a_capacity, std::memory_order_relaxed);
+  g_linear_bf16_workspace_b_capacity.store(next.b_capacity, std::memory_order_relaxed);
+  update_trainer_linear_bf16_cache_stats(g_trainer_linear_bf16_workspace);
+  return &g_trainer_linear_bf16_workspace;
+}
+
+TrainerLinearBf16Workspace::CacheEntry* trainer_linear_bf16_cache_entry_for(
+    TrainerLinearBf16Workspace* workspace,
+    const float* source,
+    std::int64_t elements,
+    bool* cache_hit) {
+  if (cache_hit != nullptr) {
+    *cache_hit = false;
+  }
+  workspace->cache_clock += 1;
+  for (TrainerLinearBf16Workspace::CacheEntry& entry : workspace->cached_a_entries) {
+    if (entry.valid && entry.source == source && entry.elements == elements) {
+      entry.last_use = workspace->cache_clock;
+      g_linear_bf16_a_cache_hit_count.fetch_add(1, std::memory_order_relaxed);
+      if (cache_hit != nullptr) {
+        *cache_hit = true;
+      }
+      return &entry;
+    }
+  }
+
+  TrainerLinearBf16Workspace::CacheEntry* selected = nullptr;
+  for (TrainerLinearBf16Workspace::CacheEntry& entry : workspace->cached_a_entries) {
+    if (!entry.valid) {
+      selected = &entry;
+      break;
+    }
+  }
+  if (selected == nullptr && workspace->cached_a_entries.size() < kTrainerLinearBf16CacheEntryLimit) {
+    workspace->cached_a_entries.emplace_back();
+    selected = &workspace->cached_a_entries.back();
+    update_trainer_linear_bf16_cache_stats(*workspace);
+  }
+  if (selected == nullptr) {
+    selected = &workspace->cached_a_entries.front();
+    for (TrainerLinearBf16Workspace::CacheEntry& entry : workspace->cached_a_entries) {
+      if (entry.last_use < selected->last_use) {
+        selected = &entry;
+      }
+    }
+  }
+  if (selected->capacity < elements) {
+    __nv_bfloat16* next = nullptr;
+    if (cudaMalloc(
+            reinterpret_cast<void**>(&next),
+            sizeof(__nv_bfloat16) * static_cast<std::size_t>(elements)) != cudaSuccess) {
+      return nullptr;
+    }
+    if (selected->data != nullptr) {
+      cudaFree(selected->data);
+    }
+    selected->data = next;
+    selected->capacity = elements;
+    update_trainer_linear_bf16_cache_stats(*workspace);
+  }
+  selected->source = source;
+  selected->elements = elements;
+  selected->last_use = workspace->cache_clock;
+  selected->valid = true;
+  return selected;
+}
+
+__nv_bfloat16* trainer_linear_bf16_a_operand(
+    TrainerLinearBf16Workspace* workspace,
+    const float* a,
+    std::int64_t a_elements,
+    bool cache_a_operand,
+    cudaStream_t stream) {
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((a_elements + threads - 1) / threads);
+  if (cache_a_operand) {
+    bool cache_hit = false;
+    TrainerLinearBf16Workspace::CacheEntry* entry =
+        trainer_linear_bf16_cache_entry_for(workspace, a, a_elements, &cache_hit);
+    if (entry == nullptr || entry->data == nullptr) {
+      return nullptr;
+    }
+    if (cache_hit) {
+      return entry->data;
+    }
+    f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(a, entry->data, a_elements);
+    g_linear_bf16_a_pack_count.fetch_add(1, std::memory_order_relaxed);
+    return entry->data;
+  }
+  f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(a, workspace->a, a_elements);
+  g_linear_bf16_a_pack_count.fetch_add(1, std::memory_order_relaxed);
+  return workspace->a;
+}
+
+bool cublas_linear_gemm_ex_bf16_float32(
+    const float* a,
+    const float* b,
+    float* c,
+    std::int64_t a_elements,
+    std::int64_t b_elements,
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b,
+    int lda,
+    int ldb,
+    int ldc,
+    float beta_value,
+    bool cache_a_operand,
+    cudaStream_t stream) {
+  TrainerLinearBf16Workspace* workspace = ensure_trainer_linear_bf16_workspace(a_elements, b_elements);
+  if (workspace == nullptr) {
+    return false;
+  }
+  cublasHandle_t handle = trainer_linear_cublas_handle(stream);
+  if (handle == nullptr) {
+    return false;
+  }
+  constexpr int threads = 256;
+  const int b_blocks = static_cast<int>((b_elements + threads - 1) / threads);
+  __nv_bfloat16* a_bf16 = trainer_linear_bf16_a_operand(workspace, a, a_elements, cache_a_operand, stream);
+  if (a_bf16 == nullptr) {
+    return false;
+  }
+  f32_to_bf16_kernel<<<b_blocks, threads, 0, stream>>>(b, workspace->b, b_elements);
+  const float alpha = 1.0f;
+  const float beta = beta_value;
+  const cublasStatus_t status = cublasGemmEx(
+      handle,
+      op_a,
+      op_b,
+      m,
+      n,
+      k,
+      &alpha,
+      a_bf16,
+      CUDA_R_16BF,
+      lda,
+      workspace->b,
+      CUDA_R_16BF,
+      ldb,
+      &beta,
+      c,
+      CUDA_R_32F,
+      ldc,
+      CUBLAS_COMPUTE_32F,
+      CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+  if (status == CUBLAS_STATUS_SUCCESS) {
+    g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+    return true;
+  }
+  return false;
+}
+
+bool cublas_linear_forward_float32(
+    const float* x,
+    const float* weight,
+    float* out,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+  if (!fits_cublas_int(rows) || !fits_cublas_int(input_dim) || !fits_cublas_int(output_dim)) {
+    return false;
+  }
+  cublasHandle_t handle = trainer_linear_cublas_handle(stream);
+  if (handle == nullptr) {
+    return false;
+  }
+  const float alpha = 1.0f;
+  const float beta = 0.0f;
+  const int m = static_cast<int>(output_dim);
+  const int n = static_cast<int>(rows);
+  const int k = static_cast<int>(input_dim);
+  if (cublas_linear_gemm_ex_bf16_float32(
+          weight,
+          x,
+          out,
+          output_dim * input_dim,
+          rows * input_dim,
+          m,
+          n,
+          k,
+          CUBLAS_OP_T,
+          CUBLAS_OP_N,
+          k,
+          k,
+          m,
+          0.0f,
+          true,
+          stream)) {
+    return true;
+  }
+  const cublasStatus_t status = cublasSgemm(
+      handle,
+      CUBLAS_OP_T,
+      CUBLAS_OP_N,
+      m,
+      n,
+      k,
+      &alpha,
+      weight,
+      k,
+      x,
+      k,
+      &beta,
+      out,
+      m);
+  if (status == CUBLAS_STATUS_SUCCESS) {
+    g_linear_sgemm_count.fetch_add(1, std::memory_order_relaxed);
+    return true;
+  }
+  return false;
+}
+
+bool cublas_linear_backward_input_float32(
+    const float* grad_out,
+    const float* weight,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+  if (!fits_cublas_int(rows) || !fits_cublas_int(input_dim) || !fits_cublas_int(output_dim)) {
+    return false;
+  }
+  cublasHandle_t handle = trainer_linear_cublas_handle(stream);
+  if (handle == nullptr) {
+    return false;
+  }
+  const float alpha = 1.0f;
+  const float beta = 0.0f;
+  const int m = static_cast<int>(input_dim);
+  const int n = static_cast<int>(rows);
+  const int k = static_cast<int>(output_dim);
+  if (cublas_linear_gemm_ex_bf16_float32(
+          weight,
+          grad_out,
+          grad_x,
+          output_dim * input_dim,
+          rows * output_dim,
+          m,
+          n,
+          k,
+          CUBLAS_OP_N,
+          CUBLAS_OP_N,
+          m,
+          k,
+          m,
+          0.0f,
+          true,
+          stream)) {
+    return true;
+  }
+  const cublasStatus_t status = cublasSgemm(
+      handle,
+      CUBLAS_OP_N,
+      CUBLAS_OP_N,
+      m,
+      n,
+      k,
+      &alpha,
+      weight,
+      m,
+      grad_out,
+      k,
+      &beta,
+      grad_x,
+      m);
+  if (status == CUBLAS_STATUS_SUCCESS) {
+    g_linear_sgemm_count.fetch_add(1, std::memory_order_relaxed);
+    return true;
+  }
+  return false;
+}
+
+bool cublas_linear_backward_weight_float32(
+    const float* x,
+    const float* grad_out,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta_value,
+    cudaStream_t stream) {
+  if (!fits_cublas_int(rows) || !fits_cublas_int(input_dim) || !fits_cublas_int(output_dim)) {
+    return false;
+  }
+  cublasHandle_t handle = trainer_linear_cublas_handle(stream);
+  if (handle == nullptr) {
+    return false;
+  }
+  const float alpha = 1.0f;
+  const float beta = beta_value;
+  const int m = static_cast<int>(input_dim);
+  const int n = static_cast<int>(output_dim);
+  const int k = static_cast<int>(rows);
+  if (cublas_linear_gemm_ex_bf16_float32(
+          x,
+          grad_out,
+          grad_weight,
+          rows * input_dim,
+          rows * output_dim,
+          m,
+          n,
+          k,
+          CUBLAS_OP_N,
+          CUBLAS_OP_T,
+          m,
+          n,
+          m,
+          beta_value,
+          false,
+          stream)) {
+    return true;
+  }
+  const cublasStatus_t status = cublasSgemm(
+      handle,
+      CUBLAS_OP_N,
+      CUBLAS_OP_T,
+      m,
+      n,
+      k,
+      &alpha,
+      x,
+      m,
+      grad_out,
+      n,
+      &beta,
+      grad_weight,
+      m);
+  if (status == CUBLAS_STATUS_SUCCESS) {
+    g_linear_sgemm_count.fetch_add(1, std::memory_order_relaxed);
+    return true;
+  }
+  return false;
+}
+
+bool ensure_trainer_bias_ones(std::int64_t rows, cudaStream_t stream, float** ones_out) {
+  static float* ones = nullptr;
+  static std::int64_t capacity = 0;
+  if (rows <= 0) {
+    return false;
+  }
+  if (capacity < rows) {
+    float* next = nullptr;
+    if (cudaMalloc(reinterpret_cast<void**>(&next), sizeof(float) * static_cast<std::size_t>(rows)) !=
+        cudaSuccess) {
+      return false;
+    }
+    const int blocks = static_cast<int>((rows + kTileSize - 1) / kTileSize);
+    fill_float32_kernel<<<blocks, 1, 0, stream>>>(next, rows, 1.0f);
+    if (ones != nullptr) {
+      cudaFree(ones);
+    }
+    ones = next;
+    capacity = rows;
+  }
+  *ones_out = ones;
+  return true;
+}
+
+bool cublas_linear_backward_bias_float32(
+    const float* grad_out,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float beta_value,
+    cudaStream_t stream) {
+  if (!fits_cublas_int(rows) || !fits_cublas_int(output_dim)) {
+    return false;
+  }
+  float* ones = nullptr;
+  if (!ensure_trainer_bias_ones(rows, stream, &ones)) {
+    return false;
+  }
+  cublasHandle_t handle = trainer_linear_cublas_handle(stream);
+  if (handle == nullptr) {
+    return false;
+  }
+  const float alpha = 1.0f;
+  const float beta = beta_value;
+  const int m = static_cast<int>(output_dim);
+  const int n = static_cast<int>(rows);
+  const cublasStatus_t status = cublasSgemv(
+      handle,
+      CUBLAS_OP_N,
+      m,
+      n,
+      &alpha,
+      grad_out,
+      m,
+      ones,
+      1,
+      &beta,
+      grad_bias,
+      1);
+  return status == CUBLAS_STATUS_SUCCESS;
+}
+#endif
 
 __tile_global__ void unary_float32_kernel(const float* __restrict__ x, float* __restrict__ out, std::int64_t n, int op) {
   namespace ct = cuda::tiles;
@@ -232,6 +1187,119 @@ __tile_global__ void gradient_accumulate_float32_kernel(
   buffer_view.store_masked(result, bx);
 }
 
+__tile_global__ void copy_float32_kernel(
+    const float* __restrict__ source,
+    float* __restrict__ dest,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  source = ct::assume_aligned(source, 16_ic);
+  dest = ct::assume_aligned(dest, 16_ic);
+
+  const int bx = ct::bid().x;
+  auto source_tile = ct::partition_view{ct::tensor_span{source, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto dest_view = ct::partition_view{ct::tensor_span{dest, ct::extents{n}}, ct::shape{1024_ic}};
+  dest_view.store_masked(source_tile, bx);
+}
+
+__tile_global__ void uint16_to_int64_kernel(
+    const std::uint16_t* __restrict__ source,
+    std::int64_t* __restrict__ dest,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  source = ct::assume_aligned(source, 16_ic);
+  dest = ct::assume_aligned(dest, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto token_tile = ct::load_masked(source + idx, mask);
+  ct::store_masked(dest + idx, ct::element_cast<std::int64_t>(token_tile), mask);
+}
+
+__tile_global__ void fill_float32_kernel(
+    float* __restrict__ values,
+    std::int64_t n,
+    float value) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  values = ct::assume_aligned(values, 16_ic);
+
+  const int bx = ct::bid().x;
+  auto view = ct::partition_view{ct::tensor_span{values, ct::extents{n}}, ct::shape{1024_ic}};
+  auto tile = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(value);
+  view.store_masked(tile, bx);
+}
+
+__tile_global__ void fill_many_float32_kernel(
+    float* const* __restrict__ buffers,
+    const std::int64_t* __restrict__ elements,
+    std::int64_t buffer_count,
+    float value) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  const int tensor = ct::bid().x;
+  const int chunk = ct::bid().y;
+  if (static_cast<std::int64_t>(tensor) >= buffer_count) {
+    return;
+  }
+
+  float* values = ct::assume_aligned(buffers[tensor], 16_ic);
+  const std::int64_t n = elements[tensor];
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto tile = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(value);
+  ct::store_masked(values + idx, tile, mask);
+}
+
+__tile_global__ void fill_many_values_float32_kernel(
+    float* const* __restrict__ buffers,
+    const std::int64_t* __restrict__ elements,
+    const float* __restrict__ fill_values,
+    std::int64_t buffer_count) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  const int tensor = ct::bid().x;
+  const int chunk = ct::bid().y;
+  if (static_cast<std::int64_t>(tensor) >= buffer_count) {
+    return;
+  }
+
+  float* values = ct::assume_aligned(buffers[tensor], 16_ic);
+  const std::int64_t n = elements[tensor];
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto tile = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(fill_values[tensor]);
+  ct::store_masked(values + idx, tile, mask);
+}
+
+__tile_global__ void init_gpt2_token_weight_float32_kernel(
+    float* __restrict__ values,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  values = ct::assume_aligned(values, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto bucket = idx % ct::full<IndexTile>(17);
+  auto shifted = bucket - ct::full<IndexTile>(8);
+  auto value = ct::element_cast<float>(shifted) * ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.01f);
+  ct::store_masked(values + idx, value, mask);
+}
+
 __tile_global__ void sumsq_partials_float32_kernel(
     const float* __restrict__ values,
     float* __restrict__ partials,
@@ -254,6 +1322,38 @@ __tile_global__ void sumsq_partials_float32_kernel(
   ct::store(partials + out_idx, ct::sum(squared, 0_ic));
 }
 
+__tile_global__ void sumsq_partials_many_float32_kernel(
+    const float* const* __restrict__ buffers,
+    const std::int64_t* __restrict__ elements,
+    const std::int64_t* __restrict__ partial_offsets,
+    float* __restrict__ partials,
+    std::int64_t buffer_count) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  const int tensor = ct::bid().x;
+  const int chunk = ct::bid().y;
+  if (static_cast<std::int64_t>(tensor) >= buffer_count) {
+    return;
+  }
+
+  const float* values = ct::assume_aligned(buffers[tensor], 16_ic);
+  partials = ct::assume_aligned(partials, 16_ic);
+  const std::int64_t n = elements[tensor];
+  if (static_cast<std::int64_t>(chunk) * kTileSize >= n) {
+    return;
+  }
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto tile = ct::load_masked(values + idx, mask);
+  auto zero = ct::full<decltype(tile)>(0.0f);
+  auto squared = ct::select(mask, tile * tile, zero);
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  auto out_idx = ct::full<OneIndexTile>(partial_offsets[tensor] + static_cast<std::int64_t>(chunk));
+  ct::store(partials + out_idx, ct::sum(squared, 0_ic));
+}
+
 __tile_global__ void scale_inplace_float32_kernel(
     float* __restrict__ values,
     std::int64_t n,
@@ -267,6 +1367,54 @@ __tile_global__ void scale_inplace_float32_kernel(
   auto view = ct::partition_view{ct::tensor_span{values, ct::extents{n}}, ct::shape{1024_ic}};
   auto tile = view.load_masked(bx);
   view.store_masked(tile * ct::full<decltype(tile)>(scale), bx);
+}
+
+__tile_global__ void global_norm_clip_scale_float32_kernel(
+    const float* __restrict__ sumsq_partials,
+    float* __restrict__ clip_scale,
+    std::int64_t partial_count,
+    float max_norm,
+    float eps) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  sumsq_partials = ct::assume_aligned(sumsq_partials, 16_ic);
+  clip_scale = ct::assume_aligned(clip_scale, 16_ic);
+
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>();
+  auto acc = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t offset = 0; offset < partial_count; offset += kTileSize) {
+    auto pos = idx + ct::full<IndexTile>(offset);
+    auto mask = pos < ct::full<IndexTile>(partial_count);
+    auto value = ct::load_masked(sumsq_partials + pos, mask);
+    acc = acc + ct::select(mask, value, ct::full<decltype(value)>(0.0f));
+  }
+  auto total = ct::sum(acc, 0_ic);
+  auto norm = ct::sqrt(total);
+  auto one = ct::full<decltype(norm)>(1.0f);
+  auto raw_scale = ct::full<decltype(norm)>(max_norm) / (norm + ct::full<decltype(norm)>(eps));
+  auto scale = ct::select(raw_scale < one, raw_scale, one);
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  auto out_idx = ct::full<OneIndexTile>(0);
+  ct::store(clip_scale + out_idx, scale);
+}
+
+__tile_global__ void scale_inplace_by_device_float32_kernel(
+    float* __restrict__ values,
+    const float* __restrict__ scale,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  values = ct::assume_aligned(values, 16_ic);
+  scale = ct::assume_aligned(scale, 16_ic);
+
+  const int bx = ct::bid().x;
+  auto view = ct::partition_view{ct::tensor_span{values, ct::extents{n}}, ct::shape{1024_ic}};
+  auto tile = view.load_masked(bx);
+  auto scale_tile = ct::full<decltype(tile)>(*scale);
+  view.store_masked(tile * scale_tile, bx);
 }
 
 __tile_global__ void adamw_step_float32_kernel(
@@ -304,6 +1452,103 @@ __tile_global__ void adamw_step_float32_kernel(
   auto next_m = beta1_tile * m + (one - beta1_tile) * g;
   auto next_v = beta2_tile * v + (one - beta2_tile) * g * g;
   auto decayed = p * (one - ct::full<decltype(p)>(lr * weight_decay));
+  auto denom = ct::sqrt(next_v) / ct::full<decltype(p)>(sqrt_bias_correction2) + ct::full<decltype(p)>(eps);
+  auto step_size = ct::full<decltype(p)>(lr / bias_correction1);
+  auto next_p = decayed - step_size * next_m / denom;
+  ct::store_masked(param + idx, next_p, mask);
+  ct::store_masked(exp_avg + idx, next_m, mask);
+  ct::store_masked(exp_avg_sq + idx, next_v, mask);
+}
+
+__tile_global__ void adamw_step_with_device_scale_float32_kernel(
+    float* __restrict__ param,
+    const float* __restrict__ grad,
+    const float* __restrict__ grad_scale,
+    float* __restrict__ exp_avg,
+    float* __restrict__ exp_avg_sq,
+    std::int64_t n,
+    float lr,
+    float beta1,
+    float beta2,
+    float eps,
+    float weight_decay,
+    float bias_correction1,
+    float sqrt_bias_correction2) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  param = ct::assume_aligned(param, 16_ic);
+  grad = ct::assume_aligned(grad, 16_ic);
+  grad_scale = ct::assume_aligned(grad_scale, 16_ic);
+  exp_avg = ct::assume_aligned(exp_avg, 16_ic);
+  exp_avg_sq = ct::assume_aligned(exp_avg_sq, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto p = ct::load_masked(param + idx, mask);
+  auto g = ct::load_masked(grad + idx, mask) * ct::full<decltype(p)>(*grad_scale);
+  auto m = ct::load_masked(exp_avg + idx, mask);
+  auto v = ct::load_masked(exp_avg_sq + idx, mask);
+  auto one = ct::full<decltype(p)>(1.0f);
+  auto beta1_tile = ct::full<decltype(p)>(beta1);
+  auto beta2_tile = ct::full<decltype(p)>(beta2);
+  auto next_m = beta1_tile * m + (one - beta1_tile) * g;
+  auto next_v = beta2_tile * v + (one - beta2_tile) * g * g;
+  auto decayed = p * (one - ct::full<decltype(p)>(lr * weight_decay));
+  auto denom = ct::sqrt(next_v) / ct::full<decltype(p)>(sqrt_bias_correction2) + ct::full<decltype(p)>(eps);
+  auto step_size = ct::full<decltype(p)>(lr / bias_correction1);
+  auto next_p = decayed - step_size * next_m / denom;
+  ct::store_masked(param + idx, next_p, mask);
+  ct::store_masked(exp_avg + idx, next_m, mask);
+  ct::store_masked(exp_avg_sq + idx, next_v, mask);
+}
+
+__tile_global__ void adamw_step_many_with_device_scale_float32_kernel(
+    float* const* __restrict__ params,
+    const float* const* __restrict__ grads,
+    const float* __restrict__ grad_scale,
+    float* const* __restrict__ exp_avgs,
+    float* const* __restrict__ exp_avg_sqs,
+    const std::int64_t* __restrict__ elements,
+    const float* __restrict__ weight_decays,
+    std::int64_t buffer_count,
+    float lr,
+    float beta1,
+    float beta2,
+    float eps,
+    float bias_correction1,
+    float sqrt_bias_correction2) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  const int tensor = ct::bid().x;
+  const int chunk = ct::bid().y;
+  if (static_cast<std::int64_t>(tensor) >= buffer_count) {
+    return;
+  }
+
+  float* param = ct::assume_aligned(params[tensor], 16_ic);
+  const float* grad = ct::assume_aligned(grads[tensor], 16_ic);
+  grad_scale = ct::assume_aligned(grad_scale, 16_ic);
+  float* exp_avg = ct::assume_aligned(exp_avgs[tensor], 16_ic);
+  float* exp_avg_sq = ct::assume_aligned(exp_avg_sqs[tensor], 16_ic);
+
+  const std::int64_t n = elements[tensor];
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto p = ct::load_masked(param + idx, mask);
+  auto g = ct::load_masked(grad + idx, mask) * ct::full<decltype(p)>(*grad_scale);
+  auto m = ct::load_masked(exp_avg + idx, mask);
+  auto v = ct::load_masked(exp_avg_sq + idx, mask);
+  auto one = ct::full<decltype(p)>(1.0f);
+  auto beta1_tile = ct::full<decltype(p)>(beta1);
+  auto beta2_tile = ct::full<decltype(p)>(beta2);
+  auto next_m = beta1_tile * m + (one - beta1_tile) * g;
+  auto next_v = beta2_tile * v + (one - beta2_tile) * g * g;
+  auto decayed = p * (one - ct::full<decltype(p)>(lr * weight_decays[tensor]));
   auto denom = ct::sqrt(next_v) / ct::full<decltype(p)>(sqrt_bias_correction2) + ct::full<decltype(p)>(eps);
   auto step_size = ct::full<decltype(p)>(lr / bias_correction1);
   auto next_p = decayed - step_size * next_m / denom;
@@ -972,6 +2217,65 @@ __tile_global__ void absolute_position_embedding_float32_kernel(
   ct::store_masked(out + idx, value, mask);
 }
 
+__tile_global__ void absolute_position_embedding_backward_float32_kernel(
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_weight,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    std::int64_t batch) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_weight = ct::assume_aligned(grad_weight, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(seq_len * model_dim);
+  auto dim_tile = ct::full<IndexTile>(model_dim);
+  auto seq_tile = ct::full<IndexTile>(seq_len);
+  auto s = idx / dim_tile;
+  auto d = idx % dim_tile;
+  auto acc = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t batch_idx = 0; batch_idx < batch; ++batch_idx) {
+    auto src = (ct::full<IndexTile>(batch_idx) * seq_tile + s) * dim_tile + d;
+    auto value = ct::load_masked(grad_out + src, mask);
+    acc = acc + value;
+  }
+  ct::store_masked(grad_weight + idx, acc, mask);
+}
+
+__tile_global__ void absolute_position_embedding_backward_accumulate_float32_kernel(
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_weight,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    std::int64_t batch) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_weight = ct::assume_aligned(grad_weight, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(seq_len * model_dim);
+  auto dim_tile = ct::full<IndexTile>(model_dim);
+  auto seq_tile = ct::full<IndexTile>(seq_len);
+  auto s = idx / dim_tile;
+  auto d = idx % dim_tile;
+  auto acc = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t batch_idx = 0; batch_idx < batch; ++batch_idx) {
+    auto src = (ct::full<IndexTile>(batch_idx) * seq_tile + s) * dim_tile + d;
+    auto value = ct::load_masked(grad_out + src, mask);
+    acc = acc + value;
+  }
+  auto current = ct::load_masked(grad_weight + idx, mask);
+  ct::store_masked(grad_weight + idx, current + acc, mask);
+}
+
 __tile_global__ void token_embedding_float32_kernel(
     const float* __restrict__ weight,
     const std::int64_t* __restrict__ token_ids,
@@ -996,6 +2300,32 @@ __tile_global__ void token_embedding_float32_kernel(
   auto src = token * dim_tile + d;
   auto value = ct::load_masked(weight + src, mask);
   ct::store_masked(out + idx, value, mask);
+}
+
+__tile_global__ void token_embedding_backward_weight_float32_kernel(
+    const std::int64_t* __restrict__ token_ids,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_weight,
+    std::int64_t n,
+    std::int64_t model_dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  token_ids = ct::assume_aligned(token_ids, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_weight = ct::assume_aligned(grad_weight, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto dim_tile = ct::full<IndexTile>(model_dim);
+  auto d = idx % dim_tile;
+  auto token_offset = idx / dim_tile;
+  auto token = ct::load_masked(token_ids + token_offset, mask);
+  auto dst = token * dim_tile + d;
+  auto grad = ct::load_masked(grad_out + idx, mask);
+  ct::atomic_add_masked<ct::memory_order::relaxed>(grad_weight + dst, grad, mask);
 }
 
 __tile_global__ void rotary_embedding_float32_kernel(
@@ -1063,6 +2393,40 @@ __tile_global__ void rms_norm_float32_kernel(
   ct::store_masked(out + base + d, valid_x * scale, mask);
 }
 
+__tile_global__ void rms_norm_backward_input_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_x,
+    std::int64_t rows,
+    std::int64_t dim,
+    float eps) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_x = ct::assume_aligned(grad_x, 16_ic);
+
+  const int row = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto d = ct::iota<IndexTile>();
+  auto mask = d < ct::full<IndexTile>(dim);
+  auto base = ct::full<IndexTile>(static_cast<std::int64_t>(row) * dim);
+  auto x_tile = ct::load_masked(x + base + d, mask);
+  auto grad_tile = ct::load_masked(grad_out + base + d, mask);
+  auto zero = ct::full<decltype(x_tile)>(0.0f);
+  auto valid_x = ct::select(mask, x_tile, zero);
+  auto valid_grad = ct::select(mask, grad_tile, zero);
+  auto sum_sq = ct::sum(valid_x * valid_x, 0_ic);
+  auto dim_f = ct::full<decltype(sum_sq)>(static_cast<float>(dim));
+  auto mean_sq = sum_sq / dim_f;
+  auto inv_rms = ct::rsqrt(mean_sq + ct::full<decltype(sum_sq)>(eps));
+  auto dot = ct::sum(valid_grad * valid_x, 0_ic);
+  auto correction = valid_x * (inv_rms * inv_rms * inv_rms) * (dot / dim_f);
+  auto grad_x_tile = valid_grad * inv_rms - correction;
+  ct::store_masked(grad_x + base + d, grad_x_tile, mask);
+}
+
 __tile_global__ void layer_norm_float32_kernel(
     const float* __restrict__ x,
     const float* __restrict__ weight,
@@ -1096,6 +2460,182 @@ __tile_global__ void layer_norm_float32_kernel(
   auto weight_tile = ct::load_masked(weight + d, mask);
   auto bias_tile = ct::load_masked(bias + d, mask);
   ct::store_masked(out + base + d, centered * scale * weight_tile + bias_tile, mask);
+}
+
+__tile_global__ void layer_norm_backward_input_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ grad_out,
+    const float* __restrict__ weight,
+    float* __restrict__ grad_x,
+    std::int64_t rows,
+    std::int64_t dim,
+    float eps) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  weight = ct::assume_aligned(weight, 16_ic);
+  grad_x = ct::assume_aligned(grad_x, 16_ic);
+
+  const int row = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto d = ct::iota<IndexTile>();
+  auto mask = d < ct::full<IndexTile>(dim);
+  auto base = ct::full<IndexTile>(static_cast<std::int64_t>(row) * dim);
+  auto zero = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  auto x_tile = ct::load_masked(x + base + d, mask);
+  auto valid_x = ct::select(mask, x_tile, zero);
+  auto sum_x = ct::sum(valid_x, 0_ic);
+  auto dim_f = ct::full<decltype(sum_x)>(static_cast<float>(dim));
+  auto mean = sum_x / dim_f;
+  auto centered = ct::select(mask, x_tile - mean, zero);
+  auto sum_sq = ct::sum(centered * centered, 0_ic);
+  auto var = sum_sq / dim_f;
+  auto inv_std = ct::rsqrt(var + ct::full<decltype(var)>(eps));
+  auto xhat = centered * inv_std;
+  auto grad_tile = ct::load_masked(grad_out + base + d, mask);
+  auto weight_tile = ct::load_masked(weight + d, mask);
+  auto grad_norm = ct::select(mask, grad_tile * weight_tile, zero);
+  auto sum_grad = ct::sum(grad_norm, 0_ic);
+  auto sum_grad_xhat = ct::sum(grad_norm * xhat, 0_ic);
+  auto grad_x_tile = (grad_norm * dim_f - sum_grad - xhat * sum_grad_xhat) * (inv_std / dim_f);
+  ct::store_masked(grad_x + base + d, grad_x_tile, mask);
+}
+
+__tile_global__ void layer_norm_backward_affine_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_weight,
+    float* __restrict__ grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
+    float eps) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_weight = ct::assume_aligned(grad_weight, 16_ic);
+  grad_bias = ct::assume_aligned(grad_bias, 16_ic);
+
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto d = ct::iota<IndexTile>();
+  auto mask = d < ct::full<IndexTile>(dim);
+  auto zero = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  auto grad_weight_acc = zero;
+  auto grad_bias_acc = zero;
+  for (std::int64_t row = 0; row < rows; ++row) {
+    auto base = ct::full<IndexTile>(row * dim);
+    auto x_tile = ct::load_masked(x + base + d, mask);
+    auto grad_tile = ct::load_masked(grad_out + base + d, mask);
+    auto valid_x = ct::select(mask, x_tile, zero);
+    auto valid_grad = ct::select(mask, grad_tile, zero);
+    auto sum_x = ct::sum(valid_x, 0_ic);
+    auto dim_f = ct::full<decltype(sum_x)>(static_cast<float>(dim));
+    auto mean = sum_x / dim_f;
+    auto centered = ct::select(mask, x_tile - mean, zero);
+    auto sum_sq = ct::sum(centered * centered, 0_ic);
+    auto var = sum_sq / dim_f;
+    auto inv_std = ct::rsqrt(var + ct::full<decltype(var)>(eps));
+    grad_weight_acc = grad_weight_acc + valid_grad * centered * inv_std;
+    grad_bias_acc = grad_bias_acc + valid_grad;
+  }
+  ct::store_masked(grad_weight + d, grad_weight_acc, mask);
+  ct::store_masked(grad_bias + d, grad_bias_acc, mask);
+}
+
+__tile_global__ void layer_norm_backward_affine_accumulate_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_weight,
+    float* __restrict__ grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
+    float eps) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_weight = ct::assume_aligned(grad_weight, 16_ic);
+  grad_bias = ct::assume_aligned(grad_bias, 16_ic);
+
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto d = ct::iota<IndexTile>();
+  auto mask = d < ct::full<IndexTile>(dim);
+  auto zero = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  auto grad_weight_acc = zero;
+  auto grad_bias_acc = zero;
+  for (std::int64_t row = 0; row < rows; ++row) {
+    auto base = ct::full<IndexTile>(row * dim);
+    auto x_tile = ct::load_masked(x + base + d, mask);
+    auto grad_tile = ct::load_masked(grad_out + base + d, mask);
+    auto valid_x = ct::select(mask, x_tile, zero);
+    auto valid_grad = ct::select(mask, grad_tile, zero);
+    auto sum_x = ct::sum(valid_x, 0_ic);
+    auto dim_f = ct::full<decltype(sum_x)>(static_cast<float>(dim));
+    auto mean = sum_x / dim_f;
+    auto centered = ct::select(mask, x_tile - mean, zero);
+    auto sum_sq = ct::sum(centered * centered, 0_ic);
+    auto var = sum_sq / dim_f;
+    auto inv_std = ct::rsqrt(var + ct::full<decltype(var)>(eps));
+    grad_weight_acc = grad_weight_acc + valid_grad * centered * inv_std;
+    grad_bias_acc = grad_bias_acc + valid_grad;
+  }
+  auto current_weight = ct::load_masked(grad_weight + d, mask);
+  auto current_bias = ct::load_masked(grad_bias + d, mask);
+  ct::store_masked(grad_weight + d, current_weight + grad_weight_acc, mask);
+  ct::store_masked(grad_bias + d, current_bias + grad_bias_acc, mask);
+}
+
+__tile_global__ void layer_norm_backward_affine_chunked_atomic_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_weight,
+    float* __restrict__ grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
+    float eps,
+    std::int64_t row_chunk_size,
+    std::int64_t row_chunks) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_weight = ct::assume_aligned(grad_weight, 16_ic);
+  grad_bias = ct::assume_aligned(grad_bias, 16_ic);
+
+  const std::int64_t dim_block = static_cast<std::int64_t>(ct::bid().x);
+  const std::int64_t row_chunk = static_cast<std::int64_t>(ct::bid().y);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto d = ct::iota<IndexTile>() + ct::full<IndexTile>(dim_block * kTileSize);
+  auto mask = d < ct::full<IndexTile>(dim);
+  auto zero = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  auto grad_weight_acc = zero;
+  auto grad_bias_acc = zero;
+  const std::int64_t row_start = row_chunk * row_chunk_size;
+  const std::int64_t row_end = (row_start + row_chunk_size < rows) ? row_start + row_chunk_size : rows;
+  for (std::int64_t row = row_start; row < row_end; ++row) {
+    auto base = ct::full<IndexTile>(row * dim);
+    auto x_tile = ct::load_masked(x + base + d, mask);
+    auto grad_tile = ct::load_masked(grad_out + base + d, mask);
+    auto valid_x = ct::select(mask, x_tile, zero);
+    auto valid_grad = ct::select(mask, grad_tile, zero);
+    auto sum_x = ct::sum(valid_x, 0_ic);
+    auto dim_f = ct::full<decltype(sum_x)>(static_cast<float>(dim));
+    auto mean = sum_x / dim_f;
+    auto centered = ct::select(mask, x_tile - mean, zero);
+    auto sum_sq = ct::sum(centered * centered, 0_ic);
+    auto var = sum_sq / dim_f;
+    auto inv_std = ct::rsqrt(var + ct::full<decltype(var)>(eps));
+    grad_weight_acc = grad_weight_acc + valid_grad * centered * inv_std;
+    grad_bias_acc = grad_bias_acc + valid_grad;
+  }
+  auto active = row_chunk < row_chunks ? mask : ct::full<decltype(mask)>(false);
+  ct::atomic_add_masked<ct::memory_order::relaxed>(grad_weight + d, grad_weight_acc, active);
+  ct::atomic_add_masked<ct::memory_order::relaxed>(grad_bias + d, grad_bias_acc, active);
 }
 
 __tile_global__ void softmax_lastdim_float32_kernel(
@@ -1330,6 +2870,207 @@ __tile_global__ void scaled_residual_add_float32_kernel(
   ct::partition_view{ct::tensor_span{out, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(result, bx);
 }
 
+__tile_global__ void split_qkv_float32_kernel(
+    const float* __restrict__ qkv,
+    float* __restrict__ q,
+    float* __restrict__ k,
+    float* __restrict__ v,
+    std::int64_t rows,
+    std::int64_t dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  qkv = ct::assume_aligned(qkv, 16_ic);
+  q = ct::assume_aligned(q, 16_ic);
+  k = ct::assume_aligned(k, 16_ic);
+  v = ct::assume_aligned(v, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto local = ct::iota<IndexTile>();
+  auto flat = ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize) + local;
+  const std::int64_t n = rows * dim;
+  auto mask = flat < ct::full<IndexTile>(n);
+  auto dim_tile = ct::full<IndexTile>(dim);
+  auto row = flat / dim_tile;
+  auto col = flat % dim_tile;
+  auto qkv_base = row * ct::full<IndexTile>(3 * dim) + col;
+  auto q_tile = ct::load_masked(qkv + qkv_base, mask);
+  auto k_tile = ct::load_masked(qkv + qkv_base + dim_tile, mask);
+  auto v_tile = ct::load_masked(qkv + qkv_base + ct::full<IndexTile>(2 * dim), mask);
+  ct::store_masked(q + flat, q_tile, mask);
+  ct::store_masked(k + flat, k_tile, mask);
+  ct::store_masked(v + flat, v_tile, mask);
+}
+
+__tile_global__ void split_qkv_to_heads_float32_kernel(
+    const float* __restrict__ qkv,
+    float* __restrict__ q_heads,
+    float* __restrict__ k_heads,
+    float* __restrict__ v_heads,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t heads,
+    std::int64_t head_dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  qkv = ct::assume_aligned(qkv, 16_ic);
+  q_heads = ct::assume_aligned(q_heads, 16_ic);
+  k_heads = ct::assume_aligned(k_heads, 16_ic);
+  v_heads = ct::assume_aligned(v_heads, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto local = ct::iota<IndexTile>();
+  auto flat = ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize) + local;
+  const std::int64_t dim = heads * head_dim;
+  const std::int64_t n = batch * seq_len * dim;
+  auto mask = flat < ct::full<IndexTile>(n);
+  auto head_dim_tile = ct::full<IndexTile>(head_dim);
+  auto seq_tile = ct::full<IndexTile>(seq_len);
+  auto heads_tile = ct::full<IndexTile>(heads);
+  auto dim_tile = ct::full<IndexTile>(dim);
+  auto d = flat % head_dim_tile;
+  auto h = (flat / head_dim_tile) % heads_tile;
+  auto s = (flat / (head_dim_tile * heads_tile)) % seq_tile;
+  auto b = flat / (head_dim_tile * heads_tile * seq_tile);
+  auto row = b * seq_tile + s;
+  auto col = h * head_dim_tile + d;
+  auto qkv_base = row * ct::full<IndexTile>(3 * dim) + col;
+  auto dst = ((b * heads_tile + h) * seq_tile + s) * head_dim_tile + d;
+  auto q_tile = ct::load_masked(qkv + qkv_base, mask);
+  auto k_tile = ct::load_masked(qkv + qkv_base + dim_tile, mask);
+  auto v_tile = ct::load_masked(qkv + qkv_base + ct::full<IndexTile>(2 * dim), mask);
+  ct::store_masked(q_heads + dst, q_tile, mask);
+  ct::store_masked(k_heads + dst, k_tile, mask);
+  ct::store_masked(v_heads + dst, v_tile, mask);
+}
+
+__tile_global__ void split_qkv_to_heads_add_bias_float32_kernel(
+    const float* __restrict__ qkv,
+    const float* __restrict__ bias,
+    float* __restrict__ q_heads,
+    float* __restrict__ k_heads,
+    float* __restrict__ v_heads,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t heads,
+    std::int64_t head_dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  qkv = ct::assume_aligned(qkv, 16_ic);
+  bias = ct::assume_aligned(bias, 16_ic);
+  q_heads = ct::assume_aligned(q_heads, 16_ic);
+  k_heads = ct::assume_aligned(k_heads, 16_ic);
+  v_heads = ct::assume_aligned(v_heads, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto local = ct::iota<IndexTile>();
+  auto flat = ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize) + local;
+  const std::int64_t dim = heads * head_dim;
+  const std::int64_t n = batch * seq_len * dim;
+  auto mask = flat < ct::full<IndexTile>(n);
+  auto head_dim_tile = ct::full<IndexTile>(head_dim);
+  auto seq_tile = ct::full<IndexTile>(seq_len);
+  auto heads_tile = ct::full<IndexTile>(heads);
+  auto dim_tile = ct::full<IndexTile>(dim);
+  auto d = flat % head_dim_tile;
+  auto h = (flat / head_dim_tile) % heads_tile;
+  auto s = (flat / (head_dim_tile * heads_tile)) % seq_tile;
+  auto b = flat / (head_dim_tile * heads_tile * seq_tile);
+  auto row = b * seq_tile + s;
+  auto col = h * head_dim_tile + d;
+  auto qkv_base = row * ct::full<IndexTile>(3 * dim) + col;
+  auto dst = ((b * heads_tile + h) * seq_tile + s) * head_dim_tile + d;
+  auto q_tile = ct::load_masked(qkv + qkv_base, mask) + ct::load_masked(bias + col, mask);
+  auto k_tile = ct::load_masked(qkv + qkv_base + dim_tile, mask) + ct::load_masked(bias + dim_tile + col, mask);
+  auto v_tile = ct::load_masked(qkv + qkv_base + ct::full<IndexTile>(2 * dim), mask) +
+                ct::load_masked(bias + ct::full<IndexTile>(2 * dim) + col, mask);
+  ct::store_masked(q_heads + dst, q_tile, mask);
+  ct::store_masked(k_heads + dst, k_tile, mask);
+  ct::store_masked(v_heads + dst, v_tile, mask);
+}
+
+__tile_global__ void merge_qkv_float32_kernel(
+    const float* __restrict__ q,
+    const float* __restrict__ k,
+    const float* __restrict__ v,
+    float* __restrict__ qkv,
+    std::int64_t rows,
+    std::int64_t dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  q = ct::assume_aligned(q, 16_ic);
+  k = ct::assume_aligned(k, 16_ic);
+  v = ct::assume_aligned(v, 16_ic);
+  qkv = ct::assume_aligned(qkv, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto local = ct::iota<IndexTile>();
+  auto flat = ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize) + local;
+  const std::int64_t n = rows * dim;
+  auto mask = flat < ct::full<IndexTile>(n);
+  auto dim_tile = ct::full<IndexTile>(dim);
+  auto row = flat / dim_tile;
+  auto col = flat % dim_tile;
+  auto qkv_base = row * ct::full<IndexTile>(3 * dim) + col;
+  auto q_tile = ct::load_masked(q + flat, mask);
+  auto k_tile = ct::load_masked(k + flat, mask);
+  auto v_tile = ct::load_masked(v + flat, mask);
+  ct::store_masked(qkv + qkv_base, q_tile, mask);
+  ct::store_masked(qkv + qkv_base + dim_tile, k_tile, mask);
+  ct::store_masked(qkv + qkv_base + ct::full<IndexTile>(2 * dim), v_tile, mask);
+}
+
+__tile_global__ void merge_heads_to_qkv_float32_kernel(
+    const float* __restrict__ q_heads,
+    const float* __restrict__ k_heads,
+    const float* __restrict__ v_heads,
+    float* __restrict__ qkv,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t heads,
+    std::int64_t head_dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  q_heads = ct::assume_aligned(q_heads, 16_ic);
+  k_heads = ct::assume_aligned(k_heads, 16_ic);
+  v_heads = ct::assume_aligned(v_heads, 16_ic);
+  qkv = ct::assume_aligned(qkv, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto local = ct::iota<IndexTile>();
+  auto flat = ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize) + local;
+  const std::int64_t dim = heads * head_dim;
+  const std::int64_t n = batch * seq_len * dim;
+  auto mask = flat < ct::full<IndexTile>(n);
+  auto head_dim_tile = ct::full<IndexTile>(head_dim);
+  auto seq_tile = ct::full<IndexTile>(seq_len);
+  auto heads_tile = ct::full<IndexTile>(heads);
+  auto dim_tile = ct::full<IndexTile>(dim);
+  auto d = flat % head_dim_tile;
+  auto h = (flat / head_dim_tile) % heads_tile;
+  auto s = (flat / (head_dim_tile * heads_tile)) % seq_tile;
+  auto b = flat / (head_dim_tile * heads_tile * seq_tile);
+  auto src = ((b * heads_tile + h) * seq_tile + s) * head_dim_tile + d;
+  auto row = b * seq_tile + s;
+  auto col = h * head_dim_tile + d;
+  auto qkv_base = row * ct::full<IndexTile>(3 * dim) + col;
+  auto q_tile = ct::load_masked(q_heads + src, mask);
+  auto k_tile = ct::load_masked(k_heads + src, mask);
+  auto v_tile = ct::load_masked(v_heads + src, mask);
+  ct::store_masked(qkv + qkv_base, q_tile, mask);
+  ct::store_masked(qkv + qkv_base + dim_tile, k_tile, mask);
+  ct::store_masked(qkv + qkv_base + ct::full<IndexTile>(2 * dim), v_tile, mask);
+}
+
 __tile_global__ void linear_float32_kernel(
     const float* __restrict__ x,
     const float* __restrict__ weight,
@@ -1366,6 +3107,353 @@ __tile_global__ void linear_float32_kernel(
     acc = acc + ct::load_masked(bias + out_col, mask);
   }
   ct::store_masked(out + idx, acc, mask);
+}
+
+__tile_global__ void linear_add_bias_float32_kernel(
+    float* __restrict__ out,
+    const float* __restrict__ bias,
+    std::int64_t n,
+    std::int64_t output_dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  out = ct::assume_aligned(out, 16_ic);
+  bias = ct::assume_aligned(bias, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto output_dim_tile = ct::full<IndexTile>(output_dim);
+  auto out_col = idx % output_dim_tile;
+  auto values = ct::load_masked(out + idx, mask) + ct::load_masked(bias + out_col, mask);
+  ct::store_masked(out + idx, values, mask);
+}
+
+__tile_global__ void linear_backward_input_float32_kernel(
+    const float* __restrict__ grad_out,
+    const float* __restrict__ weight,
+    float* __restrict__ grad_x,
+    std::int64_t n,
+    std::int64_t input_dim,
+    std::int64_t output_dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  weight = ct::assume_aligned(weight, 16_ic);
+  grad_x = ct::assume_aligned(grad_x, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto input_dim_tile = ct::full<IndexTile>(input_dim);
+  auto output_dim_tile = ct::full<IndexTile>(output_dim);
+  auto in_col = idx % input_dim_tile;
+  auto row = idx / input_dim_tile;
+  auto acc = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t out_col = 0; out_col < output_dim; ++out_col) {
+    auto grad_value = ct::load_masked(
+        grad_out + row * output_dim_tile + ct::full<IndexTile>(out_col),
+        mask);
+    auto weight_value = ct::load_masked(
+        weight + ct::full<IndexTile>(out_col) * input_dim_tile + in_col,
+        mask);
+    acc = acc + grad_value * weight_value;
+  }
+  ct::store_masked(grad_x + idx, acc, mask);
+}
+
+__tile_global__ void linear_backward_weight_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_weight,
+    std::int64_t n,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_weight = ct::assume_aligned(grad_weight, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto input_dim_tile = ct::full<IndexTile>(input_dim);
+  auto output_dim_tile = ct::full<IndexTile>(output_dim);
+  auto out_col = idx / input_dim_tile;
+  auto in_col = idx % input_dim_tile;
+  auto acc = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t row_idx = 0; row_idx < rows; ++row_idx) {
+    auto x_value = ct::load_masked(
+        x + ct::full<IndexTile>(row_idx) * input_dim_tile + in_col,
+        mask);
+    auto grad_value = ct::load_masked(
+        grad_out + ct::full<IndexTile>(row_idx) * output_dim_tile + out_col,
+        mask);
+    acc = acc + grad_value * x_value;
+  }
+  ct::store_masked(grad_weight + idx, acc, mask);
+}
+
+__tile_global__ void linear_backward_weight_chunked_atomic_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_weight,
+    std::int64_t n,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t row_chunk_size,
+    std::int64_t row_chunks) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_weight = ct::assume_aligned(grad_weight, 16_ic);
+
+  const std::int64_t weight_block = static_cast<std::int64_t>(ct::bid().x);
+  const std::int64_t row_chunk = static_cast<std::int64_t>(ct::bid().y);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(weight_block * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto input_dim_tile = ct::full<IndexTile>(input_dim);
+  auto output_dim_tile = ct::full<IndexTile>(output_dim);
+  auto out_col = idx / input_dim_tile;
+  auto in_col = idx % input_dim_tile;
+  const std::int64_t row_start = row_chunk * row_chunk_size;
+  const std::int64_t row_end = (row_start + row_chunk_size < rows) ? row_start + row_chunk_size : rows;
+  auto acc = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t row_idx = row_start; row_idx < row_end; ++row_idx) {
+    auto x_value = ct::load_masked(x + ct::full<IndexTile>(row_idx) * input_dim_tile + in_col, mask);
+    auto grad_value = ct::load_masked(grad_out + ct::full<IndexTile>(row_idx) * output_dim_tile + out_col, mask);
+    acc = acc + grad_value * x_value;
+  }
+  auto active = row_chunk < row_chunks ? mask : ct::full<decltype(mask)>(false);
+  ct::atomic_add_masked<ct::memory_order::relaxed>(grad_weight + idx, acc, active);
+}
+
+__tile_global__ void linear_backward_bias_float32_kernel(
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_bias,
+    std::int64_t output_dim,
+    std::int64_t rows) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_bias = ct::assume_aligned(grad_bias, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto out_col = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = out_col < ct::full<IndexTile>(output_dim);
+  auto output_dim_tile = ct::full<IndexTile>(output_dim);
+  auto acc = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t row_idx = 0; row_idx < rows; ++row_idx) {
+    auto grad_value = ct::load_masked(
+        grad_out + ct::full<IndexTile>(row_idx) * output_dim_tile + out_col,
+        mask);
+    acc = acc + grad_value;
+  }
+  ct::store_masked(grad_bias + out_col, acc, mask);
+}
+
+__tile_global__ void linear_backward_bias_accumulate_float32_kernel(
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_bias,
+    std::int64_t output_dim,
+    std::int64_t rows) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_bias = ct::assume_aligned(grad_bias, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto out_col = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = out_col < ct::full<IndexTile>(output_dim);
+  auto output_dim_tile = ct::full<IndexTile>(output_dim);
+  auto acc = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t row_idx = 0; row_idx < rows; ++row_idx) {
+    auto grad_value = ct::load_masked(
+        grad_out + ct::full<IndexTile>(row_idx) * output_dim_tile + out_col,
+        mask);
+    acc = acc + grad_value;
+  }
+  auto current = ct::load_masked(grad_bias + out_col, mask);
+  ct::store_masked(grad_bias + out_col, current + acc, mask);
+}
+
+__tile_global__ void linear_backward_bias_chunked_atomic_float32_kernel(
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_bias,
+    std::int64_t output_dim,
+    std::int64_t rows,
+    std::int64_t row_chunk_size,
+    std::int64_t row_chunks) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_bias = ct::assume_aligned(grad_bias, 16_ic);
+
+  const std::int64_t out_block = static_cast<std::int64_t>(ct::bid().x);
+  const std::int64_t row_chunk = static_cast<std::int64_t>(ct::bid().y);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto out_col = ct::iota<IndexTile>() + ct::full<IndexTile>(out_block * kTileSize);
+  auto mask = out_col < ct::full<IndexTile>(output_dim);
+  auto output_dim_tile = ct::full<IndexTile>(output_dim);
+  const std::int64_t row_start = row_chunk * row_chunk_size;
+  const std::int64_t row_end = (row_start + row_chunk_size < rows) ? row_start + row_chunk_size : rows;
+  auto acc = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t row_idx = row_start; row_idx < row_end; ++row_idx) {
+    auto grad_value = ct::load_masked(grad_out + ct::full<IndexTile>(row_idx) * output_dim_tile + out_col, mask);
+    acc = acc + grad_value;
+  }
+  auto active = row_chunk < row_chunks ? mask : ct::full<decltype(mask)>(false);
+  ct::atomic_add_masked<ct::memory_order::relaxed>(grad_bias + out_col, acc, active);
+}
+
+__tile_global__ void gelu_float32_kernel(
+    const float* __restrict__ x,
+    float* __restrict__ out,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  out = ct::assume_aligned(out, 16_ic);
+
+  const int bx = ct::bid().x;
+  auto x_tile = ct::partition_view{ct::tensor_span{x, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto zero = ct::full<decltype(x_tile)>(0.0f);
+  auto one = ct::full<decltype(x_tile)>(1.0f);
+  auto inv_sqrt2 = ct::full<decltype(x_tile)>(0.7071067811865476f);
+  auto z = x_tile * inv_sqrt2;
+  auto sign = ct::select(z < zero, ct::full<decltype(z)>(-1.0f), one);
+  auto abs_z = ct::abs(z);
+  auto t = one / (one + ct::full<decltype(z)>(0.3275911f) * abs_z);
+  auto a1 = ct::full<decltype(z)>(0.254829592f);
+  auto a2 = ct::full<decltype(z)>(-0.284496736f);
+  auto a3 = ct::full<decltype(z)>(1.421413741f);
+  auto a4 = ct::full<decltype(z)>(-1.453152027f);
+  auto a5 = ct::full<decltype(z)>(1.061405429f);
+  auto poly = (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t;
+  auto erf_approx = sign * (one - poly * ct::exp(-(abs_z * abs_z)));
+  auto result = ct::full<decltype(x_tile)>(0.5f) * x_tile * (one + erf_approx);
+  ct::partition_view{ct::tensor_span{out, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(result, bx);
+}
+
+__tile_global__ void gelu_add_bias_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ bias,
+    float* __restrict__ biased_out,
+    float* __restrict__ gelu_out,
+    std::int64_t n,
+    std::int64_t output_dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  bias = ct::assume_aligned(bias, 16_ic);
+  biased_out = ct::assume_aligned(biased_out, 16_ic);
+  gelu_out = ct::assume_aligned(gelu_out, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto out_col = idx % ct::full<IndexTile>(output_dim);
+  auto x_tile = ct::load_masked(x + idx, mask) + ct::load_masked(bias + out_col, mask);
+  auto zero = ct::full<decltype(x_tile)>(0.0f);
+  auto one = ct::full<decltype(x_tile)>(1.0f);
+  auto inv_sqrt2 = ct::full<decltype(x_tile)>(0.7071067811865476f);
+  auto z = x_tile * inv_sqrt2;
+  auto sign = ct::select(z < zero, ct::full<decltype(z)>(-1.0f), one);
+  auto abs_z = ct::abs(z);
+  auto t = one / (one + ct::full<decltype(z)>(0.3275911f) * abs_z);
+  auto a1 = ct::full<decltype(z)>(0.254829592f);
+  auto a2 = ct::full<decltype(z)>(-0.284496736f);
+  auto a3 = ct::full<decltype(z)>(1.421413741f);
+  auto a4 = ct::full<decltype(z)>(-1.453152027f);
+  auto a5 = ct::full<decltype(z)>(1.061405429f);
+  auto poly = (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t;
+  auto erf_approx = sign * (one - poly * ct::exp(-(abs_z * abs_z)));
+  auto result = ct::full<decltype(x_tile)>(0.5f) * x_tile * (one + erf_approx);
+  ct::store_masked(biased_out + idx, x_tile, mask);
+  ct::store_masked(gelu_out + idx, result, mask);
+}
+
+__tile_global__ void linear_bias_residual_add_float32_kernel(
+    const float* __restrict__ residual,
+    const float* __restrict__ linear_out,
+    const float* __restrict__ bias,
+    const float* __restrict__ residual_scale,
+    float* __restrict__ out,
+    std::int64_t n,
+    std::int64_t output_dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  residual = ct::assume_aligned(residual, 16_ic);
+  linear_out = ct::assume_aligned(linear_out, 16_ic);
+  bias = ct::assume_aligned(bias, 16_ic);
+  residual_scale = ct::assume_aligned(residual_scale, 16_ic);
+  out = ct::assume_aligned(out, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto out_col = idx % ct::full<IndexTile>(output_dim);
+  auto scale = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(*residual_scale);
+  auto projected = ct::load_masked(linear_out + idx, mask) + ct::load_masked(bias + out_col, mask);
+  auto result = ct::load_masked(residual + idx, mask) + projected * scale;
+  ct::store_masked(out + idx, result, mask);
+}
+
+__tile_global__ void gelu_backward_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_x,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_x = ct::assume_aligned(grad_x, 16_ic);
+
+  const int bx = ct::bid().x;
+  auto x_tile = ct::partition_view{ct::tensor_span{x, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto grad_tile = ct::partition_view{ct::tensor_span{grad_out, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto zero = ct::full<decltype(x_tile)>(0.0f);
+  auto one = ct::full<decltype(x_tile)>(1.0f);
+  auto inv_sqrt2 = ct::full<decltype(x_tile)>(0.7071067811865476f);
+  auto inv_sqrt2pi = ct::full<decltype(x_tile)>(0.3989422804014327f);
+  auto z = x_tile * inv_sqrt2;
+  auto sign = ct::select(z < zero, ct::full<decltype(z)>(-1.0f), one);
+  auto abs_z = ct::abs(z);
+  auto t = one / (one + ct::full<decltype(z)>(0.3275911f) * abs_z);
+  auto a1 = ct::full<decltype(z)>(0.254829592f);
+  auto a2 = ct::full<decltype(z)>(-0.284496736f);
+  auto a3 = ct::full<decltype(z)>(1.421413741f);
+  auto a4 = ct::full<decltype(z)>(-1.453152027f);
+  auto a5 = ct::full<decltype(z)>(1.061405429f);
+  auto poly = (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t;
+  auto erf_approx = sign * (one - poly * ct::exp(-(abs_z * abs_z)));
+  auto cdf = ct::full<decltype(x_tile)>(0.5f) * (one + erf_approx);
+  auto pdf_term = x_tile * ct::exp(ct::full<decltype(x_tile)>(-0.5f) * x_tile * x_tile) * inv_sqrt2pi;
+  auto grad = grad_tile * (cdf + pdf_term);
+  ct::partition_view{ct::tensor_span{grad_x, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(grad, bx);
 }
 
 __tile_global__ void act_weighted_sum_float32_kernel(
@@ -1521,6 +3609,255 @@ __tile_global__ void masked_token_cross_entropy_partials_float32_kernel(
   auto out_idx = ct::full<OneIndexTile>(static_cast<std::int64_t>(bx));
   ct::store(loss_partials + out_idx, ct::sum(weighted, 0_ic));
   ct::store(mask_partials + out_idx, ct::sum(mask_sum, 0_ic));
+}
+
+__tile_global__ void token_cross_entropy_row_stats_float32_kernel(
+    const float* __restrict__ logits,
+    float* __restrict__ row_max_out,
+    float* __restrict__ row_denom_out,
+    std::int64_t rows,
+    std::int64_t vocab) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  logits = ct::assume_aligned(logits, 16_ic);
+  row_max_out = ct::assume_aligned(row_max_out, 16_ic);
+  row_denom_out = ct::assume_aligned(row_denom_out, 16_ic);
+
+  const std::int64_t row = static_cast<std::int64_t>(ct::bid().x);
+  if (row >= rows) {
+    return;
+  }
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  using ScalarTile = ct::tile<float, decltype(ct::shape{1_ic})>;
+  auto local_col = ct::iota<IndexTile>();
+  auto row_max = ct::full<ScalarTile>(-3.4028234663852886e38f);
+  for (std::int64_t start = 0; start < vocab; start += kTileSize) {
+    auto col = local_col + ct::full<IndexTile>(start);
+    auto active = col < ct::full<IndexTile>(vocab);
+    auto value = ct::load_masked(logits + ct::full<IndexTile>(row * vocab) + col, active);
+    auto neg_inf = ct::full<decltype(value)>(-3.4028234663852886e38f);
+    auto safe_value = ct::select(active, value, neg_inf);
+    auto chunk_max = ct::reduce_max(safe_value, 0_ic);
+    row_max = ct::select(chunk_max > row_max, chunk_max, row_max);
+  }
+  auto denom = ct::full<ScalarTile>(0.0f);
+  for (std::int64_t start = 0; start < vocab; start += kTileSize) {
+    auto col = local_col + ct::full<IndexTile>(start);
+    auto active = col < ct::full<IndexTile>(vocab);
+    auto value = ct::load_masked(logits + ct::full<IndexTile>(row * vocab) + col, active);
+    auto exp_value = ct::select(active, ct::exp(value - row_max), ct::full<decltype(value)>(0.0f));
+    denom = denom + ct::sum(exp_value, 0_ic);
+  }
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  auto out_idx = ct::full<OneIndexTile>(row);
+  ct::store(row_max_out + out_idx, row_max);
+  ct::store(row_denom_out + out_idx, denom);
+}
+
+__tile_global__ void token_cross_entropy_backward_chunked_float32_kernel(
+    const float* __restrict__ logits,
+    const std::int64_t* __restrict__ targets,
+    const float* __restrict__ row_max,
+    const float* __restrict__ row_denom,
+    float* __restrict__ grad_logits,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t chunks_per_row,
+    float loss_scale) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  logits = ct::assume_aligned(logits, 16_ic);
+  targets = ct::assume_aligned(targets, 16_ic);
+  row_max = ct::assume_aligned(row_max, 16_ic);
+  row_denom = ct::assume_aligned(row_denom, 16_ic);
+  grad_logits = ct::assume_aligned(grad_logits, 16_ic);
+
+  const std::int64_t block = static_cast<std::int64_t>(ct::bid().x);
+  const std::int64_t row = block / chunks_per_row;
+  const std::int64_t chunk = block - row * chunks_per_row;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto col = ct::iota<IndexTile>() + ct::full<IndexTile>(chunk * kTileSize);
+  auto active = (row < rows) && (col < ct::full<IndexTile>(vocab));
+  auto base = ct::full<IndexTile>(row * vocab);
+  auto target = ct::full<IndexTile>(row < rows ? targets[row] : 0);
+  auto maxv = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(row < rows ? row_max[row] : 0.0f);
+  auto denom = ct::full<decltype(maxv)>(row < rows ? row_denom[row] : 1.0f);
+  auto value = ct::load_masked(logits + base + col, active);
+  auto prob = ct::exp(value - maxv) / denom;
+  auto onehot = ct::select(col == target, ct::full<decltype(prob)>(1.0f), ct::full<decltype(prob)>(0.0f));
+  auto grad = (prob - onehot) * ct::full<decltype(prob)>(loss_scale);
+  ct::store_masked(grad_logits + base + col, grad, active);
+}
+
+__tile_global__ void token_cross_entropy_backward_rowwise_float32_kernel(
+    const float* __restrict__ logits,
+    const std::int64_t* __restrict__ targets,
+    float* __restrict__ grad_logits,
+    std::int64_t rows,
+    std::int64_t vocab,
+    float loss_scale) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  logits = ct::assume_aligned(logits, 16_ic);
+  targets = ct::assume_aligned(targets, 16_ic);
+  grad_logits = ct::assume_aligned(grad_logits, 16_ic);
+
+  const std::int64_t row = static_cast<std::int64_t>(ct::bid().x);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto col = ct::iota<IndexTile>();
+  auto active = (row < rows) && (col < ct::full<IndexTile>(vocab));
+  auto base = ct::full<IndexTile>(row * vocab);
+  auto target = ct::full<IndexTile>(targets[row]);
+  auto value = ct::load_masked(logits + base + col, active);
+  auto neg_inf = ct::full<decltype(value)>(-3.4028234663852886e38f);
+  auto safe_value = ct::select(active, value, neg_inf);
+  auto maxv = ct::reduce_max(safe_value, 0_ic);
+  auto exp_value = ct::select(active, ct::exp(value - maxv), ct::full<decltype(value)>(0.0f));
+  auto denom = ct::sum(exp_value, 0_ic);
+  auto prob = exp_value / denom;
+  auto onehot = ct::select(col == target, ct::full<decltype(prob)>(1.0f), ct::full<decltype(prob)>(0.0f));
+  auto grad = (prob - onehot) * ct::full<decltype(prob)>(loss_scale);
+  ct::store_masked(grad_logits + base + col, grad, active);
+}
+
+__tile_global__ void masked_token_cross_entropy_row_stats_float32_kernel(
+    const float* __restrict__ logits,
+    const std::int64_t* __restrict__ targets,
+    float* __restrict__ row_max_out,
+    float* __restrict__ row_denom_out,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t ignore_index) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  logits = ct::assume_aligned(logits, 16_ic);
+  targets = ct::assume_aligned(targets, 16_ic);
+  row_max_out = ct::assume_aligned(row_max_out, 16_ic);
+  row_denom_out = ct::assume_aligned(row_denom_out, 16_ic);
+
+  const std::int64_t row = static_cast<std::int64_t>(ct::bid().x);
+  if (row >= rows) {
+    return;
+  }
+  const std::int64_t target_scalar = targets[row];
+  const bool valid_scalar = target_scalar != ignore_index;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  using ScalarTile = ct::tile<float, decltype(ct::shape{1_ic})>;
+  auto local_col = ct::iota<IndexTile>();
+  auto row_max = ct::full<ScalarTile>(-3.4028234663852886e38f);
+  for (std::int64_t start = 0; start < vocab; start += kTileSize) {
+    auto col = local_col + ct::full<IndexTile>(start);
+    auto in_vocab = col < ct::full<IndexTile>(vocab);
+    auto active = valid_scalar ? in_vocab : ct::full<decltype(in_vocab)>(false);
+    auto value = ct::load_masked(logits + ct::full<IndexTile>(row * vocab) + col, active);
+    auto neg_inf = ct::full<decltype(value)>(-3.4028234663852886e38f);
+    auto safe_value = ct::select(active, value, neg_inf);
+    auto chunk_max = ct::reduce_max(safe_value, 0_ic);
+    row_max = ct::select(chunk_max > row_max, chunk_max, row_max);
+  }
+  auto denom = ct::full<ScalarTile>(valid_scalar ? 0.0f : 1.0f);
+  for (std::int64_t start = 0; start < vocab; start += kTileSize) {
+    auto col = local_col + ct::full<IndexTile>(start);
+    auto in_vocab = col < ct::full<IndexTile>(vocab);
+    auto active = valid_scalar ? in_vocab : ct::full<decltype(in_vocab)>(false);
+    auto value = ct::load_masked(logits + ct::full<IndexTile>(row * vocab) + col, active);
+    auto exp_value = ct::select(active, ct::exp(value - row_max), ct::full<decltype(value)>(0.0f));
+    denom = denom + ct::sum(exp_value, 0_ic);
+  }
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  auto out_idx = ct::full<OneIndexTile>(row);
+  auto safe_max = valid_scalar ? row_max : ct::full<ScalarTile>(0.0f);
+  ct::store(row_max_out + out_idx, safe_max);
+  ct::store(row_denom_out + out_idx, denom);
+}
+
+__tile_global__ void masked_token_cross_entropy_backward_chunked_float32_kernel(
+    const float* __restrict__ logits,
+    const std::int64_t* __restrict__ targets,
+    const float* __restrict__ loss_mask,
+    const float* __restrict__ row_max,
+    const float* __restrict__ row_denom,
+    float* __restrict__ grad_logits,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t ignore_index,
+    std::int64_t chunks_per_row,
+    float loss_scale) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  logits = ct::assume_aligned(logits, 16_ic);
+  targets = ct::assume_aligned(targets, 16_ic);
+  loss_mask = ct::assume_aligned(loss_mask, 16_ic);
+  row_max = ct::assume_aligned(row_max, 16_ic);
+  row_denom = ct::assume_aligned(row_denom, 16_ic);
+  grad_logits = ct::assume_aligned(grad_logits, 16_ic);
+
+  const std::int64_t block = static_cast<std::int64_t>(ct::bid().x);
+  const std::int64_t row = block / chunks_per_row;
+  const std::int64_t chunk = block - row * chunks_per_row;
+  const std::int64_t target_scalar = row < rows ? targets[row] : ignore_index;
+  const bool valid_scalar = row < rows && target_scalar != ignore_index;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto col = ct::iota<IndexTile>() + ct::full<IndexTile>(chunk * kTileSize);
+  auto active = (row < rows) && (col < ct::full<IndexTile>(vocab));
+  auto valid = valid_scalar ? active : ct::full<decltype(active)>(false);
+  auto base = ct::full<IndexTile>(row * vocab);
+  auto target = ct::full<IndexTile>(valid_scalar ? target_scalar : 0);
+  auto maxv = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(row < rows ? row_max[row] : 0.0f);
+  auto denom = ct::full<decltype(maxv)>(row < rows ? row_denom[row] : 1.0f);
+  auto value = ct::load_masked(logits + base + col, valid);
+  auto prob = ct::exp(value - maxv) / denom;
+  auto onehot = ct::select(col == target, ct::full<decltype(prob)>(1.0f), ct::full<decltype(prob)>(0.0f));
+  auto mask_value = ct::full<decltype(prob)>(valid_scalar ? loss_mask[row] : 0.0f);
+  auto grad = (prob - onehot) * mask_value * ct::full<decltype(prob)>(loss_scale);
+  grad = ct::select(valid, grad, ct::full<decltype(grad)>(0.0f));
+  ct::store_masked(grad_logits + base + col, grad, active);
+}
+
+__tile_global__ void masked_token_cross_entropy_backward_rowwise_float32_kernel(
+    const float* __restrict__ logits,
+    const std::int64_t* __restrict__ targets,
+    const float* __restrict__ loss_mask,
+    float* __restrict__ grad_logits,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t ignore_index,
+    float loss_scale) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  logits = ct::assume_aligned(logits, 16_ic);
+  targets = ct::assume_aligned(targets, 16_ic);
+  loss_mask = ct::assume_aligned(loss_mask, 16_ic);
+  grad_logits = ct::assume_aligned(grad_logits, 16_ic);
+
+  const std::int64_t row = static_cast<std::int64_t>(ct::bid().x);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto col = ct::iota<IndexTile>();
+  auto active = (row < rows) && (col < ct::full<IndexTile>(vocab));
+  auto base = ct::full<IndexTile>(row * vocab);
+  const std::int64_t target_scalar = targets[row];
+  const bool valid_scalar = row < rows && target_scalar != ignore_index;
+  auto valid = active && ct::full<IndexTile>(valid_scalar);
+  auto safe_target = ct::full<IndexTile>(valid_scalar ? target_scalar : 0);
+  auto value = ct::load_masked(logits + base + col, valid);
+  auto neg_inf = ct::full<decltype(value)>(-3.4028234663852886e38f);
+  auto safe_value = ct::select(valid, value, neg_inf);
+  auto maxv = ct::reduce_max(safe_value, 0_ic);
+  auto exp_value = ct::select(valid, ct::exp(value - maxv), ct::full<decltype(value)>(0.0f));
+  auto denom = ct::sum(exp_value, 0_ic);
+  auto denom_safe = denom + ct::full<decltype(denom)>(valid_scalar ? 0.0f : 1.0f);
+  auto prob = exp_value / denom_safe;
+  auto onehot = ct::select(col == safe_target, ct::full<decltype(prob)>(1.0f), ct::full<decltype(prob)>(0.0f));
+  auto mask_value = ct::full<decltype(prob)>(valid_scalar ? loss_mask[row] : 0.0f);
+  auto grad = (prob - onehot) * mask_value * ct::full<decltype(prob)>(loss_scale);
+  grad = ct::select(valid, grad, ct::full<decltype(grad)>(0.0f));
+  ct::store_masked(grad_logits + base + col, grad, active);
 }
 
 __tile_global__ void sequence_logp_float32_kernel(
@@ -1961,6 +4298,901 @@ __tile_global__ void scaled_dot_product_attention_float32_kernel(
   ct::store(out + out_idx, result);
 }
 
+__tile_global__ void scaled_dot_product_attention_row_float32_kernel(
+    const float* __restrict__ q,
+    const float* __restrict__ k,
+    const float* __restrict__ v,
+    float* __restrict__ out,
+    std::int64_t seq_len,
+    float scale) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  q = ct::assume_aligned(q, 16_ic);
+  k = ct::assume_aligned(k, 16_ic);
+  v = ct::assume_aligned(v, 16_ic);
+  out = ct::assume_aligned(out, 16_ic);
+
+  const std::int64_t row_idx_scalar = static_cast<std::int64_t>(ct::bid().x);
+  const std::int64_t q_pos = row_idx_scalar % seq_len;
+  const std::int64_t q_head = (row_idx_scalar / seq_len) % kGpt2AttentionHeads;
+  const std::int64_t batch = row_idx_scalar / (seq_len * kGpt2AttentionHeads);
+  const std::int64_t q_base_scalar = ((batch * kGpt2AttentionHeads + q_head) * seq_len + q_pos) * kGpt2AttentionHeadDim;
+  const std::int64_t k_base_scalar = (batch * kGpt2AttentionHeads + q_head) * seq_len * kGpt2AttentionHeadDim;
+  const std::int64_t v_base_scalar = (batch * kGpt2AttentionHeads + q_head) * seq_len * kGpt2AttentionHeadDim;
+  const std::int64_t out_base_scalar = ((batch * kGpt2AttentionHeads + q_head) * seq_len + q_pos) * kGpt2AttentionHeadDim;
+
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto key_pos = ct::iota<IndexTile>();
+  auto valid = (key_pos < ct::full<IndexTile>(seq_len)) & (key_pos <= ct::full<IndexTile>(q_pos));
+
+  auto score = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t d = 0; d < kGpt2AttentionHeadDim; ++d) {
+    auto q_val = ct::full<decltype(score)>(q[q_base_scalar + d]);
+    auto k_val = ct::load_masked(
+        k + ct::full<IndexTile>(k_base_scalar + d) + key_pos * ct::full<IndexTile>(kGpt2AttentionHeadDim),
+        valid);
+    score = score + q_val * k_val;
+  }
+  score = score * ct::full<decltype(score)>(scale);
+  auto neg_inf = ct::full<decltype(score)>(-3.4028234663852886e38f);
+  auto safe_score = ct::select(valid, score, neg_inf);
+  auto max_score = ct::reduce_max(safe_score, 0_ic);
+  auto exp_score = ct::select(valid, ct::exp(score - max_score), ct::full<decltype(score)>(0.0f));
+  auto denom = ct::sum(exp_score, 0_ic);
+
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  for (std::int64_t d_out = 0; d_out < kGpt2AttentionHeadDim; ++d_out) {
+    auto v_value = ct::load_masked(
+        v + ct::full<IndexTile>(v_base_scalar + d_out) + key_pos * ct::full<IndexTile>(kGpt2AttentionHeadDim),
+        valid);
+    auto result = ct::sum(exp_score * v_value, 0_ic) / denom;
+    auto out_idx = ct::full<OneIndexTile>(out_base_scalar + d_out);
+    ct::store(out + out_idx, result);
+  }
+}
+
+__tile_global__ void scaled_dot_product_attention_backward_q_float32_kernel(
+    const float* __restrict__ q,
+    const float* __restrict__ k,
+    const float* __restrict__ v,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_q,
+    std::int64_t n,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    bool grad_out_merged) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  q = ct::assume_aligned(q, 16_ic);
+  k = ct::assume_aligned(k, 16_ic);
+  v = ct::assume_aligned(v, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_q = ct::assume_aligned(grad_q, 16_ic);
+
+  const std::int64_t q_idx_scalar = static_cast<std::int64_t>(ct::bid().x);
+  if (q_idx_scalar >= n) {
+    return;
+  }
+
+  const std::int64_t d_q = q_idx_scalar % qk_dim;
+  const std::int64_t q_pos = (q_idx_scalar / qk_dim) % seq_q;
+  const std::int64_t q_head = (q_idx_scalar / (qk_dim * seq_q)) % query_heads;
+  const std::int64_t batch = q_idx_scalar / (qk_dim * seq_q * query_heads);
+  const std::int64_t k_head = (q_head * key_heads) / query_heads;
+  const std::int64_t q_base_scalar = ((batch * query_heads + q_head) * seq_q + q_pos) * qk_dim;
+  const std::int64_t k_base_scalar = (batch * key_heads + k_head) * seq_k * qk_dim;
+  const std::int64_t v_base_scalar = (batch * key_heads + k_head) * seq_k * value_dim;
+  const std::int64_t go_base_scalar = grad_out_merged
+      ? (batch * seq_q + q_pos) * query_heads * value_dim + q_head * value_dim
+      : ((batch * query_heads + q_head) * seq_q + q_pos) * value_dim;
+
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto key_pos = ct::iota<IndexTile>();
+  auto valid = key_pos < ct::full<IndexTile>(seq_k);
+  if (is_causal) {
+    const std::int64_t offset = right_align_causal ? (seq_k - seq_q) : 0;
+    valid = valid & (key_pos <= ct::full<IndexTile>(q_pos + offset));
+  }
+  if (use_sparse_rules) {
+    const std::int64_t offset = right_align_causal ? (seq_k - seq_q) : 0;
+    auto keep = ct::full<decltype(valid)>(false);
+    bool any_rule = false;
+    if (window > 0) {
+      keep = keep | (key_pos > ct::full<IndexTile>(q_pos + offset - window));
+      any_rule = true;
+    }
+    if (num_sinks > 0) {
+      keep = keep | (key_pos < ct::full<IndexTile>(num_sinks));
+      any_rule = true;
+    }
+    if (block_size > 0) {
+      keep = keep | (ct::full<IndexTile>((q_pos + offset) / block_size) == (key_pos / ct::full<IndexTile>(block_size)));
+      any_rule = true;
+    }
+    if (compress_stride > 1) {
+      keep = keep | ((key_pos % ct::full<IndexTile>(compress_stride)) == ct::full<IndexTile>(0));
+      any_rule = true;
+    }
+    if (any_rule) {
+      valid = valid & keep;
+    }
+  }
+
+  auto score = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t d = 0; d < qk_dim; ++d) {
+    auto q_val = ct::full<decltype(score)>(q[q_base_scalar + d]);
+    auto k_val = ct::load_masked(k + ct::full<IndexTile>(k_base_scalar + d) + key_pos * ct::full<IndexTile>(qk_dim), valid);
+    score = score + q_val * k_val;
+  }
+  score = score * ct::full<decltype(score)>(scale);
+  auto neg_inf = ct::full<decltype(score)>(-3.4028234663852886e38f);
+  auto safe_score = ct::select(valid, score, neg_inf);
+  auto max_score = ct::reduce_max(safe_score, 0_ic);
+  auto exp_score = ct::select(valid, ct::exp(score - max_score), ct::full<decltype(score)>(0.0f));
+  auto denom = ct::sum(exp_score, 0_ic);
+  auto prob = exp_score / denom;
+  auto dprob = ct::full<decltype(score)>(0.0f);
+  for (std::int64_t dv = 0; dv < value_dim; ++dv) {
+    auto go_val = ct::full<decltype(score)>(grad_out[go_base_scalar + dv]);
+    auto v_val = ct::load_masked(v + ct::full<IndexTile>(v_base_scalar + dv) + key_pos * ct::full<IndexTile>(value_dim), valid);
+    dprob = dprob + go_val * v_val;
+  }
+  auto dprob_mean = ct::sum(prob * dprob, 0_ic);
+  auto dscore = prob * (dprob - dprob_mean);
+  auto k_selected_dim = ct::load_masked(
+      k + ct::full<IndexTile>(k_base_scalar + d_q) + key_pos * ct::full<IndexTile>(qk_dim),
+      valid);
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  auto out_idx = ct::full<OneIndexTile>(q_idx_scalar);
+  auto grad = ct::sum(dscore * k_selected_dim, 0_ic) * ct::full<ct::tile<float, decltype(ct::shape{1_ic})>>(scale);
+  ct::store(grad_q + out_idx, grad);
+}
+
+__tile_global__ void scaled_dot_product_attention_backward_k_float32_kernel(
+    const float* __restrict__ q,
+    const float* __restrict__ k,
+    const float* __restrict__ v,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_k,
+    std::int64_t n,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    bool grad_out_merged) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  q = ct::assume_aligned(q, 16_ic);
+  k = ct::assume_aligned(k, 16_ic);
+  v = ct::assume_aligned(v, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_k = ct::assume_aligned(grad_k, 16_ic);
+
+  const std::int64_t k_idx_scalar = static_cast<std::int64_t>(ct::bid().x);
+  if (k_idx_scalar >= n) {
+    return;
+  }
+
+  const std::int64_t d_k = k_idx_scalar % qk_dim;
+  const std::int64_t k_pos_scalar = (k_idx_scalar / qk_dim) % seq_k;
+  const std::int64_t k_head_scalar = (k_idx_scalar / (qk_dim * seq_k)) % key_heads;
+  const std::int64_t batch_scalar = k_idx_scalar / (qk_dim * seq_k * key_heads);
+  const std::int64_t k_base_scalar = (batch_scalar * key_heads + k_head_scalar) * seq_k * qk_dim;
+  const std::int64_t v_base_scalar = (batch_scalar * key_heads + k_head_scalar) * seq_k * value_dim;
+
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto key_pos = ct::iota<IndexTile>();
+  auto key_match = key_pos == ct::full<IndexTile>(k_pos_scalar);
+  auto acc_scalar = ct::full<ct::tile<float, decltype(ct::shape{1_ic})>>(0.0f);
+  for (std::int64_t q_head = 0; q_head < query_heads; ++q_head) {
+    if ((q_head * key_heads) / query_heads != k_head_scalar) {
+      continue;
+    }
+    for (std::int64_t q_pos = 0; q_pos < seq_q; ++q_pos) {
+      auto valid = key_pos < ct::full<IndexTile>(seq_k);
+      if (is_causal) {
+        const std::int64_t offset = right_align_causal ? (seq_k - seq_q) : 0;
+        valid = valid & (key_pos <= ct::full<IndexTile>(q_pos + offset));
+      }
+      if (use_sparse_rules) {
+        const std::int64_t offset = right_align_causal ? (seq_k - seq_q) : 0;
+        auto keep = ct::full<decltype(valid)>(false);
+        bool any_rule = false;
+        if (window > 0) {
+          keep = keep | (key_pos > ct::full<IndexTile>(q_pos + offset - window));
+          any_rule = true;
+        }
+        if (num_sinks > 0) {
+          keep = keep | (key_pos < ct::full<IndexTile>(num_sinks));
+          any_rule = true;
+        }
+        if (block_size > 0) {
+          keep = keep | (ct::full<IndexTile>((q_pos + offset) / block_size) == (key_pos / ct::full<IndexTile>(block_size)));
+          any_rule = true;
+        }
+        if (compress_stride > 1) {
+          keep = keep | ((key_pos % ct::full<IndexTile>(compress_stride)) == ct::full<IndexTile>(0));
+          any_rule = true;
+        }
+        if (any_rule) {
+          valid = valid & keep;
+        }
+      }
+      const std::int64_t q_base_scalar = ((batch_scalar * query_heads + q_head) * seq_q + q_pos) * qk_dim;
+      const std::int64_t go_base_scalar = grad_out_merged
+          ? (batch_scalar * seq_q + q_pos) * query_heads * value_dim + q_head * value_dim
+          : ((batch_scalar * query_heads + q_head) * seq_q + q_pos) * value_dim;
+      auto score = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+      for (std::int64_t d = 0; d < qk_dim; ++d) {
+        auto q_val = ct::full<decltype(score)>(q[q_base_scalar + d]);
+        auto k_val = ct::load_masked(k + ct::full<IndexTile>(k_base_scalar + d) + key_pos * ct::full<IndexTile>(qk_dim), valid);
+        score = score + q_val * k_val;
+      }
+      score = score * ct::full<decltype(score)>(scale);
+      auto neg_inf = ct::full<decltype(score)>(-3.4028234663852886e38f);
+      auto safe_score = ct::select(valid, score, neg_inf);
+      auto max_score = ct::reduce_max(safe_score, 0_ic);
+      auto exp_score = ct::select(valid, ct::exp(score - max_score), ct::full<decltype(score)>(0.0f));
+      auto denom = ct::sum(exp_score, 0_ic);
+      auto prob = exp_score / denom;
+      auto dprob = ct::full<decltype(score)>(0.0f);
+      for (std::int64_t dv = 0; dv < value_dim; ++dv) {
+        auto go_val = ct::full<decltype(score)>(grad_out[go_base_scalar + dv]);
+        auto v_val = ct::load_masked(v + ct::full<IndexTile>(v_base_scalar + dv) + key_pos * ct::full<IndexTile>(value_dim), valid);
+        dprob = dprob + go_val * v_val;
+      }
+      auto dprob_mean = ct::sum(prob * dprob, 0_ic);
+      auto dscore = prob * (dprob - dprob_mean);
+      auto selected = ct::sum(ct::select(valid & key_match, dscore, ct::full<decltype(dscore)>(0.0f)), 0_ic);
+      auto q_dim = ct::full<decltype(selected)>(q[q_base_scalar + d_k]);
+      acc_scalar = acc_scalar + selected * q_dim * ct::full<decltype(selected)>(scale);
+    }
+  }
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  auto out_idx = ct::full<OneIndexTile>(k_idx_scalar);
+  ct::store(grad_k + out_idx, acc_scalar);
+}
+
+__tile_global__ void scaled_dot_product_attention_backward_v_float32_kernel(
+    const float* __restrict__ q,
+    const float* __restrict__ k,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_v,
+    std::int64_t n,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    bool grad_out_merged) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  q = ct::assume_aligned(q, 16_ic);
+  k = ct::assume_aligned(k, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_v = ct::assume_aligned(grad_v, 16_ic);
+
+  const std::int64_t v_idx_scalar = static_cast<std::int64_t>(ct::bid().x);
+  if (v_idx_scalar >= n) {
+    return;
+  }
+
+  const std::int64_t d_v = v_idx_scalar % value_dim;
+  const std::int64_t k_pos_scalar = (v_idx_scalar / value_dim) % seq_k;
+  const std::int64_t k_head_scalar = (v_idx_scalar / (value_dim * seq_k)) % key_heads;
+  const std::int64_t batch_scalar = v_idx_scalar / (value_dim * seq_k * key_heads);
+  const std::int64_t k_base_scalar = (batch_scalar * key_heads + k_head_scalar) * seq_k * qk_dim;
+
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto key_pos = ct::iota<IndexTile>();
+  auto key_match = key_pos == ct::full<IndexTile>(k_pos_scalar);
+  auto acc_scalar = ct::full<ct::tile<float, decltype(ct::shape{1_ic})>>(0.0f);
+  for (std::int64_t q_head = 0; q_head < query_heads; ++q_head) {
+    if ((q_head * key_heads) / query_heads != k_head_scalar) {
+      continue;
+    }
+    for (std::int64_t q_pos = 0; q_pos < seq_q; ++q_pos) {
+      auto valid = key_pos < ct::full<IndexTile>(seq_k);
+      if (is_causal) {
+        const std::int64_t offset = right_align_causal ? (seq_k - seq_q) : 0;
+        valid = valid & (key_pos <= ct::full<IndexTile>(q_pos + offset));
+      }
+      if (use_sparse_rules) {
+        const std::int64_t offset = right_align_causal ? (seq_k - seq_q) : 0;
+        auto keep = ct::full<decltype(valid)>(false);
+        bool any_rule = false;
+        if (window > 0) {
+          keep = keep | (key_pos > ct::full<IndexTile>(q_pos + offset - window));
+          any_rule = true;
+        }
+        if (num_sinks > 0) {
+          keep = keep | (key_pos < ct::full<IndexTile>(num_sinks));
+          any_rule = true;
+        }
+        if (block_size > 0) {
+          keep = keep | (ct::full<IndexTile>((q_pos + offset) / block_size) == (key_pos / ct::full<IndexTile>(block_size)));
+          any_rule = true;
+        }
+        if (compress_stride > 1) {
+          keep = keep | ((key_pos % ct::full<IndexTile>(compress_stride)) == ct::full<IndexTile>(0));
+          any_rule = true;
+        }
+        if (any_rule) {
+          valid = valid & keep;
+        }
+      }
+      const std::int64_t q_base_scalar = ((batch_scalar * query_heads + q_head) * seq_q + q_pos) * qk_dim;
+      const std::int64_t go_base_scalar = grad_out_merged
+          ? (batch_scalar * seq_q + q_pos) * query_heads * value_dim + q_head * value_dim
+          : ((batch_scalar * query_heads + q_head) * seq_q + q_pos) * value_dim;
+      auto score = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+      for (std::int64_t d = 0; d < qk_dim; ++d) {
+        auto q_val = ct::full<decltype(score)>(q[q_base_scalar + d]);
+        auto k_val = ct::load_masked(k + ct::full<IndexTile>(k_base_scalar + d) + key_pos * ct::full<IndexTile>(qk_dim), valid);
+        score = score + q_val * k_val;
+      }
+      score = score * ct::full<decltype(score)>(scale);
+      auto neg_inf = ct::full<decltype(score)>(-3.4028234663852886e38f);
+      auto safe_score = ct::select(valid, score, neg_inf);
+      auto max_score = ct::reduce_max(safe_score, 0_ic);
+      auto exp_score = ct::select(valid, ct::exp(score - max_score), ct::full<decltype(score)>(0.0f));
+      auto denom = ct::sum(exp_score, 0_ic);
+      auto prob = exp_score / denom;
+      auto selected_prob = ct::sum(ct::select(valid & key_match, prob, ct::full<decltype(prob)>(0.0f)), 0_ic);
+      auto go_dim = ct::full<decltype(selected_prob)>(grad_out[go_base_scalar + d_v]);
+      acc_scalar = acc_scalar + selected_prob * go_dim;
+    }
+  }
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  auto out_idx = ct::full<OneIndexTile>(v_idx_scalar);
+  ct::store(grad_v + out_idx, acc_scalar);
+}
+
+__tile_global__ void zero_three_float32_kernel(
+    float* __restrict__ a,
+    float* __restrict__ b,
+    float* __restrict__ c,
+    std::int64_t n_a,
+    std::int64_t n_b,
+    std::int64_t n_c) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  a = ct::assume_aligned(a, 16_ic);
+  b = ct::assume_aligned(b, 16_ic);
+  c = ct::assume_aligned(c, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto zero = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  auto mask_a = idx < ct::full<IndexTile>(n_a);
+  auto idx_b = idx - ct::full<IndexTile>(n_a);
+  auto mask_b = (idx >= ct::full<IndexTile>(n_a)) & (idx_b < ct::full<IndexTile>(n_b));
+  auto idx_c = idx_b - ct::full<IndexTile>(n_b);
+  auto mask_c = (idx >= ct::full<IndexTile>(n_a + n_b)) & (idx_c < ct::full<IndexTile>(n_c));
+  ct::store_masked(a + idx, zero, mask_a);
+  ct::store_masked(b + idx_b, zero, mask_b);
+  ct::store_masked(c + idx_c, zero, mask_c);
+}
+
+__tile_global__ void scaled_dot_product_attention_backward_query_row_atomic_float32_kernel(
+    const float* __restrict__ q,
+    const float* __restrict__ k,
+    const float* __restrict__ v,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_q,
+    float* __restrict__ grad_k,
+    float* __restrict__ grad_v,
+    std::int64_t rows,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    bool grad_out_merged) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  q = ct::assume_aligned(q, 16_ic);
+  k = ct::assume_aligned(k, 16_ic);
+  v = ct::assume_aligned(v, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_q = ct::assume_aligned(grad_q, 16_ic);
+  grad_k = ct::assume_aligned(grad_k, 16_ic);
+  grad_v = ct::assume_aligned(grad_v, 16_ic);
+
+  const std::int64_t row_idx_scalar = static_cast<std::int64_t>(ct::bid().x);
+  if (row_idx_scalar >= rows) {
+    return;
+  }
+
+  const std::int64_t q_pos = row_idx_scalar % seq_q;
+  const std::int64_t q_head = (row_idx_scalar / seq_q) % query_heads;
+  const std::int64_t batch = row_idx_scalar / (seq_q * query_heads);
+  const std::int64_t k_head = (q_head * key_heads) / query_heads;
+  const std::int64_t q_base_scalar = ((batch * query_heads + q_head) * seq_q + q_pos) * qk_dim;
+  const std::int64_t k_base_scalar = (batch * key_heads + k_head) * seq_k * qk_dim;
+  const std::int64_t v_base_scalar = (batch * key_heads + k_head) * seq_k * value_dim;
+  const std::int64_t go_base_scalar = grad_out_merged
+      ? (batch * seq_q + q_pos) * query_heads * value_dim + q_head * value_dim
+      : ((batch * query_heads + q_head) * seq_q + q_pos) * value_dim;
+
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto key_pos = ct::iota<IndexTile>();
+  auto valid = key_pos < ct::full<IndexTile>(seq_k);
+  if (is_causal) {
+    const std::int64_t offset = right_align_causal ? (seq_k - seq_q) : 0;
+    valid = valid & (key_pos <= ct::full<IndexTile>(q_pos + offset));
+  }
+  if (use_sparse_rules) {
+    const std::int64_t offset = right_align_causal ? (seq_k - seq_q) : 0;
+    auto keep = ct::full<decltype(valid)>(false);
+    bool any_rule = false;
+    if (window > 0) {
+      keep = keep | (key_pos > ct::full<IndexTile>(q_pos + offset - window));
+      any_rule = true;
+    }
+    if (num_sinks > 0) {
+      keep = keep | (key_pos < ct::full<IndexTile>(num_sinks));
+      any_rule = true;
+    }
+    if (block_size > 0) {
+      keep = keep | (ct::full<IndexTile>((q_pos + offset) / block_size) == (key_pos / ct::full<IndexTile>(block_size)));
+      any_rule = true;
+    }
+    if (compress_stride > 1) {
+      keep = keep | ((key_pos % ct::full<IndexTile>(compress_stride)) == ct::full<IndexTile>(0));
+      any_rule = true;
+    }
+    if (any_rule) {
+      valid = valid & keep;
+    }
+  }
+
+  auto score = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t d = 0; d < qk_dim; ++d) {
+    auto q_val = ct::full<decltype(score)>(q[q_base_scalar + d]);
+    auto k_val = ct::load_masked(k + ct::full<IndexTile>(k_base_scalar + d) + key_pos * ct::full<IndexTile>(qk_dim), valid);
+    score = score + q_val * k_val;
+  }
+  score = score * ct::full<decltype(score)>(scale);
+  auto neg_inf = ct::full<decltype(score)>(-3.4028234663852886e38f);
+  auto safe_score = ct::select(valid, score, neg_inf);
+  auto max_score = ct::reduce_max(safe_score, 0_ic);
+  auto exp_score = ct::select(valid, ct::exp(score - max_score), ct::full<decltype(score)>(0.0f));
+  auto denom = ct::sum(exp_score, 0_ic);
+  auto prob = exp_score / denom;
+  auto dprob = ct::full<decltype(score)>(0.0f);
+  for (std::int64_t dv = 0; dv < value_dim; ++dv) {
+    auto go_val = ct::full<decltype(score)>(grad_out[go_base_scalar + dv]);
+    auto v_val = ct::load_masked(v + ct::full<IndexTile>(v_base_scalar + dv) + key_pos * ct::full<IndexTile>(value_dim), valid);
+    dprob = dprob + go_val * v_val;
+  }
+  auto dprob_mean = ct::sum(prob * dprob, 0_ic);
+  auto dscore = prob * (dprob - dprob_mean);
+
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  using OneFloatTile = ct::tile<float, decltype(ct::shape{1_ic})>;
+  for (std::int64_t d_q = 0; d_q < qk_dim; ++d_q) {
+    auto k_selected_dim = ct::load_masked(
+        k + ct::full<IndexTile>(k_base_scalar + d_q) + key_pos * ct::full<IndexTile>(qk_dim),
+        valid);
+    auto grad = ct::sum(dscore * k_selected_dim, 0_ic) * ct::full<OneFloatTile>(scale);
+    ct::store(grad_q + ct::full<OneIndexTile>(q_base_scalar + d_q), grad);
+
+    auto k_update = dscore * ct::full<decltype(dscore)>(q[q_base_scalar + d_q]) * ct::full<decltype(dscore)>(scale);
+    ct::atomic_add_masked<ct::memory_order::relaxed>(
+        grad_k + ct::full<IndexTile>(k_base_scalar + d_q) + key_pos * ct::full<IndexTile>(qk_dim),
+        k_update,
+        valid);
+  }
+  for (std::int64_t dv = 0; dv < value_dim; ++dv) {
+    auto go_val = ct::full<decltype(prob)>(grad_out[go_base_scalar + dv]);
+    auto v_update = prob * go_val;
+    ct::atomic_add_masked<ct::memory_order::relaxed>(
+        grad_v + ct::full<IndexTile>(v_base_scalar + dv) + key_pos * ct::full<IndexTile>(value_dim),
+        v_update,
+        valid);
+  }
+}
+
+__tile_global__ void scaled_dot_product_attention_backward_q_row_float32_kernel(
+    const float* __restrict__ q,
+    const float* __restrict__ k,
+    const float* __restrict__ v,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_q,
+    std::int64_t rows,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    bool grad_out_merged) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  q = ct::assume_aligned(q, 16_ic);
+  k = ct::assume_aligned(k, 16_ic);
+  v = ct::assume_aligned(v, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_q = ct::assume_aligned(grad_q, 16_ic);
+
+  const std::int64_t row_idx_scalar = static_cast<std::int64_t>(ct::bid().x);
+  if (row_idx_scalar >= rows) {
+    return;
+  }
+
+  const std::int64_t q_pos = row_idx_scalar % seq_q;
+  const std::int64_t q_head = (row_idx_scalar / seq_q) % query_heads;
+  const std::int64_t batch = row_idx_scalar / (seq_q * query_heads);
+  const std::int64_t k_head = (q_head * key_heads) / query_heads;
+  const std::int64_t q_base_scalar = ((batch * query_heads + q_head) * seq_q + q_pos) * qk_dim;
+  const std::int64_t k_base_scalar = (batch * key_heads + k_head) * seq_k * qk_dim;
+  const std::int64_t v_base_scalar = (batch * key_heads + k_head) * seq_k * value_dim;
+  const std::int64_t go_base_scalar = grad_out_merged
+      ? (batch * seq_q + q_pos) * query_heads * value_dim + q_head * value_dim
+      : ((batch * query_heads + q_head) * seq_q + q_pos) * value_dim;
+
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto key_pos = ct::iota<IndexTile>();
+  auto valid = key_pos < ct::full<IndexTile>(seq_k);
+  if (is_causal) {
+    const std::int64_t offset = right_align_causal ? (seq_k - seq_q) : 0;
+    valid = valid & (key_pos <= ct::full<IndexTile>(q_pos + offset));
+  }
+  if (use_sparse_rules) {
+    const std::int64_t offset = right_align_causal ? (seq_k - seq_q) : 0;
+    auto keep = ct::full<decltype(valid)>(false);
+    bool any_rule = false;
+    if (window > 0) {
+      keep = keep | (key_pos > ct::full<IndexTile>(q_pos + offset - window));
+      any_rule = true;
+    }
+    if (num_sinks > 0) {
+      keep = keep | (key_pos < ct::full<IndexTile>(num_sinks));
+      any_rule = true;
+    }
+    if (block_size > 0) {
+      keep = keep | (ct::full<IndexTile>((q_pos + offset) / block_size) == (key_pos / ct::full<IndexTile>(block_size)));
+      any_rule = true;
+    }
+    if (compress_stride > 1) {
+      keep = keep | ((key_pos % ct::full<IndexTile>(compress_stride)) == ct::full<IndexTile>(0));
+      any_rule = true;
+    }
+    if (any_rule) {
+      valid = valid & keep;
+    }
+  }
+
+  auto score = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  for (std::int64_t d = 0; d < qk_dim; ++d) {
+    auto q_val = ct::full<decltype(score)>(q[q_base_scalar + d]);
+    auto k_val = ct::load_masked(k + ct::full<IndexTile>(k_base_scalar + d) + key_pos * ct::full<IndexTile>(qk_dim), valid);
+    score = score + q_val * k_val;
+  }
+  score = score * ct::full<decltype(score)>(scale);
+  auto neg_inf = ct::full<decltype(score)>(-3.4028234663852886e38f);
+  auto safe_score = ct::select(valid, score, neg_inf);
+  auto max_score = ct::reduce_max(safe_score, 0_ic);
+  auto exp_score = ct::select(valid, ct::exp(score - max_score), ct::full<decltype(score)>(0.0f));
+  auto denom = ct::sum(exp_score, 0_ic);
+  auto prob = exp_score / denom;
+  auto dprob = ct::full<decltype(score)>(0.0f);
+  for (std::int64_t dv = 0; dv < value_dim; ++dv) {
+    auto go_val = ct::full<decltype(score)>(grad_out[go_base_scalar + dv]);
+    auto v_val = ct::load_masked(v + ct::full<IndexTile>(v_base_scalar + dv) + key_pos * ct::full<IndexTile>(value_dim), valid);
+    dprob = dprob + go_val * v_val;
+  }
+  auto dprob_mean = ct::sum(prob * dprob, 0_ic);
+  auto dscore = prob * (dprob - dprob_mean);
+
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  using OneFloatTile = ct::tile<float, decltype(ct::shape{1_ic})>;
+  for (std::int64_t d_q = 0; d_q < qk_dim; ++d_q) {
+    auto k_selected_dim = ct::load_masked(
+        k + ct::full<IndexTile>(k_base_scalar + d_q) + key_pos * ct::full<IndexTile>(qk_dim),
+        valid);
+    auto grad = ct::sum(dscore * k_selected_dim, 0_ic) * ct::full<OneFloatTile>(scale);
+    ct::store(grad_q + ct::full<OneIndexTile>(q_base_scalar + d_q), grad);
+  }
+}
+
+__tile_global__ void scaled_dot_product_attention_backward_k_row_float32_kernel(
+    const float* __restrict__ q,
+    const float* __restrict__ k,
+    const float* __restrict__ v,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_k,
+    std::int64_t rows,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    bool grad_out_merged) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  q = ct::assume_aligned(q, 16_ic);
+  k = ct::assume_aligned(k, 16_ic);
+  v = ct::assume_aligned(v, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_k = ct::assume_aligned(grad_k, 16_ic);
+
+  const std::int64_t row_idx_scalar = static_cast<std::int64_t>(ct::bid().x);
+  if (row_idx_scalar >= rows) {
+    return;
+  }
+
+  const std::int64_t k_pos_scalar = row_idx_scalar % seq_k;
+  const std::int64_t k_head_scalar = (row_idx_scalar / seq_k) % key_heads;
+  const std::int64_t batch_scalar = row_idx_scalar / (seq_k * key_heads);
+  const std::int64_t k_base_scalar = (batch_scalar * key_heads + k_head_scalar) * seq_k * qk_dim;
+  const std::int64_t v_base_scalar = (batch_scalar * key_heads + k_head_scalar) * seq_k * value_dim;
+
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  using OneFloatTile = ct::tile<float, decltype(ct::shape{1_ic})>;
+  auto key_pos = ct::iota<IndexTile>();
+  auto key_match = key_pos == ct::full<IndexTile>(k_pos_scalar);
+  for (std::int64_t d_k = 0; d_k < qk_dim; ++d_k) {
+    ct::store(
+        grad_k + ct::full<OneIndexTile>(k_base_scalar + k_pos_scalar * qk_dim + d_k),
+        ct::full<OneFloatTile>(0.0f));
+  }
+
+  for (std::int64_t q_head = 0; q_head < query_heads; ++q_head) {
+    if ((q_head * key_heads) / query_heads != k_head_scalar) {
+      continue;
+    }
+    for (std::int64_t q_pos = 0; q_pos < seq_q; ++q_pos) {
+      auto valid = key_pos < ct::full<IndexTile>(seq_k);
+      if (is_causal) {
+        const std::int64_t offset = right_align_causal ? (seq_k - seq_q) : 0;
+        valid = valid & (key_pos <= ct::full<IndexTile>(q_pos + offset));
+      }
+      if (use_sparse_rules) {
+        const std::int64_t offset = right_align_causal ? (seq_k - seq_q) : 0;
+        auto keep = ct::full<decltype(valid)>(false);
+        bool any_rule = false;
+        if (window > 0) {
+          keep = keep | (key_pos > ct::full<IndexTile>(q_pos + offset - window));
+          any_rule = true;
+        }
+        if (num_sinks > 0) {
+          keep = keep | (key_pos < ct::full<IndexTile>(num_sinks));
+          any_rule = true;
+        }
+        if (block_size > 0) {
+          keep = keep | (ct::full<IndexTile>((q_pos + offset) / block_size) == (key_pos / ct::full<IndexTile>(block_size)));
+          any_rule = true;
+        }
+        if (compress_stride > 1) {
+          keep = keep | ((key_pos % ct::full<IndexTile>(compress_stride)) == ct::full<IndexTile>(0));
+          any_rule = true;
+        }
+        if (any_rule) {
+          valid = valid & keep;
+        }
+      }
+      const std::int64_t q_base_scalar = ((batch_scalar * query_heads + q_head) * seq_q + q_pos) * qk_dim;
+      const std::int64_t go_base_scalar = grad_out_merged
+          ? (batch_scalar * seq_q + q_pos) * query_heads * value_dim + q_head * value_dim
+          : ((batch_scalar * query_heads + q_head) * seq_q + q_pos) * value_dim;
+      auto score = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+      for (std::int64_t d = 0; d < qk_dim; ++d) {
+        auto q_val = ct::full<decltype(score)>(q[q_base_scalar + d]);
+        auto k_val = ct::load_masked(k + ct::full<IndexTile>(k_base_scalar + d) + key_pos * ct::full<IndexTile>(qk_dim), valid);
+        score = score + q_val * k_val;
+      }
+      score = score * ct::full<decltype(score)>(scale);
+      auto neg_inf = ct::full<decltype(score)>(-3.4028234663852886e38f);
+      auto safe_score = ct::select(valid, score, neg_inf);
+      auto max_score = ct::reduce_max(safe_score, 0_ic);
+      auto exp_score = ct::select(valid, ct::exp(score - max_score), ct::full<decltype(score)>(0.0f));
+      auto denom = ct::sum(exp_score, 0_ic);
+      auto prob = exp_score / denom;
+      auto dprob = ct::full<decltype(score)>(0.0f);
+      for (std::int64_t dv = 0; dv < value_dim; ++dv) {
+        auto go_val = ct::full<decltype(score)>(grad_out[go_base_scalar + dv]);
+        auto v_val = ct::load_masked(v + ct::full<IndexTile>(v_base_scalar + dv) + key_pos * ct::full<IndexTile>(value_dim), valid);
+        dprob = dprob + go_val * v_val;
+      }
+      auto dprob_mean = ct::sum(prob * dprob, 0_ic);
+      auto dscore = prob * (dprob - dprob_mean);
+      auto selected = ct::sum(ct::select(valid & key_match, dscore, ct::full<decltype(dscore)>(0.0f)), 0_ic);
+      for (std::int64_t d_k = 0; d_k < qk_dim; ++d_k) {
+        const std::int64_t out_idx_scalar = k_base_scalar + k_pos_scalar * qk_dim + d_k;
+        auto current = ct::full<OneFloatTile>(grad_k[out_idx_scalar]);
+        auto q_dim = ct::full<OneFloatTile>(q[q_base_scalar + d_k]);
+        ct::store(
+            grad_k + ct::full<OneIndexTile>(out_idx_scalar),
+            current + selected * q_dim * ct::full<OneFloatTile>(scale));
+      }
+    }
+  }
+}
+
+__tile_global__ void scaled_dot_product_attention_backward_v_row_float32_kernel(
+    const float* __restrict__ q,
+    const float* __restrict__ k,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_v,
+    std::int64_t rows,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    bool grad_out_merged) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  q = ct::assume_aligned(q, 16_ic);
+  k = ct::assume_aligned(k, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_v = ct::assume_aligned(grad_v, 16_ic);
+
+  const std::int64_t row_idx_scalar = static_cast<std::int64_t>(ct::bid().x);
+  if (row_idx_scalar >= rows) {
+    return;
+  }
+
+  const std::int64_t k_pos_scalar = row_idx_scalar % seq_k;
+  const std::int64_t k_head_scalar = (row_idx_scalar / seq_k) % key_heads;
+  const std::int64_t batch_scalar = row_idx_scalar / (seq_k * key_heads);
+  const std::int64_t k_base_scalar = (batch_scalar * key_heads + k_head_scalar) * seq_k * qk_dim;
+  const std::int64_t v_base_scalar = (batch_scalar * key_heads + k_head_scalar) * seq_k * value_dim;
+
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  using OneFloatTile = ct::tile<float, decltype(ct::shape{1_ic})>;
+  auto key_pos = ct::iota<IndexTile>();
+  auto key_match = key_pos == ct::full<IndexTile>(k_pos_scalar);
+  for (std::int64_t d_v = 0; d_v < value_dim; ++d_v) {
+    ct::store(
+        grad_v + ct::full<OneIndexTile>(v_base_scalar + k_pos_scalar * value_dim + d_v),
+        ct::full<OneFloatTile>(0.0f));
+  }
+
+  for (std::int64_t q_head = 0; q_head < query_heads; ++q_head) {
+    if ((q_head * key_heads) / query_heads != k_head_scalar) {
+      continue;
+    }
+    for (std::int64_t q_pos = 0; q_pos < seq_q; ++q_pos) {
+      auto valid = key_pos < ct::full<IndexTile>(seq_k);
+      if (is_causal) {
+        const std::int64_t offset = right_align_causal ? (seq_k - seq_q) : 0;
+        valid = valid & (key_pos <= ct::full<IndexTile>(q_pos + offset));
+      }
+      if (use_sparse_rules) {
+        const std::int64_t offset = right_align_causal ? (seq_k - seq_q) : 0;
+        auto keep = ct::full<decltype(valid)>(false);
+        bool any_rule = false;
+        if (window > 0) {
+          keep = keep | (key_pos > ct::full<IndexTile>(q_pos + offset - window));
+          any_rule = true;
+        }
+        if (num_sinks > 0) {
+          keep = keep | (key_pos < ct::full<IndexTile>(num_sinks));
+          any_rule = true;
+        }
+        if (block_size > 0) {
+          keep = keep | (ct::full<IndexTile>((q_pos + offset) / block_size) == (key_pos / ct::full<IndexTile>(block_size)));
+          any_rule = true;
+        }
+        if (compress_stride > 1) {
+          keep = keep | ((key_pos % ct::full<IndexTile>(compress_stride)) == ct::full<IndexTile>(0));
+          any_rule = true;
+        }
+        if (any_rule) {
+          valid = valid & keep;
+        }
+      }
+      const std::int64_t q_base_scalar = ((batch_scalar * query_heads + q_head) * seq_q + q_pos) * qk_dim;
+      const std::int64_t go_base_scalar = grad_out_merged
+          ? (batch_scalar * seq_q + q_pos) * query_heads * value_dim + q_head * value_dim
+          : ((batch_scalar * query_heads + q_head) * seq_q + q_pos) * value_dim;
+      auto score = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+      for (std::int64_t d = 0; d < qk_dim; ++d) {
+        auto q_val = ct::full<decltype(score)>(q[q_base_scalar + d]);
+        auto k_val = ct::load_masked(k + ct::full<IndexTile>(k_base_scalar + d) + key_pos * ct::full<IndexTile>(qk_dim), valid);
+        score = score + q_val * k_val;
+      }
+      score = score * ct::full<decltype(score)>(scale);
+      auto neg_inf = ct::full<decltype(score)>(-3.4028234663852886e38f);
+      auto safe_score = ct::select(valid, score, neg_inf);
+      auto max_score = ct::reduce_max(safe_score, 0_ic);
+      auto exp_score = ct::select(valid, ct::exp(score - max_score), ct::full<decltype(score)>(0.0f));
+      auto denom = ct::sum(exp_score, 0_ic);
+      auto prob = exp_score / denom;
+      auto selected_prob = ct::sum(ct::select(valid & key_match, prob, ct::full<decltype(prob)>(0.0f)), 0_ic);
+      for (std::int64_t d_v = 0; d_v < value_dim; ++d_v) {
+        const std::int64_t out_idx_scalar = v_base_scalar + k_pos_scalar * value_dim + d_v;
+        auto current = ct::full<OneFloatTile>(grad_v[out_idx_scalar]);
+        auto go_dim = ct::full<OneFloatTile>(grad_out[go_base_scalar + d_v]);
+        ct::store(
+            grad_v + ct::full<OneIndexTile>(out_idx_scalar),
+            current + selected_prob * go_dim);
+      }
+    }
+  }
+}
+
 __device__ float deterministic_uniform_value(std::int64_t linear_idx, std::int64_t counter, std::int64_t salt) {
   const std::uint64_t modulus = 16777216ULL;
   std::uint64_t value =
@@ -2116,6 +5348,105 @@ void launch_gradient_accumulate_float32(
   gradient_accumulate_float32_kernel<<<blocks, 1, 0, stream>>>(buffer, grad, n, scale);
 }
 
+void launch_copy_float32(
+    const float* source,
+    float* dest,
+    std::int64_t n,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  copy_float32_kernel<<<blocks, 1, 0, stream>>>(source, dest, n);
+}
+
+void launch_uint16_to_int64(
+    const std::uint16_t* source,
+    std::int64_t* dest,
+    std::int64_t n,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  uint16_to_int64_kernel<<<blocks, 1, 0, stream>>>(source, dest, n);
+}
+
+void launch_float32_to_bf16_bits(
+    const float* source,
+    std::uint16_t* dest,
+    std::int64_t n,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  f32_to_bf16_bits_kernel<<<blocks, kTileSize, 0, stream>>>(source, dest, n);
+}
+
+void launch_float32_to_bf16_bits_many(
+    const float* const* sources,
+    const std::int64_t* elements,
+    const std::int64_t* offsets,
+    std::uint16_t* dest,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    cudaStream_t stream) {
+  if (buffer_count <= 0 || max_elements <= 0) {
+    return;
+  }
+  const int chunks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  dim3 grid(static_cast<unsigned int>(chunks), static_cast<unsigned int>(buffer_count), 1);
+  f32_to_bf16_bits_many_kernel<<<grid, kTileSize, 0, stream>>>(
+      sources, elements, offsets, dest, buffer_count, max_elements);
+}
+
+void launch_fill_float32(
+    float* values,
+    std::int64_t n,
+    float value,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  fill_float32_kernel<<<blocks, 1, 0, stream>>>(values, n, value);
+}
+
+void launch_fill_many_float32(
+    float* const* buffers,
+    const std::int64_t* elements,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    float value,
+    cudaStream_t stream) {
+  if (buffer_count <= 0 || max_elements <= 0) {
+    return;
+  }
+  const int tensor_blocks = static_cast<int>(buffer_count);
+  const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  fill_many_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
+      buffers,
+      elements,
+      buffer_count,
+      value);
+}
+
+void launch_fill_many_values_float32(
+    float* const* buffers,
+    const std::int64_t* elements,
+    const float* values,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    cudaStream_t stream) {
+  if (buffer_count <= 0 || max_elements <= 0) {
+    return;
+  }
+  const int tensor_blocks = static_cast<int>(buffer_count);
+  const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  fill_many_values_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
+      buffers,
+      elements,
+      values,
+      buffer_count);
+}
+
+void launch_init_gpt2_token_weight_float32(
+    float* values,
+    std::int64_t n,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  init_gpt2_token_weight_float32_kernel<<<blocks, 1, 0, stream>>>(values, n);
+}
+
 void launch_sumsq_partials_float32(
     const float* values,
     float* partials,
@@ -2125,6 +5456,27 @@ void launch_sumsq_partials_float32(
   sumsq_partials_float32_kernel<<<blocks, 1, 0, stream>>>(values, partials, n);
 }
 
+void launch_sumsq_partials_many_float32(
+    const float* const* buffers,
+    const std::int64_t* elements,
+    const std::int64_t* partial_offsets,
+    float* partials,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    cudaStream_t stream) {
+  if (buffer_count <= 0 || max_elements <= 0) {
+    return;
+  }
+  const int tensor_blocks = static_cast<int>(buffer_count);
+  const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  sumsq_partials_many_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
+      buffers,
+      elements,
+      partial_offsets,
+      partials,
+      buffer_count);
+}
+
 void launch_scale_inplace_float32(
     float* values,
     std::int64_t n,
@@ -2132,6 +5484,26 @@ void launch_scale_inplace_float32(
     cudaStream_t stream) {
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   scale_inplace_float32_kernel<<<blocks, 1, 0, stream>>>(values, n, scale);
+}
+
+void launch_global_norm_clip_scale_float32(
+    const float* sumsq_partials,
+    float* clip_scale,
+    std::int64_t partial_count,
+    float max_norm,
+    float eps,
+    cudaStream_t stream) {
+  global_norm_clip_scale_float32_kernel<<<1, 1, 0, stream>>>(
+      sumsq_partials, clip_scale, partial_count, max_norm, eps);
+}
+
+void launch_scale_inplace_by_device_float32(
+    float* values,
+    const float* scale,
+    std::int64_t n,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  scale_inplace_by_device_float32_kernel<<<blocks, 1, 0, stream>>>(values, scale, n);
 }
 
 void launch_adamw_step_float32(
@@ -2160,6 +5532,77 @@ void launch_adamw_step_float32(
       beta2,
       eps,
       weight_decay,
+      bias_correction1,
+      sqrt_bias_correction2);
+}
+
+void launch_adamw_step_with_device_scale_float32(
+    float* param,
+    const float* grad,
+    const float* grad_scale,
+    float* exp_avg,
+    float* exp_avg_sq,
+    std::int64_t n,
+    float lr,
+    float beta1,
+    float beta2,
+    float eps,
+    float weight_decay,
+    float bias_correction1,
+    float sqrt_bias_correction2,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  adamw_step_with_device_scale_float32_kernel<<<blocks, 1, 0, stream>>>(
+      param,
+      grad,
+      grad_scale,
+      exp_avg,
+      exp_avg_sq,
+      n,
+      lr,
+      beta1,
+      beta2,
+      eps,
+      weight_decay,
+      bias_correction1,
+      sqrt_bias_correction2);
+}
+
+void launch_adamw_step_many_with_device_scale_float32(
+    float* const* params,
+    const float* const* grads,
+    const float* grad_scale,
+    float* const* exp_avgs,
+    float* const* exp_avg_sqs,
+    const std::int64_t* elements,
+    const float* weight_decays,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    float lr,
+    float beta1,
+    float beta2,
+    float eps,
+    float bias_correction1,
+    float sqrt_bias_correction2,
+    cudaStream_t stream) {
+  if (buffer_count <= 0 || max_elements <= 0) {
+    return;
+  }
+  const int tensor_blocks = static_cast<int>(buffer_count);
+  const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  adamw_step_many_with_device_scale_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
+      params,
+      grads,
+      grad_scale,
+      exp_avgs,
+      exp_avg_sqs,
+      elements,
+      weight_decays,
+      buffer_count,
+      lr,
+      beta1,
+      beta2,
+      eps,
       bias_correction1,
       sqrt_bias_correction2);
 }
@@ -2429,6 +5872,32 @@ void launch_absolute_position_embedding_float32(
   absolute_position_embedding_float32_kernel<<<blocks, 1, 0, stream>>>(weight, out, n, seq_len, model_dim);
 }
 
+void launch_absolute_position_embedding_backward_float32(
+    const float* grad_out,
+    float* grad_weight,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = seq_len * model_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  absolute_position_embedding_backward_float32_kernel<<<blocks, 1, 0, stream>>>(
+      grad_out, grad_weight, seq_len, model_dim, batch);
+}
+
+void launch_absolute_position_embedding_backward_accumulate_float32(
+    const float* grad_out,
+    float* grad_weight,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = seq_len * model_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  absolute_position_embedding_backward_accumulate_float32_kernel<<<blocks, 1, 0, stream>>>(
+      grad_out, grad_weight, seq_len, model_dim, batch);
+}
+
 void launch_token_embedding_float32(
     const float* weight,
     const std::int64_t* token_ids,
@@ -2439,6 +5908,19 @@ void launch_token_embedding_float32(
   const std::int64_t n = tokens * model_dim;
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   token_embedding_float32_kernel<<<blocks, 1, 0, stream>>>(weight, token_ids, out, n, model_dim);
+}
+
+void launch_token_embedding_backward_weight_float32(
+    const std::int64_t* token_ids,
+    const float* grad_out,
+    float* grad_weight,
+    std::int64_t tokens,
+    std::int64_t model_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = tokens * model_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  token_embedding_backward_weight_float32_kernel<<<blocks, 1, 0, stream>>>(
+      token_ids, grad_out, grad_weight, n, model_dim);
 }
 
 void launch_rotary_embedding_float32(
@@ -2465,6 +5947,18 @@ void launch_rms_norm_float32(
   rms_norm_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(x, out, rows, dim, eps);
 }
 
+void launch_rms_norm_backward_input_float32(
+    const float* x,
+    const float* grad_out,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t dim,
+    float eps,
+    cudaStream_t stream) {
+  rms_norm_backward_input_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      x, grad_out, grad_x, rows, dim, eps);
+}
+
 void launch_layer_norm_float32(
     const float* x,
     const float* weight,
@@ -2475,6 +5969,69 @@ void launch_layer_norm_float32(
     float eps,
     cudaStream_t stream) {
   layer_norm_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(x, weight, bias, out, rows, dim, eps);
+}
+
+void launch_layer_norm_backward_input_float32(
+    const float* x,
+    const float* grad_out,
+    const float* weight,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t dim,
+    float eps,
+    cudaStream_t stream) {
+  layer_norm_backward_input_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      x, grad_out, weight, grad_x, rows, dim, eps);
+}
+
+void launch_layer_norm_backward_affine_float32(
+    const float* x,
+    const float* grad_out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
+    float eps,
+    cudaStream_t stream) {
+  if (rows > 1024) {
+    constexpr std::int64_t kRowChunkSize = 256;
+    const std::int64_t dim_blocks = (dim + kTileSize - 1) / kTileSize;
+    const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
+    cudaMemsetAsync(grad_weight, 0, sizeof(float) * static_cast<std::size_t>(dim), stream);
+    cudaMemsetAsync(grad_bias, 0, sizeof(float) * static_cast<std::size_t>(dim), stream);
+    layer_norm_backward_affine_chunked_atomic_float32_kernel<<<
+        dim3(static_cast<unsigned int>(dim_blocks), static_cast<unsigned int>(row_chunks), 1),
+        1,
+        0,
+        stream>>>(x, grad_out, grad_weight, grad_bias, rows, dim, eps, kRowChunkSize, row_chunks);
+    return;
+  }
+  layer_norm_backward_affine_float32_kernel<<<1, 1, 0, stream>>>(
+      x, grad_out, grad_weight, grad_bias, rows, dim, eps);
+}
+
+void launch_layer_norm_backward_affine_accumulate_float32(
+    const float* x,
+    const float* grad_out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
+    float eps,
+    cudaStream_t stream) {
+  if (rows > 1024) {
+    constexpr std::int64_t kRowChunkSize = 256;
+    const std::int64_t dim_blocks = (dim + kTileSize - 1) / kTileSize;
+    const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
+    layer_norm_backward_affine_chunked_atomic_float32_kernel<<<
+        dim3(static_cast<unsigned int>(dim_blocks), static_cast<unsigned int>(row_chunks), 1),
+        1,
+        0,
+        stream>>>(x, grad_out, grad_weight, grad_bias, rows, dim, eps, kRowChunkSize, row_chunks);
+    return;
+  }
+  layer_norm_backward_affine_accumulate_float32_kernel<<<1, 1, 0, stream>>>(
+      x, grad_out, grad_weight, grad_bias, rows, dim, eps);
 }
 
 void launch_softmax_lastdim_float32(
@@ -2565,6 +6122,81 @@ void launch_scaled_residual_add_float32(
   scaled_residual_add_float32_kernel<<<blocks, 1, 0, stream>>>(lhs, rhs, scale, out, n);
 }
 
+void launch_split_qkv_float32(
+    const float* qkv,
+    float* q,
+    float* k,
+    float* v,
+    std::int64_t rows,
+    std::int64_t dim,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  split_qkv_float32_kernel<<<blocks, 1, 0, stream>>>(qkv, q, k, v, rows, dim);
+}
+
+void launch_split_qkv_to_heads_float32(
+    const float* qkv,
+    float* q_heads,
+    float* k_heads,
+    float* v_heads,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = batch * seq_len * heads * head_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  split_qkv_to_heads_float32_kernel<<<blocks, 1, 0, stream>>>(
+      qkv, q_heads, k_heads, v_heads, batch, seq_len, heads, head_dim);
+}
+
+void launch_split_qkv_to_heads_add_bias_float32(
+    const float* qkv,
+    const float* bias,
+    float* q_heads,
+    float* k_heads,
+    float* v_heads,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = batch * seq_len * heads * head_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  split_qkv_to_heads_add_bias_float32_kernel<<<blocks, 1, 0, stream>>>(
+      qkv, bias, q_heads, k_heads, v_heads, batch, seq_len, heads, head_dim);
+}
+
+void launch_merge_qkv_float32(
+    const float* q,
+    const float* k,
+    const float* v,
+    float* qkv,
+    std::int64_t rows,
+    std::int64_t dim,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  merge_qkv_float32_kernel<<<blocks, 1, 0, stream>>>(q, k, v, qkv, rows, dim);
+}
+
+void launch_merge_heads_to_qkv_float32(
+    const float* q_heads,
+    const float* k_heads,
+    const float* v_heads,
+    float* qkv,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t heads,
+    std::int64_t head_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = batch * seq_len * heads * head_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  merge_heads_to_qkv_float32_kernel<<<blocks, 1, 0, stream>>>(
+      q_heads, k_heads, v_heads, qkv, batch, seq_len, heads, head_dim);
+}
+
 void launch_linear_float32(
     const float* x,
     const float* weight,
@@ -2577,7 +6209,180 @@ void launch_linear_float32(
     cudaStream_t stream) {
   const std::int64_t n = rows * output_dim;
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (cublas_linear_forward_float32(x, weight, out, rows, input_dim, output_dim, stream)) {
+    if (has_bias) {
+      linear_add_bias_float32_kernel<<<blocks, 1, 0, stream>>>(out, bias, n, output_dim);
+    }
+    return;
+  }
+#endif
   linear_float32_kernel<<<blocks, 1, 0, stream>>>(x, weight, bias, out, n, input_dim, output_dim, has_bias);
+}
+
+void launch_linear_backward_input_float32(
+    const float* grad_out,
+    const float* weight,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * input_dim;
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (cublas_linear_backward_input_float32(grad_out, weight, grad_x, rows, input_dim, output_dim, stream)) {
+    return;
+  }
+#endif
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  linear_backward_input_float32_kernel<<<blocks, 1, 0, stream>>>(
+      grad_out, weight, grad_x, n, input_dim, output_dim);
+}
+
+void launch_linear_backward_weight_float32(
+    const float* x,
+    const float* grad_out,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = output_dim * input_dim;
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (cublas_linear_backward_weight_float32(x, grad_out, grad_weight, rows, input_dim, output_dim, 0.0f, stream)) {
+    return;
+  }
+#endif
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  if (rows <= kTileSize) {
+    linear_backward_weight_float32_kernel<<<blocks, 1, 0, stream>>>(
+        x, grad_out, grad_weight, n, rows, input_dim, output_dim);
+    return;
+  }
+  constexpr std::int64_t kRowChunkSize = 256;
+  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
+  fill_float32_kernel<<<blocks, 1, 0, stream>>>(grad_weight, n, 0.0f);
+  dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
+  linear_backward_weight_chunked_atomic_float32_kernel<<<grid, 1, 0, stream>>>(
+      x, grad_out, grad_weight, n, rows, input_dim, output_dim, kRowChunkSize, row_chunks);
+}
+
+void launch_linear_backward_weight_accumulate_float32(
+    const float* x,
+    const float* grad_out,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = output_dim * input_dim;
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (cublas_linear_backward_weight_float32(x, grad_out, grad_weight, rows, input_dim, output_dim, 1.0f, stream)) {
+    return;
+  }
+#endif
+  constexpr std::int64_t kRowChunkSize = 256;
+  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
+  linear_backward_weight_chunked_atomic_float32_kernel<<<grid, 1, 0, stream>>>(
+      x, grad_out, grad_weight, n, rows, input_dim, output_dim, kRowChunkSize, row_chunks);
+}
+
+void launch_linear_backward_bias_float32(
+    const float* grad_out,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (cublas_linear_backward_bias_float32(grad_out, grad_bias, rows, output_dim, 0.0f, stream)) {
+    return;
+  }
+#endif
+  const int blocks = static_cast<int>((output_dim + kTileSize - 1) / kTileSize);
+  if (rows <= kTileSize) {
+    linear_backward_bias_float32_kernel<<<blocks, 1, 0, stream>>>(grad_out, grad_bias, output_dim, rows);
+    return;
+  }
+  constexpr std::int64_t kRowChunkSize = 256;
+  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
+  fill_float32_kernel<<<blocks, 1, 0, stream>>>(grad_bias, output_dim, 0.0f);
+  dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
+  linear_backward_bias_chunked_atomic_float32_kernel<<<grid, 1, 0, stream>>>(
+      grad_out, grad_bias, output_dim, rows, kRowChunkSize, row_chunks);
+}
+
+void launch_linear_backward_bias_accumulate_float32(
+    const float* grad_out,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (cublas_linear_backward_bias_float32(grad_out, grad_bias, rows, output_dim, 1.0f, stream)) {
+    return;
+  }
+#endif
+  const int blocks = static_cast<int>((output_dim + kTileSize - 1) / kTileSize);
+  if (rows <= kTileSize) {
+    linear_backward_bias_accumulate_float32_kernel<<<blocks, 1, 0, stream>>>(
+        grad_out, grad_bias, output_dim, rows);
+    return;
+  }
+  constexpr std::int64_t kRowChunkSize = 256;
+  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
+  dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
+  linear_backward_bias_chunked_atomic_float32_kernel<<<grid, 1, 0, stream>>>(
+      grad_out, grad_bias, output_dim, rows, kRowChunkSize, row_chunks);
+}
+
+void launch_gelu_float32(
+    const float* x,
+    float* out,
+    std::int64_t n,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  gelu_float32_kernel<<<blocks, 1, 0, stream>>>(x, out, n);
+}
+
+void launch_gelu_add_bias_float32(
+    const float* x,
+    const float* bias,
+    float* biased_out,
+    float* gelu_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * output_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  gelu_add_bias_float32_kernel<<<blocks, 1, 0, stream>>>(
+      x, bias, biased_out, gelu_out, n, output_dim);
+}
+
+void launch_linear_bias_residual_add_float32(
+    const float* residual,
+    const float* linear_out,
+    const float* bias,
+    const float* residual_scale,
+    float* out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * output_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  linear_bias_residual_add_float32_kernel<<<blocks, 1, 0, stream>>>(
+      residual, linear_out, bias, residual_scale, out, n, output_dim);
+}
+
+void launch_gelu_backward_float32(
+    const float* x,
+    const float* grad_out,
+    float* grad_x,
+    std::int64_t n,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  gelu_backward_float32_kernel<<<blocks, 1, 0, stream>>>(x, grad_out, grad_x, n);
 }
 
 void launch_act_weighted_sum_float32(
@@ -2630,6 +6435,116 @@ void launch_masked_token_cross_entropy_partials_float32(
   const int blocks = static_cast<int>((rows + kTileSize - 1) / kTileSize);
   masked_token_cross_entropy_partials_float32_kernel<<<blocks, 1, 0, stream>>>(
       logits, targets, loss_mask, loss_partials, mask_partials, rows, vocab, ignore_index);
+}
+
+void launch_token_cross_entropy_backward_float32(
+    const float* logits,
+    const std::int64_t* targets,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t vocab,
+    float loss_scale,
+    cudaStream_t stream) {
+  if (vocab <= kTileSize) {
+    token_cross_entropy_backward_rowwise_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+        logits, targets, grad_logits, rows, vocab, loss_scale);
+  } else {
+    float* row_max = nullptr;
+    float* row_denom = nullptr;
+    if (cudaMalloc(&row_max, sizeof(float) * static_cast<std::size_t>(rows)) != cudaSuccess) {
+      return;
+    }
+    if (cudaMalloc(&row_denom, sizeof(float) * static_cast<std::size_t>(rows)) != cudaSuccess) {
+      cudaFree(row_max);
+      return;
+    }
+    const std::int64_t chunks_per_row = (vocab + kTileSize - 1) / kTileSize;
+    token_cross_entropy_row_stats_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+        logits, row_max, row_denom, rows, vocab);
+    token_cross_entropy_backward_chunked_float32_kernel<<<static_cast<int>(rows * chunks_per_row), 1, 0, stream>>>(
+        logits, targets, row_max, row_denom, grad_logits, rows, vocab, chunks_per_row, loss_scale);
+    cudaFree(row_max);
+    cudaFree(row_denom);
+  }
+}
+
+void launch_token_cross_entropy_backward_with_workspace_float32(
+    const float* logits,
+    const std::int64_t* targets,
+    float* row_max,
+    float* row_denom,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t vocab,
+    float loss_scale,
+    cudaStream_t stream) {
+  if (vocab <= kTileSize) {
+    token_cross_entropy_backward_rowwise_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+        logits, targets, grad_logits, rows, vocab, loss_scale);
+    return;
+  }
+  const std::int64_t chunks_per_row = (vocab + kTileSize - 1) / kTileSize;
+  token_cross_entropy_row_stats_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      logits, row_max, row_denom, rows, vocab);
+  token_cross_entropy_backward_chunked_float32_kernel<<<static_cast<int>(rows * chunks_per_row), 1, 0, stream>>>(
+      logits, targets, row_max, row_denom, grad_logits, rows, vocab, chunks_per_row, loss_scale);
+}
+
+void launch_masked_token_cross_entropy_backward_float32(
+    const float* logits,
+    const std::int64_t* targets,
+    const float* loss_mask,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t ignore_index,
+    float loss_scale,
+    cudaStream_t stream) {
+  if (vocab <= kTileSize) {
+    masked_token_cross_entropy_backward_rowwise_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+        logits, targets, loss_mask, grad_logits, rows, vocab, ignore_index, loss_scale);
+  } else {
+    float* row_max = nullptr;
+    float* row_denom = nullptr;
+    if (cudaMalloc(&row_max, sizeof(float) * static_cast<std::size_t>(rows)) != cudaSuccess) {
+      return;
+    }
+    if (cudaMalloc(&row_denom, sizeof(float) * static_cast<std::size_t>(rows)) != cudaSuccess) {
+      cudaFree(row_max);
+      return;
+    }
+    const std::int64_t chunks_per_row = (vocab + kTileSize - 1) / kTileSize;
+    masked_token_cross_entropy_row_stats_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+        logits, targets, row_max, row_denom, rows, vocab, ignore_index);
+    masked_token_cross_entropy_backward_chunked_float32_kernel<<<static_cast<int>(rows * chunks_per_row), 1, 0, stream>>>(
+        logits, targets, loss_mask, row_max, row_denom, grad_logits, rows, vocab, ignore_index, chunks_per_row, loss_scale);
+    cudaFree(row_max);
+    cudaFree(row_denom);
+  }
+}
+
+void launch_masked_token_cross_entropy_backward_with_workspace_float32(
+    const float* logits,
+    const std::int64_t* targets,
+    const float* loss_mask,
+    float* row_max,
+    float* row_denom,
+    float* grad_logits,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t ignore_index,
+    float loss_scale,
+    cudaStream_t stream) {
+  if (vocab <= kTileSize) {
+    masked_token_cross_entropy_backward_rowwise_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+        logits, targets, loss_mask, grad_logits, rows, vocab, ignore_index, loss_scale);
+    return;
+  }
+  const std::int64_t chunks_per_row = (vocab + kTileSize - 1) / kTileSize;
+  masked_token_cross_entropy_row_stats_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      logits, targets, row_max, row_denom, rows, vocab, ignore_index);
+  masked_token_cross_entropy_backward_chunked_float32_kernel<<<static_cast<int>(rows * chunks_per_row), 1, 0, stream>>>(
+      logits, targets, loss_mask, row_max, row_denom, grad_logits, rows, vocab, ignore_index, chunks_per_row, loss_scale);
 }
 
 void launch_sequence_logp_float32(
@@ -2789,6 +6704,80 @@ void launch_scaled_dot_product_attention_float32(
     std::int64_t block_size,
     std::int64_t compress_stride,
     cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  if (use_tk_sm120_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride)) {
+    const std::int64_t per_batch_n = query_heads * seq_q * value_dim;
+    const std::int64_t batch = per_batch_n > 0 ? n / per_batch_n : 0;
+    const std::int64_t expected_n = batch * per_batch_n;
+    if (batch > 0 && n == expected_n &&
+        launch_tk_attention_forward_float32(
+            q, k, v, out, batch, query_heads, seq_q, qk_dim, stream) == 0) {
+      return;
+    }
+  }
+#endif
+  if (!g_attention_forward_row_launch_disabled.load(std::memory_order_relaxed) &&
+      seq_k <= kTileSize && seq_k > 0 && qk_dim > 0 && value_dim > 0 &&
+      query_heads == kGpt2AttentionHeads && key_heads == kGpt2AttentionHeads &&
+      seq_q == seq_k && qk_dim == kGpt2AttentionHeadDim && value_dim == kGpt2AttentionHeadDim &&
+      is_causal &&
+      !right_align_causal && !use_sparse_rules && window <= 0 && num_sinks <= 0 &&
+      block_size <= 0 && compress_stride <= 1) {
+    const std::int64_t row_count = n / value_dim;
+    cudaFuncAttributes row_attrs{};
+    const cudaError_t attr_status = cudaFuncGetAttributes(&row_attrs, scaled_dot_product_attention_row_float32_kernel);
+    g_attention_forward_row_attr_status.store(static_cast<int>(attr_status), std::memory_order_relaxed);
+    if (attr_status == cudaSuccess) {
+      g_attention_forward_row_attr_max_threads_per_block.store(row_attrs.maxThreadsPerBlock, std::memory_order_relaxed);
+      g_attention_forward_row_attr_num_regs.store(row_attrs.numRegs, std::memory_order_relaxed);
+      g_attention_forward_row_attr_shared_size_bytes.store(row_attrs.sharedSizeBytes, std::memory_order_relaxed);
+      g_attention_forward_row_attr_const_size_bytes.store(row_attrs.constSizeBytes, std::memory_order_relaxed);
+      g_attention_forward_row_attr_local_size_bytes.store(row_attrs.localSizeBytes, std::memory_order_relaxed);
+    }
+    g_attention_forward_row_launch_count.fetch_add(1, std::memory_order_relaxed);
+    const dim3 row_grid(
+        static_cast<unsigned int>(row_count),
+        static_cast<unsigned int>(kGpt2AttentionValueChunks),
+        1);
+    constexpr unsigned int row_block = 1;
+    g_attention_forward_row_grid_x.store(static_cast<std::int64_t>(row_grid.x), std::memory_order_relaxed);
+    g_attention_forward_row_grid_y.store(static_cast<std::int64_t>(row_grid.y), std::memory_order_relaxed);
+    g_attention_forward_row_grid_z.store(static_cast<std::int64_t>(row_grid.z), std::memory_order_relaxed);
+    g_attention_forward_row_block_x.store(static_cast<std::int64_t>(row_block), std::memory_order_relaxed);
+    const cudaError_t clear_error = cudaGetLastError();
+    g_attention_forward_row_prelaunch_clear_error.store(static_cast<int>(clear_error), std::memory_order_relaxed);
+    const cudaError_t prelaunch_error = cudaPeekAtLastError();
+    g_attention_forward_row_prelaunch_peek_error.store(static_cast<int>(prelaunch_error), std::memory_order_relaxed);
+    scaled_dot_product_attention_row_float32_kernel<<<
+        row_grid, row_block, 0, stream>>>(
+        q,
+        k,
+        v,
+        out,
+        seq_k,
+        scale);
+    if (cudaPeekAtLastError() == cudaSuccess) {
+      return;
+    }
+    cudaError_t row_error = cudaGetLastError();
+    g_attention_forward_row_last_error.store(static_cast<int>(row_error), std::memory_order_relaxed);
+    g_attention_forward_row_fallback_count.fetch_add(1, std::memory_order_relaxed);
+    g_attention_forward_row_launch_disabled.store(true, std::memory_order_relaxed);
+  }
+  g_attention_forward_scalar_launch_count.fetch_add(1, std::memory_order_relaxed);
   scaled_dot_product_attention_float32_kernel<<<static_cast<int>(n), 1, 0, stream>>>(
       q,
       k,
@@ -2809,6 +6798,561 @@ void launch_scaled_dot_product_attention_float32(
       num_sinks,
       block_size,
       compress_stride);
+}
+
+void reset_attention_forward_launch_stats() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  g_attention_forward_tk_launch_count.store(0, std::memory_order_relaxed);
+  g_attention_backward_tk_launch_count.store(0, std::memory_order_relaxed);
+  g_attention_tk_workspace_allocation_count.store(0, std::memory_order_relaxed);
+#endif
+  g_attention_forward_row_launch_count.store(0, std::memory_order_relaxed);
+  g_attention_forward_row_fallback_count.store(0, std::memory_order_relaxed);
+  g_attention_forward_scalar_launch_count.store(0, std::memory_order_relaxed);
+  g_attention_forward_row_last_error.store(0, std::memory_order_relaxed);
+  g_attention_forward_row_prelaunch_clear_error.store(0, std::memory_order_relaxed);
+  g_attention_forward_row_prelaunch_peek_error.store(0, std::memory_order_relaxed);
+  g_attention_forward_row_grid_x.store(0, std::memory_order_relaxed);
+  g_attention_forward_row_grid_y.store(0, std::memory_order_relaxed);
+  g_attention_forward_row_grid_z.store(0, std::memory_order_relaxed);
+  g_attention_forward_row_block_x.store(0, std::memory_order_relaxed);
+  g_attention_forward_row_attr_status.store(-1, std::memory_order_relaxed);
+  g_attention_forward_row_attr_max_threads_per_block.store(0, std::memory_order_relaxed);
+  g_attention_forward_row_attr_num_regs.store(0, std::memory_order_relaxed);
+  g_attention_forward_row_attr_shared_size_bytes.store(0, std::memory_order_relaxed);
+  g_attention_forward_row_attr_const_size_bytes.store(0, std::memory_order_relaxed);
+  g_attention_forward_row_attr_local_size_bytes.store(0, std::memory_order_relaxed);
+  g_attention_forward_row_launch_disabled.store(false, std::memory_order_relaxed);
+}
+
+void reset_trainer_linear_launch_stats() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  g_linear_bf16_gemm_count.store(0, std::memory_order_relaxed);
+  g_linear_sgemm_count.store(0, std::memory_order_relaxed);
+  g_linear_bf16_a_pack_count.store(0, std::memory_order_relaxed);
+  g_linear_bf16_a_cache_hit_count.store(0, std::memory_order_relaxed);
+  g_linear_bf16_cache_reset_count.store(0, std::memory_order_relaxed);
+  g_linear_bf16_workspace_allocation_count.store(0, std::memory_order_relaxed);
+  std::lock_guard<std::mutex> lock(g_trainer_linear_bf16_workspace_mutex);
+  invalidate_trainer_linear_bf16_cache(g_trainer_linear_bf16_workspace);
+#endif
+}
+
+void reset_trainer_linear_bf16_cache() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  std::lock_guard<std::mutex> lock(g_trainer_linear_bf16_workspace_mutex);
+  invalidate_trainer_linear_bf16_cache(g_trainer_linear_bf16_workspace);
+  g_linear_bf16_cache_reset_count.fetch_add(1, std::memory_order_relaxed);
+#endif
+}
+
+std::int64_t trainer_linear_bf16_gemm_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_bf16_gemm_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_sgemm_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_sgemm_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_bf16_a_pack_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_bf16_a_pack_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_bf16_a_cache_hit_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_bf16_a_cache_hit_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_bf16_cache_reset_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_bf16_cache_reset_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_bf16_workspace_allocation_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_bf16_workspace_allocation_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_bf16_workspace_a_capacity() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_bf16_workspace_a_capacity.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_bf16_workspace_b_capacity() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_bf16_workspace_b_capacity.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_bf16_cached_a_capacity() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_bf16_cached_a_capacity.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_bf16_cache_entry_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_bf16_cache_entry_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_forward_row_launch_count() {
+  return g_attention_forward_row_launch_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t attention_forward_tk_launch_count() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return g_attention_forward_tk_launch_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_backward_tk_launch_count() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return g_attention_backward_tk_launch_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_tk_workspace_allocation_count() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return g_attention_tk_workspace_allocation_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_tk_workspace_element_capacity() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return g_attention_tk_workspace_element_capacity.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_tk_workspace_row_capacity() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return g_attention_tk_workspace_row_capacity.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_forward_row_fallback_count() {
+  return g_attention_forward_row_fallback_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t attention_forward_scalar_launch_count() {
+  return g_attention_forward_scalar_launch_count.load(std::memory_order_relaxed);
+}
+
+int attention_forward_row_last_error() {
+  return g_attention_forward_row_last_error.load(std::memory_order_relaxed);
+}
+
+int attention_forward_row_prelaunch_clear_error() {
+  return g_attention_forward_row_prelaunch_clear_error.load(std::memory_order_relaxed);
+}
+
+int attention_forward_row_prelaunch_peek_error() {
+  return g_attention_forward_row_prelaunch_peek_error.load(std::memory_order_relaxed);
+}
+
+std::int64_t attention_forward_row_grid_x() {
+  return g_attention_forward_row_grid_x.load(std::memory_order_relaxed);
+}
+
+std::int64_t attention_forward_row_grid_y() {
+  return g_attention_forward_row_grid_y.load(std::memory_order_relaxed);
+}
+
+std::int64_t attention_forward_row_grid_z() {
+  return g_attention_forward_row_grid_z.load(std::memory_order_relaxed);
+}
+
+std::int64_t attention_forward_row_block_x() {
+  return g_attention_forward_row_block_x.load(std::memory_order_relaxed);
+}
+
+int attention_forward_row_attr_status() {
+  return g_attention_forward_row_attr_status.load(std::memory_order_relaxed);
+}
+
+int attention_forward_row_attr_max_threads_per_block() {
+  return g_attention_forward_row_attr_max_threads_per_block.load(std::memory_order_relaxed);
+}
+
+int attention_forward_row_attr_num_regs() {
+  return g_attention_forward_row_attr_num_regs.load(std::memory_order_relaxed);
+}
+
+std::int64_t attention_forward_row_attr_shared_size_bytes() {
+  return g_attention_forward_row_attr_shared_size_bytes.load(std::memory_order_relaxed);
+}
+
+std::int64_t attention_forward_row_attr_const_size_bytes() {
+  return g_attention_forward_row_attr_const_size_bytes.load(std::memory_order_relaxed);
+}
+
+std::int64_t attention_forward_row_attr_local_size_bytes() {
+  return g_attention_forward_row_attr_local_size_bytes.load(std::memory_order_relaxed);
+}
+
+void launch_scaled_dot_product_attention_backward_float32_impl(
+    const float* q,
+    const float* k,
+    const float* v,
+    const float* grad_out,
+    float* grad_q,
+    float* grad_k,
+    float* grad_v,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    bool grad_out_merged,
+    cudaStream_t stream) {
+  const std::int64_t q_n = batch * query_heads * seq_q * qk_dim;
+  const std::int64_t k_n = batch * key_heads * seq_k * qk_dim;
+  const std::int64_t v_n = batch * key_heads * seq_k * value_dim;
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  if (use_tk_sm120_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride) &&
+      launch_tk_attention_backward_float32(
+          q,
+          k,
+          v,
+          grad_out,
+          grad_q,
+          grad_k,
+          grad_v,
+          batch,
+          query_heads,
+          seq_q,
+          qk_dim,
+          grad_out_merged,
+          stream) == 0) {
+    return;
+  }
+#endif
+  const bool use_row_kernels =
+      qk_dim <= kGpt2AttentionHeadDim &&
+      value_dim <= kGpt2AttentionHeadDim &&
+      seq_q <= 1024 &&
+      seq_k <= 1024;
+  if (use_row_kernels) {
+    const std::int64_t q_rows = batch * query_heads * seq_q;
+    const std::int64_t total_grad_n = q_n + k_n + v_n;
+    const int zero_blocks = static_cast<int>((total_grad_n + kTileSize - 1) / kTileSize);
+    zero_three_float32_kernel<<<zero_blocks, 1, 0, stream>>>(
+        grad_q,
+        grad_k,
+        grad_v,
+        q_n,
+        k_n,
+        v_n);
+    scaled_dot_product_attention_backward_query_row_atomic_float32_kernel<<<static_cast<int>(q_rows), 1, 0, stream>>>(
+        q,
+        k,
+        v,
+        grad_out,
+        grad_q,
+        grad_k,
+        grad_v,
+        q_rows,
+        query_heads,
+        key_heads,
+        seq_q,
+        seq_k,
+        qk_dim,
+        value_dim,
+        scale,
+        is_causal,
+        right_align_causal,
+        use_sparse_rules,
+        window,
+        num_sinks,
+        block_size,
+        compress_stride,
+        grad_out_merged);
+    return;
+  }
+  scaled_dot_product_attention_backward_q_float32_kernel<<<static_cast<int>(q_n), 1, 0, stream>>>(
+      q,
+      k,
+      v,
+      grad_out,
+      grad_q,
+      q_n,
+      query_heads,
+      key_heads,
+      seq_q,
+      seq_k,
+      qk_dim,
+      value_dim,
+      scale,
+      is_causal,
+      right_align_causal,
+      use_sparse_rules,
+      window,
+      num_sinks,
+      block_size,
+      compress_stride,
+      grad_out_merged);
+  scaled_dot_product_attention_backward_k_float32_kernel<<<static_cast<int>(k_n), 1, 0, stream>>>(
+      q,
+      k,
+      v,
+      grad_out,
+      grad_k,
+      k_n,
+      query_heads,
+      key_heads,
+      seq_q,
+      seq_k,
+      qk_dim,
+      value_dim,
+      scale,
+      is_causal,
+      right_align_causal,
+      use_sparse_rules,
+      window,
+      num_sinks,
+      block_size,
+      compress_stride,
+      grad_out_merged);
+  scaled_dot_product_attention_backward_v_float32_kernel<<<static_cast<int>(v_n), 1, 0, stream>>>(
+      q,
+      k,
+      grad_out,
+      grad_v,
+      v_n,
+      query_heads,
+      key_heads,
+      seq_q,
+      seq_k,
+      qk_dim,
+      value_dim,
+      scale,
+      is_causal,
+      right_align_causal,
+      use_sparse_rules,
+      window,
+      num_sinks,
+      block_size,
+      compress_stride,
+      grad_out_merged);
+}
+
+void launch_scaled_dot_product_attention_backward_float32(
+    const float* q,
+    const float* k,
+    const float* v,
+    const float* grad_out,
+    float* grad_q,
+    float* grad_k,
+    float* grad_v,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    cudaStream_t stream) {
+  launch_scaled_dot_product_attention_backward_float32_impl(
+      q,
+      k,
+      v,
+      grad_out,
+      grad_q,
+      grad_k,
+      grad_v,
+      batch,
+      query_heads,
+      key_heads,
+      seq_q,
+      seq_k,
+      qk_dim,
+      value_dim,
+      scale,
+      is_causal,
+      right_align_causal,
+      use_sparse_rules,
+      window,
+      num_sinks,
+      block_size,
+      compress_stride,
+      false,
+      stream);
+}
+
+void launch_scaled_dot_product_attention_backward_from_merged_grad_float32(
+    const float* q,
+    const float* k,
+    const float* v,
+    const float* grad_out,
+    float* grad_q,
+    float* grad_k,
+    float* grad_v,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    cudaStream_t stream) {
+  launch_scaled_dot_product_attention_backward_float32_impl(
+      q,
+      k,
+      v,
+      grad_out,
+      grad_q,
+      grad_k,
+      grad_v,
+      batch,
+      query_heads,
+      key_heads,
+      seq_q,
+      seq_k,
+      qk_dim,
+      value_dim,
+      scale,
+      is_causal,
+      right_align_causal,
+      use_sparse_rules,
+      window,
+      num_sinks,
+      block_size,
+      compress_stride,
+      true,
+      stream);
+}
+
+void launch_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32(
+    const float* q,
+    const float* k,
+    const float* v,
+    const float* grad_out,
+    float* grad_qkv,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  if (use_tk_sm120_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride) &&
+      launch_tk_attention_backward_to_qkv_float32(
+          q,
+          k,
+          v,
+          grad_out,
+          grad_qkv,
+          batch,
+          query_heads,
+          seq_q,
+          qk_dim,
+          true,
+          stream) == 0) {
+    return;
+  }
+#endif
 }
 
 void launch_random_timesteps_float32(float* out, std::int64_t batch, std::int64_t counter, cudaStream_t stream) {

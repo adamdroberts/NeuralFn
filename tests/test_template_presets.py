@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import ast
+import inspect
+import importlib.util
+import textwrap
 import uuid
+from pathlib import Path
 
 import torch
 
@@ -9,59 +14,60 @@ from neuralfn.neuron import neuron_from_source, subgraph_neuron
 from neuralfn.port import Port
 from neuralfn.config import (
     MODERN_BASE_PRESETS,
+    SHIPPED_GPT_TEMPLATE_BASE_PRESETS,
+    SHIPPED_GPT_TEMPLATE_PRESETS,
     build_hnet_lm_spec,
     build_llm_jepa_spec,
     build_ttt_llama_spec,
     build_universal_llama_spec,
 )
+import neuralfn.torch_templates as torch_templates
 from neuralfn.torch_backend import CompiledTorchGraph, JEPAMaskStage, TorchTrainConfig, TorchTrainer
 from neuralfn.torch_templates import build_gpt_root_graph, build_gpt_template_payload, build_model_spec_from_config, make_terminal_def
-from server.dataset_manager import DATASETS_DIR, load_dataset_bytes
+import server.dataset_manager as dataset_manager
+from server.dataset_manager import load_dataset_bytes
 from server.models import ExecuteRequest, GPTTemplateRequest, LoadDatasetRequest
 from server.services.graph_ops import apply_gpt_template, load_dataset_source_into_graph, trace_torch_graph
+from neuralfn.native_gpt2 import build_native_gpt2_compiled_cli_run_config
 
 
-PRESETS = [
-    "nanogpt",
-    "gpt2",
-    "gpt2_moa",
-    "llama",
-    "modern_norms_llama",
-    "moe",
-    "llama_fast",
-    "llama_fast_megakernel",
-    "mixllama_fast",
-    "mixllama_fast_megakernel",
-    "jamba",
-    "ternary_b158",
-    "fp8_llama",
-    "mxfp4_llama",
-    "gemma3",
-    "diff_transformer",
-    "longctx_sparse_llama",
-    "seq2seq",
-    "diffusion",
-    "ttt_llama",
-    "llm_jepa",
-    "dense_jepa_evo",
-    "moe_jepa_evo",
-    "hnet_lm",
-    "universal_llama",
-    "llama_megakernel",
-    "kv_pca_llama",
-    "jepa_semantic_hybrid",
-    "jepa_semantic_hybrid_megakernel",
-    "semantic_router_moe",
-    "semantic_router_moe_megakernel",
-    "semantic_dense_jepa_evo",
-    "semantic_moe_jepa_evo",
-    "deepseek_v3",
-    "deepseek_v4",
-    "qwen3_longctx",
-    "auxfree_moe_jepa_evo",
-    "diff_semantic_moe_jepa_evo",
-    "dyt_geglu_semantic_dense_jepa_evo",
-] + [f"{p}_modern" for p in MODERN_BASE_PRESETS]
+ROOT = Path(__file__).resolve().parents[1]
+
+PRESETS = list(SHIPPED_GPT_TEMPLATE_PRESETS)
+
+
+def _builder_dispatch_presets() -> set[str]:
+    source = textwrap.dedent(inspect.getsource(torch_templates.build_model_spec_from_config))
+    tree = ast.parse(source)
+    presets: set[str] = set()
+
+    def collect_strings(node: ast.AST) -> set[str]:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return {node.value}
+        if isinstance(node, (ast.Set, ast.Tuple, ast.List)):
+            values: set[str] = set()
+            for elt in node.elts:
+                values.update(collect_strings(elt))
+            return values
+        return set()
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        if not isinstance(node.left, ast.Name) or node.left.id != "preset":
+            continue
+        for op, comparator in zip(node.ops, node.comparators):
+            if isinstance(op, (ast.Eq, ast.In)):
+                presets.update(collect_strings(comparator))
+    return presets
+
+
+def test_shipped_gpt_template_catalog_matches_builder_dispatch() -> None:
+    assert set(SHIPPED_GPT_TEMPLATE_BASE_PRESETS) == _builder_dispatch_presets()
+    assert set(SHIPPED_GPT_TEMPLATE_PRESETS) == {
+        *SHIPPED_GPT_TEMPLATE_BASE_PRESETS,
+        *(f"{preset}_modern" for preset in MODERN_BASE_PRESETS),
+    }
 
 
 def _cpu_graph(graph):
@@ -122,6 +128,97 @@ def _make_alias_root(link_family: str, available_family: str) -> NeuronGraph:
     root.input_node_ids = ["x_in"]
     root.output_node_ids = ["x_out"]
     return root
+
+
+def _load_train_gpt2_script_module():
+    script = ROOT / "cli" / "scripts" / "train_gpt2.py"
+    spec = importlib.util.spec_from_file_location("train_gpt2_template_pass_through_test", script)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_native_gpt2_compiled_cli_accepts_every_gpt_template_name() -> None:
+    for preset in PRESETS:
+        config = build_native_gpt2_compiled_cli_run_config(
+            dataset_alias="/tmp/native-cache",
+            executable="/bin/echo",
+            output_dir=Path("/tmp/native-output"),
+            eval_every_steps=1000,
+            sample_every_steps=20000,
+            generate_tokens=144,
+            checkpoint_every_steps=200,
+            batch_size=64,
+            seq_len=1024,
+            train_batch_tokens=524288,
+            learning_rate=0.0006,
+            min_lr=None,
+            warmup_steps=60,
+            weight_decay=0.1,
+            max_steps=20000,
+            num_layers=12,
+            activation="gelu",
+            template_name=preset,
+        )
+        argv = config.compiled_cli_argv(cli="/tmp/nfn_gpt2_native_train")
+        assert "--template-name" in argv
+        assert argv[argv.index("--template-name") + 1] == preset
+
+
+def test_train_gpt2_fast_path_accepts_every_gpt_template_name() -> None:
+    module = _load_train_gpt2_script_module()
+    for preset in PRESETS:
+        for selector in (
+            ["--template-name", preset],
+            [f"--template-name={preset}"],
+            ["--template", preset],
+            [f"--template={preset}"],
+            ["--preset", preset],
+            [f"--preset={preset}"],
+        ):
+            argv = module._fast_compiled_cli_argv(
+                ["--dataset-alias", "/tmp/native-cache", "--native-cuda-dry-run", *selector]
+            )
+            assert argv is not None
+            assert "--template-name" in argv
+            assert argv[argv.index("--template-name") + 1] == preset
+
+
+def test_native_gpt2_compiled_cli_accepts_custom_graph_file() -> None:
+    config = build_native_gpt2_compiled_cli_run_config(
+        dataset_alias="/tmp/native-cache",
+        executable="/bin/echo",
+        output_dir=Path("/tmp/native-output"),
+        eval_every_steps=1000,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=20000,
+        num_layers=12,
+        activation="gelu",
+        graph_file="/tmp/custom-graph.json",
+    )
+    argv = config.compiled_cli_argv(cli="/tmp/nfn_gpt2_native_train")
+    assert "--graph-file" in argv
+    assert argv[argv.index("--graph-file") + 1] == "/tmp/custom-graph.json"
+
+
+def test_train_gpt2_fast_path_accepts_custom_graph_file() -> None:
+    module = _load_train_gpt2_script_module()
+    for selector in (["--graph-file", "/tmp/custom-graph.json"], ["--graph-file=/tmp/custom-graph.json"]):
+        argv = module._fast_compiled_cli_argv(["--dataset-alias", "/tmp/native-cache", "--native-cuda-dry-run", *selector])
+        assert argv is not None
+        assert "--graph-file" in argv
+        assert argv[argv.index("--graph-file") + 1] == "/tmp/custom-graph.json"
 
 
 def test_build_gpt_template_payload_supports_all_presets() -> None:
@@ -359,18 +456,15 @@ def test_jepa_block_masking_config_wires_through_template() -> None:
     assert cfg["max_block_ratio"] == 0.3
 
 
-def test_hnet_spec_enforces_byte_vocab_and_raw_byte_chunking() -> None:
+def test_hnet_spec_enforces_byte_vocab_and_raw_byte_chunking(tmp_path: Path, monkeypatch) -> None:
     spec = build_hnet_lm_spec(**_tiny_kwargs(), vocab_size=1024, byte_patch_size=2, byte_patch_stride=2)
     assert spec.vocab_size == 256
 
+    monkeypatch.setattr(dataset_manager, "DATASETS_DIR", tmp_path)
     dataset_name = f"test_hnet_bytes_{uuid.uuid4().hex}"
-    dataset_path = DATASETS_DIR / f"{dataset_name}.txt"
-    dataset_path.parent.mkdir(parents=True, exist_ok=True)
+    dataset_path = tmp_path / f"{dataset_name}.txt"
     dataset_path.write_bytes(b"abcdefghi")
-    try:
-        inputs, targets = load_dataset_bytes([dataset_name], seq_len=4)
-    finally:
-        dataset_path.unlink(missing_ok=True)
+    inputs, targets = load_dataset_bytes([dataset_name], seq_len=4)
 
     assert inputs == [[97, 98, 99, 100], [101, 102, 103, 104]]
     assert targets == [[98, 99, 100, 101], [102, 103, 104, 105]]

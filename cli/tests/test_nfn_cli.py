@@ -273,8 +273,8 @@ class NfnCliTest(unittest.TestCase):
         self.assertIn("batch 8", run_choices["default"].description)
 
         optimizer_choices = {choice.value: choice for choice in self._question_choices("optimizer_preset", dense_state)}
-        self.assertIn("profile parameter_golf", optimizer_choices["gradient_default"].description)
-        self.assertIn("lr 3e-4", optimizer_choices["gradient_default"].description)
+        self.assertIn("profile adamw", optimizer_choices["gradient_default"].description)
+        self.assertIn("lr 6e-4", optimizer_choices["gradient_default"].description)
         self.assertIn("pop 50", optimizer_choices["evolutionary_balanced"].description)
         self.assertIn("mut 0.1", optimizer_choices["evolutionary_balanced"].description)
         self.assertIn("elite 2", optimizer_choices["evolutionary_balanced"].description)
@@ -655,6 +655,7 @@ class NfnCliTest(unittest.TestCase):
             "train",
             {
                 "base_model": "llama",
+                "seed": 1337,
                 "kernel_backend": "tile-cuda",
                 "tile_cuda_strict": True,
                 "tile_cuda_report": "/tmp/nfn-tile-report.json",
@@ -671,6 +672,52 @@ class NfnCliTest(unittest.TestCase):
         self.assertEqual("tile-cuda", trainer_cfg.kernel_backend)
         self.assertTrue(trainer_cfg.tile_cuda_strict)
         self.assertEqual("/tmp/nfn-tile-report.json", trainer_cfg.tile_cuda_report_path)
+
+    def test_tile_cuda_backend_defaults_to_strict_kernels(self) -> None:
+        args = nfn_impl.namespace_from_state(
+            "train",
+            {
+                "base_model": "llama",
+                "seed": 1337,
+                "kernel_backend": "tile-cuda",
+                "batch_size": 1,
+                "learning_rate": 1e-3,
+                "weight_decay": 0.0,
+                "max_steps": 1,
+                "train_batch_tokens": 1024,
+                "warmup_steps": 0,
+                "warmdown_fraction": 0.0,
+                "max_wallclock_seconds": 0.0,
+                "optimizer_profile": "adamw",
+                "embed_lr": 1e-3,
+                "head_lr": 1e-3,
+                "tied_embed_lr": 1e-3,
+                "matrix_lr": 1e-3,
+                "scalar_lr": 1e-3,
+                "muon_momentum": 0.95,
+                "muon_backend_steps": 5,
+                "muon_momentum_warmup_start": 0.85,
+                "muon_momentum_warmup_steps": 64,
+                "beta1": 0.9,
+                "beta2": 0.95,
+                "adam_eps": 1e-8,
+                "grad_clip_norm": 1.0,
+            },
+        )
+        trainer_cfg = nfn_impl.build_trainer_config(
+            args,
+            resolved_epochs=1,
+            derived={"drop_last": True, "respect_epoch_boundaries": False},
+        )
+        self.assertTrue(trainer_cfg.tile_cuda_strict)
+
+        args.tile_cuda_strict = False
+        trainer_cfg = nfn_impl.build_trainer_config(
+            args,
+            resolved_epochs=1,
+            derived={"drop_last": True, "respect_epoch_boundaries": False},
+        )
+        self.assertFalse(trainer_cfg.tile_cuda_strict)
 
     def test_namespace_from_state_hydrates_train_parser_defaults(self) -> None:
         args = nfn_impl.namespace_from_state(

@@ -78,6 +78,19 @@ Returns a dict with keys: `"compile"`, `"sdpa"`, `"cache"`, `"quantized_export"`
 
 ---
 
+## GPT Template Catalog
+
+```python
+SHIPPED_GPT_TEMPLATE_BASE_PRESETS: tuple[str, ...]
+SHIPPED_GPT_TEMPLATE_PRESETS: tuple[str, ...]
+```
+
+`SHIPPED_GPT_TEMPLATE_BASE_PRESETS` is the canonical SDK catalog for exact names accepted by `build_model_spec_from_config(config={"preset": ...})`, including aliases and megakernel variants such as `mixllama`, `nanogpt_megakernel`, and `gpt2_megakernel`.
+
+`SHIPPED_GPT_TEMPLATE_PRESETS` extends the base catalog with every generated `<preset>_modern` overlay from `MODERN_BASE_PRESETS`. Native GPT-2 training selectors (`--template-name`, `--template`, `--preset`) and SDK compiled-CLI configs accept every name in this tuple; only dense GPT-2-compatible shapes currently have a completed CUDA Tile trainer.
+
+---
+
 ## BlockSpec
 
 ```python
@@ -264,6 +277,12 @@ class ModelSpec:
     route_evo_population: int = 8
     route_evo_mutation_scale: float = 0.05
     route_evo_seed: int | None = None
+    layer_evo_enabled: bool = False
+    layer_evo_index: int | None = None
+    layer_evo_fraction: float = 0.10
+    layer_evo_population: int = 8
+    layer_evo_mutation_scale: float = 0.02
+    layer_evo_seed: int | None = None
     ar_loss_coef: float = 1.0
     jepa_loss_coef: float = 0.25
     semantic_align_loss_coef: float = 0.5
@@ -302,6 +321,12 @@ Complete model architecture specification.
 | `route_evo_population` | `int` | `8` | Candidate count for route evolution |
 | `route_evo_mutation_scale` | `float` | `0.05` | Gaussian mutation scale for route-evolution candidates |
 | `route_evo_seed` | `int \| None` | `None` | Optional deterministic route-evolution seed |
+| `layer_evo_enabled` | `bool` | `False` | Train one designated transformer block by interleaved evolutionary search instead of gradients |
+| `layer_evo_index` | `int \| None` | `None` | Block index trained by evolution (`None` resolves to `num_layers // 2`) |
+| `layer_evo_fraction` | `float` | `0.10` | Fraction of optimizer steps that run the layer-evo search (`0.10` ≈ every 10th step) |
+| `layer_evo_population` | `int` | `8` | Layer-evo candidate count; the current weights are always candidate 0 (elite) |
+| `layer_evo_mutation_scale` | `float` | `0.02` | Gaussian mutation scale for layer-evo candidates |
+| `layer_evo_seed` | `int \| None` | `None` | Optional deterministic layer-evo seed |
 | `ar_loss_coef` | `float` | `1.0` | Autoregressive loss scale on composed/semantic objectives |
 | `jepa_loss_coef` | `float` | `0.25` | JEPA latent loss scale |
 | `semantic_align_loss_coef` | `float` | `0.5` | Semantic topic-alignment loss scale |
@@ -351,6 +376,7 @@ when constructing fine-tuning graphs.
 | `build_nanogpt_megakernel_spec(**kwargs)` | nanogpt | dense | megakernel | NanoGPT shape with megakernel runtime metadata |
 | `build_gpt2_spec(**kwargs)` | gpt2 | dense | eager | LayerNorm, GELU MLP, absolute pos, linear bias |
 | `build_gpt2_megakernel_spec(**kwargs)` | gpt2 | dense | megakernel | GPT-2 shape with megakernel runtime metadata |
+| `build_gpt2_evo_spec(**kwargs)` | gpt2 | dense | eager | **[Experimental]** GPT-2 where one block (`layer_evo_index`, default middle) is excluded from the optimizer and trained by an interleaved evolutionary search (`layer_evo_*` knobs); all other parameters train by gradient. The 5090 harness `cli/scripts/train_gpt2_evo.py` defaults to a 12-layer SM120 AdamW run with CUDA Tile, NVFP4 activation packing for supported projection/attention kernels, and live validation loss every 250 steps; inference uses `python cli/scripts/infer_gpt2.py --evo` or explicit `nfn infer --graph ...gpt2_evo.json --weights ...gpt2_evo.pt` |
 | `build_llama_spec(**kwargs)` | llama | dense | eager | RMSNorm, SwiGLU, RoPE, GQA |
 | `build_mixllama_spec(**kwargs)` | mixllama | moe | eager | RMSNorm, MoE MLP, RoPE, GQA |
 | `build_llama_fast_spec(**kwargs)` | llama | dense | compile | Llama with torch.compile |

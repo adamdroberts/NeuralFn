@@ -10,13 +10,12 @@ conda run -n NeuralFn python scripts/train_llama_fast.py \
   --run-id llama-baseline \
   --device cuda \
   --output "$HOME/NeuralFn/artifacts/llama_fast_baseline.pt" \
-  --max-steps 12000 \
-  --max-wallclock-seconds 7200 \
-  --train-seq-len 192 \
-  --batch-size 8 \
-  --train-batch-tokens 24576 \
-  --eval-batches 8 \
-  --eval-batch-size 8 \
+  --max-steps 20000 \
+  --train-seq-len 1024 \
+  --batch-size 64 \
+  --train-batch-tokens 524288 \
+  --eval-batches 20 \
+  --eval-batch-size 64 \
   --num-layers 5 \
   --model-dim 320 \
   --num-heads 5 \
@@ -26,18 +25,11 @@ conda run -n NeuralFn python scripts/train_llama_fast.py \
   --qk-gain-init 1.5 \
   --rope-base 10000 \
   --logit-softcap 30 \
-  --optimizer-profile parameter_golf \
-  --embed-lr 0.02 \
-  --head-lr 0.005 \
-  --tied-embed-lr 0.01 \
-  --matrix-lr 0.008 \
-  --scalar-lr 0.004 \
-  --warmup-steps 100 \
-  --warmdown-fraction 0.1 \
-  --muon-momentum 0.95 \
-  --muon-backend-steps 5 \
-  --muon-momentum-warmup-start 0.85 \
-  --muon-momentum-warmup-steps 128 \
+  --optimizer-profile adamw \
+  --learning-rate 0.0006 \
+  --weight-decay 0.1 \
+  --warmup-steps 60 \
+  --warmdown-fraction 0.0 \
   --beta1 0.9 \
   --beta2 0.95 \
   --adam-eps 1e-8 \

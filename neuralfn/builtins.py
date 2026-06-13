@@ -7,28 +7,112 @@ import math
 from .neuron import NeuronDef, module_neuron, neuron
 from .port import Port
 from .semantic import DEFAULT_SEMANTIC_VOCAB_REF, NUM_SEMANTIC_DIMS, NUM_VOCAB_DIMS
-from .torch_backend import (
-    default_attention_config,
-    default_fused_attention_config,
-    default_gpt_config,
-    default_kv_pca_config,
-    default_kv_quant_unpack_config,
-    default_linear_config,
-    default_loss_scale_config,
-    default_lm_head_config,
-    default_logit_softcap_config,
-    default_merge_heads_config,
-    default_mlp_config,
-    default_qk_gain_config,
-    default_repeat_kv_config,
-    default_residual_add_config,
-    default_residual_mix_config,
-    default_reshape_heads_config,
-    default_rotary_embedding_config,
-    default_rms_norm_config,
-    default_scaled_dot_product_attention_config,
-    default_token_embedding_config,
-)
+
+
+def default_gpt_config() -> dict[str, int | float | bool]:
+    return {
+        "vocab_size": 256,
+        "num_layers": 4,
+        "model_dim": 128,
+        "num_heads": 4,
+        "num_kv_heads": 2,
+        "mlp_mult": 2,
+        "tie_embeddings": True,
+        "logit_softcap": 30.0,
+        "rope_base": 10000.0,
+        "qk_gain_init": 1.0,
+    }
+
+
+def default_token_embedding_config() -> dict[str, int]:
+    cfg = default_gpt_config()
+    return {"vocab_size": int(cfg["vocab_size"]), "model_dim": int(cfg["model_dim"])}
+
+
+def default_rms_norm_config() -> dict[str, float]:
+    return {"eps": 1e-6}
+
+
+def default_attention_config() -> dict[str, int | float]:
+    cfg = default_gpt_config()
+    return {
+        "model_dim": int(cfg["model_dim"]),
+        "num_heads": int(cfg["num_heads"]),
+        "num_kv_heads": int(cfg["num_kv_heads"]),
+        "rope_base": float(cfg["rope_base"]),
+        "qk_gain_init": float(cfg["qk_gain_init"]),
+    }
+
+
+def default_linear_config() -> dict[str, int | bool]:
+    cfg = default_gpt_config()
+    return {"input_dim": int(cfg["model_dim"]), "output_dim": int(cfg["model_dim"]), "bias": False}
+
+
+def default_reshape_heads_config(num_heads: int | None = None) -> dict[str, int]:
+    cfg = default_gpt_config()
+    return {"num_heads": int(num_heads or cfg["num_heads"])}
+
+
+def default_merge_heads_config() -> dict[str, object]:
+    return {}
+
+
+def default_repeat_kv_config() -> dict[str, int]:
+    cfg = default_gpt_config()
+    return {"num_heads": int(cfg["num_heads"]), "num_kv_heads": int(cfg["num_kv_heads"])}
+
+
+def default_rotary_embedding_config() -> dict[str, int | float]:
+    cfg = default_gpt_config()
+    return {"head_dim": int(cfg["model_dim"]) // int(cfg["num_heads"]), "rope_base": float(cfg["rope_base"])}
+
+
+def default_qk_gain_config() -> dict[str, int | float]:
+    cfg = default_gpt_config()
+    return {"num_heads": int(cfg["num_heads"]), "qk_gain_init": float(cfg["qk_gain_init"])}
+
+
+def default_scaled_dot_product_attention_config() -> dict[str, bool]:
+    return {"is_causal": True}
+
+
+def default_residual_mix_config() -> dict[str, int | float]:
+    return {"dim": int(default_gpt_config()["model_dim"]), "primary_init": 1.0, "skip_init": 0.0}
+
+
+def default_residual_add_config() -> dict[str, int | float]:
+    return {"dim": int(default_gpt_config()["model_dim"]), "init_scale": 1.0}
+
+
+def default_mlp_config() -> dict[str, int]:
+    cfg = default_gpt_config()
+    return {"model_dim": int(cfg["model_dim"]), "mlp_mult": int(cfg["mlp_mult"])}
+
+
+def default_lm_head_config() -> dict[str, int]:
+    cfg = default_gpt_config()
+    return {"model_dim": int(cfg["model_dim"]), "vocab_size": int(cfg["vocab_size"])}
+
+
+def default_logit_softcap_config() -> dict[str, float]:
+    return {"softcap": float(default_gpt_config()["logit_softcap"])}
+
+
+def default_loss_scale_config() -> dict[str, float]:
+    return {"coef": 1.0}
+
+
+def default_fused_attention_config() -> dict[str, int | float]:
+    return {"model_dim": 128, "num_heads": 4, "num_kv_heads": 4, "rope_base": 10000.0, "dropout_p": 0.0}
+
+
+def default_kv_pca_config() -> dict[str, int]:
+    return {"head_dim": 64, "compressed_dim": 16}
+
+
+def default_kv_quant_unpack_config() -> dict[str, int]:
+    return {"head_dim": 64}
 
 
 def _normalized_builtin_port(port: Port) -> Port:

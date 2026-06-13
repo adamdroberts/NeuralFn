@@ -8,6 +8,19 @@ from .config import TileCudaConfig
 from .runtime import load_tile_cuda_extension
 
 
+TILE_OPTIMIZER_DTYPES = frozenset((torch.float32, torch.float16))
+
+
+def _optimizer_float_input(tensor: torch.Tensor) -> torch.Tensor:
+    return tensor if tensor.dtype == torch.float32 else tensor.to(dtype=torch.float32)
+
+
+def _copy_back_if_needed(target: torch.Tensor, source: torch.Tensor) -> torch.Tensor:
+    if target.data_ptr() != source.data_ptr() or target.dtype != source.dtype:
+        target.copy_(source.to(dtype=target.dtype))
+    return target
+
+
 def tile_ema_update_reference(target: torch.Tensor, source: torch.Tensor, decay: float) -> torch.Tensor:
     with torch.no_grad():
         target.mul_(float(decay)).add_(source, alpha=1.0 - float(decay))
@@ -19,8 +32,8 @@ def tile_ema_update(target: torch.Tensor, source: torch.Tensor, decay: float, co
     can_use = (
         target.is_cuda
         and source.is_cuda
-        and target.dtype == torch.float32
-        and source.dtype == torch.float32
+        and target.dtype in TILE_OPTIMIZER_DTYPES
+        and source.dtype == target.dtype
         and target.is_contiguous()
         and source.is_contiguous()
         and target.shape == source.shape
@@ -28,7 +41,7 @@ def tile_ema_update(target: torch.Tensor, source: torch.Tensor, decay: float, co
     )
     if not can_use:
         if cfg.strict and (target.is_cuda or source.is_cuda):
-            raise RuntimeError("CUDA Tile optimizer 'ema_update' requires same-shape contiguous CUDA float32 tensors")
+            raise RuntimeError("CUDA Tile optimizer 'ema_update' requires same-shape contiguous CUDA float32 or float16 tensors")
         return tile_ema_update_reference(target, source, float(decay))
     ext = load_tile_cuda_extension(cfg)
     if ext is None:
@@ -36,7 +49,10 @@ def tile_ema_update(target: torch.Tensor, source: torch.Tensor, decay: float, co
             raise RuntimeError("CUDA Tile extension is unavailable for optimizer 'ema_update'")
         return tile_ema_update_reference(target, source, float(decay))
     with torch.no_grad():
-        return ext.tile_ema_update(target, source, float(decay))
+        work_target = _optimizer_float_input(target).contiguous()
+        work_source = _optimizer_float_input(source).contiguous()
+        out = ext.tile_ema_update(work_target, work_source, float(decay))
+        return _copy_back_if_needed(target, out)
 
 
 def tile_gradient_accumulate_reference(buffer: torch.Tensor, grad: torch.Tensor, scale: float = 1.0) -> torch.Tensor:
@@ -55,8 +71,8 @@ def tile_gradient_accumulate(
     can_use = (
         buffer.is_cuda
         and grad.is_cuda
-        and buffer.dtype == torch.float32
-        and grad.dtype == torch.float32
+        and buffer.dtype in TILE_OPTIMIZER_DTYPES
+        and grad.dtype == buffer.dtype
         and buffer.is_contiguous()
         and grad.is_contiguous()
         and buffer.shape == grad.shape
@@ -64,7 +80,7 @@ def tile_gradient_accumulate(
     )
     if not can_use:
         if cfg.strict and (buffer.is_cuda or grad.is_cuda):
-            raise RuntimeError("CUDA Tile optimizer 'gradient_accumulate' requires same-shape contiguous CUDA float32 tensors")
+            raise RuntimeError("CUDA Tile optimizer 'gradient_accumulate' requires same-shape contiguous CUDA float32 or float16 tensors")
         return tile_gradient_accumulate_reference(buffer, grad, float(scale))
     ext = load_tile_cuda_extension(cfg)
     if ext is None:
@@ -72,7 +88,10 @@ def tile_gradient_accumulate(
             raise RuntimeError("CUDA Tile extension is unavailable for optimizer 'gradient_accumulate'")
         return tile_gradient_accumulate_reference(buffer, grad, float(scale))
     with torch.no_grad():
-        return ext.tile_gradient_accumulate(buffer, grad, float(scale))
+        work_buffer = _optimizer_float_input(buffer).contiguous()
+        work_grad = _optimizer_float_input(grad).contiguous()
+        out = ext.tile_gradient_accumulate(work_buffer, work_grad, float(scale))
+        return _copy_back_if_needed(buffer, out)
 
 
 def tile_gradient_clip_norm_reference(
@@ -103,13 +122,10 @@ def tile_gradient_clip_norm(
     tensors = [grad for grad in grads if grad is not None and grad.numel() > 0]
     if not tensors:
         return torch.tensor(0.0)
-    can_use = all(
-        grad.is_cuda and grad.dtype == torch.float32 and grad.is_contiguous() and grad.numel() > 0
-        for grad in tensors
-    )
+    can_use = all(grad.is_cuda and grad.dtype in TILE_OPTIMIZER_DTYPES and grad.is_contiguous() and grad.numel() > 0 for grad in tensors)
     if not can_use:
         if cfg.strict and any(grad.is_cuda for grad in tensors):
-            raise RuntimeError("CUDA Tile optimizer 'gradient_clip_norm' requires contiguous CUDA float32 tensors")
+            raise RuntimeError("CUDA Tile optimizer 'gradient_clip_norm' requires contiguous CUDA float32 or float16 tensors")
         return tile_gradient_clip_norm_reference(tensors, float(max_norm), float(eps))
     ext = load_tile_cuda_extension(cfg)
     if ext is None:
@@ -117,7 +133,11 @@ def tile_gradient_clip_norm(
             raise RuntimeError("CUDA Tile extension is unavailable for optimizer 'gradient_clip_norm'")
         return tile_gradient_clip_norm_reference(tensors, float(max_norm), float(eps))
     with torch.no_grad():
-        return ext.tile_gradient_clip_norm(tensors, float(max_norm), float(eps))
+        work_tensors = [_optimizer_float_input(tensor).contiguous() for tensor in tensors]
+        norm = ext.tile_gradient_clip_norm(work_tensors, float(max_norm), float(eps))
+        for target, source in zip(tensors, work_tensors, strict=True):
+            _copy_back_if_needed(target, source)
+        return norm
 
 
 def tile_adamw_step_reference(
@@ -163,14 +183,22 @@ def tile_adamw_step(
     cfg = config or TileCudaConfig()
     tensors = (param, grad, exp_avg, exp_avg_sq)
     can_use = (
-        all(tensor.is_cuda and tensor.dtype == torch.float32 and tensor.is_contiguous() for tensor in tensors)
+        param.is_cuda
+        and grad.is_cuda
+        and exp_avg.is_cuda
+        and exp_avg_sq.is_cuda
+        and param.dtype in TILE_OPTIMIZER_DTYPES
+        and grad.dtype == param.dtype
+        and exp_avg.dtype == torch.float32
+        and exp_avg_sq.dtype == torch.float32
+        and all(tensor.is_contiguous() for tensor in tensors)
         and param.numel() > 0
         and param.shape == grad.shape == exp_avg.shape == exp_avg_sq.shape
         and int(step) > 0
     )
     if not can_use:
         if cfg.strict and any(tensor.is_cuda for tensor in tensors):
-            raise RuntimeError("CUDA Tile optimizer 'adamw_step' requires same-shape contiguous CUDA float32 tensors")
+            raise RuntimeError("CUDA Tile optimizer 'adamw_step' requires same-shape contiguous CUDA float32 parameters or fp16 parameters with float32 moments")
         return tile_adamw_step_reference(
             param,
             grad,
@@ -200,9 +228,11 @@ def tile_adamw_step(
             step=int(step),
         )
     with torch.no_grad():
+        work_param = _optimizer_float_input(param).contiguous()
+        work_grad = _optimizer_float_input(grad).contiguous()
         out_param, out_exp_avg, out_exp_avg_sq = ext.tile_adamw_step(
-            param,
-            grad,
+            work_param,
+            work_grad,
             exp_avg,
             exp_avg_sq,
             float(lr),
@@ -212,7 +242,110 @@ def tile_adamw_step(
             float(weight_decay),
             int(step),
         )
-    return out_param, out_exp_avg, out_exp_avg_sq
+        _copy_back_if_needed(param, out_param)
+    return param, out_exp_avg, out_exp_avg_sq
+
+
+def tile_adamw_step_batch(
+    params: list[torch.Tensor] | tuple[torch.Tensor, ...],
+    grads: list[torch.Tensor] | tuple[torch.Tensor, ...],
+    exp_avgs: list[torch.Tensor] | tuple[torch.Tensor, ...],
+    exp_avg_sqs: list[torch.Tensor] | tuple[torch.Tensor, ...],
+    *,
+    lr: float,
+    beta1: float = 0.9,
+    beta2: float = 0.999,
+    eps: float = 1e-8,
+    weight_decay: float = 0.0,
+    step: int = 1,
+    config: TileCudaConfig | None = None,
+) -> tuple[list[torch.Tensor], list[torch.Tensor], list[torch.Tensor]]:
+    cfg = config or TileCudaConfig()
+    param_list = list(params)
+    grad_list = list(grads)
+    exp_avg_list = list(exp_avgs)
+    exp_avg_sq_list = list(exp_avg_sqs)
+    if not (len(param_list) == len(grad_list) == len(exp_avg_list) == len(exp_avg_sq_list)):
+        raise ValueError("tile_adamw_step_batch expects equally sized tensor lists")
+    if not param_list:
+        return param_list, exp_avg_list, exp_avg_sq_list
+    tensor_groups = tuple(zip(param_list, grad_list, exp_avg_list, exp_avg_sq_list, strict=True))
+    can_use = (
+        int(step) > 0
+        and all(
+            param.is_cuda
+            and grad.is_cuda
+            and exp_avg.is_cuda
+            and exp_avg_sq.is_cuda
+            and param.dtype in TILE_OPTIMIZER_DTYPES
+            and grad.dtype == param.dtype
+            and exp_avg.dtype == torch.float32
+            and exp_avg_sq.dtype == torch.float32
+            and param.is_contiguous()
+            and grad.is_contiguous()
+            and exp_avg.is_contiguous()
+            and exp_avg_sq.is_contiguous()
+            and param.numel() > 0
+            and param.shape == grad.shape == exp_avg.shape == exp_avg_sq.shape
+            for param, grad, exp_avg, exp_avg_sq in tensor_groups
+        )
+    )
+    if not can_use:
+        if cfg.strict and any(tensor.is_cuda for group in tensor_groups for tensor in group):
+            raise RuntimeError(
+                "CUDA Tile optimizer 'adamw_step_batch' requires same-shape contiguous CUDA "
+                "float32 parameters or fp16 parameters with float32 moments"
+            )
+        for param, grad, exp_avg, exp_avg_sq in tensor_groups:
+            tile_adamw_step_reference(
+                param,
+                grad,
+                exp_avg,
+                exp_avg_sq,
+                lr=float(lr),
+                beta1=float(beta1),
+                beta2=float(beta2),
+                eps=float(eps),
+                weight_decay=float(weight_decay),
+                step=int(step),
+            )
+        return param_list, exp_avg_list, exp_avg_sq_list
+    ext = load_tile_cuda_extension(cfg)
+    if ext is None:
+        if cfg.strict:
+            raise RuntimeError("CUDA Tile extension is unavailable for optimizer 'adamw_step_batch'")
+        for param, grad, exp_avg, exp_avg_sq in tensor_groups:
+            tile_adamw_step_reference(
+                param,
+                grad,
+                exp_avg,
+                exp_avg_sq,
+                lr=float(lr),
+                beta1=float(beta1),
+                beta2=float(beta2),
+                eps=float(eps),
+                weight_decay=float(weight_decay),
+                step=int(step),
+            )
+        return param_list, exp_avg_list, exp_avg_sq_list
+    with torch.no_grad():
+        work_params = [_optimizer_float_input(param).contiguous() for param in param_list]
+        work_grads = [_optimizer_float_input(grad).contiguous() for grad in grad_list]
+        out_params = ext.tile_adamw_step_batch(
+            work_params,
+            work_grads,
+            exp_avg_list,
+            exp_avg_sq_list,
+            float(lr),
+            float(beta1),
+            float(beta2),
+            float(eps),
+            float(weight_decay),
+            int(step),
+        )
+        for target, source in zip(param_list, out_params, strict=True):
+            _copy_back_if_needed(target, source)
+        return param_list, exp_avg_list, exp_avg_sq_list
 
 
 def tile_muon_newton_schulz_reference(G: torch.Tensor, steps: int = 5, eps: float = 1e-7) -> torch.Tensor:
@@ -254,8 +387,9 @@ def tile_muon_step_reference(
     nesterov: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     with torch.no_grad():
-        momentum_buffer.mul_(float(momentum)).add_(grad)
-        update = grad.add(momentum_buffer, alpha=float(momentum)) if bool(nesterov) else momentum_buffer
+        work_grad = _optimizer_float_input(grad)
+        momentum_buffer.mul_(float(momentum)).add_(work_grad)
+        update = work_grad.add(momentum_buffer, alpha=float(momentum)) if bool(nesterov) else momentum_buffer
         if update.ndim == 2:
             update = tile_muon_newton_schulz_reference(update, steps=int(backend_steps))
             update *= max(1.0, update.size(0) / max(update.size(1), 1)) ** 0.5
@@ -277,12 +411,15 @@ def tile_muon_step(
     cfg = config or TileCudaConfig()
     tensors = (param, grad, momentum_buffer)
     can_use = (
-        all(tensor.dtype == torch.float32 and tensor.is_contiguous() for tensor in tensors)
+        param.dtype in TILE_OPTIMIZER_DTYPES
+        and grad.dtype == param.dtype
+        and momentum_buffer.dtype == torch.float32
+        and all(tensor.is_contiguous() for tensor in tensors)
         and param.shape == grad.shape == momentum_buffer.shape
         and param.numel() > 0
     )
     if not can_use and cfg.strict and any(tensor.is_cuda for tensor in tensors):
-        raise RuntimeError("CUDA Tile optimizer 'muon_step' requires same-shape contiguous float32 tensors")
+        raise RuntimeError("CUDA Tile optimizer 'muon_step' requires same-shape contiguous float32 tensors or fp16 parameter/gradient tensors with float32 momentum")
     return tile_muon_step_reference(
         param,
         grad,
@@ -357,9 +494,18 @@ def tile_split_optimizer_step(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     cfg = config or TileCudaConfig()
     tensors = (param, grad, exp_avg, exp_avg_sq, momentum_buffer)
-    can_use = all(tensor.dtype == torch.float32 and tensor.is_contiguous() for tensor in tensors)
+    can_use = (
+        param.dtype in TILE_OPTIMIZER_DTYPES
+        and grad.dtype == param.dtype
+        and exp_avg.dtype == torch.float32
+        and exp_avg_sq.dtype == torch.float32
+        and momentum_buffer.dtype == torch.float32
+        and all(tensor.is_contiguous() for tensor in tensors)
+        and param.shape == grad.shape == exp_avg.shape == exp_avg_sq.shape == momentum_buffer.shape
+        and param.numel() > 0
+    )
     if not can_use and cfg.strict and any(tensor.is_cuda for tensor in tensors):
-        raise RuntimeError("CUDA Tile optimizer 'split_optimizer_step' requires contiguous float32 tensors")
+        raise RuntimeError("CUDA Tile optimizer 'split_optimizer_step' requires contiguous float32 tensors or fp16 parameter/gradient tensors with float32 optimizer state")
     return tile_split_optimizer_step_reference(
         param,
         grad,

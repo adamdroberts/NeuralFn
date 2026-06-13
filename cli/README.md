@@ -16,15 +16,30 @@ editable mode:
 cd ./cli
 python -m venv .venv
 source .venv/bin/activate
-pip install -e ..
-pip install -e .
+./install.sh
 ```
 
-The editable install in `./cli` registers the `nfn` entrypoint:
+The installer keeps Torch optional, registers the `nfn` entrypoint, builds the
+native GPT-2 C++ binding, launcher, no-Python cached-shard CLI, and unified
+native training frontend, then links `nfn-gpt2-native`,
+`nfn-gpt2-native-train`, `nfn-native-train`, and `nfn-gpt2-tile-launcher` into
+the active Python scripts directory. Use `./install.sh --no-native` to skip C++
+artifact builds.
+
+The editable install registers the `nfn` entrypoint:
 
 ```bash
 nfn --help
 ```
+
+The root install no longer pulls in Torch by default. Root `nfn --help` /
+no-argument startup, `nfn train|infer|eval --help`, `nfn kernels ... --help`,
+`nfn kernels list [--json]`, CUDA Tile registry metadata, and native GPT-2
+training do not import it. Install
+`pip install -e ".[torch]"` for graph-backed training/inference and
+`pip install -e ".[tile-cuda]"` for Torch-free native CUDA Tile build tooling.
+Install both extras only when intentionally using the graph-backed PyTorch Tile
+extension loader.
 
 ## Workflow model
 
@@ -89,7 +104,7 @@ The legacy script entrypoints are still available:
 python scripts/train_jepa_semantic.py --device cuda --max-steps 400
 ```
 
-CUDA Tile diagnostics and example generation live under `nfn kernels`. `nfn kernels doctor` reports toolchain and coverage status, `nfn kernels bench` compares graph-walk PyTorch, static compiled PyTorch, and Tile-requested execution on a small scalar graph, and `nfn kernels examples --write --output-dir examples/tile_cuda` regenerates checked-in examples plus one generated SDK snippet per registry entry.
+CUDA Tile diagnostics and example generation live under `nfn kernels`. `nfn train --help`, `nfn infer --help`, `nfn eval --help`, and `nfn kernels ... --help` use lightweight static help that does not import `nfn_impl`, Torch, or the graph-backed runtime. `nfn kernels list [--json]` is the metadata-only coverage path. `nfn kernels doctor` reports toolchain and coverage status, `nfn kernels bench` compares graph-walk PyTorch, static compiled PyTorch, and Tile-requested execution on a small scalar graph, and `nfn kernels examples --write --output-dir examples/tile_cuda` regenerates checked-in examples plus one generated SDK snippet per registry entry. For `nfn train`, `nfn infer`, and `nfn eval`, selecting `--kernel-backend tile-cuda` now defaults to strict kernel enforcement; use `--no-tile-cuda-strict` only when intentionally comparing fallback behavior.
 
 If you launch through `conda run`, use `--no-capture-output` so the progress
 logs stream while the run is active:
@@ -114,30 +129,264 @@ python scripts/train_jepa_semantic.py \
   --evo-mutation-scale 0.05
 ```
 
-The harness also ships CUDA-only autoregressive script pairs for the other
-torch presets:
+The harness also ships inference entry points for existing graph-backed
+artifacts:
 
-- `scripts/train_llama_fast.py` / `scripts/infer_llama_fast.py`
 - `scripts/train_gpt2.py` / `scripts/infer_gpt2.py`
-- `scripts/train_nanogpt.py` / `scripts/infer_nanogpt.py`
+- `scripts/infer_gpt2.py --evo`
+- `scripts/infer_llama_fast.py`
+- `scripts/infer_nanogpt.py`
 
-The GPT-2 and NanoGPT scripts support `--megakernel` directly:
+The plain GPT-2 training script is native-only. It resolves the dataset cache,
+writes/uses uint16 token shards, and launches the compiled Tile-CUDA C++ trainer
+without importing Torch or sending training batches through graph nodes. Importing
+`scripts/train_gpt2.py`, building its parser, and resolving defaults are also
+Torch-free. Direct `python cli/scripts/train_gpt2.py ...` native runs set up
+their own repo/script import path, so they do not need `PYTHONPATH`.
+The compiled trainer keeps per-block allocation, parameter initialization, and
+AdamW-state zeroing in the block-vector visitors, including block 0, and reports
+the `block0_duplicate_*_elided` startup flags, including activation allocation,
+under `block_state_layout`. It also suballocates float buffers from one aligned
+CUDA device arena and token buffers from combined int64/device-uint16/pinned-uint16
+arenas, reporting `float_allocation_strategy: "single-arena"` and
+`token_buffer_allocation_strategy: "combined-arenas"`.
+`NFN_DATASETS_DIR` overrides the native alias cache root for Python and
+compiled native CLI paths. The GPT-2 inference script also supports `--evo` for
+`gpt2_evo.pt/json` eager artifacts. Its parser, `--help`, and
+`--evo`/`--megakernel` artifact default resolution stay off the Torch,
+dataset-manager, and NumPy import path; actual token generation still loads the
+graph-backed runtime after argument parsing until native GPT-2 inference exists:
 
 ```bash
-python scripts/train_gpt2.py --device cuda --megakernel --max-steps 400
+python scripts/train_gpt2.py --device cuda --tinystories --eval-every-steps 1000
+python scripts/train_gpt2.py --device cuda --tinystories --native-cuda-print-command --native-cuda-dry-run
+python scripts/infer_gpt2.py --device cuda --evo --prompt "Once upon a time"
 python scripts/infer_nanogpt.py --device cuda --megakernel --prompt "Once upon a time"
 ```
+
+The master CLI uses the same no-Torch native dispatcher for explicit dense
+GPT-2 pretraining. With the default `compiled-cli` runner it goes directly to
+the no-Python cached-shard C++ CLI before importing `train_gpt2_native`,
+`nfn_impl`, or Torch. `--template-name` / `--template` / `--preset` accepts
+every name in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, and
+`--graph-file` / `--graph` selects a custom graph JSON; wrappers canonicalize
+the aliases to `--template-name` and `--graph-file` at handoff. Unsupported
+template shapes fail with native missing-trainer JSON instead of falling back to Torch. Direct
+`python cli/nfn.py ...` invocations use the same lightweight dispatcher:
+
+```bash
+nfn train --base-model gpt2 --dataset tinystories --eval-every-steps 1000
+nfn train --base-model gpt2 --dataset tinystories --native-cuda-print-command --native-cuda-dry-run
+nfn train --base-model gpt2 --dataset tinystories --native-cuda-runner launcher
+nfn train --base-model gpt2 --dataset tinystories --native-cuda-runner binding
+```
+
+For an already-cached uint16 dataset, bypass Python entirely:
+
+```bash
+bash tools/build_native_gpt2_cli.sh
+nfn-gpt2-native --dataset-alias roneneldan__TinyStories__TinyStoriesV2-GPT4
+nfn-gpt2-native --dataset-alias /path/to/cached-dataset --dry-run
+nfn-gpt2-native --dataset-alias /path/to/cached-dataset --backend tile-cuda --print-plan
+```
+
+The Python-facing GPT-2 harness defaults to `--native-cuda-runner compiled-cli`,
+which requires the no-Python cached-shard CLI at `build/nfn_gpt2_native_train`.
+That compiled CLI exposes `--backend llm-kittens|tile-cuda`: `llm-kittens` is
+the explicit external bridge, while `tile-cuda` is the default NeuralFn-owned
+12-layer transformer/LM loop over the raw trainer ABI. Use `--backend tile-cuda
+--print-plan` or `--check-tile-ops --tile-ops-lib PATH` to inspect it, and use
+`--eval-every-steps 1000` when you want validation loss every 1000 optimizer
+steps. The compiled loop honors `train_batch_tokens` by deriving
+`grad_accum_steps`, running that many cached-shard CUDA Tile microbatches,
+averaging gradients on device, and applying clip plus AdamW once per optimizer
+step. Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is
+command inspection only on the default `compiled-cli` runner: it builds the C++
+argv from the dataset alias/path without importing `server.dataset_manager`,
+NumPy, tiktoken, or Torch and without writing raw-text token shards.
+Full `--train-transformer-lm` runs also emit `cuda_runtime_preflight` before
+allocation and fail early when the driver is unavailable or older than the
+loaded CUDA runtime.
+Build the SDK binding with `bash tools/build_native_gpt2_binding.sh`, the
+launcher with `bash tools/build_native_gpt2_launcher.sh`, and the no-Python
+cached-shard CLI with `bash tools/build_native_gpt2_cli.sh`; that CLI links the
+shared no-Torch `token_shards.cpp` resolver. Build the unified
+native frontend with `bash tools/build_native_train_cli.sh`; it dispatches GPT-2
+to the cached-shard CLI and dispatches per-family native targets, including the
+partial NanoGPT token-LM trainer, in C++ before Python/Torch can start. Use
+`nfn-native-train --base-model gpt2 ...` when you
+want the compiled top-level training command, and `nfn-native-train
+--list-models --json` to inspect native coverage. Default `nfn train` commands
+hand off to this compiled frontend before graph-backed Python can start; dense
+GPT-2 is implemented, NanoGPT reports `partial-native-trainer` for
+`--train-token-lm`, and LLaMA, GPT-2 evo, JEPA, semantic/MoE, and DeepSeek
+variants intentionally report missing or preflight-only native trainers. Use `auto` to
+try the Python SDK binding, compiled CLI, launcher, then subprocess in order and
+to allow Python raw-text materialization; use `binding` to require the C++
+binding, `launcher` to require the compiled launcher, or `subprocess` to force
+the external trainer binary path. Alias-only configs from
+`build_native_gpt2_compiled_cli_run_config()` still execute the compiled CLI argv
+through the SDK binding, so cached-shard resolution stays in C++ even when
+`runner="auto"` selects `neuralfn._native_gpt2`.
+
+Non-GPT-2 `nfn train` commands now fail from the compiled native registry by
+default. Direct legacy training scripts hand off to the same native registry
+before they import Torch, because their internal implementation still uses the
+graph-backed `TorchTrainer` path. Set
+`NFN_ALLOW_TORCH_TRAINING=1` only for one-off legacy debugging while native C++
+trainers are added for those model families. NanoGPT normal training invocations
+are routed to the implemented partial path: `nfn train --base-model nanogpt ...`
+and `python cli/scripts/train_nanogpt.py ...` add `--train-token-lm`
+automatically. `--dry-run` and `--print-command` inspect that same default route
+without starting the loop; explicit native actions such as `--print-plan`,
+`--check-tile-ops`, or a smoke command still run exactly as requested.
+
+SDK callers can build the unified native binding with
+`bash tools/build_native_train_binding.sh` and use `neuralfn.native_train`
+(`build_native_train_run_config`, `run_native_train`,
+`native_train_model_registry`) to hand off to the compiled frontend without
+importing Torch.
+
+Native C++ trainer implementations should link the raw Tile ops shared library
+built by `bash tools/build_native_train_tile_ops.sh`. It exposes a C ABI over
+the CUDA Tile AdamW, gradient accumulation, global-norm clip scale finalization,
+device-buffer fill/zeroing, deterministic GPT-2 token-weight initialization,
+device-scalar gradient scaling, reduction, linear,
+linear input/weight/bias/bias-accumulate backward, scaled residual add, fused QKV split/merge for
+NanoGPT `qkv.weight`, GELU forward/backward, token embedding forward/weight backward,
+absolute-position embedding forward/backward/backward-accumulate, RMSNorm, RMSNorm input backward, LayerNorm, LayerNorm input/affine/affine-accumulate backward, softmax, token and masked
+token cross-entropy partial, token and masked token cross-entropy logits
+backward, and scaled dot-product attention forward/backward kernels without including
+`torch/extension.h`. CE logits backward uses row-wise Tile kernels for
+vocabularies up to 1024 and chunked row-wise kernels with reusable row-stat
+workspace for full GPT-class vocabularies, avoiding the previous elementwise
+large-vocab fallback. Linear weight and bias backward switch large row counts to
+row-chunked tiled atomic accumulation instead of one serial row loop per output
+element.
+They should also use the native token-shard resolver in
+`neuralfn/csrc/native_train/token_shards.cpp` for `NFN_DATASETS_DIR`,
+`fineweb_train_*.bin` / `fineweb_val_*.bin` validation, token counts, and
+microbatch/gradient-accumulation metadata without routing real data through
+graph nodes. The same C++ code skips cached-shard headers and provides a
+sequential sampler for token plus next-token target batches.
+
+`bash tools/build_native_missing_trainers.sh` builds compiled per-family native
+entrypoints (`nfn_nanogpt_native_train`, `nfn_llama_native_train`, and related
+families). NanoGPT has a model-aware C++ preflight path: run
+`nfn_nanogpt_native_train --print-plan --require-token-shards --sample-token-batch`
+to validate the native shape, AdamW optimizer profile, cached token shards,
+effective token schedule, contiguous parameter/gradient/AdamW-state buffer
+layout, AdamW decay/no-decay groups, forward/backward/optimizer
+`training_step_plan`, and first native token/target batch as JSON without
+importing Python or Torch. The native preflight defaults to `dropout_p=0.0`;
+the tied LM head backward path is represented through the raw linear backward
+ABI, and nonzero `--dropout-p` reports the missing dropout ABI as required work.
+Use `--check-tile-ops --tile-ops-lib PATH` to `dlopen` the raw trainer shared
+library and verify every NanoGPT-required ABI symbol from the compiled binary.
+Use `--smoke-tile-ops --tile-ops-lib PATH` to load CUDA runtime, allocate a tiny
+device buffer, execute `nfn_native_tile_fill_float32`, copy it back, and verify
+the value without Python or Torch. Pass `--cuda-runtime-lib PATH` or set
+`NFN_CUDA_RUNTIME_LIB` when libcudart is not on the default loader path.
+Use `--smoke-optimizer-step --tile-ops-lib PATH` to build the NanoGPT parameter
+layout, initialize contiguous param/grad/AdamW moment buffers through raw fill
+kernels, execute `nfn_native_tile_adamw_step_float32` once per registered
+parameter buffer with that buffer's decay/no-decay setting, copy param and
+moment buffers back, and verify the update on the compiled path.
+Use `--smoke-training-loop-step --tile-ops-lib PATH` to exercise the native
+optimizer-loop mechanics over the registered NanoGPT parameter layout: gradient
+zeroing, synthetic gradient fill, global-norm clip scale finalization,
+device-scalar gradient scaling, and per-buffer AdamW updates.
+Use `--smoke-lm-step --tile-ops-lib PATH` to execute a tiny tied-embedding
+language-model step through token embedding, linear logits, token CE
+loss/backward, linear input/weight backward, token embedding weight backward,
+and AdamW update kernels, then verify loss, gradient, and weight update values
+without Python or Torch.
+Use `--smoke-token-train-step --tile-ops-lib PATH --dataset-alias PATH_OR_ALIAS`
+to sample a real native uint16 token/target batch from cached shards, execute
+the tied-LM forward/backward/update kernels over those IDs, and verify
+sampled-batch loss, gradient, and weight update values without Python or Torch.
+Use `--train-token-lm --tile-ops-lib PATH --dataset-alias PATH_OR_ALIAS --max-steps N`
+to run that tied token-embedding LM path as a real multi-step native loop over
+cached shards; it streams batches with the C++ sampler, zeros gradients on
+device, runs token CE backward, applies AdamW each step, and emits JSON metrics
+without Python or Torch. Full NanoGPT transformer training still requires the
+model-wide trainer loop over the ready transformer stages.
+Set `--eval-every-steps N`, `--eval-batches N`, and `--eval-batch-size N` to
+emit periodic validation losses from the resolved validation token shards inside
+that compiled loop; those validation batches do not pass through graph-editor
+nodes, `TorchTrainer`, or Python dataset payloads.
+Use `--smoke-embedding-norm-step --tile-ops-lib PATH --dataset-alias PATH_OR_ALIAS`
+to run sampled tokens through token and absolute-position embeddings, residual
+add, LayerNorm forward/backward, tied logits, CE backward, embedding/position
+gradient kernels, and AdamW updates, then verify residual, norm, loss, gradient,
+and weight update values without Python or Torch.
+Use `--smoke-qkv-layout-step --tile-ops-lib PATH` to verify the fused QKV
+split/merge layout kernels used between NanoGPT `attn.qkv.weight`, SDPA, and
+the fused QKV gradient buffer.
+Use `--smoke-fused-qkv-attention-step --tile-ops-lib PATH` to execute a tiny
+attention stage through one fused `attn.qkv.weight`, QKV split, SDPA
+forward/backward, QKV gradient merge, fused qkv weight backward, output
+projection backward, and AdamW updates for the fused qkv/output weights.
+Use `--smoke-transformer-block-step --tile-ops-lib PATH` to compose LayerNorm,
+fused-QKV attention, residual adds, MLP, backward passes, gradient
+accumulation, and AdamW updates for a tiny transformer block through raw native
+kernels.
+Use `--smoke-mlp-step --tile-ops-lib PATH` to execute a tiny MLP stage through
+fc projection, GELU, output projection, projection/input backward, GELU
+backward, and AdamW updates for both MLP weights, then verify forward,
+gradient, and weight update values without Python or Torch.
+Use `--smoke-attention-step --tile-ops-lib PATH` to execute a tiny attention
+stage through Q/K/V projections, SDPA forward/backward, output projection
+forward/backward, Q/K/V projection backward, and AdamW updates for all
+attention weights, then verify forward, gradient, and weight update values
+without Python or Torch.
+The targets still intentionally fail for real training until the family-specific
+CUDA Tile work lands, and give the unified frontend a compiled target to
+dispatch to while the real trainers are implemented.
+Installed per-family targets are linked with both underscore and hyphen names,
+and `NFN_NATIVE_<MODEL>_CLI` can override a single family, for example
+`NFN_NATIVE_NANOGPT_CLI`.
+
+`tools/install_native_gpt2_commands.sh` links the stable command names without
+running package installation. Override the destination with
+`NFN_NATIVE_GPT2_BIN_DIR=/path/to/bin`.
+
+When the dataset already has `fineweb_train_*.bin` and `fineweb_val_*.bin`
+uint16 shards, the native GPT-2 path does not import `server.dataset_manager`,
+NumPy, tiktoken, or Torch and does not scan the full dataset to estimate the
+training schedule before launching native code.
+
+The CUDA training harnesses default to `--optimizer-profile adamw` for
+RTX 5090/SM120 runs. That profile uses the llm.kittens SM120 AdamW schedule:
+20,000 steps, sequence length 1024, microbatch 64, 524,288 tokens/step,
+learning rate 0.0006, weight decay 0.1, 60 warmup steps, validation cadence
+250 where supported, and cosine decay to zero when no explicit LR schedule is
+provided. In the native GPT-2 path this schedule is passed straight to
+`train_gpt2cu`; in graph-backed Tile CUDA runs, `adamw` dispatches batched AdamW
+updates and gradient clipping through CUDA Tile optimizer kernels rather than
+`torch.optim.AdamW`.
+Use `--optimizer-profile parameter_golf` only when you explicitly
+want the split/Muon experimental path. The CUDA training harnesses default
+`--max-wallclock-seconds` to `0`, so they run to the resolved step/epoch schedule
+unless you explicitly request an early wallclock cutoff.
 
 The same flows are available from the master CLI:
 
 ```bash
 nfn train --model gpt2 --runtime megakernel
+nfn infer --graph ~/NeuralFn/artifacts/gpt2_evo.json --weights ~/NeuralFn/artifacts/gpt2_evo.pt --prompt "Once upon a time"
 nfn infer --model nanogpt --runtime megakernel --prompt "Once upon a time"
 ```
 
-By default the harness targets the existing cached-token parameter-golf alias:
+By default the native GPT-2 harness targets TinyStories with the GPT-2 tokenizer:
 
-- Local dataset name: `willdepueoai__parameter-golf__sp1024__train1`
+- Local dataset name: `roneneldan__TinyStories__TinyStoriesV2-GPT4`
+- Hugging Face source: `roneneldan/TinyStories`
+- Train/validation files: `TinyStoriesV2-GPT4-train.txt` and `TinyStoriesV2-GPT4-valid.txt`
+
+The cached-token parameter-golf aliases are still available through the explicit
+`golf1` and `golf10` shortcuts, but they are no longer the default training
+dataset.
 
 If that alias is missing under `~/.cache/nfn/datasets/`, the training and inference
 harnesses now try to download it automatically by default. Existing aliases are
@@ -185,6 +434,14 @@ SentencePiece tokenizer assets are resolved separately from datasets:
   `--tokenizer-repo-id`, `--tokenizer-remote-root-prefix`, and
   `--tokenizer-repo-type`
 
+Raw-text aliases are converted to a file-backed token cache when the tokenizer
+fits in `uint16`. The first training load writes `fineweb_train_000000.bin` and
+an optional `fineweb_val_000000.bin` beside `data.txt` / `val.txt`; schedule
+estimation then uses metadata or shard sizes, and subsequent runs memmap the
+token shards instead of re-tokenizing the raw text. Tokenizers whose ids exceed
+`uint16` stay on the raw-text path. Graph `dataset_source` nodes keep only alias
+and sequence-length config, not real text payloads.
+
 ## Run inference against an exported checkpoint
 
 The harness also ships a small CUDA-only text-generation probe for the exported
@@ -228,6 +485,21 @@ case markers and suppresses lossless reconstruction-only tokens during
 sampling, including byte fallback, ellipsis artifacts, and the high-id
 single-character fallback band. The chat UI and sampling flags are otherwise
 the same as graph-backed inference.
+
+Native GPT-2 checkpoints from `train_gpt2cu` are `.bin` files named
+`model_########.bin` with matching `DONE_########` markers. They are recognized
+without importing Torch:
+
+```bash
+nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --native-info
+python scripts/infer_gpt2.py --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --native-info
+```
+
+That path reports the native header shape, precision, expected size, and marker
+state. Prompt generation from native `.bin` checkpoints still needs a dedicated
+native GPT-2 inference executable; do not pass them to the graph-backed `.pt`
+loader.
+
 Graphless sampling also enables a small repeat guard by default: it blocks the
 fourth repeated n-gram and a fourth consecutive copy of the same token. Tune
 loops with `--repetition-penalty`, `--no-repeat-ngram-size`, and

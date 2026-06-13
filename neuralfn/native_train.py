@@ -1,0 +1,174 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+import importlib
+import json
+import os
+from pathlib import Path
+import shlex
+import subprocess
+from typing import Any, Sequence
+
+
+DEFAULT_NATIVE_TRAIN_CLI = "build/nfn_native_train"
+NATIVE_TRAIN_BINDING_MODULES = ("neuralfn_native_train", "neuralfn._native_train")
+
+
+@dataclass(frozen=True)
+class NativeTrainRunnerStatus:
+    requested: str
+    resolved: str
+    binding_module: str | None = None
+    available: bool = True
+    reason: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class NativeTrainRunConfig:
+    """Configuration for the unified native CUDA/C++ training frontend."""
+
+    model_family: str = "gpt2"
+    args: tuple[str, ...] = ()
+    native_train_cli: str | None = None
+    cuda_device_max_connections: str = "1"
+
+    def argv(self) -> list[str]:
+        return [
+            resolve_native_train_cli(self.native_train_cli),
+            "--base-model",
+            normalize_native_model_family(self.model_family),
+            *self.args,
+        ]
+
+    def command(self) -> str:
+        return shlex.join(self.argv())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            **asdict(self),
+            "model_family": normalize_native_model_family(self.model_family),
+            "args": list(self.args),
+            "argv": self.argv(),
+            "command": self.command(),
+        }
+
+
+def normalize_native_model_family(value: str | None) -> str:
+    normalized = str(value or "gpt2").strip().lower().replace("_", "-")
+    return normalized or "gpt2"
+
+
+def resolve_native_train_cli(value: str | None = None) -> str:
+    requested = str(value or "").strip()
+    if requested:
+        return requested
+    env_value = str(os.environ.get("NFN_NATIVE_TRAIN_CLI", "")).strip()
+    if env_value:
+        return env_value
+    repo_root = Path(__file__).resolve().parents[1]
+    return str(repo_root / DEFAULT_NATIVE_TRAIN_CLI)
+
+
+def build_native_train_run_config(
+    model_family: str = "gpt2",
+    args: Sequence[str] | None = None,
+    *,
+    native_train_cli: str | None = None,
+) -> NativeTrainRunConfig:
+    return NativeTrainRunConfig(
+        model_family=normalize_native_model_family(model_family),
+        args=tuple(str(arg) for arg in (args or ())),
+        native_train_cli=native_train_cli,
+    )
+
+
+def _load_native_train_binding():
+    binding_enabled = str(os.environ.get("NFN_NATIVE_TRAIN_BINDING", "1")).strip().lower()
+    if binding_enabled in {"0", "false", "no", "off"}:
+        raise ImportError("native train binding disabled by NFN_NATIVE_TRAIN_BINDING=0")
+    errors: list[str] = []
+    for module_name in NATIVE_TRAIN_BINDING_MODULES:
+        try:
+            module = importlib.import_module(module_name)
+        except ImportError as exc:
+            errors.append(f"{module_name}: {exc}")
+            continue
+        runner = getattr(module, "run_train", None) or getattr(module, "run_native_train", None)
+        if callable(runner):
+            return module_name, runner
+        errors.append(f"{module_name}: missing run_train(config_dict) or run_native_train(config_dict)")
+    raise ImportError("; ".join(errors) if errors else "no native train binding modules configured")
+
+
+def native_train_runner_status(requested: str = "auto") -> NativeTrainRunnerStatus:
+    normalized = str(requested or "auto").strip().lower().replace("_", "-")
+    if normalized == "cli":
+        normalized = "compiled-cli"
+    if normalized not in {"auto", "binding", "compiled-cli", "subprocess"}:
+        raise ValueError("native train runner must be one of: auto, binding, compiled-cli, subprocess")
+    if normalized in {"compiled-cli", "subprocess"}:
+        cli = Path(resolve_native_train_cli())
+        return NativeTrainRunnerStatus(
+            requested=normalized,
+            resolved=normalized,
+            available=cli.exists() or normalized == "subprocess",
+            reason="" if cli.exists() else f"compiled native train CLI not found: {cli}",
+        )
+    try:
+        module_name, _runner = _load_native_train_binding()
+    except ImportError as exc:
+        if normalized == "binding":
+            return NativeTrainRunnerStatus(
+                requested=normalized,
+                resolved="binding",
+                available=False,
+                reason=str(exc),
+            )
+        cli = Path(resolve_native_train_cli())
+        return NativeTrainRunnerStatus(
+            requested=normalized,
+            resolved="compiled-cli",
+            available=cli.exists(),
+            reason="" if cli.exists() else f"native binding unavailable and compiled native train CLI not found: {exc}",
+        )
+    return NativeTrainRunnerStatus(
+        requested=normalized,
+        resolved="binding",
+        binding_module=module_name,
+    )
+
+
+def run_native_train(config: NativeTrainRunConfig, *, runner: str = "auto") -> int:
+    status = native_train_runner_status(runner)
+    if status.resolved == "binding":
+        if not status.available:
+            raise RuntimeError(f"Native train binding requested but unavailable: {status.reason}")
+        _module_name, binding_runner = _load_native_train_binding()
+        return int(binding_runner(config.to_dict()))
+    if not status.available:
+        raise RuntimeError(f"Native train CLI requested but unavailable: {status.reason}")
+    env = os.environ.copy()
+    env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", config.cuda_device_max_connections)
+    proc = subprocess.run(config.argv(), env=env, check=False)
+    return int(proc.returncode)
+
+
+def native_train_model_registry(*, native_train_cli: str | None = None) -> dict[str, Any]:
+    command = [
+        resolve_native_train_cli(native_train_cli),
+        "--list-models",
+        "--json",
+    ]
+    proc = subprocess.run(
+        command,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"native train registry command failed with exit {proc.returncode}: {proc.stderr.strip()}")
+    return json.loads(proc.stdout)
