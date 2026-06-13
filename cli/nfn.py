@@ -707,7 +707,7 @@ def _legacy_graph_train_main(_argv: list[str] | None = None) -> int:
 if _is_direct_native_train_cli_train(sys.argv[1:]):
     main = _direct_native_train_cli_main
 elif _is_explicit_native_gpt_train(sys.argv[1:]):
-    from train_gpt2_native import main as main
+    from train_gpt_native import main as main
 elif _is_lightweight_native_gpt_infer(sys.argv[1:]):
     main = _lightweight_native_gpt_infer_main
 elif _is_lightweight_root_help(sys.argv[1:]):

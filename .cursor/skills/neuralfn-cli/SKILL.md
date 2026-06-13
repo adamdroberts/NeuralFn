@@ -103,8 +103,8 @@ Canonical docs:
 - `cli/scripts/train_gpt.py` is the canonical native-only dense GPT script, with
   `cli/scripts/train_gpt2.py` kept as compatibility. Direct execution with the
   default `compiled-cli` runner translates GPT flags to the compiled C++ CLI before
-  importing `train_gpt2_native.py`; explicit non-compiled runners still use
-  `train_gpt2_native.py`. Cached uint16 train/validation shards go straight to
+  importing `train_gpt_native.py`; explicit non-compiled runners still use
+  `train_gpt_native.py`. Cached uint16 train/validation shards go straight to
   the compiled dense GPT Tile-CUDA trainer, so training token batches do not pass
   through graph-editor nodes or `TorchTrainer`.
 - Cached native GPT startup should avoid `server.dataset_manager`, NumPy,
@@ -120,7 +120,7 @@ Canonical docs:
   should infer the sibling validation bin in C++, not through Python dataset
   materialization.
 - Default `nfn train` commands go directly to a compiled native frontend before
-  importing `train_gpt2_native`, `nfn_impl`, or Torch. The canonical `gpt` family
+  importing `train_gpt_native`, `nfn_impl`, or Torch. The canonical `gpt` family
   reports `model_family: gpt` and dispatches to the no-Python cached-shard CLI;
   `gpt2` and `gpt3` are aliases for that same compiled dense GPT trainer;
   plan/runtime JSON reports `architecture_source`, `architecture_contract`, and

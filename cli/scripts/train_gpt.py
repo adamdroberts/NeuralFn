@@ -323,7 +323,7 @@ if __name__ == "__main__":
     if fast_exit is not None:
         raise SystemExit(fast_exit)
 
-from train_gpt2_native import NATIVE_GPT_DEFAULTS, build_parser, main  # noqa: E402
+from train_gpt_native import NATIVE_GPT_DEFAULTS, build_parser, main  # noqa: E402
 
 
 GPT_DEFAULTS = {

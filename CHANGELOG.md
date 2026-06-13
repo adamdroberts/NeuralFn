@@ -20,6 +20,13 @@ Future updates should append new entries here rather than replacing older notes.
 
 #### Changed
 
+- Moved the Python fallback harness implementation to
+  `cli/scripts/train_gpt_native.py`. `cli/scripts/train_gpt.py` and root
+  `nfn train` now import the generic module when the compiled fast path is not
+  used, while `cli/scripts/train_gpt2_native.py` remains a compatibility
+  wrapper. Migration note: direct GPT-2 compatibility invocations still work,
+  but new native GPT integrations should target `train_gpt.py`,
+  `train_gpt_native.py`, and the `neuralfn.native_gpt` SDK names.
 - Made the compiled dense GPT trainer contract explicit in plan, unsupported
   graph, external bridge, and training JSON. Runs now report
   `architecture_source`, `architecture_contract`, and
@@ -27,9 +34,18 @@ Future updates should append new entries here rather than replacing older notes.
   `--graph-file` selects the architecture. `gpt`, `gpt2`, and `gpt3` remain
   aliases of the same trainer; `gpt3` only supplies the 2048-token default
   context when template, graph, and sequence length are all implicit.
-  Verification: `python -m pytest tests/test_native_gpt2.py -q` passed
+  Verification: `python -m py_compile cli/nfn.py cli/scripts/train_gpt.py
+  cli/scripts/train_gpt_native.py cli/scripts/train_gpt2.py
+  cli/scripts/train_gpt2_native.py neuralfn/native_gpt.py
+  neuralfn/native_gpt2.py` passed, `python -m pytest
+  cli/tests/test_train_gpt2_native.py -q` passed (`33 passed, 90 subtests
+  passed`), `python -m pytest tests/test_native_gpt2.py -q` passed
   (`30 passed, 1 skipped`), `python -m pytest tests/test_template_presets.py
-  -q -x` passed (`26 passed`), and `git diff --check` passed.
+  -q -x` passed (`26 passed`), direct dry-runs through
+  `cli/scripts/train_gpt_native.py` and the compatibility
+  `cli/scripts/train_gpt2_native.py` both printed the generic
+  `nfn_gpt_native_train --model-family gpt` handoff, and `git diff --check`
+  passed.
 
 ### 2026-06-13 Native GPT BF16 activation-cache correctness
 

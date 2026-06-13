@@ -232,7 +232,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
                 print("NUMPY_LOADED", "numpy" in sys.modules)
                 print("TIKTOKEN_LOADED", "tiktoken" in sys.modules)
-                print("TRAIN_GPT2_NATIVE_LOADED", "train_gpt2_native" in sys.modules)
+                print("TRAIN_GPT_NATIVE_LOADED", "train_gpt_native" in sys.modules)
                 raise SystemExit(exit_code)
             """
         )
@@ -294,7 +294,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
                 print("NUMPY_LOADED", "numpy" in sys.modules)
                 print("TIKTOKEN_LOADED", "tiktoken" in sys.modules)
-                print("TRAIN_GPT2_NATIVE_LOADED", "train_gpt2_native" in sys.modules)
+                print("TRAIN_GPT_NATIVE_LOADED", "train_gpt_native" in sys.modules)
                 raise SystemExit(exit_code)
             """
         )
@@ -321,7 +321,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
         self.assertIn("NUMPY_LOADED False", proc.stdout)
         self.assertIn("TIKTOKEN_LOADED False", proc.stdout)
-        self.assertIn("TRAIN_GPT2_NATIVE_LOADED False", proc.stdout)
+        self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
 
     def test_native_dry_run_without_token_shards_defers_to_compiled_cli(self) -> None:
         code = textwrap.dedent(
@@ -359,7 +359,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
                 print("NUMPY_LOADED", "numpy" in sys.modules)
                 print("TIKTOKEN_LOADED", "tiktoken" in sys.modules)
-                print("TRAIN_GPT2_NATIVE_LOADED", "train_gpt2_native" in sys.modules)
+                print("TRAIN_GPT_NATIVE_LOADED", "train_gpt_native" in sys.modules)
                 raise SystemExit(exit_code)
             """
         )
@@ -387,7 +387,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
         self.assertIn("NUMPY_LOADED False", proc.stdout)
         self.assertIn("TIKTOKEN_LOADED False", proc.stdout)
-        self.assertIn("TRAIN_GPT2_NATIVE_LOADED False", proc.stdout)
+        self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
 
     def test_native_dry_run_llm_kittens_backend_keeps_external_target(self) -> None:
         code = textwrap.dedent(
@@ -501,7 +501,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("-v 1000", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
 
-    def test_nfn_train_gpt2_native_dry_run_does_not_import_torch(self) -> None:
+    def test_nfn_train_gpt_native_dry_run_does_not_import_torch(self) -> None:
         code = textwrap.dedent(
             f"""
             import json
@@ -598,7 +598,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 exit_code = 0
             print("TORCH_LOADED", "torch" in sys.modules)
             print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
-            print("TRAIN_GPT2_NATIVE_LOADED", "train_gpt2_native" in sys.modules)
+            print("TRAIN_GPT_NATIVE_LOADED", "train_gpt_native" in sys.modules)
             print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
             raise SystemExit(exit_code)
             """
@@ -626,7 +626,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertNotIn("--base-model", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
-        self.assertIn("TRAIN_GPT2_NATIVE_LOADED False", proc.stdout)
+        self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
 
     def test_nfn_train_gpt2_direct_compiled_cli_preserves_template_and_graph_selectors(self) -> None:
@@ -657,7 +657,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 exit_code = 0
             print("TORCH_LOADED", "torch" in sys.modules)
             print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
-            print("TRAIN_GPT2_NATIVE_LOADED", "train_gpt2_native" in sys.modules)
+            print("TRAIN_GPT_NATIVE_LOADED", "train_gpt_native" in sys.modules)
             raise SystemExit(exit_code)
             """
         )
@@ -682,7 +682,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertNotIn("--base-model", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
-        self.assertIn("TRAIN_GPT2_NATIVE_LOADED False", proc.stdout)
+        self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
 
     def test_nfn_train_gpt2_direct_compiled_cli_accepts_every_template_selector(self) -> None:
         for preset in SHIPPED_GPT_TEMPLATE_PRESETS:
@@ -713,7 +713,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                         exit_code = 0
                     print("TORCH_LOADED", "torch" in sys.modules)
                     print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
-                    print("TRAIN_GPT2_NATIVE_LOADED", "train_gpt2_native" in sys.modules)
+                    print("TRAIN_GPT_NATIVE_LOADED", "train_gpt_native" in sys.modules)
                     raise SystemExit(exit_code)
                     """
                 )
@@ -736,7 +736,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 self.assertNotIn("--base-model", proc.stdout)
                 self.assertIn("TORCH_LOADED False", proc.stdout)
                 self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
-                self.assertIn("TRAIN_GPT2_NATIVE_LOADED False", proc.stdout)
+                self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
 
     def test_nfn_train_gpt2_can_dispatch_to_unified_native_train_cli(self) -> None:
         code = textwrap.dedent(
@@ -763,7 +763,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 exit_code = 0
             print("TORCH_LOADED", "torch" in sys.modules)
             print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
-            print("TRAIN_GPT2_NATIVE_LOADED", "train_gpt2_native" in sys.modules)
+            print("TRAIN_GPT_NATIVE_LOADED", "train_gpt_native" in sys.modules)
             raise SystemExit(exit_code)
             """
         )
@@ -788,7 +788,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertNotIn("--base-model", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
-        self.assertIn("TRAIN_GPT2_NATIVE_LOADED False", proc.stdout)
+        self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
 
     def test_nfn_train_gpt3_defaults_to_2048_context_without_template_or_graph(self) -> None:
         code = textwrap.dedent(
@@ -1006,7 +1006,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 exit_code = 0
             print("TORCH_LOADED", "torch" in sys.modules)
             print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
-            print("TRAIN_GPT2_NATIVE_LOADED", "train_gpt2_native" in sys.modules)
+            print("TRAIN_GPT_NATIVE_LOADED", "train_gpt_native" in sys.modules)
             print("NATIVE_TRAIN", native_train)
             raise SystemExit(exit_code)
             """
@@ -1030,7 +1030,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("nanogpt: partial-native-trainer -> nfn_nanogpt_native_train", proc.stderr)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
-        self.assertIn("TRAIN_GPT2_NATIVE_LOADED False", proc.stdout)
+        self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
 
     def test_legacy_training_scripts_reject_before_torch_import(self) -> None:
         scripts = (
@@ -1366,7 +1366,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             else:
                 exit_code = 0
             print("TORCH_LOADED", "torch" in sys.modules)
-            print("TRAIN_GPT2_NATIVE_LOADED", "train_gpt2_native" in sys.modules)
+            print("TRAIN_GPT_NATIVE_LOADED", "train_gpt_native" in sys.modules)
             print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
             print("NUMPY_LOADED", "numpy" in sys.modules)
             print("ARGV0", Path(sys.argv[0]).name)
@@ -1390,7 +1390,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("--model-family gpt3", proc.stdout)
         self.assertIn("--train-seq-len 2048", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
-        self.assertIn("TRAIN_GPT2_NATIVE_LOADED False", proc.stdout)
+        self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
         self.assertIn("NUMPY_LOADED False", proc.stdout)
         self.assertIn("ARGV0 train_gpt.py", proc.stdout)
@@ -1436,7 +1436,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
         self.assertIn("NUMPY_LOADED False", proc.stdout)
 
-    def test_train_gpt2_native_defaults_to_tinystories_not_parameter_golf(self) -> None:
+    def test_train_gpt_native_defaults_to_tinystories_not_parameter_golf(self) -> None:
         code = textwrap.dedent(
             f"""
             import importlib
@@ -1553,7 +1553,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             proc = subprocess.run(
                 [
                     sys.executable,
-                    str(NEURALFN_ROOT / "cli" / "scripts" / "train_gpt2_native.py"),
+                    str(NEURALFN_ROOT / "cli" / "scripts" / "train_gpt_native.py"),
                     "--dataset-alias",
                     "alias",
                     "--no-download-if-missing",
