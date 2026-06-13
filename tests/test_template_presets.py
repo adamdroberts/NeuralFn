@@ -28,6 +28,7 @@ import server.dataset_manager as dataset_manager
 from server.dataset_manager import load_dataset_bytes
 from server.models import ExecuteRequest, GPTTemplateRequest, LoadDatasetRequest
 from server.services.graph_ops import apply_gpt_template, load_dataset_source_into_graph, trace_torch_graph
+from neuralfn.native_gpt import build_native_gpt_compiled_cli_run_config
 from neuralfn.native_gpt2 import build_native_gpt2_compiled_cli_run_config
 
 
@@ -143,6 +144,33 @@ def _load_train_gpt2_script_module():
 def test_native_gpt2_compiled_cli_accepts_every_gpt_template_name() -> None:
     for preset in PRESETS:
         config = build_native_gpt2_compiled_cli_run_config(
+            dataset_alias="/tmp/native-cache",
+            executable="/bin/echo",
+            output_dir=Path("/tmp/native-output"),
+            eval_every_steps=1000,
+            sample_every_steps=20000,
+            generate_tokens=144,
+            checkpoint_every_steps=200,
+            batch_size=64,
+            seq_len=1024,
+            train_batch_tokens=524288,
+            learning_rate=0.0006,
+            min_lr=None,
+            warmup_steps=60,
+            weight_decay=0.1,
+            max_steps=20000,
+            num_layers=12,
+            activation="gelu",
+            template_name=preset,
+        )
+        argv = config.compiled_cli_argv(cli="/tmp/nfn_gpt2_native_train")
+        assert "--template-name" in argv
+        assert argv[argv.index("--template-name") + 1] == preset
+
+
+def test_native_gpt_compiled_cli_alias_accepts_every_gpt_template_name() -> None:
+    for preset in PRESETS:
+        config = build_native_gpt_compiled_cli_run_config(
             dataset_alias="/tmp/native-cache",
             executable="/bin/echo",
             output_dir=Path("/tmp/native-output"),

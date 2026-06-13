@@ -82,7 +82,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
         common options:
           -h, --help
           --help-style {short,long,verbose}
-          --base-model, --model {gpt2,nanogpt,llama}
+          --base-model, --model {gpt,gpt2,gpt3,nanogpt,llama}
           --topology {dense,moe,semantic_router}
           --router-mode {standard,semantic,hash}
           --dataset-alias NAME_OR_PATH
@@ -99,13 +99,13 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --native-cuda-dry-run
 
         examples:
-          nfn train --base-model gpt2 --tinystories
-          nfn train --base-model gpt2 --tinystories --template-name gpt2_moa
-          nfn train --base-model gpt2 --dataset-alias /data/tokens --graph-file graph.json
-          nfn train --base-model gpt2 --tinystories --eval-every-steps 1000
-          nfn train --base-model gpt2 --native-cuda-runner compiled-cli
+          nfn train --base-model gpt --tinystories
+          nfn train --base-model gpt --tinystories --template-name gpt2_moa
+          nfn train --base-model gpt3 --dataset-alias /data/tokens --graph-file graph.json
+          nfn train --base-model gpt --tinystories --eval-every-steps 1000
+          nfn train --base-model gpt --native-cuda-runner compiled-cli
 
-        Explicit dense GPT-2 runs dispatch before importing the graph-backed runtime.
+        Explicit dense GPT runs dispatch before importing the graph-backed runtime.
         The compiled frontend records the selected template or custom graph and
         fails fast when a matching CUDA Tile C++ trainer is not implemented.
         """,
@@ -271,8 +271,8 @@ def _is_explicit_native_gpt2_train(argv: list[str]) -> bool:
         return False
     if _has_any(argv, "-h", "--help", "--plan", "--plan-auto", "--jepa"):
         return False
-    base_model = (_arg_value(argv, "--base-model", "--model") or "").strip().lower()
-    if base_model != "gpt2":
+    base_model = (_arg_value(argv, "--base-model", "--model") or "").strip().lower().replace("_", "-")
+    if not _is_dense_gpt_native_model(base_model):
         return False
     topology = (_arg_value(argv, "--topology") or "dense").strip().lower()
     router_mode = (_arg_value(argv, "--router-mode") or "standard").strip().lower()
@@ -367,6 +367,10 @@ def _native_gpt2_requested_runtime(argv: list[str]) -> str:
     return (_arg_value(argv, "--runtime") or "native-cuda").strip().lower().replace("_", "-")
 
 
+def _is_dense_gpt_native_model(model: str) -> bool:
+    return model.strip().lower().replace("_", "-") in {"gpt", "gpt2", "gpt3"}
+
+
 def _is_direct_native_train_cli_train(argv: list[str]) -> bool:
     if not argv or argv[0] != "train":
         return False
@@ -374,8 +378,8 @@ def _is_direct_native_train_cli_train(argv: list[str]) -> bool:
         return False
     if _native_gpt2_requested_runtime(argv) != "native-cuda":
         return False
-    base_model = (_arg_value(argv, "--base-model", "--model") or "gpt2").strip().lower()
-    if base_model == "gpt2":
+    base_model = (_arg_value(argv, "--base-model", "--model") or "gpt").strip().lower().replace("_", "-")
+    if _is_dense_gpt_native_model(base_model):
         if not _is_explicit_native_gpt2_train(argv):
             return False
         runner = _native_gpt2_requested_runner(argv)
@@ -389,19 +393,19 @@ def _resolve_direct_native_train_cli(model: str) -> str:
     requested_train_cli = os.environ.get("NFN_NATIVE_TRAIN_CLI", "").strip()
     if requested_train_cli:
         return requested_train_cli
-    native_train = ROOT.parent / "build" / "nfn_native_train"
-    if native_train.exists():
-        return str(native_train)
-    if model == "gpt2":
+    if _is_dense_gpt_native_model(model):
         requested = os.environ.get("NFN_NATIVE_GPT2_CLI", "").strip()
         if requested:
             return requested
         return str(ROOT.parent / "build" / "nfn_gpt2_native_train")
+    native_train = ROOT.parent / "build" / "nfn_native_train"
+    if native_train.exists():
+        return str(native_train)
     return str(native_train)
 
 
 def _native_train_model(argv: list[str]) -> str:
-    return (_arg_value(argv, "--base-model", "--model") or "gpt2").strip().lower().replace("_", "-")
+    return (_arg_value(argv, "--base-model", "--model") or "gpt").strip().lower().replace("_", "-")
 
 
 _NATIVE_TRAIN_ACTION_FLAGS = {
@@ -461,12 +465,13 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
     model = _native_train_model(argv)
     native_cli = _resolve_direct_native_train_cli(model)
     out = [native_cli]
-    include_model = model != "gpt2"
+    dense_gpt = _is_dense_gpt_native_model(model)
+    include_model = not dense_gpt
     if include_model:
         out.extend(["--base-model", model])
     if model == "nanogpt" and not _has_native_train_action(argv):
         out.append("--train-token-lm")
-    if model == "gpt2" and not _has_native_train_action(argv):
+    if dense_gpt and not _has_native_train_action(argv):
         out.append("--train-transformer-lm")
     idx = 1
     drop_value_flags = {
@@ -628,7 +633,7 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
             continue
         out.append(arg)
         idx += 1
-    if model == "gpt2" and _native_template_name(out) == "gpt2_moa" and not _has_native_activation(out):
+    if dense_gpt and _native_template_name(out) == "gpt2_moa" and not _has_native_activation(out):
         _append_value_arg(out, "--native-cuda-activation", "moa")
     return out
 

@@ -569,7 +569,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("-v 1000", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
 
-    def test_nfn_train_gpt2_default_dispatches_directly_to_compiled_cli(self) -> None:
+    def test_nfn_train_gpt_alias_default_dispatches_directly_to_compiled_cli(self) -> None:
         code = textwrap.dedent(
             f"""
             from pathlib import Path
@@ -581,7 +581,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 str(root / "cli" / "nfn.py"),
                 "train",
                 "--base-model",
-                "gpt2",
+                "gpt",
                 "--dataset-alias=/tmp/native-cache",
                 "--output",
                 "/tmp/gpt2.pt",

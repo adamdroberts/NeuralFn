@@ -29,10 +29,22 @@ struct ModelEntry {
 
 constexpr ModelEntry MODEL_REGISTRY[] = {
     {
+        "gpt",
+        "partial-native-trainer",
+        "nfn_gpt2_native_train",
+        "Dense GPT aliases to the NeuralFn Tile-CUDA transformer-LM loop; template/custom graph selection decides the GPT architecture.",
+    },
+    {
         "gpt2",
         "partial-native-trainer",
         "nfn_gpt2_native_train",
-        "Dense GPT-2 defaults to the NeuralFn Tile-CUDA --train-transformer-lm loop over cached shards; live SM120 throughput validation remains pending.",
+        "Dense GPT-2 defaults to the NeuralFn Tile-CUDA --train-transformer-lm loop over cached shards.",
+    },
+    {
+        "gpt3",
+        "partial-native-trainer",
+        "nfn_gpt2_native_train",
+        "GPT-3-style dense decoder training uses the same GPT native target; context/window and width come from the selected template or custom graph.",
     },
     {
         "gpt2-evo",
@@ -169,10 +181,10 @@ void print_usage(const char* program) {
     std::cout
         << "Usage: " << program << " [train] --base-model MODEL [native options]\n\n"
         << "Unified no-Python NeuralFn native training frontend.\n"
-        << "Currently dispatches dense GPT-2 to nfn_gpt2_native_train and partial/missing\n"
+        << "Currently dispatches dense GPT/GPT-2/GPT-3 aliases to nfn_gpt2_native_train and partial/missing\n"
         << "families to their compiled per-family targets before any Python/Torch runtime can start.\n"
         << "Options:\n"
-        << "  --base-model, --model NAME      Model family. External fast path: gpt2; partial: nanogpt --train-token-lm\n"
+        << "  --base-model, --model NAME      Model family. Dense GPT aliases: gpt, gpt2, gpt3; partial: nanogpt --train-token-lm\n"
         << "  --native-gpt2-cli PATH          Override the GPT-2 native cached-shard CLI\n"
         << "  NFN_NATIVE_<MODEL>_CLI=PATH     Override a per-family native trainer, for example NFN_NATIVE_NANOGPT_CLI\n"
         << "  --list-models                   Print native training coverage\n"

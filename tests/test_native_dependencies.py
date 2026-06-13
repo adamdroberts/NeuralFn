@@ -58,3 +58,43 @@ print("TORCH_LOADED", "torch" in sys.modules)
     assert "ARGV" in proc.stdout
     assert "STATUS subprocess" in proc.stdout
     assert "TORCH_LOADED False" in proc.stdout
+
+
+def test_native_gpt_sdk_alias_import_does_not_import_torch() -> None:
+    code = """
+import sys
+from neuralfn.native_gpt import build_native_gpt_compiled_cli_run_config
+cfg = build_native_gpt_compiled_cli_run_config(
+    dataset_alias="/tmp/native-cache",
+    executable="/bin/echo",
+    output_dir="/tmp/native-output",
+    eval_every_steps=1000,
+    sample_every_steps=20000,
+    generate_tokens=144,
+    checkpoint_every_steps=200,
+    batch_size=64,
+    seq_len=1024,
+    train_batch_tokens=524288,
+    learning_rate=0.0006,
+    min_lr=None,
+    warmup_steps=60,
+    weight_decay=0.1,
+    max_steps=20000,
+    num_layers=12,
+    activation="gelu",
+)
+print("ARGV", " ".join(cfg.compiled_cli_argv("/tmp/nfn_gpt2_native_train")[:3]))
+print("TORCH_LOADED", "torch" in sys.modules)
+"""
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "ARGV" in proc.stdout
+    assert "TORCH_LOADED False" in proc.stdout

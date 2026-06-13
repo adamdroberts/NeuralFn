@@ -2246,7 +2246,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "-ak 7" in executed.stdout
 
 
-def test_unified_native_train_cli_builds_dispatches_gpt2_and_rejects_unsupported(tmp_path: Path) -> None:
+def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_rejects_unsupported(tmp_path: Path) -> None:
     if shutil.which("c++") is None:
         pytest.skip("c++ compiler not available")
     root = Path(__file__).resolve().parents[1]
@@ -2266,29 +2266,30 @@ def test_unified_native_train_cli_builds_dispatches_gpt2_and_rejects_unsupported
     assert build.returncode == 0, build.stderr
     assert unified.exists()
 
-    gpt2 = subprocess.run(
-        [
-            str(unified),
-            "train",
-            "--base-model",
-            "gpt2",
-            "--native-gpt2-cli",
-            str(fake_gpt2),
-            "--dataset-alias",
-            "/tmp/native-cache",
-            "--dry-run",
-            "--eval-every-steps",
-            "1000",
-        ],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    assert gpt2.returncode == 0, gpt2.stderr
-    assert "--dataset-alias\n/tmp/native-cache" in gpt2.stdout
-    assert "--eval-every-steps\n1000" in gpt2.stdout
-    assert "--base-model" not in gpt2.stdout
+    for model in ("gpt", "gpt2", "gpt3"):
+        dense_gpt = subprocess.run(
+            [
+                str(unified),
+                "train",
+                "--base-model",
+                model,
+                "--native-gpt2-cli",
+                str(fake_gpt2),
+                "--dataset-alias",
+                "/tmp/native-cache",
+                "--dry-run",
+                "--eval-every-steps",
+                "1000",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert dense_gpt.returncode == 0, dense_gpt.stderr
+        assert "--dataset-alias\n/tmp/native-cache" in dense_gpt.stdout
+        assert "--eval-every-steps\n1000" in dense_gpt.stdout
+        assert "--base-model" not in dense_gpt.stdout
 
     coverage = subprocess.run(
         [str(unified), "--list-models", "--json"],
@@ -2300,7 +2301,9 @@ def test_unified_native_train_cli_builds_dispatches_gpt2_and_rejects_unsupported
     assert coverage.returncode == 0, coverage.stderr
     payload = json.loads(coverage.stdout)
     statuses = {item["name"]: item["status"] for item in payload["models"]}
+    assert statuses["gpt"] == "partial-native-trainer"
     assert statuses["gpt2"] == "partial-native-trainer"
+    assert statuses["gpt3"] == "partial-native-trainer"
     assert statuses["nanogpt"] == "partial-native-trainer"
     sdk_payload = native_train_model_registry(native_train_cli=str(unified))
     sdk_statuses = {item["name"]: item["status"] for item in sdk_payload["models"]}
