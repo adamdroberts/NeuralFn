@@ -354,6 +354,12 @@ int nfn_native_tile_gelu_backward_float32(
     std::int64_t n,
     void* cuda_stream);
 
+int nfn_native_tile_gelu_backward_inplace_float32(
+    const float* x,
+    float* grad,
+    std::int64_t n,
+    void* cuda_stream);
+
 int nfn_native_tile_absolute_position_embedding_float32(
     const float* weight,
     float* out,

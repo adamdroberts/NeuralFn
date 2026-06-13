@@ -309,6 +309,11 @@ stops after the MLP GELU activation because backward does not consume the
 recomputed MLP projection output or final residual output; JSON reports
 `backward_recompute_mlp_projection_elided: true` and
 `backward_recompute_final_residual_elided: true`.
+The MLP projection backward path writes its dInput into the MLP fc gradient
+buffer and runs `nfn_native_tile_gelu_backward_inplace_float32`, so the full
+trainer does not allocate a separate hidden-size `grad_act` scratch buffer.
+JSON reports `mlp_proj_backward_gelu_inplace: true` and
+`mlp_proj_backward_grad_act_scratch_allocated: false`.
 Transformer block backward residual-gradient pair additions use
 `nfn_native_tile_scaled_residual_add_float32`, so the trainer avoids the earlier
 zero-fill plus two-accumulate sequence; `block_state_layout.residual_backward_fused`

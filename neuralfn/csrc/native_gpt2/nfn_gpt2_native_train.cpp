@@ -6474,7 +6474,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_linear_backward_bias_accumulate_float32",
         "nfn_native_tile_gelu_float32",
         "nfn_native_tile_gelu_add_bias_float32",
-        "nfn_native_tile_gelu_backward_float32",
+        "nfn_native_tile_gelu_backward_inplace_float32",
         "nfn_native_tile_scaled_dot_product_attention_float32",
         "nfn_native_tile_attention_forward_tk_launch_count",
         "nfn_native_tile_attention_backward_tk_launch_count",
@@ -6543,7 +6543,7 @@ int run_transformer_lm_training_json(
         const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardBiasAccumulateFn = int (*)(const float*, float*, std::int64_t, std::int64_t, void*);
     using GeluAddBiasFn = int (*)(const float*, const float*, float*, float*, std::int64_t, std::int64_t, void*);
-    using GeluBackwardFn = int (*)(const float*, const float*, float*, std::int64_t, void*);
+    using GeluBackwardInplaceFn = int (*)(const float*, float*, std::int64_t, void*);
     using AttentionFn = int (*)(
         const float*, const float*, const float*, float*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t,
@@ -6610,7 +6610,7 @@ int run_transformer_lm_training_json(
     LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
     LinearBackwardBiasAccumulateFn linear_backward_bias_accumulate = nullptr;
     GeluAddBiasFn gelu_add_bias = nullptr;
-    GeluBackwardFn gelu_backward = nullptr;
+    GeluBackwardInplaceFn gelu_backward_inplace = nullptr;
     AttentionFn attention = nullptr;
     AttentionStatsResetFn attention_stats_reset = nullptr;
     AttentionStatsCountFn attention_row_launch_count = nullptr;
@@ -6741,7 +6741,8 @@ int run_transformer_lm_training_json(
                 linear_backward_bias_accumulate = load_symbol<LinearBackwardBiasAccumulateFn>(
                     tile_handle, "nfn_native_tile_linear_backward_bias_accumulate_float32");
                 gelu_add_bias = load_symbol<GeluAddBiasFn>(tile_handle, "nfn_native_tile_gelu_add_bias_float32");
-                gelu_backward = load_symbol<GeluBackwardFn>(tile_handle, "nfn_native_tile_gelu_backward_float32");
+                gelu_backward_inplace = load_symbol<GeluBackwardInplaceFn>(
+                    tile_handle, "nfn_native_tile_gelu_backward_inplace_float32");
                 attention = load_symbol<AttentionFn>(tile_handle, "nfn_native_tile_scaled_dot_product_attention_float32");
                 attention_stats_reset = load_symbol<AttentionStatsResetFn>(
                     tile_handle, "nfn_native_tile_attention_forward_stats_reset");
@@ -7211,7 +7212,7 @@ int run_transformer_lm_training_json(
     float *lnf_out = nullptr, *logits = nullptr, *loss_partials = nullptr;
     float *loss_reduce_a = nullptr, *loss_reduce_b = nullptr, *loss_total = nullptr;
     float *row_max = nullptr, *row_denom = nullptr;
-    float *grad_logits = nullptr, *grad_lnf = nullptr, *grad_residual2 = nullptr, *grad_act = nullptr;
+    float *grad_logits = nullptr, *grad_lnf = nullptr, *grad_residual2 = nullptr;
     float *grad_fc_out = nullptr, *grad_ln2 = nullptr, *grad_residual1_from_mlp = nullptr, *grad_residual1 = nullptr;
     float *grad_attn_out = nullptr, *grad_qkv = nullptr;
     float *grad_ln1 = nullptr, *grad_x_from_attn = nullptr, *grad_x = nullptr;
@@ -7417,7 +7418,7 @@ int run_transformer_lm_training_json(
 	             {&loss_reduce_a, loss_partial_count}, {&loss_reduce_b, loss_partial_count}, {&loss_total, 1},
              {&row_max, lm_head_chunk_rows}, {&row_denom, lm_head_chunk_rows},
              {&grad_logits, logit_elements}, {&grad_lnf, activation_elements},
-             {&grad_residual2, activation_elements}, {&grad_act, hidden_elements}, {&grad_fc_out, hidden_elements},
+            {&grad_residual2, activation_elements}, {&grad_fc_out, hidden_elements},
              {&grad_ln2, activation_elements}, {&grad_residual1_from_mlp, activation_elements}, {&grad_residual1, activation_elements},
             {&grad_attn_out, activation_elements},
             {&grad_qkv, qkv_activation_elements}, {&grad_ln1, activation_elements},
@@ -7867,10 +7868,10 @@ int run_transformer_lm_training_json(
         run_timed_stage("block_backward.mlp_proj", [&]() {
             if (error.empty()) run(linear_backward_weight_accumulate(tape.act, incoming_grad, block.accum_grad_mlp_proj_weight, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_weight.accumulate");
             if (error.empty()) run(linear_backward_bias_accumulate(incoming_grad, block.accum_grad_mlp_proj_bias, rows, kDim, nullptr), label + ".mlp.proj.backward_bias.accumulate");
-            if (error.empty()) run(linear_backward_input(incoming_grad, block.mlp_proj_weight, grad_act, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_input");
+            if (error.empty()) run(linear_backward_input(incoming_grad, block.mlp_proj_weight, grad_fc_out, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_input");
+            if (error.empty()) run(gelu_backward_inplace(tape.fc_out, grad_fc_out, hidden_elements, nullptr), label + ".mlp.gelu.backward_inplace");
         });
         run_timed_stage("block_backward.mlp_fc", [&]() {
-            if (error.empty()) run(gelu_backward(tape.fc_out, grad_act, grad_fc_out, hidden_elements, nullptr), label + ".mlp.gelu.backward");
             if (error.empty()) run(linear_backward_weight_accumulate(tape.ln2_out, grad_fc_out, block.accum_grad_fc_weight, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight.accumulate");
             if (error.empty()) run(linear_backward_bias_accumulate(grad_fc_out, block.accum_grad_fc_bias, rows, kHidden, nullptr), label + ".mlp.fc.backward_bias.accumulate");
             if (error.empty()) run(linear_backward_input(grad_fc_out, block.fc_weight, grad_ln2, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_input");
@@ -8781,6 +8782,8 @@ int run_transformer_lm_training_json(
         << "    \"final_block_backward_recompute_elided\": true,\n"
         << "    \"backward_recompute_mlp_projection_elided\": true,\n"
         << "    \"backward_recompute_final_residual_elided\": true,\n"
+        << "    \"mlp_proj_backward_gelu_inplace\": true,\n"
+        << "    \"mlp_proj_backward_grad_act_scratch_allocated\": false,\n"
         << "    \"activation_tape_strategy\": \"scratch-recompute\",\n"
         << "    \"per_block_parameter_buffers\": " << kPerBlockParameterBuffers << ",\n"
         << "    \"per_block_gradient_buffers\": " << kPerBlockGradientBuffers << ",\n"

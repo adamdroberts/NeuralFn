@@ -1795,6 +1795,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "final_block_backward_recompute_elided": True,
         "backward_recompute_mlp_projection_elided": True,
         "backward_recompute_final_residual_elided": True,
+        "mlp_proj_backward_gelu_inplace": True,
+        "mlp_proj_backward_grad_act_scratch_allocated": False,
         "activation_tape_strategy": "scratch-recompute",
         "per_block_parameter_buffers": 12,
         "per_block_gradient_buffers": 0,
@@ -2797,6 +2799,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_gelu_float32" in header_text
     assert "nfn_native_tile_gelu_add_bias_float32" in header_text
     assert "nfn_native_tile_gelu_backward_float32" in header_text
+    assert "nfn_native_tile_gelu_backward_inplace_float32" in header_text
+    assert "launch_gelu_backward_inplace_float32" in source_text
     assert "nfn_native_tile_token_embedding_float32" in header_text
     assert "nfn_native_tile_token_embedding_backward_weight_float32" in header_text
     assert "nfn_native_tile_absolute_position_embedding_float32" in header_text
@@ -2853,6 +2857,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "token_cross_entropy_backward_elementwise_float32_kernel" not in kernels_text
     assert "gelu_float32_kernel" in kernels_text
     assert "gelu_backward_float32_kernel" in kernels_text
+    assert "gelu_backward_inplace_float32_kernel" in kernels_text
     assert "token_embedding_backward_weight_float32_kernel" in kernels_text
     assert "init_gpt2_token_weight_float32_kernel" in kernels_text
     assert "uint16_to_int64_kernel" in kernels_text
@@ -2885,6 +2890,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block_backward.mlp_proj" in gpt2_source_text
     assert "block_backward.attn_sdpa" in gpt2_source_text
     assert "block_backward.qkv" in gpt2_source_text
+    assert "mlp.gelu.backward_inplace" in gpt2_source_text
+    assert "mlp_proj_backward_gelu_inplace" in gpt2_source_text
+    assert "mlp_proj_backward_grad_act_scratch_allocated" in gpt2_source_text
     assert "compute_final_output" in gpt2_source_text
     assert "backward_recompute_mlp_projection_elided" in gpt2_source_text
     assert "backward_recompute_final_residual_elided" in gpt2_source_text

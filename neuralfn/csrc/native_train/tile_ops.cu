@@ -279,6 +279,11 @@ void launch_gelu_backward_float32(
     float* grad_x,
     std::int64_t n,
     cudaStream_t stream);
+void launch_gelu_backward_inplace_float32(
+    const float* x,
+    float* grad,
+    std::int64_t n,
+    cudaStream_t stream);
 void launch_absolute_position_embedding_float32(
     const float* weight,
     float* out,
@@ -1200,6 +1205,15 @@ int nfn_native_tile_gelu_backward_float32(
     std::int64_t n,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_gelu_backward_float32(x, grad_out, grad_x, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_gelu_backward_inplace_float32(
+    const float* x,
+    float* grad,
+    std::int64_t n,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_gelu_backward_inplace_float32(x, grad, n, as_stream(cuda_stream));
     return launch_status();
 }
 

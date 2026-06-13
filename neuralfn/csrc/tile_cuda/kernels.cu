@@ -3479,6 +3479,40 @@ __tile_global__ void gelu_backward_float32_kernel(
   ct::partition_view{ct::tensor_span{grad_x, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(grad, bx);
 }
 
+__tile_global__ void gelu_backward_inplace_float32_kernel(
+    const float* __restrict__ x,
+    float* __restrict__ grad,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  grad = ct::assume_aligned(grad, 16_ic);
+
+  const int bx = ct::bid().x;
+  auto x_tile = ct::partition_view{ct::tensor_span{x, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto grad_tile = ct::partition_view{ct::tensor_span{grad, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
+  auto zero = ct::full<decltype(x_tile)>(0.0f);
+  auto one = ct::full<decltype(x_tile)>(1.0f);
+  auto inv_sqrt2 = ct::full<decltype(x_tile)>(0.7071067811865476f);
+  auto inv_sqrt2pi = ct::full<decltype(x_tile)>(0.3989422804014327f);
+  auto z = x_tile * inv_sqrt2;
+  auto sign = ct::select(z < zero, ct::full<decltype(z)>(-1.0f), one);
+  auto abs_z = ct::abs(z);
+  auto t = one / (one + ct::full<decltype(z)>(0.3275911f) * abs_z);
+  auto a1 = ct::full<decltype(z)>(0.254829592f);
+  auto a2 = ct::full<decltype(z)>(-0.284496736f);
+  auto a3 = ct::full<decltype(z)>(1.421413741f);
+  auto a4 = ct::full<decltype(z)>(-1.453152027f);
+  auto a5 = ct::full<decltype(z)>(1.061405429f);
+  auto poly = (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t;
+  auto erf_approx = sign * (one - poly * ct::exp(-(abs_z * abs_z)));
+  auto cdf = ct::full<decltype(x_tile)>(0.5f) * (one + erf_approx);
+  auto pdf_term = x_tile * ct::exp(ct::full<decltype(x_tile)>(-0.5f) * x_tile * x_tile) * inv_sqrt2pi;
+  auto result = grad_tile * (cdf + pdf_term);
+  ct::partition_view{ct::tensor_span{grad, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(result, bx);
+}
+
 __tile_global__ void act_weighted_sum_float32_kernel(
     const float* __restrict__ states,
     const float* __restrict__ weights,
@@ -6406,6 +6440,15 @@ void launch_gelu_backward_float32(
     cudaStream_t stream) {
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   gelu_backward_float32_kernel<<<blocks, 1, 0, stream>>>(x, grad_out, grad_x, n);
+}
+
+void launch_gelu_backward_inplace_float32(
+    const float* x,
+    float* grad,
+    std::int64_t n,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  gelu_backward_inplace_float32_kernel<<<blocks, 1, 0, stream>>>(x, grad, n);
 }
 
 void launch_act_weighted_sum_float32(

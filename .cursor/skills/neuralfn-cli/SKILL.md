@@ -438,6 +438,12 @@ Canonical docs:
   projection output or final residual output. Keep
   `backward_recompute_mlp_projection_elided: true` and
   `backward_recompute_final_residual_elided: true`.
+- MLP projection backward in full GPT-2 `--train-transformer-lm` should write
+  projection dInput directly into the MLP fc gradient buffer and then run
+  `nfn_native_tile_gelu_backward_inplace_float32`. Do not reintroduce a
+  hidden-size `grad_act` scratch buffer in the full trainer; keep
+  `mlp_proj_backward_gelu_inplace: true` and
+  `mlp_proj_backward_grad_act_scratch_allocated: false`.
 - Residual-gradient pair additions in full GPT-2 `--train-transformer-lm`
   backward must use `nfn_native_tile_scaled_residual_add_float32`, not zero-fill
   plus two gradient-accumulate launches. JSON should report

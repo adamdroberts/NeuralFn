@@ -397,6 +397,8 @@ Full GPT-2 `--train-transformer-lm` validation forwards should not copy intermed
 
 Full GPT-2 `--train-transformer-lm` should reuse the final block activations left in the scratch tape after the initial forward pass. Keep earlier blocks on scratch recomputation from persistent block outputs, but avoid recomputing the final block before its backward pass. Earlier-block recompute should stop after the MLP GELU activation because backward does not consume the recomputed MLP projection output or final residual output. The default 12-layer JSON reports `backward_recompute_blocks: 11`, `final_block_backward_recompute_elided: true`, `backward_recompute_mlp_projection_elided: true`, and `backward_recompute_final_residual_elided: true`.
 
+Full GPT-2 `--train-transformer-lm` should write MLP projection dInput directly into the MLP fc gradient buffer and run `nfn_native_tile_gelu_backward_inplace_float32`, avoiding a separate hidden-size `grad_act` scratch buffer. Keep `mlp_proj_backward_gelu_inplace: true` and `mlp_proj_backward_grad_act_scratch_allocated: false` in trainer JSON.
+
 Full GPT-2 `--train-transformer-lm` also fuses backward residual-gradient pair additions through `nfn_native_tile_scaled_residual_add_float32`. Keep `block_state_layout.residual_backward_fused` true for the compiled trainer and avoid reverting to zero-fill plus two gradient-accumulate launches.
 
 Full GPT-2 `--train-transformer-lm` fuses gradient clipping into AdamW through `nfn_native_tile_adamw_step_with_device_scale_float32`. Keep `block_state_layout.adamw_device_clip_scale_fused` true and avoid reintroducing separate `scale_inplace_by_device` launches before AdamW.
