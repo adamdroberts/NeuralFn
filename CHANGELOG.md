@@ -6,6 +6,36 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-13 Native GPT packed attention backward chunking
+
+#### Fixed
+
+- Split the trainer-facing SM120 packed-QKV TK attention backward bridge into
+  bounded batch chunks before launching ThunderKittens backward. This preserves
+  the row-major packed QKV/O/dO/grad-QKV layout with batch-offset pointer
+  arithmetic while avoiding the worst full-batch packed-QKV backward stall seen
+  above the fast `48 x 1024` microbatch shape. No CLI or SDK migration is
+  required, but `libnfn_native_train_tile_ops.so` must be rebuilt for the fix.
+- The default `64 x 1024` one-microbatch native GPT run now completes instead
+  of timing out in the packed-QKV backward bridge. It is still too slow for the
+  final workstation target; the next bottleneck is the high-row BF16
+  dWeight/QKV path at batch 64.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so`.
+- Ran `env build/nfn_gpt_native_train --smoke-tile-ops --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so`; the CUDA fill smoke passed.
+- Ran GPU-visible one-step TinyStories profiles with
+  `NFN_NATIVE_GPT_STAGE_TIMING=1`. The patched `48 x 1024` control reported
+  75,823.9 tokens/second, `block_backward.attn_sdpa.to_qkv=42.4221ms`, and
+  zero SGEMM calls. The patched solo `56 x 1024` profile completed with
+  11,490.9 tokens/second and
+  `block_backward.attn_sdpa.to_qkv=1498.59ms`, versus the earlier 16s-class
+  packed-QKV backward cliff. The patched solo `64 x 1024` profile completed
+  with 1,101.49 tokens/second, exposing the remaining BF16 dWeight/QKV
+  bottleneck instead of hanging.
+
 ### 2026-06-13 GPT-native trainer default template alias
 
 #### Breaking changes

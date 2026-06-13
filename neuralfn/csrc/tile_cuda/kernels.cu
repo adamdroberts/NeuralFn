@@ -32,6 +32,7 @@ constexpr int kAttentionValueChunkSize = 64;
 constexpr int kGpt2AttentionHeads = 12;
 constexpr int kGpt2AttentionHeadDim = 64;
 constexpr int kGpt2AttentionValueChunks = kGpt2AttentionHeadDim / kAttentionValueChunkSize;
+constexpr std::int64_t kTkPackedAttentionBackwardMaxBatchPerLaunch = 48;
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
 std::atomic<std::int64_t> g_attention_forward_tk_launch_count{0};
 std::atomic<std::int64_t> g_attention_backward_tk_launch_count{0};
@@ -711,46 +712,57 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_float32(
       workspace->d == nullptr) {
     return 2;
   }
-  dim3 dprep_block(32, 3, 1);
-  const int dprep_grid = static_cast<int>((row_elements + dprep_block.y - 1) / dprep_block.y);
-  packed_attention_dprep_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
-      out_bf16_bits,
-      grad_out,
-      workspace->o_bf,
-      workspace->go_bf,
-      workspace->d,
-      batch,
-      heads,
-      seq_len,
-      head_dim);
-  auto* qkv = const_cast<__nv_bfloat16*>(
-      reinterpret_cast<const __nv_bfloat16*>(qkv_bf16_bits));
-  if (head_dim == 64) {
-    llmk::attention::launch_backward_causal_packed_qkv_packed_grads<64>(
-        llmk::to_bf16(qkv),
-        llmk::to_bf16(workspace->o_bf),
-        workspace->lse,
-        llmk::to_bf16(workspace->go_bf),
-        workspace->d,
-        llmk::to_bf16(workspace->packed_grad_bf),
-        static_cast<int>(batch),
-        static_cast<int>(heads),
-        static_cast<int>(seq_len),
-        stream,
-        true);
-  } else {
-    llmk::attention::launch_backward_causal_packed_qkv_packed_grads<128>(
-        llmk::to_bf16(qkv),
-        llmk::to_bf16(workspace->o_bf),
-        workspace->lse,
-        llmk::to_bf16(workspace->go_bf),
-        workspace->d,
-        llmk::to_bf16(workspace->packed_grad_bf),
-        static_cast<int>(batch),
-        static_cast<int>(heads),
-        static_cast<int>(seq_len),
-        stream,
-        true);
+  const std::int64_t max_batch_per_launch =
+      std::max<std::int64_t>(1, kTkPackedAttentionBackwardMaxBatchPerLaunch);
+  const std::int64_t head_elements_per_batch = heads * seq_len * head_dim;
+  const std::int64_t row_elements_per_batch = heads * seq_len;
+  const std::int64_t packed_elements_per_batch = seq_len * heads * head_dim * 3;
+  const std::int64_t merged_elements_per_batch = seq_len * heads * head_dim;
+  for (std::int64_t batch_begin = 0; batch_begin < batch; batch_begin += max_batch_per_launch) {
+    const std::int64_t chunk_batch = std::min(max_batch_per_launch, batch - batch_begin);
+    const std::int64_t chunk_rows = chunk_batch * row_elements_per_batch;
+    dim3 dprep_block(32, 3, 1);
+    const int dprep_grid = static_cast<int>((chunk_rows + dprep_block.y - 1) / dprep_block.y);
+    packed_attention_dprep_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
+        out_bf16_bits + batch_begin * merged_elements_per_batch,
+        grad_out + batch_begin * merged_elements_per_batch,
+        workspace->o_bf + batch_begin * head_elements_per_batch,
+        workspace->go_bf + batch_begin * head_elements_per_batch,
+        workspace->d + batch_begin * row_elements_per_batch,
+        chunk_batch,
+        heads,
+        seq_len,
+        head_dim);
+    auto* qkv = const_cast<__nv_bfloat16*>(
+        reinterpret_cast<const __nv_bfloat16*>(
+            qkv_bf16_bits + batch_begin * packed_elements_per_batch));
+    if (head_dim == 64) {
+      llmk::attention::launch_backward_causal_packed_qkv_packed_grads<64>(
+          llmk::to_bf16(qkv),
+          llmk::to_bf16(workspace->o_bf + batch_begin * head_elements_per_batch),
+          workspace->lse + batch_begin * row_elements_per_batch,
+          llmk::to_bf16(workspace->go_bf + batch_begin * head_elements_per_batch),
+          workspace->d + batch_begin * row_elements_per_batch,
+          llmk::to_bf16(workspace->packed_grad_bf + batch_begin * packed_elements_per_batch),
+          static_cast<int>(chunk_batch),
+          static_cast<int>(heads),
+          static_cast<int>(seq_len),
+          stream,
+          true);
+    } else {
+      llmk::attention::launch_backward_causal_packed_qkv_packed_grads<128>(
+          llmk::to_bf16(qkv),
+          llmk::to_bf16(workspace->o_bf + batch_begin * head_elements_per_batch),
+          workspace->lse + batch_begin * row_elements_per_batch,
+          llmk::to_bf16(workspace->go_bf + batch_begin * head_elements_per_batch),
+          workspace->d + batch_begin * row_elements_per_batch,
+          llmk::to_bf16(workspace->packed_grad_bf + batch_begin * packed_elements_per_batch),
+          static_cast<int>(chunk_batch),
+          static_cast<int>(heads),
+          static_cast<int>(seq_len),
+          stream,
+          true);
+    }
   }
   const std::int64_t packed_elements = elements * 3;
   constexpr int threads = 256;

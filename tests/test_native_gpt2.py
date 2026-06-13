@@ -160,6 +160,25 @@ def test_read_native_gpt_checkpoint_info_uses_generic_sdk_class(tmp_path: Path) 
     assert info.done_marker_exists is True
 
 
+def test_packed_qkv_attention_backward_chunks_large_batches() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "neuralfn"
+        / "csrc"
+        / "tile_cuda"
+        / "kernels.cu"
+    ).read_text(encoding="utf-8")
+
+    assert "kTkPackedAttentionBackwardMaxBatchPerLaunch = 48" in source
+    assert "for (std::int64_t batch_begin = 0; batch_begin < batch;" in source
+    assert "chunk_batch = std::min(max_batch_per_launch, batch - batch_begin)" in source
+    assert "qkv_bf16_bits + batch_begin * packed_elements_per_batch" in source
+    assert "out_bf16_bits + batch_begin * merged_elements_per_batch" in source
+    assert "grad_out + batch_begin * merged_elements_per_batch" in source
+    assert "workspace->lse + batch_begin * row_elements_per_batch" in source
+    assert "workspace->packed_grad_bf + batch_begin * packed_elements_per_batch" in source
+
+
 def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) -> None:
     dataset_path, meta = _write_raw_text_dataset(tmp_path)
 
