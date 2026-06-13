@@ -3416,21 +3416,13 @@ __tile_global__ void gelu_float32_kernel(
 
   const int bx = ct::bid().x;
   auto x_tile = ct::partition_view{ct::tensor_span{x, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
-  auto zero = ct::full<decltype(x_tile)>(0.0f);
   auto one = ct::full<decltype(x_tile)>(1.0f);
-  auto inv_sqrt2 = ct::full<decltype(x_tile)>(0.7071067811865476f);
-  auto z = x_tile * inv_sqrt2;
-  auto sign = ct::select(z < zero, ct::full<decltype(z)>(-1.0f), one);
-  auto abs_z = ct::abs(z);
-  auto t = one / (one + ct::full<decltype(z)>(0.3275911f) * abs_z);
-  auto a1 = ct::full<decltype(z)>(0.254829592f);
-  auto a2 = ct::full<decltype(z)>(-0.284496736f);
-  auto a3 = ct::full<decltype(z)>(1.421413741f);
-  auto a4 = ct::full<decltype(z)>(-1.453152027f);
-  auto a5 = ct::full<decltype(z)>(1.061405429f);
-  auto poly = (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t;
-  auto erf_approx = sign * (one - poly * ct::exp(-(abs_z * abs_z)));
-  auto result = ct::full<decltype(x_tile)>(0.5f) * x_tile * (one + erf_approx);
+  auto half = ct::full<decltype(x_tile)>(0.5f);
+  auto gelu_scale = ct::full<decltype(x_tile)>(0.7978845608028654f);
+  auto gelu_cubic = ct::full<decltype(x_tile)>(0.044715f);
+  auto x2 = x_tile * x_tile;
+  auto tanh_arg = gelu_scale * (x_tile + gelu_cubic * x_tile * x2);
+  auto result = half * x_tile * (one + ct::tanh(tanh_arg));
   ct::partition_view{ct::tensor_span{out, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(result, bx);
 }
 
@@ -3455,21 +3447,13 @@ __tile_global__ void gelu_add_bias_float32_kernel(
   auto mask = idx < ct::full<IndexTile>(n);
   auto out_col = idx % ct::full<IndexTile>(output_dim);
   auto x_tile = ct::load_masked(x + idx, mask) + ct::load_masked(bias + out_col, mask);
-  auto zero = ct::full<decltype(x_tile)>(0.0f);
   auto one = ct::full<decltype(x_tile)>(1.0f);
-  auto inv_sqrt2 = ct::full<decltype(x_tile)>(0.7071067811865476f);
-  auto z = x_tile * inv_sqrt2;
-  auto sign = ct::select(z < zero, ct::full<decltype(z)>(-1.0f), one);
-  auto abs_z = ct::abs(z);
-  auto t = one / (one + ct::full<decltype(z)>(0.3275911f) * abs_z);
-  auto a1 = ct::full<decltype(z)>(0.254829592f);
-  auto a2 = ct::full<decltype(z)>(-0.284496736f);
-  auto a3 = ct::full<decltype(z)>(1.421413741f);
-  auto a4 = ct::full<decltype(z)>(-1.453152027f);
-  auto a5 = ct::full<decltype(z)>(1.061405429f);
-  auto poly = (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t;
-  auto erf_approx = sign * (one - poly * ct::exp(-(abs_z * abs_z)));
-  auto result = ct::full<decltype(x_tile)>(0.5f) * x_tile * (one + erf_approx);
+  auto half = ct::full<decltype(x_tile)>(0.5f);
+  auto gelu_scale = ct::full<decltype(x_tile)>(0.7978845608028654f);
+  auto gelu_cubic = ct::full<decltype(x_tile)>(0.044715f);
+  auto x2 = x_tile * x_tile;
+  auto tanh_arg = gelu_scale * (x_tile + gelu_cubic * x_tile * x2);
+  auto result = half * x_tile * (one + ct::tanh(tanh_arg));
   ct::store_masked(biased_out + idx, x_tile, mask);
   ct::store_masked(gelu_out + idx, result, mask);
 }
@@ -3517,24 +3501,17 @@ __tile_global__ void gelu_backward_float32_kernel(
   const int bx = ct::bid().x;
   auto x_tile = ct::partition_view{ct::tensor_span{x, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
   auto grad_tile = ct::partition_view{ct::tensor_span{grad_out, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
-  auto zero = ct::full<decltype(x_tile)>(0.0f);
   auto one = ct::full<decltype(x_tile)>(1.0f);
-  auto inv_sqrt2 = ct::full<decltype(x_tile)>(0.7071067811865476f);
-  auto inv_sqrt2pi = ct::full<decltype(x_tile)>(0.3989422804014327f);
-  auto z = x_tile * inv_sqrt2;
-  auto sign = ct::select(z < zero, ct::full<decltype(z)>(-1.0f), one);
-  auto abs_z = ct::abs(z);
-  auto t = one / (one + ct::full<decltype(z)>(0.3275911f) * abs_z);
-  auto a1 = ct::full<decltype(z)>(0.254829592f);
-  auto a2 = ct::full<decltype(z)>(-0.284496736f);
-  auto a3 = ct::full<decltype(z)>(1.421413741f);
-  auto a4 = ct::full<decltype(z)>(-1.453152027f);
-  auto a5 = ct::full<decltype(z)>(1.061405429f);
-  auto poly = (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t;
-  auto erf_approx = sign * (one - poly * ct::exp(-(abs_z * abs_z)));
-  auto cdf = ct::full<decltype(x_tile)>(0.5f) * (one + erf_approx);
-  auto pdf_term = x_tile * ct::exp(ct::full<decltype(x_tile)>(-0.5f) * x_tile * x_tile) * inv_sqrt2pi;
-  auto grad = grad_tile * (cdf + pdf_term);
+  auto half = ct::full<decltype(x_tile)>(0.5f);
+  auto gelu_scale = ct::full<decltype(x_tile)>(0.7978845608028654f);
+  auto gelu_cubic = ct::full<decltype(x_tile)>(0.044715f);
+  auto x2 = x_tile * x_tile;
+  auto tanh_out = ct::tanh(gelu_scale * (x_tile + gelu_cubic * x_tile * x2));
+  auto sech_out = one - tanh_out * tanh_out;
+  auto grad_local = half * (one + tanh_out)
+      + half * x_tile * sech_out * gelu_scale
+          * (one + ct::full<decltype(x_tile)>(3.0f) * gelu_cubic * x2);
+  auto grad = grad_tile * grad_local;
   ct::partition_view{ct::tensor_span{grad_x, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(grad, bx);
 }
 
@@ -3551,24 +3528,17 @@ __tile_global__ void gelu_backward_inplace_float32_kernel(
   const int bx = ct::bid().x;
   auto x_tile = ct::partition_view{ct::tensor_span{x, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
   auto grad_tile = ct::partition_view{ct::tensor_span{grad, ct::extents{n}}, ct::shape{1024_ic}}.load_masked(bx);
-  auto zero = ct::full<decltype(x_tile)>(0.0f);
   auto one = ct::full<decltype(x_tile)>(1.0f);
-  auto inv_sqrt2 = ct::full<decltype(x_tile)>(0.7071067811865476f);
-  auto inv_sqrt2pi = ct::full<decltype(x_tile)>(0.3989422804014327f);
-  auto z = x_tile * inv_sqrt2;
-  auto sign = ct::select(z < zero, ct::full<decltype(z)>(-1.0f), one);
-  auto abs_z = ct::abs(z);
-  auto t = one / (one + ct::full<decltype(z)>(0.3275911f) * abs_z);
-  auto a1 = ct::full<decltype(z)>(0.254829592f);
-  auto a2 = ct::full<decltype(z)>(-0.284496736f);
-  auto a3 = ct::full<decltype(z)>(1.421413741f);
-  auto a4 = ct::full<decltype(z)>(-1.453152027f);
-  auto a5 = ct::full<decltype(z)>(1.061405429f);
-  auto poly = (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t;
-  auto erf_approx = sign * (one - poly * ct::exp(-(abs_z * abs_z)));
-  auto cdf = ct::full<decltype(x_tile)>(0.5f) * (one + erf_approx);
-  auto pdf_term = x_tile * ct::exp(ct::full<decltype(x_tile)>(-0.5f) * x_tile * x_tile) * inv_sqrt2pi;
-  auto result = grad_tile * (cdf + pdf_term);
+  auto half = ct::full<decltype(x_tile)>(0.5f);
+  auto gelu_scale = ct::full<decltype(x_tile)>(0.7978845608028654f);
+  auto gelu_cubic = ct::full<decltype(x_tile)>(0.044715f);
+  auto x2 = x_tile * x_tile;
+  auto tanh_out = ct::tanh(gelu_scale * (x_tile + gelu_cubic * x_tile * x2));
+  auto sech_out = one - tanh_out * tanh_out;
+  auto grad_local = half * (one + tanh_out)
+      + half * x_tile * sech_out * gelu_scale
+          * (one + ct::full<decltype(x_tile)>(3.0f) * gelu_cubic * x2);
+  auto result = grad_tile * grad_local;
   ct::partition_view{ct::tensor_span{grad, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(result, bx);
 }
 
