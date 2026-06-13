@@ -489,6 +489,13 @@ bias-add and GELU launches. Native JSON reports
 `mlp_fc_bias_gelu_strategy: "fused-bias-preactivation-gelu"` and one elided
 legacy launch per block.
 
+The native trainer-facing GELU kernels use the GPT-style tanh approximation for
+forward, fused bias+forward, explicit backward, and in-place backward. Keep
+`nfn_native_tile_gelu_float32`, `nfn_native_tile_gelu_add_bias_float32`,
+`nfn_native_tile_gelu_backward_float32`, and
+`nfn_native_tile_gelu_backward_inplace_float32` aligned on
+`0.5*x*(1+tanh(sqrt(2/pi)*(x+0.044715*x^3)))` when changing the native MLP path.
+
 The full GPT-2 projection residual path uses
 `nfn_native_tile_linear_bias_residual_add_float32` after no-bias attention-output
 and MLP `c_proj` CUBLAS projections. The fused Tile pass applies projection
