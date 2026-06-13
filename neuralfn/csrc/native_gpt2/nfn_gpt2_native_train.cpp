@@ -9468,8 +9468,10 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"lm_head_grad_logits_workspace_allocated\": false,\n"
         << "  \"linear_backend_strategy\": \""
-        << (lm_head_bf16_logits_enabled && linear_tk_gemm_count > 0
-                ? "block-bf16-gemmex-lm-head-tk-sm120-default"
+        << (lm_head_bf16_logits_enabled && linear_tk_gemm_count > 0 && linear_cublaslt_gemm_count > 0
+                ? "block-bf16-cublaslt-shape-gated-lm-head-tk-sm120-default"
+                : (lm_head_bf16_logits_enabled && linear_tk_gemm_count > 0
+                ? "block-bf16-gemmex-lm-head-tk-sm120-fallback"
                 : (lm_head_bf16_logits_enabled && linear_bf16_gemm_count > 0
                 ? "block-and-lm-head-bf16-gemmex-fallback"
                 : (linear_bf16_gemm_count > 0 && linear_cublaslt_gemm_count > 0
@@ -9480,11 +9482,20 @@ int run_transformer_lm_training_json(
                        ? "bf16-gemmex-float32-output"
                 : (linear_cublaslt_gemm_count > 0
                       ? "tf32-cublaslt-optimized-opt-in"
-                      : (linear_sgemm_count > 0 ? "tf32-sgemm-optimized" : "not-run")))))))
+                      : (linear_sgemm_count > 0 ? "tf32-sgemm-optimized" : "not-run"))))))))
         << "\",\n"
-        << "  \"block_forward_linear_strategy\": \"forced-bf16-gemmex-forward\",\n"
-        << "  \"block_backward_input_linear_strategy\": \"forced-bf16-gemmex-dinput\",\n"
-        << "  \"block_backward_weight_linear_strategy\": \"forced-bf16-gemmex-dweight-accumulate\",\n"
+        << "  \"block_forward_linear_strategy\": \""
+        << (linear_cublaslt_gemm_count > 0 ? "shape-gated-bf16-cublaslt-forward"
+                                           : "forced-bf16-gemmex-forward")
+        << "\",\n"
+        << "  \"block_backward_input_linear_strategy\": \""
+        << (linear_cublaslt_gemm_count > 0 ? "shape-gated-bf16-cublaslt-dinput"
+                                           : "forced-bf16-gemmex-dinput")
+        << "\",\n"
+        << "  \"block_backward_weight_linear_strategy\": \""
+        << (linear_cublaslt_gemm_count > 0 ? "shape-gated-bf16-cublaslt-dweight-accumulate"
+                                           : "forced-bf16-gemmex-dweight-accumulate")
+        << "\",\n"
         << "  \"non_block_forward_backward_linear_strategy\": \""
         << (lm_head_bf16_logits_enabled && linear_tk_gemm_count > 0
                 ? "padded-lm-head-tk-sm120-bf16-gemm-default"

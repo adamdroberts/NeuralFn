@@ -3000,8 +3000,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "CUBLAS_COMPUTE_32F" in kernels_text
     assert "cublasLtMatmul" in kernels_text
     assert "CUBLAS_COMPUTE_32F_FAST_TF32" in kernels_text
+    assert "CUBLAS_COMPUTE_32F_FAST_16BF" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_BF16" in kernels_text
     assert "NFN_NATIVE_LINEAR_BF16" in kernels_text
+    assert "NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT" in kernels_text
+    assert "NFN_NATIVE_LINEAR_BF16_CUBLASLT" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_CUBLASLT" in kernels_text
     assert "NFN_NATIVE_LINEAR_CUBLASLT" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_TK_GEMM" in kernels_text
@@ -3015,9 +3018,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_logits_linear_strategy" in gpt2_source_text
     assert "linear_tk_gemm_count" in gpt2_source_text
     assert "linear_tk_float_out_gemm_count" in gpt2_source_text
-    assert "block-bf16-gemmex-lm-head-tk-sm120-default" in gpt2_source_text
+    assert "block-bf16-cublaslt-shape-gated-lm-head-tk-sm120-default" in gpt2_source_text
     assert "padded-lm-head-tk-sm120-bf16-gemm-default" in gpt2_source_text
     assert "block-forward-dinput-dweight-bf16-lm-head-tf32" in gpt2_source_text
+    assert "shape-gated-bf16-cublaslt-forward" in gpt2_source_text
+    assert "shape-gated-bf16-cublaslt-dinput" in gpt2_source_text
+    assert "shape-gated-bf16-cublaslt-dweight-accumulate" in gpt2_source_text
     assert "forced-bf16-gemmex-forward" in gpt2_source_text
     assert "forced-bf16-gemmex-dinput" in gpt2_source_text
     assert "forced-bf16-gemmex-dweight-accumulate" in gpt2_source_text

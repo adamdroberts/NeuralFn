@@ -799,10 +799,16 @@ struct TrainerLinearCublasLtPlanKey {
   int ldc = 0;
   int op_a = CUBLAS_OP_N;
   int op_b = CUBLAS_OP_N;
+  int a_type = CUDA_R_32F;
+  int b_type = CUDA_R_32F;
+  int c_type = CUDA_R_32F;
+  int compute_type = CUBLAS_COMPUTE_32F_FAST_TF32;
 
   bool operator==(const TrainerLinearCublasLtPlanKey& other) const {
     return m == other.m && n == other.n && k == other.k && lda == other.lda &&
-        ldb == other.ldb && ldc == other.ldc && op_a == other.op_a && op_b == other.op_b;
+        ldb == other.ldb && ldc == other.ldc && op_a == other.op_a && op_b == other.op_b &&
+        a_type == other.a_type && b_type == other.b_type && c_type == other.c_type &&
+        compute_type == other.compute_type;
   }
 };
 
@@ -848,6 +854,10 @@ bool ensure_trainer_linear_cublaslt_workspace(std::size_t bytes) {
 bool create_trainer_linear_cublaslt_layouts(
     cublasOperation_t op_a,
     cublasOperation_t op_b,
+    cudaDataType_t a_type,
+    cudaDataType_t b_type,
+    cudaDataType_t c_type,
+    cublasComputeType_t compute_type,
     int m,
     int n,
     int k,
@@ -862,8 +872,7 @@ bool create_trainer_linear_cublaslt_layouts(
   *a_desc = nullptr;
   *b_desc = nullptr;
   *c_desc = nullptr;
-  if (cublasLtMatmulDescCreate(
-          matmul_desc, CUBLAS_COMPUTE_32F_FAST_TF32, CUDA_R_32F) != CUBLAS_STATUS_SUCCESS) {
+  if (cublasLtMatmulDescCreate(matmul_desc, compute_type, CUDA_R_32F) != CUBLAS_STATUS_SUCCESS) {
     return false;
   }
   if (cublasLtMatmulDescSetAttribute(
@@ -877,9 +886,9 @@ bool create_trainer_linear_cublaslt_layouts(
   const int a_cols = op_a == CUBLAS_OP_N ? k : m;
   const int b_rows = op_b == CUBLAS_OP_N ? k : n;
   const int b_cols = op_b == CUBLAS_OP_N ? n : k;
-  if (cublasLtMatrixLayoutCreate(a_desc, CUDA_R_32F, a_rows, a_cols, lda) != CUBLAS_STATUS_SUCCESS ||
-      cublasLtMatrixLayoutCreate(b_desc, CUDA_R_32F, b_rows, b_cols, ldb) != CUBLAS_STATUS_SUCCESS ||
-      cublasLtMatrixLayoutCreate(c_desc, CUDA_R_32F, m, n, ldc) != CUBLAS_STATUS_SUCCESS) {
+  if (cublasLtMatrixLayoutCreate(a_desc, a_type, a_rows, a_cols, lda) != CUBLAS_STATUS_SUCCESS ||
+      cublasLtMatrixLayoutCreate(b_desc, b_type, b_rows, b_cols, ldb) != CUBLAS_STATUS_SUCCESS ||
+      cublasLtMatrixLayoutCreate(c_desc, c_type, m, n, ldc) != CUBLAS_STATUS_SUCCESS) {
     return false;
   }
   return true;
@@ -959,10 +968,14 @@ TrainerLinearCublasLtPlan* trainer_linear_cublaslt_plan_for(
   return &g_trainer_linear_cublaslt_workspace.plans.back();
 }
 
-bool cublaslt_linear_matmul_float32(
-    const float* a,
-    const float* b,
+bool cublaslt_linear_matmul(
+    const void* a,
+    const void* b,
     float* c,
+    cudaDataType_t a_type,
+    cudaDataType_t b_type,
+    cudaDataType_t c_type,
+    cublasComputeType_t compute_type,
     int m,
     int n,
     int k,
@@ -973,9 +986,6 @@ bool cublaslt_linear_matmul_float32(
     int ldc,
     float beta_value,
     cudaStream_t stream) {
-  if (!trainer_linear_cublaslt_enabled()) {
-    return false;
-  }
   cublasLtHandle_t handle = trainer_linear_cublaslt_handle();
   if (handle == nullptr) {
     return false;
@@ -986,13 +996,39 @@ bool cublaslt_linear_matmul_float32(
   cublasLtMatrixLayout_t b_desc = nullptr;
   cublasLtMatrixLayout_t c_desc = nullptr;
   if (!create_trainer_linear_cublaslt_layouts(
-          op_a, op_b, m, n, k, lda, ldb, ldc, &matmul_desc, &a_desc, &b_desc, &c_desc)) {
+          op_a,
+          op_b,
+          a_type,
+          b_type,
+          c_type,
+          compute_type,
+          m,
+          n,
+          k,
+          lda,
+          ldb,
+          ldc,
+          &matmul_desc,
+          &a_desc,
+          &b_desc,
+          &c_desc)) {
     destroy_trainer_linear_cublaslt_layouts(matmul_desc, a_desc, b_desc, c_desc);
     return false;
   }
 
   TrainerLinearCublasLtPlanKey key{
-      m, n, k, lda, ldb, ldc, static_cast<int>(op_a), static_cast<int>(op_b)};
+      m,
+      n,
+      k,
+      lda,
+      ldb,
+      ldc,
+      static_cast<int>(op_a),
+      static_cast<int>(op_b),
+      static_cast<int>(a_type),
+      static_cast<int>(b_type),
+      static_cast<int>(c_type),
+      static_cast<int>(compute_type)};
   TrainerLinearCublasLtPlan plan_copy;
   {
     std::lock_guard<std::mutex> lock(g_trainer_linear_cublaslt_workspace_mutex);
@@ -1031,6 +1067,72 @@ bool cublaslt_linear_matmul_float32(
     return true;
   }
   return false;
+}
+
+bool cublaslt_linear_matmul_float32(
+    const float* a,
+    const float* b,
+    float* c,
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b,
+    int lda,
+    int ldb,
+    int ldc,
+    float beta_value,
+    cudaStream_t stream) {
+  if (!trainer_linear_cublaslt_enabled()) {
+    return false;
+  }
+  return cublaslt_linear_matmul(
+      a,
+      b,
+      c,
+      CUDA_R_32F,
+      CUDA_R_32F,
+      CUDA_R_32F,
+      CUBLAS_COMPUTE_32F_FAST_TF32,
+      m,
+      n,
+      k,
+      op_a,
+      op_b,
+      lda,
+      ldb,
+      ldc,
+      beta_value,
+      stream);
+}
+
+bool trainer_linear_bf16_cublaslt_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_NATIVE_LINEAR_BF16_CUBLASLT");
+    if (value == nullptr) {
+      value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT");
+    }
+    if (value == nullptr) {
+      return true;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
+bool trainer_linear_bf16_cublaslt_shape_supported(int m, int n, int k) {
+  return m <= 3072 && (n <= 3072 || k <= 3072);
 }
 
 bool trainer_linear_bf16_bridge_enabled() {
@@ -1356,6 +1458,28 @@ bool cublas_linear_gemm_ex_bf16_float32(
           stream)) {
     return true;
   }
+  if (trainer_linear_bf16_cublaslt_enabled() &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k) &&
+      cublaslt_linear_matmul(
+          a_bf16,
+          b_bf16,
+          c,
+          CUDA_R_16BF,
+          CUDA_R_16BF,
+          CUDA_R_32F,
+          CUBLAS_COMPUTE_32F_FAST_16BF,
+          m,
+          n,
+          k,
+          op_a,
+          op_b,
+          lda,
+          ldb,
+          ldc,
+          beta_value,
+          stream)) {
+    return true;
+  }
   const float alpha = 1.0f;
   const float beta = beta_value;
   const cublasStatus_t status = cublasGemmEx(
@@ -1416,6 +1540,28 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32(
   const int b_blocks = static_cast<int>((b_elements + threads - 1) / threads);
   f32_to_bf16_kernel<<<b_blocks, threads, 0, stream>>>(b, workspace->b, b_elements);
   const auto* a_bf16 = reinterpret_cast<const __nv_bfloat16*>(a_bf16_bits);
+  if (trainer_linear_bf16_cublaslt_enabled() &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k) &&
+      cublaslt_linear_matmul(
+          a_bf16,
+          workspace->b,
+          c,
+          CUDA_R_16BF,
+          CUDA_R_16BF,
+          CUDA_R_32F,
+          CUBLAS_COMPUTE_32F_FAST_16BF,
+          m,
+          n,
+          k,
+          op_a,
+          op_b,
+          lda,
+          ldb,
+          ldc,
+          beta_value,
+          stream)) {
+    return true;
+  }
   const float alpha = 1.0f;
   const float beta = beta_value;
   const cublasStatus_t status = cublasGemmEx(
@@ -1478,6 +1624,28 @@ bool cublas_linear_gemm_ex_bf16_bits_b_float32(
     return false;
   }
   const auto* b_bf16 = reinterpret_cast<const __nv_bfloat16*>(b_bf16_bits);
+  if (trainer_linear_bf16_cublaslt_enabled() &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k) &&
+      cublaslt_linear_matmul(
+          a_bf16,
+          b_bf16,
+          c,
+          CUDA_R_16BF,
+          CUDA_R_16BF,
+          CUDA_R_32F,
+          CUBLAS_COMPUTE_32F_FAST_16BF,
+          m,
+          n,
+          k,
+          op_a,
+          op_b,
+          lda,
+          ldb,
+          ldc,
+          beta_value,
+          stream)) {
+    return true;
+  }
   const float alpha = 1.0f;
   const float beta = beta_value;
   const cublasStatus_t status = cublasGemmEx(
