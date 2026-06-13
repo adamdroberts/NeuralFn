@@ -255,6 +255,12 @@ void launch_linear_bf16_output_float32(
     std::int64_t output_dim,
     bool has_bias,
     cudaStream_t stream);
+void launch_bf16_bits_add_bias_inplace_float32(
+    std::uint16_t* values,
+    const float* bias,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    cudaStream_t stream);
 void launch_linear_bf16_input_bits_float32(
     const std::uint16_t* x_bf16_bits,
     const float* weight,
@@ -701,6 +707,46 @@ void launch_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float3
     std::int64_t compress_stride,
     cudaStream_t stream);
 void launch_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32(
+    const float* grad_out,
+    float* grad_qkv,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    cudaStream_t stream);
+int launch_scaled_dot_product_attention_packed_qkv_bf16_float32(
+    const std::uint16_t* qkv_bf16_bits,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    cudaStream_t stream);
+int launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32(
+    const std::uint16_t* qkv_bf16_bits,
+    const std::uint16_t* out_bf16_bits,
     const float* grad_out,
     float* grad_qkv,
     std::int64_t batch,
@@ -1431,6 +1477,17 @@ int nfn_native_tile_linear_bf16_output_float32(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_linear_bf16_output_float32(
         x, weight, bias, out_bf16_bits, rows, input_dim, output_dim, has_bias, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_bf16_bits_add_bias_inplace_float32(
+    std::uint16_t* values,
+    const float* bias,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_bf16_bits_add_bias_inplace_float32(
+        values, bias, rows, output_dim, as_stream(cuda_stream));
     return launch_status();
 }
 
@@ -2296,6 +2353,93 @@ int nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_f
         compress_stride,
         as_stream(cuda_stream));
     return launch_status();
+}
+
+int nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32(
+    const std::uint16_t* qkv_bf16_bits,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    void* cuda_stream) {
+    const int status = neuralfn::tile_cuda::launch_scaled_dot_product_attention_packed_qkv_bf16_float32(
+        qkv_bf16_bits,
+        out_bf16_bits,
+        batch,
+        query_heads,
+        key_heads,
+        seq_q,
+        seq_k,
+        qk_dim,
+        value_dim,
+        scale,
+        is_causal,
+        right_align_causal,
+        use_sparse_rules,
+        window,
+        num_sinks,
+        block_size,
+        compress_stride,
+        as_stream(cuda_stream));
+    return status != 0 ? status : launch_status();
+}
+
+int nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32(
+    const std::uint16_t* qkv_bf16_bits,
+    const std::uint16_t* out_bf16_bits,
+    const float* grad_out,
+    float* grad_qkv,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    void* cuda_stream) {
+    const int status =
+        neuralfn::tile_cuda::launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32(
+            qkv_bf16_bits,
+            out_bf16_bits,
+            grad_out,
+            grad_qkv,
+            batch,
+            query_heads,
+            key_heads,
+            seq_q,
+            seq_k,
+            qk_dim,
+            value_dim,
+            scale,
+            is_causal,
+            right_align_causal,
+            use_sparse_rules,
+            window,
+            num_sinks,
+            block_size,
+            compress_stride,
+            as_stream(cuda_stream));
+    return status != 0 ? status : launch_status();
 }
 
 int nfn_native_tile_scaled_dot_product_attention_store_tk_bf16_float32(

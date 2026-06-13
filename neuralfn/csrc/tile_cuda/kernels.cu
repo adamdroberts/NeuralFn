@@ -99,6 +99,7 @@ struct TkAttentionWorkspace {
   __nv_bfloat16* gq_bf = nullptr;
   __nv_bfloat16* gk_bf = nullptr;
   __nv_bfloat16* gv_bf = nullptr;
+  __nv_bfloat16* packed_grad_bf = nullptr;
   float* lse = nullptr;
   float* d = nullptr;
   std::int64_t element_capacity = 0;
@@ -117,6 +118,7 @@ void release_tk_attention_workspace(TkAttentionWorkspace& workspace) {
   if (workspace.gq_bf != nullptr) cudaFree(workspace.gq_bf);
   if (workspace.gk_bf != nullptr) cudaFree(workspace.gk_bf);
   if (workspace.gv_bf != nullptr) cudaFree(workspace.gv_bf);
+  if (workspace.packed_grad_bf != nullptr) cudaFree(workspace.packed_grad_bf);
   if (workspace.lse != nullptr) cudaFree(workspace.lse);
   if (workspace.d != nullptr) cudaFree(workspace.d);
   workspace = {};
@@ -137,10 +139,12 @@ bool cuda_malloc_float(float** ptr, std::int64_t elements) {
 TkAttentionWorkspace* ensure_tk_attention_workspace(
     std::int64_t elements,
     std::int64_t row_elements,
-    cudaStream_t stream) {
+    cudaStream_t stream,
+    bool require_packed_grad = false) {
   std::lock_guard<std::mutex> lock(g_tk_attention_workspace_mutex);
   if (g_tk_attention_workspace.element_capacity >= elements &&
-      g_tk_attention_workspace.row_capacity >= row_elements) {
+      g_tk_attention_workspace.row_capacity >= row_elements &&
+      (!require_packed_grad || g_tk_attention_workspace.packed_grad_bf != nullptr)) {
     return &g_tk_attention_workspace;
   }
   cudaStreamSynchronize(stream);
@@ -156,6 +160,10 @@ TkAttentionWorkspace* ensure_tk_attention_workspace(
       !cuda_malloc_bf16(&next.gv_bf, elements) ||
       !cuda_malloc_float(&next.lse, row_elements) ||
       !cuda_malloc_float(&next.d, row_elements)) {
+    release_tk_attention_workspace(next);
+    return nullptr;
+  }
+  if (require_packed_grad && !cuda_malloc_bf16(&next.packed_grad_bf, elements * 3)) {
     release_tk_attention_workspace(next);
     return nullptr;
   }
@@ -296,6 +304,43 @@ __global__ void f32_to_bf16_attention_grad_kernel(
   dst[idx] = __float2bfloat16(src[merged_idx]);
 }
 
+__global__ void packed_attention_dprep_kernel(
+    const std::uint16_t* __restrict__ out_btc_bf16_bits,
+    const float* __restrict__ grad_out_btc,
+    __nv_bfloat16* __restrict__ out_heads_bf16,
+    __nv_bfloat16* __restrict__ grad_out_heads_bf16,
+    float* __restrict__ d,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim) {
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x) * blockDim.y + threadIdx.y;
+  const std::int64_t rows = batch * heads * seq_len;
+  if (row >= rows) {
+    return;
+  }
+  const std::int64_t t = row % seq_len;
+  const std::int64_t h = (row / seq_len) % heads;
+  const std::int64_t b = row / (heads * seq_len);
+  const std::int64_t merged_base = ((b * seq_len + t) * heads + h) * head_dim;
+  const std::int64_t head_base = row * head_dim;
+  float acc = 0.0f;
+  for (std::int64_t d_idx = threadIdx.x; d_idx < head_dim; d_idx += warpSize) {
+    const std::uint16_t out_bits = out_btc_bf16_bits[merged_base + d_idx];
+    const float out_value = bf16_bits_to_f32_device(out_bits);
+    const float grad_value = grad_out_btc[merged_base + d_idx];
+    out_heads_bf16[head_base + d_idx] = reinterpret_cast<const __nv_bfloat16&>(out_bits);
+    grad_out_heads_bf16[head_base + d_idx] = __float2bfloat16(grad_value);
+    acc += out_value * grad_value;
+  }
+  for (int offset = warpSize / 2; offset > 0; offset /= 2) {
+    acc += __shfl_down_sync(0xffffffff, acc, offset);
+  }
+  if (threadIdx.x == 0) {
+    d[row] = acc;
+  }
+}
+
 __global__ void bf16_to_f32_kernel(
     const __nv_bfloat16* __restrict__ src,
     float* __restrict__ dst,
@@ -332,6 +377,19 @@ __global__ void bf16_heads_to_qkv_float32_kernel(
   qkv[qkv_base] = __bfloat162float(q_heads[src]);
   qkv[qkv_base + dim] = __bfloat162float(k_heads[src]);
   qkv[qkv_base + 2 * dim] = __bfloat162float(v_heads[src]);
+}
+
+__global__ void bf16_bits_add_bias_inplace_kernel(
+    std::uint16_t* __restrict__ values,
+    const float* __restrict__ bias,
+    std::int64_t n,
+    std::int64_t output_dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const std::int64_t col = idx % output_dim;
+  values[idx] = f32_to_bf16_bits_device(bf16_bits_to_f32_device(values[idx]) + bias[col]);
 }
 
 bool use_tk_sm120_attention(
@@ -578,6 +636,126 @@ int launch_tk_attention_backward_to_qkv_reuse_forward_float32(
       seq_len,
       heads,
       head_dim);
+  g_attention_backward_tk_launch_count.fetch_add(1, std::memory_order_relaxed);
+  return static_cast<int>(cudaPeekAtLastError());
+}
+
+int launch_tk_attention_packed_qkv_forward_bf16_float32(
+    const std::uint16_t* qkv_bf16_bits,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    cudaStream_t stream) {
+  if (qkv_bf16_bits == nullptr ||
+      out_bf16_bits == nullptr ||
+      batch <= 0 ||
+      heads <= 0 ||
+      seq_len <= 0 ||
+      head_dim <= 0) {
+    return 2;
+  }
+  const std::int64_t elements = batch * heads * seq_len * head_dim;
+  const std::int64_t row_elements = batch * heads * seq_len;
+  TkAttentionWorkspace* workspace = ensure_tk_attention_workspace(elements, row_elements, stream, true);
+  if (workspace == nullptr || workspace->lse == nullptr) {
+    return 2;
+  }
+  auto* qkv = const_cast<__nv_bfloat16*>(
+      reinterpret_cast<const __nv_bfloat16*>(qkv_bf16_bits));
+  auto* out = reinterpret_cast<__nv_bfloat16*>(out_bf16_bits);
+  llmk::attention::launch_forward_causal_packed_qkv_btc(
+      llmk::to_bf16(qkv),
+      workspace->lse,
+      llmk::to_bf16(out),
+      static_cast<int>(batch),
+      static_cast<int>(heads),
+      static_cast<int>(seq_len),
+      static_cast<int>(head_dim),
+      stream);
+  g_attention_forward_tk_launch_count.fetch_add(1, std::memory_order_relaxed);
+  return static_cast<int>(cudaPeekAtLastError());
+}
+
+int launch_tk_attention_packed_qkv_backward_to_qkv_float32(
+    const std::uint16_t* qkv_bf16_bits,
+    const std::uint16_t* out_bf16_bits,
+    const float* grad_out,
+    float* grad_qkv,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    bool grad_out_merged,
+    cudaStream_t stream) {
+  if (qkv_bf16_bits == nullptr ||
+      out_bf16_bits == nullptr ||
+      grad_out == nullptr ||
+      grad_qkv == nullptr ||
+      !grad_out_merged ||
+      batch <= 0 ||
+      heads <= 0 ||
+      seq_len <= 0 ||
+      head_dim <= 0) {
+    return 2;
+  }
+  const std::int64_t elements = batch * heads * seq_len * head_dim;
+  const std::int64_t row_elements = batch * heads * seq_len;
+  TkAttentionWorkspace* workspace = ensure_tk_attention_workspace(elements, row_elements, stream, true);
+  if (workspace == nullptr ||
+      workspace->o_bf == nullptr ||
+      workspace->go_bf == nullptr ||
+      workspace->packed_grad_bf == nullptr ||
+      workspace->lse == nullptr ||
+      workspace->d == nullptr) {
+    return 2;
+  }
+  dim3 dprep_block(32, 3, 1);
+  const int dprep_grid = static_cast<int>((row_elements + dprep_block.y - 1) / dprep_block.y);
+  packed_attention_dprep_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
+      out_bf16_bits,
+      grad_out,
+      workspace->o_bf,
+      workspace->go_bf,
+      workspace->d,
+      batch,
+      heads,
+      seq_len,
+      head_dim);
+  auto* qkv = const_cast<__nv_bfloat16*>(
+      reinterpret_cast<const __nv_bfloat16*>(qkv_bf16_bits));
+  if (head_dim == 64) {
+    llmk::attention::launch_backward_causal_packed_qkv_packed_grads<64>(
+        llmk::to_bf16(qkv),
+        llmk::to_bf16(workspace->o_bf),
+        workspace->lse,
+        llmk::to_bf16(workspace->go_bf),
+        workspace->d,
+        llmk::to_bf16(workspace->packed_grad_bf),
+        static_cast<int>(batch),
+        static_cast<int>(heads),
+        static_cast<int>(seq_len),
+        stream,
+        true);
+  } else {
+    llmk::attention::launch_backward_causal_packed_qkv_packed_grads<128>(
+        llmk::to_bf16(qkv),
+        llmk::to_bf16(workspace->o_bf),
+        workspace->lse,
+        llmk::to_bf16(workspace->go_bf),
+        workspace->d,
+        llmk::to_bf16(workspace->packed_grad_bf),
+        static_cast<int>(batch),
+        static_cast<int>(heads),
+        static_cast<int>(seq_len),
+        stream,
+        true);
+  }
+  const std::int64_t packed_elements = elements * 3;
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((packed_elements + threads - 1) / threads);
+  bf16_to_f32_kernel<<<blocks, threads, 0, stream>>>(workspace->packed_grad_bf, grad_qkv, packed_elements);
   g_attention_backward_tk_launch_count.fetch_add(1, std::memory_order_relaxed);
   return static_cast<int>(cudaPeekAtLastError());
 }
@@ -8362,6 +8540,18 @@ void launch_linear_bf16_output_float32(
       x, weight, bias, out_bf16_bits, n, input_dim, output_dim, has_bias);
 }
 
+void launch_bf16_bits_add_bias_inplace_float32(
+    std::uint16_t* values,
+    const float* bias,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * output_dim;
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  bf16_bits_add_bias_inplace_kernel<<<blocks, threads, 0, stream>>>(values, bias, n, output_dim);
+}
+
 void launch_linear_bf16_input_bits_float32(
     const std::uint16_t* x_bf16_bits,
     const float* weight,
@@ -9912,6 +10102,147 @@ void launch_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merg
           stream) == 0) {
     return;
   }
+#endif
+}
+
+int launch_scaled_dot_product_attention_packed_qkv_bf16_float32(
+    const std::uint16_t* qkv_bf16_bits,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    cudaStream_t stream) {
+  (void)scale;
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  if (!use_tk_sm120_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride)) {
+    return 2;
+  }
+  return launch_tk_attention_packed_qkv_forward_bf16_float32(
+      qkv_bf16_bits,
+      out_bf16_bits,
+      batch,
+      query_heads,
+      seq_q,
+      qk_dim,
+      stream);
+#else
+  (void)qkv_bf16_bits;
+  (void)out_bf16_bits;
+  (void)batch;
+  (void)query_heads;
+  (void)key_heads;
+  (void)seq_q;
+  (void)seq_k;
+  (void)qk_dim;
+  (void)value_dim;
+  (void)is_causal;
+  (void)right_align_causal;
+  (void)use_sparse_rules;
+  (void)window;
+  (void)num_sinks;
+  (void)block_size;
+  (void)compress_stride;
+  (void)stream;
+  return 2;
+#endif
+}
+
+int launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32(
+    const std::uint16_t* qkv_bf16_bits,
+    const std::uint16_t* out_bf16_bits,
+    const float* grad_out,
+    float* grad_qkv,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    cudaStream_t stream) {
+  (void)scale;
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  if (!use_tk_sm120_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride)) {
+    return 2;
+  }
+  return launch_tk_attention_packed_qkv_backward_to_qkv_float32(
+      qkv_bf16_bits,
+      out_bf16_bits,
+      grad_out,
+      grad_qkv,
+      batch,
+      query_heads,
+      seq_q,
+      qk_dim,
+      true,
+      stream);
+#else
+  (void)qkv_bf16_bits;
+  (void)out_bf16_bits;
+  (void)grad_out;
+  (void)grad_qkv;
+  (void)batch;
+  (void)query_heads;
+  (void)key_heads;
+  (void)seq_q;
+  (void)seq_k;
+  (void)qk_dim;
+  (void)value_dim;
+  (void)is_causal;
+  (void)right_align_causal;
+  (void)use_sparse_rules;
+  (void)window;
+  (void)num_sinks;
+  (void)block_size;
+  (void)compress_stride;
+  (void)stream;
+  return 2;
 #endif
 }
 

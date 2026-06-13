@@ -1000,27 +1000,30 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["training_step_plan"]["backward_stage_count"] > 0
     assert any(stage["name"] == "h.0.attn.sdpa.forward" for stage in tile_payload["training_step_plan"]["stages"])
     assert any(stage["name"] == "adamw_step" for stage in tile_payload["training_step_plan"]["stages"])
-    assert tile_payload["attention_forward_strategy"] == "row-vector-tile-score-reuse"
+    assert tile_payload["attention_forward_strategy"] == "tk-sm120-packed-qkv-bf16-flashattention"
     assert tile_payload["attention_forward_score_reuse_value_dim"] == 64
     assert tile_payload["attention_forward_scalar_cta_elision_factor"] == 64
     assert tile_payload["attention_forward_value_chunk_size"] == 64
     assert tile_payload["attention_forward_scalar_launch_fallback_enabled"] is True
     assert tile_payload["attention_forward_row_launch_auto_disable_enabled"] is True
     assert tile_payload["attention_forward_row_count"] * 64 == tile_payload["attention_forward_scalar_output_count"]
-    assert tile_payload["qkv_forward_layout_strategy"] == "fused-split-to-heads"
-    assert tile_payload["qkv_forward_layout_kernel_launches_per_block"] == 1
+    assert tile_payload["packed_qkv_attention_enabled"] is True
+    assert tile_payload["packed_qkv_attention_bf16_elements"] > 0
+    assert tile_payload["packed_qkv_attention_bf16_bytes"] > 0
+    assert tile_payload["qkv_forward_layout_strategy"] == "packed-qkv-bf16-no-split"
+    assert tile_payload["qkv_forward_layout_kernel_launches_per_block"] == 0
     assert tile_payload["qkv_forward_layout_legacy_launches_per_block"] == 4
-    assert tile_payload["qkv_forward_layout_launches_elided_per_block"] == 3
-    assert tile_payload["qkv_bias_layout_strategy"] == "fused-qkv-bias-split-to-heads"
+    assert tile_payload["qkv_forward_layout_launches_elided_per_block"] == 4
+    assert tile_payload["qkv_bias_layout_strategy"] == "packed-qkv-bf16-bias-inplace"
     assert tile_payload["qkv_bias_layout_kernel_launches_per_block"] == 1
     assert tile_payload["qkv_bias_layout_legacy_launches_per_block"] == 2
     assert tile_payload["qkv_bias_layout_launches_elided_per_block"] == 1
-    assert tile_payload["qkv_backward_layout_strategy"] == "fused-heads-to-qkv"
+    assert tile_payload["qkv_backward_layout_strategy"] == "packed-qkv-bf16-gradient-unpack"
     assert tile_payload["qkv_backward_layout_kernel_launches_per_block"] == 1
     assert tile_payload["qkv_backward_layout_legacy_launches_per_block"] == 4
     assert tile_payload["qkv_backward_layout_launches_elided_per_block"] == 3
-    assert tile_payload["attention_backward_qkv_bridge_strategy"] == "fused-bf16-heads-to-row-qkv"
-    assert tile_payload["attention_backward_qkv_bridge_kernel_launches_per_block"] == 1
+    assert tile_payload["attention_backward_qkv_bridge_strategy"] == "tk-sm120-packed-qkv-packed-grad-bridge"
+    assert tile_payload["attention_backward_qkv_bridge_kernel_launches_per_block"] == 2
     assert tile_payload["attention_backward_qkv_bridge_legacy_launches_per_block"] == 4
     assert tile_payload["attention_backward_qkv_bridge_launches_elided_per_block"] == 3
     assert tile_payload["mlp_fc_bias_gelu_strategy"] == "fused-bias-preactivation-gelu"
@@ -1038,7 +1041,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["attention_backward_grad_layout_kernel_launches_per_block"] == 0
     assert tile_payload["attention_backward_grad_layout_legacy_launches_per_block"] == 1
     assert tile_payload["attention_backward_grad_layout_launches_elided_per_block"] == 1
-    assert tile_payload["attention_backward_strategy"] == "tk-sm120-bf16-reuse-forward-workspace-bridge"
+    assert tile_payload["attention_backward_strategy"] == "tk-sm120-packed-qkv-bf16-backward-bridge"
     assert tile_payload["attention_backward_reuses_forward_workspace"] is True
     assert tile_payload["attention_backward_uses_saved_forward_workspace"] is False
     assert tile_payload["attention_activation_storage_strategy"] == "disabled-by-default-opt-in"
@@ -1067,6 +1070,15 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_attention_tk_store_forward_workspace_bf16" in tile_payload["available_native_kernels"]
     assert (
         "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_merged_grad_float32"
+        in tile_payload["available_native_kernels"]
+    )
+    assert "nfn_native_tile_bf16_bits_add_bias_inplace_float32" in tile_payload["available_native_kernels"]
+    assert (
+        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32"
+        in tile_payload["available_native_kernels"]
+    )
+    assert (
+        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32"
         in tile_payload["available_native_kernels"]
     )
     assert "nfn_native_tile_attention_forward_stats_reset" in tile_payload["available_native_kernels"]
@@ -1706,7 +1718,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["timing"]["stage_timing_event_count"] == 0
     assert train_transformer_payload["timing"]["stage_timing_dropped_event_count"] == 0
     assert train_transformer_payload["timing"]["stage_timing"] == []
-    assert train_transformer_payload["attention_forward_strategy"] == "row-vector-tile-score-reuse"
+    assert train_transformer_payload["attention_forward_strategy"] == "tk-sm120-packed-qkv-bf16-flashattention"
     assert train_transformer_payload["attention_forward_row_count"] == 24
     assert train_transformer_payload["attention_forward_scalar_output_count"] == 1536
     assert train_transformer_payload["attention_forward_score_reuse_value_dim"] == 64
@@ -1719,20 +1731,23 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["attention_forward_row_launch_success_count"] == 0
     assert train_transformer_payload["attention_forward_row_launch_fallback_count"] == 0
     assert train_transformer_payload["attention_forward_scalar_launch_count"] == 0
-    assert train_transformer_payload["qkv_forward_layout_strategy"] == "fused-split-to-heads"
-    assert train_transformer_payload["qkv_forward_layout_kernel_launches_per_block"] == 1
+    assert train_transformer_payload["packed_qkv_attention_enabled"] is True
+    assert train_transformer_payload["packed_qkv_attention_bf16_elements"] == 0
+    assert train_transformer_payload["packed_qkv_attention_bf16_bytes"] == 0
+    assert train_transformer_payload["qkv_forward_layout_strategy"] == "packed-qkv-bf16-no-split"
+    assert train_transformer_payload["qkv_forward_layout_kernel_launches_per_block"] == 0
     assert train_transformer_payload["qkv_forward_layout_legacy_launches_per_block"] == 4
-    assert train_transformer_payload["qkv_forward_layout_launches_elided_per_block"] == 3
-    assert train_transformer_payload["qkv_bias_layout_strategy"] == "fused-qkv-bias-split-to-heads"
+    assert train_transformer_payload["qkv_forward_layout_launches_elided_per_block"] == 4
+    assert train_transformer_payload["qkv_bias_layout_strategy"] == "packed-qkv-bf16-bias-inplace"
     assert train_transformer_payload["qkv_bias_layout_kernel_launches_per_block"] == 1
     assert train_transformer_payload["qkv_bias_layout_legacy_launches_per_block"] == 2
     assert train_transformer_payload["qkv_bias_layout_launches_elided_per_block"] == 1
-    assert train_transformer_payload["qkv_backward_layout_strategy"] == "fused-heads-to-qkv"
+    assert train_transformer_payload["qkv_backward_layout_strategy"] == "packed-qkv-bf16-gradient-unpack"
     assert train_transformer_payload["qkv_backward_layout_kernel_launches_per_block"] == 1
     assert train_transformer_payload["qkv_backward_layout_legacy_launches_per_block"] == 4
     assert train_transformer_payload["qkv_backward_layout_launches_elided_per_block"] == 3
-    assert train_transformer_payload["attention_backward_qkv_bridge_strategy"] == "fused-bf16-heads-to-row-qkv"
-    assert train_transformer_payload["attention_backward_qkv_bridge_kernel_launches_per_block"] == 1
+    assert train_transformer_payload["attention_backward_qkv_bridge_strategy"] == "tk-sm120-packed-qkv-packed-grad-bridge"
+    assert train_transformer_payload["attention_backward_qkv_bridge_kernel_launches_per_block"] == 2
     assert train_transformer_payload["attention_backward_qkv_bridge_legacy_launches_per_block"] == 4
     assert train_transformer_payload["attention_backward_qkv_bridge_launches_elided_per_block"] == 3
     assert train_transformer_payload["mlp_fc_bias_gelu_strategy"] == "fused-bias-preactivation-gelu"
@@ -1750,7 +1765,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["attention_backward_grad_layout_kernel_launches_per_block"] == 0
     assert train_transformer_payload["attention_backward_grad_layout_legacy_launches_per_block"] == 1
     assert train_transformer_payload["attention_backward_grad_layout_launches_elided_per_block"] == 1
-    assert train_transformer_payload["attention_backward_strategy"] == "query-row-atomic-tile-score-reuse"
+    assert train_transformer_payload["attention_backward_strategy"] == "tk-sm120-packed-qkv-bf16-backward-bridge"
     assert train_transformer_payload["attention_backward_reuses_forward_workspace"] is False
     assert train_transformer_payload["attention_backward_uses_saved_forward_workspace"] is False
     assert train_transformer_payload["attention_backward_recompute_forward_elided_per_block"] == 0
@@ -2025,6 +2040,15 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_scaled_dot_product_attention_backward_float32" in train_transformer_payload["kernels"]
     assert (
         "nfn_native_tile_scaled_dot_product_attention_backward_from_merged_grad_float32"
+        in train_transformer_payload["kernels"]
+    )
+    assert "nfn_native_tile_bf16_bits_add_bias_inplace_float32" in train_transformer_payload["kernels"]
+    assert (
+        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32"
+        in train_transformer_payload["kernels"]
+    )
+    assert (
+        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32"
         in train_transformer_payload["kernels"]
     )
     assert (
@@ -2928,6 +2952,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_uint16_to_int64" in header_text
     assert "nfn_native_tile_float32_to_bf16_bits" in header_text
     assert "nfn_native_tile_bf16_bits_to_float32" in header_text
+    assert "nfn_native_tile_bf16_bits_add_bias_inplace_float32" in header_text
     assert "nfn_native_tile_store_mlp_activations_bf16_float32" in header_text
     assert "nfn_native_tile_restore_mlp_activations_bf16_float32" in header_text
     assert "nfn_native_tile_linear_bf16_input_bits_float32" in header_text
@@ -2951,6 +2976,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_trainer_linear_bf16_cache_reset_count" in header_text
     assert "launch_float32_to_bf16_bits" in source_text
     assert "launch_bf16_bits_to_float32" in source_text
+    assert "launch_bf16_bits_add_bias_inplace_float32" in source_text
     assert "launch_store_mlp_activations_bf16_float32" in source_text
     assert "launch_restore_mlp_activations_bf16_float32" in source_text
     assert "launch_linear_bf16_input_bits_float32" in source_text
@@ -2967,6 +2993,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_trainer_linear_bf16_cache_entry_count" in source_text
     assert "f32_to_bf16_bits_kernel" in kernels_text
     assert "f32_to_bf16_bits_many_kernel" in kernels_text
+    assert "bf16_bits_add_bias_inplace_kernel" in kernels_text
     assert "launch_linear_bf16_float32" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_float32_to_bf16_bits" in kernels_text
     assert "tk_linear_gemm_bf16_forward_to_bf16_bits" in kernels_text
@@ -3092,6 +3119,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace" in header_text
     assert "nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_float32" in header_text
+    assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32" in header_text
+    assert (
+        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32"
+        in header_text
+    )
     assert "nfn_native_tile_attention_forward_stats_reset" in header_text
     assert "nfn_native_tile_attention_forward_row_launch_count" in header_text
     assert "nfn_native_tile_attention_forward_row_fallback_count" in header_text
@@ -3115,6 +3147,19 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_merged_grad_float32"
         in header_text
     )
+    assert "launch_scaled_dot_product_attention_packed_qkv_bf16_float32" in source_text
+    assert (
+        "launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32"
+        in source_text
+    )
+    assert "launch_tk_attention_packed_qkv_forward_bf16_float32" in kernels_text
+    assert "launch_tk_attention_packed_qkv_backward_to_qkv_float32" in kernels_text
+    assert "packed_attention_dprep_kernel" in kernels_text
+    assert "launch_forward_causal_packed_qkv_btc" in kernels_text
+    assert "launch_backward_causal_packed_qkv_packed_grads" in kernels_text
+    assert "packed-qkv-bf16-no-split" in gpt2_source_text
+    assert "packed-qkv-bf16-bias-inplace" in gpt2_source_text
+    assert "tk-sm120-packed-qkv-bf16-backward-bridge" in gpt2_source_text
     assert "linear_backward_weight_chunked_atomic_float32_kernel" in kernels_text
     assert "linear_backward_bias_chunked_atomic_float32_kernel" in kernels_text
     assert "cublas_linear_forward_float32" in kernels_text
@@ -3861,6 +3906,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_uint16_to_int64" in exported
         assert "nfn_native_tile_float32_to_bf16_bits" in exported
         assert "nfn_native_tile_bf16_bits_to_float32" in exported
+        assert "nfn_native_tile_bf16_bits_add_bias_inplace_float32" in exported
         assert "nfn_native_tile_store_mlp_activations_bf16_float32" in exported
         assert "nfn_native_tile_restore_mlp_activations_bf16_float32" in exported
         assert "nfn_native_tile_float32_to_bf16_bits_many" in exported
@@ -3922,6 +3968,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace" in exported
         assert "nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32" in exported
         assert "nfn_native_tile_scaled_dot_product_attention_float32" in exported
+        assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32" in exported
+        assert (
+            "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32"
+            in exported
+        )
         assert "nfn_native_tile_scaled_dot_product_attention_backward_float32" in exported
         assert (
             "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32"
