@@ -2945,6 +2945,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "cublas_linear_backward_input_float32" in kernels_text
     assert "cublas_linear_backward_weight_float32" in kernels_text
     assert "cublas_linear_backward_bias_float32" in kernels_text
+    assert "rows <= kTileSize && cublas_linear_backward_bias_float32" in kernels_text
     assert "kAttentionValueChunkSize = 64" in kernels_text
     assert "cudaPeekAtLastError" in kernels_text
     assert "cudaGetLastError" in kernels_text

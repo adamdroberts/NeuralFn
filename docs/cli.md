@@ -411,6 +411,10 @@ reports
 `block_state_layout.gradient_accumulation_copy_loop_elided: true`,
 `block_state_layout.gradient_zero_strategy` set to
 `"fused-multi-buffer-accumulation-zero"`, and `gradient_zeroed_buffer_count: 0`.
+For the default GPT-2 `batch=64`, `seq=1024` shape, large-row Linear
+bias-gradient reductions use the Tile chunked atomic reduction path instead of
+cuBLAS SGEMV. This keeps the expensive MLP projection bias reduction on the
+native Tile route; small reductions can still use the existing cuBLAS path.
 The accumulation buffers are zeroed once per optimizer step through
 `nfn_native_tile_fill_many_float32` over the same descriptor table used by the
 fused AdamW call, so the default 12-layer trainer emits one zero-fill kernel

@@ -7492,7 +7492,7 @@ void launch_linear_backward_bias_float32(
     std::int64_t output_dim,
     cudaStream_t stream) {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
-  if (cublas_linear_backward_bias_float32(grad_out, grad_bias, rows, output_dim, 0.0f, stream)) {
+  if (rows <= kTileSize && cublas_linear_backward_bias_float32(grad_out, grad_bias, rows, output_dim, 0.0f, stream)) {
     return;
   }
 #endif
@@ -7516,7 +7516,7 @@ void launch_linear_backward_bias_accumulate_float32(
     std::int64_t output_dim,
     cudaStream_t stream) {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
-  if (cublas_linear_backward_bias_float32(grad_out, grad_bias, rows, output_dim, 1.0f, stream)) {
+  if (rows <= kTileSize && cublas_linear_backward_bias_float32(grad_out, grad_bias, rows, output_dim, 1.0f, stream)) {
     return;
   }
 #endif
