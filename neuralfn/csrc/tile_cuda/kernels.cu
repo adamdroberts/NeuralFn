@@ -5263,6 +5263,8 @@ __tile_global__ void linear_bias_residual_layer_norm_float32_kernel(
     const float* __restrict__ norm_bias,
     float* __restrict__ residual_out,
     float* __restrict__ norm_out,
+    float* __restrict__ mean_out,
+    float* __restrict__ rstd_out,
     std::int64_t rows,
     std::int64_t dim,
     float eps) {
@@ -5297,6 +5299,12 @@ __tile_global__ void linear_bias_residual_layer_norm_float32_kernel(
   auto sum_sq = ct::sum(centered * centered, 0_ic);
   auto var = sum_sq / ct::full<decltype(sum_sq)>(static_cast<float>(dim));
   auto norm_scale = ct::rsqrt(var + ct::full<decltype(var)>(eps));
+  if (mean_out != nullptr && row < rows) {
+    mean_out[row] = static_cast<float>(mean);
+  }
+  if (rstd_out != nullptr && row < rows) {
+    rstd_out[row] = static_cast<float>(norm_scale);
+  }
   auto weight_tile = ct::load_masked(norm_weight + d, mask);
   auto bias_tile = ct::load_masked(norm_bias + d, mask);
   ct::store_masked(norm_out + base + d, centered * norm_scale * weight_tile + bias_tile, mask);
@@ -8988,6 +8996,39 @@ void launch_linear_bias_residual_layer_norm_float32(
       norm_bias,
       residual_out,
       norm_out,
+      nullptr,
+      nullptr,
+      rows,
+      output_dim,
+      eps);
+}
+
+void launch_linear_bias_residual_layer_norm_with_stats_float32(
+    const float* residual,
+    const float* linear_out,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    float* mean_out,
+    float* rstd_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    cudaStream_t stream) {
+  linear_bias_residual_layer_norm_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      residual,
+      linear_out,
+      linear_bias,
+      residual_scale,
+      norm_weight,
+      norm_bias,
+      residual_out,
+      norm_out,
+      mean_out,
+      rstd_out,
       rows,
       output_dim,
       eps);

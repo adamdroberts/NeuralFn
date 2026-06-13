@@ -586,6 +586,17 @@ bias-add and residual-add launches. Native JSON reports
 `projection_bias_residual_strategy: "fused-linear-bias-residual-add"` and two
 elided legacy launches per block.
 
+The attention projection residual path also defaults to the stats-preserving
+fused LN2 route through
+`nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32`. It applies
+attention projection bias, residual scale, residual add, and LN2 in one Tile
+launch while writing LN2 mean/rstd for backward stats reuse. Set
+`NFN_NATIVE_GPT2_FUSE_ATTENTION_RESIDUAL_LN2=0` to force the older separate
+residual-add plus LN2 route. Native plan and runtime JSON report
+`attention_residual_ln2_strategy: "fused-linear-bias-residual-layernorm"` and
+`block_state_layout.layer_norm_backward_reuses_forward_stats: true` when this
+default route is active.
+
 The full GPT-2 transformer-LM trainer also uses
 `nfn_native_tile_fill_many_values_float32` for startup nonzero constant
 parameter initialization. Its JSON reports

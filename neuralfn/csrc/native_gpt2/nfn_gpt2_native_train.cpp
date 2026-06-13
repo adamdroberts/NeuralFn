@@ -117,6 +117,16 @@ bool packed_qkv_attention_default_enabled() {
            value == "ON";
 }
 
+bool fuse_attention_residual_ln2_default_enabled() {
+    const std::string value = env_or_empty("NFN_NATIVE_GPT2_FUSE_ATTENTION_RESIDUAL_LN2");
+    return value.empty() ||
+           value == "1" ||
+           value == "true" ||
+           value == "TRUE" ||
+           value == "on" ||
+           value == "ON";
+}
+
 fs::path home_dir() {
     std::string home = env_or_empty("HOME");
     if (home.empty()) {
@@ -689,6 +699,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_scaled_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_float32",
+        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32",
         "nfn_native_tile_gelu_float32",
         "nfn_native_tile_gelu_add_bias_float32",
         "nfn_native_tile_gelu_backward_float32",
@@ -958,6 +969,7 @@ bool print_tile_plan(
     const std::int64_t attention_row_count = tokens * 12;
     const std::int64_t attention_scalar_output_count = hidden;
     const bool packed_qkv_attention_enabled = packed_qkv_attention_default_enabled();
+    const bool fuse_attention_residual_ln2_enabled = fuse_attention_residual_ln2_default_enabled();
     constexpr std::int64_t activation_tape_count = 1;
     const std::int64_t packed_qkv_attention_bf16_elements =
         packed_qkv_attention_enabled ? (tokens * 768 * 4 * activation_tape_count) : 0;
@@ -1078,10 +1090,14 @@ bool print_tile_plan(
         << "  \"mlp_forward_act_bf16_elements\": 0,\n"
         << "  \"mlp_forward_act_bf16_bytes\": 0,\n"
         << "  \"projection_bias_residual_strategy\": \"fused-linear-bias-residual-add\",\n"
-        << "  \"attention_residual_ln2_strategy\": \"disabled-by-default-opt-in\",\n"
-        << "  \"attention_residual_ln2_kernel_launches_per_block\": 0,\n"
+        << "  \"attention_residual_ln2_strategy\": \""
+        << (fuse_attention_residual_ln2_enabled ? "fused-linear-bias-residual-layernorm" : "disabled")
+        << "\",\n"
+        << "  \"attention_residual_ln2_kernel_launches_per_block\": "
+        << (fuse_attention_residual_ln2_enabled ? 1 : 0) << ",\n"
         << "  \"attention_residual_ln2_legacy_launches_per_block\": 2,\n"
-        << "  \"attention_residual_ln2_launches_elided_per_block\": 0,\n"
+        << "  \"attention_residual_ln2_launches_elided_per_block\": "
+        << (fuse_attention_residual_ln2_enabled ? 1 : 0) << ",\n"
         << "  \"projection_bias_residual_kernel_launches_per_block\": 2,\n"
         << "  \"projection_bias_residual_legacy_launches_per_block\": 4,\n"
         << "  \"projection_bias_residual_launches_elided_per_block\": 2,\n"
@@ -6572,6 +6588,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_scaled_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_float32",
+        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32",
         "nfn_native_tile_split_qkv_float32",
         "nfn_native_tile_split_qkv_to_heads_float32",
         "nfn_native_tile_split_qkv_to_heads_add_bias_float32",
@@ -6664,9 +6681,9 @@ int run_transformer_lm_training_json(
     using ResidualAddFn = int (*)(const float*, const float*, const float*, float*, std::int64_t, void*);
     using LinearBiasResidualAddFn =
         int (*)(const float*, const float*, const float*, const float*, float*, std::int64_t, std::int64_t, void*);
-    using LinearBiasResidualLayerNormFn =
+    using LinearBiasResidualLayerNormWithStatsFn =
         int (*)(const float*, const float*, const float*, const float*, const float*, const float*,
-                float*, float*, std::int64_t, std::int64_t, float, void*);
+                float*, float*, float*, float*, std::int64_t, std::int64_t, float, void*);
     using SplitQkvToHeadsAddBiasFn = int (*)(
         const float*, const float*, float*, float*, float*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
@@ -6799,7 +6816,7 @@ int run_transformer_lm_training_json(
     PositionEmbeddingBackwardAccumulateFn position_embedding_backward_accumulate = nullptr;
     ResidualAddFn residual_add = nullptr;
     LinearBiasResidualAddFn linear_bias_residual_add = nullptr;
-    LinearBiasResidualLayerNormFn linear_bias_residual_layer_norm = nullptr;
+    LinearBiasResidualLayerNormWithStatsFn linear_bias_residual_layer_norm_with_stats = nullptr;
     SplitQkvToHeadsAddBiasFn split_qkv_to_heads_add_bias = nullptr;
     MergeHeadsFn merge_heads = nullptr;
     LayerNormFn layer_norm = nullptr;
@@ -6954,8 +6971,8 @@ int run_transformer_lm_training_json(
                 residual_add = load_symbol<ResidualAddFn>(tile_handle, "nfn_native_tile_scaled_residual_add_float32");
                 linear_bias_residual_add = load_symbol<LinearBiasResidualAddFn>(
                     tile_handle, "nfn_native_tile_linear_bias_residual_add_float32");
-                linear_bias_residual_layer_norm = load_symbol<LinearBiasResidualLayerNormFn>(
-                    tile_handle, "nfn_native_tile_linear_bias_residual_layer_norm_float32");
+                linear_bias_residual_layer_norm_with_stats = load_symbol<LinearBiasResidualLayerNormWithStatsFn>(
+                    tile_handle, "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32");
                 split_qkv_to_heads_add_bias = load_symbol<SplitQkvToHeadsAddBiasFn>(
                     tile_handle, "nfn_native_tile_split_qkv_to_heads_add_bias_float32");
                 merge_heads = load_symbol<MergeHeadsFn>(tile_handle, "nfn_native_tile_merge_heads_float32");
@@ -7206,15 +7223,8 @@ int run_transformer_lm_training_json(
         store_attention_activations_env == "on" ||
         store_attention_activations_env == "ON";
     const bool packed_qkv_attention_enabled = packed_qkv_attention_default_enabled();
-    const std::string fuse_attention_residual_ln2_env =
-        env_or_empty("NFN_NATIVE_GPT2_FUSE_ATTENTION_RESIDUAL_LN2");
-    const bool fuse_attention_residual_ln2_enabled =
-        fuse_attention_residual_ln2_env == "1" ||
-        fuse_attention_residual_ln2_env == "true" ||
-        fuse_attention_residual_ln2_env == "TRUE" ||
-        fuse_attention_residual_ln2_env == "on" ||
-        fuse_attention_residual_ln2_env == "ON";
-    const bool layer_norm_stats_enabled = !fuse_attention_residual_ln2_enabled;
+    const bool fuse_attention_residual_ln2_enabled = fuse_attention_residual_ln2_default_enabled();
+    const bool layer_norm_stats_enabled = true;
     const std::string lm_head_bf16_logits_env = env_or_empty("NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS");
     const bool lm_head_bf16_logits_enabled =
         lm_head_bf16_logits_env.empty() ||
@@ -8681,7 +8691,9 @@ int run_transformer_lm_training_json(
             run_timed_stage(stage_name + ".attention.residual", [&]() {
                 if (compute_mlp_activations && fuse_attention_residual_ln2_enabled) {
                     if (error.empty()) {
-                        run(linear_bias_residual_layer_norm(
+                        float* ln2_mean = fused_mlp_store != nullptr ? fused_mlp_store->ln2_mean : tape.ln2_mean;
+                        float* ln2_rstd = fused_mlp_store != nullptr ? fused_mlp_store->ln2_rstd : tape.ln2_rstd;
+                        run(linear_bias_residual_layer_norm_with_stats(
                                 block_input,
                                 tape.attn_proj,
                                 block.attn_proj_bias,
@@ -8690,6 +8702,8 @@ int run_transformer_lm_training_json(
                                 block.ln2_bias,
                                 tape.residual1,
                                 tape.ln2_out,
+                                ln2_mean,
+                                ln2_rstd,
                                 rows,
                                 kDim,
                                 kNormEps,
@@ -10111,7 +10125,7 @@ int run_transformer_lm_training_json(
         << "    \"layer_norm_backward_reuses_forward_stats\": "
         << (layer_norm_stats_enabled ? "true" : "false") << ",\n"
         << "    \"layer_norm_stats_disabled_by_fused_residual_ln2\": "
-        << (fuse_attention_residual_ln2_enabled ? "true" : "false") << ",\n"
+        << (fuse_attention_residual_ln2_enabled && !layer_norm_stats_enabled ? "true" : "false") << ",\n"
         << "    \"gradient_clip_loop\": false,\n"
         << "    \"gradient_clip_loop_elided\": true,\n"
         << "    \"gradient_clip_strategy\": \"fused-multi-buffer-sumsq-device-scale\",\n"
