@@ -123,8 +123,15 @@ uses a targeted split: transformer block forward/recompute projections call
 workspace plus `cublasGemmEx` bridge where the stable weight operand can be
 cached. Transformer block dWeight accumulation calls
 `nfn_native_tile_linear_backward_weight_accumulate_bf16_float32`; tied LM-head
-logits, dHidden, and dWeight chunks stay on optimized TF32 tensor-op
-`cublasSgemm`. Set `NFN_TILE_CUDA_LINEAR_BF16=1` or
+logits, dHidden, and dWeight chunks also default to the BF16 classifier path.
+`nfn_native_tile_linear_bf16_output_float32` writes BF16 logits,
+`nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace`
+overwrites them with BF16 dlogits, and the BF16 dlogits feed
+`nfn_native_tile_linear_backward_input_bf16_bits_float32` plus
+`nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits`. Set
+`NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS=0` to return only the tied LM-head chunks
+to the older optimized TF32 tensor-op `cublasSgemm` path for debugging. Set
+`NFN_TILE_CUDA_LINEAR_BF16=1` or
 `NFN_NATIVE_LINEAR_BF16=1` only when profiling the normal linear ABI's BF16
 bridge. Set `NFN_TILE_CUDA_LINEAR_CUBLASLT=1` or
 `NFN_NATIVE_LINEAR_CUBLASLT=1` only when profiling the normal linear ABI's
@@ -146,9 +153,14 @@ The full GPT-2 transformer-LM trainer also exposes
 `nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32`
 for tied LM-head CE backward. That ABI overwrites the logits chunk with dlogits,
 so the main trainer reports `grad_logit_workspace_elements: 0`,
-`lm_head_ce_backward_strategy: "inplace-logits-dlogits-workspace"`, and
+`lm_head_training_logits_dtype: "bf16"`,
+`lm_head_training_dlogits_dtype: "bf16"`,
+`lm_head_ce_backward_strategy: "inplace-bf16-logits-dlogits-workspace"`, and
 `lm_head_grad_logits_workspace_allocated: false` instead of allocating a
-separate full-vocab `grad_logits` chunk.
+separate full-vocab `grad_logits` chunk. It also reports
+`lm_head_bf16_logits_enabled: true`, `lm_head_bf16_logit_elements`, and
+`lm_head_bf16_logit_bytes`. With `NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS=0`, the
+same fields report the older float32 logits/dlogits strategy.
 
 The older float32 row-vector forward and query-row atomic backward kernels stay
 compiled as a diagnostic/fallback path for unsupported attention shapes or

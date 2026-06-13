@@ -243,6 +243,16 @@ void launch_linear_bf16_float32(
     std::int64_t output_dim,
     bool has_bias,
     cudaStream_t stream);
+void launch_linear_bf16_output_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    cudaStream_t stream);
 void launch_linear_backward_input_float32(
     const float* grad_out,
     const float* weight,
@@ -253,6 +263,14 @@ void launch_linear_backward_input_float32(
     cudaStream_t stream);
 void launch_linear_backward_input_bf16_float32(
     const float* grad_out,
+    const float* weight,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream);
+void launch_linear_backward_input_bf16_bits_float32(
+    const std::uint16_t* grad_out_bf16_bits,
     const float* weight,
     float* grad_x,
     std::int64_t rows,
@@ -286,6 +304,14 @@ void launch_linear_backward_weight_accumulate_bf16_float32(
 void launch_linear_backward_weight_accumulate_bf16_bits_float32(
     const std::uint16_t* x_bf16_bits,
     const float* grad_out,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream);
+void launch_linear_backward_weight_accumulate_float32_bf16_bits(
+    const float* x,
+    const std::uint16_t* grad_out_bf16_bits,
     float* grad_weight,
     std::int64_t rows,
     std::int64_t input_dim,
@@ -470,6 +496,15 @@ void launch_token_cross_entropy_backward_with_workspace_float32(
     cudaStream_t stream);
 void launch_token_cross_entropy_backward_inplace_with_workspace_float32(
     float* logits,
+    const std::int64_t* targets,
+    float* row_max,
+    float* row_denom,
+    std::int64_t rows,
+    std::int64_t vocab,
+    float loss_scale,
+    cudaStream_t stream);
+void launch_token_cross_entropy_backward_inplace_bf16_bits_with_workspace(
+    std::uint16_t* logits,
     const std::int64_t* targets,
     float* row_max,
     float* row_denom,
@@ -1240,6 +1275,21 @@ int nfn_native_tile_linear_bf16_float32(
     return launch_status();
 }
 
+int nfn_native_tile_linear_bf16_output_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_bf16_output_float32(
+        x, weight, bias, out_bf16_bits, rows, input_dim, output_dim, has_bias, as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_linear_backward_input_float32(
     const float* grad_out,
     const float* weight,
@@ -1263,6 +1313,19 @@ int nfn_native_tile_linear_backward_input_bf16_float32(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_linear_backward_input_bf16_float32(
         grad_out, weight, grad_x, rows, input_dim, output_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_backward_input_bf16_bits_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    const float* weight,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_float32(
+        grad_out_bf16_bits, weight, grad_x, rows, input_dim, output_dim, as_stream(cuda_stream));
     return launch_status();
 }
 
@@ -1315,6 +1378,19 @@ int nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_float32(
         x_bf16_bits, grad_out, grad_weight, rows, input_dim, output_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits(
+    const float* x,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_float32_bf16_bits(
+        x, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, as_stream(cuda_stream));
     return launch_status();
 }
 
@@ -1634,6 +1710,27 @@ int nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32(
     float loss_scale,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_token_cross_entropy_backward_inplace_with_workspace_float32(
+        logits,
+        targets,
+        row_max_workspace,
+        row_denom_workspace,
+        rows,
+        vocab,
+        loss_scale,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace(
+    std::uint16_t* logits,
+    const std::int64_t* targets,
+    float* row_max_workspace,
+    float* row_denom_workspace,
+    std::int64_t rows,
+    std::int64_t vocab,
+    float loss_scale,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_token_cross_entropy_backward_inplace_bf16_bits_with_workspace(
         logits,
         targets,
         row_max_workspace,

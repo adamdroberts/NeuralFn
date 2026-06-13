@@ -1634,7 +1634,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["loss_partial_count"] == 1
     assert train_transformer_payload["logit_workspace_elements"] == 2 * 50304
     assert train_transformer_payload["grad_logit_workspace_elements"] == 0
-    assert train_transformer_payload["lm_head_ce_backward_strategy"] == "inplace-logits-dlogits-workspace"
+    assert train_transformer_payload["lm_head_training_logits_dtype"] == "bf16"
+    assert train_transformer_payload["lm_head_training_dlogits_dtype"] == "bf16"
+    assert train_transformer_payload["lm_head_bf16_logits_enabled"] is True
+    assert train_transformer_payload["lm_head_bf16_logit_elements"] == 0
+    assert train_transformer_payload["lm_head_bf16_logit_bytes"] == 0
+    assert train_transformer_payload["lm_head_ce_backward_strategy"] == "inplace-bf16-logits-dlogits-workspace"
     assert train_transformer_payload["lm_head_grad_logits_workspace_allocated"] is False
     assert train_transformer_payload["linear_backend_strategy"] == "not-run"
     assert train_transformer_payload["block_forward_linear_strategy"] == "forced-bf16-gemmex-forward"
@@ -1645,7 +1650,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert (
         train_transformer_payload["non_block_forward_backward_linear_strategy"]
-        == "padded-lm-head-tf32-sgemm-optimized-default"
+        == "padded-lm-head-bf16-gemmex-default"
     )
     assert train_transformer_payload["linear_bf16_gemm_count"] == 0
     assert train_transformer_payload["linear_cublaslt_gemm_count"] == 0
@@ -2804,6 +2809,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_store_mlp_activations_bf16_float32" in header_text
     assert "nfn_native_tile_restore_mlp_activations_bf16_float32" in header_text
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32" in header_text
+    assert "nfn_native_tile_linear_bf16_output_float32" in header_text
+    assert "nfn_native_tile_linear_backward_input_bf16_bits_float32" in header_text
+    assert "nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits" in header_text
     assert "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32" in header_text
     assert "nfn_native_tile_float32_to_bf16_bits_many" in header_text
     assert "nfn_native_tile_trainer_linear_stats_reset" in header_text
@@ -2819,6 +2827,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "launch_store_mlp_activations_bf16_float32" in source_text
     assert "launch_restore_mlp_activations_bf16_float32" in source_text
     assert "launch_linear_backward_weight_accumulate_bf16_bits_float32" in source_text
+    assert "launch_linear_bf16_output_float32" in source_text
+    assert "launch_linear_backward_input_bf16_bits_float32" in source_text
+    assert "launch_linear_backward_weight_accumulate_float32_bf16_bits" in source_text
     assert "launch_gelu_backward_inplace_bf16_bits_float32" in source_text
     assert "launch_float32_to_bf16_bits_many" in source_text
     assert "nfn_native_tile_trainer_linear_bf16_workspace_allocation_count" in source_text
@@ -2827,12 +2838,17 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "f32_to_bf16_bits_kernel" in kernels_text
     assert "f32_to_bf16_bits_many_kernel" in kernels_text
     assert "launch_linear_bf16_float32" in kernels_text
+    assert "cublas_linear_gemm_ex_bf16_float32_to_bf16_bits" in kernels_text
+    assert "cublas_linear_gemm_ex_bf16_bits_b_float32" in kernels_text
+    assert "linear_bf16_output_float32_kernel" in kernels_text
     assert "nfn_native_tile_linear_bf16_float32" in header_text
     assert "nfn_native_tile_linear_bf16_float32" in source_text
     assert "launch_linear_backward_input_bf16_float32" in kernels_text
+    assert "linear_backward_input_bf16_bits_float32_kernel" in kernels_text
     assert "nfn_native_tile_linear_backward_input_bf16_float32" in header_text
     assert "nfn_native_tile_linear_backward_input_bf16_float32" in source_text
     assert "launch_linear_backward_weight_accumulate_bf16_float32" in kernels_text
+    assert "linear_backward_weight_chunked_atomic_float32_bf16_bits_kernel" in kernels_text
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32" in header_text
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32" in source_text
     assert "cublas_linear_gemm_ex_bf16_float32" in kernels_text
@@ -2902,6 +2918,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_masked_token_cross_entropy_backward_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_backward_with_workspace_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32" in header_text
+    assert "nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace" in header_text
     assert "nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_float32" in header_text
     assert "nfn_native_tile_attention_forward_stats_reset" in header_text
@@ -2942,8 +2959,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "token_cross_entropy_backward_rowwise_float32_kernel" in kernels_text
     assert "token_cross_entropy_backward_rowwise_inplace_float32_kernel" in kernels_text
     assert "token_cross_entropy_row_stats_float32_kernel" in kernels_text
+    assert "token_cross_entropy_bf16_bits_row_stats_kernel" in kernels_text
     assert "token_cross_entropy_backward_chunked_float32_kernel" in kernels_text
     assert "token_cross_entropy_backward_chunked_inplace_float32_kernel" in kernels_text
+    assert "token_cross_entropy_backward_inplace_bf16_bits_kernel" in kernels_text
     assert "token_cross_entropy_backward_elementwise_float32_kernel" not in kernels_text
     assert "gelu_float32_kernel" in kernels_text
     assert "gelu_backward_float32_kernel" in kernels_text
@@ -3632,7 +3651,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_restore_mlp_activations_bf16_float32" in exported
         assert "nfn_native_tile_float32_to_bf16_bits_many" in exported
         assert "nfn_native_tile_linear_bf16_float32" in exported
+        assert "nfn_native_tile_linear_bf16_output_float32" in exported
         assert "nfn_native_tile_linear_backward_input_bf16_float32" in exported
+        assert "nfn_native_tile_linear_backward_input_bf16_bits_float32" in exported
         assert "nfn_native_tile_trainer_linear_stats_reset" in exported
         assert "nfn_native_tile_trainer_linear_bf16_cache_reset" in exported
         assert "nfn_native_tile_trainer_linear_bf16_gemm_count" in exported
@@ -3652,6 +3673,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_linear_backward_weight_accumulate_float32" in exported
         assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32" in exported
         assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32" in exported
+        assert "nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits" in exported
         assert "nfn_native_tile_linear_backward_bias_float32" in exported
         assert "nfn_native_tile_linear_backward_bias_accumulate_float32" in exported
         assert "nfn_native_tile_scaled_residual_add_float32" in exported
@@ -3675,6 +3697,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_masked_token_cross_entropy_backward_float32" in exported
         assert "nfn_native_tile_token_cross_entropy_backward_with_workspace_float32" in exported
         assert "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32" in exported
+        assert "nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace" in exported
         assert "nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32" in exported
         assert "nfn_native_tile_scaled_dot_product_attention_float32" in exported
         assert "nfn_native_tile_scaled_dot_product_attention_backward_float32" in exported

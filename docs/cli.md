@@ -166,9 +166,12 @@ dInput GEMMs through `nfn_native_tile_linear_backward_input_bf16_float32`, which
 forces the cached-workspace BF16 `cublasGemmEx` bridge for cacheable-weight
 GEMMs. Transformer block dWeight accumulation uses
 `nfn_native_tile_linear_backward_weight_accumulate_bf16_float32`; tied LM-head
-logits, dHidden, and dWeight chunks stay on the normal optimized TF32 tensor-op
-`cublasSgemm` default so the full-vocab activation-first path avoids BF16
-repacking overhead. Set `NFN_TILE_CUDA_LINEAR_BF16=1` or
+logits, dHidden, and dWeight chunks also default to the BF16 classifier path,
+which writes BF16 logits, overwrites them with BF16 dlogits, then feeds BF16
+dlogits into the LM-head dHidden and dWeight GEMMs. Set
+`NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS=0` to return only the tied LM-head chunks to
+the older optimized TF32 tensor-op `cublasSgemm` path for debugging. Set
+`NFN_TILE_CUDA_LINEAR_BF16=1` or
 `NFN_NATIVE_LINEAR_BF16=1` only when profiling the normal linear ABI's BF16
 bridge. Set `NFN_TILE_CUDA_LINEAR_CUBLASLT=1` or
 `NFN_NATIVE_LINEAR_CUBLASLT=1` only when profiling the normal linear ABI's
@@ -194,7 +197,10 @@ The tied LM-head row chunk defaults to 8192 rows and can be overridden with
 are reduced on device before one host loss copy per forward loss, and tied
 LM-head dWeight chunks accumulate directly into `accum_grad_token_weight` with
 `nfn_native_tile_linear_backward_weight_accumulate_float32` instead of using a
-full-vocab scratch gradient buffer per chunk or per microbatch.
+full-vocab scratch gradient buffer per chunk or per microbatch. Default JSON
+reports `lm_head_training_logits_dtype: "bf16"`,
+`lm_head_bf16_logits_enabled: true`, `lm_head_bf16_logit_elements`, and
+`lm_head_ce_backward_strategy: "inplace-bf16-logits-dlogits-workspace"`.
 `--smoke-lm-step`, `--smoke-embedding-lm-step`, `--train-embedding-lm`, and
 `--smoke-transformer-lm-step` use that same 50,304-row padded tied token
 embedding/LM-head tensor while validating token IDs against public vocab 50,257.
