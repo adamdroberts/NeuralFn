@@ -149,12 +149,15 @@ Canonical docs:
   `linear_bf16_cache_entry_count`. Dense GPT transformer block forward/recompute
   projections should use `nfn_native_tile_linear_bf16_float32`, block dInput
   GEMMs should use `nfn_native_tile_linear_backward_input_bf16_float32`, and
-  the trainer should report `linear_backend_strategy:
-  "block-forward-and-block-dinput-bf16-dweight-tf32"`,
-  `block_forward_linear_strategy`, `block_backward_input_linear_strategy`, and
-  `non_block_forward_backward_linear_strategy`; LM-head and dWeight GEMMs
-  should stay on optimized TF32 tensor-op `cublasSgemm`, not scalar Tile dot
-  products.
+  block dWeight accumulation should use
+  `nfn_native_tile_linear_backward_weight_accumulate_bf16_float32`. The tied
+  LM-head logits, dHidden, and dWeight GEMMs should stay on optimized TF32
+  tensor-op `cublasSgemm`, not scalar Tile dot products. The trainer should
+  report `linear_backend_strategy:
+  "block-forward-dinput-dweight-bf16-lm-head-tf32"`,
+  `block_forward_linear_strategy`, `block_backward_input_linear_strategy`,
+  `block_backward_weight_linear_strategy`,
+  and `non_block_forward_backward_linear_strategy`.
 - The row-vector forward and query-row atomic backward float32 SDPA kernels are
   fallback/diagnostic paths for unsupported shapes or
   `NFN_TILE_CUDA_USE_TK_ATTENTION=0` builds. Do not make them the default dense
@@ -328,8 +331,9 @@ Canonical docs:
   forward/backward/update slice through raw Tile kernels without Python/Torch.
 - `libnfn_native_train_tile_ops.so` is built with
   `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1`, so trainer-facing native linear forward,
-  dInput, and dWeight ABI symbols use GPU GEMM, and linear bias plus
-  accumulate-bias backward use GPU GEMV over a cached device ones vector
+  dInput, dWeight, accumulate-dWeight, forced-BF16 forward, forced-BF16 dInput,
+  and forced-BF16 accumulate-dWeight ABI symbols use GPU GEMM, and linear bias
+  plus accumulate-bias backward use GPU GEMV over a cached device ones vector
   initialized by a Tile fill kernel, while keeping Torch and the PyTorch Tile
   extension out of the training process. The pure Tile direct dot-product and
   row-chunked atomic kernels remain the fallback for non-trainer builds.

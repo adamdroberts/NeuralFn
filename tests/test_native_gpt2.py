@@ -1039,6 +1039,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_attention_forward_row_attr_status" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_attention_forward_row_attr_const_size_bytes" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_linear_bf16_float32" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_stats_reset" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_bf16_cache_reset" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_bf16_gemm_count" in tile_payload["available_native_kernels"]
@@ -1616,8 +1617,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["block_forward_linear_strategy"] == "forced-bf16-gemmex-forward"
     assert train_transformer_payload["block_backward_input_linear_strategy"] == "forced-bf16-gemmex-dinput"
     assert (
+        train_transformer_payload["block_backward_weight_linear_strategy"]
+        == "forced-bf16-gemmex-dweight-accumulate"
+    )
+    assert (
         train_transformer_payload["non_block_forward_backward_linear_strategy"]
-        == "lm-head-and-dweight-tf32-sgemm-optimized-default"
+        == "lm-head-tf32-sgemm-optimized-default"
     )
     assert train_transformer_payload["linear_bf16_gemm_count"] == 0
     assert train_transformer_payload["linear_sgemm_count"] == 0
@@ -2781,6 +2786,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "launch_linear_backward_input_bf16_float32" in kernels_text
     assert "nfn_native_tile_linear_backward_input_bf16_float32" in header_text
     assert "nfn_native_tile_linear_backward_input_bf16_float32" in source_text
+    assert "launch_linear_backward_weight_accumulate_bf16_float32" in kernels_text
+    assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32" in header_text
+    assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32" in source_text
     assert "cublas_linear_gemm_ex_bf16_float32" in kernels_text
     assert "CUDA_R_16BF" in kernels_text
     assert "CUBLAS_COMPUTE_32F" in kernels_text
@@ -2789,9 +2797,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "return false;" in kernels_text
     assert 'std::strcmp(value, "1") == 0' in kernels_text
     assert "tf32-sgemm-optimized" in gpt2_source_text
-    assert "block-forward-and-block-dinput-bf16-dweight-tf32" in gpt2_source_text
+    assert "block-forward-dinput-dweight-bf16-lm-head-tf32" in gpt2_source_text
     assert "forced-bf16-gemmex-forward" in gpt2_source_text
     assert "forced-bf16-gemmex-dinput" in gpt2_source_text
+    assert "forced-bf16-gemmex-dweight-accumulate" in gpt2_source_text
     assert "non_block_forward_backward_linear_strategy" in gpt2_source_text
     assert ".forward.no_bias.bf16" in gpt2_source_text
     assert ".backward_input.bf16" in gpt2_source_text
@@ -3573,6 +3582,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_linear_backward_input_float32" in exported
         assert "nfn_native_tile_linear_backward_weight_float32" in exported
         assert "nfn_native_tile_linear_backward_weight_accumulate_float32" in exported
+        assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32" in exported
         assert "nfn_native_tile_linear_backward_bias_float32" in exported
         assert "nfn_native_tile_linear_backward_bias_accumulate_float32" in exported
         assert "nfn_native_tile_scaled_residual_add_float32" in exported

@@ -6411,6 +6411,41 @@ void launch_linear_backward_weight_accumulate_float32(
       x, grad_out, grad_weight, n, rows, input_dim, output_dim, kRowChunkSize, row_chunks);
 }
 
+void launch_linear_backward_weight_accumulate_bf16_float32(
+    const float* x,
+    const float* grad_out,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
+      cublas_linear_gemm_ex_bf16_float32(
+          x,
+          grad_out,
+          grad_weight,
+          rows * input_dim,
+          rows * output_dim,
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          static_cast<int>(rows),
+          CUBLAS_OP_N,
+          CUBLAS_OP_T,
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          static_cast<int>(input_dim),
+          1.0f,
+          false,
+          true,
+          stream)) {
+    return;
+  }
+#endif
+  launch_linear_backward_weight_accumulate_float32(
+      x, grad_out, grad_weight, rows, input_dim, output_dim, stream);
+}
+
 void launch_linear_backward_bias_float32(
     const float* grad_out,
     float* grad_bias,

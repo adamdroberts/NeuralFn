@@ -257,6 +257,14 @@ void launch_linear_backward_weight_accumulate_float32(
     std::int64_t input_dim,
     std::int64_t output_dim,
     cudaStream_t stream);
+void launch_linear_backward_weight_accumulate_bf16_float32(
+    const float* x,
+    const float* grad_out,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream);
 void launch_linear_backward_bias_float32(
     const float* grad_out,
     float* grad_bias,
@@ -1182,6 +1190,19 @@ int nfn_native_tile_linear_backward_weight_accumulate_float32(
     std::int64_t output_dim,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_float32(
+        x, grad_out, grad_weight, rows, input_dim, output_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_backward_weight_accumulate_bf16_float32(
+    const float* x,
+    const float* grad_out,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_float32(
         x, grad_out, grad_weight, rows, input_dim, output_dim, as_stream(cuda_stream));
     return launch_status();
 }

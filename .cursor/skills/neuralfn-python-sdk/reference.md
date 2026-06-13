@@ -257,7 +257,8 @@ CUDA Tile SDK helpers live in `neuralfn.tile_cuda`; see `docs/python-sdk/tile-cu
 
 `tools/build_native_train_tile_ops.sh` builds the trainer-facing raw C ABI with
 `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1`, so native linear forward, dInput, dWeight,
-and accumulate-dWeight calls use GPU GEMM, while native bias and
+accumulate-dWeight, forced-BF16 forward, forced-BF16 dInput, and forced-BF16
+accumulate-dWeight calls use GPU GEMM, while native bias and
 accumulate-bias backward calls use GPU GEMV over a cached device ones vector
 initialized by a Tile fill kernel. This keeps native trainers off Torch/Python
 while moving the GPT-style projection path toward the SM120 `llm.kittens`
@@ -266,10 +267,13 @@ fallback unless that macro is set. In the full GPT-2 trainer, block
 forward/recompute projections call `nfn_native_tile_linear_bf16_float32`, and
 block dInput GEMMs call `nfn_native_tile_linear_backward_input_bf16_float32`, to
 force the cached BF16 `cublasGemmEx` bridge where the stable weight operand can
-be cached. LM-head and dWeight accumulation GEMMs stay on optimized TF32
-tensor-op `cublasSgemm`. Native JSON reports `linear_backend_strategy:
-"block-forward-and-block-dinput-bf16-dweight-tf32"`,
+be cached. Transformer block dWeight accumulation uses
+`nfn_native_tile_linear_backward_weight_accumulate_bf16_float32`; tied LM-head
+logits, dHidden, and dWeight chunks stay on optimized TF32 tensor-op
+`cublasSgemm`. Native JSON reports `linear_backend_strategy:
+"block-forward-dinput-dweight-bf16-lm-head-tf32"`,
 `block_forward_linear_strategy`, `block_backward_input_linear_strategy`,
+`block_backward_weight_linear_strategy`,
 `non_block_forward_backward_linear_strategy`,
 `linear_bf16_gemm_count`, `linear_sgemm_count`, `linear_bf16_a_pack_count`,
 `linear_bf16_a_cache_hit_count`, `linear_bf16_cache_reset_count`,
