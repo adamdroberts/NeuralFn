@@ -6579,6 +6579,10 @@ int run_transformer_lm_training_json(
     using CudaDeviceSynchronizeFn = int (*)();
     using CudaGetErrorStringFn = const char* (*)(int);
     using CudaVersionFn = int (*)(int*);
+    using CudaEventCreateWithFlagsFn = int (*)(void**, unsigned int);
+    using CudaEventRecordFn = int (*)(void*, void*);
+    using CudaEventElapsedTimeFn = int (*)(float*, void*, void*);
+    using CudaEventDestroyFn = int (*)(void*);
 
     FillFn fill = nullptr;
     FillManyValuesFn fill_many_values = nullptr;
@@ -6657,6 +6661,10 @@ int run_transformer_lm_training_json(
     CudaGetErrorStringFn cuda_get_error_string = nullptr;
     CudaVersionFn cuda_runtime_get_version = nullptr;
     CudaVersionFn cuda_driver_get_version = nullptr;
+    CudaEventCreateWithFlagsFn cuda_event_create_with_flags = nullptr;
+    CudaEventRecordFn cuda_event_record = nullptr;
+    CudaEventElapsedTimeFn cuda_event_elapsed_time = nullptr;
+    CudaEventDestroyFn cuda_event_destroy = nullptr;
     int cuda_runtime_version = 0;
     int cuda_driver_version = 0;
     int cuda_runtime_version_status = -1;
@@ -6846,6 +6854,11 @@ int run_transformer_lm_training_json(
         cuda_get_error_string = load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
         cuda_runtime_get_version = load_symbol<CudaVersionFn>(cuda_handle, "cudaRuntimeGetVersion");
         cuda_driver_get_version = load_symbol<CudaVersionFn>(cuda_handle, "cudaDriverGetVersion");
+        cuda_event_create_with_flags =
+            load_symbol<CudaEventCreateWithFlagsFn>(cuda_handle, "cudaEventCreateWithFlags");
+        cuda_event_record = load_symbol<CudaEventRecordFn>(cuda_handle, "cudaEventRecord");
+        cuda_event_elapsed_time = load_symbol<CudaEventElapsedTimeFn>(cuda_handle, "cudaEventElapsedTime");
+        cuda_event_destroy = load_symbol<CudaEventDestroyFn>(cuda_handle, "cudaEventDestroy");
         if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
             cuda_memcpy_async == nullptr || cuda_host_alloc == nullptr || cuda_free_host == nullptr ||
             cuda_device_synchronize == nullptr) {
@@ -6877,6 +6890,115 @@ int run_transformer_lm_training_json(
             }
         }
     }
+
+    struct StageTimingRecord {
+        std::string name;
+        double total_ms = 0.0;
+        std::int64_t count = 0;
+    };
+    struct StageTimingEvent {
+        std::size_t record_index = 0;
+        void* start = nullptr;
+        void* stop = nullptr;
+    };
+    const bool stage_timing_requested =
+        env_or_empty("NFN_NATIVE_GPT2_STAGE_TIMING") == "1" ||
+        env_or_empty("NFN_NATIVE_GPT2_STAGE_TIMING") == "true" ||
+        env_or_empty("NFN_NATIVE_GPT2_STAGE_TIMING") == "TRUE";
+    bool stage_timing_enabled = false;
+    std::int64_t stage_timing_event_count = 0;
+    std::int64_t stage_timing_dropped_event_count = 0;
+    std::vector<StageTimingRecord> stage_timing_records;
+    std::vector<StageTimingEvent> stage_timing_events;
+    constexpr std::int64_t kStageTimingMaxEvents = 20000;
+    if (error.empty() && stage_timing_requested) {
+        if (cuda_event_create_with_flags == nullptr || cuda_event_record == nullptr ||
+            cuda_event_elapsed_time == nullptr || cuda_event_destroy == nullptr) {
+            error = "NFN_NATIVE_GPT2_STAGE_TIMING requested but CUDA event APIs are unavailable";
+        } else {
+            stage_timing_enabled = true;
+        }
+    }
+    auto stage_record_index = [&](const std::string& name) -> std::size_t {
+        for (std::size_t i = 0; i < stage_timing_records.size(); ++i) {
+            if (stage_timing_records[i].name == name) {
+                return i;
+            }
+        }
+        stage_timing_records.push_back(StageTimingRecord{name, 0.0, 0});
+        return stage_timing_records.size() - 1;
+    };
+    auto stage_begin = [&](const std::string& name) -> std::int64_t {
+        if (!stage_timing_enabled || stage_timing_event_count >= kStageTimingMaxEvents) {
+            if (stage_timing_enabled) {
+                stage_timing_dropped_event_count += 1;
+            }
+            return -1;
+        }
+        void* start = nullptr;
+        void* stop = nullptr;
+        int status = cuda_event_create_with_flags(&start, 0);
+        if (status == 0) {
+            status = cuda_event_create_with_flags(&stop, 0);
+        }
+        if (status == 0) {
+            status = cuda_event_record(start, nullptr);
+        }
+        if (status != 0) {
+            if (start != nullptr) {
+                cuda_event_destroy(start);
+            }
+            if (stop != nullptr) {
+                cuda_event_destroy(stop);
+            }
+            if (error.empty()) {
+                error = cuda_error(status, "cudaEventRecord stage timing " + name);
+            }
+            return -1;
+        }
+        const std::size_t record_index = stage_record_index(name);
+        stage_timing_events.push_back(StageTimingEvent{record_index, start, stop});
+        stage_timing_event_count += 1;
+        return static_cast<std::int64_t>(stage_timing_events.size() - 1);
+    };
+    auto stage_end = [&](std::int64_t event_index, const std::string& name) {
+        if (event_index < 0 || !stage_timing_enabled) {
+            return;
+        }
+        const int status = cuda_event_record(stage_timing_events[static_cast<std::size_t>(event_index)].stop, nullptr);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaEventRecord stage timing stop " + name);
+        }
+    };
+    auto finalize_stage_timing = [&]() {
+        if (!stage_timing_enabled) {
+            return;
+        }
+        if (cuda_device_synchronize != nullptr) {
+            const int sync_status = cuda_device_synchronize();
+            if (sync_status != 0 && error.empty()) {
+                error = cuda_error(sync_status, "cudaDeviceSynchronize stage timing");
+            }
+        }
+        for (StageTimingEvent& event : stage_timing_events) {
+            float elapsed = 0.0f;
+            const int status = cuda_event_elapsed_time(&elapsed, event.start, event.stop);
+            if (status == 0 && event.record_index < stage_timing_records.size()) {
+                stage_timing_records[event.record_index].total_ms += static_cast<double>(elapsed);
+                stage_timing_records[event.record_index].count += 1;
+            } else if (status != 0 && error.empty()) {
+                error = cuda_error(status, "cudaEventElapsedTime stage timing");
+            }
+            if (event.start != nullptr) {
+                cuda_event_destroy(event.start);
+                event.start = nullptr;
+            }
+            if (event.stop != nullptr) {
+                cuda_event_destroy(event.stop);
+                event.stop = nullptr;
+            }
+        }
+    };
 
     const float initial_token_weight_sample = kInitialTokenWeightSample;
 
@@ -7547,6 +7669,7 @@ int run_transformer_lm_training_json(
     auto zero_gradients = [&]() {};
 
     auto zero_accumulated_gradients = [&]() {
+        const std::int64_t stage_event = stage_begin("gradient_zero");
         if (error.empty()) {
             run(fill_many(
                     adamw_grad_ptrs,
@@ -7560,6 +7683,7 @@ int run_transformer_lm_training_json(
                 accumulation_zero_kernel_launches += 1;
             }
         }
+        stage_end(stage_event, "gradient_zero");
     };
 
     auto accumulate_gradients = [&](float scale) {
@@ -7567,6 +7691,7 @@ int run_transformer_lm_training_json(
     };
 
     auto clip_gradients = [&]() {
+        const std::int64_t stage_event = stage_begin("gradient_clip");
         if (error.empty()) {
             run(sumsq_partials_many(
                     reinterpret_cast<const float* const*>(adamw_grad_ptrs),
@@ -7585,12 +7710,14 @@ int run_transformer_lm_training_json(
             run(clip_scale(grad_sumsq_partials, grad_clip_scale, gradient_partial_count, kGradClipNorm, kClipEps, nullptr),
                 "gradient_clip_scale");
         }
+        stage_end(stage_event, "gradient_clip");
     };
 
     auto upload_pinned_batch = [&]() {
         if (!error.empty()) {
             return;
         }
+        const std::int64_t stage_event = stage_begin("token_upload");
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(rows);
         const std::size_t arena_bytes = bytes * 2;
         run(cuda_memcpy_async(
@@ -7604,9 +7731,11 @@ int run_transformer_lm_training_json(
             run(uint16_to_int64(token_u16_device_arena, token_i64_arena, rows * 2, nullptr),
                 "token_i64_arena.device_widen");
         }
+        stage_end(stage_event, "token_upload");
     };
 
     auto lm_head_forward_loss = [&](const std::string& label) -> double {
+        const std::int64_t stage_event = stage_begin(label + ".lm_head_loss");
         fill_buffer(loss_total, 1, 0.0f, label + ".loss_total.zero");
         for (std::int64_t row_start = 0; row_start < rows && error.empty(); row_start += lm_head_chunk_rows) {
             const std::int64_t row_count =
@@ -7642,10 +7771,12 @@ int run_transformer_lm_training_json(
             run(cuda_memcpy(host_loss.data(), loss_total, sizeof(float), kCudaMemcpyDeviceToHost),
                 label + ".loss.copy");
         }
+        stage_end(stage_event, label + ".lm_head_loss");
         return error.empty() ? static_cast<double>(host_loss[0]) : 0.0;
     };
 
     auto lm_head_backward = [&](float accumulation_scale) {
+        const std::int64_t stage_event = stage_begin("lm_head_backward");
         for (std::int64_t row_start = 0; row_start < rows && error.empty(); row_start += lm_head_chunk_rows) {
             const std::int64_t row_count =
                 (row_start + lm_head_chunk_rows < rows) ? lm_head_chunk_rows : (rows - row_start);
@@ -7683,12 +7814,15 @@ int run_transformer_lm_training_json(
                     "lm_head.backward_weight.accumulate");
             }
         }
+        stage_end(stage_event, "lm_head_backward");
     };
 
     auto block_input_for = [&](std::size_t block_index) -> const float* {
         return block_index == 0 ? x : block_outputs[block_index - 1];
     };
     auto forward_block = [&](TransformerBlockParams& block, TransformerBlockActivations& tape, const float* block_input, const std::string& label) {
+        const std::string stage_name = label.find("recompute") == std::string::npos ? "block_forward" : "block_recompute";
+        const std::int64_t stage_event = stage_begin(stage_name);
         if (error.empty()) run(layer_norm(block_input, block.ln1_weight, block.ln1_bias, tape.ln1_out, rows, kDim, kNormEps, nullptr), label + ".ln1.forward");
         if (error.empty()) run(linear(tape.ln1_out, block.qkv_weight, nullptr, tape.qkv, rows, kDim, kQkvDim, false, nullptr), label + ".attn.qkv.forward.no_bias");
         if (error.empty()) run(split_qkv_to_heads_add_bias(tape.qkv, block.qkv_bias, tape.q_heads, tape.k_heads, tape.v_heads, batch_size, seq_len, kHeads, kHeadDim, nullptr), label + ".attn.qkv.bias_split_to_heads");
@@ -7701,8 +7835,10 @@ int run_transformer_lm_training_json(
         if (error.empty()) run(gelu_add_bias(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward");
         if (error.empty()) run(linear(tape.act, block.mlp_proj_weight, nullptr, tape.mlp_out, rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias");
         if (error.empty()) run(linear_bias_residual_add(tape.residual1, tape.mlp_out, block.mlp_proj_bias, residual_scale, tape.residual2, rows, kDim, nullptr), label + ".mlp.bias_residual");
+        stage_end(stage_event, stage_name);
     };
     auto backward_block = [&](TransformerBlockParams& block, TransformerBlockActivations& tape, const float* block_input, float* incoming_grad, float* output_grad, const std::string& label) {
+        const std::int64_t stage_event = stage_begin("block_backward");
         if (error.empty()) run(linear_backward_weight_accumulate(tape.act, incoming_grad, block.accum_grad_mlp_proj_weight, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_weight.accumulate");
         if (error.empty()) run(linear_backward_bias_accumulate(incoming_grad, block.accum_grad_mlp_proj_bias, rows, kDim, nullptr), label + ".mlp.proj.backward_bias.accumulate");
         if (error.empty()) run(linear_backward_input(incoming_grad, block.mlp_proj_weight, grad_act, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_input");
@@ -7723,9 +7859,11 @@ int run_transformer_lm_training_json(
         if (error.empty()) run(layer_norm_backward_affine_accumulate(block_input, grad_ln1, block.accum_grad_ln1_weight, block.accum_grad_ln1_bias, rows, kDim, kNormEps, nullptr), label + ".ln1.backward_affine.accumulate");
         if (error.empty()) run(layer_norm_backward_input(block_input, grad_ln1, block.ln1_weight, grad_x_from_attn, rows, kDim, kNormEps, nullptr), label + ".ln1.backward_input");
         if (error.empty()) run(residual_add(grad_residual1, grad_x_from_attn, residual_scale, output_grad, activation_elements, nullptr), label + ".attn.residual.backward_add");
+        stage_end(stage_event, "block_backward");
     };
 
     auto forward_loss = [&](const std::string& label, bool compute_loss, bool preserve_block_outputs) -> double {
+        const std::int64_t stage_event = stage_begin(label + ".model_forward");
         if (error.empty()) run(token_embedding(token_weight, token_ids, token_out, rows, kDim, nullptr), label + ".wte.forward");
         if (error.empty()) run(position_embedding(position_weight, position_out, batch_size, seq_len, kDim, nullptr), label + ".wpe.forward");
         if (error.empty()) run(residual_add(token_out, position_out, residual_scale, x, activation_elements, nullptr), label + ".embedding.residual");
@@ -7745,6 +7883,7 @@ int run_transformer_lm_training_json(
         }
         lnf_input = final_block_output;
         if (error.empty()) run(layer_norm(lnf_input, lnf_weight, lnf_bias, lnf_out, rows, kDim, kNormEps, nullptr), label + ".ln_f.forward");
+        stage_end(stage_event, label + ".model_forward");
         return (error.empty() && compute_loss) ? lm_head_forward_loss(label) : 0.0;
     };
 
@@ -7767,8 +7906,10 @@ int run_transformer_lm_training_json(
         zero_gradients();
         const double train_loss_sum = forward_loss("train", record_train_loss, true);
         if (error.empty()) lm_head_backward(accumulation_scale);
+        const std::int64_t final_norm_event = stage_begin("final_norm_backward");
         if (error.empty()) run(layer_norm_backward_affine_accumulate(lnf_input, grad_lnf, accum_grad_lnf_weight, accum_grad_lnf_bias, rows, kDim, kNormEps, nullptr), "ln_f.backward_affine.accumulate");
         if (error.empty()) run(layer_norm_backward_input(lnf_input, grad_lnf, lnf_weight, grad_residual2, rows, kDim, kNormEps, nullptr), "ln_f.backward_input");
+        stage_end(final_norm_event, "final_norm_backward");
         float* incoming_grad = grad_residual2;
         float* output_grad = grad_x;
         for (std::size_t reverse_index = blocks.size(); reverse_index > 0 && error.empty(); --reverse_index) {
@@ -7781,8 +7922,10 @@ int run_transformer_lm_training_json(
             backward_block(blocks[i], tape, block_input, incoming_grad, output_grad, "block" + std::to_string(i));
             std::swap(incoming_grad, output_grad);
         }
+        const std::int64_t embedding_backward_event = stage_begin("embedding_backward");
         if (error.empty()) run(token_embedding_backward_weight(token_ids, incoming_grad, accum_grad_token_weight, rows, kDim, nullptr), "wte.backward_weight");
         if (error.empty()) run(position_embedding_backward_accumulate(incoming_grad, accum_grad_position_weight, batch_size, seq_len, kDim, nullptr), "wpe.backward_weight.accumulate");
+        stage_end(embedding_backward_event, "embedding_backward");
         return train_loss_sum;
     };
 
@@ -7808,6 +7951,7 @@ int run_transformer_lm_training_json(
         const float bias_correction1 = 1.0f - std::pow(kBeta1, static_cast<float>(step));
         const float sqrt_bias_correction2 = std::sqrt(1.0f - std::pow(kBeta2, static_cast<float>(step)));
         if (error.empty()) {
+            const std::int64_t stage_event = stage_begin("adamw_update");
             run(adamw_many_with_device_scale(
                     adamw_param_ptrs,
                     reinterpret_cast<const float* const*>(adamw_grad_ptrs),
@@ -7832,6 +7976,7 @@ int run_transformer_lm_training_json(
                     trainer_linear_bf16_cache_reset();
                 }
             }
+            stage_end(stage_event, "adamw_update");
         }
         return train_loss_sum;
     };
@@ -7902,6 +8047,7 @@ int run_transformer_lm_training_json(
     }
     const auto train_loop_end_time = Clock::now();
     train_loop_wall_ms = elapsed_ms(train_loop_start_time, train_loop_end_time);
+    finalize_stage_timing();
     const double max_weight_delta = std::fabs(static_cast<double>(sampled_token_weight) - initial_token_weight_sample);
     passed = error.empty() && steps_completed == cfg.max_steps && max_weight_delta > 0.0;
 
@@ -8307,6 +8453,26 @@ int run_transformer_lm_training_json(
         dlclose(tile_handle);
     }
     total_wall_ms = elapsed_ms(total_start_time, Clock::now());
+    std::ostringstream stage_timing_json;
+    stage_timing_json
+        << "    \"stage_timing_enabled\": " << (stage_timing_enabled ? "true" : "false") << ",\n"
+        << "    \"stage_timing_event_count\": " << stage_timing_event_count << ",\n"
+        << "    \"stage_timing_dropped_event_count\": " << stage_timing_dropped_event_count << ",\n"
+        << "    \"stage_timing\": [\n";
+    for (std::size_t i = 0; i < stage_timing_records.size(); ++i) {
+        const StageTimingRecord& record = stage_timing_records[i];
+        stage_timing_json
+            << "      {\"name\": \"" << json_escape(record.name) << "\", "
+            << "\"total_ms\": " << record.total_ms << ", "
+            << "\"count\": " << record.count << ", "
+            << "\"avg_ms\": " << (record.count > 0 ? record.total_ms / static_cast<double>(record.count) : 0.0)
+            << "}";
+        if (i + 1 != stage_timing_records.size()) {
+            stage_timing_json << ",";
+        }
+        stage_timing_json << "\n";
+    }
+    stage_timing_json << "    ]\n";
 
     std::cout
         << "{\n"
@@ -8327,7 +8493,8 @@ int run_transformer_lm_training_json(
         << "    \"checkpoint_wall_ms\": " << checkpoint_wall_ms << ",\n"
         << "    \"total_wall_ms\": " << total_wall_ms << ",\n"
         << "    \"optimizer_steps_per_second\": " << (train_loop_wall_ms > 0.0 ? (static_cast<double>(steps_completed) * 1000.0 / train_loop_wall_ms) : 0.0) << ",\n"
-        << "    \"train_tokens_per_second\": " << (train_loop_wall_ms > 0.0 ? (static_cast<double>(tokens_processed) * 1000.0 / train_loop_wall_ms) : 0.0) << "\n"
+        << "    \"train_tokens_per_second\": " << (train_loop_wall_ms > 0.0 ? (static_cast<double>(tokens_processed) * 1000.0 / train_loop_wall_ms) : 0.0) << ",\n"
+        << stage_timing_json.str()
         << "  },\n"
         << "  \"tile_ops_library\": \"" << json_escape(tile_lib_path) << "\",\n"
         << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"

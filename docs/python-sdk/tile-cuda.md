@@ -131,7 +131,14 @@ The compiled GPT-2 trainer also reports host wall-clock timing under `timing`:
 `train_compute_wall_ms`, `checkpoint_wall_ms`, `total_wall_ms`,
 `optimizer_steps_per_second`, and `train_tokens_per_second`. The timers do not
 add device synchronizations; the train-loop measurement ends after the existing
-final sample copy from device to host.
+final sample copy from device to host. Set `NFN_NATIVE_GPT2_STAGE_TIMING=1` to
+add a CUDA-event profiler for the native transformer-LM loop. That diagnostic
+mode records `stage_timing_enabled`, `stage_timing_event_count`,
+`stage_timing_dropped_event_count`, and `stage_timing` entries with per-stage
+`total_ms`, `count`, and `avg_ms` values for token upload, model forward, block
+forward/recompute/backward, LM-head backward, final-norm/embedding backward,
+gradient zero/clip, and AdamW update. The stage profiler synchronizes before
+reading event timings, so leave it disabled for normal throughput runs.
 
 Native GPT-2 SDK config builders accept `template_name` and `graph_file`, which
 map to canonical compiled CLI `--template-name` and `--graph-file` arguments;

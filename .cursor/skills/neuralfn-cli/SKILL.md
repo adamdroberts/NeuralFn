@@ -161,6 +161,13 @@ Canonical docs:
   with host wall-clock phase timers for setup, train loop, validation,
   checkpoint export, total runtime, optimizer steps per second, and train
   tokens per second. These timers should not add new device synchronizations.
+- Full GPT-2 `--train-transformer-lm` may opt into CUDA-event stage timing via
+  `NFN_NATIVE_GPT2_STAGE_TIMING=1`. Keep this diagnostic disabled by default.
+  When enabled, JSON under `timing` should include `stage_timing_enabled`,
+  `stage_timing_event_count`, `stage_timing_dropped_event_count`, and
+  `stage_timing` records for token upload, model/block forward, block
+  recompute/backward, LM-head backward, final-norm/embedding backward,
+  gradient zero/clip, and AdamW update.
 - Full GPT-2 `--train-transformer-lm` should use
   `nfn_native_tile_split_qkv_to_heads_add_bias_float32` to apply Q/K/V bias and
   write Q/K/V head-major buffers in one launch per block. Keep

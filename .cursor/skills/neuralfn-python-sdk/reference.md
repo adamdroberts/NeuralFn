@@ -272,6 +272,14 @@ profiling without rebuilding. Native JSON reports `linear_backend_strategy`,
 `linear_bf16_gemm_count`, `linear_sgemm_count`, `linear_bf16_a_pack_count`,
 `linear_bf16_a_cache_hit_count`, `linear_bf16_cache_reset_count`,
 `linear_bf16_cached_a_capacity`, and `linear_bf16_cache_entry_count`.
+Full GPT-2 `--train-transformer-lm` can opt into CUDA-event stage timing with
+`NFN_NATIVE_GPT2_STAGE_TIMING=1`; keep it disabled by default for throughput
+runs because it records events and synchronizes before reporting. Native JSON
+under `timing` should then include `stage_timing_enabled`,
+`stage_timing_event_count`, `stage_timing_dropped_event_count`, and
+`stage_timing` records for token upload, model/block forward, block
+recompute/backward, LM-head backward, final-norm/embedding backward, gradient
+zero/clip, and AdamW update.
 The trainer-facing build also defaults to the SM120 ThunderKittens bf16
 attention bridge (`NFN_TILE_CUDA_USE_TK_ATTENTION=1`,
 `NFN_TILE_CUDA_ARCH=sm_120a`) for GPT-2-compatible causal SDPA. Keep
