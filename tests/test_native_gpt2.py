@@ -165,7 +165,7 @@ def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) ->
 
     argv = cfg.argv()
     assert cached_meta["token_cache_format"] == "raw_text_uint16_shards"
-    assert cfg.lm_head_row_chunk_size == 16384
+    assert cfg.lm_head_row_chunk_size == 8192
     assert argv[:3] == ["/opt/nfn/train_gpt2cu", "-i", str(dataset_path / "fineweb_train_000000.bin")]
     assert argv[argv.index("-j") + 1] == str(dataset_path / "fineweb_val_000000.bin")
     assert argv[argv.index("-v") + 1] == "1000"
