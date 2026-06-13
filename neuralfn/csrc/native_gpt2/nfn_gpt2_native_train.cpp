@@ -580,6 +580,9 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_copy_float32",
         "nfn_native_tile_uint16_to_int64",
         "nfn_native_tile_float32_to_bf16_bits",
+        "nfn_native_tile_bf16_bits_to_float32",
+        "nfn_native_tile_store_mlp_activations_bf16_float32",
+        "nfn_native_tile_restore_mlp_activations_bf16_float32",
         "nfn_native_tile_float32_to_bf16_bits_many",
         "nfn_native_tile_gradient_accumulate_float32",
         "nfn_native_tile_sum_partials_float32",
@@ -6466,6 +6469,9 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_copy_float32",
         "nfn_native_tile_uint16_to_int64",
         "nfn_native_tile_float32_to_bf16_bits",
+        "nfn_native_tile_bf16_bits_to_float32",
+        "nfn_native_tile_store_mlp_activations_bf16_float32",
+        "nfn_native_tile_restore_mlp_activations_bf16_float32",
         "nfn_native_tile_float32_to_bf16_bits_many",
         "nfn_native_tile_gradient_accumulate_float32",
         "nfn_native_tile_sum_partials_float32",
@@ -6532,6 +6538,10 @@ int run_transformer_lm_training_json(
     using FillManyValuesFn = int (*)(float* const*, const std::int64_t*, const float*, std::int64_t, std::int64_t, void*);
     using CopyFn = int (*)(const float*, float*, std::int64_t, void*);
     using Uint16ToInt64Fn = int (*)(const std::uint16_t*, std::int64_t*, std::int64_t, void*);
+    using StoreMlpActivationsBf16Fn =
+        int (*)(const float*, const float*, const float*, std::uint16_t*, std::int64_t, std::int64_t, void*);
+    using RestoreMlpActivationsBf16Fn =
+        int (*)(const std::uint16_t*, float*, float*, float*, std::int64_t, std::int64_t, void*);
     using Float32ToBf16BitsManyFn =
         int (*)(const float* const*, const std::int64_t*, const std::int64_t*, std::uint16_t*,
                 std::int64_t, std::int64_t, void*);
@@ -6614,6 +6624,8 @@ int run_transformer_lm_training_json(
     InitGpt2TokenWeightFn init_gpt2_token_weight = nullptr;
     CopyFn copy = nullptr;
     Uint16ToInt64Fn uint16_to_int64 = nullptr;
+    StoreMlpActivationsBf16Fn store_mlp_activations_bf16 = nullptr;
+    RestoreMlpActivationsBf16Fn restore_mlp_activations_bf16 = nullptr;
     Float32ToBf16BitsManyFn float32_to_bf16_bits_many = nullptr;
     GradientAccumulateFn gradient_accumulate = nullptr;
     SumPartialsFn sum_partials = nullptr;
@@ -6734,6 +6746,10 @@ int run_transformer_lm_training_json(
                     load_symbol<InitGpt2TokenWeightFn>(tile_handle, "nfn_native_tile_init_gpt2_token_weight_float32");
                 copy = load_symbol<CopyFn>(tile_handle, "nfn_native_tile_copy_float32");
                 uint16_to_int64 = load_symbol<Uint16ToInt64Fn>(tile_handle, "nfn_native_tile_uint16_to_int64");
+                store_mlp_activations_bf16 = load_symbol<StoreMlpActivationsBf16Fn>(
+                    tile_handle, "nfn_native_tile_store_mlp_activations_bf16_float32");
+                restore_mlp_activations_bf16 = load_symbol<RestoreMlpActivationsBf16Fn>(
+                    tile_handle, "nfn_native_tile_restore_mlp_activations_bf16_float32");
                 float32_to_bf16_bits_many = load_symbol<Float32ToBf16BitsManyFn>(
                     tile_handle, "nfn_native_tile_float32_to_bf16_bits_many");
                 gradient_accumulate = load_symbol<GradientAccumulateFn>(
@@ -6942,6 +6958,10 @@ int run_transformer_lm_training_json(
         env_or_empty("NFN_NATIVE_GPT2_STAGE_TIMING") == "1" ||
         env_or_empty("NFN_NATIVE_GPT2_STAGE_TIMING") == "true" ||
         env_or_empty("NFN_NATIVE_GPT2_STAGE_TIMING") == "TRUE";
+    const bool store_mlp_activations_enabled =
+        env_or_empty("NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS") == "1" ||
+        env_or_empty("NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS") == "true" ||
+        env_or_empty("NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS") == "TRUE";
     bool stage_timing_enabled = false;
     std::int64_t stage_timing_event_count = 0;
     std::int64_t stage_timing_dropped_event_count = 0;
@@ -7233,9 +7253,26 @@ int run_transformer_lm_training_json(
         float* mlp_out = nullptr;
         float* residual2 = nullptr;
     };
+    struct StoredMlpActivations {
+        std::uint16_t* ln2_out = nullptr;
+        std::uint16_t* fc_out = nullptr;
+        std::uint16_t* act = nullptr;
+    };
     std::vector<TransformerBlockParams> blocks(static_cast<std::size_t>(trained_layers));
     std::vector<TransformerBlockActivations> block_tapes(static_cast<std::size_t>(kActivationTapeCount));
     std::vector<float*> block_outputs(static_cast<std::size_t>(persistent_block_output_count), nullptr);
+    const std::int64_t stored_mlp_activation_block_count =
+        store_mlp_activations_enabled && trained_layers > 0 ? trained_layers - 1 : 0;
+    const std::int64_t stored_mlp_activation_elements_per_block = activation_elements + hidden_elements * 2;
+    const std::int64_t stored_mlp_activation_elements =
+        stored_mlp_activation_block_count * stored_mlp_activation_elements_per_block;
+    std::vector<StoredMlpActivations> stored_mlp_activations(
+        static_cast<std::size_t>(stored_mlp_activation_block_count));
+    std::uint16_t* stored_mlp_activation_arena = nullptr;
+    std::int64_t stored_mlp_activation_arena_elements = 0;
+    std::int64_t stored_mlp_activation_arena_bytes = 0;
+    std::int64_t stored_mlp_activation_store_kernel_launches = 0;
+    std::int64_t stored_mlp_activation_restore_kernel_launches = 0;
 
     float *token_weight = nullptr, *position_weight = nullptr, *residual_scale = nullptr;
     float *lnf_weight = nullptr, *lnf_bias = nullptr;
@@ -7324,6 +7361,35 @@ int run_transformer_lm_training_json(
         token_u16_pinned_arena_cuda_host_alloc_count = 1;
         token_ids_pinned = token_u16_pinned_arena;
         targets_pinned = token_u16_pinned_arena + rows;
+    };
+    auto allocate_stored_mlp_activation_arena = [&]() {
+        if (!error.empty() || stored_mlp_activation_elements <= 0) {
+            return;
+        }
+        if (stored_mlp_activation_elements >
+            static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
+            error = "stored MLP activation bf16 arena byte size overflow";
+            return;
+        }
+        void* raw = nullptr;
+        const std::size_t bytes =
+            sizeof(std::uint16_t) * static_cast<std::size_t>(stored_mlp_activation_elements);
+        const int status = cuda_malloc(&raw, bytes);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc stored_mlp_activation_bf16_arena");
+            return;
+        }
+        stored_mlp_activation_arena = static_cast<std::uint16_t*>(raw);
+        uint16_ptrs.push_back(stored_mlp_activation_arena);
+        stored_mlp_activation_arena_elements = stored_mlp_activation_elements;
+        stored_mlp_activation_arena_bytes = static_cast<std::int64_t>(bytes);
+        for (std::int64_t i = 0; i < stored_mlp_activation_block_count; ++i) {
+            const std::int64_t base = i * stored_mlp_activation_elements_per_block;
+            StoredMlpActivations& stored = stored_mlp_activations[static_cast<std::size_t>(i)];
+            stored.ln2_out = stored_mlp_activation_arena + base;
+            stored.fc_out = stored_mlp_activation_arena + base + activation_elements;
+            stored.act = stored_mlp_activation_arena + base + activation_elements + hidden_elements;
+        }
     };
 
     auto visit_block_parameter_ptrs = [&](auto&& visit) {
@@ -7465,6 +7531,7 @@ int run_transformer_lm_training_json(
     }
     materialize_float_arena();
     allocate_token_arenas();
+    allocate_stored_mlp_activation_arena();
     const std::int64_t startup_per_buffer_zero_fill_launches_elided =
         1 + trained_layers * 6 + 8 + trained_layers * kPerBlockAdamWStateBuffers;
     const std::int64_t nonzero_parameter_fill_buffer_count = 3 + trained_layers * 6;
@@ -7869,11 +7936,48 @@ int run_transformer_lm_training_json(
     auto block_input_for = [&](std::size_t block_index) -> const float* {
         return block_index == 0 ? x : block_outputs[block_index - 1];
     };
+    auto store_mlp_activations = [&](std::size_t block_index, TransformerBlockActivations& tape) {
+        if (block_index >= stored_mlp_activations.size()) {
+            return;
+        }
+        StoredMlpActivations& stored = stored_mlp_activations[block_index];
+        if (error.empty()) {
+            run(store_mlp_activations_bf16(
+                    tape.ln2_out,
+                    tape.fc_out,
+                    tape.act,
+                    stored.ln2_out,
+                    activation_elements,
+                    hidden_elements,
+                    nullptr),
+                "block" + std::to_string(block_index) + ".mlp_activation_store.bf16");
+            if (error.empty()) stored_mlp_activation_store_kernel_launches += 1;
+        }
+    };
+    auto restore_mlp_activations = [&](std::size_t block_index, TransformerBlockActivations& tape) {
+        if (block_index >= stored_mlp_activations.size()) {
+            return;
+        }
+        StoredMlpActivations& stored = stored_mlp_activations[block_index];
+        if (error.empty()) {
+            run(restore_mlp_activations_bf16(
+                    stored.ln2_out,
+                    tape.ln2_out,
+                    tape.fc_out,
+                    tape.act,
+                    activation_elements,
+                    hidden_elements,
+                    nullptr),
+                "block" + std::to_string(block_index) + ".mlp_activation_restore.bf16");
+            if (error.empty()) stored_mlp_activation_restore_kernel_launches += 1;
+        }
+    };
     auto forward_block = [&](TransformerBlockParams& block,
                              TransformerBlockActivations& tape,
                              const float* block_input,
                              const std::string& label,
-                             bool compute_final_output) {
+                             bool compute_final_output,
+                             bool compute_mlp_activations) {
         const std::string stage_name = label.find("recompute") == std::string::npos ? "block_forward" : "block_recompute";
         const std::int64_t stage_event = stage_begin(stage_name);
         run_timed_stage(stage_name + ".attention", [&]() {
@@ -7885,11 +7989,13 @@ int run_transformer_lm_training_json(
             if (error.empty()) run(linear_bf16(tape.attn_out, block.attn_proj_weight, nullptr, tape.attn_proj, rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.bf16");
             if (error.empty()) run(linear_bias_residual_add(block_input, tape.attn_proj, block.attn_proj_bias, residual_scale, tape.residual1, rows, kDim, nullptr), label + ".attn.bias_residual");
         });
-        run_timed_stage(stage_name + ".mlp_fc_gelu", [&]() {
-            if (error.empty()) run(layer_norm(tape.residual1, block.ln2_weight, block.ln2_bias, tape.ln2_out, rows, kDim, kNormEps, nullptr), label + ".ln2.forward");
-            if (error.empty()) run(linear_bf16(tape.ln2_out, block.fc_weight, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias.bf16");
-            if (error.empty()) run(gelu_add_bias(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward");
-        });
+        if (compute_mlp_activations) {
+            run_timed_stage(stage_name + ".mlp_fc_gelu", [&]() {
+                if (error.empty()) run(layer_norm(tape.residual1, block.ln2_weight, block.ln2_bias, tape.ln2_out, rows, kDim, kNormEps, nullptr), label + ".ln2.forward");
+                if (error.empty()) run(linear_bf16(tape.ln2_out, block.fc_weight, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias.bf16");
+                if (error.empty()) run(gelu_add_bias(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward");
+            });
+        }
         if (compute_final_output) {
             run_timed_stage(stage_name + ".mlp_proj", [&]() {
                 if (error.empty()) run(linear_bf16(tape.act, block.mlp_proj_weight, nullptr, tape.mlp_out, rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias.bf16");
@@ -7986,9 +8092,10 @@ int run_transformer_lm_training_json(
         float* final_block_output = x;
         for (std::size_t i = 0; i < blocks.size(); ++i) {
             TransformerBlockActivations& tape = block_tapes[0];
-            forward_block(blocks[i], tape, block_input, label + ".block" + std::to_string(i), true);
+            forward_block(blocks[i], tape, block_input, label + ".block" + std::to_string(i), true, true);
             final_block_output = tape.residual2;
             if (error.empty() && preserve_block_outputs && i + 1 < blocks.size()) {
+                store_mlp_activations(i, tape);
                 run(copy(tape.residual2, block_outputs[i], activation_elements, nullptr),
                     label + ".block" + std::to_string(i) + ".output.copy");
                 block_input = block_outputs[i];
@@ -8032,7 +8139,17 @@ int run_transformer_lm_training_json(
             TransformerBlockActivations& tape = block_tapes[0];
             const float* block_input = block_input_for(i);
             if (reverse_index != blocks.size()) {
-                forward_block(blocks[i], tape, block_input, "block" + std::to_string(i) + ".recompute", false);
+                const bool use_stored_mlp_activations = i < stored_mlp_activations.size();
+                forward_block(
+                    blocks[i],
+                    tape,
+                    block_input,
+                    "block" + std::to_string(i) + ".recompute",
+                    false,
+                    !use_stored_mlp_activations);
+                if (use_stored_mlp_activations) {
+                    restore_mlp_activations(i, tape);
+                }
             }
             backward_block(blocks[i], tape, block_input, incoming_grad, output_grad, "block" + std::to_string(i));
             std::swap(incoming_grad, output_grad);
@@ -8788,6 +8905,14 @@ int run_transformer_lm_training_json(
         << "  \"position_gradient_scratch_buffer_allocated\": false,\n"
         << "  \"position_gradient_microbatch_full_copy_elided\": true,\n"
         << "  \"position_gradient_microbatch_zero_elided\": true,\n"
+        << "  \"mlp_activation_storage_strategy\": \""
+        << (stored_mlp_activation_block_count > 0 ? "bf16-forward-store-restore-opt-in" : "disabled")
+        << "\",\n"
+        << "  \"stored_mlp_activation_blocks\": " << stored_mlp_activation_block_count << ",\n"
+        << "  \"stored_mlp_activation_elements\": " << stored_mlp_activation_arena_elements << ",\n"
+        << "  \"stored_mlp_activation_bytes\": " << stored_mlp_activation_arena_bytes << ",\n"
+        << "  \"stored_mlp_activation_store_kernel_launches\": " << stored_mlp_activation_store_kernel_launches << ",\n"
+        << "  \"stored_mlp_activation_restore_kernel_launches\": " << stored_mlp_activation_restore_kernel_launches << ",\n"
         << "  \"max_steps\": " << cfg.max_steps << ",\n"
         << "  \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
         << "  \"eval_batches\": " << cfg.eval_batches << ",\n"
@@ -8881,11 +9006,17 @@ int run_transformer_lm_training_json(
         << "    \"validation_block_output_copies_elided\": true,\n"
         << "    \"backward_recompute_blocks\": " << backward_recompute_block_count << ",\n"
         << "    \"final_block_backward_recompute_elided\": true,\n"
+        << "    \"backward_recompute_mlp_fc_gelu_elided\": "
+        << (stored_mlp_activation_block_count > 0 ? "true" : "false") << ",\n"
         << "    \"backward_recompute_mlp_projection_elided\": true,\n"
         << "    \"backward_recompute_final_residual_elided\": true,\n"
         << "    \"mlp_proj_backward_gelu_inplace\": true,\n"
         << "    \"mlp_proj_backward_grad_act_scratch_allocated\": false,\n"
-        << "    \"activation_tape_strategy\": \"scratch-recompute\",\n"
+        << "    \"activation_tape_strategy\": \""
+        << (stored_mlp_activation_block_count > 0
+                ? "scratch-recompute-bf16-stored-mlp-activations-opt-in"
+                : "scratch-recompute")
+        << "\",\n"
         << "    \"per_block_parameter_buffers\": " << kPerBlockParameterBuffers << ",\n"
         << "    \"per_block_gradient_buffers\": " << kPerBlockGradientBuffers << ",\n"
         << "    \"per_block_direct_accum_gradient_buffers\": " << kPerBlockDirectAccumGradientBuffers << ",\n"

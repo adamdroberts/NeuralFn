@@ -94,6 +94,30 @@ int nfn_native_tile_float32_to_bf16_bits(
     std::int64_t n,
     void* cuda_stream);
 
+int nfn_native_tile_bf16_bits_to_float32(
+    const std::uint16_t* source,
+    float* dest,
+    std::int64_t n,
+    void* cuda_stream);
+
+int nfn_native_tile_store_mlp_activations_bf16_float32(
+    const float* ln2_out,
+    const float* fc_out,
+    const float* act,
+    std::uint16_t* dest,
+    std::int64_t activation_elements,
+    std::int64_t hidden_elements,
+    void* cuda_stream);
+
+int nfn_native_tile_restore_mlp_activations_bf16_float32(
+    const std::uint16_t* source,
+    float* ln2_out,
+    float* fc_out,
+    float* act,
+    std::int64_t activation_elements,
+    std::int64_t hidden_elements,
+    void* cuda_stream);
+
 int nfn_native_tile_float32_to_bf16_bits_many(
     const float* const* sources,
     const std::int64_t* elements,

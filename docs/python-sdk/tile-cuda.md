@@ -262,9 +262,25 @@ follows validation. JSON reports `validation_persistent_block_outputs: 0` and
 The backward pass reuses the final block activations that remain in the scratch
 tape after the initial forward pass, so only the earlier blocks are recomputed;
 the default JSON reports `backward_recompute_blocks: 11` and
-`final_block_backward_recompute_elided: true`. Earlier-block recompute stops
-after the MLP GELU activation because backward does not consume the recomputed
-MLP projection output or final residual output; JSON reports
+`final_block_backward_recompute_elided: true`. The default path keeps
+`backward_recompute_mlp_fc_gelu_elided: false` and
+`activation_tape_strategy: "scratch-recompute"`. Set
+`NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS=1` only when profiling the experimental
+BF16 MLP activation-storage path: earlier-block `ln2_out`, MLP preactivation,
+and GELU activation tensors are stored into a BF16 arena during forward,
+restored before backward, and reported through
+`mlp_activation_storage_strategy`, `stored_mlp_activation_blocks`,
+`stored_mlp_activation_elements`, `stored_mlp_activation_bytes`,
+`stored_mlp_activation_store_kernel_launches`,
+`stored_mlp_activation_restore_kernel_launches`, and
+`backward_recompute_mlp_fc_gelu_elided`. It is disabled by default because the
+current RTX 5090 GPT-2 shape is faster with normal scratch recompute. Rebuild
+the trainer-facing Tile ops library after updating, since the compiled GPT-2
+trainer now requires `nfn_native_tile_bf16_bits_to_float32`,
+`nfn_native_tile_store_mlp_activations_bf16_float32`, and
+`nfn_native_tile_restore_mlp_activations_bf16_float32` at startup. Earlier-block
+recompute stops after the MLP GELU activation because backward does not consume
+the recomputed MLP projection output or final residual output; JSON reports
 `backward_recompute_mlp_projection_elided: true` and
 `backward_recompute_final_residual_elided: true`.
 The MLP projection backward path writes its dInput into the MLP fc gradient

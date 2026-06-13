@@ -43,6 +43,23 @@ void launch_gradient_accumulate_float32(float* buffer, const float* grad, std::i
 void launch_copy_float32(const float* source, float* dest, std::int64_t n, cudaStream_t stream);
 void launch_uint16_to_int64(const std::uint16_t* source, std::int64_t* dest, std::int64_t n, cudaStream_t stream);
 void launch_float32_to_bf16_bits(const float* source, std::uint16_t* dest, std::int64_t n, cudaStream_t stream);
+void launch_bf16_bits_to_float32(const std::uint16_t* source, float* dest, std::int64_t n, cudaStream_t stream);
+void launch_store_mlp_activations_bf16_float32(
+    const float* ln2_out,
+    const float* fc_out,
+    const float* act,
+    std::uint16_t* dest,
+    std::int64_t activation_elements,
+    std::int64_t hidden_elements,
+    cudaStream_t stream);
+void launch_restore_mlp_activations_bf16_float32(
+    const std::uint16_t* source,
+    float* ln2_out,
+    float* fc_out,
+    float* act,
+    std::int64_t activation_elements,
+    std::int64_t hidden_elements,
+    cudaStream_t stream);
 void launch_float32_to_bf16_bits_many(
     const float* const* sources,
     const std::int64_t* elements,
@@ -829,6 +846,41 @@ int nfn_native_tile_float32_to_bf16_bits(
     std::int64_t n,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_float32_to_bf16_bits(source, dest, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_bf16_bits_to_float32(
+    const std::uint16_t* source,
+    float* dest,
+    std::int64_t n,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_bf16_bits_to_float32(source, dest, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_store_mlp_activations_bf16_float32(
+    const float* ln2_out,
+    const float* fc_out,
+    const float* act,
+    std::uint16_t* dest,
+    std::int64_t activation_elements,
+    std::int64_t hidden_elements,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_store_mlp_activations_bf16_float32(
+        ln2_out, fc_out, act, dest, activation_elements, hidden_elements, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_restore_mlp_activations_bf16_float32(
+    const std::uint16_t* source,
+    float* ln2_out,
+    float* fc_out,
+    float* act,
+    std::int64_t activation_elements,
+    std::int64_t hidden_elements,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_restore_mlp_activations_bf16_float32(
+        source, ln2_out, fc_out, act, activation_elements, hidden_elements, as_stream(cuda_stream));
     return launch_status();
 }
 

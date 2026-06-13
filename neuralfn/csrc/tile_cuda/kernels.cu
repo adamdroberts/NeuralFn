@@ -179,6 +179,65 @@ __global__ void f32_to_bf16_bits_kernel(
   }
 }
 
+__global__ void bf16_bits_to_f32_kernel(
+    const std::uint16_t* __restrict__ src,
+    float* __restrict__ dst,
+    std::int64_t n) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx < n) {
+    const unsigned int bits = static_cast<unsigned int>(src[idx]) << 16;
+    dst[idx] = __uint_as_float(bits);
+  }
+}
+
+__global__ void store_mlp_activations_bf16_float32_kernel(
+    const float* __restrict__ ln2_out,
+    const float* __restrict__ fc_out,
+    const float* __restrict__ act,
+    std::uint16_t* __restrict__ dest,
+    std::int64_t activation_elements,
+    std::int64_t hidden_elements) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t total = activation_elements + hidden_elements * 2;
+  if (idx >= total) {
+    return;
+  }
+  float value = 0.0f;
+  if (idx < activation_elements) {
+    value = ln2_out[idx];
+  } else if (idx < activation_elements + hidden_elements) {
+    value = fc_out[idx - activation_elements];
+  } else {
+    value = act[idx - activation_elements - hidden_elements];
+  }
+  const unsigned int bits = __float_as_uint(value);
+  const unsigned int rounding_bias = ((bits >> 16) & 1u) + 0x7fffu;
+  dest[idx] = static_cast<std::uint16_t>((bits + rounding_bias) >> 16);
+}
+
+__global__ void restore_mlp_activations_bf16_float32_kernel(
+    const std::uint16_t* __restrict__ source,
+    float* __restrict__ ln2_out,
+    float* __restrict__ fc_out,
+    float* __restrict__ act,
+    std::int64_t activation_elements,
+    std::int64_t hidden_elements) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t total = activation_elements + hidden_elements * 2;
+  if (idx >= total) {
+    return;
+  }
+  const unsigned int bits = static_cast<unsigned int>(source[idx]) << 16;
+  const float value = __uint_as_float(bits);
+  if (idx < activation_elements) {
+    ln2_out[idx] = value;
+  } else if (idx < activation_elements + hidden_elements) {
+    fc_out[idx - activation_elements] = value;
+  } else {
+    act[idx - activation_elements - hidden_elements] = value;
+  }
+}
+
 __global__ void f32_to_bf16_bits_many_kernel(
     const float* const* __restrict__ sources,
     const std::int64_t* __restrict__ elements,
@@ -5843,6 +5902,43 @@ void launch_float32_to_bf16_bits(
     cudaStream_t stream) {
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   f32_to_bf16_bits_kernel<<<blocks, kTileSize, 0, stream>>>(source, dest, n);
+}
+
+void launch_bf16_bits_to_float32(
+    const std::uint16_t* source,
+    float* dest,
+    std::int64_t n,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  bf16_bits_to_f32_kernel<<<blocks, kTileSize, 0, stream>>>(source, dest, n);
+}
+
+void launch_store_mlp_activations_bf16_float32(
+    const float* ln2_out,
+    const float* fc_out,
+    const float* act,
+    std::uint16_t* dest,
+    std::int64_t activation_elements,
+    std::int64_t hidden_elements,
+    cudaStream_t stream) {
+  const std::int64_t total = activation_elements + hidden_elements * 2;
+  const int blocks = static_cast<int>((total + kTileSize - 1) / kTileSize);
+  store_mlp_activations_bf16_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+      ln2_out, fc_out, act, dest, activation_elements, hidden_elements);
+}
+
+void launch_restore_mlp_activations_bf16_float32(
+    const std::uint16_t* source,
+    float* ln2_out,
+    float* fc_out,
+    float* act,
+    std::int64_t activation_elements,
+    std::int64_t hidden_elements,
+    cudaStream_t stream) {
+  const std::int64_t total = activation_elements + hidden_elements * 2;
+  const int blocks = static_cast<int>((total + kTileSize - 1) / kTileSize);
+  restore_mlp_activations_bf16_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
+      source, ln2_out, fc_out, act, activation_elements, hidden_elements);
 }
 
 void launch_float32_to_bf16_bits_many(
