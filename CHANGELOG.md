@@ -33,7 +33,11 @@ Future updates should append new entries here rather than replacing older notes.
   GPU-visible one-step TinyStories probe that reported
   `packed_qkv_float_attention_tape_elided: true`, 1.61GB of float tape elided,
   `float_arena_requested_elements: 3175449357`, zero SGEMM calls, and about
-  `132,779` tokens/s.
+  `132,779` tokens/s. A follow-up opt-in full packed-attention-store probe now
+  fits in memory, but stays non-default because it regressed to about
+  `44,096` tokens/s without stage timing; the stage-timed run showed
+  `block_backward.attn_sdpa.to_qkv` dominating at about `8,627 ms` per
+  optimizer step.
 - The raw native Tile ABI now exposes `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32`
   and `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32`.
   Dense GPT block backward now uses those fused dWeight+bias entrypoints for
