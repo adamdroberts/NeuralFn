@@ -4626,6 +4626,54 @@ __tile_global__ void linear_bias_residual_add_float32_kernel(
   ct::store_masked(out + idx, result, mask);
 }
 
+__tile_global__ void linear_bias_residual_layer_norm_float32_kernel(
+    const float* __restrict__ residual,
+    const float* __restrict__ linear_out,
+    const float* __restrict__ linear_bias,
+    const float* __restrict__ residual_scale,
+    const float* __restrict__ norm_weight,
+    const float* __restrict__ norm_bias,
+    float* __restrict__ residual_out,
+    float* __restrict__ norm_out,
+    std::int64_t rows,
+    std::int64_t dim,
+    float eps) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  residual = ct::assume_aligned(residual, 16_ic);
+  linear_out = ct::assume_aligned(linear_out, 16_ic);
+  linear_bias = ct::assume_aligned(linear_bias, 16_ic);
+  residual_scale = ct::assume_aligned(residual_scale, 16_ic);
+  norm_weight = ct::assume_aligned(norm_weight, 16_ic);
+  norm_bias = ct::assume_aligned(norm_bias, 16_ic);
+  residual_out = ct::assume_aligned(residual_out, 16_ic);
+  norm_out = ct::assume_aligned(norm_out, 16_ic);
+
+  const int row = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto d = ct::iota<IndexTile>();
+  auto mask = (ct::full<IndexTile>(row) < ct::full<IndexTile>(rows)) && (d < ct::full<IndexTile>(dim));
+  auto base = ct::full<IndexTile>(static_cast<std::int64_t>(row) * dim);
+  auto scale = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(*residual_scale);
+  auto residual_tile = ct::load_masked(residual + base + d, mask);
+  auto projected = ct::load_masked(linear_out + base + d, mask) + ct::load_masked(linear_bias + d, mask);
+  auto combined = residual_tile + projected * scale;
+  auto zero = ct::full<decltype(combined)>(0.0f);
+  auto valid = ct::select(mask, combined, zero);
+  ct::store_masked(residual_out + base + d, combined, mask);
+  auto sum_x = ct::sum(valid, 0_ic);
+  auto dim_f = ct::full<decltype(sum_x)>(static_cast<float>(dim));
+  auto mean = sum_x / dim_f;
+  auto centered = ct::select(mask, combined - mean, zero);
+  auto sum_sq = ct::sum(centered * centered, 0_ic);
+  auto var = sum_sq / ct::full<decltype(sum_sq)>(static_cast<float>(dim));
+  auto norm_scale = ct::rsqrt(var + ct::full<decltype(var)>(eps));
+  auto weight_tile = ct::load_masked(norm_weight + d, mask);
+  auto bias_tile = ct::load_masked(norm_bias + d, mask);
+  ct::store_masked(norm_out + base + d, centered * norm_scale * weight_tile + bias_tile, mask);
+}
+
 __tile_global__ void gelu_backward_float32_kernel(
     const float* __restrict__ x,
     const float* __restrict__ grad_out,
@@ -8222,6 +8270,33 @@ void launch_linear_bias_residual_add_float32(
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   linear_bias_residual_add_float32_kernel<<<blocks, 1, 0, stream>>>(
       residual, linear_out, bias, residual_scale, out, n, output_dim);
+}
+
+void launch_linear_bias_residual_layer_norm_float32(
+    const float* residual,
+    const float* linear_out,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    cudaStream_t stream) {
+  linear_bias_residual_layer_norm_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      residual,
+      linear_out,
+      linear_bias,
+      residual_scale,
+      norm_weight,
+      norm_bias,
+      residual_out,
+      norm_out,
+      rows,
+      output_dim,
+      eps);
 }
 
 void launch_gelu_backward_float32(

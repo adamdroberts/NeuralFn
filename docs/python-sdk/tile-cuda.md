@@ -536,6 +536,15 @@ across `nfn_native_tile_gelu_float32`, `nfn_native_tile_gelu_add_bias_float32`,
 `nfn_native_tile_gelu_backward_inplace_float32`; graph-backed Torch execution can
 keep its own PyTorch GELU semantics.
 
+The trainer ABI also exports
+`nfn_native_tile_linear_bias_residual_layer_norm_float32`, which fuses the
+attention projection bias add, residual add, and following MLP LayerNorm forward.
+It is available for profiling with
+`NFN_NATIVE_GPT2_FUSE_ATTENTION_RESIDUAL_LN2=1`, but dense GPT-2 keeps it
+disabled by default because the current `64 x 1024` TinyStories one-step probe
+regressed slightly versus the separate kernels. Runtime JSON reports
+`attention_residual_ln2_strategy` plus launch counters for this path.
+
 Full GPT-2 `--train-transformer-lm` also fuses attention-output and MLP
 projection bias with residual addition. `nfn_native_tile_linear_bias_residual_add_float32`
 consumes no-bias CUBLAS projection output, applies the projection bias and

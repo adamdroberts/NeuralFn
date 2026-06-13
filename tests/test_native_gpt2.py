@@ -3036,6 +3036,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_linear_backward_bias_accumulate_float32" in header_text
     assert "nfn_native_tile_scaled_residual_add_float32" in header_text
     assert "nfn_native_tile_linear_bias_residual_add_float32" in header_text
+    assert "nfn_native_tile_linear_bias_residual_layer_norm_float32" in header_text
+    assert "launch_linear_bias_residual_layer_norm_float32" in source_text
     assert "nfn_native_tile_gelu_float32" in header_text
     assert "nfn_native_tile_gelu_add_bias_float32" in header_text
     assert "nfn_native_tile_gelu_backward_float32" in header_text
@@ -3103,6 +3105,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "linear_add_bias_float32_kernel" in kernels_text
     assert "gelu_add_bias_float32_kernel" in kernels_text
     assert "linear_bias_residual_add_float32_kernel" in kernels_text
+    assert "linear_bias_residual_layer_norm_float32_kernel" in kernels_text
+    assert "NFN_NATIVE_GPT2_FUSE_ATTENTION_RESIDUAL_LN2" in gpt2_source_text
+    assert "attention_residual_ln2_strategy" in gpt2_source_text
+    assert "fused-linear-bias-residual-layernorm" in gpt2_source_text
     assert "token_cross_entropy_backward_rowwise_float32_kernel" in kernels_text
     assert "token_cross_entropy_backward_rowwise_inplace_float32_kernel" in kernels_text
     assert "token_cross_entropy_row_stats_float32_kernel" in kernels_text

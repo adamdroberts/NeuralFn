@@ -472,6 +472,20 @@ int nfn_native_tile_linear_bias_residual_add_float32(
     std::int64_t output_dim,
     void* cuda_stream);
 
+int nfn_native_tile_linear_bias_residual_layer_norm_float32(
+    const float* residual,
+    const float* linear_out,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    void* cuda_stream);
+
 int nfn_native_tile_gelu_backward_float32(
     const float* x,
     const float* grad_out,
