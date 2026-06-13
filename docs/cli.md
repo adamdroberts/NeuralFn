@@ -160,18 +160,18 @@ training JSON reports `attention_backend_strategy: "tk-sm120-bf16-bridge"`,
 zero row/scalar attention launches when that path is active. Set
 `NFN_TILE_CUDA_USE_TK_ATTENTION=0` before rebuilding only for the older float32
 row-scan diagnostic path.
-The same trainer-facing build routes native linear forward, dInput, and dWeight
-GEMMs through optimized TF32 tensor-op `cublasSgemm` by default. Set
-`NFN_TILE_CUDA_LINEAR_BF16=1` or `NFN_NATIVE_LINEAR_BF16=1` to opt into the
-cached-workspace BF16 `cublasGemmEx` bridge for profiling or shape-specific
-tuning. That bridge keeps a multi-entry packed BF16 first-GEMM-operand cache for
-weight-forward and weight-dInput calls, then invalidates that cache after AdamW
-updates. GPT-2 training JSON reports
-`linear_backend_strategy`, `linear_bf16_gemm_count`, `linear_sgemm_count`,
-`linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
-`linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
-`linear_bf16_cache_entry_count` so runs show whether large projections used the
-TF32 route or the BF16 bridge.
+The same trainer-facing build routes transformer block forward/recompute
+projections through `nfn_native_tile_linear_bf16_float32`, which forces the
+cached-workspace BF16 `cublasGemmEx` bridge for those cacheable-weight GEMMs.
+LM-head and backward GEMMs stay on the normal optimized TF32 tensor-op
+`cublasSgemm` default so activation-first dWeight calls avoid BF16 repacking
+overhead. Set `NFN_TILE_CUDA_LINEAR_BF16=1` or `NFN_NATIVE_LINEAR_BF16=1` only
+when profiling the normal linear ABI's BF16 bridge. GPT-2 training JSON reports
+`linear_backend_strategy: "block-forward-bf16-backward-tf32"`,
+`block_forward_linear_strategy`, `non_block_forward_backward_linear_strategy`,
+`linear_bf16_gemm_count`, `linear_sgemm_count`, `linear_bf16_a_pack_count`,
+`linear_bf16_a_cache_hit_count`, `linear_bf16_cache_reset_count`,
+`linear_bf16_cached_a_capacity`, and `linear_bf16_cache_entry_count`.
 The tied LM-head row chunk defaults to 1024 rows and can be overridden with
 `--lm-head-row-chunk-size` on the compiled C++ entrypoint or
 `--native-cuda-lm-head-row-chunk-size` from the wrapper/root CLI. Loss partials

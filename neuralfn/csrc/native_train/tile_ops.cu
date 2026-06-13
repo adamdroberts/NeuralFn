@@ -215,6 +215,16 @@ void launch_linear_float32(
     std::int64_t output_dim,
     bool has_bias,
     cudaStream_t stream);
+void launch_linear_bf16_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    float* out,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    cudaStream_t stream);
 void launch_linear_backward_input_float32(
     const float* grad_out,
     const float* weight,
@@ -1097,6 +1107,21 @@ int nfn_native_tile_linear_float32(
     bool has_bias,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_linear_float32(
+        x, weight, bias, out, rows, input_dim, output_dim, has_bias, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_bf16_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    float* out,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_bf16_float32(
         x, weight, bias, out, rows, input_dim, output_dim, has_bias, as_stream(cuda_stream));
     return launch_status();
 }

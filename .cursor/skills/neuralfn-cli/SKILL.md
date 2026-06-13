@@ -146,12 +146,13 @@ Canonical docs:
   `linear_bf16_gemm_count`, `linear_sgemm_count`,
   `linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
   `linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
-  `linear_bf16_cache_entry_count`. The intended default route for dense GPT
-  projections is optimized TF32 tensor-op `cublasSgemm`, not scalar Tile dot
-  products. `NFN_TILE_CUDA_LINEAR_BF16=1` and `NFN_NATIVE_LINEAR_BF16=1` opt
-  into the cached BF16 `cublasGemmEx` bridge for profiling or shape-specific
-  tuning; that bridge still reuses packed first GEMM operands until the AdamW
-  boundary.
+  `linear_bf16_cache_entry_count`. Dense GPT transformer block forward/recompute
+  projections should use `nfn_native_tile_linear_bf16_float32` and report
+  `linear_backend_strategy: "block-forward-bf16-backward-tf32"`,
+  `block_forward_linear_strategy`, and
+  `non_block_forward_backward_linear_strategy`; LM-head and backward GEMMs
+  should stay on optimized TF32 tensor-op `cublasSgemm`, not scalar Tile dot
+  products.
 - The row-vector forward and query-row atomic backward float32 SDPA kernels are
   fallback/diagnostic paths for unsupported shapes or
   `NFN_TILE_CUDA_USE_TK_ATTENTION=0` builds. Do not make them the default dense

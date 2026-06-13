@@ -692,8 +692,9 @@ bool cublas_linear_gemm_ex_bf16_float32(
     int ldc,
     float beta_value,
     bool cache_a_operand,
+    bool force_bf16,
     cudaStream_t stream) {
-  if (!trainer_linear_bf16_bridge_enabled()) {
+  if (!force_bf16 && !trainer_linear_bf16_bridge_enabled()) {
     return false;
   }
   TrainerLinearBf16Workspace* workspace = ensure_trainer_linear_bf16_workspace(a_elements, b_elements);
@@ -776,6 +777,7 @@ bool cublas_linear_forward_float32(
           m,
           0.0f,
           true,
+          false,
           stream)) {
     return true;
   }
@@ -837,6 +839,7 @@ bool cublas_linear_backward_input_float32(
           m,
           0.0f,
           true,
+          false,
           stream)) {
     return true;
   }
@@ -898,6 +901,7 @@ bool cublas_linear_backward_weight_float32(
           n,
           m,
           beta_value,
+          false,
           false,
           stream)) {
     return true;
@@ -6268,6 +6272,50 @@ void launch_linear_float32(
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   if (cublas_linear_forward_float32(x, weight, out, rows, input_dim, output_dim, stream)) {
+    if (has_bias) {
+      linear_add_bias_float32_kernel<<<blocks, 1, 0, stream>>>(out, bias, n, output_dim);
+    }
+    return;
+  }
+#endif
+  linear_float32_kernel<<<blocks, 1, 0, stream>>>(x, weight, bias, out, n, input_dim, output_dim, has_bias);
+}
+
+void launch_linear_bf16_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    float* out,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * output_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  const int m = static_cast<int>(output_dim);
+  const int cols = static_cast<int>(rows);
+  const int k = static_cast<int>(input_dim);
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
+      cublas_linear_gemm_ex_bf16_float32(
+          weight,
+          x,
+          out,
+          output_dim * input_dim,
+          rows * input_dim,
+          m,
+          cols,
+          k,
+          CUBLAS_OP_T,
+          CUBLAS_OP_N,
+          k,
+          k,
+          m,
+          0.0f,
+          true,
+          true,
+          stream)) {
     if (has_bias) {
       linear_add_bias_float32_kernel<<<blocks, 1, 0, stream>>>(out, bias, n, output_dim);
     }
