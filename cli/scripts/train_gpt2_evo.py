@@ -12,7 +12,13 @@ import uuid
 from native_training_guard import reject_torch_training_by_default
 
 if __name__ == "__main__":
-    reject_torch_training_by_default("train_gpt2_evo.py", native_target="nfn train --base-model gpt2-evo", model_family="gpt2-evo")
+    reject_torch_training_by_default(
+        "train_gpt2_evo.py",
+        native_target="nfn train --base-model gpt2-evo",
+        model_family="gpt2-evo",
+        family_native_cli_env="NFN_NATIVE_GPT2_EVO_CLI",
+        family_native_cli_name="nfn_gpt2_evo_native_train",
+    )
 
 import numpy as np
 import torch

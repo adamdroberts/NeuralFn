@@ -895,7 +895,6 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             ("train_llama_megakernel.py", "llama"),
             ("train_nanogpt.py", "nanogpt"),
             ("train_mixllama_fast.py", "mixllama"),
-            ("train_gpt2_evo.py", "gpt2-evo"),
             ("train_jepa_semantic.py", "jepa"),
             ("train_semantic_router_moe.py", "semantic-router-moe"),
             ("train_semantic_router_moe-overnight.py", "semantic-router-moe"),
@@ -954,6 +953,63 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 self.assertIn("--tinystories", proc.stdout)
                 self.assertIn("TORCH_LOADED False", proc.stdout)
                 self.assertIn("TRAIN_JEPA_LOADED False", proc.stdout)
+
+    def test_train_gpt2_evo_direct_script_prefers_family_native_preflight(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import os
+            import runpy
+            import sys
+            import tempfile
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            script = root / "cli" / "scripts" / "train_gpt2_evo.py"
+            native_evo = Path(tempfile.mkdtemp()) / "nfn_gpt2_evo_native_train"
+            native_evo.write_text(
+                "#!/usr/bin/env bash\\n"
+                "printf 'EVO_NATIVE_DIRECT\\\\n'\\n"
+                "printf '%s\\\\n' \\"$@\\"\\n"
+                "exit 23\\n",
+                encoding="utf-8",
+            )
+            native_evo.chmod(0o755)
+            os.environ["NFN_NATIVE_GPT2_EVO_CLI"] = str(native_evo)
+            sys.path.insert(0, str(root / "cli" / "scripts"))
+            sys.argv = [str(script), "--tinystories", "--native-cuda-dry-run", "--eval-every-steps", "1000"]
+            try:
+                runpy.run_path(str(script), run_name="__main__")
+            except SystemExit as exc:
+                exit_code = int(exc.code or 0)
+            else:
+                exit_code = 0
+            print("TORCH_LOADED", "torch" in sys.modules)
+            print("TRAIN_JEPA_LOADED", "train_jepa_semantic" in sys.modules)
+            raise SystemExit(exit_code)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env.pop("NFN_ALLOW_TORCH_TRAINING", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(23, proc.returncode)
+        self.assertIn("EVO_NATIVE_DIRECT", proc.stdout)
+        self.assertNotIn("--base-model", proc.stdout)
+        self.assertIn("--tinystories", proc.stdout)
+        self.assertIn("--native-cuda-dry-run", proc.stdout)
+        self.assertIn("--eval-every-steps", proc.stdout)
+        self.assertIn("1000", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("TRAIN_JEPA_LOADED False", proc.stdout)
 
     def test_train_nanogpt_direct_script_defaults_to_native_token_lm(self) -> None:
         code = textwrap.dedent(

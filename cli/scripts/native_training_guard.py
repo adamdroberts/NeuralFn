@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 
 
@@ -43,6 +44,20 @@ def _resolve_native_train_cli() -> str:
     return "nfn-native-train"
 
 
+def _resolve_family_native_cli(env_var: str, command_name: str) -> str | None:
+    requested = os.environ.get(env_var, "").strip()
+    if requested:
+        return requested
+    root = Path(__file__).resolve().parents[2]
+    built = root / "build" / command_name
+    if built.exists():
+        return str(built)
+    resolved = shutil.which(command_name)
+    if resolved:
+        return resolved
+    return None
+
+
 def _has_native_action(args: list[str]) -> bool:
     for arg in args:
         if arg in _NATIVE_ACTION_FLAGS:
@@ -56,12 +71,18 @@ def _forwarded_args(model_family: str, native_default_args: list[str]) -> list[s
     return [_resolve_native_train_cli(), "--base-model", model_family, *defaults, *args]
 
 
+def _family_forwarded_args(command: str) -> list[str]:
+    return [command, *sys.argv[1:]]
+
+
 def reject_torch_training_by_default(
     script_name: str,
     *,
     native_target: str,
     model_family: str | None = None,
     native_default_args: list[str] | None = None,
+    family_native_cli_env: str | None = None,
+    family_native_cli_name: str | None = None,
 ) -> None:
     """Exit before legacy training scripts import Torch.
 
@@ -73,7 +94,12 @@ def reject_torch_training_by_default(
     if torch_training_allowed():
         return
     family = (model_family or native_target.rsplit(" ", 1)[-1]).strip()
-    command = _forwarded_args(family, list(native_default_args or ()))
+    family_command = (
+        _resolve_family_native_cli(family_native_cli_env, family_native_cli_name)
+        if family_native_cli_env and family_native_cli_name
+        else None
+    )
+    command = _family_forwarded_args(family_command) if family_command else _forwarded_args(family, list(native_default_args or ()))
     env = os.environ.copy()
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
     if any(flag in sys.argv[1:] for flag in ("--dry-run", "--native-cuda-dry-run", "--print-command", "--native-cuda-print-command")):
