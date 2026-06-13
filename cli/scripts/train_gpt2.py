@@ -32,6 +32,10 @@ def _has_any(argv: list[str], *flags: str) -> bool:
     return any(arg in flags for arg in argv)
 
 
+def _explicit_arg(argv: list[str], *flags: str) -> bool:
+    return any(arg in flags or any(arg.startswith(flag + "=") for flag in flags) for arg in argv)
+
+
 def _native_cli_path() -> str:
     requested = os.environ.get("NFN_NATIVE_GPT2_CLI", "").strip()
     if requested:
@@ -73,6 +77,10 @@ def _final_lr_fraction(argv: list[str]) -> str | None:
 
 def _native_template_name(argv: list[str]) -> str:
     return (_arg_value(argv, "--template-name", "--template", "--preset") or "gpt2").strip().lower().replace("-", "_")
+
+
+def _native_model_family(argv: list[str]) -> str:
+    return (_arg_value(argv, "--model-family", "--base-model", "--model") or "gpt").strip().lower().replace("_", "-")
 
 
 def _native_backend_name(argv: list[str]) -> str:
@@ -125,6 +133,9 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         "--no-tile-cuda-strict",
     }
     value_aliases = {
+        "--model-family": "--model-family",
+        "--base-model": "--model-family",
+        "--model": "--model-family",
         "--kernel-backend": "--backend",
         "--native-cuda-kernel-backend": "--backend",
         "--native-cuda-executable": "--target",
@@ -158,6 +169,7 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         "--native-cuda-allow-train-val-fallback": "--allow-train-val-fallback",
     }
     pass_value_flags = {
+        "--model-family",
         "--dataset-alias",
         "--dataset-path",
         "--target",
@@ -260,6 +272,16 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         out.append(arg)
         idx += 1
 
+    model_family = _native_model_family(out)
+    if "--model-family" not in out:
+        _append_value(out, "--model-family", model_family)
+    if (
+        model_family == "gpt3"
+        and not _explicit_arg(out, "--train-seq-len")
+        and not _explicit_arg(out, "--template-name", "--template", "--preset")
+        and not _explicit_arg(out, "--graph-file", "--graph")
+    ):
+        _append_value(out, "--train-seq-len", "2048")
     if "--dataset-alias" not in out and "--dataset-path" not in out and "--tinystories" not in out:
         _append_value(out, "--dataset-alias", os.environ.get("DATASET_ALIAS", _TINYSTORIES_ALIAS))
     if "--target" not in out and _native_backend_name(out) == "llm-kittens":

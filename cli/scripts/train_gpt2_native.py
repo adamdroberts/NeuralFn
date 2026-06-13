@@ -23,7 +23,7 @@ from neuralfn.native_gpt2 import (
 )
 
 
-LOGGER = logging.getLogger("gpt2_native_harness")
+LOGGER = logging.getLogger("gpt_native_harness")
 DATASETS_DIR = Path(os.environ.get("NFN_DATASETS_DIR", Path.home() / ".cache" / "nfn" / "datasets")).expanduser()
 DEFAULT_ARTIFACT = artifact_path("gpt2.pt")
 TINYSTORIES_ALIAS = "roneneldan__TinyStories__TinyStoriesV2-GPT4"
@@ -31,6 +31,7 @@ TINYSTORIES_HF_PATH = "roneneldan/TinyStories"
 TINYSTORIES_TRAIN_FILE = "TinyStoriesV2-GPT4-train.txt"
 TINYSTORIES_VAL_FILE = "TinyStoriesV2-GPT4-valid.txt"
 DEFAULT_DATASET_ALIAS = TINYSTORIES_ALIAS
+DEFAULT_MODEL_FAMILY = "gpt"
 
 NATIVE_GPT2_DEFAULTS = {
     "seed": 1337,
@@ -60,6 +61,7 @@ NATIVE_GPT2_DEFAULTS = {
     "native_cuda_kernel_backend": "tile-cuda",
     "native_cuda_tile_ops_lib": "",
     "native_cuda_cuda_runtime_lib": "",
+    "model_family": DEFAULT_MODEL_FAMILY,
     "template_name": "gpt2",
     "graph_file": "",
 }
@@ -252,6 +254,7 @@ def _build_compiled_cli_config(args: argparse.Namespace, dataset_arg: str | Path
         cuda_runtime_lib=str(args.native_cuda_cuda_runtime_lib or ""),
         template_name=str(args.template_name or "gpt2"),
         graph_file=str(args.graph_file or ""),
+        model_family=str(args.model_family or DEFAULT_MODEL_FAMILY),
     )
 
 
@@ -263,8 +266,19 @@ def _uint16_sequence_count(train_shard: Path, *, seq_len: int) -> int | None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = create_argument_parser(description="Train gpt2 with the NeuralFn CUDA harness.")
+    parser = create_argument_parser(description="Train dense GPT templates with the NeuralFn native CUDA harness.")
     parser.add_argument("--runtime", choices=("native-cuda",), default="native-cuda")
+    parser.add_argument(
+        "--model-family",
+        "--base-model",
+        "--model",
+        choices=("gpt", "gpt2", "gpt3"),
+        default=env_str("MODEL_FAMILY", env_str("BASE_MODEL", NATIVE_GPT2_DEFAULTS["model_family"])),
+        help=(
+            "Dense GPT family label for native metadata and defaults. gpt3 uses the same native GPT "
+            "kernel family and defaults to a 2048 context only when no template, graph, or seq len is supplied."
+        ),
+    )
     parser.add_argument("--run-id", default=env_str("RUN_ID", NATIVE_GPT2_DEFAULTS["run_id"]))
     parser.add_argument("--seed", type=int, default=env_int("SEED", NATIVE_GPT2_DEFAULTS["seed"]))
     parser.add_argument("--device", default=env_str("DEVICE", NATIVE_GPT2_DEFAULTS["device"]))
@@ -292,8 +306,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--tokenizer", default=env_str("TOKENIZER", "gpt2"))
     parser.add_argument("--tokgpt2", action="store_true", help="Use the GPT-2 tokenizer.")
-    parser.add_argument("--cl100k", action="store_true", help="Use cl100k_base. Not valid for native uint16 GPT-2.")
-    parser.add_argument("--o200k", action="store_true", help="Use o200k_base. Not valid for native uint16 GPT-2.")
+    parser.add_argument("--cl100k", action="store_true", help="Use cl100k_base. Not valid for native uint16 GPT shards.")
+    parser.add_argument("--o200k", action="store_true", help="Use o200k_base. Not valid for native uint16 GPT shards.")
     parser.add_argument("--output", default=env_str("OUTPUT", ""))
     parser.add_argument("--max-steps", type=int, default=env_int("ITERATIONS", NATIVE_GPT2_DEFAULTS["max_steps"]))
     parser.add_argument("--train-seq-len", type=int, default=env_int("TRAIN_SEQ_LEN", NATIVE_GPT2_DEFAULTS["train_seq_len"]))
@@ -326,7 +340,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("auto", "binding", "compiled-cli", "cli", "launcher", "subprocess"),
         default=env_str("NFN_NATIVE_GPT2_RUNNER", NATIVE_GPT2_DEFAULTS["native_cuda_runner"]),
         help=(
-            "Native GPT-2 launch mode. The default requires the compiled no-Python cached-shard CLI; "
+            "Native GPT launch mode. The default requires the compiled no-Python cached-shard CLI; "
             "use auto, binding, launcher, or subprocess explicitly for fallback/debug runs."
         ),
     )
@@ -392,6 +406,24 @@ def main(argv: list[str] | None = None) -> int:
     configure_console_logging()
     parser = build_parser()
     args = parser.parse_args(argv)
+    explicit_tokens = list(argv if argv is not None else sys.argv[1:])
+    explicit_seq_len = any(token == "--train-seq-len" or token.startswith("--train-seq-len=") for token in explicit_tokens)
+    explicit_template = any(
+        token in {"--template-name", "--template", "--preset"}
+        or token.startswith("--template-name=")
+        or token.startswith("--template=")
+        or token.startswith("--preset=")
+        for token in explicit_tokens
+    )
+    explicit_graph = any(
+        token in {"--graph-file", "--graph"}
+        or token.startswith("--graph-file=")
+        or token.startswith("--graph=")
+        for token in explicit_tokens
+    )
+    args.model_family = str(args.model_family or DEFAULT_MODEL_FAMILY).strip().lower().replace("_", "-")
+    if args.model_family == "gpt3" and not explicit_seq_len and not explicit_template and not explicit_graph:
+        args.train_seq_len = 2048
     _apply_dataset_shortcuts(args)
     encoding_name = _resolve_tokenizer(args)
     if not str(args.output or "").strip():
@@ -400,7 +432,7 @@ def main(argv: list[str] | None = None) -> int:
         print("This harness is configured to run on CUDA only.", file=sys.stderr)
         return 1
 
-    LOGGER.info("Starting gpt2 native CUDA harness run %s", args.run_id)
+    LOGGER.info("Starting GPT native CUDA harness run %s", args.run_id)
     LOGGER.info("CLI started at %s", datetime.now().isoformat(timespec="seconds"))
     LOGGER.info("Resolving dataset alias %s", args.dataset_alias)
 
@@ -482,9 +514,11 @@ def main(argv: list[str] | None = None) -> int:
             template_name=str(args.template_name or "gpt2"),
             graph_file=str(args.graph_file or ""),
             allow_train_as_val=bool(args.native_cuda_allow_train_val_fallback),
+            model_family=str(args.model_family or DEFAULT_MODEL_FAMILY),
         )
     print(f"Using dataset: {dataset_name}")
     print(f"Tokenizer: {encoding_name}")
+    print(f"Native CUDA model family: {native_cfg.model_family}")
     print(f"Native CUDA template: {native_cfg.template_name}")
     if str(native_cfg.graph_file or "").strip():
         print(f"Native CUDA graph file: {native_cfg.graph_file}")
@@ -565,7 +599,7 @@ def main(argv: list[str] | None = None) -> int:
         import subprocess
 
         return int(subprocess.run(compiled_cli_args or native_cfg.compiled_cli_argv(), check=False).returncode)
-    LOGGER.info("Launching native CUDA GPT-2 trainer")
+    LOGGER.info("Launching native CUDA GPT trainer")
     return run_native_gpt2(native_cfg, runner=str(args.native_cuda_runner))
 
 

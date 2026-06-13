@@ -59,7 +59,7 @@ class NativeGpt2RunnerStatus:
 
 @dataclass(frozen=True)
 class NativeGpt2RunConfig:
-    """Configuration for the native CUDA Tile/SM120 GPT-2 trainer handoff."""
+    """Configuration for the native CUDA Tile/SM120 dense GPT trainer handoff."""
 
     executable: str
     train_data: str
@@ -106,6 +106,7 @@ class NativeGpt2RunConfig:
     dataset_alias: str | None = None
     template_name: str = "gpt2"
     graph_file: str = ""
+    model_family: str = "gpt2"
 
     def argv(self) -> list[str]:
         args = [
@@ -178,6 +179,8 @@ class NativeGpt2RunConfig:
         dataset_alias = str(self.dataset_alias or "").strip() or str(Path(self.train_data).parent)
         args = [
             cli_path,
+            "--model-family",
+            self.model_family,
             "--dataset-alias",
             dataset_alias,
             "--backend",
@@ -626,6 +629,7 @@ def build_native_gpt2_run_config(
     template_name: str = "gpt2",
     graph_file: str = "",
     allow_train_as_val: bool = False,
+    model_family: str = "gpt2",
 ) -> tuple[NativeGpt2RunConfig, dict[str, Any]]:
     meta, train_data, val_data = resolve_native_gpt2_token_shards(
         dataset_name,
@@ -641,6 +645,7 @@ def build_native_gpt2_run_config(
         train_data=str(train_data),
         val_data=str(val_data),
         output_dir=str(output_dir),
+        model_family=str(model_family or "gpt2").strip().lower().replace("_", "-"),
         model_descriptor=f"d{int(num_layers)}",
         eval_every_steps=max(1, int(eval_every_steps)),
         eval_batches=max(0, int(eval_batches)),
@@ -721,6 +726,7 @@ def build_native_gpt2_compiled_cli_run_config(
     lm_head_row_chunk_size: int = 8192,
     template_name: str = "gpt2",
     graph_file: str = "",
+    model_family: str = "gpt2",
 ) -> NativeGpt2RunConfig:
     """Build a compiled-CLI handoff without Python-side token shard inspection."""
 
@@ -731,6 +737,7 @@ def build_native_gpt2_compiled_cli_run_config(
         train_data="",
         val_data="",
         output_dir=str(output_dir),
+        model_family=str(model_family or "gpt2").strip().lower().replace("_", "-"),
         model_descriptor=f"d{int(num_layers)}",
         eval_every_steps=max(1, int(eval_every_steps)),
         eval_batches=max(0, int(eval_batches)),

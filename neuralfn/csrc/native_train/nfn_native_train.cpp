@@ -374,8 +374,12 @@ int main(int argc, char** argv) {
 
     if (model_entry->status != std::string_view("implemented") &&
         model_entry->status != std::string_view("external-fast-path")) {
+        const bool dense_gpt =
+            model_entry->name == std::string_view("gpt") ||
+            model_entry->name == std::string_view("gpt2") ||
+            model_entry->name == std::string_view("gpt3");
         const std::string target_cli =
-            model_entry->name == std::string_view("gpt2") && !gpt2_cli.empty()
+            dense_gpt && !gpt2_cli.empty()
                 ? gpt2_cli
                 : resolve_native_target_cli(argv[0], *model_entry);
         if (!target_cli.empty()) {
@@ -384,6 +388,10 @@ int main(int argc, char** argv) {
             }
             std::vector<std::string> command;
             command.push_back(target_cli);
+            if (dense_gpt) {
+                command.push_back("--model-family");
+                command.push_back(std::string(model_entry->name));
+            }
             command.insert(command.end(), forwarded.begin(), forwarded.end());
             if (print_command_requested) {
                 print_command(command);

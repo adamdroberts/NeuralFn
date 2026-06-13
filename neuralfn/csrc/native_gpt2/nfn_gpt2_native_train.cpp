@@ -34,6 +34,7 @@ constexpr std::int64_t kAttentionForwardValueReuse = 64;
 constexpr std::int64_t kAttentionBackwardDimReuse = 64;
 
 struct Config {
+    std::string model_family = "gpt2";
     std::string dataset_alias = "roneneldan__TinyStories__TinyStoriesV2-GPT4";
     std::string target;
     std::string output_dir;
@@ -76,6 +77,8 @@ struct Config {
     bool train_embedding_lm = false;
     bool train_transformer_lm = true;
     bool checkpoint_metadata_smoke = false;
+    bool template_explicit = false;
+    bool seq_len_explicit = false;
     std::string cuda_runtime_lib;
 };
 
@@ -226,13 +229,14 @@ void print_invocation_command(int argc, char** argv) {
 void print_usage(const char* program) {
     std::cout
         << "Usage: " << program << " [options]\n\n"
-        << "Native no-Python GPT-2 trainer entrypoint for cached uint16 NeuralFn datasets.\n"
+        << "Native no-Python GPT trainer entrypoint for cached uint16 NeuralFn datasets.\n"
         << "Requires fineweb_train_*.bin and fineweb_val_*.bin under the dataset directory.\n\n"
         << "Dataset options:\n"
         << "  --dataset-alias NAME_OR_PATH      Dataset alias under ~/.cache/nfn/datasets or absolute path\n"
         << "  --tinystories                     Shortcut for roneneldan__TinyStories__TinyStoriesV2-GPT4\n"
         << "  --allow-train-val-fallback        Reuse train shard when no validation shard exists\n\n"
         << "Template/graph options:\n"
+        << "  --model-family gpt|gpt2|gpt3    Dense GPT family label; gpt3 defaults to 2048 context unless template/graph/seq len is explicit\n"
         << "  --template-name NAME              GPT template preset to select; --print-plan reports known/native status\n"
         << "  --graph-file PATH                 Custom NeuralFn graph JSON to select; reports missing native graph trainer until implemented\n\n"
         << "Launch options:\n"
@@ -250,7 +254,7 @@ void print_usage(const char* program) {
         << "  --smoke-transformer-lm-step       Sample cached tokens and run embeddings, one transformer block, final norm, tied LM head, CE, backward, and AdamW\n"
         << "  --smoke-embedding-lm-step         Sample cached tokens and run GPT-2 embedding/final-norm/LM-head kernels\n"
         << "  --train-embedding-lm              Train GPT-2 embedding/final-norm/LM-head path over cached shards with Tile kernels\n"
-        << "  --train-transformer-lm            Run the 12-layer GPT-2 transformer/LM training loop with validation JSON (default)\n"
+        << "  --train-transformer-lm            Run the dense GPT transformer/LM training loop with validation JSON (default)\n"
         << "  --no-train-transformer-lm         Disable the default transformer-LM loop for plan/check/debug commands\n"
         << "  --checkpoint-metadata-smoke       Write a sparse native GPT-2 checkpoint-format artifact and DONE marker without CUDA/Torch\n"
         << "  --cuda-runtime-lib PATH           libcudart path for Tile-CUDA smokes/training; defaults to NFN_CUDA_RUNTIME_LIB/libcudart.so\n"
@@ -339,6 +343,26 @@ std::string normalize_template_name(const std::string& value) {
         }
     }
     return out.empty() ? "gpt2" : out;
+}
+
+std::string normalize_model_family(const std::string& value) {
+    std::string normalized;
+    normalized.reserve(value.size());
+    for (char ch : value) {
+        char lowered = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        normalized.push_back(lowered == '_' ? '-' : lowered);
+    }
+    if (normalized.empty()) {
+        return "gpt";
+    }
+    if (normalized == "gpt" || normalized == "gpt2" || normalized == "gpt3") {
+        return normalized;
+    }
+    throw std::runtime_error("model family must be one of: gpt, gpt2, gpt3");
+}
+
+bool is_default_gpt_template(const Config& cfg) {
+    return normalize_template_name(cfg.template_name) == "gpt2";
 }
 
 const std::vector<std::string>& shipped_gpt_template_presets() {
@@ -1044,7 +1068,7 @@ bool print_tile_plan(
 
     std::cout
         << "{\n"
-        << "  \"model_family\": \"gpt2\",\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"status\": \"" << json_escape(plan_status) << "\",\n"
         << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
@@ -1237,7 +1261,7 @@ int print_selected_graph_unsupported_json(const Config& cfg, const neuralfn::nat
                                                                      : "selected-graph-native-trainer-missing";
     std::cout
         << "{\n"
-        << "  \"model_family\": \"gpt2\",\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"" << json_escape(cfg.backend) << "\",\n"
         << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
@@ -1403,7 +1427,7 @@ int print_tile_ops_smoke_json(const Config& cfg, const char* program) {
 
     std::cout
         << "{\n"
-        << "  \"model_family\": \"gpt2\",\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"smoke\": \"tile_ops_fill\",\n"
         << "  \"token_shards_resolved\": false,\n"
@@ -1713,7 +1737,7 @@ int print_optimizer_smoke_json(const Config& cfg, const char* program) {
 
     std::cout
         << "{\n"
-        << "  \"model_family\": \"gpt2\",\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"smoke\": \"optimizer_step\",\n"
         << "  \"token_shards_resolved\": false,\n"
@@ -2125,7 +2149,7 @@ int print_lm_step_smoke_json(const Config& cfg, const char* program) {
 
     std::cout
         << "{\n"
-        << "  \"model_family\": \"gpt2\",\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"smoke\": \"lm_step\",\n"
         << "  \"token_shards_resolved\": false,\n"
@@ -2696,7 +2720,7 @@ int print_embedding_lm_step_smoke_json(
 
     std::cout
         << "{\n"
-        << "  \"model_family\": \"gpt2\",\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"smoke\": \"embedding_lm_step\",\n"
         << "  \"tile_ops_library\": \"" << json_escape(tile_lib_path) << "\",\n"
@@ -3299,7 +3323,7 @@ int run_embedding_lm_training_json(
 
     std::cout
         << "{\n"
-        << "  \"model_family\": \"gpt2\",\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"status\": \"" << (passed ? "native-embedding-lm-trained" : "native-embedding-lm-failed") << "\",\n"
         << "  \"tile_ops_library\": \"" << json_escape(tile_lib_path) << "\",\n"
@@ -3894,7 +3918,7 @@ int print_attention_step_smoke_json(const Config& cfg, const char* program) {
 
     std::cout
         << "{\n"
-        << "  \"model_family\": \"gpt2\",\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"smoke\": \"attention_step\",\n"
         << "  \"token_shards_resolved\": false,\n"
@@ -4301,7 +4325,7 @@ int print_mlp_step_smoke_json(const Config& cfg, const char* program) {
 
     std::cout
         << "{\n"
-        << "  \"model_family\": \"gpt2\",\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"smoke\": \"mlp_step\",\n"
         << "  \"token_shards_resolved\": false,\n"
@@ -5471,7 +5495,7 @@ int print_transformer_block_step_smoke_json(const Config& cfg, const char* progr
 
     std::cout
         << "{\n"
-        << "  \"model_family\": \"gpt2\",\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"smoke\": \"transformer_block_step\",\n"
         << "  \"token_shards_resolved\": false,\n"
@@ -6270,7 +6294,7 @@ int print_transformer_lm_step_smoke_json(
 
     std::cout
         << "{\n"
-        << "  \"model_family\": \"gpt2\",\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"smoke\": \"transformer_lm_step\",\n"
         << "  \"tile_ops_library\": \"" << json_escape(tile_lib_path) << "\",\n"
@@ -6397,7 +6421,7 @@ int write_checkpoint_metadata_smoke_json(
 
     std::cout
         << "{\n"
-        << "  \"model_family\": \"gpt2\",\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"status\": \"" << (passed ? "native-checkpoint-metadata-written" : "native-checkpoint-metadata-failed") << "\",\n"
         << "  \"checkpoint_metadata_smoke\": true,\n"
@@ -9910,7 +9934,7 @@ int run_transformer_lm_training_json(
 
     std::cout
         << "{\n"
-        << "  \"model_family\": \"gpt2\",\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
@@ -10894,7 +10918,7 @@ int print_norm_residual_step_smoke_json(const Config& cfg, const char* program) 
 
     std::cout
         << "{\n"
-        << "  \"model_family\": \"gpt2\",\n"
+        << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"smoke\": \"norm_residual_step\",\n"
         << "  \"token_shards_resolved\": false,\n"
@@ -10993,6 +11017,14 @@ int main(int argc, char** argv) {
         if (arg == "--help" || arg == "-h") {
             print_usage(argv[0]);
             return 0;
+        } else if (arg == "--model-family" || arg == "--base-model" || arg == "--model") {
+            cfg.model_family = normalize_model_family(require_value(argc, argv, &i, arg));
+        } else if (arg.rfind("--model-family=", 0) == 0) {
+            cfg.model_family = normalize_model_family(value_after_equals("--model-family="));
+        } else if (arg.rfind("--base-model=", 0) == 0) {
+            cfg.model_family = normalize_model_family(value_after_equals("--base-model="));
+        } else if (arg.rfind("--model=", 0) == 0) {
+            cfg.model_family = normalize_model_family(value_after_equals("--model="));
         } else if (arg == "--tinystories") {
             cfg.dataset_alias = "roneneldan__TinyStories__TinyStoriesV2-GPT4";
         } else if (arg == "--dataset-alias" || arg == "--dataset-path") {
@@ -11015,12 +11047,16 @@ int main(int argc, char** argv) {
             cfg.tile_ops_lib = value_after_equals("--tile-ops-lib=");
         } else if (arg == "--template-name" || arg == "--template" || arg == "--preset") {
             cfg.template_name = normalize_template_name(require_value(argc, argv, &i, arg));
+            cfg.template_explicit = true;
         } else if (arg.rfind("--template-name=", 0) == 0) {
             cfg.template_name = normalize_template_name(value_after_equals("--template-name="));
+            cfg.template_explicit = true;
         } else if (arg.rfind("--template=", 0) == 0) {
             cfg.template_name = normalize_template_name(value_after_equals("--template="));
+            cfg.template_explicit = true;
         } else if (arg.rfind("--preset=", 0) == 0) {
             cfg.template_name = normalize_template_name(value_after_equals("--preset="));
+            cfg.template_explicit = true;
         } else if (arg == "--graph-file" || arg == "--graph") {
             cfg.graph_file = require_value(argc, argv, &i, arg);
         } else if (arg.rfind("--graph-file=", 0) == 0) {
@@ -11096,6 +11132,10 @@ int main(int argc, char** argv) {
             cfg.batch_size = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--train-seq-len") {
             cfg.seq_len = parse_int(require_value(argc, argv, &i, arg), arg);
+            cfg.seq_len_explicit = true;
+        } else if (arg.rfind("--train-seq-len=", 0) == 0) {
+            cfg.seq_len = parse_int(value_after_equals("--train-seq-len="), "--train-seq-len");
+            cfg.seq_len_explicit = true;
         } else if (arg == "--train-batch-tokens") {
             cfg.train_batch_tokens = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--learning-rate") {
@@ -11135,6 +11175,16 @@ int main(int argc, char** argv) {
         }
     }
 
+    cfg.model_family = normalize_model_family(cfg.model_family);
+    if (
+        cfg.model_family == "gpt3" &&
+        !cfg.seq_len_explicit &&
+        !cfg.template_explicit &&
+        cfg.graph_file.empty() &&
+        is_default_gpt_template(cfg)
+    ) {
+        cfg.seq_len = 2048;
+    }
     cfg.activation = lower_activation(cfg.activation);
     cfg.template_name = normalize_template_name(cfg.template_name);
     apply_template_activation_defaults(cfg);
@@ -11227,7 +11277,7 @@ int main(int argc, char** argv) {
     if (cfg.print_plan) {
         std::cout
             << "{\n"
-            << "  \"model_family\": \"gpt2\",\n"
+            << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
             << "  \"backend\": \"llm-kittens\",\n"
             << "  \"status\": \"external-fast-path\",\n"
             << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"

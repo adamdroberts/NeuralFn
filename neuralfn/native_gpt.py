@@ -9,8 +9,8 @@ from .native_gpt2 import (
     NativeGpt2CheckpointInfo as NativeGptCheckpointInfo,
     NativeGpt2RunConfig as NativeGptRunConfig,
     NativeGpt2RunnerStatus as NativeGptRunnerStatus,
-    build_native_gpt2_compiled_cli_run_config as build_native_gpt_compiled_cli_run_config,
-    build_native_gpt2_run_config as build_native_gpt_run_config,
+    build_native_gpt2_compiled_cli_run_config,
+    build_native_gpt2_run_config,
     is_native_gpt2_checkpoint as is_native_gpt_checkpoint,
     latest_native_gpt2_checkpoint as latest_native_gpt_checkpoint,
     native_gpt2_parameter_count as native_gpt_parameter_count,
@@ -23,6 +23,16 @@ from .native_gpt2 import (
     run_native_gpt2 as run_native_gpt,
     write_native_gpt2_run_config as write_native_gpt_run_config,
 )
+
+
+def build_native_gpt_run_config(**kwargs):
+    kwargs.setdefault("model_family", "gpt")
+    return build_native_gpt2_run_config(**kwargs)
+
+
+def build_native_gpt_compiled_cli_run_config(**kwargs):
+    kwargs.setdefault("model_family", "gpt")
+    return build_native_gpt2_compiled_cli_run_config(**kwargs)
 
 __all__ = [
     "NativeGptCheckpointInfo",

@@ -220,8 +220,10 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
 
     assert cfg.dataset_alias == "roneneldan__TinyStories__TinyStoriesV2-GPT4"
     assert cfg.train_data == ""
-    assert argv[:7] == [
+    assert argv[:9] == [
         "/opt/nfn/nfn_gpt2_native_train",
+        "--model-family",
+        "gpt2",
         "--dataset-alias",
         "roneneldan__TinyStories__TinyStoriesV2-GPT4",
         "--backend",
@@ -564,7 +566,9 @@ def test_native_gpt2_compiled_cli_runner_executes_cli(
 
     assert run_native_gpt2(cfg, runner="compiled-cli") == 19
     args = output.read_text(encoding="utf-8").splitlines()
-    assert args[:4] == [
+    assert args[:6] == [
+        "--model-family",
+        "gpt2",
         "--dataset-alias",
         str(tmp_path / "dataset"),
         "--backend",
@@ -726,7 +730,9 @@ def test_native_gpt2_cpp_binding_uses_compiled_cli_for_alias_only_config(
     assert native_gpt2_runner_status("auto").resolved == "binding"
     assert run_native_gpt2(cfg, runner="auto") == 37
     args = observed_args.read_text(encoding="utf-8").splitlines()
-    assert args[:4] == [
+    assert args[:6] == [
+        "--model-family",
+        "gpt2",
         "--dataset-alias",
         "cached-shards",
         "--backend",
@@ -2287,6 +2293,7 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
             check=False,
         )
         assert dense_gpt.returncode == 0, dense_gpt.stderr
+        assert f"--model-family\n{model}" in dense_gpt.stdout
         assert "--dataset-alias\n/tmp/native-cache" in dense_gpt.stdout
         assert "--eval-every-steps\n1000" in dense_gpt.stdout
         assert "--base-model" not in dense_gpt.stdout
@@ -4171,7 +4178,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
         check=False,
     )
     assert help_proc.returncode == 0, help_proc.stderr
-    assert "Native no-Python GPT-2 trainer" in help_proc.stdout
+    assert "Native no-Python GPT trainer" in help_proc.stdout
 
     unified_help = subprocess.run(
         [str(linked_unified), "--help"],

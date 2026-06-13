@@ -784,10 +784,105 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("--dataset-alias /tmp/native-cache", proc.stdout)
         self.assertIn("--eval-every-steps 1000", proc.stdout)
         self.assertIn("--dry-run", proc.stdout)
+        self.assertIn("--model-family gpt2", proc.stdout)
         self.assertNotIn("--base-model", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
         self.assertIn("TRAIN_GPT2_NATIVE_LOADED False", proc.stdout)
+
+    def test_nfn_train_gpt3_defaults_to_2048_context_without_template_or_graph(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import runpy
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.argv = [
+                str(root / "cli" / "nfn.py"),
+                "train",
+                "--base-model",
+                "gpt3",
+                "--dataset-alias=/tmp/native-cache",
+                "--native-cuda-dry-run",
+            ]
+            try:
+                runpy.run_path(str(root / "cli" / "nfn.py"), run_name="__main__")
+            except SystemExit as exc:
+                exit_code = int(exc.code or 0)
+            else:
+                exit_code = 0
+            print("TORCH_LOADED", "torch" in sys.modules)
+            print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
+            raise SystemExit(exit_code)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env["NFN_NATIVE_TRAIN_CLI"] = "/bin/echo"
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("--model-family gpt3", proc.stdout)
+        self.assertIn("--train-seq-len 2048", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
+
+    def test_nfn_train_gpt3_does_not_override_explicit_template_graph_or_seq_len(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import runpy
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.argv = [
+                str(root / "cli" / "nfn.py"),
+                "train",
+                "--base-model",
+                "gpt3",
+                "--dataset-alias=/tmp/native-cache",
+                "--template-name=gpt2_moa",
+                "--graph-file=/tmp/custom-graph.json",
+                "--train-seq-len=4096",
+                "--native-cuda-dry-run",
+            ]
+            try:
+                runpy.run_path(str(root / "cli" / "nfn.py"), run_name="__main__")
+            except SystemExit as exc:
+                exit_code = int(exc.code or 0)
+            else:
+                exit_code = 0
+            raise SystemExit(exit_code)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env["NFN_NATIVE_TRAIN_CLI"] = "/bin/echo"
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("--model-family gpt3", proc.stdout)
+        self.assertIn("--template-name gpt2_moa", proc.stdout)
+        self.assertIn("--graph-file /tmp/custom-graph.json", proc.stdout)
+        self.assertIn("--train-seq-len 4096", proc.stdout)
+        self.assertNotIn("--train-seq-len 2048", proc.stdout)
 
     def test_nfn_train_gpt2_translates_kernel_backend_to_native_backend(self) -> None:
         code = textwrap.dedent(

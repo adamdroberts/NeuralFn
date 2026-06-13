@@ -29,6 +29,10 @@ def _has_any(argv: list[str], *flags: str) -> bool:
     return any(arg in flags or any(arg.startswith(flag + "=") for flag in flags) for arg in argv)
 
 
+def _explicit_arg(argv: list[str], *flags: str) -> bool:
+    return any(arg in flags or any(arg.startswith(flag + "=") for flag in flags) for arg in argv)
+
+
 def _is_lightweight_root_help(argv: list[str]) -> bool:
     if not argv:
         return True
@@ -469,6 +473,8 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
     include_model = not dense_gpt
     if include_model:
         out.extend(["--base-model", model])
+    elif dense_gpt:
+        out.extend(["--model-family", model])
     if model == "nanogpt" and not _has_native_train_action(argv):
         out.append("--train-token-lm")
     if dense_gpt and not _has_native_train_action(argv):
@@ -635,6 +641,14 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         idx += 1
     if dense_gpt and _native_template_name(out) == "gpt2_moa" and not _has_native_activation(out):
         _append_value_arg(out, "--native-cuda-activation", "moa")
+    if (
+        dense_gpt
+        and model == "gpt3"
+        and not _explicit_arg(out, "--train-seq-len")
+        and not _explicit_arg(out, "--template-name", "--template", "--preset")
+        and not _explicit_arg(out, "--graph-file", "--graph")
+    ):
+        _append_value_arg(out, "--train-seq-len", "2048")
     return out
 
 
