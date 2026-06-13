@@ -49,7 +49,7 @@ NATIVE_GPT2_DEFAULTS = {
     "learning_rate": 6e-4,
     "weight_decay": 0.1,
     "eval_every_steps": 250,
-    "lm_head_row_chunk_size": 1_024,
+    "lm_head_row_chunk_size": 2_048,
     "num_layers": 12,
     "native_cuda_checkpoint_every": 200,
     "native_cuda_sample_every": 20_000,

@@ -397,7 +397,7 @@ Canonical docs:
   Use `--no-train-transformer-lm` only for direct
   C++ plan/check/debug commands that must not start the default trainer.
 - Full GPT-2 `--train-transformer-lm` defaults the tied LM-head row chunk to
-  1024 rows. Use `--lm-head-row-chunk-size` on the compiled C++ CLI or
+  2048 rows. Use `--lm-head-row-chunk-size` on the compiled C++ CLI or
   `--native-cuda-lm-head-row-chunk-size` from root/wrapper CLI to override it.
   Loss partials must reduce on device with `nfn_native_tile_sum_partials_float32`
   before the single host loss scalar copy. Tied LM-head dWeight chunks must
