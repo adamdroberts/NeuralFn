@@ -294,6 +294,10 @@ The CLI provides composed `train`, `infer`, and `eval`
 workflows with dataset shortcuts, tokenizer selection, graph-linked artifacts,
 and optional interactive planning. See [CLI Workflows](docs/cli.md) and
 [cli/README.md](cli/README.md).
+Direct `python cli/scripts/train_gpt.py ...` uses the same pre-import compiled
+CLI fast path as `train_gpt2.py`, so dry-run and default native training commands
+do not load Torch, NumPy, the dataset manager, or the compatibility Python
+harness before handing off to C++.
 
 ### Run the library examples
 

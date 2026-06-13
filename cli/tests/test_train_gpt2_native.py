@@ -1343,6 +1343,56 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("Native CUDA validation eval: every 1000 optimizer steps", proc.stdout)
         self.assertIn("train_gpt2cu -i", proc.stdout)
 
+    def test_direct_gpt_script_uses_fast_path_without_compat_imports(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import runpy
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.argv = [
+                str(root / "cli" / "scripts" / "train_gpt.py"),
+                "--model-family",
+                "gpt3",
+                "--dataset-alias",
+                "/tmp/native-cache",
+                "--native-cuda-dry-run",
+            ]
+            try:
+                runpy.run_path(str(root / "cli" / "scripts" / "train_gpt.py"), run_name="__main__")
+            except SystemExit as exc:
+                exit_code = int(exc.code or 0)
+            else:
+                exit_code = 0
+            print("TORCH_LOADED", "torch" in sys.modules)
+            print("TRAIN_GPT2_NATIVE_LOADED", "train_gpt2_native" in sys.modules)
+            print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
+            print("NUMPY_LOADED", "numpy" in sys.modules)
+            raise SystemExit(exit_code)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env["NFN_NATIVE_GPT2_CLI"] = "/bin/echo"
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("--model-family gpt3", proc.stdout)
+        self.assertIn("--train-seq-len 2048", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("TRAIN_GPT2_NATIVE_LOADED False", proc.stdout)
+        self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
+        self.assertIn("NUMPY_LOADED False", proc.stdout)
+
     def test_train_gpt2_module_import_and_parser_do_not_import_torch(self) -> None:
         code = textwrap.dedent(
             f"""
