@@ -62,7 +62,7 @@ NATIVE_GPT_DEFAULTS = {
     "native_cuda_tile_ops_lib": "",
     "native_cuda_cuda_runtime_lib": "",
     "model_family": DEFAULT_MODEL_FAMILY,
-    "template_name": "gpt2",
+    "template_name": "gpt",
     "graph_file": "",
 }
 NATIVE_GPT2_DEFAULTS = NATIVE_GPT_DEFAULTS
@@ -253,7 +253,7 @@ def _build_compiled_cli_config(args: argparse.Namespace, dataset_arg: str | Path
         train_embedding_lm=bool(args.train_embedding_lm),
         train_transformer_lm=bool(args.train_transformer_lm),
         cuda_runtime_lib=str(args.native_cuda_cuda_runtime_lib or ""),
-        template_name=str(args.template_name or "gpt2"),
+        template_name=str(args.template_name or "gpt"),
         graph_file=str(args.graph_file or ""),
         model_family=str(args.model_family or DEFAULT_MODEL_FAMILY),
     )
@@ -297,7 +297,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--template",
         "--preset",
         default=env_str("TEMPLATE_NAME", NATIVE_GPT_DEFAULTS["template_name"]),
-        help="GPT template preset name to select for native training metadata and dispatch.",
+        help=(
+            "GPT template preset or alias to select for native training metadata and dispatch. "
+            "The default gpt alias resolves to the dense GPT native implementation."
+        ),
     )
     parser.add_argument(
         "--graph-file",
@@ -519,7 +522,7 @@ def main(argv: list[str] | None = None) -> int:
             train_embedding_lm=bool(args.train_embedding_lm),
             train_transformer_lm=bool(args.train_transformer_lm),
             cuda_runtime_lib=str(args.native_cuda_cuda_runtime_lib or ""),
-            template_name=str(args.template_name or "gpt2"),
+            template_name=str(args.template_name or "gpt"),
             graph_file=str(args.graph_file or ""),
             allow_train_as_val=bool(args.native_cuda_allow_train_val_fallback),
             model_family=str(args.model_family or DEFAULT_MODEL_FAMILY),

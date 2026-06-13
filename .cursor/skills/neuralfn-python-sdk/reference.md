@@ -489,6 +489,13 @@ Full GPT-2 `--train-transformer-lm` should rely on the chunked parallel atomic i
 
 Full GPT-2 `--train-transformer-lm` JSON includes `cuda_runtime_preflight` before allocation. Driver version `0` or a loaded runtime newer than the driver is an early native failure so live SM120 timing attempts fail at the GPU-access/runtime gate instead of a later allocation.
 
+The generic `neuralfn.native_gpt` surface is the preferred SDK entrypoint for
+dense GPT native training. The default public template is `template_name="gpt"`;
+compiled plan/runtime JSON reports `resolved_native_template_name: "gpt2"` while
+the current implementation template still carries its legacy name. Use
+`template_name` or `graph_file` for architecture selection; do not branch new
+SDK code on `model_family == "gpt2"` or create a separate GPT-3 trainer.
+
 `NativeGpt2RunConfig.kernel_backend` is strict: `tile-cuda` is the default
 NeuralFn-owned 12-layer trainer path, and `llm-kittens` is an explicit external
 bridge. The `tile-cuda` path may print a plan, verify `tile_ops_lib`, or run

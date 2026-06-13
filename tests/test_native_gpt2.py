@@ -273,6 +273,8 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
     assert argv[argv.index("--eval-batch-size") + 1] == "0"
     assert argv[argv.index("--lm-head-row-chunk-size") + 1] == "8192"
     assert argv[argv.index("--cuda-runtime-lib") + 1] == "/usr/local/cuda/lib64/libcudart.so"
+    assert cfg.template_name == "gpt"
+    assert argv[argv.index("--template-name") + 1] == "gpt"
 
     llm_cfg = build_native_gpt2_compiled_cli_run_config(
         dataset_alias="roneneldan__TinyStories__TinyStoriesV2-GPT4",
@@ -1016,7 +1018,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["model_family"] == "gpt"
     assert default_payload["backend"] == "tile-cuda"
     assert default_payload["status"] == "native-transformer-lm-ready"
-    assert default_payload["template_name"] == "gpt2"
+    assert default_payload["template_name"] == "gpt"
+    assert default_payload["resolved_native_template_name"] == "gpt2"
     assert default_payload["graph_file"] == ""
     assert default_payload["architecture_source"] == "template"
     assert default_payload["architecture_contract"] == "gpt-template-preset"
@@ -1096,7 +1099,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     external_payload = json.loads(external_plan.stdout)
     assert external_payload["backend"] == "llm-kittens"
     assert external_payload["status"] == "external-fast-path"
-    assert external_payload["template_name"] == "gpt2"
+    assert external_payload["template_name"] == "gpt"
+    assert external_payload["resolved_native_template_name"] == "gpt2"
     assert external_payload["graph_file"] == ""
     assert external_payload["architecture_source"] == "template"
     assert external_payload["architecture_contract"] == "gpt-template-preset"
@@ -1120,7 +1124,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["model_family"] == "gpt"
     assert tile_payload["backend"] == "tile-cuda"
     assert tile_payload["status"] == "native-transformer-lm-ready"
-    assert tile_payload["template_name"] == "gpt2"
+    assert tile_payload["template_name"] == "gpt"
+    assert tile_payload["resolved_native_template_name"] == "gpt2"
     assert tile_payload["architecture_source"] == "template"
     assert tile_payload["architecture_contract"] == "gpt-template-preset"
     assert (
@@ -1331,6 +1336,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert megakernel_template_plan.returncode == 0, megakernel_template_plan.stderr
     megakernel_template_payload = json.loads(megakernel_template_plan.stdout)
     assert megakernel_template_payload["template_name"] == "gpt2_megakernel"
+    assert megakernel_template_payload["resolved_native_template_name"] == "gpt2_megakernel"
     assert megakernel_template_payload["selected_graph_support_status"] == "native-transformer-lm"
     assert megakernel_template_payload["selected_graph_native_runnable"] is True
 
@@ -1353,6 +1359,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert moa_template_plan.returncode == 0, moa_template_plan.stderr
     moa_template_payload = json.loads(moa_template_plan.stdout)
     assert moa_template_payload["template_name"] == "gpt2_moa"
+    assert moa_template_payload["resolved_native_template_name"] == "gpt2_moa"
     assert moa_template_payload["native_cuda_activation"] == "moa"
     assert moa_template_payload["selected_graph_support_status"] == "native-transformer-lm"
     assert moa_template_payload["selected_graph_native_runnable"] is True

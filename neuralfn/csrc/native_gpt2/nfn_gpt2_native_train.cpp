@@ -42,7 +42,7 @@ struct Config {
     std::string backend = "tile-cuda";
     std::string tile_ops_lib;
     std::string activation = "gelu";
-    std::string template_name = "gpt2";
+    std::string template_name = "gpt";
     std::string graph_file;
     int moa_interval = 50;
     int eval_every_steps = 250;
@@ -261,7 +261,7 @@ void print_usage(const char* program) {
         << "  --allow-train-val-fallback        Reuse train shard when no validation shard exists\n\n"
         << "Template/graph options:\n"
         << "  --model-family gpt|gpt2|gpt3    Dense GPT selector; all canonicalize to model_family=gpt, while gpt3 can default to 2048 context\n"
-        << "  --template-name NAME              GPT template preset to select; --print-plan reports known/native status\n"
+        << "  --template-name NAME              GPT template preset or alias to select; default gpt resolves to the dense GPT native implementation\n"
         << "  --graph-file PATH                 Custom NeuralFn graph JSON to select; reports missing native graph trainer until implemented\n\n"
         << "Launch options:\n"
         << "  --backend llm-kittens|tile-cuda   Backend; defaults to tile-cuda and the NeuralFn-owned trainer path\n"
@@ -366,7 +366,12 @@ std::string normalize_template_name(const std::string& value) {
             out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
         }
     }
-    return out.empty() ? "gpt2" : out;
+    return out.empty() ? "gpt" : out;
+}
+
+std::string resolved_native_template_name(const std::string& value) {
+    const std::string normalized = normalize_template_name(value);
+    return normalized == "gpt" ? "gpt2" : normalized;
 }
 
 std::string normalize_model_family(const std::string& value) {
@@ -394,7 +399,7 @@ std::string canonical_dense_gpt_model_family(const std::string& model_selector) 
 }
 
 bool is_default_gpt_template(const Config& cfg) {
-    return normalize_template_name(cfg.template_name) == "gpt2";
+    return resolved_native_template_name(cfg.template_name) == "gpt2";
 }
 
 const std::vector<std::string>& shipped_gpt_template_presets() {
@@ -466,12 +471,15 @@ const std::vector<std::string>& shipped_gpt_template_presets() {
 
 bool selected_template_is_shipped(const Config& cfg) {
     const std::string name = normalize_template_name(cfg.template_name);
+    if (name == "gpt") {
+        return true;
+    }
     const std::vector<std::string>& presets = shipped_gpt_template_presets();
     return std::find(presets.begin(), presets.end(), name) != presets.end();
 }
 
 bool selected_template_is_native_dense_gpt_compatible(const Config& cfg) {
-    const std::string name = normalize_template_name(cfg.template_name);
+    const std::string name = resolved_native_template_name(cfg.template_name);
     return name == "gpt2" || name == "gpt2_megakernel" || name == "gpt2_moa";
 }
 
@@ -643,7 +651,7 @@ bool valid_activation(const std::string& value) {
 }
 
 void apply_template_activation_defaults(Config& cfg) {
-    if (normalize_template_name(cfg.template_name) == "gpt2_moa" && lower_activation(cfg.activation) == "gelu") {
+    if (resolved_native_template_name(cfg.template_name) == "gpt2_moa" && lower_activation(cfg.activation) == "gelu") {
         cfg.activation = "moa";
     }
 }
@@ -1128,6 +1136,7 @@ bool print_tile_plan(
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"status\": \"" << json_escape(plan_status) << "\",\n"
         << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
+        << "  \"resolved_native_template_name\": \"" << json_escape(resolved_native_template_name(cfg.template_name)) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
         << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
         << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
@@ -1329,6 +1338,7 @@ int print_selected_graph_unsupported_json(const Config& cfg, const neuralfn::nat
         << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"" << json_escape(cfg.backend) << "\",\n"
         << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
+        << "  \"resolved_native_template_name\": \"" << json_escape(resolved_native_template_name(cfg.template_name)) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
         << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
         << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
@@ -10008,6 +10018,7 @@ int run_transformer_lm_training_json(
         << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
+        << "  \"resolved_native_template_name\": \"" << json_escape(resolved_native_template_name(cfg.template_name)) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
         << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
         << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
@@ -11366,6 +11377,7 @@ int main(int argc, char** argv) {
             << "  \"backend\": \"llm-kittens\",\n"
             << "  \"status\": \"external-fast-path\",\n"
             << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
+            << "  \"resolved_native_template_name\": \"" << json_escape(resolved_native_template_name(cfg.template_name)) << "\",\n"
             << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
             << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
             << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"

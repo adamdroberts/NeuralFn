@@ -82,7 +82,7 @@ def _final_lr_fraction(argv: list[str]) -> str | None:
 
 
 def _native_template_name(argv: list[str]) -> str:
-    return (_arg_value(argv, "--template-name", "--template", "--preset") or "gpt2").strip().lower().replace("-", "_")
+    return (_arg_value(argv, "--template-name", "--template", "--preset") or "gpt").strip().lower().replace("-", "_")
 
 
 def _native_model_family(argv: list[str]) -> str:

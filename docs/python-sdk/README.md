@@ -77,14 +77,17 @@ inspection to the C++ resolver. When that alias-only config is passed through
 the C++ binding, the binding executes `compiled_cli_argv` instead of the raw
 `train_gpt2cu` argv so SDK `runner="auto"` keeps the no-Python shard resolver
 path. Set `kernel_backend="tile-cuda"` plus `tile_ops_lib=...` on the config to
-inspect/check or run the NeuralFn-owned raw Tile GPT plan. Set
-`template_name="gpt2"` or `template_name="gpt2_megakernel"` for the implemented
-dense native loop, or pass another shipped GPT template name/custom `graph_file`
-to select that architecture and receive explicit
+inspect/check or run the NeuralFn-owned raw Tile GPT plan. The default
+`template_name="gpt"` is the public dense GPT native template alias and reports
+`resolved_native_template_name: "gpt2"` in compiled JSON while the current
+implementation template is still named `gpt2`. Set
+`template_name="gpt2_megakernel"` for the megakernel dense loop, or pass another
+shipped GPT template name/custom `graph_file` to select that architecture and receive explicit
 `selected-graph-native-trainer-missing` JSON until its C++ Tile trainer exists.
 Compiled plan and runtime JSON also report `architecture_source`,
-`architecture_contract`, and `model_family_context_policy`, making the template
-or graph the architecture source of truth. The compatibility
+`architecture_contract`, `model_family_context_policy`, and
+`resolved_native_template_name`, making the template or graph the architecture
+source of truth. The compatibility
 `NativeGpt2RunConfig` and `build_native_gpt2_*` helpers now canonicalize dense
 GPT selectors to `model_family="gpt"`; pass `template_name` or `graph_file` for
 architecture selection instead of keying off the model-family label.

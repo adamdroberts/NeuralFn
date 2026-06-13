@@ -6,6 +6,51 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-13 GPT-native trainer default template alias
+
+#### Breaking changes
+
+- The native dense GPT CLI/SDK default template is now the public
+  `template_name="gpt"` alias instead of `template_name="gpt2"`. The compiled
+  frontend resolves that alias to the current dense GPT implementation template
+  and reports `resolved_native_template_name: "gpt2"` in plan/runtime JSON.
+  Callers should use `template_name`, `graph_file`, and shape fields as the
+  architecture contract; do not infer architecture from `model_family` or assume
+  GPT-3 is a separate trainer.
+
+#### Changed
+
+- Updated `train_gpt.py`, `train_gpt_native.py`, the native GPT SDK config
+  builders, and `nfn_gpt_native_train` so `gpt` is the canonical public native
+  trainer/template surface. `gpt2` and `gpt3` remain accepted selector aliases;
+  `gpt3` only supplies a 2048-token default context when the caller did not
+  provide a template, graph, or explicit sequence length.
+- Added `resolved_native_template_name` to compiled dense GPT plan, unsupported
+  graph, external bridge, and runtime JSON so diagnostics distinguish the
+  public template alias from the implementation template used by the current
+  native trainer.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`.
+- Verified Python syntax with `python -m py_compile cli/scripts/train_gpt.py
+  cli/scripts/train_gpt_native.py neuralfn/native_gpt.py
+  neuralfn/native_gpt2.py`.
+- Verified focused native behavior with `python -m pytest
+  tests/test_native_gpt2.py -q -k "compiled_cli_config_passes_dataset_alias_without_shard_inspection
+  or cpp_cli_builds_and_uses_sm120_defaults or
+  compiled_cli_config_canonicalizes_dense_gpt_family or universal_gpt"`.
+- Verified wrapper dispatch with `python -m pytest
+  cli/tests/test_train_gpt2_native.py -q`.
+- Verified shipped GPT template integrity with `python -m pytest
+  tests/test_template_presets.py -x -q`.
+- Verified rebuilt compiled dry-runs: default `--tinystories --dry-run` reports
+  `model_family: "gpt"`, `template_name: "gpt"`,
+  `resolved_native_template_name: "gpt2"`, and
+  `selected_graph_support_status: "native-transformer-lm"`; `--model-family
+  gpt3` reports the same architecture fields with `seq_len: 2048`.
+
 ### 2026-06-13 Native GPT 5090 Tile-CUDA cache retune
 
 #### Changed
@@ -38,9 +83,11 @@ Future updates should append new entries here rather than replacing older notes.
 - `NativeGpt2RunConfig`, `build_native_gpt2_run_config()`, and
   `build_native_gpt2_compiled_cli_run_config()` now canonicalize dense GPT
   selectors to `model_family="gpt"` instead of emitting `"gpt2"` or `"gpt3"`.
-  The default template remains `"gpt2"` because that is the shipped dense
-  decoder preset. Callers that keyed behavior off `model_family == "gpt2"` or
-  `"gpt3"` should migrate to `template_name`, `graph_file`, and shape fields.
+  The default public template is now the `"gpt"` alias; compiled JSON reports
+  `resolved_native_template_name` when that alias maps to the current dense
+  implementation template. Callers that keyed behavior off
+  `model_family == "gpt2"` or `"gpt3"` should migrate to `template_name`,
+  `graph_file`, and shape fields.
   New SDK code should use `neuralfn.native_gpt` and the `NativeGpt*` names.
 
 #### Changed

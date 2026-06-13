@@ -103,8 +103,10 @@ a 2048-token context only when no explicit template, graph, or
 `implemented` because they share the same native trainer; template or graph
 selection determines whether the selected architecture can run on that trainer.
 Plan and runtime JSON include `architecture_source`,
-`architecture_contract`, and `model_family_context_policy` so a run makes clear
-that the graph/template, not the family label, chooses the architecture.
+`architecture_contract`, `model_family_context_policy`, and
+`resolved_native_template_name` so a run makes clear that the graph/template,
+not the family label, chooses the architecture. The default public template is
+`gpt`; today it resolves to the implemented dense GPT native topology.
 `--native-cuda-print-plan` and `--native-cuda-check-tile-ops` still print the
 raw Tile ABI plan or check the trainer-facing library. The Tile plan includes
 the GPT-2 parameter layout and forward/backward/optimizer stage sequence that
@@ -304,13 +306,15 @@ or `--train-seq-len` is present.
 For all other cases, including custom graphs and explicit templates, `gpt3`
 does not alter the architecture; the selected graph/template and sequence
 arguments are authoritative.
-The selector accepts every name in
+The selector accepts `gpt` as the default public dense GPT template alias plus
+every name in
 `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, and the compiled C++ plan JSON
 reports the synchronized `shipped_template_catalog`,
 `shipped_template_catalog_count`, and `template_known` fields. The current native
-loop runs dense GPT-compatible presets (`gpt2`, `gpt2_megakernel`, and
-`gpt2_moa`) through the transformer-LM trainer; `gpt2_moa` resolves to the
-native MoA activation mode automatically. Structurally different shipped GPT
+loop runs `gpt`, `gpt2`, `gpt2_megakernel`, and `gpt2_moa` through the
+transformer-LM trainer; `gpt` reports `resolved_native_template_name: "gpt2"`,
+and `gpt2_moa` resolves to the native MoA activation mode automatically.
+Structurally different shipped GPT
 template names and custom graph files are selected and reported in JSON, but
 return `selected-graph-native-trainer-missing` for real training until their
 native C++ Tile trainer plans are implemented. Unknown template names return

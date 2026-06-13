@@ -52,6 +52,10 @@ Canonical docs:
   context only when the caller did not supply `--train-seq-len`,
   `--template-name`/`--preset`, or `--graph-file`; otherwise the selected
   template or graph remains the architecture source of truth.
+- The public dense GPT native template default is `--template-name gpt`. The
+  compiled frontend currently resolves that alias to the implemented dense GPT
+  topology and reports `resolved_native_template_name: "gpt2"`; do not treat
+  that implementation detail as a separate GPT-2 trainer surface.
 - Keep the full `nfn train` parser and planner in sync with the lightweight
   dispatcher: `gpt`, `gpt2`, and `gpt3` must all be accepted, while graph-backed
   compatibility code canonicalizes them to the GPT-compatible template builder.

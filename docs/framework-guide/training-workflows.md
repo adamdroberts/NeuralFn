@@ -19,12 +19,13 @@ is supplied. Other graph-backed `TorchTrainer` harnesses are disabled before Tor
 `NFN_ALLOW_TORCH_TRAINING=1` is set for one-off legacy debugging while native
 trainers are being added.
 
-GPT template selection is explicit on the native path. Pass
-`--template-name NAME` / `--preset NAME` to select any name in
-`neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, or `--graph-file PATH` for a
-custom graph JSON. Dense GPT-compatible presets (`gpt2` and
-`gpt2_megakernel`, plus `gpt2_moa` with native MoA activation) use the
-implemented compiled CUDA Tile trainer; unsupported
+GPT template selection is explicit on the native path. The default public
+template alias is `gpt`, which currently resolves to the implemented dense GPT
+native topology and is reported separately as `resolved_native_template_name` in
+compiled JSON. Pass `--template-name NAME` / `--preset NAME` to select any name
+in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, or `--graph-file PATH` for a
+custom graph JSON. `gpt`, `gpt2`, and `gpt2_megakernel`, plus `gpt2_moa` with
+native MoA activation, use the implemented compiled CUDA Tile trainer; unsupported
 templates and graph files fail fast with native missing-trainer JSON instead of
 falling back to Torch.
 

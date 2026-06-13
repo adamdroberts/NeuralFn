@@ -106,7 +106,7 @@ class NativeGpt2RunConfig:
     resume: int = 0
     cuda_device_max_connections: str = "1"
     dataset_alias: str | None = None
-    template_name: str = "gpt2"
+    template_name: str = "gpt"
     graph_file: str = ""
     model_family: str = "gpt"
 
@@ -543,13 +543,18 @@ def native_gpt2_activation(value: str | None) -> str:
 
 
 def _normalize_native_gpt2_template_name(value: str | None) -> str:
-    normalized = str(value or "gpt2").strip().lower().replace("-", "_")
-    return normalized or "gpt2"
+    normalized = str(value or "gpt").strip().lower().replace("-", "_")
+    return normalized or "gpt"
+
+
+def _resolved_native_gpt2_template_name(value: str | None) -> str:
+    normalized = _normalize_native_gpt2_template_name(value)
+    return "gpt2" if normalized == "gpt" else normalized
 
 
 def _native_gpt2_activation_for_template(template_name: str | None, activation: str | None) -> str:
     resolved = native_gpt2_activation(activation)
-    if _normalize_native_gpt2_template_name(template_name) == "gpt2_moa" and resolved == "gelu":
+    if _resolved_native_gpt2_template_name(template_name) == "gpt2_moa" and resolved == "gelu":
         return "moa"
     return resolved
 
@@ -646,7 +651,7 @@ def build_native_gpt2_run_config(
     checkpoint_metadata_smoke: bool = False,
     cuda_runtime_lib: str = "",
     lm_head_row_chunk_size: int = 8192,
-    template_name: str = "gpt2",
+    template_name: str = "gpt",
     graph_file: str = "",
     allow_train_as_val: bool = False,
     model_family: str = "gpt",
@@ -744,7 +749,7 @@ def build_native_gpt2_compiled_cli_run_config(
     checkpoint_metadata_smoke: bool = False,
     cuda_runtime_lib: str = "",
     lm_head_row_chunk_size: int = 8192,
-    template_name: str = "gpt2",
+    template_name: str = "gpt",
     graph_file: str = "",
     model_family: str = "gpt",
 ) -> NativeGpt2RunConfig:
