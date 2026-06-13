@@ -370,6 +370,13 @@ def native_gpt2_encoding_vocab_size(encoding_name: str) -> int:
     return RAW_TEXT_ENCODING_VOCAB_SIZES[normalized]
 
 
+def _canonical_native_gpt2_model_family(model_family: str | None) -> str:
+    normalized = str(model_family or "gpt").strip().lower().replace("_", "-")
+    if normalized not in {"gpt", "gpt2", "gpt3"}:
+        raise ValueError("native GPT model_family must be one of: gpt, gpt2, gpt3")
+    return "gpt"
+
+
 def native_gpt2_parameter_count(
     *,
     max_seq_len: int,
@@ -658,7 +665,7 @@ def build_native_gpt2_run_config(
         train_data=str(train_data),
         val_data=str(val_data),
         output_dir=str(output_dir),
-        model_family=str(model_family or "gpt").strip().lower().replace("_", "-"),
+        model_family=_canonical_native_gpt2_model_family(model_family),
         model_descriptor=f"d{int(num_layers)}",
         eval_every_steps=max(1, int(eval_every_steps)),
         eval_batches=max(0, int(eval_batches)),
@@ -750,7 +757,7 @@ def build_native_gpt2_compiled_cli_run_config(
         train_data="",
         val_data="",
         output_dir=str(output_dir),
-        model_family=str(model_family or "gpt").strip().lower().replace("_", "-"),
+        model_family=_canonical_native_gpt2_model_family(model_family),
         model_descriptor=f"d{int(num_layers)}",
         eval_every_steps=max(1, int(eval_every_steps)),
         eval_batches=max(0, int(eval_batches)),

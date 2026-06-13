@@ -339,6 +339,35 @@ def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path
     assert native_gpt_kernel_backend("tile-cuda") == "tile-cuda"
 
 
+def test_build_native_gpt2_compiled_cli_config_canonicalizes_dense_gpt_family(tmp_path: Path) -> None:
+    cfg = build_native_gpt2_compiled_cli_run_config(
+        dataset_alias="cached-shards",
+        executable="/opt/nfn/train_gpt2cu",
+        output_dir=tmp_path / "gpt3",
+        eval_every_steps=1000,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=2048,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=20000,
+        num_layers=12,
+        activation="gelu",
+        model_family="gpt3",
+    )
+
+    argv = cfg.compiled_cli_argv("/opt/nfn/nfn_gpt_native_train")
+
+    assert cfg.model_family == "gpt"
+    assert argv[argv.index("--model-family") + 1] == "gpt"
+    assert argv[argv.index("--train-seq-len") + 1] == "2048"
+
+
 def test_build_native_gpt2_compiled_cli_config_maps_gpt2_moa_template_to_native_activation(tmp_path: Path) -> None:
     cfg = build_native_gpt2_compiled_cli_run_config(
         dataset_alias="/tmp/native-cache",
@@ -991,7 +1020,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["graph_file"] == ""
     assert default_payload["architecture_source"] == "template"
     assert default_payload["architecture_contract"] == "gpt-template-preset"
-    assert default_payload["model_family_context_policy"] == "model-family-label-does-not-select-architecture"
+    assert (
+        default_payload["model_family_context_policy"]
+        == "dense-gpt-selectors-canonicalize-to-gpt-template-or-graph-selects-architecture"
+    )
     assert default_payload["selected_graph_native_runnable"] is True
     assert default_payload["train_shard"].endswith("fineweb_train_000000.bin")
     assert default_payload["val_shard"].endswith("fineweb_val_000000.bin")
@@ -1091,7 +1123,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["template_name"] == "gpt2"
     assert tile_payload["architecture_source"] == "template"
     assert tile_payload["architecture_contract"] == "gpt-template-preset"
-    assert tile_payload["model_family_context_policy"] == "model-family-label-does-not-select-architecture"
+    assert (
+        tile_payload["model_family_context_policy"]
+        == "dense-gpt-selectors-canonicalize-to-gpt-template-or-graph-selects-architecture"
+    )
     assert tile_payload["template_known"] is True
     assert tile_payload["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert tile_payload["shipped_template_catalog"] == list(SHIPPED_GPT_TEMPLATE_PRESETS)
@@ -1166,7 +1201,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["packed_attention_activation_storage_strategy"] == (
         "packed-qkv-o-bf16-forward-store-direct-backward"
     )
-    assert tile_payload["stored_packed_attention_activation_blocks"] == 8
+    assert tile_payload["stored_packed_attention_activation_blocks"] == 3
     assert tile_payload["stored_packed_attention_bf16_elements"] > 0
     assert tile_payload["stored_packed_attention_bf16_bytes"] > 0
     assert tile_payload["stored_packed_attention_store_blocks"] == 0
@@ -1987,7 +2022,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["packed_attention_activation_storage_strategy"] == (
         "packed-qkv-o-bf16-forward-store-direct-backward"
     )
-    assert train_transformer_payload["stored_packed_attention_activation_blocks"] == 8
+    assert train_transformer_payload["stored_packed_attention_activation_blocks"] == 3
     assert train_transformer_payload["stored_packed_attention_bf16_elements"] == 0
     assert train_transformer_payload["stored_packed_attention_bf16_bytes"] == 0
     assert train_transformer_payload["stored_packed_attention_store_blocks"] == 0

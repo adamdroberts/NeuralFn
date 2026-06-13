@@ -11,12 +11,12 @@ Future updates should append new entries here rather than replacing older notes.
 #### Breaking changes
 
 - `NativeGpt2RunConfig`, `build_native_gpt2_run_config()`, and
-  `build_native_gpt2_compiled_cli_run_config()` now default their
-  `model_family` metadata to `"gpt"` instead of `"gpt2"`. The default template
-  remains `"gpt2"` because that is the shipped dense decoder preset. Callers
-  that require a literal GPT-2 family label in emitted native CLI argv should
-  pass `model_family="gpt2"` explicitly. New SDK code should use
-  `neuralfn.native_gpt` and the `NativeGpt*` names.
+  `build_native_gpt2_compiled_cli_run_config()` now canonicalize dense GPT
+  selectors to `model_family="gpt"` instead of emitting `"gpt2"` or `"gpt3"`.
+  The default template remains `"gpt2"` because that is the shipped dense
+  decoder preset. Callers that keyed behavior off `model_family == "gpt2"` or
+  `"gpt3"` should migrate to `template_name`, `graph_file`, and shape fields.
+  New SDK code should use `neuralfn.native_gpt` and the `NativeGpt*` names.
 
 #### Changed
 
@@ -35,17 +35,20 @@ Future updates should append new entries here rather than replacing older notes.
   aliases of the same trainer; `gpt3` only supplies the 2048-token default
   context when template, graph, and sequence length are all implicit.
   Verification: `python -m py_compile cli/nfn.py cli/scripts/train_gpt.py
-  cli/scripts/train_gpt_native.py cli/scripts/train_gpt2.py
-  cli/scripts/train_gpt2_native.py neuralfn/native_gpt.py
+  cli/scripts/train_gpt_native.py neuralfn/native_gpt.py
   neuralfn/native_gpt2.py` passed, `python -m pytest
   cli/tests/test_train_gpt2_native.py -q` passed (`33 passed, 90 subtests
-  passed`), `python -m pytest tests/test_native_gpt2.py -q` passed
-  (`30 passed, 1 skipped`), `python -m pytest tests/test_template_presets.py
-  -q -x` passed (`26 passed`), direct dry-runs through
-  `cli/scripts/train_gpt_native.py` and the compatibility
-  `cli/scripts/train_gpt2_native.py` both printed the generic
-  `nfn_gpt_native_train --model-family gpt` handoff, and `git diff --check`
-  passed.
+  passed`), `python -m pytest tests/test_template_presets.py -q -x` passed
+  (`26 passed`), and the focused native slice
+  `python -m pytest tests/test_native_gpt2.py -q -k "universal_gpt or
+  canonicalizes_dense_gpt_family or cpp_cli_builds_and_uses_sm120_defaults or
+  native_train_tile_ops_builds_torch_free_c_abi"` passed (`3 passed, 1
+  skipped`). Rebuilt `build/nfn_gpt_native_train`; raw `--model-family gpt3`
+  dry-run reported `model_family: "gpt"`, `seq_len: 2048`, and
+  `stored_packed_attention_activation_blocks: 3`. A live default TinyStories
+  one-step CUDA profile reported `model_family: "gpt"`, no SGEMM calls,
+  `stored_packed_attention_activation_blocks: 3`, and 138,549 tokens/second.
+  `git diff --check` passed.
 
 ### 2026-06-13 Native GPT BF16 activation-cache correctness
 
@@ -64,6 +67,21 @@ Future updates should append new entries here rather than replacing older notes.
   CUDA probe passed with no SGEMM calls while reporting 1,121 BF16 activation
   packs, 927 stable cache hits, and 129,635 tokens/second.
 
+### 2026-06-13 Native GPT packed-attention cap retune
+
+#### Changed
+
+- Reduced the default packed-QKV attention activation storage cap from 8 earlier
+  blocks to 3 earlier blocks. The corrected BF16-output path spends less time
+  in attention backward with this smaller saved-packed window while keeping the
+  explicit `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` override for future
+  tuning. Runtime JSON now reports `stored_packed_attention_activation_blocks:
+  3` by default. Verification: isolated one-step TinyStories stage profiles on
+  the llm.kittens `train-sm120.sh` shape improved from `130,107` tokens/second
+  with the previous default to `135,906` tokens/second with the three-block cap,
+  and `block_backward.attn_sdpa.to_qkv` dropped from about `649 ms` to about
+  `334 ms`.
+
 ### 2026-06-12 Native GPT-2 Tile-CUDA default
 
 #### Breaking changes
@@ -81,9 +99,9 @@ Future updates should append new entries here rather than replacing older notes.
 
 - The unified native training registry now reports `gpt`, `gpt2`, and `gpt3`
   as `implemented` aliases of the same dense GPT CUDA Tile C++ trainer and
-  forwards `--model-family` for all three aliases. GPT-3 remains a GPT-native
-  alias whose only default difference is a 2048-token context when no explicit
-  template, custom graph, or sequence length is supplied; selected
+  forwards canonical `--model-family gpt` for all three aliases. GPT-3 remains
+  a GPT-native selector whose only default difference is a 2048-token context
+  when no explicit template, custom graph, or sequence length is supplied; selected
   `--template-name` / `--graph-file` values define the architecture and native
   support status. Verification: updated the unified native registry test and
   rebuilt the native C++ frontends during focused test runs.

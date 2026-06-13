@@ -85,9 +85,9 @@ to select that architecture and receive explicit
 Compiled plan and runtime JSON also report `architecture_source`,
 `architecture_contract`, and `model_family_context_policy`, making the template
 or graph the architecture source of truth. The compatibility
-`NativeGpt2RunConfig` and `build_native_gpt2_*` helpers now default
-`model_family` to `"gpt"`; pass `model_family="gpt2"` only when a literal GPT-2
-metadata label is required.
+`NativeGpt2RunConfig` and `build_native_gpt2_*` helpers now canonicalize dense
+GPT selectors to `model_family="gpt"`; pass `template_name` or `graph_file` for
+architecture selection instead of keying off the model-family label.
 New code should import `neuralfn.native_gpt` for generic dense GPT names:
 `NativeGptRunConfig`, `build_native_gpt_compiled_cli_run_config()`,
 `build_native_gpt_run_config()`, `run_native_gpt()`, and related checkpoint/

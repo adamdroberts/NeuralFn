@@ -95,9 +95,10 @@ The native GPT compiled CLI has its own backend selector:
 `--kernel-backend`). `llm-kittens` is the current external fast trainer.
 `tile-cuda` is the default NeuralFn-owned compiled trainer for dense GPT.
 Use `--base-model gpt` as the canonical native trainer surface. `gpt2` and
-`gpt3` are dense GPT aliases that forward `--model-family` into the compiled
-C++ frontend; `gpt3` defaults to a 2048-token context only when no explicit
-template, graph, or `--train-seq-len` is supplied.
+`gpt3` are dense GPT selector aliases that canonicalize to
+`--model-family gpt` before the compiled C++ frontend runs; `gpt3` defaults to
+a 2048-token context only when no explicit template, graph, or
+`--train-seq-len` is supplied.
 `nfn-native-train --list-models --json` reports all three dense GPT aliases as
 `implemented` because they share the same native trainer; template or graph
 selection determines whether the selected architecture can run on that trainer.
@@ -569,10 +570,10 @@ profiling. Native plan and runtime JSON report `packed_qkv_attention_enabled`,
 "tk-sm120-packed-qkv-bf16-backward-bridge"` when the default packed route is
 active.
 The default route also stores packed BF16 QKV plus packed BF16 O for the first
-eight earlier blocks and reuses those saved tensors during backward. Runtime
+three earlier blocks and reuses those saved tensors during backward. Runtime
 JSON reports `packed_attention_activation_storage_strategy:
 "packed-qkv-o-bf16-forward-store-direct-backward"`,
-`stored_packed_attention_activation_blocks: 8`, and
+`stored_packed_attention_activation_blocks: 3`, and
 `stored_packed_attention_*` counters. Set
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` for the previous
 lower-memory recompute path, or set

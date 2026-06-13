@@ -784,7 +784,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("--dataset-alias /tmp/native-cache", proc.stdout)
         self.assertIn("--eval-every-steps 1000", proc.stdout)
         self.assertIn("--dry-run", proc.stdout)
-        self.assertIn("--model-family gpt2", proc.stdout)
+        self.assertIn("--model-family gpt", proc.stdout)
         self.assertNotIn("--base-model", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
@@ -831,7 +831,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn("--model-family gpt3", proc.stdout)
+        self.assertIn("--model-family gpt", proc.stdout)
         self.assertIn("--train-seq-len 2048", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
@@ -878,7 +878,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn("--model-family gpt3", proc.stdout)
+        self.assertIn("--model-family gpt", proc.stdout)
         self.assertIn("--template-name gpt2_moa", proc.stdout)
         self.assertIn("--graph-file /tmp/custom-graph.json", proc.stdout)
         self.assertIn("--train-seq-len 4096", proc.stdout)
@@ -1387,7 +1387,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn("--model-family gpt3", proc.stdout)
+        self.assertIn("--model-family gpt", proc.stdout)
         self.assertIn("--train-seq-len 2048", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)

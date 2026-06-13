@@ -89,6 +89,25 @@ def _native_model_family(argv: list[str]) -> str:
     return (_arg_value(argv, "--model-family", "--base-model", "--model") or "gpt").strip().lower().replace("_", "-")
 
 
+def _canonical_dense_gpt_model_family(model: str) -> str:
+    return "gpt" if model in {"gpt", "gpt2", "gpt3"} else model
+
+
+def _set_split_value(out: list[str], flag: str, value: str) -> None:
+    for idx, arg in enumerate(out):
+        if arg == flag:
+            if idx + 1 < len(out):
+                out[idx + 1] = value
+            else:
+                out.append(value)
+            return
+        if arg.startswith(flag + "="):
+            out[idx] = flag
+            out.insert(idx + 1, value)
+            return
+    _append_value(out, flag, value)
+
+
 def _native_backend_name(argv: list[str]) -> str:
     return (_arg_value(argv, "--backend") or "tile-cuda").strip().lower().replace("_", "-")
 
@@ -282,11 +301,11 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         out.append(arg)
         idx += 1
 
-    model_family = _native_model_family(out)
-    if "--model-family" not in out:
-        _append_value(out, "--model-family", model_family)
+    model_selector = _native_model_family(out)
+    model_family = _canonical_dense_gpt_model_family(model_selector)
+    _set_split_value(out, "--model-family", model_family)
     if (
-        model_family == "gpt3"
+        model_selector == "gpt3"
         and not _explicit_arg(out, "--train-seq-len")
         and not _explicit_arg(out, "--template-name", "--template", "--preset")
         and not _explicit_arg(out, "--graph-file", "--graph")

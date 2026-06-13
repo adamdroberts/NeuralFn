@@ -177,9 +177,9 @@ every name in `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, and
 the aliases to `--template-name` and `--graph-file` at handoff. Unsupported
 template shapes fail with native missing-trainer JSON instead of falling back to Torch.
 `--base-model gpt` is the canonical dense GPT surface. `gpt2` and `gpt3` route
-to the same C++ trainer and forward `--model-family`; `gpt3` defaults to a
-2048-token context only when no template, graph, or `--train-seq-len` is
-explicit. The full `nfn train` parser, planner, and compatibility graph builder
+to the same C++ trainer and forward canonical `--model-family gpt`; `gpt3`
+defaults to a 2048-token context only when no template, graph, or
+`--train-seq-len` is explicit. The full `nfn train` parser, planner, and compatibility graph builder
 accept those same dense GPT aliases; when a graph-backed compatibility path is
 used, the alias is canonicalized to the GPT-compatible template builder and the
 template or graph still decides the architecture. Direct

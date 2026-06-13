@@ -32,7 +32,7 @@ namespace {
 
 constexpr std::int64_t kAttentionForwardValueReuse = 64;
 constexpr std::int64_t kAttentionBackwardDimReuse = 64;
-constexpr std::int64_t kDefaultStoredPackedAttentionBlocks = 8;
+constexpr std::int64_t kDefaultStoredPackedAttentionBlocks = 3;
 
 struct Config {
     std::string model_family = "gpt";
@@ -260,7 +260,7 @@ void print_usage(const char* program) {
         << "  --tinystories                     Shortcut for roneneldan__TinyStories__TinyStoriesV2-GPT4\n"
         << "  --allow-train-val-fallback        Reuse train shard when no validation shard exists\n\n"
         << "Template/graph options:\n"
-        << "  --model-family gpt|gpt2|gpt3    Dense GPT family label; gpt3 defaults to 2048 context unless template/graph/seq len is explicit\n"
+        << "  --model-family gpt|gpt2|gpt3    Dense GPT selector; all canonicalize to model_family=gpt, while gpt3 can default to 2048 context\n"
         << "  --template-name NAME              GPT template preset to select; --print-plan reports known/native status\n"
         << "  --graph-file PATH                 Custom NeuralFn graph JSON to select; reports missing native graph trainer until implemented\n\n"
         << "Launch options:\n"
@@ -385,6 +385,14 @@ std::string normalize_model_family(const std::string& value) {
     throw std::runtime_error("model family must be one of: gpt, gpt2, gpt3");
 }
 
+std::string canonical_dense_gpt_model_family(const std::string& model_selector) {
+    const std::string normalized = normalize_model_family(model_selector);
+    if (normalized == "gpt" || normalized == "gpt2" || normalized == "gpt3") {
+        return "gpt";
+    }
+    return normalized;
+}
+
 bool is_default_gpt_template(const Config& cfg) {
     return normalize_template_name(cfg.template_name) == "gpt2";
 }
@@ -494,10 +502,8 @@ std::string dense_gpt_architecture_contract(const Config& cfg) {
 }
 
 std::string model_family_context_policy(const Config& cfg) {
-    if (cfg.model_family == "gpt3") {
-        return "gpt3-label-defaults-to-2048-context-only-when-template-graph-and-seq-len-are-implicit";
-    }
-    return "model-family-label-does-not-select-architecture";
+    (void)cfg;
+    return "dense-gpt-selectors-canonicalize-to-gpt-template-or-graph-selects-architecture";
 }
 
 std::int64_t native_gpt2_parameter_count(
@@ -11253,9 +11259,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    cfg.model_family = normalize_model_family(cfg.model_family);
+    const std::string model_selector = normalize_model_family(cfg.model_family);
     if (
-        cfg.model_family == "gpt3" &&
+        model_selector == "gpt3" &&
         !cfg.seq_len_explicit &&
         !cfg.template_explicit &&
         cfg.graph_file.empty() &&
@@ -11263,6 +11269,7 @@ int main(int argc, char** argv) {
     ) {
         cfg.seq_len = 2048;
     }
+    cfg.model_family = canonical_dense_gpt_model_family(model_selector);
     cfg.activation = lower_activation(cfg.activation);
     cfg.template_name = normalize_template_name(cfg.template_name);
     apply_template_activation_defaults(cfg);

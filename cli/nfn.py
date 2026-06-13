@@ -415,6 +415,10 @@ def _native_train_model(argv: list[str]) -> str:
     return (_arg_value(argv, "--base-model", "--model") or "gpt").strip().lower().replace("_", "-")
 
 
+def _canonical_dense_gpt_model_family(model: str) -> str:
+    return "gpt" if _is_dense_gpt_native_model(model) else model
+
+
 _NATIVE_TRAIN_ACTION_FLAGS = {
     "--check-tile-ops",
     "--json",
@@ -477,7 +481,7 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
     if include_model:
         out.extend(["--base-model", model])
     elif dense_gpt:
-        out.extend(["--model-family", model])
+        out.extend(["--model-family", _canonical_dense_gpt_model_family(model)])
     if model == "nanogpt" and not _has_native_train_action(argv):
         out.append("--train-token-lm")
     if dense_gpt and not _has_native_train_action(argv):

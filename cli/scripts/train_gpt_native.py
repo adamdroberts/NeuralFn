@@ -428,9 +428,10 @@ def main(argv: list[str] | None = None) -> int:
         or token.startswith("--graph=")
         for token in explicit_tokens
     )
-    args.model_family = str(args.model_family or DEFAULT_MODEL_FAMILY).strip().lower().replace("_", "-")
-    if args.model_family == "gpt3" and not explicit_seq_len and not explicit_template and not explicit_graph:
+    model_selector = str(args.model_family or DEFAULT_MODEL_FAMILY).strip().lower().replace("_", "-")
+    if model_selector == "gpt3" and not explicit_seq_len and not explicit_template and not explicit_graph:
         args.train_seq_len = 2048
+    args.model_family = "gpt" if model_selector in {"gpt", "gpt2", "gpt3"} else model_selector
     _apply_dataset_shortcuts(args)
     encoding_name = _resolve_tokenizer(args)
     if not str(args.output or "").strip():
