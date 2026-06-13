@@ -94,6 +94,11 @@ row chunk. Tied LM-head dWeight chunks accumulate directly into the optimizer-st
 `nfn_native_tile_linear_backward_weight_accumulate_float32` instead of using a
 full-vocab scratch gradient buffer per chunk or per microbatch. The JSON reports
 `lm_head_row_chunk_count` and `loss_partial_count`.
+
+Prefer the generic dense GPT environment names for new SDK integrations:
+`NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, `NFN_NATIVE_GPT_BINDING`, and
+`NFN_NATIVE_GPT_TRAIN_BIN`. The older `NFN_NATIVE_GPT2_*` variables remain
+compatibility fallbacks for existing GPT-2-named wrappers.
 The tokenizer-visible GPT-2 vocab remains 50,257, but native transformer-LM
 parameter layout pads the tied token embedding/LM-head rows to 50,304 for the
 GEMM path. Compiled plan JSON reports `shape.vocab_size: 50257` and
@@ -498,7 +503,7 @@ and optimizer stage sequence for the current 12-layer trainer.
 - `launcher` requires the compiled `nfn_gpt2_tile_train` launcher and raises if it is unavailable.
 - `subprocess` always launches the external `train_gpt2cu` executable.
 
-`native_gpt2_runner_status()` returns the resolved mode and diagnostic reason, and `write_native_gpt2_run_config()` includes that status in the JSON payload. Set `NFN_NATIVE_GPT2_BINDING=0` to test launcher/subprocess fallback paths even when `neuralfn._native_gpt2` is built locally.
+`native_gpt_runner_status()` returns the resolved mode and diagnostic reason, and `write_native_gpt_run_config()` includes that status in the JSON payload. Set `NFN_NATIVE_GPT_BINDING=0` to test launcher/subprocess fallback paths even when the compatibility `neuralfn._native_gpt2` binding is built locally; the older `native_gpt2_runner_status()`, `write_native_gpt2_run_config()`, and `NFN_NATIVE_GPT2_BINDING` names remain compatibility fallbacks.
 
 The unified native frontend has a separate SDK wrapper in `neuralfn.native_train`. Build its C++ extension with `bash tools/build_native_train_binding.sh`; `run_native_train(build_native_train_run_config("gpt", ["--tinystories"]), runner="auto")` then prefers `neuralfn._native_train` before falling back to the compiled `nfn_native_train` CLI. `native_train_model_registry()` returns the JSON coverage from `nfn-native-train --list-models --json`, and `NFN_NATIVE_TRAIN_BINDING=0` disables the extension for fallback tests.
 

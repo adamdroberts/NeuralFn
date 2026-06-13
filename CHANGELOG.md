@@ -10,6 +10,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 #### Changed
 
+- Made the generic dense GPT trainer path canonical in Python. `cli/scripts/train_gpt.py`
+  now owns the pre-import compiled-CLI fast path, while `cli/scripts/train_gpt2.py`
+  is a compatibility wrapper that still reaches the same no-Torch dispatch when
+  executed directly. `cli/nfn_impl.py` now imports generic `GPT_DEFAULTS`, the
+  native wrapper uses generic `neuralfn.native_gpt` helpers internally, and
+  `NFN_NATIVE_GPT_BINDING` / `NFN_NATIVE_GPT_TRAIN_BIN` take precedence over
+  legacy GPT-2 environment names. Migration note: use `train_gpt.py`,
+  `GPT_DEFAULTS`, `neuralfn.native_gpt`, and `NFN_NATIVE_GPT_*` for new code;
+  GPT-2 names remain compatibility aliases. Verification: added generic-env
+  precedence coverage and reran focused no-Torch startup tests.
 - Tightened the universal GPT native trainer surface and reduced the packed-QKV
   trainer tape. `cli/scripts/train_gpt2_native.py` now defaults the canonical
   Python wrapper output to `~/NeuralFn/artifacts/gpt`, accepts

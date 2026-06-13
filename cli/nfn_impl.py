@@ -150,7 +150,7 @@ from train_llama_fast import (
 )
 from train_mixllama_fast import MIXLLAMA_DEFAULTS
 from train_nanogpt import NANOGPT_DEFAULTS
-from train_gpt2 import GPT2_DEFAULTS
+from train_gpt import GPT_DEFAULTS
 from train_semantic_router_moe import ROUTER_DEFAULTS
 
 HELP_STYLES = ("short", "long", "verbose")
@@ -3347,7 +3347,7 @@ def base_model_defaults(base_model: str) -> dict[str, Any]:
     if base_model == "llama":
         return dict(LLAMA_DEFAULTS)
     if base_model in DENSE_GPT_BASE_MODELS:
-        defaults = dict(GPT2_DEFAULTS)
+        defaults = dict(GPT_DEFAULTS)
         defaults["model_family"] = base_model
         if base_model == "gpt3":
             defaults["train_seq_len"] = 2048

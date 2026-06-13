@@ -11,15 +11,15 @@ import uuid
 from typing import Any
 
 from cli_utils import artifact_path, create_argument_parser
-from neuralfn.native_gpt2 import (
-    NativeGpt2RunConfig,
-    build_native_gpt2_compiled_cli_run_config,
-    build_native_gpt2_run_config,
-    native_gpt2_encoding_vocab_size,
-    native_gpt2_runner_status,
-    normalize_native_gpt2_encoding_name,
-    run_native_gpt2,
-    write_native_gpt2_run_config,
+from neuralfn.native_gpt import (
+    NativeGptRunConfig,
+    build_native_gpt_compiled_cli_run_config,
+    build_native_gpt_run_config,
+    native_gpt_encoding_vocab_size,
+    native_gpt_runner_status,
+    normalize_native_gpt_encoding_name,
+    run_native_gpt,
+    write_native_gpt_run_config,
 )
 
 
@@ -33,7 +33,7 @@ TINYSTORIES_VAL_FILE = "TinyStoriesV2-GPT4-valid.txt"
 DEFAULT_DATASET_ALIAS = TINYSTORIES_ALIAS
 DEFAULT_MODEL_FAMILY = "gpt"
 
-NATIVE_GPT2_DEFAULTS = {
+NATIVE_GPT_DEFAULTS = {
     "seed": 1337,
     "device": "cuda",
     "run_id": str(uuid.uuid4()),
@@ -65,6 +65,7 @@ NATIVE_GPT2_DEFAULTS = {
     "template_name": "gpt2",
     "graph_file": "",
 }
+NATIVE_GPT2_DEFAULTS = NATIVE_GPT_DEFAULTS
 
 
 def env_int(name: str, default: int) -> int:
@@ -148,8 +149,8 @@ def _resolve_tokenizer(args: argparse.Namespace) -> str:
         selected = "cl100k_base"
     if args.o200k:
         selected = "o200k_base"
-    normalized = normalize_native_gpt2_encoding_name(selected) or selected
-    native_gpt2_encoding_vocab_size(normalized)
+    normalized = normalize_native_gpt_encoding_name(selected) or selected
+    native_gpt_encoding_vocab_size(normalized)
     return normalized
 
 
@@ -210,13 +211,13 @@ def _has_native_token_shards(dataset_path: Path, *, allow_train_as_val: bool) ->
     return bool(val_files or allow_train_as_val)
 
 
-def _build_compiled_cli_config(args: argparse.Namespace, dataset_arg: str | Path) -> NativeGpt2RunConfig:
+def _build_compiled_cli_config(args: argparse.Namespace, dataset_arg: str | Path) -> NativeGptRunConfig:
     output_dir = (
         Path(args.native_cuda_output_dir)
         if str(args.native_cuda_output_dir or "").strip()
         else Path(args.output).with_suffix("")
     )
-    return build_native_gpt2_compiled_cli_run_config(
+    return build_native_gpt_compiled_cli_run_config(
         dataset_alias=str(dataset_arg),
         executable=str(args.native_cuda_executable or "") or None,
         output_dir=output_dir,
@@ -273,35 +274,35 @@ def build_parser() -> argparse.ArgumentParser:
         "--base-model",
         "--model",
         choices=("gpt", "gpt2", "gpt3"),
-        default=env_str("MODEL_FAMILY", env_str("BASE_MODEL", NATIVE_GPT2_DEFAULTS["model_family"])),
+        default=env_str("MODEL_FAMILY", env_str("BASE_MODEL", NATIVE_GPT_DEFAULTS["model_family"])),
         help=(
             "Dense GPT family label for native metadata and defaults. gpt3 uses the same native GPT "
             "kernel family and defaults to a 2048 context only when no template, graph, or seq len is supplied."
         ),
     )
-    parser.add_argument("--run-id", default=env_str("RUN_ID", NATIVE_GPT2_DEFAULTS["run_id"]))
-    parser.add_argument("--seed", type=int, default=env_int("SEED", NATIVE_GPT2_DEFAULTS["seed"]))
-    parser.add_argument("--device", default=env_str("DEVICE", NATIVE_GPT2_DEFAULTS["device"]))
+    parser.add_argument("--run-id", default=env_str("RUN_ID", NATIVE_GPT_DEFAULTS["run_id"]))
+    parser.add_argument("--seed", type=int, default=env_int("SEED", NATIVE_GPT_DEFAULTS["seed"]))
+    parser.add_argument("--device", default=env_str("DEVICE", NATIVE_GPT_DEFAULTS["device"]))
     parser.add_argument("--tinystories", action="store_true")
     parser.add_argument("--dataset", choices=("tinystories", "golf1", "golf10"), default=None)
-    parser.add_argument("--dataset-alias", default=env_str("DATASET_ALIAS", NATIVE_GPT2_DEFAULTS["dataset_alias"]))
+    parser.add_argument("--dataset-alias", default=env_str("DATASET_ALIAS", NATIVE_GPT_DEFAULTS["dataset_alias"]))
     parser.add_argument("--download-if-missing", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--dataset-hf-path", default=env_str("DATASET_HF_PATH", NATIVE_GPT2_DEFAULTS["dataset_hf_path"]))
+    parser.add_argument("--dataset-hf-path", default=env_str("DATASET_HF_PATH", NATIVE_GPT_DEFAULTS["dataset_hf_path"]))
     parser.add_argument("--dataset-variant", default=None)
     parser.add_argument("--dataset-train-shards", type=int, default=None)
-    parser.add_argument("--dataset-train-file", default=env_str("DATASET_TRAIN_FILE", NATIVE_GPT2_DEFAULTS["dataset_train_file"]))
-    parser.add_argument("--dataset-val-file", default=env_str("DATASET_VAL_FILE", NATIVE_GPT2_DEFAULTS["dataset_val_file"]))
+    parser.add_argument("--dataset-train-file", default=env_str("DATASET_TRAIN_FILE", NATIVE_GPT_DEFAULTS["dataset_train_file"]))
+    parser.add_argument("--dataset-val-file", default=env_str("DATASET_VAL_FILE", NATIVE_GPT_DEFAULTS["dataset_val_file"]))
     parser.add_argument(
         "--template-name",
         "--template",
         "--preset",
-        default=env_str("TEMPLATE_NAME", NATIVE_GPT2_DEFAULTS["template_name"]),
+        default=env_str("TEMPLATE_NAME", NATIVE_GPT_DEFAULTS["template_name"]),
         help="GPT template preset name to select for native training metadata and dispatch.",
     )
     parser.add_argument(
         "--graph-file",
         "--graph",
-        default=env_str("GRAPH_FILE", NATIVE_GPT2_DEFAULTS["graph_file"]),
+        default=env_str("GRAPH_FILE", NATIVE_GPT_DEFAULTS["graph_file"]),
         help="Custom NeuralFn graph JSON to select for native training metadata and dispatch.",
     )
     parser.add_argument("--tokenizer", default=env_str("TOKENIZER", "gpt2"))
@@ -309,19 +310,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cl100k", action="store_true", help="Use cl100k_base. Not valid for native uint16 GPT shards.")
     parser.add_argument("--o200k", action="store_true", help="Use o200k_base. Not valid for native uint16 GPT shards.")
     parser.add_argument("--output", default=env_str("OUTPUT", ""))
-    parser.add_argument("--max-steps", type=int, default=env_int("ITERATIONS", NATIVE_GPT2_DEFAULTS["max_steps"]))
-    parser.add_argument("--train-seq-len", type=int, default=env_int("TRAIN_SEQ_LEN", NATIVE_GPT2_DEFAULTS["train_seq_len"]))
-    parser.add_argument("--batch-size", type=int, default=env_int("BATCH_SIZE", NATIVE_GPT2_DEFAULTS["batch_size"]))
+    parser.add_argument("--max-steps", type=int, default=env_int("ITERATIONS", NATIVE_GPT_DEFAULTS["max_steps"]))
+    parser.add_argument("--train-seq-len", type=int, default=env_int("TRAIN_SEQ_LEN", NATIVE_GPT_DEFAULTS["train_seq_len"]))
+    parser.add_argument("--batch-size", type=int, default=env_int("BATCH_SIZE", NATIVE_GPT_DEFAULTS["batch_size"]))
     parser.add_argument(
         "--train-batch-tokens",
         type=int,
-        default=env_int("TRAIN_BATCH_TOKENS", NATIVE_GPT2_DEFAULTS["train_batch_tokens"]),
+        default=env_int("TRAIN_BATCH_TOKENS", NATIVE_GPT_DEFAULTS["train_batch_tokens"]),
     )
-    parser.add_argument("--learning-rate", type=float, default=env_float("LEARNING_RATE", NATIVE_GPT2_DEFAULTS["learning_rate"]))
+    parser.add_argument("--learning-rate", type=float, default=env_float("LEARNING_RATE", NATIVE_GPT_DEFAULTS["learning_rate"]))
     parser.add_argument("--min-lr", type=float, default=None)
-    parser.add_argument("--weight-decay", type=float, default=env_float("WEIGHT_DECAY", NATIVE_GPT2_DEFAULTS["weight_decay"]))
-    parser.add_argument("--warmup-steps", type=int, default=env_int("WARMUP_STEPS", NATIVE_GPT2_DEFAULTS["warmup_steps"]))
-    parser.add_argument("--eval-every-steps", type=int, default=env_int("EVAL_EVERY_STEPS", NATIVE_GPT2_DEFAULTS["eval_every_steps"]))
+    parser.add_argument("--weight-decay", type=float, default=env_float("WEIGHT_DECAY", NATIVE_GPT_DEFAULTS["weight_decay"]))
+    parser.add_argument("--warmup-steps", type=int, default=env_int("WARMUP_STEPS", NATIVE_GPT_DEFAULTS["warmup_steps"]))
+    parser.add_argument("--eval-every-steps", type=int, default=env_int("EVAL_EVERY_STEPS", NATIVE_GPT_DEFAULTS["eval_every_steps"]))
     parser.add_argument("--eval-batches", type=int, default=env_int("EVAL_BATCHES", 1))
     parser.add_argument("--eval-batch-size", type=int, default=env_int("EVAL_BATCH_SIZE", 0))
     parser.add_argument(
@@ -330,10 +331,10 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=env_int(
             "NATIVE_CUDA_LM_HEAD_ROW_CHUNK_SIZE",
-            env_int("LM_HEAD_ROW_CHUNK_SIZE", NATIVE_GPT2_DEFAULTS["lm_head_row_chunk_size"]),
+            env_int("LM_HEAD_ROW_CHUNK_SIZE", NATIVE_GPT_DEFAULTS["lm_head_row_chunk_size"]),
         ),
     )
-    parser.add_argument("--num-layers", type=int, default=env_int("NUM_LAYERS", NATIVE_GPT2_DEFAULTS["num_layers"]))
+    parser.add_argument("--num-layers", type=int, default=env_int("NUM_LAYERS", NATIVE_GPT_DEFAULTS["num_layers"]))
     parser.add_argument(
         "--native-cuda-executable",
         default=env_str("NFN_NATIVE_GPT_TRAIN_BIN", env_str("NFN_NATIVE_GPT2_TRAIN_BIN", "")),
@@ -343,7 +344,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("auto", "binding", "compiled-cli", "cli", "launcher", "subprocess"),
         default=env_str(
             "NFN_NATIVE_GPT_RUNNER",
-            env_str("NFN_NATIVE_GPT2_RUNNER", NATIVE_GPT2_DEFAULTS["native_cuda_runner"]),
+            env_str("NFN_NATIVE_GPT2_RUNNER", NATIVE_GPT_DEFAULTS["native_cuda_runner"]),
         ),
         help=(
             "Native GPT launch mode. The default requires the compiled no-Python cached-shard CLI; "
@@ -371,39 +372,39 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--native-cuda-checkpoint-every",
         type=int,
-        default=env_int("NATIVE_CUDA_CHECKPOINT_EVERY", NATIVE_GPT2_DEFAULTS["native_cuda_checkpoint_every"]),
+        default=env_int("NATIVE_CUDA_CHECKPOINT_EVERY", NATIVE_GPT_DEFAULTS["native_cuda_checkpoint_every"]),
     )
     parser.add_argument(
         "--native-cuda-sample-every",
         type=int,
-        default=env_int("NATIVE_CUDA_SAMPLE_EVERY", NATIVE_GPT2_DEFAULTS["native_cuda_sample_every"]),
+        default=env_int("NATIVE_CUDA_SAMPLE_EVERY", NATIVE_GPT_DEFAULTS["native_cuda_sample_every"]),
     )
     parser.add_argument(
         "--native-cuda-generate-tokens",
         type=int,
-        default=env_int("NATIVE_CUDA_GENERATE_TOKENS", NATIVE_GPT2_DEFAULTS["native_cuda_generate_tokens"]),
+        default=env_int("NATIVE_CUDA_GENERATE_TOKENS", NATIVE_GPT_DEFAULTS["native_cuda_generate_tokens"]),
     )
     parser.add_argument("--native-cuda-activation", default=env_str("NATIVE_CUDA_ACTIVATION", "gelu"))
     parser.add_argument(
         "--native-cuda-kernel-backend",
         "--kernel-backend",
         choices=("llm-kittens", "tile-cuda"),
-        default=env_str("NATIVE_CUDA_KERNEL_BACKEND", NATIVE_GPT2_DEFAULTS["native_cuda_kernel_backend"]),
+        default=env_str("NATIVE_CUDA_KERNEL_BACKEND", NATIVE_GPT_DEFAULTS["native_cuda_kernel_backend"]),
     )
     parser.add_argument(
         "--native-cuda-tile-ops-lib",
         "--tile-ops-lib",
-        default=env_str("NATIVE_CUDA_TILE_OPS_LIB", NATIVE_GPT2_DEFAULTS["native_cuda_tile_ops_lib"]),
+        default=env_str("NATIVE_CUDA_TILE_OPS_LIB", NATIVE_GPT_DEFAULTS["native_cuda_tile_ops_lib"]),
     )
     parser.add_argument(
         "--native-cuda-cuda-runtime-lib",
         "--cuda-runtime-lib",
-        default=env_str("NATIVE_CUDA_RUNTIME_LIB", NATIVE_GPT2_DEFAULTS["native_cuda_cuda_runtime_lib"]),
+        default=env_str("NATIVE_CUDA_RUNTIME_LIB", NATIVE_GPT_DEFAULTS["native_cuda_cuda_runtime_lib"]),
     )
     parser.add_argument(
         "--native-cuda-moa-interval",
         type=int,
-        default=env_int("NATIVE_CUDA_MOA_INTERVAL", NATIVE_GPT2_DEFAULTS["native_cuda_moa_interval"]),
+        default=env_int("NATIVE_CUDA_MOA_INTERVAL", NATIVE_GPT_DEFAULTS["native_cuda_moa_interval"]),
     )
     return parser
 
@@ -442,7 +443,7 @@ def main(argv: list[str] | None = None) -> int:
     LOGGER.info("CLI started at %s", datetime.now().isoformat(timespec="seconds"))
     LOGGER.info("Resolving dataset alias %s", args.dataset_alias)
 
-    runner_status = native_gpt2_runner_status(str(args.native_cuda_runner))
+    runner_status = native_gpt_runner_status(str(args.native_cuda_runner))
     dry_run_deferred_dataset = False
     if runner_status.resolved == "compiled-cli" and bool(args.native_cuda_dry_run):
         dataset_name = str(args.dataset_alias)
@@ -478,7 +479,7 @@ def main(argv: list[str] | None = None) -> int:
             if str(args.native_cuda_output_dir or "").strip()
             else Path(args.output).with_suffix("")
         )
-        native_cfg, dataset_meta = build_native_gpt2_run_config(
+        native_cfg, dataset_meta = build_native_gpt_run_config(
             dataset_name=dataset_name,
             dataset_path=dataset_path,
             dataset_meta=dataset_meta,
@@ -549,7 +550,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Estimated train rows: {rows}")
     print(f"Native CUDA output dir: {native_cfg.output_dir}")
     if str(args.native_cuda_config_out or "").strip():
-        write_native_gpt2_run_config(
+        write_native_gpt_run_config(
             native_cfg,
             Path(args.native_cuda_config_out),
             runner=str(args.native_cuda_runner),
@@ -606,7 +607,7 @@ def main(argv: list[str] | None = None) -> int:
 
         return int(subprocess.run(compiled_cli_args or native_cfg.compiled_cli_argv(), check=False).returncode)
     LOGGER.info("Launching native CUDA GPT trainer")
-    return run_native_gpt2(native_cfg, runner=str(args.native_cuda_runner))
+    return run_native_gpt(native_cfg, runner=str(args.native_cuda_runner))
 
 
 if __name__ == "__main__":

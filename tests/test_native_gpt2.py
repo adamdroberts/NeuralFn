@@ -31,6 +31,7 @@ from neuralfn.native_gpt2 import (
     native_gpt2_runner_status,
     read_native_gpt2_checkpoint_info,
     resolve_native_gpt2_cli,
+    resolve_native_gpt2_executable,
     resolve_native_gpt2_launcher,
     resolve_native_gpt2_token_shards,
     run_native_gpt2,
@@ -443,7 +444,7 @@ def test_native_gpt2_runner_status_falls_back_to_subprocess_without_binding(
     assert status.resolved == "subprocess"
     assert status.available is True
     assert "binding unavailable" in status.reason
-    assert "compiled native CLI/launcher not found" in status.reason
+    assert "compiled native GPT CLI/launcher not found" in status.reason
 
 
 def test_native_gpt2_runner_status_uses_compiled_cli_when_present(
@@ -466,6 +467,30 @@ def test_native_gpt2_runner_status_uses_compiled_cli_when_present(
         native_gpt2_runner_status("cli")
     assert automatic.resolved == "compiled-cli"
     assert automatic.available is True
+
+
+def test_native_gpt_generic_env_names_take_precedence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generic_cli = tmp_path / "nfn_gpt_native_train"
+    legacy_cli = tmp_path / "nfn_gpt2_native_train"
+    for cli in (generic_cli, legacy_cli):
+        cli.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        cli.chmod(0o755)
+
+    monkeypatch.setenv("NFN_NATIVE_GPT_BINDING", "0")
+    monkeypatch.setenv("NFN_NATIVE_GPT2_BINDING", "1")
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", str(generic_cli))
+    monkeypatch.setenv("NFN_NATIVE_GPT2_CLI", str(legacy_cli))
+    monkeypatch.setenv("NFN_NATIVE_GPT_TRAIN_BIN", "/opt/nfn/train_gpt")
+    monkeypatch.setenv("NFN_NATIVE_GPT2_TRAIN_BIN", "/opt/nfn/train_gpt2cu")
+
+    assert resolve_native_gpt2_cli() == str(generic_cli)
+    assert resolve_native_gpt2_executable() == "/opt/nfn/train_gpt"
+    status = native_gpt2_runner_status("auto")
+    assert status.resolved == "compiled-cli"
+    assert "NFN_NATIVE_GPT_BINDING" in status.reason
 
 
 def test_native_gpt2_runner_status_uses_compiled_launcher_when_present(

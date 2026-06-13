@@ -161,6 +161,10 @@ fs::path home_dir() {
 }
 
 std::string default_target() {
+    std::string generic_env_target = env_or_empty("NFN_NATIVE_GPT_TRAIN_BIN");
+    if (!generic_env_target.empty()) {
+        return generic_env_target;
+    }
     std::string env_target = env_or_empty("NFN_NATIVE_GPT2_TRAIN_BIN");
     if (!env_target.empty()) {
         return env_target;
@@ -262,7 +266,7 @@ void print_usage(const char* program) {
         << "  --output-dir PATH                 Native output directory\n"
         << "  --dry-run                         Print/resolve without exec\n"
         << "  --print-command                   Print the backend command without training; tile-cuda exits before CUDA/shard setup\n\n"
-        << "Training options mirror train_gpt2.py names, including --eval-every-steps, --eval-batches, --eval-batch-size, --batch-size, --train-seq-len,\n"
+        << "Training options mirror train_gpt.py names, including --eval-every-steps, --eval-batches, --eval-batch-size, --batch-size, --train-seq-len,\n"
         << "  --train-batch-tokens, --learning-rate, --final-lr-fraction, --weight-decay, --warmup-steps, and --max-steps.\n"
         << "  --lm-head-row-chunk-size N        Tied LM-head full-vocab row chunk size for the Tile-CUDA transformer loop; default 8192.\n"
         << "Dataset default: roneneldan__TinyStories__TinyStoriesV2-GPT4.\n"

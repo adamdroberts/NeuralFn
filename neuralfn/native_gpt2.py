@@ -307,6 +307,9 @@ def resolve_native_gpt2_executable(value: str | None = None) -> str:
     requested = str(value or "").strip()
     if requested:
         return requested
+    env_value = str(os.environ.get("NFN_NATIVE_GPT_TRAIN_BIN", "")).strip()
+    if env_value:
+        return env_value
     env_value = str(os.environ.get("NFN_NATIVE_GPT2_TRAIN_BIN", "")).strip()
     if env_value:
         return env_value
@@ -802,9 +805,15 @@ def write_native_gpt2_run_config(
 
 
 def _load_native_gpt2_binding():
-    binding_enabled = str(os.environ.get("NFN_NATIVE_GPT2_BINDING", "1")).strip().lower()
+    generic_binding_value = os.environ.get("NFN_NATIVE_GPT_BINDING")
+    binding_env_name = "NFN_NATIVE_GPT_BINDING" if generic_binding_value is not None else "NFN_NATIVE_GPT2_BINDING"
+    binding_enabled = str(
+        generic_binding_value
+        if generic_binding_value is not None
+        else os.environ.get("NFN_NATIVE_GPT2_BINDING", "1")
+    ).strip().lower()
     if binding_enabled in {"0", "false", "no", "off"}:
-        raise ImportError("native GPT-2 binding disabled by NFN_NATIVE_GPT2_BINDING=0")
+        raise ImportError(f"native GPT binding disabled by {binding_env_name}=0")
     errors: list[str] = []
     for module_name in NATIVE_GPT2_BINDING_MODULES:
         try:
@@ -816,13 +825,13 @@ def _load_native_gpt2_binding():
         if callable(runner):
             return module_name, runner
         errors.append(f"{module_name}: missing run_gpt2(config_dict) or run_train(config_dict)")
-    raise ImportError("; ".join(errors) if errors else "no native GPT-2 binding modules configured")
+    raise ImportError("; ".join(errors) if errors else "no native GPT binding modules configured")
 
 
 def native_gpt2_runner_status(requested: str = "auto") -> NativeGpt2RunnerStatus:
     normalized = str(requested or "auto").strip().lower().replace("_", "-")
     if normalized not in {"auto", "binding", "compiled-cli", "launcher", "subprocess"}:
-        raise ValueError("native GPT-2 runner must be one of: auto, binding, compiled-cli, launcher, subprocess")
+        raise ValueError("native GPT runner must be one of: auto, binding, compiled-cli, launcher, subprocess")
     if normalized == "subprocess":
         return NativeGpt2RunnerStatus(requested=normalized, resolved="subprocess")
     if normalized == "compiled-cli":
@@ -831,7 +840,7 @@ def native_gpt2_runner_status(requested: str = "auto") -> NativeGpt2RunnerStatus
             requested=normalized,
             resolved="compiled-cli",
             available=cli.exists(),
-            reason="" if cli.exists() else f"compiled native GPT-2 CLI not found: {cli}",
+            reason="" if cli.exists() else f"compiled native GPT CLI not found: {cli}",
         )
     if normalized == "launcher":
         launcher = Path(resolve_native_gpt2_launcher())
@@ -871,7 +880,7 @@ def native_gpt2_runner_status(requested: str = "auto") -> NativeGpt2RunnerStatus
             requested=normalized,
             resolved="subprocess",
             available=True,
-            reason=f"native binding unavailable and compiled native CLI/launcher not found: {exc}",
+            reason=f"native binding unavailable and compiled native GPT CLI/launcher not found: {exc}",
         )
     return NativeGpt2RunnerStatus(
         requested=normalized,
