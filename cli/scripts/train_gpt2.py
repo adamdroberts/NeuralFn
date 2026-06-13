@@ -75,6 +75,10 @@ def _native_template_name(argv: list[str]) -> str:
     return (_arg_value(argv, "--template-name", "--template", "--preset") or "gpt2").strip().lower().replace("-", "_")
 
 
+def _native_backend_name(argv: list[str]) -> str:
+    return (_arg_value(argv, "--backend") or "tile-cuda").strip().lower().replace("_", "-")
+
+
 def _has_native_activation(argv: list[str]) -> bool:
     return any(
         arg in {"--activation", "--native-cuda-activation"} or
@@ -258,7 +262,7 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
 
     if "--dataset-alias" not in out and "--dataset-path" not in out and "--tinystories" not in out:
         _append_value(out, "--dataset-alias", os.environ.get("DATASET_ALIAS", _TINYSTORIES_ALIAS))
-    if "--target" not in out:
+    if "--target" not in out and _native_backend_name(out) == "llm-kittens":
         _append_value(out, "--target", _native_target_path())
     final_lr = _final_lr_fraction(argv)
     if final_lr is not None and "--final-lr-fraction" not in out:

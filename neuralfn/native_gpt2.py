@@ -182,8 +182,6 @@ class NativeGpt2RunConfig:
             dataset_alias,
             "--backend",
             self.kernel_backend,
-            "--target",
-            self.executable,
             "--output-dir",
             self.output_dir,
             "--eval-every-steps",
@@ -221,6 +219,8 @@ class NativeGpt2RunConfig:
             "--native-cuda-activation",
             self.activation,
         ]
+        if str(self.kernel_backend).strip().lower().replace("_", "-") == "llm-kittens":
+            args.extend(["--target", self.executable])
         if str(self.tile_ops_lib or "").strip():
             args.extend(["--tile-ops-lib", self.tile_ops_lib])
         if self.smoke_tile_ops:

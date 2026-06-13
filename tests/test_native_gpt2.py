@@ -226,9 +226,10 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
         "roneneldan__TinyStories__TinyStoriesV2-GPT4",
         "--backend",
         "tile-cuda",
-        "--target",
-        "/opt/nfn/train_gpt2cu",
+        "--output-dir",
+        str(tmp_path / "log124M" / "5090_S"),
     ]
+    assert "--target" not in argv
     assert argv[argv.index("--train-batch-tokens") + 1] == "524288"
     assert argv[argv.index("--tile-ops-lib") + 1] == "/opt/nfn/libnfn_native_train_tile_ops.so"
     assert "--smoke-tile-ops" in argv
@@ -247,6 +248,30 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
     assert argv[argv.index("--eval-batch-size") + 1] == "0"
     assert argv[argv.index("--lm-head-row-chunk-size") + 1] == "8192"
     assert argv[argv.index("--cuda-runtime-lib") + 1] == "/usr/local/cuda/lib64/libcudart.so"
+
+    llm_cfg = build_native_gpt2_compiled_cli_run_config(
+        dataset_alias="roneneldan__TinyStories__TinyStoriesV2-GPT4",
+        executable="/opt/nfn/train_gpt2cu",
+        output_dir=tmp_path / "gpt2-llm",
+        eval_every_steps=250,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=20000,
+        num_layers=12,
+        activation="gelu",
+        kernel_backend="llm-kittens",
+    )
+    llm_argv = llm_cfg.compiled_cli_argv("/opt/nfn/nfn_gpt2_native_train")
+    assert llm_argv[llm_argv.index("--backend") + 1] == "llm-kittens"
+    assert llm_argv[llm_argv.index("--target") + 1] == "/opt/nfn/train_gpt2cu"
 
 
 def test_build_native_gpt2_compiled_cli_config_maps_gpt2_moa_template_to_native_activation(tmp_path: Path) -> None:
@@ -539,14 +564,13 @@ def test_native_gpt2_compiled_cli_runner_executes_cli(
 
     assert run_native_gpt2(cfg, runner="compiled-cli") == 19
     args = output.read_text(encoding="utf-8").splitlines()
-    assert args[:6] == [
+    assert args[:4] == [
         "--dataset-alias",
         str(tmp_path / "dataset"),
         "--backend",
         "tile-cuda",
-        "--target",
-        "/opt/nfn/train_gpt2cu",
     ]
+    assert "--target" not in args
     assert "--train-transformer-lm" in args
     assert "--eval-every-steps" in args
     assert "--final-lr-fraction" in args
@@ -702,14 +726,13 @@ def test_native_gpt2_cpp_binding_uses_compiled_cli_for_alias_only_config(
     assert native_gpt2_runner_status("auto").resolved == "binding"
     assert run_native_gpt2(cfg, runner="auto") == 37
     args = observed_args.read_text(encoding="utf-8").splitlines()
-    assert args[:6] == [
+    assert args[:4] == [
         "--dataset-alias",
         "cached-shards",
         "--backend",
         "tile-cuda",
-        "--target",
-        "/tmp/should-not-run-raw-train-gpt2cu",
     ]
+    assert "--target" not in args
     assert "--train-transformer-lm" in args
 
 

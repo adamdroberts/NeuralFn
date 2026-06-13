@@ -314,8 +314,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertEqual(0, proc.returncode, proc.stderr)
         self.assertIn("--dataset-alias", proc.stdout)
         self.assertRegex(proc.stdout, r"--dataset-alias /tmp/.*/tiny")
-        self.assertIn("--target ", proc.stdout)
-        self.assertIn("train_gpt2cu", proc.stdout)
+        self.assertNotIn("--target ", proc.stdout)
+        self.assertNotIn("train_gpt2cu", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
@@ -379,8 +379,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertEqual(0, proc.returncode, proc.stderr)
         self.assertIn("--dataset-alias", proc.stdout)
         self.assertRegex(proc.stdout, r"--dataset-alias /tmp/.*/raw-only")
-        self.assertIn("--target ", proc.stdout)
-        self.assertIn("train_gpt2cu", proc.stdout)
+        self.assertNotIn("--target ", proc.stdout)
+        self.assertNotIn("train_gpt2cu", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)
         self.assertIn("TRAIN_SHARD_EXISTS False", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
@@ -388,6 +388,54 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("NUMPY_LOADED False", proc.stdout)
         self.assertIn("TIKTOKEN_LOADED False", proc.stdout)
         self.assertIn("TRAIN_GPT2_NATIVE_LOADED False", proc.stdout)
+
+    def test_native_dry_run_llm_kittens_backend_keeps_external_target(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import runpy
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root / "cli" / "scripts"))
+            sys.path.insert(0, str(root))
+            sys.argv = [
+                str(root / "cli" / "scripts" / "train_gpt2.py"),
+                "--dataset-alias",
+                "/tmp/native-cache",
+                "--native-cuda-kernel-backend",
+                "llm-kittens",
+                "--native-cuda-dry-run",
+                "--native-cuda-print-command",
+            ]
+            try:
+                runpy.run_path(str(root / "cli" / "scripts" / "train_gpt2.py"), run_name="__main__")
+            except SystemExit as exc:
+                exit_code = int(exc.code or 0)
+            else:
+                exit_code = 0
+            print("TORCH_LOADED", "torch" in sys.modules)
+            raise SystemExit(exit_code)
+            """
+        )
+        env = os.environ.copy()
+        env["PYTHONPATH"] = f"{NEURALFN_ROOT / 'cli' / 'scripts'}:{NEURALFN_ROOT}"
+        env["NFN_NATIVE_GPT2_CLI"] = "/bin/echo"
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("--backend llm-kittens", proc.stdout)
+        self.assertIn("--target ", proc.stdout)
+        self.assertIn("train_gpt2cu", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
 
     def test_native_dry_run_does_not_import_torch(self) -> None:
         code = textwrap.dedent(
@@ -1381,8 +1429,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("Native CUDA runner: compiled-cli (requested=compiled-cli)", proc.stdout)
         self.assertIn("Native CUDA shard resolution: compiled C++ frontend (deferred dry-run)", proc.stdout)
         self.assertIn("--dataset-alias alias", proc.stdout)
-        self.assertIn("--target ", proc.stdout)
-        self.assertIn("train_gpt2cu", proc.stdout)
+        self.assertNotIn("--target ", proc.stdout)
+        self.assertNotIn("train_gpt2cu", proc.stdout)
 
     def test_infer_gpt2_parser_and_help_do_not_import_torch(self) -> None:
         cases = (
