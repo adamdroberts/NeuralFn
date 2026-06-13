@@ -279,7 +279,7 @@ class NativeGpt2RunConfig:
 
 @dataclass(frozen=True)
 class NativeGpt2CheckpointInfo:
-    """Metadata read from a llm.kittens/NeuralFn native GPT-2 checkpoint."""
+    """Metadata read from a llm.kittens/NeuralFn native GPT checkpoint."""
 
     path: str
     version: int
@@ -415,13 +415,13 @@ def read_native_gpt2_checkpoint_info(
     with path.open("rb") as handle:
         header_bytes = handle.read(NATIVE_GPT2_CHECKPOINT_HEADER_BYTES)
     if len(header_bytes) != NATIVE_GPT2_CHECKPOINT_HEADER_BYTES:
-        raise ValueError(f"Native GPT-2 checkpoint header is truncated: {path}")
+        raise ValueError(f"Native GPT checkpoint header is truncated: {path}")
     header = struct.unpack("<" + "i" * NATIVE_GPT2_CHECKPOINT_HEADER_INTS, header_bytes)
     if int(header[0]) != NATIVE_GPT2_CHECKPOINT_MAGIC:
-        raise ValueError(f"Not a native GPT-2 checkpoint: {path}")
+        raise ValueError(f"Not a native GPT checkpoint: {path}")
     version = int(header[1])
     if version not in NATIVE_GPT2_CHECKPOINT_VERSIONS:
-        raise ValueError(f"Unsupported native GPT-2 checkpoint version {version} in {path}")
+        raise ValueError(f"Unsupported native GPT checkpoint version {version} in {path}")
     precision, bytes_per_param = NATIVE_GPT2_CHECKPOINT_VERSIONS[version]
     max_seq_len = int(header[2])
     vocab_size = int(header[3])
@@ -441,7 +441,7 @@ def read_native_gpt2_checkpoint_info(
     size_matches = actual_file_size == expected_file_size
     if validate_size and not size_matches:
         raise ValueError(
-            f"Bad native GPT-2 checkpoint size for {path}: got {actual_file_size} bytes, "
+            f"Bad native GPT checkpoint size for {path}: got {actual_file_size} bytes, "
             f"expected {expected_file_size} bytes"
         )
     step = _native_gpt2_checkpoint_step(path)
@@ -526,7 +526,7 @@ def native_gpt2_activation(value: str | None) -> str:
     }
     if normalized not in aliases:
         raise ValueError(
-            f"Unsupported native GPT-2 activation {value!r}; "
+            f"Unsupported native GPT activation {value!r}; "
             f"expected one of {', '.join(sorted(set(aliases.values())))}."
         )
     return aliases[normalized]
@@ -547,7 +547,7 @@ def _native_gpt2_activation_for_template(template_name: str | None, activation: 
 def native_gpt2_kernel_backend(value: str | None) -> str:
     normalized = str(value or "tile-cuda").strip().lower()
     if normalized not in {"llm-kittens", "tile-cuda"}:
-        raise ValueError("native GPT-2 kernel backend must be one of: llm-kittens, tile-cuda")
+        raise ValueError("native GPT kernel backend must be one of: llm-kittens, tile-cuda")
     return normalized
 
 
@@ -580,14 +580,14 @@ def resolve_native_gpt2_token_shards(
         val_files = sorted(dataset_path.glob("fineweb_val_*.bin"))
     if meta.get("data_format") != "uint16_shards" or not train_files:
         raise ValueError(
-            "Native GPT-2 training requires cached uint16 token shards. "
+            "Native GPT training requires cached uint16 token shards. "
             f"Dataset {dataset_name!r} is not cached as uint16 for tokenizer {encoding!r}; "
             "use --tokgpt2 or a sentencepiece tokenizer with <=65536 tokens."
         )
     if not val_files:
         if not allow_train_as_val:
             raise ValueError(
-                "Native GPT-2 training requires validation token shards for live validation loss. "
+                "Native GPT training requires validation token shards for live validation loss. "
                 "Provide a validation file when caching the dataset, or pass "
                 "--native-cuda-allow-train-val-fallback to reuse the train shard."
             )
@@ -884,19 +884,19 @@ def run_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "auto") -> int
     status = native_gpt2_runner_status(runner)
     if status.resolved == "binding":
         if not status.available:
-            raise RuntimeError(f"Native GPT-2 binding requested but unavailable: {status.reason}")
+            raise RuntimeError(f"Native GPT binding requested but unavailable: {status.reason}")
         _module_name, binding_runner = _load_native_gpt2_binding()
         return int(binding_runner(config.to_dict()))
     if status.resolved == "compiled-cli":
         if not status.available:
-            raise RuntimeError(f"Native GPT-2 compiled CLI requested but unavailable: {status.reason}")
+            raise RuntimeError(f"Native GPT compiled CLI requested but unavailable: {status.reason}")
         env = os.environ.copy()
         env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", config.cuda_device_max_connections)
         proc = subprocess.run(config.compiled_cli_argv(), env=env, check=False)
         return int(proc.returncode)
     if status.resolved == "launcher":
         if not status.available:
-            raise RuntimeError(f"Native GPT-2 launcher requested but unavailable: {status.reason}")
+            raise RuntimeError(f"Native GPT launcher requested but unavailable: {status.reason}")
         env = os.environ.copy()
         env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", config.cuda_device_max_connections)
         proc = subprocess.run(config.launcher_argv(), env=env, check=False)

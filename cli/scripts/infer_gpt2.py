@@ -162,7 +162,7 @@ def handle_native_checkpoint_request(args: argparse.Namespace) -> int | None:
     from neuralfn.native_gpt2 import read_native_gpt2_checkpoint_info
 
     info = read_native_gpt2_checkpoint_info(Path(native_checkpoint).expanduser())
-    print("Native GPT-2 checkpoint detected")
+    print("Native GPT checkpoint detected")
     print(f"  path: {info.path}")
     print(f"  precision: {info.precision} (version {info.version})")
     print(f"  shape: layers={info.num_layers} heads={info.num_heads} channels={info.channels} seq_len={info.max_seq_len}")
@@ -173,9 +173,9 @@ def handle_native_checkpoint_request(args: argparse.Namespace) -> int | None:
     if bool(getattr(args, "native_info", False)):
         return 0
     print(
-        "Native GPT-2 prompt inference is not wired yet. This checkpoint is not a "
+        "Native GPT prompt inference is not wired yet. This checkpoint is not a "
         "graph-backed Torch artifact; use train-time sampling today or build the "
-        "native GPT-2 inference executable before prompt generation."
+        "native GPT inference executable before prompt generation."
     )
     return 2
 

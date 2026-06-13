@@ -534,7 +534,9 @@ forward pass and by the BF16-bits dWeight accumulator for that projection, so
 the packed route does not unpack `O` to float32 before the projection.
 Set `NFN_NATIVE_GPT2_PACKED_QKV_ATTENTION=0` to force the older split bridge for
 profiling. Native plan and runtime JSON report `packed_qkv_attention_enabled`,
-`packed_qkv_attention_bf16_bytes`, `qkv_forward_layout_strategy:
+`packed_qkv_attention_bf16_bytes`,
+`packed_qkv_float_attention_tape_elided`,
+`packed_qkv_float_attention_tape_elements_elided`, `qkv_forward_layout_strategy:
 "packed-qkv-bf16-no-split"`, `qkv_bias_layout_strategy:
 "packed-qkv-bf16-bias-inplace"`, `attention_projection_input_strategy:
 "packed-o-bf16-direct-gemm"`, `attention_packed_output_unpack_strategy:

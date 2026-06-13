@@ -14,6 +14,13 @@ import neuralfn
 import pytest
 
 from neuralfn.config import SHIPPED_GPT_TEMPLATE_PRESETS
+from neuralfn.native_gpt import (
+    build_native_gpt_compiled_cli_run_config,
+    native_gpt_activation,
+    native_gpt_encoding_vocab_size,
+    native_gpt_kernel_backend,
+    normalize_native_gpt_encoding_name,
+)
 from neuralfn.native_gpt2 import (
     NativeGpt2RunConfig,
     build_native_gpt2_compiled_cli_run_config,
@@ -276,6 +283,43 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
     assert llm_argv[llm_argv.index("--target") + 1] == "/opt/nfn/train_gpt2cu"
 
 
+def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path: Path) -> None:
+    cfg = build_native_gpt_compiled_cli_run_config(
+        dataset_alias="cached-shards",
+        executable="/opt/nfn/train_gpt2cu",
+        output_dir=tmp_path / "gpt",
+        eval_every_steps=1000,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=20000,
+        num_layers=12,
+        activation="gelu",
+        template_name="gpt2_megakernel",
+        graph_file="/tmp/custom-gpt.json",
+    )
+
+    argv = cfg.compiled_cli_argv("/opt/nfn/nfn_gpt_native_train")
+
+    assert cfg.model_family == "gpt"
+    assert cfg.template_name == "gpt2_megakernel"
+    assert cfg.graph_file == "/tmp/custom-gpt.json"
+    assert argv[:3] == ["/opt/nfn/nfn_gpt_native_train", "--model-family", "gpt"]
+    assert argv[argv.index("--template-name") + 1] == "gpt2_megakernel"
+    assert argv[argv.index("--graph-file") + 1] == "/tmp/custom-gpt.json"
+    assert normalize_native_gpt_encoding_name("tokgpt2") == "gpt2"
+    assert native_gpt_encoding_vocab_size("gpt2") == 50257
+    assert native_gpt_activation("sd_prelu") == "sd-prelu"
+    assert native_gpt_kernel_backend("tile-cuda") == "tile-cuda"
+
+
 def test_build_native_gpt2_compiled_cli_config_maps_gpt2_moa_template_to_native_activation(tmp_path: Path) -> None:
     cfg = build_native_gpt2_compiled_cli_run_config(
         dataset_alias="/tmp/native-cache",
@@ -337,7 +381,7 @@ def test_write_native_gpt2_run_config_includes_command(tmp_path: Path) -> None:
 
 
 def test_native_gpt2_activation_rejects_unknown_value() -> None:
-    with pytest.raises(ValueError, match="Unsupported native GPT-2 activation"):
+    with pytest.raises(ValueError, match="Unsupported native GPT activation"):
         native_gpt2_activation("not-real")
 
 
@@ -1020,6 +1064,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["packed_qkv_attention_enabled"] is True
     assert tile_payload["packed_qkv_attention_bf16_elements"] > 0
     assert tile_payload["packed_qkv_attention_bf16_bytes"] > 0
+    assert tile_payload["packed_qkv_float_attention_tape_elided"] is True
+    assert tile_payload["packed_qkv_float_attention_tape_elements_elided"] == 64 * 1024 * 768 * 8
+    assert tile_payload["packed_qkv_float_attention_tape_bytes_elided"] == 64 * 1024 * 768 * 8 * 4
     assert tile_payload["qkv_forward_layout_strategy"] == "packed-qkv-bf16-no-split"
     assert tile_payload["qkv_forward_layout_kernel_launches_per_block"] == 0
     assert tile_payload["qkv_forward_layout_legacy_launches_per_block"] == 4
@@ -1970,6 +2017,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "allocated_block_count": 12,
         "target_block_count": 12,
         "activation_tape_count": 1,
+        "packed_qkv_float_attention_tape_elided": True,
+        "packed_qkv_float_attention_tape_elements_elided": 2 * 1 * 768 * 8,
         "persistent_block_outputs": 11,
         "final_block_output_copy_elided": True,
         "validation_persistent_block_outputs": 0,

@@ -10,6 +10,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 #### Changed
 
+- Tightened the universal GPT native trainer surface and reduced the packed-QKV
+  trainer tape. `cli/scripts/train_gpt2_native.py` now defaults the canonical
+  Python wrapper output to `~/NeuralFn/artifacts/gpt`, accepts
+  `NFN_NATIVE_GPT_TRAIN_BIN` / `NFN_NATIVE_GPT_RUNNER` ahead of the legacy
+  GPT-2 environment names, and the lightweight CLI identifies native `.bin`
+  checkpoints as native GPT artifacts. The generic `neuralfn.native_gpt` and
+  top-level `neuralfn` exports now include generic activation, backend, and
+  tokenizer helper aliases so new SDK code can stay on GPT-native names.
+  Packed-QKV attention no longer allocates the legacy float QKV/split-head/O
+  tape tensors when the packed path is active; plan and training JSON report
+  `packed_qkv_float_attention_tape_elided`,
+  `packed_qkv_float_attention_tape_elements_elided`, and
+  `packed_qkv_float_attention_tape_bytes_elided`. Migration note: use
+  `nfn train --base-model gpt`, `python cli/scripts/train_gpt.py`, and
+  `neuralfn.native_gpt` for new code; the `gpt2` names remain compatibility
+  wrappers for the current checkpoint/template implementation. Verification:
+  rebuilt `nfn_gpt_native_train`, ran `python -m pytest tests/test_native_gpt2.py -q`
+  (`28 passed, 1 skipped`), ran
+  `python -m pytest cli/tests/test_train_gpt2_native.py -q`
+  (`33 passed, 90 subtests passed`), ran `git diff --check`, and ran a
+  GPU-visible one-step TinyStories probe that reported
+  `packed_qkv_float_attention_tape_elided: true`, 1.61GB of float tape elided,
+  `float_arena_requested_elements: 3175449357`, zero SGEMM calls, and about
+  `132,779` tokens/s.
 - The raw native Tile ABI now exposes `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32`
   and `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32`.
   Dense GPT block backward now uses those fused dWeight+bias entrypoints for

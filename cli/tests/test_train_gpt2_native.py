@@ -584,7 +584,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 "gpt",
                 "--dataset-alias=/tmp/native-cache",
                 "--output",
-                "/tmp/gpt2.pt",
+                "/tmp/gpt.pt",
                 "--native-cuda-dry-run",
                 "--native-cuda-print-command",
                 "--eval-every-steps=1000",
@@ -618,7 +618,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
         self.assertEqual(0, proc.returncode, proc.stderr)
         self.assertIn("--dataset-alias /tmp/native-cache", proc.stdout)
-        self.assertIn("--output-dir /tmp/gpt2", proc.stdout)
+        self.assertIn("--output-dir /tmp/gpt", proc.stdout)
         self.assertIn("--eval-every-steps 1000", proc.stdout)
         self.assertIn("--native-cuda-activation sd-prelu", proc.stdout)
         self.assertIn("--dry-run", proc.stdout)
@@ -1698,7 +1698,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn("Native GPT-2 checkpoint detected", proc.stdout)
+        self.assertIn("Native GPT checkpoint detected", proc.stdout)
         self.assertIn("precision: bf16", proc.stdout)
         self.assertIn("checkpoint_step: 10", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
@@ -1761,8 +1761,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn("Native GPT-2 checkpoint detected", proc.stdout)
-        self.assertIn("Native GPT-2 prompt inference is not wired yet", proc.stdout)
+        self.assertIn("Native GPT checkpoint detected", proc.stdout)
+        self.assertIn("Native GPT prompt inference is not wired yet", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
 

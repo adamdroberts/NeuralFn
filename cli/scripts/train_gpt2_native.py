@@ -25,7 +25,7 @@ from neuralfn.native_gpt2 import (
 
 LOGGER = logging.getLogger("gpt_native_harness")
 DATASETS_DIR = Path(os.environ.get("NFN_DATASETS_DIR", Path.home() / ".cache" / "nfn" / "datasets")).expanduser()
-DEFAULT_ARTIFACT = artifact_path("gpt2.pt")
+DEFAULT_ARTIFACT = artifact_path("gpt.pt")
 TINYSTORIES_ALIAS = "roneneldan__TinyStories__TinyStoriesV2-GPT4"
 TINYSTORIES_HF_PATH = "roneneldan/TinyStories"
 TINYSTORIES_TRAIN_FILE = "TinyStoriesV2-GPT4-train.txt"
@@ -99,7 +99,7 @@ def _resolve_existing_dataset(alias: str) -> tuple[str, Path, dict[str, Any]]:
     alias_path = Path(str(alias)).expanduser()
     if alias_path.is_absolute():
         if not alias_path.is_dir():
-            raise FileNotFoundError(f"Native GPT-2 dataset path {alias_path} is not a directory.")
+            raise FileNotFoundError(f"Native GPT dataset path {alias_path} is not a directory.")
         return str(alias_path), alias_path, _read_meta(alias_path)
     dataset_path = DATASETS_DIR / alias
     if dataset_path.is_dir():
@@ -111,7 +111,7 @@ def _resolve_existing_dataset_path(alias: str) -> tuple[str, Path]:
     alias_path = Path(str(alias)).expanduser()
     if alias_path.is_absolute():
         if not alias_path.is_dir():
-            raise FileNotFoundError(f"Native GPT-2 dataset path {alias_path} is not a directory.")
+            raise FileNotFoundError(f"Native GPT dataset path {alias_path} is not a directory.")
         return str(alias_path), alias_path
     dataset_path = DATASETS_DIR / alias
     if dataset_path.is_dir():
@@ -305,7 +305,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Custom NeuralFn graph JSON to select for native training metadata and dispatch.",
     )
     parser.add_argument("--tokenizer", default=env_str("TOKENIZER", "gpt2"))
-    parser.add_argument("--tokgpt2", action="store_true", help="Use the GPT-2 tokenizer.")
+    parser.add_argument("--tokgpt2", action="store_true", help="Use the GPT-2 byte-level BPE tokenizer.")
     parser.add_argument("--cl100k", action="store_true", help="Use cl100k_base. Not valid for native uint16 GPT shards.")
     parser.add_argument("--o200k", action="store_true", help="Use o200k_base. Not valid for native uint16 GPT shards.")
     parser.add_argument("--output", default=env_str("OUTPUT", ""))
@@ -334,11 +334,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--num-layers", type=int, default=env_int("NUM_LAYERS", NATIVE_GPT2_DEFAULTS["num_layers"]))
-    parser.add_argument("--native-cuda-executable", default=env_str("NFN_NATIVE_GPT2_TRAIN_BIN", ""))
+    parser.add_argument(
+        "--native-cuda-executable",
+        default=env_str("NFN_NATIVE_GPT_TRAIN_BIN", env_str("NFN_NATIVE_GPT2_TRAIN_BIN", "")),
+    )
     parser.add_argument(
         "--native-cuda-runner",
         choices=("auto", "binding", "compiled-cli", "cli", "launcher", "subprocess"),
-        default=env_str("NFN_NATIVE_GPT2_RUNNER", NATIVE_GPT2_DEFAULTS["native_cuda_runner"]),
+        default=env_str(
+            "NFN_NATIVE_GPT_RUNNER",
+            env_str("NFN_NATIVE_GPT2_RUNNER", NATIVE_GPT2_DEFAULTS["native_cuda_runner"]),
+        ),
         help=(
             "Native GPT launch mode. The default requires the compiled no-Python cached-shard CLI; "
             "use auto, binding, launcher, or subprocess explicitly for fallback/debug runs."

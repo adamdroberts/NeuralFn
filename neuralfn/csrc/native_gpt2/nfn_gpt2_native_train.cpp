@@ -1028,6 +1028,9 @@ bool print_tile_plan(
         packed_qkv_attention_enabled ? (tokens * 768 * 4 * activation_tape_count) : 0;
     const std::int64_t packed_qkv_attention_bf16_bytes =
         packed_qkv_attention_bf16_elements * static_cast<std::int64_t>(sizeof(std::uint16_t));
+    const bool packed_qkv_float_attention_tape_elided = packed_qkv_attention_enabled;
+    const std::int64_t packed_qkv_float_attention_tape_elements_elided =
+        packed_qkv_float_attention_tape_elided ? (tokens * 768 * 8) : 0;
     const std::int64_t stored_packed_attention_block_count =
         store_packed_attention_activations_enabled && cfg.num_layers > 0
             ? std::min<std::int64_t>(
@@ -1114,6 +1117,12 @@ bool print_tile_plan(
         << "  \"packed_qkv_attention_enabled\": " << (packed_qkv_attention_enabled ? "true" : "false") << ",\n"
         << "  \"packed_qkv_attention_bf16_elements\": " << packed_qkv_attention_bf16_elements << ",\n"
         << "  \"packed_qkv_attention_bf16_bytes\": " << packed_qkv_attention_bf16_bytes << ",\n"
+        << "  \"packed_qkv_float_attention_tape_elided\": "
+        << (packed_qkv_float_attention_tape_elided ? "true" : "false") << ",\n"
+        << "  \"packed_qkv_float_attention_tape_elements_elided\": "
+        << packed_qkv_float_attention_tape_elements_elided << ",\n"
+        << "  \"packed_qkv_float_attention_tape_bytes_elided\": "
+        << (packed_qkv_float_attention_tape_elements_elided * static_cast<std::int64_t>(sizeof(float))) << ",\n"
         << "  \"qkv_forward_layout_strategy\": \""
         << (packed_qkv_attention_enabled ? "packed-qkv-bf16-no-split" : "fused-split-to-heads")
         << "\",\n"
@@ -7306,6 +7315,11 @@ int run_transformer_lm_training_json(
         packed_qkv_attention_enabled &&
         env_flag_enabled(store_packed_attention_activations_env);
     const bool fuse_attention_residual_ln2_enabled = fuse_attention_residual_ln2_default_enabled();
+    const bool packed_qkv_float_attention_tape_elided = packed_qkv_attention_enabled;
+    const std::int64_t packed_qkv_float_attention_tape_elements_elided =
+        packed_qkv_float_attention_tape_elided
+            ? qkv_activation_elements + activation_elements * 5
+            : 0;
     const bool layer_norm_stats_enabled = true;
     const std::string lm_head_bf16_logits_env = env_or_empty("NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS");
     const bool lm_head_bf16_logits_enabled =
@@ -8066,12 +8080,14 @@ int run_transformer_lm_training_json(
             visit(&tape.ln1_out, activation_elements, prefix + ".ln1.out");
             visit(&tape.ln1_mean, rows, prefix + ".ln1.mean");
             visit(&tape.ln1_rstd, rows, prefix + ".ln1.rstd");
-            visit(&tape.qkv, qkv_activation_elements, prefix + ".attn.qkv");
-            visit(&tape.q_heads, activation_elements, prefix + ".attn.q_heads");
-            visit(&tape.k_heads, activation_elements, prefix + ".attn.k_heads");
-            visit(&tape.v_heads, activation_elements, prefix + ".attn.v_heads");
-            visit(&tape.attn_heads, activation_elements, prefix + ".attn.heads");
-            visit(&tape.attn_out, activation_elements, prefix + ".attn.out");
+            if (!packed_qkv_attention_enabled) {
+                visit(&tape.qkv, qkv_activation_elements, prefix + ".attn.qkv");
+                visit(&tape.q_heads, activation_elements, prefix + ".attn.q_heads");
+                visit(&tape.k_heads, activation_elements, prefix + ".attn.k_heads");
+                visit(&tape.v_heads, activation_elements, prefix + ".attn.v_heads");
+                visit(&tape.attn_heads, activation_elements, prefix + ".attn.heads");
+                visit(&tape.attn_out, activation_elements, prefix + ".attn.out");
+            }
             visit(&tape.attn_proj, activation_elements, prefix + ".attn.proj");
             visit(&tape.residual1, activation_elements, prefix + ".residual1");
             visit(&tape.ln2_out, activation_elements, prefix + ".ln2.out");
@@ -10098,6 +10114,12 @@ int run_transformer_lm_training_json(
         << "  \"packed_qkv_attention_enabled\": " << (packed_qkv_attention_enabled ? "true" : "false") << ",\n"
         << "  \"packed_qkv_attention_bf16_elements\": " << packed_qkv_attention_bf16_elements << ",\n"
         << "  \"packed_qkv_attention_bf16_bytes\": " << packed_qkv_attention_bf16_bytes << ",\n"
+        << "  \"packed_qkv_float_attention_tape_elided\": "
+        << (packed_qkv_float_attention_tape_elided ? "true" : "false") << ",\n"
+        << "  \"packed_qkv_float_attention_tape_elements_elided\": "
+        << packed_qkv_float_attention_tape_elements_elided << ",\n"
+        << "  \"packed_qkv_float_attention_tape_bytes_elided\": "
+        << (packed_qkv_float_attention_tape_elements_elided * static_cast<std::int64_t>(sizeof(float))) << ",\n"
         << "  \"qkv_forward_layout_strategy\": \""
         << (packed_qkv_attention_enabled ? "packed-qkv-bf16-no-split" : "fused-split-to-heads")
         << "\",\n"
@@ -10331,6 +10353,10 @@ int run_transformer_lm_training_json(
         << "    \"allocated_block_count\": " << trained_layers << ",\n"
         << "    \"target_block_count\": " << target_layers << ",\n"
         << "    \"activation_tape_count\": " << kActivationTapeCount << ",\n"
+        << "    \"packed_qkv_float_attention_tape_elided\": "
+        << (packed_qkv_float_attention_tape_elided ? "true" : "false") << ",\n"
+        << "    \"packed_qkv_float_attention_tape_elements_elided\": "
+        << packed_qkv_float_attention_tape_elements_elided << ",\n"
         << "    \"forward_row_qkv_scratch_allocated\": false,\n"
         << "    \"forward_row_qkv_scratch_buffers_elided\": 3,\n"
         << "    \"persistent_block_outputs\": " << persistent_block_output_count << ",\n"

@@ -354,13 +354,13 @@ Canonical docs:
   154 MB host float matrix for the real training path. JSON should report
   `token_weight_init_strategy: "device-tile-deterministic"` and
   `token_weight_host_materialization: false`.
-- GPT-2 native `--backend tile-cuda` / wrapper `--kernel-backend tile-cuda`
+- GPT native `--backend tile-cuda` / wrapper `--kernel-backend tile-cuda`
   is a NeuralFn-owned raw Tile ABI path with smoke coverage plus a tiny
-  12-layer `--train-transformer-lm` loop. Full dense GPT-2 Tile training should
+  12-layer `--train-transformer-lm` loop. Full dense GPT Tile training should
   keep using `libnfn_native_train_tile_ops.so`. The plan includes the GPT-2 parameter
   layout and forward/backward/optimizer stage sequence. `nfn-native-train
-  --list-models` should report GPT-2 as `partial-native-trainer` until that
-  full loop exists.
+  --list-models` should report `gpt`, `gpt2`, and `gpt3` as the same dense GPT
+  native trainer aliases.
 - `nfn_gpt_native_train --smoke-tile-ops --tile-ops-lib PATH` / wrapper
   `--native-cuda-smoke-tile-ops` launches `nfn_native_tile_fill_float32`
   through dynamically loaded CUDA runtime and verifies copyback without Python,
@@ -623,7 +623,7 @@ Canonical docs:
 - `nfn_nanogpt_native_train --smoke-embedding-norm-step --tile-ops-lib PATH --dataset-alias PATH_OR_ALIAS` samples a real native uint16 token/target batch from cached shards, runs token/position embedding, residual add, LayerNorm forward/backward, tied logits, CE backward, embedding/position/norm gradient, and AdamW update kernels, then verifies copyback values without Python/Torch.
 - `nfn_nanogpt_native_train --smoke-fused-qkv-attention-step --tile-ops-lib PATH` runs a tiny attention stage through one fused `attn.qkv.weight`, QKV split, SDPA forward/backward, QKV gradient merge, fused qkv weight backward, output projection backward, and AdamW updates for fused qkv/output weights without Python/Torch.
 - `nfn_nanogpt_native_train --smoke-transformer-block-step --tile-ops-lib PATH` composes LayerNorm, fused-QKV attention, residual adds, MLP, backward passes, gradient accumulation, and AdamW updates for a tiny transformer block through raw native kernels without Python/Torch.
-- Native GPT-2 checkpoints from `train_gpt2cu` or NeuralFn's `nfn_gpt_native_train --checkpoint-metadata-smoke --output-dir PATH` are `model_########.bin` files with optional matching `DONE_########` markers. Keep `nfn infer --checkpoint PATH --native-info` and `python cli/scripts/infer_gpt2.py --native-checkpoint PATH --native-info` on a Torch-free metadata path via `read_native_gpt2_checkpoint_info()`; do not route native `.bin` checkpoints into the graph-backed `.pt` loader. Prompt generation from native `.bin` checkpoints still needs a dedicated native inference executable.
+- Native GPT checkpoints from `train_gpt2cu` or NeuralFn's `nfn_gpt_native_train --checkpoint-metadata-smoke --output-dir PATH` are `model_########.bin` files with optional matching `DONE_########` markers. Keep `nfn infer --checkpoint PATH --native-info` and `python cli/scripts/infer_gpt2.py --native-checkpoint PATH --native-info` on a Torch-free metadata path via `read_native_gpt_checkpoint_info()` / `read_native_gpt2_checkpoint_info()`; do not route native `.bin` checkpoints into the graph-backed `.pt` loader. Prompt generation from native `.bin` checkpoints still needs a dedicated native inference executable.
 - `cli/scripts/train_gpt2_evo.py` remains graph-backed because native `train_gpt2cu` does not implement NeuralFn's evo-layer loop. It is disabled by default with the other legacy TorchTrainer scripts; use `NFN_ALLOW_TORCH_TRAINING=1` only for one-off debugging while a native C++ trainer is being added. The compiled preflight `nfn_gpt2_evo_native_train --print-plan --eval-every-steps 1000 --tile-cuda-activation-dtype nvfp4` reports the AdamW/NVFP4/evo-layer schedule and remaining candidate-evaluation/mutation/loss-reduction/adoption kernels without importing Python/Torch. Run existing exported artifacts with `python cli/scripts/infer_gpt2.py --evo --prompt "..."` or `nfn infer --graph ~/NeuralFn/artifacts/gpt2_evo.json --weights ~/NeuralFn/artifacts/gpt2_evo.pt --prompt "..."`; keep `infer_gpt2.py --help` and artifact default resolution no-Torch even though actual generation is still graph-backed.
 - Native trainer CE logits backward in `libnfn_native_train_tile_ops.so` uses row-wise CUDA Tile kernels for vocabularies up to 1024 and chunked row-wise kernels with reusable row-stat workspace for full GPT-class vocabularies; do not reintroduce the elementwise large-vocab fallback.
 - Linear weight and bias backward in `libnfn_native_train_tile_ops.so` switch large row counts away from one serial row loop per output element. Trainer builds use cuBLAS for linear forward/dInput/dWeight and cuBLASLt `BGRADB` for forced-BF16 block dWeight+bias accumulation when `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1`; unsupported shapes and fallback builds use row-chunked tiled atomic accumulation for bias reductions. A future tensor-core/GEMM-grade fallback replacement is still useful for dWeight, but do not reintroduce the serial large-row reduction path.

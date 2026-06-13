@@ -311,7 +311,7 @@ def _lightweight_native_gpt2_infer_main(argv: list[str] | None = None) -> int:
     from neuralfn.native_gpt2 import read_native_gpt2_checkpoint_info
 
     info = read_native_gpt2_checkpoint_info(Path(checkpoint).expanduser())
-    print("Native GPT-2 checkpoint detected")
+    print("Native GPT checkpoint detected")
     print(f"  path: {info.path}")
     print(f"  precision: {info.precision} (version {info.version})")
     print(f"  shape: layers={info.num_layers} heads={info.num_heads} channels={info.channels} seq_len={info.max_seq_len}")
@@ -321,10 +321,10 @@ def _lightweight_native_gpt2_infer_main(argv: list[str] | None = None) -> int:
         print(f"  checkpoint_step: {info.step} (DONE marker {marker})")
     print()
     print(
-        "Native GPT-2 prompt inference is not wired yet. This checkpoint is a "
+        "Native GPT prompt inference is not wired yet. This checkpoint is a "
         "llm.kittens/NeuralFn native .bin artifact, not a graph-backed Torch .pt file. "
         "Use train-time sampling with --native-cuda-sample-every today, or build the "
-        "native GPT-2 inference executable before using this checkpoint for prompt generation."
+        "native GPT inference executable before using this checkpoint for prompt generation."
     )
     return 0 if _has_any(tokens, "--native-info") else 2
 
@@ -696,7 +696,7 @@ def _legacy_graph_train_main(_argv: list[str] | None = None) -> int:
     print(
         "This training command would enter the graph-backed TorchTrainer path, which is disabled by default.\n"
         "Default NeuralFn training must use compiled native CUDA/C++ entrypoints. Today the default compiled "
-        "training route is dense GPT-2: nfn train --base-model gpt2 --tinystories.\n"
+        "training route is dense GPT: nfn train --base-model gpt --tinystories.\n"
         "Build a matching native trainer for this model family before running it. For one-off legacy debugging "
         "only, set NFN_ALLOW_TORCH_TRAINING=1.",
         file=sys.stderr,
