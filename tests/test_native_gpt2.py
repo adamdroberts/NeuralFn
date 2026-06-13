@@ -1792,6 +1792,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["position_gradient_scratch_buffer_allocated"] is False
     assert train_transformer_payload["position_gradient_microbatch_full_copy_elided"] is True
     assert train_transformer_payload["position_gradient_microbatch_zero_elided"] is True
+    assert train_transformer_payload["block_state_layout"]["layer_norm_stats_strategy"] in {
+        "forward-store-mean-rstd-backward-reuse",
+        "backward-recompute",
+    }
+    assert isinstance(train_transformer_payload["block_state_layout"]["layer_norm_backward_reuses_forward_stats"], bool)
     assert train_transformer_payload["attention_activation_storage_strategy"] == "disabled"
     assert train_transformer_payload["stored_attention_activation_blocks"] == 0
     assert train_transformer_payload["stored_attention_bf16_elements"] == 0
@@ -1953,6 +1958,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "position_gradient_scratch_buffer_allocated": False,
         "position_gradient_microbatch_full_copy_elided": True,
         "layer_norm_backward_affine_strategy": "auto-chunked-atomic-accumulate",
+        "layer_norm_stats_strategy": "forward-store-mean-rstd-backward-reuse",
+        "layer_norm_backward_reuses_forward_stats": True,
+        "layer_norm_stats_disabled_by_fused_residual_ln2": False,
         "gradient_clip_loop": False,
         "gradient_clip_loop_elided": True,
         "gradient_clip_strategy": "fused-multi-buffer-sumsq-device-scale",
@@ -3177,6 +3185,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "mlp_proj_backward_grad_act_scratch_allocated" in gpt2_source_text
     assert "compute_final_output" in gpt2_source_text
     assert "stored_mlp_activation_store_kernel_launches" in gpt2_source_text
+    assert "stored_mlp_layer_norm_stats_elements" in gpt2_source_text
+    assert "stored_mlp_layer_norm_stats_bytes" in gpt2_source_text
     assert "stored_mlp_activation_backward_consumer_strategy" in gpt2_source_text
     assert "stored_mlp_forward_strategy" in gpt2_source_text
     assert "tk-sm120-fused-fc-bias-gelu-bf16-store" in gpt2_source_text
