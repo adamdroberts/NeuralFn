@@ -445,7 +445,12 @@ runner. `python cli/scripts/train_gpt2.py --tinystories --native-cuda-dry-run
 --native-cuda-print-command` builds the compiled C++ argv from the dataset
 alias/path and leaves shard validation to C++, so it does not import
 `server.dataset_manager`, NumPy, tiktoken, or Torch and does not materialize
-raw-text token shards before printing the command.
+raw-text token shards before printing the command. The compiled Tile-CUDA
+frontend itself treats `--print-command` as a no-data/no-CUDA inspection mode:
+it prints the exact `nfn_gpt2_native_train ...` invocation and exits before
+token-shard resolution, CUDA runtime loading, or driver preflight. The explicit
+`llm-kittens` backend still resolves train/validation shards to print its
+delegated `train_gpt2cu -i/-j` command.
 Dense GPT-2 native `--dry-run` / `--print-plan` JSON reports the implemented
 Tile-CUDA transformer-LM path as `native-transformer-lm-ready` with
 `training_step_plan.status: "ready"`. `required_native_work` is empty for the

@@ -2805,6 +2805,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "cudaHostAlloc" in gpt2_source_text
     assert "cudaFreeHost" in gpt2_source_text
     assert "copy_async" in gpt2_source_text
+    assert "print_invocation_command(argc, argv)" in gpt2_source_text
+    tile_print_command_guard = 'if (cfg.backend == "tile-cuda" && cfg.print_command)'
+    assert tile_print_command_guard in gpt2_source_text
+    assert gpt2_source_text.index(tile_print_command_guard) < gpt2_source_text.index("resolve_token_shards")
     assert "token_ids_pinned" in gpt2_source_text
     assert "transformer_lm_token_device_arena" in gpt2_source_text
     assert "transformer_lm_token_u16_pinned_arena" in gpt2_source_text

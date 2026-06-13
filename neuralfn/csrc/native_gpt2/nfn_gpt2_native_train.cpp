@@ -172,6 +172,15 @@ void print_command(const std::vector<std::string>& command) {
     std::cout << '\n';
 }
 
+void print_invocation_command(int argc, char** argv) {
+    std::vector<std::string> command;
+    command.reserve(static_cast<std::size_t>(argc));
+    for (int i = 0; i < argc; ++i) {
+        command.emplace_back(argv[i]);
+    }
+    print_command(command);
+}
+
 void print_usage(const char* program) {
     std::cout
         << "Usage: " << program << " [options]\n\n"
@@ -10019,6 +10028,11 @@ int main(int argc, char** argv) {
     if (!valid_backend(cfg.backend)) {
         std::cerr << "Invalid backend: " << cfg.backend << "\n";
         return 2;
+    }
+
+    if (cfg.backend == "tile-cuda" && cfg.print_command) {
+        print_invocation_command(argc, argv);
+        return 0;
     }
 
     if (std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
