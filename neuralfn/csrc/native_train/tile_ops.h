@@ -572,6 +572,18 @@ int nfn_native_tile_layer_norm_float32(
     float eps,
     void* cuda_stream);
 
+int nfn_native_tile_layer_norm_with_stats_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    float* out,
+    float* mean,
+    float* rstd,
+    std::int64_t rows,
+    std::int64_t dim,
+    float eps,
+    void* cuda_stream);
+
 int nfn_native_tile_layer_norm_backward_input_float32(
     const float* x,
     const float* grad_out,
@@ -580,6 +592,17 @@ int nfn_native_tile_layer_norm_backward_input_float32(
     std::int64_t rows,
     std::int64_t dim,
     float eps,
+    void* cuda_stream);
+
+int nfn_native_tile_layer_norm_backward_input_with_stats_float32(
+    const float* x,
+    const float* grad_out,
+    const float* weight,
+    const float* mean,
+    const float* rstd,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t dim,
     void* cuda_stream);
 
 int nfn_native_tile_layer_norm_backward_affine_float32(
@@ -600,6 +623,17 @@ int nfn_native_tile_layer_norm_backward_affine_accumulate_float32(
     std::int64_t rows,
     std::int64_t dim,
     float eps,
+    void* cuda_stream);
+
+int nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_float32(
+    const float* x,
+    const float* grad_out,
+    const float* mean,
+    const float* rstd,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
     void* cuda_stream);
 
 int nfn_native_tile_softmax_lastdim_float32(

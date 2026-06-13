@@ -3049,9 +3049,15 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_absolute_position_embedding_backward_float32" in header_text
     assert "nfn_native_tile_absolute_position_embedding_backward_accumulate_float32" in header_text
     assert "nfn_native_tile_layer_norm_float32" in header_text
+    assert "nfn_native_tile_layer_norm_with_stats_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_input_float32" in header_text
+    assert "nfn_native_tile_layer_norm_backward_input_with_stats_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_affine_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_affine_accumulate_float32" in header_text
+    assert "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_float32" in header_text
+    assert "launch_layer_norm_with_stats_float32" in source_text
+    assert "launch_layer_norm_backward_input_with_stats_float32" in source_text
+    assert "launch_layer_norm_backward_affine_accumulate_with_stats_float32" in source_text
     assert "nfn_native_tile_rms_norm_float32" in header_text
     assert "nfn_native_tile_rms_norm_backward_input_float32" in header_text
     assert "nfn_native_tile_softmax_lastdim_float32" in header_text
@@ -3874,9 +3880,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_absolute_position_embedding_backward_float32" in exported
         assert "nfn_native_tile_absolute_position_embedding_backward_accumulate_float32" in exported
         assert "nfn_native_tile_layer_norm_float32" in exported
+        assert "nfn_native_tile_layer_norm_with_stats_float32" in exported
         assert "nfn_native_tile_layer_norm_backward_input_float32" in exported
+        assert "nfn_native_tile_layer_norm_backward_input_with_stats_float32" in exported
         assert "nfn_native_tile_layer_norm_backward_affine_float32" in exported
         assert "nfn_native_tile_layer_norm_backward_affine_accumulate_float32" in exported
+        assert "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_float32" in exported
         assert "nfn_native_tile_rms_norm_float32" in exported
         assert "nfn_native_tile_rms_norm_backward_input_float32" in exported
         assert "nfn_native_tile_softmax_lastdim_float32" in exported
