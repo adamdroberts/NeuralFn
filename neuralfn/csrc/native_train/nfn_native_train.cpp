@@ -30,19 +30,19 @@ struct ModelEntry {
 constexpr ModelEntry MODEL_REGISTRY[] = {
     {
         "gpt",
-        "partial-native-trainer",
+        "implemented",
         "nfn_gpt_native_train",
         "Dense GPT aliases to the NeuralFn Tile-CUDA transformer-LM loop; template/custom graph selection decides the GPT architecture.",
     },
     {
         "gpt2",
-        "partial-native-trainer",
+        "implemented",
         "nfn_gpt_native_train",
         "GPT-2 is a dense GPT template/default shape on the NeuralFn Tile-CUDA transformer-LM loop.",
     },
     {
         "gpt3",
-        "partial-native-trainer",
+        "implemented",
         "nfn_gpt_native_train",
         "GPT-3-style dense decoder training uses the same GPT native target; context/window and width come from the selected template or custom graph.",
     },
@@ -181,8 +181,8 @@ void print_usage(const char* program) {
     std::cout
         << "Usage: " << program << " [train] --base-model MODEL [native options]\n\n"
         << "Unified no-Python NeuralFn native training frontend.\n"
-        << "Currently dispatches dense GPT/GPT-2/GPT-3 aliases to nfn_gpt_native_train and partial/missing\n"
-        << "families to their compiled per-family targets before any Python/Torch runtime can start.\n"
+        << "Dispatches dense GPT/GPT-2/GPT-3 aliases to nfn_gpt_native_train and partial/missing\n"
+        << "families to compiled per-family targets before any Python/Torch runtime can start.\n"
         << "Options:\n"
         << "  --base-model, --model NAME      Model family. Dense GPT aliases: gpt, gpt2, gpt3; partial: nanogpt --train-token-lm\n"
         << "  --native-gpt-cli PATH           Override the dense GPT native cached-shard CLI\n"
@@ -437,6 +437,12 @@ int main(int argc, char** argv) {
 
     std::vector<std::string> command;
     command.push_back(gpt_cli);
+    if (model_entry->name == std::string_view("gpt") ||
+        model_entry->name == std::string_view("gpt2") ||
+        model_entry->name == std::string_view("gpt3")) {
+        command.push_back("--model-family");
+        command.push_back(std::string(model_entry->name));
+    }
     command.insert(command.end(), forwarded.begin(), forwarded.end());
     if (print_command_requested) {
         print_command(command);

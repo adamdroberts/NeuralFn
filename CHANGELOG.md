@@ -21,6 +21,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 #### Changed
 
+- The unified native training registry now reports `gpt`, `gpt2`, and `gpt3`
+  as `implemented` aliases of the same dense GPT CUDA Tile C++ trainer and
+  forwards `--model-family` for all three aliases. GPT-3 remains a GPT-native
+  alias whose only default difference is a 2048-token context when no explicit
+  template, custom graph, or sequence length is supplied; selected
+  `--template-name` / `--graph-file` values define the architecture and native
+  support status. Verification: updated the unified native registry test and
+  rebuilt the native C++ frontends during focused test runs.
 - Dense GPT native `--train-transformer-lm` now saves packed BF16 QKV plus
   packed BF16 O for the first three earlier blocks by default on the packed-QKV
   path. This changes default `packed_attention_activation_storage_strategy`

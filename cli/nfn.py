@@ -270,7 +270,7 @@ def _lightweight_kernels_list_main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _is_explicit_native_gpt2_train(argv: list[str]) -> bool:
+def _is_explicit_native_gpt_train(argv: list[str]) -> bool:
     if not argv or argv[0] != "train":
         return False
     if _has_any(argv, "-h", "--help", "--plan", "--plan-auto", "--jepa"):
@@ -291,7 +291,7 @@ def _native_infer_checkpoint_arg(argv: list[str]) -> str | None:
     return _arg_value(argv, "--checkpoint", "--weights")
 
 
-def _is_lightweight_native_gpt2_infer(argv: list[str]) -> bool:
+def _is_lightweight_native_gpt_infer(argv: list[str]) -> bool:
     checkpoint = _native_infer_checkpoint_arg(argv)
     if not checkpoint:
         return False
@@ -303,7 +303,7 @@ def _is_lightweight_native_gpt2_infer(argv: list[str]) -> bool:
         return False
 
 
-def _lightweight_native_gpt2_infer_main(argv: list[str] | None = None) -> int:
+def _lightweight_native_gpt_infer_main(argv: list[str] | None = None) -> int:
     tokens = list(sys.argv[1:] if argv is None else argv)
     checkpoint = _native_infer_checkpoint_arg(tokens)
     if not checkpoint:
@@ -329,7 +329,7 @@ def _lightweight_native_gpt2_infer_main(argv: list[str] | None = None) -> int:
     return 0 if _has_any(tokens, "--native-info") else 2
 
 
-def _native_gpt2_argv(argv: list[str]) -> list[str]:
+def _native_gpt_argv(argv: list[str]) -> list[str]:
     forwarded: list[str] = []
     drop_value_flags = {
         "--base-model",
@@ -363,11 +363,11 @@ def _native_gpt2_argv(argv: list[str]) -> list[str]:
     return forwarded
 
 
-def _native_gpt2_requested_runner(argv: list[str]) -> str:
+def _native_gpt_requested_runner(argv: list[str]) -> str:
     return (_arg_value(argv, "--native-cuda-runner") or "compiled-cli").strip().lower().replace("_", "-")
 
 
-def _native_gpt2_requested_runtime(argv: list[str]) -> str:
+def _native_gpt_requested_runtime(argv: list[str]) -> str:
     return (_arg_value(argv, "--runtime") or "native-cuda").strip().lower().replace("_", "-")
 
 
@@ -380,13 +380,13 @@ def _is_direct_native_train_cli_train(argv: list[str]) -> bool:
         return False
     if _has_any(argv, "-h", "--help", "--plan", "--plan-auto", "--jepa"):
         return False
-    if _native_gpt2_requested_runtime(argv) != "native-cuda":
+    if _native_gpt_requested_runtime(argv) != "native-cuda":
         return False
     base_model = (_arg_value(argv, "--base-model", "--model") or "gpt").strip().lower().replace("_", "-")
     if _is_dense_gpt_native_model(base_model):
-        if not _is_explicit_native_gpt2_train(argv):
+        if not _is_explicit_native_gpt_train(argv):
             return False
-        runner = _native_gpt2_requested_runner(argv)
+        runner = _native_gpt_requested_runner(argv)
         return runner == "compiled-cli"
     if _torch_training_allowed():
         return False
@@ -687,7 +687,7 @@ def _is_legacy_graph_train(argv: list[str]) -> bool:
         return False
     if _has_any(argv, "-h", "--help", "--plan", "--plan-auto"):
         return False
-    if _is_explicit_native_gpt2_train(argv):
+    if _is_explicit_native_gpt_train(argv):
         return False
     return not _torch_training_allowed()
 
@@ -706,10 +706,10 @@ def _legacy_graph_train_main(_argv: list[str] | None = None) -> int:
 
 if _is_direct_native_train_cli_train(sys.argv[1:]):
     main = _direct_native_train_cli_main
-elif _is_explicit_native_gpt2_train(sys.argv[1:]):
+elif _is_explicit_native_gpt_train(sys.argv[1:]):
     from train_gpt2_native import main as main
-elif _is_lightweight_native_gpt2_infer(sys.argv[1:]):
-    main = _lightweight_native_gpt2_infer_main
+elif _is_lightweight_native_gpt_infer(sys.argv[1:]):
+    main = _lightweight_native_gpt_infer_main
 elif _is_lightweight_root_help(sys.argv[1:]):
     main = _lightweight_root_main
 elif _is_lightweight_command_help(sys.argv[1:]):
@@ -726,9 +726,9 @@ else:
 if __name__ == "__main__":
     if _is_direct_native_train_cli_train(sys.argv[1:]):
         raise SystemExit(main(sys.argv[1:]))
-    if _is_explicit_native_gpt2_train(sys.argv[1:]):
-        raise SystemExit(main(_native_gpt2_argv(sys.argv[1:])))
-    if _is_lightweight_native_gpt2_infer(sys.argv[1:]):
+    if _is_explicit_native_gpt_train(sys.argv[1:]):
+        raise SystemExit(main(_native_gpt_argv(sys.argv[1:])))
+    if _is_lightweight_native_gpt_infer(sys.argv[1:]):
         raise SystemExit(main(sys.argv[1:]))
     if _is_legacy_graph_train(sys.argv[1:]):
         raise SystemExit(main(sys.argv[1:]))

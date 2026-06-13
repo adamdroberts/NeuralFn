@@ -2412,9 +2412,9 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     payload = json.loads(coverage.stdout)
     statuses = {item["name"]: item["status"] for item in payload["models"]}
     native_targets = {item["name"]: item["native_target"] for item in payload["models"]}
-    assert statuses["gpt"] == "partial-native-trainer"
-    assert statuses["gpt2"] == "partial-native-trainer"
-    assert statuses["gpt3"] == "partial-native-trainer"
+    assert statuses["gpt"] == "implemented"
+    assert statuses["gpt2"] == "implemented"
+    assert statuses["gpt3"] == "implemented"
     assert statuses["nanogpt"] == "partial-native-trainer"
     assert native_targets["gpt"] == "nfn_gpt_native_train"
     assert native_targets["gpt2"] == "nfn_gpt_native_train"

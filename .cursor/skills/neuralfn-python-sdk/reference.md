@@ -495,8 +495,8 @@ GPT-2 parameter layout and forward/backward/optimizer
 stage sequence, and `block_state_layout` should expose the block-vector loop
 flags for allocation, initialization, gradient zeroing, gradient clipping,
 AdamW updates, checkpoint export, activation tape, forward blocks, and backward
-blocks. Native registry status for GPT-2 should be
-`partial-native-trainer` while that throughput validation remains open.
+blocks. Native registry status for `gpt`, `gpt2`, and `gpt3` should be
+`implemented`; all three aliases dispatch to the same dense GPT C++ trainer.
 
 Dense GPT-2 Tile preflight can execute a real raw-kernel smoke without Torch:
 set `NativeGpt2RunConfig(smoke_tile_ops=True, tile_ops_lib=..., cuda_runtime_lib=...)`
