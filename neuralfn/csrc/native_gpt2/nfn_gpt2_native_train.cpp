@@ -110,8 +110,19 @@ std::string env_or_empty(const char* name) {
     return value == nullptr ? std::string() : std::string(value);
 }
 
+std::string env_or_empty_any(std::initializer_list<const char*> names) {
+    for (const char* name : names) {
+        std::string value = env_or_empty(name);
+        if (!value.empty()) {
+            return value;
+        }
+    }
+    return {};
+}
+
 bool packed_qkv_attention_default_enabled() {
-    const std::string value = env_or_empty("NFN_NATIVE_GPT2_PACKED_QKV_ATTENTION");
+    const std::string value =
+        env_or_empty_any({"NFN_NATIVE_GPT_PACKED_QKV_ATTENTION", "NFN_NATIVE_GPT2_PACKED_QKV_ATTENTION"});
     return value.empty() ||
            value == "1" ||
            value == "true" ||
@@ -128,8 +139,8 @@ bool env_flag_enabled(const std::string& value) {
            value == "ON";
 }
 
-std::int64_t env_nonnegative_i64_or(const char* name, std::int64_t fallback) {
-    const std::string value = env_or_empty(name);
+std::int64_t env_nonnegative_i64_or(std::initializer_list<const char*> names, std::int64_t fallback) {
+    const std::string value = env_or_empty_any(names);
     if (value.empty()) {
         return fallback;
     }
@@ -143,7 +154,8 @@ std::int64_t env_nonnegative_i64_or(const char* name, std::int64_t fallback) {
 }
 
 bool fuse_attention_residual_ln2_default_enabled() {
-    const std::string value = env_or_empty("NFN_NATIVE_GPT2_FUSE_ATTENTION_RESIDUAL_LN2");
+    const std::string value = env_or_empty_any(
+        {"NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2", "NFN_NATIVE_GPT2_FUSE_ATTENTION_RESIDUAL_LN2"});
     return value.empty() ||
            value == "1" ||
            value == "true" ||
@@ -1023,7 +1035,8 @@ bool print_tile_plan(
     const bool packed_qkv_attention_enabled = packed_qkv_attention_default_enabled();
     const bool fuse_attention_residual_ln2_enabled = fuse_attention_residual_ln2_default_enabled();
     const std::string store_packed_attention_activations_env =
-        env_or_empty("NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS");
+        env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS",
+                          "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS"});
     const bool store_packed_attention_activations_enabled =
         packed_qkv_attention_enabled &&
         env_flag_enabled(store_packed_attention_activations_env);
@@ -1039,7 +1052,9 @@ bool print_tile_plan(
         store_packed_attention_activations_enabled && cfg.num_layers > 0
             ? std::min<std::int64_t>(
                   cfg.num_layers - 1,
-                  env_nonnegative_i64_or("NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS", cfg.num_layers - 1))
+                  env_nonnegative_i64_or({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS",
+                                          "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS"},
+                                         cfg.num_layers - 1))
             : 0;
     const std::int64_t stored_packed_attention_bf16_elements =
         stored_packed_attention_block_count * tokens * 768 * 4;
@@ -7292,11 +7307,12 @@ int run_transformer_lm_training_json(
         void* start = nullptr;
         void* stop = nullptr;
     };
+    const std::string stage_timing_env =
+        env_or_empty_any({"NFN_NATIVE_GPT_STAGE_TIMING", "NFN_NATIVE_GPT2_STAGE_TIMING"});
     const bool stage_timing_requested =
-        env_or_empty("NFN_NATIVE_GPT2_STAGE_TIMING") == "1" ||
-        env_or_empty("NFN_NATIVE_GPT2_STAGE_TIMING") == "true" ||
-        env_or_empty("NFN_NATIVE_GPT2_STAGE_TIMING") == "TRUE";
-    const std::string store_mlp_activations_env = env_or_empty("NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS");
+        stage_timing_env == "1" || stage_timing_env == "true" || stage_timing_env == "TRUE";
+    const std::string store_mlp_activations_env =
+        env_or_empty_any({"NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS", "NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS"});
     const bool store_mlp_activations_enabled =
         store_mlp_activations_env.empty() ||
         store_mlp_activations_env == "1" ||
@@ -7305,7 +7321,8 @@ int run_transformer_lm_training_json(
         store_mlp_activations_env == "on" ||
         store_mlp_activations_env == "ON";
     const std::string store_attention_activations_env =
-        env_or_empty("NFN_NATIVE_GPT2_STORE_ATTENTION_ACTIVATIONS");
+        env_or_empty_any({"NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS",
+                          "NFN_NATIVE_GPT2_STORE_ATTENTION_ACTIVATIONS"});
     const bool store_attention_activations_enabled =
         store_attention_activations_env == "1" ||
         store_attention_activations_env == "true" ||
@@ -7314,7 +7331,8 @@ int run_transformer_lm_training_json(
         store_attention_activations_env == "ON";
     const bool packed_qkv_attention_enabled = packed_qkv_attention_default_enabled();
     const std::string store_packed_attention_activations_env =
-        env_or_empty("NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS");
+        env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS",
+                          "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS"});
     const bool store_packed_attention_activations_enabled =
         packed_qkv_attention_enabled &&
         env_flag_enabled(store_packed_attention_activations_env);
@@ -7325,7 +7343,8 @@ int run_transformer_lm_training_json(
             ? qkv_activation_elements + activation_elements * 5
             : 0;
     const bool layer_norm_stats_enabled = true;
-    const std::string lm_head_bf16_logits_env = env_or_empty("NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS");
+    const std::string lm_head_bf16_logits_env =
+        env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS", "NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS"});
     const bool lm_head_bf16_logits_enabled =
         lm_head_bf16_logits_env.empty() ||
         lm_head_bf16_logits_env == "1" ||
@@ -7342,7 +7361,7 @@ int run_transformer_lm_training_json(
     if (error.empty() && stage_timing_requested) {
         if (cuda_event_create_with_flags == nullptr || cuda_event_record == nullptr ||
             cuda_event_elapsed_time == nullptr || cuda_event_destroy == nullptr) {
-            error = "NFN_NATIVE_GPT2_STAGE_TIMING requested but CUDA event APIs are unavailable";
+            error = "NFN_NATIVE_GPT_STAGE_TIMING requested but CUDA event APIs are unavailable";
         } else {
             stage_timing_enabled = true;
         }
@@ -7692,7 +7711,9 @@ int run_transformer_lm_training_json(
         store_packed_attention_activations_enabled && trained_layers > 0
             ? std::min<std::int64_t>(
                   trained_layers - 1,
-                  env_nonnegative_i64_or("NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS", trained_layers - 1))
+                  env_nonnegative_i64_or({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS",
+                                          "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS"},
+                                         trained_layers - 1))
             : 0;
     const std::int64_t stored_packed_attention_bf16_elements_per_block =
         qkv_activation_elements + activation_elements;

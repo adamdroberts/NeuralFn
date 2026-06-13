@@ -97,8 +97,15 @@ full-vocab scratch gradient buffer per chunk or per microbatch. The JSON reports
 
 Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, `NFN_NATIVE_GPT_BINDING`, and
-`NFN_NATIVE_GPT_TRAIN_BIN`. The older `NFN_NATIVE_GPT2_*` variables remain
-compatibility fallbacks for existing GPT-2-named wrappers.
+`NFN_NATIVE_GPT_TRAIN_BIN`. Runtime tuning also prefers
+`NFN_NATIVE_GPT_STAGE_TIMING`, `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION`,
+`NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS`,
+`NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS`,
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS`,
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS`,
+`NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`, and
+`NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`. The older `NFN_NATIVE_GPT2_*`
+variables remain compatibility fallbacks for existing GPT-2-named wrappers.
 The tokenizer-visible GPT-2 vocab remains 50,257, but native transformer-LM
 parameter layout pads the tied token embedding/LM-head rows to 50,304 for the
 GEMM path. Compiled plan JSON reports `shape.vocab_size: 50257` and

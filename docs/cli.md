@@ -453,8 +453,16 @@ The compiled GPT-2 `--train-transformer-lm` JSON includes `cuda_runtime_prefligh
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, `NFN_NATIVE_GPT_BINDING`, and
-`NFN_NATIVE_GPT_TRAIN_BIN`. The older `NFN_NATIVE_GPT2_*` variables remain
-compatibility fallbacks for the GPT-2-named wrapper and launcher.
+`NFN_NATIVE_GPT_TRAIN_BIN`. Runtime tuning also prefers
+`NFN_NATIVE_GPT_STAGE_TIMING`, `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION`,
+`NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS`,
+`NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS`,
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS`,
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS`,
+`NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`, and
+`NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`. The older `NFN_NATIVE_GPT2_*`
+variables remain compatibility fallbacks for the GPT-2-named wrapper,
+launcher, and existing local scripts.
 
 Wrapper-level dry-runs are metadata-only on the default GPT `compiled-cli`
 runner. `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run

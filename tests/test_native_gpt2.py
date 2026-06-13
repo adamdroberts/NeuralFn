@@ -1156,8 +1156,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         ],
         env={
             **os.environ,
-            "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS": "1",
-            "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS": "3",
+            "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS": "1",
+            "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS": "3",
         },
         text=True,
         stdout=subprocess.PIPE,
@@ -3374,6 +3374,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "linear_bias_residual_layer_norm_float32_kernel" in kernels_text
     assert "mean_out[row] = static_cast<float>(mean)" in kernels_text
     assert "rstd_out[row] = static_cast<float>(norm_scale)" in kernels_text
+    assert "NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_FUSE_ATTENTION_RESIDUAL_LN2" in gpt2_source_text
     assert "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32" in gpt2_source_text
     assert "attention_residual_ln2_strategy" in gpt2_source_text
@@ -3412,6 +3413,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "validation_wall_ms" in gpt2_source_text
     assert "checkpoint_wall_ms" in gpt2_source_text
     assert "train_tokens_per_second" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_STAGE_TIMING" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STAGE_TIMING" in gpt2_source_text
     assert "cudaEventCreateWithFlags" in gpt2_source_text
     assert "cudaEventElapsedTime" in gpt2_source_text
@@ -3446,9 +3448,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "stored_mlp_forward_strategy" in gpt2_source_text
     assert "tk-sm120-fused-fc-bias-gelu-bf16-store" in gpt2_source_text
     assert "mlp.gelu.backward_inplace.bf16_bits" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_ATTENTION_ACTIVATIONS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS" in gpt2_source_text
     assert "nfn_native_tile_scaled_dot_product_attention_store_tk_bf16_float32" in gpt2_source_text
     assert "forward_store_tk_bf16" in gpt2_source_text

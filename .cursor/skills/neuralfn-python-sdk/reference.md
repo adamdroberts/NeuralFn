@@ -285,8 +285,9 @@ dlogits through
 native JSON reports `grad_logit_workspace_elements: 0`,
 `lm_head_ce_backward_strategy: "inplace-logits-dlogits-workspace"`, and
 `lm_head_grad_logits_workspace_allocated: false`.
-Full GPT-2 `--train-transformer-lm` can opt into CUDA-event stage timing with
-`NFN_NATIVE_GPT2_STAGE_TIMING=1`; keep it disabled by default for throughput
+Full GPT `--train-transformer-lm` can opt into CUDA-event stage timing with
+`NFN_NATIVE_GPT_STAGE_TIMING=1`; `NFN_NATIVE_GPT2_STAGE_TIMING=1` remains a
+compatibility fallback. Keep it disabled by default for throughput
 runs because it records events and synchronizes before reporting. Native JSON
 under `timing` should then include `stage_timing_enabled`,
 `stage_timing_event_count`, `stage_timing_dropped_event_count`, and
@@ -361,7 +362,8 @@ launches in native plan/training JSON.
 Full GPT `--train-transformer-lm` with packed-QKV attention must not allocate
 the legacy float attention tape tensors for packed blocks: `attn.qkv`,
 `attn.q_heads`, `attn.k_heads`, `attn.v_heads`, `attn.heads`, and `attn.out`
-stay fallback-only for `NFN_NATIVE_GPT2_PACKED_QKV_ATTENTION=0`. Keep
+stay fallback-only for `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=0`; the
+GPT-2-prefixed flag remains a fallback. Keep
 `packed_qkv_float_attention_tape_elided: true`,
 `packed_qkv_float_attention_tape_elements_elided`, and
 `packed_qkv_float_attention_tape_bytes_elided` in plan/training JSON.

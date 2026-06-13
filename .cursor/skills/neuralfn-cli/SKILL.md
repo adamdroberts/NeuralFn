@@ -190,8 +190,9 @@ Canonical docs:
   with host wall-clock phase timers for setup, train loop, validation,
   checkpoint export, total runtime, optimizer steps per second, and train
   tokens per second. These timers should not add new device synchronizations.
-- Full GPT-2 `--train-transformer-lm` may opt into CUDA-event stage timing via
-  `NFN_NATIVE_GPT2_STAGE_TIMING=1`. Keep this diagnostic disabled by default.
+- Full GPT `--train-transformer-lm` may opt into CUDA-event stage timing via
+  `NFN_NATIVE_GPT_STAGE_TIMING=1`; `NFN_NATIVE_GPT2_STAGE_TIMING=1` remains a
+  compatibility fallback. Keep this diagnostic disabled by default.
   When enabled, JSON under `timing` should include `stage_timing_enabled`,
   `stage_timing_event_count`, `stage_timing_dropped_event_count`, and
   `stage_timing` records for token upload, model/block forward, block
@@ -491,11 +492,12 @@ Canonical docs:
   projection output or final residual output. Keep
   `backward_recompute_mlp_projection_elided: true` and
   `backward_recompute_final_residual_elided: true`.
-- Packed-QKV attention activation storage in full GPT-2
+- Packed-QKV attention activation storage in full GPT
   `--train-transformer-lm` is opt-in because saving every earlier block currently
   exceeds the default RTX 5090 memory budget. Preserve
-  `NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS=1` plus optional
-  `NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS=N`, and keep default JSON at
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=1` plus optional
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N`; the GPT-2-prefixed names
+  remain fallbacks. Keep default JSON at
   `packed_attention_activation_storage_strategy: "disabled"`. Opt-in runs should
   report `stored_packed_attention_*` counters and
   `block_recompute_saved_packed_attention` timings when the saved packed QKV/O

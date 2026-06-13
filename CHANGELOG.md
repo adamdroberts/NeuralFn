@@ -10,6 +10,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 #### Changed
 
+- Promoted the dense GPT native C++ runtime toggles to generic
+  `NFN_NATIVE_GPT_*` names. The compiled trainer now checks
+  `NFN_NATIVE_GPT_STAGE_TIMING`, `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION`,
+  `NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS`,
+  `NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS`,
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS`,
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS`,
+  `NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`, and
+  `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS` before the legacy GPT-2-prefixed
+  fallbacks. Migration note: use the generic names for new GPT, GPT-2, GPT-3,
+  template-selected, and custom-graph native training scripts; existing
+  `NFN_NATIVE_GPT2_*` scripts continue to work as compatibility fallbacks.
+  Verification: updated compiled plan coverage to drive packed-attention
+  storage through the generic env names, rebuilt `nfn_gpt_native_train`, and
+  reran the focused native GPT C++ source/compiled-plan tests.
 - Made the generic dense GPT trainer path canonical in Python. `cli/scripts/train_gpt.py`
   now owns the pre-import compiled-CLI fast path, while `cli/scripts/train_gpt2.py`
   is a compatibility wrapper that still reaches the same no-Torch dispatch when
