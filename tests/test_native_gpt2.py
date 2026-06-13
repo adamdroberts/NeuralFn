@@ -1050,11 +1050,49 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["attention_backward_strategy"] == "tk-sm120-packed-qkv-bf16-backward-bridge"
     assert tile_payload["attention_backward_reuses_forward_workspace"] is True
     assert tile_payload["attention_backward_uses_saved_forward_workspace"] is False
-    assert tile_payload["attention_activation_storage_strategy"] == "disabled-by-default-opt-in"
+    assert tile_payload["attention_activation_storage_strategy"] == "disabled"
+    assert tile_payload["packed_attention_activation_storage_strategy"] == "disabled"
+    assert tile_payload["stored_packed_attention_activation_blocks"] == 0
+    assert tile_payload["stored_packed_attention_bf16_elements"] == 0
+    assert tile_payload["stored_packed_attention_bf16_bytes"] == 0
+    assert tile_payload["stored_packed_attention_store_blocks"] == 0
+    assert tile_payload["stored_packed_attention_restore_blocks"] == 0
+    assert tile_payload["stored_packed_attention_backward_kernel_launches"] == 0
+    assert tile_payload["stored_packed_attention_backward_consumer_strategy"] == "disabled"
     assert tile_payload["attention_backward_recompute_forward_elided_per_block"] == 1
     assert tile_payload["attention_backward_score_reuse_dim"] == 64
     assert tile_payload["attention_backward_scalar_cta_elision_factor"] == 192
     assert tile_payload["attention_backward_row_count"] * 192 == tile_payload["attention_backward_scalar_output_count"]
+    packed_store_plan = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(dataset_path),
+            "--backend",
+            "tile-cuda",
+            "--print-plan",
+        ],
+        env={
+            **os.environ,
+            "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS": "1",
+            "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS": "3",
+        },
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert packed_store_plan.returncode == 0, packed_store_plan.stderr
+    packed_store_payload = json.loads(packed_store_plan.stdout)
+    assert packed_store_payload["packed_attention_activation_storage_strategy"] == (
+        "packed-qkv-o-bf16-forward-store-direct-backward"
+    )
+    assert packed_store_payload["stored_packed_attention_activation_blocks"] == 3
+    assert packed_store_payload["stored_packed_attention_bf16_elements"] > 0
+    assert packed_store_payload["stored_packed_attention_bf16_bytes"] > 0
+    assert packed_store_payload["stored_packed_attention_backward_consumer_strategy"] == (
+        "saved-packed-qkv-o-bf16-backward-to-qkv"
+    )
     gpt2_stages_by_name = {stage["name"]: stage for stage in tile_payload["training_step_plan"]["stages"]}
     assert (
         gpt2_stages_by_name["lm_head.backward_weight_tied"]["kernel_abi"]
@@ -1835,6 +1873,14 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["stored_attention_restore_kernel_launches"] == 0
     assert train_transformer_payload["stored_attention_backward_kernel_launches"] == 0
     assert train_transformer_payload["stored_attention_backward_consumer_strategy"] == "disabled"
+    assert train_transformer_payload["packed_attention_activation_storage_strategy"] == "disabled"
+    assert train_transformer_payload["stored_packed_attention_activation_blocks"] == 0
+    assert train_transformer_payload["stored_packed_attention_bf16_elements"] == 0
+    assert train_transformer_payload["stored_packed_attention_bf16_bytes"] == 0
+    assert train_transformer_payload["stored_packed_attention_store_blocks"] == 0
+    assert train_transformer_payload["stored_packed_attention_restore_blocks"] == 0
+    assert train_transformer_payload["stored_packed_attention_backward_kernel_launches"] == 0
+    assert train_transformer_payload["stored_packed_attention_backward_consumer_strategy"] == "disabled"
     assert train_transformer_payload["max_steps"] == 2
     assert train_transformer_payload["eval_every_steps"] == 1
     assert train_transformer_payload["eval_batches"] == 1
@@ -3274,6 +3320,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "mlp.gelu.backward_inplace.bf16_bits" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_ATTENTION_ACTIVATIONS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS" in gpt2_source_text
     assert "nfn_native_tile_scaled_dot_product_attention_store_tk_bf16_float32" in gpt2_source_text
     assert "forward_store_tk_bf16" in gpt2_source_text
     assert "tk-bf16-direct-forward-store-saved-backward" in gpt2_source_text
@@ -3281,6 +3329,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "stored_attention_store_kernel_launches" in gpt2_source_text
     assert "stored_attention_backward_kernel_launches" in gpt2_source_text
     assert "stored_attention_backward_consumer_strategy" in gpt2_source_text
+    assert "packed_attention_activation_storage_strategy" in gpt2_source_text
+    assert "stored_packed_attention_backward_consumer_strategy" in gpt2_source_text
+    assert "recompute_block_from_saved_packed_attention" in gpt2_source_text
     assert "recompute_block_from_saved_attention" in gpt2_source_text
     assert "attention_backward_uses_saved_forward_workspace" in gpt2_source_text
     assert "backward_recompute_mlp_fc_gelu_elided" in gpt2_source_text
