@@ -30,18 +30,20 @@ Future updates should append new entries here rather than replacing older notes.
   support status. Verification: updated the unified native registry test and
   rebuilt the native C++ frontends during focused test runs.
 - Dense GPT native `--train-transformer-lm` now saves packed BF16 QKV plus
-  packed BF16 O for the first three earlier blocks by default on the packed-QKV
+  packed BF16 O for the first eight earlier blocks by default on the packed-QKV
   path. This changes default `packed_attention_activation_storage_strategy`
   from `"disabled"` to `"packed-qkv-o-bf16-forward-store-direct-backward"` and
-  default `stored_packed_attention_activation_blocks` from `0` to `3`.
+  default `stored_packed_attention_activation_blocks` from `0` to `8`.
   Migration note: set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` for
   the previous lower-memory recompute behavior, or set
   `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` to tune the cap. The
   GPT-2-prefixed environment names remain compatibility fallbacks. Verification:
   serial GPU-visible TinyStories two-step probes on the default 64x1024,
   524,288-token optimizer-step shape improved from about `137,653` tokens/s with
-  packed storage disabled to about `140,449` tokens/s with three saved packed
-  blocks, and focused native GPT plan/runtime JSON tests were updated.
+  packed storage disabled to about `146,691` tokens/s with eight saved packed
+  blocks; the same sweep showed cap 9 regressed to about `83,116` tokens/s and
+  cap 11 to about `56,738` tokens/s. Focused native GPT plan/runtime JSON tests
+  were updated.
 - Promoted the dense GPT native C++ runtime toggles to generic
   `NFN_NATIVE_GPT_*` names. The compiled trainer now checks
   `NFN_NATIVE_GPT_STAGE_TIMING`, `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION`,

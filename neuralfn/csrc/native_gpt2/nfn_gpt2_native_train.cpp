@@ -32,7 +32,7 @@ namespace {
 
 constexpr std::int64_t kAttentionForwardValueReuse = 64;
 constexpr std::int64_t kAttentionBackwardDimReuse = 64;
-constexpr std::int64_t kDefaultStoredPackedAttentionBlocks = 3;
+constexpr std::int64_t kDefaultStoredPackedAttentionBlocks = 8;
 
 struct Config {
     std::string model_family = "gpt";
