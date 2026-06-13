@@ -294,6 +294,8 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
     assert argv[argv.index("--cuda-runtime-lib") + 1] == "/usr/local/cuda/lib64/libcudart.so"
     assert cfg.template_name == "gpt"
     assert argv[argv.index("--template-name") + 1] == "gpt"
+    assert cfg.write_checkpoint is True
+    assert "--no-checkpoint" not in argv
 
     llm_cfg = build_native_gpt2_compiled_cli_run_config(
         dataset_alias="roneneldan__TinyStories__TinyStoriesV2-GPT4",
@@ -318,6 +320,55 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
     llm_argv = llm_cfg.compiled_cli_argv("/opt/nfn/nfn_gpt2_native_train")
     assert llm_argv[llm_argv.index("--backend") + 1] == "llm-kittens"
     assert llm_argv[llm_argv.index("--target") + 1] == "/opt/nfn/train_gpt2cu"
+
+
+def test_build_native_gpt2_compiled_cli_config_can_skip_checkpoint_export(tmp_path: Path) -> None:
+    cfg = build_native_gpt2_compiled_cli_run_config(
+        dataset_alias="cached-shards",
+        executable=None,
+        output_dir=tmp_path / "gpt",
+        eval_every_steps=1000,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=1,
+        num_layers=12,
+        activation="gelu",
+        write_checkpoint=False,
+    )
+    generic_cfg = build_native_gpt_compiled_cli_run_config(
+        dataset_alias="cached-shards",
+        executable=None,
+        output_dir=tmp_path / "generic-gpt",
+        eval_every_steps=1000,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=1,
+        num_layers=12,
+        activation="gelu",
+        write_checkpoint=False,
+    )
+
+    assert cfg.write_checkpoint is False
+    assert "--no-checkpoint" in cfg.compiled_cli_argv("/opt/nfn/nfn_gpt_native_train")
+    assert isinstance(generic_cfg, NativeGptRunConfig)
+    assert generic_cfg.write_checkpoint is False
+    assert "--no-checkpoint" in generic_cfg.compiled_cli_argv("/opt/nfn/nfn_gpt_native_train")
 
 
 def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path: Path) -> None:
@@ -3507,6 +3558,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "train_loop_wall_ms" in gpt2_source_text
     assert "validation_wall_ms" in gpt2_source_text
     assert "checkpoint_wall_ms" in gpt2_source_text
+    assert "--no-checkpoint" in gpt2_source_text
+    assert "--native-cuda-no-checkpoint" in gpt2_source_text
+    assert "cfg.write_checkpoint = false" in gpt2_source_text
+    assert "checkpoint_export_enabled" in gpt2_source_text
+    assert '\\"enabled\\": ' in gpt2_source_text
     assert "train_tokens_per_second" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STAGE_TIMING" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STAGE_TIMING" in gpt2_source_text

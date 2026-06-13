@@ -24,6 +24,11 @@ NeuralFn supports both a scalar graph runtime and optional PyTorch-backed graph 
 | [llms.txt](llms.txt) | LLM-friendly project index |
 | [llms-full.txt](llms-full.txt) | Complete docs in a single file for LLM ingestion |
 
+Native GPT benchmark and preflight runs can pass
+`--native-cuda-no-checkpoint` from the Python wrappers or `--no-checkpoint`
+to the compiled C++ trainer to skip final trained-checkpoint export. Default
+training still writes the final native checkpoint.
+
 ## Current state of play
 
 NeuralFn now ships Torch-backed template presets for:

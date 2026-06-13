@@ -468,6 +468,12 @@ The RTX 5090 dense GPT harness at `cli/scripts/train_gpt.py` is native-only; `tr
 
 The compiled GPT-2 `--train-transformer-lm` JSON includes `cuda_runtime_preflight` before any allocation. Driver version `0` or a loaded CUDA runtime newer than the driver exits early with an actionable GPU-access/runtime error, which is the expected gate before live SM120 throughput comparison.
 
+For timing-only native GPT probes, pass wrapper
+`--native-cuda-no-checkpoint` or compiled C++ `--no-checkpoint` to skip final
+trained-checkpoint export. Runtime JSON then reports `checkpoint.enabled:
+false`, `checkpoint.checkpoint_written: false`, and zero checkpoint wall time;
+normal training leaves checkpoint export enabled.
+
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, `NFN_NATIVE_GPT_BINDING`, and
 `NFN_NATIVE_GPT_TRAIN_BIN`. Runtime tuning also prefers

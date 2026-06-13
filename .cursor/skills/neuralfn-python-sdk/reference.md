@@ -335,6 +335,10 @@ the JSON contract: `checkpoint.payload_pack_strategy:
 "single-contiguous-device-payload-d2h"`, `payload_cpu_bf16_conversion: false`,
 `device_pack_kernel_launches`, `d2h_copy_count`, `d2h_bytes`, and
 `float32_d2h_bytes_elided`.
+`NativeGptRunConfig.write_checkpoint=False` and
+`NativeGpt2RunConfig.write_checkpoint=False` are benchmark/preflight controls
+that forward `--no-checkpoint` and should report checkpoint export disabled in
+plan/runtime JSON; default configs keep checkpoint export enabled.
 
 Canonical dense GPT handoff helpers are exported from `neuralfn.native_gpt` and top-level `neuralfn`: `NativeGptRunConfig`, `NativeGptRunnerStatus`, `NativeGptCheckpointInfo`, `build_native_gpt_run_config()`, `build_native_gpt_compiled_cli_run_config()`, `native_gpt_activation()`, `native_gpt_kernel_backend()`, `normalize_native_gpt_encoding_name()`, `native_gpt_encoding_vocab_size()`, `native_gpt_runner_status()`, `resolve_native_gpt_cli()`, `write_native_gpt_run_config()`, `read_native_gpt_checkpoint_info()`, and `run_native_gpt()`. Prefer these names for new SDK code. `gpt`, `gpt2`, and `gpt3` route to the same dense GPT CUDA Tile C++ trainer; `gpt3` only defaults to a 2048-token context when no template, graph, or explicit sequence length is provided. Plan/runtime JSON canonicalizes those selectors to `model_family: "gpt"` and reports `architecture_source`, `architecture_contract`, and `model_family_context_policy` so the template or graph is visibly the architecture source. The older `neuralfn.native_gpt2` helpers remain compatibility wrappers around the same implementation and checkpoint format, and now canonicalize dense GPT selector metadata to `gpt`.
 

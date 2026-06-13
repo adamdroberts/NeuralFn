@@ -196,6 +196,10 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         "--native-cuda-smoke-transformer-lm-step": "--smoke-transformer-lm-step",
         "--native-cuda-smoke-embedding-lm-step": "--smoke-embedding-lm-step",
         "--native-cuda-allow-train-val-fallback": "--allow-train-val-fallback",
+        "--native-cuda-no-checkpoint": "--no-checkpoint",
+        "--no-checkpoint": "--no-checkpoint",
+        "--native-cuda-write-checkpoint": "--write-checkpoint",
+        "--write-checkpoint": "--write-checkpoint",
     }
     pass_value_flags = {
         "--model-family",

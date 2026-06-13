@@ -256,6 +256,7 @@ def _build_compiled_cli_config(args: argparse.Namespace, dataset_arg: str | Path
         template_name=str(args.template_name or "gpt"),
         graph_file=str(args.graph_file or ""),
         model_family=str(args.model_family or DEFAULT_MODEL_FAMILY),
+        write_checkpoint=not bool(args.native_cuda_no_checkpoint),
     )
 
 
@@ -360,6 +361,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--native-cuda-dry-run", action="store_true")
     parser.add_argument("--native-cuda-print-plan", action="store_true")
     parser.add_argument("--native-cuda-check-tile-ops", action="store_true")
+    parser.add_argument(
+        "--native-cuda-no-checkpoint",
+        "--no-checkpoint",
+        action="store_true",
+        help="Skip final trained checkpoint export for native benchmark/preflight runs.",
+    )
     parser.add_argument("--native-cuda-smoke-tile-ops", "--smoke-tile-ops", action="store_true")
     parser.add_argument("--native-cuda-smoke-optimizer-step", "--smoke-optimizer-step", action="store_true")
     parser.add_argument("--native-cuda-smoke-lm-step", "--smoke-lm-step", action="store_true")
@@ -526,6 +533,7 @@ def main(argv: list[str] | None = None) -> int:
             graph_file=str(args.graph_file or ""),
             allow_train_as_val=bool(args.native_cuda_allow_train_val_fallback),
             model_family=str(args.model_family or DEFAULT_MODEL_FAMILY),
+            write_checkpoint=not bool(args.native_cuda_no_checkpoint),
         )
     print(f"Using dataset: {dataset_name}")
     print(f"Tokenizer: {encoding_name}")
@@ -544,6 +552,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Native CUDA validation shard: {native_cfg.val_data}")
     print(f"Native CUDA validation eval: every {native_cfg.eval_every_steps} optimizer steps")
     print(f"Native CUDA LM-head row chunk size: {native_cfg.lm_head_row_chunk_size}")
+    print(f"Native CUDA checkpoint export: {'enabled' if native_cfg.write_checkpoint else 'disabled'}")
     print(f"Native CUDA runner: {runner_status.resolved} (requested={runner_status.requested})")
     print(f"Native CUDA kernel backend: {native_cfg.kernel_backend}")
     if runner_status.reason:

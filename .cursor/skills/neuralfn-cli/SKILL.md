@@ -297,7 +297,10 @@ Canonical docs:
 - The default runner is `compiled-cli`. Use `--eval-every-steps 1000` for
   per-1000-step validation loss, native command/config inspection flags for
   debugging, and `NFN_NATIVE_*_CLI` environment overrides for installed native
-  commands. The 5090 helper scripts should not add wallclock caps by default.
+  commands. Use `--native-cuda-no-checkpoint` / compiled `--no-checkpoint`
+  only for timing-only native probes that should exclude final checkpoint
+  export; default training still writes checkpoints. The 5090 helper scripts
+  should not add wallclock caps by default.
   The default root install no longer installs Torch; use `.[tile-cuda]` for
   native CUDA Tile tooling and `.[torch]` for graph-backed Torch workflows.
 - For the GPT-2 `compiled-cli` runner, only skip Python shard metadata validation when cached train plus validation shard files already exist. Raw-text dataset directories must still materialize token shards before C++ training. The exceptions are wrapper-level `--native-cuda-dry-run --native-cuda-print-command`, compiled Tile-CUDA `--print-command`, and no-data compiled preflights (`--check-tile-ops`, `--smoke-tile-ops`, `--smoke-optimizer-step`, `--smoke-lm-step`, `--smoke-attention-step`, `--smoke-mlp-step`, `--smoke-norm-residual-step`, and `--smoke-transformer-block-step`). Those paths build, print, or run synthetic/native ABI checks before token-shard resolution, must not import `server.dataset_manager`, NumPy, tiktoken, or Torch, must not write `fineweb_train_*.bin` shards, must not add the external `--target train_gpt2cu` bridge argument for the default Tile-CUDA backend, and should report `token_shards_resolved: false` when no dataset was opened. The explicit `llm-kittens` backend may still receive `--target` and resolve shards when printing its delegated `train_gpt2cu -i/-j` command.

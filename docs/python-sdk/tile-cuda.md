@@ -522,6 +522,11 @@ The native GPT-2 transformer-LM trainer pads only the tensor row count: tokenize
 
 Full GPT-2 `--train-transformer-lm` runs report a `cuda_runtime_preflight` object before allocation. If `cudaDriverGetVersion` returns driver version `0`, or if the loaded CUDA runtime is newer than the reported driver, the trainer exits before `cudaMalloc` so benchmark failures point at GPU access/runtime compatibility instead of kernel execution.
 
+Set `NativeGptRunConfig.write_checkpoint=False` or
+`NativeGpt2RunConfig.write_checkpoint=False` for benchmark/preflight runs that
+should exclude final trained-checkpoint export. `compiled_cli_argv()` forwards
+that as `--no-checkpoint`; default configs keep checkpoint export enabled.
+
 Successful GPT-2 `--train-transformer-lm` checkpoint export packs device
 float32 weights into one contiguous bf16 payload with
 `nfn_native_tile_float32_to_bf16_bits_many`, copies the compact uint16 payload

@@ -78,6 +78,7 @@ struct Config {
     bool train_embedding_lm = false;
     bool train_transformer_lm = true;
     bool checkpoint_metadata_smoke = false;
+    bool write_checkpoint = true;
     bool template_explicit = false;
     bool seq_len_explicit = false;
     std::string cuda_runtime_lib;
@@ -280,6 +281,7 @@ void print_usage(const char* program) {
         << "  --train-embedding-lm              Train dense GPT embedding/final-norm/LM-head path over cached shards with Tile kernels\n"
         << "  --train-transformer-lm            Run the dense GPT transformer/LM training loop with validation JSON (default)\n"
         << "  --no-train-transformer-lm         Disable the default transformer-LM loop for plan/check/debug commands\n"
+        << "  --no-checkpoint                   Skip final trained checkpoint export for speed/preflight runs\n"
         << "  --checkpoint-metadata-smoke       Write a sparse native dense GPT checkpoint-format artifact and DONE marker without CUDA/Torch\n"
         << "  --cuda-runtime-lib PATH           libcudart path for Tile-CUDA smokes/training; defaults to NFN_CUDA_RUNTIME_LIB/libcudart.so\n"
         << "  --print-plan                      Print native backend JSON plan and exit\n"
@@ -1164,6 +1166,7 @@ bool print_tile_plan(
         << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
         << ", \"eval_every_steps\": " << cfg.eval_every_steps
         << ", \"warmup_steps\": " << cfg.warmup_steps << "},\n"
+        << "  \"checkpoint_export_enabled\": " << (cfg.write_checkpoint ? "true" : "false") << ",\n"
         << "  \"estimated_stage_elements\": {\"hidden\": " << hidden
         << ", \"logits\": " << logits
         << ", \"lm_head_row_chunk_size\": " << lm_head_chunk_rows << "},\n"
@@ -9825,7 +9828,7 @@ int run_transformer_lm_training_json(
         checkpoint_written = true;
     };
 
-    if (passed) {
+    if (passed && cfg.write_checkpoint) {
         const auto checkpoint_start_time = Clock::now();
         write_trained_checkpoint();
         checkpoint_wall_ms = elapsed_ms(checkpoint_start_time, Clock::now());
@@ -10545,7 +10548,7 @@ int run_transformer_lm_training_json(
         << "    \"adamw_step_kernel_launches_per_optimizer_step\": " << (adamw_descriptor_count > 0 ? 1 : 0) << ",\n"
         << "    \"adamw_per_buffer_step_launches_elided\": "
         << std::max<std::int64_t>(0, (kGlobalParameterBuffers + kPerBlockParameterBuffers * trained_layers) - 1) << ",\n"
-        << "    \"checkpoint_export_loop\": true,\n"
+        << "    \"checkpoint_export_loop\": " << (cfg.write_checkpoint ? "true" : "false") << ",\n"
         << "    \"activation_tape_loop\": true,\n"
         << "    \"forward_block_loop\": true,\n"
         << "    \"backward_block_loop\": true,\n"
@@ -10557,7 +10560,7 @@ int run_transformer_lm_training_json(
         << "  \"final_loss_sum\": " << final_loss_sum << ",\n"
         << "  \"final_loss_mean\": " << final_loss_mean << ",\n"
         << "  \"checkpoint\": {\n"
-        << "    \"enabled\": true,\n"
+        << "    \"enabled\": " << (cfg.write_checkpoint ? "true" : "false") << ",\n"
         << "    \"checkpoint_written\": " << (checkpoint_written ? "true" : "false") << ",\n"
         << "    \"checkpoint_path\": \"" << json_escape(checkpoint_path_json) << "\",\n"
         << "    \"done_marker\": \"" << json_escape(done_marker_json) << "\",\n"
@@ -11196,6 +11199,10 @@ int main(int argc, char** argv) {
             cfg.train_transformer_lm = true;
         } else if (arg == "--no-train-transformer-lm") {
             cfg.train_transformer_lm = false;
+        } else if (arg == "--no-checkpoint" || arg == "--native-cuda-no-checkpoint") {
+            cfg.write_checkpoint = false;
+        } else if (arg == "--checkpoint" || arg == "--write-checkpoint" || arg == "--native-cuda-write-checkpoint") {
+            cfg.write_checkpoint = true;
         } else if (arg == "--checkpoint-metadata-smoke") {
             cfg.backend = "tile-cuda";
             cfg.checkpoint_metadata_smoke = true;

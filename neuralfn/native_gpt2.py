@@ -99,6 +99,7 @@ class NativeGpt2RunConfig:
     train_embedding_lm: bool = False
     train_transformer_lm: bool = True
     checkpoint_metadata_smoke: bool = False
+    write_checkpoint: bool = True
     cuda_runtime_lib: str = ""
     hellaswag_eval: int = 0
     recompute: int = 0
@@ -252,6 +253,8 @@ class NativeGpt2RunConfig:
             args.append("--train-transformer-lm")
         if self.checkpoint_metadata_smoke:
             args.append("--checkpoint-metadata-smoke")
+        if not self.write_checkpoint:
+            args.append("--no-checkpoint")
         if str(self.cuda_runtime_lib or "").strip():
             args.extend(["--cuda-runtime-lib", self.cuda_runtime_lib])
         if self.activation == "moa":
@@ -655,6 +658,7 @@ def build_native_gpt2_run_config(
     graph_file: str = "",
     allow_train_as_val: bool = False,
     model_family: str = "gpt",
+    write_checkpoint: bool = True,
 ) -> tuple[NativeGpt2RunConfig, dict[str, Any]]:
     meta, train_data, val_data = resolve_native_gpt2_token_shards(
         dataset_name,
@@ -707,6 +711,7 @@ def build_native_gpt2_run_config(
         dataset_alias=str(dataset_path),
         template_name=_normalize_native_gpt2_template_name(template_name),
         graph_file=str(graph_file or ""),
+        write_checkpoint=bool(write_checkpoint),
     )
     return cfg, meta
 
@@ -752,6 +757,7 @@ def build_native_gpt2_compiled_cli_run_config(
     template_name: str = "gpt",
     graph_file: str = "",
     model_family: str = "gpt",
+    write_checkpoint: bool = True,
 ) -> NativeGpt2RunConfig:
     """Build a compiled-CLI handoff without Python-side token shard inspection."""
 
@@ -799,6 +805,7 @@ def build_native_gpt2_compiled_cli_run_config(
         dataset_alias=str(dataset_alias),
         template_name=_normalize_native_gpt2_template_name(template_name),
         graph_file=str(graph_file or ""),
+        write_checkpoint=bool(write_checkpoint),
     )
 
 

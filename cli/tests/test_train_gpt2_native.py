@@ -283,6 +283,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                     "--no-download-if-missing",
                     "--native-cuda-dry-run",
                     "--native-cuda-print-command",
+                    "--native-cuda-no-checkpoint",
                 ]
                 try:
                     runpy.run_path(str(root / "cli" / "scripts" / "train_gpt2.py"), run_name="__main__")
@@ -317,6 +318,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertNotIn("--target ", proc.stdout)
         self.assertNotIn("train_gpt2cu", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)
+        self.assertIn("--no-checkpoint", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
         self.assertIn("NUMPY_LOADED False", proc.stdout)
@@ -913,6 +915,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 "--native-cuda-smoke-embedding-lm-step",
                 "--train-embedding-lm",
                 "--train-transformer-lm",
+                "--native-cuda-no-checkpoint",
                 "--eval-batches=1",
                 "--eval-batch-size=1",
                 "--native-cuda-lm-head-row-chunk-size=2048",
@@ -960,6 +963,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("--smoke-embedding-lm-step", proc.stdout)
         self.assertIn("--train-embedding-lm", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)
+        self.assertIn("--native-cuda-no-checkpoint", proc.stdout)
         self.assertIn("--eval-batches 1", proc.stdout)
         self.assertIn("--eval-batch-size 1", proc.stdout)
         self.assertIn("--lm-head-row-chunk-size 2048", proc.stdout)

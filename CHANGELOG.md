@@ -6,6 +6,38 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-13 Native GPT no-checkpoint benchmark mode
+
+#### Changed
+
+- Added `--no-checkpoint` / `--native-cuda-no-checkpoint` to the compiled
+  dense GPT CUDA Tile trainer and Python wrappers. This is a timing-only
+  preflight/benchmark control: default native GPT training still writes the
+  final checkpoint, while disabled runs report checkpoint export disabled in
+  plan/runtime JSON and skip the final checkpoint wall time.
+- Added SDK support through `NativeGptRunConfig.write_checkpoint` and
+  `NativeGpt2RunConfig.write_checkpoint`; `compiled_cli_argv()` forwards
+  `write_checkpoint=False` as `--no-checkpoint`.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Verified `python -m py_compile neuralfn/native_gpt2.py neuralfn/native_gpt.py
+  cli/scripts/train_gpt.py cli/scripts/train_gpt_native.py
+  cli/scripts/train_gpt2.py`.
+- Verified `python -m pytest tests/test_native_gpt2.py -q -k
+  "compiled_cli_config_passes_dataset_alias_without_shard_inspection or
+  can_skip_checkpoint_export or native_train_tile_ops_builds_torch_free_c_abi"`.
+- Verified `python -m pytest cli/tests/test_train_gpt2_native.py -q -k
+  "native_cached_shard_default_runner_uses_compiled_cli or
+  translates_kernel_backend"`.
+- Verified `git diff --check`.
+- Ran a GPU-visible one-step TinyStories probe with `--no-checkpoint`; JSON
+  reported `passed: true`, `checkpoint.enabled: false`,
+  `checkpoint.checkpoint_written: false`, `checkpoint_wall_ms: 0`,
+  `train_compute_wall_ms: 3774.03`, and `train_tokens_per_second: 138920`.
+
 ### 2026-06-13 Paired kernel speed measurements
 
 #### Changed
