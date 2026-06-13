@@ -1747,7 +1747,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["block_backward_input_linear_strategy"] == "forced-bf16-gemmex-dinput"
     assert (
         train_transformer_payload["block_backward_weight_linear_strategy"]
-        == "forced-bf16-gemmex-dweight-accumulate"
+        == "forced-bf16-gemmex-dweight-plus-bias-accumulate-fallback"
     )
     assert (
         train_transformer_payload["non_block_forward_backward_linear_strategy"]
@@ -3056,6 +3056,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_linear_bf16_gelu_bf16_float32" in header_text
     assert "nfn_native_tile_gelu_add_bias_bf16_act_float32" in header_text
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32" in header_text
+    assert "nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32" in header_text
+    assert "nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32" in header_text
     assert "nfn_native_tile_linear_bf16_output_float32" in header_text
     assert "nfn_native_tile_linear_backward_input_bf16_bits_float32" in header_text
     assert "nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits" in header_text
@@ -3080,6 +3082,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "launch_linear_bf16_gelu_bf16_float32" in source_text
     assert "launch_gelu_add_bias_bf16_act_float32" in source_text
     assert "launch_linear_backward_weight_accumulate_bf16_bits_float32" in source_text
+    assert "launch_linear_backward_weight_bias_accumulate_bf16_float32" in source_text
+    assert "launch_linear_backward_weight_bias_accumulate_bf16_bits_float32" in source_text
     assert "launch_linear_bf16_output_float32" in source_text
     assert "launch_linear_backward_input_bf16_bits_float32" in source_text
     assert "launch_linear_backward_weight_accumulate_float32_bf16_bits" in source_text
@@ -3123,6 +3127,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "CUDA_R_16BF" in kernels_text
     assert "CUBLAS_COMPUTE_32F" in kernels_text
     assert "cublasLtMatmul" in kernels_text
+    assert "CUBLASLT_EPILOGUE_BGRADB" in kernels_text
+    assert "CUBLASLT_MATMUL_DESC_BIAS_POINTER" in kernels_text
+    assert "cublas_linear_gemm_ex_bf16_float32_with_bgrad" in kernels_text
+    assert "cublas_linear_gemm_ex_bf16_bits_a_float32_with_bgrad" in kernels_text
     assert "CUBLAS_COMPUTE_32F_FAST_TF32" in kernels_text
     assert "CUBLAS_COMPUTE_32F_FAST_16BF" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_BF16" in kernels_text
@@ -3147,10 +3155,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block-forward-dinput-dweight-bf16-lm-head-tf32" in gpt2_source_text
     assert "shape-gated-bf16-cublaslt-forward" in gpt2_source_text
     assert "shape-gated-bf16-cublaslt-dinput" in gpt2_source_text
-    assert "shape-gated-bf16-cublaslt-dweight-accumulate" in gpt2_source_text
+    assert "shape-gated-bf16-cublaslt-dweight-bgrad-accumulate" in gpt2_source_text
+    assert "forced-bf16-gemmex-dweight-plus-bias-accumulate-fallback" in gpt2_source_text
     assert "forced-bf16-gemmex-forward" in gpt2_source_text
     assert "forced-bf16-gemmex-dinput" in gpt2_source_text
-    assert "forced-bf16-gemmex-dweight-accumulate" in gpt2_source_text
     assert "non_block_forward_backward_linear_strategy" in gpt2_source_text
     assert ".forward.no_bias.bf16" in gpt2_source_text
     assert ".backward_input.bf16" in gpt2_source_text
@@ -3268,7 +3276,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "packed-o-bf16-direct-gemm" in gpt2_source_text
     assert "elided-direct-bf16-projection" in gpt2_source_text
     assert ".attn.out.forward.no_bias.packed_o_bf16_bits" in gpt2_source_text
-    assert ".attn.out.backward_weight.accumulate.packed_o_bf16_bits" in gpt2_source_text
+    assert ".attn.out.backward_weight_bias.accumulate.packed_o_bf16_bits" in gpt2_source_text
     assert ".attn.unpack_packed_out_bf16" not in gpt2_source_text
     assert "tk-sm120-packed-qkv-bf16-backward-bridge" in gpt2_source_text
     assert "linear_backward_weight_chunked_atomic_float32_kernel" in kernels_text
@@ -4057,6 +4065,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_linear_backward_weight_accumulate_float32" in exported
         assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32" in exported
         assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32" in exported
+        assert "nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32" in exported
+        assert "nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32" in exported
         assert "nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits" in exported
         assert "nfn_native_tile_linear_backward_bias_float32" in exported
         assert "nfn_native_tile_linear_backward_bias_accumulate_float32" in exported

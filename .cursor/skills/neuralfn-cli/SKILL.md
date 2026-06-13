@@ -200,10 +200,10 @@ Canonical docs:
   LM-head logits/CE/dHidden/dWeight, block forward/recompute attention and MLP
   phases, and block backward MLP projection, MLP fc, LayerNorm/residual,
   attention projection, attention SDPA, and QKV phases. Preserve individual
-  block-backward dWeight, bias, dInput, activation, residual-add, and
-  attention-to-QKV records such as `block_backward.mlp_proj.dweight`,
+  block-backward dWeight+bias, dInput, activation, residual-add, and
+  attention-to-QKV records such as `block_backward.mlp_proj.dweight_bias`,
   `block_backward.mlp_proj.dinput`, `block_backward.attn_sdpa.to_qkv`, and
-  `block_backward.qkv.dweight`.
+  `block_backward.qkv.dweight_bias`.
 - GPT-2 block backward should use
   `nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32`
   only after a matching TK attention forward has populated the process
@@ -377,9 +377,10 @@ Canonical docs:
 - `libnfn_native_train_tile_ops.so` is built with
   `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1`, so trainer-facing native linear forward,
   dInput, dWeight, accumulate-dWeight, forced-BF16 forward, forced-BF16 dInput,
-  and forced-BF16 accumulate-dWeight ABI symbols use GPU GEMM, and linear bias
-  plus accumulate-bias backward use GPU GEMV over a cached device ones vector
-  initialized by a Tile fill kernel, while keeping Torch and the PyTorch Tile
+  and forced-BF16 accumulate-dWeight ABI symbols use GPU GEMM. Forced-BF16
+  weight+bias accumulate uses cuBLASLt `BGRADB` when supported and falls back
+  inside the ABI to separate dWeight plus Tile bias-reduction launchers, while
+  keeping Torch and the PyTorch Tile
   extension out of the training process. The pure Tile direct dot-product and
   row-chunked atomic kernels remain the fallback for non-trainer builds.
 - `nfn_gpt_native_train --smoke-embedding-lm-step --tile-ops-lib PATH` /
@@ -625,7 +626,7 @@ Canonical docs:
 - Native GPT-2 checkpoints from `train_gpt2cu` or NeuralFn's `nfn_gpt_native_train --checkpoint-metadata-smoke --output-dir PATH` are `model_########.bin` files with optional matching `DONE_########` markers. Keep `nfn infer --checkpoint PATH --native-info` and `python cli/scripts/infer_gpt2.py --native-checkpoint PATH --native-info` on a Torch-free metadata path via `read_native_gpt2_checkpoint_info()`; do not route native `.bin` checkpoints into the graph-backed `.pt` loader. Prompt generation from native `.bin` checkpoints still needs a dedicated native inference executable.
 - `cli/scripts/train_gpt2_evo.py` remains graph-backed because native `train_gpt2cu` does not implement NeuralFn's evo-layer loop. It is disabled by default with the other legacy TorchTrainer scripts; use `NFN_ALLOW_TORCH_TRAINING=1` only for one-off debugging while a native C++ trainer is being added. The compiled preflight `nfn_gpt2_evo_native_train --print-plan --eval-every-steps 1000 --tile-cuda-activation-dtype nvfp4` reports the AdamW/NVFP4/evo-layer schedule and remaining candidate-evaluation/mutation/loss-reduction/adoption kernels without importing Python/Torch. Run existing exported artifacts with `python cli/scripts/infer_gpt2.py --evo --prompt "..."` or `nfn infer --graph ~/NeuralFn/artifacts/gpt2_evo.json --weights ~/NeuralFn/artifacts/gpt2_evo.pt --prompt "..."`; keep `infer_gpt2.py --help` and artifact default resolution no-Torch even though actual generation is still graph-backed.
 - Native trainer CE logits backward in `libnfn_native_train_tile_ops.so` uses row-wise CUDA Tile kernels for vocabularies up to 1024 and chunked row-wise kernels with reusable row-stat workspace for full GPT-class vocabularies; do not reintroduce the elementwise large-vocab fallback.
-- Linear weight and bias backward in `libnfn_native_train_tile_ops.so` switch large row counts away from one serial row loop per output element. Trainer builds use cuBLAS for linear forward/dInput/dWeight and bias GEMV when `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1`; fallback builds use row-chunked tiled atomic accumulation. A future tensor-core/GEMM-grade fallback replacement is still useful for dWeight, but do not reintroduce the serial large-row reduction path.
+- Linear weight and bias backward in `libnfn_native_train_tile_ops.so` switch large row counts away from one serial row loop per output element. Trainer builds use cuBLAS for linear forward/dInput/dWeight and cuBLASLt `BGRADB` for forced-BF16 block dWeight+bias accumulation when `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1`; unsupported shapes and fallback builds use row-chunked tiled atomic accumulation for bias reductions. A future tensor-core/GEMM-grade fallback replacement is still useful for dWeight, but do not reintroduce the serial large-row reduction path.
 
 ## Verification
 

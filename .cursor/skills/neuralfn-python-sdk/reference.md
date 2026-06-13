@@ -258,17 +258,18 @@ CUDA Tile SDK helpers live in `neuralfn.tile_cuda`; see `docs/python-sdk/tile-cu
 `tools/build_native_train_tile_ops.sh` builds the trainer-facing raw C ABI with
 `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1`, so native linear forward, dInput, dWeight,
 accumulate-dWeight, forced-BF16 forward, forced-BF16 dInput, and forced-BF16
-accumulate-dWeight calls use GPU GEMM, while native bias and
-accumulate-bias backward calls use GPU GEMV over a cached device ones vector
-initialized by a Tile fill kernel. This keeps native trainers off Torch/Python
+accumulate-dWeight calls use GPU GEMM. Forced-BF16 weight+bias accumulate calls
+use cuBLASLt `BGRADB` when supported and fall back inside the ABI to separate
+dWeight plus Tile bias-reduction launchers. This keeps native trainers off Torch/Python
 while moving the GPT-style projection path toward the SM120 `llm.kittens`
 throughput target; the generic Tile extension build still uses the pure Tile
 fallback unless that macro is set. In the full GPT-2 trainer, block
 forward/recompute projections call `nfn_native_tile_linear_bf16_float32`, and
 block dInput GEMMs call `nfn_native_tile_linear_backward_input_bf16_float32`, to
 force the cached BF16 `cublasGemmEx` bridge where the stable weight operand can
-be cached. Transformer block dWeight accumulation uses
-`nfn_native_tile_linear_backward_weight_accumulate_bf16_float32`; tied LM-head
+be cached. Transformer block dWeight+bias accumulation uses
+`nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32` or
+`nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32`; tied LM-head
 logits, dHidden, and dWeight chunks stay on optimized TF32 tensor-op
 `cublasSgemm`. Native JSON reports `linear_backend_strategy:
 "block-forward-dinput-dweight-bf16-lm-head-tf32"`,
@@ -295,10 +296,10 @@ zero/clip, and AdamW update. Keep nested diagnostic records for LM-head
 logits/CE/dHidden/dWeight, block forward/recompute attention and MLP phases,
 and block backward MLP projection, MLP fc, LayerNorm/residual, attention
 projection, attention SDPA, and QKV phases. Preserve individual block-backward
-dWeight, bias, dInput, activation, residual-add, and attention-to-QKV records
-such as `block_backward.mlp_proj.dweight`,
+dWeight+bias, dInput, activation, residual-add, and attention-to-QKV records
+such as `block_backward.mlp_proj.dweight_bias`,
 `block_backward.mlp_proj.dinput`, `block_backward.attn_sdpa.to_qkv`, and
-`block_backward.qkv.dweight`.
+`block_backward.qkv.dweight_bias`.
 GPT-2 block backward should use
 `nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32`
 only after a matching TK attention forward has populated the process workspace.
@@ -533,7 +534,7 @@ Unified native training helpers are exported from `neuralfn.native_train` and to
 
 Native trainer CE logits backward in `libnfn_native_train_tile_ops.so` uses row-wise CUDA Tile kernels for vocabularies up to 1024 and chunked row-wise kernels with reusable row-stat workspace for full GPT-class vocabularies; do not reintroduce the elementwise large-vocab fallback.
 
-Linear weight and bias backward in `libnfn_native_train_tile_ops.so` switch large row counts away from one serial row loop per output element. Trainer builds route dWeight through cuBLAS GEMM and bias reductions through cuBLAS GEMV when `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1`; fallback builds keep row-chunked tiled atomic accumulation. A future tensor-core/GEMM-grade fallback replacement is still useful for dWeight, but do not reintroduce the serial large-row reduction path.
+Linear weight and bias backward in `libnfn_native_train_tile_ops.so` switch large row counts away from one serial row loop per output element. Trainer builds route dWeight through cuBLAS GEMM and fused forced-BF16 block dWeight+bias through cuBLASLt `BGRADB` when `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1`; unsupported shapes and fallback builds keep row-chunked tiled atomic accumulation for bias reductions. A future tensor-core/GEMM-grade fallback replacement is still useful for dWeight, but do not reintroduce the serial large-row reduction path.
 
 `TorchTrainer.active_compiled_graph` is available only while `TorchTrainer.train()` is running. Use it inside `on_step` callbacks for live validation loss against current in-memory weights; it is cleared after final graph state sync. `TorchTrainer.last_compiled_graph` retains the most recent compiled graph after `train()` returns for final validation against those same trained weights.
 

@@ -10,6 +10,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 #### Changed
 
+- The raw native Tile ABI now exposes `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32`
+  and `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32`.
+  Dense GPT block backward now uses those fused dWeight+bias entrypoints for
+  qkv, attention projection, MLP fc, and MLP projection gradients. Supported
+  BF16 block dWeight GEMMs request cuBLASLt `CUBLASLT_EPILOGUE_BGRADB`, write
+  the bias gradient into Tile-owned scratch, and accumulate that vector into the
+  existing optimizer-step bias buffer; unsupported shapes fall back inside the
+  ABI to the previous BF16 dWeight plus Tile bias-reduction launchers. Training
+  JSON now reports `block_backward_weight_linear_strategy:
+  "shape-gated-bf16-cublaslt-dweight-bgrad-accumulate"` when that fused path is
+  active, and stage timing folds the old block projection `dweight`/`bias`
+  buckets into `dweight_bias` buckets. Migration note: rebuild
+  `libnfn_native_train_tile_ops.so` and `nfn_gpt_native_train` together before
+  running dense GPT native training because the compiled trainer now requires
+  the new ABI symbols. Verification: rebuilt both native artifacts, reran the
+  focused native GPT-2 static/export pytest slice, and ran a GPU-visible
+  TinyStories one-step `64 x 1024`, `524288` tokens/step probe that reported
+  about `128,609` tokens/s, `block_backward` about `1,962 ms`, zero SGEMM
+  calls, and `block_backward_weight_linear_strategy:
+  "shape-gated-bf16-cublaslt-dweight-bgrad-accumulate"`.
 - Tightened the universal dense GPT native trainer surface so the compiled
   command defaults to `model_family: "gpt"` and `~/NeuralFn/artifacts/gpt`,
   while `gpt2` and `gpt3` remain aliases for the same CUDA Tile C++ trainer.

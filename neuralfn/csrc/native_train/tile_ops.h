@@ -411,6 +411,26 @@ int nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32(
     std::int64_t output_dim,
     void* cuda_stream);
 
+int nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32(
+    const float* x,
+    const float* grad_out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    void* cuda_stream);
+
+int nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    const float* grad_out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    void* cuda_stream);
+
 int nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits(
     const float* x,
     const std::uint16_t* grad_out_bf16_bits,

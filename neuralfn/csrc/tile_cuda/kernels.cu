@@ -981,12 +981,13 @@ struct TrainerLinearCublasLtPlanKey {
   int b_type = CUDA_R_32F;
   int c_type = CUDA_R_32F;
   int compute_type = CUBLAS_COMPUTE_32F_FAST_TF32;
+  int epilogue = CUBLASLT_EPILOGUE_DEFAULT;
 
   bool operator==(const TrainerLinearCublasLtPlanKey& other) const {
     return m == other.m && n == other.n && k == other.k && lda == other.lda &&
         ldb == other.ldb && ldc == other.ldc && op_a == other.op_a && op_b == other.op_b &&
         a_type == other.a_type && b_type == other.b_type && c_type == other.c_type &&
-        compute_type == other.compute_type;
+        compute_type == other.compute_type && epilogue == other.epilogue;
   }
 };
 
@@ -1003,10 +1004,17 @@ struct TrainerLinearCublasLtWorkspace {
   std::vector<TrainerLinearCublasLtPlan> plans;
 };
 
+struct TrainerLinearBgradWorkspace {
+  float* data = nullptr;
+  std::int64_t capacity = 0;
+};
+
 bool trainer_linear_cublaslt_enabled();
 
 TrainerLinearCublasLtWorkspace g_trainer_linear_cublaslt_workspace;
 std::mutex g_trainer_linear_cublaslt_workspace_mutex;
+TrainerLinearBgradWorkspace g_trainer_linear_bgrad_workspace;
+std::mutex g_trainer_linear_bgrad_workspace_mutex;
 constexpr std::size_t kTrainerLinearCublasLtWorkspaceBytes = 128ull * 1024ull * 1024ull;
 constexpr std::size_t kTrainerLinearCublasLtPlanLimit = 128;
 
@@ -1029,6 +1037,27 @@ bool ensure_trainer_linear_cublaslt_workspace(std::size_t bytes) {
   return true;
 }
 
+float* ensure_trainer_linear_bgrad_workspace(std::int64_t elements) {
+  if (elements <= 0) {
+    return nullptr;
+  }
+  std::lock_guard<std::mutex> lock(g_trainer_linear_bgrad_workspace_mutex);
+  if (g_trainer_linear_bgrad_workspace.capacity >= elements &&
+      g_trainer_linear_bgrad_workspace.data != nullptr) {
+    return g_trainer_linear_bgrad_workspace.data;
+  }
+  float* next = nullptr;
+  if (cudaMalloc(&next, static_cast<std::size_t>(elements) * sizeof(float)) != cudaSuccess) {
+    return nullptr;
+  }
+  if (g_trainer_linear_bgrad_workspace.data != nullptr) {
+    cudaFree(g_trainer_linear_bgrad_workspace.data);
+  }
+  g_trainer_linear_bgrad_workspace.data = next;
+  g_trainer_linear_bgrad_workspace.capacity = elements;
+  return g_trainer_linear_bgrad_workspace.data;
+}
+
 bool create_trainer_linear_cublaslt_layouts(
     cublasOperation_t op_a,
     cublasOperation_t op_b,
@@ -1042,6 +1071,8 @@ bool create_trainer_linear_cublaslt_layouts(
     int lda,
     int ldb,
     int ldc,
+    cublasLtEpilogue_t epilogue,
+    float* bias_pointer,
     cublasLtMatmulDesc_t* matmul_desc,
     cublasLtMatrixLayout_t* a_desc,
     cublasLtMatrixLayout_t* b_desc,
@@ -1058,6 +1089,27 @@ bool create_trainer_linear_cublaslt_layouts(
       cublasLtMatmulDescSetAttribute(
           *matmul_desc, CUBLASLT_MATMUL_DESC_TRANSB, &op_b, sizeof(op_b)) != CUBLAS_STATUS_SUCCESS) {
     return false;
+  }
+  if (epilogue != CUBLASLT_EPILOGUE_DEFAULT &&
+      cublasLtMatmulDescSetAttribute(
+          *matmul_desc, CUBLASLT_MATMUL_DESC_EPILOGUE, &epilogue, sizeof(epilogue)) !=
+          CUBLAS_STATUS_SUCCESS) {
+    return false;
+  }
+  if (bias_pointer != nullptr) {
+    cudaDataType_t bias_data_type = c_type;
+    if (cublasLtMatmulDescSetAttribute(
+            *matmul_desc,
+            CUBLASLT_MATMUL_DESC_BIAS_DATA_TYPE,
+            &bias_data_type,
+            sizeof(bias_data_type)) != CUBLAS_STATUS_SUCCESS ||
+        cublasLtMatmulDescSetAttribute(
+            *matmul_desc,
+            CUBLASLT_MATMUL_DESC_BIAS_POINTER,
+            &bias_pointer,
+            sizeof(bias_pointer)) != CUBLAS_STATUS_SUCCESS) {
+      return false;
+    }
   }
 
   const int a_rows = op_a == CUBLAS_OP_N ? m : k;
@@ -1163,6 +1215,8 @@ bool cublaslt_linear_matmul(
     int ldb,
     int ldc,
     float beta_value,
+    cublasLtEpilogue_t epilogue,
+    float* bias_pointer,
     cudaStream_t stream) {
   cublasLtHandle_t handle = trainer_linear_cublaslt_handle();
   if (handle == nullptr) {
@@ -1186,6 +1240,8 @@ bool cublaslt_linear_matmul(
           lda,
           ldb,
           ldc,
+          epilogue,
+          bias_pointer,
           &matmul_desc,
           &a_desc,
           &b_desc,
@@ -1206,7 +1262,8 @@ bool cublaslt_linear_matmul(
       static_cast<int>(a_type),
       static_cast<int>(b_type),
       static_cast<int>(c_type),
-      static_cast<int>(compute_type)};
+      static_cast<int>(compute_type),
+      static_cast<int>(epilogue)};
   TrainerLinearCublasLtPlan plan_copy;
   {
     std::lock_guard<std::mutex> lock(g_trainer_linear_cublaslt_workspace_mutex);
@@ -1245,6 +1302,46 @@ bool cublaslt_linear_matmul(
     return true;
   }
   return false;
+}
+
+bool cublaslt_linear_matmul(
+    const void* a,
+    const void* b,
+    float* c,
+    cudaDataType_t a_type,
+    cudaDataType_t b_type,
+    cudaDataType_t c_type,
+    cublasComputeType_t compute_type,
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b,
+    int lda,
+    int ldb,
+    int ldc,
+    float beta_value,
+    cudaStream_t stream) {
+  return cublaslt_linear_matmul(
+      a,
+      b,
+      c,
+      a_type,
+      b_type,
+      c_type,
+      compute_type,
+      m,
+      n,
+      k,
+      op_a,
+      op_b,
+      lda,
+      ldb,
+      ldc,
+      beta_value,
+      CUBLASLT_EPILOGUE_DEFAULT,
+      nullptr,
+      stream);
 }
 
 bool cublaslt_linear_matmul_float32(
@@ -1768,6 +1865,118 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32(
     return true;
   }
   return false;
+}
+
+bool cublas_linear_gemm_ex_bf16_float32_with_bgrad(
+    const float* a,
+    const float* b,
+    float* c,
+    float* bias_gradient,
+    std::int64_t a_elements,
+    std::int64_t b_elements,
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b,
+    int lda,
+    int ldb,
+    int ldc,
+    float beta_value,
+    bool cache_a_operand,
+    bool cache_b_operand,
+    bool force_bf16,
+    cudaStream_t stream) {
+  if (bias_gradient == nullptr || (!force_bf16 && !trainer_linear_bf16_bridge_enabled())) {
+    return false;
+  }
+  const std::int64_t c_elements = static_cast<std::int64_t>(m) * n;
+  TrainerLinearBf16Workspace* workspace = ensure_trainer_linear_bf16_workspace(a_elements, b_elements, c_elements);
+  if (workspace == nullptr) {
+    return false;
+  }
+  __nv_bfloat16* a_bf16 = trainer_linear_bf16_a_operand(workspace, a, a_elements, cache_a_operand, stream);
+  if (a_bf16 == nullptr) {
+    return false;
+  }
+  __nv_bfloat16* b_bf16 = trainer_linear_bf16_b_operand(workspace, b, b_elements, cache_b_operand, stream);
+  if (b_bf16 == nullptr) {
+    return false;
+  }
+  return trainer_linear_bf16_cublaslt_enabled() &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k) &&
+      cublaslt_linear_matmul(
+          a_bf16,
+          b_bf16,
+          c,
+          CUDA_R_16BF,
+          CUDA_R_16BF,
+          CUDA_R_32F,
+          CUBLAS_COMPUTE_32F_FAST_16BF,
+          m,
+          n,
+          k,
+          op_a,
+          op_b,
+          lda,
+          ldb,
+          ldc,
+          beta_value,
+          CUBLASLT_EPILOGUE_BGRADB,
+          bias_gradient,
+          stream);
+}
+
+bool cublas_linear_gemm_ex_bf16_bits_a_float32_with_bgrad(
+    const std::uint16_t* a_bf16_bits,
+    const float* b,
+    float* c,
+    float* bias_gradient,
+    std::int64_t b_elements,
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b,
+    int lda,
+    int ldb,
+    int ldc,
+    float beta_value,
+    bool force_bf16,
+    cudaStream_t stream) {
+  if (bias_gradient == nullptr || (!force_bf16 && !trainer_linear_bf16_bridge_enabled())) {
+    return false;
+  }
+  TrainerLinearBf16Workspace* workspace = ensure_trainer_linear_bf16_workspace(1, b_elements);
+  if (workspace == nullptr) {
+    return false;
+  }
+  constexpr int threads = 256;
+  const int b_blocks = static_cast<int>((b_elements + threads - 1) / threads);
+  f32_to_bf16_kernel<<<b_blocks, threads, 0, stream>>>(b, workspace->b, b_elements);
+  const auto* a_bf16 = reinterpret_cast<const __nv_bfloat16*>(a_bf16_bits);
+  return trainer_linear_bf16_cublaslt_enabled() &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k) &&
+      cublaslt_linear_matmul(
+          a_bf16,
+          workspace->b,
+          c,
+          CUDA_R_16BF,
+          CUDA_R_16BF,
+          CUDA_R_32F,
+          CUBLAS_COMPUTE_32F_FAST_16BF,
+          m,
+          n,
+          k,
+          op_a,
+          op_b,
+          lda,
+          ldb,
+          ldc,
+          beta_value,
+          CUBLASLT_EPILOGUE_BGRADB,
+          bias_gradient,
+          stream);
 }
 
 bool cublas_linear_gemm_ex_bf16_bits_b_float32(
@@ -8831,6 +9040,97 @@ void launch_linear_backward_weight_accumulate_bf16_bits_float32(
   dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
   linear_backward_weight_chunked_atomic_bf16_bits_float32_kernel<<<grid, threads, 0, stream>>>(
       x_bf16_bits, grad_out, grad_weight, n, rows, input_dim, output_dim, kRowChunkSize);
+}
+
+void
+launch_linear_backward_bias_accumulate_float32(
+    const float* grad_out,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    cudaStream_t stream);
+
+void launch_linear_backward_weight_bias_accumulate_bf16_float32(
+    const float* x,
+    const float* grad_out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim)) {
+    float* bias_gradient = ensure_trainer_linear_bgrad_workspace(output_dim);
+    if (bias_gradient != nullptr &&
+        cublas_linear_gemm_ex_bf16_float32_with_bgrad(
+            x,
+            grad_out,
+            grad_weight,
+            bias_gradient,
+            rows * input_dim,
+            rows * output_dim,
+            static_cast<int>(input_dim),
+            static_cast<int>(output_dim),
+            static_cast<int>(rows),
+            CUBLAS_OP_N,
+            CUBLAS_OP_T,
+            static_cast<int>(input_dim),
+            static_cast<int>(output_dim),
+            static_cast<int>(input_dim),
+            1.0f,
+            false,
+            false,
+            true,
+            stream)) {
+      launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
+      return;
+    }
+  }
+#endif
+  launch_linear_backward_weight_accumulate_bf16_float32(
+      x, grad_out, grad_weight, rows, input_dim, output_dim, stream);
+  launch_linear_backward_bias_accumulate_float32(grad_out, grad_bias, rows, output_dim, stream);
+}
+
+void launch_linear_backward_weight_bias_accumulate_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    const float* grad_out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim)) {
+    float* bias_gradient = ensure_trainer_linear_bgrad_workspace(output_dim);
+    if (bias_gradient != nullptr &&
+        cublas_linear_gemm_ex_bf16_bits_a_float32_with_bgrad(
+            x_bf16_bits,
+            grad_out,
+            grad_weight,
+            bias_gradient,
+            rows * output_dim,
+            static_cast<int>(input_dim),
+            static_cast<int>(output_dim),
+            static_cast<int>(rows),
+            CUBLAS_OP_N,
+            CUBLAS_OP_T,
+            static_cast<int>(input_dim),
+            static_cast<int>(output_dim),
+            static_cast<int>(input_dim),
+            1.0f,
+            true,
+            stream)) {
+      launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
+      return;
+    }
+  }
+#endif
+  launch_linear_backward_weight_accumulate_bf16_bits_float32(
+      x_bf16_bits, grad_out, grad_weight, rows, input_dim, output_dim, stream);
+  launch_linear_backward_bias_accumulate_float32(grad_out, grad_bias, rows, output_dim, stream);
 }
 
 void launch_linear_backward_weight_accumulate_float32_bf16_bits(
