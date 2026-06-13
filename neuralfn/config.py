@@ -421,6 +421,8 @@ def build_composed_lm_spec(
     normalized_model = str(base_model or "llama").strip().lower()
     if normalized_model == "mixllama":
         normalized_model = "llama"
+    if normalized_model in {"gpt", "gpt3"}:
+        normalized_model = "gpt2"
     if normalized_model not in {"llama", "gpt2", "nanogpt"}:
         raise ValueError(f"Unsupported composed base model {base_model!r}")
 

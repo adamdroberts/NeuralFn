@@ -24,6 +24,22 @@ def test_build_composed_dense_gpt2_defaults_to_eager_runtime() -> None:
     assert graph.input_node_ids == ["tokens_in", "targets_in"]
 
 
+def test_build_composed_dense_gpt_aliases_use_gpt_compatible_builder() -> None:
+    for base_model in ("gpt", "gpt2", "gpt3"):
+        spec = build_composed_lm_spec(
+            base_model=base_model,
+            topology="dense",
+            runtime="default",
+            vocab_size=1024,
+            num_layers=1,
+            model_dim=64,
+            num_heads=4,
+        )
+        assert spec.template.backbone == "gpt2"
+        assert spec.block_spec.family == "gpt2"
+        assert spec.template.runtime == "eager"
+
+
 def test_build_composed_standard_moe_jepa_uses_tokens_and_targets_contract() -> None:
     spec = build_composed_lm_spec(
         base_model="llama",

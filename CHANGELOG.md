@@ -10,6 +10,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 #### Changed
 
+- Extended the universal dense GPT alias surface through the full `nfn train`
+  parser, planner, compatibility spec builder, and public
+  `build_composed_lm_spec()` API. `gpt`, `gpt2`, and `gpt3` now parse
+  consistently outside the lightweight native dispatcher; graph-backed
+  compatibility paths and SDK composed specs canonicalize those aliases to the
+  GPT-compatible template builder, and `gpt3` remains only a 2048-token
+  default-context alias unless a template, graph, or explicit sequence length is
+  provided. Verification: added CLI and composed-spec regression coverage for
+  parser acceptance, defaults, and spec canonicalization.
 - Promoted the dense native trainer surface to universal GPT metadata. `nfn train --base-model gpt`, `gpt2`, and `gpt3` now forward `--model-family` into the compiled C++ trainer, the trainer JSON reports the requested family instead of hard-coding `gpt2`, and `cli/scripts/train_gpt.py` is the canonical direct script wrapper over the existing compatibility implementation. `gpt3` uses the same dense GPT native kernels and defaults to `--train-seq-len 2048` only when the caller did not provide a template, custom graph, or explicit sequence length; otherwise the selected `--template-name` or `--graph-file` remains the architecture authority. Verification: rebuilt `nfn_gpt2_native_train` and `nfn_native_train`; ran focused CLI/template/native alias tests; ran metadata smokes proving `model_family: "gpt3"`, default `max_seq_len: 2048`, and explicit `--train-seq-len 4096` preservation.
 - Fixed the canonical `cli/scripts/train_gpt.py` startup path so it executes the compatibility trainer script as `__main__` and preserves the pre-import compiled-CLI fast path. Direct `python cli/scripts/train_gpt.py --native-cuda-dry-run ...` now reaches the C++ handoff before loading `train_gpt2_native.py`, Torch, NumPy, or `server.dataset_manager`. Verification: added a direct-script regression test with `NFN_NATIVE_GPT2_CLI=/bin/echo`.
 - Added generic dense GPT native training aliases. `nfn train --base-model gpt`, `gpt2`, and `gpt3` now route through the same no-Python GPT-compatible compiled CLI path, and `nfn-native-train --list-models` reports `gpt`, `gpt2`, and `gpt3` as partial native aliases to the dense transformer-LM target. The new public `neuralfn.native_gpt` module exports generic aliases such as `NativeGptRunConfig`, `build_native_gpt_compiled_cli_run_config()`, `build_native_gpt_run_config()`, and `run_native_gpt()` over the existing no-Torch native implementation. Template and custom graph selectors remain the source of architectural truth, so GPT-3-style context/window changes should flow through `--template-name` or `--graph-file` rather than a separate hardcoded trainer. Verification: rebuilt `nfn_native_train`, ran the focused alias/template tests (`8 passed`), ran `python -m pytest tests/test_native_gpt2.py tests/test_native_dependencies.py -q` (`29 passed, 1 skipped`), and ran `python -m pytest cli/tests/test_train_gpt2_native.py -q` (`30 passed, 90 subtests passed`).

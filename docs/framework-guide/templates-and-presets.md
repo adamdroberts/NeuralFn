@@ -219,7 +219,9 @@ These keys can be passed in config-dict flows such as `build_model_spec_from_con
 
 The `nfn` CLI and lower-level Python callers can use `build_composed_lm_spec()`
 to build a `ModelSpec` from base-model/topology/router choices instead of a
-single named preset:
+single named preset. Dense GPT aliases (`gpt`, `gpt2`, and `gpt3`) all resolve
+through the GPT-compatible builder; the selected template or custom graph still
+decides the actual architecture and native support status:
 
 ```python
 from neuralfn.config import FineTuneSpec, build_composed_lm_spec

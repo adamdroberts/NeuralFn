@@ -90,6 +90,9 @@ without importing Torch. CLI users can select `--base-model gpt`, `gpt2`, or
 `gpt3`; `gpt3` defaults to a 2048-token context only when no template, graph,
 or explicit sequence length was supplied. Otherwise the template/custom graph
 still determines the architecture, context window, and unsupported-native status.
+The composed-spec SDK path mirrors this: `build_composed_lm_spec()` accepts
+`base_model="gpt"`, `"gpt2"`, or `"gpt3"` and canonicalizes all three through
+the GPT-compatible template builder.
 The implemented dense loop honors `train_batch_tokens` by deriving
 `grad_accum_steps`, averaging that many CUDA Tile microbatch gradients in device
 accumulation buffers, and applying clip plus AdamW once per optimizer step.

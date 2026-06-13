@@ -363,7 +363,9 @@ def build_composed_lm_spec(
 ```
 
 Build a `ModelSpec` from the same recipe vocabulary used by the `nfn` CLI:
-`base_model` is `llama`, `gpt2`, or `nanogpt`; `topology` is `dense` or `moe`;
+`base_model` is `llama`, `gpt`, `gpt2`, `gpt3`, or `nanogpt`; `gpt`, `gpt2`,
+and `gpt3` all use the GPT-compatible template builder and leave architecture
+selection to the chosen template or graph; `topology` is `dense` or `moe`;
 `router_mode` is `standard` or `semantic` for MoE graphs; `use_jepa` overlays
 the additive JEPA objective; and `runtime` can be default, `eager`, `compile`,
 or `megakernel`. Pass adapter options such as `adapter_type="lora"` or

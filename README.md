@@ -283,7 +283,10 @@ trainer entrypoint. `--base-model gpt2` and `--base-model gpt3` are dense GPT
 aliases that route to the same CUDA Tile C++ trainer; `gpt3` defaults to a
 2048-token context only when no explicit template, custom graph, or
 `--train-seq-len` is supplied. Otherwise the selected GPT template or
-`--graph-file` is the architecture source of truth. The Tile plan includes the GPT parameter layout and
+`--graph-file` is the architecture source of truth. The full `nfn train`
+parser and planner accept the same aliases, and graph-backed compatibility
+paths canonicalize those dense GPT aliases back to the GPT-compatible template
+builder instead of creating separate GPT-2/GPT-3 trainers. The Tile plan includes the GPT parameter layout and
 forward/backward/optimizer stage sequence; the training JSON reports
 `block_state_layout` flags for per-block allocation, initialization, gradient
 zeroing, gradient clipping, AdamW update, checkpoint export, activation tape,

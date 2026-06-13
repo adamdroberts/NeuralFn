@@ -19,7 +19,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 
 SCRIPT_CASES = [
-    ("train_gpt2", "Train gpt2 with the NeuralFn CUDA harness."),
+    ("train_gpt2", "Train dense GPT templates with the NeuralFn native CUDA harness."),
     ("train_jepa_semantic", "Train jepa_semantic_hybrid with the NeuralFn CUDA harness."),
     ("train_llama_fast", "Train llama_fast with the NeuralFn CUDA harness."),
     ("train_llama_megakernel", "Train llama_megakernel with the NeuralFn CUDA harness."),

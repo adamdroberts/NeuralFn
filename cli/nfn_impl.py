@@ -155,7 +155,8 @@ from train_semantic_router_moe import ROUTER_DEFAULTS
 
 HELP_STYLES = ("short", "long", "verbose")
 COMMANDS = ("train", "infer", "eval", "kernels")
-BASE_MODELS = ("llama", "gpt2", "nanogpt")
+DENSE_GPT_BASE_MODELS = frozenset({"gpt", "gpt2", "gpt3"})
+BASE_MODELS = ("llama", "gpt", "gpt2", "gpt3", "nanogpt")
 TOPOLOGIES = ("dense", "moe")
 ROUTER_MODES = ("standard", "semantic")
 DATASET_CHOICES = tuple(DATASET_SHORTCUT_CONTRACTS)
@@ -382,7 +383,7 @@ class ComposedRecipe:
             return "semantic_router_moe_megakernel" if self.runtime == "megakernel" else "semantic_router_moe"
         if self.base_model == "llama" and self.topology == "moe" and self.router_mode == "semantic" and self.use_jepa:
             return "jepa_semantic_hybrid_megakernel" if self.runtime == "megakernel" else "jepa_semantic_hybrid"
-        if self.base_model == "gpt2" and self.topology == "dense" and not self.use_jepa:
+        if self.base_model in DENSE_GPT_BASE_MODELS and self.topology == "dense" and not self.use_jepa:
             return "gpt2_megakernel" if self.runtime == "megakernel" else "gpt2"
         if self.base_model == "nanogpt" and self.topology == "dense" and not self.use_jepa:
             return "nanogpt_megakernel" if self.runtime == "megakernel" else "nanogpt"
@@ -556,6 +557,10 @@ def recipe_from_state(state: dict[str, Any]) -> ComposedRecipe:
     )
 
 
+def spec_base_model(recipe: ComposedRecipe) -> str:
+    return "gpt2" if recipe.base_model in DENSE_GPT_BASE_MODELS else recipe.base_model
+
+
 def dataset_choice_from_state(state: dict[str, Any]) -> str:
     if state.get("tinystories"):
         return "tinystories"
@@ -727,7 +732,7 @@ def command_epilog(command: str, style: str) -> str:
             "  nfn train --plan\n"
             "  nfn train --pretraining-file ./pretraining-data.txt\n"
             "  nfn train --base-model nanogpt --topology moe --router-mode semantic --jepa --megakernel\n"
-            "  nfn train --base-model gpt2 --model-preset harness_default --run-preset overnight"
+            "  nfn train --base-model gpt --model-preset harness_default --run-preset overnight"
         )
     if command == "infer":
         return (
@@ -748,7 +753,7 @@ def command_epilog(command: str, style: str) -> str:
     return (
         "Examples:\n"
         "  nfn eval --plan\n"
-        "  nfn eval --base-model gpt2\n"
+        "  nfn eval --base-model gpt\n"
         "  nfn eval --base-model nanogpt --topology moe --router-mode semantic --jepa --megakernel"
     )
 
@@ -3341,8 +3346,12 @@ def run_infer_chat_session(
 def base_model_defaults(base_model: str) -> dict[str, Any]:
     if base_model == "llama":
         return dict(LLAMA_DEFAULTS)
-    if base_model == "gpt2":
-        return dict(GPT2_DEFAULTS)
+    if base_model in DENSE_GPT_BASE_MODELS:
+        defaults = dict(GPT2_DEFAULTS)
+        defaults["model_family"] = base_model
+        if base_model == "gpt3":
+            defaults["train_seq_len"] = 2048
+        return defaults
     return dict(NANOGPT_DEFAULTS)
 
 
@@ -3630,7 +3639,9 @@ def training_questionnaire(explicit: set[str]) -> list[Question]:
             "Choose the base model to start from.",
             lambda _state: [
                 OptionChoice("Llama", "Balanced default for rope-based recipes.", "llama", recommended=True),
-                OptionChoice("GPT-2", "Absolute-position baseline with GPT-2 tokenizer defaults.", "gpt2"),
+                OptionChoice("GPT", "Native dense GPT trainer; templates or graph files select the architecture.", "gpt"),
+                OptionChoice("GPT-2", "Compatibility alias for the dense GPT native trainer.", "gpt2"),
+                OptionChoice("GPT-3", "Dense GPT alias with a 2048-token default context.", "gpt3"),
                 OptionChoice("NanoGPT", "NanoGPT-style baseline with optional bias and dropout knobs.", "nanogpt"),
             ],
             lambda _state, _explicit: "base_model" not in explicit,
@@ -4280,7 +4291,7 @@ def build_spec_from_args(args: argparse.Namespace, recipe: ComposedRecipe):
             ppo_epochs_per_rollout=int(getattr(args, "ppo_epochs_per_rollout", None) if getattr(args, "ppo_epochs_per_rollout", None) is not None else 4),
         )
     spec = build_composed_lm_spec(
-        base_model=recipe.base_model,
+        base_model=spec_base_model(recipe),
         topology=recipe.topology,
         router_mode=recipe.router_mode,
         use_jepa=recipe.use_jepa,

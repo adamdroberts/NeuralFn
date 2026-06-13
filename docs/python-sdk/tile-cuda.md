@@ -241,7 +241,10 @@ available, while new code can use the generic `neuralfn.native_gpt` aliases such
 as `NativeGptRunConfig`, `build_native_gpt_compiled_cli_run_config()`, and
 `run_native_gpt()`. CLI `--base-model gpt`, `gpt2`, and `gpt3` all select the
 same dense GPT native target; the selected template/custom graph decides the
-architecture and whether a matching C++ trainer is implemented. Every shipped
+architecture and whether a matching C++ trainer is implemented. The full CLI
+parser and planner expose those same aliases, with `gpt3` only changing the
+default context to 2048 tokens when no template, graph, or explicit sequence
+length was supplied. Every shipped
 GPT template name can be passed through this no-Torch selection path, and the
 compiled C++ plan JSON reports
 `shipped_template_catalog`, `shipped_template_catalog_count`, and

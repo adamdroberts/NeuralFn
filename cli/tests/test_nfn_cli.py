@@ -69,6 +69,22 @@ class NfnCliTest(unittest.TestCase):
         self.assertEqual("megakernel", recipe.runtime)
         self.assertEqual("nanogpt_semantic_moe_jepa_megakernel", recipe.mode_name())
 
+    def test_dense_gpt_aliases_are_universal_native_family(self) -> None:
+        parser = nfn_impl.build_command_parser("train", style="long")
+        for base_model in ("gpt", "gpt2", "gpt3"):
+            with self.subTest(base_model=base_model):
+                args = parser.parse_args(["--base-model", base_model, "--tinystories"])
+                self.assertEqual(base_model, args.base_model)
+
+                recipe = nfn.recipe_from_state({"base_model": base_model, "topology": "dense"})
+                self.assertEqual("gpt2", recipe.mode_name())
+                self.assertEqual("gpt2", nfn_impl.spec_base_model(recipe))
+
+                defaults = nfn_impl.base_model_defaults(base_model)
+                self.assertEqual(base_model, defaults["model_family"])
+
+        self.assertEqual(2048, nfn_impl.base_model_defaults("gpt3")["train_seq_len"])
+
     def test_render_help_mentions_base_model_router_and_presets(self) -> None:
         help_text = nfn.render_help("train", style="verbose")
         self.assertIn("--base-model", help_text)

@@ -52,6 +52,9 @@ Canonical docs:
   context only when the caller did not supply `--train-seq-len`,
   `--template-name`/`--preset`, or `--graph-file`; otherwise the selected
   template or graph remains the architecture source of truth.
+- Keep the full `nfn train` parser and planner in sync with the lightweight
+  dispatcher: `gpt`, `gpt2`, and `gpt3` must all be accepted, while graph-backed
+  compatibility code canonicalizes them to the GPT-compatible template builder.
 - Keep `cli/scripts/train_gpt2.py` native-only and lightweight: importing it,
   building its parser, resolving defaults, and running direct native dispatch
   must set up repo/script imports without requiring `PYTHONPATH` and without
