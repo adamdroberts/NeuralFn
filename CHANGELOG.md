@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-13 Paired kernel speed measurements
+
+#### Changed
+
+- `nfn kernels bench` now measures graph-walk PyTorch, compiled PyTorch, and
+  Tile-requested execution with paired interleaved samples instead of timing
+  each mode in one isolated block. JSON output includes `measurement:
+  "paired_interleaved"`, `samples`, per-sample timings, and paired ratios such
+  as `compiled_tile_cuda_requested_over_compiled_pytorch`. This makes candidate
+  and baseline timings share the same run window, reducing skew from unrelated
+  external GPU load.
+- Added `tools/paired_kernel_speed.py` for native CUDA kernel experiments where
+  the older and candidate paths are separate commands or environment
+  configurations. The tool alternates baseline/candidate order across samples
+  and reports paired candidate-over-baseline ratios.
+
+#### Verification
+
+- Verified `python -m pytest cli/tests/test_nfn_cli.py -q -k
+  kernels_bench_json_reports_execution_modes`.
+- Verified `python -m pytest tests/test_tile_cuda_examples.py -q -k
+  paired_kernel_speed_tool_compiles_and_smokes`.
+
 ### 2026-06-13 Native GPT packed attention backward chunking
 
 #### Fixed

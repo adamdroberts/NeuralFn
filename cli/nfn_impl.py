@@ -860,6 +860,7 @@ def build_command_parser(command: str, style: str) -> argparse.ArgumentParser:
         parser.add_argument("--json", action="store_true", dest="json_output", help="Print machine-readable JSON.")
         parser.add_argument("--iterations", type=int, default=200, help="Benchmark iterations for 'kernels bench'.")
         parser.add_argument("--warmup", type=int, default=20, help="Warmup iterations for 'kernels bench'.")
+        parser.add_argument("--samples", type=int, default=5, help="Paired benchmark samples for 'kernels bench'.")
         parser.add_argument("--device", default="auto", help="Benchmark device: auto, cpu, cuda, or cuda:N.")
         parser.add_argument("--output-dir", default=None, help="Directory for 'kernels examples --write'.")
         parser.add_argument("--write", action="store_true", help="Write CUDA Tile example files for 'kernels examples'.")
@@ -4931,9 +4932,14 @@ def run_kernels(state: dict[str, Any]) -> int:
             print(f"  device: {payload['device']}")
             print(f"  iterations: {payload['iterations']}")
             print(f"  warmup: {payload['warmup']}")
+            print(f"  samples: {payload['samples']}")
             print(f"  tile_backend_resolved: {payload['tile_backend_resolved']}")
             for name, value in payload["seconds"].items():
                 print(f"  {name}: {value:.6f}s")
+            print("  paired ratios:")
+            for name, value in payload["ratios"].items():
+                rendered = "null" if value is None else f"{value:.6f}"
+                print(f"    {name}: {rendered}")
         return 0
     if action == "examples":
         payload = kernel_examples_payload(
@@ -5036,17 +5042,54 @@ def _run_graph_walk_for_benchmark(compiled: Any, *flat_inputs: torch.Tensor) -> 
     return tuple(outputs)
 
 
-def _benchmark_callable(fn: Callable[[], Any], *, iterations: int, warmup: int, device: torch.device) -> float:
-    for _ in range(max(0, warmup)):
-        fn()
+def _synchronize_benchmark_device(device: torch.device) -> None:
     if device.type == "cuda":
         torch.cuda.synchronize(device)
+
+
+def _time_benchmark_sample(fn: Callable[[], Any], *, iterations: int, device: torch.device) -> float:
+    _synchronize_benchmark_device(device)
     start = time.perf_counter()
     for _ in range(max(1, iterations)):
         fn()
-    if device.type == "cuda":
-        torch.cuda.synchronize(device)
+    _synchronize_benchmark_device(device)
     return time.perf_counter() - start
+
+
+def _paired_benchmark_samples(
+    callables: dict[str, Callable[[], Any]],
+    *,
+    iterations: int,
+    warmup: int,
+    samples: int,
+    device: torch.device,
+) -> tuple[dict[str, float], list[dict[str, float]]]:
+    names = list(callables)
+    for name in names:
+        fn = callables[name]
+        for _ in range(max(0, warmup)):
+            fn()
+    _synchronize_benchmark_device(device)
+
+    sample_rows: list[dict[str, float]] = []
+    totals = {name: 0.0 for name in names}
+    sample_count = max(1, samples)
+    for sample_idx in range(sample_count):
+        order = names if sample_idx % 2 == 0 else list(reversed(names))
+        row: dict[str, float] = {}
+        for name in order:
+            seconds = _time_benchmark_sample(callables[name], iterations=iterations, device=device)
+            row[name] = seconds
+            totals[name] += seconds
+        sample_rows.append(row)
+    means = {name: totals[name] / sample_count for name in names}
+    return means, sample_rows
+
+
+def _safe_ratio(numerator: float, denominator: float) -> float | None:
+    if denominator == 0:
+        return None
+    return numerator / denominator
 
 
 def run_kernel_benchmark(state: dict[str, Any]) -> dict[str, Any]:
@@ -5063,6 +5106,7 @@ def run_kernel_benchmark(state: dict[str, Any]) -> dict[str, Any]:
     warmup_raw = state.get("warmup")
     iterations = max(1, int(200 if iterations_raw is None else iterations_raw))
     warmup = max(0, int(20 if warmup_raw is None else warmup_raw))
+    samples = max(1, int(state.get("samples") or 5))
     graph = _tile_benchmark_graph()
     x = torch.randn(8192, device=device)
     y = torch.randn(8192, device=device)
@@ -5070,22 +5114,15 @@ def run_kernel_benchmark(state: dict[str, Any]) -> dict[str, Any]:
     compiled_tile = CompiledTorchGraph(graph, kernel_backend="tile_cuda", tile_cuda_strict=False).to(device)
 
     with torch.no_grad():
-        graph_walk_seconds = _benchmark_callable(
-            lambda: _run_graph_walk_for_benchmark(compiled_torch, x, y),
+        seconds, paired_samples = _paired_benchmark_samples(
+            {
+                "graph_walk_pytorch": lambda: _run_graph_walk_for_benchmark(compiled_torch, x, y),
+                "compiled_pytorch": lambda: compiled_torch(x, y),
+                "compiled_tile_cuda_requested": lambda: compiled_tile(x, y),
+            },
             iterations=iterations,
             warmup=warmup,
-            device=device,
-        )
-        compiled_torch_seconds = _benchmark_callable(
-            lambda: compiled_torch(x, y),
-            iterations=iterations,
-            warmup=warmup,
-            device=device,
-        )
-        compiled_tile_seconds = _benchmark_callable(
-            lambda: compiled_tile(x, y),
-            iterations=iterations,
-            warmup=warmup,
+            samples=samples,
             device=device,
         )
 
@@ -5093,11 +5130,18 @@ def run_kernel_benchmark(state: dict[str, Any]) -> dict[str, Any]:
         "device": str(device),
         "iterations": iterations,
         "warmup": warmup,
+        "samples": samples,
         "tile_backend_resolved": compiled_tile.resolved_kernel_backend,
-        "seconds": {
-            "graph_walk_pytorch": graph_walk_seconds,
-            "compiled_pytorch": compiled_torch_seconds,
-            "compiled_tile_cuda_requested": compiled_tile_seconds,
+        "measurement": "paired_interleaved",
+        "seconds": seconds,
+        "paired_samples": paired_samples,
+        "ratios": {
+            "compiled_tile_cuda_requested_over_compiled_pytorch": _safe_ratio(
+                seconds["compiled_tile_cuda_requested"], seconds["compiled_pytorch"]
+            ),
+            "compiled_tile_cuda_requested_over_graph_walk_pytorch": _safe_ratio(
+                seconds["compiled_tile_cuda_requested"], seconds["graph_walk_pytorch"]
+            ),
         },
     }
 

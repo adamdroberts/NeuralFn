@@ -180,6 +180,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --json
           --iterations N
           --warmup N
+          --samples N
           --device auto|cpu|cuda|cuda:N
           --output-dir PATH
           --write

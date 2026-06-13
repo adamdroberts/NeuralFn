@@ -123,7 +123,19 @@ class NfnCliTest(unittest.TestCase):
         out = io.StringIO()
         with redirect_stdout(out):
             rc = nfn_impl.main(
-                ["kernels", "bench", "--json", "--device", "cpu", "--iterations", "1", "--warmup", "0"],
+                [
+                    "kernels",
+                    "bench",
+                    "--json",
+                    "--device",
+                    "cpu",
+                    "--iterations",
+                    "1",
+                    "--warmup",
+                    "0",
+                    "--samples",
+                    "2",
+                ],
                 stdin_isatty=False,
                 stdout_isatty=False,
             )
@@ -133,9 +145,13 @@ class NfnCliTest(unittest.TestCase):
         self.assertEqual("cpu", payload["device"])
         self.assertEqual(1, payload["iterations"])
         self.assertEqual(0, payload["warmup"])
+        self.assertEqual(2, payload["samples"])
+        self.assertEqual("paired_interleaved", payload["measurement"])
         self.assertIn("graph_walk_pytorch", payload["seconds"])
         self.assertIn("compiled_pytorch", payload["seconds"])
         self.assertIn("compiled_tile_cuda_requested", payload["seconds"])
+        self.assertEqual(2, len(payload["paired_samples"]))
+        self.assertIn("compiled_tile_cuda_requested_over_compiled_pytorch", payload["ratios"])
 
     def test_kernels_examples_json_lists_and_writes_examples(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -91,7 +91,7 @@ nfn infer --graph ~/NeuralFn/artifacts/nanogpt.json --prompt "Once upon a time"
 nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer ~/Downloads/fineweb_8192_bpe_lossless_caps_caseops_v1_reserved.model
 nfn eval --preset semantic_router_moe --dataset shakespeare
 nfn kernels list --json
-nfn kernels bench --device auto --iterations 200
+nfn kernels bench --device auto --iterations 200 --samples 5
 nfn kernels examples
 ```
 
@@ -105,7 +105,7 @@ The legacy script entrypoints are still available:
 python scripts/train_jepa_semantic.py --device cuda --max-steps 400
 ```
 
-CUDA Tile diagnostics and example generation live under `nfn kernels`. `nfn train --help`, `nfn infer --help`, `nfn eval --help`, and `nfn kernels ... --help` use lightweight static help that does not import `nfn_impl`, Torch, or the graph-backed runtime. `nfn kernels list [--json]` is the metadata-only coverage path. `nfn kernels doctor` reports toolchain and coverage status, `nfn kernels bench` compares graph-walk PyTorch, static compiled PyTorch, and Tile-requested execution on a small scalar graph, and `nfn kernels examples --write --output-dir examples/tile_cuda` regenerates checked-in examples plus one generated SDK snippet per registry entry. For `nfn train`, `nfn infer`, and `nfn eval`, selecting `--kernel-backend tile-cuda` now defaults to strict kernel enforcement; use `--no-tile-cuda-strict` only when intentionally comparing fallback behavior.
+CUDA Tile diagnostics and example generation live under `nfn kernels`. `nfn train --help`, `nfn infer --help`, `nfn eval --help`, and `nfn kernels ... --help` use lightweight static help that does not import `nfn_impl`, Torch, or the graph-backed runtime. `nfn kernels list [--json]` is the metadata-only coverage path. `nfn kernels doctor` reports toolchain and coverage status, `nfn kernels bench` compares graph-walk PyTorch, static compiled PyTorch, and Tile-requested execution on a small scalar graph with paired interleaved samples and paired ratios, and `nfn kernels examples --write --output-dir examples/tile_cuda` regenerates checked-in examples plus one generated SDK snippet per registry entry. For native candidate-vs-older command comparisons, `python tools/paired_kernel_speed.py --baseline "OLD_COMMAND" --candidate "NEW_COMMAND"` alternates command order across samples so unrelated external GPU load is shared across both variants. For `nfn train`, `nfn infer`, and `nfn eval`, selecting `--kernel-backend tile-cuda` now defaults to strict kernel enforcement; use `--no-tile-cuda-strict` only when intentionally comparing fallback behavior.
 
 If you launch through `conda run`, use `--no-capture-output` so the progress
 logs stream while the run is active:
