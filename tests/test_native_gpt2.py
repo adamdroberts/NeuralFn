@@ -1351,6 +1351,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert lm_payload["loaded"] is False
     assert lm_payload["rows"] == 2
     assert lm_payload["vocab"] == 50257
+    assert lm_payload["padded_vocab"] == 50304
     assert lm_payload["model_dim"] == 768
     assert "nfn_native_tile_token_cross_entropy_backward_with_workspace_float32" in lm_payload["kernels"]
     assert lm_payload["passed"] is False
@@ -1494,6 +1495,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert transformer_lm_payload["head_dim"] == 4
     assert transformer_lm_payload["seq"] == 2
     assert transformer_lm_payload["vocab"] == 50257
+    assert transformer_lm_payload["padded_vocab"] == 50304
     assert transformer_lm_payload["model_dim"] == 4
     assert transformer_lm_payload["hidden_dim"] == 8
     assert transformer_lm_payload["weight_update_count"] == 16
@@ -1528,6 +1530,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert embedding_lm_payload["seq"] == 2
     assert embedding_lm_payload["rows"] == 2
     assert embedding_lm_payload["vocab"] == 50257
+    assert embedding_lm_payload["padded_vocab"] == 50304
     assert embedding_lm_payload["model_dim"] == 768
     assert embedding_lm_payload["weight_update_count"] == 4
     assert "nfn_native_tile_absolute_position_embedding_float32" in embedding_lm_payload["kernels"]
@@ -1570,6 +1573,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_embedding_payload["batch_size"] == 1
     assert train_embedding_payload["eval_batch_size"] == 1
     assert train_embedding_payload["seq_len"] == 2
+    assert train_embedding_payload["vocab"] == 50257
+    assert train_embedding_payload["padded_vocab"] == 50304
     assert train_embedding_payload["max_steps"] == 2
     assert train_embedding_payload["eval_every_steps"] == 1
     assert train_embedding_payload["eval_batches"] == 1

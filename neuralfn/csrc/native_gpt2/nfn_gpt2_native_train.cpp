@@ -1602,10 +1602,11 @@ int print_optimizer_smoke_json(const Config& cfg, const char* program) {
 int print_lm_step_smoke_json(const Config& cfg, const char* program) {
     constexpr std::int64_t kRows = 2;
     constexpr std::int64_t kVocab = 50257;
+    constexpr std::int64_t kPaddedVocab = 50304;
     constexpr std::int64_t kDim = 768;
-    constexpr std::int64_t kWeightElements = kVocab * kDim;
+    constexpr std::int64_t kWeightElements = kPaddedVocab * kDim;
     constexpr std::int64_t kActivationElements = kRows * kDim;
-    constexpr std::int64_t kLogitElements = kRows * kVocab;
+    constexpr std::int64_t kLogitElements = kRows * kPaddedVocab;
     constexpr float kInitialWeight = 0.01f;
     constexpr float kLearningRate = 0.1f;
     constexpr float kBeta1 = 0.9f;
@@ -1618,8 +1619,8 @@ int print_lm_step_smoke_json(const Config& cfg, const char* program) {
     constexpr int kCudaMemcpyDeviceToHost = 2;
     const std::int64_t host_tokens[kRows] = {0, 3};
     const std::int64_t host_targets[kRows] = {1, 4};
-    const double expected_loss = std::log(static_cast<double>(kVocab));
-    const float inv_vocab = 1.0f / static_cast<float>(kVocab);
+    const double expected_loss = std::log(static_cast<double>(kPaddedVocab));
+    const float inv_vocab = 1.0f / static_cast<float>(kPaddedVocab);
 
     auto expected_grad_for_token = [&](std::int64_t token) {
         const bool is_target = token == host_targets[0] || token == host_targets[1];
@@ -1845,10 +1846,10 @@ int print_lm_step_smoke_json(const Config& cfg, const char* program) {
         run(token_embedding(weight, token_ids, hidden, kRows, kDim, nullptr), "token_embedding");
     }
     if (error.empty()) {
-        run(linear(hidden, weight, nullptr, logits, kRows, kDim, kVocab, false, nullptr), "linear");
+        run(linear(hidden, weight, nullptr, logits, kRows, kDim, kPaddedVocab, false, nullptr), "linear");
     }
     if (error.empty()) {
-        run(ce_partials(logits, targets, loss_partials, kRows, kVocab, nullptr), "token_cross_entropy_partials");
+        run(ce_partials(logits, targets, loss_partials, kRows, kPaddedVocab, nullptr), "token_cross_entropy_partials");
     }
     if (error.empty()) {
         run(ce_backward_workspace(
@@ -1858,17 +1859,17 @@ int print_lm_step_smoke_json(const Config& cfg, const char* program) {
                 row_denom,
                 grad_logits,
                 kRows,
-                kVocab,
+                kPaddedVocab,
                 1.0f / static_cast<float>(kRows),
                 nullptr),
             "token_cross_entropy_backward_with_workspace");
     }
     if (error.empty()) {
-        run(linear_backward_input(grad_logits, weight, grad_hidden, kRows, kDim, kVocab, nullptr),
+        run(linear_backward_input(grad_logits, weight, grad_hidden, kRows, kDim, kPaddedVocab, nullptr),
             "linear_backward_input");
     }
     if (error.empty()) {
-        run(linear_backward_weight(hidden, grad_logits, grad_weight, kRows, kDim, kVocab, nullptr),
+        run(linear_backward_weight(hidden, grad_logits, grad_weight, kRows, kDim, kPaddedVocab, nullptr),
             "linear_backward_weight");
     }
     if (error.empty()) {
@@ -1982,6 +1983,7 @@ int print_lm_step_smoke_json(const Config& cfg, const char* program) {
         << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
         << "  \"rows\": " << kRows << ",\n"
         << "  \"vocab\": " << kVocab << ",\n"
+        << "  \"padded_vocab\": " << kPaddedVocab << ",\n"
         << "  \"model_dim\": " << kDim << ",\n"
         << "  \"kernels\": [\n"
         << "    \"nfn_native_tile_token_embedding_float32\",\n"
@@ -2017,11 +2019,12 @@ int print_embedding_lm_step_smoke_json(
     constexpr std::int64_t kSeq = 2;
     constexpr std::int64_t kRows = kBatch * kSeq;
     constexpr std::int64_t kVocab = 50257;
+    constexpr std::int64_t kPaddedVocab = 50304;
     constexpr std::int64_t kDim = 768;
-    constexpr std::int64_t kTokenWeightElements = kVocab * kDim;
+    constexpr std::int64_t kTokenWeightElements = kPaddedVocab * kDim;
     constexpr std::int64_t kPositionWeightElements = kSeq * kDim;
     constexpr std::int64_t kActivationElements = kRows * kDim;
-    constexpr std::int64_t kLogitElements = kRows * kVocab;
+    constexpr std::int64_t kLogitElements = kRows * kPaddedVocab;
     constexpr float kInitialTokenWeight = 0.01f;
     constexpr float kInitialPositionWeight = 0.02f;
     constexpr float kInitialLnWeight = 1.0f;
@@ -2368,10 +2371,10 @@ int print_embedding_lm_step_smoke_json(
         run(layer_norm(residual, ln_weight, ln_bias, ln_out, kRows, kDim, kNormEps, nullptr), "ln_f.forward");
     }
     if (error.empty()) {
-        run(linear(ln_out, token_weight, nullptr, logits, kRows, kDim, kVocab, false, nullptr), "lm_head.forward");
+        run(linear(ln_out, token_weight, nullptr, logits, kRows, kDim, kPaddedVocab, false, nullptr), "lm_head.forward");
     }
     if (error.empty()) {
-        run(ce_partials(logits, targets, loss_partials, kRows, kVocab, nullptr), "token_cross_entropy.partials");
+        run(ce_partials(logits, targets, loss_partials, kRows, kPaddedVocab, nullptr), "token_cross_entropy.partials");
     }
     if (error.empty()) {
         run(ce_backward_workspace(
@@ -2381,17 +2384,17 @@ int print_embedding_lm_step_smoke_json(
                 row_denom,
                 grad_logits,
                 kRows,
-                kVocab,
+                kPaddedVocab,
                 1.0f / static_cast<float>(kRows),
                 nullptr),
             "token_cross_entropy.backward_with_workspace");
     }
     if (error.empty()) {
-        run(linear_backward_input(grad_logits, token_weight, grad_ln, kRows, kDim, kVocab, nullptr),
+        run(linear_backward_input(grad_logits, token_weight, grad_ln, kRows, kDim, kPaddedVocab, nullptr),
             "lm_head.backward_input");
     }
     if (error.empty()) {
-        run(linear_backward_weight(ln_out, grad_logits, grad_token_weight, kRows, kDim, kVocab, nullptr),
+        run(linear_backward_weight(ln_out, grad_logits, grad_token_weight, kRows, kDim, kPaddedVocab, nullptr),
             "lm_head.backward_weight");
     }
     if (error.empty()) {
@@ -2563,6 +2566,7 @@ int print_embedding_lm_step_smoke_json(
         << "  \"seq\": " << kSeq << ",\n"
         << "  \"rows\": " << kRows << ",\n"
         << "  \"vocab\": " << kVocab << ",\n"
+        << "  \"padded_vocab\": " << kPaddedVocab << ",\n"
         << "  \"model_dim\": " << kDim << ",\n"
         << "  \"weight_update_count\": 4,\n"
         << "  \"kernels\": [\n"
@@ -2609,6 +2613,7 @@ int run_embedding_lm_training_json(
     const neuralfn::native_train::TokenShardDataset& dataset,
     const char* program) {
     constexpr std::int64_t kVocab = 50257;
+    constexpr std::int64_t kPaddedVocab = 50304;
     constexpr std::int64_t kDim = 768;
     constexpr float kInitialTokenWeight = 0.01f;
     constexpr float kInitialPositionWeight = 0.02f;
@@ -2628,10 +2633,10 @@ int run_embedding_lm_training_json(
     const std::int64_t train_rows = train_batch_size * seq_len;
     const std::int64_t eval_rows = eval_batch_size * seq_len;
     const std::int64_t max_rows = train_rows > eval_rows ? train_rows : eval_rows;
-    const std::int64_t token_weight_elements = kVocab * kDim;
+    const std::int64_t token_weight_elements = kPaddedVocab * kDim;
     const std::int64_t position_weight_elements = seq_len * kDim;
     const std::int64_t activation_elements = max_rows * kDim;
-    const std::int64_t logit_elements = max_rows * kVocab;
+    const std::int64_t logit_elements = max_rows * kPaddedVocab;
     std::string error;
     neuralfn::native_train::BatchPlan batch_plan;
     try {
@@ -2973,11 +2978,11 @@ int run_embedding_lm_training_json(
                 label + ".ln_f.forward");
         }
         if (error.empty()) {
-            run(linear(ln_out, token_weight, nullptr, logits, row_count, kDim, kVocab, false, nullptr),
+            run(linear(ln_out, token_weight, nullptr, logits, row_count, kDim, kPaddedVocab, false, nullptr),
                 label + ".lm_head.forward");
         }
         if (error.empty()) {
-            run(ce_partials(logits, targets, loss_partials, row_count, kVocab, nullptr),
+            run(ce_partials(logits, targets, loss_partials, row_count, kPaddedVocab, nullptr),
                 label + ".token_cross_entropy.partials");
         }
         if (error.empty()) {
@@ -3042,17 +3047,17 @@ int run_embedding_lm_training_json(
                     row_denom,
                     grad_logits,
                     train_rows,
-                    kVocab,
+                    kPaddedVocab,
                     1.0f / static_cast<float>(train_rows),
                     nullptr),
                 "token_cross_entropy.backward");
         }
         if (error.empty()) {
-            run(linear_backward_input(grad_logits, token_weight, grad_ln, train_rows, kDim, kVocab, nullptr),
+            run(linear_backward_input(grad_logits, token_weight, grad_ln, train_rows, kDim, kPaddedVocab, nullptr),
                 "lm_head.backward_input");
         }
         if (error.empty()) {
-            run(linear_backward_weight(ln_out, grad_logits, grad_token_weight, train_rows, kDim, kVocab, nullptr),
+            run(linear_backward_weight(ln_out, grad_logits, grad_token_weight, train_rows, kDim, kPaddedVocab, nullptr),
                 "lm_head.backward_weight");
         }
         if (error.empty()) {
@@ -3156,6 +3161,7 @@ int run_embedding_lm_training_json(
         << "  \"rows\": " << train_rows << ",\n"
         << "  \"eval_rows\": " << eval_rows << ",\n"
         << "  \"vocab\": " << kVocab << ",\n"
+        << "  \"padded_vocab\": " << kPaddedVocab << ",\n"
         << "  \"model_dim\": " << kDim << ",\n"
         << "  \"max_steps\": " << cfg.max_steps << ",\n"
         << "  \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
@@ -5392,6 +5398,7 @@ int print_transformer_lm_step_smoke_json(
     constexpr std::int64_t kHeads = 1;
     constexpr std::int64_t kSeq = 2;
     constexpr std::int64_t kVocab = 50257;
+    constexpr std::int64_t kPaddedVocab = 50304;
     constexpr std::int64_t kDim = 4;
     constexpr std::int64_t kHeadDim = kDim / kHeads;
     constexpr std::int64_t kRows = kBatch * kSeq;
@@ -5400,13 +5407,13 @@ int print_transformer_lm_step_smoke_json(
     constexpr std::int64_t kActivationElements = kRows * kDim;
     constexpr std::int64_t kHiddenElements = kRows * kHidden;
     constexpr std::int64_t kQkvActivationElements = kRows * kQkvDim;
-    constexpr std::int64_t kTokenWeightElements = kVocab * kDim;
+    constexpr std::int64_t kTokenWeightElements = kPaddedVocab * kDim;
     constexpr std::int64_t kPositionWeightElements = kSeq * kDim;
     constexpr std::int64_t kQkvWeightElements = kQkvDim * kDim;
     constexpr std::int64_t kAttnProjWeightElements = kDim * kDim;
     constexpr std::int64_t kFcWeightElements = kHidden * kDim;
     constexpr std::int64_t kMlpProjWeightElements = kDim * kHidden;
-    constexpr std::int64_t kLogitElements = kRows * kVocab;
+    constexpr std::int64_t kLogitElements = kRows * kPaddedVocab;
     constexpr float kInitialPositionWeight = 0.02f;
     constexpr float kLnWeight = 1.0f;
     constexpr float kLnBias = 0.0f;
@@ -5953,11 +5960,11 @@ int print_transformer_lm_step_smoke_json(
     if (error.empty()) run(linear(act, mlp_proj_weight, mlp_proj_bias, mlp_out, kRows, kHidden, kDim, true, nullptr), "mlp.proj.forward");
     if (error.empty()) run(residual_add(residual1, mlp_out, residual_scale, residual2, kActivationElements, nullptr), "mlp.residual");
     if (error.empty()) run(layer_norm(residual2, lnf_weight, lnf_bias, lnf_out, kRows, kDim, kNormEps, nullptr), "ln_f.forward");
-    if (error.empty()) run(linear(lnf_out, token_weight, nullptr, logits, kRows, kDim, kVocab, false, nullptr), "lm_head.forward");
-    if (error.empty()) run(ce_partials(logits, targets, loss_partials, kRows, kVocab, nullptr), "ce.forward");
-    if (error.empty()) run(ce_backward_workspace(logits, targets, row_max, row_denom, grad_logits, kRows, kVocab, 1.0f / static_cast<float>(kRows), nullptr), "ce.backward");
-    if (error.empty()) run(linear_backward_input(grad_logits, token_weight, grad_lnf, kRows, kDim, kVocab, nullptr), "lm_head.backward_input");
-    if (error.empty()) run(linear_backward_weight(lnf_out, grad_logits, grad_token_weight, kRows, kDim, kVocab, nullptr), "lm_head.backward_weight");
+    if (error.empty()) run(linear(lnf_out, token_weight, nullptr, logits, kRows, kDim, kPaddedVocab, false, nullptr), "lm_head.forward");
+    if (error.empty()) run(ce_partials(logits, targets, loss_partials, kRows, kPaddedVocab, nullptr), "ce.forward");
+    if (error.empty()) run(ce_backward_workspace(logits, targets, row_max, row_denom, grad_logits, kRows, kPaddedVocab, 1.0f / static_cast<float>(kRows), nullptr), "ce.backward");
+    if (error.empty()) run(linear_backward_input(grad_logits, token_weight, grad_lnf, kRows, kDim, kPaddedVocab, nullptr), "lm_head.backward_input");
+    if (error.empty()) run(linear_backward_weight(lnf_out, grad_logits, grad_token_weight, kRows, kDim, kPaddedVocab, nullptr), "lm_head.backward_weight");
     if (error.empty()) run(layer_norm_backward_affine(residual2, grad_lnf, grad_lnf_weight, grad_lnf_bias, kRows, kDim, kNormEps, nullptr), "ln_f.backward_affine");
     if (error.empty()) run(layer_norm_backward_input(residual2, grad_lnf, lnf_weight, grad_residual2, kRows, kDim, kNormEps, nullptr), "ln_f.backward_input");
     if (error.empty()) run(linear_backward_weight(act, grad_residual2, grad_mlp_proj_weight, kRows, kHidden, kDim, nullptr), "mlp.proj.backward_weight");
@@ -6135,6 +6142,7 @@ int print_transformer_lm_step_smoke_json(
         << "  \"seq\": " << kSeq << ",\n"
         << "  \"rows\": " << kRows << ",\n"
         << "  \"vocab\": " << kVocab << ",\n"
+        << "  \"padded_vocab\": " << kPaddedVocab << ",\n"
         << "  \"model_dim\": " << kDim << ",\n"
         << "  \"hidden_dim\": " << kHidden << ",\n"
         << "  \"weight_update_count\": 16,\n"

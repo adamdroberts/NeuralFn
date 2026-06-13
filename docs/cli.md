@@ -191,6 +191,9 @@ are reduced on device before one host loss copy per forward loss, and tied
 LM-head dWeight chunks accumulate directly into `accum_grad_token_weight` with
 `nfn_native_tile_linear_backward_weight_accumulate_float32` instead of using a
 full-vocab scratch gradient buffer per chunk or per microbatch.
+`--smoke-lm-step`, `--smoke-embedding-lm-step`, `--train-embedding-lm`, and
+`--smoke-transformer-lm-step` use that same 50,304-row padded tied token
+embedding/LM-head tensor while validating token IDs against public vocab 50,257.
 Its JSON reports `trained_layers: 12`, `target_layers: 12`,
 `block_state_layout` with block-vector allocation/init/zero/clip/AdamW/checkpoint/tape/forward/backward loop
 flags, `activation_tape_strategy: "scratch-recompute"`, `activation_tape_count: 1`,

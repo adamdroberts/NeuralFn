@@ -99,6 +99,9 @@ GEMM path. Compiled plan JSON reports `shape.vocab_size: 50257` and
 `shape.padded_vocab_size: 50304`; training and checkpoint JSON report
 `vocab: 50257` plus `padded_vocab: 50304`, and `logit_workspace_elements` is
 computed from the padded row count.
+The no-data LM smoke, dataset-backed embedding-LM smoke/training path, and
+transformer-LM smoke path use the same padded tensor shape while keeping shard
+token validation on the public vocab.
 
 GPT-2-compatible causal SDPA now uses the SM120 ThunderKittens bf16
 FlashAttention-style bridge by default in `tools/build_native_train_tile_ops.sh`.
