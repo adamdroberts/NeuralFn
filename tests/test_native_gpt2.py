@@ -1793,6 +1793,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "validation_block_output_copies_elided": True,
         "backward_recompute_blocks": 11,
         "final_block_backward_recompute_elided": True,
+        "backward_recompute_mlp_projection_elided": True,
+        "backward_recompute_final_residual_elided": True,
         "activation_tape_strategy": "scratch-recompute",
         "per_block_parameter_buffers": 12,
         "per_block_gradient_buffers": 0,
@@ -2876,6 +2878,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block_backward" in gpt2_source_text
     assert "block_recompute" in gpt2_source_text
     assert "lm_head_backward" in gpt2_source_text
+    assert "compute_final_output" in gpt2_source_text
+    assert "backward_recompute_mlp_projection_elided" in gpt2_source_text
+    assert "backward_recompute_final_residual_elided" in gpt2_source_text
     assert "bool next_into(std::uint16_t* tokens, std::uint16_t* targets" in token_shards_header_text
     assert "SequentialTokenBatchSampler::next_into" in token_shards_source_text
     assert "append_contiguous_chunks_into" in token_shards_source_text

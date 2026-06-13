@@ -392,7 +392,7 @@ Full GPT-2 `--train-transformer-lm` uses `nfn_native_tile_copy_float32` for pers
 
 Full GPT-2 `--train-transformer-lm` validation forwards should not copy intermediate block outputs into persistent training-backward buffers because validation has no backward pass. Keep `validation_persistent_block_outputs` at `0` and `validation_block_output_copies_elided` true in the default JSON.
 
-Full GPT-2 `--train-transformer-lm` should reuse the final block activations left in the scratch tape after the initial forward pass. Keep earlier blocks on scratch recomputation from persistent block outputs, but avoid recomputing the final block before its backward pass. The default 12-layer JSON reports `backward_recompute_blocks: 11` and `final_block_backward_recompute_elided: true`.
+Full GPT-2 `--train-transformer-lm` should reuse the final block activations left in the scratch tape after the initial forward pass. Keep earlier blocks on scratch recomputation from persistent block outputs, but avoid recomputing the final block before its backward pass. Earlier-block recompute should stop after the MLP GELU activation because backward does not consume the recomputed MLP projection output or final residual output. The default 12-layer JSON reports `backward_recompute_blocks: 11`, `final_block_backward_recompute_elided: true`, `backward_recompute_mlp_projection_elided: true`, and `backward_recompute_final_residual_elided: true`.
 
 Full GPT-2 `--train-transformer-lm` also fuses backward residual-gradient pair additions through `nfn_native_tile_scaled_residual_add_float32`. Keep `block_state_layout.residual_backward_fused` true for the compiled trainer and avoid reverting to zero-fill plus two gradient-accumulate launches.
 

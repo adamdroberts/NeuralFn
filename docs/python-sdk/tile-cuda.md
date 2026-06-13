@@ -210,7 +210,11 @@ follows validation. JSON reports `validation_persistent_block_outputs: 0` and
 The backward pass reuses the final block activations that remain in the scratch
 tape after the initial forward pass, so only the earlier blocks are recomputed;
 the default JSON reports `backward_recompute_blocks: 11` and
-`final_block_backward_recompute_elided: true`.
+`final_block_backward_recompute_elided: true`. Earlier-block recompute stops
+after the MLP GELU activation because backward does not consume the recomputed
+MLP projection output or final residual output; JSON reports
+`backward_recompute_mlp_projection_elided: true` and
+`backward_recompute_final_residual_elided: true`.
 Backward residual-gradient pair additions use
 `nfn_native_tile_scaled_residual_add_float32` instead of zero-fill plus two
 gradient-accumulate launches; `block_state_layout.residual_backward_fused`

@@ -300,7 +300,11 @@ reports `validation_persistent_block_outputs: 0` and
 The scratch-recompute backward pass reuses the final block activations left by
 the initial forward pass, so only earlier blocks are recomputed from persistent
 block outputs. The default 12-layer JSON reports `backward_recompute_blocks: 11`
-and `final_block_backward_recompute_elided: true`.
+and `final_block_backward_recompute_elided: true`. Earlier-block recompute now
+stops after the MLP GELU activation because backward does not consume the
+recomputed MLP projection output or final residual output; JSON reports
+`backward_recompute_mlp_projection_elided: true` and
+`backward_recompute_final_residual_elided: true`.
 Transformer block backward residual-gradient pair additions use
 `nfn_native_tile_scaled_residual_add_float32`, so the trainer avoids the earlier
 zero-fill plus two-accumulate sequence; `block_state_layout.residual_backward_fused`

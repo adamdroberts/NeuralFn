@@ -430,7 +430,11 @@ Canonical docs:
   the final block activations left in the scratch tape by the initial forward
   pass. Only earlier blocks should be recomputed; the default 12-layer JSON
   should report `backward_recompute_blocks: 11` and
-  `final_block_backward_recompute_elided: true`.
+  `final_block_backward_recompute_elided: true`. Earlier-block recompute should
+  stop after the MLP GELU activation; backward does not consume recomputed MLP
+  projection output or final residual output. Keep
+  `backward_recompute_mlp_projection_elided: true` and
+  `backward_recompute_final_residual_elided: true`.
 - Residual-gradient pair additions in full GPT-2 `--train-transformer-lm`
   backward must use `nfn_native_tile_scaled_residual_add_float32`, not zero-fill
   plus two gradient-accumulate launches. JSON should report

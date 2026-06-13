@@ -7820,7 +7820,11 @@ int run_transformer_lm_training_json(
     auto block_input_for = [&](std::size_t block_index) -> const float* {
         return block_index == 0 ? x : block_outputs[block_index - 1];
     };
-    auto forward_block = [&](TransformerBlockParams& block, TransformerBlockActivations& tape, const float* block_input, const std::string& label) {
+    auto forward_block = [&](TransformerBlockParams& block,
+                             TransformerBlockActivations& tape,
+                             const float* block_input,
+                             const std::string& label,
+                             bool compute_final_output) {
         const std::string stage_name = label.find("recompute") == std::string::npos ? "block_forward" : "block_recompute";
         const std::int64_t stage_event = stage_begin(stage_name);
         if (error.empty()) run(layer_norm(block_input, block.ln1_weight, block.ln1_bias, tape.ln1_out, rows, kDim, kNormEps, nullptr), label + ".ln1.forward");
@@ -7833,8 +7837,10 @@ int run_transformer_lm_training_json(
         if (error.empty()) run(layer_norm(tape.residual1, block.ln2_weight, block.ln2_bias, tape.ln2_out, rows, kDim, kNormEps, nullptr), label + ".ln2.forward");
         if (error.empty()) run(linear(tape.ln2_out, block.fc_weight, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias");
         if (error.empty()) run(gelu_add_bias(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward");
-        if (error.empty()) run(linear(tape.act, block.mlp_proj_weight, nullptr, tape.mlp_out, rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias");
-        if (error.empty()) run(linear_bias_residual_add(tape.residual1, tape.mlp_out, block.mlp_proj_bias, residual_scale, tape.residual2, rows, kDim, nullptr), label + ".mlp.bias_residual");
+        if (compute_final_output) {
+            if (error.empty()) run(linear(tape.act, block.mlp_proj_weight, nullptr, tape.mlp_out, rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias");
+            if (error.empty()) run(linear_bias_residual_add(tape.residual1, tape.mlp_out, block.mlp_proj_bias, residual_scale, tape.residual2, rows, kDim, nullptr), label + ".mlp.bias_residual");
+        }
         stage_end(stage_event, stage_name);
     };
     auto backward_block = [&](TransformerBlockParams& block, TransformerBlockActivations& tape, const float* block_input, float* incoming_grad, float* output_grad, const std::string& label) {
@@ -7871,7 +7877,7 @@ int run_transformer_lm_training_json(
         float* final_block_output = x;
         for (std::size_t i = 0; i < blocks.size(); ++i) {
             TransformerBlockActivations& tape = block_tapes[0];
-            forward_block(blocks[i], tape, block_input, label + ".block" + std::to_string(i));
+            forward_block(blocks[i], tape, block_input, label + ".block" + std::to_string(i), true);
             final_block_output = tape.residual2;
             if (error.empty() && preserve_block_outputs && i + 1 < blocks.size()) {
                 run(copy(tape.residual2, block_outputs[i], activation_elements, nullptr),
@@ -7917,7 +7923,7 @@ int run_transformer_lm_training_json(
             TransformerBlockActivations& tape = block_tapes[0];
             const float* block_input = block_input_for(i);
             if (reverse_index != blocks.size()) {
-                forward_block(blocks[i], tape, block_input, "block" + std::to_string(i) + ".recompute");
+                forward_block(blocks[i], tape, block_input, "block" + std::to_string(i) + ".recompute", false);
             }
             backward_block(blocks[i], tape, block_input, incoming_grad, output_grad, "block" + std::to_string(i));
             std::swap(incoming_grad, output_grad);
@@ -8740,6 +8746,8 @@ int run_transformer_lm_training_json(
         << "    \"validation_block_output_copies_elided\": true,\n"
         << "    \"backward_recompute_blocks\": " << backward_recompute_block_count << ",\n"
         << "    \"final_block_backward_recompute_elided\": true,\n"
+        << "    \"backward_recompute_mlp_projection_elided\": true,\n"
+        << "    \"backward_recompute_final_residual_elided\": true,\n"
         << "    \"activation_tape_strategy\": \"scratch-recompute\",\n"
         << "    \"per_block_parameter_buffers\": " << kPerBlockParameterBuffers << ",\n"
         << "    \"per_block_gradient_buffers\": " << kPerBlockGradientBuffers << ",\n"
