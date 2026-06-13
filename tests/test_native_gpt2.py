@@ -2934,6 +2934,20 @@ def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> N
     assert (Path(env["NFN_NATIVE_MISSING_TRAINERS_OUT_DIR"]) / "nfn_llama_native_train").exists()
 
 
+def test_bf16_bit_linear_dweight_accumulate_fallbacks_use_large_row_chunks() -> None:
+    root = Path(__file__).resolve().parents[1]
+    kernels_text = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text()
+
+    assert "kLinearBackwardBiasRowChunkSize = 1024" in kernels_text
+    for function_name in (
+        "launch_linear_backward_weight_accumulate_bf16_bits_float32",
+        "launch_linear_backward_weight_accumulate_float32_bf16_bits",
+    ):
+        function_body = kernels_text.split(f"void {function_name}", 1)[1].split("\nvoid ", 1)[0]
+        assert "kRowChunkSize = kLinearBackwardBiasRowChunkSize" in function_body
+        assert "kRowChunkSize = 256" not in function_body
+
+
 def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     gpt2_source = root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
@@ -3137,6 +3151,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "trainer_linear_bf16_b_operand" in kernels_text
     assert "trainer_linear_bf16_a_operand" in kernels_text
     assert "kLinearBackwardBiasRowChunkSize = 1024" in kernels_text
+    for function_name in (
+        "launch_linear_backward_weight_accumulate_bf16_bits_float32",
+        "launch_linear_backward_weight_accumulate_float32_bf16_bits",
+    ):
+        function_body = kernels_text.split(f"void {function_name}", 1)[1].split("\nvoid ", 1)[0]
+        assert "kRowChunkSize = kLinearBackwardBiasRowChunkSize" in function_body
+        assert "kRowChunkSize = 256" not in function_body
     assert "cached-first-gemm-operand-with-optimizer-reset" in gpt2_source_text
     assert "nfn_native_tile_trainer_linear_bf16_cache_reset" in gpt2_source_text
     assert "payload_pack_strategy" in gpt2_source_text

@@ -8823,7 +8823,7 @@ void launch_linear_backward_weight_accumulate_bf16_bits_float32(
     return;
   }
 #endif
-  constexpr std::int64_t kRowChunkSize = 256;
+  constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
   const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
   const std::int64_t n = output_dim * input_dim;
   constexpr int threads = 256;
@@ -8863,7 +8863,7 @@ void launch_linear_backward_weight_accumulate_float32_bf16_bits(
     return;
   }
 #endif
-  constexpr std::int64_t kRowChunkSize = 256;
+  constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
   const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
   const std::int64_t n = output_dim * input_dim;
   constexpr int threads = 256;
