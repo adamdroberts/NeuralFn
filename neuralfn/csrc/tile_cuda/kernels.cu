@@ -8744,8 +8744,9 @@ void launch_linear_bf16_output_float32(
           static_cast<int>(input_dim),
           static_cast<int>(input_dim),
           static_cast<int>(output_dim),
+          // Cache the stable weight operand only; activation pointers are reused with new contents.
           true,
-          true,
+          false,
           true,
           stream)) {
     return;

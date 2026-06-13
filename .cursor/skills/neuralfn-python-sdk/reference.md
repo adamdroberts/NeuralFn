@@ -279,6 +279,9 @@ logits, dHidden, and dWeight chunks stay on optimized TF32 tensor-op
 `linear_bf16_gemm_count`, `linear_sgemm_count`, `linear_bf16_a_pack_count`,
 `linear_bf16_a_cache_hit_count`, `linear_bf16_cache_reset_count`,
 `linear_bf16_cached_a_capacity`, and `linear_bf16_cache_entry_count`.
+The BF16 operand cache is only for stable operands such as weights and biases;
+do not cache mutable activation inputs in BF16-output GEMMs because native
+scratch activation pointers are reused with new contents.
 Full GPT-2 `--train-transformer-lm` reuses the tied LM-head logits chunk as
 dlogits through
 `nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32`;

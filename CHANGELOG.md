@@ -31,6 +31,23 @@ Future updates should append new entries here rather than replacing older notes.
   (`30 passed, 1 skipped`), `python -m pytest tests/test_template_presets.py
   -q -x` passed (`26 passed`), and `git diff --check` passed.
 
+### 2026-06-13 Native GPT BF16 activation-cache correctness
+
+#### Fixed
+
+- `nfn_native_tile_linear_bf16_output_float32` no longer caches the mutable
+  activation operand for BF16-output GEMMs. The native dense GPT trainer reuses
+  scratch activation addresses across blocks and microbatches, so pointer-keyed
+  activation cache hits could reuse stale packed BF16 inputs. The path still
+  caches stable packed weights and continues to invalidate the BF16 operand
+  cache after AdamW updates. Migration note: no CLI change is required, but
+  rebuild `libnfn_native_train_tile_ops.so` before running native GPT training.
+  Verification: `python -m pytest tests/test_native_gpt2.py -q` passed
+  (`30 passed, 1 skipped`), `git diff --check` passed, the Tile ops shared
+  library and native GPT CLI were rebuilt, and a one-step TinyStories native
+  CUDA probe passed with no SGEMM calls while reporting 1,121 BF16 activation
+  packs, 927 stable cache hits, and 129,635 tokens/second.
+
 ### 2026-06-12 Native GPT-2 Tile-CUDA default
 
 #### Breaking changes

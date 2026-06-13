@@ -3204,6 +3204,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "bf16_bits_add_bias_inplace_kernel" in kernels_text
     assert "launch_linear_bf16_float32" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_float32_to_bf16_bits" in kernels_text
+    assert "Cache the stable weight operand only; activation pointers are reused with new contents." in kernels_text
     assert "tk_linear_gemm_bf16_forward_to_bf16_bits" in kernels_text
     assert "tk_linear_gemm_bf16_forward_to_float32" in kernels_text
     assert "tk_linear_gemm_bf16_forward_gelu_to_bf16_bits" in kernels_text

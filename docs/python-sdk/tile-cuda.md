@@ -161,8 +161,9 @@ bridge. Tied LM-head BF16 logits use the SM120 ThunderKittens GEMM
 bridge by default when the Tile ops library was built with TK support; set
 `NFN_TILE_CUDA_LINEAR_TK_GEMM=0` or `NFN_NATIVE_LINEAR_TK_GEMM=0` to force the
 BF16 `cublasGemmEx` fallback for diagnostics. The BF16 bridge keeps a
-multi-entry packed first-GEMM-operand
-cache for weight-forward and weight-dInput calls, then invalidates that cache
+multi-entry cache for stable packed operands such as weights and biases, but
+BF16-output GEMMs repack mutable activation inputs because native scratch
+activation pointers are reused with new contents. The cache is invalidated
 after AdamW updates. GPT-2 training JSON reports `linear_backend_strategy:
 "block-bf16-cublaslt-shape-gated-lm-head-tk-sm120-default"` when the default
 block cuBLASLt plus TK LM-head path runs,
