@@ -793,6 +793,33 @@ int nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_f
     std::int64_t compress_stride,
     void* cuda_stream);
 
+int nfn_native_tile_scaled_dot_product_attention_store_tk_bf16_float32(
+    const float* q,
+    const float* k,
+    const float* v,
+    float* out,
+    std::uint16_t* saved_q_bf16_bits,
+    std::uint16_t* saved_k_bf16_bits,
+    std::uint16_t* saved_v_bf16_bits,
+    std::uint16_t* saved_o_bf16_bits,
+    float* saved_lse,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    void* cuda_stream);
+
 int nfn_native_tile_attention_tk_store_forward_workspace_bf16(
     std::uint16_t* saved_q_bf16_bits,
     std::uint16_t* saved_k_bf16_bits,

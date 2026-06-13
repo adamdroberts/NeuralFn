@@ -3171,6 +3171,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "mlp.gelu.backward_inplace.bf16_bits" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_ATTENTION_ACTIVATIONS" in gpt2_source_text
+    assert "nfn_native_tile_scaled_dot_product_attention_store_tk_bf16_float32" in gpt2_source_text
+    assert "forward_store_tk_bf16" in gpt2_source_text
+    assert "tk-bf16-direct-forward-store-saved-backward" in gpt2_source_text
+    assert "launch_tk_attention_forward_store_bf16_float32" in kernels_text
     assert "stored_attention_store_kernel_launches" in gpt2_source_text
     assert "stored_attention_backward_kernel_launches" in gpt2_source_text
     assert "stored_attention_backward_consumer_strategy" in gpt2_source_text
