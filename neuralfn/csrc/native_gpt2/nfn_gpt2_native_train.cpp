@@ -654,6 +654,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_trainer_linear_stats_reset",
         "nfn_native_tile_trainer_linear_bf16_cache_reset",
         "nfn_native_tile_trainer_linear_bf16_gemm_count",
+        "nfn_native_tile_trainer_linear_tk_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_gemm_count",
         "nfn_native_tile_trainer_linear_sgemm_count",
         "nfn_native_tile_trainer_linear_bf16_a_pack_count",
@@ -6455,6 +6456,7 @@ int run_transformer_lm_training_json(
     std::int64_t attention_forward_row_attr_const_size_bytes = 0;
     std::int64_t attention_forward_row_attr_local_size_bytes = 0;
     std::int64_t linear_bf16_gemm_count = 0;
+    std::int64_t linear_tk_gemm_count = 0;
     std::int64_t linear_cublaslt_gemm_count = 0;
     std::int64_t linear_sgemm_count = 0;
     std::int64_t linear_bf16_a_pack_count = 0;
@@ -6539,6 +6541,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_trainer_linear_stats_reset",
         "nfn_native_tile_trainer_linear_bf16_cache_reset",
         "nfn_native_tile_trainer_linear_bf16_gemm_count",
+        "nfn_native_tile_trainer_linear_tk_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_gemm_count",
         "nfn_native_tile_trainer_linear_sgemm_count",
         "nfn_native_tile_trainer_linear_bf16_a_pack_count",
@@ -6736,6 +6739,7 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsResetFn trainer_linear_stats_reset = nullptr;
     TrainerLinearStatsResetFn trainer_linear_bf16_cache_reset = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_gemm_count_fn = nullptr;
+    TrainerLinearStatsCountFn trainer_linear_tk_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_cublaslt_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_sgemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_a_pack_count_fn = nullptr;
@@ -6921,6 +6925,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_trainer_linear_bf16_cache_reset");
                 trainer_linear_bf16_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_bf16_gemm_count");
+                trainer_linear_tk_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_tk_gemm_count");
                 trainer_linear_cublaslt_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_cublaslt_gemm_count");
                 trainer_linear_sgemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
@@ -9020,6 +9026,9 @@ int run_transformer_lm_training_json(
     if (trainer_linear_bf16_gemm_count_fn != nullptr) {
         linear_bf16_gemm_count = trainer_linear_bf16_gemm_count_fn();
     }
+    if (trainer_linear_tk_gemm_count_fn != nullptr) {
+        linear_tk_gemm_count = trainer_linear_tk_gemm_count_fn();
+    }
     if (trainer_linear_cublaslt_gemm_count_fn != nullptr) {
         linear_cublaslt_gemm_count = trainer_linear_cublaslt_gemm_count_fn();
     }
@@ -9193,8 +9202,10 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"lm_head_grad_logits_workspace_allocated\": false,\n"
         << "  \"linear_backend_strategy\": \""
-        << (lm_head_bf16_logits_enabled && linear_bf16_gemm_count > 0
-                ? "block-and-lm-head-bf16-gemmex-default"
+        << (lm_head_bf16_logits_enabled && linear_tk_gemm_count > 0
+                ? "block-bf16-gemmex-lm-head-tk-sm120-default"
+                : (lm_head_bf16_logits_enabled && linear_bf16_gemm_count > 0
+                ? "block-and-lm-head-bf16-gemmex-fallback"
                 : (linear_bf16_gemm_count > 0 && linear_cublaslt_gemm_count > 0
                 ? "block-forward-dinput-dweight-bf16-lm-head-tf32-cublaslt-opt-in"
                 : (linear_bf16_gemm_count > 0 && linear_sgemm_count > 0
@@ -9203,19 +9214,29 @@ int run_transformer_lm_training_json(
                        ? "bf16-gemmex-float32-output"
                 : (linear_cublaslt_gemm_count > 0
                       ? "tf32-cublaslt-optimized-opt-in"
-                      : (linear_sgemm_count > 0 ? "tf32-sgemm-optimized" : "not-run"))))))
+                      : (linear_sgemm_count > 0 ? "tf32-sgemm-optimized" : "not-run")))))))
         << "\",\n"
         << "  \"block_forward_linear_strategy\": \"forced-bf16-gemmex-forward\",\n"
         << "  \"block_backward_input_linear_strategy\": \"forced-bf16-gemmex-dinput\",\n"
         << "  \"block_backward_weight_linear_strategy\": \"forced-bf16-gemmex-dweight-accumulate\",\n"
         << "  \"non_block_forward_backward_linear_strategy\": \""
-        << (lm_head_bf16_logits_enabled
-                ? "padded-lm-head-bf16-gemmex-default"
+        << (lm_head_bf16_logits_enabled && linear_tk_gemm_count > 0
+                ? "padded-lm-head-tk-sm120-bf16-gemm-default"
+                : (lm_head_bf16_logits_enabled
+                ? "padded-lm-head-bf16-gemmex-fallback"
                 : (linear_cublaslt_gemm_count > 0
                        ? "padded-lm-head-tf32-cublaslt-optimized-opt-in"
-                       : "padded-lm-head-tf32-sgemm-optimized-default"))
+                       : "padded-lm-head-tf32-sgemm-optimized-default")))
+        << "\",\n"
+        << "  \"lm_head_logits_linear_strategy\": \""
+        << (lm_head_bf16_logits_enabled && linear_tk_gemm_count > 0
+                ? "tk-sm120-bf16-gemm-default"
+                : (lm_head_bf16_logits_enabled
+                       ? "bf16-gemmex-fallback"
+                       : "tf32-sgemm-or-cublaslt"))
         << "\",\n"
         << "  \"linear_bf16_gemm_count\": " << linear_bf16_gemm_count << ",\n"
+        << "  \"linear_tk_gemm_count\": " << linear_tk_gemm_count << ",\n"
         << "  \"linear_cublaslt_gemm_count\": " << linear_cublaslt_gemm_count << ",\n"
         << "  \"linear_sgemm_count\": " << linear_sgemm_count << ",\n"
         << "  \"linear_bf16_a_pack_count\": " << linear_bf16_a_pack_count << ",\n"

@@ -136,19 +136,24 @@ to the older optimized TF32 tensor-op `cublasSgemm` path for debugging. Set
 bridge. Set `NFN_TILE_CUDA_LINEAR_CUBLASLT=1` or
 `NFN_NATIVE_LINEAR_CUBLASLT=1` only when profiling the normal linear ABI's
 cached cuBLASLt TF32 path; the current 5090 GPT-2 shape keeps SGEMM as the
-faster default. The BF16 bridge keeps a multi-entry packed first-GEMM-operand
+faster default. Tied LM-head BF16 logits use the SM120 ThunderKittens GEMM
+bridge by default when the Tile ops library was built with TK support; set
+`NFN_TILE_CUDA_LINEAR_TK_GEMM=0` or `NFN_NATIVE_LINEAR_TK_GEMM=0` to force the
+BF16 `cublasGemmEx` fallback for diagnostics. The BF16 bridge keeps a
+multi-entry packed first-GEMM-operand
 cache for weight-forward and weight-dInput calls, then invalidates that cache
 after AdamW updates. GPT-2 training JSON reports `linear_backend_strategy:
-"block-forward-dinput-dweight-bf16-lm-head-tf32-sgemm-default"`,
+"block-bf16-gemmex-lm-head-tk-sm120-default"` when the TK LM-head path runs,
 `block_forward_linear_strategy`, `block_backward_input_linear_strategy`,
 `block_backward_weight_linear_strategy`,
-`non_block_forward_backward_linear_strategy`, `linear_bf16_gemm_count`,
+`non_block_forward_backward_linear_strategy`, `lm_head_logits_linear_strategy`,
+`linear_bf16_gemm_count`, `linear_tk_gemm_count`,
 `linear_cublaslt_gemm_count`, `linear_sgemm_count`,
 `linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
 `linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
 `linear_bf16_cache_entry_count`.
 The default `non_block_forward_backward_linear_strategy` is
-`"padded-lm-head-tf32-sgemm-optimized-default"`.
+`"padded-lm-head-tk-sm120-bf16-gemm-default"` when TK GEMM is available.
 The full GPT-2 transformer-LM trainer also exposes
 `nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32`
 for tied LM-head CE backward. That ABI overwrites the logits chunk with dlogits,
