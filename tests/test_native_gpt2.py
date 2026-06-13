@@ -2832,6 +2832,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     tile_print_command_guard = 'if (cfg.backend == "tile-cuda" && cfg.print_command)'
     assert tile_print_command_guard in gpt2_source_text
     assert gpt2_source_text.index(tile_print_command_guard) < gpt2_source_text.index("resolve_token_shards")
+    assert "tile-cuda exits before CUDA/shard setup" in gpt2_source_text
+    assert "Print the train_gpt2cu command" not in gpt2_source_text
     assert "token_ids_pinned" in gpt2_source_text
     assert "transformer_lm_token_device_arena" in gpt2_source_text
     assert "transformer_lm_token_u16_pinned_arena" in gpt2_source_text
