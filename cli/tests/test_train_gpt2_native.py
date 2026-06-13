@@ -983,7 +983,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 "#!/usr/bin/env bash\\n"
                 "printf %s\\\\n \\\"No native C++ trainer is registered for model family 'llama'.\\\" >&2\\n"
                 "printf 'Current native training coverage:\\\\n' >&2\\n"
-                "printf '  gpt2: partial-native-trainer -> nfn_gpt2_native_train\\\\n' >&2\\n"
+                "printf '  gpt2: partial-native-trainer -> nfn_gpt_native_train\\\\n' >&2\\n"
                 "printf '  nanogpt: partial-native-trainer -> nfn_nanogpt_native_train\\\\n' >&2\\n"
                 "exit 2\\n",
                 encoding="utf-8",
@@ -1026,7 +1026,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
         self.assertEqual(2, proc.returncode)
         self.assertIn("No native C++ trainer is registered for model family 'llama'", proc.stderr)
-        self.assertIn("gpt2: partial-native-trainer -> nfn_gpt2_native_train", proc.stderr)
+        self.assertIn("gpt2: partial-native-trainer -> nfn_gpt_native_train", proc.stderr)
         self.assertIn("nanogpt: partial-native-trainer -> nfn_nanogpt_native_train", proc.stderr)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)

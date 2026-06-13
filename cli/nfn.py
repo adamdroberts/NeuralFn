@@ -398,10 +398,13 @@ def _resolve_direct_native_train_cli(model: str) -> str:
     if requested_train_cli:
         return requested_train_cli
     if _is_dense_gpt_native_model(model):
+        requested = os.environ.get("NFN_NATIVE_GPT_CLI", "").strip()
+        if requested:
+            return requested
         requested = os.environ.get("NFN_NATIVE_GPT2_CLI", "").strip()
         if requested:
             return requested
-        return str(ROOT.parent / "build" / "nfn_gpt2_native_train")
+        return str(ROOT.parent / "build" / "nfn_gpt_native_train")
     native_train = ROOT.parent / "build" / "nfn_native_train"
     if native_train.exists():
         return str(native_train)

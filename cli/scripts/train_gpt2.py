@@ -37,10 +37,13 @@ def _explicit_arg(argv: list[str], *flags: str) -> bool:
 
 
 def _native_cli_path() -> str:
+    requested = os.environ.get("NFN_NATIVE_GPT_CLI", "").strip()
+    if requested:
+        return requested
     requested = os.environ.get("NFN_NATIVE_GPT2_CLI", "").strip()
     if requested:
         return requested
-    return str(REPO_ROOT / "build" / "nfn_gpt2_native_train")
+    return str(REPO_ROOT / "build" / "nfn_gpt_native_train")
 
 
 def _native_target_path() -> str:

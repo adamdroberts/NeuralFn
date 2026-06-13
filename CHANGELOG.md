@@ -10,6 +10,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 #### Changed
 
+- Promoted the dense GPT native trainer entrypoint from GPT-2-specific names to
+  universal GPT names. `tools/build_native_gpt_cli.sh` now builds
+  `nfn_gpt_native_train`, `nfn_native_train` defaults to `--base-model gpt`,
+  and the native registry reports `gpt`, `gpt2`, and `gpt3` as dense GPT
+  aliases targeting `nfn_gpt_native_train`; `gpt2` remains a template/default
+  shape, not a separate trainer family. `cli/install.sh` now installs
+  `nfn-gpt-native` and `nfn-gpt-native-train` as the primary commands, while
+  the old GPT-2 command names and `NFN_NATIVE_GPT2_CLI` remain compatibility
+  fallbacks. New configuration should use `NFN_NATIVE_GPT_CLI` or
+  `--native-gpt-cli`. Verification: added/updated native dispatcher,
+  build-all, installer, SDK-default, and CLI regression coverage.
 - Extended the universal dense GPT alias surface through the full `nfn train`
   parser, planner, compatibility spec builder, and public
   `build_composed_lm_spec()` API. `gpt`, `gpt2`, and `gpt3` now parse

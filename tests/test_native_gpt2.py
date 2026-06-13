@@ -2257,9 +2257,9 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
         pytest.skip("c++ compiler not available")
     root = Path(__file__).resolve().parents[1]
     unified = tmp_path / "nfn_native_train"
-    fake_gpt2 = tmp_path / "nfn_gpt2_native_train"
-    fake_gpt2.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
-    fake_gpt2.chmod(0o755)
+    fake_gpt = tmp_path / "nfn_gpt_native_train"
+    fake_gpt.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
+    fake_gpt.chmod(0o755)
 
     build = subprocess.run(
         ["bash", str(root / "tools" / "build_native_train_cli.sh"), str(unified)],
@@ -2279,8 +2279,8 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
                 "train",
                 "--base-model",
                 model,
-                "--native-gpt2-cli",
-                str(fake_gpt2),
+                "--native-gpt-cli",
+                str(fake_gpt),
                 "--dataset-alias",
                 "/tmp/native-cache",
                 "--dry-run",
@@ -2308,10 +2308,14 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert coverage.returncode == 0, coverage.stderr
     payload = json.loads(coverage.stdout)
     statuses = {item["name"]: item["status"] for item in payload["models"]}
+    native_targets = {item["name"]: item["native_target"] for item in payload["models"]}
     assert statuses["gpt"] == "partial-native-trainer"
     assert statuses["gpt2"] == "partial-native-trainer"
     assert statuses["gpt3"] == "partial-native-trainer"
     assert statuses["nanogpt"] == "partial-native-trainer"
+    assert native_targets["gpt"] == "nfn_gpt_native_train"
+    assert native_targets["gpt2"] == "nfn_gpt_native_train"
+    assert native_targets["gpt3"] == "nfn_gpt_native_train"
     sdk_payload = native_train_model_registry(native_train_cli=str(unified))
     sdk_statuses = {item["name"]: item["status"] for item in sdk_payload["models"]}
     assert sdk_statuses == statuses
@@ -2902,6 +2906,7 @@ def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> N
     env["NFN_NATIVE_GPT2_BINDING_OUT"] = str(tmp_path / f"_native_gpt2{ext_suffix}")
     env["NFN_NATIVE_TRAIN_BINDING_OUT"] = str(tmp_path / f"_native_train{ext_suffix}")
     env["NFN_NATIVE_GPT2_LAUNCHER_OUT"] = str(tmp_path / "nfn_gpt2_tile_train")
+    env["NFN_NATIVE_GPT_CLI_OUT"] = str(tmp_path / "nfn_gpt_native_train")
     env["NFN_NATIVE_GPT2_CLI_OUT"] = str(tmp_path / "nfn_gpt2_native_train")
     env["NFN_NATIVE_TRAIN_CLI_OUT"] = str(tmp_path / "nfn_native_train")
     env["NFN_NATIVE_TRAIN_TILE_OPS_OUT"] = str(tmp_path / "libnfn_native_train_tile_ops.so")
@@ -2921,6 +2926,7 @@ def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> N
     assert Path(env["NFN_NATIVE_GPT2_BINDING_OUT"]).exists()
     assert Path(env["NFN_NATIVE_TRAIN_BINDING_OUT"]).exists()
     assert Path(env["NFN_NATIVE_GPT2_LAUNCHER_OUT"]).exists()
+    assert Path(env["NFN_NATIVE_GPT_CLI_OUT"]).exists()
     assert Path(env["NFN_NATIVE_GPT2_CLI_OUT"]).exists()
     assert Path(env["NFN_NATIVE_TRAIN_CLI_OUT"]).exists()
     assert Path(env["NFN_NATIVE_TRAIN_TILE_OPS_OUT"]).exists()
@@ -4091,13 +4097,14 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     if shutil.which("c++") is None:
         pytest.skip("c++ compiler not available")
     root = Path(__file__).resolve().parents[1]
-    native_cli = tmp_path / "nfn_gpt2_native_train"
+    native_cli = tmp_path / "nfn_gpt_native_train"
+    compat_native_cli = tmp_path / "nfn_gpt2_native_train"
     native_train_cli = tmp_path / "nfn_native_train"
     launcher = tmp_path / "nfn_gpt2_tile_train"
     missing_dir = tmp_path / "missing"
 
     build_cli = subprocess.run(
-        ["bash", str(root / "tools" / "build_native_gpt2_cli.sh"), str(native_cli)],
+        ["bash", str(root / "tools" / "build_native_gpt_cli.sh"), str(native_cli)],
         cwd=root,
         text=True,
         stdout=subprocess.PIPE,
@@ -4105,6 +4112,15 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
         check=False,
     )
     assert build_cli.returncode == 0, build_cli.stderr
+    build_compat_cli = subprocess.run(
+        ["bash", str(root / "tools" / "build_native_gpt2_cli.sh"), str(compat_native_cli)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert build_compat_cli.returncode == 0, build_compat_cli.stderr
     build_native_train = subprocess.run(
         ["bash", str(root / "tools" / "build_native_train_cli.sh"), str(native_train_cli)],
         cwd=root,
@@ -4136,7 +4152,8 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     env = os.environ.copy()
     env["NFN_NATIVE_GPT2_BIN_DIR"] = str(bin_dir)
-    env["NFN_NATIVE_GPT2_CLI"] = str(native_cli)
+    env["NFN_NATIVE_GPT_CLI"] = str(native_cli)
+    env["NFN_NATIVE_GPT2_CLI"] = str(compat_native_cli)
     env["NFN_NATIVE_TRAIN_CLI"] = str(native_train_cli)
     env["NFN_NATIVE_GPT2_LAUNCHER"] = str(launcher)
     env["NFN_NATIVE_MISSING_TRAINERS_DIR"] = str(missing_dir)
@@ -4153,18 +4170,27 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
 
     linked_native = bin_dir / "nfn-gpt2-native"
     linked_train = bin_dir / "nfn-gpt2-native-train"
+    linked_gpt_native = bin_dir / "nfn-gpt-native"
+    linked_gpt_train = bin_dir / "nfn-gpt-native-train"
+    linked_gpt2_compat = bin_dir / "nfn-gpt2-native-compat"
     linked_unified = bin_dir / "nfn-native-train"
     linked_launcher = bin_dir / "nfn-gpt2-tile-launcher"
     linked_nanogpt_underscore = bin_dir / "nfn_nanogpt_native_train"
     linked_nanogpt = bin_dir / "nfn-nanogpt-native-train"
     assert linked_native.is_symlink()
     assert linked_train.is_symlink()
+    assert linked_gpt_native.is_symlink()
+    assert linked_gpt_train.is_symlink()
+    assert linked_gpt2_compat.is_symlink()
     assert linked_unified.is_symlink()
     assert linked_launcher.is_symlink()
     assert linked_nanogpt_underscore.is_symlink()
     assert linked_nanogpt.is_symlink()
     assert linked_native.resolve() == native_cli
     assert linked_train.resolve() == native_cli
+    assert linked_gpt_native.resolve() == native_cli
+    assert linked_gpt_train.resolve() == native_cli
+    assert linked_gpt2_compat.resolve() == compat_native_cli
     assert linked_unified.resolve() == native_train_cli
     assert linked_launcher.resolve() == launcher
     assert linked_nanogpt_underscore.resolve() == missing_dir / "nfn_nanogpt_native_train"

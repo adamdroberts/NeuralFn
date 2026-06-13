@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PYTHON:-python}"
 BIN_DIR="${NFN_NATIVE_GPT2_BIN_DIR:-$("${PYTHON_BIN}" -c 'import sysconfig; print(sysconfig.get_path("scripts"))')}"
-NATIVE_CLI="${NFN_NATIVE_GPT2_CLI:-${ROOT_DIR}/build/nfn_gpt2_native_train}"
+NATIVE_CLI="${NFN_NATIVE_GPT_CLI:-${ROOT_DIR}/build/nfn_gpt_native_train}"
+COMPAT_NATIVE_CLI="${NFN_NATIVE_GPT2_CLI:-${ROOT_DIR}/build/nfn_gpt2_native_train}"
 NATIVE_TRAIN_CLI="${NFN_NATIVE_TRAIN_CLI:-${ROOT_DIR}/build/nfn_native_train}"
 LAUNCHER="${NFN_NATIVE_GPT2_LAUNCHER:-${ROOT_DIR}/build/nfn_gpt2_tile_train}"
 MISSING_TRAINERS_DIR="${NFN_NATIVE_MISSING_TRAINERS_DIR:-${ROOT_DIR}/build}"
@@ -21,8 +22,8 @@ MISSING_TARGETS=(
 mkdir -p "${BIN_DIR}"
 
 if [[ ! -x "${NATIVE_CLI}" ]]; then
-  echo "Native GPT-2 CLI not found or not executable: ${NATIVE_CLI}" >&2
-  echo "Run: bash ${ROOT_DIR}/tools/build_native_gpt2_cli.sh" >&2
+  echo "Native GPT CLI not found or not executable: ${NATIVE_CLI}" >&2
+  echo "Run: bash ${ROOT_DIR}/tools/build_native_gpt_cli.sh" >&2
   exit 2
 fi
 
@@ -40,6 +41,11 @@ fi
 
 ln -sfn "${NATIVE_CLI}" "${BIN_DIR}/nfn-gpt2-native"
 ln -sfn "${NATIVE_CLI}" "${BIN_DIR}/nfn-gpt2-native-train"
+ln -sfn "${NATIVE_CLI}" "${BIN_DIR}/nfn-gpt-native"
+ln -sfn "${NATIVE_CLI}" "${BIN_DIR}/nfn-gpt-native-train"
+if [[ -x "${COMPAT_NATIVE_CLI}" ]]; then
+  ln -sfn "${COMPAT_NATIVE_CLI}" "${BIN_DIR}/nfn-gpt2-native-compat"
+fi
 ln -sfn "${NATIVE_TRAIN_CLI}" "${BIN_DIR}/nfn-native-train"
 ln -sfn "${LAUNCHER}" "${BIN_DIR}/nfn-gpt2-tile-launcher"
 for target in "${MISSING_TARGETS[@]}"; do
@@ -51,6 +57,11 @@ done
 
 printf '%s\n' "${BIN_DIR}/nfn-gpt2-native"
 printf '%s\n' "${BIN_DIR}/nfn-gpt2-native-train"
+printf '%s\n' "${BIN_DIR}/nfn-gpt-native"
+printf '%s\n' "${BIN_DIR}/nfn-gpt-native-train"
+if [[ -L "${BIN_DIR}/nfn-gpt2-native-compat" ]]; then
+  printf '%s\n' "${BIN_DIR}/nfn-gpt2-native-compat"
+fi
 printf '%s\n' "${BIN_DIR}/nfn-native-train"
 printf '%s\n' "${BIN_DIR}/nfn-gpt2-tile-launcher"
 for target in "${MISSING_TARGETS[@]}"; do

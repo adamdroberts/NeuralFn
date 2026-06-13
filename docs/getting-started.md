@@ -64,7 +64,7 @@ bash tools/build_native_gpt2_all.sh
 ```
 
 Installing the local CLI with `cli/install.sh` runs that native build step
-automatically unless you pass `--no-native`, then links `nfn-gpt2-native` into
+automatically unless you pass `--no-native`, then links `nfn-gpt-native` into
 the active Python scripts directory.
 
 ## Install the editor

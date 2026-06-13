@@ -31,19 +31,19 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     {
         "gpt",
         "partial-native-trainer",
-        "nfn_gpt2_native_train",
+        "nfn_gpt_native_train",
         "Dense GPT aliases to the NeuralFn Tile-CUDA transformer-LM loop; template/custom graph selection decides the GPT architecture.",
     },
     {
         "gpt2",
         "partial-native-trainer",
-        "nfn_gpt2_native_train",
-        "Dense GPT-2 defaults to the NeuralFn Tile-CUDA --train-transformer-lm loop over cached shards.",
+        "nfn_gpt_native_train",
+        "GPT-2 is a dense GPT template/default shape on the NeuralFn Tile-CUDA transformer-LM loop.",
     },
     {
         "gpt3",
         "partial-native-trainer",
-        "nfn_gpt2_native_train",
+        "nfn_gpt_native_train",
         "GPT-3-style dense decoder training uses the same GPT native target; context/window and width come from the selected template or custom graph.",
     },
     {
@@ -181,11 +181,12 @@ void print_usage(const char* program) {
     std::cout
         << "Usage: " << program << " [train] --base-model MODEL [native options]\n\n"
         << "Unified no-Python NeuralFn native training frontend.\n"
-        << "Currently dispatches dense GPT/GPT-2/GPT-3 aliases to nfn_gpt2_native_train and partial/missing\n"
+        << "Currently dispatches dense GPT/GPT-2/GPT-3 aliases to nfn_gpt_native_train and partial/missing\n"
         << "families to their compiled per-family targets before any Python/Torch runtime can start.\n"
         << "Options:\n"
         << "  --base-model, --model NAME      Model family. Dense GPT aliases: gpt, gpt2, gpt3; partial: nanogpt --train-token-lm\n"
-        << "  --native-gpt2-cli PATH          Override the GPT-2 native cached-shard CLI\n"
+        << "  --native-gpt-cli PATH           Override the dense GPT native cached-shard CLI\n"
+        << "  --native-gpt2-cli PATH          Compatibility override for the dense GPT native cached-shard CLI\n"
         << "  NFN_NATIVE_<MODEL>_CLI=PATH     Override a per-family native trainer, for example NFN_NATIVE_NANOGPT_CLI\n"
         << "  --list-models                   Print native training coverage\n"
         << "  --json                          Use JSON with --list-models\n"
@@ -202,23 +203,35 @@ std::string require_value(int argc, char** argv, int* index, const std::string& 
     return argv[*index];
 }
 
-std::string sibling_gpt2_cli(const char* program) {
-    std::string env_cli = env_or_empty("NFN_NATIVE_GPT2_CLI");
+std::string sibling_gpt_cli(const char* program) {
+    std::string env_cli = env_or_empty("NFN_NATIVE_GPT_CLI");
+    if (!env_cli.empty()) {
+        return env_cli;
+    }
+    env_cli = env_or_empty("NFN_NATIVE_GPT2_CLI");
     if (!env_cli.empty()) {
         return env_cli;
     }
     fs::path exe_path(program);
     if (exe_path.has_parent_path()) {
-        fs::path sibling = exe_path.parent_path() / "nfn_gpt2_native_train";
+        fs::path sibling = exe_path.parent_path() / "nfn_gpt_native_train";
         if (fs::exists(sibling)) {
             return sibling.string();
         }
+        fs::path legacy_sibling = exe_path.parent_path() / "nfn_gpt2_native_train";
+        if (fs::exists(legacy_sibling)) {
+            return legacy_sibling.string();
+        }
     }
-    fs::path local_build = fs::current_path() / "build" / "nfn_gpt2_native_train";
+    fs::path local_build = fs::current_path() / "build" / "nfn_gpt_native_train";
     if (fs::exists(local_build)) {
         return local_build.string();
     }
-    return "nfn_gpt2_native_train";
+    fs::path legacy_local_build = fs::current_path() / "build" / "nfn_gpt2_native_train";
+    if (fs::exists(legacy_local_build)) {
+        return legacy_local_build.string();
+    }
+    return "nfn_gpt_native_train";
 }
 
 std::string env_name_for_model(std::string_view model) {
@@ -289,8 +302,8 @@ int exec_command(std::vector<std::string>& command) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string model = "gpt2";
-    std::string gpt2_cli = sibling_gpt2_cli(argv[0]);
+    std::string model = "gpt";
+    std::string gpt_cli = sibling_gpt_cli(argv[0]);
     std::vector<std::string> forwarded;
     bool print_command_requested = false;
     bool list_models = false;
@@ -333,12 +346,16 @@ int main(int argc, char** argv) {
             model = lower_model(after_equals("--model="));
             continue;
         }
-        if (!saw_separator && arg == "--native-gpt2-cli") {
-            gpt2_cli = require_value(argc, argv, &i, arg);
+        if (!saw_separator && (arg == "--native-gpt-cli" || arg == "--native-gpt2-cli")) {
+            gpt_cli = require_value(argc, argv, &i, arg);
+            continue;
+        }
+        if (!saw_separator && arg.rfind("--native-gpt-cli=", 0) == 0) {
+            gpt_cli = after_equals("--native-gpt-cli=");
             continue;
         }
         if (!saw_separator && arg.rfind("--native-gpt2-cli=", 0) == 0) {
-            gpt2_cli = after_equals("--native-gpt2-cli=");
+            gpt_cli = after_equals("--native-gpt2-cli=");
             continue;
         }
         if (arg == "--dry-run" || arg == "--native-cuda-dry-run") {
@@ -379,8 +396,8 @@ int main(int argc, char** argv) {
             model_entry->name == std::string_view("gpt2") ||
             model_entry->name == std::string_view("gpt3");
         const std::string target_cli =
-            dense_gpt && !gpt2_cli.empty()
-                ? gpt2_cli
+            dense_gpt && !gpt_cli.empty()
+                ? gpt_cli
                 : resolve_native_target_cli(argv[0], *model_entry);
         if (!target_cli.empty()) {
             if (std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
@@ -409,8 +426,8 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    if (gpt2_cli.empty()) {
-        std::cerr << "No GPT-2 native CLI configured.\n";
+    if (gpt_cli.empty()) {
+        std::cerr << "No GPT native CLI configured.\n";
         return 2;
     }
 
@@ -419,7 +436,7 @@ int main(int argc, char** argv) {
     }
 
     std::vector<std::string> command;
-    command.push_back(gpt2_cli);
+    command.push_back(gpt_cli);
     command.insert(command.end(), forwarded.begin(), forwarded.end());
     if (print_command_requested) {
         print_command(command);

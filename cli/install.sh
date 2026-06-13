@@ -16,7 +16,7 @@ while [[ $# -gt 0 ]]; do
 Usage: cli/install.sh [--no-native]
 
 Installs NeuralFn in editable mode without installing Torch by default, then
-builds native C++ bindings, the GPT-2 launcher/CLI, the unified native frontend,
+builds native C++ bindings, the GPT launcher/CLI, the unified native frontend,
 the raw CUDA Tile trainer ops shared library, and compiled per-family native trainer entrypoints.
 
 Options:

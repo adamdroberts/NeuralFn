@@ -21,8 +21,9 @@ source .venv/bin/activate
 
 The installer keeps Torch optional, registers the `nfn` entrypoint, builds the
 native GPT C++ binding, launcher, no-Python cached-shard CLI, and unified
-native training frontend, then links the compatibility `nfn-gpt2-native`,
-`nfn-gpt2-native-train`, `nfn-native-train`, and `nfn-gpt2-tile-launcher` into
+native training frontend, then links `nfn-gpt-native`,
+`nfn-gpt-native-train`, compatibility `nfn-gpt2-native` names,
+`nfn-native-train`, and `nfn-gpt2-tile-launcher` into
 the active Python scripts directory. Use `./install.sh --no-native` to skip C++
 artifact builds.
 
@@ -192,14 +193,14 @@ nfn train --base-model gpt --dataset tinystories --native-cuda-runner binding
 For an already-cached uint16 dataset, bypass Python entirely:
 
 ```bash
-bash tools/build_native_gpt2_cli.sh
-nfn-gpt2-native --dataset-alias roneneldan__TinyStories__TinyStoriesV2-GPT4
-nfn-gpt2-native --dataset-alias /path/to/cached-dataset --dry-run
-nfn-gpt2-native --dataset-alias /path/to/cached-dataset --backend tile-cuda --print-plan
+bash tools/build_native_gpt_cli.sh
+nfn-gpt-native --dataset-alias roneneldan__TinyStories__TinyStoriesV2-GPT4
+nfn-gpt-native --dataset-alias /path/to/cached-dataset --dry-run
+nfn-gpt-native --dataset-alias /path/to/cached-dataset --backend tile-cuda --print-plan
 ```
 
-The Python-facing GPT-2 harness defaults to `--native-cuda-runner compiled-cli`,
-which requires the no-Python cached-shard CLI at `build/nfn_gpt2_native_train`.
+The Python-facing GPT harness defaults to `--native-cuda-runner compiled-cli`,
+which requires the no-Python cached-shard CLI at `build/nfn_gpt_native_train`.
 That compiled CLI exposes `--backend llm-kittens|tile-cuda`: `llm-kittens` is
 the explicit external bridge, while `tile-cuda` is the default NeuralFn-owned
 12-layer transformer/LM loop over the raw trainer ABI. Use `--backend tile-cuda
@@ -217,7 +218,7 @@ allocation and fail early when the driver is unavailable or older than the
 loaded CUDA runtime.
 Build the SDK binding with `bash tools/build_native_gpt2_binding.sh`, the
 launcher with `bash tools/build_native_gpt2_launcher.sh`, and the no-Python
-cached-shard CLI with `bash tools/build_native_gpt2_cli.sh`; that CLI links the
+cached-shard CLI with `bash tools/build_native_gpt_cli.sh`; that CLI links the
 shared no-Torch `token_shards.cpp` resolver. Build the unified
 native frontend with `bash tools/build_native_train_cli.sh`; it dispatches dense GPT aliases
 to the cached-shard CLI and dispatches per-family native targets, including the
@@ -226,7 +227,7 @@ partial NanoGPT token-LM trainer, in C++ before Python/Torch can start. Use
 want the compiled top-level training command, and `nfn-native-train
 --list-models --json` to inspect native coverage. Default `nfn train` commands
 hand off to this compiled frontend before graph-backed Python can start; dense
-GPT is implemented through the compatibility target, NanoGPT reports `partial-native-trainer` for
+GPT is implemented through the dense GPT target, NanoGPT reports `partial-native-trainer` for
 `--train-token-lm`, and LLaMA, GPT-2 evo, JEPA, semantic/MoE, and DeepSeek
 variants intentionally report missing or preflight-only native trainers. Use `auto` to
 try the Python SDK binding, compiled CLI, launcher, then subprocess in order and

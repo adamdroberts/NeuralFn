@@ -30,7 +30,7 @@ class NativeTrainRunnerStatus:
 class NativeTrainRunConfig:
     """Configuration for the unified native CUDA/C++ training frontend."""
 
-    model_family: str = "gpt2"
+    model_family: str = "gpt"
     args: tuple[str, ...] = ()
     native_train_cli: str | None = None
     cuda_device_max_connections: str = "1"
@@ -57,8 +57,8 @@ class NativeTrainRunConfig:
 
 
 def normalize_native_model_family(value: str | None) -> str:
-    normalized = str(value or "gpt2").strip().lower().replace("_", "-")
-    return normalized or "gpt2"
+    normalized = str(value or "gpt").strip().lower().replace("_", "-")
+    return normalized or "gpt"
 
 
 def resolve_native_train_cli(value: str | None = None) -> str:
@@ -73,7 +73,7 @@ def resolve_native_train_cli(value: str | None = None) -> str:
 
 
 def build_native_train_run_config(
-    model_family: str = "gpt2",
+    model_family: str = "gpt",
     args: Sequence[str] | None = None,
     *,
     native_train_cli: str | None = None,

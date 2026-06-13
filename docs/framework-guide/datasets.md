@@ -108,7 +108,7 @@ token arrays stay in the dataset cache rather than graph-editor node state.
 
 The compiled native GPT-2 resolver also accepts existing llm.kittens
 TinyStories token bins without converting them into NeuralFn cache shards. When
-`--tinystories` is used, `nfn_gpt2_native_train` checks
+`--tinystories` is used, `nfn_gpt_native_train` checks
 `/mnt/disk2/dev/open-source/llm.kittens/dev/data/tinystories` for
 `TinyStories_train.bin` and `TinyStories_val.bin`; set
 `NFN_LLM_KITTENS_TINYSTORIES_DIR` to override that location. Passing a direct

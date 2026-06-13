@@ -13,7 +13,9 @@ from typing import Any
 
 DEFAULT_NATIVE_GPT2_EXECUTABLE = "/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu"
 DEFAULT_NATIVE_GPT2_LAUNCHER = "build/nfn_gpt2_tile_train"
-DEFAULT_NATIVE_GPT2_CLI = "build/nfn_gpt2_native_train"
+DEFAULT_NATIVE_GPT_CLI = "build/nfn_gpt_native_train"
+DEFAULT_NATIVE_GPT2_CLI = DEFAULT_NATIVE_GPT_CLI
+LEGACY_NATIVE_GPT2_CLI = "build/nfn_gpt2_native_train"
 NATIVE_GPT2_BINDING_MODULES = ("neuralfn_native_gpt2", "neuralfn._native_gpt2")
 NATIVE_GPT2_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT2_CHECKPOINT_HEADER_INTS = 256
@@ -328,11 +330,19 @@ def resolve_native_gpt2_cli(value: str | None = None) -> str:
     requested = str(value or "").strip()
     if requested:
         return requested
+    env_value = str(os.environ.get("NFN_NATIVE_GPT_CLI", "")).strip()
+    if env_value:
+        return env_value
     env_value = str(os.environ.get("NFN_NATIVE_GPT2_CLI", "")).strip()
     if env_value:
         return env_value
     repo_root = Path(__file__).resolve().parents[1]
     default_path = repo_root / DEFAULT_NATIVE_GPT2_CLI
+    if default_path.exists():
+        return str(default_path)
+    legacy_path = repo_root / LEGACY_NATIVE_GPT2_CLI
+    if legacy_path.exists():
+        return str(legacy_path)
     return str(default_path)
 
 
