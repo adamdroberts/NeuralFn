@@ -58,6 +58,7 @@ std::atomic<std::int64_t> g_attention_forward_row_attr_local_size_bytes{0};
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
 std::atomic<std::int64_t> g_linear_bf16_gemm_count{0};
 std::atomic<std::int64_t> g_linear_tk_gemm_count{0};
+std::atomic<std::int64_t> g_linear_tk_float_out_gemm_count{0};
 std::atomic<std::int64_t> g_linear_cublaslt_gemm_count{0};
 std::atomic<std::int64_t> g_linear_sgemm_count{0};
 std::atomic<std::int64_t> g_linear_bf16_a_pack_count{0};
@@ -1080,8 +1081,10 @@ struct TrainerLinearBf16Workspace {
 
   __nv_bfloat16* a = nullptr;
   __nv_bfloat16* b = nullptr;
+  std::uint16_t* c_bits = nullptr;
   std::int64_t a_capacity = 0;
   std::int64_t b_capacity = 0;
+  std::int64_t c_capacity = 0;
   std::uint64_t cache_clock = 0;
   std::vector<CacheEntry> cached_a_entries;
 };
@@ -1110,6 +1113,7 @@ void update_trainer_linear_bf16_cache_stats(const TrainerLinearBf16Workspace& wo
 void release_trainer_linear_bf16_workspace(TrainerLinearBf16Workspace& workspace) {
   if (workspace.a != nullptr) cudaFree(workspace.a);
   if (workspace.b != nullptr) cudaFree(workspace.b);
+  if (workspace.c_bits != nullptr) cudaFree(workspace.c_bits);
   for (TrainerLinearBf16Workspace::CacheEntry& entry : workspace.cached_a_entries) {
     if (entry.data != nullptr) {
       cudaFree(entry.data);
@@ -1129,24 +1133,34 @@ void invalidate_trainer_linear_bf16_cache(TrainerLinearBf16Workspace& workspace)
 
 TrainerLinearBf16Workspace* ensure_trainer_linear_bf16_workspace(
     std::int64_t a_elements,
-    std::int64_t b_elements) {
+    std::int64_t b_elements,
+    std::int64_t c_elements = 0) {
   if (a_elements <= 0 || b_elements <= 0) {
     return nullptr;
   }
   std::lock_guard<std::mutex> lock(g_trainer_linear_bf16_workspace_mutex);
   if (g_trainer_linear_bf16_workspace.a_capacity >= a_elements &&
-      g_trainer_linear_bf16_workspace.b_capacity >= b_elements) {
+      g_trainer_linear_bf16_workspace.b_capacity >= b_elements &&
+      g_trainer_linear_bf16_workspace.c_capacity >= c_elements) {
     return &g_trainer_linear_bf16_workspace;
   }
   TrainerLinearBf16Workspace next;
   next.a_capacity = std::max(a_elements, g_trainer_linear_bf16_workspace.a_capacity);
   next.b_capacity = std::max(b_elements, g_trainer_linear_bf16_workspace.b_capacity);
+  next.c_capacity = std::max(c_elements, g_trainer_linear_bf16_workspace.c_capacity);
   if (cudaMalloc(
           reinterpret_cast<void**>(&next.a),
           sizeof(__nv_bfloat16) * static_cast<std::size_t>(next.a_capacity)) != cudaSuccess ||
       cudaMalloc(
           reinterpret_cast<void**>(&next.b),
           sizeof(__nv_bfloat16) * static_cast<std::size_t>(next.b_capacity)) != cudaSuccess) {
+    release_trainer_linear_bf16_workspace(next);
+    return nullptr;
+  }
+  if (next.c_capacity > 0 &&
+      cudaMalloc(
+          reinterpret_cast<void**>(&next.c_bits),
+          sizeof(std::uint16_t) * static_cast<std::size_t>(next.c_capacity)) != cudaSuccess) {
     release_trainer_linear_bf16_workspace(next);
     return nullptr;
   }
@@ -1277,6 +1291,18 @@ __nv_bfloat16* trainer_linear_bf16_b_operand(
   return workspace->b;
 }
 
+bool tk_linear_gemm_bf16_forward_to_float32(
+    const __nv_bfloat16* weight_bf16,
+    const __nv_bfloat16* x_bf16,
+    std::uint16_t* out_bf16_bits,
+    float* out,
+    int rows,
+    int input_dim,
+    int output_dim,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b,
+    cudaStream_t stream);
+
 bool cublas_linear_gemm_ex_bf16_float32(
     const float* a,
     const float* b,
@@ -1299,7 +1325,8 @@ bool cublas_linear_gemm_ex_bf16_float32(
   if (!force_bf16 && !trainer_linear_bf16_bridge_enabled()) {
     return false;
   }
-  TrainerLinearBf16Workspace* workspace = ensure_trainer_linear_bf16_workspace(a_elements, b_elements);
+  const std::int64_t c_elements = static_cast<std::int64_t>(m) * n;
+  TrainerLinearBf16Workspace* workspace = ensure_trainer_linear_bf16_workspace(a_elements, b_elements, c_elements);
   if (workspace == nullptr) {
     return false;
   }
@@ -1314,6 +1341,20 @@ bool cublas_linear_gemm_ex_bf16_float32(
   __nv_bfloat16* b_bf16 = trainer_linear_bf16_b_operand(workspace, b, b_elements, cache_b_operand, stream);
   if (b_bf16 == nullptr) {
     return false;
+  }
+  if (beta_value == 0.0f &&
+      tk_linear_gemm_bf16_forward_to_float32(
+          a_bf16,
+          b_bf16,
+          workspace->c_bits,
+          c,
+          n,
+          k,
+          m,
+          op_a,
+          op_b,
+          stream)) {
+    return true;
   }
   const float alpha = 1.0f;
   const float beta = beta_value;
@@ -1491,6 +1532,31 @@ bool trainer_linear_tk_gemm_enabled() {
   return enabled;
 }
 
+bool trainer_linear_tk_float_out_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_NATIVE_LINEAR_TK_FLOAT_OUT");
+    if (value == nullptr) {
+      value = std::getenv("NFN_TILE_CUDA_LINEAR_TK_FLOAT_OUT");
+    }
+    if (value == nullptr) {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
 bool tk_linear_gemm_bf16_forward_to_bf16_bits(
     const __nv_bfloat16* weight_bf16,
     const __nv_bfloat16* x_bf16,
@@ -1523,6 +1589,49 @@ bool tk_linear_gemm_bf16_forward_to_bf16_bits(
   (void)weight_bf16;
   (void)x_bf16;
   (void)out_bf16_bits;
+  (void)rows;
+  (void)input_dim;
+  (void)output_dim;
+  (void)op_a;
+  (void)op_b;
+  (void)stream;
+  return false;
+#endif
+}
+
+bool tk_linear_gemm_bf16_forward_to_float32(
+    const __nv_bfloat16* weight_bf16,
+    const __nv_bfloat16* x_bf16,
+    std::uint16_t* out_bf16_bits,
+    float* out,
+    int rows,
+    int input_dim,
+    int output_dim,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  if (!trainer_linear_tk_gemm_enabled() || !trainer_linear_tk_float_out_enabled()) {
+    return false;
+  }
+  if (out_bf16_bits == nullptr || out == nullptr) {
+    return false;
+  }
+  if (!tk_linear_gemm_bf16_forward_to_bf16_bits(
+          weight_bf16, x_bf16, out_bf16_bits, rows, input_dim, output_dim, op_a, op_b, stream)) {
+    return false;
+  }
+  const std::int64_t elements = static_cast<std::int64_t>(rows) * output_dim;
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((elements + threads - 1) / threads);
+  bf16_bits_to_f32_kernel<<<blocks, threads, 0, stream>>>(out_bf16_bits, out, elements);
+  g_linear_tk_float_out_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  return true;
+#else
+  (void)weight_bf16;
+  (void)x_bf16;
+  (void)out_bf16_bits;
+  (void)out;
   (void)rows;
   (void)input_dim;
   (void)output_dim;
@@ -9035,6 +9144,7 @@ void reset_trainer_linear_launch_stats() {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   g_linear_bf16_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_tk_gemm_count.store(0, std::memory_order_relaxed);
+  g_linear_tk_float_out_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_cublaslt_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_sgemm_count.store(0, std::memory_order_relaxed);
   g_linear_bf16_a_pack_count.store(0, std::memory_order_relaxed);
@@ -9065,6 +9175,14 @@ std::int64_t trainer_linear_bf16_gemm_count() {
 std::int64_t trainer_linear_tk_gemm_count() {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   return g_linear_tk_gemm_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_tk_float_out_gemm_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_tk_float_out_gemm_count.load(std::memory_order_relaxed);
 #else
   return 0;
 #endif

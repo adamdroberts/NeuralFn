@@ -32,6 +32,7 @@ void nfn_native_tile_trainer_linear_stats_reset();
 void nfn_native_tile_trainer_linear_bf16_cache_reset();
 std::int64_t nfn_native_tile_trainer_linear_bf16_gemm_count();
 std::int64_t nfn_native_tile_trainer_linear_tk_gemm_count();
+std::int64_t nfn_native_tile_trainer_linear_tk_float_out_gemm_count();
 std::int64_t nfn_native_tile_trainer_linear_cublaslt_gemm_count();
 std::int64_t nfn_native_tile_trainer_linear_sgemm_count();
 std::int64_t nfn_native_tile_trainer_linear_bf16_a_pack_count();

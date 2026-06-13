@@ -655,6 +655,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_trainer_linear_bf16_cache_reset",
         "nfn_native_tile_trainer_linear_bf16_gemm_count",
         "nfn_native_tile_trainer_linear_tk_gemm_count",
+        "nfn_native_tile_trainer_linear_tk_float_out_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_gemm_count",
         "nfn_native_tile_trainer_linear_sgemm_count",
         "nfn_native_tile_trainer_linear_bf16_a_pack_count",
@@ -6463,6 +6464,7 @@ int run_transformer_lm_training_json(
     std::int64_t attention_forward_row_attr_local_size_bytes = 0;
     std::int64_t linear_bf16_gemm_count = 0;
     std::int64_t linear_tk_gemm_count = 0;
+    std::int64_t linear_tk_float_out_gemm_count = 0;
     std::int64_t linear_cublaslt_gemm_count = 0;
     std::int64_t linear_sgemm_count = 0;
     std::int64_t linear_bf16_a_pack_count = 0;
@@ -6553,6 +6555,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_trainer_linear_bf16_cache_reset",
         "nfn_native_tile_trainer_linear_bf16_gemm_count",
         "nfn_native_tile_trainer_linear_tk_gemm_count",
+        "nfn_native_tile_trainer_linear_tk_float_out_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_gemm_count",
         "nfn_native_tile_trainer_linear_sgemm_count",
         "nfn_native_tile_trainer_linear_bf16_a_pack_count",
@@ -6777,6 +6780,7 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsResetFn trainer_linear_bf16_cache_reset = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_tk_gemm_count_fn = nullptr;
+    TrainerLinearStatsCountFn trainer_linear_tk_float_out_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_cublaslt_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_sgemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_a_pack_count_fn = nullptr;
@@ -6978,6 +6982,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_trainer_linear_bf16_gemm_count");
                 trainer_linear_tk_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_tk_gemm_count");
+                trainer_linear_tk_float_out_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_tk_float_out_gemm_count");
                 trainer_linear_cublaslt_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_cublaslt_gemm_count");
                 trainer_linear_sgemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
@@ -9286,6 +9292,9 @@ int run_transformer_lm_training_json(
     if (trainer_linear_tk_gemm_count_fn != nullptr) {
         linear_tk_gemm_count = trainer_linear_tk_gemm_count_fn();
     }
+    if (trainer_linear_tk_float_out_gemm_count_fn != nullptr) {
+        linear_tk_float_out_gemm_count = trainer_linear_tk_float_out_gemm_count_fn();
+    }
     if (trainer_linear_cublaslt_gemm_count_fn != nullptr) {
         linear_cublaslt_gemm_count = trainer_linear_cublaslt_gemm_count_fn();
     }
@@ -9494,6 +9503,7 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"linear_bf16_gemm_count\": " << linear_bf16_gemm_count << ",\n"
         << "  \"linear_tk_gemm_count\": " << linear_tk_gemm_count << ",\n"
+        << "  \"linear_tk_float_out_gemm_count\": " << linear_tk_float_out_gemm_count << ",\n"
         << "  \"linear_cublaslt_gemm_count\": " << linear_cublaslt_gemm_count << ",\n"
         << "  \"linear_sgemm_count\": " << linear_sgemm_count << ",\n"
         << "  \"linear_bf16_a_pack_count\": " << linear_bf16_a_pack_count << ",\n"

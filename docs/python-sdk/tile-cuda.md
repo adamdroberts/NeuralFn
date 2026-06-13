@@ -148,12 +148,19 @@ after AdamW updates. GPT-2 training JSON reports `linear_backend_strategy:
 `block_backward_weight_linear_strategy`,
 `non_block_forward_backward_linear_strategy`, `lm_head_logits_linear_strategy`,
 `linear_bf16_gemm_count`, `linear_tk_gemm_count`,
-`linear_cublaslt_gemm_count`, `linear_sgemm_count`,
+`linear_tk_float_out_gemm_count`, `linear_cublaslt_gemm_count`, `linear_sgemm_count`,
 `linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
 `linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
 `linear_bf16_cache_entry_count`.
 The default `non_block_forward_backward_linear_strategy` is
 `"padded-lm-head-tk-sm120-bf16-gemm-default"` when TK GEMM is available.
+`NFN_TILE_CUDA_LINEAR_TK_FLOAT_OUT=1` or
+`NFN_NATIVE_LINEAR_TK_FLOAT_OUT=1` enables an opt-in diagnostic bridge that runs
+eligible BF16 linear forward GEMMs through the TK BF16-output path and converts
+the BF16 result back to float32. This is not the default because the measured
+full-shape TinyStories probe improved QKV forward timing but regressed overall
+throughput; use `linear_tk_float_out_gemm_count` only when profiling that
+candidate path.
 The full GPT-2 transformer-LM trainer also exposes
 `nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32`
 for tied LM-head CE backward. That ABI overwrites the logits chunk with dlogits,
