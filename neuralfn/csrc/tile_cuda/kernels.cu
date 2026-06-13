@@ -1,9 +1,7 @@
 #include <cuda_tile.h>
 
-#include <cuda_runtime_api.h>
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) || defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
 #include <cuda_bf16.h>
-#endif
+#include <cuda_runtime_api.h>
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
 #include "llmc/tk/attention_sm120.cuh"
 #include "llmc/matmul.cuh"
@@ -4393,7 +4391,7 @@ __tile_global__ void gelu_add_bias_float32_kernel(
   ct::store_masked(gelu_out + idx, result, mask);
 }
 
-__global__ void gelu_add_bias_bf16_act_float32_kernel(
+__tile_global__ void gelu_add_bias_bf16_act_float32_kernel(
     const float* __restrict__ x,
     const float* __restrict__ bias,
     float* __restrict__ biased_out,
@@ -4401,18 +4399,32 @@ __global__ void gelu_add_bias_bf16_act_float32_kernel(
     std::uint16_t* __restrict__ gelu_bf16_bits,
     std::int64_t n,
     std::int64_t output_dim) {
-  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (idx >= n) {
-    return;
-  }
-  const std::int64_t out_col = idx % output_dim;
-  const float biased = x[idx] + bias[out_col];
-  const float x2 = biased * biased;
-  const float tanh_out = tanhf(0.7978845608028654f * (biased + 0.044715f * biased * x2));
-  const float result = 0.5f * biased * (1.0f + tanh_out);
-  biased_out[idx] = biased;
-  gelu_out[idx] = result;
-  gelu_bf16_bits[idx] = f32_to_bf16_bits_device(result);
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  bias = ct::assume_aligned(bias, 16_ic);
+  biased_out = ct::assume_aligned(biased_out, 16_ic);
+  gelu_out = ct::assume_aligned(gelu_out, 16_ic);
+  auto* gelu_bf16 = ct::assume_aligned(reinterpret_cast<__nv_bfloat16*>(gelu_bf16_bits), 16_ic);
+
+  const int bx = ct::bid().x;
+  using Shape = decltype(ct::shape{1024_ic});
+  using IndexTile = ct::tile<std::int64_t, Shape>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto out_col = idx % ct::full<IndexTile>(output_dim);
+  auto biased = ct::load_masked(x + idx, mask) + ct::load_masked(bias + out_col, mask);
+  auto one = ct::full<decltype(biased)>(1.0f);
+  auto half = ct::full<decltype(biased)>(0.5f);
+  auto gelu_scale = ct::full<decltype(biased)>(0.7978845608028654f);
+  auto gelu_cubic = ct::full<decltype(biased)>(0.044715f);
+  auto x2 = biased * biased;
+  auto tanh_arg = gelu_scale * (biased + gelu_cubic * biased * x2);
+  auto result = half * biased * (one + ct::tanh(tanh_arg));
+  ct::store_masked(biased_out + idx, biased, mask);
+  ct::store_masked(gelu_out + idx, result, mask);
+  ct::store_masked(gelu_bf16 + idx, ct::element_cast<__nv_bfloat16>(result), mask);
 }
 
 __tile_global__ void linear_bias_residual_add_float32_kernel(
@@ -4499,22 +4511,34 @@ __tile_global__ void gelu_backward_inplace_float32_kernel(
   ct::partition_view{ct::tensor_span{grad, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(result, bx);
 }
 
-__global__ void gelu_backward_inplace_bf16_bits_float32_kernel(
+__tile_global__ void gelu_backward_inplace_bf16_bits_float32_kernel(
     const std::uint16_t* __restrict__ x_bf16_bits,
     float* __restrict__ grad,
     std::int64_t n) {
-  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (idx >= n) {
-    return;
-  }
-  const unsigned int bits = static_cast<unsigned int>(x_bf16_bits[idx]) << 16;
-  const float x = __uint_as_float(bits);
-  const float x2 = x * x;
-  const float tanh_out = tanhf(0.7978845608028654f * (x + 0.044715f * x * x2));
-  const float sech_out = 1.0f - tanh_out * tanh_out;
-  const float grad_local = 0.5f * (1.0f + tanh_out) +
-      0.5f * x * sech_out * 0.7978845608028654f * (1.0f + 3.0f * 0.044715f * x2);
-  grad[idx] *= grad_local;
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  const auto* x_bf16 = ct::assume_aligned(reinterpret_cast<const __nv_bfloat16*>(x_bf16_bits), 16_ic);
+  grad = ct::assume_aligned(grad, 16_ic);
+
+  const int bx = ct::bid().x;
+  using Shape = decltype(ct::shape{1024_ic});
+  using IndexTile = ct::tile<std::int64_t, Shape>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto x = ct::element_cast<float>(ct::load_masked(x_bf16 + idx, mask));
+  auto grad_tile = ct::load_masked(grad + idx, mask);
+  auto one = ct::full<decltype(x)>(1.0f);
+  auto half = ct::full<decltype(x)>(0.5f);
+  auto gelu_scale = ct::full<decltype(x)>(0.7978845608028654f);
+  auto gelu_cubic = ct::full<decltype(x)>(0.044715f);
+  auto x2 = x * x;
+  auto tanh_out = ct::tanh(gelu_scale * (x + gelu_cubic * x * x2));
+  auto sech_out = one - tanh_out * tanh_out;
+  auto grad_local = half * (one + tanh_out)
+      + half * x * sech_out * gelu_scale
+          * (one + ct::full<decltype(x)>(3.0f) * gelu_cubic * x2);
+  ct::store_masked(grad + idx, grad_tile * grad_local, mask);
 }
 
 __tile_global__ void act_weighted_sum_float32_kernel(
@@ -7975,9 +7999,8 @@ void launch_gelu_add_bias_bf16_act_float32(
     std::int64_t output_dim,
     cudaStream_t stream) {
   const std::int64_t n = rows * output_dim;
-  constexpr int threads = 256;
-  const int blocks = static_cast<int>((n + threads - 1) / threads);
-  gelu_add_bias_bf16_act_float32_kernel<<<blocks, threads, 0, stream>>>(
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  gelu_add_bias_bf16_act_float32_kernel<<<blocks, 1, 0, stream>>>(
       x, bias, biased_out, gelu_out, gelu_bf16_bits, n, output_dim);
 }
 
@@ -8020,9 +8043,8 @@ void launch_gelu_backward_inplace_bf16_bits_float32(
     float* grad,
     std::int64_t n,
     cudaStream_t stream) {
-  constexpr int threads = 256;
-  const int blocks = static_cast<int>((n + threads - 1) / threads);
-  gelu_backward_inplace_bf16_bits_float32_kernel<<<blocks, threads, 0, stream>>>(
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  gelu_backward_inplace_bf16_bits_float32_kernel<<<blocks, 1, 0, stream>>>(
       x_bf16_bits, grad, n);
 }
 

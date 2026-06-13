@@ -2960,6 +2960,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "linear_bf16_output_float32_kernel" in kernels_text
     assert "linear_bf16_input_bits_float32_kernel" in kernels_text
     assert "gelu_add_bias_bf16_act_float32_kernel" in kernels_text
+    assert "__tile_global__ void gelu_add_bias_bf16_act_float32_kernel" in kernels_text
+    assert "gelu_add_bias_bf16_act_float32_kernel<<<blocks, 1, 0, stream>>>" in kernels_text
+    assert "ct::element_cast<__nv_bfloat16>(result)" in kernels_text
+    assert "__tile_global__ void gelu_backward_inplace_bf16_bits_float32_kernel" in kernels_text
+    assert "gelu_backward_inplace_bf16_bits_float32_kernel<<<blocks, 1, 0, stream>>>" in kernels_text
     assert "fused-gelu-bf16-act-direct-gemm" in gpt2_source_text
     assert ".mlp.proj.forward.no_bias.bf16_act" in gpt2_source_text
     assert ".mlp.bias_gelu.forward.bf16_act" in gpt2_source_text
