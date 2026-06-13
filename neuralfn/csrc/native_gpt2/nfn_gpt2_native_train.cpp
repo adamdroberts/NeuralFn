@@ -8565,7 +8565,7 @@ int run_transformer_lm_training_json(
         << "  \"linear_backend_strategy\": \""
         << (linear_bf16_gemm_count > 0
                 ? "bf16-gemmex-float32-output"
-                : (linear_sgemm_count > 0 ? "tf32-sgemm-fallback" : "not-run"))
+                : (linear_sgemm_count > 0 ? "tf32-sgemm-optimized" : "not-run"))
         << "\",\n"
         << "  \"linear_bf16_gemm_count\": " << linear_bf16_gemm_count << ",\n"
         << "  \"linear_sgemm_count\": " << linear_sgemm_count << ",\n"

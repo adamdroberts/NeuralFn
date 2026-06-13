@@ -262,13 +262,12 @@ accumulate-bias backward calls use GPU GEMV over a cached device ones vector
 initialized by a Tile fill kernel. This keeps native trainers off Torch/Python
 while moving the GPT-style projection path toward the SM120 `llm.kittens`
 throughput target; the generic Tile extension build still uses the pure Tile
-fallback unless that macro is set. In the trainer build, the large linear GEMMs
-first try a cached BF16 workspace plus `cublasGemmEx` with FP32 outputs and
-accumulation before falling back to TF32 `cublasSgemm`; a multi-entry packed
-BF16 first-GEMM-operand cache is reused for weight-forward and weight-dInput
-calls until the AdamW boundary invalidates it. `NFN_TILE_CUDA_LINEAR_BF16=0`
-and `NFN_NATIVE_LINEAR_BF16=0` force the optimized TF32 cuBLAS route for
-profiling without rebuilding. Native JSON reports `linear_backend_strategy`,
+fallback unless that macro is set. In the trainer build, large linear GEMMs
+default to optimized TF32 tensor-op `cublasSgemm`. `NFN_TILE_CUDA_LINEAR_BF16=1`
+and `NFN_NATIVE_LINEAR_BF16=1` opt into the cached BF16 `cublasGemmEx` bridge
+for profiling or shape-specific tuning; the bridge reuses a multi-entry packed
+first-GEMM-operand cache for weight-forward and weight-dInput calls until the
+AdamW boundary invalidates it. Native JSON reports `linear_backend_strategy`,
 `linear_bf16_gemm_count`, `linear_sgemm_count`, `linear_bf16_a_pack_count`,
 `linear_bf16_a_cache_hit_count`, `linear_bf16_cache_reset_count`,
 `linear_bf16_cached_a_capacity`, and `linear_bf16_cache_entry_count`.

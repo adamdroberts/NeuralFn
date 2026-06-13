@@ -483,13 +483,13 @@ bool trainer_linear_bf16_bridge_enabled() {
       value = std::getenv("NFN_NATIVE_LINEAR_BF16");
     }
     if (value == nullptr) {
-      return true;
+      return false;
     }
-    return std::strcmp(value, "0") != 0 &&
-        std::strcmp(value, "false") != 0 &&
-        std::strcmp(value, "FALSE") != 0 &&
-        std::strcmp(value, "off") != 0 &&
-        std::strcmp(value, "OFF") != 0;
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
   }();
   return enabled;
 }

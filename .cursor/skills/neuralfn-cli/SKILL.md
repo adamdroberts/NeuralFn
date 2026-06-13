@@ -141,17 +141,17 @@ Canonical docs:
   `attention_backward_strategy: "tk-sm120-bf16-recompute-forward-bridge"`,
   `attention_forward_tk_launch_count`, and
   `attention_backward_tk_launch_count` when the optimized path runs.
-- The trainer-facing linear ABI should expose and preserve the BF16 cuBLAS
-  bridge telemetry: `linear_backend_strategy`,
+- The trainer-facing linear ABI should expose and preserve the linear backend
+  telemetry: `linear_backend_strategy`,
   `linear_bf16_gemm_count`, `linear_sgemm_count`,
   `linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
   `linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
-  `linear_bf16_cache_entry_count`. The intended optimized route is BF16
-  `cublasGemmEx` before TF32 `cublasSgemm` fallback, with multi-entry packed
-  first-GEMM-operand cache reuse until the AdamW boundary, not scalar Tile dot
-  products for dense GPT projections. `NFN_TILE_CUDA_LINEAR_BF16=0` and
-  `NFN_NATIVE_LINEAR_BF16=0` are profiling controls that force the optimized
-  TF32 cuBLAS route without rebuilding.
+  `linear_bf16_cache_entry_count`. The intended default route for dense GPT
+  projections is optimized TF32 tensor-op `cublasSgemm`, not scalar Tile dot
+  products. `NFN_TILE_CUDA_LINEAR_BF16=1` and `NFN_NATIVE_LINEAR_BF16=1` opt
+  into the cached BF16 `cublasGemmEx` bridge for profiling or shape-specific
+  tuning; that bridge still reuses packed first GEMM operands until the AdamW
+  boundary.
 - The row-vector forward and query-row atomic backward float32 SDPA kernels are
   fallback/diagnostic paths for unsupported shapes or
   `NFN_TILE_CUDA_USE_TK_ATTENTION=0` builds. Do not make them the default dense
