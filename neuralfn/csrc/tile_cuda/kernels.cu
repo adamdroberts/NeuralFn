@@ -1126,6 +1126,66 @@ bool cublas_linear_gemm_ex_bf16_float32(
   return false;
 }
 
+bool cublas_linear_gemm_ex_bf16_bits_a_float32(
+    const std::uint16_t* a_bf16_bits,
+    const float* b,
+    float* c,
+    std::int64_t b_elements,
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b,
+    int lda,
+    int ldb,
+    int ldc,
+    float beta_value,
+    bool force_bf16,
+    cudaStream_t stream) {
+  if (!force_bf16 && !trainer_linear_bf16_bridge_enabled()) {
+    return false;
+  }
+  TrainerLinearBf16Workspace* workspace = ensure_trainer_linear_bf16_workspace(1, b_elements);
+  if (workspace == nullptr) {
+    return false;
+  }
+  cublasHandle_t handle = trainer_linear_cublas_handle(stream);
+  if (handle == nullptr) {
+    return false;
+  }
+  constexpr int threads = 256;
+  const int b_blocks = static_cast<int>((b_elements + threads - 1) / threads);
+  f32_to_bf16_kernel<<<b_blocks, threads, 0, stream>>>(b, workspace->b, b_elements);
+  const auto* a_bf16 = reinterpret_cast<const __nv_bfloat16*>(a_bf16_bits);
+  const float alpha = 1.0f;
+  const float beta = beta_value;
+  const cublasStatus_t status = cublasGemmEx(
+      handle,
+      op_a,
+      op_b,
+      m,
+      n,
+      k,
+      &alpha,
+      a_bf16,
+      CUDA_R_16BF,
+      lda,
+      workspace->b,
+      CUDA_R_16BF,
+      ldb,
+      &beta,
+      c,
+      CUDA_R_32F,
+      ldc,
+      CUBLAS_COMPUTE_32F,
+      CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+  if (status == CUBLAS_STATUS_SUCCESS) {
+    g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+    return true;
+  }
+  return false;
+}
+
 bool cublas_linear_forward_float32(
     const float* x,
     const float* weight,
@@ -3700,6 +3760,35 @@ __tile_global__ void linear_backward_weight_chunked_atomic_float32_kernel(
   ct::atomic_add_masked<ct::memory_order::relaxed>(grad_weight + idx, acc, active);
 }
 
+__global__ void linear_backward_weight_chunked_atomic_bf16_bits_float32_kernel(
+    const std::uint16_t* __restrict__ x_bf16_bits,
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_weight,
+    std::int64_t n,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t row_chunk_size) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const std::int64_t row_chunk = static_cast<std::int64_t>(blockIdx.y);
+  const std::int64_t row_start = row_chunk * row_chunk_size;
+  const std::int64_t row_end = (row_start + row_chunk_size < rows) ? row_start + row_chunk_size : rows;
+  const std::int64_t out_col = idx / input_dim;
+  const std::int64_t in_col = idx % input_dim;
+  float acc = 0.0f;
+  for (std::int64_t row_idx = row_start; row_idx < row_end; ++row_idx) {
+    const std::int64_t x_idx = row_idx * input_dim + in_col;
+    const unsigned int bits = static_cast<unsigned int>(x_bf16_bits[x_idx]) << 16;
+    const float x_value = __uint_as_float(bits);
+    const float grad_value = grad_out[row_idx * output_dim + out_col];
+    acc += grad_value * x_value;
+  }
+  atomicAdd(grad_weight + idx, acc);
+}
+
 __tile_global__ void linear_backward_bias_float32_kernel(
     const float* __restrict__ grad_out,
     float* __restrict__ grad_bias,
@@ -3919,6 +4008,24 @@ __tile_global__ void gelu_backward_inplace_float32_kernel(
           * (one + ct::full<decltype(x_tile)>(3.0f) * gelu_cubic * x2);
   auto result = grad_tile * grad_local;
   ct::partition_view{ct::tensor_span{grad, ct::extents{n}}, ct::shape{1024_ic}}.store_masked(result, bx);
+}
+
+__global__ void gelu_backward_inplace_bf16_bits_float32_kernel(
+    const std::uint16_t* __restrict__ x_bf16_bits,
+    float* __restrict__ grad,
+    std::int64_t n) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const unsigned int bits = static_cast<unsigned int>(x_bf16_bits[idx]) << 16;
+  const float x = __uint_as_float(bits);
+  const float x2 = x * x;
+  const float tanh_out = tanhf(0.7978845608028654f * (x + 0.044715f * x * x2));
+  const float sech_out = 1.0f - tanh_out * tanh_out;
+  const float grad_local = 0.5f * (1.0f + tanh_out) +
+      0.5f * x * sech_out * 0.7978845608028654f * (1.0f + 3.0f * 0.044715f * x2);
+  grad[idx] *= grad_local;
 }
 
 __tile_global__ void act_weighted_sum_float32_kernel(
@@ -6950,6 +7057,45 @@ void launch_linear_backward_weight_accumulate_bf16_float32(
       x, grad_out, grad_weight, rows, input_dim, output_dim, stream);
 }
 
+void launch_linear_backward_weight_accumulate_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    const float* grad_out,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
+      cublas_linear_gemm_ex_bf16_bits_a_float32(
+          x_bf16_bits,
+          grad_out,
+          grad_weight,
+          rows * output_dim,
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          static_cast<int>(rows),
+          CUBLAS_OP_N,
+          CUBLAS_OP_T,
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          static_cast<int>(input_dim),
+          1.0f,
+          true,
+          stream)) {
+    return;
+  }
+#endif
+  constexpr std::int64_t kRowChunkSize = 256;
+  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
+  const std::int64_t n = output_dim * input_dim;
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
+  linear_backward_weight_chunked_atomic_bf16_bits_float32_kernel<<<grid, threads, 0, stream>>>(
+      x_bf16_bits, grad_out, grad_weight, n, rows, input_dim, output_dim, kRowChunkSize);
+}
+
 void launch_linear_backward_bias_float32(
     const float* grad_out,
     float* grad_bias,
@@ -7053,6 +7199,17 @@ void launch_gelu_backward_inplace_float32(
     cudaStream_t stream) {
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   gelu_backward_inplace_float32_kernel<<<blocks, 1, 0, stream>>>(x, grad, n);
+}
+
+void launch_gelu_backward_inplace_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    float* grad,
+    std::int64_t n,
+    cudaStream_t stream) {
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  gelu_backward_inplace_bf16_bits_float32_kernel<<<blocks, threads, 0, stream>>>(
+      x_bf16_bits, grad, n);
 }
 
 void launch_act_weighted_sum_float32(

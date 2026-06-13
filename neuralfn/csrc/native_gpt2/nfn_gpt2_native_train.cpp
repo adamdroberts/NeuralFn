@@ -583,6 +583,8 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_bf16_bits_to_float32",
         "nfn_native_tile_store_mlp_activations_bf16_float32",
         "nfn_native_tile_restore_mlp_activations_bf16_float32",
+        "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32",
+        "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32",
         "nfn_native_tile_float32_to_bf16_bits_many",
         "nfn_native_tile_gradient_accumulate_float32",
         "nfn_native_tile_sum_partials_float32",
@@ -6472,6 +6474,8 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_bf16_bits_to_float32",
         "nfn_native_tile_store_mlp_activations_bf16_float32",
         "nfn_native_tile_restore_mlp_activations_bf16_float32",
+        "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32",
+        "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32",
         "nfn_native_tile_float32_to_bf16_bits_many",
         "nfn_native_tile_gradient_accumulate_float32",
         "nfn_native_tile_sum_partials_float32",
@@ -6540,8 +6544,6 @@ int run_transformer_lm_training_json(
     using Uint16ToInt64Fn = int (*)(const std::uint16_t*, std::int64_t*, std::int64_t, void*);
     using StoreMlpActivationsBf16Fn =
         int (*)(const float*, const float*, const float*, std::uint16_t*, std::int64_t, std::int64_t, void*);
-    using RestoreMlpActivationsBf16Fn =
-        int (*)(const std::uint16_t*, float*, float*, float*, std::int64_t, std::int64_t, void*);
     using Float32ToBf16BitsManyFn =
         int (*)(const float* const*, const std::int64_t*, const std::int64_t*, std::uint16_t*,
                 std::int64_t, std::int64_t, void*);
@@ -6576,9 +6578,12 @@ int run_transformer_lm_training_json(
         const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardWeightAccumulateFn = int (*)(
         const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBackwardWeightAccumulateBf16BitsFn = int (*)(
+        const std::uint16_t*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardBiasAccumulateFn = int (*)(const float*, float*, std::int64_t, std::int64_t, void*);
     using GeluAddBiasFn = int (*)(const float*, const float*, float*, float*, std::int64_t, std::int64_t, void*);
     using GeluBackwardInplaceFn = int (*)(const float*, float*, std::int64_t, void*);
+    using GeluBackwardInplaceBf16BitsFn = int (*)(const std::uint16_t*, float*, std::int64_t, void*);
     using AttentionFn = int (*)(
         const float*, const float*, const float*, float*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t,
@@ -6625,7 +6630,6 @@ int run_transformer_lm_training_json(
     CopyFn copy = nullptr;
     Uint16ToInt64Fn uint16_to_int64 = nullptr;
     StoreMlpActivationsBf16Fn store_mlp_activations_bf16 = nullptr;
-    RestoreMlpActivationsBf16Fn restore_mlp_activations_bf16 = nullptr;
     Float32ToBf16BitsManyFn float32_to_bf16_bits_many = nullptr;
     GradientAccumulateFn gradient_accumulate = nullptr;
     SumPartialsFn sum_partials = nullptr;
@@ -6648,9 +6652,11 @@ int run_transformer_lm_training_json(
     LinearBackwardInputFn linear_backward_input_bf16 = nullptr;
     LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
     LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate_bf16 = nullptr;
+    LinearBackwardWeightAccumulateBf16BitsFn linear_backward_weight_accumulate_bf16_bits = nullptr;
     LinearBackwardBiasAccumulateFn linear_backward_bias_accumulate = nullptr;
     GeluAddBiasFn gelu_add_bias = nullptr;
     GeluBackwardInplaceFn gelu_backward_inplace = nullptr;
+    GeluBackwardInplaceBf16BitsFn gelu_backward_inplace_bf16_bits = nullptr;
     AttentionFn attention = nullptr;
     AttentionStatsResetFn attention_stats_reset = nullptr;
     AttentionStatsCountFn attention_row_launch_count = nullptr;
@@ -6748,8 +6754,6 @@ int run_transformer_lm_training_json(
                 uint16_to_int64 = load_symbol<Uint16ToInt64Fn>(tile_handle, "nfn_native_tile_uint16_to_int64");
                 store_mlp_activations_bf16 = load_symbol<StoreMlpActivationsBf16Fn>(
                     tile_handle, "nfn_native_tile_store_mlp_activations_bf16_float32");
-                restore_mlp_activations_bf16 = load_symbol<RestoreMlpActivationsBf16Fn>(
-                    tile_handle, "nfn_native_tile_restore_mlp_activations_bf16_float32");
                 float32_to_bf16_bits_many = load_symbol<Float32ToBf16BitsManyFn>(
                     tile_handle, "nfn_native_tile_float32_to_bf16_bits_many");
                 gradient_accumulate = load_symbol<GradientAccumulateFn>(
@@ -6788,11 +6792,16 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_float32");
                 linear_backward_weight_accumulate_bf16 = load_symbol<LinearBackwardWeightAccumulateFn>(
                     tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32");
+                linear_backward_weight_accumulate_bf16_bits =
+                    load_symbol<LinearBackwardWeightAccumulateBf16BitsFn>(
+                        tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32");
                 linear_backward_bias_accumulate = load_symbol<LinearBackwardBiasAccumulateFn>(
                     tile_handle, "nfn_native_tile_linear_backward_bias_accumulate_float32");
                 gelu_add_bias = load_symbol<GeluAddBiasFn>(tile_handle, "nfn_native_tile_gelu_add_bias_float32");
                 gelu_backward_inplace = load_symbol<GeluBackwardInplaceFn>(
                     tile_handle, "nfn_native_tile_gelu_backward_inplace_float32");
+                gelu_backward_inplace_bf16_bits = load_symbol<GeluBackwardInplaceBf16BitsFn>(
+                    tile_handle, "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32");
                 attention = load_symbol<AttentionFn>(tile_handle, "nfn_native_tile_scaled_dot_product_attention_float32");
                 attention_stats_reset = load_symbol<AttentionStatsResetFn>(
                     tile_handle, "nfn_native_tile_attention_forward_stats_reset");
@@ -6958,10 +6967,14 @@ int run_transformer_lm_training_json(
         env_or_empty("NFN_NATIVE_GPT2_STAGE_TIMING") == "1" ||
         env_or_empty("NFN_NATIVE_GPT2_STAGE_TIMING") == "true" ||
         env_or_empty("NFN_NATIVE_GPT2_STAGE_TIMING") == "TRUE";
+    const std::string store_mlp_activations_env = env_or_empty("NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS");
     const bool store_mlp_activations_enabled =
-        env_or_empty("NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS") == "1" ||
-        env_or_empty("NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS") == "true" ||
-        env_or_empty("NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS") == "TRUE";
+        store_mlp_activations_env.empty() ||
+        store_mlp_activations_env == "1" ||
+        store_mlp_activations_env == "true" ||
+        store_mlp_activations_env == "TRUE" ||
+        store_mlp_activations_env == "on" ||
+        store_mlp_activations_env == "ON";
     bool stage_timing_enabled = false;
     std::int64_t stage_timing_event_count = 0;
     std::int64_t stage_timing_dropped_event_count = 0;
@@ -7954,24 +7967,6 @@ int run_transformer_lm_training_json(
             if (error.empty()) stored_mlp_activation_store_kernel_launches += 1;
         }
     };
-    auto restore_mlp_activations = [&](std::size_t block_index, TransformerBlockActivations& tape) {
-        if (block_index >= stored_mlp_activations.size()) {
-            return;
-        }
-        StoredMlpActivations& stored = stored_mlp_activations[block_index];
-        if (error.empty()) {
-            run(restore_mlp_activations_bf16(
-                    stored.ln2_out,
-                    tape.ln2_out,
-                    tape.fc_out,
-                    tape.act,
-                    activation_elements,
-                    hidden_elements,
-                    nullptr),
-                "block" + std::to_string(block_index) + ".mlp_activation_restore.bf16");
-            if (error.empty()) stored_mlp_activation_restore_kernel_launches += 1;
-        }
-    };
     auto forward_block = [&](TransformerBlockParams& block,
                              TransformerBlockActivations& tape,
                              const float* block_input,
@@ -8004,11 +7999,21 @@ int run_transformer_lm_training_json(
         }
         stage_end(stage_event, stage_name);
     };
-    auto backward_block = [&](TransformerBlockParams& block, TransformerBlockActivations& tape, const float* block_input, float* incoming_grad, float* output_grad, const std::string& label) {
+    auto backward_block = [&](TransformerBlockParams& block,
+                              TransformerBlockActivations& tape,
+                              const StoredMlpActivations* stored_mlp,
+                              const float* block_input,
+                              float* incoming_grad,
+                              float* output_grad,
+                              const std::string& label) {
         const std::int64_t stage_event = stage_begin("block_backward");
         run_timed_stage("block_backward.mlp_proj", [&]() {
             run_timed_stage("block_backward.mlp_proj.dweight", [&]() {
-                if (error.empty()) run(linear_backward_weight_accumulate_bf16(tape.act, incoming_grad, block.accum_grad_mlp_proj_weight, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_weight.accumulate.bf16");
+                if (stored_mlp != nullptr) {
+                    if (error.empty()) run(linear_backward_weight_accumulate_bf16_bits(stored_mlp->act, incoming_grad, block.accum_grad_mlp_proj_weight, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_weight.accumulate.bf16_bits");
+                } else {
+                    if (error.empty()) run(linear_backward_weight_accumulate_bf16(tape.act, incoming_grad, block.accum_grad_mlp_proj_weight, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_weight.accumulate.bf16");
+                }
             });
             run_timed_stage("block_backward.mlp_proj.bias", [&]() {
                 if (error.empty()) run(linear_backward_bias_accumulate(incoming_grad, block.accum_grad_mlp_proj_bias, rows, kDim, nullptr), label + ".mlp.proj.backward_bias.accumulate");
@@ -8017,12 +8022,20 @@ int run_transformer_lm_training_json(
                 if (error.empty()) run(linear_backward_input_bf16(incoming_grad, block.mlp_proj_weight, grad_fc_out, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_input.bf16");
             });
             run_timed_stage("block_backward.mlp_proj.gelu", [&]() {
-                if (error.empty()) run(gelu_backward_inplace(tape.fc_out, grad_fc_out, hidden_elements, nullptr), label + ".mlp.gelu.backward_inplace");
+                if (stored_mlp != nullptr) {
+                    if (error.empty()) run(gelu_backward_inplace_bf16_bits(stored_mlp->fc_out, grad_fc_out, hidden_elements, nullptr), label + ".mlp.gelu.backward_inplace.bf16_bits");
+                } else {
+                    if (error.empty()) run(gelu_backward_inplace(tape.fc_out, grad_fc_out, hidden_elements, nullptr), label + ".mlp.gelu.backward_inplace");
+                }
             });
         });
         run_timed_stage("block_backward.mlp_fc", [&]() {
             run_timed_stage("block_backward.mlp_fc.dweight", [&]() {
-                if (error.empty()) run(linear_backward_weight_accumulate_bf16(tape.ln2_out, grad_fc_out, block.accum_grad_fc_weight, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight.accumulate.bf16");
+                if (stored_mlp != nullptr) {
+                    if (error.empty()) run(linear_backward_weight_accumulate_bf16_bits(stored_mlp->ln2_out, grad_fc_out, block.accum_grad_fc_weight, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight.accumulate.bf16_bits");
+                } else {
+                    if (error.empty()) run(linear_backward_weight_accumulate_bf16(tape.ln2_out, grad_fc_out, block.accum_grad_fc_weight, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight.accumulate.bf16");
+                }
             });
             run_timed_stage("block_backward.mlp_fc.bias", [&]() {
                 if (error.empty()) run(linear_backward_bias_accumulate(grad_fc_out, block.accum_grad_fc_bias, rows, kHidden, nullptr), label + ".mlp.fc.backward_bias.accumulate");
@@ -8147,11 +8160,10 @@ int run_transformer_lm_training_json(
                     "block" + std::to_string(i) + ".recompute",
                     false,
                     !use_stored_mlp_activations);
-                if (use_stored_mlp_activations) {
-                    restore_mlp_activations(i, tape);
-                }
             }
-            backward_block(blocks[i], tape, block_input, incoming_grad, output_grad, "block" + std::to_string(i));
+            const StoredMlpActivations* stored_mlp =
+                i < stored_mlp_activations.size() ? &stored_mlp_activations[i] : nullptr;
+            backward_block(blocks[i], tape, stored_mlp, block_input, incoming_grad, output_grad, "block" + std::to_string(i));
             std::swap(incoming_grad, output_grad);
         }
         const std::int64_t embedding_backward_event = stage_begin("embedding_backward");
@@ -8906,13 +8918,16 @@ int run_transformer_lm_training_json(
         << "  \"position_gradient_microbatch_full_copy_elided\": true,\n"
         << "  \"position_gradient_microbatch_zero_elided\": true,\n"
         << "  \"mlp_activation_storage_strategy\": \""
-        << (stored_mlp_activation_block_count > 0 ? "bf16-forward-store-restore-opt-in" : "disabled")
+        << (stored_mlp_activation_block_count > 0 ? "bf16-forward-store-direct-backward-opt-in" : "disabled")
         << "\",\n"
         << "  \"stored_mlp_activation_blocks\": " << stored_mlp_activation_block_count << ",\n"
         << "  \"stored_mlp_activation_elements\": " << stored_mlp_activation_arena_elements << ",\n"
         << "  \"stored_mlp_activation_bytes\": " << stored_mlp_activation_arena_bytes << ",\n"
         << "  \"stored_mlp_activation_store_kernel_launches\": " << stored_mlp_activation_store_kernel_launches << ",\n"
         << "  \"stored_mlp_activation_restore_kernel_launches\": " << stored_mlp_activation_restore_kernel_launches << ",\n"
+        << "  \"stored_mlp_activation_backward_consumer_strategy\": \""
+        << (stored_mlp_activation_block_count > 0 ? "direct-bf16-dweight-and-gelu-backward" : "disabled")
+        << "\",\n"
         << "  \"max_steps\": " << cfg.max_steps << ",\n"
         << "  \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
         << "  \"eval_batches\": " << cfg.eval_batches << ",\n"
@@ -9014,7 +9029,7 @@ int run_transformer_lm_training_json(
         << "    \"mlp_proj_backward_grad_act_scratch_allocated\": false,\n"
         << "    \"activation_tape_strategy\": \""
         << (stored_mlp_activation_block_count > 0
-                ? "scratch-recompute-bf16-stored-mlp-activations-opt-in"
+                ? "scratch-recompute-bf16-stored-mlp-direct-backward-opt-in"
                 : "scratch-recompute")
         << "\",\n"
         << "    \"per_block_parameter_buffers\": " << kPerBlockParameterBuffers << ",\n"

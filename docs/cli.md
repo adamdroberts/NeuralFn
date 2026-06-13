@@ -325,26 +325,26 @@ reports `validation_persistent_block_outputs: 0` and
 The scratch-recompute backward pass reuses the final block activations left by
 the initial forward pass, so only earlier blocks are recomputed from persistent
 block outputs. The default 12-layer JSON reports `backward_recompute_blocks: 11`
-and `final_block_backward_recompute_elided: true`. Default scratch recompute
-still reports `backward_recompute_mlp_fc_gelu_elided: false` and
-`activation_tape_strategy: "scratch-recompute"`. Set
-`NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS=1` only for the experimental BF16 MLP
-activation-storage diagnostic: the trainer stores earlier-block `ln2_out`,
-MLP preactivation, and GELU activation tensors in a BF16 arena during forward,
-restores them before backward, and reports
-`mlp_activation_storage_strategy: "bf16-forward-store-restore-opt-in"`,
+and `final_block_backward_recompute_elided: true`. The default workstation
+path stores earlier-block `ln2_out`, MLP preactivation, and GELU activation
+tensors in a BF16 arena during forward,
+consumes them directly for MLP dWeight and GELU backward, and reports
+`mlp_activation_storage_strategy: "bf16-forward-store-direct-backward-opt-in"`,
 `stored_mlp_activation_blocks`, `stored_mlp_activation_bytes`,
 `stored_mlp_activation_store_kernel_launches`,
-`stored_mlp_activation_restore_kernel_launches`, and
-`backward_recompute_mlp_fc_gelu_elided: true`. That path is disabled by
-default on the 5090 shape because it measured slower than normal scratch
-recompute. Earlier-block recompute still stops after the MLP GELU activation
-because backward does not consume the recomputed MLP projection output or final
-residual output; JSON reports `backward_recompute_mlp_projection_elided: true`
-and `backward_recompute_final_residual_elided: true`. Rebuild
+`stored_mlp_activation_restore_kernel_launches`,
+`stored_mlp_activation_backward_consumer_strategy`, and
+`backward_recompute_mlp_fc_gelu_elided: true`. Set
+`NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS=0` to use lower-memory pure scratch
+recompute, which reports `activation_tape_strategy: "scratch-recompute"` and
+`backward_recompute_mlp_fc_gelu_elided: false`. Earlier-block recompute still
+stops before the MLP projection output and final residual output because
+backward does not consume them; JSON reports
+`backward_recompute_mlp_projection_elided: true` and
+`backward_recompute_final_residual_elided: true`. Rebuild
 `libnfn_native_train_tile_ops.so` with `bash tools/build_native_train_tile_ops.sh`
 after updating, because the native trainer checks for the BF16 activation
-store/restore ABI symbols at startup.
+store/direct-backward ABI symbols at startup.
 The MLP projection backward path writes its dInput into the MLP fc gradient
 buffer and runs `nfn_native_tile_gelu_backward_inplace_float32`, so the full
 trainer does not allocate a separate hidden-size `grad_act` scratch buffer.
