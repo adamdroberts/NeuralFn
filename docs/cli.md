@@ -237,8 +237,10 @@ block recompute/backward, LM-head backward, embedding/final-norm backward,
 gradient zero/clip, and AdamW update stages. It also reports nested LM-head,
 block forward/recompute, and block backward substages such as
 `lm_head_backward.dhidden`, `lm_head_backward.dweight`,
-`block_forward.attention`, `block_backward.mlp_proj`,
-`block_backward.attn_sdpa`, and `block_backward.qkv`. This mode inserts event
+`block_forward.attention.qkv`, `block_forward.attention.sdpa`,
+`block_forward.mlp_fc_gelu.fc`, `block_forward.mlp_proj.proj`,
+`block_backward.mlp_proj`, `block_backward.attn_sdpa`, and
+`block_backward.qkv`. This mode inserts event
 timing work and synchronizes before reporting, so keep it off for normal
 throughput or model-quality runs.
 

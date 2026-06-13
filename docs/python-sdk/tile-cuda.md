@@ -181,13 +181,16 @@ mode records `stage_timing_enabled`, `stage_timing_event_count`,
 `total_ms`, `count`, and `avg_ms` values for token upload, model forward, block
 forward/recompute/backward, LM-head backward, final-norm/embedding backward,
 gradient zero/clip, and AdamW update. Diagnostic runs also emit nested entries
-for LM-head logits/CE/dHidden/dWeight, block forward/recompute attention and
-MLP phases, and block backward MLP projection, MLP fc, LayerNorm/residual,
-attention projection, attention SDPA, and QKV phases. The block backward
-records include individual dWeight, bias, dInput, activation, residual-add, and
-attention-to-QKV entries such as `block_backward.mlp_proj.dweight`,
-`block_backward.mlp_proj.dinput`, `block_backward.attn_sdpa.to_qkv`, and
-`block_backward.qkv.dweight`. The stage profiler
+for LM-head logits/CE/dHidden/dWeight, block forward/recompute attention
+substeps such as `block_forward.attention.qkv`,
+`block_forward.attention.sdpa`, and `block_forward.attention.proj`, forward MLP
+substeps such as `block_forward.mlp_fc_gelu.fc` and
+`block_forward.mlp_proj.proj`, and block backward MLP projection, MLP fc,
+LayerNorm/residual, attention projection, attention SDPA, and QKV phases. The
+block backward records include individual dWeight, bias, dInput, activation,
+residual-add, and attention-to-QKV entries such as
+`block_backward.mlp_proj.dweight`, `block_backward.mlp_proj.dinput`,
+`block_backward.attn_sdpa.to_qkv`, and `block_backward.qkv.dweight`. The stage profiler
 synchronizes before reading event timings, so leave it disabled for normal
 throughput runs.
 

@@ -2995,7 +2995,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_backward.dhidden" in gpt2_source_text
     assert "lm_head_backward.dweight" in gpt2_source_text
     assert 'stage_name + ".attention"' in gpt2_source_text
+    assert 'stage_name + ".attention.qkv"' in gpt2_source_text
+    assert 'stage_name + ".attention.sdpa"' in gpt2_source_text
+    assert 'stage_name + ".attention.proj"' in gpt2_source_text
     assert 'stage_name + ".mlp_fc_gelu"' in gpt2_source_text
+    assert 'stage_name + ".mlp_fc_gelu.fc"' in gpt2_source_text
+    assert 'stage_name + ".mlp_fc_gelu.gelu"' in gpt2_source_text
+    assert 'stage_name + ".mlp_proj.proj"' in gpt2_source_text
     assert "block_backward.mlp_proj" in gpt2_source_text
     assert "block_backward.attn_sdpa" in gpt2_source_text
     assert "block_backward.qkv" in gpt2_source_text
