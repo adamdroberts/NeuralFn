@@ -1062,6 +1062,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32"
         in tile_payload["available_native_kernels"]
     )
+    assert "nfn_native_tile_attention_tk_store_forward_workspace_bf16" in tile_payload["available_native_kernels"]
+    assert (
+        "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_merged_grad_float32"
+        in tile_payload["available_native_kernels"]
+    )
     assert "nfn_native_tile_attention_forward_stats_reset" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_attention_forward_row_launch_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_attention_forward_row_fallback_count" in tile_payload["available_native_kernels"]
@@ -3036,6 +3041,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32"
         in header_text
     )
+    assert "nfn_native_tile_attention_tk_store_forward_workspace_bf16" in header_text
+    assert (
+        "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_merged_grad_float32"
+        in header_text
+    )
     assert "linear_backward_weight_chunked_atomic_float32_kernel" in kernels_text
     assert "linear_backward_bias_chunked_atomic_float32_kernel" in kernels_text
     assert "cublas_linear_forward_float32" in kernels_text
@@ -3128,6 +3138,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "llmc/tk/attention_sm120.cuh" in kernels_text
     assert "launch_tk_attention_forward_float32" in kernels_text
     assert "launch_tk_attention_backward_float32" in kernels_text
+    assert "launch_tk_attention_store_forward_workspace_bf16" in kernels_text
+    assert "launch_tk_attention_backward_to_qkv_from_saved_bf16_float32" in kernels_text
+    assert "cudaMemcpyDeviceToDevice" in kernels_text
     assert "tk-sm120-bf16-bridge" in gpt2_source_text
     assert "attention_forward_tk_launch_count" in gpt2_source_text
     assert "attention_backward_tk_launch_count" in gpt2_source_text
@@ -3812,6 +3825,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_scaled_dot_product_attention_backward_float32" in exported
         assert (
             "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32"
+            in exported
+        )
+        assert "nfn_native_tile_attention_tk_store_forward_workspace_bf16" in exported
+        assert (
+            "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_merged_grad_float32"
             in exported
         )
 

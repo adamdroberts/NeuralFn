@@ -663,6 +663,41 @@ void launch_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merg
     std::int64_t block_size,
     std::int64_t compress_stride,
     cudaStream_t stream);
+int launch_attention_tk_store_forward_workspace_bf16(
+    std::uint16_t* saved_q_bf16_bits,
+    std::uint16_t* saved_k_bf16_bits,
+    std::uint16_t* saved_v_bf16_bits,
+    std::uint16_t* saved_o_bf16_bits,
+    float* saved_lse,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    cudaStream_t stream);
+int launch_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_merged_grad_float32(
+    const std::uint16_t* saved_q_bf16_bits,
+    const std::uint16_t* saved_k_bf16_bits,
+    const std::uint16_t* saved_v_bf16_bits,
+    const std::uint16_t* saved_o_bf16_bits,
+    const float* saved_lse,
+    const float* grad_out,
+    float* grad_qkv,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    cudaStream_t stream);
 
 }  // namespace neuralfn::tile_cuda
 
@@ -2073,6 +2108,84 @@ int nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_f
         compress_stride,
         as_stream(cuda_stream));
     return launch_status();
+}
+
+int nfn_native_tile_attention_tk_store_forward_workspace_bf16(
+    std::uint16_t* saved_q_bf16_bits,
+    std::uint16_t* saved_k_bf16_bits,
+    std::uint16_t* saved_v_bf16_bits,
+    std::uint16_t* saved_o_bf16_bits,
+    float* saved_lse,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    void* cuda_stream) {
+    const int status = neuralfn::tile_cuda::launch_attention_tk_store_forward_workspace_bf16(
+        saved_q_bf16_bits,
+        saved_k_bf16_bits,
+        saved_v_bf16_bits,
+        saved_o_bf16_bits,
+        saved_lse,
+        batch,
+        heads,
+        seq_len,
+        head_dim,
+        as_stream(cuda_stream));
+    return status == 0 ? launch_status() : status;
+}
+
+int nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_merged_grad_float32(
+    const std::uint16_t* saved_q_bf16_bits,
+    const std::uint16_t* saved_k_bf16_bits,
+    const std::uint16_t* saved_v_bf16_bits,
+    const std::uint16_t* saved_o_bf16_bits,
+    const float* saved_lse,
+    const float* grad_out,
+    float* grad_qkv,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    void* cuda_stream) {
+    const int status =
+        neuralfn::tile_cuda::
+            launch_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_merged_grad_float32(
+                saved_q_bf16_bits,
+                saved_k_bf16_bits,
+                saved_v_bf16_bits,
+                saved_o_bf16_bits,
+                saved_lse,
+                grad_out,
+                grad_qkv,
+                batch,
+                query_heads,
+                key_heads,
+                seq_q,
+                seq_k,
+                qk_dim,
+                value_dim,
+                scale,
+                is_causal,
+                right_align_causal,
+                use_sparse_rules,
+                window,
+                num_sinks,
+                block_size,
+                compress_stride,
+                as_stream(cuda_stream));
+    return status == 0 ? launch_status() : status;
 }
 
 }
