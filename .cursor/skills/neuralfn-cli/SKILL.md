@@ -152,7 +152,12 @@ Canonical docs:
   block dWeight accumulation should use
   `nfn_native_tile_linear_backward_weight_accumulate_bf16_float32`. The tied
   LM-head logits, dHidden, and dWeight GEMMs should stay on optimized TF32
-  tensor-op `cublasSgemm`, not scalar Tile dot products. The trainer should
+  tensor-op `cublasSgemm`, not scalar Tile dot products. The CE backward path
+  should reuse the logits chunk as dlogits through
+  `nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32`
+  and report `grad_logit_workspace_elements: 0`,
+  `lm_head_ce_backward_strategy: "inplace-logits-dlogits-workspace"`, and
+  `lm_head_grad_logits_workspace_allocated: false`. The trainer should
   report `linear_backend_strategy:
   "block-forward-dinput-dweight-bf16-lm-head-tf32"`,
   `block_forward_linear_strategy`, `block_backward_input_linear_strategy`,

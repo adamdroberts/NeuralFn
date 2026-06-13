@@ -3753,6 +3753,40 @@ __tile_global__ void token_cross_entropy_backward_chunked_float32_kernel(
   ct::store_masked(grad_logits + base + col, grad, active);
 }
 
+__tile_global__ void token_cross_entropy_backward_chunked_inplace_float32_kernel(
+    float* __restrict__ logits,
+    const std::int64_t* __restrict__ targets,
+    const float* __restrict__ row_max,
+    const float* __restrict__ row_denom,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t chunks_per_row,
+    float loss_scale) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  logits = ct::assume_aligned(logits, 16_ic);
+  targets = ct::assume_aligned(targets, 16_ic);
+  row_max = ct::assume_aligned(row_max, 16_ic);
+  row_denom = ct::assume_aligned(row_denom, 16_ic);
+
+  const std::int64_t block = static_cast<std::int64_t>(ct::bid().x);
+  const std::int64_t row = block / chunks_per_row;
+  const std::int64_t chunk = block - row * chunks_per_row;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto col = ct::iota<IndexTile>() + ct::full<IndexTile>(chunk * kTileSize);
+  auto active = (row < rows) && (col < ct::full<IndexTile>(vocab));
+  auto base = ct::full<IndexTile>(row * vocab);
+  auto target = ct::full<IndexTile>(row < rows ? targets[row] : 0);
+  auto maxv = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(row < rows ? row_max[row] : 0.0f);
+  auto denom = ct::full<decltype(maxv)>(row < rows ? row_denom[row] : 1.0f);
+  auto value = ct::load_masked(logits + base + col, active);
+  auto prob = ct::exp(value - maxv) / denom;
+  auto onehot = ct::select(col == target, ct::full<decltype(prob)>(1.0f), ct::full<decltype(prob)>(0.0f));
+  auto grad = (prob - onehot) * ct::full<decltype(prob)>(loss_scale);
+  ct::store_masked(logits + base + col, grad, active);
+}
+
 __tile_global__ void token_cross_entropy_backward_rowwise_float32_kernel(
     const float* __restrict__ logits,
     const std::int64_t* __restrict__ targets,
@@ -3783,6 +3817,36 @@ __tile_global__ void token_cross_entropy_backward_rowwise_float32_kernel(
   auto onehot = ct::select(col == target, ct::full<decltype(prob)>(1.0f), ct::full<decltype(prob)>(0.0f));
   auto grad = (prob - onehot) * ct::full<decltype(prob)>(loss_scale);
   ct::store_masked(grad_logits + base + col, grad, active);
+}
+
+__tile_global__ void token_cross_entropy_backward_rowwise_inplace_float32_kernel(
+    float* __restrict__ logits,
+    const std::int64_t* __restrict__ targets,
+    std::int64_t rows,
+    std::int64_t vocab,
+    float loss_scale) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  logits = ct::assume_aligned(logits, 16_ic);
+  targets = ct::assume_aligned(targets, 16_ic);
+
+  const std::int64_t row = static_cast<std::int64_t>(ct::bid().x);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto col = ct::iota<IndexTile>();
+  auto active = (row < rows) && (col < ct::full<IndexTile>(vocab));
+  auto base = ct::full<IndexTile>(row * vocab);
+  auto target = ct::full<IndexTile>(targets[row]);
+  auto value = ct::load_masked(logits + base + col, active);
+  auto neg_inf = ct::full<decltype(value)>(-3.4028234663852886e38f);
+  auto safe_value = ct::select(active, value, neg_inf);
+  auto maxv = ct::reduce_max(safe_value, 0_ic);
+  auto exp_value = ct::select(active, ct::exp(value - maxv), ct::full<decltype(value)>(0.0f));
+  auto denom = ct::sum(exp_value, 0_ic);
+  auto prob = exp_value / denom;
+  auto onehot = ct::select(col == target, ct::full<decltype(prob)>(1.0f), ct::full<decltype(prob)>(0.0f));
+  auto grad = (prob - onehot) * ct::full<decltype(prob)>(loss_scale);
+  ct::store_masked(logits + base + col, grad, active);
 }
 
 __tile_global__ void masked_token_cross_entropy_row_stats_float32_kernel(
@@ -6654,6 +6718,27 @@ void launch_token_cross_entropy_backward_with_workspace_float32(
       logits, row_max, row_denom, rows, vocab);
   token_cross_entropy_backward_chunked_float32_kernel<<<static_cast<int>(rows * chunks_per_row), 1, 0, stream>>>(
       logits, targets, row_max, row_denom, grad_logits, rows, vocab, chunks_per_row, loss_scale);
+}
+
+void launch_token_cross_entropy_backward_inplace_with_workspace_float32(
+    float* logits,
+    const std::int64_t* targets,
+    float* row_max,
+    float* row_denom,
+    std::int64_t rows,
+    std::int64_t vocab,
+    float loss_scale,
+    cudaStream_t stream) {
+  if (vocab <= kTileSize) {
+    token_cross_entropy_backward_rowwise_inplace_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+        logits, targets, rows, vocab, loss_scale);
+    return;
+  }
+  const std::int64_t chunks_per_row = (vocab + kTileSize - 1) / kTileSize;
+  token_cross_entropy_row_stats_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      logits, row_max, row_denom, rows, vocab);
+  token_cross_entropy_backward_chunked_inplace_float32_kernel<<<static_cast<int>(rows * chunks_per_row), 1, 0, stream>>>(
+      logits, targets, row_max, row_denom, rows, vocab, chunks_per_row, loss_scale);
 }
 
 void launch_masked_token_cross_entropy_backward_float32(

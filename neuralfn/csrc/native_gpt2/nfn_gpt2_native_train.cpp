@@ -659,6 +659,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_gelu_backward_float32",
         "nfn_native_tile_token_cross_entropy_partials_float32",
         "nfn_native_tile_token_cross_entropy_backward_with_workspace_float32",
+        "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32",
     };
 }
 
@@ -6502,7 +6503,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_scaled_dot_product_attention_backward_from_merged_grad_float32",
         "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32",
         "nfn_native_tile_token_cross_entropy_partials_float32",
-        "nfn_native_tile_token_cross_entropy_backward_with_workspace_float32",
+        "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32",
         "nfn_native_tile_adamw_step_float32",
         "nfn_native_tile_adamw_step_with_device_scale_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_float32",
@@ -6566,8 +6567,8 @@ int run_transformer_lm_training_json(
         std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
     using TokenCrossEntropyPartialsFn = int (*)(
         const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
-    using TokenCrossEntropyBackwardWorkspaceFn = int (*)(
-        const float*, const std::int64_t*, float*, float*, float*,
+    using TokenCrossEntropyBackwardInplaceWorkspaceFn = int (*)(
+        float*, const std::int64_t*, float*, float*,
         std::int64_t, std::int64_t, float, void*);
     using AdamWManyWithDeviceScaleFn = int (*)(
         float* const*, const float* const*, const float*, float* const*, float* const*,
@@ -6656,7 +6657,7 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_bf16_cache_entry_count_fn = nullptr;
     AttentionBackwardToQkvFn attention_backward_to_qkv = nullptr;
     TokenCrossEntropyPartialsFn ce_partials = nullptr;
-    TokenCrossEntropyBackwardWorkspaceFn ce_backward_workspace = nullptr;
+    TokenCrossEntropyBackwardInplaceWorkspaceFn ce_backward_inplace_workspace = nullptr;
     FillManyFn fill_many = nullptr;
     AdamWManyWithDeviceScaleFn adamw_many_with_device_scale = nullptr;
     CudaMallocFn cuda_malloc = nullptr;
@@ -6831,8 +6832,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32");
                 ce_partials = load_symbol<TokenCrossEntropyPartialsFn>(
                     tile_handle, "nfn_native_tile_token_cross_entropy_partials_float32");
-                ce_backward_workspace = load_symbol<TokenCrossEntropyBackwardWorkspaceFn>(
-                    tile_handle, "nfn_native_tile_token_cross_entropy_backward_with_workspace_float32");
+                ce_backward_inplace_workspace = load_symbol<TokenCrossEntropyBackwardInplaceWorkspaceFn>(
+                    tile_handle, "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32");
                 adamw_many_with_device_scale = load_symbol<AdamWManyWithDeviceScaleFn>(
                     tile_handle, "nfn_native_tile_adamw_step_many_with_device_scale_float32");
             }
@@ -7225,7 +7226,7 @@ int run_transformer_lm_training_json(
     float *lnf_out = nullptr, *logits = nullptr, *loss_partials = nullptr;
     float *loss_reduce_a = nullptr, *loss_reduce_b = nullptr, *loss_total = nullptr;
     float *row_max = nullptr, *row_denom = nullptr;
-    float *grad_logits = nullptr, *grad_lnf = nullptr, *grad_residual2 = nullptr;
+    float *grad_lnf = nullptr, *grad_residual2 = nullptr;
     float *grad_fc_out = nullptr, *grad_ln2 = nullptr, *grad_residual1_from_mlp = nullptr, *grad_residual1 = nullptr;
     float *grad_attn_out = nullptr, *grad_qkv = nullptr;
     float *grad_ln1 = nullptr, *grad_x_from_attn = nullptr, *grad_x = nullptr;
@@ -7427,10 +7428,10 @@ int run_transformer_lm_training_json(
 	             {&position_avg, position_weight_elements}, {&position_avg_sq, position_weight_elements},
 	             {&lnf_weight_avg, kDim}, {&lnf_weight_avg_sq, kDim}, {&lnf_bias_avg, kDim}, {&lnf_bias_avg_sq, kDim},
 	             {&token_out, activation_elements}, {&position_out, activation_elements}, {&x, activation_elements},
-	             {&lnf_out, activation_elements}, {&logits, logit_elements}, {&loss_partials, loss_partial_count},
-	             {&loss_reduce_a, loss_partial_count}, {&loss_reduce_b, loss_partial_count}, {&loss_total, 1},
+             {&lnf_out, activation_elements}, {&logits, logit_elements}, {&loss_partials, loss_partial_count},
+             {&loss_reduce_a, loss_partial_count}, {&loss_reduce_b, loss_partial_count}, {&loss_total, 1},
              {&row_max, lm_head_chunk_rows}, {&row_denom, lm_head_chunk_rows},
-             {&grad_logits, logit_elements}, {&grad_lnf, activation_elements},
+             {&grad_lnf, activation_elements},
             {&grad_residual2, activation_elements}, {&grad_fc_out, hidden_elements},
              {&grad_ln2, activation_elements}, {&grad_residual1_from_mlp, activation_elements}, {&grad_residual1, activation_elements},
             {&grad_attn_out, activation_elements},
@@ -7808,22 +7809,21 @@ int run_transformer_lm_training_json(
             });
             run_timed_stage("lm_head_backward.ce", [&]() {
                 if (error.empty()) {
-                    run(ce_backward_workspace(
+                    run(ce_backward_inplace_workspace(
                             logits,
                             target_chunk,
                             row_max,
                             row_denom,
-                            grad_logits,
                             row_count,
                             kVocab,
                             accumulation_scale / static_cast<float>(rows),
                             nullptr),
-                        "ce.backward");
+                        "ce.backward.inplace");
                 }
             });
             run_timed_stage("lm_head_backward.dhidden", [&]() {
                 if (error.empty()) {
-                    run(linear_backward_input(grad_logits, token_weight, grad_hidden_chunk, row_count, kDim, kVocab, nullptr),
+                    run(linear_backward_input(logits, token_weight, grad_hidden_chunk, row_count, kDim, kVocab, nullptr),
                         "lm_head.backward_input");
                 }
             });
@@ -7831,7 +7831,7 @@ int run_transformer_lm_training_json(
                 if (error.empty()) {
                     run(linear_backward_weight_accumulate(
                             hidden_chunk,
-                            grad_logits,
+                            logits,
                             accum_grad_token_weight,
                             row_count,
                             kDim,
@@ -8575,6 +8575,9 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_row_chunk_count\": " << lm_head_chunk_count << ",\n"
         << "  \"loss_partial_count\": " << loss_partial_count << ",\n"
         << "  \"logit_workspace_elements\": " << logit_elements << ",\n"
+        << "  \"grad_logit_workspace_elements\": 0,\n"
+        << "  \"lm_head_ce_backward_strategy\": \"inplace-logits-dlogits-workspace\",\n"
+        << "  \"lm_head_grad_logits_workspace_allocated\": false,\n"
         << "  \"linear_backend_strategy\": \""
         << (linear_bf16_gemm_count > 0 && linear_sgemm_count > 0
                 ? "block-forward-dinput-dweight-bf16-lm-head-tf32"

@@ -437,6 +437,15 @@ void launch_token_cross_entropy_backward_with_workspace_float32(
     std::int64_t vocab,
     float loss_scale,
     cudaStream_t stream);
+void launch_token_cross_entropy_backward_inplace_with_workspace_float32(
+    float* logits,
+    const std::int64_t* targets,
+    float* row_max,
+    float* row_denom,
+    std::int64_t rows,
+    std::int64_t vocab,
+    float loss_scale,
+    cudaStream_t stream);
 void launch_masked_token_cross_entropy_backward_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -1496,6 +1505,27 @@ int nfn_native_tile_token_cross_entropy_backward_with_workspace_float32(
         row_max_workspace,
         row_denom_workspace,
         grad_logits,
+        rows,
+        vocab,
+        loss_scale,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32(
+    float* logits,
+    const std::int64_t* targets,
+    float* row_max_workspace,
+    float* row_denom_workspace,
+    std::int64_t rows,
+    std::int64_t vocab,
+    float loss_scale,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_token_cross_entropy_backward_inplace_with_workspace_float32(
+        logits,
+        targets,
+        row_max_workspace,
+        row_denom_workspace,
         rows,
         vocab,
         loss_scale,

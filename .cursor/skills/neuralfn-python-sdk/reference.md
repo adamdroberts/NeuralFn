@@ -278,6 +278,12 @@ logits, dHidden, and dWeight chunks stay on optimized TF32 tensor-op
 `linear_bf16_gemm_count`, `linear_sgemm_count`, `linear_bf16_a_pack_count`,
 `linear_bf16_a_cache_hit_count`, `linear_bf16_cache_reset_count`,
 `linear_bf16_cached_a_capacity`, and `linear_bf16_cache_entry_count`.
+Full GPT-2 `--train-transformer-lm` reuses the tied LM-head logits chunk as
+dlogits through
+`nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32`;
+native JSON reports `grad_logit_workspace_elements: 0`,
+`lm_head_ce_backward_strategy: "inplace-logits-dlogits-workspace"`, and
+`lm_head_grad_logits_workspace_allocated: false`.
 Full GPT-2 `--train-transformer-lm` can opt into CUDA-event stage timing with
 `NFN_NATIVE_GPT2_STAGE_TIMING=1`; keep it disabled by default for throughput
 runs because it records events and synchronizes before reporting. Native JSON
