@@ -222,6 +222,13 @@ return `selected-graph-native-trainer-missing` for real training until their
 native C++ Tile trainer plans are implemented. Unknown template names return
 `unknown-template`.
 
+GPT-2 evo's family-specific C++ preflight exposes the same selector fields and
+catalog for SDK/subprocess callers. Its current status remains
+`native-preflight-missing-evo-trainer`, so `selected_graph_native_runnable` is
+always `false`, but the preflight distinguishes dense GPT-2-compatible evo work
+(`native-gpt2-evo-trainer-missing`) from other shipped templates, custom graph
+files, and typoed template names without importing the graph-backed runtime.
+
 The compiled transformer-LM loop treats `train_batch_tokens` as the effective
 optimizer-step token batch, not just metadata. It computes
 `grad_accum_steps = ceil(train_batch_tokens / (batch_size * seq_len))`, streams

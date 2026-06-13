@@ -1,4 +1,5 @@
 #include <cctype>
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -15,6 +16,8 @@ struct Gpt2EvoPlan {
     std::string output = "artifacts/gpt2_evo.bin";
     std::string optimizer_profile = "adamw";
     std::string tile_activation_dtype = "nvfp4";
+    std::string template_name = "gpt2";
+    std::string graph_file;
     std::int64_t max_steps = 20000;
     std::int64_t train_seq_len = 1024;
     std::int64_t batch_size = 64;
@@ -108,6 +111,108 @@ std::int64_t ceil_div(std::int64_t lhs, std::int64_t rhs) {
     return (lhs + rhs - 1) / rhs;
 }
 
+std::string normalize_template_name(const std::string& value) {
+    std::string out;
+    out.reserve(value.size());
+    for (char ch : value) {
+        if (ch == '-') {
+            out.push_back('_');
+        } else {
+            out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+        }
+    }
+    return out.empty() ? "gpt2" : out;
+}
+
+const std::vector<std::string>& shipped_gpt_template_presets() {
+    static const std::vector<std::string> presets = {
+        "nanogpt",
+        "nanogpt_megakernel",
+        "gpt2",
+        "gpt2_megakernel",
+        "gpt2_moa",
+        "llama",
+        "modern_norms_llama",
+        "mixllama",
+        "moe",
+        "llama_fast",
+        "llama_fast_megakernel",
+        "mixllama_fast",
+        "mixllama_fast_megakernel",
+        "jamba",
+        "ternary_b158",
+        "fp8_llama",
+        "mxfp4_llama",
+        "deepseek_v3",
+        "deepseek_v4",
+        "gemma3",
+        "diff_transformer",
+        "longctx_sparse_llama",
+        "qwen3_longctx",
+        "auxfree_moe_jepa_evo",
+        "diff_semantic_moe_jepa_evo",
+        "dyt_geglu_semantic_dense_jepa_evo",
+        "llama_megakernel",
+        "kv_pca_llama",
+        "seq2seq",
+        "diffusion",
+        "ttt_llama",
+        "llm_jepa",
+        "dense_jepa_evo",
+        "moe_jepa_evo",
+        "jepa_semantic_hybrid",
+        "jepa_semantic_hybrid_megakernel",
+        "semantic_router_moe",
+        "semantic_router_moe_megakernel",
+        "semantic_moe_jepa_evo",
+        "semantic_dense_jepa_evo",
+        "hnet_lm",
+        "universal_llama",
+        "nanogpt_modern",
+        "gpt2_modern",
+        "llama_modern",
+        "moe_modern",
+        "jamba_modern",
+        "ternary_b158_modern",
+        "seq2seq_modern",
+        "diffusion_modern",
+        "ttt_llama_modern",
+        "llm_jepa_modern",
+        "dense_jepa_evo_modern",
+        "moe_jepa_evo_modern",
+        "hnet_lm_modern",
+        "universal_llama_modern",
+        "kv_pca_llama_modern",
+        "jepa_semantic_hybrid_modern",
+        "semantic_router_moe_modern",
+        "semantic_dense_jepa_evo_modern",
+        "semantic_moe_jepa_evo_modern",
+    };
+    return presets;
+}
+
+bool selected_template_is_shipped(const Gpt2EvoPlan& plan) {
+    const std::string name = normalize_template_name(plan.template_name);
+    const std::vector<std::string>& presets = shipped_gpt_template_presets();
+    return std::find(presets.begin(), presets.end(), name) != presets.end();
+}
+
+bool selected_template_is_dense_gpt2_compatible(const Gpt2EvoPlan& plan) {
+    const std::string name = normalize_template_name(plan.template_name);
+    return name == "gpt2" || name == "gpt2_megakernel" || name == "gpt2_moa";
+}
+
+std::string selected_graph_support_status(const Gpt2EvoPlan& plan) {
+    if (!plan.graph_file.empty()) {
+        return "custom-graph-native-trainer-missing";
+    }
+    if (!selected_template_is_shipped(plan)) {
+        return "unknown-template";
+    }
+    return selected_template_is_dense_gpt2_compatible(plan) ? "native-gpt2-evo-trainer-missing"
+                                                           : "template-native-trainer-missing";
+}
+
 std::int64_t dense_parameter_count(const Gpt2EvoPlan& plan) {
     const std::int64_t token = plan.vocab_size * plan.model_dim;
     const std::int64_t position = plan.train_seq_len * plan.model_dim;
@@ -132,6 +237,8 @@ void print_usage(const char* program) {
         << "  --dataset-alias PATH_OR_ALIAS   Dataset alias or cached shard directory\n"
         << "  --tinystories                   Use TinyStoriesV2 GPT-4 alias\n"
         << "  --output PATH                   Native checkpoint/output path\n"
+        << "  --template-name NAME            GPT template preset to select; aliases: --template, --preset\n"
+        << "  --graph-file PATH               Custom NeuralFn graph JSON to select; alias: --graph\n"
         << "  --max-steps N                   Optimizer steps, default 20000\n"
         << "  --train-seq-len N               Sequence length, default 1024\n"
         << "  --batch-size N                  Microbatch rows, default 64\n"
@@ -199,6 +306,22 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
         << "{\n"
         << "  \"model_family\": \"gpt2-evo\",\n"
         << "  \"status\": \"native-preflight-missing-evo-trainer\",\n"
+        << "  \"template_name\": \"" << json_escape(normalize_template_name(plan.template_name)) << "\",\n"
+        << "  \"graph_file\": \"" << json_escape(plan.graph_file) << "\",\n"
+        << "  \"template_known\": " << (selected_template_is_shipped(plan) ? "true" : "false") << ",\n"
+        << "  \"selected_graph_support_status\": \"" << json_escape(selected_graph_support_status(plan)) << "\",\n"
+        << "  \"selected_graph_native_runnable\": false,\n"
+        << "  \"shipped_template_catalog_count\": " << shipped_gpt_template_presets().size() << ",\n"
+        << "  \"shipped_template_catalog\": [";
+    const std::vector<std::string>& presets = shipped_gpt_template_presets();
+    for (std::size_t i = 0; i < presets.size(); ++i) {
+        if (i != 0) {
+            std::cout << ", ";
+        }
+        std::cout << "\"" << json_escape(presets[i]) << "\"";
+    }
+    std::cout
+        << "],\n"
         << "  \"dataset_alias\": \"" << json_escape(plan.dataset_alias) << "\",\n"
         << "  \"output\": \"" << json_escape(plan.output) << "\",\n"
         << "  \"shape\": {\n"
@@ -246,7 +369,8 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
         << "  \"available_native_kernels\": [\n"
         << "    \"cached uint16 token-shard dispatch through the dense GPT-2 native CLI\",\n"
         << "    \"AdamW optimizer profile and validation cadence parsed before Python/Torch import\",\n"
-        << "    \"NVFP4 activation intent preserved in the compiled native plan\"\n"
+        << "    \"NVFP4 activation intent preserved in the compiled native plan\",\n"
+        << "    \"template/custom graph selector parsed before graph-backed runtime import\"\n"
         << "  ],\n"
         << "  \"required_native_kernels\": [\n"
         << "    \"native dense GPT-2 forward/backward trainer loop that can expose evo block state\",\n"
@@ -306,6 +430,34 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run) {
         }
         if (arg.rfind("--output=", 0) == 0) {
             plan.output = after_equals("--output=");
+            continue;
+        }
+        if (arg == "--template-name" || arg == "--template" || arg == "--preset") {
+            plan.template_name = normalize_template_name(value_for(arg));
+            continue;
+        }
+        if (arg.rfind("--template-name=", 0) == 0) {
+            plan.template_name = normalize_template_name(after_equals("--template-name="));
+            continue;
+        }
+        if (arg.rfind("--template=", 0) == 0) {
+            plan.template_name = normalize_template_name(after_equals("--template="));
+            continue;
+        }
+        if (arg.rfind("--preset=", 0) == 0) {
+            plan.template_name = normalize_template_name(after_equals("--preset="));
+            continue;
+        }
+        if (arg == "--graph-file" || arg == "--graph") {
+            plan.graph_file = value_for(arg);
+            continue;
+        }
+        if (arg.rfind("--graph-file=", 0) == 0) {
+            plan.graph_file = after_equals("--graph-file=");
+            continue;
+        }
+        if (arg.rfind("--graph=", 0) == 0) {
+            plan.graph_file = after_equals("--graph=");
             continue;
         }
         if (arg == "--max-steps" || arg == "--iterations") {

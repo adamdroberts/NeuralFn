@@ -2218,6 +2218,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     )
     assert evo_help.returncode == 0, evo_help.stderr
     assert "Compiled NeuralFn GPT-2 evo native training preflight" in evo_help.stdout
+    assert "--template-name NAME" in evo_help.stdout
+    assert "--graph-file PATH" in evo_help.stdout
     assert "--tile-cuda-activation-dtype nvfp4|float32|none" in evo_help.stdout
     assert "--evo-layer-index N" in evo_help.stdout
     assert "--evo-layer-population N" in evo_help.stdout
@@ -2230,6 +2232,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
             "/tmp/native-cache",
             "--eval-every-steps",
             "1000",
+            "--template-name",
+            "gpt2-moa",
             "--tile-cuda-activation-dtype",
             "nvfp4",
         ],
@@ -2242,6 +2246,13 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     evo_plan = json.loads(evo_plan_proc.stdout)
     assert evo_plan["model_family"] == "gpt2-evo"
     assert evo_plan["status"] == "native-preflight-missing-evo-trainer"
+    assert evo_plan["template_name"] == "gpt2_moa"
+    assert evo_plan["graph_file"] == ""
+    assert evo_plan["template_known"] is True
+    assert evo_plan["selected_graph_support_status"] == "native-gpt2-evo-trainer-missing"
+    assert evo_plan["selected_graph_native_runnable"] is False
+    assert evo_plan["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
+    assert evo_plan["shipped_template_catalog"] == list(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert evo_plan["shape"]["num_layers"] == 12
     assert evo_plan["shape"]["model_dim"] == 768
     assert evo_plan["shape"]["num_heads"] == 12
@@ -2256,8 +2267,50 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert evo_plan["layer_evo"]["evo_block_parameters"] > 0
     assert evo_plan["estimated_parameters"] > evo_plan["layer_evo"]["evo_block_parameters"]
     assert "NVFP4 activation intent preserved in the compiled native plan" in evo_plan["available_native_kernels"]
+    assert "template/custom graph selector parsed before graph-backed runtime import" in evo_plan["available_native_kernels"]
     assert "forward-only candidate evaluation for current plus mutated evo-layer weights" in evo_plan["required_native_kernels"]
     assert "copy/adopt best evo block candidate without host graph-editor tensor flow" in evo_plan["required_native_kernels"]
+
+    evo_custom_graph = subprocess.run(
+        [
+            str(gpt2_evo),
+            "--print-plan",
+            "--dataset-alias",
+            "/tmp/native-cache",
+            "--graph-file",
+            str(tmp_path / "gpt2-evo-custom.json"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert evo_custom_graph.returncode == 0, evo_custom_graph.stderr
+    evo_custom_graph_plan = json.loads(evo_custom_graph.stdout)
+    assert evo_custom_graph_plan["graph_file"].endswith("gpt2-evo-custom.json")
+    assert evo_custom_graph_plan["template_name"] == "gpt2"
+    assert evo_custom_graph_plan["template_known"] is True
+    assert evo_custom_graph_plan["selected_graph_support_status"] == "custom-graph-native-trainer-missing"
+    assert evo_custom_graph_plan["selected_graph_native_runnable"] is False
+
+    evo_unknown_template = subprocess.run(
+        [
+            str(gpt2_evo),
+            "--print-plan",
+            "--preset",
+            "typo-not-a-shipped-template",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert evo_unknown_template.returncode == 0, evo_unknown_template.stderr
+    evo_unknown_plan = json.loads(evo_unknown_template.stdout)
+    assert evo_unknown_plan["template_name"] == "typo_not_a_shipped_template"
+    assert evo_unknown_plan["template_known"] is False
+    assert evo_unknown_plan["selected_graph_support_status"] == "unknown-template"
+    assert evo_unknown_plan["selected_graph_native_runnable"] is False
 
     bad_evo_optimizer = subprocess.run(
         [str(gpt2_evo), "--print-plan", "--optimizer-profile", "sm120_adamw"],

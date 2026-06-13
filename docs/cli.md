@@ -292,6 +292,15 @@ return `selected-graph-native-trainer-missing` for real training until their
 native C++ Tile trainer plans are implemented. Unknown template names return
 `unknown-template`, which keeps typos separate from known migration work.
 
+The GPT-2 evo compiled preflight accepts the same selector aliases. It reports
+`template_name`, `graph_file`, `template_known`,
+`selected_graph_support_status`, `selected_graph_native_runnable: false`, and
+the synchronized shipped template catalog before any graph-backed runtime import.
+Dense GPT-2-compatible selectors currently report
+`native-gpt2-evo-trainer-missing`; structurally different templates report
+`template-native-trainer-missing`; custom graph files report
+`custom-graph-native-trainer-missing`.
+
 The same trainer samples cached token/target batches directly into one pinned
 uint16 arena, enqueues one H2D `cudaMemcpyAsync`, and widens tokens plus targets
 to int64 IDs on device with one `nfn_native_tile_uint16_to_int64` launch.
