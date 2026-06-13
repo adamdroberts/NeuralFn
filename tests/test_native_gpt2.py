@@ -3035,6 +3035,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "trainer_linear_tk_float_out_gemm_count" in kernels_text
     assert "trainer_linear_bf16_b_operand" in kernels_text
     assert "trainer_linear_bf16_a_operand" in kernels_text
+    assert "kLinearBackwardBiasRowChunkSize = 1024" in kernels_text
     assert "cached-first-gemm-operand-with-optimizer-reset" in gpt2_source_text
     assert "nfn_native_tile_trainer_linear_bf16_cache_reset" in gpt2_source_text
     assert "payload_pack_strategy" in gpt2_source_text

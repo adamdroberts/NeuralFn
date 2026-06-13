@@ -1193,6 +1193,7 @@ struct TrainerLinearBf16Workspace {
 
 TrainerLinearBf16Workspace g_trainer_linear_bf16_workspace;
 std::mutex g_trainer_linear_bf16_workspace_mutex;
+constexpr std::int64_t kLinearBackwardBiasRowChunkSize = 1024;
 constexpr std::size_t kTrainerLinearBf16CacheEntryLimit = 64;
 
 std::int64_t trainer_linear_bf16_cached_a_total_capacity(const TrainerLinearBf16Workspace& workspace) {
@@ -8529,7 +8530,7 @@ void launch_linear_backward_weight_float32(
         x, grad_out, grad_weight, n, rows, input_dim, output_dim);
     return;
   }
-  constexpr std::int64_t kRowChunkSize = 256;
+  constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
   const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
   fill_float32_kernel<<<blocks, 1, 0, stream>>>(grad_weight, n, 0.0f);
   dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
@@ -8551,7 +8552,7 @@ void launch_linear_backward_weight_accumulate_float32(
     return;
   }
 #endif
-  constexpr std::int64_t kRowChunkSize = 256;
+  constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
   const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
