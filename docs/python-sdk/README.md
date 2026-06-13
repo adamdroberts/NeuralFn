@@ -42,16 +42,23 @@ from neuralfn import (
     save_graph, load_graph,
     TorchTrainConfig, TorchTrainer,
     build_gpt_root_graph, build_model_stage_graph,
+    NativeGptCheckpointInfo, NativeGptRunConfig, NativeGptRunnerStatus,
     NativeGpt2CheckpointInfo, NativeGpt2RunConfig, NativeGpt2RunnerStatus,
+    build_native_gpt_compiled_cli_run_config, build_native_gpt_run_config, is_native_gpt_checkpoint,
     NativeTrainRunConfig, NativeTrainRunnerStatus,
     build_native_gpt2_compiled_cli_run_config, build_native_gpt2_run_config, is_native_gpt2_checkpoint,
     build_native_train_run_config,
+    latest_native_gpt_checkpoint, native_gpt_parameter_count,
     latest_native_gpt2_checkpoint, native_gpt2_parameter_count,
+    native_gpt_runner_status, read_native_gpt_checkpoint_info,
     native_gpt2_runner_status, read_native_gpt2_checkpoint_info,
     native_train_model_registry, native_train_runner_status,
+    resolve_native_gpt_cli, resolve_native_gpt_executable,
+    resolve_native_gpt_launcher, resolve_native_gpt_token_shards, run_native_gpt,
     resolve_native_gpt2_cli, resolve_native_gpt2_executable,
     resolve_native_gpt2_launcher, resolve_native_gpt2_token_shards, run_native_gpt2,
     resolve_native_train_cli, run_native_train,
+    write_native_gpt_run_config,
     write_native_gpt2_run_config,
 )
 ```
@@ -75,6 +82,13 @@ inspect/check or run the NeuralFn-owned raw Tile GPT-2 plan. Set
 dense native loop, or pass another shipped GPT template name/custom `graph_file`
 to select that architecture and receive explicit
 `selected-graph-native-trainer-missing` JSON until its C++ Tile trainer exists.
+New code can import `neuralfn.native_gpt` for generic dense GPT names:
+`NativeGptRunConfig`, `build_native_gpt_compiled_cli_run_config()`,
+`build_native_gpt_run_config()`, `run_native_gpt()`, and related checkpoint/
+resolver helpers delegate to the same GPT-compatible native implementation
+without importing Torch. CLI users can select `--base-model gpt`, `gpt2`, or
+`gpt3`; the template/custom graph still determines the architecture, context
+window, and unsupported-native status.
 The implemented dense loop honors `train_batch_tokens` by deriving
 `grad_accum_steps`, averaging that many CUDA Tile microbatch gradients in device
 accumulation buffers, and applying clip plus AdamW once per optimizer step.

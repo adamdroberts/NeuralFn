@@ -286,9 +286,12 @@ Canonical docs:
   Keep the compiled C++ `shipped_template_catalog` in sync with that SDK
   catalog, and assert `template_known` plus `shipped_template_catalog_count` in
   native plan tests.
-  Top-level `nfn train --base-model gpt2` direct compiled-CLI handoff should add
-  `--train-transformer-lm` for normal training commands, including selector
-  commands, unless a plan/check/smoke/train action was already requested.
+  Top-level `nfn train --base-model gpt`, `gpt2`, or `gpt3` direct
+  compiled-CLI handoff should add `--train-transformer-lm` for normal training
+  commands, including selector commands, unless a plan/check/smoke/train action
+  was already requested. New SDK code can use `neuralfn.native_gpt` aliases;
+  existing `neuralfn.native_gpt2` names remain wrappers over the same
+  implementation.
   Dense GPT-2-compatible presets (`gpt2`, `gpt2_megakernel`, and `gpt2_moa`)
   may run the current native loop; `gpt2_moa` should resolve to
   `--native-cuda-activation moa`. `--dry-run` / `--print-plan` should report
@@ -399,7 +402,7 @@ Canonical docs:
   forward/backward, transformer backward, embedding backward, and AdamW for 16
   parameter buffers without Python/Torch.
 - `nfn_gpt2_native_train --train-transformer-lm --tile-ops-lib PATH` /
-  wrapper `--train-transformer-lm` is the default dense GPT-2 Tile-CUDA training
+  wrapper `--train-transformer-lm` is the default dense GPT Tile-CUDA training
   action and runs a full-vocab real-dim 12-layer
   transformer-LM multi-step loop over cached shards with periodic validation
   records in `validation.losses`, token/position embeddings, transformer

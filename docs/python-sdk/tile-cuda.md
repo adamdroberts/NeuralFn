@@ -232,11 +232,17 @@ CUDA-only and avoids graph-editor tensors, but it is disabled by default because
 the 64x1024 TinyStories one-step probe regressed from about 74.4k tok/s to about
 12.6k tok/s from the added attention-state storage traffic.
 
-Native GPT-2 SDK config builders accept `template_name` and `graph_file`, which
-map to canonical compiled CLI `--template-name` and `--graph-file` arguments;
-Python CLI aliases such as `--template`, `--preset`, and `--graph` are
-normalized before handoff. Every shipped GPT template name can be passed through
-this no-Torch selection path, and the compiled C++ plan JSON reports
+Native dense GPT SDK config builders accept `template_name` and `graph_file`,
+which map to canonical compiled CLI `--template-name` and `--graph-file`
+arguments; Python CLI aliases such as `--template`, `--preset`, and `--graph`
+are normalized before handoff. Existing `neuralfn.native_gpt2` names remain
+available, while new code can use the generic `neuralfn.native_gpt` aliases such
+as `NativeGptRunConfig`, `build_native_gpt_compiled_cli_run_config()`, and
+`run_native_gpt()`. CLI `--base-model gpt`, `gpt2`, and `gpt3` all select the
+same dense GPT native target; the selected template/custom graph decides the
+architecture and whether a matching C++ trainer is implemented. Every shipped
+GPT template name can be passed through this no-Torch selection path, and the
+compiled C++ plan JSON reports
 `shipped_template_catalog`, `shipped_template_catalog_count`, and
 `template_known` so SDK callers can audit the no-Python selector catalog. Dense
 GPT-2-compatible presets (`gpt2`, `gpt2_megakernel`, and `gpt2_moa`) map to the
