@@ -2311,6 +2311,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["adamw_step_kernel_launches_per_optimizer_step"] == 0
     assert train_transformer_payload["adamw_per_buffer_step_launches_elided"] == 147
     assert train_transformer_payload["gradient_zero_strategy"] == "fused-multi-buffer-accumulation-zero"
+    assert train_transformer_payload["gradient_cuda_memset_zero_enabled"] is True
+    assert isinstance(train_transformer_payload["gradient_cuda_memset_zero_available"], bool)
+    assert train_transformer_payload["gradient_zero_range_count"] == 0
+    assert train_transformer_payload["gradient_zero_range_elements"] == 0
+    assert train_transformer_payload["gradient_zero_cuda_memset_count"] == 0
+    assert train_transformer_payload["gradient_zero_tile_fill_count"] == 0
     assert train_transformer_payload["accumulation_zero_kernel_launches"] == 0
     assert train_transformer_payload["gradient_zero_kernel_launches_per_optimizer_step"] == 0
     assert train_transformer_payload["gradient_zero_per_buffer_launches_elided"] == 147
@@ -2383,6 +2389,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "gradient_zero_loop": False,
         "gradient_zero_loop_elided": True,
         "gradient_zero_strategy": "fused-multi-buffer-accumulation-zero",
+        "gradient_cuda_memset_zero_enabled": True,
+        "gradient_cuda_memset_zero_available": train_transformer_payload["gradient_cuda_memset_zero_available"],
+        "gradient_zero_range_count": 0,
+        "gradient_zero_range_elements": 0,
+        "gradient_zero_cuda_memset_count": 0,
+        "gradient_zero_tile_fill_count": 0,
         "gradient_zeroed_buffer_count": 0,
         "gradient_zero_descriptor_count": 0,
         "gradient_zero_kernel_launches_per_optimizer_step": 0,

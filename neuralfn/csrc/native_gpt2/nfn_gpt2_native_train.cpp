@@ -7862,6 +7862,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_CUDA_MEMSET_ZERO",
                               "NFN_NATIVE_GPT2_CUDA_MEMSET_ZERO"}),
             true);
+    const bool gradient_cuda_memset_zero_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO",
+                              "NFN_NATIVE_GPT2_CUDA_MEMSET_GRAD_ZERO"}),
+            true);
     const std::string startup_zero_init_strategy =
         startup_zero_adamw_state_only_enabled
             ? (startup_zero_adamw_state_ranges_enabled
@@ -8062,6 +8067,10 @@ int run_transformer_lm_training_json(
     std::int64_t startup_tile_zero_fill_count = 0;
     std::int64_t adamw_state_zero_range_count = 0;
     std::int64_t adamw_state_zero_range_elements = 0;
+    std::int64_t gradient_zero_range_count = 0;
+    std::int64_t gradient_zero_range_elements = 0;
+    std::int64_t gradient_zero_cuda_memset_count = 0;
+    std::int64_t gradient_zero_tile_fill_count = 0;
     std::size_t descriptor_arena_requested_bytes = 0;
     std::size_t descriptor_arena_bytes = 0;
     std::int64_t descriptor_arena_cuda_malloc_count = 0;
@@ -9218,19 +9227,20 @@ int run_transformer_lm_training_json(
     run_setup_timed("setup.build_adamw_descriptors", [&]() {
         build_adamw_descriptors();
     });
-    struct AdamWZeroRange {
+    struct FloatZeroRange {
         float* ptr = nullptr;
         std::int64_t elements = 0;
     };
-    std::vector<AdamWZeroRange> adamw_zero_ranges;
-    auto build_adamw_zero_ranges = [&]() {
-        adamw_zero_ranges.clear();
-        if (!error.empty() || !startup_zero_adamw_state_ranges_enabled) {
-            return;
-        }
-        if (adamw_host.avgs.size() != adamw_host.elements.size() ||
-            adamw_host.avg_sqs.size() != adamw_host.elements.size()) {
-            error = "AdamW zero range descriptor size mismatch";
+    std::vector<FloatZeroRange> adamw_zero_ranges;
+    std::vector<FloatZeroRange> gradient_zero_ranges;
+    auto build_zero_ranges_from_spans =
+        [&](const std::vector<std::pair<float*, std::int64_t>>& buffers,
+            std::vector<FloatZeroRange>& ranges,
+            std::int64_t& range_elements,
+            const std::string& label) {
+        ranges.clear();
+        range_elements = 0;
+        if (!error.empty() || buffers.empty()) {
             return;
         }
         struct Span {
@@ -9238,14 +9248,14 @@ int run_transformer_lm_training_json(
             std::uintptr_t end = 0;
         };
         std::vector<Span> spans;
-        spans.reserve(adamw_host.elements.size() * 2);
+        spans.reserve(buffers.size());
         auto add_span = [&](float* ptr, std::int64_t elements) {
             if (error.empty() && ptr == nullptr) {
-                error = "null pointer while building AdamW zero ranges";
+                error = "null pointer while building " + label + " zero ranges";
                 return;
             }
             if (error.empty() && elements <= 0) {
-                error = "non-positive element count while building AdamW zero ranges";
+                error = "non-positive element count while building " + label + " zero ranges";
                 return;
             }
             if (!error.empty()) {
@@ -9256,9 +9266,8 @@ int run_transformer_lm_training_json(
                 sizeof(float) * static_cast<std::size_t>(elements));
             spans.push_back(Span{begin, begin + bytes});
         };
-        for (std::size_t i = 0; i < adamw_host.elements.size(); ++i) {
-            add_span(adamw_host.avgs[i], adamw_host.elements[i]);
-            add_span(adamw_host.avg_sqs[i], adamw_host.elements[i]);
+        for (const auto& buffer : buffers) {
+            add_span(buffer.first, buffer.second);
         }
         if (!error.empty() || spans.empty()) {
             return;
@@ -9266,24 +9275,23 @@ int run_transformer_lm_training_json(
         std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) {
             return a.begin < b.begin;
         });
-        constexpr std::uintptr_t kMaxCoalescedAdamWZeroPaddingBytes =
+        constexpr std::uintptr_t kMaxCoalescedZeroPaddingBytes =
             static_cast<std::uintptr_t>(kFloatArenaAlignmentElements * sizeof(float));
         Span current = spans.front();
         auto flush = [&]() {
             if (current.end <= current.begin ||
                 (current.end - current.begin) % sizeof(float) != 0) {
-                error = "invalid AdamW zero range alignment";
+                error = "invalid " + label + " zero range alignment";
                 return;
             }
             const std::int64_t elements =
                 static_cast<std::int64_t>((current.end - current.begin) / sizeof(float));
-            adamw_zero_ranges.push_back(
-                AdamWZeroRange{reinterpret_cast<float*>(current.begin), elements});
-            adamw_state_zero_range_elements += elements;
+            ranges.push_back(FloatZeroRange{reinterpret_cast<float*>(current.begin), elements});
+            range_elements += elements;
         };
         for (std::size_t i = 1; i < spans.size(); ++i) {
             const Span& span = spans[i];
-            if (span.begin <= current.end + kMaxCoalescedAdamWZeroPaddingBytes) {
+            if (span.begin <= current.end + kMaxCoalescedZeroPaddingBytes) {
                 current.end = std::max(current.end, span.end);
             } else {
                 flush();
@@ -9295,7 +9303,47 @@ int run_transformer_lm_training_json(
         }
         flush();
     };
+    auto build_adamw_zero_ranges = [&]() {
+        adamw_zero_ranges.clear();
+        adamw_state_zero_range_elements = 0;
+        if (!error.empty() || !startup_zero_adamw_state_ranges_enabled) {
+            return;
+        }
+        if (adamw_host.avgs.size() != adamw_host.elements.size() ||
+            adamw_host.avg_sqs.size() != adamw_host.elements.size()) {
+            error = "AdamW zero range descriptor size mismatch";
+            return;
+        }
+        std::vector<std::pair<float*, std::int64_t>> buffers;
+        buffers.reserve(adamw_host.elements.size() * 2);
+        for (std::size_t i = 0; i < adamw_host.elements.size(); ++i) {
+            buffers.push_back({adamw_host.avgs[i], adamw_host.elements[i]});
+            buffers.push_back({adamw_host.avg_sqs[i], adamw_host.elements[i]});
+        }
+        build_zero_ranges_from_spans(
+            buffers, adamw_zero_ranges, adamw_state_zero_range_elements, "AdamW state");
+    };
     build_adamw_zero_ranges();
+    auto build_gradient_zero_ranges = [&]() {
+        gradient_zero_ranges.clear();
+        gradient_zero_range_elements = 0;
+        if (!error.empty() || !gradient_cuda_memset_zero_enabled) {
+            return;
+        }
+        if (adamw_host.grads.size() != adamw_host.elements.size()) {
+            error = "gradient zero range descriptor size mismatch";
+            return;
+        }
+        std::vector<std::pair<float*, std::int64_t>> buffers;
+        buffers.reserve(adamw_host.elements.size());
+        for (std::size_t i = 0; i < adamw_host.elements.size(); ++i) {
+            buffers.push_back({adamw_host.grads[i], adamw_host.elements[i]});
+        }
+        build_zero_ranges_from_spans(
+            buffers, gradient_zero_ranges, gradient_zero_range_elements, "gradient");
+        gradient_zero_range_count = static_cast<std::int64_t>(gradient_zero_ranges.size());
+    };
+    build_gradient_zero_ranges();
     auto build_parameter_fill_descriptors = [&]() {
         if (!error.empty()) {
             return;
@@ -9511,7 +9559,7 @@ int run_transformer_lm_training_json(
     });
     run_setup_timed("setup.zero_init", [&]() {
         if (error.empty() && startup_zero_adamw_state_ranges_enabled && !adamw_zero_ranges.empty()) {
-            for (const AdamWZeroRange& range : adamw_zero_ranges) {
+            for (const FloatZeroRange& range : adamw_zero_ranges) {
                 zero_float_buffer(range.ptr, range.elements, "adamw_state.zero_range");
                 if (!error.empty()) {
                     break;
@@ -9696,9 +9744,33 @@ int run_transformer_lm_training_json(
     auto zero_accumulated_gradients = [&]() {
         const std::int64_t stage_event = stage_begin("gradient_zero");
         if (error.empty()) {
-            fill_adamw_many(adamw_grad_ptrs, 0.0f, "accumulated_gradients.zero_many");
-            if (error.empty()) {
-                accumulation_zero_kernel_launches += 1;
+            bool zeroed_with_cuda_memset = false;
+            if (gradient_cuda_memset_zero_enabled &&
+                cuda_memset_async != nullptr &&
+                !gradient_zero_ranges.empty()) {
+                bool all_memsets_queued = true;
+                for (const FloatZeroRange& range : gradient_zero_ranges) {
+                    const std::size_t bytes =
+                        sizeof(float) * static_cast<std::size_t>(range.elements);
+                    const int status = cuda_memset_async(range.ptr, 0, bytes, nullptr);
+                    if (status != 0) {
+                        all_memsets_queued = false;
+                        break;
+                    }
+                    gradient_zero_cuda_memset_count += 1;
+                }
+                zeroed_with_cuda_memset = all_memsets_queued;
+                if (zeroed_with_cuda_memset) {
+                    accumulation_zero_kernel_launches +=
+                        static_cast<std::int64_t>(gradient_zero_ranges.size());
+                }
+            }
+            if (!zeroed_with_cuda_memset) {
+                fill_adamw_many(adamw_grad_ptrs, 0.0f, "accumulated_gradients.zero_many");
+                if (error.empty()) {
+                    accumulation_zero_kernel_launches += 1;
+                    gradient_zero_tile_fill_count += 1;
+                }
             }
         }
         stage_end(stage_event, "gradient_zero");
@@ -12401,8 +12473,19 @@ int run_transformer_lm_training_json(
         << "  \"adamw_per_buffer_step_launches_elided\": "
         << std::max<std::int64_t>(0, (kGlobalParameterBuffers + kPerBlockParameterBuffers * trained_layers) - 1) << ",\n"
         << "  \"gradient_zero_strategy\": \"fused-multi-buffer-accumulation-zero\",\n"
+        << "  \"gradient_cuda_memset_zero_enabled\": "
+        << (gradient_cuda_memset_zero_enabled ? "true" : "false") << ",\n"
+        << "  \"gradient_cuda_memset_zero_available\": "
+        << (cuda_memset_async != nullptr ? "true" : "false") << ",\n"
+        << "  \"gradient_zero_range_count\": " << gradient_zero_range_count << ",\n"
+        << "  \"gradient_zero_range_elements\": " << gradient_zero_range_elements << ",\n"
+        << "  \"gradient_zero_cuda_memset_count\": " << gradient_zero_cuda_memset_count << ",\n"
+        << "  \"gradient_zero_tile_fill_count\": " << gradient_zero_tile_fill_count << ",\n"
         << "  \"accumulation_zero_kernel_launches\": " << accumulation_zero_kernel_launches << ",\n"
-        << "  \"gradient_zero_kernel_launches_per_optimizer_step\": " << (adamw_descriptor_count > 0 ? 1 : 0) << ",\n"
+        << "  \"gradient_zero_kernel_launches_per_optimizer_step\": "
+        << ((gradient_cuda_memset_zero_enabled && cuda_memset_async != nullptr && gradient_zero_range_count > 0)
+                ? gradient_zero_range_count
+                : (adamw_descriptor_count > 0 ? 1 : 0)) << ",\n"
         << "  \"gradient_zero_per_buffer_launches_elided\": "
         << std::max<std::int64_t>(0, (kGlobalParameterBuffers + kPerBlockParameterBuffers * trained_layers) - 1) << ",\n"
         << "  \"gradient_clip_strategy\": \"fused-multi-buffer-sumsq-device-scale\",\n"
@@ -12491,9 +12574,20 @@ int run_transformer_lm_training_json(
         << "    \"gradient_zero_loop\": false,\n"
         << "    \"gradient_zero_loop_elided\": true,\n"
         << "    \"gradient_zero_strategy\": \"fused-multi-buffer-accumulation-zero\",\n"
+        << "    \"gradient_cuda_memset_zero_enabled\": "
+        << (gradient_cuda_memset_zero_enabled ? "true" : "false") << ",\n"
+        << "    \"gradient_cuda_memset_zero_available\": "
+        << (cuda_memset_async != nullptr ? "true" : "false") << ",\n"
+        << "    \"gradient_zero_range_count\": " << gradient_zero_range_count << ",\n"
+        << "    \"gradient_zero_range_elements\": " << gradient_zero_range_elements << ",\n"
+        << "    \"gradient_zero_cuda_memset_count\": " << gradient_zero_cuda_memset_count << ",\n"
+        << "    \"gradient_zero_tile_fill_count\": " << gradient_zero_tile_fill_count << ",\n"
         << "    \"gradient_zeroed_buffer_count\": 0,\n"
         << "    \"gradient_zero_descriptor_count\": " << adamw_descriptor_count << ",\n"
-        << "    \"gradient_zero_kernel_launches_per_optimizer_step\": " << (adamw_descriptor_count > 0 ? 1 : 0) << ",\n"
+        << "    \"gradient_zero_kernel_launches_per_optimizer_step\": "
+        << ((gradient_cuda_memset_zero_enabled && cuda_memset_async != nullptr && gradient_zero_range_count > 0)
+                ? gradient_zero_range_count
+                : (adamw_descriptor_count > 0 ? 1 : 0)) << ",\n"
         << "    \"gradient_zero_per_buffer_launches_elided\": "
         << std::max<std::int64_t>(0, (kGlobalParameterBuffers + kPerBlockParameterBuffers * trained_layers) - 1) << ",\n"
         << "    \"gradient_accumulation_loop\": false,\n"

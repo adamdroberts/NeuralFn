@@ -108,6 +108,7 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE`,
 `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS`,
 `NFN_NATIVE_GPT_CUDA_MEMSET_ZERO`,
+`NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO`,
 `NFN_NATIVE_GPT_FUSE_RESIDUAL1_STORE`,
 `NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`,
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU`,
@@ -555,12 +556,14 @@ bias-gradient and LayerNorm affine-gradient reductions use the 512-row Tile
 chunked atomic reduction path on the fallback route instead of cuBLAS SGEMV on
 the default GPT `batch=64`, `seq=1024` shape, while small reductions can still
 use cuBLAS where selected. Accumulation buffers are zeroed once
-per optimizer step through
-`nfn_native_tile_fill_many_float32` over the same descriptor table used by the
-fused AdamW call, so the default 12-layer trainer emits one zero-fill kernel
-launch instead of one launch per accumulation buffer. JSON reports
-`gradient_zero_kernel_launches_per_optimizer_step` and
-`gradient_zero_per_buffer_launches_elided`.
+per optimizer step through coalesced contiguous-range `cudaMemsetAsync` by
+default, falling back to `nfn_native_tile_fill_many_float32` over the same
+descriptor table used by the fused AdamW call when CUDA memset is unavailable or
+`NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO=0` is set. JSON reports
+`gradient_cuda_memset_zero_enabled`, `gradient_cuda_memset_zero_available`,
+`gradient_zero_range_count`, `gradient_zero_cuda_memset_count`,
+`gradient_zero_tile_fill_count`, `gradient_zero_kernel_launches_per_optimizer_step`,
+and `gradient_zero_per_buffer_launches_elided`.
 Startup also leaves block 0 on the same block-vector ownership path as every
 other transformer block. The global startup buffer list excludes block-0
 aliases for parameter/gradient allocation, scratch-tape activation allocation,

@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Use CUDA memset for native GPT gradient zeroing
+
+#### Changed
+
+- Dense GPT native training now zeroes per-step accumulation gradients through
+  coalesced contiguous-range `cudaMemsetAsync` by default. The older
+  descriptor-driven Tile fill-many path remains available for paired
+  comparisons with `NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO=0` or
+  `NFN_NATIVE_GPT2_CUDA_MEMSET_GRAD_ZERO=0`.
+- Runtime JSON now reports `gradient_cuda_memset_zero_enabled`,
+  `gradient_cuda_memset_zero_available`, `gradient_zero_range_count`,
+  `gradient_zero_range_elements`, `gradient_zero_cuda_memset_count`, and
+  `gradient_zero_tile_fill_count` at the top level and under
+  `block_state_layout`.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step TinyStories staged smoke pinned to the dedicated RTX 5090:
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 NFN_NATIVE_GPT_STAGE_TIMING=1 build/nfn_gpt_native_train --tinystories --max-steps 1 --model-family gpt --train-transformer-lm --no-checkpoint`.
+  It completed with `gradient_cuda_memset_zero_available: true`,
+  `gradient_zero_range_count: 2`, `gradient_zero_cuda_memset_count: 2`,
+  and a staged `gradient_zero` time of about `0.28 ms`.
+- Ran `tools/paired_kernel_speed.py` with one warmup and four measured
+  three-step pairs on GPU 0, comparing
+  `NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO=0` against the new default. Candidate
+  train-loop ratio was `0.999308`, total runtime ratio was `0.999450`, and
+  tokens/s ratio was `1.000702`; this is a small hot-loop cleanup, not a large
+  throughput win.
+
 ### 2026-06-15 Use CUDA memset for native GPT startup zeroing
 
 #### Changed

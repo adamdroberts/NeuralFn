@@ -552,12 +552,15 @@ For the default GPT-2 `batch=64`, `seq=1024` shape, large-row Linear
 bias-gradient reductions use the Tile chunked atomic reduction path instead of
 cuBLAS SGEMV. This keeps the expensive MLP projection bias reduction on the
 native Tile route; small reductions can still use the existing cuBLAS path.
-The accumulation buffers are zeroed once per optimizer step through
+The accumulation buffers are zeroed once per optimizer step through coalesced
+contiguous-range `cudaMemsetAsync` by default, falling back to
 `nfn_native_tile_fill_many_float32` over the same descriptor table used by the
-fused AdamW call, so the default 12-layer trainer emits one zero-fill kernel
-launch instead of one launch per accumulation buffer. JSON reports
-`gradient_zero_kernel_launches_per_optimizer_step` and
-`gradient_zero_per_buffer_launches_elided`.
+fused AdamW call when CUDA memset is unavailable or
+`NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO=0` is set. JSON reports
+`gradient_cuda_memset_zero_enabled`, `gradient_cuda_memset_zero_available`,
+`gradient_zero_range_count`, `gradient_zero_cuda_memset_count`,
+`gradient_zero_tile_fill_count`, `gradient_zero_kernel_launches_per_optimizer_step`,
+and `gradient_zero_per_buffer_launches_elided`.
 LayerNorm affine-gradient backward has an accumulate ABI and uses a chunked
 parallel atomic reduction for large row counts instead of one CUDA block looping
 over all rows. The LayerNorm affine row chunk now defaults to 256 rows; set
@@ -623,6 +626,7 @@ Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS`,
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE`,
 `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP`,
+`NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO`,
 `NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`,
 `NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF`,
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF`,
