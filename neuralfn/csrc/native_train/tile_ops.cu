@@ -698,6 +698,13 @@ void launch_token_cross_entropy_partials_float32(
     std::int64_t rows,
     std::int64_t vocab,
     cudaStream_t stream);
+void launch_token_cross_entropy_partials_bf16_bits(
+    const std::uint16_t* logits_bf16_bits,
+    const std::int64_t* targets,
+    float* partials,
+    std::int64_t rows,
+    std::int64_t vocab,
+    cudaStream_t stream);
 void launch_masked_token_cross_entropy_partials_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -2389,6 +2396,18 @@ int nfn_native_tile_token_cross_entropy_partials_float32(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_token_cross_entropy_partials_float32(
         logits, targets, partials, rows, vocab, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_token_cross_entropy_partials_bf16_bits(
+    const std::uint16_t* logits_bf16_bits,
+    const std::int64_t* targets,
+    float* partials,
+    std::int64_t rows,
+    std::int64_t vocab,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_token_cross_entropy_partials_bf16_bits(
+        logits_bf16_bits, targets, partials, rows, vocab, as_stream(cuda_stream));
     return launch_status();
 }
 

@@ -6433,6 +6433,45 @@ __tile_global__ void token_cross_entropy_partials_float32_kernel(
   ct::store(partials + out_idx, ct::sum(loss, 0_ic));
 }
 
+__tile_global__ void token_cross_entropy_partials_bf16_bits_kernel(
+    const std::uint16_t* __restrict__ logits_bf16_bits,
+    const std::int64_t* __restrict__ targets,
+    float* __restrict__ partials,
+    std::int64_t rows,
+    std::int64_t vocab) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  const auto* logits = ct::assume_aligned(reinterpret_cast<const __nv_bfloat16*>(logits_bf16_bits), 16_ic);
+  targets = ct::assume_aligned(targets, 16_ic);
+  partials = ct::assume_aligned(partials, 16_ic);
+
+  const int bx = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto row = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto active = row < ct::full<IndexTile>(rows);
+  auto vocab_tile = ct::full<IndexTile>(vocab);
+  auto maxv = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(-3.4028234663852886e38f);
+  for (std::int64_t col = 0; col < vocab; ++col) {
+    auto value = ct::element_cast<float>(
+        ct::load_masked(logits + row * vocab_tile + ct::full<IndexTile>(col), active));
+    maxv = ct::select(value > maxv, value, maxv);
+  }
+  auto denom = ct::full<decltype(maxv)>(0.0f);
+  for (std::int64_t col = 0; col < vocab; ++col) {
+    auto value = ct::element_cast<float>(
+        ct::load_masked(logits + row * vocab_tile + ct::full<IndexTile>(col), active));
+    denom = denom + ct::exp(value - maxv);
+  }
+  auto target = ct::load_masked(targets + row, active);
+  auto target_value = ct::element_cast<float>(ct::load_masked(logits + row * vocab_tile + target, active));
+  auto loss = ct::log(denom) + maxv - target_value;
+  loss = ct::select(active, loss, ct::full<decltype(loss)>(0.0f));
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  auto out_idx = ct::full<OneIndexTile>(static_cast<std::int64_t>(bx));
+  ct::store(partials + out_idx, ct::sum(loss, 0_ic));
+}
+
 __tile_global__ void masked_token_cross_entropy_partials_float32_kernel(
     const float* __restrict__ logits,
     const std::int64_t* __restrict__ targets,
@@ -10471,6 +10510,18 @@ void launch_token_cross_entropy_partials_float32(
     cudaStream_t stream) {
   const int blocks = static_cast<int>((rows + kTileSize - 1) / kTileSize);
   token_cross_entropy_partials_float32_kernel<<<blocks, 1, 0, stream>>>(logits, targets, partials, rows, vocab);
+}
+
+void launch_token_cross_entropy_partials_bf16_bits(
+    const std::uint16_t* logits_bf16_bits,
+    const std::int64_t* targets,
+    float* partials,
+    std::int64_t rows,
+    std::int64_t vocab,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((rows + kTileSize - 1) / kTileSize);
+  token_cross_entropy_partials_bf16_bits_kernel<<<blocks, 1, 0, stream>>>(
+      logits_bf16_bits, targets, partials, rows, vocab);
 }
 
 void launch_masked_token_cross_entropy_partials_float32(

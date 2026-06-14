@@ -6,6 +6,43 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT BF16 validation loss
+
+#### Changed
+
+- Added the raw Tile ABI
+  `nfn_native_tile_token_cross_entropy_partials_bf16_bits`. Dense GPT
+  validation/test loss can now consume BF16 LM-head logits directly instead of
+  recomputing a separate float logits workspace.
+- Full dense GPT `--train-transformer-lm` enables BF16 LM-head loss by default
+  when BF16 LM-head logits are enabled. Runtime JSON now reports
+  `lm_head_loss_logits_dtype`, `lm_head_bf16_loss_enabled`, and
+  `logit_workspace_elements: 0` on the default path.
+- Set `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS=0` or
+  `NFN_NATIVE_GPT2_BF16_LM_HEAD_LOSS=0` to compare validation/test loss against
+  the older float logits loss workspace while keeping BF16 training backward.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`, rebuilt
+  `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`, and
+  rebuilt `build/nfn_native_train` with `bash tools/build_native_train_cli.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q`; 33 tests passed and 1
+  was skipped.
+- Ran a one-step TinyStories validation probe on the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and
+  `NFN_NATIVE_GPT_STAGE_TIMING=1`. The run reported
+  `lm_head_loss_logits_dtype: "bf16"`, `lm_head_bf16_loss_enabled: true`,
+  `logit_workspace_elements: 0`, no missing symbols, and one validation loss at
+  step 1.
+- Ran `tools/paired_kernel_speed.py` on GPU 0 with one warmup pair and five
+  measured pairs comparing `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS=0` against the
+  default BF16 loss path. The train-only setup comparison was neutral-positive
+  with `candidate_over_baseline` mean `0.999170` and median `0.997590`. The
+  eval-inclusive comparison reported mean `0.967912`, median `0.969412`, min
+  `0.960212`, and max `0.971242`.
+
 ### 2026-06-14 Native GPT direct BF16 residual1 LayerNorm backward
 
 #### Changed

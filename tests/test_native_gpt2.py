@@ -1976,10 +1976,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["lm_head_row_chunk_size"] == 2
     assert train_transformer_payload["lm_head_row_chunk_count"] == 1
     assert train_transformer_payload["loss_partial_count"] == 1
-    assert train_transformer_payload["logit_workspace_elements"] == 2 * 50304
+    assert train_transformer_payload["logit_workspace_elements"] == 0
     assert train_transformer_payload["grad_logit_workspace_elements"] == 0
     assert train_transformer_payload["lm_head_training_logits_dtype"] == "bf16"
     assert train_transformer_payload["lm_head_training_dlogits_dtype"] == "bf16"
+    assert train_transformer_payload["lm_head_loss_logits_dtype"] == "bf16"
+    assert train_transformer_payload["lm_head_bf16_loss_enabled"] is True
     assert train_transformer_payload["lm_head_bf16_logits_enabled"] is True
     assert train_transformer_payload["lm_head_bf16_logit_elements"] == 0
     assert train_transformer_payload["lm_head_bf16_logit_bytes"] == 0
@@ -3520,6 +3522,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_rms_norm_backward_input_float32" in header_text
     assert "nfn_native_tile_softmax_lastdim_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_partials_float32" in header_text
+    assert "nfn_native_tile_token_cross_entropy_partials_bf16_bits" in header_text
     assert "nfn_native_tile_masked_token_cross_entropy_partials_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_backward_float32" in header_text
     assert "nfn_native_tile_masked_token_cross_entropy_backward_float32" in header_text
@@ -4436,6 +4439,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_rms_norm_float32" in exported
         assert "nfn_native_tile_rms_norm_backward_input_float32" in exported
         assert "nfn_native_tile_softmax_lastdim_float32" in exported
+        assert "nfn_native_tile_token_cross_entropy_partials_bf16_bits" in exported
         assert "nfn_native_tile_masked_token_cross_entropy_partials_float32" in exported
         assert "nfn_native_tile_token_cross_entropy_backward_float32" in exported
         assert "nfn_native_tile_masked_token_cross_entropy_backward_float32" in exported

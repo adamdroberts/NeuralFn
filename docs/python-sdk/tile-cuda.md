@@ -107,7 +107,8 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS`,
 `NFN_NATIVE_GPT_FUSE_RESIDUAL1_STORE`,
 `NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`, and
-`NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`. The older `NFN_NATIVE_GPT2_*`
+`NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`, and
+`NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS`. The older `NFN_NATIVE_GPT2_*`
 variables remain compatibility fallbacks for existing GPT-2-named wrappers.
 The tokenizer-visible GPT-2 vocab remains 50,257, but native transformer-LM
 parameter layout pads the tied token embedding/LM-head rows to 50,304 for the
@@ -150,12 +151,17 @@ shapes and fall back inside the ABI to separate dWeight plus Tile bias
 reduction when unsupported. Tied LM-head
 logits, dHidden, and dWeight chunks also default to the BF16 classifier path.
 `nfn_native_tile_linear_bf16_output_float32` writes BF16 logits,
+`nfn_native_tile_token_cross_entropy_partials_bf16_bits` computes
+validation/test CE partials directly from those BF16 logits,
 `nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace`
 overwrites them with BF16 dlogits, and the BF16 dlogits feed
 `nfn_native_tile_linear_backward_input_bf16_bits_float32` plus
 `nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits`. Set
-`NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS=0` to return only the tied LM-head chunks
-to the older optimized TF32 tensor-op `cublasSgemm` path for debugging. Set
+`NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS=0` to return the tied LM-head chunks to the
+older optimized TF32 tensor-op `cublasSgemm` path for debugging. Set
+`NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS=0` to keep BF16 training backward while
+comparing validation/test loss against the older float logits loss workspace.
+Set
 `NFN_TILE_CUDA_LINEAR_BF16=1` or
 `NFN_NATIVE_LINEAR_BF16=1` only when profiling the normal linear ABI's BF16
 bridge. Set `NFN_TILE_CUDA_LINEAR_CUBLASLT=1` or
@@ -215,15 +221,21 @@ candidate path.
 The full GPT-2 transformer-LM trainer also exposes
 `nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32`
 for tied LM-head CE backward. That ABI overwrites the logits chunk with dlogits,
-so the main trainer reports `grad_logit_workspace_elements: 0`,
+so the main trainer reports `logit_workspace_elements: 0`,
+`grad_logit_workspace_elements: 0`,
 `lm_head_training_logits_dtype: "bf16"`,
 `lm_head_training_dlogits_dtype: "bf16"`,
+`lm_head_loss_logits_dtype: "bf16"`,
+`lm_head_bf16_loss_enabled: true`,
 `lm_head_ce_backward_strategy: "fused-row-bf16-logits-dlogits"`, and
-`lm_head_grad_logits_workspace_allocated: false` instead of allocating a
-separate full-vocab `grad_logits` chunk. It also reports
+`lm_head_grad_logits_workspace_allocated: false` instead of allocating separate
+float logits or full-vocab `grad_logits` chunks. It also reports
 `lm_head_bf16_logits_enabled: true`, `lm_head_bf16_logit_elements`, and
-`lm_head_bf16_logit_bytes`. With `NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS=0`, the
-same fields report the older float32 logits/dlogits strategy.
+`lm_head_bf16_logit_bytes`. With `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS=0`, training
+still uses BF16 logits/dlogits but validation/test loss allocates and reports
+the older float logits workspace for paired benchmarking. With
+`NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS=0`, the same fields report the older
+float32 logits/dlogits strategy.
 
 The older float32 row-vector forward and query-row atomic backward kernels stay
 compiled as a diagnostic/fallback path for unsupported attention shapes or
@@ -589,7 +601,7 @@ marker. Training JSON reports `checkpoint.payload_pack_strategy:
 `device_pack_kernel_launches`, `d2h_copy_count`, `d2h_bytes`, and
 `float32_d2h_bytes_elided`.
 
-`bash tools/build_native_train_tile_ops.sh` builds `libnfn_native_train_tile_ops.so`, a raw C ABI over CUDA Tile kernels from `neuralfn/csrc/tile_cuda/kernels.cu`. Native C++ trainers should link this library for single-buffer and multi-buffer fill/zeroing, single-buffer and multi-buffer sumsq partials, single-buffer and multi-buffer AdamW, gradient accumulation, deterministic GPT-2 token-weight initialization, device float32-to-bf16 checkpoint payload packing, device-side global-norm clip scale finalization, device-scalar gradient scaling, reductions, linear, forced-BF16 linear, BF16-input linear, linear input/forced-BF16 input/weight/weight-accumulate/forced-BF16 weight-accumulate/forced-BF16 weight+bias-accumulate/bias/bias-accumulate backward, scaled residual add, fused projection bias+residual add, fused QKV split/merge, fused GPT-2 QKV split-to-heads, fused GPT-2 QKV bias+split-to-heads, fused GPT-2 heads-to-QKV gradient merge, fused TK bf16 attention-gradient heads-to-QKV bridge, saved TK BF16 attention workspace copy/backward, reshape-heads/merge-heads, GELU forward, fused bias+GELU forward, fused bias+GELU with BF16 activation output, GELU backward, token embedding forward/weight backward, absolute-position embedding forward/backward/backward-accumulate, RMSNorm, RMSNorm input backward, LayerNorm, LayerNorm forward-with-stats, LayerNorm input plus fused input/residual-add, affine, and affine-accumulate backward, LayerNorm stats-consuming input and affine-accumulate backward, softmax, token and masked token cross-entropy partials, token and masked token cross-entropy logits backward, and scaled dot-product attention forward/backward instead of importing the PyTorch extension binding. The trainer build defines `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1` and links `libcublas`, so the exported native linear forward, BF16-input linear forward, dInput, dWeight, and accumulate-dWeight ABI symbols use GPU GEMM; the forced-BF16 weight+bias accumulate ABI uses cuBLASLt `BGRADB` when supported and falls back to separate dWeight plus Tile bias-reduction launchers. The generic Tile extension build keeps the pure Tile fallback. CE logits backward uses a row-wise Tile path for vocabularies up to 1024 and a chunked row-wise path with reusable row-stat workspace for full GPT-class vocabularies. Linear weight, accumulate-weight, bias, and accumulate-bias backward keep the row-chunked tiled atomic fallback for builds or shapes that do not use the trainer cuBLAS path.
+`bash tools/build_native_train_tile_ops.sh` builds `libnfn_native_train_tile_ops.so`, a raw C ABI over CUDA Tile kernels from `neuralfn/csrc/tile_cuda/kernels.cu`. Native C++ trainers should link this library for single-buffer and multi-buffer fill/zeroing, single-buffer and multi-buffer sumsq partials, single-buffer and multi-buffer AdamW, gradient accumulation, deterministic GPT-2 token-weight initialization, device float32-to-bf16 checkpoint payload packing, device-side global-norm clip scale finalization, device-scalar gradient scaling, reductions, linear, forced-BF16 linear, BF16-input linear, linear input/forced-BF16 input/weight/weight-accumulate/forced-BF16 weight-accumulate/forced-BF16 weight+bias-accumulate/bias/bias-accumulate backward, scaled residual add, fused projection bias+residual add, fused QKV split/merge, fused GPT-2 QKV split-to-heads, fused GPT-2 QKV bias+split-to-heads, fused GPT-2 heads-to-QKV gradient merge, fused TK bf16 attention-gradient heads-to-QKV bridge, saved TK BF16 attention workspace copy/backward, reshape-heads/merge-heads, GELU forward, fused bias+GELU forward, fused bias+GELU with BF16 activation output, GELU backward, token embedding forward/weight backward, absolute-position embedding forward/backward/backward-accumulate, RMSNorm, RMSNorm input backward, LayerNorm, LayerNorm forward-with-stats, LayerNorm input plus fused input/residual-add, affine, and affine-accumulate backward, LayerNorm stats-consuming input and affine-accumulate backward, softmax, float token and masked token cross-entropy partials, BF16-bits token cross-entropy partials, token and masked token cross-entropy logits backward, and scaled dot-product attention forward/backward instead of importing the PyTorch extension binding. The trainer build defines `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1` and links `libcublas`, so the exported native linear forward, BF16-input linear forward, dInput, dWeight, and accumulate-dWeight ABI symbols use GPU GEMM; the forced-BF16 weight+bias accumulate ABI uses cuBLASLt `BGRADB` when supported and falls back to separate dWeight plus Tile bias-reduction launchers. The generic Tile extension build keeps the pure Tile fallback. CE logits backward uses a row-wise Tile path for vocabularies up to 1024 and a chunked row-wise path with reusable row-stat workspace for full GPT-class vocabularies. Linear weight, accumulate-weight, bias, and accumulate-bias backward keep the row-chunked tiled atomic fallback for builds or shapes that do not use the trainer cuBLAS path.
 
 Full GPT-2 `--train-transformer-lm` uses `nfn_native_tile_gelu_add_bias_bf16_act_float32` to write float preactivation, float GELU activation, and BF16 GELU activation bits from one CUDA Tile launch. The BF16 saved-activation backward route uses `nfn_native_tile_gelu_backward_inplace_bf16_bits_float32` as a CUDA Tile kernel too, so the BF16 GELU forward/backward path no longer falls back to scalar CUDA element kernels. The MLP projection then consumes those BF16 bits through `nfn_native_tile_linear_bf16_input_bits_float32`, avoiding another activation pack before GEMM. Training JSON reports `mlp_proj_forward_activation_strategy`, `mlp_forward_act_bf16_elements`, and `mlp_forward_act_bf16_bytes` for this scratch.
 

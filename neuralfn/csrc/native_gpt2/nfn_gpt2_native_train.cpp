@@ -824,6 +824,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_gelu_add_bias_float32",
         "nfn_native_tile_gelu_backward_float32",
         "nfn_native_tile_token_cross_entropy_partials_float32",
+        "nfn_native_tile_token_cross_entropy_partials_bf16_bits",
         "nfn_native_tile_token_cross_entropy_backward_with_workspace_float32",
         "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32",
     };
@@ -6831,6 +6832,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_attention_tk_store_forward_workspace_bf16",
         "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_merged_grad_float32",
         "nfn_native_tile_token_cross_entropy_partials_float32",
+        "nfn_native_tile_token_cross_entropy_partials_bf16_bits",
         "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32",
         "nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace",
         "nfn_native_tile_adamw_step_float32",
@@ -6976,6 +6978,8 @@ int run_transformer_lm_training_json(
         std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
     using TokenCrossEntropyPartialsFn = int (*)(
         const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+    using TokenCrossEntropyPartialsBf16BitsFn = int (*)(
+        const std::uint16_t*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
     using TokenCrossEntropyBackwardInplaceWorkspaceFn = int (*)(
         float*, const std::int64_t*, float*, float*,
         std::int64_t, std::int64_t, float, void*);
@@ -7100,6 +7104,7 @@ int run_transformer_lm_training_json(
     StoreAttentionTkWorkspaceFn store_attention_tk_workspace = nullptr;
     AttentionBackwardToQkvFromSavedTkFn attention_backward_to_qkv_from_saved_tk = nullptr;
     TokenCrossEntropyPartialsFn ce_partials = nullptr;
+    TokenCrossEntropyPartialsBf16BitsFn ce_partials_bf16_bits = nullptr;
     TokenCrossEntropyBackwardInplaceWorkspaceFn ce_backward_inplace_workspace = nullptr;
     TokenCrossEntropyBackwardInplaceBf16BitsWorkspaceFn ce_backward_inplace_bf16_bits_workspace = nullptr;
     FillManyFn fill_many = nullptr;
@@ -7352,6 +7357,8 @@ int run_transformer_lm_training_json(
                     "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_merged_grad_float32");
                 ce_partials = load_symbol<TokenCrossEntropyPartialsFn>(
                     tile_handle, "nfn_native_tile_token_cross_entropy_partials_float32");
+                ce_partials_bf16_bits = load_symbol<TokenCrossEntropyPartialsBf16BitsFn>(
+                    tile_handle, "nfn_native_tile_token_cross_entropy_partials_bf16_bits");
                 ce_backward_inplace_workspace = load_symbol<TokenCrossEntropyBackwardInplaceWorkspaceFn>(
                     tile_handle, "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32");
                 ce_backward_inplace_bf16_bits_workspace =
@@ -7517,6 +7524,13 @@ int run_transformer_lm_training_json(
         lm_head_bf16_logits_env == "TRUE" ||
         lm_head_bf16_logits_env == "on" ||
         lm_head_bf16_logits_env == "ON";
+    const bool lm_head_bf16_loss_enabled =
+        lm_head_bf16_logits_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS",
+                              "NFN_NATIVE_GPT2_BF16_LM_HEAD_LOSS"}),
+            true);
+    const std::int64_t logit_workspace_elements = lm_head_bf16_loss_enabled ? 0 : logit_elements;
     bool stage_timing_enabled = false;
     std::int64_t stage_timing_event_count = 0;
     std::int64_t stage_timing_dropped_event_count = 0;
@@ -8413,9 +8427,9 @@ int run_transformer_lm_training_json(
              {&token_avg, kTokenWeightElements}, {&token_avg_sq, kTokenWeightElements},
 	             {&position_avg, position_weight_elements}, {&position_avg_sq, position_weight_elements},
 	             {&lnf_weight_avg, kDim}, {&lnf_weight_avg_sq, kDim}, {&lnf_bias_avg, kDim}, {&lnf_bias_avg_sq, kDim},
-	             {&token_out, activation_elements}, {&position_out, activation_elements}, {&x, activation_elements},
+             {&token_out, activation_elements}, {&position_out, activation_elements}, {&x, activation_elements},
              {&lnf_mean, rows}, {&lnf_rstd, rows},
-             {&lnf_out, activation_elements}, {&logits, logit_elements}, {&loss_partials, loss_partial_count},
+             {&lnf_out, activation_elements}, {&logits, logit_workspace_elements}, {&loss_partials, loss_partial_count},
              {&loss_reduce_a, loss_partial_count}, {&loss_reduce_b, loss_partial_count}, {&loss_total, 1},
              {&row_max, lm_head_chunk_rows}, {&row_denom, lm_head_chunk_rows},
              {&grad_lnf, activation_elements},
@@ -8904,11 +8918,31 @@ int run_transformer_lm_training_json(
                 (row_start + lm_head_chunk_rows < rows) ? lm_head_chunk_rows : (rows - row_start);
             const float* hidden_chunk = lnf_out + row_start * kDim;
             const std::int64_t* target_chunk = targets + row_start;
-            run(linear(hidden_chunk, token_weight, nullptr, logits, row_count, kDim, kPaddedVocab, false, nullptr),
-                label + ".lm_head.forward");
+            if (lm_head_bf16_loss_enabled) {
+                run(linear_bf16_output(
+                        hidden_chunk,
+                        token_weight,
+                        nullptr,
+                        lm_head_bf16_logits,
+                        row_count,
+                        kDim,
+                        kPaddedVocab,
+                        false,
+                        nullptr),
+                    label + ".lm_head.forward.bf16_logits");
+            } else {
+                run(linear(hidden_chunk, token_weight, nullptr, logits, row_count, kDim, kPaddedVocab, false, nullptr),
+                    label + ".lm_head.forward");
+            }
             if (error.empty()) {
-                run(ce_partials(logits, target_chunk, loss_partials, row_count, kPaddedVocab, nullptr),
-                    label + ".ce.forward");
+                if (lm_head_bf16_loss_enabled) {
+                    run(ce_partials_bf16_bits(
+                            lm_head_bf16_logits, target_chunk, loss_partials, row_count, kPaddedVocab, nullptr),
+                        label + ".ce.forward.bf16_bits");
+                } else {
+                    run(ce_partials(logits, target_chunk, loss_partials, row_count, kPaddedVocab, nullptr),
+                        label + ".ce.forward");
+                }
             }
             if (error.empty()) {
                 const std::int64_t chunk_loss_partials = partial_count_for(row_count);
@@ -10548,12 +10582,16 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_row_chunk_size\": " << lm_head_chunk_rows << ",\n"
         << "  \"lm_head_row_chunk_count\": " << lm_head_chunk_count << ",\n"
         << "  \"loss_partial_count\": " << loss_partial_count << ",\n"
-        << "  \"logit_workspace_elements\": " << logit_elements << ",\n"
+        << "  \"logit_workspace_elements\": " << logit_workspace_elements << ",\n"
         << "  \"grad_logit_workspace_elements\": 0,\n"
         << "  \"lm_head_training_logits_dtype\": \""
         << (lm_head_bf16_logits_enabled ? "bf16" : "float32") << "\",\n"
         << "  \"lm_head_training_dlogits_dtype\": \""
         << (lm_head_bf16_logits_enabled ? "bf16" : "float32") << "\",\n"
+        << "  \"lm_head_loss_logits_dtype\": \""
+        << (lm_head_bf16_loss_enabled ? "bf16" : "float32") << "\",\n"
+        << "  \"lm_head_bf16_loss_enabled\": "
+        << (lm_head_bf16_loss_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_bf16_logits_enabled\": "
         << (lm_head_bf16_logits_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_bf16_logit_elements\": " << lm_head_bf16_logit_elements << ",\n"
