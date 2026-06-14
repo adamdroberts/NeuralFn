@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT default fused dGELU float-gradient path
+
+#### Changed
+
+- Dense GPT block backward now keeps the fused MLP projection dInput+dGELU ABI
+  active on the default float-gradient path. The BF16 MLP gradient handoff flag
+  only controls whether the following MLP FC backward consumes BF16 bits instead
+  of the default float gradient.
+- Runtime JSON continues to report
+  `block_backward_bf16_mlp_grad_handoff_enabled: false` by default while
+  `block_backward_mlp_proj_dgelu_strategy` remains the fused float-gradient
+  strategy.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran a stage-timed one-step TinyStories native GPT CUDA smoke on GPU 0 with
+  `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and
+  `NFN_NATIVE_GPT_STAGE_TIMING=1`.
+
 ### 2026-06-14 Native GPT opt-in BF16 MLP gradient handoff ABI
 
 #### Changed

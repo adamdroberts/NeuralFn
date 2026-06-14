@@ -218,6 +218,8 @@ because paired dedicated-RTX-5090 timing was neutral/slower than the default
 float-gradient handoff. Runtime JSON reports
 `block_backward_bf16_mlp_grad_handoff_enabled` and switches
 `stored_mlp_activation_backward_consumer_strategy` when the experiment is active.
+The default float-gradient path still uses the fused dInput+dGELU ABI and only
+hands the following MLP FC backward a float gradient.
 Set
 `NFN_TILE_CUDA_LINEAR_BF16=1` or
 `NFN_NATIVE_LINEAR_BF16=1` only when profiling the normal linear ABI's BF16

@@ -9742,7 +9742,7 @@ int run_transformer_lm_training_json(
                 }
             });
             run_timed_stage("block_backward.mlp_proj.dinput", [&]() {
-                if (stored_mlp != nullptr && bf16_mlp_grad_handoff_enabled) {
+                if (stored_mlp != nullptr && fuse_mlp_proj_dgelu_enabled) {
                     if (error.empty()) {
                         run(linear_backward_input_dgelu_weight_bf16_bits(
                                 incoming_grad,
@@ -9771,7 +9771,7 @@ int run_transformer_lm_training_json(
                 }
             });
             run_timed_stage("block_backward.mlp_proj.gelu", [&]() {
-                if (stored_mlp != nullptr && bf16_mlp_grad_handoff_enabled) {
+                if (stored_mlp != nullptr && fuse_mlp_proj_dgelu_enabled) {
                     return;
                 } else if (stored_mlp != nullptr) {
                     if (error.empty()) {
