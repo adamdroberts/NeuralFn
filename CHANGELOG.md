@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Dense GPT transformer validation eval batch size
+
+#### Changed
+
+- Dense GPT native `--train-transformer-lm` now honors
+  `--eval-batch-size` / `eval_batch_size` for transformer validation, not just
+  the embedding-LM path.
+- Validation now switches the active forward dimensions and packed token/target
+  staging to the eval batch while keeping training on the full microbatch.
+  `validation.eval_batch_size` reports the resolved eval batch, and each
+  validation loss record reports its actual token count.
+- The eval batch must be between 1 and the training `--batch-size`; the current
+  fixed activation arena is still allocated for the training microbatch.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran focused native GPT coverage:
+  `python -m pytest tests/test_native_gpt2.py -q -k
+  "native_train_tile_ops_builds_torch_free_c_abi or missing"`
+  (`1 passed`, `1 skipped`).
+- Ran a one-step TinyStories transformer-LM validation probe on the dedicated
+  RTX 5090 with `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`,
+  `--eval-every-steps 1`, `--eval-batches 1`, and `--eval-batch-size 4`.
+  Runtime JSON reported `validation.eval_batch_size: 4`,
+  `validation.losses[0].tokens: 4096`, no missing symbols, and `passed: true`.
+
 ### 2026-06-14 Dense GPT LM-head row chunk retune to 8192
 
 #### Changed

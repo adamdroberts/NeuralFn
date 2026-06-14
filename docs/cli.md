@@ -166,6 +166,12 @@ using the token/position embedding, transformer, final norm, tied LM head, CE
 backward, a row-chunked tied LM-head/CE workspace, device-side global norm
 gradient clipping, scratch-recompute activation tape, and 148-buffer AdamW raw
 Tile kernels without Python/Torch.
+Validation uses a separate C++ validation sampler and active forward batch size
+from `--eval-batch-size`; that value must be at least 1 and no larger than the
+training `--batch-size` because the fixed activation arena is allocated for the
+training microbatch. Runtime JSON reports it as `validation.eval_batch_size`,
+and validation loss records report their token counts in
+`validation.losses[].tokens`.
 The trainer-facing Tile ops library built by `tools/build_native_train_tile_ops.sh`
 defaults to the SM120 ThunderKittens bf16 attention bridge. GPT-2-compatible
 training JSON reports `attention_backend_strategy: "tk-sm120-bf16-bridge"`,

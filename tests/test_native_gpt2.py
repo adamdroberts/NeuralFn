@@ -2173,6 +2173,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["max_steps"] == 2
     assert train_transformer_payload["eval_every_steps"] == 1
     assert train_transformer_payload["eval_batches"] == 1
+    assert train_transformer_payload["validation"]["eval_batch_size"] == 1
     assert train_transformer_payload["train_loss_eval_count"] == 0
     assert train_transformer_payload["train_loss_last_step"] == 0
     assert train_transformer_payload["train_loss_sparse"] is False
@@ -2424,6 +2425,40 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_adamw_step_with_device_scale_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_adamw_step_many_with_device_scale_float32" in train_transformer_payload["kernels"]
     assert train_transformer_payload["passed"] is False
+
+    smaller_eval_transformer_lm = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(dataset_path),
+            "--train-transformer-lm",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-tile-ops.so"),
+            "--batch-size",
+            "2",
+            "--train-seq-len",
+            "2",
+            "--max-steps",
+            "1",
+            "--eval-every-steps",
+            "1",
+            "--eval-batches",
+            "1",
+            "--eval-batch-size",
+            "1",
+            "--train-batch-tokens",
+            "4",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert smaller_eval_transformer_lm.returncode == 2
+    smaller_eval_payload = json.loads(smaller_eval_transformer_lm.stdout)
+    assert smaller_eval_payload["batch_size"] == 2
+    assert smaller_eval_payload["validation"]["eval_batch_size"] == 1
+    assert smaller_eval_payload["validation"]["eval_batches"] == 1
 
     checkpoint_out = tmp_path / "checkpoint-metadata-out"
     checkpoint_metadata = subprocess.run(
@@ -3654,10 +3689,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "uint16_to_int64_kernel" in kernels_text
     assert "token_u16_arena.copy_async" in gpt2_source_text
     assert "token_i64_arena.device_widen" in gpt2_source_text
-    assert "next_into(token_ids_pinned, targets_pinned, rows)" in gpt2_source_text
+    assert "next_into(token_ids_pinned, targets_pinned, active_rows)" in gpt2_source_text
+    assert "next_into(token_ids_pinned, active_targets_pinned, active_rows)" in gpt2_source_text
     assert "direct-sampler-to-pinned-arena" in gpt2_source_text
-    assert "attention(tape.q_heads, tape.k_heads, tape.v_heads, tape.attn_heads, activation_elements" in gpt2_source_text
-    assert "attention(tape.q_heads, tape.k_heads, tape.v_heads, tape.attn_heads, batch_size" not in gpt2_source_text
+    assert (
+        "attention(tape.q_heads, tape.k_heads, tape.v_heads, tape.attn_heads, active_activation_elements"
+        in gpt2_source_text
+    )
+    assert "attention(tape.q_heads, tape.k_heads, tape.v_heads, tape.attn_heads, active_batch_size" not in gpt2_source_text
     assert "forward_row_qkv_scratch_allocated" in gpt2_source_text
     assert "forward_row_qkv_scratch_buffers_elided" in gpt2_source_text
     assert 'visit(&tape.q, activation_elements, prefix + ".attn.q")' not in gpt2_source_text

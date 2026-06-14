@@ -8764,6 +8764,41 @@ int run_transformer_lm_training_json(
     };
     refresh_block_weight_bf16("block_weight_bf16.initial_refresh");
 
+    const std::int64_t eval_batch_size =
+        cfg.eval_batch_size > 0 ? static_cast<std::int64_t>(cfg.eval_batch_size) : batch_size;
+    if (error.empty() && (eval_batch_size <= 0 || eval_batch_size > batch_size)) {
+        std::ostringstream out;
+        out << "GPT transformer/LM eval batch size must be in [1, " << batch_size
+            << "] for the current fixed-size activation arena; got " << eval_batch_size;
+        error = out.str();
+    }
+    std::int64_t active_batch_size = batch_size;
+    std::int64_t active_rows = rows;
+    std::int64_t active_activation_elements = activation_elements;
+    std::int64_t active_hidden_elements = hidden_elements;
+    std::int64_t active_qkv_activation_elements = qkv_activation_elements;
+    std::int64_t* active_targets = targets;
+    std::uint16_t* active_targets_pinned = targets_pinned;
+    auto set_active_batch_size = [&](std::int64_t value) {
+        if (!error.empty()) {
+            return;
+        }
+        if (value <= 0 || value > batch_size) {
+            std::ostringstream out;
+            out << "active GPT transformer/LM batch size must be in [1, " << batch_size << "]; got " << value;
+            error = out.str();
+            return;
+        }
+        active_batch_size = value;
+        active_rows = active_batch_size * seq_len;
+        active_activation_elements = active_rows * kDim;
+        active_hidden_elements = active_rows * kHidden;
+        active_qkv_activation_elements = active_rows * kQkvDim;
+        active_targets = token_i64_arena + active_rows;
+        active_targets_pinned = token_u16_pinned_arena + active_rows;
+    };
+    set_active_batch_size(batch_size);
+
     neuralfn::native_train::SequentialTokenBatchSampler sampler(dataset.train_shards, seq_len, batch_size);
     std::vector<float> host_loss(1, 0.0f);
     std::vector<ValidationLossRecord> validation_losses;
@@ -8781,9 +8816,9 @@ int run_transformer_lm_training_json(
             return;
         }
         if (layer_norm_stats_enabled) {
-            run(layer_norm_with_stats(input, weight, bias, output, mean, rstd, rows, kDim, kNormEps, nullptr), name);
+            run(layer_norm_with_stats(input, weight, bias, output, mean, rstd, active_rows, kDim, kNormEps, nullptr), name);
         } else {
-            run(layer_norm(input, weight, bias, output, rows, kDim, kNormEps, nullptr), name);
+            run(layer_norm(input, weight, bias, output, active_rows, kDim, kNormEps, nullptr), name);
         }
     };
     auto run_layer_norm_backward_affine_accumulate = [&](
@@ -8799,11 +8834,11 @@ int run_transformer_lm_training_json(
         }
         if (layer_norm_stats_enabled) {
             run(layer_norm_backward_affine_accumulate_with_stats(
-                    input, grad_out, mean, rstd, grad_weight, grad_bias, rows, kDim, nullptr),
+                    input, grad_out, mean, rstd, grad_weight, grad_bias, active_rows, kDim, nullptr),
                 name);
         } else {
             run(layer_norm_backward_affine_accumulate(
-                    input, grad_out, grad_weight, grad_bias, rows, kDim, kNormEps, nullptr),
+                    input, grad_out, grad_weight, grad_bias, active_rows, kDim, kNormEps, nullptr),
                 name);
         }
     };
@@ -8819,7 +8854,7 @@ int run_transformer_lm_training_json(
             return;
         }
         run(layer_norm_backward_affine_accumulate_with_stats_bf16_bits(
-                input_bf16_bits, grad_out, mean, rstd, grad_weight, grad_bias, rows, kDim, nullptr),
+                input_bf16_bits, grad_out, mean, rstd, grad_weight, grad_bias, active_rows, kDim, nullptr),
             name);
     };
     auto run_layer_norm_backward_input = [&](
@@ -8835,10 +8870,10 @@ int run_transformer_lm_training_json(
         }
         if (layer_norm_stats_enabled) {
             run(layer_norm_backward_input_with_stats(
-                    input, grad_out, weight, mean, rstd, grad_input, rows, kDim, nullptr),
+                    input, grad_out, weight, mean, rstd, grad_input, active_rows, kDim, nullptr),
                 name);
         } else {
-            run(layer_norm_backward_input(input, grad_out, weight, grad_input, rows, kDim, kNormEps, nullptr), name);
+            run(layer_norm_backward_input(input, grad_out, weight, grad_input, active_rows, kDim, kNormEps, nullptr), name);
         }
     };
 
@@ -8894,7 +8929,7 @@ int run_transformer_lm_training_json(
             return;
         }
         const std::int64_t stage_event = stage_begin("token_upload");
-        const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(rows);
+        const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(active_rows);
         const std::size_t arena_bytes = bytes * 2;
         run(cuda_memcpy_async(
                 token_u16_device_arena,
@@ -8904,7 +8939,7 @@ int run_transformer_lm_training_json(
                 nullptr),
             "token_u16_arena.copy_async");
         if (error.empty()) {
-            run(uint16_to_int64(token_u16_device_arena, token_i64_arena, rows * 2, nullptr),
+            run(uint16_to_int64(token_u16_device_arena, token_i64_arena, active_rows * 2, nullptr),
                 "token_i64_arena.device_widen");
         }
         stage_end(stage_event, "token_upload");
@@ -8913,11 +8948,11 @@ int run_transformer_lm_training_json(
     auto lm_head_forward_loss = [&](const std::string& label) -> double {
         const std::int64_t stage_event = stage_begin(label + ".lm_head_loss");
         fill_buffer(loss_total, 1, 0.0f, label + ".loss_total.zero");
-        for (std::int64_t row_start = 0; row_start < rows && error.empty(); row_start += lm_head_chunk_rows) {
+        for (std::int64_t row_start = 0; row_start < active_rows && error.empty(); row_start += lm_head_chunk_rows) {
             const std::int64_t row_count =
-                (row_start + lm_head_chunk_rows < rows) ? lm_head_chunk_rows : (rows - row_start);
+                (row_start + lm_head_chunk_rows < active_rows) ? lm_head_chunk_rows : (active_rows - row_start);
             const float* hidden_chunk = lnf_out + row_start * kDim;
-            const std::int64_t* target_chunk = targets + row_start;
+            const std::int64_t* target_chunk = active_targets + row_start;
             if (lm_head_bf16_loss_enabled) {
                 run(linear_bf16_output(
                         hidden_chunk,
@@ -8973,11 +9008,11 @@ int run_transformer_lm_training_json(
 
     auto lm_head_backward = [&](float accumulation_scale) {
         const std::int64_t stage_event = stage_begin("lm_head_backward");
-        for (std::int64_t row_start = 0; row_start < rows && error.empty(); row_start += lm_head_chunk_rows) {
+        for (std::int64_t row_start = 0; row_start < active_rows && error.empty(); row_start += lm_head_chunk_rows) {
             const std::int64_t row_count =
-                (row_start + lm_head_chunk_rows < rows) ? lm_head_chunk_rows : (rows - row_start);
+                (row_start + lm_head_chunk_rows < active_rows) ? lm_head_chunk_rows : (active_rows - row_start);
             const float* hidden_chunk = lnf_out + row_start * kDim;
-            const std::int64_t* target_chunk = targets + row_start;
+            const std::int64_t* target_chunk = active_targets + row_start;
             float* grad_hidden_chunk = grad_lnf + row_start * kDim;
             run_timed_stage("lm_head_backward.logits", [&]() {
                 if (lm_head_bf16_logits_enabled) {
@@ -9007,7 +9042,7 @@ int run_transformer_lm_training_json(
                                 row_denom,
                                 row_count,
                                 kPaddedVocab,
-                                accumulation_scale / static_cast<float>(rows),
+                                accumulation_scale / static_cast<float>(active_rows),
                                 nullptr),
                             "ce.backward.inplace.bf16_bits");
                     } else {
@@ -9018,7 +9053,7 @@ int run_transformer_lm_training_json(
                                 row_denom,
                                 row_count,
                                 kPaddedVocab,
-                                accumulation_scale / static_cast<float>(rows),
+                                accumulation_scale / static_cast<float>(active_rows),
                                 nullptr),
                             "ce.backward.inplace");
                     }
@@ -9086,8 +9121,8 @@ int run_transformer_lm_training_json(
                     tape.fc_out,
                     tape.act,
                     stored.ln2_out,
-                    activation_elements,
-                    hidden_elements,
+                    active_activation_elements,
+                    active_hidden_elements,
                     nullptr),
                 "block" + std::to_string(block_index) + ".mlp_activation_store.bf16");
             if (error.empty()) stored_mlp_activation_store_kernel_launches += 1;
@@ -9105,7 +9140,7 @@ int run_transformer_lm_training_json(
                     stored.v,
                     stored.o,
                     stored.lse,
-                    batch_size,
+                    active_batch_size,
                     kHeads,
                     seq_len,
                     kHeadDim,
@@ -9143,7 +9178,7 @@ int run_transformer_lm_training_json(
                                 block.qkv_weight_bf16,
                                 nullptr,
                                 active_qkv_bf16,
-                                rows,
+                                active_rows,
                                 kDim,
                                 kQkvDim,
                                 false,
@@ -9151,7 +9186,7 @@ int run_transformer_lm_training_json(
                             label + ".attn.qkv.forward.no_bias.bf16_bits");
                     }
                 } else {
-                    if (error.empty()) run(linear_weight_bf16(tape.ln1_out, block.qkv_weight_bf16, nullptr, tape.qkv, rows, kDim, kQkvDim, false, nullptr), label + ".attn.qkv.forward.no_bias.weight_bf16");
+                    if (error.empty()) run(linear_weight_bf16(tape.ln1_out, block.qkv_weight_bf16, nullptr, tape.qkv, active_rows, kDim, kQkvDim, false, nullptr), label + ".attn.qkv.forward.no_bias.weight_bf16");
                 }
             });
             run_timed_stage(stage_name + ".attention.qkv_layout", [&]() {
@@ -9160,13 +9195,13 @@ int run_transformer_lm_training_json(
                         run(bf16_bits_add_bias_inplace(
                                 active_qkv_bf16,
                                 block.qkv_bias,
-                                rows,
+                                active_rows,
                                 kQkvDim,
                                 nullptr),
                             label + ".attn.qkv.bias_add_bf16_bits");
                     }
                 } else {
-                    if (error.empty()) run(split_qkv_to_heads_add_bias(tape.qkv, block.qkv_bias, tape.q_heads, tape.k_heads, tape.v_heads, batch_size, seq_len, kHeads, kHeadDim, nullptr), label + ".attn.qkv.bias_split_to_heads");
+                    if (error.empty()) run(split_qkv_to_heads_add_bias(tape.qkv, block.qkv_bias, tape.q_heads, tape.k_heads, tape.v_heads, active_batch_size, seq_len, kHeads, kHeadDim, nullptr), label + ".attn.qkv.bias_split_to_heads");
                 }
             });
             run_timed_stage(stage_name + ".attention.sdpa", [&]() {
@@ -9175,7 +9210,7 @@ int run_transformer_lm_training_json(
                         run(packed_attention_forward(
                                 active_qkv_bf16,
                                 active_packed_attn_out_bf16,
-                                batch_size,
+                                active_batch_size,
                                 kHeads,
                                 kHeads,
                                 seq_len,
@@ -9208,7 +9243,7 @@ int run_transformer_lm_training_json(
                                 fused_attention_store->v,
                                 fused_attention_store->o,
                                 fused_attention_store->lse,
-                                batch_size,
+                                active_batch_size,
                                 kHeads,
                                 kHeads,
                                 seq_len,
@@ -9228,14 +9263,14 @@ int run_transformer_lm_training_json(
                         if (error.empty()) stored_attention_store_kernel_launches += 1;
                     }
                 } else {
-                    if (error.empty()) run(attention(tape.q_heads, tape.k_heads, tape.v_heads, tape.attn_heads, activation_elements, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.forward");
+                    if (error.empty()) run(attention(tape.q_heads, tape.k_heads, tape.v_heads, tape.attn_heads, active_activation_elements, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.forward");
                 }
             });
             run_timed_stage(stage_name + ".attention.merge_heads", [&]() {
                 if (packed_qkv_attention_enabled) {
                     return;
                 } else {
-                    if (error.empty()) run(merge_heads(tape.attn_heads, tape.attn_out, batch_size, kHeads, seq_len, kHeadDim, nullptr), label + ".attn.merge_heads");
+                    if (error.empty()) run(merge_heads(tape.attn_heads, tape.attn_out, active_batch_size, kHeads, seq_len, kHeadDim, nullptr), label + ".attn.merge_heads");
                 }
             });
             run_timed_stage(stage_name + ".attention.proj", [&]() {
@@ -9246,7 +9281,7 @@ int run_transformer_lm_training_json(
                                 block.attn_proj_weight_bf16,
                                 nullptr,
                                 tape.attn_proj,
-                                rows,
+                                active_rows,
                                 kDim,
                                 kDim,
                                 false,
@@ -9254,7 +9289,7 @@ int run_transformer_lm_training_json(
                             label + ".attn.out.forward.no_bias.packed_o_bf16_bits");
                     }
                 } else {
-                    if (error.empty()) run(linear_weight_bf16(tape.attn_out, block.attn_proj_weight_bf16, nullptr, tape.attn_proj, rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.weight_bf16");
+                    if (error.empty()) run(linear_weight_bf16(tape.attn_out, block.attn_proj_weight_bf16, nullptr, tape.attn_proj, active_rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.weight_bf16");
                 }
             });
             run_timed_stage(stage_name + ".attention.residual", [&]() {
@@ -9275,7 +9310,7 @@ int run_transformer_lm_training_json(
                                     ln2_mean,
                                     ln2_rstd,
                                     fused_residual1_store,
-                                    rows,
+                                    active_rows,
                                     kDim,
                                     kNormEps,
                                     nullptr),
@@ -9295,7 +9330,7 @@ int run_transformer_lm_training_json(
                                     tape.ln2_out,
                                     ln2_mean,
                                     ln2_rstd,
-                                    rows,
+                                    active_rows,
                                     kDim,
                                     kNormEps,
                                     nullptr),
@@ -9304,7 +9339,7 @@ int run_transformer_lm_training_json(
                         ln2_precomputed = error.empty();
                     }
                 } else {
-                    if (error.empty()) run(linear_bias_residual_add(block_input, tape.attn_proj, block.attn_proj_bias, residual_scale, tape.residual1, rows, kDim, nullptr), label + ".attn.bias_residual");
+                    if (error.empty()) run(linear_bias_residual_add(block_input, tape.attn_proj, block.attn_proj_bias, residual_scale, tape.residual1, active_rows, kDim, nullptr), label + ".attn.bias_residual");
                 }
             });
         });
@@ -9319,7 +9354,7 @@ int run_transformer_lm_training_json(
                 });
                 if (fused_mlp_store != nullptr) {
                     run_timed_stage(stage_name + ".mlp_fc_gelu.pack_ln2", [&]() {
-                        if (error.empty()) run(float32_to_bf16_bits(tape.ln2_out, fused_mlp_store->ln2_out, activation_elements, nullptr), label + ".mlp.ln2.store_bf16");
+                        if (error.empty()) run(float32_to_bf16_bits(tape.ln2_out, fused_mlp_store->ln2_out, active_activation_elements, nullptr), label + ".mlp.ln2.store_bf16");
                     });
                     run_timed_stage(stage_name + ".mlp_fc_gelu.fc_gelu", [&]() {
                         if (error.empty()) {
@@ -9329,7 +9364,7 @@ int run_transformer_lm_training_json(
                                     block.fc_bias,
                                     fused_mlp_store->fc_out,
                                     fused_mlp_store->act,
-                                    rows,
+                                    active_rows,
                                     kDim,
                                     kHidden,
                                     nullptr),
@@ -9339,10 +9374,10 @@ int run_transformer_lm_training_json(
                     });
                 } else {
                     run_timed_stage(stage_name + ".mlp_fc_gelu.fc", [&]() {
-                        if (error.empty()) run(linear_weight_bf16(tape.ln2_out, block.fc_weight_bf16, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias.weight_bf16");
+                        if (error.empty()) run(linear_weight_bf16(tape.ln2_out, block.fc_weight_bf16, nullptr, tape.fc_out, active_rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias.weight_bf16");
                     });
                     run_timed_stage(stage_name + ".mlp_fc_gelu.gelu", [&]() {
-                        if (error.empty()) run(gelu_add_bias_bf16_act(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, mlp_forward_act_bf16, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward.bf16_act");
+                        if (error.empty()) run(gelu_add_bias_bf16_act(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, mlp_forward_act_bf16, active_rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward.bf16_act");
                     });
                 }
             });
@@ -9352,10 +9387,10 @@ int run_transformer_lm_training_json(
                 run_timed_stage(stage_name + ".mlp_proj.proj", [&]() {
                     const std::uint16_t* act_bits =
                         fused_mlp_store != nullptr ? fused_mlp_store->act : mlp_forward_act_bf16;
-                    if (error.empty()) run(linear_bf16_input_weight_bf16(act_bits, block.mlp_proj_weight_bf16, nullptr, tape.mlp_out, rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias.bf16_act_weight_bf16");
+                    if (error.empty()) run(linear_bf16_input_weight_bf16(act_bits, block.mlp_proj_weight_bf16, nullptr, tape.mlp_out, active_rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias.bf16_act_weight_bf16");
                 });
                 run_timed_stage(stage_name + ".mlp_proj.residual", [&]() {
-                    if (error.empty()) run(linear_bias_residual_add(tape.residual1, tape.mlp_out, block.mlp_proj_bias, residual_scale, tape.residual2, rows, kDim, nullptr), label + ".mlp.bias_residual");
+                    if (error.empty()) run(linear_bias_residual_add(tape.residual1, tape.mlp_out, block.mlp_proj_bias, residual_scale, tape.residual2, active_rows, kDim, nullptr), label + ".mlp.bias_residual");
                 });
             });
         }
@@ -9373,16 +9408,16 @@ int run_transformer_lm_training_json(
             run_layer_norm(block_input, block.ln1_weight, block.ln1_bias, tape.ln1_out, tape.ln1_mean, tape.ln1_rstd, label + ".ln1.forward");
         });
         run_timed_stage(stage_name + ".attention.restore_o", [&]() {
-            if (error.empty()) run(bf16_bits_to_float32(stored_attention.o, tape.attn_heads, activation_elements, nullptr), label + ".attn.restore_o_bf16");
+            if (error.empty()) run(bf16_bits_to_float32(stored_attention.o, tape.attn_heads, active_activation_elements, nullptr), label + ".attn.restore_o_bf16");
         });
         run_timed_stage(stage_name + ".attention.merge_heads", [&]() {
-            if (error.empty()) run(merge_heads(tape.attn_heads, tape.attn_out, batch_size, kHeads, seq_len, kHeadDim, nullptr), label + ".attn.merge_heads");
+            if (error.empty()) run(merge_heads(tape.attn_heads, tape.attn_out, active_batch_size, kHeads, seq_len, kHeadDim, nullptr), label + ".attn.merge_heads");
         });
         run_timed_stage(stage_name + ".attention.proj", [&]() {
-            if (error.empty()) run(linear_weight_bf16(tape.attn_out, block.attn_proj_weight_bf16, nullptr, tape.attn_proj, rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.weight_bf16");
+            if (error.empty()) run(linear_weight_bf16(tape.attn_out, block.attn_proj_weight_bf16, nullptr, tape.attn_proj, active_rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.weight_bf16");
         });
         run_timed_stage(stage_name + ".attention.residual", [&]() {
-            if (error.empty()) run(linear_bias_residual_add(block_input, tape.attn_proj, block.attn_proj_bias, residual_scale, tape.residual1, rows, kDim, nullptr), label + ".attn.bias_residual");
+            if (error.empty()) run(linear_bias_residual_add(block_input, tape.attn_proj, block.attn_proj_bias, residual_scale, tape.residual1, active_rows, kDim, nullptr), label + ".attn.bias_residual");
         });
         if (compute_mlp_activations) {
             run_timed_stage(stage_name + ".mlp_fc_gelu", [&]() {
@@ -9390,10 +9425,10 @@ int run_transformer_lm_training_json(
                     run_layer_norm(tape.residual1, block.ln2_weight, block.ln2_bias, tape.ln2_out, tape.ln2_mean, tape.ln2_rstd, label + ".ln2.forward");
                 });
                 run_timed_stage(stage_name + ".mlp_fc_gelu.fc", [&]() {
-                    if (error.empty()) run(linear_weight_bf16(tape.ln2_out, block.fc_weight_bf16, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias.weight_bf16");
+                    if (error.empty()) run(linear_weight_bf16(tape.ln2_out, block.fc_weight_bf16, nullptr, tape.fc_out, active_rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias.weight_bf16");
                 });
                 run_timed_stage(stage_name + ".mlp_fc_gelu.gelu", [&]() {
-                    if (error.empty()) run(gelu_add_bias_bf16_act(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, mlp_forward_act_bf16, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward.bf16_act");
+                    if (error.empty()) run(gelu_add_bias_bf16_act(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, mlp_forward_act_bf16, active_rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward.bf16_act");
                 });
             });
         }
@@ -9429,7 +9464,7 @@ int run_transformer_lm_training_json(
                         block.attn_proj_weight_bf16,
                         nullptr,
                         tape.attn_proj,
-                        rows,
+                        active_rows,
                         kDim,
                         kDim,
                         false,
@@ -9448,7 +9483,7 @@ int run_transformer_lm_training_json(
                     run(bf16_bits_to_float32(
                             stored_residual1_bf16,
                             tape.residual1,
-                            activation_elements,
+                            active_activation_elements,
                             nullptr),
                         label + ".residual1.restore_bf16");
                     if (error.empty()) {
@@ -9470,7 +9505,7 @@ int run_transformer_lm_training_json(
                             tape.ln2_out,
                             tape.ln2_mean,
                             tape.ln2_rstd,
-                            rows,
+                            active_rows,
                             kDim,
                             kNormEps,
                             nullptr),
@@ -9485,7 +9520,7 @@ int run_transformer_lm_training_json(
                             block.attn_proj_bias,
                             residual_scale,
                             tape.residual1,
-                            rows,
+                            active_rows,
                             kDim,
                             nullptr),
                         label + ".attn.bias_residual");
@@ -9513,7 +9548,7 @@ int run_transformer_lm_training_json(
                                 block.fc_weight_bf16,
                                 nullptr,
                                 tape.fc_out,
-                                rows,
+                                active_rows,
                                 kDim,
                                 kHidden,
                                 false,
@@ -9529,7 +9564,7 @@ int run_transformer_lm_training_json(
                                 tape.fc_out,
                                 tape.act,
                                 mlp_forward_act_bf16,
-                                rows,
+                                active_rows,
                                 kHidden,
                                 nullptr),
                             label + ".mlp.bias_gelu.forward.bf16_act");
@@ -9557,9 +9592,9 @@ int run_transformer_lm_training_json(
         run_timed_stage("block_backward.mlp_proj", [&]() {
             run_timed_stage("block_backward.mlp_proj.dweight_bias", [&]() {
                 if (stored_mlp != nullptr) {
-                    if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16_bits(stored_mlp->act, incoming_grad, block.accum_grad_mlp_proj_weight, block.accum_grad_mlp_proj_bias, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_weight_bias.accumulate.bf16_bits");
+                    if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16_bits(stored_mlp->act, incoming_grad, block.accum_grad_mlp_proj_weight, block.accum_grad_mlp_proj_bias, active_rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_weight_bias.accumulate.bf16_bits");
                 } else {
-                    if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16(tape.act, incoming_grad, block.accum_grad_mlp_proj_weight, block.accum_grad_mlp_proj_bias, rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_weight_bias.accumulate.bf16");
+                    if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16(tape.act, incoming_grad, block.accum_grad_mlp_proj_weight, block.accum_grad_mlp_proj_bias, active_rows, kHidden, kDim, nullptr), label + ".mlp.proj.backward_weight_bias.accumulate.bf16");
                 }
             });
             run_timed_stage("block_backward.mlp_proj.dinput", [&]() {
@@ -9571,7 +9606,7 @@ int run_transformer_lm_training_json(
                                 stored_mlp->fc_out,
                                 mlp_forward_act_bf16,
                                 grad_fc_out,
-                                rows,
+                                active_rows,
                                 kHidden,
                                 kDim,
                                 nullptr),
@@ -9583,7 +9618,7 @@ int run_transformer_lm_training_json(
                                 incoming_grad,
                                 block.mlp_proj_weight_bf16,
                                 grad_fc_out,
-                                rows,
+                                active_rows,
                                 kHidden,
                                 kDim,
                                 nullptr),
@@ -9599,25 +9634,25 @@ int run_transformer_lm_training_json(
                         run(gelu_backward_inplace_bf16_bits(
                                 stored_mlp->fc_out,
                                 grad_fc_out,
-                                hidden_elements,
+                                active_hidden_elements,
                                 nullptr),
                             label + ".mlp.gelu.backward_inplace.bf16_bits");
                     }
                 } else {
-                    if (error.empty()) run(gelu_backward_inplace(tape.fc_out, grad_fc_out, hidden_elements, nullptr), label + ".mlp.gelu.backward_inplace");
+                    if (error.empty()) run(gelu_backward_inplace(tape.fc_out, grad_fc_out, active_hidden_elements, nullptr), label + ".mlp.gelu.backward_inplace");
                 }
             });
         });
         run_timed_stage("block_backward.mlp_fc", [&]() {
             run_timed_stage("block_backward.mlp_fc.dweight_bias", [&]() {
                 if (stored_mlp != nullptr) {
-                    if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16_bits(stored_mlp->ln2_out, grad_fc_out, block.accum_grad_fc_weight, block.accum_grad_fc_bias, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight_bias.accumulate.bf16_bits");
+                    if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16_bits(stored_mlp->ln2_out, grad_fc_out, block.accum_grad_fc_weight, block.accum_grad_fc_bias, active_rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight_bias.accumulate.bf16_bits");
                 } else {
-                    if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16(tape.ln2_out, grad_fc_out, block.accum_grad_fc_weight, block.accum_grad_fc_bias, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight_bias.accumulate.bf16");
+                    if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16(tape.ln2_out, grad_fc_out, block.accum_grad_fc_weight, block.accum_grad_fc_bias, active_rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight_bias.accumulate.bf16");
                 }
             });
             run_timed_stage("block_backward.mlp_fc.dinput", [&]() {
-                if (error.empty()) run(linear_backward_input_weight_bf16(grad_fc_out, block.fc_weight_bf16, grad_ln2, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_input.weight_bf16");
+                if (error.empty()) run(linear_backward_input_weight_bf16(grad_fc_out, block.fc_weight_bf16, grad_ln2, active_rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_input.weight_bf16");
             });
         });
         run_timed_stage("block_backward.ln2_residual", [&]() {
@@ -9659,7 +9694,7 @@ int run_transformer_lm_training_json(
                                     incoming_grad,
                                     residual_scale,
                                     grad_residual1,
-                                    rows,
+                                    active_rows,
                                     kDim,
                                     nullptr),
                                 label + ".ln2.backward_input_residual_add.with_stats.bf16_bits");
@@ -9673,7 +9708,7 @@ int run_transformer_lm_training_json(
                                     incoming_grad,
                                     residual_scale,
                                     grad_residual1,
-                                    rows,
+                                    active_rows,
                                     kDim,
                                     nullptr),
                                 label + ".ln2.backward_input_residual_add.with_stats");
@@ -9685,7 +9720,7 @@ int run_transformer_lm_training_json(
                     run_layer_norm_backward_input(tape.residual1, grad_ln2, block.ln2_weight, ln2_mean, ln2_rstd, grad_residual1_from_mlp, label + ".ln2.backward_input");
                 });
                 run_timed_stage("block_backward.ln2_residual.add", [&]() {
-                    if (error.empty()) run(residual_add(incoming_grad, grad_residual1_from_mlp, residual_scale, grad_residual1, activation_elements, nullptr), label + ".mlp.residual.backward_add");
+                    if (error.empty()) run(residual_add(incoming_grad, grad_residual1_from_mlp, residual_scale, grad_residual1, active_activation_elements, nullptr), label + ".mlp.residual.backward_add");
                 });
             }
         });
@@ -9698,18 +9733,18 @@ int run_transformer_lm_training_json(
                                 grad_residual1,
                                 block.accum_grad_attn_proj_weight,
                                 block.accum_grad_attn_proj_bias,
-                                rows,
+                                active_rows,
                                 kDim,
                                 kDim,
                                 nullptr),
                             label + ".attn.out.backward_weight_bias.accumulate.packed_o_bf16_bits");
                     }
                 } else {
-                    if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16(tape.attn_out, grad_residual1, block.accum_grad_attn_proj_weight, block.accum_grad_attn_proj_bias, rows, kDim, kDim, nullptr), label + ".attn.out.backward_weight_bias.accumulate.bf16");
+                    if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16(tape.attn_out, grad_residual1, block.accum_grad_attn_proj_weight, block.accum_grad_attn_proj_bias, active_rows, kDim, kDim, nullptr), label + ".attn.out.backward_weight_bias.accumulate.bf16");
                 }
             });
             run_timed_stage("block_backward.attn_proj.dinput", [&]() {
-                if (error.empty()) run(linear_backward_input_weight_bf16(grad_residual1, block.attn_proj_weight_bf16, grad_attn_out, rows, kDim, kDim, nullptr), label + ".attn.out.backward_input.weight_bf16");
+                if (error.empty()) run(linear_backward_input_weight_bf16(grad_residual1, block.attn_proj_weight_bf16, grad_attn_out, active_rows, kDim, kDim, nullptr), label + ".attn.out.backward_input.weight_bf16");
             });
         });
         run_timed_stage("block_backward.attn_sdpa", [&]() {
@@ -9721,7 +9756,7 @@ int run_transformer_lm_training_json(
                                 active_packed_attn_out_bf16,
                                 grad_attn_out,
                                 grad_qkv,
-                                batch_size,
+                                active_batch_size,
                                 kHeads,
                                 kHeads,
                                 seq_len,
@@ -9752,7 +9787,7 @@ int run_transformer_lm_training_json(
                                 stored_attention->lse,
                                 grad_attn_out,
                                 grad_qkv,
-                                batch_size,
+                                active_batch_size,
                                 kHeads,
                                 kHeads,
                                 seq_len,
@@ -9772,16 +9807,16 @@ int run_transformer_lm_training_json(
                         if (error.empty()) stored_attention_backward_kernel_launches += 1;
                     }
                 } else {
-                    if (error.empty()) run(attention_backward_to_qkv_reuse_forward(grad_attn_out, grad_qkv, batch_size, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.backward_to_qkv_reuse_forward_from_merged_grad");
+                    if (error.empty()) run(attention_backward_to_qkv_reuse_forward(grad_attn_out, grad_qkv, active_batch_size, kHeads, kHeads, seq_len, seq_len, kHeadDim, kHeadDim, attention_scale, true, false, false, 0, 0, 0, 0, nullptr), label + ".attn.sdpa.backward_to_qkv_reuse_forward_from_merged_grad");
                 }
             });
         });
         run_timed_stage("block_backward.qkv", [&]() {
             run_timed_stage("block_backward.qkv.dweight_bias", [&]() {
-                if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16(tape.ln1_out, grad_qkv, block.accum_grad_qkv_weight, block.accum_grad_qkv_bias, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_weight_bias.accumulate.bf16");
+                if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16(tape.ln1_out, grad_qkv, block.accum_grad_qkv_weight, block.accum_grad_qkv_bias, active_rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_weight_bias.accumulate.bf16");
             });
             run_timed_stage("block_backward.qkv.dinput", [&]() {
-                if (error.empty()) run(linear_backward_input_weight_bf16(grad_qkv, block.qkv_weight_bf16, grad_ln1, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_input.weight_bf16");
+                if (error.empty()) run(linear_backward_input_weight_bf16(grad_qkv, block.qkv_weight_bf16, grad_ln1, active_rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_input.weight_bf16");
             });
         });
         run_timed_stage("block_backward.ln1_residual", [&]() {
@@ -9800,7 +9835,7 @@ int run_transformer_lm_training_json(
                                 grad_residual1,
                                 residual_scale,
                                 output_grad,
-                                rows,
+                                active_rows,
                                 kDim,
                                 nullptr),
                             label + ".ln1.backward_input_residual_add.with_stats");
@@ -9811,7 +9846,7 @@ int run_transformer_lm_training_json(
                     run_layer_norm_backward_input(block_input, grad_ln1, block.ln1_weight, tape.ln1_mean, tape.ln1_rstd, grad_x_from_attn, label + ".ln1.backward_input");
                 });
                 run_timed_stage("block_backward.ln1_residual.add", [&]() {
-                    if (error.empty()) run(residual_add(grad_residual1, grad_x_from_attn, residual_scale, output_grad, activation_elements, nullptr), label + ".attn.residual.backward_add");
+                    if (error.empty()) run(residual_add(grad_residual1, grad_x_from_attn, residual_scale, output_grad, active_activation_elements, nullptr), label + ".attn.residual.backward_add");
                 });
             }
         });
@@ -9820,9 +9855,9 @@ int run_transformer_lm_training_json(
 
     auto forward_loss = [&](const std::string& label, bool compute_loss, bool preserve_block_outputs) -> double {
         const std::int64_t stage_event = stage_begin(label + ".model_forward");
-        if (error.empty()) run(token_embedding(token_weight, token_ids, token_out, rows, kDim, nullptr), label + ".wte.forward");
-        if (error.empty()) run(position_embedding(position_weight, position_out, batch_size, seq_len, kDim, nullptr), label + ".wpe.forward");
-        if (error.empty()) run(residual_add(token_out, position_out, residual_scale, x, activation_elements, nullptr), label + ".embedding.residual");
+        if (error.empty()) run(token_embedding(token_weight, token_ids, token_out, active_rows, kDim, nullptr), label + ".wte.forward");
+        if (error.empty()) run(position_embedding(position_weight, position_out, active_batch_size, seq_len, kDim, nullptr), label + ".wpe.forward");
+        if (error.empty()) run(residual_add(token_out, position_out, residual_scale, x, active_activation_elements, nullptr), label + ".embedding.residual");
         const float* block_input = x;
         float* final_block_output = x;
         for (std::size_t i = 0; i < blocks.size(); ++i) {
@@ -9856,7 +9891,7 @@ int run_transformer_lm_training_json(
                 run(float32_to_bf16_bits(
                         tape.residual1,
                         stored_residual1_activations[i],
-                        activation_elements,
+                        active_activation_elements,
                         nullptr),
                     label + ".block" + std::to_string(i) + ".residual1.store_bf16");
                 if (error.empty()) {
@@ -9870,7 +9905,7 @@ int run_transformer_lm_training_json(
                 if (fused_mlp_store == nullptr) {
                     store_mlp_activations(i, tape);
                 }
-                run(copy(tape.residual2, block_outputs[i], activation_elements, nullptr),
+                run(copy(tape.residual2, block_outputs[i], active_activation_elements, nullptr),
                     label + ".block" + std::to_string(i) + ".output.copy");
                 block_input = block_outputs[i];
             } else {
@@ -9884,13 +9919,14 @@ int run_transformer_lm_training_json(
     };
 
     auto next_train_batch = [&]() -> bool {
-        if (sampler.next_into(token_ids_pinned, targets_pinned, rows)) {
+        set_active_batch_size(batch_size);
+        if (sampler.next_into(token_ids_pinned, targets_pinned, active_rows)) {
             upload_pinned_batch();
             return error.empty();
         }
         sampler.reset();
         epochs_completed += 1;
-        if (sampler.next_into(token_ids_pinned, targets_pinned, rows)) {
+        if (sampler.next_into(token_ids_pinned, targets_pinned, active_rows)) {
             upload_pinned_batch();
             return error.empty();
         }
@@ -9969,8 +10005,8 @@ int run_transformer_lm_training_json(
             std::swap(incoming_grad, output_grad);
         }
         const std::int64_t embedding_backward_event = stage_begin("embedding_backward");
-        if (error.empty()) run(token_embedding_backward_weight(token_ids, incoming_grad, accum_grad_token_weight, rows, kDim, nullptr), "wte.backward_weight");
-        if (error.empty()) run(position_embedding_backward_accumulate(incoming_grad, accum_grad_position_weight, batch_size, seq_len, kDim, nullptr), "wpe.backward_weight.accumulate");
+        if (error.empty()) run(token_embedding_backward_weight(token_ids, incoming_grad, accum_grad_token_weight, active_rows, kDim, nullptr), "wte.backward_weight");
+        if (error.empty()) run(position_embedding_backward_accumulate(incoming_grad, accum_grad_position_weight, active_batch_size, seq_len, kDim, nullptr), "wpe.backward_weight.accumulate");
         stage_end(embedding_backward_event, "embedding_backward");
         return train_loss_sum;
     };
@@ -10028,18 +10064,19 @@ int run_transformer_lm_training_json(
         return train_loss_sum;
     };
 
-    neuralfn::native_train::SequentialTokenBatchSampler val_sampler(dataset.val_shards, seq_len, batch_size);
+    neuralfn::native_train::SequentialTokenBatchSampler val_sampler(dataset.val_shards, seq_len, eval_batch_size);
     auto run_validation = [&](std::int64_t step) {
         if (!error.empty() || cfg.eval_every_steps <= 0 || cfg.eval_batches <= 0) {
             return;
         }
+        set_active_batch_size(eval_batch_size);
         const auto validation_start_time = Clock::now();
         ValidationLossRecord record;
         record.step = step;
         for (std::int64_t batch_index = 0; batch_index < cfg.eval_batches; ++batch_index) {
-            if (!val_sampler.next_into(token_ids_pinned, targets_pinned, rows)) {
+            if (!val_sampler.next_into(token_ids_pinned, active_targets_pinned, active_rows)) {
                 val_sampler.reset();
-                if (!val_sampler.next_into(token_ids_pinned, targets_pinned, rows)) {
+                if (!val_sampler.next_into(token_ids_pinned, active_targets_pinned, active_rows)) {
                     error = "not enough validation tokens to build one GPT-2 transformer/LM validation batch";
                     break;
                 }
@@ -10050,7 +10087,7 @@ int run_transformer_lm_training_json(
                 break;
             }
             record.batches += 1;
-            record.tokens += rows;
+            record.tokens += active_rows;
             record.loss_sum += loss_sum;
         }
         if (error.empty() && record.batches > 0 && record.tokens > 0) {
@@ -10058,6 +10095,7 @@ int run_transformer_lm_training_json(
             validation_losses.push_back(record);
         }
         validation_wall_ms += elapsed_ms(validation_start_time, Clock::now());
+        set_active_batch_size(batch_size);
     };
 
     const auto train_loop_start_time = Clock::now();
@@ -11156,7 +11194,7 @@ int run_transformer_lm_training_json(
         << "  \"validation\": {\n"
         << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
         << "    \"eval_batches\": " << cfg.eval_batches << ",\n"
-        << "    \"eval_batch_size\": " << batch_size << ",\n"
+        << "    \"eval_batch_size\": " << eval_batch_size << ",\n"
         << "    \"eval_count\": " << validation_losses.size() << ",\n"
         << "    \"losses\": [\n";
     for (std::size_t i = 0; i < validation_losses.size(); ++i) {

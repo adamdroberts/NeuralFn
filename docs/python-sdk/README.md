@@ -140,7 +140,8 @@ through raw Tile kernels while preserving range-checked GPT-2 token IDs. Set
 `train_transformer_lm=True` to run the full-vocab real-dim 12-layer
 transformer-LM multi-step compiled loop over cached shards. That path emits
 periodic validation records in `validation.losses` when `eval_every_steps` is
-positive, clips gradients on device before AdamW, reports vocab and clip
+positive, uses `eval_batch_size` as the validation sampler and active forward
+batch size, clips gradients on device before AdamW, reports vocab and clip
 metadata plus the row-chunked LM-head workspace size in the native JSON, stages
 cached uint16 token/target batches through pinned host memory, enqueues H2D
 copy with `cudaMemcpyAsync`, widens them to int64 on device through one
