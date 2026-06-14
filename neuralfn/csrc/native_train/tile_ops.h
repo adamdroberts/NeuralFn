@@ -930,6 +930,24 @@ int nfn_native_tile_token_cross_entropy_partials_bf16_bits(
     std::int64_t vocab,
     void* cuda_stream);
 
+int nfn_native_tile_token_cross_entropy_partials_strided_float32(
+    const float* logits,
+    const std::int64_t* targets,
+    float* partials,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    void* cuda_stream);
+
+int nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits(
+    const std::uint16_t* logits_bf16_bits,
+    const std::int64_t* targets,
+    float* partials,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    void* cuda_stream);
+
 int nfn_native_tile_masked_token_cross_entropy_partials_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -978,6 +996,28 @@ int nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspac
     float* row_denom_workspace,
     std::int64_t rows,
     std::int64_t vocab,
+    float loss_scale,
+    void* cuda_stream);
+
+int nfn_native_tile_token_cross_entropy_backward_inplace_strided_with_workspace_float32(
+    float* logits,
+    const std::int64_t* targets,
+    float* row_max_workspace,
+    float* row_denom_workspace,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    void* cuda_stream);
+
+int nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace(
+    std::uint16_t* logits,
+    const std::int64_t* targets,
+    float* row_max_workspace,
+    float* row_denom_workspace,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
     float loss_scale,
     void* cuda_stream);
 

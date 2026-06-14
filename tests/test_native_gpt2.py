@@ -2035,6 +2035,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["target_layers"] == 12
     assert train_transformer_payload["vocab"] == 50257
     assert train_transformer_payload["padded_vocab"] == 50304
+    assert train_transformer_payload["lm_head_public_vocab_ce_enabled"] is True
+    assert train_transformer_payload["lm_head_softmax_vocab"] == 50257
+    assert train_transformer_payload["lm_head_logit_row_stride"] == 50304
+    assert train_transformer_payload["lm_head_padded_dlogits_zeroed"] is True
     assert train_transformer_payload["model_dim"] == 768
     assert train_transformer_payload["hidden_dim"] == 3072
     assert train_transformer_payload["lm_head_row_chunk_size"] == 2
@@ -2049,7 +2053,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["lm_head_bf16_logits_enabled"] is True
     assert train_transformer_payload["lm_head_bf16_logit_elements"] == 0
     assert train_transformer_payload["lm_head_bf16_logit_bytes"] == 0
-    assert train_transformer_payload["lm_head_ce_backward_strategy"] == "fused-row-bf16-logits-dlogits"
+    assert (
+        train_transformer_payload["lm_head_ce_backward_strategy"]
+        == "public-vocab-strided-fused-row-bf16-logits-dlogits"
+    )
     assert train_transformer_payload["lm_head_grad_logits_workspace_allocated"] is False
     assert train_transformer_payload["linear_backend_strategy"] == "not-run"
     assert train_transformer_payload["block_forward_linear_strategy"] == "bf16-shadow-weight-gemmex-forward"
@@ -2494,6 +2501,16 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert (
         "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32"
+        in train_transformer_payload["kernels"]
+    )
+    assert "nfn_native_tile_token_cross_entropy_partials_strided_float32" in train_transformer_payload["kernels"]
+    assert "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits" in train_transformer_payload["kernels"]
+    assert (
+        "nfn_native_tile_token_cross_entropy_backward_inplace_strided_with_workspace_float32"
+        in train_transformer_payload["kernels"]
+    )
+    assert (
+        "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace"
         in train_transformer_payload["kernels"]
     )
     assert "nfn_native_tile_linear_backward_weight_accumulate_float32" in train_transformer_payload["kernels"]
@@ -3736,12 +3753,20 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_softmax_lastdim_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_partials_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_partials_bf16_bits" in header_text
+    assert "nfn_native_tile_token_cross_entropy_partials_strided_float32" in header_text
+    assert "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits" in header_text
     assert "nfn_native_tile_masked_token_cross_entropy_partials_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_backward_float32" in header_text
     assert "nfn_native_tile_masked_token_cross_entropy_backward_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_backward_with_workspace_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace" in header_text
+    assert "nfn_native_tile_token_cross_entropy_backward_inplace_strided_with_workspace_float32" in header_text
+    assert "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace" in header_text
+    assert "token_cross_entropy_partials_strided_float32_kernel" in kernels_text
+    assert "token_cross_entropy_partials_strided_bf16_bits_kernel" in kernels_text
+    assert "token_cross_entropy_backward_inplace_strided_float32_fused_kernel" in kernels_text
+    assert "token_cross_entropy_backward_inplace_strided_bf16_bits_fused_kernel" in kernels_text
     assert "nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32" in header_text
@@ -4705,12 +4730,16 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_rms_norm_backward_input_float32" in exported
         assert "nfn_native_tile_softmax_lastdim_float32" in exported
         assert "nfn_native_tile_token_cross_entropy_partials_bf16_bits" in exported
+        assert "nfn_native_tile_token_cross_entropy_partials_strided_float32" in exported
+        assert "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits" in exported
         assert "nfn_native_tile_masked_token_cross_entropy_partials_float32" in exported
         assert "nfn_native_tile_token_cross_entropy_backward_float32" in exported
         assert "nfn_native_tile_masked_token_cross_entropy_backward_float32" in exported
         assert "nfn_native_tile_token_cross_entropy_backward_with_workspace_float32" in exported
         assert "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32" in exported
         assert "nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace" in exported
+        assert "nfn_native_tile_token_cross_entropy_backward_inplace_strided_with_workspace_float32" in exported
+        assert "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace" in exported
         assert "nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32" in exported
         assert "nfn_native_tile_scaled_dot_product_attention_float32" in exported
         assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32" in exported

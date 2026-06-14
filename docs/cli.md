@@ -262,7 +262,7 @@ The public GPT-2 tokenizer vocab stays 50,257, while the native tied token
 embedding/LM-head tensor is padded to 50,304 rows for GEMM-friendly layout;
 training JSON reports both `vocab: 50257` and `padded_vocab: 50304`, and
 `--dry-run` / `--print-plan` reports `shape.padded_vocab_size: 50304`.
-The tied LM-head row chunk defaults to 8192 rows and can be overridden with
+The tied LM-head row chunk defaults to 4096 rows and can be overridden with
 `--lm-head-row-chunk-size` on the compiled C++ entrypoint or
 `--native-cuda-lm-head-row-chunk-size` from the wrapper/root CLI. Loss partials
 are reduced on device before one host loss copy per forward loss, and tied
@@ -271,7 +271,13 @@ LM-head dWeight chunks accumulate directly into `accum_grad_token_weight` with
 full-vocab scratch gradient buffer per chunk or per microbatch. Default JSON
 reports `lm_head_training_logits_dtype: "bf16"`,
 `lm_head_bf16_logits_enabled: true`, `lm_head_bf16_logit_elements`, and
-`lm_head_ce_backward_strategy: "fused-row-bf16-logits-dlogits"`.
+`lm_head_ce_backward_strategy: "public-vocab-strided-fused-row-bf16-logits-dlogits"`.
+The LM-head CE kernels softmax over the public vocab and use the padded row
+count only as the logit/dlogit stride; JSON reports
+`lm_head_public_vocab_ce_enabled`, `lm_head_softmax_vocab`,
+`lm_head_logit_row_stride`, and `lm_head_padded_dlogits_zeroed`. Set
+`NFN_NATIVE_GPT_PUBLIC_VOCAB_CE=0` only when paired-benchmarking against the old
+padded-vocab CE behavior.
 `--smoke-lm-step`, `--smoke-embedding-lm-step`, `--train-embedding-lm`, and
 `--smoke-transformer-lm-step` use that same 50,304-row padded tied token
 embedding/LM-head tensor while validating token IDs against public vocab 50,257.

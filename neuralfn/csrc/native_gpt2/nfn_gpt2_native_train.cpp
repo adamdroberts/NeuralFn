@@ -6946,8 +6946,12 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_merged_grad_float32",
         "nfn_native_tile_token_cross_entropy_partials_float32",
         "nfn_native_tile_token_cross_entropy_partials_bf16_bits",
+        "nfn_native_tile_token_cross_entropy_partials_strided_float32",
+        "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits",
         "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32",
         "nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace",
+        "nfn_native_tile_token_cross_entropy_backward_inplace_strided_with_workspace_float32",
+        "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace",
         "nfn_native_tile_adamw_step_float32",
         "nfn_native_tile_adamw_step_with_device_scale_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_float32",
@@ -7132,12 +7136,22 @@ int run_transformer_lm_training_json(
         const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
     using TokenCrossEntropyPartialsBf16BitsFn = int (*)(
         const std::uint16_t*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+    using TokenCrossEntropyPartialsStridedFn = int (*)(
+        const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using TokenCrossEntropyPartialsStridedBf16BitsFn = int (*)(
+        const std::uint16_t*, const std::int64_t*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using TokenCrossEntropyBackwardInplaceWorkspaceFn = int (*)(
         float*, const std::int64_t*, float*, float*,
         std::int64_t, std::int64_t, float, void*);
     using TokenCrossEntropyBackwardInplaceBf16BitsWorkspaceFn = int (*)(
         std::uint16_t*, const std::int64_t*, float*, float*,
         std::int64_t, std::int64_t, float, void*);
+    using TokenCrossEntropyBackwardInplaceStridedWorkspaceFn = int (*)(
+        float*, const std::int64_t*, float*, float*,
+        std::int64_t, std::int64_t, std::int64_t, float, void*);
+    using TokenCrossEntropyBackwardInplaceStridedBf16BitsWorkspaceFn = int (*)(
+        std::uint16_t*, const std::int64_t*, float*, float*,
+        std::int64_t, std::int64_t, std::int64_t, float, void*);
     using AdamWManyWithDeviceScaleFn = int (*)(
         float* const*, const float* const*, const float*, float* const*, float* const*,
         const std::int64_t*, const float*, std::int64_t, std::int64_t,
@@ -7279,8 +7293,12 @@ int run_transformer_lm_training_json(
     AttentionBackwardToQkvFromSavedTkFn attention_backward_to_qkv_from_saved_tk = nullptr;
     TokenCrossEntropyPartialsFn ce_partials = nullptr;
     TokenCrossEntropyPartialsBf16BitsFn ce_partials_bf16_bits = nullptr;
+    TokenCrossEntropyPartialsStridedFn ce_partials_strided = nullptr;
+    TokenCrossEntropyPartialsStridedBf16BitsFn ce_partials_strided_bf16_bits = nullptr;
     TokenCrossEntropyBackwardInplaceWorkspaceFn ce_backward_inplace_workspace = nullptr;
     TokenCrossEntropyBackwardInplaceBf16BitsWorkspaceFn ce_backward_inplace_bf16_bits_workspace = nullptr;
+    TokenCrossEntropyBackwardInplaceStridedWorkspaceFn ce_backward_inplace_strided_workspace = nullptr;
+    TokenCrossEntropyBackwardInplaceStridedBf16BitsWorkspaceFn ce_backward_inplace_strided_bf16_bits_workspace = nullptr;
     FillManyFn fill_many = nullptr;
     AdamWManyWithDeviceScaleFn adamw_many_with_device_scale = nullptr;
     AdamWManyWithDeviceScaleBf16ShadowFn adamw_many_with_device_scale_bf16_shadow = nullptr;
@@ -7569,11 +7587,23 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_token_cross_entropy_partials_float32");
                 ce_partials_bf16_bits = load_symbol<TokenCrossEntropyPartialsBf16BitsFn>(
                     tile_handle, "nfn_native_tile_token_cross_entropy_partials_bf16_bits");
+                ce_partials_strided = load_symbol<TokenCrossEntropyPartialsStridedFn>(
+                    tile_handle, "nfn_native_tile_token_cross_entropy_partials_strided_float32");
+                ce_partials_strided_bf16_bits = load_symbol<TokenCrossEntropyPartialsStridedBf16BitsFn>(
+                    tile_handle, "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits");
                 ce_backward_inplace_workspace = load_symbol<TokenCrossEntropyBackwardInplaceWorkspaceFn>(
                     tile_handle, "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32");
                 ce_backward_inplace_bf16_bits_workspace =
                     load_symbol<TokenCrossEntropyBackwardInplaceBf16BitsWorkspaceFn>(
                         tile_handle, "nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace");
+                ce_backward_inplace_strided_workspace =
+                    load_symbol<TokenCrossEntropyBackwardInplaceStridedWorkspaceFn>(
+                        tile_handle,
+                        "nfn_native_tile_token_cross_entropy_backward_inplace_strided_with_workspace_float32");
+                ce_backward_inplace_strided_bf16_bits_workspace =
+                    load_symbol<TokenCrossEntropyBackwardInplaceStridedBf16BitsWorkspaceFn>(
+                        tile_handle,
+                        "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace");
                 adamw_many_with_device_scale = load_symbol<AdamWManyWithDeviceScaleFn>(
                     tile_handle, "nfn_native_tile_adamw_step_many_with_device_scale_float32");
                 adamw_many_with_device_scale_bf16_shadow =
@@ -7806,6 +7836,13 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT",
                               "NFN_NATIVE_GPT2_LM_HEAD_BF16_DWEIGHT"}),
             false);
+    const bool lm_head_public_vocab_ce_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_PUBLIC_VOCAB_CE",
+                              "NFN_NATIVE_GPT_STRIDED_PUBLIC_VOCAB_CE",
+                              "NFN_NATIVE_GPT2_PUBLIC_VOCAB_CE",
+                              "NFN_NATIVE_GPT2_STRIDED_PUBLIC_VOCAB_CE"}),
+            true);
     const bool startup_zero_adamw_state_only_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_ZERO_ADAMW_STATE_ONLY",
@@ -9712,12 +9749,41 @@ int run_transformer_lm_training_json(
             }
             if (error.empty()) {
                 if (lm_head_bf16_loss_enabled) {
-                    run(ce_partials_bf16_bits(
-                            lm_head_bf16_logits, target_chunk, loss_partials, row_count, kPaddedVocab, nullptr),
-                        label + ".ce.forward.bf16_bits");
+                    if (lm_head_public_vocab_ce_enabled) {
+                        run(ce_partials_strided_bf16_bits(
+                                lm_head_bf16_logits,
+                                target_chunk,
+                                loss_partials,
+                                row_count,
+                                kVocab,
+                                kPaddedVocab,
+                                nullptr),
+                            label + ".ce.forward.public_vocab_strided_bf16_bits");
+                    } else {
+                        run(ce_partials_bf16_bits(
+                                lm_head_bf16_logits,
+                                target_chunk,
+                                loss_partials,
+                                row_count,
+                                kPaddedVocab,
+                                nullptr),
+                            label + ".ce.forward.padded_vocab_bf16_bits");
+                    }
                 } else {
-                    run(ce_partials(logits, target_chunk, loss_partials, row_count, kPaddedVocab, nullptr),
-                        label + ".ce.forward");
+                    if (lm_head_public_vocab_ce_enabled) {
+                        run(ce_partials_strided(
+                                logits,
+                                target_chunk,
+                                loss_partials,
+                                row_count,
+                                kVocab,
+                                kPaddedVocab,
+                                nullptr),
+                            label + ".ce.forward.public_vocab_strided");
+                    } else {
+                        run(ce_partials(logits, target_chunk, loss_partials, row_count, kPaddedVocab, nullptr),
+                            label + ".ce.forward.padded_vocab");
+                    }
                 }
             }
             if (error.empty()) {
@@ -9776,27 +9842,55 @@ int run_transformer_lm_training_json(
             run_timed_stage("lm_head_backward.ce", [&]() {
                 if (error.empty()) {
                     if (lm_head_bf16_logits_enabled) {
-                        run(ce_backward_inplace_bf16_bits_workspace(
-                                lm_head_bf16_logits,
-                                target_chunk,
-                                row_max,
-                                row_denom,
-                                row_count,
-                                kPaddedVocab,
-                                accumulation_scale / static_cast<float>(active_rows),
-                                nullptr),
-                            "ce.backward.inplace.bf16_bits");
+                        if (lm_head_public_vocab_ce_enabled) {
+                            run(ce_backward_inplace_strided_bf16_bits_workspace(
+                                    lm_head_bf16_logits,
+                                    target_chunk,
+                                    row_max,
+                                    row_denom,
+                                    row_count,
+                                    kVocab,
+                                    kPaddedVocab,
+                                    accumulation_scale / static_cast<float>(active_rows),
+                                    nullptr),
+                                "ce.backward.inplace.public_vocab_strided_bf16_bits");
+                        } else {
+                            run(ce_backward_inplace_bf16_bits_workspace(
+                                    lm_head_bf16_logits,
+                                    target_chunk,
+                                    row_max,
+                                    row_denom,
+                                    row_count,
+                                    kPaddedVocab,
+                                    accumulation_scale / static_cast<float>(active_rows),
+                                    nullptr),
+                                "ce.backward.inplace.padded_vocab_bf16_bits");
+                        }
                     } else {
-                        run(ce_backward_inplace_workspace(
-                                logits,
-                                target_chunk,
-                                row_max,
-                                row_denom,
-                                row_count,
-                                kPaddedVocab,
-                                accumulation_scale / static_cast<float>(active_rows),
-                                nullptr),
-                            "ce.backward.inplace");
+                        if (lm_head_public_vocab_ce_enabled) {
+                            run(ce_backward_inplace_strided_workspace(
+                                    logits,
+                                    target_chunk,
+                                    row_max,
+                                    row_denom,
+                                    row_count,
+                                    kVocab,
+                                    kPaddedVocab,
+                                    accumulation_scale / static_cast<float>(active_rows),
+                                    nullptr),
+                                "ce.backward.inplace.public_vocab_strided");
+                        } else {
+                            run(ce_backward_inplace_workspace(
+                                    logits,
+                                    target_chunk,
+                                    row_max,
+                                    row_denom,
+                                    row_count,
+                                    kPaddedVocab,
+                                    accumulation_scale / static_cast<float>(active_rows),
+                                    nullptr),
+                                "ce.backward.inplace.padded_vocab");
+                        }
                     }
                 }
             });
@@ -11743,6 +11837,13 @@ int run_transformer_lm_training_json(
         << "  \"target_layers\": " << target_layers << ",\n"
         << "  \"vocab\": " << kVocab << ",\n"
         << "  \"padded_vocab\": " << kPaddedVocab << ",\n"
+        << "  \"lm_head_public_vocab_ce_enabled\": "
+        << (lm_head_public_vocab_ce_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_softmax_vocab\": "
+        << (lm_head_public_vocab_ce_enabled ? kVocab : kPaddedVocab) << ",\n"
+        << "  \"lm_head_logit_row_stride\": " << kPaddedVocab << ",\n"
+        << "  \"lm_head_padded_dlogits_zeroed\": "
+        << (lm_head_public_vocab_ce_enabled ? "true" : "false") << ",\n"
         << "  \"model_dim\": " << kDim << ",\n"
         << "  \"hidden_dim\": " << kHidden << ",\n"
         << "  \"lm_head_row_chunk_size\": " << lm_head_chunk_rows << ",\n"
@@ -11776,8 +11877,13 @@ int run_transformer_lm_training_json(
                        : "float32-hidden-float32-dlogit-dweight-accumulate"))
         << "\",\n"
         << "  \"lm_head_ce_backward_strategy\": \""
-        << (lm_head_bf16_logits_enabled ? "fused-row-bf16-logits-dlogits"
-                                        : "inplace-logits-dlogits-workspace")
+        << (lm_head_public_vocab_ce_enabled
+                ? (lm_head_bf16_logits_enabled
+                       ? "public-vocab-strided-fused-row-bf16-logits-dlogits"
+                       : "public-vocab-strided-inplace-logits-dlogits-workspace")
+                : (lm_head_bf16_logits_enabled
+                       ? "padded-vocab-fused-row-bf16-logits-dlogits"
+                       : "padded-vocab-inplace-logits-dlogits-workspace"))
         << "\",\n"
         << "  \"lm_head_grad_logits_workspace_allocated\": false,\n"
         << "  \"linear_backend_strategy\": \""

@@ -6,6 +6,58 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Use public vocab for native GPT LM-head CE
+
+#### Changed
+
+- Dense GPT native training now computes LM-head cross-entropy over the public
+  tokenizer vocab (`50257`) while using the padded LM-head row count (`50304`)
+  only as the logits/dlogits row stride. The strided CE backward kernels zero
+  padded dlogit columns before LM-head dWeight accumulation.
+- The raw trainer Tile ABI now exposes
+  `nfn_native_tile_token_cross_entropy_partials_strided_float32`,
+  `nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits`,
+  `nfn_native_tile_token_cross_entropy_backward_inplace_strided_with_workspace_float32`,
+  and
+  `nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace`.
+- Runtime JSON now reports `lm_head_public_vocab_ce_enabled`,
+  `lm_head_softmax_vocab`, `lm_head_logit_row_stride`, and
+  `lm_head_padded_dlogits_zeroed`. The default BF16 strategy is now
+  `public-vocab-strided-fused-row-bf16-logits-dlogits`.
+- Set `NFN_NATIVE_GPT_PUBLIC_VOCAB_CE=0` or
+  `NFN_NATIVE_GPT2_PUBLIC_VOCAB_CE=0` only when paired-benchmarking against the
+  previous padded-vocab CE behavior.
+
+#### Breaking changes
+
+- Native GPT `--train-transformer-lm` loss and token-weight gradients no longer
+  include the 47 padded LM-head rows in the softmax denominator. Callers that
+  diff exact loss curves or optimizer updates against prior NeuralFn native GPT
+  runs should treat this as a correctness migration and compare against the old
+  path only with `NFN_NATIVE_GPT_PUBLIC_VOCAB_CE=0`.
+
+#### Verification
+
+- Rebuilt `libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh` and rebuilt
+  `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran
+  `python -m pytest tests/test_native_gpt2.py -q -k 'native_train_tile_ops_builds_torch_free_c_abi or native_gpt2_cpp_cli_builds_and_uses_sm120_defaults or native_transformer_lm'`,
+  which passed the focused native GPT slice with one sandbox-skipped
+  GPU-dependent test.
+- Ran a one-step TinyStories smoke pinned to the dedicated RTX 5090
+  (`CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1`). It completed with
+  no missing symbols and reported `lm_head_public_vocab_ce_enabled: true`,
+  `lm_head_softmax_vocab: 50257`, `lm_head_logit_row_stride: 50304`,
+  `lm_head_padded_dlogits_zeroed: true`, and
+  `lm_head_ce_backward_strategy:
+  "public-vocab-strided-fused-row-bf16-logits-dlogits"`.
+- Ran `tools/paired_kernel_speed.py` with one warmup and five measured pairs on
+  GPU 0, comparing `NFN_NATIVE_GPT_PUBLIC_VOCAB_CE=0` against the new default.
+  Candidate train-loop ratio was `1.002844`, tokens/s ratio was `0.997335`,
+  and total runtime ratio was `1.001548`; this is treated as a correctness fix,
+  not a throughput win.
+
 ### 2026-06-14 Combine native GPT BF16 device allocations
 
 #### Changed
