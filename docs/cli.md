@@ -325,11 +325,14 @@ activation, and workspace buffer. JSON reports
 `float_allocation_strategy: "single-arena"`,
 `float_allocation_cuda_malloc_count`, `float_allocation_request_count`,
 `float_arena_requested_elements`, and `float_arena_allocated_elements`.
-Startup zeroes the float arena once, then overwrites nonzero weights with
-device initializers; the default 12-layer shape elides 369 per-buffer zero-fill
-launches for zero biases and AdamW state. JSON reports
-`float_arena_zero_init_strategy: "single-arena-fill"`,
-`float_arena_zero_fill_count`, `startup_per_buffer_zero_fill_elided`, and
+Startup zeroes only AdamW first/second moment state with descriptor-driven Tile
+fills by default, then overwrites nonzero weights with device initializers and
+zeroes gradients per optimizer step. Set
+`NFN_NATIVE_GPT_ZERO_ADAMW_STATE_ONLY=0` to force the older full-arena zero for
+bisection. JSON reports
+`float_arena_zero_init_strategy: "adamw-state-fill-many"` or
+`"single-arena-fill"`, `float_arena_zero_fill_count`,
+`adamw_state_zero_fill_count`, `startup_per_buffer_zero_fill_elided`, and
 `startup_per_buffer_zero_fill_launches_elided`.
 Token upload/storage buffers are also arena-backed: one aligned device arena
 holds widened int64 token/target buffers plus compact uint16 H2D staging, and

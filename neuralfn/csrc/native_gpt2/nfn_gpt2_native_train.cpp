@@ -7699,6 +7699,13 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS",
                               "NFN_NATIVE_GPT2_BF16_LM_HEAD_LOSS"}),
             true);
+    const bool startup_zero_adamw_state_only_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_ZERO_ADAMW_STATE_ONLY",
+                              "NFN_NATIVE_GPT2_ZERO_ADAMW_STATE_ONLY"}),
+            true);
+    const char* startup_zero_init_strategy =
+        startup_zero_adamw_state_only_enabled ? "adamw-state-fill-many" : "single-arena-fill";
     const std::int64_t logit_workspace_elements = lm_head_bf16_loss_enabled ? 0 : logit_elements;
     bool stage_timing_enabled = false;
     std::int64_t stage_timing_event_count = 0;
@@ -7874,6 +7881,7 @@ int run_transformer_lm_training_json(
     std::int64_t token_device_arena_suballocation_count = 0;
     std::int64_t token_device_cuda_mallocs_elided = 1;
     std::int64_t float_arena_zero_fill_count = 0;
+    std::int64_t adamw_state_zero_fill_count = 0;
     std::size_t descriptor_arena_requested_bytes = 0;
     std::size_t descriptor_arena_bytes = 0;
     std::int64_t descriptor_arena_cuda_malloc_count = 0;
@@ -9019,7 +9027,30 @@ int run_transformer_lm_training_json(
         descriptor_arena_copy_count = 1;
     };
     materialize_descriptor_arena();
-    if (error.empty() && float_arena != nullptr && float_arena_allocated_elements > 0) {
+    if (error.empty() && startup_zero_adamw_state_only_enabled && adamw_descriptor_count > 0) {
+        run(fill_many(
+                adamw_avg_ptrs,
+                adamw_elements,
+                adamw_descriptor_count,
+                adamw_max_elements,
+                0.0f,
+                nullptr),
+            "adamw_avg.zero_many");
+        if (error.empty()) {
+            adamw_state_zero_fill_count += 1;
+        }
+        run(fill_many(
+                adamw_avg_sq_ptrs,
+                adamw_elements,
+                adamw_descriptor_count,
+                adamw_max_elements,
+                0.0f,
+                nullptr),
+            "adamw_avg_sq.zero_many");
+        if (error.empty()) {
+            adamw_state_zero_fill_count += 1;
+        }
+    } else if (error.empty() && float_arena != nullptr && float_arena_allocated_elements > 0) {
         run(fill(float_arena, float_arena_allocated_elements, 0.0f, nullptr), "transformer_lm_float_arena.zero");
         if (error.empty()) {
             float_arena_zero_fill_count = 1;
@@ -11628,8 +11659,9 @@ int run_transformer_lm_training_json(
         << "  \"float_allocation_request_count\": " << float_arena_requests.size() << ",\n"
         << "  \"float_arena_requested_elements\": " << float_arena_requested_elements << ",\n"
         << "  \"float_arena_allocated_elements\": " << float_arena_allocated_elements << ",\n"
-        << "  \"float_arena_zero_init_strategy\": \"single-arena-fill\",\n"
+        << "  \"float_arena_zero_init_strategy\": \"" << startup_zero_init_strategy << "\",\n"
         << "  \"float_arena_zero_fill_count\": " << float_arena_zero_fill_count << ",\n"
+        << "  \"adamw_state_zero_fill_count\": " << adamw_state_zero_fill_count << ",\n"
         << "  \"startup_per_buffer_zero_fill_elided\": true,\n"
         << "  \"startup_per_buffer_zero_fill_launches_elided\": " << startup_per_buffer_zero_fill_launches_elided << ",\n"
         << "  \"descriptor_allocation_strategy\": \"single-device-arena\",\n"
@@ -11747,8 +11779,9 @@ int run_transformer_lm_training_json(
         << (parameter_fill_descriptor_count > 0 ? 1 : 0) << ",\n"
         << "    \"parameter_initialization_per_buffer_launches_elided\": "
         << std::max<std::int64_t>(0, nonzero_parameter_fill_buffer_count - 1) << ",\n"
-        << "    \"startup_zero_init_strategy\": \"single-arena-fill\",\n"
+        << "    \"startup_zero_init_strategy\": \"" << startup_zero_init_strategy << "\",\n"
         << "    \"startup_arena_zero_fill_count\": " << float_arena_zero_fill_count << ",\n"
+        << "    \"startup_adamw_state_zero_fill_count\": " << adamw_state_zero_fill_count << ",\n"
         << "    \"startup_per_buffer_zero_fill_elided\": true,\n"
         << "    \"startup_per_buffer_zero_fill_launches_elided\": " << startup_per_buffer_zero_fill_launches_elided << ",\n"
         << "    \"descriptor_allocation_strategy\": \"single-device-arena\",\n"
