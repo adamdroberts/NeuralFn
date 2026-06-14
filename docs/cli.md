@@ -487,7 +487,11 @@ For native kernel candidate comparisons, use
 /tmp/result.json`. The helper alternates baseline/candidate order inside one
 script so unrelated external GPU load affects both measurements in the same
 sampling window, and it runs one warmup pair by default to keep first-use CUDA
-or kernel-load cost out of the reported samples.
+or kernel-load cost out of the reported samples. When `nvidia-smi` is present,
+the result JSON includes `gpu_before` and `gpu_after` snapshots containing GPU
+identity, utilization, memory, and active compute-process rows, which makes
+dedicated-GPU runs and accidental external GPU load visible in benchmark
+artifacts.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, `NFN_NATIVE_GPT_BINDING`, and

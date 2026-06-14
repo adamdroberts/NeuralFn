@@ -6,6 +6,35 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Paired kernel benchmark GPU snapshots
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now records `nvidia-smi` GPU snapshots before
+  and after the interleaved benchmark when `nvidia-smi` is available. The JSON
+  payload includes GPU identity, utilization, memory, and active compute
+  processes in `gpu_before` and `gpu_after`, while still running when
+  `nvidia-smi` is missing.
+- Text output now prints the pre-run GPU identity/utilization summary and the
+  number of compute processes seen before timing starts.
+
+#### Verification
+
+- Verified `python -m py_compile tools/paired_kernel_speed.py`.
+- Verified `python -m pytest tests/test_tile_cuda_examples.py -q -k
+  paired_kernel_speed_tool_compiles_and_smokes`.
+- Verified `git diff --check`.
+- Confirmed CUDA visibility on the workstation reports only
+  `GPU 0: NVIDIA GeForce RTX 5090` and used `CUDA_VISIBLE_DEVICES=0` for native
+  benchmarks.
+- Re-measured the current native GPT default on the dedicated RTX 5090 with
+  stage timing: about `3,627.07 ms` train compute and `144,549` tokens/s.
+- Ran paired negative controls on the dedicated RTX 5090:
+  `NFN_NATIVE_LINEAR_BF16_CUBLASLT=0` was about `1.078777x` slower than the
+  current cuBLASLt default, `NFN_NATIVE_LINEAR_TK_FLOAT_OUT=1` was about
+  `1.002213x` of baseline, and `NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS=0` was
+  about `1.101086x` slower. Those candidates were not promoted.
+
 ### 2026-06-14 Native GPT packed-attention store cap retune
 
 #### Changed

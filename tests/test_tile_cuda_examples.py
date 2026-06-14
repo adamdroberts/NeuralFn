@@ -70,4 +70,8 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["measurement"] == "paired_interleaved_commands"
     assert payload["cuda_visible_devices"] == "test-device"
+    assert "gpu_before" in payload
+    assert "gpu_after" in payload
+    assert "gpus" in payload["gpu_before"]
+    assert "compute_processes" in payload["gpu_before"]
     assert "test-device" in payload["paired_samples"][0]["baseline"]["stdout_tail"]

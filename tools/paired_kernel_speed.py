@@ -94,6 +94,75 @@ def summarize(values: Sequence[float]) -> dict[str, float]:
     }
 
 
+def run_nvidia_smi(args: Sequence[str]) -> dict[str, object]:
+    try:
+        proc = subprocess.run(
+            ["nvidia-smi", *args],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except FileNotFoundError:
+        return {"available": False, "error": "nvidia-smi not found"}
+    return {
+        "available": True,
+        "returncode": proc.returncode,
+        "stdout": proc.stdout.strip(),
+        "stderr": proc.stderr.strip(),
+    }
+
+
+def parse_csv_rows(output: str, columns: Sequence[str]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for line in output.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) != len(columns):
+            continue
+        rows.append(dict(zip(columns, parts)))
+    return rows
+
+
+def gpu_snapshot() -> dict[str, object]:
+    gpu_columns = [
+        "index",
+        "name",
+        "uuid",
+        "pci.bus_id",
+        "utilization.gpu_pct",
+        "memory.used_mib",
+        "memory.total_mib",
+    ]
+    process_columns = [
+        "gpu_uuid",
+        "pid",
+        "process_name",
+        "used_memory_mib",
+    ]
+    gpu_query = run_nvidia_smi(
+        [
+            "--query-gpu=index,name,uuid,pci.bus_id,utilization.gpu,memory.used,memory.total",
+            "--format=csv,noheader,nounits",
+        ]
+    )
+    process_query = run_nvidia_smi(
+        [
+            "--query-compute-apps=gpu_uuid,pid,process_name,used_memory",
+            "--format=csv,noheader,nounits",
+        ]
+    )
+    return {
+        "gpus": parse_csv_rows(str(gpu_query.get("stdout", "")), gpu_columns)
+        if gpu_query.get("returncode") == 0
+        else [],
+        "compute_processes": parse_csv_rows(str(process_query.get("stdout", "")), process_columns)
+        if process_query.get("returncode") == 0
+        else [],
+        "gpu_query": gpu_query,
+        "compute_process_query": process_query,
+    }
+
+
 def build_payload(args: argparse.Namespace) -> dict[str, object]:
     baseline = TimedCommand("baseline", shlex.split(args.baseline))
     candidate = TimedCommand("candidate", shlex.split(args.candidate))
@@ -105,6 +174,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         run_env = dict(os.environ)
         run_env["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
 
+    gpu_before = gpu_snapshot()
     for warmup_index in range(warmup):
         for command in ordered_pair(warmup_index, baseline, candidate):
             run_once(command, continue_on_error=args.continue_on_error, env=run_env)
@@ -130,12 +200,15 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         row["candidate"] = by_name["candidate"]
         row["candidate_over_baseline"] = ratios[-1]
         sample_rows.append(row)
+    gpu_after = gpu_snapshot()
 
     return {
         "measurement": "paired_interleaved_commands",
         "samples": samples,
         "warmup": warmup,
         "cuda_visible_devices": cuda_visible_devices,
+        "gpu_before": gpu_before,
+        "gpu_after": gpu_after,
         "baseline_command": baseline.argv,
         "candidate_command": candidate.argv,
         "baseline_seconds": summarize(baseline_seconds),
@@ -150,6 +223,23 @@ def print_text(payload: dict[str, object]) -> None:
     print(f"  measurement: {payload['measurement']}")
     print(f"  samples: {payload['samples']}")
     print(f"  warmup: {payload['warmup']}")
+    gpu_before = payload.get("gpu_before")
+    if isinstance(gpu_before, dict):
+        gpus = gpu_before.get("gpus")
+        if isinstance(gpus, list) and gpus:
+            print("  gpu_before:")
+            for gpu in gpus:
+                if not isinstance(gpu, dict):
+                    continue
+                print(
+                    "    "
+                    f"index={gpu.get('index', '')} name={gpu.get('name', '')} "
+                    f"util={gpu.get('utilization.gpu_pct', '')}% "
+                    f"mem={gpu.get('memory.used_mib', '')}/{gpu.get('memory.total_mib', '')} MiB"
+                )
+        processes = gpu_before.get("compute_processes")
+        if isinstance(processes, list):
+            print(f"  gpu_compute_processes_before: {len(processes)}")
     for key in ("baseline_seconds", "candidate_seconds", "candidate_over_baseline"):
         stats = payload[key]
         assert isinstance(stats, dict)

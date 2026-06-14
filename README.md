@@ -34,7 +34,10 @@ Use `python tools/paired_kernel_speed.py --baseline "OLD_COMMAND"
 /tmp/result.json` for candidate-vs-current CUDA timing pinned to the dedicated
 5090 while still alternating pairs in the same sampling window. The helper runs
 one warmup pair by default so first-use CUDA/kernel load does not contaminate
-reported samples.
+reported samples. When `nvidia-smi` is available, the JSON also includes
+`gpu_before` and `gpu_after` snapshots with GPU identity, utilization, memory,
+and active compute-process rows so kernel-speed notes show which CUDA device
+was measured and whether other compute work was present.
 
 ## Current state of play
 
