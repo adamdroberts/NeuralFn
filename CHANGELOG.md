@@ -6,6 +6,36 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Default packed QKV bias to fused SM120 TK GEMM
+
+#### Changed
+
+- Dense GPT native training now fuses QKV bias into the packed-QKV SM120 TK
+  BF16 QKV GEMM by default. This removes the separate packed BF16 QKV bias-add
+  launch from the default forward path while keeping the older route available
+  with `NFN_NATIVE_GPT_FUSE_QKV_BIAS_TK_GEMM=0`.
+- The trainer-facing Tile-CUDA BF16 weight-output helper can pass a BF16-packed
+  bias pointer to the TK matmul path. If TK declines a shape and the helper uses
+  the cuBLAS fallback, it still applies the existing BF16 bias-add internally so
+  public C ABI behavior is unchanged.
+- Plan and runtime JSON now report `qkv_bias_fused_tk_gemm_enabled` and default
+  `qkv_bias_layout_strategy: "packed-qkv-bf16-bias-fused-tk-gemm"`.
+
+#### Verification
+
+- Rebuilt `libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh` and rebuilt
+  `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step TinyStories smoke pinned to the dedicated RTX 5090
+  (`CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1`). It completed and
+  reported `qkv_bias_fused_tk_gemm_enabled: true`,
+  `qkv_bias_layout_kernel_launches_per_block: 0`, and
+  `qkv_bias_layout_strategy: "packed-qkv-bf16-bias-fused-tk-gemm"`.
+- Ran `tools/paired_kernel_speed.py` with one warmup and five measured pairs on
+  GPU 0, comparing the previous separate-bias path against the fused-bias
+  candidate. The fused/default candidate had `train_loop_wall_ms` ratio
+  `0.989147`, tokens/s ratio `1.010975`, and total runtime ratio `0.991113`.
+
 ### 2026-06-14 Add opt-in BF16/BF16 QKV dWeight candidate path
 
 #### Changed

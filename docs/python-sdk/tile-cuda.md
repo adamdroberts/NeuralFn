@@ -690,11 +690,11 @@ saved path; the current `64 x 1024` TinyStories probe still regresses to about
 default remains the faster recompute plus process-workspace reuse path.
 
 Full GPT `--train-transformer-lm` now defaults to the packed-QKV attention
-layout. It writes the no-bias QKV projection as packed BF16 bits, applies QKV
-bias in place through `bf16_bits_add_bias_inplace_tile_float32_kernel`, runs the
-SM120 TK packed attention bridge over that row-major packed QKV tensor, and feeds
-the packed BF16 attention output directly into the attention projection forward
-GEMM and dWeight accumulation. Backward keeps packed attention `dQKV` in BF16 by
+layout. It writes the QKV projection as packed BF16 bits with QKV bias fused
+into the SM120 TK BF16 GEMM, runs the SM120 TK packed attention bridge over
+that row-major packed QKV tensor, and feeds the packed BF16 attention output
+directly into the attention projection forward GEMM and dWeight accumulation.
+Backward keeps packed attention `dQKV` in BF16 by
 default: the BF16-output packed backward ABI writes directly into a non-aliased
 BF16 scratch buffer that reuses the MLP BF16 scratch after MLP backward is done,
 then QKV dWeight+bias uses
@@ -702,7 +702,8 @@ then QKV dWeight+bias uses
 QKV dInput consumes the same BF16 gradient bits with BF16 block weights. Native
 plan and training JSON report `qkv_forward_layout_strategy:
 "packed-qkv-bf16-no-split"`, `qkv_bias_layout_strategy:
-"packed-qkv-bf16-bias-inplace"`, `attention_projection_input_strategy:
+"packed-qkv-bf16-bias-fused-tk-gemm"`, `qkv_bias_fused_tk_gemm_enabled`,
+`attention_projection_input_strategy:
 "packed-o-bf16-direct-gemm"`, `attention_packed_output_unpack_strategy:
 "elided-direct-bf16-projection"`, `attention_backward_bf16_qkv_grad_handoff_enabled`,
 `attention_backward_direct_bf16_qkv_grad_scratch_enabled`,
@@ -714,6 +715,8 @@ plan and training JSON report `qkv_forward_layout_strategy:
 "tk-sm120-packed-qkv-bf16-backward-direct-bf16-grad-scratch-handoff"` when the default path is
 active. Set `NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH=0` to reproduce the
 older workspace-to-packed-QKV-buffer copy path, or set
+`NFN_NATIVE_GPT_FUSE_QKV_BIAS_TK_GEMM=0` to reproduce the older separate
+packed BF16 QKV bias-add launch. Set
 `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=1` to pack LN1 output into the freed packed-QKV
 BF16 buffer and profile BF16/BF16 QKV dWeight+bias accumulation. Runtime JSON
 reports `block_backward_bf16_qkv_dweight_enabled` and

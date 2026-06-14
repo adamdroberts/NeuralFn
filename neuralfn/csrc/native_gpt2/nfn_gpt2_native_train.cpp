@@ -1115,6 +1115,12 @@ bool print_tile_plan(
             env_or_empty_any({"NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH",
                               "NFN_NATIVE_GPT2_DIRECT_BF16_QKV_GRAD_SCRATCH"}),
             true);
+    const bool fuse_qkv_bias_tk_gemm_enabled =
+        packed_qkv_attention_enabled &&
+            env_flag_enabled_or_default(
+                env_or_empty_any({"NFN_NATIVE_GPT_FUSE_QKV_BIAS_TK_GEMM",
+                                  "NFN_NATIVE_GPT2_FUSE_QKV_BIAS_TK_GEMM"}),
+                true);
     const std::int64_t qkv_activation_elements = hidden * 3;
     const bool fuse_attention_residual_ln2_enabled = fuse_attention_residual_ln2_default_enabled();
     const std::string store_packed_attention_activations_env =
@@ -1247,11 +1253,18 @@ bool print_tile_plan(
         << "  \"qkv_forward_layout_legacy_launches_per_block\": 4,\n"
         << "  \"qkv_forward_layout_launches_elided_per_block\": " << (packed_qkv_attention_enabled ? 4 : 3) << ",\n"
         << "  \"qkv_bias_layout_strategy\": \""
-        << (packed_qkv_attention_enabled ? "packed-qkv-bf16-bias-inplace" : "fused-qkv-bias-split-to-heads")
+        << (packed_qkv_attention_enabled
+                ? (fuse_qkv_bias_tk_gemm_enabled
+                       ? "packed-qkv-bf16-bias-fused-tk-gemm"
+                       : "packed-qkv-bf16-bias-inplace")
+                : "fused-qkv-bias-split-to-heads")
         << "\",\n"
-        << "  \"qkv_bias_layout_kernel_launches_per_block\": 1,\n"
+        << "  \"qkv_bias_fused_tk_gemm_enabled\": " << (fuse_qkv_bias_tk_gemm_enabled ? "true" : "false") << ",\n"
+        << "  \"qkv_bias_layout_kernel_launches_per_block\": "
+        << (packed_qkv_attention_enabled && fuse_qkv_bias_tk_gemm_enabled ? 0 : 1) << ",\n"
         << "  \"qkv_bias_layout_legacy_launches_per_block\": 2,\n"
-        << "  \"qkv_bias_layout_launches_elided_per_block\": 1,\n"
+        << "  \"qkv_bias_layout_launches_elided_per_block\": "
+        << (packed_qkv_attention_enabled && fuse_qkv_bias_tk_gemm_enabled ? 2 : 1) << ",\n"
         << "  \"qkv_backward_layout_strategy\": \""
         << (packed_qkv_attention_enabled
                 ? (bf16_qkv_grad_handoff_enabled ? "packed-qkv-bf16-gradient-handoff" : "packed-qkv-bf16-gradient-unpack")
@@ -7731,6 +7744,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_QKV_DWEIGHT",
                               "NFN_NATIVE_GPT2_BF16_QKV_DWEIGHT"}),
             false);
+    const bool fuse_qkv_bias_tk_gemm_enabled =
+        packed_qkv_attention_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_FUSE_QKV_BIAS_TK_GEMM",
+                              "NFN_NATIVE_GPT2_FUSE_QKV_BIAS_TK_GEMM"}),
+            true);
     const bool reuse_packed_ln2_fc_gelu_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU",
@@ -9667,14 +9686,16 @@ int run_transformer_lm_training_json(
                         run(linear_weight_bf16_output(
                                 tape.ln1_out,
                                 block.qkv_weight_bf16,
-                                nullptr,
+                                fuse_qkv_bias_tk_gemm_enabled ? block.qkv_bias : nullptr,
                                 active_qkv_bf16,
                                 active_rows,
                                 kDim,
                                 kQkvDim,
-                                false,
+                                fuse_qkv_bias_tk_gemm_enabled,
                                 nullptr),
-                            label + ".attn.qkv.forward.no_bias.bf16_bits");
+                            fuse_qkv_bias_tk_gemm_enabled
+                                ? label + ".attn.qkv.forward.fused_bias.bf16_bits"
+                                : label + ".attn.qkv.forward.no_bias.bf16_bits");
                     }
                 } else {
                     if (error.empty()) run(linear_weight_bf16(tape.ln1_out, block.qkv_weight_bf16, nullptr, tape.qkv, active_rows, kDim, kQkvDim, false, nullptr), label + ".attn.qkv.forward.no_bias.weight_bf16");
@@ -9682,7 +9703,7 @@ int run_transformer_lm_training_json(
             });
             run_timed_stage(stage_name + ".attention.qkv_layout", [&]() {
                 if (packed_qkv_attention_enabled) {
-                    if (error.empty()) {
+                    if (!fuse_qkv_bias_tk_gemm_enabled && error.empty()) {
                         run(bf16_bits_add_bias_inplace(
                                 active_qkv_bf16,
                                 block.qkv_bias,
@@ -11672,11 +11693,18 @@ int run_transformer_lm_training_json(
         << "  \"qkv_forward_layout_legacy_launches_per_block\": 4,\n"
         << "  \"qkv_forward_layout_launches_elided_per_block\": " << (packed_qkv_attention_enabled ? 4 : 3) << ",\n"
         << "  \"qkv_bias_layout_strategy\": \""
-        << (packed_qkv_attention_enabled ? "packed-qkv-bf16-bias-inplace" : "fused-qkv-bias-split-to-heads")
+        << (packed_qkv_attention_enabled
+                ? (fuse_qkv_bias_tk_gemm_enabled
+                       ? "packed-qkv-bf16-bias-fused-tk-gemm"
+                       : "packed-qkv-bf16-bias-inplace")
+                : "fused-qkv-bias-split-to-heads")
         << "\",\n"
-        << "  \"qkv_bias_layout_kernel_launches_per_block\": 1,\n"
+        << "  \"qkv_bias_fused_tk_gemm_enabled\": " << (fuse_qkv_bias_tk_gemm_enabled ? "true" : "false") << ",\n"
+        << "  \"qkv_bias_layout_kernel_launches_per_block\": "
+        << (packed_qkv_attention_enabled && fuse_qkv_bias_tk_gemm_enabled ? 0 : 1) << ",\n"
         << "  \"qkv_bias_layout_legacy_launches_per_block\": 2,\n"
-        << "  \"qkv_bias_layout_launches_elided_per_block\": 1,\n"
+        << "  \"qkv_bias_layout_launches_elided_per_block\": "
+        << (packed_qkv_attention_enabled && fuse_qkv_bias_tk_gemm_enabled ? 2 : 1) << ",\n"
         << "  \"qkv_backward_layout_strategy\": \""
         << (packed_qkv_attention_enabled
                 ? (bf16_qkv_grad_handoff_enabled ? "packed-qkv-bf16-gradient-handoff" : "packed-qkv-bf16-gradient-unpack")

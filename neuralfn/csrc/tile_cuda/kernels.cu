@@ -2472,6 +2472,7 @@ bool trainer_linear_tk_float_out_enabled() {
 bool tk_linear_gemm_bf16_forward_to_bf16_bits(
     const __nv_bfloat16* weight_bf16,
     const __nv_bfloat16* x_bf16,
+    const __nv_bfloat16* bias_bf16,
     std::uint16_t* out_bf16_bits,
     int rows,
     int input_dim,
@@ -2493,13 +2494,15 @@ bool tk_linear_gemm_bf16_forward_to_bf16_bits(
   auto* out = reinterpret_cast<floatX*>(out_bf16_bits);
   const auto* inp = reinterpret_cast<const floatX*>(x_bf16);
   const auto* weight = reinterpret_cast<const floatX*>(weight_bf16);
-  ::matmul_forward(out, inp, weight, nullptr, 1, rows, input_dim, output_dim, stream);
+  const auto* bias = reinterpret_cast<const floatX*>(bias_bf16);
+  ::matmul_forward(out, inp, weight, bias, 1, rows, input_dim, output_dim, stream);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
   return true;
 #else
   (void)weight_bf16;
   (void)x_bf16;
+  (void)bias_bf16;
   (void)out_bf16_bits;
   (void)rows;
   (void)input_dim;
@@ -2530,7 +2533,7 @@ bool tk_linear_gemm_bf16_forward_to_float32(
     return false;
   }
   if (!tk_linear_gemm_bf16_forward_to_bf16_bits(
-          weight_bf16, x_bf16, out_bf16_bits, rows, input_dim, output_dim, op_a, op_b, stream)) {
+          weight_bf16, x_bf16, nullptr, out_bf16_bits, rows, input_dim, output_dim, op_a, op_b, stream)) {
     return false;
   }
   const std::int64_t elements = static_cast<std::int64_t>(rows) * output_dim;
@@ -2897,6 +2900,7 @@ bool cublas_linear_gemm_ex_bf16_float32_to_bf16_bits(
   if (tk_linear_gemm_bf16_forward_to_bf16_bits(
           a_bf16,
           b_bf16,
+          nullptr,
           c_bf16_bits,
           n,
           k,
@@ -2939,6 +2943,7 @@ bool cublas_linear_gemm_ex_bf16_float32_to_bf16_bits(
 bool cublas_linear_gemm_ex_bf16_bits_a_float32_to_bf16_bits(
     const std::uint16_t* a_bf16_bits,
     const float* b,
+    const float* bias,
     std::uint16_t* c_bf16_bits,
     std::int64_t b_elements,
     int m,
@@ -2950,11 +2955,13 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32_to_bf16_bits(
     int ldb,
     int ldc,
     bool force_bf16,
+    bool has_bias,
     cudaStream_t stream) {
   if (!force_bf16 && !trainer_linear_bf16_bridge_enabled()) {
     return false;
   }
-  TrainerLinearBf16Workspace* workspace = ensure_trainer_linear_bf16_workspace(1, b_elements);
+  const std::int64_t bias_elements = has_bias && bias != nullptr ? static_cast<std::int64_t>(m) : 1;
+  TrainerLinearBf16Workspace* workspace = ensure_trainer_linear_bf16_workspace(bias_elements, b_elements);
   if (workspace == nullptr) {
     return false;
   }
@@ -2965,10 +2972,17 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32_to_bf16_bits(
   constexpr int threads = 256;
   const int b_blocks = static_cast<int>((b_elements + threads - 1) / threads);
   f32_to_bf16_kernel<<<b_blocks, threads, 0, stream>>>(b, workspace->b, b_elements);
+  __nv_bfloat16* bias_bf16 = nullptr;
+  if (has_bias && bias != nullptr) {
+    const int bias_blocks = static_cast<int>((bias_elements + threads - 1) / threads);
+    f32_to_bf16_kernel<<<bias_blocks, threads, 0, stream>>>(bias, workspace->a, bias_elements);
+    bias_bf16 = workspace->a;
+  }
   const auto* a_bf16 = reinterpret_cast<const __nv_bfloat16*>(a_bf16_bits);
   if (tk_linear_gemm_bf16_forward_to_bf16_bits(
           a_bf16,
           workspace->b,
+          bias_bf16,
           c_bf16_bits,
           n,
           k,
@@ -3003,6 +3017,17 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32_to_bf16_bits(
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+    if (has_bias && bias != nullptr) {
+      const std::int64_t elements = static_cast<std::int64_t>(n) * m;
+      if (bf16_bits_add_bias_tile_enabled()) {
+        const int blocks = static_cast<int>((elements + kTileSize - 1) / kTileSize);
+        bf16_bits_add_bias_inplace_tile_float32_kernel<<<blocks, 1, 0, stream>>>(
+            c_bf16_bits, bias, elements, m);
+      } else {
+        const int blocks = static_cast<int>((elements + threads - 1) / threads);
+        bf16_bits_add_bias_inplace_kernel<<<blocks, threads, 0, stream>>>(c_bf16_bits, bias, elements, m);
+      }
+    }
     return true;
   }
   return false;
@@ -10159,6 +10184,7 @@ void launch_linear_weight_bf16_output_float32(
       cublas_linear_gemm_ex_bf16_bits_a_float32_to_bf16_bits(
           weight_bf16_bits,
           x,
+          bias,
           out_bf16_bits,
           rows * input_dim,
           static_cast<int>(output_dim),
@@ -10170,18 +10196,8 @@ void launch_linear_weight_bf16_output_float32(
           static_cast<int>(input_dim),
           static_cast<int>(output_dim),
           true,
+          has_bias,
           stream)) {
-    if (has_bias) {
-      if (bf16_bits_add_bias_tile_enabled()) {
-        const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
-        bf16_bits_add_bias_inplace_tile_float32_kernel<<<blocks, 1, 0, stream>>>(
-            out_bf16_bits, bias, n, output_dim);
-      } else {
-        constexpr int threads = 256;
-        const int blocks = static_cast<int>((n + threads - 1) / threads);
-        bf16_bits_add_bias_inplace_kernel<<<blocks, threads, 0, stream>>>(out_bf16_bits, bias, n, output_dim);
-      }
-    }
     return;
   }
 #endif

@@ -671,8 +671,8 @@ layout launches per block.
 
 By default, dense GPT-2 now uses the packed-QKV SM120 TK bridge instead of that
 split-to-heads bridge. `nfn_native_tile_linear_bf16_output_float32` writes the
-no-bias QKV projection as packed BF16, `nfn_native_tile_bf16_bits_add_bias_inplace_float32`
-adds Q/K/V bias in-place, and
+QKV projection as packed BF16 and fuses Q/K/V bias into the SM120 TK BF16 GEMM,
+and
 `nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32` runs TK
 attention directly over the packed row-major QKV tensor. Backward uses
 `nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_merged_grad_float32`
@@ -693,7 +693,8 @@ profiling. Native plan and runtime JSON report `packed_qkv_attention_enabled`,
 `packed_qkv_float_attention_tape_elided`,
 `packed_qkv_float_attention_tape_elements_elided`, `qkv_forward_layout_strategy:
 "packed-qkv-bf16-no-split"`, `qkv_bias_layout_strategy:
-"packed-qkv-bf16-bias-inplace"`, `attention_projection_input_strategy:
+"packed-qkv-bf16-bias-fused-tk-gemm"`, `qkv_bias_fused_tk_gemm_enabled`,
+`attention_projection_input_strategy:
 "packed-o-bf16-direct-gemm"`, `attention_packed_output_unpack_strategy:
 "elided-direct-bf16-projection"`, `attention_backward_bf16_qkv_grad_handoff_enabled`,
 `qkv_backward_layout_strategy: "packed-qkv-bf16-gradient-handoff"`,
@@ -706,6 +707,8 @@ route is active.
 Set `NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH=0` when reproducing the older
 workspace-to-packed-QKV-buffer copy path in paired candidate-vs-baseline
 benchmarks.
+Set `NFN_NATIVE_GPT_FUSE_QKV_BIAS_TK_GEMM=0` to reproduce the older separate
+packed BF16 QKV bias-add launch.
 Set `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=1` to pack LN1 output into the freed
 packed-QKV BF16 buffer and profile BF16/BF16 QKV dWeight+bias accumulation;
 runtime JSON reports `block_backward_bf16_qkv_dweight_enabled` and

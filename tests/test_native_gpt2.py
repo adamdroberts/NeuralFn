@@ -1278,10 +1278,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["qkv_forward_layout_kernel_launches_per_block"] == 0
     assert tile_payload["qkv_forward_layout_legacy_launches_per_block"] == 4
     assert tile_payload["qkv_forward_layout_launches_elided_per_block"] == 4
-    assert tile_payload["qkv_bias_layout_strategy"] == "packed-qkv-bf16-bias-inplace"
-    assert tile_payload["qkv_bias_layout_kernel_launches_per_block"] == 1
+    assert tile_payload["qkv_bias_layout_strategy"] == "packed-qkv-bf16-bias-fused-tk-gemm"
+    assert tile_payload["qkv_bias_fused_tk_gemm_enabled"] is True
+    assert tile_payload["qkv_bias_layout_kernel_launches_per_block"] == 0
     assert tile_payload["qkv_bias_layout_legacy_launches_per_block"] == 2
-    assert tile_payload["qkv_bias_layout_launches_elided_per_block"] == 1
+    assert tile_payload["qkv_bias_layout_launches_elided_per_block"] == 2
     assert tile_payload["qkv_backward_layout_strategy"] == "packed-qkv-bf16-gradient-handoff"
     assert tile_payload["qkv_backward_layout_kernel_launches_per_block"] == 1
     assert tile_payload["qkv_backward_layout_legacy_launches_per_block"] == 4
@@ -2100,10 +2101,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["qkv_forward_layout_kernel_launches_per_block"] == 0
     assert train_transformer_payload["qkv_forward_layout_legacy_launches_per_block"] == 4
     assert train_transformer_payload["qkv_forward_layout_launches_elided_per_block"] == 4
-    assert train_transformer_payload["qkv_bias_layout_strategy"] == "packed-qkv-bf16-bias-inplace"
-    assert train_transformer_payload["qkv_bias_layout_kernel_launches_per_block"] == 1
+    assert train_transformer_payload["qkv_bias_layout_strategy"] == "packed-qkv-bf16-bias-fused-tk-gemm"
+    assert train_transformer_payload["qkv_bias_fused_tk_gemm_enabled"] is True
+    assert train_transformer_payload["qkv_bias_layout_kernel_launches_per_block"] == 0
     assert train_transformer_payload["qkv_bias_layout_legacy_launches_per_block"] == 2
-    assert train_transformer_payload["qkv_bias_layout_launches_elided_per_block"] == 1
+    assert train_transformer_payload["qkv_bias_layout_launches_elided_per_block"] == 2
     assert train_transformer_payload["qkv_backward_layout_strategy"] == "packed-qkv-bf16-gradient-handoff"
     assert train_transformer_payload["qkv_backward_layout_kernel_launches_per_block"] == 1
     assert train_transformer_payload["qkv_backward_layout_legacy_launches_per_block"] == 4
@@ -3947,8 +3949,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_FUSE_QKV_BIAS_TK_GEMM" in gpt2_source_text
     assert "NFN_NATIVE_GPT_BF16_QKV_DWEIGHT" in gpt2_source_text
     assert "attention_backward_direct_bf16_qkv_grad_scratch_enabled" in gpt2_source_text
+    assert "qkv_bias_fused_tk_gemm_enabled" in gpt2_source_text
     assert "block_backward_bf16_qkv_dweight_enabled" in gpt2_source_text
     assert "tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff" in gpt2_source_text
     assert "grad_qkv_bf16_bits != qkv_bf16_bits" in kernels_text
