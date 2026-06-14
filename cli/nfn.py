@@ -276,7 +276,7 @@ def _is_explicit_native_gpt_train(argv: list[str]) -> bool:
         return False
     if _has_any(argv, "-h", "--help", "--plan", "--plan-auto", "--jepa"):
         return False
-    base_model = (_arg_value(argv, "--base-model", "--model") or "").strip().lower().replace("_", "-")
+    base_model = (_arg_value(argv, "--base-model", "--model") or "gpt").strip().lower().replace("_", "-")
     if not _is_dense_gpt_native_model(base_model):
         return False
     topology = (_arg_value(argv, "--topology") or "dense").strip().lower()

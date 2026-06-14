@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Default `nfn train` to native GPT when base model is omitted
+
+#### Changed
+
+- Top-level `nfn train` now treats an omitted `--base-model` / `--model` as
+  `gpt` during the lightweight pre-import native dispatch check. Commands such
+  as `nfn train --tinystories` now exec the compiled
+  `nfn_gpt_native_train --model-family gpt --train-transformer-lm ...` path
+  instead of falling through toward the legacy graph-backed training guard.
+- Explicit non-GPT, non-dense, MoE, router, topology, or external bridge
+  selections still bypass this dense GPT shortcut and are handled by the native
+  registry or legacy guard as before.
+
+#### Verification
+
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k
+  "top_level_nfn_train_defaults_to_native_gpt_without_base_model"`.
+- Ran `python cli/nfn.py train --tinystories --native-cuda-print-command` and
+  verified it resolves to
+  `nfn_gpt_native_train --model-family gpt --train-transformer-lm --tinystories
+  --print-command`.
+
 ### 2026-06-14 Default BF16 packed-QKV gradient handoff
 
 #### Changed

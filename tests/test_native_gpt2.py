@@ -4696,6 +4696,37 @@ def test_cli_install_script_help_and_no_native_mode() -> None:
     assert "per-family native trainer entrypoints" in help_proc.stdout
 
 
+def test_top_level_nfn_train_defaults_to_native_gpt_without_base_model(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    native_cli = tmp_path / "nfn_gpt_native_train"
+    native_cli.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
+    native_cli.chmod(0o755)
+
+    env = os.environ.copy()
+    env["NFN_NATIVE_GPT_CLI"] = str(native_cli)
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli" / "nfn.py"),
+            "train",
+            "--tinystories",
+            "--native-cuda-print-command",
+        ],
+        cwd=root,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "--model-family\ngpt" in proc.stdout
+    assert "--train-transformer-lm" in proc.stdout
+    assert "--tinystories" in proc.stdout
+    assert "TorchTrainer path" not in proc.stderr
+
+
 def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     if shutil.which("c++") is None:
         pytest.skip("c++ compiler not available")
