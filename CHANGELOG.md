@@ -6,6 +6,50 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT direct BF16 residual1 LayerNorm backward
+
+#### Changed
+
+- Added raw Tile ABI symbols
+  `nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32`
+  and
+  `nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_bf16_bits_float32`.
+  Native GPT training can now consume stored BF16 residual1 activations directly
+  in LN2 backward instead of restoring them to FP32 first.
+- Dense GPT enables the direct BF16 residual1 LayerNorm backward consumer by
+  default when residual1 activation storage, LayerNorm forward stats, and fused
+  LayerNorm dInput/residual-add are active. Set
+  `NFN_NATIVE_GPT_BF16_RESIDUAL1_LN_BACKWARD=0` or
+  `NFN_NATIVE_GPT2_BF16_RESIDUAL1_LN_BACKWARD=0` to compare against the older
+  restore-to-FP32 LayerNorm backward path.
+- Runtime JSON now reports `residual1_backward_consumer_strategy` and changes
+  active residual1 storage telemetry to
+  `residual1_activation_storage_strategy:
+  "bf16-forward-store-direct-ln-backward"` when the direct BF16 consumer is
+  active. The default one-step TinyStories probe now reports
+  `stored_residual1_activation_restore_kernel_launches: 0`.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`, rebuilt
+  `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`, and
+  rebuilt `build/nfn_native_train` with `bash tools/build_native_train_cli.sh`.
+- Ran a one-step TinyStories probe on the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and
+  `NFN_NATIVE_GPT_STAGE_TIMING=1`. The run loaded the new symbols with no
+  missing symbols, reported
+  `residual1_backward_consumer_strategy: "bf16-layernorm-backward"`,
+  `stored_residual1_activation_restore_kernel_launches: 0`, and about
+  `156,728` train tokens/s.
+- Ran `tools/paired_kernel_speed.py` on GPU 0 with one warmup pair and five
+  measured pairs comparing `NFN_NATIVE_GPT_BF16_RESIDUAL1_LN_BACKWARD=0`
+  against the default direct BF16 consumer. The benchmark recorded GPU 0 as
+  `NVIDIA GeForce RTX 5090`, `0%` utilization, about `380/32607` MiB used, and
+  no compute processes before timing. The direct BF16 candidate reported
+  `candidate_over_baseline` mean `0.993841`, median `0.994280`, min
+  `0.989406`, and max `0.998092`.
+
 ### 2026-06-14 Native GPT fused residual1 BF16 store
 
 #### Changed

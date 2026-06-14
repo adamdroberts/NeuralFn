@@ -1288,7 +1288,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["packed_attention_activation_storage_strategy"] == (
         "packed-qkv-o-bf16-forward-store-direct-backward"
     )
-    assert tile_payload["stored_packed_attention_activation_blocks"] == 10
+    assert tile_payload["stored_packed_attention_activation_blocks"] == 12
     assert tile_payload["stored_packed_attention_bf16_elements"] > 0
     assert tile_payload["stored_packed_attention_bf16_bytes"] > 0
     assert tile_payload["stored_packed_attention_store_blocks"] == 0
@@ -1375,6 +1375,14 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_restore_mlp_activations_bf16_float32" in tile_payload["available_native_kernels"]
     assert (
         "nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32"
+        in tile_payload["available_native_kernels"]
+    )
+    assert (
+        "nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_bf16_bits_float32"
+        in tile_payload["available_native_kernels"]
+    )
+    assert (
+        "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32"
         in tile_payload["available_native_kernels"]
     )
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32" in tile_payload["available_native_kernels"]
@@ -1978,8 +1986,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["lm_head_ce_backward_strategy"] == "fused-row-bf16-logits-dlogits"
     assert train_transformer_payload["lm_head_grad_logits_workspace_allocated"] is False
     assert train_transformer_payload["linear_backend_strategy"] == "not-run"
-    assert train_transformer_payload["block_forward_linear_strategy"] == "forced-bf16-gemmex-forward"
-    assert train_transformer_payload["block_backward_input_linear_strategy"] == "forced-bf16-gemmex-dinput"
+    assert train_transformer_payload["block_forward_linear_strategy"] == "bf16-shadow-weight-gemmex-forward"
+    assert train_transformer_payload["block_backward_input_linear_strategy"] == "bf16-shadow-weight-gemmex-dinput"
     assert (
         train_transformer_payload["block_backward_weight_linear_strategy"]
         == "forced-bf16-gemmex-dweight-plus-bias-accumulate-fallback"
@@ -2121,7 +2129,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["packed_attention_activation_storage_strategy"] == (
         "packed-qkv-o-bf16-forward-store-direct-backward"
     )
-    assert train_transformer_payload["stored_packed_attention_activation_blocks"] == 10
+    assert train_transformer_payload["stored_packed_attention_activation_blocks"] == 12
     assert train_transformer_payload["stored_packed_attention_bf16_elements"] == 0
     assert train_transformer_payload["stored_packed_attention_bf16_bytes"] == 0
     assert train_transformer_payload["stored_packed_attention_store_blocks"] == 0
@@ -2181,8 +2189,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["descriptor_arena_suballocation_count"] == 0
     assert train_transformer_payload["descriptor_upload_strategy"] == "single-host-packed-arena-copy"
     assert train_transformer_payload["descriptor_arena_copy_count"] == 0
-    assert train_transformer_payload["descriptor_arena_copy_calls_elided"] == 9
-    assert train_transformer_payload["descriptor_cuda_mallocs_elided"] == 9
+    assert train_transformer_payload["descriptor_arena_copy_calls_elided"] == 12
+    assert train_transformer_payload["descriptor_cuda_mallocs_elided"] == 12
     assert train_transformer_payload["parameter_initialization_strategy"] == "fused-multi-buffer-fill-values"
     assert train_transformer_payload["parameter_initialization_descriptor_count"] == 0
     assert train_transformer_payload["parameter_initialization_max_elements"] == 0
@@ -2251,8 +2259,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "descriptor_arena_suballocation_count": 0,
         "descriptor_upload_strategy": "single-host-packed-arena-copy",
         "descriptor_arena_copy_count": 0,
-        "descriptor_arena_copy_calls_elided": 9,
-        "descriptor_cuda_mallocs_elided": 9,
+        "descriptor_arena_copy_calls_elided": 12,
+        "descriptor_cuda_mallocs_elided": 12,
         "block0_duplicate_allocation_elided": True,
         "block0_duplicate_activation_allocation_elided": True,
         "block0_duplicate_parameter_initialization_elided": True,
@@ -2288,6 +2296,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "layer_norm_stats_disabled_by_fused_residual_ln2": False,
             "layer_norm_backward_residual_fusion_enabled": True,
             "layer_norm_backward_residual_strategy": "fused-dinput-residual-add-with-forward-stats",
+            "residual1_backward_consumer_strategy": "bf16-layernorm-backward",
             "gradient_clip_loop": False,
         "gradient_clip_loop_elided": True,
         "gradient_clip_strategy": "fused-multi-buffer-sumsq-device-scale",
@@ -3492,14 +3501,20 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_layer_norm_backward_input_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_input_with_stats_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32" in header_text
+    assert "nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_bf16_bits_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_affine_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_affine_accumulate_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_float32" in header_text
+    assert "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32" in header_text
     assert "launch_layer_norm_with_stats_float32" in source_text
     assert "launch_layer_norm_backward_input_with_stats_float32" in source_text
     assert "launch_layer_norm_backward_input_residual_add_with_stats_float32" in source_text
     assert "launch_layer_norm_backward_affine_accumulate_with_stats_float32" in source_text
     assert "layer_norm_backward_input_residual_add_with_stats_float32_kernel" in kernels_text
+    assert "launch_layer_norm_backward_input_residual_add_with_stats_bf16_bits_float32" in source_text
+    assert "launch_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32" in source_text
+    assert "layer_norm_backward_input_residual_add_with_stats_bf16_bits_float32_kernel" in kernels_text
+    assert "layer_norm_backward_affine_chunked_atomic_with_stats_bf16_bits_float32_kernel" in kernels_text
     assert "fused-dinput-residual-add-with-forward-stats" in gpt2_source_text
     assert "nfn_native_tile_rms_norm_float32" in header_text
     assert "nfn_native_tile_rms_norm_backward_input_float32" in header_text
@@ -3689,6 +3704,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "stored_residual1_activation_store_kernel_launches" in gpt2_source_text
     assert "stored_residual1_activation_restore_kernel_launches" in gpt2_source_text
     assert "bf16-forward-store-recompute-restore" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_BF16_RESIDUAL1_LN_BACKWARD" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_BF16_RESIDUAL1_LN_BACKWARD" in gpt2_source_text
+    assert "bf16-forward-store-direct-ln-backward" in gpt2_source_text
+    assert "residual1_backward_consumer_strategy" in gpt2_source_text
+    assert "bf16-layernorm-backward" in gpt2_source_text
+    assert "restore-float32-layernorm-backward" in gpt2_source_text
     assert "kDefaultLmHeadRowChunkSize = 4096" in gpt2_source_text
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
@@ -4407,9 +4428,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_layer_norm_backward_input_float32" in exported
         assert "nfn_native_tile_layer_norm_backward_input_with_stats_float32" in exported
         assert "nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32" in exported
+        assert "nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_bf16_bits_float32" in exported
         assert "nfn_native_tile_layer_norm_backward_affine_float32" in exported
         assert "nfn_native_tile_layer_norm_backward_affine_accumulate_float32" in exported
         assert "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_float32" in exported
+        assert "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32" in exported
         assert "nfn_native_tile_rms_norm_float32" in exported
         assert "nfn_native_tile_rms_norm_backward_input_float32" in exported
         assert "nfn_native_tile_softmax_lastdim_float32" in exported
