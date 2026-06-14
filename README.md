@@ -41,8 +41,12 @@ and `gpu_after` snapshots with GPU identity, display-active state, utilization,
 memory, and active compute-process rows so kernel-speed notes show which CUDA
 device was measured and whether other compute work was present. The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
-emit non-UTF-8 bytes can still be compared in the same paired run. If either
-command emits NeuralFn native JSON, the helper also summarizes native in-loop
+emit non-UTF-8 bytes can still be compared in the same paired run. Pass
+`--command-timeout-seconds N` to cap each child command; with
+`--continue-on-error`, timed-out candidates are kept in the JSON with
+`timed_out: true`, `returncode: -1`, and their output tails instead of wedging
+the tuning loop. If either command emits NeuralFn native JSON, the helper also
+summarizes native in-loop
 metrics such as `timing.train_loop_wall_ms`, `timing.train_tokens_per_second`,
 setup time, checkpoint time, total native wall time, and any emitted
 `timing.stage_timing` entries separately from outer command runtime.

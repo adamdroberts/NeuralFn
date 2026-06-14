@@ -65,7 +65,6 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
             "1",
             "--warmup",
             "0",
-            "--json",
             "--json-out",
             str(output_path),
             "--cuda-visible-devices",
@@ -95,3 +94,42 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["paired_samples"][0]["candidate"]["native_metrics"]["status"] == "native-test"
     assert payload["candidate_native_metrics"]["train_loop_wall_ms"]["mean"] == 12.5
     assert payload["candidate_native_metrics"]["train_tokens_per_second"]["mean"] == 42.0
+
+
+def test_paired_kernel_speed_tool_records_command_timeout() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-timeout.json"
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('baseline-ok')\"",
+            "--candidate",
+            f"{sys.executable} -c \"import time; time.sleep(5)\"",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--continue-on-error",
+            "--command-timeout-seconds",
+            "0.1",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "command_timeouts: baseline=0 candidate=1" in proc.stdout
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    sample = payload["paired_samples"][0]
+    assert sample["baseline"]["timed_out"] is False
+    assert sample["candidate"]["timed_out"] is True
+    assert sample["candidate"]["returncode"] == -1
+    assert sample["candidate"]["timeout_seconds"] == 0.1
+    assert payload["command_timeout_seconds"] == 0.1

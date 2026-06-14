@@ -567,7 +567,11 @@ wall time, selected linear/attention kernel counters, emitted
 when both commands expose the same metric. Use those native summaries when
 command startup or checkpoint export would otherwise hide the actual
 training-loop speed or when a kernel candidate is expected to move only one
-stage.
+stage. Pass `--command-timeout-seconds N` to cap each child command. With
+`--continue-on-error`, timeout rows stay in `paired_samples` with
+`timed_out: true`, `returncode: -1`, and `timeout_seconds`, which is useful
+when a bad kernel candidate saturates a dedicated GPU or allocates nearly all
+VRAM.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, `NFN_NATIVE_GPT_BINDING`, and

@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Add timeout handling to paired native benchmarks
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now accepts
+  `--command-timeout-seconds N` to cap each baseline/candidate child process.
+  When `--continue-on-error` is set, timed-out commands are preserved in
+  `paired_samples` with `timed_out: true`, `returncode: -1`, and
+  `timeout_seconds`, so a runaway CUDA kernel candidate can be recorded without
+  wedging the dedicated GPU tuning loop.
+
+#### Verification
+
+- Ran `python -m pytest tests/test_tile_cuda_examples.py -q -k
+  "paired_kernel_speed_tool_compiles_and_smokes or paired_kernel_speed_tool_records_command_timeout"`.
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran `git diff --check`.
+
 ### 2026-06-14 Add stage-timing extraction to paired native benchmarks
 
 #### Changed

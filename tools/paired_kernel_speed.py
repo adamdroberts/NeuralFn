@@ -64,6 +64,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Record failed commands instead of stopping at the first nonzero exit.",
     )
+    parser.add_argument(
+        "--command-timeout-seconds",
+        type=float,
+        default=0.0,
+        help=(
+            "Per-command timeout. The default 0 disables the timeout. With "
+            "--continue-on-error, timed-out commands are recorded with timed_out=true; "
+            "otherwise the run stops at the first timeout."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -129,22 +139,55 @@ def native_metrics_from_stdout(stdout: str) -> dict[str, float | int | str | boo
     return metrics
 
 
+def timeout_output_to_text(value: str | bytes | None) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return ""
+
+
 def run_once(
     command: TimedCommand,
     *,
     continue_on_error: bool,
     env: dict[str, str] | None,
+    timeout_seconds: float | None,
 ) -> dict[str, object]:
     start = time.perf_counter()
-    proc = subprocess.run(
-        command.argv,
-        text=True,
-        errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-        env=env,
-    )
+    try:
+        proc = subprocess.run(
+            command.argv,
+            text=True,
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            env=env,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        seconds = time.perf_counter() - start
+        stdout = timeout_output_to_text(exc.stdout)
+        stderr = timeout_output_to_text(exc.stderr)
+        if not continue_on_error:
+            raise SystemExit(
+                f"{command.name} timed out after {timeout_seconds:.3f}s\n"
+                f"command: {shlex.join(command.argv)}\n"
+                f"stdout tail:\n{stdout[-2000:]}\n"
+                f"stderr tail:\n{stderr[-2000:]}"
+            ) from exc
+        return {
+            "name": command.name,
+            "argv": command.argv,
+            "seconds": seconds,
+            "returncode": -1,
+            "timed_out": True,
+            "timeout_seconds": timeout_seconds,
+            "native_metrics": native_metrics_from_stdout(stdout),
+            "stdout_tail": stdout[-2000:],
+            "stderr_tail": stderr[-2000:],
+        }
     seconds = time.perf_counter() - start
     if proc.returncode != 0 and not continue_on_error:
         raise SystemExit(
@@ -157,6 +200,7 @@ def run_once(
         "argv": command.argv,
         "seconds": seconds,
         "returncode": proc.returncode,
+        "timed_out": False,
         "native_metrics": native_metrics_from_stdout(proc.stdout),
         "stdout_tail": proc.stdout[-2000:],
         "stderr_tail": proc.stderr[-2000:],
@@ -298,6 +342,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     candidate = TimedCommand("candidate", shlex.split(args.candidate))
     samples = max(1, args.samples)
     warmup = max(0, args.warmup)
+    timeout_seconds = float(args.command_timeout_seconds or 0.0)
+    command_timeout = timeout_seconds if timeout_seconds > 0.0 else None
     cuda_visible_devices = str(args.cuda_visible_devices or "").strip()
     cuda_device_max_connections = str(args.cuda_device_max_connections or "").strip()
     run_env = None
@@ -311,7 +357,12 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     gpu_before = gpu_snapshot()
     for warmup_index in range(warmup):
         for command in ordered_pair(warmup_index, baseline, candidate):
-            run_once(command, continue_on_error=args.continue_on_error, env=run_env)
+            run_once(
+                command,
+                continue_on_error=args.continue_on_error,
+                env=run_env,
+                timeout_seconds=command_timeout,
+            )
 
     sample_rows: list[dict[str, object]] = []
     baseline_seconds: list[float] = []
@@ -323,7 +374,12 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         by_name: dict[str, dict[str, object]] = {}
         for command in ordered_pair(sample_index, baseline, candidate):
             order_names.append(command.name)
-            result = run_once(command, continue_on_error=args.continue_on_error, env=run_env)
+            result = run_once(
+                command,
+                continue_on_error=args.continue_on_error,
+                env=run_env,
+                timeout_seconds=command_timeout,
+            )
             by_name[command.name] = result
         baseline_time = float(by_name["baseline"]["seconds"])
         candidate_time = float(by_name["candidate"]["seconds"])
@@ -344,6 +400,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "warmup": warmup,
         "cuda_visible_devices": cuda_visible_devices,
         "cuda_device_max_connections": cuda_device_max_connections,
+        "command_timeout_seconds": timeout_seconds,
         "gpu_before": gpu_before,
         "gpu_after": gpu_after,
         "baseline_command": baseline.argv,
@@ -385,6 +442,21 @@ def print_text(payload: dict[str, object]) -> None:
         processes = gpu_before.get("compute_processes")
         if isinstance(processes, list):
             print(f"  gpu_compute_processes_before: {len(processes)}")
+    paired_samples = payload.get("paired_samples")
+    if isinstance(paired_samples, list):
+        timeout_counts = {"baseline": 0, "candidate": 0}
+        for row in paired_samples:
+            if not isinstance(row, dict):
+                continue
+            for name in timeout_counts:
+                command = row.get(name)
+                if isinstance(command, dict) and command.get("timed_out") is True:
+                    timeout_counts[name] += 1
+        if timeout_counts["baseline"] or timeout_counts["candidate"]:
+            print(
+                "  command_timeouts: "
+                f"baseline={timeout_counts['baseline']} candidate={timeout_counts['candidate']}"
+            )
     for key in ("baseline_seconds", "candidate_seconds", "candidate_over_baseline"):
         stats = payload[key]
         assert isinstance(stats, dict)
