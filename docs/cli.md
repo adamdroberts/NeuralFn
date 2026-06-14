@@ -230,6 +230,9 @@ faster default. GPT-2 training JSON reports `linear_backend_strategy:
 The BF16 operand cache is only for stable operands such as weights and biases;
 BF16-output GEMMs repack mutable activation inputs because native scratch
 activation pointers are reused with new contents.
+The tied LM-head dWeight path follows the same rule: it consumes BF16 dlogits
+but repacks each mutable hidden activation chunk instead of caching that
+scratch pointer across gradient-accumulation microbatches.
 The default dense GPT route also uses
 `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32` to fuse the MLP
 projection dInput GEMM with saved-BF16 GELU backward. Set

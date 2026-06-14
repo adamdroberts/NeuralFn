@@ -10427,7 +10427,9 @@ void launch_linear_backward_weight_accumulate_float32_bf16_bits(
           static_cast<int>(output_dim),
           static_cast<int>(input_dim),
           1.0f,
-          true,
+          // x is a reused activation scratch pointer whose contents change across
+          // gradient-accumulation microbatches; caching by pointer would reuse stale BF16 data.
+          false,
           true,
           stream)) {
     return;

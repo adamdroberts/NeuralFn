@@ -6,6 +6,41 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT LM-head dWeight BF16 cache correctness
+
+#### Changed
+
+- The native dense-GPT LM-head dWeight GEMM no longer caches its FP32 hidden
+  activation operand by pointer before packing it to BF16. The hidden activation
+  buffer is scratch storage reused with new contents across
+  gradient-accumulation microbatches, so pointer-keyed caching could reuse stale
+  packed hidden chunks while accumulating token-weight gradients.
+- Stable operands such as weights remain eligible for the BF16 operand cache.
+  Runtime JSON still reports the BF16 pack/cache counters so this behavior can
+  be audited during kernel tuning.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran a one-step TinyStories native GPT CUDA smoke on the dedicated RTX 5090:
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1
+  NFN_NATIVE_GPT_STAGE_TIMING=1 build/nfn_gpt_native_train --tinystories
+  --tile-ops-lib /tmp/libnfn_tile_ops_lm_dweight_cachefix.so --max-steps 1
+  --eval-every-steps 0 --no-checkpoint`. Runtime JSON reported
+  `steps_completed: 1`, `passed: true`, no missing symbols,
+  `linear_bf16_a_pack_count: 429`, and `linear_bf16_a_cache_hit_count: 211`,
+  confirming the mutable LM-head hidden chunks are repacked instead of reused
+  from the BF16 cache.
+- Ran `tools/paired_kernel_speed.py` on GPU 0 with one warmup pair and five
+  measured one-step pairs comparing the old stale-cache Tile ops library
+  against the corrected library. The benchmark recorded GPU 0 as
+  `NVIDIA GeForce RTX 5090`, `0%` utilization, about `426/32607` MiB used, and
+  no compute processes before timing. The corrected candidate reported
+  `candidate_over_baseline` mean `1.000010`, median `1.000189`, min
+  `0.995780`, and max `1.003054`, so the correctness fix is neutral at command
+  level.
+
 ### 2026-06-14 Paired kernel speed output decoding
 
 #### Changed

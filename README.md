@@ -44,6 +44,9 @@ emit non-UTF-8 bytes can still be compared in the same paired run.
 The native dense-GPT BF16 LM-head CE backward path now traverses rows in
 reverse block order, matching the llm.kittens fused-classifier cache-locality
 pattern for logits that were just produced by the tied LM-head GEMM.
+The BF16 linear operand cache is limited to stable operands such as weights;
+LM-head dWeight repacks the mutable hidden activation chunks each microbatch so
+gradient accumulation does not reuse stale packed activations.
 
 ## Current state of play
 
