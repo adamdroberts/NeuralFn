@@ -6,6 +6,38 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT packed-attention store cap retune
+
+#### Changed
+
+- Dense GPT native training now stores packed BF16 QKV/O activations for ten
+  earlier transformer blocks by default on the packed-QKV attention path,
+  instead of six. The `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` and
+  `NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS=N` overrides still control the
+  cap, and `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` still returns
+  to the lower-memory recompute route.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Verified `python -m pytest tests/test_native_gpt2.py -q -k
+  native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`.
+- Verified `git diff --check`.
+- Swept `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS` values on the dedicated
+  RTX 5090 with one-step TinyStories stage timing. Ten stored blocks reported
+  about `3,587.55 ms` train compute and `146,141` tokens/s; eleven stored
+  blocks regressed to about `5,502.16 ms` and `95,288` tokens/s, confirming the
+  memory-pressure cliff.
+- Ran a live default one-step stage probe after changing the default; runtime
+  JSON reported `stored_packed_attention_activation_blocks: 10`,
+  `stored_packed_attention_bf16_bytes: 4026531840`, and about `144,924`
+  tokens/s.
+- Ran an interleaved paired benchmark with `tools/paired_kernel_speed.py`,
+  pinning both commands to `CUDA_VISIBLE_DEVICES=0`. The ten-block candidate
+  reported `candidate_over_baseline` mean `0.987715` across five samples
+  versus the previous six-block default.
+
 ### 2026-06-14 Native GPT fused LayerNorm residual backward
 
 #### Changed
