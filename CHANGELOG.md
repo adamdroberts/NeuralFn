@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Elide unused MLP dGELU float-gradient conversion in native GPT
+
+#### Changed
+
+- Added `nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_only_float32`
+  to the raw trainer Tile-CUDA ABI. Dense GPT training uses it by default when
+  BF16 MLP grad handoff is active, so the MLP projection backward path writes
+  the BF16 gradient consumed by the following MLP FC backward stage without
+  also converting that gradient to an unused FP32 buffer.
+- Added `NFN_NATIVE_GPT_ELIDE_MLP_DGELU_FLOAT_GRAD=0` for paired benchmarks or
+  diagnostics that need the previous BF16 handoff path. Runtime JSON now
+  reports `block_backward_mlp_dgelu_float_grad_elided` and distinguishes the
+  `...-no-float-grad` and `...-float-grad` strategy strings.
+
+#### Verification
+
+- Rebuilt `libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt the native GPT CLI with `bash tools/build_native_gpt_cli.sh`.
+- Ran a dedicated RTX 5090 paired benchmark with the previous conversion path
+  as baseline and the BF16-only path as candidate:
+  candidate mean `train_loop_wall_ms` ratio `0.979437`, mean
+  `train_tokens_per_second` ratio `1.021189`, and no compute processes before
+  the run.
+
 ### 2026-06-14 Retune native GPT LM-head row chunk default to 4096
 
 #### Changed

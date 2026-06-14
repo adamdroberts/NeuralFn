@@ -2788,13 +2788,14 @@ bool tk_linear_backward_input_dgelu_weight_bf16_bits_float32(
     int rows,
     int input_dim,
     int output_dim,
+    bool write_float_grad,
     cudaStream_t stream) {
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   if (!trainer_linear_tk_gemm_enabled()) {
     return false;
   }
   if (grad_out == nullptr || weight_bf16_bits == nullptr || pre_gelu_bf16_bits == nullptr ||
-      grad_x_bf16_bits == nullptr || grad_x == nullptr) {
+      grad_x_bf16_bits == nullptr || (write_float_grad && grad_x == nullptr)) {
     return false;
   }
   if (rows <= 0 || input_dim <= 0 || output_dim <= 0 ||
@@ -2821,10 +2822,12 @@ bool tk_linear_backward_input_dgelu_weight_bf16_bits_float32(
       stream,
       reinterpret_cast<const floatX*>(pre_gelu_bf16_bits),
       true);
-  const std::int64_t elements = static_cast<std::int64_t>(rows) * input_dim;
-  constexpr int threads = 256;
-  const int blocks = static_cast<int>((elements + threads - 1) / threads);
-  bf16_bits_to_f32_kernel<<<blocks, threads, 0, stream>>>(grad_x_bf16_bits, grad_x, elements);
+  if (write_float_grad) {
+    const std::int64_t elements = static_cast<std::int64_t>(rows) * input_dim;
+    constexpr int threads = 256;
+    const int blocks = static_cast<int>((elements + threads - 1) / threads);
+    bf16_bits_to_f32_kernel<<<blocks, threads, 0, stream>>>(grad_x_bf16_bits, grad_x, elements);
+  }
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
   return true;
@@ -10612,6 +10615,7 @@ void launch_linear_backward_input_dgelu_weight_bf16_bits_float32(
           static_cast<int>(rows),
           static_cast<int>(input_dim),
           static_cast<int>(output_dim),
+          true,
           stream)) {
     return;
   }
@@ -10619,6 +10623,43 @@ void launch_linear_backward_input_dgelu_weight_bf16_bits_float32(
   launch_linear_backward_input_weight_bf16_float32(
       grad_out, weight_bf16_bits, grad_x, rows, input_dim, output_dim, stream);
   launch_gelu_backward_inplace_bf16_bits_float32(pre_gelu_bf16_bits, grad_x, rows * input_dim, stream);
+}
+
+void launch_linear_backward_input_dgelu_weight_bf16_bits_only_float32(
+    const float* grad_out,
+    const std::uint16_t* weight_bf16_bits,
+    const std::uint16_t* pre_gelu_bf16_bits,
+    std::uint16_t* grad_x_bf16_bits,
+    float* grad_x_fallback,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+  const std::int64_t grad_x_elements = rows * input_dim;
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
+      tk_linear_backward_input_dgelu_weight_bf16_bits_float32(
+          grad_out,
+          weight_bf16_bits,
+          pre_gelu_bf16_bits,
+          grad_x_bf16_bits,
+          nullptr,
+          rows * output_dim,
+          static_cast<int>(rows),
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          false,
+          stream)) {
+    return;
+  }
+#endif
+  launch_linear_backward_input_weight_bf16_float32(
+      grad_out, weight_bf16_bits, grad_x_fallback, rows, input_dim, output_dim, stream);
+  launch_gelu_backward_inplace_bf16_bits_float32(pre_gelu_bf16_bits, grad_x_fallback, grad_x_elements, stream);
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((grad_x_elements + threads - 1) / threads);
+  f32_to_bf16_kernel<<<blocks, threads, 0, stream>>>(
+      grad_x_fallback, reinterpret_cast<__nv_bfloat16*>(grad_x_bf16_bits), grad_x_elements);
 }
 
 void launch_linear_backward_weight_float32(
