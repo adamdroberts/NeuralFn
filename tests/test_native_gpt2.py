@@ -2272,9 +2272,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["uint16_arena_allocated_elements"] == 0
     assert train_transformer_payload["uint16_arena_cuda_malloc_count"] == 0
     assert train_transformer_payload["uint16_arena_suballocation_count"] == 0
-    assert train_transformer_payload["float_arena_zero_init_strategy"] == "adamw-state-contiguous-range-fill"
+    assert train_transformer_payload["float_arena_zero_init_strategy"] == "adamw-state-contiguous-range-cuda-memset"
+    assert train_transformer_payload["startup_cuda_memset_zero_enabled"] is True
+    assert isinstance(train_transformer_payload["startup_cuda_memset_zero_available"], bool)
     assert train_transformer_payload["float_arena_zero_fill_count"] == 0
     assert train_transformer_payload["adamw_state_zero_fill_count"] == 0
+    assert train_transformer_payload["startup_cuda_memset_zero_fill_count"] == 0
+    assert train_transformer_payload["startup_tile_zero_fill_count"] == 0
     assert train_transformer_payload["adamw_state_zero_range_count"] == 0
     assert train_transformer_payload["adamw_state_zero_range_elements"] == 0
     assert train_transformer_payload["startup_per_buffer_zero_fill_elided"] is True
@@ -2354,9 +2358,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "parameter_initialization_descriptor_count": 0,
         "parameter_initialization_kernel_launches_per_startup": 0,
         "parameter_initialization_per_buffer_launches_elided": 74,
-        "startup_zero_init_strategy": "adamw-state-contiguous-range-fill",
+        "startup_zero_init_strategy": "adamw-state-contiguous-range-cuda-memset",
+        "startup_cuda_memset_zero_enabled": True,
+        "startup_cuda_memset_zero_available": train_transformer_payload["startup_cuda_memset_zero_available"],
         "startup_arena_zero_fill_count": 0,
         "startup_adamw_state_zero_fill_count": 0,
+        "startup_cuda_memset_zero_fill_count": 0,
+        "startup_tile_zero_fill_count": 0,
         "startup_adamw_state_zero_range_count": 0,
         "startup_adamw_state_zero_range_elements": 0,
         "startup_per_buffer_zero_fill_elided": True,

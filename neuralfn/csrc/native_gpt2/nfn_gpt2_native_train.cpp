@@ -7170,6 +7170,7 @@ int run_transformer_lm_training_json(
     using CudaFreeFn = int (*)(void*);
     using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
     using CudaMemcpyAsyncFn = int (*)(void*, const void*, std::size_t, int, void*);
+    using CudaMemsetAsyncFn = int (*)(void*, int, std::size_t, void*);
     using CudaHostAllocFn = int (*)(void**, std::size_t, unsigned int);
     using CudaFreeHostFn = int (*)(void*);
     using CudaDeviceSynchronizeFn = int (*)();
@@ -7307,6 +7308,7 @@ int run_transformer_lm_training_json(
     CudaFreeFn cuda_free = nullptr;
     CudaMemcpyFn cuda_memcpy = nullptr;
     CudaMemcpyAsyncFn cuda_memcpy_async = nullptr;
+    CudaMemsetAsyncFn cuda_memset_async = nullptr;
     CudaHostAllocFn cuda_host_alloc = nullptr;
     CudaFreeHostFn cuda_free_host = nullptr;
     CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
@@ -7641,6 +7643,7 @@ int run_transformer_lm_training_json(
         cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
         cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
         cuda_memcpy_async = load_symbol<CudaMemcpyAsyncFn>(cuda_handle, "cudaMemcpyAsync");
+        cuda_memset_async = load_symbol<CudaMemsetAsyncFn>(cuda_handle, "cudaMemsetAsync");
         cuda_host_alloc = load_symbol<CudaHostAllocFn>(cuda_handle, "cudaHostAlloc");
         cuda_free_host = load_symbol<CudaFreeHostFn>(cuda_handle, "cudaFreeHost");
         cuda_device_synchronize = load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
@@ -7854,12 +7857,19 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_ZERO_ADAMW_STATE_RANGES",
                               "NFN_NATIVE_GPT2_ZERO_ADAMW_STATE_RANGES"}),
             true);
+    const bool startup_cuda_memset_zero_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_CUDA_MEMSET_ZERO",
+                              "NFN_NATIVE_GPT2_CUDA_MEMSET_ZERO"}),
+            true);
     const std::string startup_zero_init_strategy =
         startup_zero_adamw_state_only_enabled
             ? (startup_zero_adamw_state_ranges_enabled
-                   ? "adamw-state-contiguous-range-fill"
+                   ? (startup_cuda_memset_zero_enabled
+                          ? "adamw-state-contiguous-range-cuda-memset"
+                          : "adamw-state-contiguous-range-fill")
                    : "adamw-state-fill-many")
-            : "single-arena-fill";
+            : (startup_cuda_memset_zero_enabled ? "single-arena-cuda-memset" : "single-arena-fill");
     const std::int64_t logit_workspace_elements = lm_head_bf16_loss_enabled ? 0 : logit_elements;
     bool stage_timing_enabled = false;
     std::int64_t stage_timing_event_count = 0;
@@ -8048,6 +8058,8 @@ int run_transformer_lm_training_json(
     std::int64_t token_device_cuda_mallocs_elided = 1;
     std::int64_t float_arena_zero_fill_count = 0;
     std::int64_t adamw_state_zero_fill_count = 0;
+    std::int64_t startup_cuda_memset_zero_fill_count = 0;
+    std::int64_t startup_tile_zero_fill_count = 0;
     std::int64_t adamw_state_zero_range_count = 0;
     std::int64_t adamw_state_zero_range_elements = 0;
     std::size_t descriptor_arena_requested_bytes = 0;
@@ -9048,6 +9060,23 @@ int run_transformer_lm_training_json(
             run(fill(ptr, elements, value, nullptr), name);
         }
     };
+    auto zero_float_buffer = [&](float* ptr, std::int64_t elements, const std::string& name) {
+        if (!error.empty() || ptr == nullptr || elements <= 0) {
+            return;
+        }
+        if (startup_cuda_memset_zero_enabled && cuda_memset_async != nullptr) {
+            const std::size_t bytes = sizeof(float) * static_cast<std::size_t>(elements);
+            const int status = cuda_memset_async(ptr, 0, bytes, nullptr);
+            if (status == 0) {
+                startup_cuda_memset_zero_fill_count += 1;
+                return;
+            }
+        }
+        run(fill(ptr, elements, 0.0f, nullptr), name);
+        if (error.empty()) {
+            startup_tile_zero_fill_count += 1;
+        }
+    };
     auto fill_adamw_many = [&](float* const* ptrs, float value, const std::string& name) {
         if (!error.empty()) {
             return;
@@ -9483,7 +9512,7 @@ int run_transformer_lm_training_json(
     run_setup_timed("setup.zero_init", [&]() {
         if (error.empty() && startup_zero_adamw_state_ranges_enabled && !adamw_zero_ranges.empty()) {
             for (const AdamWZeroRange& range : adamw_zero_ranges) {
-                fill_buffer(range.ptr, range.elements, 0.0f, "adamw_state.zero_range");
+                zero_float_buffer(range.ptr, range.elements, "adamw_state.zero_range");
                 if (!error.empty()) {
                     break;
                 }
@@ -9502,7 +9531,7 @@ int run_transformer_lm_training_json(
                 adamw_state_zero_fill_count += 1;
             }
         } else if (error.empty() && float_arena != nullptr && float_arena_allocated_elements > 0) {
-            run(fill(float_arena, float_arena_allocated_elements, 0.0f, nullptr), "transformer_lm_float_arena.zero");
+            zero_float_buffer(float_arena, float_arena_allocated_elements, "transformer_lm_float_arena.zero");
             if (error.empty()) {
                 float_arena_zero_fill_count = 1;
             }
@@ -12312,8 +12341,12 @@ int run_transformer_lm_training_json(
         << "  \"uint16_arena_cuda_malloc_count\": " << uint16_arena_cuda_malloc_count << ",\n"
         << "  \"uint16_arena_suballocation_count\": " << uint16_arena_requests.size() << ",\n"
         << "  \"float_arena_zero_init_strategy\": \"" << startup_zero_init_strategy << "\",\n"
+        << "  \"startup_cuda_memset_zero_enabled\": " << (startup_cuda_memset_zero_enabled ? "true" : "false") << ",\n"
+        << "  \"startup_cuda_memset_zero_available\": " << (cuda_memset_async != nullptr ? "true" : "false") << ",\n"
         << "  \"float_arena_zero_fill_count\": " << float_arena_zero_fill_count << ",\n"
         << "  \"adamw_state_zero_fill_count\": " << adamw_state_zero_fill_count << ",\n"
+        << "  \"startup_cuda_memset_zero_fill_count\": " << startup_cuda_memset_zero_fill_count << ",\n"
+        << "  \"startup_tile_zero_fill_count\": " << startup_tile_zero_fill_count << ",\n"
         << "  \"adamw_state_zero_range_count\": " << adamw_state_zero_range_count << ",\n"
         << "  \"adamw_state_zero_range_elements\": " << adamw_state_zero_range_elements << ",\n"
         << "  \"startup_per_buffer_zero_fill_elided\": true,\n"
@@ -12434,8 +12467,12 @@ int run_transformer_lm_training_json(
         << "    \"parameter_initialization_per_buffer_launches_elided\": "
         << std::max<std::int64_t>(0, nonzero_parameter_fill_buffer_count - 1) << ",\n"
         << "    \"startup_zero_init_strategy\": \"" << startup_zero_init_strategy << "\",\n"
+        << "    \"startup_cuda_memset_zero_enabled\": " << (startup_cuda_memset_zero_enabled ? "true" : "false") << ",\n"
+        << "    \"startup_cuda_memset_zero_available\": " << (cuda_memset_async != nullptr ? "true" : "false") << ",\n"
         << "    \"startup_arena_zero_fill_count\": " << float_arena_zero_fill_count << ",\n"
         << "    \"startup_adamw_state_zero_fill_count\": " << adamw_state_zero_fill_count << ",\n"
+        << "    \"startup_cuda_memset_zero_fill_count\": " << startup_cuda_memset_zero_fill_count << ",\n"
+        << "    \"startup_tile_zero_fill_count\": " << startup_tile_zero_fill_count << ",\n"
         << "    \"startup_adamw_state_zero_range_count\": " << adamw_state_zero_range_count << ",\n"
         << "    \"startup_adamw_state_zero_range_elements\": " << adamw_state_zero_range_elements << ",\n"
         << "    \"startup_per_buffer_zero_fill_elided\": true,\n"

@@ -6,6 +6,42 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Use CUDA memset for native GPT startup zeroing
+
+#### Changed
+
+- Dense GPT native training now uses `cudaMemsetAsync` for the default
+  contiguous AdamW first/second moment zero ranges during startup. This keeps
+  real training batches on the compiled C++/CUDA path while reducing the
+  startup zeroing overhead on the dedicated RTX 5090 path.
+- Set `NFN_NATIVE_GPT_CUDA_MEMSET_ZERO=0` or
+  `NFN_NATIVE_GPT2_CUDA_MEMSET_ZERO=0` to reproduce the previous Tile fill
+  startup-zero path in same-binary paired benchmarks.
+- Runtime JSON now reports `startup_cuda_memset_zero_enabled`,
+  `startup_cuda_memset_zero_available`,
+  `startup_cuda_memset_zero_fill_count`, and
+  `startup_tile_zero_fill_count` at the top level and under
+  `block_state_layout`.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Confirmed that sandboxed CUDA access still fails early with native preflight
+  when the driver is not visible, then reran GPU-visible validation pinned to
+  the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1`.
+- Ran a one-step TinyStories staged smoke:
+  `NFN_NATIVE_GPT_STAGE_TIMING=1 build/nfn_gpt_native_train --tinystories --max-steps 1 --model-family gpt --train-transformer-lm --no-checkpoint`.
+  It completed with `startup_cuda_memset_zero_available: true`,
+  `startup_cuda_memset_zero_fill_count: 2`, and
+  `startup_tile_zero_fill_count: 0`.
+- Ran `tools/paired_kernel_speed.py` with one warmup and five measured pairs on
+  GPU 0, comparing `NFN_NATIVE_GPT_CUDA_MEMSET_ZERO=0` against the new default.
+  Candidate setup wall ratio was about `0.9719`, total runtime ratio was
+  `0.9983`, train-loop ratio was `1.0019`, and tokens/s ratio was `0.9981`;
+  this is treated as a startup improvement, not a hot-loop throughput win.
+
 ### 2026-06-14 Add per-sample GPU snapshots to paired native benchmarks
 
 #### Changed
