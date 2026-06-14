@@ -49,7 +49,10 @@ the tuning loop. If either command emits NeuralFn native JSON, the helper also
 summarizes native in-loop
 metrics such as `timing.train_loop_wall_ms`, `timing.train_tokens_per_second`,
 setup time, checkpoint time, total native wall time, and any emitted
-`timing.stage_timing` entries separately from outer command runtime.
+`timing.stage_timing` entries separately from outer command runtime. It also
+parses llm.kittens `step ... ms ... tok/s` logs, so direct
+NeuralFn-vs-`train_gpt2cu` comparisons report both trainers' in-loop step time
+and token throughput in the same paired JSON.
 
 The native dense-GPT BF16 LM-head CE backward path now traverses rows in
 reverse block order, matching the llm.kittens fused-classifier cache-locality

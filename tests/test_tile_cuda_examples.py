@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import py_compile
 import subprocess
 import sys
@@ -94,6 +95,32 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["paired_samples"][0]["candidate"]["native_metrics"]["status"] == "native-test"
     assert payload["candidate_native_metrics"]["train_loop_wall_ms"]["mean"] == 12.5
     assert payload["candidate_native_metrics"]["train_tokens_per_second"]["mean"] == 42.0
+
+
+def test_paired_kernel_speed_tool_extracts_llm_kittens_step_metrics() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    stdout = """
+device memory usage: 28819 MiB / 32606 MiB
+step    1/1 | loss 11.032360 (+nanz)| norm 22.1408 (+nanz)| lr 1.00e-05 | 2493.74 ms | 40.3% bf16 MFU | 210242 tok/s
+"""
+
+    metrics = module.native_metrics_from_stdout(stdout)
+    assert metrics["status"] == "llm-kittens-step-log"
+    assert metrics["train_loop_wall_ms"] == 2493.74
+    assert metrics["train_tokens_per_second"] == 210242.0
+    assert metrics["llm_kittens_bf16_mfu_pct"] == 40.3
+    assert metrics["llm_kittens_device_memory_used_mib"] == 28819
+    assert metrics["llm_kittens_device_memory_total_mib"] == 32606
 
 
 def test_paired_kernel_speed_tool_records_command_timeout() -> None:

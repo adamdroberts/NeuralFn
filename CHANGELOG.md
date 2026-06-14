@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Parse llm.kittens metrics in paired kernel benchmarks
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now parses llm.kittens
+  `step ... ms ... bf16 MFU ... tok/s` output when a command does not emit
+  NeuralFn native JSON. The parsed step time, token throughput, BF16 MFU, and
+  device-memory line are reported through the same `baseline_native_metrics`
+  and `candidate_native_metrics` summaries used for NeuralFn native runs, so
+  direct `train_gpt2cu` baselines can be compared against NeuralFn candidates
+  in one paired script.
+
+#### Verification
+
+- Ran `python -m pytest tests/test_tile_cuda_examples.py -q -k
+  "paired_kernel_speed_tool_compiles_and_smokes or
+  paired_kernel_speed_tool_extracts_llm_kittens_step_metrics"`.
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran a dedicated RTX 5090 paired comparison between llm.kittens
+  `train_gpt2cu` and NeuralFn `nfn_gpt_native_train`; the helper reported
+  llm.kittens `train_loop_wall_ms` / `train_tokens_per_second` in
+  `baseline_native_metrics` and NeuralFn JSON metrics in
+  `candidate_native_metrics`.
+- Ran `git diff --check`.
+
 ### 2026-06-14 Add timeout handling to paired native benchmarks
 
 #### Changed

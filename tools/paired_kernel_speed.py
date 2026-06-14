@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import subprocess
 import time
@@ -38,6 +39,19 @@ NATIVE_METRIC_PATHS = (
     ("linear_bf16_a_cache_hit_count", ("linear_bf16_a_cache_hit_count",)),
     ("attention_forward_tk_launch_count", ("attention_forward_tk_launch_count",)),
     ("attention_backward_tk_launch_count", ("attention_backward_tk_launch_count",)),
+)
+
+LLM_KITTENS_STEP_RE = re.compile(
+    r"^step\s+\d+/\d+\s+\|.*?\|\s+"
+    r"(?P<step_ms>[0-9]+(?:\.[0-9]+)?)\s+ms\s+\|\s+"
+    r"(?P<mfu>[0-9]+(?:\.[0-9]+)?)%\s+bf16\s+MFU\s+\|\s+"
+    r"(?P<tok_s>[0-9]+(?:\.[0-9]+)?)\s+tok/s\s*$",
+    re.MULTILINE,
+)
+LLM_KITTENS_MEMORY_RE = re.compile(
+    r"^device memory usage:\s+"
+    r"(?P<used>[0-9]+)\s+MiB\s+/\s+(?P<total>[0-9]+)\s+MiB\s*$",
+    re.MULTILINE,
 )
 
 
@@ -101,7 +115,7 @@ def value_at_path(payload: dict[str, Any], path: Sequence[str]) -> Any:
 def native_metrics_from_stdout(stdout: str) -> dict[str, float | int | str | bool]:
     payload = extract_json_object(stdout)
     if payload is None:
-        return {}
+        return llm_kittens_metrics_from_stdout(stdout)
     metrics: dict[str, float | int | str | bool] = {}
     for name, path in NATIVE_METRIC_PATHS:
         value = value_at_path(payload, path)
@@ -136,6 +150,23 @@ def native_metrics_from_stdout(stdout: str) -> dict[str, float | int | str | boo
                     value = stage.get(source_key)
                     if isinstance(value, (int, float)) and not isinstance(value, bool):
                         metrics[f"{metric_name}.{suffix}"] = value
+    return metrics
+
+
+def llm_kittens_metrics_from_stdout(stdout: str) -> dict[str, float | int | str | bool]:
+    metrics: dict[str, float | int | str | bool] = {}
+    step_matches = list(LLM_KITTENS_STEP_RE.finditer(stdout))
+    if step_matches:
+        last_step = step_matches[-1]
+        metrics["status"] = "llm-kittens-step-log"
+        metrics["train_loop_wall_ms"] = float(last_step.group("step_ms"))
+        metrics["train_tokens_per_second"] = float(last_step.group("tok_s"))
+        metrics["llm_kittens_bf16_mfu_pct"] = float(last_step.group("mfu"))
+        metrics["llm_kittens_step_log_count"] = len(step_matches)
+    memory_match = LLM_KITTENS_MEMORY_RE.search(stdout)
+    if memory_match:
+        metrics["llm_kittens_device_memory_used_mib"] = int(memory_match.group("used"))
+        metrics["llm_kittens_device_memory_total_mib"] = int(memory_match.group("total"))
     return metrics
 
 
@@ -472,6 +503,8 @@ def print_text(payload: dict[str, object]) -> None:
         for key in (
             "train_loop_wall_ms",
             "train_tokens_per_second",
+            "llm_kittens_bf16_mfu_pct",
+            "llm_kittens_device_memory_used_mib",
             "setup_wall_ms",
             "checkpoint_wall_ms",
             "total_wall_ms",
@@ -494,6 +527,7 @@ def print_text(payload: dict[str, object]) -> None:
         for key in (
             "train_loop_wall_ms",
             "train_tokens_per_second",
+            "llm_kittens_bf16_mfu_pct",
             "total_wall_ms",
             "stage.lm_head_backward.total_ms",
             "stage.block_backward.total_ms",
