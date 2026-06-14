@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT Tile BF16 bias-in-place
+
+#### Changed
+
+- Added a CUDA Tile implementation for the BF16 bits bias-in-place helper used
+  by the packed-QKV dense GPT forward path. The scalar CUDA kernel remains
+  compiled as a diagnostic fallback.
+- The Tile implementation is enabled by default. Set
+  `NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE=0`,
+  `NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE=0`, or
+  `NFN_NATIVE_GPT2_BF16_BIAS_INPLACE_TILE=0` to compare against the older
+  scalar CUDA bias kernel.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh` and rebuilt
+  `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step TinyStories probe on the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and
+  `NFN_NATIVE_GPT_STAGE_TIMING=1`. The run completed with no missing symbols
+  and reported `block_forward.attention.qkv_layout` at about `0.390 ms` per
+  block.
+- Ran `tools/paired_kernel_speed.py` on GPU 0 with one warmup pair and five
+  measured pairs comparing `NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE=0` against the
+  default Tile kernel. The benchmark recorded GPU 0 as
+  `NVIDIA GeForce RTX 5090`, `0%` utilization, about `399/32607` MiB used, and
+  no compute processes before timing. The Tile candidate reported
+  `candidate_over_baseline` mean `0.997901`, median `0.997173`, min
+  `0.995190`, and max `1.002785`.
+
 ### 2026-06-14 Native GPT BF16 validation loss
 
 #### Changed

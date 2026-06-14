@@ -412,6 +412,56 @@ __global__ void bf16_bits_add_bias_inplace_kernel(
   values[idx] = f32_to_bf16_bits_device(bf16_bits_to_f32_device(values[idx]) + bias[col]);
 }
 
+__tile_global__ void bf16_bits_add_bias_inplace_tile_float32_kernel(
+    std::uint16_t* __restrict__ values_bf16_bits,
+    const float* __restrict__ bias,
+    std::int64_t n,
+    std::int64_t output_dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  auto* values = ct::assume_aligned(reinterpret_cast<__nv_bfloat16*>(values_bf16_bits), 16_ic);
+  bias = ct::assume_aligned(bias, 16_ic);
+
+  const int bx = ct::bid().x;
+  using Shape = decltype(ct::shape{1024_ic});
+  using IndexTile = ct::tile<std::int64_t, Shape>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto col = idx % ct::full<IndexTile>(output_dim);
+  auto value = ct::element_cast<float>(ct::load_masked(values + idx, mask));
+  auto bias_value = ct::load_masked(bias + col, mask);
+  ct::store_masked(values + idx, ct::element_cast<__nv_bfloat16>(value + bias_value), mask);
+}
+
+bool bf16_bits_add_bias_tile_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_BF16_BIAS_INPLACE_TILE");
+    }
+    if (value == nullptr) {
+      return true;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
 bool use_tk_sm120_attention(
     std::int64_t query_heads,
     std::int64_t key_heads,
@@ -9644,9 +9694,15 @@ void launch_linear_weight_bf16_output_float32(
           true,
           stream)) {
     if (has_bias) {
-      constexpr int threads = 256;
-      const int blocks = static_cast<int>((n + threads - 1) / threads);
-      bf16_bits_add_bias_inplace_kernel<<<blocks, threads, 0, stream>>>(out_bf16_bits, bias, n, output_dim);
+      if (bf16_bits_add_bias_tile_enabled()) {
+        const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+        bf16_bits_add_bias_inplace_tile_float32_kernel<<<blocks, 1, 0, stream>>>(
+            out_bf16_bits, bias, n, output_dim);
+      } else {
+        constexpr int threads = 256;
+        const int blocks = static_cast<int>((n + threads - 1) / threads);
+        bf16_bits_add_bias_inplace_kernel<<<blocks, threads, 0, stream>>>(out_bf16_bits, bias, n, output_dim);
+      }
     }
     return;
   }
@@ -9664,9 +9720,14 @@ void launch_bf16_bits_add_bias_inplace_float32(
     std::int64_t output_dim,
     cudaStream_t stream) {
   const std::int64_t n = rows * output_dim;
-  constexpr int threads = 256;
-  const int blocks = static_cast<int>((n + threads - 1) / threads);
-  bf16_bits_add_bias_inplace_kernel<<<blocks, threads, 0, stream>>>(values, bias, n, output_dim);
+  if (bf16_bits_add_bias_tile_enabled()) {
+    const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+    bf16_bits_add_bias_inplace_tile_float32_kernel<<<blocks, 1, 0, stream>>>(values, bias, n, output_dim);
+  } else {
+    constexpr int threads = 256;
+    const int blocks = static_cast<int>((n + threads - 1) / threads);
+    bf16_bits_add_bias_inplace_kernel<<<blocks, threads, 0, stream>>>(values, bias, n, output_dim);
+  }
 }
 
 void launch_linear_bf16_input_bits_float32(

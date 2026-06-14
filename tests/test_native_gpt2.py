@@ -3359,6 +3359,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "f32_to_bf16_bits_kernel" in kernels_text
     assert "f32_to_bf16_bits_many_kernel" in kernels_text
     assert "bf16_bits_add_bias_inplace_kernel" in kernels_text
+    assert "bf16_bits_add_bias_inplace_tile_float32_kernel" in kernels_text
     assert "launch_linear_bf16_float32" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_float32_to_bf16_bits" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_bits_a_float32_to_bf16_bits" in kernels_text
