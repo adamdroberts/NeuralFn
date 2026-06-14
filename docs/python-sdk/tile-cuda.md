@@ -100,6 +100,7 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_TRAIN_BIN`. Runtime tuning also prefers
 `NFN_NATIVE_GPT_STAGE_TIMING`, `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION`,
 `NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS`,
+`NFN_NATIVE_GPT_STORE_MLP_BLOCKS`,
 `NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS`,
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS`,
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS`,
@@ -364,8 +365,8 @@ The backward pass reuses the final block activations that remain in the scratch
 tape after the initial forward pass, so only the earlier blocks are recomputed;
 the default JSON reports `backward_recompute_blocks: 11` and
 `final_block_backward_recompute_elided: true`. The default workstation path
-stores earlier-block `ln2_out`, MLP preactivation, and GELU activation tensors
-into a BF16 arena during forward,
+stores all trained blocks' `ln2_out`, MLP preactivation, and GELU activation
+tensors into a BF16 arena during forward,
 consumes them directly for MLP dWeight and GELU backward, and writes the stored
 preactivation plus GELU activation through
 `nfn_native_tile_linear_bf16_gelu_bf16_float32`. Supported SM120 GPT-2 shapes use
@@ -377,8 +378,9 @@ the generic CUDA kernel. The trainer reports `mlp_activation_storage_strategy`,
 `stored_mlp_activation_restore_kernel_launches`, and
 `stored_mlp_activation_backward_consumer_strategy`, plus
 `backward_recompute_mlp_fc_gelu_elided`. Set
-`NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS=0` to disable that higher-memory path and
-use pure scratch recompute. Rebuild
+`NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS=0` to disable that higher-memory path or
+`NFN_NATIVE_GPT_STORE_MLP_BLOCKS=N` to tune the saved-block cap; GPT-2-prefixed
+names remain fallbacks. Rebuild
 the trainer-facing Tile ops library after updating, since the compiled GPT-2
 trainer now requires `nfn_native_tile_bf16_bits_to_float32`,
 `nfn_native_tile_store_mlp_activations_bf16_float32`, and
@@ -593,7 +595,7 @@ saved path; the current `64 x 1024` TinyStories probe still regresses to about
 6.0k tokens/s because saved-attention backward dominates the step, so the
 default remains the faster recompute plus process-workspace reuse path.
 
-Full GPT `--train-transformer-lm` now defaults to the packed-QKV attention layout. It writes the no-bias QKV projection as packed BF16 bits, applies QKV bias in place, runs the SM120 TK packed attention bridge over that row-major packed QKV tensor, and feeds the packed BF16 attention output directly into the attention projection forward GEMM and dWeight accumulation. Native plan and training JSON report `qkv_forward_layout_strategy: "packed-qkv-bf16-no-split"`, `qkv_bias_layout_strategy: "packed-qkv-bf16-bias-inplace"`, `attention_projection_input_strategy: "packed-o-bf16-direct-gemm"`, `attention_packed_output_unpack_strategy: "elided-direct-bf16-projection"`, `attention_backward_qkv_bridge_strategy: "tk-sm120-packed-qkv-packed-grad-bridge"`, and `attention_backward_strategy: "tk-sm120-packed-qkv-bf16-backward-bridge"` when the default path is active. Set `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=0` only when comparing against the older split-to-heads bridge. The packed backward batch cap defaults to 64 so the workstation `64 x 1024` microbatch runs as one TK backward chunk; set `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48` to reproduce the previous split for paired benchmarks. `attention_backward_tk_launch_count` now counts packed backward chunks instead of only wrapper calls. When `NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS=1` is set with the split path, runtime JSON switches `attention_activation_storage_strategy` to `"tk-bf16-direct-forward-store-saved-backward"`, `attention_backward_strategy` to `"tk-sm120-bf16-saved-forward-workspace-bridge"`, and reports saved-attention arena sizes plus store/restore/backward counts. For the packed path, the trainer stores packed BF16 QKV plus packed BF16 O for the first eleven earlier blocks by default on the RTX 5090 workstation shape; runtime JSON reports `packed_attention_activation_storage_strategy: "packed-qkv-o-bf16-forward-store-direct-backward"`, `stored_packed_attention_activation_blocks: 11`, `stored_packed_attention_*` counts/bytes, `attention_backward_strategy: "tk-sm120-packed-qkv-bf16-saved-activation-backward-bridge"`, and `block_recompute_saved_packed_attention` timing. Set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` for the previous lower-memory recompute route, or set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` to tune the saved-block cap. The GPT-2-prefixed variables remain fallbacks for existing scripts.
+Full GPT `--train-transformer-lm` now defaults to the packed-QKV attention layout. It writes the no-bias QKV projection as packed BF16 bits, applies QKV bias in place, runs the SM120 TK packed attention bridge over that row-major packed QKV tensor, and feeds the packed BF16 attention output directly into the attention projection forward GEMM and dWeight accumulation. Native plan and training JSON report `qkv_forward_layout_strategy: "packed-qkv-bf16-no-split"`, `qkv_bias_layout_strategy: "packed-qkv-bf16-bias-inplace"`, `attention_projection_input_strategy: "packed-o-bf16-direct-gemm"`, `attention_packed_output_unpack_strategy: "elided-direct-bf16-projection"`, `attention_backward_qkv_bridge_strategy: "tk-sm120-packed-qkv-packed-grad-bridge"`, and `attention_backward_strategy: "tk-sm120-packed-qkv-bf16-backward-bridge"` when the default path is active. Set `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=0` only when comparing against the older split-to-heads bridge. The packed backward batch cap defaults to 64 so the workstation `64 x 1024` microbatch runs as one TK backward chunk; set `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48` to reproduce the previous split for paired benchmarks. `attention_backward_tk_launch_count` now counts packed backward chunks instead of only wrapper calls. When `NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS=1` is set with the split path, runtime JSON switches `attention_activation_storage_strategy` to `"tk-bf16-direct-forward-store-saved-backward"`, `attention_backward_strategy` to `"tk-sm120-bf16-saved-forward-workspace-bridge"`, and reports saved-attention arena sizes plus store/restore/backward counts. For the packed path, the trainer stores packed BF16 QKV plus packed BF16 O for all 12 trained blocks by default on the dedicated RTX 5090 workstation shape; runtime JSON reports `packed_attention_activation_storage_strategy: "packed-qkv-o-bf16-forward-store-direct-backward"`, `stored_packed_attention_activation_blocks: 12`, `stored_packed_attention_*` counts/bytes, `attention_backward_strategy: "tk-sm120-packed-qkv-bf16-saved-activation-backward-bridge"`, and `block_recompute_saved_packed_attention` timing. Set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` for the previous lower-memory recompute route, or set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` to tune the saved-block cap. The GPT-2-prefixed variables remain fallbacks for existing scripts.
 
 Full GPT-2 `--train-transformer-lm` also fuses the MLP `c_fc` bias add with
 GELU. `nfn_native_tile_gelu_add_bias_float32` consumes the no-bias CUBLAS

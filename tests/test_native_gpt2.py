@@ -3662,13 +3662,16 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "mlp.gelu.backward_inplace.bf16_bits" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_STORE_MLP_BLOCKS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_STORE_MLP_BLOCKS" in gpt2_source_text
+    assert "kDefaultStoredMlpBlocks = 12" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_ATTENTION_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS" in gpt2_source_text
-    assert "kDefaultStoredPackedAttentionBlocks = 11" in gpt2_source_text
+    assert "kDefaultStoredPackedAttentionBlocks = 12" in gpt2_source_text
     assert "kDefaultLmHeadRowChunkSize = 4096" in gpt2_source_text
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text

@@ -6,6 +6,47 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT all-block activation storage default
+
+#### Changed
+
+- Native dense GPT Tile-CUDA training now saves BF16 MLP activations and packed
+  BF16 QKV/O attention tensors for all trained blocks by default on the
+  workstation shape instead of capping storage at the first 11 blocks. This
+  keeps the final block on the same fused stored-activation path as earlier
+  blocks.
+- Added `NFN_NATIVE_GPT_STORE_MLP_BLOCKS=N` and
+  `NFN_NATIVE_GPT2_STORE_MLP_BLOCKS=N` as saved-MLP block-count overrides. The
+  existing `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` cap can now select
+  the final block as well. The default caps are now 12.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh` and rebuilt
+  `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step probe on the dedicated RTX 5090:
+  `env CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1
+  NFN_NATIVE_GPT_STORE_MLP_BLOCKS=12
+  NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=12
+  build/nfn_gpt_native_train --tinystories --max-steps 1
+  --eval-every-steps 0 --no-checkpoint --allow-train-val-fallback
+  --tile-ops-lib build/libnfn_native_train_tile_ops.so`. It completed without
+  OOM and reported `stored_mlp_activation_blocks: 12`,
+  `stored_packed_attention_activation_blocks: 12`, and about `153,412`
+  train tokens/s.
+- Ran `tools/paired_kernel_speed.py` on GPU 0 with one warmup pair and three
+  measured pairs comparing the previous default against
+  `NFN_NATIVE_GPT_STORE_MLP_BLOCKS=12
+  NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=12`; the helper recorded GPU 0 as
+  `NVIDIA GeForce RTX 5090`, `0%` utilization, about `508/32607` MiB used, and
+  no compute processes before timing. The candidate reported
+  `candidate_over_baseline` mean `0.993963`.
+- Rejected disabling cuBLASLt for BF16 backward-input GEMMs after a paired
+  benchmark reported `candidate_over_baseline` mean `1.005956`.
+- Rejected disabling the BF16 cuBLASLt `BGRADB` epilogue after a paired
+  benchmark reported `candidate_over_baseline` mean `1.095258`.
+
 ### 2026-06-14 Native GPT dedicated CUDA device default
 
 #### Changed

@@ -32,7 +32,8 @@ namespace {
 
 constexpr std::int64_t kAttentionForwardValueReuse = 64;
 constexpr std::int64_t kAttentionBackwardDimReuse = 64;
-constexpr std::int64_t kDefaultStoredPackedAttentionBlocks = 11;
+constexpr std::int64_t kDefaultStoredMlpBlocks = 12;
+constexpr std::int64_t kDefaultStoredPackedAttentionBlocks = 12;
 constexpr int kDefaultLmHeadRowChunkSize = 4096;
 
 struct Config {
@@ -1103,7 +1104,7 @@ bool print_tile_plan(
     const std::int64_t stored_packed_attention_block_count =
         store_packed_attention_activations_enabled && cfg.num_layers > 0
             ? std::min<std::int64_t>(
-                  cfg.num_layers - 1,
+                  cfg.num_layers,
                   env_nonnegative_i64_or({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS",
                                           "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS"},
                                          kDefaultStoredPackedAttentionBlocks))
@@ -7790,7 +7791,13 @@ int run_transformer_lm_training_json(
     std::vector<TransformerBlockActivations> block_tapes(static_cast<std::size_t>(kActivationTapeCount));
     std::vector<float*> block_outputs(static_cast<std::size_t>(persistent_block_output_count), nullptr);
     const std::int64_t stored_mlp_activation_block_count =
-        store_mlp_activations_enabled && trained_layers > 0 ? trained_layers - 1 : 0;
+        store_mlp_activations_enabled && trained_layers > 0
+            ? std::min<std::int64_t>(
+                  trained_layers,
+                  env_nonnegative_i64_or({"NFN_NATIVE_GPT_STORE_MLP_BLOCKS",
+                                          "NFN_NATIVE_GPT2_STORE_MLP_BLOCKS"},
+                                         kDefaultStoredMlpBlocks))
+            : 0;
     const std::int64_t stored_mlp_activation_elements_per_block = activation_elements + hidden_elements * 2;
     const std::int64_t stored_mlp_activation_elements =
         stored_mlp_activation_block_count * stored_mlp_activation_elements_per_block;
@@ -7829,7 +7836,7 @@ int run_transformer_lm_training_json(
     const std::int64_t stored_packed_attention_block_count =
         store_packed_attention_activations_enabled && trained_layers > 0
             ? std::min<std::int64_t>(
-                  trained_layers - 1,
+                  trained_layers,
                   env_nonnegative_i64_or({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS",
                                           "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS"},
                                          kDefaultStoredPackedAttentionBlocks))
