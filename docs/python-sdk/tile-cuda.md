@@ -550,7 +550,12 @@ reports `token_buffer_allocation_strategy: "combined-arenas"`,
 `token_device_cuda_mallocs_elided`.
 LayerNorm affine-gradient backward has an accumulate raw Tile ABI and uses a
 chunked parallel atomic reduction for large row counts, avoiding the previous
-single-block loop over every row and the scratch-copy pass. JSON reports
+single-block loop over every row and the scratch-copy pass. The LayerNorm
+affine row chunk now defaults to 256 rows; set
+`NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N`,
+`NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N`, or
+`NFN_NATIVE_GPT2_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N` to compare chunk sizes in
+paired native benchmarks. JSON reports
 `layer_norm_backward_affine_strategy: "auto-chunked-atomic-accumulate"` under
 `block_state_layout`.
 

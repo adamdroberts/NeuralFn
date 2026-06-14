@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 LayerNorm affine row-chunk tuning for native GPT
+
+#### Changed
+
+- Tile-CUDA LayerNorm affine-gradient large-row reductions now default to
+  256-row chunks instead of inheriting the 512-row Linear bias-gradient chunk.
+  This improves row-level parallelism for the dense GPT `64 x 1024` RTX 5090
+  training shape while leaving Linear bias-gradient chunking unchanged.
+- Added `NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE`, with
+  `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE` and
+  `NFN_NATIVE_GPT2_LAYERNORM_AFFINE_ROW_CHUNK_SIZE` aliases, so native paired
+  benchmarks can compare LayerNorm affine row chunk sizes without rebuilding.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran `build/nfn_gpt_native_train --smoke-transformer-lm-step --backend
+  tile-cuda` on GPU 0 with `CUDA_VISIBLE_DEVICES=0` and
+  `CUDA_DEVICE_MAX_CONNECTIONS=1`.
+- Compared row chunk candidates in `tools/paired_kernel_speed.py` on the
+  dedicated RTX 5090. The confirmed 256-row run used one warmup pair and four
+  measured pairs, with
+  `candidate_over_baseline_native_metrics.train_loop_wall_ms.mean = 0.996599`
+  and `candidate_over_baseline_native_metrics.train_tokens_per_second.mean =
+  1.003413` versus the old 512-row default.
+
 ### 2026-06-14 Native GPT default fused dGELU float-gradient path
 
 #### Changed

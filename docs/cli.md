@@ -506,7 +506,11 @@ launch instead of one launch per accumulation buffer. JSON reports
 `gradient_zero_per_buffer_launches_elided`.
 LayerNorm affine-gradient backward has an accumulate ABI and uses a chunked
 parallel atomic reduction for large row counts instead of one CUDA block looping
-over all rows. JSON reports
+over all rows. The LayerNorm affine row chunk now defaults to 256 rows; set
+`NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N`,
+`NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N`, or
+`NFN_NATIVE_GPT2_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N` to run paired chunk-size
+experiments without rebuilding. JSON reports
 `block_state_layout.layer_norm_backward_affine_strategy:
 "auto-chunked-atomic-accumulate"`.
 

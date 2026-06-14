@@ -33,6 +33,7 @@ constexpr int kGpt2AttentionHeads = 12;
 constexpr int kGpt2AttentionHeadDim = 64;
 constexpr int kGpt2AttentionValueChunks = kGpt2AttentionHeadDim / kAttentionValueChunkSize;
 constexpr std::int64_t kTkPackedAttentionBackwardDefaultMaxBatchPerLaunch = 64;
+constexpr std::int64_t kLayerNormBackwardAffineDefaultRowChunkSize = 256;
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
 std::atomic<std::int64_t> g_attention_forward_tk_launch_count{0};
 std::atomic<std::int64_t> g_attention_backward_tk_launch_count{0};
@@ -72,6 +73,28 @@ std::atomic<std::int64_t> g_linear_bf16_cached_a_capacity{0};
 std::atomic<std::int64_t> g_linear_bf16_cache_entry_count{0};
 #endif
 std::atomic<bool> g_attention_forward_row_launch_disabled{false};
+
+std::int64_t layer_norm_backward_affine_row_chunk_size() {
+  static const std::int64_t value = []() {
+    const char* raw = std::getenv("NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE");
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE");
+    }
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT2_LAYERNORM_AFFINE_ROW_CHUNK_SIZE");
+    }
+    if (raw == nullptr || raw[0] == '\0') {
+      return kLayerNormBackwardAffineDefaultRowChunkSize;
+    }
+    char* end = nullptr;
+    const long long parsed = std::strtoll(raw, &end, 10);
+    if (end == raw || (end != nullptr && *end != '\0') || parsed <= 0) {
+      return kLayerNormBackwardAffineDefaultRowChunkSize;
+    }
+    return static_cast<std::int64_t>(parsed);
+  }();
+  return value;
+}
 
 __tile_global__ void fill_float32_kernel(
     float* __restrict__ values,
@@ -9441,7 +9464,7 @@ void launch_layer_norm_backward_affine_float32(
     float eps,
     cudaStream_t stream) {
   if (rows > 1024) {
-    constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
+    const std::int64_t kRowChunkSize = layer_norm_backward_affine_row_chunk_size();
     const std::int64_t dim_blocks = (dim + kTileSize - 1) / kTileSize;
     const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
     cudaMemsetAsync(grad_weight, 0, sizeof(float) * static_cast<std::size_t>(dim), stream);
@@ -9467,7 +9490,7 @@ void launch_layer_norm_backward_affine_accumulate_float32(
     float eps,
     cudaStream_t stream) {
   if (rows > 1024) {
-    constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
+    const std::int64_t kRowChunkSize = layer_norm_backward_affine_row_chunk_size();
     const std::int64_t dim_blocks = (dim + kTileSize - 1) / kTileSize;
     const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
     layer_norm_backward_affine_chunked_atomic_float32_kernel<<<
@@ -9492,7 +9515,7 @@ void launch_layer_norm_backward_affine_accumulate_with_stats_float32(
     std::int64_t dim,
     cudaStream_t stream) {
   if (rows > 1024) {
-    constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
+    const std::int64_t kRowChunkSize = layer_norm_backward_affine_row_chunk_size();
     const std::int64_t dim_blocks = (dim + kTileSize - 1) / kTileSize;
     const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
     layer_norm_backward_affine_chunked_atomic_with_stats_float32_kernel<<<
@@ -9517,7 +9540,7 @@ void launch_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32(
     std::int64_t dim,
     cudaStream_t stream) {
   if (rows > 1024) {
-    constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
+    const std::int64_t kRowChunkSize = layer_norm_backward_affine_row_chunk_size();
     const std::int64_t dim_blocks = (dim + kTileSize - 1) / kTileSize;
     const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
     layer_norm_backward_affine_chunked_atomic_with_stats_bf16_bits_float32_kernel<<<
