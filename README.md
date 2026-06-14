@@ -56,9 +56,9 @@ parses llm.kittens `step ... ms ... tok/s` logs, so direct
 NeuralFn-vs-`train_gpt2cu` comparisons report both trainers' in-loop step time
 and token throughput in the same paired JSON.
 
-The native dense-GPT BF16 LM-head CE backward path now traverses rows in
-reverse block order, matching the llm.kittens fused-classifier cache-locality
-pattern for logits that were just produced by the tied LM-head GEMM.
+The native dense-GPT BF16 LM-head CE backward path keeps the forward
+row-chunk order because paired dedicated-RTX-5090 timing showed reverse chunk
+traversal was neutral-to-slower for the current tied LM-head workspace.
 The BF16 linear operand cache is limited to stable operands such as weights;
 LM-head dWeight repacks the mutable hidden activation chunks each microbatch so
 gradient accumulation does not reuse stale packed activations.
