@@ -6,6 +6,52 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Dense GPT LM-head row chunk retune to 8192
+
+#### Changed
+
+- Dense GPT native training now defaults the tied LM-head row chunk to 8192
+  rows across the compiled C++ trainer, Python native wrapper, and SDK config.
+  This reduces the default full-vocab LM-head chunk count from 16 to 8 at the
+  `64 x 1024` workstation microbatch.
+
+#### Breaking changes
+
+- Callers that relied on the implicit 4096-row tied LM-head workspace should
+  pass `--lm-head-row-chunk-size 4096`,
+  `--native-cuda-lm-head-row-chunk-size 4096`, or
+  `NativeGpt2RunConfig(lm_head_row_chunk_size=4096, ...)` to keep the older
+  lower-memory profile.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran focused default/config coverage:
+  `python -m pytest tests/test_native_gpt2.py -q -k
+  "build_native_gpt2_run_config_matches_sm120_cli_shape or
+  build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shard_inspection
+  or native_train_tile_ops_builds_torch_free_c_abi"` (`2 passed`, `1 skipped`).
+- Verified syntax and formatting with
+  `python -m py_compile neuralfn/native_gpt2.py cli/scripts/train_gpt_native.py`
+  and `git diff --check`.
+- Ran a two-step train-only stage profile on the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0` and `CUDA_DEVICE_MAX_CONNECTIONS=1`; current default
+  timing was about `6.56s` for two optimizer steps and `159,931` train tokens/s
+  before this retune.
+- Ran `tools/paired_kernel_speed.py` with one warmup pair and three measured
+  pairs comparing the current 4096-row default against `--lm-head-row-chunk-size
+  8192`. The benchmark recorded GPU 0 as `NVIDIA GeForce RTX 5090`, `0%`
+  utilization, about `454/32607` MiB used, and no compute processes before
+  timing. The 8192-row candidate reported `candidate_over_baseline` mean
+  `0.998067`, median `0.997965`, min `0.997729`, and max `0.998505`.
+- Rejected `--lm-head-row-chunk-size 16384` after an interleaved paired run
+  reported `candidate_over_baseline` mean `1.655394`.
+- Ran a post-change one-step CUDA Tile probe on the dedicated RTX 5090. Runtime
+  JSON reported `lm_head_row_chunk_size: 8192`,
+  `lm_head_row_chunk_count: 8`, `lm_head_bf16_logits_enabled: true`,
+  no missing symbols, and `passed: true`.
+
 ### 2026-06-14 Generic native train SDK binding command selection
 
 #### Changed
