@@ -297,6 +297,26 @@ int nfn_native_tile_adamw_step_many_with_device_scale_float32(
     float sqrt_bias_correction2,
     void* cuda_stream);
 
+int nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32(
+    float* const* params,
+    const float* const* grads,
+    const float* grad_scale,
+    float* const* exp_avgs,
+    float* const* exp_avg_sqs,
+    const std::int64_t* elements,
+    const float* weight_decays,
+    const std::int64_t* bf16_shadow_offsets,
+    std::uint16_t* bf16_shadow_bits,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    float lr,
+    float beta1,
+    float beta2,
+    float eps,
+    float bias_correction1,
+    float sqrt_bias_correction2,
+    void* cuda_stream);
+
 int nfn_native_tile_linear_float32(
     const float* x,
     const float* weight,

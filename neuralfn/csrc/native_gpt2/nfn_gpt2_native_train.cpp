@@ -739,6 +739,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_adamw_step_float32",
         "nfn_native_tile_adamw_step_with_device_scale_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_float32",
+        "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32",
         "nfn_native_tile_token_embedding_float32",
         "nfn_native_tile_token_embedding_backward_weight_float32",
         "nfn_native_tile_absolute_position_embedding_float32",
@@ -6866,6 +6867,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_adamw_step_float32",
         "nfn_native_tile_adamw_step_with_device_scale_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_float32",
+        "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32",
     };
 
     using FillFn = int (*)(float*, std::int64_t, float, void*);
@@ -7036,6 +7038,10 @@ int run_transformer_lm_training_json(
         float* const*, const float* const*, const float*, float* const*, float* const*,
         const std::int64_t*, const float*, std::int64_t, std::int64_t,
         float, float, float, float, float, float, void*);
+    using AdamWManyWithDeviceScaleBf16ShadowFn = int (*)(
+        float* const*, const float* const*, const float*, float* const*, float* const*,
+        const std::int64_t*, const float*, const std::int64_t*, std::uint16_t*,
+        std::int64_t, std::int64_t, float, float, float, float, float, float, void*);
     using FillManyFn = int (*)(float* const*, const std::int64_t*, std::int64_t, std::int64_t, float, void*);
     using InitGpt2TokenWeightFn = int (*)(float*, std::int64_t, void*);
     using CudaMallocFn = int (*)(void**, std::size_t);
@@ -7161,6 +7167,7 @@ int run_transformer_lm_training_json(
     TokenCrossEntropyBackwardInplaceBf16BitsWorkspaceFn ce_backward_inplace_bf16_bits_workspace = nullptr;
     FillManyFn fill_many = nullptr;
     AdamWManyWithDeviceScaleFn adamw_many_with_device_scale = nullptr;
+    AdamWManyWithDeviceScaleBf16ShadowFn adamw_many_with_device_scale_bf16_shadow = nullptr;
     CudaMallocFn cuda_malloc = nullptr;
     CudaFreeFn cuda_free = nullptr;
     CudaMemcpyFn cuda_memcpy = nullptr;
@@ -7433,6 +7440,10 @@ int run_transformer_lm_training_json(
                         tile_handle, "nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace");
                 adamw_many_with_device_scale = load_symbol<AdamWManyWithDeviceScaleFn>(
                     tile_handle, "nfn_native_tile_adamw_step_many_with_device_scale_float32");
+                adamw_many_with_device_scale_bf16_shadow =
+                    load_symbol<AdamWManyWithDeviceScaleBf16ShadowFn>(
+                        tile_handle,
+                        "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32");
             }
         }
     }
@@ -7574,6 +7585,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU",
                               "NFN_NATIVE_GPT2_REUSE_PACKED_LN2_FC_GELU"}),
             true);
+    const bool fuse_adamw_bf16_shadow_refresh_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_FUSE_ADAMW_BF16_SHADOW_REFRESH",
+                              "NFN_NATIVE_GPT2_FUSE_ADAMW_BF16_SHADOW_REFRESH"}),
+            false);
     const bool packed_qkv_float_attention_tape_elided = packed_qkv_attention_enabled;
     const std::int64_t packed_qkv_float_attention_tape_elements_elided =
         packed_qkv_float_attention_tape_elided
@@ -7736,6 +7752,7 @@ int run_transformer_lm_training_json(
     float** adamw_avg_ptrs = nullptr;
     float** adamw_avg_sq_ptrs = nullptr;
     std::int64_t* adamw_elements = nullptr;
+    std::int64_t* adamw_bf16_shadow_offsets = nullptr;
     std::int64_t* gradient_partial_offsets = nullptr;
     float* adamw_weight_decays = nullptr;
     float** parameter_fill_ptrs = nullptr;
@@ -7769,7 +7786,7 @@ int run_transformer_lm_training_json(
     std::int64_t descriptor_arena_cuda_malloc_count = 0;
     std::int64_t descriptor_arena_suballocation_count = 0;
     std::int64_t descriptor_arena_copy_count = 0;
-    constexpr std::int64_t kDescriptorDeviceTableCount = 13;
+    constexpr std::int64_t kDescriptorDeviceTableCount = 14;
     const std::int64_t descriptor_cuda_mallocs_elided = kDescriptorDeviceTableCount - 1;
     const std::int64_t descriptor_arena_copy_calls_elided = kDescriptorDeviceTableCount - 1;
     auto align_float_arena_offset = [](std::int64_t value) {
@@ -7932,6 +7949,8 @@ int run_transformer_lm_training_json(
     std::vector<TransformerBlockParams> blocks(static_cast<std::size_t>(trained_layers));
     std::vector<TransformerBlockActivations> block_tapes(static_cast<std::size_t>(kActivationTapeCount));
     std::vector<float*> block_outputs(static_cast<std::size_t>(persistent_block_output_count), nullptr);
+    constexpr std::int64_t kBlockWeightBf16ElementsPerBlock =
+        kQkvWeightElements + kAttnProjWeightElements + kFcWeightElements + kMlpProjWeightElements;
     const std::int64_t stored_mlp_activation_block_count =
         store_mlp_activations_enabled && trained_layers > 0
             ? std::min<std::int64_t>(
@@ -8055,6 +8074,7 @@ int run_transformer_lm_training_json(
     std::int64_t block_weight_bf16_arena_elements = 0;
     std::int64_t block_weight_bf16_arena_bytes = 0;
     std::int64_t block_weight_bf16_refresh_count = 0;
+    std::int64_t block_weight_bf16_fused_adamw_refresh_count = 0;
     const float** block_weight_bf16_sources = nullptr;
     std::int64_t* block_weight_bf16_elements = nullptr;
     std::int64_t* block_weight_bf16_offsets = nullptr;
@@ -8365,16 +8385,14 @@ int run_transformer_lm_training_json(
         if (!error.empty() || trained_layers <= 0) {
             return;
         }
-        const std::int64_t elements_per_block =
-            kQkvWeightElements + kAttnProjWeightElements + kFcWeightElements + kMlpProjWeightElements;
-        if (elements_per_block <= 0 ||
-            trained_layers > std::numeric_limits<std::int64_t>::max() / elements_per_block ||
-            elements_per_block * trained_layers >
+        if (kBlockWeightBf16ElementsPerBlock <= 0 ||
+            trained_layers > std::numeric_limits<std::int64_t>::max() / kBlockWeightBf16ElementsPerBlock ||
+            kBlockWeightBf16ElementsPerBlock * trained_layers >
                 static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
             error = "block BF16 weight arena byte size overflow";
             return;
         }
-        const std::int64_t total_elements = elements_per_block * trained_layers;
+        const std::int64_t total_elements = kBlockWeightBf16ElementsPerBlock * trained_layers;
         void* raw = nullptr;
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(total_elements);
         const int status = cuda_malloc(&raw, bytes);
@@ -8387,7 +8405,8 @@ int run_transformer_lm_training_json(
         block_weight_bf16_arena_elements = total_elements;
         block_weight_bf16_arena_bytes = static_cast<std::int64_t>(bytes);
         for (std::size_t i = 0; i < blocks.size(); ++i) {
-            std::uint16_t* base = block_weight_bf16_arena + static_cast<std::int64_t>(i) * elements_per_block;
+            std::uint16_t* base = block_weight_bf16_arena +
+                                  static_cast<std::int64_t>(i) * kBlockWeightBf16ElementsPerBlock;
             TransformerBlockParams& block = blocks[i];
             block.qkv_weight_bf16 = base;
             base += kQkvWeightElements;
@@ -8577,6 +8596,7 @@ int run_transformer_lm_training_json(
         std::vector<float*> avg_sqs;
         std::vector<std::int64_t> elements;
         std::vector<std::int64_t> partial_offsets;
+        std::vector<std::int64_t> bf16_shadow_offsets;
         std::vector<float> decays;
     };
     struct ParameterFillDescriptorHost {
@@ -8597,7 +8617,13 @@ int run_transformer_lm_training_json(
             return;
         }
         std::int64_t partial_offset = 0;
-        auto add = [&](float* param, float* grad, float* avg, float* avg_sq, std::int64_t elements, float decay) {
+        auto add = [&](float* param,
+                       float* grad,
+                       float* avg,
+                       float* avg_sq,
+                       std::int64_t elements,
+                       float decay,
+                       std::int64_t bf16_shadow_offset = -1) {
             if (!error.empty()) {
                 return;
             }
@@ -8615,6 +8641,7 @@ int run_transformer_lm_training_json(
             adamw_host.avg_sqs.push_back(avg_sq);
             adamw_host.elements.push_back(elements);
             adamw_host.partial_offsets.push_back(partial_offset);
+            adamw_host.bf16_shadow_offsets.push_back(bf16_shadow_offset);
             adamw_host.decays.push_back(decay);
             adamw_max_elements = std::max<std::int64_t>(adamw_max_elements, elements);
             partial_offset += partial_count_for(elements);
@@ -8622,18 +8649,21 @@ int run_transformer_lm_training_json(
 
         add(token_weight, accum_grad_token_weight, token_avg, token_avg_sq, kTokenWeightElements, kWeightDecay);
         add(position_weight, accum_grad_position_weight, position_avg, position_avg_sq, position_weight_elements, kWeightDecay);
-        for (TransformerBlockParams& block : blocks) {
+        for (std::size_t i = 0; i < blocks.size(); ++i) {
+            TransformerBlockParams& block = blocks[i];
+            const std::int64_t shadow_base =
+                static_cast<std::int64_t>(i) * kBlockWeightBf16ElementsPerBlock;
             add(block.ln1_weight, block.accum_grad_ln1_weight, block.ln1_weight_avg, block.ln1_weight_avg_sq, kDim, 0.0f);
             add(block.ln1_bias, block.accum_grad_ln1_bias, block.ln1_bias_avg, block.ln1_bias_avg_sq, kDim, 0.0f);
-            add(block.qkv_weight, block.accum_grad_qkv_weight, block.qkv_avg, block.qkv_avg_sq, kQkvWeightElements, kWeightDecay);
+            add(block.qkv_weight, block.accum_grad_qkv_weight, block.qkv_avg, block.qkv_avg_sq, kQkvWeightElements, kWeightDecay, shadow_base);
             add(block.qkv_bias, block.accum_grad_qkv_bias, block.qkv_bias_avg, block.qkv_bias_avg_sq, kQkvDim, 0.0f);
-            add(block.attn_proj_weight, block.accum_grad_attn_proj_weight, block.attn_proj_avg, block.attn_proj_avg_sq, kAttnProjWeightElements, kWeightDecay);
+            add(block.attn_proj_weight, block.accum_grad_attn_proj_weight, block.attn_proj_avg, block.attn_proj_avg_sq, kAttnProjWeightElements, kWeightDecay, shadow_base + kQkvWeightElements);
             add(block.attn_proj_bias, block.accum_grad_attn_proj_bias, block.attn_proj_bias_avg, block.attn_proj_bias_avg_sq, kDim, 0.0f);
             add(block.ln2_weight, block.accum_grad_ln2_weight, block.ln2_weight_avg, block.ln2_weight_avg_sq, kDim, 0.0f);
             add(block.ln2_bias, block.accum_grad_ln2_bias, block.ln2_bias_avg, block.ln2_bias_avg_sq, kDim, 0.0f);
-            add(block.fc_weight, block.accum_grad_fc_weight, block.fc_avg, block.fc_avg_sq, kFcWeightElements, kWeightDecay);
+            add(block.fc_weight, block.accum_grad_fc_weight, block.fc_avg, block.fc_avg_sq, kFcWeightElements, kWeightDecay, shadow_base + kQkvWeightElements + kAttnProjWeightElements);
             add(block.fc_bias, block.accum_grad_fc_bias, block.fc_bias_avg, block.fc_bias_avg_sq, kHidden, 0.0f);
-            add(block.mlp_proj_weight, block.accum_grad_mlp_proj_weight, block.mlp_proj_avg, block.mlp_proj_avg_sq, kMlpProjWeightElements, kWeightDecay);
+            add(block.mlp_proj_weight, block.accum_grad_mlp_proj_weight, block.mlp_proj_avg, block.mlp_proj_avg_sq, kMlpProjWeightElements, kWeightDecay, shadow_base + kQkvWeightElements + kAttnProjWeightElements + kFcWeightElements);
             add(block.mlp_proj_bias, block.accum_grad_mlp_proj_bias, block.mlp_proj_bias_avg, block.mlp_proj_bias_avg_sq, kDim, 0.0f);
         }
         add(lnf_weight, accum_grad_lnf_weight, lnf_weight_avg, lnf_weight_avg_sq, kDim, 0.0f);
@@ -8777,6 +8807,8 @@ int run_transformer_lm_training_json(
         const std::size_t adamw_pointer_bytes = sizeof(float*) * adamw_host.params.size();
         const std::size_t adamw_element_bytes = sizeof(std::int64_t) * adamw_host.elements.size();
         const std::size_t adamw_partial_offset_bytes = sizeof(std::int64_t) * adamw_host.partial_offsets.size();
+        const std::size_t adamw_bf16_shadow_offset_bytes =
+            sizeof(std::int64_t) * adamw_host.bf16_shadow_offsets.size();
         const std::size_t adamw_decay_bytes = sizeof(float) * adamw_host.decays.size();
         const std::size_t fill_pointer_bytes = sizeof(float*) * parameter_fill_host.ptrs.size();
         const std::size_t fill_element_bytes = sizeof(std::int64_t) * parameter_fill_host.elements.size();
@@ -8790,6 +8822,7 @@ int run_transformer_lm_training_json(
         add_region(reinterpret_cast<void**>(&adamw_avg_sq_ptrs), adamw_host.avg_sqs.data(), adamw_pointer_bytes, "adamw_avg_sq_ptrs");
         add_region(reinterpret_cast<void**>(&adamw_elements), adamw_host.elements.data(), adamw_element_bytes, "adamw_elements");
         add_region(reinterpret_cast<void**>(&gradient_partial_offsets), adamw_host.partial_offsets.data(), adamw_partial_offset_bytes, "gradient_partial_offsets");
+        add_region(reinterpret_cast<void**>(&adamw_bf16_shadow_offsets), adamw_host.bf16_shadow_offsets.data(), adamw_bf16_shadow_offset_bytes, "adamw_bf16_shadow_offsets");
         add_region(reinterpret_cast<void**>(&adamw_weight_decays), adamw_host.decays.data(), adamw_decay_bytes, "adamw_weight_decays");
         add_region(reinterpret_cast<void**>(&parameter_fill_ptrs), parameter_fill_host.ptrs.data(), fill_pointer_bytes, "parameter_fill_ptrs");
         add_region(reinterpret_cast<void**>(&parameter_fill_elements), parameter_fill_host.elements.data(), fill_element_bytes, "parameter_fill_elements");
@@ -10232,30 +10265,57 @@ int run_transformer_lm_training_json(
         const float sqrt_bias_correction2 = std::sqrt(1.0f - std::pow(kBeta2, static_cast<float>(step)));
         if (error.empty()) {
             const std::int64_t stage_event = stage_begin("adamw_update");
-            run(adamw_many_with_device_scale(
-                    adamw_param_ptrs,
-                    reinterpret_cast<const float* const*>(adamw_grad_ptrs),
-                    grad_clip_scale,
-                    adamw_avg_ptrs,
-                    adamw_avg_sq_ptrs,
-                    adamw_elements,
-                    adamw_weight_decays,
-                    adamw_descriptor_count,
-                    adamw_max_elements,
-                    static_cast<float>(cfg.learning_rate),
-                    kBeta1,
-                    kBeta2,
-                    kEps,
-                    bias_correction1,
-                    sqrt_bias_correction2,
-                    nullptr),
-                "adamw_many_with_device_scale");
+            if (fuse_adamw_bf16_shadow_refresh_enabled) {
+                run(adamw_many_with_device_scale_bf16_shadow(
+                        adamw_param_ptrs,
+                        reinterpret_cast<const float* const*>(adamw_grad_ptrs),
+                        grad_clip_scale,
+                        adamw_avg_ptrs,
+                        adamw_avg_sq_ptrs,
+                        adamw_elements,
+                        adamw_weight_decays,
+                        adamw_bf16_shadow_offsets,
+                        block_weight_bf16_arena,
+                        adamw_descriptor_count,
+                        adamw_max_elements,
+                        static_cast<float>(cfg.learning_rate),
+                        kBeta1,
+                        kBeta2,
+                        kEps,
+                        bias_correction1,
+                        sqrt_bias_correction2,
+                        nullptr),
+                    "adamw_many_with_device_scale_bf16_shadow");
+            } else {
+                run(adamw_many_with_device_scale(
+                        adamw_param_ptrs,
+                        reinterpret_cast<const float* const*>(adamw_grad_ptrs),
+                        grad_clip_scale,
+                        adamw_avg_ptrs,
+                        adamw_avg_sq_ptrs,
+                        adamw_elements,
+                        adamw_weight_decays,
+                        adamw_descriptor_count,
+                        adamw_max_elements,
+                        static_cast<float>(cfg.learning_rate),
+                        kBeta1,
+                        kBeta2,
+                        kEps,
+                        bias_correction1,
+                        sqrt_bias_correction2,
+                        nullptr),
+                    "adamw_many_with_device_scale");
+            }
             if (error.empty()) {
                 adamw_kernel_launches += 1;
                 if (trainer_linear_bf16_cache_reset != nullptr) {
                     trainer_linear_bf16_cache_reset();
                 }
-                refresh_block_weight_bf16("block_weight_bf16.post_adamw_refresh");
+                if (fuse_adamw_bf16_shadow_refresh_enabled) {
+                    block_weight_bf16_fused_adamw_refresh_count += 1;
+                } else {
+                    refresh_block_weight_bf16("block_weight_bf16.post_adamw_refresh");
+                }
             }
             stage_end(stage_event, "adamw_update");
         }
@@ -10912,12 +10972,19 @@ int run_transformer_lm_training_json(
         << "  \"linear_bf16_workspace_b_capacity\": " << linear_bf16_workspace_b_capacity << ",\n"
         << "  \"linear_bf16_cached_a_capacity\": " << linear_bf16_cached_a_capacity << ",\n"
         << "  \"linear_bf16_cache_entry_count\": " << linear_bf16_cache_entry_count << ",\n"
-        << "  \"block_weight_bf16_shadow_strategy\": \"persistent-fp32-master-bf16-shadow-refresh-after-adamw\",\n"
+        << "  \"block_weight_bf16_shadow_strategy\": \""
+        << (fuse_adamw_bf16_shadow_refresh_enabled
+                ? "persistent-fp32-master-bf16-shadow-fused-adamw-refresh"
+                : "persistent-fp32-master-bf16-shadow-refresh-after-adamw")
+        << "\",\n"
+        << "  \"block_weight_bf16_shadow_fused_adamw_refresh_enabled\": "
+        << (fuse_adamw_bf16_shadow_refresh_enabled ? "true" : "false") << ",\n"
         << "  \"block_weight_bf16_shadow_elements\": " << block_weight_bf16_arena_elements << ",\n"
         << "  \"block_weight_bf16_shadow_bytes\": " << block_weight_bf16_arena_bytes << ",\n"
         << "  \"block_weight_bf16_shadow_descriptor_count\": " << block_weight_bf16_descriptor_count << ",\n"
         << "  \"block_weight_bf16_shadow_max_elements\": " << block_weight_bf16_max_elements << ",\n"
         << "  \"block_weight_bf16_refresh_count\": " << block_weight_bf16_refresh_count << ",\n"
+        << "  \"block_weight_bf16_fused_adamw_refresh_count\": " << block_weight_bf16_fused_adamw_refresh_count << ",\n"
         << "  \"attention_backend_strategy\": \""
         << (attention_forward_tk_launches > 0 || attention_backward_tk_launches > 0
                 ? "tk-sm120-bf16-bridge"
@@ -11227,6 +11294,9 @@ int run_transformer_lm_training_json(
         << "  \"tokens_processed\": " << tokens_processed << ",\n"
         << "  \"weight_update_count\": " << (kGlobalParameterBuffers + kPerBlockParameterBuffers * trained_layers) << ",\n"
         << "  \"adamw_update_strategy\": \"fused-multi-buffer-device-scale\",\n"
+        << "  \"adamw_bf16_shadow_refresh_strategy\": \""
+        << (fuse_adamw_bf16_shadow_refresh_enabled ? "fused-adamw-shadow-write" : "separate-many-pack-after-adamw")
+        << "\",\n"
         << "  \"adamw_descriptor_count\": " << adamw_descriptor_count << ",\n"
         << "  \"adamw_max_elements\": " << adamw_max_elements << ",\n"
         << "  \"adamw_kernel_launches\": " << adamw_kernel_launches << ",\n"
@@ -11371,6 +11441,9 @@ int run_transformer_lm_training_json(
         << "    \"adamw_update_loop\": false,\n"
         << "    \"adamw_update_loop_elided\": true,\n"
         << "    \"adamw_update_strategy\": \"fused-multi-buffer-device-scale\",\n"
+        << "    \"adamw_bf16_shadow_refresh_strategy\": \""
+        << (fuse_adamw_bf16_shadow_refresh_enabled ? "fused-adamw-shadow-write" : "separate-many-pack-after-adamw")
+        << "\",\n"
         << "    \"adamw_descriptor_count\": " << adamw_descriptor_count << ",\n"
         << "    \"adamw_step_kernel_launches_per_optimizer_step\": " << (adamw_descriptor_count > 0 ? 1 : 0) << ",\n"
         << "    \"adamw_per_buffer_step_launches_elided\": "

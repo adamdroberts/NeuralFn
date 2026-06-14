@@ -6,6 +6,42 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Opt-in fused AdamW BF16 shadow refresh ABI
+
+#### Changed
+
+- Added the raw Tile-CUDA ABI
+  `nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32`.
+  It mirrors the descriptor-driven multi-buffer AdamW kernel and can also write
+  updated FP32 master weights into optional BF16 shadow-weight slots from the
+  same launch.
+- Dense GPT native training now carries BF16 shadow offsets in the AdamW
+  descriptor arena and reports
+  `block_weight_bf16_shadow_fused_adamw_refresh_enabled`,
+  `block_weight_bf16_fused_adamw_refresh_count`, and
+  `adamw_bf16_shadow_refresh_strategy`.
+- The fused shadow-write path is opt-in through
+  `NFN_NATIVE_GPT_FUSE_ADAMW_BF16_SHADOW_REFRESH=1`. The default remains the
+  separate `nfn_native_tile_float32_to_bf16_bits_many` refresh after AdamW
+  because paired dedicated RTX 5090 timing was neutral/slightly slower on the
+  native train loop.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` and `build/nfn_gpt_native_train`
+  with `bash tools/build_native_train_tile_ops.sh` and
+  `bash tools/build_native_gpt_cli.sh`.
+- Verified the exported symbols with `nm -D build/libnfn_native_train_tile_ops.so
+  | rg "adamw_step_many_with_device_scale"`.
+- Ran default and opt-in `--smoke-transformer-lm-step` probes on GPU 0 with
+  `CUDA_VISIBLE_DEVICES=0` and `CUDA_DEVICE_MAX_CONNECTIONS=1`.
+- Compared separate refresh versus fused shadow-write with
+  `tools/paired_kernel_speed.py` on the dedicated RTX 5090. The four measured
+  pairs reported
+  `candidate_over_baseline_native_metrics.train_loop_wall_ms.mean = 1.000469`
+  and `candidate_over_baseline_native_metrics.train_tokens_per_second.mean =
+  0.999532`, so the fused path stayed opt-in.
+
 ### 2026-06-14 LayerNorm affine row-chunk tuning for native GPT
 
 #### Changed

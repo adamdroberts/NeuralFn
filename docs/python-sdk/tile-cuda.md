@@ -193,7 +193,10 @@ block cuBLASLt plus TK LM-head path runs,
 `block_forward_linear_strategy`, `block_backward_input_linear_strategy`,
 `block_weight_bf16_shadow_strategy`, `block_weight_bf16_shadow_elements`,
 `block_weight_bf16_shadow_bytes`, `block_weight_bf16_shadow_descriptor_count`,
+`block_weight_bf16_shadow_fused_adamw_refresh_enabled`,
 `block_weight_bf16_refresh_count`,
+`block_weight_bf16_fused_adamw_refresh_count`,
+`adamw_bf16_shadow_refresh_strategy`,
 `block_backward_mlp_proj_dgelu_strategy`,
 `block_backward_weight_linear_strategy`,
 `non_block_forward_backward_linear_strategy`, `lm_head_logits_linear_strategy`,
@@ -461,7 +464,13 @@ over device-resident parameter descriptors, so the default 12-layer path updates
 instead of one launch per buffer. JSON reports
 `adamw_update_strategy: "fused-multi-buffer-device-scale"`,
 `adamw_descriptor_count`, `adamw_step_kernel_launches_per_optimizer_step`, and
-`adamw_per_buffer_step_launches_elided`.
+`adamw_per_buffer_step_launches_elided`. The raw ABI also exports
+`nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32`, which
+can write optional BF16 block-weight shadow entries in the same descriptor-driven
+Tile launch. Set `NFN_NATIVE_GPT_FUSE_ADAMW_BF16_SHADOW_REFRESH=1` only when
+profiling that fused shadow-write route; the default stays on the separate
+`nfn_native_tile_float32_to_bf16_bits_many` refresh because paired dedicated RTX
+5090 timing did not improve native train-loop throughput.
 Token, position, and block Linear weight gradients accumulate directly into
 optimizer-step accumulation buffers in the full GPT-2 trainer. The tied LM-head
 CE backward scale includes the microbatch accumulation factor, LM-head dWeight

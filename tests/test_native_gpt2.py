@@ -2240,8 +2240,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["descriptor_arena_suballocation_count"] == 0
     assert train_transformer_payload["descriptor_upload_strategy"] == "single-host-packed-arena-copy"
     assert train_transformer_payload["descriptor_arena_copy_count"] == 0
-    assert train_transformer_payload["descriptor_arena_copy_calls_elided"] == 12
-    assert train_transformer_payload["descriptor_cuda_mallocs_elided"] == 12
+    assert train_transformer_payload["descriptor_arena_copy_calls_elided"] == 13
+    assert train_transformer_payload["descriptor_cuda_mallocs_elided"] == 13
     assert train_transformer_payload["parameter_initialization_strategy"] == "fused-multi-buffer-fill-values"
     assert train_transformer_payload["parameter_initialization_descriptor_count"] == 0
     assert train_transformer_payload["parameter_initialization_max_elements"] == 0
@@ -2310,8 +2310,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "descriptor_arena_suballocation_count": 0,
         "descriptor_upload_strategy": "single-host-packed-arena-copy",
         "descriptor_arena_copy_count": 0,
-        "descriptor_arena_copy_calls_elided": 12,
-        "descriptor_cuda_mallocs_elided": 12,
+        "descriptor_arena_copy_calls_elided": 13,
+        "descriptor_cuda_mallocs_elided": 13,
         "block0_duplicate_allocation_elided": True,
         "block0_duplicate_activation_allocation_elided": True,
         "block0_duplicate_parameter_initialization_elided": True,
@@ -2355,6 +2355,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "gradient_sumsq_kernel_launches_per_optimizer_step": 0,
         "gradient_sumsq_per_buffer_launches_elided": 147,
         "adamw_device_clip_scale_fused": True,
+        "adamw_bf16_shadow_refresh_strategy": "separate-many-pack-after-adamw",
         "adamw_update_loop": False,
         "adamw_update_loop_elided": True,
         "adamw_update_strategy": "fused-multi-buffer-device-scale",
@@ -2451,6 +2452,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_float32_to_bf16_bits_many" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_adamw_step_with_device_scale_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_adamw_step_many_with_device_scale_float32" in train_transformer_payload["kernels"]
+    assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32" in train_transformer_payload["kernels"]
     assert train_transformer_payload["passed"] is False
 
     smaller_eval_transformer_lm = subprocess.run(
@@ -3288,11 +3290,19 @@ def test_large_row_reduction_fallbacks_use_shared_row_chunks() -> None:
     root = Path(__file__).resolve().parents[1]
     kernels_text = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text()
 
+    assert "kLayerNormBackwardAffineDefaultRowChunkSize = 256" in kernels_text
+    assert "NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in kernels_text
+    assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in kernels_text
     assert "kLinearBackwardBiasRowChunkSize = 512" in kernels_text
     for function_name in (
         "launch_layer_norm_backward_affine_float32",
         "launch_layer_norm_backward_affine_accumulate_float32",
         "launch_layer_norm_backward_affine_accumulate_with_stats_float32",
+    ):
+        function_body = kernels_text.split(f"void {function_name}", 1)[1].split("\nvoid ", 1)[0]
+        assert "kRowChunkSize = layer_norm_backward_affine_row_chunk_size()" in function_body
+        assert "kRowChunkSize = kLinearBackwardBiasRowChunkSize" not in function_body
+    for function_name in (
         "launch_linear_backward_weight_accumulate_bf16_bits_float32",
         "launch_linear_backward_weight_accumulate_float32_bf16_bits",
         "launch_linear_backward_bias_float32",
@@ -3377,7 +3387,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_adamw_step_float32" in header_text
     assert "nfn_native_tile_adamw_step_with_device_scale_float32" in header_text
     assert "nfn_native_tile_adamw_step_many_with_device_scale_float32" in header_text
+    assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32" in header_text
     assert "launch_adamw_step_many_with_device_scale_float32" in source_text
+    assert "launch_adamw_step_many_with_device_scale_bf16_shadow_float32" in source_text
+    assert "adamw_step_many_with_device_scale_bf16_shadow_float32_kernel" in kernels_text
+    assert "bf16_shadow_offsets" in kernels_text
+    assert "ct::element_cast<__nv_bfloat16>(next_p)" in kernels_text
     assert "nfn_native_tile_fill_float32" in header_text
     assert "nfn_native_tile_fill_many_float32" in header_text
     assert "nfn_native_tile_fill_many_values_float32" in header_text
@@ -3547,6 +3562,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "tk_linear_backward_input_dgelu_bf16_bits_float32" in kernels_text
     assert "tk_linear_backward_input_dgelu_weight_bf16_bits_float32" in kernels_text
     assert "matmul_dispatch_tk_ab" in kernels_text
+    assert "kLayerNormBackwardAffineDefaultRowChunkSize = 256" in kernels_text
+    assert "NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in kernels_text
     assert "kLinearBackwardBiasRowChunkSize = 512" in kernels_text
     for function_name in (
         "launch_linear_backward_weight_accumulate_bf16_bits_float32",
