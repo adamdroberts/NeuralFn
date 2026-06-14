@@ -748,9 +748,43 @@ int launch_tk_attention_packed_qkv_forward_bf16_float32(
   return static_cast<int>(cudaPeekAtLastError());
 }
 
+int launch_tk_attention_packed_qkv_forward_store_lse_bf16_float32(
+    const std::uint16_t* qkv_bf16_bits,
+    std::uint16_t* out_bf16_bits,
+    float* saved_lse,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim,
+    cudaStream_t stream) {
+  const int status = launch_tk_attention_packed_qkv_forward_bf16_float32(
+      qkv_bf16_bits,
+      out_bf16_bits,
+      batch,
+      heads,
+      seq_len,
+      head_dim,
+      stream);
+  if (status != 0) {
+    return status;
+  }
+  const std::int64_t row_elements = batch * heads * seq_len;
+  if (saved_lse == nullptr || g_tk_attention_workspace.lse == nullptr || row_elements <= 0) {
+    return 2;
+  }
+  cudaMemcpyAsync(
+      saved_lse,
+      g_tk_attention_workspace.lse,
+      sizeof(float) * static_cast<std::size_t>(row_elements),
+      cudaMemcpyDeviceToDevice,
+      stream);
+  return static_cast<int>(cudaPeekAtLastError());
+}
+
 int launch_tk_attention_packed_qkv_backward_to_qkv_float32(
     const std::uint16_t* qkv_bf16_bits,
     const std::uint16_t* out_bf16_bits,
+    const float* saved_lse,
     const float* grad_out,
     float* grad_qkv,
     std::int64_t batch,
@@ -806,11 +840,14 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_float32(
     auto* qkv = const_cast<__nv_bfloat16*>(
         reinterpret_cast<const __nv_bfloat16*>(
             qkv_bf16_bits + batch_begin * packed_elements_per_batch));
+    float* lse =
+        const_cast<float*>((saved_lse != nullptr ? saved_lse : workspace->lse) +
+                           batch_begin * row_elements_per_batch);
     if (head_dim == 64) {
       llmk::attention::launch_backward_causal_packed_qkv_packed_grads<64>(
           llmk::to_bf16(qkv),
           llmk::to_bf16(workspace->o_bf + batch_begin * head_elements_per_batch),
-          workspace->lse + batch_begin * row_elements_per_batch,
+          lse,
           llmk::to_bf16(workspace->go_bf + batch_begin * head_elements_per_batch),
           workspace->d + batch_begin * row_elements_per_batch,
           llmk::to_bf16(workspace->packed_grad_bf + batch_begin * packed_elements_per_batch),
@@ -823,7 +860,7 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_float32(
       llmk::attention::launch_backward_causal_packed_qkv_packed_grads<128>(
           llmk::to_bf16(qkv),
           llmk::to_bf16(workspace->o_bf + batch_begin * head_elements_per_batch),
-          workspace->lse + batch_begin * row_elements_per_batch,
+          lse,
           llmk::to_bf16(workspace->go_bf + batch_begin * head_elements_per_batch),
           workspace->d + batch_begin * row_elements_per_batch,
           llmk::to_bf16(workspace->packed_grad_bf + batch_begin * packed_elements_per_batch),
@@ -11793,6 +11830,76 @@ int launch_scaled_dot_product_attention_packed_qkv_bf16_float32(
 #endif
 }
 
+int launch_scaled_dot_product_attention_packed_qkv_store_lse_bf16_float32(
+    const std::uint16_t* qkv_bf16_bits,
+    std::uint16_t* out_bf16_bits,
+    float* saved_lse,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    cudaStream_t stream) {
+  (void)scale;
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  if (!use_tk_sm120_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride)) {
+    return 2;
+  }
+  return launch_tk_attention_packed_qkv_forward_store_lse_bf16_float32(
+      qkv_bf16_bits,
+      out_bf16_bits,
+      saved_lse,
+      batch,
+      query_heads,
+      seq_q,
+      qk_dim,
+      stream);
+#else
+  (void)qkv_bf16_bits;
+  (void)out_bf16_bits;
+  (void)saved_lse;
+  (void)batch;
+  (void)query_heads;
+  (void)key_heads;
+  (void)seq_q;
+  (void)seq_k;
+  (void)qk_dim;
+  (void)value_dim;
+  (void)is_causal;
+  (void)right_align_causal;
+  (void)use_sparse_rules;
+  (void)window;
+  (void)num_sinks;
+  (void)block_size;
+  (void)compress_stride;
+  (void)stream;
+  return 2;
+#endif
+}
+
 int launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32(
     const std::uint16_t* qkv_bf16_bits,
     const std::uint16_t* out_bf16_bits,
@@ -11835,6 +11942,7 @@ int launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_g
   return launch_tk_attention_packed_qkv_backward_to_qkv_float32(
       qkv_bf16_bits,
       out_bf16_bits,
+      nullptr,
       grad_out,
       grad_qkv,
       batch,
@@ -11846,6 +11954,83 @@ int launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_g
 #else
   (void)qkv_bf16_bits;
   (void)out_bf16_bits;
+  (void)grad_out;
+  (void)grad_qkv;
+  (void)batch;
+  (void)query_heads;
+  (void)key_heads;
+  (void)seq_q;
+  (void)seq_k;
+  (void)qk_dim;
+  (void)value_dim;
+  (void)is_causal;
+  (void)right_align_causal;
+  (void)use_sparse_rules;
+  (void)window;
+  (void)num_sinks;
+  (void)block_size;
+  (void)compress_stride;
+  (void)stream;
+  return 2;
+#endif
+}
+
+int launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_saved_lse_bf16_from_merged_grad_float32(
+    const std::uint16_t* qkv_bf16_bits,
+    const std::uint16_t* out_bf16_bits,
+    const float* saved_lse,
+    const float* grad_out,
+    float* grad_qkv,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    cudaStream_t stream) {
+  (void)scale;
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  if (!use_tk_sm120_attention(
+          query_heads,
+          key_heads,
+          seq_q,
+          seq_k,
+          qk_dim,
+          value_dim,
+          is_causal,
+          right_align_causal,
+          use_sparse_rules,
+          window,
+          num_sinks,
+          block_size,
+          compress_stride)) {
+    return 2;
+  }
+  return launch_tk_attention_packed_qkv_backward_to_qkv_float32(
+      qkv_bf16_bits,
+      out_bf16_bits,
+      saved_lse,
+      grad_out,
+      grad_qkv,
+      batch,
+      query_heads,
+      seq_q,
+      qk_dim,
+      true,
+      stream);
+#else
+  (void)qkv_bf16_bits;
+  (void)out_bf16_bits;
+  (void)saved_lse;
   (void)grad_out;
   (void)grad_qkv;
   (void)batch;

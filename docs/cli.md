@@ -525,6 +525,7 @@ Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS`,
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS`,
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS`,
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE`,
 `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP`,
 `NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`, and
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`. The older `NFN_NATIVE_GPT2_*`
@@ -630,14 +631,15 @@ previous split in paired candidate-vs-baseline benchmarks. The GPT-2-prefixed
 fallback name is `NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP`.
 `attention_backward_tk_launch_count` counts packed backward chunks, not just
 wrapper calls, so smaller caps are visible in runtime JSON.
-The default route also stores packed BF16 QKV plus packed BF16 O for the first
-eleven earlier blocks on the RTX 5090 workstation shape and reuses those saved
-tensors during backward. Runtime JSON reports `packed_attention_activation_storage_strategy:
+The default route also stores packed BF16 QKV, packed BF16 O, and per-row TK
+`lse` for the saved packed-attention blocks on the RTX 5090 workstation shape
+and reuses those saved tensors during backward. Runtime JSON reports `packed_attention_activation_storage_strategy:
 "packed-qkv-o-bf16-forward-store-direct-backward"`,
-`stored_packed_attention_activation_blocks: 11`, and
-`stored_packed_attention_*` counters. Set
+`stored_packed_attention_activation_blocks`, `stored_packed_attention_lse_enabled`,
+and `stored_packed_attention_*` counters. Set
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` for the previous
-lower-memory recompute path, or set
+lower-memory recompute path, set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0`
+to reproduce the older shared-workspace LSE behavior in paired benchmarks, or set
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` to tune the cap.
 
 The matching backward layout path uses

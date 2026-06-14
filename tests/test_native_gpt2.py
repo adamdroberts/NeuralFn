@@ -179,7 +179,7 @@ def test_packed_qkv_attention_backward_chunks_large_batches() -> None:
     assert "qkv_bf16_bits + batch_begin * packed_elements_per_batch" in source
     assert "out_bf16_bits + batch_begin * merged_elements_per_batch" in source
     assert "grad_out + batch_begin * merged_elements_per_batch" in source
-    assert "workspace->lse + batch_begin * row_elements_per_batch" in source
+    assert "saved_lse != nullptr ? saved_lse : workspace->lse" in source
     assert "workspace->packed_grad_bf + batch_begin * packed_elements_per_batch" in source
 
 
@@ -1321,11 +1321,14 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["stored_packed_attention_activation_blocks"] == 12
     assert tile_payload["stored_packed_attention_bf16_elements"] > 0
     assert tile_payload["stored_packed_attention_bf16_bytes"] > 0
+    assert tile_payload["stored_packed_attention_lse_elements"] > 0
+    assert tile_payload["stored_packed_attention_lse_bytes"] > 0
+    assert tile_payload["stored_packed_attention_lse_enabled"] is True
     assert tile_payload["stored_packed_attention_store_blocks"] == 0
     assert tile_payload["stored_packed_attention_restore_blocks"] == 0
     assert tile_payload["stored_packed_attention_backward_kernel_launches"] == 0
     assert tile_payload["stored_packed_attention_backward_consumer_strategy"] == (
-        "saved-packed-qkv-o-bf16-backward-to-qkv"
+        "saved-packed-qkv-o-lse-bf16-backward-to-qkv"
     )
     assert tile_payload["attention_backward_recompute_forward_elided_per_block"] == 1
     assert tile_payload["attention_backward_score_reuse_dim"] == 64
@@ -1385,7 +1388,15 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         in tile_payload["available_native_kernels"]
     )
     assert (
+        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_store_lse_bf16_float32"
+        in tile_payload["available_native_kernels"]
+    )
+    assert (
         "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32"
+        in tile_payload["available_native_kernels"]
+    )
+    assert (
+        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_saved_lse_bf16_from_merged_grad_float32"
         in tile_payload["available_native_kernels"]
     )
     assert "nfn_native_tile_attention_forward_stats_reset" in tile_payload["available_native_kernels"]
@@ -2168,11 +2179,14 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["stored_packed_attention_activation_blocks"] == 12
     assert train_transformer_payload["stored_packed_attention_bf16_elements"] == 0
     assert train_transformer_payload["stored_packed_attention_bf16_bytes"] == 0
+    assert train_transformer_payload["stored_packed_attention_lse_elements"] == 0
+    assert train_transformer_payload["stored_packed_attention_lse_bytes"] == 0
+    assert train_transformer_payload["stored_packed_attention_lse_enabled"] is True
     assert train_transformer_payload["stored_packed_attention_store_blocks"] == 0
     assert train_transformer_payload["stored_packed_attention_restore_blocks"] == 0
     assert train_transformer_payload["stored_packed_attention_backward_kernel_launches"] == 0
     assert train_transformer_payload["stored_packed_attention_backward_consumer_strategy"] == (
-        "saved-packed-qkv-o-bf16-backward-to-qkv"
+        "saved-packed-qkv-o-lse-bf16-backward-to-qkv"
     )
     assert train_transformer_payload["max_steps"] == 2
     assert train_transformer_payload["eval_every_steps"] == 1
@@ -2405,7 +2419,15 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         in train_transformer_payload["kernels"]
     )
     assert (
+        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_store_lse_bf16_float32"
+        in train_transformer_payload["kernels"]
+    )
+    assert (
         "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32"
+        in train_transformer_payload["kernels"]
+    )
+    assert (
+        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_saved_lse_bf16_from_merged_grad_float32"
         in train_transformer_payload["kernels"]
     )
     assert (
@@ -3607,8 +3629,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32" in header_text
+    assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_store_lse_bf16_float32" in header_text
     assert (
         "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32"
+        in header_text
+    )
+    assert (
+        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_saved_lse_bf16_from_merged_grad_float32"
         in header_text
     )
     assert "nfn_native_tile_attention_forward_stats_reset" in header_text
@@ -3635,11 +3662,17 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         in header_text
     )
     assert "launch_scaled_dot_product_attention_packed_qkv_bf16_float32" in source_text
+    assert "launch_scaled_dot_product_attention_packed_qkv_store_lse_bf16_float32" in source_text
     assert (
         "launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32"
         in source_text
     )
+    assert (
+        "launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_saved_lse_bf16_from_merged_grad_float32"
+        in source_text
+    )
     assert "launch_tk_attention_packed_qkv_forward_bf16_float32" in kernels_text
+    assert "launch_tk_attention_packed_qkv_forward_store_lse_bf16_float32" in kernels_text
     assert "launch_tk_attention_packed_qkv_backward_to_qkv_float32" in kernels_text
     assert "packed_attention_dprep_kernel" in kernels_text
     assert "launch_forward_causal_packed_qkv_btc" in kernels_text
@@ -3774,6 +3807,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_LSE" in gpt2_source_text
     assert "kDefaultStoredPackedAttentionBlocks = 12" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_RESIDUAL1_ACTIVATIONS" in gpt2_source_text
@@ -3807,6 +3842,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "stored_attention_backward_kernel_launches" in gpt2_source_text
     assert "stored_attention_backward_consumer_strategy" in gpt2_source_text
     assert "packed_attention_activation_storage_strategy" in gpt2_source_text
+    assert "stored_packed_attention_lse_enabled" in gpt2_source_text
+    assert "stored_packed_attention_lse_elements" in gpt2_source_text
+    assert "stored_packed_attention_lse_bytes" in gpt2_source_text
     assert "stored_packed_attention_backward_consumer_strategy" in gpt2_source_text
     assert "recompute_block_from_saved_packed_attention" in gpt2_source_text
     assert "recompute_block_from_saved_attention" in gpt2_source_text
@@ -4532,8 +4570,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32" in exported
         assert "nfn_native_tile_scaled_dot_product_attention_float32" in exported
         assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32" in exported
+        assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_store_lse_bf16_float32" in exported
         assert (
             "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_merged_grad_float32"
+            in exported
+        )
+        assert (
+            "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_saved_lse_bf16_from_merged_grad_float32"
             in exported
         )
         assert "nfn_native_tile_scaled_dot_product_attention_backward_float32" in exported

@@ -371,6 +371,48 @@ Future updates should append new entries here rather than replacing older notes.
 - Rejected disabling the BF16 cuBLASLt `BGRADB` epilogue after a paired
   benchmark reported `candidate_over_baseline` mean `1.095258`.
 
+### 2026-06-14 Native GPT packed attention saved LSE
+
+#### Changed
+
+- Stored packed-QKV attention now saves the per-row TK softmax `lse` alongside
+  packed BF16 QKV and packed BF16 O, then feeds that saved `lse` to the packed
+  backward bridge for stored blocks. This avoids relying on the shared TK
+  workspace contents from another block when backward consumes saved packed
+  attention activations.
+- Added raw Tile-CUDA ABI symbols
+  `nfn_native_tile_scaled_dot_product_attention_packed_qkv_store_lse_bf16_float32`
+  and
+  `nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_saved_lse_bf16_from_merged_grad_float32`.
+  Plan and runtime JSON now report `stored_packed_attention_lse_enabled`,
+  `stored_packed_attention_lse_elements`, and
+  `stored_packed_attention_lse_bytes`.
+- Added `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0` and the
+  `NFN_NATIVE_GPT2_*` fallback to reproduce the older shared-workspace LSE
+  behavior in paired benchmarks.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh` and rebuilt
+  `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step TinyStories probe on GPU 0 with
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1
+  NFN_NATIVE_GPT_STAGE_TIMING=1 build/nfn_gpt_native_train --tinystories
+  --tile-ops-lib build/libnfn_native_train_tile_ops.so --max-steps 1
+  --eval-every-steps 0 --no-checkpoint --output-dir /tmp/nfn-packed-lse-probe`.
+  It reported `stored_packed_attention_lse_enabled: true`,
+  `stored_packed_attention_lse_elements: 9437184`, and
+  `stored_packed_attention_backward_consumer_strategy:
+  "saved-packed-qkv-o-lse-bf16-backward-to-qkv"`.
+- Ran `tools/paired_kernel_speed.py` on GPU 0 with one warmup pair and three
+  measured pairs, comparing the older
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0` path against the saved-LSE
+  default in the same binary. The helper recorded GPU 0 as
+  `NVIDIA GeForce RTX 5090`, `0%` utilization, about `437/32607` MiB used, and
+  no compute processes before timing. The saved-LSE candidate was
+  performance-neutral with `candidate_over_baseline` mean `1.000463`.
+
 ### 2026-06-14 Native GPT dedicated CUDA device default
 
 #### Changed
