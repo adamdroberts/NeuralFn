@@ -746,7 +746,11 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_layer_norm_backward_affine_accumulate_float32",
         "nfn_native_tile_linear_float32",
         "nfn_native_tile_linear_bf16_float32",
+        "nfn_native_tile_linear_weight_bf16_float32",
+        "nfn_native_tile_linear_weight_bf16_output_float32",
+        "nfn_native_tile_linear_bf16_input_weight_bf16_float32",
         "nfn_native_tile_linear_backward_input_float32",
+        "nfn_native_tile_linear_backward_input_weight_bf16_float32",
         "nfn_native_tile_linear_backward_weight_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32",
@@ -6766,12 +6770,16 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_float32",
         "nfn_native_tile_linear_float32",
         "nfn_native_tile_linear_bf16_float32",
+        "nfn_native_tile_linear_weight_bf16_float32",
         "nfn_native_tile_linear_bf16_output_float32",
+        "nfn_native_tile_linear_weight_bf16_output_float32",
         "nfn_native_tile_bf16_bits_add_bias_inplace_float32",
         "nfn_native_tile_linear_bf16_input_bits_float32",
+        "nfn_native_tile_linear_bf16_input_weight_bf16_float32",
         "nfn_native_tile_linear_bf16_gelu_bf16_float32",
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_input_bf16_float32",
+        "nfn_native_tile_linear_backward_input_weight_bf16_float32",
         "nfn_native_tile_linear_backward_input_bf16_bits_float32",
         "nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
@@ -6872,10 +6880,16 @@ int run_transformer_lm_training_json(
     using LinearBf16OutputFn = int (*)(
         const float*, const float*, const float*, std::uint16_t*,
         std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearWeightBf16OutputFn = int (*)(
+        const float*, const std::uint16_t*, const float*, std::uint16_t*,
+        std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearWeightBf16Fn = int (*)(
+        const float*, const std::uint16_t*, const float*, float*,
+        std::int64_t, std::int64_t, std::int64_t, bool, void*);
     using Bf16BitsAddBiasInplaceFn =
         int (*)(std::uint16_t*, const float*, std::int64_t, std::int64_t, void*);
-    using LinearBf16InputBitsFn = int (*)(
-        const std::uint16_t*, const float*, const float*, float*,
+    using LinearBf16InputWeightBf16Fn = int (*)(
+        const std::uint16_t*, const std::uint16_t*, const float*, float*,
         std::int64_t, std::int64_t, std::int64_t, bool, void*);
     using LinearBf16GeluBf16Fn = int (*)(
         const float*, const float*, const float*, std::uint16_t*, std::uint16_t*,
@@ -6884,6 +6898,8 @@ int run_transformer_lm_training_json(
         const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardInputBf16BitsFn = int (*)(
         const std::uint16_t*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBackwardInputWeightBf16Fn = int (*)(
+        const float*, const std::uint16_t*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardInputDgeluBf16BitsFn = int (*)(
         const float*, const float*, const std::uint16_t*, std::uint16_t*, float*,
         std::int64_t, std::int64_t, std::int64_t, void*);
@@ -6997,14 +7013,15 @@ int run_transformer_lm_training_json(
     LayerNormBackwardAffineAccumulateFn layer_norm_backward_affine_accumulate = nullptr;
     LayerNormBackwardAffineAccumulateWithStatsFn layer_norm_backward_affine_accumulate_with_stats = nullptr;
     LinearFn linear = nullptr;
-    LinearFn linear_bf16 = nullptr;
     LinearBf16OutputFn linear_bf16_output = nullptr;
+    LinearWeightBf16Fn linear_weight_bf16 = nullptr;
+    LinearWeightBf16OutputFn linear_weight_bf16_output = nullptr;
     Bf16BitsAddBiasInplaceFn bf16_bits_add_bias_inplace = nullptr;
-    LinearBf16InputBitsFn linear_bf16_input_bits = nullptr;
+    LinearBf16InputWeightBf16Fn linear_bf16_input_weight_bf16 = nullptr;
     LinearBf16GeluBf16Fn linear_bf16_gelu_bf16 = nullptr;
     LinearBackwardInputFn linear_backward_input = nullptr;
-    LinearBackwardInputFn linear_backward_input_bf16 = nullptr;
     LinearBackwardInputBf16BitsFn linear_backward_input_bf16_bits = nullptr;
+    LinearBackwardInputWeightBf16Fn linear_backward_input_weight_bf16 = nullptr;
     LinearBackwardInputDgeluBf16BitsFn linear_backward_input_dgelu_bf16_bits = nullptr;
     LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
     LinearBackwardWeightBiasAccumulateFn linear_backward_weight_bias_accumulate_bf16 = nullptr;
@@ -7163,19 +7180,25 @@ int run_transformer_lm_training_json(
                     load_symbol<LayerNormBackwardAffineAccumulateWithStatsFn>(
                         tile_handle, "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_float32");
                 linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
-                linear_bf16 = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_bf16_float32");
+                linear_weight_bf16 =
+                    load_symbol<LinearWeightBf16Fn>(tile_handle, "nfn_native_tile_linear_weight_bf16_float32");
                 linear_bf16_output =
                     load_symbol<LinearBf16OutputFn>(tile_handle, "nfn_native_tile_linear_bf16_output_float32");
+                linear_weight_bf16_output =
+                    load_symbol<LinearWeightBf16OutputFn>(
+                        tile_handle, "nfn_native_tile_linear_weight_bf16_output_float32");
                 bf16_bits_add_bias_inplace = load_symbol<Bf16BitsAddBiasInplaceFn>(
                     tile_handle, "nfn_native_tile_bf16_bits_add_bias_inplace_float32");
-                linear_bf16_input_bits =
-                    load_symbol<LinearBf16InputBitsFn>(tile_handle, "nfn_native_tile_linear_bf16_input_bits_float32");
+                linear_bf16_input_weight_bf16 =
+                    load_symbol<LinearBf16InputWeightBf16Fn>(
+                        tile_handle, "nfn_native_tile_linear_bf16_input_weight_bf16_float32");
                 linear_bf16_gelu_bf16 =
                     load_symbol<LinearBf16GeluBf16Fn>(tile_handle, "nfn_native_tile_linear_bf16_gelu_bf16_float32");
                 linear_backward_input = load_symbol<LinearBackwardInputFn>(
                     tile_handle, "nfn_native_tile_linear_backward_input_float32");
-                linear_backward_input_bf16 = load_symbol<LinearBackwardInputFn>(
-                    tile_handle, "nfn_native_tile_linear_backward_input_bf16_float32");
+                linear_backward_input_weight_bf16 =
+                    load_symbol<LinearBackwardInputWeightBf16Fn>(
+                        tile_handle, "nfn_native_tile_linear_backward_input_weight_bf16_float32");
                 linear_backward_input_bf16_bits = load_symbol<LinearBackwardInputBf16BitsFn>(
                     tile_handle, "nfn_native_tile_linear_backward_input_bf16_bits_float32");
                 linear_backward_input_dgelu_bf16_bits =
@@ -7599,7 +7622,7 @@ int run_transformer_lm_training_json(
     std::int64_t descriptor_arena_cuda_malloc_count = 0;
     std::int64_t descriptor_arena_suballocation_count = 0;
     std::int64_t descriptor_arena_copy_count = 0;
-    constexpr std::int64_t kDescriptorDeviceTableCount = 10;
+    constexpr std::int64_t kDescriptorDeviceTableCount = 13;
     const std::int64_t descriptor_cuda_mallocs_elided = kDescriptorDeviceTableCount - 1;
     const std::int64_t descriptor_arena_copy_calls_elided = kDescriptorDeviceTableCount - 1;
     auto align_float_arena_offset = [](std::int64_t value) {
@@ -7667,12 +7690,16 @@ int run_transformer_lm_training_json(
         float* ln2_weight = nullptr;
         float* ln2_bias = nullptr;
         float* qkv_weight = nullptr;
+        std::uint16_t* qkv_weight_bf16 = nullptr;
         float* qkv_bias = nullptr;
         float* attn_proj_weight = nullptr;
+        std::uint16_t* attn_proj_weight_bf16 = nullptr;
         float* attn_proj_bias = nullptr;
         float* fc_weight = nullptr;
+        std::uint16_t* fc_weight_bf16 = nullptr;
         float* fc_bias = nullptr;
         float* mlp_proj_weight = nullptr;
+        std::uint16_t* mlp_proj_weight_bf16 = nullptr;
         float* mlp_proj_bias = nullptr;
         float* accum_grad_ln1_weight = nullptr;
         float* accum_grad_ln1_bias = nullptr;
@@ -7844,6 +7871,15 @@ int run_transformer_lm_training_json(
     std::uint16_t *token_ids_u16 = nullptr, *targets_u16 = nullptr;
     std::uint16_t *token_ids_pinned = nullptr, *targets_pinned = nullptr;
     std::uint16_t* checkpoint_bf16_device = nullptr;
+    std::uint16_t* block_weight_bf16_arena = nullptr;
+    std::int64_t block_weight_bf16_arena_elements = 0;
+    std::int64_t block_weight_bf16_arena_bytes = 0;
+    std::int64_t block_weight_bf16_refresh_count = 0;
+    const float** block_weight_bf16_sources = nullptr;
+    std::int64_t* block_weight_bf16_elements = nullptr;
+    std::int64_t* block_weight_bf16_offsets = nullptr;
+    std::int64_t block_weight_bf16_descriptor_count = 0;
+    std::int64_t block_weight_bf16_max_elements = 0;
     auto allocate_token_arenas = [&]() {
         if (!error.empty()) {
             return;
@@ -8115,6 +8151,43 @@ int run_transformer_lm_training_json(
             block_tapes[i].packed_attn_out_bf16 = base + offset + qkv_activation_elements;
         }
     };
+    auto allocate_block_weight_bf16_arena = [&]() {
+        if (!error.empty() || trained_layers <= 0) {
+            return;
+        }
+        const std::int64_t elements_per_block =
+            kQkvWeightElements + kAttnProjWeightElements + kFcWeightElements + kMlpProjWeightElements;
+        if (elements_per_block <= 0 ||
+            trained_layers > std::numeric_limits<std::int64_t>::max() / elements_per_block ||
+            elements_per_block * trained_layers >
+                static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
+            error = "block BF16 weight arena byte size overflow";
+            return;
+        }
+        const std::int64_t total_elements = elements_per_block * trained_layers;
+        void* raw = nullptr;
+        const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(total_elements);
+        const int status = cuda_malloc(&raw, bytes);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc block_weight_bf16_arena");
+            return;
+        }
+        block_weight_bf16_arena = static_cast<std::uint16_t*>(raw);
+        uint16_ptrs.push_back(block_weight_bf16_arena);
+        block_weight_bf16_arena_elements = total_elements;
+        block_weight_bf16_arena_bytes = static_cast<std::int64_t>(bytes);
+        for (std::size_t i = 0; i < blocks.size(); ++i) {
+            std::uint16_t* base = block_weight_bf16_arena + static_cast<std::int64_t>(i) * elements_per_block;
+            TransformerBlockParams& block = blocks[i];
+            block.qkv_weight_bf16 = base;
+            base += kQkvWeightElements;
+            block.attn_proj_weight_bf16 = base;
+            base += kAttnProjWeightElements;
+            block.fc_weight_bf16 = base;
+            base += kFcWeightElements;
+            block.mlp_proj_weight_bf16 = base;
+        }
+    };
 
     auto visit_block_parameter_ptrs = [&](auto&& visit) {
         for (std::size_t i = 0; i < blocks.size(); ++i) {
@@ -8265,6 +8338,7 @@ int run_transformer_lm_training_json(
     allocate_lm_head_bf16_logits();
     allocate_mlp_forward_act_bf16();
     allocate_packed_qkv_attention_scratch();
+    allocate_block_weight_bf16_arena();
     const std::int64_t startup_per_buffer_zero_fill_launches_elided =
         1 + trained_layers * 6 + 8 + trained_layers * kPerBlockAdamWStateBuffers;
     const std::int64_t nonzero_parameter_fill_buffer_count = 3 + trained_layers * 6;
@@ -8293,8 +8367,14 @@ int run_transformer_lm_training_json(
         std::vector<std::int64_t> elements;
         std::vector<float> values;
     };
+    struct Bf16ShadowDescriptorHost {
+        std::vector<const float*> sources;
+        std::vector<std::int64_t> elements;
+        std::vector<std::int64_t> offsets;
+    };
     AdamWDescriptorHost adamw_host;
     ParameterFillDescriptorHost parameter_fill_host;
+    Bf16ShadowDescriptorHost block_weight_bf16_host;
     auto build_adamw_descriptors = [&]() {
         if (!error.empty()) {
             return;
@@ -8402,6 +8482,50 @@ int run_transformer_lm_training_json(
         parameter_fill_descriptor_count = static_cast<std::int64_t>(parameter_fill_host.ptrs.size());
     };
     build_parameter_fill_descriptors();
+    auto build_block_weight_bf16_descriptors = [&]() {
+        if (!error.empty()) {
+            return;
+        }
+        if (block_weight_bf16_arena == nullptr) {
+            error = "block BF16 weight arena was not allocated";
+            return;
+        }
+        std::int64_t offset = 0;
+        auto add = [&](const float* source, std::int64_t elements, const std::string& name) {
+            if (!error.empty()) {
+                return;
+            }
+            if (source == nullptr) {
+                error = "null pointer while building BF16 block weight descriptors: " + name;
+                return;
+            }
+            if (elements <= 0) {
+                error = "non-positive element count while building BF16 block weight descriptors: " + name;
+                return;
+            }
+            block_weight_bf16_host.sources.push_back(source);
+            block_weight_bf16_host.elements.push_back(elements);
+            block_weight_bf16_host.offsets.push_back(offset);
+            block_weight_bf16_max_elements = std::max<std::int64_t>(block_weight_bf16_max_elements, elements);
+            offset += elements;
+        };
+        for (std::size_t i = 0; i < blocks.size(); ++i) {
+            TransformerBlockParams& block = blocks[i];
+            const std::string prefix = "block" + std::to_string(i);
+            add(block.qkv_weight, kQkvWeightElements, prefix + ".attn.qkv.weight.bf16_shadow");
+            add(block.attn_proj_weight, kAttnProjWeightElements, prefix + ".attn.proj.weight.bf16_shadow");
+            add(block.fc_weight, kFcWeightElements, prefix + ".mlp.fc.weight.bf16_shadow");
+            add(block.mlp_proj_weight, kMlpProjWeightElements, prefix + ".mlp.proj.weight.bf16_shadow");
+        }
+        if (error.empty() && offset != block_weight_bf16_arena_elements) {
+            std::ostringstream out;
+            out << "BF16 block weight descriptor mismatch: arena has "
+                << block_weight_bf16_arena_elements << " elements but descriptors cover " << offset;
+            error = out.str();
+        }
+        block_weight_bf16_descriptor_count = static_cast<std::int64_t>(block_weight_bf16_host.sources.size());
+    };
+    build_block_weight_bf16_descriptors();
     auto materialize_descriptor_arena = [&]() {
         if (!error.empty()) {
             return;
@@ -8440,6 +8564,9 @@ int run_transformer_lm_training_json(
         const std::size_t fill_pointer_bytes = sizeof(float*) * parameter_fill_host.ptrs.size();
         const std::size_t fill_element_bytes = sizeof(std::int64_t) * parameter_fill_host.elements.size();
         const std::size_t fill_value_bytes = sizeof(float) * parameter_fill_host.values.size();
+        const std::size_t bf16_source_bytes = sizeof(const float*) * block_weight_bf16_host.sources.size();
+        const std::size_t bf16_element_bytes = sizeof(std::int64_t) * block_weight_bf16_host.elements.size();
+        const std::size_t bf16_offset_bytes = sizeof(std::int64_t) * block_weight_bf16_host.offsets.size();
         add_region(reinterpret_cast<void**>(&adamw_param_ptrs), adamw_host.params.data(), adamw_pointer_bytes, "adamw_param_ptrs");
         add_region(reinterpret_cast<void**>(&adamw_grad_ptrs), adamw_host.grads.data(), adamw_pointer_bytes, "adamw_grad_ptrs");
         add_region(reinterpret_cast<void**>(&adamw_avg_ptrs), adamw_host.avgs.data(), adamw_pointer_bytes, "adamw_avg_ptrs");
@@ -8450,6 +8577,9 @@ int run_transformer_lm_training_json(
         add_region(reinterpret_cast<void**>(&parameter_fill_ptrs), parameter_fill_host.ptrs.data(), fill_pointer_bytes, "parameter_fill_ptrs");
         add_region(reinterpret_cast<void**>(&parameter_fill_elements), parameter_fill_host.elements.data(), fill_element_bytes, "parameter_fill_elements");
         add_region(reinterpret_cast<void**>(&parameter_fill_values), parameter_fill_host.values.data(), fill_value_bytes, "parameter_fill_values");
+        add_region(reinterpret_cast<void**>(&block_weight_bf16_sources), block_weight_bf16_host.sources.data(), bf16_source_bytes, "block_weight_bf16_sources");
+        add_region(reinterpret_cast<void**>(&block_weight_bf16_elements), block_weight_bf16_host.elements.data(), bf16_element_bytes, "block_weight_bf16_elements");
+        add_region(reinterpret_cast<void**>(&block_weight_bf16_offsets), block_weight_bf16_host.offsets.data(), bf16_offset_bytes, "block_weight_bf16_offsets");
         if (!error.empty() || requests.empty()) {
             return;
         }
@@ -8502,6 +8632,24 @@ int run_transformer_lm_training_json(
             parameter_fill_kernel_launches += 1;
         }
     }
+    auto refresh_block_weight_bf16 = [&](const std::string& name) {
+        if (!error.empty()) {
+            return;
+        }
+        run(float32_to_bf16_bits_many(
+                block_weight_bf16_sources,
+                block_weight_bf16_elements,
+                block_weight_bf16_offsets,
+                block_weight_bf16_arena,
+                block_weight_bf16_descriptor_count,
+                block_weight_bf16_max_elements,
+                nullptr),
+            name);
+        if (error.empty()) {
+            block_weight_bf16_refresh_count += 1;
+        }
+    };
+    refresh_block_weight_bf16("block_weight_bf16.initial_refresh");
 
     neuralfn::native_train::SequentialTokenBatchSampler sampler(dataset.train_shards, seq_len, batch_size);
     std::vector<float> host_loss(1, 0.0f);
@@ -8841,9 +8989,9 @@ int run_transformer_lm_training_json(
             run_timed_stage(stage_name + ".attention.qkv", [&]() {
                 if (packed_qkv_attention_enabled) {
                     if (error.empty()) {
-                        run(linear_bf16_output(
+                        run(linear_weight_bf16_output(
                                 tape.ln1_out,
-                                block.qkv_weight,
+                                block.qkv_weight_bf16,
                                 nullptr,
                                 active_qkv_bf16,
                                 rows,
@@ -8854,7 +9002,7 @@ int run_transformer_lm_training_json(
                             label + ".attn.qkv.forward.no_bias.bf16_bits");
                     }
                 } else {
-                    if (error.empty()) run(linear_bf16(tape.ln1_out, block.qkv_weight, nullptr, tape.qkv, rows, kDim, kQkvDim, false, nullptr), label + ".attn.qkv.forward.no_bias.bf16");
+                    if (error.empty()) run(linear_weight_bf16(tape.ln1_out, block.qkv_weight_bf16, nullptr, tape.qkv, rows, kDim, kQkvDim, false, nullptr), label + ".attn.qkv.forward.no_bias.weight_bf16");
                 }
             });
             run_timed_stage(stage_name + ".attention.qkv_layout", [&]() {
@@ -8944,9 +9092,9 @@ int run_transformer_lm_training_json(
             run_timed_stage(stage_name + ".attention.proj", [&]() {
                 if (packed_qkv_attention_enabled) {
                     if (error.empty()) {
-                        run(linear_bf16_input_bits(
+                        run(linear_bf16_input_weight_bf16(
                                 active_packed_attn_out_bf16,
-                                block.attn_proj_weight,
+                                block.attn_proj_weight_bf16,
                                 nullptr,
                                 tape.attn_proj,
                                 rows,
@@ -8957,7 +9105,7 @@ int run_transformer_lm_training_json(
                             label + ".attn.out.forward.no_bias.packed_o_bf16_bits");
                     }
                 } else {
-                    if (error.empty()) run(linear_bf16(tape.attn_out, block.attn_proj_weight, nullptr, tape.attn_proj, rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.bf16");
+                    if (error.empty()) run(linear_weight_bf16(tape.attn_out, block.attn_proj_weight_bf16, nullptr, tape.attn_proj, rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.weight_bf16");
                 }
             });
             run_timed_stage(stage_name + ".attention.residual", [&]() {
@@ -9019,7 +9167,7 @@ int run_transformer_lm_training_json(
                     });
                 } else {
                     run_timed_stage(stage_name + ".mlp_fc_gelu.fc", [&]() {
-                        if (error.empty()) run(linear_bf16(tape.ln2_out, block.fc_weight, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias.bf16");
+                        if (error.empty()) run(linear_weight_bf16(tape.ln2_out, block.fc_weight_bf16, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias.weight_bf16");
                     });
                     run_timed_stage(stage_name + ".mlp_fc_gelu.gelu", [&]() {
                         if (error.empty()) run(gelu_add_bias_bf16_act(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, mlp_forward_act_bf16, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward.bf16_act");
@@ -9032,7 +9180,7 @@ int run_transformer_lm_training_json(
                 run_timed_stage(stage_name + ".mlp_proj.proj", [&]() {
                     const std::uint16_t* act_bits =
                         fused_mlp_store != nullptr ? fused_mlp_store->act : mlp_forward_act_bf16;
-                    if (error.empty()) run(linear_bf16_input_bits(act_bits, block.mlp_proj_weight, nullptr, tape.mlp_out, rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias.bf16_act");
+                    if (error.empty()) run(linear_bf16_input_weight_bf16(act_bits, block.mlp_proj_weight_bf16, nullptr, tape.mlp_out, rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias.bf16_act_weight_bf16");
                 });
                 run_timed_stage(stage_name + ".mlp_proj.residual", [&]() {
                     if (error.empty()) run(linear_bias_residual_add(tape.residual1, tape.mlp_out, block.mlp_proj_bias, residual_scale, tape.residual2, rows, kDim, nullptr), label + ".mlp.bias_residual");
@@ -9059,7 +9207,7 @@ int run_transformer_lm_training_json(
             if (error.empty()) run(merge_heads(tape.attn_heads, tape.attn_out, batch_size, kHeads, seq_len, kHeadDim, nullptr), label + ".attn.merge_heads");
         });
         run_timed_stage(stage_name + ".attention.proj", [&]() {
-            if (error.empty()) run(linear_bf16(tape.attn_out, block.attn_proj_weight, nullptr, tape.attn_proj, rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.bf16");
+            if (error.empty()) run(linear_weight_bf16(tape.attn_out, block.attn_proj_weight_bf16, nullptr, tape.attn_proj, rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.weight_bf16");
         });
         run_timed_stage(stage_name + ".attention.residual", [&]() {
             if (error.empty()) run(linear_bias_residual_add(block_input, tape.attn_proj, block.attn_proj_bias, residual_scale, tape.residual1, rows, kDim, nullptr), label + ".attn.bias_residual");
@@ -9070,7 +9218,7 @@ int run_transformer_lm_training_json(
                     run_layer_norm(tape.residual1, block.ln2_weight, block.ln2_bias, tape.ln2_out, tape.ln2_mean, tape.ln2_rstd, label + ".ln2.forward");
                 });
                 run_timed_stage(stage_name + ".mlp_fc_gelu.fc", [&]() {
-                    if (error.empty()) run(linear_bf16(tape.ln2_out, block.fc_weight, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias.bf16");
+                    if (error.empty()) run(linear_weight_bf16(tape.ln2_out, block.fc_weight_bf16, nullptr, tape.fc_out, rows, kDim, kHidden, false, nullptr), label + ".mlp.fc.forward.no_bias.weight_bf16");
                 });
                 run_timed_stage(stage_name + ".mlp_fc_gelu.gelu", [&]() {
                     if (error.empty()) run(gelu_add_bias_bf16_act(tape.fc_out, block.fc_bias, tape.fc_out, tape.act, mlp_forward_act_bf16, rows, kHidden, nullptr), label + ".mlp.bias_gelu.forward.bf16_act");
@@ -9100,9 +9248,9 @@ int run_transformer_lm_training_json(
         });
         run_timed_stage(stage_name + ".attention.proj", [&]() {
             if (error.empty()) {
-                run(linear_bf16_input_bits(
+                run(linear_bf16_input_weight_bf16(
                         stored_attention.o,
-                        block.attn_proj_weight,
+                        block.attn_proj_weight_bf16,
                         nullptr,
                         tape.attn_proj,
                         rows,
@@ -9165,9 +9313,9 @@ int run_transformer_lm_training_json(
                 });
                 run_timed_stage(stage_name + ".mlp_fc_gelu.fc", [&]() {
                     if (error.empty()) {
-                        run(linear_bf16(
+                        run(linear_weight_bf16(
                                 tape.ln2_out,
-                                block.fc_weight,
+                                block.fc_weight_bf16,
                                 nullptr,
                                 tape.fc_out,
                                 rows,
@@ -9235,9 +9383,9 @@ int run_transformer_lm_training_json(
                     }
                 } else {
                     if (error.empty()) {
-                        run(linear_backward_input_bf16(
+                        run(linear_backward_input_weight_bf16(
                                 incoming_grad,
-                                block.mlp_proj_weight,
+                                block.mlp_proj_weight_bf16,
                                 grad_fc_out,
                                 rows,
                                 kHidden,
@@ -9273,7 +9421,7 @@ int run_transformer_lm_training_json(
                 }
             });
             run_timed_stage("block_backward.mlp_fc.dinput", [&]() {
-                if (error.empty()) run(linear_backward_input_bf16(grad_fc_out, block.fc_weight, grad_ln2, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_input.bf16");
+                if (error.empty()) run(linear_backward_input_weight_bf16(grad_fc_out, block.fc_weight_bf16, grad_ln2, rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_input.weight_bf16");
             });
         });
         run_timed_stage("block_backward.ln2_residual", [&]() {
@@ -9329,7 +9477,7 @@ int run_transformer_lm_training_json(
                 }
             });
             run_timed_stage("block_backward.attn_proj.dinput", [&]() {
-                if (error.empty()) run(linear_backward_input_bf16(grad_residual1, block.attn_proj_weight, grad_attn_out, rows, kDim, kDim, nullptr), label + ".attn.out.backward_input.bf16");
+                if (error.empty()) run(linear_backward_input_weight_bf16(grad_residual1, block.attn_proj_weight_bf16, grad_attn_out, rows, kDim, kDim, nullptr), label + ".attn.out.backward_input.weight_bf16");
             });
         });
         run_timed_stage("block_backward.attn_sdpa", [&]() {
@@ -9401,7 +9549,7 @@ int run_transformer_lm_training_json(
                 if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16(tape.ln1_out, grad_qkv, block.accum_grad_qkv_weight, block.accum_grad_qkv_bias, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_weight_bias.accumulate.bf16");
             });
             run_timed_stage("block_backward.qkv.dinput", [&]() {
-                if (error.empty()) run(linear_backward_input_bf16(grad_qkv, block.qkv_weight, grad_ln1, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_input.bf16");
+                if (error.empty()) run(linear_backward_input_weight_bf16(grad_qkv, block.qkv_weight_bf16, grad_ln1, rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_input.weight_bf16");
             });
         });
         run_timed_stage("block_backward.ln1_residual", [&]() {
@@ -9619,6 +9767,7 @@ int run_transformer_lm_training_json(
                 if (trainer_linear_bf16_cache_reset != nullptr) {
                     trainer_linear_bf16_cache_reset();
                 }
+                refresh_block_weight_bf16("block_weight_bf16.post_adamw_refresh");
             }
             stage_end(stage_event, "adamw_update");
         }
@@ -10212,12 +10361,12 @@ int run_transformer_lm_training_json(
                       : (linear_sgemm_count > 0 ? "tf32-sgemm-optimized" : "not-run"))))))))
         << "\",\n"
         << "  \"block_forward_linear_strategy\": \""
-        << (linear_cublaslt_gemm_count > 0 ? "shape-gated-bf16-cublaslt-forward"
-                                           : "forced-bf16-gemmex-forward")
+        << (linear_cublaslt_gemm_count > 0 ? "bf16-shadow-weight-shape-gated-cublaslt-forward"
+                                           : "bf16-shadow-weight-gemmex-forward")
         << "\",\n"
         << "  \"block_backward_input_linear_strategy\": \""
-        << (linear_cublaslt_gemm_count > 0 ? "shape-gated-bf16-cublaslt-dinput"
-                                           : "forced-bf16-gemmex-dinput")
+        << (linear_cublaslt_gemm_count > 0 ? "bf16-shadow-weight-shape-gated-cublaslt-dinput"
+                                           : "bf16-shadow-weight-gemmex-dinput")
         << "\",\n"
         << "  \"block_backward_mlp_proj_dgelu_fusion_enabled\": "
         << (fuse_mlp_proj_dgelu_enabled ? "true" : "false") << ",\n"
@@ -10265,6 +10414,12 @@ int run_transformer_lm_training_json(
         << "  \"linear_bf16_workspace_b_capacity\": " << linear_bf16_workspace_b_capacity << ",\n"
         << "  \"linear_bf16_cached_a_capacity\": " << linear_bf16_cached_a_capacity << ",\n"
         << "  \"linear_bf16_cache_entry_count\": " << linear_bf16_cache_entry_count << ",\n"
+        << "  \"block_weight_bf16_shadow_strategy\": \"persistent-fp32-master-bf16-shadow-refresh-after-adamw\",\n"
+        << "  \"block_weight_bf16_shadow_elements\": " << block_weight_bf16_arena_elements << ",\n"
+        << "  \"block_weight_bf16_shadow_bytes\": " << block_weight_bf16_arena_bytes << ",\n"
+        << "  \"block_weight_bf16_shadow_descriptor_count\": " << block_weight_bf16_descriptor_count << ",\n"
+        << "  \"block_weight_bf16_shadow_max_elements\": " << block_weight_bf16_max_elements << ",\n"
+        << "  \"block_weight_bf16_refresh_count\": " << block_weight_bf16_refresh_count << ",\n"
         << "  \"attention_backend_strategy\": \""
         << (attention_forward_tk_launches > 0 || attention_backward_tk_launches > 0
                 ? "tk-sm120-bf16-bridge"

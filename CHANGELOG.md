@@ -6,6 +6,43 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT BF16 block weight shadows
+
+#### Changed
+
+- The raw trainer Tile ABI now exposes BF16-shadow weight variants:
+  `nfn_native_tile_linear_weight_bf16_float32`,
+  `nfn_native_tile_linear_weight_bf16_output_float32`,
+  `nfn_native_tile_linear_bf16_input_weight_bf16_float32`, and
+  `nfn_native_tile_linear_backward_input_weight_bf16_float32`.
+- Dense GPT native training now keeps FP32 master weights, gradients, and AdamW
+  state, but allocates a persistent BF16 shadow arena for block QKV, attention
+  projection, MLP FC, and MLP projection weights. The compiled trainer refreshes
+  all block shadows with one `nfn_native_tile_float32_to_bf16_bits_many` call
+  after parameter initialization and after each AdamW update, then consumes the
+  shadows for block forward/recompute and block dInput GEMMs.
+- Training JSON now reports `block_weight_bf16_shadow_strategy`,
+  `block_weight_bf16_shadow_elements`, `block_weight_bf16_shadow_bytes`,
+  `block_weight_bf16_shadow_descriptor_count`,
+  `block_weight_bf16_shadow_max_elements`, and
+  `block_weight_bf16_refresh_count`.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran a GPU-visible one-step TinyStories stage profile on the dedicated RTX
+  5090. JSON reported `block_weight_bf16_shadow_bytes: 169869312`,
+  `block_weight_bf16_shadow_descriptor_count: 48`,
+  `block_weight_bf16_refresh_count: 2`, and about `149,670` tokens/s.
+- Built a temporary previous-commit worktree at `953875a` and ran
+  `tools/paired_kernel_speed.py` with one warmup pair and three measured pairs,
+  pinning both commands to `CUDA_VISIBLE_DEVICES=0`. The candidate reported
+  `candidate_over_baseline` mean `0.998421`; the benchmark recorded GPU 0 at
+  `0%` utilization, `589/32607 MiB`, and no compute processes before timing.
+
 ### 2026-06-14 Native GPT LM-head workspace and packed-attention retune
 
 #### Changed

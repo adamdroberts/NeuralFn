@@ -319,9 +319,31 @@ int nfn_native_tile_linear_bf16_float32(
     bool has_bias,
     void* cuda_stream);
 
+int nfn_native_tile_linear_weight_bf16_float32(
+    const float* x,
+    const std::uint16_t* weight_bf16_bits,
+    const float* bias,
+    float* out,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    void* cuda_stream);
+
 int nfn_native_tile_linear_bf16_output_float32(
     const float* x,
     const float* weight,
+    const float* bias,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    void* cuda_stream);
+
+int nfn_native_tile_linear_weight_bf16_output_float32(
+    const float* x,
+    const std::uint16_t* weight_bf16_bits,
     const float* bias,
     std::uint16_t* out_bf16_bits,
     std::int64_t rows,
@@ -348,6 +370,17 @@ int nfn_native_tile_linear_bf16_input_bits_float32(
     bool has_bias,
     void* cuda_stream);
 
+int nfn_native_tile_linear_bf16_input_weight_bf16_float32(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* weight_bf16_bits,
+    const float* bias,
+    float* out,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    void* cuda_stream);
+
 int nfn_native_tile_linear_backward_input_float32(
     const float* grad_out,
     const float* weight,
@@ -360,6 +393,15 @@ int nfn_native_tile_linear_backward_input_float32(
 int nfn_native_tile_linear_backward_input_bf16_float32(
     const float* grad_out,
     const float* weight,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    void* cuda_stream);
+
+int nfn_native_tile_linear_backward_input_weight_bf16_float32(
+    const float* grad_out,
+    const std::uint16_t* weight_bf16_bits,
     float* grad_x,
     std::int64_t rows,
     std::int64_t input_dim,

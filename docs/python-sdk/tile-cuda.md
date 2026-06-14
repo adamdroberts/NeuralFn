@@ -129,12 +129,17 @@ causal masks. Training JSON reports
 `attention_backward_strategy: "tk-sm120-bf16-recompute-forward-bridge"`,
 `attention_forward_tk_launch_count`, and `attention_backward_tk_launch_count`.
 
-Trainer-facing linear GEMMs use the same native ABI but the full GPT-2 trainer
-uses a targeted split: transformer block forward/recompute projections call
-`nfn_native_tile_linear_bf16_float32`, and transformer block dInput GEMMs call
-`nfn_native_tile_linear_backward_input_bf16_float32`, to force the cached BF16
-workspace plus `cublasGemmEx` bridge where the stable weight operand can be
-cached. Transformer block dWeight+bias accumulation calls
+Trainer-facing linear GEMMs use the same native ABI, and the full dense GPT
+trainer now keeps persistent BF16 shadows for block projection weights while
+retaining FP32 master weights, gradients, and AdamW state. The trainer refreshes
+QKV, attention projection, MLP FC, and MLP projection shadows with one
+`nfn_native_tile_float32_to_bf16_bits_many` call after initialization and each
+AdamW update. Transformer block forward/recompute projections and block dInput
+GEMMs consume those shadows through `nfn_native_tile_linear_weight_bf16_float32`,
+`nfn_native_tile_linear_weight_bf16_output_float32`,
+`nfn_native_tile_linear_bf16_input_weight_bf16_float32`, and
+`nfn_native_tile_linear_backward_input_weight_bf16_float32`. Transformer block
+dWeight+bias accumulation calls
 `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32` or
 `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32`,
 which request cuBLASLt `CUBLASLT_EPILOGUE_BGRADB` for supported BF16 block
@@ -168,6 +173,9 @@ after AdamW updates. GPT-2 training JSON reports `linear_backend_strategy:
 "block-bf16-cublaslt-shape-gated-lm-head-tk-sm120-default"` when the default
 block cuBLASLt plus TK LM-head path runs,
 `block_forward_linear_strategy`, `block_backward_input_linear_strategy`,
+`block_weight_bf16_shadow_strategy`, `block_weight_bf16_shadow_elements`,
+`block_weight_bf16_shadow_bytes`, `block_weight_bf16_shadow_descriptor_count`,
+`block_weight_bf16_refresh_count`,
 `block_backward_mlp_proj_dgelu_strategy`,
 `block_backward_weight_linear_strategy`,
 `non_block_forward_backward_linear_strategy`, `lm_head_logits_linear_strategy`,
