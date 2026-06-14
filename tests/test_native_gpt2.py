@@ -210,7 +210,7 @@ def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) ->
 
     argv = cfg.argv()
     assert cached_meta["token_cache_format"] == "raw_text_uint16_shards"
-    assert cfg.lm_head_row_chunk_size == 8192
+    assert cfg.lm_head_row_chunk_size == 4096
     assert argv[:3] == ["/opt/nfn/train_gpt2cu", "-i", str(dataset_path / "fineweb_train_000000.bin")]
     assert argv[argv.index("-j") + 1] == str(dataset_path / "fineweb_val_000000.bin")
     assert argv[argv.index("-v") + 1] == "1000"
@@ -3626,6 +3626,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS" in gpt2_source_text
+    assert "kDefaultStoredPackedAttentionBlocks = 11" in gpt2_source_text
+    assert "kDefaultLmHeadRowChunkSize = 4096" in gpt2_source_text
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "kTkPackedAttentionBackwardDefaultMaxBatchPerLaunch = 64" in kernels_text

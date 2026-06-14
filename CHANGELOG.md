@@ -6,6 +6,45 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT LM-head workspace and packed-attention retune
+
+#### Changed
+
+- Dense GPT native training now defaults the tied LM-head row chunk to 4096
+  rows instead of 8192 rows across the compiled C++ trainer, Python native
+  wrapper, and SDK config. The smaller chunk halves BF16 logit workspace at the
+  default `64 x 1024` microbatch, leaving memory for one additional stored
+  packed-attention block.
+- The default packed-QKV attention activation store cap is now eleven earlier
+  blocks instead of ten. The explicit
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` and GPT-2-prefixed fallback
+  still override the default.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Verified `python -m pytest tests/test_native_gpt2.py -q -k
+  'build_native_gpt2_run_config_matches_sm120_cli_shape or
+  build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shard_inspection
+  or native_train_tile_ops_builds_torch_free_c_abi'` (`2 passed`, `1 skipped`).
+- Verified `git diff --check`.
+- Rejected a 16,384-row LM-head chunk candidate on the dedicated RTX 5090: the
+  paired benchmark reported `candidate_over_baseline` mean `5.900867` because it
+  hit the memory-pressure cliff.
+- Confirmed 4096-row chunks were neutral/slightly faster than 8192-row chunks in
+  an interleaved five-sample benchmark:
+  `candidate_over_baseline` mean `0.998056`.
+- Confirmed the combined candidate, 4096-row LM-head chunks plus eleven stored
+  packed-attention blocks, remained faster than the current defaults in an
+  interleaved five-sample benchmark:
+  `candidate_over_baseline` mean `0.997010`.
+- Ran a clean default one-step TinyStories stage profile on the dedicated RTX
+  5090 after changing the defaults; JSON reported
+  `lm_head_row_chunk_size: 4096`,
+  `stored_packed_attention_activation_blocks: 11`, and about `144,765`
+  tokens/s.
+
 ### 2026-06-14 Native GPT packed-attention backward cap diagnostics
 
 #### Changed

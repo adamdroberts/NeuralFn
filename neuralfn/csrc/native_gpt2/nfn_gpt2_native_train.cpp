@@ -32,7 +32,8 @@ namespace {
 
 constexpr std::int64_t kAttentionForwardValueReuse = 64;
 constexpr std::int64_t kAttentionBackwardDimReuse = 64;
-constexpr std::int64_t kDefaultStoredPackedAttentionBlocks = 10;
+constexpr std::int64_t kDefaultStoredPackedAttentionBlocks = 11;
+constexpr int kDefaultLmHeadRowChunkSize = 4096;
 
 struct Config {
     std::string model_family = "gpt";
@@ -57,7 +58,7 @@ struct Config {
     int num_layers = 12;
     int eval_batches = 1;
     int eval_batch_size = 0;
-    int lm_head_row_chunk_size = 8192;
+    int lm_head_row_chunk_size = kDefaultLmHeadRowChunkSize;
     double learning_rate = 0.0006;
     double final_lr_fraction = 0.0;
     double weight_decay = 0.1;
@@ -290,7 +291,8 @@ void print_usage(const char* program) {
         << "  --print-command                   Print the backend command without training; tile-cuda exits before CUDA/shard setup\n\n"
         << "Training options mirror train_gpt.py names, including --eval-every-steps, --eval-batches, --eval-batch-size, --batch-size, --train-seq-len,\n"
         << "  --train-batch-tokens, --learning-rate, --final-lr-fraction, --weight-decay, --warmup-steps, and --max-steps.\n"
-        << "  --lm-head-row-chunk-size N        Tied LM-head full-vocab row chunk size for the Tile-CUDA transformer loop; default 8192.\n"
+        << "  --lm-head-row-chunk-size N        Tied LM-head full-vocab row chunk size for the Tile-CUDA transformer loop; default "
+        << kDefaultLmHeadRowChunkSize << ".\n"
         << "Dataset default: roneneldan__TinyStories__TinyStoriesV2-GPT4.\n"
         << "SM120 defaults match llm.kittens/train-sm120.sh: -v 250 -b 64 -t 1024 -d 524288 -l 0.0006 -q 0.0 -c 0.1 -u 60 -x 20000.\n";
 }

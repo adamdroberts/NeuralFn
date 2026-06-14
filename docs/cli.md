@@ -217,7 +217,7 @@ The public GPT-2 tokenizer vocab stays 50,257, while the native tied token
 embedding/LM-head tensor is padded to 50,304 rows for GEMM-friendly layout;
 training JSON reports both `vocab: 50257` and `padded_vocab: 50304`, and
 `--dry-run` / `--print-plan` reports `shape.padded_vocab_size: 50304`.
-The tied LM-head row chunk defaults to 8192 rows and can be overridden with
+The tied LM-head row chunk defaults to 4096 rows and can be overridden with
 `--lm-head-row-chunk-size` on the compiled C++ entrypoint or
 `--native-cuda-lm-head-row-chunk-size` from the wrapper/root CLI. Loss partials
 are reduced on device before one host loss copy per forward loss, and tied
@@ -607,10 +607,10 @@ fallback name is `NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP`.
 `attention_backward_tk_launch_count` counts packed backward chunks, not just
 wrapper calls, so smaller caps are visible in runtime JSON.
 The default route also stores packed BF16 QKV plus packed BF16 O for the first
-ten earlier blocks on the RTX 5090 workstation shape and reuses those saved
+eleven earlier blocks on the RTX 5090 workstation shape and reuses those saved
 tensors during backward. Runtime JSON reports `packed_attention_activation_storage_strategy:
 "packed-qkv-o-bf16-forward-store-direct-backward"`,
-`stored_packed_attention_activation_blocks: 10`, and
+`stored_packed_attention_activation_blocks: 11`, and
 `stored_packed_attention_*` counters. Set
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` for the previous
 lower-memory recompute path, or set

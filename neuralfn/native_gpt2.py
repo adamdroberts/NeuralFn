@@ -82,7 +82,7 @@ class NativeGpt2RunConfig:
     max_steps: int
     eval_batches: int = 1
     eval_batch_size: int = 0
-    lm_head_row_chunk_size: int = 8192
+    lm_head_row_chunk_size: int = 4096
     activation: str = "gelu"
     moa_interval: int = 50
     kernel_backend: str = "tile-cuda"
@@ -653,7 +653,7 @@ def build_native_gpt2_run_config(
     train_transformer_lm: bool = True,
     checkpoint_metadata_smoke: bool = False,
     cuda_runtime_lib: str = "",
-    lm_head_row_chunk_size: int = 8192,
+    lm_head_row_chunk_size: int = 4096,
     template_name: str = "gpt",
     graph_file: str = "",
     allow_train_as_val: bool = False,
@@ -753,7 +753,7 @@ def build_native_gpt2_compiled_cli_run_config(
     train_transformer_lm: bool = True,
     checkpoint_metadata_smoke: bool = False,
     cuda_runtime_lib: str = "",
-    lm_head_row_chunk_size: int = 8192,
+    lm_head_row_chunk_size: int = 4096,
     template_name: str = "gpt",
     graph_file: str = "",
     model_family: str = "gpt",
