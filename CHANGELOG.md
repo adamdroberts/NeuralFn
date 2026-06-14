@@ -6,6 +6,47 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT BF16 fused MLP shadow routes
+
+#### Changed
+
+- Added raw Tile ABI symbols for BF16-shadow fused MLP routes:
+  `nfn_native_tile_linear_weight_bf16_gelu_bf16_float32` for stored-MLP
+  FC+bias+GELU and
+  `nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_float32` for
+  fused MLP projection dInput plus saved-BF16 GELU backward.
+- Dense GPT native training now routes those fused MLP paths through persistent
+  BF16 block-weight shadows instead of repacking the FP32 block weights inside
+  the fused kernels. FP32 master weights, gradients, and AdamW state remain the
+  optimizer source of truth.
+- Runtime JSON now reports the shadow-weight fused strategies as
+  `stored_mlp_forward_strategy:
+  "tk-sm120-fused-fc-bias-gelu-bf16-store-bf16-shadow-weight"` and
+  `block_backward_mlp_proj_dgelu_strategy:
+  "tk-sm120-fused-dinput-dgelu-bf16-store-bf16-shadow-weight-float32-grad"`.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran focused native GPT tests:
+  `python -m pytest tests/test_native_gpt2.py -q -k
+  'build_native_gpt2_run_config_matches_sm120_cli_shape or
+  build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shard_inspection
+  or native_train_tile_ops_builds_torch_free_c_abi or
+  native_train_tile_ops_exports_required_symbols'` (`2 passed`, `1 skipped`).
+- Ran a GPU-visible one-step TinyStories stage profile on the dedicated RTX
+  5090 with `CUDA_VISIBLE_DEVICES=0` and `CUDA_DEVICE_MAX_CONNECTIONS=1`. JSON
+  reported the two new ABI symbols in `kernels`, the new strategy strings,
+  `linear_bf16_a_pack_count: 556`, and about `148,888` tokens/s.
+- Built a temporary previous-commit worktree at `ed5370d` and ran
+  `tools/paired_kernel_speed.py` with one warmup pair and five measured pairs,
+  pinning both commands to `CUDA_VISIBLE_DEVICES=0`. The benchmark recorded GPU
+  0 at `0%` utilization, `613/32607 MiB`, and no compute processes before
+  timing; the candidate reported `candidate_over_baseline` mean `0.994699`.
+
 ### 2026-06-14 Native GPT BF16 block weight shadows
 
 #### Changed

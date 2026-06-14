@@ -723,6 +723,8 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32",
         "nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32",
         "nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32",
+        "nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_float32",
+        "nfn_native_tile_linear_weight_bf16_gelu_bf16_float32",
         "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32",
         "nfn_native_tile_float32_to_bf16_bits_many",
         "nfn_native_tile_gradient_accumulate_float32",
@@ -6777,11 +6779,13 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_linear_bf16_input_bits_float32",
         "nfn_native_tile_linear_bf16_input_weight_bf16_float32",
         "nfn_native_tile_linear_bf16_gelu_bf16_float32",
+        "nfn_native_tile_linear_weight_bf16_gelu_bf16_float32",
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_input_bf16_float32",
         "nfn_native_tile_linear_backward_input_weight_bf16_float32",
         "nfn_native_tile_linear_backward_input_bf16_bits_float32",
         "nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32",
+        "nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32",
         "nfn_native_tile_linear_backward_bias_accumulate_float32",
@@ -6891,8 +6895,8 @@ int run_transformer_lm_training_json(
     using LinearBf16InputWeightBf16Fn = int (*)(
         const std::uint16_t*, const std::uint16_t*, const float*, float*,
         std::int64_t, std::int64_t, std::int64_t, bool, void*);
-    using LinearBf16GeluBf16Fn = int (*)(
-        const float*, const float*, const float*, std::uint16_t*, std::uint16_t*,
+    using LinearWeightBf16GeluBf16Fn = int (*)(
+        const float*, const std::uint16_t*, const float*, std::uint16_t*, std::uint16_t*,
         std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardInputFn = int (*)(
         const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
@@ -6900,8 +6904,8 @@ int run_transformer_lm_training_json(
         const std::uint16_t*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardInputWeightBf16Fn = int (*)(
         const float*, const std::uint16_t*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
-    using LinearBackwardInputDgeluBf16BitsFn = int (*)(
-        const float*, const float*, const std::uint16_t*, std::uint16_t*, float*,
+    using LinearBackwardInputDgeluWeightBf16BitsFn = int (*)(
+        const float*, const std::uint16_t*, const std::uint16_t*, std::uint16_t*, float*,
         std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardWeightAccumulateFn = int (*)(
         const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
@@ -7018,11 +7022,11 @@ int run_transformer_lm_training_json(
     LinearWeightBf16OutputFn linear_weight_bf16_output = nullptr;
     Bf16BitsAddBiasInplaceFn bf16_bits_add_bias_inplace = nullptr;
     LinearBf16InputWeightBf16Fn linear_bf16_input_weight_bf16 = nullptr;
-    LinearBf16GeluBf16Fn linear_bf16_gelu_bf16 = nullptr;
+    LinearWeightBf16GeluBf16Fn linear_weight_bf16_gelu_bf16 = nullptr;
     LinearBackwardInputFn linear_backward_input = nullptr;
     LinearBackwardInputBf16BitsFn linear_backward_input_bf16_bits = nullptr;
     LinearBackwardInputWeightBf16Fn linear_backward_input_weight_bf16 = nullptr;
-    LinearBackwardInputDgeluBf16BitsFn linear_backward_input_dgelu_bf16_bits = nullptr;
+    LinearBackwardInputDgeluWeightBf16BitsFn linear_backward_input_dgelu_weight_bf16_bits = nullptr;
     LinearBackwardWeightAccumulateFn linear_backward_weight_accumulate = nullptr;
     LinearBackwardWeightBiasAccumulateFn linear_backward_weight_bias_accumulate_bf16 = nullptr;
     LinearBackwardWeightBiasAccumulateBf16BitsFn linear_backward_weight_bias_accumulate_bf16_bits = nullptr;
@@ -7192,8 +7196,9 @@ int run_transformer_lm_training_json(
                 linear_bf16_input_weight_bf16 =
                     load_symbol<LinearBf16InputWeightBf16Fn>(
                         tile_handle, "nfn_native_tile_linear_bf16_input_weight_bf16_float32");
-                linear_bf16_gelu_bf16 =
-                    load_symbol<LinearBf16GeluBf16Fn>(tile_handle, "nfn_native_tile_linear_bf16_gelu_bf16_float32");
+                linear_weight_bf16_gelu_bf16 =
+                    load_symbol<LinearWeightBf16GeluBf16Fn>(
+                        tile_handle, "nfn_native_tile_linear_weight_bf16_gelu_bf16_float32");
                 linear_backward_input = load_symbol<LinearBackwardInputFn>(
                     tile_handle, "nfn_native_tile_linear_backward_input_float32");
                 linear_backward_input_weight_bf16 =
@@ -7201,9 +7206,9 @@ int run_transformer_lm_training_json(
                         tile_handle, "nfn_native_tile_linear_backward_input_weight_bf16_float32");
                 linear_backward_input_bf16_bits = load_symbol<LinearBackwardInputBf16BitsFn>(
                     tile_handle, "nfn_native_tile_linear_backward_input_bf16_bits_float32");
-                linear_backward_input_dgelu_bf16_bits =
-                    load_symbol<LinearBackwardInputDgeluBf16BitsFn>(
-                        tile_handle, "nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32");
+                linear_backward_input_dgelu_weight_bf16_bits =
+                    load_symbol<LinearBackwardInputDgeluWeightBf16BitsFn>(
+                        tile_handle, "nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_float32");
                 linear_backward_weight_accumulate = load_symbol<LinearBackwardWeightAccumulateFn>(
                     tile_handle, "nfn_native_tile_linear_backward_weight_accumulate_float32");
                 linear_backward_weight_bias_accumulate_bf16 =
@@ -9151,9 +9156,9 @@ int run_transformer_lm_training_json(
                     });
                     run_timed_stage(stage_name + ".mlp_fc_gelu.fc_gelu", [&]() {
                         if (error.empty()) {
-                            run(linear_bf16_gelu_bf16(
+                            run(linear_weight_bf16_gelu_bf16(
                                     tape.ln2_out,
-                                    block.fc_weight,
+                                    block.fc_weight_bf16,
                                     block.fc_bias,
                                     fused_mlp_store->fc_out,
                                     fused_mlp_store->act,
@@ -9369,9 +9374,9 @@ int run_transformer_lm_training_json(
             run_timed_stage("block_backward.mlp_proj.dinput", [&]() {
                 if (stored_mlp != nullptr && fuse_mlp_proj_dgelu_enabled) {
                     if (error.empty()) {
-                        run(linear_backward_input_dgelu_bf16_bits(
+                        run(linear_backward_input_dgelu_weight_bf16_bits(
                                 incoming_grad,
-                                block.mlp_proj_weight,
+                                block.mlp_proj_weight_bf16,
                                 stored_mlp->fc_out,
                                 mlp_forward_act_bf16,
                                 grad_fc_out,
@@ -10372,7 +10377,7 @@ int run_transformer_lm_training_json(
         << (fuse_mlp_proj_dgelu_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_mlp_proj_dgelu_strategy\": \""
         << (fuse_mlp_proj_dgelu_enabled
-                ? "tk-sm120-fused-dinput-dgelu-bf16-store-float32-grad"
+                ? "tk-sm120-fused-dinput-dgelu-bf16-store-bf16-shadow-weight-float32-grad"
                 : "separate-dinput-plus-gelu")
         << "\",\n"
         << "  \"block_backward_weight_linear_strategy\": \""
@@ -10580,7 +10585,7 @@ int run_transformer_lm_training_json(
         << (stored_mlp_activation_block_count > 0 ? "bf16-forward-store-direct-backward-opt-in" : "disabled")
         << "\",\n"
         << "  \"stored_mlp_forward_strategy\": \""
-        << (stored_mlp_activation_block_count > 0 ? "tk-sm120-fused-fc-bias-gelu-bf16-store" : "disabled")
+        << (stored_mlp_activation_block_count > 0 ? "tk-sm120-fused-fc-bias-gelu-bf16-store-bf16-shadow-weight" : "disabled")
         << "\",\n"
         << "  \"stored_mlp_activation_blocks\": " << stored_mlp_activation_block_count << ",\n"
         << "  \"stored_mlp_activation_elements\": " << stored_mlp_activation_arena_elements << ",\n"

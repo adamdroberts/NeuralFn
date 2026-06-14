@@ -187,10 +187,15 @@ block cuBLASLt plus TK LM-head path runs,
 The default `non_block_forward_backward_linear_strategy` is
 `"padded-lm-head-tk-sm120-bf16-gemm-default"` when TK GEMM is available.
 The default dense GPT path also exposes
-`nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32`, which fuses the
-MLP projection dInput GEMM with saved-BF16 GELU backward. Active runs report
+`nfn_native_tile_linear_weight_bf16_gelu_bf16_float32` for stored-MLP
+FC+bias+GELU and
+`nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_float32` for fused
+MLP projection dInput plus saved-BF16 GELU backward. Both consume persistent
+BF16 block-weight shadows while keeping FP32 masters and optimizer state.
+Active runs report `stored_mlp_forward_strategy` as
+`"tk-sm120-fused-fc-bias-gelu-bf16-store-bf16-shadow-weight"` and
 `block_backward_mlp_proj_dgelu_strategy` as
-`"tk-sm120-fused-dinput-dgelu-bf16-store-float32-grad"`. Set
+`"tk-sm120-fused-dinput-dgelu-bf16-store-bf16-shadow-weight-float32-grad"`. Set
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` to force the older separate dInput plus
 GELU-backward route for paired benchmarks.
 `NFN_TILE_CUDA_LINEAR_TK_FLOAT_OUT=1` or

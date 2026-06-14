@@ -192,7 +192,17 @@ logits, dHidden, and dWeight chunks also default to the BF16 classifier path,
 which writes BF16 logits, overwrites them with BF16 dlogits, then feeds BF16
 dlogits into the LM-head dHidden and dWeight GEMMs. Set
 `NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS=0` to return only the tied LM-head chunks to
-the older optimized TF32 tensor-op `cublasSgemm` path for debugging. Set
+the older optimized TF32 tensor-op `cublasSgemm` path for debugging.
+`nfn_native_tile_linear_weight_bf16_gelu_bf16_float32` now handles stored-MLP
+FC+bias+GELU and
+`nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_float32` handles
+fused MLP projection dInput plus saved-BF16 GELU backward, so these fused MLP
+routes also consume persistent BF16 block-weight shadows. Runtime JSON reports
+`stored_mlp_forward_strategy:
+"tk-sm120-fused-fc-bias-gelu-bf16-store-bf16-shadow-weight"` and
+`block_backward_mlp_proj_dgelu_strategy:
+"tk-sm120-fused-dinput-dgelu-bf16-store-bf16-shadow-weight-float32-grad"` when
+that path is active. Set
 `NFN_TILE_CUDA_LINEAR_BF16=1` or
 `NFN_NATIVE_LINEAR_BF16=1` only when profiling the normal linear ABI's BF16
 bridge. Set `NFN_TILE_CUDA_LINEAR_CUBLASLT=1` or
