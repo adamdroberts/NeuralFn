@@ -1501,7 +1501,7 @@ struct TrainerLinearBf16Workspace {
 
 TrainerLinearBf16Workspace g_trainer_linear_bf16_workspace;
 std::mutex g_trainer_linear_bf16_workspace_mutex;
-constexpr std::int64_t kLinearBackwardBiasRowChunkSize = 1024;
+constexpr std::int64_t kLinearBackwardBiasRowChunkSize = 512;
 constexpr std::size_t kTrainerLinearBf16CacheEntryLimit = 128;
 
 std::int64_t trainer_linear_bf16_cached_a_total_capacity(const TrainerLinearBf16Workspace& workspace) {

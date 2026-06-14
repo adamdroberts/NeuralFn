@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT row-chunk reduction tuning
+
+#### Changed
+
+- Retuned the shared large-row Tile atomic reduction chunk size from 1024 rows
+  to 512 rows for Linear bias-gradient fallbacks, Linear dWeight accumulate
+  fallbacks, and LayerNorm affine-gradient fallbacks. The smaller chunk
+  increases reduction-grid parallelism for the default dense GPT
+  `batch=64`, `seq=1024` native C++ training shape while keeping the same
+  accumulation contract and cuBLAS/cuBLASLt fast paths where those are selected.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran a GPU-visible one-step TinyStories stage profile on the dedicated RTX
+  5090 with `CUDA_VISIBLE_DEVICES=0` and `CUDA_DEVICE_MAX_CONNECTIONS=1`.
+  The 512-row candidate reported `train_loop_wall_ms: 3488.93`,
+  `train_tokens_per_second: 150272`, and reduced combined LN1/LN2 affine time
+  from about `95.5 ms` to about `59.1 ms` versus the previous 1024-row profile.
+- Built a temporary committed-baseline worktree and ran
+  `tools/paired_kernel_speed.py` with one warmup pair and three measured pairs,
+  pinning both commands to `CUDA_VISIBLE_DEVICES=0`. The benchmark recorded GPU
+  0 as the dedicated `NVIDIA GeForce RTX 5090`, `0%` utilization, `539/32607`
+  MiB, and no compute processes before timing; the 512-row candidate reported
+  `candidate_over_baseline` mean `0.992931`. A 256-row candidate also beat
+  baseline but was slower than 512-row in paired timing
+  (`candidate_over_baseline` mean `0.994437`), so 512 rows was kept.
+
 ### 2026-06-14 Native GPT BF16 fused MLP shadow routes
 
 #### Changed

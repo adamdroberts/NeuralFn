@@ -440,9 +440,10 @@ Accumulation buffers are zeroed once per optimizer step. JSON reports
 `gradient_accumulation_copy_loop_elided: true`,
 `gradient_zero_strategy: "fused-multi-buffer-accumulation-zero"`, and
 `gradient_zeroed_buffer_count: 0` under `block_state_layout`. Large-row Linear
-bias-gradient reductions use the 1024-row Tile chunked atomic reduction
-path instead of cuBLAS SGEMV on the default GPT-2 `batch=64`, `seq=1024` shape,
-while small reductions can still use cuBLAS. Accumulation buffers are zeroed once
+bias-gradient and LayerNorm affine-gradient reductions use the 512-row Tile
+chunked atomic reduction path on the fallback route instead of cuBLAS SGEMV on
+the default GPT `batch=64`, `seq=1024` shape, while small reductions can still
+use cuBLAS where selected. Accumulation buffers are zeroed once
 per optimizer step through
 `nfn_native_tile_fill_many_float32` over the same descriptor table used by the
 fused AdamW call, so the default 12-layer trainer emits one zero-fill kernel

@@ -3176,7 +3176,7 @@ def test_large_row_reduction_fallbacks_use_shared_row_chunks() -> None:
     root = Path(__file__).resolve().parents[1]
     kernels_text = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text()
 
-    assert "kLinearBackwardBiasRowChunkSize = 1024" in kernels_text
+    assert "kLinearBackwardBiasRowChunkSize = 512" in kernels_text
     for function_name in (
         "launch_layer_norm_backward_affine_float32",
         "launch_layer_norm_backward_affine_accumulate_float32",
@@ -3426,7 +3426,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "tk_linear_backward_input_dgelu_bf16_bits_float32" in kernels_text
     assert "tk_linear_backward_input_dgelu_weight_bf16_bits_float32" in kernels_text
     assert "matmul_dispatch_tk_ab" in kernels_text
-    assert "kLinearBackwardBiasRowChunkSize = 1024" in kernels_text
+    assert "kLinearBackwardBiasRowChunkSize = 512" in kernels_text
     for function_name in (
         "launch_linear_backward_weight_accumulate_bf16_bits_float32",
         "launch_linear_backward_weight_accumulate_float32_bf16_bits",
