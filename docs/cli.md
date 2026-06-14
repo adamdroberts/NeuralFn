@@ -218,6 +218,11 @@ float-gradient handoff. Runtime JSON reports
 `stored_mlp_activation_backward_consumer_strategy` when the handoff is active.
 The older float-gradient path still uses the fused dInput+dGELU ABI and only
 hands the following MLP FC backward a float gradient when the handoff is forced off.
+The mixed float32-hidden/BF16-grad dWeight+bias ABI can opt into a cuBLASLt
+bgrad epilogue route for QKV profiling with
+`NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=1` or
+`NFN_TILE_CUDA_LINEAR_FLOAT32_BF16_BGRAD=1`; it remains default-off after paired
+RTX 5090 timing showed a slight train-loop regression.
 Set
 `NFN_TILE_CUDA_LINEAR_BF16=1` or
 `NFN_NATIVE_LINEAR_BF16=1` only when profiling the normal linear ABI's BF16

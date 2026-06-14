@@ -163,6 +163,12 @@ validation/test CE partials directly from those BF16 logits,
 overwrites them with BF16 dlogits, and the BF16 dlogits feed
 `nfn_native_tile_linear_backward_input_bf16_bits_float32` plus
 `nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits`.
+The mixed float32-hidden/BF16-grad dWeight+bias ABI also has an opt-in
+cuBLASLt bgrad epilogue route for QKV profiling; set
+`NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=1` or
+`NFN_TILE_CUDA_LINEAR_FLOAT32_BF16_BGRAD=1` to compare it against the default
+split-bias route. It remains default-off after paired dedicated-RTX-5090 timing
+showed a slight train-loop regression.
 The raw ABI also exports
 `nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32`
 for candidate LM-head dWeight profiles that pack the final LayerNorm hidden

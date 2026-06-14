@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Add opt-in mixed float32/BF16 dWeight bgrad epilogue
+
+#### Changed
+
+- The trainer-facing Tile-CUDA linear helper now has an opt-in cuBLASLt
+  `CUBLASLT_EPILOGUE_BGRADB` route for the mixed float32-hidden/BF16-grad
+  dWeight+bias ABI used by the dense GPT QKV backward default path.
+- The path is controlled by
+  `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=1`,
+  `NFN_NATIVE_GPT2_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=1`, or
+  `NFN_TILE_CUDA_LINEAR_FLOAT32_BF16_BGRAD=1`. It remains default-off because
+  the paired benchmark did not justify promoting it.
+
+#### Verification
+
+- Rebuilt `libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran a one-step TinyStories smoke pinned to the dedicated RTX 5090
+  (`CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1`) with the new path
+  enabled. It completed with no missing symbols; the QKV dWeight/bias substage
+  dropped in the noisy single profile, but the full step regressed.
+- Ran `tools/paired_kernel_speed.py` with one warmup and five measured pairs on
+  GPU 0, comparing `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=0` against
+  the opt-in candidate. Candidate train-loop ratio was `1.001718`, tokens/s
+  ratio was `0.998302`, and total runtime ratio was `1.002059`, so the helper
+  remains opt-in rather than default.
+
 ### 2026-06-14 Default AdamW startup zeroing to contiguous Tile ranges
 
 #### Changed
