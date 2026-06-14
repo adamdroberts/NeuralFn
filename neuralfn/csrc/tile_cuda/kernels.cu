@@ -6054,6 +6054,7 @@ __tile_global__ void linear_bias_residual_layer_norm_float32_kernel(
     float* __restrict__ norm_out,
     float* __restrict__ mean_out,
     float* __restrict__ rstd_out,
+    std::uint16_t* __restrict__ residual_bf16_out,
     std::int64_t rows,
     std::int64_t dim,
     float eps) {
@@ -6081,6 +6082,10 @@ __tile_global__ void linear_bias_residual_layer_norm_float32_kernel(
   auto zero = ct::full<decltype(combined)>(0.0f);
   auto valid = ct::select(mask, combined, zero);
   ct::store_masked(residual_out + base + d, combined, mask);
+  if (residual_bf16_out != nullptr) {
+    auto* residual_bf16 = reinterpret_cast<__nv_bfloat16*>(residual_bf16_out);
+    ct::store_masked(residual_bf16 + base + d, ct::element_cast<__nv_bfloat16>(combined), mask);
+  }
   auto sum_x = ct::sum(valid, 0_ic);
   auto dim_f = ct::full<decltype(sum_x)>(static_cast<float>(dim));
   auto mean = sum_x / dim_f;
@@ -10155,6 +10160,7 @@ void launch_linear_bias_residual_layer_norm_float32(
       norm_out,
       nullptr,
       nullptr,
+      nullptr,
       rows,
       output_dim,
       eps);
@@ -10186,6 +10192,40 @@ void launch_linear_bias_residual_layer_norm_with_stats_float32(
       norm_out,
       mean_out,
       rstd_out,
+      nullptr,
+      rows,
+      output_dim,
+      eps);
+}
+
+void launch_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32(
+    const float* residual,
+    const float* linear_out,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    float* mean_out,
+    float* rstd_out,
+    std::uint16_t* residual_bf16_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    cudaStream_t stream) {
+  linear_bias_residual_layer_norm_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      residual,
+      linear_out,
+      linear_bias,
+      residual_scale,
+      norm_weight,
+      norm_bias,
+      residual_out,
+      norm_out,
+      mean_out,
+      rstd_out,
+      residual_bf16_out,
       rows,
       output_dim,
       eps);

@@ -6,6 +6,42 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT fused residual1 BF16 store
+
+#### Changed
+
+- Added the raw Tile ABI
+  `nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32`.
+  It extends the stats-preserving attention projection bias+residual+LN2 fused
+  kernel so dense GPT can write the BF16 residual1 activation cache in the same
+  launch instead of launching a separate `float32_to_bf16` conversion over
+  residual1.
+- Dense GPT training uses the fused residual1 store by default when residual1
+  activation storage is enabled. Set `NFN_NATIVE_GPT_FUSE_RESIDUAL1_STORE=0` or
+  `NFN_NATIVE_GPT2_FUSE_RESIDUAL1_STORE=0` to compare against the older separate
+  store path.
+- Runtime JSON now reports `residual1_activation_store_strategy` as either
+  `"fused-attention-residual-layernorm-bf16-store"` or
+  `"separate-float32-to-bf16-store"` when residual1 storage is active.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh` and rebuilt
+  `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step TinyStories probe on the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0` and `CUDA_DEVICE_MAX_CONNECTIONS=1`; it reported
+  `residual1_activation_store_strategy:
+  "fused-attention-residual-layernorm-bf16-store"` and loaded the new raw symbol
+  with no missing symbols.
+- Ran `tools/paired_kernel_speed.py` on GPU 0 with one warmup pair and five
+  measured pairs comparing `NFN_NATIVE_GPT_FUSE_RESIDUAL1_STORE=0` against the
+  default fused store. The benchmark recorded GPU 0 as
+  `NVIDIA GeForce RTX 5090`, `0%` utilization, about `331/32607` MiB used, and
+  no compute processes before timing. The fused candidate reported
+  `candidate_over_baseline` mean `0.998396`, median `0.998298`, min
+  `0.997474`, and max `0.999760`.
+
 ### 2026-06-14 Native GPT residual1 activation cache default
 
 #### Changed

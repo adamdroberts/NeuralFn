@@ -817,6 +817,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_linear_bias_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32",
+        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32",
         "nfn_native_tile_gelu_float32",
         "nfn_native_tile_gelu_add_bias_float32",
         "nfn_native_tile_gelu_backward_float32",
@@ -6757,6 +6758,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_linear_bias_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32",
+        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32",
         "nfn_native_tile_split_qkv_float32",
         "nfn_native_tile_split_qkv_to_heads_float32",
         "nfn_native_tile_split_qkv_to_heads_add_bias_float32",
@@ -6860,6 +6862,9 @@ int run_transformer_lm_training_json(
     using LinearBiasResidualLayerNormWithStatsFn =
         int (*)(const float*, const float*, const float*, const float*, const float*, const float*,
                 float*, float*, float*, float*, std::int64_t, std::int64_t, float, void*);
+    using LinearBiasResidualLayerNormWithStatsBf16ResidualFn =
+        int (*)(const float*, const float*, const float*, const float*, const float*, const float*,
+                float*, float*, float*, float*, std::uint16_t*, std::int64_t, std::int64_t, float, void*);
     using SplitQkvToHeadsAddBiasFn = int (*)(
         const float*, const float*, float*, float*, float*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
@@ -7008,6 +7013,8 @@ int run_transformer_lm_training_json(
     ResidualAddFn residual_add = nullptr;
     LinearBiasResidualAddFn linear_bias_residual_add = nullptr;
     LinearBiasResidualLayerNormWithStatsFn linear_bias_residual_layer_norm_with_stats = nullptr;
+    LinearBiasResidualLayerNormWithStatsBf16ResidualFn
+        linear_bias_residual_layer_norm_with_stats_bf16_residual = nullptr;
     SplitQkvToHeadsAddBiasFn split_qkv_to_heads_add_bias = nullptr;
     MergeHeadsFn merge_heads = nullptr;
     LayerNormFn layer_norm = nullptr;
@@ -7166,6 +7173,10 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_linear_bias_residual_add_float32");
                 linear_bias_residual_layer_norm_with_stats = load_symbol<LinearBiasResidualLayerNormWithStatsFn>(
                     tile_handle, "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32");
+                linear_bias_residual_layer_norm_with_stats_bf16_residual =
+                    load_symbol<LinearBiasResidualLayerNormWithStatsBf16ResidualFn>(
+                        tile_handle,
+                        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32");
                 split_qkv_to_heads_add_bias = load_symbol<SplitQkvToHeadsAddBiasFn>(
                     tile_handle, "nfn_native_tile_split_qkv_to_heads_add_bias_float32");
                 merge_heads = load_symbol<MergeHeadsFn>(tile_handle, "nfn_native_tile_merge_heads_float32");
@@ -7441,6 +7452,11 @@ int run_transformer_lm_training_json(
                           "NFN_NATIVE_GPT2_STORE_RESIDUAL1_ACTIVATIONS"});
     const bool store_residual1_activations_enabled =
         env_flag_enabled_or_default(store_residual1_activations_env, true);
+    const bool fuse_residual1_store_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_FUSE_RESIDUAL1_STORE",
+                              "NFN_NATIVE_GPT2_FUSE_RESIDUAL1_STORE"}),
+            true);
     const bool fuse_attention_residual_ln2_enabled = fuse_attention_residual_ln2_default_enabled();
     const std::string fuse_mlp_proj_dgelu_env =
         env_or_empty_any({"NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU",
@@ -9029,7 +9045,8 @@ int run_transformer_lm_training_json(
                              bool compute_mlp_activations,
                              StoredAttentionActivations* fused_attention_store,
                              StoredPackedAttentionActivations* fused_packed_attention_store,
-                             StoredMlpActivations* fused_mlp_store) {
+                             StoredMlpActivations* fused_mlp_store,
+                             std::uint16_t* fused_residual1_store) {
         const std::string stage_name = label.find("recompute") == std::string::npos ? "block_forward" : "block_recompute";
         const std::int64_t stage_event = stage_begin(stage_name);
         bool ln2_precomputed = false;
@@ -9168,22 +9185,45 @@ int run_transformer_lm_training_json(
                     if (error.empty()) {
                         float* ln2_mean = fused_mlp_store != nullptr ? fused_mlp_store->ln2_mean : tape.ln2_mean;
                         float* ln2_rstd = fused_mlp_store != nullptr ? fused_mlp_store->ln2_rstd : tape.ln2_rstd;
-                        run(linear_bias_residual_layer_norm_with_stats(
-                                block_input,
-                                tape.attn_proj,
-                                block.attn_proj_bias,
-                                residual_scale,
-                                block.ln2_weight,
-                                block.ln2_bias,
-                                tape.residual1,
-                                tape.ln2_out,
-                                ln2_mean,
-                                ln2_rstd,
-                                rows,
-                                kDim,
-                                kNormEps,
-                                nullptr),
-                            label + ".attn.bias_residual_ln2");
+                        if (fused_residual1_store != nullptr) {
+                            run(linear_bias_residual_layer_norm_with_stats_bf16_residual(
+                                    block_input,
+                                    tape.attn_proj,
+                                    block.attn_proj_bias,
+                                    residual_scale,
+                                    block.ln2_weight,
+                                    block.ln2_bias,
+                                    tape.residual1,
+                                    tape.ln2_out,
+                                    ln2_mean,
+                                    ln2_rstd,
+                                    fused_residual1_store,
+                                    rows,
+                                    kDim,
+                                    kNormEps,
+                                    nullptr),
+                                label + ".attn.bias_residual_ln2_bf16_residual");
+                            if (error.empty()) {
+                                stored_residual1_activation_store_kernel_launches += 1;
+                            }
+                        } else {
+                            run(linear_bias_residual_layer_norm_with_stats(
+                                    block_input,
+                                    tape.attn_proj,
+                                    block.attn_proj_bias,
+                                    residual_scale,
+                                    block.ln2_weight,
+                                    block.ln2_bias,
+                                    tape.residual1,
+                                    tape.ln2_out,
+                                    ln2_mean,
+                                    ln2_rstd,
+                                    rows,
+                                    kDim,
+                                    kNormEps,
+                                    nullptr),
+                                label + ".attn.bias_residual_ln2");
+                        }
                         ln2_precomputed = error.empty();
                     }
                 } else {
@@ -9676,6 +9716,10 @@ int run_transformer_lm_training_json(
                 preserve_block_outputs && i < stored_packed_attention_activations.size()
                     ? &stored_packed_attention_activations[i]
                     : nullptr;
+            std::uint16_t* fused_residual1_store =
+                preserve_block_outputs && fuse_residual1_store_enabled && i < stored_residual1_activations.size()
+                    ? stored_residual1_activations[i]
+                    : nullptr;
             forward_block(
                 blocks[i],
                 tape,
@@ -9685,9 +9729,11 @@ int run_transformer_lm_training_json(
                 true,
                 fused_attention_store,
                 fused_packed_attention_store,
-                fused_mlp_store);
+                fused_mlp_store,
+                fused_residual1_store);
             final_block_output = tape.residual2;
-            if (error.empty() && preserve_block_outputs && i < stored_residual1_activations.size()) {
+            if (error.empty() && preserve_block_outputs && i < stored_residual1_activations.size() &&
+                (!fuse_residual1_store_enabled || !fuse_attention_residual_ln2_enabled)) {
                 run(float32_to_bf16_bits(
                         tape.residual1,
                         stored_residual1_activations[i],
@@ -9778,6 +9824,7 @@ int run_transformer_lm_training_json(
                         "block" + std::to_string(i) + ".recompute",
                         false,
                         !use_stored_mlp_activations,
+                        nullptr,
                         nullptr,
                         nullptr,
                         nullptr);
@@ -10681,6 +10728,12 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"residual1_activation_storage_strategy\": \""
         << (stored_residual1_block_count > 0 ? "bf16-forward-store-recompute-restore" : "disabled")
+        << "\",\n"
+        << "  \"residual1_activation_store_strategy\": \""
+        << (stored_residual1_block_count > 0
+                ? (fuse_residual1_store_enabled ? "fused-attention-residual-layernorm-bf16-store"
+                                                 : "separate-float32-to-bf16-store")
+                : "disabled")
         << "\",\n"
         << "  \"stored_residual1_activation_blocks\": " << stored_residual1_block_count << ",\n"
         << "  \"stored_residual1_activation_elements\": " << stored_residual1_activation_arena_elements << ",\n"
