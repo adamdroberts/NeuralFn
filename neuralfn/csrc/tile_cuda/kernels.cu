@@ -32,7 +32,7 @@ constexpr int kAttentionValueChunkSize = 64;
 constexpr int kGpt2AttentionHeads = 12;
 constexpr int kGpt2AttentionHeadDim = 64;
 constexpr int kGpt2AttentionValueChunks = kGpt2AttentionHeadDim / kAttentionValueChunkSize;
-constexpr std::int64_t kTkPackedAttentionBackwardMaxBatchPerLaunch = 48;
+constexpr std::int64_t kTkPackedAttentionBackwardDefaultMaxBatchPerLaunch = 64;
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
 std::atomic<std::int64_t> g_attention_forward_tk_launch_count{0};
 std::atomic<std::int64_t> g_attention_backward_tk_launch_count{0};
@@ -109,6 +109,25 @@ struct TkAttentionWorkspace {
 
 TkAttentionWorkspace g_tk_attention_workspace;
 std::mutex g_tk_attention_workspace_mutex;
+
+std::int64_t tk_packed_attention_backward_max_batch_per_launch() {
+  static const std::int64_t value = []() {
+    const char* raw = std::getenv("NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP");
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP");
+    }
+    if (raw == nullptr || raw[0] == '\0') {
+      return kTkPackedAttentionBackwardDefaultMaxBatchPerLaunch;
+    }
+    char* end = nullptr;
+    const long long parsed = std::strtoll(raw, &end, 10);
+    if (end == raw || parsed <= 0) {
+      return kTkPackedAttentionBackwardDefaultMaxBatchPerLaunch;
+    }
+    return static_cast<std::int64_t>(parsed);
+  }();
+  return value;
+}
 
 void release_tk_attention_workspace(TkAttentionWorkspace& workspace) {
   if (workspace.q_bf != nullptr) cudaFree(workspace.q_bf);
@@ -713,11 +732,12 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_float32(
     return 2;
   }
   const std::int64_t max_batch_per_launch =
-      std::max<std::int64_t>(1, kTkPackedAttentionBackwardMaxBatchPerLaunch);
+      std::max<std::int64_t>(1, tk_packed_attention_backward_max_batch_per_launch());
   const std::int64_t head_elements_per_batch = heads * seq_len * head_dim;
   const std::int64_t row_elements_per_batch = heads * seq_len;
   const std::int64_t packed_elements_per_batch = seq_len * heads * head_dim * 3;
   const std::int64_t merged_elements_per_batch = seq_len * heads * head_dim;
+  std::int64_t tk_backward_chunk_launches = 0;
   for (std::int64_t batch_begin = 0; batch_begin < batch; batch_begin += max_batch_per_launch) {
     const std::int64_t chunk_batch = std::min(max_batch_per_launch, batch - batch_begin);
     const std::int64_t chunk_rows = chunk_batch * row_elements_per_batch;
@@ -763,12 +783,13 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_float32(
           stream,
           true);
     }
+    tk_backward_chunk_launches += 1;
   }
   const std::int64_t packed_elements = elements * 3;
   constexpr int threads = 256;
   const int blocks = static_cast<int>((packed_elements + threads - 1) / threads);
   bf16_to_f32_kernel<<<blocks, threads, 0, stream>>>(workspace->packed_grad_bf, grad_qkv, packed_elements);
-  g_attention_backward_tk_launch_count.fetch_add(1, std::memory_order_relaxed);
+  g_attention_backward_tk_launch_count.fetch_add(tk_backward_chunk_launches, std::memory_order_relaxed);
   return static_cast<int>(cudaPeekAtLastError());
 }
 

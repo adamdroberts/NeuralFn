@@ -169,7 +169,10 @@ def test_packed_qkv_attention_backward_chunks_large_batches() -> None:
         / "kernels.cu"
     ).read_text(encoding="utf-8")
 
-    assert "kTkPackedAttentionBackwardMaxBatchPerLaunch = 48" in source
+    assert "kTkPackedAttentionBackwardDefaultMaxBatchPerLaunch = 64" in source
+    assert "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in source
+    assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in source
+    assert "tk_packed_attention_backward_max_batch_per_launch()" in source
     assert "for (std::int64_t batch_begin = 0; batch_begin < batch;" in source
     assert "chunk_batch = std::min(max_batch_per_launch, batch - batch_begin)" in source
     assert "qkv_bf16_bits + batch_begin * packed_elements_per_batch" in source
@@ -3623,6 +3626,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
+    assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
+    assert "kTkPackedAttentionBackwardDefaultMaxBatchPerLaunch = 64" in kernels_text
     assert "nfn_native_tile_scaled_dot_product_attention_store_tk_bf16_float32" in gpt2_source_text
     assert "forward_store_tk_bf16" in gpt2_source_text
     assert "tk-bf16-direct-forward-store-saved-backward" in gpt2_source_text

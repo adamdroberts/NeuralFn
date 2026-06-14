@@ -501,6 +501,7 @@ Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS`,
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS`,
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS`,
+`NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP`,
 `NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`, and
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`. The older `NFN_NATIVE_GPT2_*`
 variables remain compatibility fallbacks for the GPT-2-named wrapper,
@@ -598,6 +599,13 @@ profiling. Native plan and runtime JSON report `packed_qkv_attention_enabled`,
 "elided-direct-bf16-projection"`, and `attention_backward_strategy:
 "tk-sm120-packed-qkv-bf16-backward-bridge"` when the default packed route is
 active.
+The packed backward batch cap defaults to 64 so the workstation `64 x 1024`
+microbatch runs as one TK backward chunk. Set
+`NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48` when reproducing the
+previous split in paired candidate-vs-baseline benchmarks. The GPT-2-prefixed
+fallback name is `NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP`.
+`attention_backward_tk_launch_count` counts packed backward chunks, not just
+wrapper calls, so smaller caps are visible in runtime JSON.
 The default route also stores packed BF16 QKV plus packed BF16 O for the first
 ten earlier blocks on the RTX 5090 workstation shape and reuses those saved
 tensors during backward. Runtime JSON reports `packed_attention_activation_storage_strategy:

@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT packed-attention backward cap diagnostics
+
+#### Changed
+
+- The SM120 packed-QKV attention backward bridge now defaults its internal
+  packed-backward batch cap to 64, matching the workstation `64 x 1024`
+  microbatch in one TK backward chunk. Set
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48` or the GPT-2-prefixed
+  fallback to reproduce the previous split when running paired benchmarks.
+- `attention_backward_tk_launch_count` now increments by the actual number of
+  packed backward chunks launched by the packed-QKV bridge instead of counting
+  only one wrapper call.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran an interleaved old-cap-vs-new-cap benchmark with
+  `tools/paired_kernel_speed.py`, pinning both commands to
+  `CUDA_VISIBLE_DEVICES=0` on the dedicated RTX 5090. The new default reported
+  `candidate_over_baseline` mean `0.998176` across three samples versus forcing
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48`.
+- Attempted separate full-output stage probes after the paired run, but discarded
+  them because concurrent launches left stale `[Not Found]` CUDA contexts in
+  `nvidia-smi`; no additional timing claim is based on those probes.
+
 ### 2026-06-14 Paired kernel benchmark GPU snapshots
 
 #### Changed
