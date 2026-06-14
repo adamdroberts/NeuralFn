@@ -66,14 +66,62 @@ bool string_list_from_config(PyObject* config, const char* key, std::vector<std:
     return true;
 }
 
-bool optional_string_from_config(PyObject* config, const char* key, std::string* out) {
+bool optional_string_from_config(PyObject* config, const char* key, std::string* out, bool* present = nullptr) {
     PyObject* value = get_optional_item(config, key);
     if (value == nullptr) {
+        if (present != nullptr) {
+            *present = false;
+        }
         return !PyErr_Occurred();
+    }
+    if (present != nullptr) {
+        *present = true;
     }
     const bool ok = unicode_to_string(value, key, out);
     Py_DECREF(value);
     return ok;
+}
+
+bool command_from_config(PyObject* config, std::vector<std::string>* command, std::string* error) {
+    std::string train_data;
+    std::string val_data;
+    bool has_train_data = false;
+    bool has_val_data = false;
+    if (!optional_string_from_config(config, "train_data", &train_data, &has_train_data)) {
+        return false;
+    }
+    if (!optional_string_from_config(config, "val_data", &val_data, &has_val_data)) {
+        return false;
+    }
+
+    const bool alias_only_gpt_config =
+        (has_train_data || has_val_data) && (train_data.empty() || val_data.empty());
+    const char* first_key = alias_only_gpt_config ? "compiled_cli_argv" : "argv";
+    const char* second_key = alias_only_gpt_config ? "argv" : "compiled_cli_argv";
+
+    if (!string_list_from_config(config, first_key, command)) {
+        return false;
+    }
+    if (!command->empty()) {
+        return true;
+    }
+    if (!string_list_from_config(config, second_key, command)) {
+        return false;
+    }
+    if (!command->empty()) {
+        return true;
+    }
+    if (!string_list_from_config(config, "launcher_argv", command)) {
+        return false;
+    }
+    if (!command->empty()) {
+        return true;
+    }
+
+    *error = alias_only_gpt_config
+        ? "native train alias-only config requires a non-empty compiled_cli_argv, argv, or launcher_argv list"
+        : "native train config requires a non-empty argv, compiled_cli_argv, or launcher_argv list";
+    return true;
 }
 
 int run_exec_and_wait(const std::vector<std::string>& command) {
@@ -119,11 +167,12 @@ PyObject* run_train(PyObject*, PyObject* args) {
     }
 
     std::vector<std::string> command;
-    if (!string_list_from_config(config, "argv", &command)) {
+    std::string command_error;
+    if (!command_from_config(config, &command, &command_error)) {
         return nullptr;
     }
     if (command.empty()) {
-        PyErr_SetString(PyExc_ValueError, "native train config requires a non-empty argv list");
+        PyErr_SetString(PyExc_ValueError, command_error.c_str());
         return nullptr;
     }
 

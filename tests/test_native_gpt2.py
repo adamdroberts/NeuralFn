@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib
 import os
 from pathlib import Path
 import shutil
@@ -1031,6 +1032,35 @@ def test_native_train_cpp_binding_builds_and_runs(
     assert status.resolved == "binding"
     assert status.binding_module == "neuralfn._native_train"
     assert run_native_train(cfg, runner="auto") == 31
+
+    raw_cli = tmp_path / "raw_train_gpt2cu"
+    raw_cli.write_text("#!/usr/bin/env bash\nexit 41\n", encoding="utf-8")
+    raw_cli.chmod(0o755)
+    compiled_cli = tmp_path / "nfn_gpt_native_train"
+    observed_args = tmp_path / "native-train-compiled-cli-args.txt"
+    compiled_cli.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_TRAIN_COMPILED_ARGS\"\n"
+        "exit 33\n",
+        encoding="utf-8",
+    )
+    compiled_cli.chmod(0o755)
+    monkeypatch.setenv("NFN_TEST_NATIVE_TRAIN_COMPILED_ARGS", str(observed_args))
+
+    module = importlib.import_module("neuralfn._native_train")
+    assert module.run_train(
+        {
+            "train_data": "",
+            "val_data": "",
+            "argv": [str(raw_cli), "--should-not-run"],
+            "compiled_cli_argv": [str(compiled_cli), "--dataset-alias", "cached-shards"],
+            "launcher_argv": [str(raw_cli), "--launcher-fallback"],
+        }
+    ) == 33
+    assert observed_args.read_text(encoding="utf-8").splitlines() == [
+        "--dataset-alias",
+        "cached-shards",
+    ]
 
 
 def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> None:

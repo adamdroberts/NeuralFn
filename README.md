@@ -298,6 +298,9 @@ launcher, no-Python cached-shard CLI, and unified native training frontend, and
 links `nfn-gpt-native`, `nfn-gpt-native-train`, compatibility `nfn-gpt2-native`
 names, and `nfn-native-train` into the active Python scripts
 directory. Pass `./install.sh --no-native` to skip native artifact builds. The
+generic SDK binding can execute normal `argv` configs and GPT compiled-CLI
+configs; alias-only GPT configs prefer `compiled_cli_argv` so dataset aliases
+stay on the compiled C++ resolver instead of raw external trainer paths. The
 GPT native CLI exposes `--backend llm-kittens|tile-cuda`; `tile-cuda` is the
 default NeuralFn-owned path and runs the dense `--train-transformer-lm`
 trainer unless an introspection command such as `--print-plan`, `--check-tile-ops`,

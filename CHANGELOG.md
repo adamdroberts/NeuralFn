@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Generic native train SDK binding command selection
+
+#### Changed
+
+- Updated the generic `neuralfn._native_train` C++ binding to accept
+  `compiled_cli_argv` and `launcher_argv` in addition to `argv`.
+- GPT alias-only configs now prefer `compiled_cli_argv` inside the generic
+  binding, keeping dataset alias and cached-shard resolution in the compiled
+  C++ frontend instead of falling through to raw external trainer commands with
+  empty train/validation paths.
+
+#### Verification
+
+- Added test coverage that builds `neuralfn._native_train`, feeds it an
+  alias-only GPT-style config containing both raw `argv` and
+  `compiled_cli_argv`, and verifies the compiled CLI command is selected.
+- Ran `python -m pytest tests/test_native_gpt2.py -q`; 33 tests passed and 1
+  was skipped.
+- Ran `git diff --check`.
+
 ### 2026-06-14 Native GPT Tile BF16 bias-in-place
 
 #### Changed

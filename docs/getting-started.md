@@ -56,8 +56,8 @@ Tile extension path:
 pip install -e ".[torch,tile-cuda]"
 ```
 
-For the no-Torch native GPT-2 training path, build the small C++ SDK binding,
-launcher, and no-Python cached-shard CLI once:
+For the no-Torch native GPT training path, build the C++ SDK bindings, launcher,
+and no-Python cached-shard CLI once:
 
 ```bash
 bash tools/build_native_gpt2_all.sh
@@ -66,6 +66,11 @@ bash tools/build_native_gpt2_all.sh
 Installing the local CLI with `cli/install.sh` runs that native build step
 automatically unless you pass `--no-native`, then links `nfn-gpt-native` into
 the active Python scripts directory.
+
+The generic SDK binding, `neuralfn._native_train`, accepts normal `argv`
+configs as well as GPT compiled-CLI configs. Alias-only GPT configs use the
+compiled frontend command so dataset aliases are resolved in C++ without
+falling back to Python, Torch, or raw external trainer paths.
 
 ## Install the editor
 
