@@ -552,6 +552,16 @@ int nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_f
     std::int64_t output_dim,
     void* cuda_stream);
 
+int nfn_native_tile_linear_backward_weight_bias_accumulate_float32_bf16_bits(
+    const float* x,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    void* cuda_stream);
+
 int nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits(
     const float* x,
     const std::uint16_t* grad_out_bf16_bits,
@@ -1159,6 +1169,51 @@ int nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from
     const float* saved_lse,
     const float* grad_out,
     float* grad_qkv,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    void* cuda_stream);
+
+int nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_merged_grad_float32(
+    const std::uint16_t* qkv_bf16_bits,
+    const std::uint16_t* out_bf16_bits,
+    const float* grad_out,
+    std::uint16_t* grad_qkv_bf16_bits,
+    std::int64_t batch,
+    std::int64_t query_heads,
+    std::int64_t key_heads,
+    std::int64_t seq_q,
+    std::int64_t seq_k,
+    std::int64_t qk_dim,
+    std::int64_t value_dim,
+    float scale,
+    bool is_causal,
+    bool right_align_causal,
+    bool use_sparse_rules,
+    std::int64_t window,
+    std::int64_t num_sinks,
+    std::int64_t block_size,
+    std::int64_t compress_stride,
+    void* cuda_stream);
+
+int nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_merged_grad_float32(
+    const std::uint16_t* qkv_bf16_bits,
+    const std::uint16_t* out_bf16_bits,
+    const float* saved_lse,
+    const float* grad_out,
+    std::uint16_t* grad_qkv_bf16_bits,
     std::int64_t batch,
     std::int64_t query_heads,
     std::int64_t key_heads,

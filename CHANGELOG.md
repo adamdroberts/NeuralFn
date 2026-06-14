@@ -6,6 +6,55 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Default BF16 packed-QKV gradient handoff
+
+#### Changed
+
+- Dense GPT native training now keeps packed attention backward `dQKV` in BF16 by
+  default on the packed-QKV SM120 Tile path. The packed attention backward writes
+  BF16 gradient bits into the packed QKV activation buffer after the forward
+  consumers are done, then QKV dWeight+bias consumes those bits through
+  `nfn_native_tile_linear_backward_weight_bias_accumulate_float32_bf16_bits` and
+  QKV dInput consumes them through the BF16-gradient/BF16-weight input-backward
+  ABI.
+- Added the raw trainer Tile ABI symbols
+  `nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_merged_grad_float32`,
+  `nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_merged_grad_float32`,
+  and `nfn_native_tile_linear_backward_weight_bias_accumulate_float32_bf16_bits`.
+- `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF` /
+  `NFN_NATIVE_GPT2_BF16_QKV_GRAD_HANDOFF` now default to enabled. Set either to
+  `0` only when comparing against the older packed attention backward path that
+  expands `dQKV` to a float32 `grad_qkv` buffer before QKV dWeight/dInput.
+- Native plan and runtime JSON now report
+  `attention_backward_bf16_qkv_grad_handoff_enabled`,
+  `qkv_backward_layout_strategy: "packed-qkv-bf16-gradient-handoff"`,
+  `attention_backward_qkv_bridge_strategy:
+  "tk-sm120-packed-qkv-packed-bf16-grad-handoff"`, and the handoff-specific
+  attention backward strategy strings.
+
+#### Verification
+
+- Rebuilt the raw Tile ops library with `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt the native GPT CLI with `bash tools/build_native_gpt_cli.sh`.
+- Ran a paired dedicated-RTX-5090 candidate-vs-current benchmark with
+  `python tools/paired_kernel_speed.py --cuda-visible-devices 0 --warmup 1
+  --samples 3 ...`; the BF16 handoff candidate averaged 3234.88 ms train-loop
+  time versus 3350.13 ms baseline, and 162074.67 versus 156499.00 train
+  tokens/sec.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k
+  "native_gpt2_cpp_cli_builds_and_uses_sm120_defaults or
+  native_train_tile_ops_builds_torch_free_c_abi"`; the native GPT CLI contract
+  test passed, and the ABI test skipped only its final live CUDA fill smoke after
+  source/build/symbol checks completed.
+- Ran a default one-step full-shape native CUDA smoke on the dedicated RTX 5090
+  with `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1
+  NFN_NATIVE_GPT_STAGE_TIMING=1 build/nfn_gpt_native_train ... --max-steps 1
+  --no-checkpoint`; it completed with `status:
+  "native-transformer-lm-trained"`, `attention_backward_bf16_qkv_grad_handoff_enabled:
+  true`, saved packed-attention strategy
+  `"tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-handoff"`, and
+  161459 train tokens/sec.
+
 ### 2026-06-14 Opt-in BF16 primary block-weight AdamW path
 
 #### Changed

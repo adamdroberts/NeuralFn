@@ -108,10 +108,11 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE`,
 `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS`,
 `NFN_NATIVE_GPT_FUSE_RESIDUAL1_STORE`,
-`NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`, and
+`NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`,
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU`,
+`NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF`,
 `NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU`,
-`NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`, and
+`NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`,
 `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS`, and
 `NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE`. The older `NFN_NATIVE_GPT2_*`
 variables remain compatibility fallbacks for existing GPT-2-named wrappers.
@@ -638,7 +639,7 @@ marker. Training JSON reports `checkpoint.payload_pack_strategy:
 `device_pack_kernel_launches`, `d2h_copy_count`, `d2h_bytes`, and
 `float32_d2h_bytes_elided`.
 
-`bash tools/build_native_train_tile_ops.sh` builds `libnfn_native_train_tile_ops.so`, a raw C ABI over CUDA Tile kernels from `neuralfn/csrc/tile_cuda/kernels.cu`. Native C++ trainers should link this library for single-buffer and multi-buffer fill/zeroing, single-buffer and multi-buffer sumsq partials, single-buffer and multi-buffer AdamW, gradient accumulation, deterministic GPT-2 token-weight initialization, device float32-to-bf16 checkpoint payload packing, device-side global-norm clip scale finalization, device-scalar gradient scaling, reductions, linear, forced-BF16 linear, BF16-input linear, linear input/forced-BF16 input/weight/weight-accumulate/forced-BF16 weight-accumulate/forced-BF16 weight+bias-accumulate/bias/bias-accumulate backward, scaled residual add, fused projection bias+residual add, fused QKV split/merge, fused GPT-2 QKV split-to-heads, fused GPT-2 QKV bias+split-to-heads, fused GPT-2 heads-to-QKV gradient merge, fused TK bf16 attention-gradient heads-to-QKV bridge, saved TK BF16 attention workspace copy/backward, reshape-heads/merge-heads, GELU forward, fused bias+GELU forward, fused bias+GELU with BF16 activation output, GELU backward, token embedding forward/weight backward, absolute-position embedding forward/backward/backward-accumulate, RMSNorm, RMSNorm input backward, LayerNorm, LayerNorm forward-with-stats, LayerNorm input plus fused input/residual-add, affine, and affine-accumulate backward, LayerNorm stats-consuming input and affine-accumulate backward, softmax, float token and masked token cross-entropy partials, BF16-bits token cross-entropy partials, token and masked token cross-entropy logits backward, and scaled dot-product attention forward/backward instead of importing the PyTorch extension binding. The trainer build defines `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1` and links `libcublas`, so the exported native linear forward, BF16-input linear forward, dInput, dWeight, and accumulate-dWeight ABI symbols use GPU GEMM; the forced-BF16 weight+bias accumulate ABI uses cuBLASLt `BGRADB` when supported and falls back to separate dWeight plus Tile bias-reduction launchers. The generic Tile extension build keeps the pure Tile fallback. CE logits backward uses a row-wise Tile path for vocabularies up to 1024 and a chunked row-wise path with reusable row-stat workspace for full GPT-class vocabularies. Linear weight, accumulate-weight, bias, and accumulate-bias backward keep the row-chunked tiled atomic fallback for builds or shapes that do not use the trainer cuBLAS path.
+`bash tools/build_native_train_tile_ops.sh` builds `libnfn_native_train_tile_ops.so`, a raw C ABI over CUDA Tile kernels from `neuralfn/csrc/tile_cuda/kernels.cu`. Native C++ trainers should link this library for single-buffer and multi-buffer fill/zeroing, single-buffer and multi-buffer sumsq partials, single-buffer and multi-buffer AdamW, gradient accumulation, deterministic GPT-2 token-weight initialization, device float32-to-bf16 checkpoint payload packing, device-side global-norm clip scale finalization, device-scalar gradient scaling, reductions, linear, forced-BF16 linear, BF16-input linear, linear input/forced-BF16 input/weight/weight-accumulate/forced-BF16 weight-accumulate/forced-BF16 weight+bias-accumulate/float-input plus BF16-bits weight+bias-accumulate/bias/bias-accumulate backward, scaled residual add, fused projection bias+residual add, fused QKV split/merge, fused GPT-2 QKV split-to-heads, fused GPT-2 QKV bias+split-to-heads, fused GPT-2 heads-to-QKV gradient merge, fused TK bf16 attention-gradient heads-to-QKV bridge, saved TK BF16 attention workspace copy/backward, packed GPT-2 QKV TK attention backward with BF16-gradient output, reshape-heads/merge-heads, GELU forward, fused bias+GELU forward, fused bias+GELU with BF16 activation output, GELU backward, token embedding forward/weight backward, absolute-position embedding forward/backward/backward-accumulate, RMSNorm, RMSNorm input backward, LayerNorm, LayerNorm forward-with-stats, LayerNorm input plus fused input/residual-add, affine, and affine-accumulate backward, LayerNorm stats-consuming input and affine-accumulate backward, softmax, float token and masked token cross-entropy partials, BF16-bits token cross-entropy partials, token and masked token cross-entropy logits backward, and scaled dot-product attention forward/backward instead of importing the PyTorch extension binding. The trainer build defines `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1` and links `libcublas`, so the exported native linear forward, BF16-input linear forward, dInput, dWeight, and accumulate-dWeight ABI symbols use GPU GEMM; the forced-BF16 and BF16-bits weight+bias accumulate ABIs use cuBLASLt `BGRADB` when supported and fall back to separate dWeight plus Tile bias-reduction launchers. The generic Tile extension build keeps the pure Tile fallback. CE logits backward uses a row-wise Tile path for vocabularies up to 1024 and a chunked row-wise path with reusable row-stat workspace for full GPT-class vocabularies. Linear weight, accumulate-weight, bias, and accumulate-bias backward keep the row-chunked tiled atomic fallback for builds or shapes that do not use the trainer cuBLAS path.
 
 Full GPT-2 `--train-transformer-lm` uses `nfn_native_tile_gelu_add_bias_bf16_act_float32` to write float preactivation, float GELU activation, and BF16 GELU activation bits from one CUDA Tile launch. The BF16 saved-activation backward route uses `nfn_native_tile_gelu_backward_inplace_bf16_bits_float32` as a CUDA Tile kernel too, so the BF16 GELU forward/backward path no longer falls back to scalar CUDA element kernels. The MLP projection then consumes those BF16 bits through `nfn_native_tile_linear_bf16_input_bits_float32`, avoiding another activation pack before GEMM. Training JSON reports `mlp_proj_forward_activation_strategy`, `mlp_forward_act_bf16_elements`, and `mlp_forward_act_bf16_bytes` for this scratch.
 
@@ -666,7 +667,62 @@ saved path; the current `64 x 1024` TinyStories probe still regresses to about
 6.0k tokens/s because saved-attention backward dominates the step, so the
 default remains the faster recompute plus process-workspace reuse path.
 
-Full GPT `--train-transformer-lm` now defaults to the packed-QKV attention layout. It writes the no-bias QKV projection as packed BF16 bits, applies QKV bias in place through `bf16_bits_add_bias_inplace_tile_float32_kernel`, runs the SM120 TK packed attention bridge over that row-major packed QKV tensor, and feeds the packed BF16 attention output directly into the attention projection forward GEMM and dWeight accumulation. Native plan and training JSON report `qkv_forward_layout_strategy: "packed-qkv-bf16-no-split"`, `qkv_bias_layout_strategy: "packed-qkv-bf16-bias-inplace"`, `attention_projection_input_strategy: "packed-o-bf16-direct-gemm"`, `attention_packed_output_unpack_strategy: "elided-direct-bf16-projection"`, `attention_backward_qkv_bridge_strategy: "tk-sm120-packed-qkv-packed-grad-bridge"`, and `attention_backward_strategy: "tk-sm120-packed-qkv-bf16-backward-bridge"` when the default path is active. Set `NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE=0`, `NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE=0`, or `NFN_NATIVE_GPT2_BF16_BIAS_INPLACE_TILE=0` to compare against the older scalar CUDA BF16 bias kernel. Set `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=0` only when comparing against the older split-to-heads bridge. The packed backward batch cap defaults to 64 so the workstation `64 x 1024` microbatch runs as one TK backward chunk; set `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48` to reproduce the previous split for paired benchmarks. `attention_backward_tk_launch_count` now counts packed backward chunks instead of only wrapper calls. When `NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS=1` is set with the split path, runtime JSON switches `attention_activation_storage_strategy` to `"tk-bf16-direct-forward-store-saved-backward"`, `attention_backward_strategy` to `"tk-sm120-bf16-saved-forward-workspace-bridge"`, and reports saved-attention arena sizes plus store/restore/backward counts. For the packed path, the trainer stores packed BF16 QKV, packed BF16 O, and per-row TK `lse` for all 12 trained blocks by default on the dedicated RTX 5090 workstation shape; runtime JSON reports `packed_attention_activation_storage_strategy: "packed-qkv-o-bf16-forward-store-direct-backward"`, `stored_packed_attention_activation_blocks: 12`, `stored_packed_attention_lse_enabled`, `stored_packed_attention_*` counts/bytes, `attention_backward_strategy: "tk-sm120-packed-qkv-bf16-saved-activation-backward-bridge"`, and `block_recompute_saved_packed_attention` timing. The default packed recompute path also stores intermediate residual1 tensors in BF16 and skips the packed-attention recompute projection/residual subpath; that store is fused into the attention residual+LN2 Tile kernel by default. Set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` or `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0` for lower-memory comparisons, set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0` to reproduce the older shared-workspace LSE behavior in paired benchmarks, set `NFN_NATIVE_GPT_FUSE_RESIDUAL1_STORE=0` to compare against the older separate residual1 store, or set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` to tune the saved packed-attention block cap. The GPT-2-prefixed variables remain fallbacks for existing scripts.
+Full GPT `--train-transformer-lm` now defaults to the packed-QKV attention
+layout. It writes the no-bias QKV projection as packed BF16 bits, applies QKV
+bias in place through `bf16_bits_add_bias_inplace_tile_float32_kernel`, runs the
+SM120 TK packed attention bridge over that row-major packed QKV tensor, and feeds
+the packed BF16 attention output directly into the attention projection forward
+GEMM and dWeight accumulation. Backward keeps packed attention `dQKV` in BF16 by
+default: the BF16-output packed backward ABI writes into the packed QKV
+activation buffer after forward consumers are done, then QKV dWeight+bias uses
+`nfn_native_tile_linear_backward_weight_bias_accumulate_float32_bf16_bits` and
+QKV dInput consumes the same BF16 gradient bits with BF16 block weights. Native
+plan and training JSON report `qkv_forward_layout_strategy:
+"packed-qkv-bf16-no-split"`, `qkv_bias_layout_strategy:
+"packed-qkv-bf16-bias-inplace"`, `attention_projection_input_strategy:
+"packed-o-bf16-direct-gemm"`, `attention_packed_output_unpack_strategy:
+"elided-direct-bf16-projection"`, `attention_backward_bf16_qkv_grad_handoff_enabled`,
+`qkv_backward_layout_strategy: "packed-qkv-bf16-gradient-handoff"`,
+`attention_backward_qkv_bridge_strategy:
+"tk-sm120-packed-qkv-packed-bf16-grad-handoff"`, and
+`attention_backward_strategy:
+"tk-sm120-packed-qkv-bf16-backward-bf16-grad-handoff"` when the default path is
+active. Set `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF=0` to compare against the
+older packed path that expands `dQKV` to float32 before QKV dWeight/dInput. Set
+`NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE=0`,
+`NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE=0`, or
+`NFN_NATIVE_GPT2_BF16_BIAS_INPLACE_TILE=0` to compare against the older scalar
+CUDA BF16 bias kernel. Set `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=0` only when
+comparing against the older split-to-heads bridge. The packed backward batch cap
+defaults to 64 so the workstation `64 x 1024` microbatch runs as one TK backward
+chunk; set `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48` to reproduce
+the previous split for paired benchmarks. `attention_backward_tk_launch_count`
+now counts packed backward chunks instead of only wrapper calls. When
+`NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS=1` is set with the split path,
+runtime JSON switches `attention_activation_storage_strategy` to
+`"tk-bf16-direct-forward-store-saved-backward"`, `attention_backward_strategy` to
+`"tk-sm120-bf16-saved-forward-workspace-bridge"`, and reports saved-attention
+arena sizes plus store/restore/backward counts. For the packed path, the trainer
+stores packed BF16 QKV, packed BF16 O, and per-row TK `lse` for all 12 trained
+blocks by default on the dedicated RTX 5090 workstation shape; runtime JSON
+reports `packed_attention_activation_storage_strategy:
+"packed-qkv-o-bf16-forward-store-direct-backward"`,
+`stored_packed_attention_activation_blocks: 12`,
+`stored_packed_attention_lse_enabled`, `stored_packed_attention_*` counts/bytes,
+`attention_backward_strategy:
+"tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-handoff"`, and
+`block_recompute_saved_packed_attention` timing. The default packed recompute
+path also stores intermediate residual1 tensors in BF16 and skips the
+packed-attention recompute projection/residual subpath; that store is fused into
+the attention residual+LN2 Tile kernel by default. Set
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` or
+`NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0` for lower-memory comparisons, set
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0` to reproduce the older
+shared-workspace LSE behavior in paired benchmarks, set
+`NFN_NATIVE_GPT_FUSE_RESIDUAL1_STORE=0` to compare against the older separate
+residual1 store, or set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` to tune
+the saved packed-attention block cap. The GPT-2-prefixed variables remain
+fallbacks for existing scripts.
 
 Full GPT-2 `--train-transformer-lm` also fuses the MLP `c_fc` bias add with
 GELU. `nfn_native_tile_gelu_add_bias_float32` consumes the no-bias CUBLAS
