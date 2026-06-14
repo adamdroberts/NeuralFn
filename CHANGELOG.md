@@ -6,6 +6,35 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Retune native GPT LM-head row chunk default to 4096
+
+#### Changed
+
+- Dense GPT native training now defaults the tied LM-head row chunk to 4096
+  rows for the compiled C++ trainer, Python wrapper defaults, and
+  `NativeGpt2RunConfig` / generic native GPT SDK handoff helpers.
+- The default uses about 412MB of BF16 LM-head logits workspace at the
+  workstation `64 x 1024` microbatch, instead of about 824MB for the previous
+  8192-row profile.
+
+#### Breaking changes
+
+- Callers relying on the implicit 8192-row tied LM-head workspace should pass
+  `--lm-head-row-chunk-size 8192`,
+  `--native-cuda-lm-head-row-chunk-size 8192`, or
+  `NativeGpt2RunConfig(lm_head_row_chunk_size=8192, ...)` explicitly. The flag,
+  config field, and JSON field names are unchanged.
+
+#### Verification
+
+- Ran paired dedicated RTX 5090 benchmarks comparing default 8192-row chunks
+  against `--lm-head-row-chunk-size 4096`. The two-step, three-sample pair
+  reported candidate/default mean `train_loop_wall_ms` ratio `0.969890` and
+  mean `train_tokens_per_second` ratio `1.031782`.
+- Rejected `--lm-head-row-chunk-size 16384` after a two-sample pair regressed
+  to `1.226666x` train-loop wall time, and rejected `65536` after it failed to
+  complete in the useful benchmark window.
+
 ### 2026-06-14 Parse llm.kittens metrics in paired kernel benchmarks
 
 #### Changed

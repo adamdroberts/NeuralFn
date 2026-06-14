@@ -34,7 +34,7 @@ constexpr std::int64_t kAttentionForwardValueReuse = 64;
 constexpr std::int64_t kAttentionBackwardDimReuse = 64;
 constexpr std::int64_t kDefaultStoredMlpBlocks = 12;
 constexpr std::int64_t kDefaultStoredPackedAttentionBlocks = 12;
-constexpr int kDefaultLmHeadRowChunkSize = 8192;
+constexpr int kDefaultLmHeadRowChunkSize = 4096;
 
 struct Config {
     std::string model_family = "gpt";
