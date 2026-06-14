@@ -105,6 +105,7 @@ class NativeGpt2RunConfig:
     recompute: int = 0
     zero_stage: int = 1
     resume: int = 0
+    cuda_visible_devices: str = "0"
     cuda_device_max_connections: str = "1"
     dataset_alias: str | None = None
     template_name: str = "gpt"
@@ -918,19 +919,25 @@ def run_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "auto") -> int
     if status.resolved == "compiled-cli":
         if not status.available:
             raise RuntimeError(f"Native GPT compiled CLI requested but unavailable: {status.reason}")
-        env = os.environ.copy()
-        env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", config.cuda_device_max_connections)
+        env = _native_gpt2_subprocess_env(config)
         proc = subprocess.run(config.compiled_cli_argv(), env=env, check=False)
         return int(proc.returncode)
     if status.resolved == "launcher":
         if not status.available:
             raise RuntimeError(f"Native GPT launcher requested but unavailable: {status.reason}")
-        env = os.environ.copy()
-        env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", config.cuda_device_max_connections)
+        env = _native_gpt2_subprocess_env(config)
         proc = subprocess.run(config.launcher_argv(), env=env, check=False)
         return int(proc.returncode)
 
-    env = os.environ.copy()
-    env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", config.cuda_device_max_connections)
+    env = _native_gpt2_subprocess_env(config)
     proc = subprocess.run(config.argv(), env=env, check=False)
     return int(proc.returncode)
+
+
+def _native_gpt2_subprocess_env(config: NativeGpt2RunConfig) -> dict[str, str]:
+    env = os.environ.copy()
+    if str(config.cuda_visible_devices or "").strip():
+        env.setdefault("CUDA_VISIBLE_DEVICES", str(config.cuda_visible_devices))
+    if str(config.cuda_device_max_connections or "").strip():
+        env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", str(config.cuda_device_max_connections))
+    return env

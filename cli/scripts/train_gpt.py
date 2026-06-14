@@ -334,6 +334,7 @@ def _fast_compiled_cli_main(argv: list[str]) -> int | None:
     if command is None:
         return None
     env = os.environ.copy()
+    env.setdefault("CUDA_VISIBLE_DEVICES", "0")
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
     if "--dry-run" in command or "--print-command" in command or "--print-plan" in command or "--check-tile-ops" in command:
         return int(subprocess.run(command, env=env, check=False).returncode)

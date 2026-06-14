@@ -671,6 +671,8 @@ def test_native_gpt2_binding_runner_invokes_in_process_module(monkeypatch: pytes
     assert native_gpt2_runner_status("auto").resolved == "binding"
     assert run_native_gpt2(cfg, runner="binding") == 17
     assert calls[0]["train_data"] == "train.bin"
+    assert calls[0]["cuda_visible_devices"] == "0"
+    assert calls[0]["cuda_device_max_connections"] == "1"
 
 
 def test_native_gpt2_binding_runner_errors_when_explicit_and_unavailable(
@@ -732,13 +734,17 @@ def test_native_gpt2_compiled_cli_runner_executes_cli(
     cli.write_text(
         "#!/usr/bin/env bash\n"
         "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_CLI_ARGS\"\n"
+        "printf 'CUDA_VISIBLE_DEVICES=%s\\nCUDA_DEVICE_MAX_CONNECTIONS=%s\\n' "
+        "\"$CUDA_VISIBLE_DEVICES\" \"$CUDA_DEVICE_MAX_CONNECTIONS\" > \"$NFN_TEST_NATIVE_CLI_ENV\"\n"
         "exit 19\n",
         encoding="utf-8",
     )
     cli.chmod(0o755)
     output = tmp_path / "native-cli-args.txt"
+    env_output = tmp_path / "native-cli-env.txt"
     monkeypatch.setenv("NFN_NATIVE_GPT2_CLI", str(cli))
     monkeypatch.setenv("NFN_TEST_NATIVE_CLI_ARGS", str(output))
+    monkeypatch.setenv("NFN_TEST_NATIVE_CLI_ENV", str(env_output))
     cfg = NativeGpt2RunConfig(
         executable="/opt/nfn/train_gpt2cu",
         train_data=str(tmp_path / "dataset" / "fineweb_train_000000.bin"),
@@ -773,6 +779,9 @@ def test_native_gpt2_compiled_cli_runner_executes_cli(
     assert "--train-transformer-lm" in args
     assert "--eval-every-steps" in args
     assert "--final-lr-fraction" in args
+    env_lines = env_output.read_text(encoding="utf-8").splitlines()
+    assert "CUDA_VISIBLE_DEVICES=0" in env_lines
+    assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in env_lines
 
 
 def test_native_gpt2_cpp_launcher_builds_and_execs(tmp_path: Path) -> None:
@@ -3607,6 +3616,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "train_loop_wall_ms" in gpt2_source_text
     assert "validation_wall_ms" in gpt2_source_text
     assert "checkpoint_wall_ms" in gpt2_source_text
+    assert 'std::getenv("CUDA_VISIBLE_DEVICES")' in gpt2_source_text
+    assert 'setenv("CUDA_VISIBLE_DEVICES", "0", 0)' in gpt2_source_text
+    assert 'std::getenv("CUDA_DEVICE_MAX_CONNECTIONS")' in gpt2_source_text
     assert "--no-checkpoint" in gpt2_source_text
     assert "--native-cuda-no-checkpoint" in gpt2_source_text
     assert "cfg.write_checkpoint = false" in gpt2_source_text

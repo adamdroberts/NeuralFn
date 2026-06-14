@@ -11591,6 +11591,9 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    if (std::getenv("CUDA_VISIBLE_DEVICES") == nullptr) {
+        setenv("CUDA_VISIBLE_DEVICES", "0", 0);
+    }
     if (std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
         setenv("CUDA_DEVICE_MAX_CONNECTIONS", "1", 0);
     }

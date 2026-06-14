@@ -6,6 +6,61 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT dedicated CUDA device default
+
+#### Changed
+
+- `NativeGptRunConfig` / `NativeGpt2RunConfig` now carry
+  `cuda_visible_devices="0"` by default, alongside the existing
+  `cuda_device_max_connections="1"` default. SDK subprocess, launcher,
+  compiled-CLI, and binding runs set `CUDA_VISIBLE_DEVICES` only when the caller
+  has not already set it.
+- `cli/scripts/train_gpt.py`, `nfn_gpt_native_train`,
+  `nfn_gpt2_tile_train`, and the unified `nfn_native_train` dispatcher now also
+  default unset `CUDA_VISIBLE_DEVICES` to `0`. This matches the workstation
+  layout where the AMD GPU is the primary display device and the RTX 5090 is the
+  dedicated CUDA compute GPU.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`, rebuilt `build/nfn_native_train` with
+  `bash tools/build_native_train_cli.sh`, and rebuilt
+  `build/nfn_gpt2_tile_train` with `bash tools/build_native_gpt2_launcher.sh`.
+- Verified Python syntax with
+  `python -m py_compile neuralfn/native_gpt2.py cli/scripts/train_gpt.py`.
+- Ran focused SDK/native tests:
+  `python -m pytest tests/test_native_gpt2.py -q -k
+  'binding_runner_invokes_in_process_module or compiled_cli_runner_executes_cli
+  or cpp_binding_uses_compiled_cli_for_alias_only_config or
+  native_train_tile_ops_builds_torch_free_c_abi or
+  native_train_tile_ops_exports_required_symbols'`
+  (`3 passed`, `1 skipped`) and
+  `python -m pytest tests/test_native_gpt2.py -q -k
+  'native_gpt2_cpp_binding_builds_and_runs or
+  native_train_cpp_binding_builds_and_runs'` (`2 passed`).
+- Ran `tools/paired_kernel_speed.py` on the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0`; the helper recorded GPU 0 as
+  `NVIDIA GeForce RTX 5090`, `0%` utilization, about `373/32607` MiB used, and
+  no compute processes before timing.
+- Ran a post-change one-step native GPT Tile-CUDA probe with
+  `CUDA_VISIBLE_DEVICES` and `CUDA_DEVICE_MAX_CONNECTIONS` unset:
+  `env -u CUDA_VISIBLE_DEVICES -u CUDA_DEVICE_MAX_CONNECTIONS
+  build/nfn_gpt_native_train --tinystories --max-steps 1 --eval-every-steps 0
+  --no-checkpoint --allow-train-val-fallback --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so`. It completed successfully with
+  `linear_backend_strategy:
+  "block-bf16-cublaslt-shape-gated-lm-head-tk-sm120-default"` and about
+  `151,713` train tokens/s.
+- Rejected changing the LM-head row chunk from 4096 to 8192 after a paired
+  benchmark with one warmup pair and three measured pairs reported
+  `candidate_over_baseline` mean `1.003552`.
+- Rejected splitting BF16 cuBLASLt `BGRADB` bias-gradient accumulation from
+  dWeight GEMM after a paired benchmark reported `candidate_over_baseline` mean
+  `1.047523`.
+- Rejected reducing the saved packed-attention block cap from 11 to 10 after a
+  paired benchmark reported `candidate_over_baseline` mean `1.003216`.
+
 ### 2026-06-14 Native GPT cuBLASLt heuristic retune
 
 #### Changed

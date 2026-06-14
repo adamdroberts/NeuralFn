@@ -127,6 +127,14 @@ PyObject* run_train(PyObject*, PyObject* args) {
         return nullptr;
     }
 
+    std::string visible_devices;
+    if (!optional_string_from_config(config, "cuda_visible_devices", &visible_devices)) {
+        return nullptr;
+    }
+    if (!visible_devices.empty() && std::getenv("CUDA_VISIBLE_DEVICES") == nullptr) {
+        setenv("CUDA_VISIBLE_DEVICES", visible_devices.c_str(), 0);
+    }
+
     std::string max_connections;
     if (!optional_string_from_config(config, "cuda_device_max_connections", &max_connections)) {
         return nullptr;

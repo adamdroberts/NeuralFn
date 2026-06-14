@@ -400,6 +400,9 @@ int main(int argc, char** argv) {
                 ? gpt_cli
                 : resolve_native_target_cli(argv[0], *model_entry);
         if (!target_cli.empty()) {
+            if (std::getenv("CUDA_VISIBLE_DEVICES") == nullptr) {
+                setenv("CUDA_VISIBLE_DEVICES", "0", 0);
+            }
             if (std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
                 setenv("CUDA_DEVICE_MAX_CONNECTIONS", "1", 0);
             }
@@ -431,6 +434,9 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    if (std::getenv("CUDA_VISIBLE_DEVICES") == nullptr) {
+        setenv("CUDA_VISIBLE_DEVICES", "0", 0);
+    }
     if (std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
         setenv("CUDA_DEVICE_MAX_CONNECTIONS", "1", 0);
     }
