@@ -7932,8 +7932,16 @@ int run_transformer_lm_training_json(
         std::int64_t offset = 0;
         std::string name;
     };
+    struct Uint16ArenaRequest {
+        std::uint16_t** ptr = nullptr;
+        std::int64_t elements = 0;
+        std::int64_t offset = 0;
+        std::string name;
+    };
     constexpr std::int64_t kFloatArenaAlignmentElements = 64;
+    constexpr std::int64_t kUint16ArenaAlignmentElements = 128;
     std::vector<FloatArenaRequest> float_arena_requests;
+    std::vector<Uint16ArenaRequest> uint16_arena_requests;
     std::vector<float*> float_ptrs;
     std::vector<std::int64_t*> int_ptrs;
     std::vector<std::uint16_t*> uint16_ptrs;
@@ -7941,6 +7949,7 @@ int run_transformer_lm_training_json(
     std::vector<void*> token_device_ptrs;
     std::vector<void*> descriptor_ptrs;
     float* float_arena = nullptr;
+    std::uint16_t* uint16_arena = nullptr;
     void* descriptor_arena = nullptr;
     void* token_device_arena = nullptr;
     std::int64_t* token_i64_arena = nullptr;
@@ -7986,6 +7995,9 @@ int run_transformer_lm_training_json(
     std::int64_t float_arena_requested_elements = 0;
     std::int64_t float_arena_allocated_elements = 0;
     std::int64_t float_arena_cuda_malloc_count = 0;
+    std::int64_t uint16_arena_requested_elements = 0;
+    std::int64_t uint16_arena_allocated_elements = 0;
+    std::int64_t uint16_arena_cuda_malloc_count = 0;
     std::int64_t token_i64_arena_elements = 0;
     std::int64_t token_u16_device_arena_elements = 0;
     std::int64_t token_u16_pinned_arena_elements = 0;
@@ -8017,6 +8029,15 @@ int run_transformer_lm_training_json(
         return ((value + kFloatArenaAlignmentElements - 1) / kFloatArenaAlignmentElements) *
                kFloatArenaAlignmentElements;
     };
+    auto align_uint16_arena_offset = [](std::int64_t value) {
+        return ((value + kUint16ArenaAlignmentElements - 1) / kUint16ArenaAlignmentElements) *
+               kUint16ArenaAlignmentElements;
+    };
+    const bool combined_uint16_arena_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_COMBINED_BF16_ARENA",
+                              "NFN_NATIVE_GPT2_COMBINED_BF16_ARENA"}),
+            true);
     auto allocate = [&](float** ptr, std::int64_t elements, const std::string& name) {
         if (!error.empty()) {
             return;
@@ -8069,6 +8090,60 @@ int run_transformer_lm_training_json(
         float_arena_cuda_malloc_count = 1;
         for (const FloatArenaRequest& request : float_arena_requests) {
             *request.ptr = float_arena + request.offset;
+        }
+    };
+    auto allocate_uint16 = [&](std::uint16_t** ptr, std::int64_t elements, const std::string& name) {
+        if (!error.empty() || !combined_uint16_arena_enabled) {
+            return;
+        }
+        if (*ptr != nullptr) {
+            return;
+        }
+        if (elements < 0) {
+            error = "negative uint16 allocation requested for " + name;
+            return;
+        }
+        if (elements == 0) {
+            return;
+        }
+        for (const Uint16ArenaRequest& request : uint16_arena_requests) {
+            if (request.ptr == ptr) {
+                if (request.elements != elements && error.empty()) {
+                    error = "conflicting duplicate uint16 allocation request for " + name;
+                }
+                return;
+            }
+        }
+        const std::int64_t offset = align_uint16_arena_offset(uint16_arena_allocated_elements);
+        if (offset > std::numeric_limits<std::int64_t>::max() - elements) {
+            error = "uint16 arena allocation size overflow for " + name;
+            return;
+        }
+        uint16_arena_requests.push_back(Uint16ArenaRequest{ptr, elements, offset, name});
+        uint16_arena_requested_elements += elements;
+        uint16_arena_allocated_elements = offset + elements;
+    };
+    auto materialize_uint16_arena = [&]() {
+        if (!error.empty() || !combined_uint16_arena_enabled || uint16_arena_requests.empty()) {
+            return;
+        }
+        uint16_arena_allocated_elements = align_uint16_arena_offset(uint16_arena_allocated_elements);
+        if (uint16_arena_allocated_elements >
+            static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
+            error = "uint16 arena allocation byte size overflow";
+            return;
+        }
+        const int status = cuda_malloc(
+            reinterpret_cast<void**>(&uint16_arena),
+            sizeof(std::uint16_t) * static_cast<std::size_t>(uint16_arena_allocated_elements));
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc transformer_lm_uint16_arena");
+            return;
+        }
+        uint16_ptrs.push_back(uint16_arena);
+        uint16_arena_cuda_malloc_count = 1;
+        for (const Uint16ArenaRequest& request : uint16_arena_requests) {
+            *request.ptr = uint16_arena + request.offset;
         }
     };
 
@@ -8273,6 +8348,7 @@ int run_transformer_lm_training_json(
     std::uint16_t* mlp_forward_act_bf16 = nullptr;
     std::int64_t mlp_forward_act_bf16_elements = 0;
     std::int64_t mlp_forward_act_bf16_bytes = 0;
+    std::uint16_t* packed_qkv_attention_bf16_arena = nullptr;
     std::int64_t packed_qkv_attention_bf16_elements = 0;
     std::int64_t packed_qkv_attention_bf16_bytes = 0;
 
@@ -8384,16 +8460,18 @@ int run_transformer_lm_training_json(
             error = "stored MLP activation bf16 arena byte size overflow";
             return;
         }
-        void* raw = nullptr;
         const std::size_t bytes =
             sizeof(std::uint16_t) * static_cast<std::size_t>(stored_mlp_activation_elements);
-        const int status = cuda_malloc(&raw, bytes);
-        if (status != 0) {
-            error = cuda_error(status, "cudaMalloc stored_mlp_activation_bf16_arena");
-            return;
+        if (stored_mlp_activation_arena == nullptr) {
+            void* raw = nullptr;
+            const int status = cuda_malloc(&raw, bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc stored_mlp_activation_bf16_arena");
+                return;
+            }
+            stored_mlp_activation_arena = static_cast<std::uint16_t*>(raw);
+            uint16_ptrs.push_back(stored_mlp_activation_arena);
         }
-        stored_mlp_activation_arena = static_cast<std::uint16_t*>(raw);
-        uint16_ptrs.push_back(stored_mlp_activation_arena);
         stored_mlp_activation_arena_elements = stored_mlp_activation_elements;
         stored_mlp_activation_arena_bytes = static_cast<std::int64_t>(bytes);
         const std::int64_t norm_stats_elements = stored_mlp_activation_block_count * rows * 2;
@@ -8434,16 +8512,18 @@ int run_transformer_lm_training_json(
             error = "stored residual1 bf16 arena byte size overflow";
             return;
         }
-        void* raw = nullptr;
         const std::size_t bytes =
             sizeof(std::uint16_t) * static_cast<std::size_t>(stored_residual1_activation_elements);
-        const int status = cuda_malloc(&raw, bytes);
-        if (status != 0) {
-            error = cuda_error(status, "cudaMalloc stored_residual1_bf16_arena");
-            return;
+        if (stored_residual1_activation_arena == nullptr) {
+            void* raw = nullptr;
+            const int status = cuda_malloc(&raw, bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc stored_residual1_bf16_arena");
+                return;
+            }
+            stored_residual1_activation_arena = static_cast<std::uint16_t*>(raw);
+            uint16_ptrs.push_back(stored_residual1_activation_arena);
         }
-        stored_residual1_activation_arena = static_cast<std::uint16_t*>(raw);
-        uint16_ptrs.push_back(stored_residual1_activation_arena);
         stored_residual1_activation_arena_elements = stored_residual1_activation_elements;
         stored_residual1_activation_arena_bytes = static_cast<std::int64_t>(bytes);
         for (std::int64_t i = 0; i < stored_residual1_block_count; ++i) {
@@ -8464,16 +8544,19 @@ int run_transformer_lm_training_json(
             error = "stored attention activation arena byte size overflow";
             return;
         }
-        void* raw_bf16 = nullptr;
         const std::size_t bf16_bytes =
             sizeof(std::uint16_t) * static_cast<std::size_t>(stored_attention_bf16_elements);
-        int status = cuda_malloc(&raw_bf16, bf16_bytes);
-        if (status != 0) {
-            error = cuda_error(status, "cudaMalloc stored_attention_bf16_arena");
-            return;
+        int status = 0;
+        if (stored_attention_bf16_arena == nullptr) {
+            void* raw_bf16 = nullptr;
+            status = cuda_malloc(&raw_bf16, bf16_bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc stored_attention_bf16_arena");
+                return;
+            }
+            stored_attention_bf16_arena = static_cast<std::uint16_t*>(raw_bf16);
+            uint16_ptrs.push_back(stored_attention_bf16_arena);
         }
-        stored_attention_bf16_arena = static_cast<std::uint16_t*>(raw_bf16);
-        uint16_ptrs.push_back(stored_attention_bf16_arena);
         stored_attention_bf16_arena_elements = stored_attention_bf16_elements;
         stored_attention_bf16_arena_bytes = static_cast<std::int64_t>(bf16_bytes);
 
@@ -8510,16 +8593,18 @@ int run_transformer_lm_training_json(
             error = "stored packed attention activation arena byte size overflow";
             return;
         }
-        void* raw = nullptr;
         const std::size_t bytes =
             sizeof(std::uint16_t) * static_cast<std::size_t>(stored_packed_attention_bf16_elements);
-        const int status = cuda_malloc(&raw, bytes);
-        if (status != 0) {
-            error = cuda_error(status, "cudaMalloc stored_packed_attention_bf16_arena");
-            return;
+        if (stored_packed_attention_bf16_arena == nullptr) {
+            void* raw = nullptr;
+            const int status = cuda_malloc(&raw, bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc stored_packed_attention_bf16_arena");
+                return;
+            }
+            stored_packed_attention_bf16_arena = static_cast<std::uint16_t*>(raw);
+            uint16_ptrs.push_back(stored_packed_attention_bf16_arena);
         }
-        stored_packed_attention_bf16_arena = static_cast<std::uint16_t*>(raw);
-        uint16_ptrs.push_back(stored_packed_attention_bf16_arena);
         stored_packed_attention_bf16_arena_elements = stored_packed_attention_bf16_elements;
         stored_packed_attention_bf16_arena_bytes = static_cast<std::int64_t>(bytes);
 
@@ -8544,15 +8629,17 @@ int run_transformer_lm_training_json(
             error = "LM-head bf16 logit allocation byte size overflow";
             return;
         }
-        void* raw = nullptr;
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(logit_elements);
-        const int status = cuda_malloc(&raw, bytes);
-        if (status != 0) {
-            error = cuda_error(status, "cudaMalloc lm_head_bf16_logits");
-            return;
+        if (lm_head_bf16_logits == nullptr) {
+            void* raw = nullptr;
+            const int status = cuda_malloc(&raw, bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc lm_head_bf16_logits");
+                return;
+            }
+            lm_head_bf16_logits = static_cast<std::uint16_t*>(raw);
+            uint16_ptrs.push_back(lm_head_bf16_logits);
         }
-        lm_head_bf16_logits = static_cast<std::uint16_t*>(raw);
-        uint16_ptrs.push_back(lm_head_bf16_logits);
         lm_head_bf16_logit_elements = logit_elements;
         lm_head_bf16_logit_bytes = static_cast<std::int64_t>(bytes);
     };
@@ -8566,15 +8653,17 @@ int run_transformer_lm_training_json(
             error = "LM-head bf16 hidden allocation byte size overflow";
             return;
         }
-        void* raw = nullptr;
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(elements);
-        const int status = cuda_malloc(&raw, bytes);
-        if (status != 0) {
-            error = cuda_error(status, "cudaMalloc lm_head_bf16_hidden");
-            return;
+        if (lm_head_bf16_hidden == nullptr) {
+            void* raw = nullptr;
+            const int status = cuda_malloc(&raw, bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc lm_head_bf16_hidden");
+                return;
+            }
+            lm_head_bf16_hidden = static_cast<std::uint16_t*>(raw);
+            uint16_ptrs.push_back(lm_head_bf16_hidden);
         }
-        lm_head_bf16_hidden = static_cast<std::uint16_t*>(raw);
-        uint16_ptrs.push_back(lm_head_bf16_hidden);
         lm_head_bf16_hidden_elements = elements;
         lm_head_bf16_hidden_bytes = static_cast<std::int64_t>(bytes);
     };
@@ -8587,15 +8676,17 @@ int run_transformer_lm_training_json(
             error = "MLP forward bf16 activation scratch allocation byte size overflow";
             return;
         }
-        void* raw = nullptr;
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(hidden_elements);
-        const int status = cuda_malloc(&raw, bytes);
-        if (status != 0) {
-            error = cuda_error(status, "cudaMalloc mlp_forward_act_bf16");
-            return;
+        if (mlp_forward_act_bf16 == nullptr) {
+            void* raw = nullptr;
+            const int status = cuda_malloc(&raw, bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc mlp_forward_act_bf16");
+                return;
+            }
+            mlp_forward_act_bf16 = static_cast<std::uint16_t*>(raw);
+            uint16_ptrs.push_back(mlp_forward_act_bf16);
         }
-        mlp_forward_act_bf16 = static_cast<std::uint16_t*>(raw);
-        uint16_ptrs.push_back(mlp_forward_act_bf16);
         mlp_forward_act_bf16_elements = hidden_elements;
         mlp_forward_act_bf16_bytes = static_cast<std::int64_t>(bytes);
     };
@@ -8613,15 +8704,18 @@ int run_transformer_lm_training_json(
             return;
         }
         const std::int64_t total_elements = elements_per_tape * kActivationTapeCount;
-        void* raw = nullptr;
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(total_elements);
-        const int status = cuda_malloc(&raw, bytes);
-        if (status != 0) {
-            error = cuda_error(status, "cudaMalloc packed_qkv_attention_bf16");
-            return;
+        if (packed_qkv_attention_bf16_arena == nullptr) {
+            void* raw = nullptr;
+            const int status = cuda_malloc(&raw, bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc packed_qkv_attention_bf16");
+                return;
+            }
+            packed_qkv_attention_bf16_arena = static_cast<std::uint16_t*>(raw);
+            uint16_ptrs.push_back(packed_qkv_attention_bf16_arena);
         }
-        std::uint16_t* base = static_cast<std::uint16_t*>(raw);
-        uint16_ptrs.push_back(base);
+        std::uint16_t* base = packed_qkv_attention_bf16_arena;
         packed_qkv_attention_bf16_elements = total_elements;
         packed_qkv_attention_bf16_bytes = static_cast<std::int64_t>(bytes);
         for (std::size_t i = 0; i < block_tapes.size(); ++i) {
@@ -8642,15 +8736,17 @@ int run_transformer_lm_training_json(
             return;
         }
         const std::int64_t total_elements = kBlockWeightBf16ElementsPerBlock * trained_layers;
-        void* raw = nullptr;
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(total_elements);
-        const int status = cuda_malloc(&raw, bytes);
-        if (status != 0) {
-            error = cuda_error(status, "cudaMalloc block_weight_bf16_arena");
-            return;
+        if (block_weight_bf16_arena == nullptr) {
+            void* raw = nullptr;
+            const int status = cuda_malloc(&raw, bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc block_weight_bf16_arena");
+                return;
+            }
+            block_weight_bf16_arena = static_cast<std::uint16_t*>(raw);
+            uint16_ptrs.push_back(block_weight_bf16_arena);
         }
-        block_weight_bf16_arena = static_cast<std::uint16_t*>(raw);
-        uint16_ptrs.push_back(block_weight_bf16_arena);
         block_weight_bf16_arena_elements = total_elements;
         block_weight_bf16_arena_bytes = static_cast<std::int64_t>(bytes);
         for (std::size_t i = 0; i < blocks.size(); ++i) {
@@ -8809,8 +8905,62 @@ int run_transformer_lm_training_json(
          }) {
         allocate(item.first, item.second, "transformer_lm_buffer");
     }
+    auto request_uint16_arenas = [&]() {
+        if (!combined_uint16_arena_enabled || !error.empty()) {
+            return;
+        }
+        allocate_uint16(
+            &stored_mlp_activation_arena,
+            stored_mlp_activation_elements,
+            "stored_mlp_activation_bf16_arena");
+        allocate_uint16(
+            &stored_residual1_activation_arena,
+            stored_residual1_activation_elements,
+            "stored_residual1_bf16_arena");
+        allocate_uint16(
+            &stored_attention_bf16_arena,
+            stored_attention_bf16_elements,
+            "stored_attention_bf16_arena");
+        allocate_uint16(
+            &stored_packed_attention_bf16_arena,
+            stored_packed_attention_bf16_elements,
+            "stored_packed_attention_bf16_arena");
+        allocate_uint16(
+            &lm_head_bf16_logits,
+            lm_head_bf16_logits_enabled ? logit_elements : 0,
+            "lm_head_bf16_logits");
+        allocate_uint16(
+            &lm_head_bf16_hidden,
+            lm_head_bf16_dweight_enabled ? lm_head_chunk_rows * kDim : 0,
+            "lm_head_bf16_hidden");
+        allocate_uint16(&mlp_forward_act_bf16, hidden_elements, "mlp_forward_act_bf16");
+        if (packed_qkv_attention_enabled) {
+            const std::int64_t elements_per_tape = qkv_activation_elements + activation_elements;
+            if (elements_per_tape > 0 &&
+                kActivationTapeCount <=
+                    std::numeric_limits<std::int64_t>::max() / elements_per_tape) {
+                allocate_uint16(
+                    &packed_qkv_attention_bf16_arena,
+                    elements_per_tape * kActivationTapeCount,
+                    "packed_qkv_attention_bf16");
+            }
+        }
+        if (trained_layers > 0 &&
+            kBlockWeightBf16ElementsPerBlock > 0 &&
+            trained_layers <=
+                std::numeric_limits<std::int64_t>::max() / kBlockWeightBf16ElementsPerBlock) {
+            allocate_uint16(
+                &block_weight_bf16_arena,
+                kBlockWeightBf16ElementsPerBlock * trained_layers,
+                "block_weight_bf16_arena");
+        }
+    };
     run_setup_timed("setup.float_arena_materialize", [&]() {
         materialize_float_arena();
+    });
+    run_setup_timed("setup.uint16_arena_materialize", [&]() {
+        request_uint16_arenas();
+        materialize_uint16_arena();
     });
     if (stored_packed_attention_lse_arena != nullptr && stored_packed_attention_lse_elements > 0) {
         stored_packed_attention_lse_arena_elements = stored_packed_attention_lse_elements;
@@ -12045,6 +12195,16 @@ int run_transformer_lm_training_json(
         << "  \"float_allocation_request_count\": " << float_arena_requests.size() << ",\n"
         << "  \"float_arena_requested_elements\": " << float_arena_requested_elements << ",\n"
         << "  \"float_arena_allocated_elements\": " << float_arena_allocated_elements << ",\n"
+        << "  \"uint16_allocation_strategy\": \""
+        << (combined_uint16_arena_enabled ? "single-arena" : "per-buffer-cudaMalloc") << "\",\n"
+        << "  \"uint16_allocation_cuda_malloc_count\": "
+        << (combined_uint16_arena_enabled ? uint16_arena_cuda_malloc_count
+                                          : static_cast<std::int64_t>(uint16_ptrs.size())) << ",\n"
+        << "  \"uint16_allocation_request_count\": " << uint16_arena_requests.size() << ",\n"
+        << "  \"uint16_arena_requested_elements\": " << uint16_arena_requested_elements << ",\n"
+        << "  \"uint16_arena_allocated_elements\": " << uint16_arena_allocated_elements << ",\n"
+        << "  \"uint16_arena_cuda_malloc_count\": " << uint16_arena_cuda_malloc_count << ",\n"
+        << "  \"uint16_arena_suballocation_count\": " << uint16_arena_requests.size() << ",\n"
         << "  \"float_arena_zero_init_strategy\": \"" << startup_zero_init_strategy << "\",\n"
         << "  \"float_arena_zero_fill_count\": " << float_arena_zero_fill_count << ",\n"
         << "  \"adamw_state_zero_fill_count\": " << adamw_state_zero_fill_count << ",\n"

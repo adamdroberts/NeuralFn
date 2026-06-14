@@ -330,6 +330,17 @@ activation, and workspace buffer. JSON reports
 `float_allocation_strategy: "single-arena"`,
 `float_allocation_cuda_malloc_count`, `float_allocation_request_count`,
 `float_arena_requested_elements`, and `float_arena_allocated_elements`.
+BF16 activation and scratch buffers are suballocated from one uint16 CUDA device
+arena by default, covering stored MLP activations, residual1 caches, packed
+attention stores, LM-head BF16 logits, MLP BF16 scratch, packed-QKV BF16
+scratch, and block BF16 weight shadows. Set
+`NFN_NATIVE_GPT_COMBINED_BF16_ARENA=0` or
+`NFN_NATIVE_GPT2_COMBINED_BF16_ARENA=0` to reproduce the older per-buffer
+BF16 `cudaMalloc` path during paired benchmarks. JSON reports
+`uint16_allocation_strategy`, `uint16_allocation_cuda_malloc_count`,
+`uint16_allocation_request_count`, `uint16_arena_requested_elements`,
+`uint16_arena_allocated_elements`, `uint16_arena_cuda_malloc_count`, and
+`uint16_arena_suballocation_count`.
 Startup zeroes only AdamW first/second moment state as coalesced contiguous
 ranges with Tile fills by default, then overwrites nonzero weights with device
 initializers and zeroes gradients per optimizer step. Set

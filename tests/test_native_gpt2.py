@@ -2258,6 +2258,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["float_allocation_request_count"] == 0
     assert train_transformer_payload["float_arena_requested_elements"] == 0
     assert train_transformer_payload["float_arena_allocated_elements"] == 0
+    assert train_transformer_payload["uint16_allocation_strategy"] == "single-arena"
+    assert train_transformer_payload["uint16_allocation_cuda_malloc_count"] == 0
+    assert train_transformer_payload["uint16_allocation_request_count"] == 0
+    assert train_transformer_payload["uint16_arena_requested_elements"] == 0
+    assert train_transformer_payload["uint16_arena_allocated_elements"] == 0
+    assert train_transformer_payload["uint16_arena_cuda_malloc_count"] == 0
+    assert train_transformer_payload["uint16_arena_suballocation_count"] == 0
     assert train_transformer_payload["float_arena_zero_init_strategy"] == "adamw-state-contiguous-range-fill"
     assert train_transformer_payload["float_arena_zero_fill_count"] == 0
     assert train_transformer_payload["adamw_state_zero_fill_count"] == 0
@@ -3414,9 +3421,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "token_weight.init_device" in gpt2_source_text
     assert "nfn_native_tile_init_gpt2_token_weight_float32" in gpt2_source_text
     assert "FloatArenaRequest" in gpt2_source_text
+    assert "Uint16ArenaRequest" in gpt2_source_text
     assert "cudaMalloc transformer_lm_float_arena" in gpt2_source_text
+    assert "cudaMalloc transformer_lm_uint16_arena" in gpt2_source_text
     assert "float_allocation_strategy" in gpt2_source_text
     assert "float_allocation_cuda_malloc_count" in gpt2_source_text
+    assert "uint16_allocation_strategy" in gpt2_source_text
+    assert "uint16_arena_cuda_malloc_count" in gpt2_source_text
     assert "DescriptorArenaRequest" in gpt2_source_text
     assert "host_descriptor_arena" in gpt2_source_text
     assert "cudaMalloc transformer_lm_descriptor_arena" in gpt2_source_text

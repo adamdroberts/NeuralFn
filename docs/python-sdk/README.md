@@ -155,9 +155,11 @@ block outputs, keeps block-0 allocation/initialization/AdamW-state zeroing under
 the same block-vector visitors as every other transformer block, reports the
 `block0_duplicate_*_elided` startup flags, including activation allocation,
 under `block_state_layout`, suballocates float buffers from a single CUDA device
-arena with `float_allocation_strategy: "single-arena"`, uses combined token
-arenas with `token_buffer_allocation_strategy: "combined-arenas"`, and stays
-out of Python/Torch.
+arena with `float_allocation_strategy: "single-arena"`, suballocates BF16
+activation/scratch buffers from a single uint16 CUDA device arena with
+`uint16_allocation_strategy: "single-arena"`, uses combined token arenas with
+`token_buffer_allocation_strategy: "combined-arenas"`, and stays out of
+Python/Torch.
 Backend names are strict: use
 `"llm-kittens"` or `"tile-cuda"`. For the unified native training frontend, `bash
 tools/build_native_train_binding.sh` builds `neuralfn._native_train`, which is

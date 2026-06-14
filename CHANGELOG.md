@@ -6,6 +6,39 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Combine native GPT BF16 device allocations
+
+#### Changed
+
+- Dense GPT native training now suballocates BF16 activation and scratch buffers
+  from one uint16 CUDA device arena by default. The arena covers stored MLP
+  activations, residual1 caches, stored packed attention tensors, LM-head BF16
+  logits, MLP BF16 scratch, packed-QKV BF16 scratch, and block BF16 weight
+  shadows.
+- Set `NFN_NATIVE_GPT_COMBINED_BF16_ARENA=0` or
+  `NFN_NATIVE_GPT2_COMBINED_BF16_ARENA=0` to reproduce the older per-buffer
+  BF16 `cudaMalloc` path in paired benchmarks.
+- Runtime JSON now reports `uint16_allocation_strategy`,
+  `uint16_allocation_cuda_malloc_count`, `uint16_allocation_request_count`,
+  `uint16_arena_requested_elements`, `uint16_arena_allocated_elements`,
+  `uint16_arena_cuda_malloc_count`, and `uint16_arena_suballocation_count`.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step TinyStories smoke pinned to the dedicated RTX 5090
+  (`CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1`). It completed with
+  `uint16_allocation_strategy: "single-arena"`,
+  `uint16_allocation_request_count: 7`, and
+  `uint16_arena_cuda_malloc_count: 1`.
+- Ran `tools/paired_kernel_speed.py` with one warmup and five measured pairs on
+  GPU 0, comparing
+  `NFN_NATIVE_GPT_COMBINED_BF16_ARENA=0 build/nfn_gpt_native_train ...` against
+  the default candidate. Candidate total runtime ratio was `0.999271`,
+  train-loop ratio was `0.998035`, and tokens/s ratio was `1.001978`; this is
+  treated as allocation/topology cleanup rather than a material throughput win.
+
 ### 2026-06-14 Add opt-in mixed float32/BF16 dWeight bgrad epilogue
 
 #### Changed
