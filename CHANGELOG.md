@@ -6,6 +6,64 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Opt-in BF16 primary block-weight AdamW path
+
+#### Changed
+
+- Dense GPT native training can now opt into BF16 primary parameter updates for
+  block projection weights with `NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=1`.
+  QKV, attention projection, MLP FC, and MLP projection weights update their
+  BF16 parameter buffers directly through
+  `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32`, while
+  token, position, norm, and bias tensors continue to update through the float32
+  multi-buffer AdamW ABI.
+- The existing all-buffer descriptor table still drives gradient zeroing and
+  gradient clipping, so no training batches or accumulated gradients are routed
+  through graph-editor or Torch paths.
+- Checkpoint export now syncs BF16 primary block weights back into the existing
+  FP32 staging buffers before the version-5 BF16 checkpoint packer runs, keeping
+  native inference artifacts in the established checkpoint format.
+- Runtime JSON now reports
+  `block_weight_bf16_primary_param_update_enabled`,
+  `block_weight_bf16_primary_param_update_count`,
+  `adamw_float_update_descriptor_count`,
+  `adamw_bf16_param_descriptor_count`,
+  `adamw_float_update_kernel_launches`,
+  `adamw_bf16_param_kernel_launches`, and
+  `checkpoint.bf16_param_sync_kernel_launches`.
+
+#### Verification
+
+- Rebuilt the native GPT CLI with `bash tools/build_native_gpt_cli.sh`.
+- Rebuilt the raw Tile ops library with
+  `bash tools/build_native_train_tile_ops.sh` and verified it exports
+  `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32` with
+  `nm -D build/libnfn_native_train_tile_ops.so | rg
+  "adamw_step_many_with_device_scale.*(float32|bf16)"`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k
+  "native_gpt2_cpp_cli_builds_and_uses_sm120_defaults or
+  native_train_tile_ops_builds_torch_free_c_abi"`; the CLI contract test
+  passed, and the ABI test skipped only its final CUDA fill smoke after source,
+  build, and symbol assertions completed.
+- Confirmed the dedicated RTX 5090 is CUDA device 0 with display disabled via
+  `nvidia-smi --query-gpu=index,name,uuid,memory.total,display_active
+  --format=csv,noheader`.
+- Ran a full-shape one-step opt-in CUDA probe with
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1
+  NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=1 build/nfn_gpt_native_train ...`;
+  it completed on the RTX 5090 and reported 100 float32 update descriptors,
+  48 BF16 parameter descriptors, two AdamW launches per optimizer step, and
+  `block_weight_bf16_primary_param_update_enabled: true`.
+- Ran paired baseline-vs-candidate timing with `python
+  tools/paired_kernel_speed.py --cuda-visible-devices 0 --warmup 1 --samples 3
+  ...`; candidate train-loop time was effectively neutral at 3290.13 ms vs
+  3291.26 ms baseline, with candidate tokens/sec at 1.00034x baseline.
+- Ran a one-layer CUDA checkpoint smoke with
+  `NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=1` and packed-attention/storage
+  disabled for the tiny shape; it wrote
+  `/tmp/nfn-bf16-param-checkpoint-smoke/model_00000001.bin` and reported
+  `checkpoint.bf16_param_sync_kernel_launches: 4`.
+
 ### 2026-06-14 BF16-parameter AdamW ABI for no-master native GPT
 
 #### Changed

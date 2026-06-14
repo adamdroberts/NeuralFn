@@ -2250,7 +2250,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["parameter_initialization_per_buffer_launches_elided"] == 74
     assert train_transformer_payload["adamw_update_strategy"] == "fused-multi-buffer-device-scale"
     assert train_transformer_payload["adamw_descriptor_count"] == 0
+    assert train_transformer_payload["adamw_float_update_descriptor_count"] == 0
+    assert train_transformer_payload["adamw_bf16_param_descriptor_count"] == 0
     assert train_transformer_payload["adamw_kernel_launches"] == 0
+    assert train_transformer_payload["adamw_float_update_kernel_launches"] == 0
+    assert train_transformer_payload["adamw_bf16_param_kernel_launches"] == 0
     assert train_transformer_payload["adamw_step_kernel_launches_per_optimizer_step"] == 0
     assert train_transformer_payload["adamw_per_buffer_step_launches_elided"] == 147
     assert train_transformer_payload["gradient_zero_strategy"] == "fused-multi-buffer-accumulation-zero"
@@ -2356,10 +2360,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "gradient_sumsq_per_buffer_launches_elided": 147,
         "adamw_device_clip_scale_fused": True,
         "adamw_bf16_shadow_refresh_strategy": "separate-many-pack-after-adamw",
+        "block_weight_bf16_primary_param_update_enabled": False,
         "adamw_update_loop": False,
         "adamw_update_loop_elided": True,
         "adamw_update_strategy": "fused-multi-buffer-device-scale",
         "adamw_descriptor_count": 0,
+        "adamw_float_update_descriptor_count": 0,
+        "adamw_bf16_param_descriptor_count": 0,
         "adamw_step_kernel_launches_per_optimizer_step": 0,
         "adamw_per_buffer_step_launches_elided": 147,
         "checkpoint_export_loop": True,
@@ -2391,6 +2398,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "payload_cpu_bf16_conversion": False,
         "tensor_count": 0,
         "payload_elements": 0,
+        "bf16_param_sync_kernel_launches": 0,
         "device_pack_kernel_launches": 0,
         "d2h_copy_count": 0,
         "d2h_bytes": 0,
@@ -2453,6 +2461,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_adamw_step_with_device_scale_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_adamw_step_many_with_device_scale_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32" in train_transformer_payload["kernels"]
+    assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32" in train_transformer_payload["kernels"]
     assert train_transformer_payload["passed"] is False
 
     smaller_eval_transformer_lm = subprocess.run(
@@ -3509,6 +3518,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_linear_backward_input_bf16_float32" in source_text
     assert "bf16-shadow-weight-shape-gated-cublaslt-forward" in gpt2_source_text
     assert "persistent-fp32-master-bf16-shadow-refresh-after-adamw" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS" in gpt2_source_text
+    assert "persistent-bf16-primary-block-weight-adamw" in gpt2_source_text
+    assert "split-float32-and-bf16-param-multi-buffer-device-scale" in gpt2_source_text
+    assert "adamw_many_with_device_scale_bf16_param" in gpt2_source_text
+    assert "sync_bf16_param_to_fp32_checkpoint" in gpt2_source_text
     assert "launch_linear_backward_weight_accumulate_bf16_float32" in kernels_text
     assert "linear_backward_weight_chunked_atomic_float32_bf16_bits_kernel" in kernels_text
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32" in header_text
