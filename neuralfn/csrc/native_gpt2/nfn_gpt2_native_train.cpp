@@ -726,6 +726,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32",
         "nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_float32",
         "nfn_native_tile_linear_weight_bf16_gelu_bf16_float32",
+        "nfn_native_tile_linear_bf16_input_weight_bf16_gelu_bf16_float32",
         "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32",
         "nfn_native_tile_float32_to_bf16_bits_many",
         "nfn_native_tile_gradient_accumulate_float32",
@@ -6788,6 +6789,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_linear_bf16_input_weight_bf16_float32",
         "nfn_native_tile_linear_bf16_gelu_bf16_float32",
         "nfn_native_tile_linear_weight_bf16_gelu_bf16_float32",
+        "nfn_native_tile_linear_bf16_input_weight_bf16_gelu_bf16_float32",
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_input_bf16_float32",
         "nfn_native_tile_linear_backward_input_weight_bf16_float32",
@@ -6914,6 +6916,9 @@ int run_transformer_lm_training_json(
         std::int64_t, std::int64_t, std::int64_t, bool, void*);
     using LinearWeightBf16GeluBf16Fn = int (*)(
         const float*, const std::uint16_t*, const float*, std::uint16_t*, std::uint16_t*,
+        std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBf16InputWeightBf16GeluBf16Fn = int (*)(
+        const std::uint16_t*, const std::uint16_t*, const float*, std::uint16_t*, std::uint16_t*,
         std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardInputFn = int (*)(
         const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
@@ -7048,6 +7053,7 @@ int run_transformer_lm_training_json(
     Bf16BitsAddBiasInplaceFn bf16_bits_add_bias_inplace = nullptr;
     LinearBf16InputWeightBf16Fn linear_bf16_input_weight_bf16 = nullptr;
     LinearWeightBf16GeluBf16Fn linear_weight_bf16_gelu_bf16 = nullptr;
+    LinearBf16InputWeightBf16GeluBf16Fn linear_bf16_input_weight_bf16_gelu_bf16 = nullptr;
     LinearBackwardInputFn linear_backward_input = nullptr;
     LinearBackwardInputBf16BitsFn linear_backward_input_bf16_bits = nullptr;
     LinearBackwardInputWeightBf16Fn linear_backward_input_weight_bf16 = nullptr;
@@ -7237,6 +7243,9 @@ int run_transformer_lm_training_json(
                 linear_weight_bf16_gelu_bf16 =
                     load_symbol<LinearWeightBf16GeluBf16Fn>(
                         tile_handle, "nfn_native_tile_linear_weight_bf16_gelu_bf16_float32");
+                linear_bf16_input_weight_bf16_gelu_bf16 =
+                    load_symbol<LinearBf16InputWeightBf16GeluBf16Fn>(
+                        tile_handle, "nfn_native_tile_linear_bf16_input_weight_bf16_gelu_bf16_float32");
                 linear_backward_input = load_symbol<LinearBackwardInputFn>(
                     tile_handle, "nfn_native_tile_linear_backward_input_float32");
                 linear_backward_input_weight_bf16 =
@@ -7496,6 +7505,11 @@ int run_transformer_lm_training_json(
         fuse_mlp_proj_dgelu_env == "TRUE" ||
         fuse_mlp_proj_dgelu_env == "on" ||
         fuse_mlp_proj_dgelu_env == "ON";
+    const bool reuse_packed_ln2_fc_gelu_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU",
+                              "NFN_NATIVE_GPT2_REUSE_PACKED_LN2_FC_GELU"}),
+            true);
     const bool packed_qkv_float_attention_tape_elided = packed_qkv_attention_enabled;
     const std::int64_t packed_qkv_float_attention_tape_elements_elided =
         packed_qkv_float_attention_tape_elided
@@ -9358,17 +9372,32 @@ int run_transformer_lm_training_json(
                     });
                     run_timed_stage(stage_name + ".mlp_fc_gelu.fc_gelu", [&]() {
                         if (error.empty()) {
-                            run(linear_weight_bf16_gelu_bf16(
-                                    tape.ln2_out,
-                                    block.fc_weight_bf16,
-                                    block.fc_bias,
-                                    fused_mlp_store->fc_out,
-                                    fused_mlp_store->act,
-                                    active_rows,
-                                    kDim,
-                                    kHidden,
-                                    nullptr),
-                                label + ".mlp.fc_bias_gelu.forward.bf16_fused");
+                            if (reuse_packed_ln2_fc_gelu_enabled &&
+                                linear_bf16_input_weight_bf16_gelu_bf16 != nullptr) {
+                                run(linear_bf16_input_weight_bf16_gelu_bf16(
+                                        fused_mlp_store->ln2_out,
+                                        block.fc_weight_bf16,
+                                        block.fc_bias,
+                                        fused_mlp_store->fc_out,
+                                        fused_mlp_store->act,
+                                        active_rows,
+                                        kDim,
+                                        kHidden,
+                                        nullptr),
+                                    label + ".mlp.fc_bias_gelu.forward.prepacked_bf16_fused");
+                            } else {
+                                run(linear_weight_bf16_gelu_bf16(
+                                        tape.ln2_out,
+                                        block.fc_weight_bf16,
+                                        block.fc_bias,
+                                        fused_mlp_store->fc_out,
+                                        fused_mlp_store->act,
+                                        active_rows,
+                                        kDim,
+                                        kHidden,
+                                        nullptr),
+                                    label + ".mlp.fc_bias_gelu.forward.bf16_fused");
+                            }
                             if (error.empty()) stored_mlp_activation_store_kernel_launches += 1;
                         }
                     });
@@ -10875,8 +10904,14 @@ int run_transformer_lm_training_json(
         << "  \"mlp_activation_storage_strategy\": \""
         << (stored_mlp_activation_block_count > 0 ? "bf16-forward-store-direct-backward-opt-in" : "disabled")
         << "\",\n"
+        << "  \"reuse_packed_ln2_fc_gelu_enabled\": "
+        << (reuse_packed_ln2_fc_gelu_enabled ? "true" : "false") << ",\n"
         << "  \"stored_mlp_forward_strategy\": \""
-        << (stored_mlp_activation_block_count > 0 ? "tk-sm120-fused-fc-bias-gelu-bf16-store-bf16-shadow-weight" : "disabled")
+        << (stored_mlp_activation_block_count > 0
+                ? (reuse_packed_ln2_fc_gelu_enabled
+                       ? "tk-sm120-fused-fc-bias-gelu-prepacked-ln2-bf16-shadow-weight"
+                       : "tk-sm120-fused-fc-bias-gelu-bf16-store-bf16-shadow-weight")
+                : "disabled")
         << "\",\n"
         << "  \"stored_mlp_activation_blocks\": " << stored_mlp_activation_block_count << ",\n"
         << "  \"stored_mlp_activation_elements\": " << stored_mlp_activation_arena_elements << ",\n"

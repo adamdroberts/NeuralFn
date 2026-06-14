@@ -108,6 +108,8 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS`,
 `NFN_NATIVE_GPT_FUSE_RESIDUAL1_STORE`,
 `NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`, and
+`NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU`,
+`NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU`,
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`, and
 `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS`, and
 `NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE`. The older `NFN_NATIVE_GPT2_*`
@@ -202,13 +204,19 @@ block cuBLASLt plus TK LM-head path runs,
 The default `non_block_forward_backward_linear_strategy` is
 `"padded-lm-head-tk-sm120-bf16-gemm-default"` when TK GEMM is available.
 The default dense GPT path also exposes
+`nfn_native_tile_linear_bf16_input_weight_bf16_gelu_bf16_float32` for stored-MLP
+FC+bias+GELU from the already-packed BF16 LN2 output,
 `nfn_native_tile_linear_weight_bf16_gelu_bf16_float32` for stored-MLP
 FC+bias+GELU and
 `nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_float32` for fused
 MLP projection dInput plus saved-BF16 GELU backward. Both consume persistent
 BF16 block-weight shadows while keeping FP32 masters and optimizer state.
 Active runs report `stored_mlp_forward_strategy` as
-`"tk-sm120-fused-fc-bias-gelu-bf16-store-bf16-shadow-weight"` and
+`"tk-sm120-fused-fc-bias-gelu-prepacked-ln2-bf16-shadow-weight"` and
+`reuse_packed_ln2_fc_gelu_enabled: true` when the prepacked-LN2 route is active,
+or `"tk-sm120-fused-fc-bias-gelu-bf16-store-bf16-shadow-weight"` when forced
+back to the older route. Set `NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU=0` to
+force that older route for paired benchmarks. Active runs report
 `block_backward_mlp_proj_dgelu_strategy` as
 `"tk-sm120-fused-dinput-dgelu-bf16-store-bf16-shadow-weight-float32-grad"`. Set
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` to force the older separate dInput plus

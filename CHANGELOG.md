@@ -6,6 +6,45 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT prepacked LN2 FC+GELU route
+
+#### Changed
+
+- Added the raw Tile-CUDA ABI
+  `nfn_native_tile_linear_bf16_input_weight_bf16_gelu_bf16_float32`.
+  Dense GPT stored-MLP forward now uses it by default after `ln2_out` has
+  already been packed to BF16 for backward storage, so the FC+bias+GELU TK path
+  reuses that prepacked BF16 input instead of repacking the same LN2 activation
+  inside the GEMM helper.
+- Set `NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU=0` or
+  `NFN_NATIVE_GPT2_REUSE_PACKED_LN2_FC_GELU=0` to compare against the older
+  `nfn_native_tile_linear_weight_bf16_gelu_bf16_float32` route.
+- Runtime JSON now reports `reuse_packed_ln2_fc_gelu_enabled` and changes
+  `stored_mlp_forward_strategy` to
+  `"tk-sm120-fused-fc-bias-gelu-prepacked-ln2-bf16-shadow-weight"` when the new
+  default route is active.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh` and rebuilt
+  `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step TinyStories stage profile on the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and
+  `NFN_NATIVE_GPT_STAGE_TIMING=1`. The run reported the new ABI in `kernels`,
+  `reuse_packed_ln2_fc_gelu_enabled: true`, no missing symbols, and
+  `stored_mlp_forward_strategy:
+  "tk-sm120-fused-fc-bias-gelu-prepacked-ln2-bf16-shadow-weight"`. The
+  `block_forward.mlp_fc_gelu.fc_gelu` stage was about `152.862 ms` in that
+  profile versus the prior clean-source profile's about `169.733 ms`.
+- Ran `tools/paired_kernel_speed.py` on GPU 0 with one warmup pair and five
+  measured one-step pairs comparing
+  `NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU=0` against the new default. The
+  candidate reported `candidate_over_baseline` mean `0.999403`.
+- Ran a less startup-diluted two-step paired benchmark with one warmup pair and
+  three measured pairs. The candidate reported `candidate_over_baseline` mean
+  `0.997485`, median `0.997458`, min `0.996870`, and max `0.998126`.
+
 ### 2026-06-14 Dense GPT transformer validation eval batch size
 
 #### Changed

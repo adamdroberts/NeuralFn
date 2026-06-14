@@ -1422,6 +1422,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         in tile_payload["available_native_kernels"]
     )
     assert "nfn_native_tile_linear_weight_bf16_gelu_bf16_float32" in tile_payload["available_native_kernels"]
+    assert (
+        "nfn_native_tile_linear_bf16_input_weight_bf16_gelu_bf16_float32"
+        in tile_payload["available_native_kernels"]
+    )
     assert "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_stats_reset" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_bf16_cache_reset" in tile_payload["available_native_kernels"]
@@ -2420,6 +2424,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_store_mlp_activations_bf16_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_restore_mlp_activations_bf16_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32" in train_transformer_payload["kernels"]
+    assert "nfn_native_tile_linear_bf16_input_weight_bf16_gelu_bf16_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_float32_to_bf16_bits_many" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_adamw_step_with_device_scale_float32" in train_transformer_payload["kernels"]
@@ -3377,6 +3382,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_linear_bf16_input_weight_bf16_float32" in header_text
     assert "nfn_native_tile_linear_bf16_gelu_bf16_float32" in header_text
     assert "nfn_native_tile_linear_weight_bf16_gelu_bf16_float32" in header_text
+    assert "nfn_native_tile_linear_bf16_input_weight_bf16_gelu_bf16_float32" in header_text
     assert "nfn_native_tile_gelu_add_bias_bf16_act_float32" in header_text
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32" in header_text
     assert "nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32" in header_text
@@ -3408,6 +3414,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "launch_linear_bf16_input_weight_bf16_float32" in source_text
     assert "launch_linear_bf16_gelu_bf16_float32" in source_text
     assert "launch_linear_weight_bf16_gelu_bf16_float32" in source_text
+    assert "launch_linear_bf16_input_weight_bf16_gelu_bf16_float32" in source_text
     assert "launch_gelu_add_bias_bf16_act_float32" in source_text
     assert "launch_linear_backward_weight_accumulate_bf16_bits_float32" in source_text
     assert "launch_linear_backward_weight_bias_accumulate_bf16_float32" in source_text
@@ -3434,6 +3441,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "tk_linear_gemm_bf16_forward_to_float32" in kernels_text
     assert "tk_linear_gemm_bf16_forward_gelu_to_bf16_bits" in kernels_text
     assert "tk_linear_gemm_bf16_forward_gelu_weight_bf16_to_bf16_bits" in kernels_text
+    assert "linear_bf16_input_weight_bf16_gelu_bf16_float32_kernel" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_bits_b_float32" in kernels_text
     assert "linear_bf16_output_float32_kernel" in kernels_text
     assert "linear_weight_bf16_output_float32_kernel" in kernels_text
@@ -3442,6 +3450,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "linear_bf16_input_weight_bf16_bits_float32_kernel" in kernels_text
     assert "linear_bf16_gelu_bf16_float32_kernel" in kernels_text
     assert "linear_weight_bf16_gelu_bf16_float32_kernel" in kernels_text
+    assert "launch_linear_bf16_input_weight_bf16_gelu_bf16_float32" in kernels_text
     assert "gelu_add_bias_bf16_act_float32_kernel" in kernels_text
     assert "__tile_global__ void gelu_add_bias_bf16_act_float32_kernel" in kernels_text
     assert "gelu_add_bias_bf16_act_float32_kernel<<<blocks, 1, 0, stream>>>" in kernels_text
@@ -3748,7 +3757,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "stored_mlp_layer_norm_stats_elements" in gpt2_source_text
     assert "stored_mlp_layer_norm_stats_bytes" in gpt2_source_text
     assert "stored_mlp_activation_backward_consumer_strategy" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU" in gpt2_source_text
+    assert "reuse_packed_ln2_fc_gelu_enabled" in gpt2_source_text
     assert "stored_mlp_forward_strategy" in gpt2_source_text
+    assert "tk-sm120-fused-fc-bias-gelu-prepacked-ln2-bf16-shadow-weight" in gpt2_source_text
     assert "tk-sm120-fused-fc-bias-gelu-bf16-store-bf16-shadow-weight" in gpt2_source_text
     assert "mlp.gelu.backward_inplace.bf16_bits" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS" in gpt2_source_text
@@ -4456,6 +4468,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_linear_bf16_input_weight_bf16_float32" in exported
         assert "nfn_native_tile_linear_bf16_gelu_bf16_float32" in exported
         assert "nfn_native_tile_linear_weight_bf16_gelu_bf16_float32" in exported
+        assert "nfn_native_tile_linear_bf16_input_weight_bf16_gelu_bf16_float32" in exported
         assert "nfn_native_tile_linear_backward_input_bf16_float32" in exported
         assert "nfn_native_tile_linear_backward_input_weight_bf16_float32" in exported
         assert "nfn_native_tile_linear_backward_input_bf16_bits_float32" in exported
