@@ -7440,7 +7440,7 @@ int run_transformer_lm_training_json(
         env_or_empty_any({"NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS",
                           "NFN_NATIVE_GPT2_STORE_RESIDUAL1_ACTIVATIONS"});
     const bool store_residual1_activations_enabled =
-        env_flag_enabled_or_default(store_residual1_activations_env, false);
+        env_flag_enabled_or_default(store_residual1_activations_env, true);
     const bool fuse_attention_residual_ln2_enabled = fuse_attention_residual_ln2_default_enabled();
     const std::string fuse_mlp_proj_dgelu_env =
         env_or_empty_any({"NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU",

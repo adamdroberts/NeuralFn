@@ -6,16 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
-### 2026-06-14 Native GPT residual1 activation cache option
+### 2026-06-14 Native GPT residual1 activation cache default
 
 #### Changed
 
-- Added `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1` with
-  `NFN_NATIVE_GPT2_STORE_RESIDUAL1_ACTIVATIONS=1` as the legacy fallback for
-  dense GPT Tile-CUDA training. The opt-in path stores intermediate block
-  `residual1` tensors as BF16 during forward and restores them during
+- Dense GPT Tile-CUDA training now stores intermediate block `residual1` tensors
+  as BF16 by default during forward and restores them during
   packed-attention recompute so backward skips the recomputed attention
   projection and projection-residual work for earlier blocks.
+- Set `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0` or the legacy fallback
+  `NFN_NATIVE_GPT2_STORE_RESIDUAL1_ACTIVATIONS=0` to disable this cache for
+  lower-memory comparisons.
 - The cache intentionally excludes the final block because the final block
   remains in the scratch tape and is not recomputed before backward. At the
   default 12-layer `64 x 1024 x 768` shape, the option stores 11 residual
@@ -32,14 +33,13 @@ Future updates should append new entries here rather than replacing older notes.
 - Rebuilt `build/nfn_gpt_native_train` with
   `bash tools/build_native_gpt_cli.sh`.
 - Ran a one-step TinyStories probe on the dedicated RTX 5090 with
-  `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and
-  `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1`; it reported
+  `CUDA_VISIBLE_DEVICES=0` and `CUDA_DEVICE_MAX_CONNECTIONS=1`; it reported
   `stored_residual1_activation_blocks: 11`,
   `stored_residual1_activation_bytes: 1107296256`, and matching store/restore
   launch counts for the 11 recomputed blocks.
 - Ran `tools/paired_kernel_speed.py` on GPU 0 with one warmup pair and five
-  measured pairs comparing the no-env default to
-  `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1`. The benchmark recorded GPU 0
+  measured pairs comparing the previous no-cache default to the residual1-cache
+  candidate. The benchmark recorded GPU 0
   as `NVIDIA GeForce RTX 5090`, `0%` utilization, about `245/32607` MiB used,
   and no compute processes before timing. The candidate reported
   `candidate_over_baseline` mean `0.994567`, median `0.995901`, min
