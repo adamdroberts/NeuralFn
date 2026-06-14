@@ -6,6 +6,45 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Default packed QKV backward to direct BF16 grad scratch
+
+#### Changed
+
+- Dense GPT native training now writes packed-attention BF16 `dQKV` directly
+  into a non-aliased BF16 scratch buffer by default. The trainer reuses the MLP
+  BF16 scratch after MLP backward is done, then feeds that buffer to QKV
+  dWeight+bias and QKV dInput without copying through the packed QKV activation
+  buffer.
+- The Tile-CUDA packed QKV backward wrapper now honors a caller-provided
+  non-aliased BF16 `grad_qkv_bf16_bits` destination directly. Aliased calls keep
+  the older workspace-to-QKV-buffer copy behavior, and callers that also request
+  float `grad_qkv` conversion read back from the actual BF16 destination.
+- Set `NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH=0` to reproduce the older
+  workspace-to-packed-QKV-buffer copy path in paired benchmarks. Runtime and
+  plan JSON now report
+  `attention_backward_direct_bf16_qkv_grad_scratch_enabled`,
+  `attention_backward_direct_bf16_qkv_grad_scratch_elements`, and direct-scratch
+  strategy strings.
+
+#### Verification
+
+- Rebuilt `libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh` and rebuilt
+  `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran the focused native GPT pytest slice, Python compile checks, and
+  `git diff --check`.
+- Ran a one-step TinyStories GPU smoke pinned to the dedicated RTX 5090
+  (`CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1`). It reported
+  `attention_backward_direct_bf16_qkv_grad_scratch_enabled: true`,
+  `attention_backward_direct_bf16_qkv_grad_scratch_elements: 150994944`, and
+  `attention_backward_strategy:
+  "tk-sm120-packed-qkv-bf16-saved-activation-backward-direct-bf16-grad-scratch-handoff"`.
+- Ran `tools/paired_kernel_speed.py` with one warmup and five measured pairs on
+  GPU 0, comparing baseline
+  `NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH=0` against the new default. The
+  default/old-path `train_loop_wall_ms` ratio was `0.988571`, tokens/s ratio was
+  `1.011569`, and total runtime ratio was `0.988554`.
+
 ### 2026-06-14 Add opt-in BF16/BF16 LM-head dWeight candidate path
 
 #### Changed

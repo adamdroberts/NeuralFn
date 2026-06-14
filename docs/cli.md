@@ -593,7 +593,8 @@ Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP`,
 `NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`,
 `NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF`,
-`NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF`, and
+`NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF`,
+`NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH`, and
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`. The older `NFN_NATIVE_GPT2_*`
 variables remain compatibility fallbacks for the GPT-2-named wrapper,
 launcher, and existing local scripts.
@@ -695,10 +696,15 @@ profiling. Native plan and runtime JSON report `packed_qkv_attention_enabled`,
 "packed-o-bf16-direct-gemm"`, `attention_packed_output_unpack_strategy:
 "elided-direct-bf16-projection"`, `attention_backward_bf16_qkv_grad_handoff_enabled`,
 `qkv_backward_layout_strategy: "packed-qkv-bf16-gradient-handoff"`,
-`attention_backward_qkv_bridge_strategy: "tk-sm120-packed-qkv-packed-bf16-grad-handoff"`,
+`attention_backward_direct_bf16_qkv_grad_scratch_enabled`,
+`attention_backward_direct_bf16_qkv_grad_scratch_elements`,
+`attention_backward_qkv_bridge_strategy: "tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff"`,
 and `attention_backward_strategy:
-"tk-sm120-packed-qkv-bf16-backward-bf16-grad-handoff"` when the default packed
+"tk-sm120-packed-qkv-bf16-backward-direct-bf16-grad-scratch-handoff"` when the default packed
 route is active.
+Set `NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH=0` when reproducing the older
+workspace-to-packed-QKV-buffer copy path in paired candidate-vs-baseline
+benchmarks.
 The packed backward batch cap defaults to 64 so the workstation `64 x 1024`
 microbatch runs as one TK backward chunk. Set
 `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48` when reproducing the
@@ -712,7 +718,7 @@ and reuses those saved tensors during backward. Runtime JSON reports `packed_att
 "packed-qkv-o-bf16-forward-store-direct-backward"`,
 `stored_packed_attention_activation_blocks`, `stored_packed_attention_lse_enabled`,
 `stored_packed_attention_*` counters, and the saved path strategy
-`"tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-handoff"`. Set
+`"tk-sm120-packed-qkv-bf16-saved-activation-backward-direct-bf16-grad-scratch-handoff"`. Set
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` for the previous
 lower-memory recompute path, set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0`
 to reproduce the older shared-workspace LSE behavior in paired benchmarks, or set

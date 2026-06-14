@@ -867,6 +867,13 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
     float* lse =
         const_cast<float*>((saved_lse != nullptr ? saved_lse : workspace->lse) +
                            batch_begin * row_elements_per_batch);
+    __nv_bfloat16* packed_grad_target = workspace->packed_grad_bf + batch_begin * packed_elements_per_batch;
+    const bool direct_bf16_grad_target =
+        grad_qkv_bf16_bits != nullptr && grad_qkv_bf16_bits != qkv_bf16_bits;
+    if (direct_bf16_grad_target) {
+      packed_grad_target = reinterpret_cast<__nv_bfloat16*>(
+          grad_qkv_bf16_bits + batch_begin * packed_elements_per_batch);
+    }
     if (head_dim == 64) {
       llmk::attention::launch_backward_causal_packed_qkv_packed_grads<64>(
           llmk::to_bf16(qkv),
@@ -874,7 +881,7 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
           lse,
           llmk::to_bf16(workspace->go_bf + batch_begin * head_elements_per_batch),
           workspace->d + batch_begin * row_elements_per_batch,
-          llmk::to_bf16(workspace->packed_grad_bf + batch_begin * packed_elements_per_batch),
+          llmk::to_bf16(packed_grad_target),
           static_cast<int>(chunk_batch),
           static_cast<int>(heads),
           static_cast<int>(seq_len),
@@ -887,7 +894,7 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
           lse,
           llmk::to_bf16(workspace->go_bf + batch_begin * head_elements_per_batch),
           workspace->d + batch_begin * row_elements_per_batch,
-          llmk::to_bf16(workspace->packed_grad_bf + batch_begin * packed_elements_per_batch),
+          llmk::to_bf16(packed_grad_target),
           static_cast<int>(chunk_batch),
           static_cast<int>(heads),
           static_cast<int>(seq_len),
@@ -898,7 +905,7 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
   }
   const std::int64_t packed_elements = elements * 3;
   constexpr int threads = 256;
-  if (grad_qkv_bf16_bits != nullptr) {
+  if (grad_qkv_bf16_bits != nullptr && grad_qkv_bf16_bits == qkv_bf16_bits) {
     cudaMemcpyAsync(
         grad_qkv_bf16_bits,
         workspace->packed_grad_bf,
@@ -906,9 +913,13 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
         cudaMemcpyDeviceToDevice,
         stream);
   }
+  const __nv_bfloat16* packed_grad_source =
+      (grad_qkv_bf16_bits != nullptr && grad_qkv_bf16_bits != qkv_bf16_bits)
+          ? reinterpret_cast<const __nv_bfloat16*>(grad_qkv_bf16_bits)
+          : workspace->packed_grad_bf;
   if (grad_qkv != nullptr) {
     const int blocks = static_cast<int>((packed_elements + threads - 1) / threads);
-    bf16_to_f32_kernel<<<blocks, threads, 0, stream>>>(workspace->packed_grad_bf, grad_qkv, packed_elements);
+    bf16_to_f32_kernel<<<blocks, threads, 0, stream>>>(packed_grad_source, grad_qkv, packed_elements);
   }
   g_attention_backward_tk_launch_count.fetch_add(tk_backward_chunk_launches, std::memory_order_relaxed);
   return static_cast<int>(cudaPeekAtLastError());

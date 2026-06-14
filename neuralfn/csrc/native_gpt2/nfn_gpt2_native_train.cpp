@@ -1109,6 +1109,13 @@ bool print_tile_plan(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF",
                               "NFN_NATIVE_GPT2_BF16_QKV_GRAD_HANDOFF"}),
             true);
+    const bool direct_bf16_qkv_grad_scratch_enabled =
+        bf16_qkv_grad_handoff_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH",
+                              "NFN_NATIVE_GPT2_DIRECT_BF16_QKV_GRAD_SCRATCH"}),
+            true);
+    const std::int64_t qkv_activation_elements = hidden * 3;
     const bool fuse_attention_residual_ln2_enabled = fuse_attention_residual_ln2_default_enabled();
     const std::string store_packed_attention_activations_env =
         env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS",
@@ -1255,10 +1262,16 @@ bool print_tile_plan(
         << "  \"qkv_backward_layout_launches_elided_per_block\": 3,\n"
         << "  \"attention_backward_bf16_qkv_grad_handoff_enabled\": "
         << (bf16_qkv_grad_handoff_enabled ? "true" : "false") << ",\n"
+        << "  \"attention_backward_direct_bf16_qkv_grad_scratch_enabled\": "
+        << (direct_bf16_qkv_grad_scratch_enabled ? "true" : "false") << ",\n"
+        << "  \"attention_backward_direct_bf16_qkv_grad_scratch_elements\": "
+        << (direct_bf16_qkv_grad_scratch_enabled ? qkv_activation_elements : 0) << ",\n"
         << "  \"attention_backward_qkv_bridge_strategy\": \""
         << (packed_qkv_attention_enabled
                 ? (bf16_qkv_grad_handoff_enabled
-                       ? "tk-sm120-packed-qkv-packed-bf16-grad-handoff"
+                       ? (direct_bf16_qkv_grad_scratch_enabled
+                              ? "tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff"
+                              : "tk-sm120-packed-qkv-packed-bf16-grad-handoff")
                        : "tk-sm120-packed-qkv-packed-grad-bridge")
                 : "fused-bf16-heads-to-row-qkv")
         << "\",\n"
@@ -1297,9 +1310,17 @@ bool print_tile_plan(
         << "  \"attention_backward_grad_layout_launches_elided_per_block\": 1,\n"
         << "  \"attention_backward_strategy\": \""
         << (packed_qkv_attention_enabled
-                ? (bf16_qkv_grad_handoff_enabled
-                       ? "tk-sm120-packed-qkv-bf16-backward-bf16-grad-handoff"
-                       : "tk-sm120-packed-qkv-bf16-backward-bridge")
+                ? (stored_packed_attention_block_count > 0
+                       ? (bf16_qkv_grad_handoff_enabled
+                              ? (direct_bf16_qkv_grad_scratch_enabled
+                                     ? "tk-sm120-packed-qkv-bf16-saved-activation-backward-direct-bf16-grad-scratch-handoff"
+                                     : "tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-handoff")
+                              : "tk-sm120-packed-qkv-bf16-saved-activation-backward-bridge")
+                       : (bf16_qkv_grad_handoff_enabled
+                              ? (direct_bf16_qkv_grad_scratch_enabled
+                                     ? "tk-sm120-packed-qkv-bf16-backward-direct-bf16-grad-scratch-handoff"
+                                     : "tk-sm120-packed-qkv-bf16-backward-bf16-grad-handoff")
+                              : "tk-sm120-packed-qkv-bf16-backward-bridge"))
                 : "tk-sm120-bf16-reuse-forward-workspace-bridge")
         << "\",\n"
         << "  \"attention_backward_reuses_forward_workspace\": true,\n"
@@ -7698,6 +7719,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF",
                               "NFN_NATIVE_GPT2_BF16_QKV_GRAD_HANDOFF"}),
             true);
+    const bool direct_bf16_qkv_grad_scratch_enabled =
+        bf16_qkv_grad_handoff_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH",
+                              "NFN_NATIVE_GPT2_DIRECT_BF16_QKV_GRAD_SCRATCH"}),
+            true);
     const bool reuse_packed_ln2_fc_gelu_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU",
@@ -10085,6 +10112,12 @@ int run_transformer_lm_training_json(
         const std::int64_t stage_event = stage_begin("block_backward");
         std::uint16_t* active_qkv_bf16 =
             stored_packed_attention != nullptr ? stored_packed_attention->qkv : tape.qkv_bf16;
+        std::uint16_t* active_qkv_grad_bf16 =
+            direct_bf16_qkv_grad_scratch_enabled &&
+                    mlp_forward_act_bf16 != nullptr &&
+                    mlp_forward_act_bf16_elements >= qkv_activation_elements
+                ? mlp_forward_act_bf16
+                : active_qkv_bf16;
         const std::uint16_t* active_packed_attn_out_bf16 =
             stored_packed_attention != nullptr ? stored_packed_attention->o : tape.packed_attn_out_bf16;
         run_timed_stage("block_backward.mlp_proj", [&]() {
@@ -10298,7 +10331,7 @@ int run_transformer_lm_training_json(
                                         active_packed_attn_out_bf16,
                                         stored_packed_attention->lse,
                                         grad_attn_out,
-                                        active_qkv_bf16,
+                                        active_qkv_grad_bf16,
                                         active_batch_size,
                                         kHeads,
                                         kHeads,
@@ -10347,7 +10380,7 @@ int run_transformer_lm_training_json(
                                         active_qkv_bf16,
                                         active_packed_attn_out_bf16,
                                         grad_attn_out,
-                                        active_qkv_bf16,
+                                        active_qkv_grad_bf16,
                                         active_batch_size,
                                         kHeads,
                                         kHeads,
@@ -10434,7 +10467,7 @@ int run_transformer_lm_training_json(
                     if (error.empty()) {
                         run(linear_backward_weight_bias_accumulate_float32_bf16_bits(
                                 tape.ln1_out,
-                                active_qkv_bf16,
+                                active_qkv_grad_bf16,
                                 block.accum_grad_qkv_weight,
                                 block.accum_grad_qkv_bias,
                                 active_rows,
@@ -10451,7 +10484,7 @@ int run_transformer_lm_training_json(
                 if (bf16_qkv_grad_handoff_enabled) {
                     if (error.empty()) {
                         run(linear_backward_input_bf16_bits_weight_bf16(
-                                active_qkv_bf16,
+                                active_qkv_grad_bf16,
                                 block.qkv_weight_bf16,
                                 grad_ln1,
                                 active_rows,
@@ -11620,10 +11653,16 @@ int run_transformer_lm_training_json(
         << "  \"qkv_backward_layout_launches_elided_per_block\": 3,\n"
         << "  \"attention_backward_bf16_qkv_grad_handoff_enabled\": "
         << (bf16_qkv_grad_handoff_enabled ? "true" : "false") << ",\n"
+        << "  \"attention_backward_direct_bf16_qkv_grad_scratch_enabled\": "
+        << (direct_bf16_qkv_grad_scratch_enabled ? "true" : "false") << ",\n"
+        << "  \"attention_backward_direct_bf16_qkv_grad_scratch_elements\": "
+        << (direct_bf16_qkv_grad_scratch_enabled ? qkv_activation_elements : 0) << ",\n"
         << "  \"attention_backward_qkv_bridge_strategy\": \""
         << (packed_qkv_attention_enabled
                 ? (bf16_qkv_grad_handoff_enabled
-                       ? "tk-sm120-packed-qkv-packed-bf16-grad-handoff"
+                       ? (direct_bf16_qkv_grad_scratch_enabled
+                              ? "tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff"
+                              : "tk-sm120-packed-qkv-packed-bf16-grad-handoff")
                        : "tk-sm120-packed-qkv-packed-grad-bridge")
                 : "fused-bf16-heads-to-row-qkv")
         << "\",\n"
@@ -11663,10 +11702,14 @@ int run_transformer_lm_training_json(
         << (packed_qkv_attention_enabled
                 ? (stored_packed_attention_backward_kernel_launches > 0
                        ? (bf16_qkv_grad_handoff_enabled
-                              ? "tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-handoff"
+                              ? (direct_bf16_qkv_grad_scratch_enabled
+                                     ? "tk-sm120-packed-qkv-bf16-saved-activation-backward-direct-bf16-grad-scratch-handoff"
+                                     : "tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-handoff")
                               : "tk-sm120-packed-qkv-bf16-saved-activation-backward-bridge")
                        : (bf16_qkv_grad_handoff_enabled
-                              ? "tk-sm120-packed-qkv-bf16-backward-bf16-grad-handoff"
+                              ? (direct_bf16_qkv_grad_scratch_enabled
+                                     ? "tk-sm120-packed-qkv-bf16-backward-direct-bf16-grad-scratch-handoff"
+                                     : "tk-sm120-packed-qkv-bf16-backward-bf16-grad-handoff")
                               : "tk-sm120-packed-qkv-bf16-backward-bridge"))
                 : stored_attention_backward_kernel_launches > 0
                 ? "tk-sm120-bf16-saved-forward-workspace-bridge"

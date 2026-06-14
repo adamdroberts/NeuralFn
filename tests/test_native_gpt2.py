@@ -1287,7 +1287,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["qkv_backward_layout_legacy_launches_per_block"] == 4
     assert tile_payload["qkv_backward_layout_launches_elided_per_block"] == 3
     assert tile_payload["attention_backward_bf16_qkv_grad_handoff_enabled"] is True
-    assert tile_payload["attention_backward_qkv_bridge_strategy"] == "tk-sm120-packed-qkv-packed-bf16-grad-handoff"
+    assert tile_payload["attention_backward_direct_bf16_qkv_grad_scratch_enabled"] is True
+    assert tile_payload["attention_backward_direct_bf16_qkv_grad_scratch_elements"] == 64 * 1024 * 768 * 3
+    assert tile_payload["attention_backward_qkv_bridge_strategy"] == "tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff"
     assert tile_payload["attention_backward_qkv_bridge_kernel_launches_per_block"] == 2
     assert tile_payload["attention_backward_qkv_bridge_legacy_launches_per_block"] == 4
     assert tile_payload["attention_backward_qkv_bridge_launches_elided_per_block"] == 3
@@ -1312,7 +1314,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["attention_backward_grad_layout_kernel_launches_per_block"] == 0
     assert tile_payload["attention_backward_grad_layout_legacy_launches_per_block"] == 1
     assert tile_payload["attention_backward_grad_layout_launches_elided_per_block"] == 1
-    assert tile_payload["attention_backward_strategy"] == "tk-sm120-packed-qkv-bf16-backward-bf16-grad-handoff"
+    assert (
+        tile_payload["attention_backward_strategy"]
+        == "tk-sm120-packed-qkv-bf16-saved-activation-backward-direct-bf16-grad-scratch-handoff"
+    )
     assert tile_payload["attention_backward_reuses_forward_workspace"] is True
     assert tile_payload["attention_backward_uses_saved_forward_workspace"] is True
     assert tile_payload["attention_activation_storage_strategy"] == "disabled"
@@ -2104,9 +2109,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["qkv_backward_layout_legacy_launches_per_block"] == 4
     assert train_transformer_payload["qkv_backward_layout_launches_elided_per_block"] == 3
     assert train_transformer_payload["attention_backward_bf16_qkv_grad_handoff_enabled"] is True
+    assert train_transformer_payload["attention_backward_direct_bf16_qkv_grad_scratch_enabled"] is True
+    assert train_transformer_payload["attention_backward_direct_bf16_qkv_grad_scratch_elements"] == 1 * 2 * 768 * 3
     assert (
         train_transformer_payload["attention_backward_qkv_bridge_strategy"]
-        == "tk-sm120-packed-qkv-packed-bf16-grad-handoff"
+        == "tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff"
     )
     assert train_transformer_payload["attention_backward_qkv_bridge_kernel_launches_per_block"] == 2
     assert train_transformer_payload["attention_backward_qkv_bridge_legacy_launches_per_block"] == 4
@@ -2134,7 +2141,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["attention_backward_grad_layout_launches_elided_per_block"] == 1
     assert (
         train_transformer_payload["attention_backward_strategy"]
-        == "tk-sm120-packed-qkv-bf16-backward-bf16-grad-handoff"
+        == "tk-sm120-packed-qkv-bf16-backward-direct-bf16-grad-scratch-handoff"
     )
     assert train_transformer_payload["attention_backward_reuses_forward_workspace"] is False
     assert train_transformer_payload["attention_backward_uses_saved_forward_workspace"] is False
@@ -3939,6 +3946,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "kDefaultLmHeadRowChunkSize = 4096" in gpt2_source_text
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
+    assert "NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH" in gpt2_source_text
+    assert "attention_backward_direct_bf16_qkv_grad_scratch_enabled" in gpt2_source_text
+    assert "tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff" in gpt2_source_text
+    assert "grad_qkv_bf16_bits != qkv_bf16_bits" in kernels_text
     assert "kTkPackedAttentionBackwardDefaultMaxBatchPerLaunch = 64" in kernels_text
     assert "nfn_native_tile_scaled_dot_product_attention_store_tk_bf16_float32" in gpt2_source_text
     assert "forward_store_tk_bf16" in gpt2_source_text

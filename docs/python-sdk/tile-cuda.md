@@ -695,8 +695,9 @@ bias in place through `bf16_bits_add_bias_inplace_tile_float32_kernel`, runs the
 SM120 TK packed attention bridge over that row-major packed QKV tensor, and feeds
 the packed BF16 attention output directly into the attention projection forward
 GEMM and dWeight accumulation. Backward keeps packed attention `dQKV` in BF16 by
-default: the BF16-output packed backward ABI writes into the packed QKV
-activation buffer after forward consumers are done, then QKV dWeight+bias uses
+default: the BF16-output packed backward ABI writes directly into a non-aliased
+BF16 scratch buffer that reuses the MLP BF16 scratch after MLP backward is done,
+then QKV dWeight+bias uses
 `nfn_native_tile_linear_backward_weight_bias_accumulate_float32_bf16_bits` and
 QKV dInput consumes the same BF16 gradient bits with BF16 block weights. Native
 plan and training JSON report `qkv_forward_layout_strategy:
@@ -704,12 +705,16 @@ plan and training JSON report `qkv_forward_layout_strategy:
 "packed-qkv-bf16-bias-inplace"`, `attention_projection_input_strategy:
 "packed-o-bf16-direct-gemm"`, `attention_packed_output_unpack_strategy:
 "elided-direct-bf16-projection"`, `attention_backward_bf16_qkv_grad_handoff_enabled`,
+`attention_backward_direct_bf16_qkv_grad_scratch_enabled`,
+`attention_backward_direct_bf16_qkv_grad_scratch_elements`,
 `qkv_backward_layout_strategy: "packed-qkv-bf16-gradient-handoff"`,
 `attention_backward_qkv_bridge_strategy:
-"tk-sm120-packed-qkv-packed-bf16-grad-handoff"`, and
+"tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff"`, and
 `attention_backward_strategy:
-"tk-sm120-packed-qkv-bf16-backward-bf16-grad-handoff"` when the default path is
-active. Set `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF=0` to compare against the
+"tk-sm120-packed-qkv-bf16-backward-direct-bf16-grad-scratch-handoff"` when the default path is
+active. Set `NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH=0` to reproduce the
+older workspace-to-packed-QKV-buffer copy path, or set
+`NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF=0` to compare against the
 older packed path that expands `dQKV` to float32 before QKV dWeight/dInput. Set
 `NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE=0`,
 `NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE=0`, or
@@ -732,7 +737,7 @@ reports `packed_attention_activation_storage_strategy:
 `stored_packed_attention_activation_blocks: 12`,
 `stored_packed_attention_lse_enabled`, `stored_packed_attention_*` counts/bytes,
 `attention_backward_strategy:
-"tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-handoff"`, and
+"tk-sm120-packed-qkv-bf16-saved-activation-backward-direct-bf16-grad-scratch-handoff"`, and
 `block_recompute_saved_packed_attention` timing. The default packed recompute
 path also stores intermediate residual1 tensors in BF16 and skips the
 packed-attention recompute projection/residual subpath; that store is fused into
