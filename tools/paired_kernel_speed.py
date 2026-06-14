@@ -52,6 +52,11 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Set CUDA_VISIBLE_DEVICES for both commands, e.g. 0 for a dedicated RTX 5090.",
     )
+    parser.add_argument(
+        "--cuda-device-max-connections",
+        default="1",
+        help="Set CUDA_DEVICE_MAX_CONNECTIONS for both commands. Pass an empty string to leave it unchanged.",
+    )
     parser.add_argument("--json", action="store_true", help="Print JSON instead of a text summary.")
     parser.add_argument("--json-out", default="", help="Write the JSON payload to this file.")
     parser.add_argument(
@@ -234,6 +239,7 @@ def gpu_snapshot() -> dict[str, object]:
         "name",
         "uuid",
         "pci.bus_id",
+        "display_active",
         "utilization.gpu_pct",
         "memory.used_mib",
         "memory.total_mib",
@@ -245,8 +251,8 @@ def gpu_snapshot() -> dict[str, object]:
         "used_memory_mib",
     ]
     gpu_query = run_nvidia_smi(
-        [
-            "--query-gpu=index,name,uuid,pci.bus_id,utilization.gpu,memory.used,memory.total",
+            [
+            "--query-gpu=index,name,uuid,pci.bus_id,display_active,utilization.gpu,memory.used,memory.total",
             "--format=csv,noheader,nounits",
         ]
     )
@@ -274,10 +280,14 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     samples = max(1, args.samples)
     warmup = max(0, args.warmup)
     cuda_visible_devices = str(args.cuda_visible_devices or "").strip()
+    cuda_device_max_connections = str(args.cuda_device_max_connections or "").strip()
     run_env = None
-    if cuda_visible_devices:
+    if cuda_visible_devices or cuda_device_max_connections:
         run_env = dict(os.environ)
-        run_env["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
+        if cuda_visible_devices:
+            run_env["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
+        if cuda_device_max_connections:
+            run_env["CUDA_DEVICE_MAX_CONNECTIONS"] = cuda_device_max_connections
 
     gpu_before = gpu_snapshot()
     for warmup_index in range(warmup):
@@ -314,6 +324,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "samples": samples,
         "warmup": warmup,
         "cuda_visible_devices": cuda_visible_devices,
+        "cuda_device_max_connections": cuda_device_max_connections,
         "gpu_before": gpu_before,
         "gpu_after": gpu_after,
         "baseline_command": baseline.argv,
@@ -348,6 +359,7 @@ def print_text(payload: dict[str, object]) -> None:
                 print(
                     "    "
                     f"index={gpu.get('index', '')} name={gpu.get('name', '')} "
+                    f"display_active={gpu.get('display_active', '')} "
                     f"util={gpu.get('utilization.gpu_pct', '')}% "
                     f"mem={gpu.get('memory.used_mib', '')}/{gpu.get('memory.total_mib', '')} MiB"
                 )

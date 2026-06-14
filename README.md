@@ -34,10 +34,12 @@ Use `python tools/paired_kernel_speed.py --baseline "OLD_COMMAND"
 /tmp/result.json` for candidate-vs-current CUDA timing pinned to the dedicated
 5090 while still alternating pairs in the same sampling window. The helper runs
 one warmup pair by default so first-use CUDA/kernel load does not contaminate
-reported samples. When `nvidia-smi` is available, the JSON also includes
-`gpu_before` and `gpu_after` snapshots with GPU identity, utilization, memory,
-and active compute-process rows so kernel-speed notes show which CUDA device
-was measured and whether other compute work was present. The helper decodes
+reported samples. It sets `CUDA_DEVICE_MAX_CONNECTIONS=1` for both commands by
+default; pass `--cuda-device-max-connections ""` to leave that environment
+unchanged. When `nvidia-smi` is available, the JSON also includes `gpu_before`
+and `gpu_after` snapshots with GPU identity, display-active state, utilization,
+memory, and active compute-process rows so kernel-speed notes show which CUDA
+device was measured and whether other compute work was present. The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
 emit non-UTF-8 bytes can still be compared in the same paired run. If either
 command emits NeuralFn native JSON, the helper also summarizes native in-loop

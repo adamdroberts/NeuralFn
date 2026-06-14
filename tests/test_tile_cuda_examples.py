@@ -46,7 +46,11 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
             sys.executable,
             str(script),
             "--baseline",
-            f"{sys.executable} -c \"import os; print(os.environ.get('CUDA_VISIBLE_DEVICES', ''))\"",
+            (
+                f"{sys.executable} -c "
+                "\"import os; print(os.environ.get('CUDA_VISIBLE_DEVICES', '')); "
+                "print(os.environ.get('CUDA_DEVICE_MAX_CONNECTIONS', ''))\""
+            ),
             "--candidate",
             (
                 f"{sys.executable} -c "
@@ -76,8 +80,10 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["measurement"] == "paired_interleaved_commands"
     assert payload["cuda_visible_devices"] == "test-device"
+    assert payload["cuda_device_max_connections"] == "1"
     assert "gpu_before" in payload
     assert "gpu_after" in payload
+    assert "test-device\n1\n" in payload["paired_samples"][0]["baseline"]["stdout_tail"]
     assert "gpus" in payload["gpu_before"]
     assert "compute_processes" in payload["gpu_before"]
     assert "test-device" in payload["paired_samples"][0]["baseline"]["stdout_tail"]

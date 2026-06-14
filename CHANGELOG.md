@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Pin paired kernel benchmarks to deterministic CUDA connection mode
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now sets `CUDA_DEVICE_MAX_CONNECTIONS=1` for
+  both baseline and candidate commands by default, so paired native CUDA
+  benchmark artifacts match the dedicated RTX 5090 training launch profile.
+  Pass `--cuda-device-max-connections ""` to leave the inherited environment
+  unchanged for experiments that need a different CUDA connection mode.
+- The paired benchmark GPU snapshot now records `display_active` from
+  `nvidia-smi`, making it visible whether a timing run used the compute-only
+  RTX 5090 or a display-active GPU.
+
+#### Verification
+
+- Ran `python -m pytest tests/test_tile_cuda_examples.py -q -k
+  paired_kernel_speed_tool_compiles_and_smokes`.
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran `git diff --check`.
+
 ### 2026-06-14 Default `nfn train` to native GPT when base model is omitted
 
 #### Changed

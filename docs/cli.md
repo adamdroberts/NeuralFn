@@ -553,11 +553,14 @@ For native kernel candidate comparisons, use
 /tmp/result.json`. The helper alternates baseline/candidate order inside one
 script so unrelated external GPU load affects both measurements in the same
 sampling window, and it runs one warmup pair by default to keep first-use CUDA
-or kernel-load cost out of the reported samples. When `nvidia-smi` is present,
-the result JSON includes `gpu_before` and `gpu_after` snapshots containing GPU
-identity, utilization, memory, and active compute-process rows, which makes
-dedicated-GPU runs and accidental external GPU load visible in benchmark
-artifacts. When a command emits NeuralFn native JSON, the helper extracts
+or kernel-load cost out of the reported samples. It sets
+`CUDA_DEVICE_MAX_CONNECTIONS=1` for both commands by default; pass
+`--cuda-device-max-connections ""` to leave that environment unchanged. When
+`nvidia-smi` is present, the result JSON includes `gpu_before` and `gpu_after`
+snapshots containing GPU identity, display-active state, utilization, memory,
+and active compute-process rows, which makes dedicated-GPU runs and accidental
+external GPU load visible in benchmark artifacts. When a command emits NeuralFn
+native JSON, the helper extracts
 native-loop counters into `baseline_native_metrics` or
 `candidate_native_metrics`, including `timing.train_loop_wall_ms`,
 `timing.train_tokens_per_second`, setup time, checkpoint time, total native
