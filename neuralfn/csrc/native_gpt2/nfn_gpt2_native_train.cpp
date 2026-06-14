@@ -7642,7 +7642,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF",
                               "NFN_NATIVE_GPT2_BF16_MLP_GRAD_HANDOFF"}),
-            false);
+            true);
     const bool bf16_qkv_grad_handoff_enabled =
         packed_qkv_attention_enabled &&
         env_flag_enabled_or_default(

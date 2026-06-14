@@ -223,9 +223,10 @@ or `"tk-sm120-fused-fc-bias-gelu-bf16-store-bf16-shadow-weight"` when forced
 back to the older route. Set `NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU=0` to
 force that older route for paired benchmarks. Active runs report
 `block_backward_mlp_proj_dgelu_strategy` as
-`"tk-sm120-fused-dinput-dgelu-bf16-store-bf16-shadow-weight-float32-grad"`. Set
-`NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` to force the older separate dInput plus
-GELU-backward route for paired benchmarks.
+`"tk-sm120-fused-dinput-dgelu-bf16-store-bf16-shadow-weight-bf16-grad-handoff"`.
+Set `NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF=0` to compare against the older
+float-gradient handoff, or `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` to force the
+older separate dInput plus GELU-backward route for paired benchmarks.
 `NFN_TILE_CUDA_LINEAR_TK_FLOAT_OUT=1` or
 `NFN_NATIVE_LINEAR_TK_FLOAT_OUT=1` enables an opt-in diagnostic bridge that runs
 eligible BF16 linear forward GEMMs through the TK BF16-output path and converts

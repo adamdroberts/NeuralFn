@@ -3585,6 +3585,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "bf16-shadow-weight-shape-gated-cublaslt-forward" in gpt2_source_text
     assert "bf16-shadow-weight-shape-gated-cublaslt-dinput" in gpt2_source_text
     assert "block_backward_mlp_proj_dgelu_strategy" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF" in gpt2_source_text
+    assert 'NFN_NATIVE_GPT2_BF16_MLP_GRAD_HANDOFF"}),\n            true)' in gpt2_source_text
+    assert "tk-sm120-fused-dinput-dgelu-bf16-store-bf16-shadow-weight-bf16-grad-handoff" in gpt2_source_text
     assert "tk-sm120-fused-dinput-dgelu-bf16-store-bf16-shadow-weight-float32-grad" in gpt2_source_text
     assert "shape-gated-bf16-cublaslt-dweight-bgrad-accumulate" in gpt2_source_text
     assert "forced-bf16-gemmex-dweight-plus-bias-accumulate-fallback" in gpt2_source_text

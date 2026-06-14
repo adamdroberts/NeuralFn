@@ -207,19 +207,17 @@ routes also consume persistent BF16 block-weight shadows. Runtime JSON reports
 `stored_mlp_forward_strategy:
 "tk-sm120-fused-fc-bias-gelu-bf16-store-bf16-shadow-weight"` and
 `block_backward_mlp_proj_dgelu_strategy:
-"tk-sm120-fused-dinput-dgelu-bf16-store-bf16-shadow-weight-float32-grad"` when
+"tk-sm120-fused-dinput-dgelu-bf16-store-bf16-shadow-weight-bf16-grad-handoff"` when
 that path is active. The raw ABI also exposes
 `nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_float32` and
 `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32`
-for BF16 MLP gradient handoff experiments; set
-`NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF=1` to keep the fused MLP projection
-gradient as BF16 bits for the following MLP FC backward GEMMs. This is opt-in
-because paired dedicated-RTX-5090 timing was neutral/slower than the default
+for the default BF16 MLP gradient handoff; set
+`NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF=0` to compare against the older
 float-gradient handoff. Runtime JSON reports
 `block_backward_bf16_mlp_grad_handoff_enabled` and switches
-`stored_mlp_activation_backward_consumer_strategy` when the experiment is active.
-The default float-gradient path still uses the fused dInput+dGELU ABI and only
-hands the following MLP FC backward a float gradient.
+`stored_mlp_activation_backward_consumer_strategy` when the handoff is active.
+The older float-gradient path still uses the fused dInput+dGELU ABI and only
+hands the following MLP FC backward a float gradient when the handoff is forced off.
 Set
 `NFN_TILE_CUDA_LINEAR_BF16=1` or
 `NFN_NATIVE_LINEAR_BF16=1` only when profiling the normal linear ABI's BF16

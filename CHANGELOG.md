@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Default BF16 MLP gradient handoff on native GPT
+
+#### Changed
+
+- Dense GPT native training now enables `NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF`
+  by default when fused MLP projection dInput+dGELU is active. The fused MLP
+  projection backward keeps its result as BF16 bits for the following MLP FC
+  backward GEMMs instead of converting that intermediate gradient back to
+  float32.
+- Set `NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF=0` or the GPT-2-prefixed fallback
+  to compare against the older float-gradient handoff.
+- Runtime JSON now reports
+  `block_backward_bf16_mlp_grad_handoff_enabled: true` by default and the
+  default `block_backward_mlp_proj_dgelu_strategy` becomes
+  `"tk-sm120-fused-dinput-dgelu-bf16-store-bf16-shadow-weight-bf16-grad-handoff"`.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k
+  "native_train_tile_ops_builds_torch_free_c_abi or
+  native_gpt2_cpp_cli_builds_and_uses_sm120_defaults"`; the native GPT CLI
+  contract test passed, and the ABI test skipped only its final live CUDA fill
+  smoke after source/build/symbol checks completed.
+- Ran `tools/paired_kernel_speed.py` on the dedicated RTX 5090 with one warmup
+  pair and three measured pairs, comparing the new default against
+  `NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF=0`. The default averaged `3095.74 ms`
+  train-loop time versus `3237.30 ms` for the forced older path, and
+  `169358.00` versus `161952.33` train tokens/sec.
+- Ran `git diff --check`.
+
 ### 2026-06-14 Pin paired kernel benchmarks to deterministic CUDA connection mode
 
 #### Changed
