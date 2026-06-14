@@ -107,6 +107,25 @@ def native_metrics_from_stdout(stdout: str) -> dict[str, float | int | str | boo
         value = payload.get(key)
         if isinstance(value, (bool, int, float, str)):
             metrics[key] = value
+    timing = payload.get("timing")
+    if isinstance(timing, dict):
+        stage_timing = timing.get("stage_timing")
+        if isinstance(stage_timing, list):
+            for stage in stage_timing:
+                if not isinstance(stage, dict):
+                    continue
+                name = stage.get("name")
+                if not isinstance(name, str) or not name:
+                    continue
+                metric_name = "stage." + name
+                for source_key, suffix in (
+                    ("total_ms", "total_ms"),
+                    ("avg_ms", "avg_ms"),
+                    ("count", "count"),
+                ):
+                    value = stage.get(source_key)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        metrics[f"{metric_name}.{suffix}"] = value
     return metrics
 
 
@@ -384,6 +403,12 @@ def print_text(payload: dict[str, object]) -> None:
             "setup_wall_ms",
             "checkpoint_wall_ms",
             "total_wall_ms",
+            "stage.lm_head_backward.total_ms",
+            "stage.block_backward.total_ms",
+            "stage.block_backward.mlp_fc.total_ms",
+            "stage.block_backward.attn_sdpa.total_ms",
+            "stage.block_backward.qkv.total_ms",
+            "stage.adamw_update.total_ms",
         ):
             stats = metrics.get(key)
             if isinstance(stats, dict):
@@ -394,7 +419,17 @@ def print_text(payload: dict[str, object]) -> None:
     ratios = payload.get("candidate_over_baseline_native_metrics")
     if isinstance(ratios, dict) and ratios:
         print("  candidate_over_baseline_native_metrics:")
-        for key in ("train_loop_wall_ms", "train_tokens_per_second", "total_wall_ms"):
+        for key in (
+            "train_loop_wall_ms",
+            "train_tokens_per_second",
+            "total_wall_ms",
+            "stage.lm_head_backward.total_ms",
+            "stage.block_backward.total_ms",
+            "stage.block_backward.mlp_fc.total_ms",
+            "stage.block_backward.attn_sdpa.total_ms",
+            "stage.block_backward.qkv.total_ms",
+            "stage.adamw_update.total_ms",
+        ):
             stats = ratios.get(key)
             if isinstance(stats, dict):
                 print(

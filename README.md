@@ -44,8 +44,8 @@ native binary stdout/stderr with replacement, so external CUDA trainers that
 emit non-UTF-8 bytes can still be compared in the same paired run. If either
 command emits NeuralFn native JSON, the helper also summarizes native in-loop
 metrics such as `timing.train_loop_wall_ms`, `timing.train_tokens_per_second`,
-setup time, checkpoint time, and total native wall time separately from outer
-command runtime.
+setup time, checkpoint time, total native wall time, and any emitted
+`timing.stage_timing` entries separately from outer command runtime.
 
 The native dense-GPT BF16 LM-head CE backward path now traverses rows in
 reverse block order, matching the llm.kittens fused-classifier cache-locality

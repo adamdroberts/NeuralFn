@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Add stage-timing extraction to paired native benchmarks
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now extracts NeuralFn native
+  `timing.stage_timing` entries into `baseline_native_metrics` and
+  `candidate_native_metrics` as `stage.<name>.total_ms`, `.avg_ms`, and
+  `.count`. Text output highlights the major dense GPT stages so kernel
+  candidates can be judged against the stage they are supposed to improve, not
+  only whole-command wall time.
+
+#### Verification
+
+- Ran `python -m pytest tests/test_tile_cuda_examples.py -q -k
+  paired_kernel_speed_tool_compiles_and_smokes`.
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran `git diff --check`.
+
 ### 2026-06-14 Default BF16 MLP gradient handoff on native GPT
 
 #### Changed

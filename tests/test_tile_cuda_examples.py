@@ -56,7 +56,9 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 f"{sys.executable} -c "
                 "\"print('{\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 12.5, "
                 "\\\"train_tokens_per_second\\\": 42.0, \\\"setup_wall_ms\\\": 1.0, "
-                "\\\"checkpoint_wall_ms\\\": 0.0, \\\"total_wall_ms\\\": 15.0}, "
+                "\\\"checkpoint_wall_ms\\\": 0.0, \\\"total_wall_ms\\\": 15.0, "
+                "\\\"stage_timing\\\": [{\\\"name\\\": \\\"lm_head_backward\\\", "
+                "\\\"total_ms\\\": 7.0, \\\"avg_ms\\\": 3.5, \\\"count\\\": 2}]}, "
                 "\\\"linear_tk_gemm_count\\\": 3, \\\"status\\\": \\\"native-test\\\"}')\""
             ),
             "--samples",
@@ -84,6 +86,9 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "gpu_before" in payload
     assert "gpu_after" in payload
     assert "test-device\n1\n" in payload["paired_samples"][0]["baseline"]["stdout_tail"]
+    assert payload["candidate_native_metrics"]["stage.lm_head_backward.total_ms"]["mean"] == 7.0
+    assert payload["candidate_native_metrics"]["stage.lm_head_backward.avg_ms"]["mean"] == 3.5
+    assert payload["candidate_native_metrics"]["stage.lm_head_backward.count"]["mean"] == 2.0
     assert "gpus" in payload["gpu_before"]
     assert "compute_processes" in payload["gpu_before"]
     assert "test-device" in payload["paired_samples"][0]["baseline"]["stdout_tail"]

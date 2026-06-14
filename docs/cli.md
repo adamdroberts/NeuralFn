@@ -562,10 +562,12 @@ native JSON, the helper extracts
 native-loop counters into `baseline_native_metrics` or
 `candidate_native_metrics`, including `timing.train_loop_wall_ms`,
 `timing.train_tokens_per_second`, setup time, checkpoint time, total native
-wall time, selected linear/attention kernel counters, and paired native-metric
-ratios when both commands expose the same metric. Use those native summaries
-when command startup or checkpoint export would otherwise hide the actual
-training-loop speed.
+wall time, selected linear/attention kernel counters, emitted
+`timing.stage_timing` totals/averages/counts, and paired native-metric ratios
+when both commands expose the same metric. Use those native summaries when
+command startup or checkpoint export would otherwise hide the actual
+training-loop speed or when a kernel candidate is expected to move only one
+stage.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, `NFN_NATIVE_GPT_BINDING`, and
