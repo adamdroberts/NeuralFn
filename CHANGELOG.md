@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 BF16-parameter AdamW ABI for no-master native GPT
+
+#### Changed
+
+- Added the raw Tile-CUDA ABI
+  `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32`.
+  It updates descriptor-driven BF16 parameter buffers directly from float32
+  gradients, float32 AdamW moment state, and the device clip scalar.
+- This is the low-level primitive needed to migrate the native GPT trainer
+  toward the llm.kittens SM120 `use_master_weights disabled` storage model.
+  The default trainer still uses FP32 parameter buffers plus BF16 block-weight
+  shadows until the parameter/gradient layout migration is wired and benchmarked
+  end-to-end.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Verified the exported ABI with `nm -D build/libnfn_native_train_tile_ops.so
+  | rg "adamw_step_many_with_device_scale.*(float32|bf16)"`, which reports
+  `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k
+  "native_train_tile_ops_builds_torch_free_c_abi"`; the source, build, and
+  symbol-load assertions completed, then the test skipped its final CUDA fill
+  smoke because that helper loaded a mismatched CUDA runtime in the test process.
+
 ### 2026-06-14 Opt-in fused AdamW BF16 shadow refresh ABI
 
 #### Changed

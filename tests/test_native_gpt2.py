@@ -3388,9 +3388,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_adamw_step_with_device_scale_float32" in header_text
     assert "nfn_native_tile_adamw_step_many_with_device_scale_float32" in header_text
     assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32" in header_text
+    assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32" in header_text
     assert "launch_adamw_step_many_with_device_scale_float32" in source_text
     assert "launch_adamw_step_many_with_device_scale_bf16_shadow_float32" in source_text
+    assert "launch_adamw_step_many_with_device_scale_bf16_param_float32" in source_text
     assert "adamw_step_many_with_device_scale_bf16_shadow_float32_kernel" in kernels_text
+    assert "adamw_step_many_with_device_scale_bf16_param_float32_kernel" in kernels_text
+    assert "params_bf16_bits" in kernels_text
     assert "bf16_shadow_offsets" in kernels_text
     assert "ct::element_cast<__nv_bfloat16>(next_p)" in kernels_text
     assert "nfn_native_tile_fill_float32" in header_text

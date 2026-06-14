@@ -471,6 +471,9 @@ Tile launch. Set `NFN_NATIVE_GPT_FUSE_ADAMW_BF16_SHADOW_REFRESH=1` only when
 profiling that fused shadow-write route; the default stays on the separate
 `nfn_native_tile_float32_to_bf16_bits_many` refresh because paired dedicated RTX
 5090 timing did not improve native train-loop throughput.
+`nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32` exposes
+the no-master storage primitive needed to migrate dense GPT parameter buffers to
+BF16 while leaving gradients and AdamW moment state in float32.
 Token, position, and block Linear weight gradients accumulate directly into
 optimizer-step accumulation buffers in the full GPT-2 trainer. The tied LM-head
 CE backward scale includes the microbatch accumulation factor, LM-head dWeight

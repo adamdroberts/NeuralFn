@@ -473,6 +473,10 @@ Set `NFN_NATIVE_GPT_FUSE_ADAMW_BF16_SHADOW_REFRESH=1` only for profiling that
 fused shadow-write path; the default remains the separate
 `nfn_native_tile_float32_to_bf16_bits_many` refresh because the paired dedicated
 RTX 5090 train-loop timing was neutral/slightly slower for the fused route.
+`nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32` is the
+matching no-master primitive for future native GPT parameter storage: it updates
+BF16 parameter buffers directly while keeping float32 gradients and AdamW moment
+state.
 Token, position, and block Linear weight gradients accumulate directly into
 optimizer-step accumulation buffers. The tied LM-head CE backward scale includes
 the microbatch accumulation factor, LM-head dWeight chunks and token-embedding
