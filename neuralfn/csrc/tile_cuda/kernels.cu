@@ -2116,6 +2116,51 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32_with_bgrad(
           stream);
 }
 
+bool cublas_linear_gemm_ex_bf16_bits_ab_float32_with_bgrad(
+    const std::uint16_t* a_bf16_bits,
+    const std::uint16_t* b_bf16_bits,
+    float* c,
+    float* bias_gradient,
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b,
+    int lda,
+    int ldb,
+    int ldc,
+    float beta_value,
+    bool force_bf16,
+    cudaStream_t stream) {
+  if (bias_gradient == nullptr || (!force_bf16 && !trainer_linear_bf16_bridge_enabled())) {
+    return false;
+  }
+  const auto* a_bf16 = reinterpret_cast<const __nv_bfloat16*>(a_bf16_bits);
+  const auto* b_bf16 = reinterpret_cast<const __nv_bfloat16*>(b_bf16_bits);
+  return trainer_linear_bf16_cublaslt_enabled() &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k) &&
+      cublaslt_linear_matmul(
+          a_bf16,
+          b_bf16,
+          c,
+          CUDA_R_16BF,
+          CUDA_R_16BF,
+          CUDA_R_32F,
+          CUBLAS_COMPUTE_32F_FAST_16BF,
+          m,
+          n,
+          k,
+          op_a,
+          op_b,
+          lda,
+          ldb,
+          ldc,
+          beta_value,
+          CUBLASLT_EPILOGUE_BGRADB,
+          bias_gradient,
+          stream);
+}
+
 bool cublas_linear_gemm_ex_bf16_bits_b_float32(
     const float* a,
     const std::uint16_t* b_bf16_bits,
@@ -5846,6 +5891,33 @@ __global__ void linear_backward_weight_chunked_atomic_float32_bf16_bits_kernel(
   atomicAdd(grad_weight + idx, acc);
 }
 
+__global__ void linear_backward_weight_chunked_atomic_bf16_bits_bf16_bits_float32_kernel(
+    const std::uint16_t* __restrict__ x_bf16_bits,
+    const std::uint16_t* __restrict__ grad_out_bf16_bits,
+    float* __restrict__ grad_weight,
+    std::int64_t n,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t row_chunk_size) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const std::int64_t row_chunk = static_cast<std::int64_t>(blockIdx.y);
+  const std::int64_t row_start = row_chunk * row_chunk_size;
+  const std::int64_t row_end = (row_start + row_chunk_size < rows) ? row_start + row_chunk_size : rows;
+  const std::int64_t out_col = idx / input_dim;
+  const std::int64_t in_col = idx % input_dim;
+  float acc = 0.0f;
+  for (std::int64_t row_idx = row_start; row_idx < row_end; ++row_idx) {
+    const float x_value = bf16_bits_to_f32_device(x_bf16_bits[row_idx * input_dim + in_col]);
+    const float grad_value = bf16_bits_to_f32_device(grad_out_bf16_bits[row_idx * output_dim + out_col]);
+    acc += x_value * grad_value;
+  }
+  atomicAdd(grad_weight + idx, acc);
+}
+
 __global__ void linear_backward_input_bf16_bits_float32_kernel(
     const std::uint16_t* __restrict__ grad_out_bf16_bits,
     const float* __restrict__ weight,
@@ -5863,6 +5935,28 @@ __global__ void linear_backward_input_bf16_bits_float32_kernel(
   for (std::int64_t out_col = 0; out_col < output_dim; ++out_col) {
     const float grad_value = bf16_bits_to_f32_device(grad_out_bf16_bits[row * output_dim + out_col]);
     acc += grad_value * weight[out_col * input_dim + in_col];
+  }
+  grad_x[idx] = acc;
+}
+
+__global__ void linear_backward_input_bf16_bits_weight_bf16_bits_float32_kernel(
+    const std::uint16_t* __restrict__ grad_out_bf16_bits,
+    const std::uint16_t* __restrict__ weight_bf16_bits,
+    float* __restrict__ grad_x,
+    std::int64_t n,
+    std::int64_t input_dim,
+    std::int64_t output_dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const std::int64_t row = idx / input_dim;
+  const std::int64_t in_col = idx % input_dim;
+  float acc = 0.0f;
+  for (std::int64_t out_col = 0; out_col < output_dim; ++out_col) {
+    const float grad_value = bf16_bits_to_f32_device(grad_out_bf16_bits[row * output_dim + out_col]);
+    const float weight_value = bf16_bits_to_f32_device(weight_bf16_bits[out_col * input_dim + in_col]);
+    acc += grad_value * weight_value;
   }
   grad_x[idx] = acc;
 }
@@ -6173,6 +6267,26 @@ __tile_global__ void linear_backward_bias_chunked_atomic_float32_kernel(
   }
   auto active = row_chunk < row_chunks ? mask : ct::full<decltype(mask)>(false);
   ct::atomic_add_masked<ct::memory_order::relaxed>(grad_bias + out_col, acc, active);
+}
+
+__global__ void linear_backward_bias_chunked_atomic_bf16_bits_float32_kernel(
+    const std::uint16_t* __restrict__ grad_out_bf16_bits,
+    float* __restrict__ grad_bias,
+    std::int64_t output_dim,
+    std::int64_t rows,
+    std::int64_t row_chunk_size) {
+  const std::int64_t out_col = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (out_col >= output_dim) {
+    return;
+  }
+  const std::int64_t row_chunk = static_cast<std::int64_t>(blockIdx.y);
+  const std::int64_t row_start = row_chunk * row_chunk_size;
+  const std::int64_t row_end = (row_start + row_chunk_size < rows) ? row_start + row_chunk_size : rows;
+  float acc = 0.0f;
+  for (std::int64_t row_idx = row_start; row_idx < row_end; ++row_idx) {
+    acc += bf16_bits_to_f32_device(grad_out_bf16_bits[row_idx * output_dim + out_col]);
+  }
+  atomicAdd(grad_bias + out_col, acc);
 }
 
 __tile_global__ void gelu_float32_kernel(
@@ -10082,6 +10196,41 @@ void launch_linear_backward_input_weight_bf16_float32(
       grad_out, weight_bf16_bits, grad_x, n, input_dim, output_dim);
 }
 
+void launch_linear_backward_input_bf16_bits_weight_bf16_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    const std::uint16_t* weight_bf16_bits,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
+      cublas_linear_gemm_ex_bf16_bits_ab_float32(
+          weight_bf16_bits,
+          grad_out_bf16_bits,
+          grad_x,
+          static_cast<int>(input_dim),
+          static_cast<int>(rows),
+          static_cast<int>(output_dim),
+          CUBLAS_OP_N,
+          CUBLAS_OP_N,
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          static_cast<int>(input_dim),
+          0.0f,
+          true,
+          stream)) {
+    return;
+  }
+#endif
+  const std::int64_t n = rows * input_dim;
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  linear_backward_input_bf16_bits_weight_bf16_bits_float32_kernel<<<blocks, threads, 0, stream>>>(
+      grad_out_bf16_bits, weight_bf16_bits, grad_x, n, input_dim, output_dim);
+}
+
 void launch_linear_backward_input_bf16_bits_float32(
     const std::uint16_t* grad_out_bf16_bits,
     const float* weight,
@@ -10401,6 +10550,54 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_float32(
   launch_linear_backward_weight_accumulate_bf16_bits_float32(
       x_bf16_bits, grad_out, grad_weight, rows, input_dim, output_dim, stream);
   launch_linear_backward_bias_accumulate_float32(grad_out, grad_bias, rows, output_dim, stream);
+}
+
+void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim)) {
+    float* bias_gradient = ensure_trainer_linear_bgrad_workspace(output_dim);
+    if (bias_gradient != nullptr &&
+        cublas_linear_gemm_ex_bf16_bits_ab_float32_with_bgrad(
+            x_bf16_bits,
+            grad_out_bf16_bits,
+            grad_weight,
+            bias_gradient,
+            static_cast<int>(input_dim),
+            static_cast<int>(output_dim),
+            static_cast<int>(rows),
+            CUBLAS_OP_N,
+            CUBLAS_OP_T,
+            static_cast<int>(input_dim),
+            static_cast<int>(output_dim),
+            static_cast<int>(input_dim),
+            1.0f,
+            true,
+            stream)) {
+      launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
+      return;
+    }
+  }
+#endif
+  constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
+  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
+  const std::int64_t n = output_dim * input_dim;
+  constexpr int threads = 256;
+  const int weight_blocks = static_cast<int>((n + threads - 1) / threads);
+  dim3 weight_grid(static_cast<unsigned int>(weight_blocks), static_cast<unsigned int>(row_chunks), 1);
+  linear_backward_weight_chunked_atomic_bf16_bits_bf16_bits_float32_kernel<<<weight_grid, threads, 0, stream>>>(
+      x_bf16_bits, grad_out_bf16_bits, grad_weight, n, rows, input_dim, output_dim, kRowChunkSize);
+  const int bias_blocks = static_cast<int>((output_dim + threads - 1) / threads);
+  dim3 bias_grid(static_cast<unsigned int>(bias_blocks), static_cast<unsigned int>(row_chunks), 1);
+  linear_backward_bias_chunked_atomic_bf16_bits_float32_kernel<<<bias_grid, threads, 0, stream>>>(
+      grad_out_bf16_bits, grad_bias, output_dim, rows, kRowChunkSize);
 }
 
 void launch_linear_backward_weight_accumulate_float32_bf16_bits(

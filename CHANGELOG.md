@@ -6,6 +6,38 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT opt-in BF16 MLP gradient handoff ABI
+
+#### Changed
+
+- The raw native Tile ABI now exposes
+  `nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_float32` and
+  `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32`
+  so native trainers can test carrying the fused MLP projection dInput/dGELU
+  result as BF16 bits into the following MLP FC backward GEMMs.
+- The dense GPT compiled trainer can opt into that path with
+  `NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF=1`. The default remains the existing
+  float-gradient handoff because paired timing on the dedicated RTX 5090 was
+  neutral/slower for the BF16 handoff experiment.
+- Runtime JSON now reports `block_backward_bf16_mlp_grad_handoff_enabled` and
+  updates `block_backward_mlp_proj_dgelu_strategy` plus
+  `stored_mlp_activation_backward_consumer_strategy` when the experiment is
+  active.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Verified the exported ABI with `nm -D build/libnfn_native_train_tile_ops.so |
+  rg "bf16_bits_weight_bf16|bf16_bits_bf16_bits"`.
+- Ran default and opt-in one-step TinyStories native GPT CUDA smokes on GPU 0
+  with `CUDA_VISIBLE_DEVICES=0` and `CUDA_DEVICE_MAX_CONNECTIONS=1`.
+- Compared handoff-off and handoff-on in `tools/paired_kernel_speed.py` with one
+  warmup pair and five measured pairs. Native train-loop
+  `candidate_over_baseline_native_metrics.timing.train_loop_wall_ms.mean` was
+  `1.002665`, so the BF16 handoff remains opt-in.
+
 ### 2026-06-14 Paired benchmark native metric summaries
 
 #### Changed
