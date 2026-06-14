@@ -7696,7 +7696,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS",
                               "NFN_NATIVE_GPT2_BF16_BLOCK_WEIGHT_PARAMS"}),
-            false);
+            true);
     const bool fuse_adamw_bf16_shadow_refresh_enabled =
         !bf16_block_weight_param_update_enabled &&
         env_flag_enabled_or_default(

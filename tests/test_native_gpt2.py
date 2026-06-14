@@ -2261,15 +2261,18 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["descriptor_arena_suballocation_count"] == 0
     assert train_transformer_payload["descriptor_upload_strategy"] == "single-host-packed-arena-copy"
     assert train_transformer_payload["descriptor_arena_copy_count"] == 0
-    assert train_transformer_payload["descriptor_arena_copy_calls_elided"] == 13
-    assert train_transformer_payload["descriptor_cuda_mallocs_elided"] == 13
+    assert train_transformer_payload["descriptor_arena_copy_calls_elided"] == 25
+    assert train_transformer_payload["descriptor_cuda_mallocs_elided"] == 25
     assert train_transformer_payload["parameter_initialization_strategy"] == "fused-multi-buffer-fill-values"
     assert train_transformer_payload["parameter_initialization_descriptor_count"] == 0
     assert train_transformer_payload["parameter_initialization_max_elements"] == 0
     assert train_transformer_payload["parameter_initialization_kernel_launches"] == 0
     assert train_transformer_payload["parameter_initialization_kernel_launches_per_startup"] == 0
     assert train_transformer_payload["parameter_initialization_per_buffer_launches_elided"] == 74
-    assert train_transformer_payload["adamw_update_strategy"] == "fused-multi-buffer-device-scale"
+    assert train_transformer_payload["adamw_update_strategy"] in {
+        "fused-multi-buffer-device-scale",
+        "split-float32-and-bf16-param-multi-buffer-device-scale",
+    }
     assert train_transformer_payload["adamw_descriptor_count"] == 0
     assert train_transformer_payload["adamw_float_update_descriptor_count"] == 0
     assert train_transformer_payload["adamw_bf16_param_descriptor_count"] == 0
@@ -2336,8 +2339,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "descriptor_arena_suballocation_count": 0,
         "descriptor_upload_strategy": "single-host-packed-arena-copy",
         "descriptor_arena_copy_count": 0,
-        "descriptor_arena_copy_calls_elided": 13,
-        "descriptor_cuda_mallocs_elided": 13,
+        "descriptor_arena_copy_calls_elided": 25,
+        "descriptor_cuda_mallocs_elided": 25,
         "block0_duplicate_allocation_elided": True,
         "block0_duplicate_activation_allocation_elided": True,
         "block0_duplicate_parameter_initialization_elided": True,
@@ -2381,11 +2384,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "gradient_sumsq_kernel_launches_per_optimizer_step": 0,
         "gradient_sumsq_per_buffer_launches_elided": 147,
         "adamw_device_clip_scale_fused": True,
-        "adamw_bf16_shadow_refresh_strategy": "separate-many-pack-after-adamw",
-        "block_weight_bf16_primary_param_update_enabled": False,
+        "adamw_bf16_shadow_refresh_strategy": "elided-bf16-primary-params",
+        "block_weight_bf16_primary_param_update_enabled": True,
         "adamw_update_loop": False,
         "adamw_update_loop_elided": True,
-        "adamw_update_strategy": "fused-multi-buffer-device-scale",
+        "adamw_update_strategy": "split-float32-and-bf16-param-multi-buffer-device-scale",
         "adamw_descriptor_count": 0,
         "adamw_float_update_descriptor_count": 0,
         "adamw_bf16_param_descriptor_count": 0,

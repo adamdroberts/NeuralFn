@@ -478,17 +478,19 @@ instead of one launch per buffer. JSON reports
 `adamw_per_buffer_step_launches_elided`. The raw ABI also exports
 `nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32`, which
 can write optional BF16 block-weight shadow entries in the same descriptor-driven
-Tile launch. Set `NFN_NATIVE_GPT_FUSE_ADAMW_BF16_SHADOW_REFRESH=1` only when
-profiling that fused shadow-write route; the default stays on the separate
-`nfn_native_tile_float32_to_bf16_bits_many` refresh because paired dedicated RTX
-5090 timing did not improve native train-loop throughput.
-Set `NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=1` to profile the no-master block
-projection update path. Token/position/norm/bias tensors keep using the
-float32 multi-buffer AdamW ABI, while QKV, attention projection, MLP FC, and MLP
-projection weights update their BF16 parameter buffers directly through
+Tile launch. Set `NFN_NATIVE_GPT_FUSE_ADAMW_BF16_SHADOW_REFRESH=1` only after
+forcing `NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=0`; the BF16-primary default
+bypasses the shadow-refresh route, and prior paired dedicated RTX 5090 timing
+did not improve native train-loop throughput for the fused shadow write.
+The default native GPT optimizer uses the no-master BF16 block projection update
+path. Token/position/norm/bias tensors keep using the float32 multi-buffer AdamW
+ABI, while QKV, attention projection, MLP FC, and MLP projection weights update
+their BF16 parameter buffers directly through
 `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32`.
 Checkpoint export syncs those BF16 block weights back into FP32 staging buffers
-before the existing version-5 BF16 checkpoint packer runs. Runtime JSON reports
+before the existing version-5 BF16 checkpoint packer runs. Set
+`NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=0` to reproduce the older FP32-master
+plus BF16-shadow refresh path for bisection. Runtime JSON reports
 `block_weight_bf16_primary_param_update_enabled`,
 `block_weight_bf16_primary_param_update_count`,
 `adamw_float_update_descriptor_count`, `adamw_bf16_param_descriptor_count`,

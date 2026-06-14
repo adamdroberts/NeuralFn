@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Default native GPT block projection weights to BF16-primary AdamW
+
+#### Changed
+
+- Dense GPT native training now defaults QKV, attention projection, MLP FC, and
+  MLP projection weights to the BF16-primary block-weight AdamW path. The
+  token, position, norm, and bias tensors still use the float32 multi-buffer
+  AdamW descriptors.
+- Set `NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=0` to reproduce the older
+  FP32-master plus BF16-shadow refresh path for bisection. The fused shadow
+  refresh profiler remains available only when the BF16-primary path is
+  disabled.
+
+#### Verification
+
+- Ran paired RTX 5090 benchmarks with display disabled on GPU 0. A three-sample
+  warmup-backed pair reported candidate/default `train_loop_wall_ms` ratio
+  `0.991168`; a five-sample confirmation reported `0.996888` and total runtime
+  ratio `0.996224`.
+- After flipping the default, reran a three-sample pair with
+  `NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=0` as the baseline and the new
+  default as candidate. It reported `train_loop_wall_ms` ratio `0.999012` and
+  total runtime ratio `0.998851`, confirming the default is neutral to slightly
+  faster on the dedicated RTX 5090.
+
 ### 2026-06-14 Add native GPT setup timing breakdown
 
 #### Changed
