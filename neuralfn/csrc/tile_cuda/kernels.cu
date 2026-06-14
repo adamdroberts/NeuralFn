@@ -10926,6 +10926,44 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32(
       grad_out_bf16_bits, grad_bias, output_dim, rows, kRowChunkSize);
 }
 
+void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
+      cublas_linear_gemm_ex_bf16_bits_ab_float32(
+          x_bf16_bits,
+          grad_out_bf16_bits,
+          grad_weight,
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          static_cast<int>(rows),
+          CUBLAS_OP_N,
+          CUBLAS_OP_T,
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          static_cast<int>(input_dim),
+          1.0f,
+          true,
+          stream)) {
+    return;
+  }
+#endif
+  constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
+  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
+  const std::int64_t n = output_dim * input_dim;
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
+  linear_backward_weight_chunked_atomic_bf16_bits_bf16_bits_float32_kernel<<<grid, threads, 0, stream>>>(
+      x_bf16_bits, grad_out_bf16_bits, grad_weight, n, rows, input_dim, output_dim, kRowChunkSize);
+}
+
 void launch_linear_backward_weight_accumulate_float32_bf16_bits(
     const float* x,
     const std::uint16_t* grad_out_bf16_bits,

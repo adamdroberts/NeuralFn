@@ -162,7 +162,14 @@ validation/test CE partials directly from those BF16 logits,
 `nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace`
 overwrites them with BF16 dlogits, and the BF16 dlogits feed
 `nfn_native_tile_linear_backward_input_bf16_bits_float32` plus
-`nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits`. Set
+`nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits`.
+The raw ABI also exports
+`nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32`
+for candidate LM-head dWeight profiles that pack the final LayerNorm hidden
+chunk to BF16 before accumulating against BF16 dlogits. Set
+`NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT=1` to enable that profiling path; runtime
+JSON reports `lm_head_bf16_dweight_enabled`, `lm_head_dweight_input_dtype`,
+`lm_head_bf16_hidden_elements`, and `lm_head_dweight_strategy`. Set
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS=0` to return the tied LM-head chunks to the
 older optimized TF32 tensor-op `cublasSgemm` path for debugging. Set
 `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS=0` to keep BF16 training backward while

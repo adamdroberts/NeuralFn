@@ -6,6 +6,41 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Add opt-in BF16/BF16 LM-head dWeight candidate path
+
+#### Changed
+
+- Added raw Tile-CUDA ABI
+  `nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32`
+  for no-bias BF16-input/BF16-grad-output dWeight accumulation.
+- Dense GPT native training now exposes `NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT=1`
+  as an opt-in candidate path. It packs each final LayerNorm hidden chunk to
+  BF16 inside the compiled trainer and uses the new BF16/BF16 dWeight ABI for
+  tied LM-head accumulation. The default remains the existing float32-hidden
+  plus BF16-dlogit path until paired RTX 5090 timing proves this candidate is
+  faster.
+- Runtime JSON now reports `lm_head_bf16_dweight_enabled`,
+  `lm_head_bf16_hidden_elements`, `lm_head_bf16_hidden_bytes`,
+  `lm_head_dweight_input_dtype`, and `lm_head_dweight_strategy`.
+
+#### Verification
+
+- Rebuilt `libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh` and rebuilt
+  `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran the focused native GPT pytest slice, Python compile checks, and
+  `git diff --check`.
+- Ran default and opt-in one-step TinyStories GPU smokes pinned to the
+  dedicated RTX 5090 (`CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1`).
+  The default reported `lm_head_bf16_dweight_enabled: false`; the opt-in run
+  reported `lm_head_bf16_dweight_enabled: true`, `lm_head_bf16_hidden_elements:
+  3145728`, and `lm_head_dweight_strategy:
+  "chunked-final-norm-bf16-pack-bf16-dlogit-dweight-accumulate"`.
+- Ran `tools/paired_kernel_speed.py` with one warmup and five measured pairs on
+  GPU 0. The opt-in candidate/default `train_loop_wall_ms` ratio was
+  `1.000037`, tokens/s ratio was `0.999962`, and total runtime ratio was
+  `1.001343`, so the path remains opt-in rather than becoming the default.
+
 ### 2026-06-14 Default native GPT block projection weights to BF16-primary AdamW
 
 #### Changed

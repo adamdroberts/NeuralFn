@@ -3347,6 +3347,7 @@ def test_large_row_reduction_fallbacks_use_shared_row_chunks() -> None:
     for function_name in (
         "launch_linear_backward_weight_accumulate_bf16_bits_float32",
         "launch_linear_backward_weight_accumulate_float32_bf16_bits",
+        "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32",
         "launch_linear_backward_weight_bias_accumulate_float32_bf16_bits",
         "launch_linear_backward_bias_float32",
         "launch_linear_backward_bias_accumulate_float32",
@@ -3479,6 +3480,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_linear_backward_input_bf16_bits_float32" in header_text
     assert "nfn_native_tile_linear_backward_input_weight_bf16_float32" in header_text
     assert "nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits" in header_text
+    assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32" in header_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT" in gpt2_source_text
+    assert "lm_head_bf16_dweight_enabled" in gpt2_source_text
+    assert "lm_head_dweight_strategy" in gpt2_source_text
     assert "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32" in header_text
     assert "nfn_native_tile_float32_to_bf16_bits_many" in header_text
     assert "nfn_native_tile_trainer_linear_stats_reset" in header_text
@@ -3511,6 +3516,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "launch_linear_backward_input_bf16_bits_float32" in source_text
     assert "launch_linear_backward_input_weight_bf16_float32" in source_text
     assert "launch_linear_backward_weight_accumulate_float32_bf16_bits" in source_text
+    assert "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32" in source_text
     assert "launch_gelu_backward_inplace_bf16_bits_float32" in source_text
     assert "launch_float32_to_bf16_bits_many" in source_text
     assert "nfn_native_tile_trainer_linear_bf16_workspace_allocation_count" in source_text
@@ -3632,6 +3638,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     for function_name in (
         "launch_linear_backward_weight_accumulate_bf16_bits_float32",
         "launch_linear_backward_weight_accumulate_float32_bf16_bits",
+        "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32",
     ):
         function_body = kernels_text.split(f"void {function_name}", 1)[1].split("\nvoid ", 1)[0]
         assert "kRowChunkSize = kLinearBackwardBiasRowChunkSize" in function_body
@@ -4636,6 +4643,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32" in exported
         assert "nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32" in exported
         assert "nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits" in exported
+        assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32" in exported
         assert "nfn_native_tile_linear_backward_weight_bias_accumulate_float32_bf16_bits" in exported
         assert "nfn_native_tile_linear_backward_bias_float32" in exported
         assert "nfn_native_tile_linear_backward_bias_accumulate_float32" in exported
