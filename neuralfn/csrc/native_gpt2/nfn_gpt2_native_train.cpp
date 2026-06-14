@@ -7725,6 +7725,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH",
                               "NFN_NATIVE_GPT2_DIRECT_BF16_QKV_GRAD_SCRATCH"}),
             true);
+    const bool bf16_qkv_dweight_enabled =
+        direct_bf16_qkv_grad_scratch_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_BF16_QKV_DWEIGHT",
+                              "NFN_NATIVE_GPT2_BF16_QKV_DWEIGHT"}),
+            false);
     const bool reuse_packed_ln2_fc_gelu_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU",
@@ -10465,16 +10471,37 @@ int run_transformer_lm_training_json(
             run_timed_stage("block_backward.qkv.dweight_bias", [&]() {
                 if (bf16_qkv_grad_handoff_enabled) {
                     if (error.empty()) {
-                        run(linear_backward_weight_bias_accumulate_float32_bf16_bits(
-                                tape.ln1_out,
-                                active_qkv_grad_bf16,
-                                block.accum_grad_qkv_weight,
-                                block.accum_grad_qkv_bias,
-                                active_rows,
-                                kDim,
-                                kQkvDim,
-                                nullptr),
-                            label + ".attn.qkv.backward_weight_bias.accumulate.float32_bf16_grad");
+                        if (bf16_qkv_dweight_enabled) {
+                            run(float32_to_bf16_bits(
+                                    tape.ln1_out,
+                                    active_qkv_bf16,
+                                    active_activation_elements,
+                                    nullptr),
+                                label + ".attn.qkv.ln1_out.to_bf16_bits");
+                            if (error.empty()) {
+                                run(linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits(
+                                        active_qkv_bf16,
+                                        active_qkv_grad_bf16,
+                                        block.accum_grad_qkv_weight,
+                                        block.accum_grad_qkv_bias,
+                                        active_rows,
+                                        kDim,
+                                        kQkvDim,
+                                        nullptr),
+                                    label + ".attn.qkv.backward_weight_bias.accumulate.bf16_bits_bf16_grad");
+                            }
+                        } else {
+                            run(linear_backward_weight_bias_accumulate_float32_bf16_bits(
+                                    tape.ln1_out,
+                                    active_qkv_grad_bf16,
+                                    block.accum_grad_qkv_weight,
+                                    block.accum_grad_qkv_bias,
+                                    active_rows,
+                                    kDim,
+                                    kQkvDim,
+                                    nullptr),
+                                label + ".attn.qkv.backward_weight_bias.accumulate.float32_bf16_grad");
+                        }
                     }
                 } else {
                     if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16(tape.ln1_out, grad_qkv, block.accum_grad_qkv_weight, block.accum_grad_qkv_bias, active_rows, kDim, kQkvDim, nullptr), label + ".attn.qkv.backward_weight_bias.accumulate.bf16");
@@ -11520,6 +11547,13 @@ int run_transformer_lm_training_json(
                 : (fuse_mlp_proj_dgelu_enabled
                        ? "tk-sm120-fused-dinput-dgelu-bf16-store-bf16-shadow-weight-float32-grad"
                        : "separate-dinput-plus-gelu")))
+        << "\",\n"
+        << "  \"block_backward_bf16_qkv_dweight_enabled\": "
+        << (bf16_qkv_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_qkv_dweight_strategy\": \""
+        << (bf16_qkv_dweight_enabled
+                ? "packed-ln1-bf16-qkv-bf16-grad-dweight-bias-accumulate"
+                : "float32-ln1-bf16-qkv-grad-dweight-bias-accumulate")
         << "\",\n"
         << "  \"block_backward_weight_linear_strategy\": \""
         << (linear_cublaslt_gemm_count > 0 ? "shape-gated-bf16-cublaslt-dweight-bgrad-accumulate"

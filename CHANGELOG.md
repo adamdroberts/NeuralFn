@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Add opt-in BF16/BF16 QKV dWeight candidate path
+
+#### Changed
+
+- Dense GPT native training now exposes `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=1`
+  as an opt-in candidate path. After packed-attention backward writes `dQKV`
+  into the separate BF16 scratch buffer, the trainer can reuse the freed packed
+  QKV BF16 buffer to pack LN1 output and call the existing BF16/BF16
+  dWeight+bias accumulation ABI for QKV.
+- Runtime JSON reports `block_backward_bf16_qkv_dweight_enabled` and
+  `block_backward_qkv_dweight_strategy`. The default remains the existing
+  float32-LN1 plus BF16-`dQKV` dWeight+bias path because paired RTX 5090 timing
+  was neutral rather than clearly faster.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran an opt-in one-step TinyStories GPU smoke pinned to the dedicated RTX 5090
+  (`CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1`). It completed and
+  reported `block_backward_bf16_qkv_dweight_enabled: true` with strategy
+  `"packed-ln1-bf16-qkv-bf16-grad-dweight-bias-accumulate"`.
+- Ran `tools/paired_kernel_speed.py` with one warmup and five measured pairs on
+  GPU 0. The opt-in candidate/default `train_loop_wall_ms` ratio was
+  `0.998878`, tokens/s ratio was `1.001129`, and total runtime ratio was
+  `1.000061`, so this path remains opt-in.
+
 ### 2026-06-14 Default packed QKV backward to direct BF16 grad scratch
 
 #### Changed

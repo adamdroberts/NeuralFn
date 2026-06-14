@@ -3947,7 +3947,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_BF16_QKV_DWEIGHT" in gpt2_source_text
     assert "attention_backward_direct_bf16_qkv_grad_scratch_enabled" in gpt2_source_text
+    assert "block_backward_bf16_qkv_dweight_enabled" in gpt2_source_text
     assert "tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff" in gpt2_source_text
     assert "grad_qkv_bf16_bits != qkv_bf16_bits" in kernels_text
     assert "kTkPackedAttentionBackwardDefaultMaxBatchPerLaunch = 64" in kernels_text

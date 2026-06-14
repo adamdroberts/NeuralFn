@@ -594,7 +594,8 @@ Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`,
 `NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF`,
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF`,
-`NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH`, and
+`NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH`,
+`NFN_NATIVE_GPT_BF16_QKV_DWEIGHT`, and
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`. The older `NFN_NATIVE_GPT2_*`
 variables remain compatibility fallbacks for the GPT-2-named wrapper,
 launcher, and existing local scripts.
@@ -705,6 +706,10 @@ route is active.
 Set `NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH=0` when reproducing the older
 workspace-to-packed-QKV-buffer copy path in paired candidate-vs-baseline
 benchmarks.
+Set `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=1` to pack LN1 output into the freed
+packed-QKV BF16 buffer and profile BF16/BF16 QKV dWeight+bias accumulation;
+runtime JSON reports `block_backward_bf16_qkv_dweight_enabled` and
+`block_backward_qkv_dweight_strategy`.
 The packed backward batch cap defaults to 64 so the workstation `64 x 1024`
 microbatch runs as one TK backward chunk. Set
 `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48` when reproducing the

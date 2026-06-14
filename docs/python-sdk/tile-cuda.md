@@ -714,6 +714,10 @@ plan and training JSON report `qkv_forward_layout_strategy:
 "tk-sm120-packed-qkv-bf16-backward-direct-bf16-grad-scratch-handoff"` when the default path is
 active. Set `NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH=0` to reproduce the
 older workspace-to-packed-QKV-buffer copy path, or set
+`NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=1` to pack LN1 output into the freed packed-QKV
+BF16 buffer and profile BF16/BF16 QKV dWeight+bias accumulation. Runtime JSON
+reports `block_backward_bf16_qkv_dweight_enabled` and
+`block_backward_qkv_dweight_strategy` for that candidate. Set
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF=0` to compare against the
 older packed path that expands `dQKV` to float32 before QKV dWeight/dInput. Set
 `NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE=0`,
