@@ -6797,7 +6797,7 @@ __global__ void token_cross_entropy_backward_inplace_bf16_bits_fused_kernel(
     std::int64_t rows,
     std::int64_t vocab,
     float loss_scale) {
-  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x);
+  const std::int64_t row = rows - static_cast<std::int64_t>(blockIdx.x) - 1;
   if (row >= rows) {
     return;
   }

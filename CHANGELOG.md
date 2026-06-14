@@ -6,6 +6,40 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT BF16 CE reverse-row traversal
+
+#### Changed
+
+- The dense-GPT native BF16 token cross-entropy backward kernel now maps CUDA
+  blocks to rows in reverse order. This matches the llm.kittens fused
+  classifier traversal and improves locality for BF16 logits immediately after
+  the tied LM-head GEMM writes them.
+- The kernel still uses the existing fused row-wise max/sum/probability pass and
+  writes BF16 dlogits in-place; there is no new runtime flag or graph contract
+  change.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran `tools/paired_kernel_speed.py` on the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, one warmup pair,
+  and ten measured one-step pairs comparing forward-row CE traversal against
+  reverse-row traversal. The benchmark recorded GPU 0 as
+  `NVIDIA GeForce RTX 5090`, `0%` utilization, about `421/32607` MiB used, and
+  no compute processes before timing. The reverse-row candidate reported
+  `candidate_over_baseline` mean `0.998673`, median `0.998475`, min
+  `0.990774`, and max `1.005167`.
+- Rejected an `exp2f` CE variant after a five-sample paired run reported
+  `candidate_over_baseline` mean `1.000190`.
+- Ran a one-step TinyStories native GPT CUDA smoke on GPU 0:
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1
+  build/nfn_gpt_native_train --tinystories --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so --max-steps 1 --eval-every-steps 0
+  --no-checkpoint --output-dir /tmp/nfn-ce-reverse-smoke`. Runtime JSON reported
+  `lm_head_ce_backward_strategy: "fused-row-bf16-logits-dlogits"`, no missing
+  symbols, `steps_completed: 1`, and `passed: true`.
+
 ### 2026-06-14 Native GPT prepacked LN2 FC+GELU route
 
 #### Changed

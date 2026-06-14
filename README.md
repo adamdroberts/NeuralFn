@@ -39,6 +39,10 @@ reported samples. When `nvidia-smi` is available, the JSON also includes
 and active compute-process rows so kernel-speed notes show which CUDA device
 was measured and whether other compute work was present.
 
+The native dense-GPT BF16 LM-head CE backward path now traverses rows in
+reverse block order, matching the llm.kittens fused-classifier cache-locality
+pattern for logits that were just produced by the tied LM-head GEMM.
+
 ## Current state of play
 
 NeuralFn now ships Torch-backed template presets for:
