@@ -159,7 +159,11 @@ bridge. Set `NFN_TILE_CUDA_LINEAR_CUBLASLT=1` or
 `NFN_NATIVE_LINEAR_CUBLASLT=1` only when profiling the normal linear ABI's
 cached cuBLASLt TF32 path; the current 5090 GPT-2 shape keeps SGEMM as the
 faster default. Shape-supported transformer-block BF16 GEMMs use cached
-cuBLASLt with `CUBLAS_COMPUTE_32F_FAST_16BF` by default; set
+cuBLASLt with `CUBLAS_COMPUTE_32F_FAST_16BF` by default and select cuBLASLt
+heuristic index 1 when that candidate is available on the workstation RTX 5090
+shape. Set `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX=N` or
+`NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX=N` only for paired kernel profiling.
+Set
 `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT=0` or
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT=0` to force the older BF16 `cublasGemmEx`
 bridge. Tied LM-head BF16 logits use the SM120 ThunderKittens GEMM

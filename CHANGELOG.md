@@ -6,6 +6,38 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT cuBLASLt heuristic retune
+
+#### Changed
+
+- Retuned the trainer-facing BF16 cuBLASLt block GEMM planner to select
+  heuristic index 1 by default when cuBLASLt returns at least two viable
+  algorithms. This affects shape-supported transformer-block BF16 forward,
+  dInput, and dWeight/BGRADB GEMMs in the native Tile CUDA trainer path.
+- Added `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX` and
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX` as profiling overrides for
+  paired kernel experiments.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran short paired TinyStories native GPT probes on the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0` and `CUDA_DEVICE_MAX_CONNECTIONS=1`. The benchmark
+  recorded GPU 0 as `NVIDIA GeForce RTX 5090`, `0%` utilization, `493/32607`
+  MiB, and no compute processes before timing. Candidate ratios were:
+  heuristic index 0 `1.001252`, index 1 `0.990418`, index 2 `0.995652`, and
+  index 3 `0.995795`.
+- Confirmed heuristic index 1 with one warmup pair and five measured pairs:
+  baseline mean `7.650571s`, candidate mean `7.585230s`, and
+  `candidate_over_baseline` mean `0.991460`.
+- After promoting index 1 as the no-env default, ran a short default-vs-explicit
+  index 1 paired check. It was neutral within short-run noise
+  (`candidate_over_baseline` mean `1.003800`) and again recorded GPU 0 at `0%`
+  utilization with no compute processes before timing.
+
 ### 2026-06-14 Native GPT row-chunk reduction tuning
 
 #### Changed

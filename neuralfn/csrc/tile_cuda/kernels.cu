@@ -1043,6 +1043,7 @@ struct TrainerLinearBgradWorkspace {
 };
 
 bool trainer_linear_cublaslt_enabled();
+int trainer_linear_cublaslt_heuristic_index_override();
 
 TrainerLinearCublasLtWorkspace g_trainer_linear_cublaslt_workspace;
 std::mutex g_trainer_linear_cublaslt_workspace_mutex;
@@ -1212,13 +1213,10 @@ TrainerLinearCublasLtPlan* trainer_linear_cublaslt_plan_for(
     return nullptr;
   }
 
-  int selected = 0;
-  for (int i = 1; i < returned; ++i) {
-    if (results[i].wavesCount < results[selected].wavesCount ||
-        (results[i].wavesCount == results[selected].wavesCount &&
-         results[i].workspaceSize < results[selected].workspaceSize)) {
-      selected = i;
-    }
+  int selected = returned > 1 ? 1 : 0;
+  const int requested_index = trainer_linear_cublaslt_heuristic_index_override();
+  if (requested_index >= 0 && requested_index < returned) {
+    selected = requested_index;
   }
   if (!ensure_trainer_linear_cublaslt_workspace(results[selected].workspaceSize)) {
     return nullptr;
@@ -1477,6 +1475,25 @@ bool trainer_linear_cublaslt_enabled() {
         std::strcmp(value, "ON") == 0;
   }();
   return enabled;
+}
+
+int trainer_linear_cublaslt_heuristic_index_override() {
+  static const int index = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX");
+    }
+    if (value == nullptr || value[0] == '\0') {
+      return -1;
+    }
+    char* end = nullptr;
+    const long parsed = std::strtol(value, &end, 10);
+    if (end == value || (end != nullptr && *end != '\0') || parsed < 0 || parsed > 31) {
+      return -1;
+    }
+    return static_cast<int>(parsed);
+  }();
+  return index;
 }
 
 struct TrainerLinearBf16Workspace {
