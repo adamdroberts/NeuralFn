@@ -401,7 +401,11 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     ratios: list[float] = []
     for sample_index in range(samples):
         order_names: list[str] = []
-        row: dict[str, object] = {"sample": sample_index + 1, "order": order_names}
+        row: dict[str, object] = {
+            "sample": sample_index + 1,
+            "order": order_names,
+            "gpu_before": gpu_snapshot(),
+        }
         by_name: dict[str, dict[str, object]] = {}
         for command in ordered_pair(sample_index, baseline, candidate):
             order_names.append(command.name)
@@ -420,6 +424,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         row["baseline"] = by_name["baseline"]
         row["candidate"] = by_name["candidate"]
         row["candidate_over_baseline"] = ratios[-1]
+        row["gpu_after"] = gpu_snapshot()
         sample_rows.append(row)
     gpu_after = gpu_snapshot()
     baseline_native_metrics = summarize_metric_rows(sample_rows, "baseline")
@@ -476,6 +481,7 @@ def print_text(payload: dict[str, object]) -> None:
     paired_samples = payload.get("paired_samples")
     if isinstance(paired_samples, list):
         timeout_counts = {"baseline": 0, "candidate": 0}
+        sample_process_counts: list[int] = []
         for row in paired_samples:
             if not isinstance(row, dict):
                 continue
@@ -483,10 +489,20 @@ def print_text(payload: dict[str, object]) -> None:
                 command = row.get(name)
                 if isinstance(command, dict) and command.get("timed_out") is True:
                     timeout_counts[name] += 1
+            gpu_before_sample = row.get("gpu_before")
+            if isinstance(gpu_before_sample, dict):
+                processes = gpu_before_sample.get("compute_processes")
+                if isinstance(processes, list):
+                    sample_process_counts.append(len(processes))
         if timeout_counts["baseline"] or timeout_counts["candidate"]:
             print(
                 "  command_timeouts: "
                 f"baseline={timeout_counts['baseline']} candidate={timeout_counts['candidate']}"
+            )
+        if sample_process_counts:
+            print(
+                "  gpu_compute_processes_per_sample_before: "
+                f"min={min(sample_process_counts)} max={max(sample_process_counts)}"
             )
     for key in ("baseline_seconds", "candidate_seconds", "candidate_over_baseline"):
         stats = payload[key]

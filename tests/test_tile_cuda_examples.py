@@ -91,6 +91,11 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["stage.lm_head_backward.count"]["mean"] == 2.0
     assert "gpus" in payload["gpu_before"]
     assert "compute_processes" in payload["gpu_before"]
+    assert "gpu_before" in payload["paired_samples"][0]
+    assert "gpu_after" in payload["paired_samples"][0]
+    assert "gpus" in payload["paired_samples"][0]["gpu_before"]
+    assert "compute_processes" in payload["paired_samples"][0]["gpu_before"]
+    assert "gpu_compute_processes_per_sample_before:" in proc.stdout
     assert "test-device" in payload["paired_samples"][0]["baseline"]["stdout_tail"]
     assert payload["paired_samples"][0]["candidate"]["native_metrics"]["status"] == "native-test"
     assert payload["candidate_native_metrics"]["train_loop_wall_ms"]["mean"] == 12.5

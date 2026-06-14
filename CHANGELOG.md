@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Add per-sample GPU snapshots to paired native benchmarks
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now records `nvidia-smi` snapshots around each
+  measured baseline/candidate pair in `paired_samples[].gpu_before` and
+  `paired_samples[].gpu_after`, in addition to the existing run-level
+  `gpu_before` and `gpu_after` snapshots.
+- The text summary now reports the min/max number of compute processes visible
+  before measured samples when `nvidia-smi` is available. This keeps benchmark
+  timing paired while making mid-run external GPU load visible in the saved
+  artifact.
+
+#### Verification
+
+- Ran
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k 'paired_kernel_speed_tool_compiles_and_smokes or paired_kernel_speed_tool_extracts_llm_kittens_step_metrics or paired_kernel_speed_tool_records_command_timeout'`.
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran `git diff --check`.
+
 ### 2026-06-14 Use public vocab for native GPT LM-head CE
 
 #### Changed
