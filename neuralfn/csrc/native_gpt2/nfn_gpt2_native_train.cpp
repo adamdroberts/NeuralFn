@@ -6641,6 +6641,27 @@ int run_transformer_lm_training_json(
     auto elapsed_ms = [](Clock::time_point start, Clock::time_point end) -> double {
         return std::chrono::duration<double, std::milli>(end - start).count();
     };
+    struct SetupTimingRecord {
+        std::string name;
+        double total_ms = 0.0;
+        std::int64_t count = 0;
+    };
+    std::vector<SetupTimingRecord> setup_timing_records;
+    auto record_setup_timing = [&](const std::string& name, double ms) {
+        for (SetupTimingRecord& record : setup_timing_records) {
+            if (record.name == name) {
+                record.total_ms += ms;
+                record.count += 1;
+                return;
+            }
+        }
+        setup_timing_records.push_back(SetupTimingRecord{name, ms, 1});
+    };
+    auto run_setup_timed = [&](const std::string& name, const auto& fn) {
+        const auto start = Clock::now();
+        fn();
+        record_setup_timing(name, elapsed_ms(start, Clock::now()));
+    };
     double setup_wall_ms = 0.0;
     double train_loop_wall_ms = 0.0;
     double validation_wall_ms = 0.0;
@@ -8682,21 +8703,41 @@ int run_transformer_lm_training_json(
          }) {
         allocate(item.first, item.second, "transformer_lm_buffer");
     }
-    materialize_float_arena();
+    run_setup_timed("setup.float_arena_materialize", [&]() {
+        materialize_float_arena();
+    });
     if (stored_packed_attention_lse_arena != nullptr && stored_packed_attention_lse_elements > 0) {
         stored_packed_attention_lse_arena_elements = stored_packed_attention_lse_elements;
         stored_packed_attention_lse_arena_bytes =
             stored_packed_attention_lse_elements * static_cast<std::int64_t>(sizeof(float));
     }
-    allocate_token_arenas();
-    allocate_stored_mlp_activation_arena();
-    allocate_stored_residual1_activation_arena();
-    allocate_stored_attention_activation_arenas();
-    allocate_stored_packed_attention_activation_arena();
-    allocate_lm_head_bf16_logits();
-    allocate_mlp_forward_act_bf16();
-    allocate_packed_qkv_attention_scratch();
-    allocate_block_weight_bf16_arena();
+    run_setup_timed("setup.token_arenas", [&]() {
+        allocate_token_arenas();
+    });
+    run_setup_timed("setup.stored_mlp_activation_arena", [&]() {
+        allocate_stored_mlp_activation_arena();
+    });
+    run_setup_timed("setup.stored_residual1_activation_arena", [&]() {
+        allocate_stored_residual1_activation_arena();
+    });
+    run_setup_timed("setup.stored_attention_activation_arenas", [&]() {
+        allocate_stored_attention_activation_arenas();
+    });
+    run_setup_timed("setup.stored_packed_attention_activation_arena", [&]() {
+        allocate_stored_packed_attention_activation_arena();
+    });
+    run_setup_timed("setup.lm_head_bf16_logits", [&]() {
+        allocate_lm_head_bf16_logits();
+    });
+    run_setup_timed("setup.mlp_forward_act_bf16", [&]() {
+        allocate_mlp_forward_act_bf16();
+    });
+    run_setup_timed("setup.packed_qkv_attention_scratch", [&]() {
+        allocate_packed_qkv_attention_scratch();
+    });
+    run_setup_timed("setup.block_weight_bf16_arena", [&]() {
+        allocate_block_weight_bf16_arena();
+    });
     const std::int64_t startup_per_buffer_zero_fill_launches_elided =
         1 + trained_layers * 6 + 8 + trained_layers * kPerBlockAdamWStateBuffers;
     const std::int64_t nonzero_parameter_fill_buffer_count = 3 + trained_layers * 6;
@@ -8710,6 +8751,19 @@ int run_transformer_lm_training_json(
         if (error.empty()) {
             run(fill(ptr, elements, value, nullptr), name);
         }
+    };
+    auto fill_adamw_many = [&](float* const* ptrs, float value, const std::string& name) {
+        if (!error.empty()) {
+            return;
+        }
+        run(fill_many(
+                ptrs,
+                adamw_elements,
+                adamw_descriptor_count,
+                adamw_max_elements,
+                value,
+                nullptr),
+            name);
     };
     struct AdamWDescriptorHost {
         std::vector<float*> params;
@@ -8836,7 +8890,9 @@ int run_transformer_lm_training_json(
         adamw_bf16_param_descriptor_count =
             static_cast<std::int64_t>(adamw_bf16_param_host.params.size());
     };
-    build_adamw_descriptors();
+    run_setup_timed("setup.build_adamw_descriptors", [&]() {
+        build_adamw_descriptors();
+    });
     auto build_parameter_fill_descriptors = [&]() {
         if (!error.empty()) {
             return;
@@ -8884,7 +8940,9 @@ int run_transformer_lm_training_json(
         }
         parameter_fill_descriptor_count = static_cast<std::int64_t>(parameter_fill_host.ptrs.size());
     };
-    build_parameter_fill_descriptors();
+    run_setup_timed("setup.build_parameter_fill_descriptors", [&]() {
+        build_parameter_fill_descriptors();
+    });
     auto build_block_weight_bf16_descriptors = [&]() {
         if (!error.empty()) {
             return;
@@ -8928,7 +8986,9 @@ int run_transformer_lm_training_json(
         }
         block_weight_bf16_descriptor_count = static_cast<std::int64_t>(block_weight_bf16_host.sources.size());
     };
-    build_block_weight_bf16_descriptors();
+    run_setup_timed("setup.build_block_weight_bf16_descriptors", [&]() {
+        build_block_weight_bf16_descriptors();
+    });
     auto materialize_descriptor_arena = [&]() {
         if (!error.empty()) {
             return;
@@ -9043,52 +9103,46 @@ int run_transformer_lm_training_json(
         }
         descriptor_arena_copy_count = 1;
     };
-    materialize_descriptor_arena();
-    if (error.empty() && startup_zero_adamw_state_only_enabled && adamw_descriptor_count > 0) {
-        run(fill_many(
-                adamw_avg_ptrs,
-                adamw_elements,
-                adamw_descriptor_count,
-                adamw_max_elements,
-                0.0f,
-                nullptr),
-            "adamw_avg.zero_many");
-        if (error.empty()) {
-            adamw_state_zero_fill_count += 1;
+    run_setup_timed("setup.descriptor_arena_materialize", [&]() {
+        materialize_descriptor_arena();
+    });
+    run_setup_timed("setup.zero_init", [&]() {
+        if (error.empty() && startup_zero_adamw_state_only_enabled && adamw_descriptor_count > 0) {
+            fill_adamw_many(adamw_avg_ptrs, 0.0f, "adamw_avg.zero_many");
+            if (error.empty()) {
+                adamw_state_zero_fill_count += 1;
+            }
+            fill_adamw_many(adamw_avg_sq_ptrs, 0.0f, "adamw_avg_sq.zero_many");
+            if (error.empty()) {
+                adamw_state_zero_fill_count += 1;
+            }
+        } else if (error.empty() && float_arena != nullptr && float_arena_allocated_elements > 0) {
+            run(fill(float_arena, float_arena_allocated_elements, 0.0f, nullptr), "transformer_lm_float_arena.zero");
+            if (error.empty()) {
+                float_arena_zero_fill_count = 1;
+            }
         }
-        run(fill_many(
-                adamw_avg_sq_ptrs,
-                adamw_elements,
-                adamw_descriptor_count,
-                adamw_max_elements,
-                0.0f,
-                nullptr),
-            "adamw_avg_sq.zero_many");
+    });
+    run_setup_timed("setup.token_weight_init", [&]() {
         if (error.empty()) {
-            adamw_state_zero_fill_count += 1;
+            run(init_gpt2_token_weight(token_weight, kTokenWeightElements, nullptr), "token_weight.init_device");
         }
-    } else if (error.empty() && float_arena != nullptr && float_arena_allocated_elements > 0) {
-        run(fill(float_arena, float_arena_allocated_elements, 0.0f, nullptr), "transformer_lm_float_arena.zero");
+    });
+    run_setup_timed("setup.nonzero_parameter_fill", [&]() {
         if (error.empty()) {
-            float_arena_zero_fill_count = 1;
+            run(fill_many_values(
+                    parameter_fill_ptrs,
+                    parameter_fill_elements,
+                    parameter_fill_values,
+                    parameter_fill_descriptor_count,
+                    parameter_fill_max_elements,
+                    nullptr),
+                "nonzero_parameters.fill_many_values");
+            if (error.empty()) {
+                parameter_fill_kernel_launches += 1;
+            }
         }
-    }
-    if (error.empty()) {
-        run(init_gpt2_token_weight(token_weight, kTokenWeightElements, nullptr), "token_weight.init_device");
-    }
-    if (error.empty()) {
-        run(fill_many_values(
-                parameter_fill_ptrs,
-                parameter_fill_elements,
-                parameter_fill_values,
-                parameter_fill_descriptor_count,
-                parameter_fill_max_elements,
-                nullptr),
-            "nonzero_parameters.fill_many_values");
-        if (error.empty()) {
-            parameter_fill_kernel_launches += 1;
-        }
-    }
+    });
     auto refresh_block_weight_bf16 = [&](const std::string& name) {
         if (!error.empty()) {
             return;
@@ -9106,7 +9160,9 @@ int run_transformer_lm_training_json(
             block_weight_bf16_refresh_count += 1;
         }
     };
-    refresh_block_weight_bf16("block_weight_bf16.initial_refresh");
+    run_setup_timed("setup.block_weight_bf16_initial_refresh", [&]() {
+        refresh_block_weight_bf16("block_weight_bf16.initial_refresh");
+    });
 
     const std::int64_t eval_batch_size =
         cfg.eval_batch_size > 0 ? static_cast<std::int64_t>(cfg.eval_batch_size) : batch_size;
@@ -9226,14 +9282,7 @@ int run_transformer_lm_training_json(
     auto zero_accumulated_gradients = [&]() {
         const std::int64_t stage_event = stage_begin("gradient_zero");
         if (error.empty()) {
-            run(fill_many(
-                    adamw_grad_ptrs,
-                    adamw_elements,
-                    adamw_descriptor_count,
-                    adamw_max_elements,
-                    0.0f,
-                    nullptr),
-                "accumulated_gradients.zero_many");
+            fill_adamw_many(adamw_grad_ptrs, 0.0f, "accumulated_gradients.zero_many");
             if (error.empty()) {
                 accumulation_zero_kernel_launches += 1;
             }
@@ -11211,6 +11260,23 @@ int run_transformer_lm_training_json(
         dlclose(tile_handle);
     }
     total_wall_ms = elapsed_ms(total_start_time, Clock::now());
+    std::ostringstream setup_timing_json;
+    setup_timing_json
+        << "    \"setup_timing\": [\n";
+    for (std::size_t i = 0; i < setup_timing_records.size(); ++i) {
+        const SetupTimingRecord& record = setup_timing_records[i];
+        setup_timing_json
+            << "      {\"name\": \"" << json_escape(record.name) << "\", "
+            << "\"total_ms\": " << record.total_ms << ", "
+            << "\"count\": " << record.count << ", "
+            << "\"avg_ms\": " << (record.count > 0 ? record.total_ms / static_cast<double>(record.count) : 0.0)
+            << "}";
+        if (i + 1 != setup_timing_records.size()) {
+            setup_timing_json << ",";
+        }
+        setup_timing_json << "\n";
+    }
+    setup_timing_json << "    ],\n";
     std::ostringstream stage_timing_json;
     stage_timing_json
         << "    \"stage_timing_enabled\": " << (stage_timing_enabled ? "true" : "false") << ",\n"
@@ -11256,6 +11322,7 @@ int run_transformer_lm_training_json(
         << "    \"total_wall_ms\": " << total_wall_ms << ",\n"
         << "    \"optimizer_steps_per_second\": " << (train_loop_wall_ms > 0.0 ? (static_cast<double>(steps_completed) * 1000.0 / train_loop_wall_ms) : 0.0) << ",\n"
         << "    \"train_tokens_per_second\": " << (train_loop_wall_ms > 0.0 ? (static_cast<double>(tokens_processed) * 1000.0 / train_loop_wall_ms) : 0.0) << ",\n"
+        << setup_timing_json.str()
         << stage_timing_json.str()
         << "  },\n"
         << "  \"tile_ops_library\": \"" << json_escape(tile_lib_path) << "\",\n"

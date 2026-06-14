@@ -3443,6 +3443,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "launch_fill_many_float32" in source_text
     assert "launch_fill_many_values_float32" in source_text
     assert "fill_many_values_float32_kernel" in kernels_text
+    assert "setup_timing" in gpt2_source_text
+    assert "setup.float_arena_materialize" in gpt2_source_text
+    assert "setup.zero_init" in gpt2_source_text
+    assert "setup.block_weight_bf16_initial_refresh" in gpt2_source_text
     assert "nfn_native_tile_sumsq_partials_many_float32" in header_text
     assert "launch_sumsq_partials_many_float32" in source_text
     assert "sumsq_partials_many_float32_kernel" in kernels_text

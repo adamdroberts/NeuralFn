@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Add native GPT setup timing breakdown
+
+#### Changed
+
+- Dense GPT native training JSON now includes `timing.setup_timing`, a
+  host-side breakdown of setup phases such as float arena materialization,
+  token arenas, stored BF16 activation arenas, descriptor materialization,
+  zero initialization, token-weight initialization, parameter fill, and initial
+  BF16 block-weight refresh.
+- This keeps normal runs free of CUDA-event stage profiling overhead while
+  making startup regressions visible in the compiled C++ trainer output.
+
+#### Verification
+
+- Rebuilt the native GPT CLI with `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step dedicated RTX 5090 native GPT smoke. The output included
+  `timing.setup_timing` and showed the largest setup buckets as float arena
+  materialization, AdamW zero init, stored MLP activation arena allocation,
+  stored packed-attention arena allocation, and initial BF16 block-weight
+  refresh.
+- Tested and rejected an offset-compacted zero-fill Tile kernel candidate:
+  paired RTX 5090 timing regressed mean train-loop wall time to `1.047281x`
+  versus the existing fill-many zero path.
+
 ### 2026-06-14 Elide unused MLP dGELU float-gradient conversion in native GPT
 
 #### Changed
