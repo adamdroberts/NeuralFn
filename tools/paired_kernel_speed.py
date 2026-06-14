@@ -17,13 +17,28 @@ import subprocess
 import time
 from dataclasses import dataclass
 from statistics import mean, median
-from typing import Sequence
+from typing import Any, Sequence
 
 
 @dataclass(frozen=True)
 class TimedCommand:
     name: str
     argv: list[str]
+
+
+NATIVE_METRIC_PATHS = (
+    ("train_loop_wall_ms", ("timing", "train_loop_wall_ms")),
+    ("setup_wall_ms", ("timing", "setup_wall_ms")),
+    ("checkpoint_wall_ms", ("timing", "checkpoint_wall_ms")),
+    ("total_wall_ms", ("timing", "total_wall_ms")),
+    ("train_tokens_per_second", ("timing", "train_tokens_per_second")),
+    ("linear_tk_gemm_count", ("linear_tk_gemm_count",)),
+    ("linear_cublaslt_gemm_count", ("linear_cublaslt_gemm_count",)),
+    ("linear_bf16_a_pack_count", ("linear_bf16_a_pack_count",)),
+    ("linear_bf16_a_cache_hit_count", ("linear_bf16_a_cache_hit_count",)),
+    ("attention_forward_tk_launch_count", ("attention_forward_tk_launch_count",)),
+    ("attention_backward_tk_launch_count", ("attention_backward_tk_launch_count",)),
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -45,6 +60,49 @@ def parse_args() -> argparse.Namespace:
         help="Record failed commands instead of stopping at the first nonzero exit.",
     )
     return parser.parse_args()
+
+
+def extract_json_object(text: str) -> dict[str, Any] | None:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        value = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def value_at_path(payload: dict[str, Any], path: Sequence[str]) -> Any:
+    current: Any = payload
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            return None
+        current = current[key]
+    return current
+
+
+def native_metrics_from_stdout(stdout: str) -> dict[str, float | int | str | bool]:
+    payload = extract_json_object(stdout)
+    if payload is None:
+        return {}
+    metrics: dict[str, float | int | str | bool] = {}
+    for name, path in NATIVE_METRIC_PATHS:
+        value = value_at_path(payload, path)
+        if isinstance(value, (bool, int, float, str)):
+            metrics[name] = value
+    for key in (
+        "status",
+        "selected_graph_support_status",
+        "lm_head_training_logits_dtype",
+        "block_backward_weight_linear_strategy",
+        "attention_backward_strategy",
+    ):
+        value = payload.get(key)
+        if isinstance(value, (bool, int, float, str)):
+            metrics[key] = value
+    return metrics
 
 
 def run_once(
@@ -75,6 +133,7 @@ def run_once(
         "argv": command.argv,
         "seconds": seconds,
         "returncode": proc.returncode,
+        "native_metrics": native_metrics_from_stdout(proc.stdout),
         "stdout_tail": proc.stdout[-2000:],
         "stderr_tail": proc.stderr[-2000:],
     }
@@ -93,6 +152,51 @@ def summarize(values: Sequence[float]) -> dict[str, float]:
         "min": min(values),
         "max": max(values),
     }
+
+
+def summarize_metric_rows(rows: Sequence[dict[str, object]], command_name: str) -> dict[str, dict[str, float]]:
+    values_by_metric: dict[str, list[float]] = {}
+    for row in rows:
+        command = row.get(command_name)
+        if not isinstance(command, dict):
+            continue
+        metrics = command.get("native_metrics")
+        if not isinstance(metrics, dict):
+            continue
+        for key, value in metrics.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                values_by_metric.setdefault(key, []).append(float(value))
+    return {key: summarize(values) for key, values in values_by_metric.items() if values}
+
+
+def summarize_metric_ratios(
+    rows: Sequence[dict[str, object]],
+    baseline_summary: dict[str, dict[str, float]],
+    candidate_summary: dict[str, dict[str, float]],
+) -> dict[str, dict[str, float]]:
+    ratios_by_metric: dict[str, list[float]] = {}
+    shared_metrics = set(baseline_summary).intersection(candidate_summary)
+    for row in rows:
+        baseline = row.get("baseline")
+        candidate = row.get("candidate")
+        if not isinstance(baseline, dict) or not isinstance(candidate, dict):
+            continue
+        baseline_metrics = baseline.get("native_metrics")
+        candidate_metrics = candidate.get("native_metrics")
+        if not isinstance(baseline_metrics, dict) or not isinstance(candidate_metrics, dict):
+            continue
+        for key in shared_metrics:
+            baseline_value = baseline_metrics.get(key)
+            candidate_value = candidate_metrics.get(key)
+            if (
+                isinstance(baseline_value, (int, float))
+                and not isinstance(baseline_value, bool)
+                and isinstance(candidate_value, (int, float))
+                and not isinstance(candidate_value, bool)
+                and float(baseline_value) != 0.0
+            ):
+                ratios_by_metric.setdefault(key, []).append(float(candidate_value) / float(baseline_value))
+    return {key: summarize(values) for key, values in ratios_by_metric.items() if values}
 
 
 def run_nvidia_smi(args: Sequence[str]) -> dict[str, object]:
@@ -202,6 +306,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         row["candidate_over_baseline"] = ratios[-1]
         sample_rows.append(row)
     gpu_after = gpu_snapshot()
+    baseline_native_metrics = summarize_metric_rows(sample_rows, "baseline")
+    candidate_native_metrics = summarize_metric_rows(sample_rows, "candidate")
 
     return {
         "measurement": "paired_interleaved_commands",
@@ -215,6 +321,13 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "baseline_seconds": summarize(baseline_seconds),
         "candidate_seconds": summarize(candidate_seconds),
         "candidate_over_baseline": summarize(ratios),
+        "baseline_native_metrics": baseline_native_metrics,
+        "candidate_native_metrics": candidate_native_metrics,
+        "candidate_over_baseline_native_metrics": summarize_metric_ratios(
+            sample_rows,
+            baseline_native_metrics,
+            candidate_native_metrics,
+        ),
         "paired_samples": sample_rows,
     }
 
@@ -248,6 +361,34 @@ def print_text(payload: dict[str, object]) -> None:
             f"  {key}: mean={stats['mean']:.6f} median={stats['median']:.6f} "
             f"min={stats['min']:.6f} max={stats['max']:.6f}"
         )
+    for section in ("baseline_native_metrics", "candidate_native_metrics"):
+        metrics = payload.get(section)
+        if not isinstance(metrics, dict) or not metrics:
+            continue
+        print(f"  {section}:")
+        for key in (
+            "train_loop_wall_ms",
+            "train_tokens_per_second",
+            "setup_wall_ms",
+            "checkpoint_wall_ms",
+            "total_wall_ms",
+        ):
+            stats = metrics.get(key)
+            if isinstance(stats, dict):
+                print(
+                    f"    {key}: mean={stats['mean']:.6f} median={stats['median']:.6f} "
+                    f"min={stats['min']:.6f} max={stats['max']:.6f}"
+                )
+    ratios = payload.get("candidate_over_baseline_native_metrics")
+    if isinstance(ratios, dict) and ratios:
+        print("  candidate_over_baseline_native_metrics:")
+        for key in ("train_loop_wall_ms", "train_tokens_per_second", "total_wall_ms"):
+            stats = ratios.get(key)
+            if isinstance(stats, dict):
+                print(
+                    f"    {key}: mean={stats['mean']:.6f} median={stats['median']:.6f} "
+                    f"min={stats['min']:.6f} max={stats['max']:.6f}"
+                )
 
 
 def main() -> int:

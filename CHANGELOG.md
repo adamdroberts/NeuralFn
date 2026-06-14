@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Paired benchmark native metric summaries
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now extracts selected metrics from NeuralFn
+  native JSON stdout for each baseline/candidate sample. Text and JSON output
+  now include `baseline_native_metrics`, `candidate_native_metrics`, and
+  `candidate_over_baseline_native_metrics` for shared numeric metrics, so
+  command startup and checkpoint export can be separated from native
+  `timing.train_loop_wall_ms` and token-throughput comparisons.
+- The extracted metrics include native setup, train-loop, checkpoint, total
+  wall time, train tokens/s, selected BF16 linear cache counters, and attention
+  launch counters when present.
+
+#### Verification
+
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran a one-sample paired comparison on the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0` and `CUDA_DEVICE_MAX_CONNECTIONS=1`, comparing the
+  default dense GPT native trainer against
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0`. The helper reported GPU 0 as
+  `NVIDIA GeForce RTX 5090`, `0%` utilization, no compute processes before
+  timing, command-level paired timing, and native summaries including
+  `train_loop_wall_ms` (`3315.020` ms baseline, `3297.090` ms candidate) and
+  `train_tokens_per_second` (`158155` baseline, `159015` candidate).
+
 ### 2026-06-14 Native GPT LM-head dWeight BF16 cache correctness
 
 #### Changed

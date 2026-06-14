@@ -48,7 +48,13 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
             "--baseline",
             f"{sys.executable} -c \"import os; print(os.environ.get('CUDA_VISIBLE_DEVICES', ''))\"",
             "--candidate",
-            f"{sys.executable} -c \"import os; print(os.environ.get('CUDA_VISIBLE_DEVICES', ''))\"",
+            (
+                f"{sys.executable} -c "
+                "\"print('{\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 12.5, "
+                "\\\"train_tokens_per_second\\\": 42.0, \\\"setup_wall_ms\\\": 1.0, "
+                "\\\"checkpoint_wall_ms\\\": 0.0, \\\"total_wall_ms\\\": 15.0}, "
+                "\\\"linear_tk_gemm_count\\\": 3, \\\"status\\\": \\\"native-test\\\"}')\""
+            ),
             "--samples",
             "1",
             "--warmup",
@@ -75,3 +81,6 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "gpus" in payload["gpu_before"]
     assert "compute_processes" in payload["gpu_before"]
     assert "test-device" in payload["paired_samples"][0]["baseline"]["stdout_tail"]
+    assert payload["paired_samples"][0]["candidate"]["native_metrics"]["status"] == "native-test"
+    assert payload["candidate_native_metrics"]["train_loop_wall_ms"]["mean"] == 12.5
+    assert payload["candidate_native_metrics"]["train_tokens_per_second"]["mean"] == 42.0
