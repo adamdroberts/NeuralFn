@@ -6,6 +6,49 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Native GPT residual1 activation cache option
+
+#### Changed
+
+- Added `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1` with
+  `NFN_NATIVE_GPT2_STORE_RESIDUAL1_ACTIVATIONS=1` as the legacy fallback for
+  dense GPT Tile-CUDA training. The opt-in path stores intermediate block
+  `residual1` tensors as BF16 during forward and restores them during
+  packed-attention recompute so backward skips the recomputed attention
+  projection and projection-residual work for earlier blocks.
+- The cache intentionally excludes the final block because the final block
+  remains in the scratch tape and is not recomputed before backward. At the
+  default 12-layer `64 x 1024 x 768` shape, the option stores 11 residual
+  tensors and adds about 1.03 GiB.
+- Runtime JSON now reports `residual1_activation_storage_strategy`,
+  `stored_residual1_activation_blocks`,
+  `stored_residual1_activation_elements`,
+  `stored_residual1_activation_bytes`,
+  `stored_residual1_activation_store_kernel_launches`, and
+  `stored_residual1_activation_restore_kernel_launches`.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step TinyStories probe on the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and
+  `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1`; it reported
+  `stored_residual1_activation_blocks: 11`,
+  `stored_residual1_activation_bytes: 1107296256`, and matching store/restore
+  launch counts for the 11 recomputed blocks.
+- Ran `tools/paired_kernel_speed.py` on GPU 0 with one warmup pair and five
+  measured pairs comparing the no-env default to
+  `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=1`. The benchmark recorded GPU 0
+  as `NVIDIA GeForce RTX 5090`, `0%` utilization, about `245/32607` MiB used,
+  and no compute processes before timing. The candidate reported
+  `candidate_over_baseline` mean `0.994567`, median `0.995901`, min
+  `0.989916`, and max `0.997638`.
+- Ran a stage-timed two-step probe with the option enabled. The
+  `block_recompute_saved_packed_attention` bucket dropped to about `90.165 ms`
+  versus the prior default profile's about `182.194 ms`, and the overall run
+  reported about `156,691` train tokens/s.
+
 ### 2026-06-14 Native GPT all-block activation storage default
 
 #### Changed

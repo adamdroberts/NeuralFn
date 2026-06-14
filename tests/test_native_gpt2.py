@@ -3672,6 +3672,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS" in gpt2_source_text
     assert "kDefaultStoredPackedAttentionBlocks = 12" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_STORE_RESIDUAL1_ACTIVATIONS" in gpt2_source_text
+    assert "stored_residual1_activation_blocks" in gpt2_source_text
+    assert "stored_residual1_activation_elements" in gpt2_source_text
+    assert "stored_residual1_activation_bytes" in gpt2_source_text
+    assert "stored_residual1_activation_store_kernel_launches" in gpt2_source_text
+    assert "stored_residual1_activation_restore_kernel_launches" in gpt2_source_text
+    assert "bf16-forward-store-recompute-restore" in gpt2_source_text
     assert "kDefaultLmHeadRowChunkSize = 4096" in gpt2_source_text
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
