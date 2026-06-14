@@ -6,6 +6,42 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Default AdamW startup zeroing to contiguous Tile ranges
+
+#### Changed
+
+- Dense GPT native training now zeroes AdamW first/second moment state as
+  coalesced contiguous float-arena ranges with Tile fills by default. This
+  keeps the state-only startup contract while reducing descriptor fanout for
+  the default 12-layer shape from many small AdamW state fills to two coalesced
+  range fills.
+- Set `NFN_NATIVE_GPT_ZERO_ADAMW_STATE_RANGES=0` to force the older
+  descriptor-driven AdamW state fill path. Set
+  `NFN_NATIVE_GPT_ZERO_ADAMW_STATE_ONLY=0` to force the older full-arena zero
+  for bisection.
+- Runtime and plan JSON now report `adamw_state_zero_range_count` and
+  `adamw_state_zero_range_elements`, with matching
+  `block_state_layout.startup_adamw_state_zero_range_count` and
+  `block_state_layout.startup_adamw_state_zero_range_elements` fields. The
+  default `float_arena_zero_init_strategy` is now
+  `"adamw-state-contiguous-range-fill"`.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step TinyStories smoke pinned to the dedicated RTX 5090
+  (`CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1`). It completed with
+  `float_arena_zero_init_strategy` set to
+  `"adamw-state-contiguous-range-fill"`, `adamw_state_zero_fill_count: 2`,
+  `adamw_state_zero_range_count: 2`, and
+  `adamw_state_zero_range_elements: 248951808`.
+- Ran `tools/paired_kernel_speed.py` with one warmup and five measured pairs on
+  GPU 0, comparing `NFN_NATIVE_GPT_ZERO_ADAMW_STATE_RANGES=0` against the new
+  default. The contiguous-range default had total runtime ratio `0.997812`,
+  setup wall time mean `510.4956 ms` versus `521.7332 ms` for the previous
+  descriptor-fill path, and neutral train-loop timing ratio `1.00109`.
+
 ### 2026-06-14 Default packed QKV bias to fused SM120 TK GEMM
 
 #### Changed

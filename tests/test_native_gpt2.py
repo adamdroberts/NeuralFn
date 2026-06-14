@@ -2258,9 +2258,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["float_allocation_request_count"] == 0
     assert train_transformer_payload["float_arena_requested_elements"] == 0
     assert train_transformer_payload["float_arena_allocated_elements"] == 0
-    assert train_transformer_payload["float_arena_zero_init_strategy"] == "adamw-state-fill-many"
+    assert train_transformer_payload["float_arena_zero_init_strategy"] == "adamw-state-contiguous-range-fill"
     assert train_transformer_payload["float_arena_zero_fill_count"] == 0
     assert train_transformer_payload["adamw_state_zero_fill_count"] == 0
+    assert train_transformer_payload["adamw_state_zero_range_count"] == 0
+    assert train_transformer_payload["adamw_state_zero_range_elements"] == 0
     assert train_transformer_payload["startup_per_buffer_zero_fill_elided"] is True
     assert train_transformer_payload["startup_per_buffer_zero_fill_launches_elided"] == 369
     assert train_transformer_payload["descriptor_allocation_strategy"] == "single-device-arena"
@@ -2338,9 +2340,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "parameter_initialization_descriptor_count": 0,
         "parameter_initialization_kernel_launches_per_startup": 0,
         "parameter_initialization_per_buffer_launches_elided": 74,
-        "startup_zero_init_strategy": "adamw-state-fill-many",
+        "startup_zero_init_strategy": "adamw-state-contiguous-range-fill",
         "startup_arena_zero_fill_count": 0,
         "startup_adamw_state_zero_fill_count": 0,
+        "startup_adamw_state_zero_range_count": 0,
+        "startup_adamw_state_zero_range_elements": 0,
         "startup_per_buffer_zero_fill_elided": True,
         "startup_per_buffer_zero_fill_launches_elided": 369,
         "descriptor_allocation_strategy": "single-device-arena",

@@ -7811,8 +7811,18 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_ZERO_ADAMW_STATE_ONLY",
                               "NFN_NATIVE_GPT2_ZERO_ADAMW_STATE_ONLY"}),
             true);
-    const char* startup_zero_init_strategy =
-        startup_zero_adamw_state_only_enabled ? "adamw-state-fill-many" : "single-arena-fill";
+    const bool startup_zero_adamw_state_ranges_enabled =
+        startup_zero_adamw_state_only_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_ZERO_ADAMW_STATE_RANGES",
+                              "NFN_NATIVE_GPT2_ZERO_ADAMW_STATE_RANGES"}),
+            true);
+    const std::string startup_zero_init_strategy =
+        startup_zero_adamw_state_only_enabled
+            ? (startup_zero_adamw_state_ranges_enabled
+                   ? "adamw-state-contiguous-range-fill"
+                   : "adamw-state-fill-many")
+            : "single-arena-fill";
     const std::int64_t logit_workspace_elements = lm_head_bf16_loss_enabled ? 0 : logit_elements;
     bool stage_timing_enabled = false;
     std::int64_t stage_timing_event_count = 0;
@@ -7989,6 +7999,8 @@ int run_transformer_lm_training_json(
     std::int64_t token_device_cuda_mallocs_elided = 1;
     std::int64_t float_arena_zero_fill_count = 0;
     std::int64_t adamw_state_zero_fill_count = 0;
+    std::int64_t adamw_state_zero_range_count = 0;
+    std::int64_t adamw_state_zero_range_elements = 0;
     std::size_t descriptor_arena_requested_bytes = 0;
     std::size_t descriptor_arena_bytes = 0;
     std::int64_t descriptor_arena_cuda_malloc_count = 0;
@@ -8990,6 +9002,84 @@ int run_transformer_lm_training_json(
     run_setup_timed("setup.build_adamw_descriptors", [&]() {
         build_adamw_descriptors();
     });
+    struct AdamWZeroRange {
+        float* ptr = nullptr;
+        std::int64_t elements = 0;
+    };
+    std::vector<AdamWZeroRange> adamw_zero_ranges;
+    auto build_adamw_zero_ranges = [&]() {
+        adamw_zero_ranges.clear();
+        if (!error.empty() || !startup_zero_adamw_state_ranges_enabled) {
+            return;
+        }
+        if (adamw_host.avgs.size() != adamw_host.elements.size() ||
+            adamw_host.avg_sqs.size() != adamw_host.elements.size()) {
+            error = "AdamW zero range descriptor size mismatch";
+            return;
+        }
+        struct Span {
+            std::uintptr_t begin = 0;
+            std::uintptr_t end = 0;
+        };
+        std::vector<Span> spans;
+        spans.reserve(adamw_host.elements.size() * 2);
+        auto add_span = [&](float* ptr, std::int64_t elements) {
+            if (error.empty() && ptr == nullptr) {
+                error = "null pointer while building AdamW zero ranges";
+                return;
+            }
+            if (error.empty() && elements <= 0) {
+                error = "non-positive element count while building AdamW zero ranges";
+                return;
+            }
+            if (!error.empty()) {
+                return;
+            }
+            const std::uintptr_t begin = reinterpret_cast<std::uintptr_t>(ptr);
+            const std::uintptr_t bytes = static_cast<std::uintptr_t>(
+                sizeof(float) * static_cast<std::size_t>(elements));
+            spans.push_back(Span{begin, begin + bytes});
+        };
+        for (std::size_t i = 0; i < adamw_host.elements.size(); ++i) {
+            add_span(adamw_host.avgs[i], adamw_host.elements[i]);
+            add_span(adamw_host.avg_sqs[i], adamw_host.elements[i]);
+        }
+        if (!error.empty() || spans.empty()) {
+            return;
+        }
+        std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) {
+            return a.begin < b.begin;
+        });
+        constexpr std::uintptr_t kMaxCoalescedAdamWZeroPaddingBytes =
+            static_cast<std::uintptr_t>(kFloatArenaAlignmentElements * sizeof(float));
+        Span current = spans.front();
+        auto flush = [&]() {
+            if (current.end <= current.begin ||
+                (current.end - current.begin) % sizeof(float) != 0) {
+                error = "invalid AdamW zero range alignment";
+                return;
+            }
+            const std::int64_t elements =
+                static_cast<std::int64_t>((current.end - current.begin) / sizeof(float));
+            adamw_zero_ranges.push_back(
+                AdamWZeroRange{reinterpret_cast<float*>(current.begin), elements});
+            adamw_state_zero_range_elements += elements;
+        };
+        for (std::size_t i = 1; i < spans.size(); ++i) {
+            const Span& span = spans[i];
+            if (span.begin <= current.end + kMaxCoalescedAdamWZeroPaddingBytes) {
+                current.end = std::max(current.end, span.end);
+            } else {
+                flush();
+                if (!error.empty()) {
+                    return;
+                }
+                current = span;
+            }
+        }
+        flush();
+    };
+    build_adamw_zero_ranges();
     auto build_parameter_fill_descriptors = [&]() {
         if (!error.empty()) {
             return;
@@ -9204,7 +9294,18 @@ int run_transformer_lm_training_json(
         materialize_descriptor_arena();
     });
     run_setup_timed("setup.zero_init", [&]() {
-        if (error.empty() && startup_zero_adamw_state_only_enabled && adamw_descriptor_count > 0) {
+        if (error.empty() && startup_zero_adamw_state_ranges_enabled && !adamw_zero_ranges.empty()) {
+            for (const AdamWZeroRange& range : adamw_zero_ranges) {
+                fill_buffer(range.ptr, range.elements, 0.0f, "adamw_state.zero_range");
+                if (!error.empty()) {
+                    break;
+                }
+                adamw_state_zero_fill_count += 1;
+            }
+            if (error.empty()) {
+                adamw_state_zero_range_count = static_cast<std::int64_t>(adamw_zero_ranges.size());
+            }
+        } else if (error.empty() && startup_zero_adamw_state_only_enabled && adamw_descriptor_count > 0) {
             fill_adamw_many(adamw_avg_ptrs, 0.0f, "adamw_avg.zero_many");
             if (error.empty()) {
                 adamw_state_zero_fill_count += 1;
@@ -11947,6 +12048,8 @@ int run_transformer_lm_training_json(
         << "  \"float_arena_zero_init_strategy\": \"" << startup_zero_init_strategy << "\",\n"
         << "  \"float_arena_zero_fill_count\": " << float_arena_zero_fill_count << ",\n"
         << "  \"adamw_state_zero_fill_count\": " << adamw_state_zero_fill_count << ",\n"
+        << "  \"adamw_state_zero_range_count\": " << adamw_state_zero_range_count << ",\n"
+        << "  \"adamw_state_zero_range_elements\": " << adamw_state_zero_range_elements << ",\n"
         << "  \"startup_per_buffer_zero_fill_elided\": true,\n"
         << "  \"startup_per_buffer_zero_fill_launches_elided\": " << startup_per_buffer_zero_fill_launches_elided << ",\n"
         << "  \"descriptor_allocation_strategy\": \"single-device-arena\",\n"
@@ -12067,6 +12170,8 @@ int run_transformer_lm_training_json(
         << "    \"startup_zero_init_strategy\": \"" << startup_zero_init_strategy << "\",\n"
         << "    \"startup_arena_zero_fill_count\": " << float_arena_zero_fill_count << ",\n"
         << "    \"startup_adamw_state_zero_fill_count\": " << adamw_state_zero_fill_count << ",\n"
+        << "    \"startup_adamw_state_zero_range_count\": " << adamw_state_zero_range_count << ",\n"
+        << "    \"startup_adamw_state_zero_range_elements\": " << adamw_state_zero_range_elements << ",\n"
         << "    \"startup_per_buffer_zero_fill_elided\": true,\n"
         << "    \"startup_per_buffer_zero_fill_launches_elided\": " << startup_per_buffer_zero_fill_launches_elided << ",\n"
         << "    \"descriptor_allocation_strategy\": \"single-device-arena\",\n"
