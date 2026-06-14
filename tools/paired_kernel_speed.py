@@ -57,6 +57,7 @@ def run_once(
     proc = subprocess.run(
         command.argv,
         text=True,
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,

@@ -37,7 +37,9 @@ one warmup pair by default so first-use CUDA/kernel load does not contaminate
 reported samples. When `nvidia-smi` is available, the JSON also includes
 `gpu_before` and `gpu_after` snapshots with GPU identity, utilization, memory,
 and active compute-process rows so kernel-speed notes show which CUDA device
-was measured and whether other compute work was present.
+was measured and whether other compute work was present. The helper decodes
+native binary stdout/stderr with replacement, so external CUDA trainers that
+emit non-UTF-8 bytes can still be compared in the same paired run.
 
 The native dense-GPT BF16 LM-head CE backward path now traverses rows in
 reverse block order, matching the llm.kittens fused-classifier cache-locality

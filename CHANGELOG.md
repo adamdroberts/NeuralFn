@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-14 Paired kernel speed output decoding
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now decodes child-process stdout and stderr
+  with replacement instead of failing on non-UTF-8 bytes. This lets NeuralFn
+  native binaries and external CUDA trainers such as llm.kittens be compared in
+  the same paired timing script even when one emits binary or extended bytes.
+
+#### Verification
+
+- Reproduced the prior strict UTF-8 decode failure while comparing
+  `train_gpt2cu` against `build/nfn_gpt_native_train`.
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Reran the same paired comparison on the dedicated RTX 5090 with one warmup
+  pair and three measured pairs. The helper recorded GPU 0 as
+  `NVIDIA GeForce RTX 5090`, `0%` utilization, about `424/32607` MiB used, and
+  no compute processes before timing. The NeuralFn native command completed at
+  `candidate_over_baseline` mean `0.435572` versus the llm.kittens command,
+  proving the helper now survives the external trainer output.
+
 ### 2026-06-14 Native GPT BF16 CE reverse-row traversal
 
 #### Changed
