@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Correct llm.kittens paired benchmark step aggregation
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now aggregates multi-step llm.kittens logs
+  consistently with NeuralFn native JSON. Parsed `step ... ms ... tok/s` rows
+  report `train_loop_wall_ms` as the sum of all parsed step times,
+  `train_loop_wall_ms_per_step` as their mean, and preserve the final visible
+  step under `llm_kittens_last_step_*` keys.
+- This fixes misleading NeuralFn-vs-llm.kittens paired summaries where
+  NeuralFn's total train-loop time was previously compared against only the
+  final llm.kittens step.
+- Documented the corrected metric semantics in README and CLI docs.
+
+#### Verification
+
+- Ran
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k 'paired_kernel_speed_tool_compiles_and_smokes or paired_kernel_speed_tool_extracts_llm_kittens_step_metrics or paired_kernel_speed_tool_sums_llm_kittens_step_time or paired_kernel_speed_tool_records_command_timeout or paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu'`.
+- Ran a one-sample corrected NeuralFn-vs-llm.kittens comparison on the
+  dedicated RTX 5090 with `--cuda-visible-devices auto`; llm.kittens
+  reported `train_loop_wall_ms=7390.63` across three parsed steps,
+  `train_loop_wall_ms_per_step=2463.543333`, and NeuralFn's corresponding
+  ratio reported `1.127890` for both total and per-step train-loop metrics.
+
 ### 2026-06-15 Auto-select dedicated GPU for paired kernel benchmarks
 
 #### Changed

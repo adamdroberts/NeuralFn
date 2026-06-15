@@ -617,7 +617,11 @@ wall time, selected linear/attention kernel counters, emitted
 when both commands expose the same metric. The helper also parses llm.kittens
 `step ... ms ... tok/s` output into the same metric keys, plus BF16 MFU and
 device-memory fields, so direct `train_gpt2cu` baselines can be compared
-against NeuralFn native JSON without relying on outer subprocess wall time. Use those native summaries when
+against NeuralFn native JSON without relying on outer subprocess wall time.
+For multi-step llm.kittens logs, `train_loop_wall_ms` is the sum of parsed
+step times, `train_loop_wall_ms_per_step` is the mean step time, and the
+last-step values are preserved under `llm_kittens_last_step_*` metric keys.
+Use those native summaries when
 command startup or checkpoint export would otherwise hide the actual
 training-loop speed or when a kernel candidate is expected to move only one
 stage. Pass `--command-timeout-seconds N` to cap each child command. With

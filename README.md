@@ -47,7 +47,11 @@ state, utilization, memory, and active compute-process rows so kernel-speed
 notes show which CUDA device was measured and whether other compute work was
 present for a specific pair. The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
-emit non-UTF-8 bytes can still be compared in the same paired run. Pass
+emit non-UTF-8 bytes can still be compared in the same paired run. For
+llm.kittens output, parsed `step ... ms ... tok/s` rows now report
+`train_loop_wall_ms` as the sum of parsed step times,
+`train_loop_wall_ms_per_step` as their mean, plus last-step fields under the
+`llm_kittens_last_step_*` keys. Pass
 `--command-timeout-seconds N` to cap each child command; with
 `--continue-on-error`, timed-out candidates are kept in the JSON with
 `timed_out: true`, `returncode: -1`, and their output tails instead of wedging

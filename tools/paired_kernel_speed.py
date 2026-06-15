@@ -189,12 +189,17 @@ def llm_kittens_metrics_from_stdout(stdout: str) -> dict[str, float | int | str 
     metrics: dict[str, float | int | str | bool] = {}
     step_matches = list(LLM_KITTENS_STEP_RE.finditer(stdout))
     if step_matches:
-        last_step = step_matches[-1]
+        step_ms_values = [float(match.group("step_ms")) for match in step_matches]
+        tok_s_values = [float(match.group("tok_s")) for match in step_matches]
+        mfu_values = [float(match.group("mfu")) for match in step_matches]
         metrics["status"] = "llm-kittens-step-log"
-        metrics["train_loop_wall_ms"] = float(last_step.group("step_ms"))
-        metrics["train_loop_wall_ms_per_step"] = float(last_step.group("step_ms"))
-        metrics["train_tokens_per_second"] = float(last_step.group("tok_s"))
-        metrics["llm_kittens_bf16_mfu_pct"] = float(last_step.group("mfu"))
+        metrics["train_loop_wall_ms"] = sum(step_ms_values)
+        metrics["train_loop_wall_ms_per_step"] = mean(step_ms_values)
+        metrics["train_tokens_per_second"] = mean(tok_s_values)
+        metrics["llm_kittens_bf16_mfu_pct"] = mean(mfu_values)
+        metrics["llm_kittens_last_step_wall_ms"] = step_ms_values[-1]
+        metrics["llm_kittens_last_step_tokens_per_second"] = tok_s_values[-1]
+        metrics["llm_kittens_last_step_bf16_mfu_pct"] = mfu_values[-1]
         metrics["llm_kittens_step_log_count"] = len(step_matches)
     memory_match = LLM_KITTENS_MEMORY_RE.search(stdout)
     if memory_match:
@@ -655,6 +660,9 @@ def print_text(payload: dict[str, object]) -> None:
             "steps_completed",
             "train_tokens_per_second",
             "llm_kittens_bf16_mfu_pct",
+            "llm_kittens_last_step_wall_ms",
+            "llm_kittens_last_step_tokens_per_second",
+            "llm_kittens_last_step_bf16_mfu_pct",
             "llm_kittens_device_memory_used_mib",
             "setup_wall_ms",
             "setup.float_arena_materialize.total_ms",

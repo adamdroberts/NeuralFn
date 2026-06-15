@@ -137,6 +137,34 @@ step    1/1 | loss 11.032360 (+nanz)| norm 22.1408 (+nanz)| lr 1.00e-05 | 2493.7
     assert metrics["llm_kittens_device_memory_total_mib"] == 32606
 
 
+def test_paired_kernel_speed_tool_sums_llm_kittens_step_time() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    stdout = """
+step    1/2 | loss 11.0 (+nanz)| norm 22.1 (+nanz)| lr 1.00e-05 | 2400.00 ms | 40.0% bf16 MFU | 210000 tok/s
+step    2/2 | loss 10.0 (+nanz)| norm 20.0 (+nanz)| lr 2.00e-05 | 2600.00 ms | 42.0% bf16 MFU | 220000 tok/s
+"""
+
+    metrics = module.native_metrics_from_stdout(stdout)
+    assert metrics["status"] == "llm-kittens-step-log"
+    assert metrics["train_loop_wall_ms"] == 5000.0
+    assert metrics["train_loop_wall_ms_per_step"] == 2500.0
+    assert metrics["train_tokens_per_second"] == 215000.0
+    assert metrics["llm_kittens_bf16_mfu_pct"] == 41.0
+    assert metrics["llm_kittens_last_step_wall_ms"] == 2600.0
+    assert metrics["llm_kittens_last_step_tokens_per_second"] == 220000.0
+    assert metrics["llm_kittens_step_log_count"] == 2
+
+
 def test_paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu() -> None:
     script = Path("tools/paired_kernel_speed.py")
     spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
