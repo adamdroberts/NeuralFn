@@ -6,6 +6,47 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Direct GPT block-output writes
+
+#### Changed
+
+- Dense GPT native training now writes each non-final transformer block's final
+  residual output directly into that block's persistent backward-recompute
+  buffer. This removes the previous post-block `nfn_native_tile_copy_float32`
+  preservation launch while keeping the one-tape scratch-recompute layout.
+- Runtime JSON now reports
+  `block_state_layout.persistent_block_output_write_strategy` with value
+  `"direct-residual2-output"` and
+  `block_state_layout.persistent_block_output_copy_elided_count`. For the
+  default 12-layer, `64 x 1024 -> 524288` schedule, the count is 88 per
+  optimizer step: 11 non-final blocks across 8 gradient-accumulation
+  microbatches.
+- The dense transformer-LM trainer no longer requires or loads
+  `nfn_native_tile_copy_float32`; other Tile smokes and helper paths that use
+  the copy ABI are unchanged.
+
+#### Verification
+
+- Built the candidate trainer with
+  `bash tools/build_native_gpt_cli.sh /tmp/nfn_gpt_native_train_direct_block_output`.
+- Ran a dedicated-RTX-5090 paired benchmark with
+  `python tools/paired_kernel_speed.py --samples 3 --warmup 1
+  --cuda-visible-devices 0 --cuda-device-max-connections 1
+  --command-timeout-seconds 90 --continue-on-error
+  --json-out /tmp/nfn_direct_block_output_pair.json --baseline
+  'build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 3
+  --eval-every-steps 0 --no-checkpoint' --candidate
+  '/tmp/nfn_gpt_native_train_direct_block_output --backend tile-cuda
+  --tinystories --max-steps 3 --eval-every-steps 0 --no-checkpoint'`.
+  The candidate train-loop ratio was `0.994006` and total wall-time ratio was
+  `0.992365`; the harness reported zero compute processes on GPU 0.
+- Ran a one-step native probe with
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1
+  /tmp/nfn_gpt_native_train_direct_block_output --backend tile-cuda
+  --tinystories --max-steps 1 --eval-every-steps 0 --no-checkpoint`, which
+  completed with `status: "native-transformer-lm-trained"` and reported
+  `persistent_block_output_copy_elided_count: 88`.
+
 ### 2026-06-15 Generic native GPT C++ binding
 
 #### Changed

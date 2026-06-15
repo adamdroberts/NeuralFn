@@ -2402,6 +2402,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "packed_qkv_float_attention_tape_elided": True,
         "packed_qkv_float_attention_tape_elements_elided": 2 * 1 * 768 * 8,
         "persistent_block_outputs": 11,
+        "persistent_block_output_write_strategy": "direct-residual2-output",
+        "persistent_block_output_copy_elided_count": 0,
         "final_block_output_copy_elided": True,
         "validation_persistent_block_outputs": 0,
         "validation_block_output_copies_elided": True,

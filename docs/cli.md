@@ -287,7 +287,8 @@ embedding/LM-head tensor while validating token IDs against public vocab 50,257.
 Its JSON reports `trained_layers: 12`, `target_layers: 12`,
 `block_state_layout` with block-vector allocation/init/zero/clip/AdamW/checkpoint/tape/forward/backward loop
 flags, `activation_tape_strategy: "scratch-recompute"`, `activation_tape_count: 1`,
-`persistent_block_outputs: 11`, `final_block_output_copy_elided: true`, `vocab: 50257`, `padded_vocab: 50304`, `lm_head_row_chunk_size`,
+`persistent_block_outputs: 11`, `persistent_block_output_write_strategy: "direct-residual2-output"`, `persistent_block_output_copy_elided_count`,
+`final_block_output_copy_elided: true`, `vocab: 50257`, `padded_vocab: 50304`, `lm_head_row_chunk_size`,
 `lm_head_row_chunk_count`, `loss_partial_count`, `logit_workspace_elements`,
 `gradient_partial_count`, `gradient_clip_norm`, and `sample_gradient_clip_scale`
 after completed steps. Pass
@@ -440,10 +441,10 @@ measuring train loss. The JSON fields `train_loss_sparse: false`,
 `train_loss_sampling: "disabled"`, `train_loss_on_validation_steps: false`,
 `train_loss_eval_count`, and `train_loss_last_step` report that contract.
 
-Persistent block-output preservation in the compiled GPT-2 trainer uses
-`nfn_native_tile_copy_float32` rather than zero-fill plus
-`nfn_native_tile_gradient_accumulate_float32(scale=1)`, removing one Tile launch
-per block output copy while keeping the scratch-recompute tape contract.
+Persistent block-output preservation in the compiled GPT trainer writes the MLP
+residual-add output directly into each non-final block's persistent
+backward-recompute buffer. This removes the previous post-block copy launch
+while keeping the scratch-recompute tape contract.
 The final block output copy is elided because final LayerNorm consumes it before
 backward recomputation starts.
 Validation forwards do not copy intermediate block outputs into persistent

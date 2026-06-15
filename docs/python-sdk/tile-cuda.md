@@ -436,12 +436,15 @@ loss. The output fields `train_loss_sparse: false`,
 `train_loss_sampling: "disabled"`, `train_loss_on_validation_steps: false`,
 `train_loss_eval_count`, and `train_loss_last_step` describe that contract.
 
-Persistent block-output preservation uses `nfn_native_tile_copy_float32` instead
-of a zero-fill plus accumulate-by-one pair, removing one Tile launch per block
-output copy while preserving the scratch-recompute activation tape layout.
+Persistent block-output preservation writes each non-final block's MLP
+residual-add output directly into the per-layer backward-recompute buffer,
+removing the previous post-block `nfn_native_tile_copy_float32` launch while
+preserving the scratch-recompute activation tape layout.
 The final block output copy is elided because final LayerNorm consumes it before
 backward recomputation starts; the default 12-layer run reports
-`persistent_block_outputs: 11` and `final_block_output_copy_elided: true`.
+`persistent_block_outputs: 11`, `persistent_block_output_write_strategy: "direct-residual2-output"`,
+`persistent_block_output_copy_elided_count`, and
+`final_block_output_copy_elided: true`.
 Validation forwards stream through the scratch tape without copying block
 outputs into persistent training-backward buffers, because no backward pass
 follows validation. JSON reports `validation_persistent_block_outputs: 0` and

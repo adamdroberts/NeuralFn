@@ -714,7 +714,6 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_fill_many_values_float32",
         "nfn_native_tile_fill_many_values_bf16_bits_float32",
         "nfn_native_tile_init_gpt2_token_weight_float32",
-        "nfn_native_tile_copy_float32",
         "nfn_native_tile_uint16_to_int64",
         "nfn_native_tile_float32_to_bf16_bits",
         "nfn_native_tile_bf16_bits_to_float32",
@@ -7012,7 +7011,6 @@ int run_transformer_lm_training_json(
     using FillManyValuesFn = int (*)(float* const*, const std::int64_t*, const float*, std::int64_t, std::int64_t, void*);
     using FillManyValuesBf16BitsFn =
         int (*)(std::uint16_t* const*, const std::int64_t*, const float*, std::int64_t, std::int64_t, void*);
-    using CopyFn = int (*)(const float*, float*, std::int64_t, void*);
     using Uint16ToInt64Fn = int (*)(const std::uint16_t*, std::int64_t*, std::int64_t, void*);
     using Bf16BitsToFloat32Fn = int (*)(const std::uint16_t*, float*, std::int64_t, void*);
     using Float32ToBf16BitsFn = int (*)(const float*, std::uint16_t*, std::int64_t, void*);
@@ -7255,7 +7253,6 @@ int run_transformer_lm_training_json(
     FillManyValuesFn fill_many_values = nullptr;
     FillManyValuesBf16BitsFn fill_many_values_bf16_bits = nullptr;
     InitGpt2TokenWeightFn init_gpt2_token_weight = nullptr;
-    CopyFn copy = nullptr;
     Uint16ToInt64Fn uint16_to_int64 = nullptr;
     Bf16BitsToFloat32Fn bf16_bits_to_float32 = nullptr;
     Float32ToBf16BitsFn float32_to_bf16_bits = nullptr;
@@ -7441,7 +7438,6 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_fill_many_values_bf16_bits_float32");
                 init_gpt2_token_weight =
                     load_symbol<InitGpt2TokenWeightFn>(tile_handle, "nfn_native_tile_init_gpt2_token_weight_float32");
-                copy = load_symbol<CopyFn>(tile_handle, "nfn_native_tile_copy_float32");
                 uint16_to_int64 = load_symbol<Uint16ToInt64Fn>(tile_handle, "nfn_native_tile_uint16_to_int64");
                 bf16_bits_to_float32 =
                     load_symbol<Bf16BitsToFloat32Fn>(tile_handle, "nfn_native_tile_bf16_bits_to_float32");
@@ -8546,6 +8542,7 @@ int run_transformer_lm_training_json(
     std::int64_t stored_packed_attention_store_blocks = 0;
     std::int64_t stored_packed_attention_restore_blocks = 0;
     std::int64_t stored_packed_attention_backward_kernel_launches = 0;
+    std::int64_t direct_block_output_write_count = 0;
     std::uint16_t* lm_head_bf16_logits = nullptr;
     std::int64_t lm_head_bf16_logit_elements = 0;
     std::int64_t lm_head_bf16_logit_bytes = 0;
@@ -10421,7 +10418,8 @@ int run_transformer_lm_training_json(
                              StoredAttentionActivations* fused_attention_store,
                              StoredPackedAttentionActivations* fused_packed_attention_store,
                              StoredMlpActivations* fused_mlp_store,
-                             std::uint16_t* fused_residual1_store) {
+                             std::uint16_t* fused_residual1_store,
+                             float* direct_residual2_output) {
         const std::string stage_name = label.find("recompute") == std::string::npos ? "block_forward" : "block_recompute";
         const std::int64_t stage_event = stage_begin(stage_name);
         bool ln2_precomputed = false;
@@ -10764,7 +10762,9 @@ int run_transformer_lm_training_json(
                     if (error.empty()) run(linear_bf16_input_weight_bf16(act_bits, block.mlp_proj_weight_bf16, nullptr, tape.mlp_out, active_rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias.bf16_act_weight_bf16");
                 });
                 run_timed_stage(stage_name + ".mlp_proj.residual", [&]() {
-                    if (error.empty()) run(linear_bias_residual_add(tape.residual1, tape.mlp_out, block.mlp_proj_bias, residual_scale, tape.residual2, active_rows, kDim, nullptr), label + ".mlp.bias_residual");
+                    float* residual2_output =
+                        direct_residual2_output != nullptr ? direct_residual2_output : tape.residual2;
+                    if (error.empty()) run(linear_bias_residual_add(tape.residual1, tape.mlp_out, block.mlp_proj_bias, residual_scale, residual2_output, active_rows, kDim, nullptr), label + ".mlp.bias_residual");
                 });
             });
         }
@@ -11458,8 +11458,14 @@ int run_transformer_lm_training_json(
                 fused_attention_store,
                 fused_packed_attention_store,
                 fused_mlp_store,
-                fused_residual1_store);
-            final_block_output = tape.residual2;
+                fused_residual1_store,
+                preserve_block_outputs && i + 1 < blocks.size() ? block_outputs[i] : nullptr);
+            if (preserve_block_outputs && i + 1 < blocks.size()) {
+                final_block_output = block_outputs[i];
+                direct_block_output_write_count += 1;
+            } else {
+                final_block_output = tape.residual2;
+            }
             if (error.empty() && preserve_block_outputs && i < stored_residual1_activations.size() &&
                 (!fuse_residual1_store_enabled || !fuse_attention_residual_ln2_enabled)) {
                 run(float32_to_bf16_bits(
@@ -11479,8 +11485,6 @@ int run_transformer_lm_training_json(
                 if (fused_mlp_store == nullptr) {
                     store_mlp_activations(i, tape);
                 }
-                run(copy(tape.residual2, block_outputs[i], active_activation_elements, nullptr),
-                    label + ".block" + std::to_string(i) + ".output.copy");
                 block_input = block_outputs[i];
             } else {
                 block_input = tape.residual2;
@@ -11553,6 +11557,7 @@ int run_transformer_lm_training_json(
                         "block" + std::to_string(i) + ".recompute",
                         false,
                         !use_stored_mlp_activations,
+                        nullptr,
                         nullptr,
                         nullptr,
                         nullptr,
@@ -12964,6 +12969,8 @@ int run_transformer_lm_training_json(
         << "    \"forward_row_qkv_scratch_allocated\": false,\n"
         << "    \"forward_row_qkv_scratch_buffers_elided\": 3,\n"
         << "    \"persistent_block_outputs\": " << persistent_block_output_count << ",\n"
+        << "    \"persistent_block_output_write_strategy\": \"direct-residual2-output\",\n"
+        << "    \"persistent_block_output_copy_elided_count\": " << direct_block_output_write_count << ",\n"
         << "    \"final_block_output_copy_elided\": true,\n"
         << "    \"validation_persistent_block_outputs\": 0,\n"
         << "    \"validation_block_output_copies_elided\": true,\n"
