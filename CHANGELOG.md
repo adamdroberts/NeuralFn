@@ -6,6 +6,38 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Default fused float32/BF16 dWeight bias reduction
+
+#### Changed
+
+- The native CUDA Tile linear runtime now enables the optimized
+  float32-input/BF16-gradient dWeight+bias cuBLASLt epilogue path by default.
+  This replaces the previous default split dWeight GEMM plus Tile
+  chunked-bias-reduction path for supported shapes.
+- Set `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=0`,
+  `NFN_NATIVE_GPT2_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=0`, or
+  `NFN_TILE_CUDA_LINEAR_FLOAT32_BF16_BGRAD=0` to reproduce the previous split
+  path in paired benchmarks.
+
+#### Verification
+
+- Before changing the default, ran a paired candidate check on the dedicated
+  RTX 5090 comparing current default against
+  `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=1` for four measured
+  three-step TinyStories samples after one warmup pair. Candidate train-loop
+  time ratio was `0.998381` and token-throughput ratio was `1.001625`.
+- Rebuilt the Tile ops library with `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt the compiled dense GPT CLI with `bash tools/build_native_gpt_cli.sh`.
+- Ran
+  `python -m pytest tests/test_native_gpt2.py -q -k 'native_train_tile_ops_builds_torch_free_c_abi or native_gpt2_cpp_cli_builds_and_uses_sm120_defaults or native_transformer_lm'`
+  (`1 passed`, `1 skipped`).
+- Ran the final default-vs-old paired check on the dedicated RTX 5090 with the
+  previous split path forced by
+  `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=0` as baseline and the new
+  default as candidate. Across four measured three-step TinyStories samples
+  after one warmup pair, candidate train-loop time ratio was `0.992036` and
+  token-throughput ratio was `1.008198`.
+
 ### 2026-06-15 Normalize paired trainer step metrics
 
 #### Changed

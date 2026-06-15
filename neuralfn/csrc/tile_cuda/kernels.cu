@@ -1637,7 +1637,7 @@ bool trainer_linear_float32_bf16_bgrad_enabled() {
       value = std::getenv("NFN_TILE_CUDA_LINEAR_FLOAT32_BF16_BGRAD");
     }
     if (value == nullptr) {
-      return false;
+      return true;
     }
     if (std::strcmp(value, "0") == 0 ||
         std::strcmp(value, "false") == 0 ||

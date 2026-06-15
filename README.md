@@ -65,6 +65,10 @@ traversal was neutral-to-slower for the current tied LM-head workspace.
 The BF16 linear operand cache is limited to stable operands such as weights;
 LM-head dWeight repacks the mutable hidden activation chunks each microbatch so
 gradient accumulation does not reuse stale packed activations.
+The native float32-input/BF16-gradient dWeight+bias path now uses the optimized
+cuBLASLt bias-gradient epilogue by default for supported shapes; set
+`NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=0` to reproduce the previous
+split dWeight plus Tile bias-reduction path in paired benchmarks.
 
 ## Current state of play
 
