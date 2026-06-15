@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Paired benchmark per-command env overrides
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now accepts repeatable
+  `--baseline-env KEY=VALUE` and `--candidate-env KEY=VALUE` flags. These
+  command-specific overrides are merged on top of the shared benchmark
+  environment so CUDA pinning still applies to both commands while kernel
+  experiment toggles can apply to only one side of the pair.
+- Text and JSON output now include `baseline_env` and `candidate_env` when
+  overrides are present, making saved candidate-vs-baseline artifacts
+  self-describing without wrapping commands in `/usr/bin/env`.
+
+#### Verification
+
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k 'paired_kernel_speed_tool_compiles_and_smokes or paired_kernel_speed_tool_applies_command_specific_env or paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu or paired_kernel_speed_tool_require_idle_selected_gpu_checks_selected_uuid or paired_kernel_speed_tool_selected_gpu_utilization_guard or paired_kernel_speed_tool_records_command_timeout or paired_kernel_speed_tool_extracts_llm_kittens_step_metrics or paired_kernel_speed_tool_sums_llm_kittens_step_time'`.
+- Ran a live dedicated-RTX-5090 smoke using
+  `--candidate-env NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT=1`; text output reported
+  `candidate_env: {"NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT": "1"}` and both
+  baseline/candidate one-step commands completed with zero selected-GPU compute
+  processes before and after the sample.
+
 ### 2026-06-15 Native GPT fused LayerNorm scratch elision
 
 #### Changed

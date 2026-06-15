@@ -610,6 +610,9 @@ sampling window, and it runs one warmup pair by default to keep first-use CUDA
 or kernel-load cost out of the reported samples. It sets
 `CUDA_DEVICE_MAX_CONNECTIONS=1` for both commands by default; pass
 `--cuda-device-max-connections ""` to leave that environment unchanged. Pass
+repeatable `--baseline-env KEY=VALUE` or `--candidate-env KEY=VALUE` flags for
+environment-gated kernel candidates; these overrides apply only to that side of
+the pair and are recorded in the JSON/text output. Pass
 `--require-idle-selected-gpu` when a speed test should fail before warmup or a
 measured pair if `nvidia-smi` reports a compute process on the selected CUDA GPU;
 the check uses the selected GPU UUID so a separate display GPU does not fail a

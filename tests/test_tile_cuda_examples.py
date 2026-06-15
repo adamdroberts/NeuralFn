@@ -119,6 +119,49 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["train_tokens_per_second"]["mean"] == 42.0
 
 
+def test_paired_kernel_speed_tool_applies_command_specific_env() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-env.json"
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"import os; print(os.environ.get('NFN_BASELINE_ONLY', 'missing'))\"",
+            "--candidate",
+            f"{sys.executable} -c \"import os; print(os.environ.get('NFN_CANDIDATE_ONLY', 'missing'))\"",
+            "--baseline-env",
+            "NFN_BASELINE_ONLY=old",
+            "--candidate-env",
+            "NFN_CANDIDATE_ONLY=new",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert 'baseline_env: {"NFN_BASELINE_ONLY": "old"}' in proc.stdout
+    assert 'candidate_env: {"NFN_CANDIDATE_ONLY": "new"}' in proc.stdout
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["baseline_env"] == {"NFN_BASELINE_ONLY": "old"}
+    assert payload["candidate_env"] == {"NFN_CANDIDATE_ONLY": "new"}
+    assert "old\n" in payload["paired_samples"][0]["baseline"]["stdout_tail"]
+    assert "new\n" in payload["paired_samples"][0]["candidate"]["stdout_tail"]
+
+
 def test_paired_kernel_speed_tool_extracts_llm_kittens_step_metrics() -> None:
     script = Path("tools/paired_kernel_speed.py")
     spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)

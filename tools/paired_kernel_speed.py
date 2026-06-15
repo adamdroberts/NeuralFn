@@ -25,6 +25,7 @@ from typing import Any, Sequence
 class TimedCommand:
     name: str
     argv: list[str]
+    env_overrides: dict[str, str]
 
 
 NATIVE_METRIC_PATHS = (
@@ -60,6 +61,20 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", required=True, help="Older/baseline command, shell-quoted as one string.")
     parser.add_argument("--candidate", required=True, help="Candidate command, shell-quoted as one string.")
+    parser.add_argument(
+        "--baseline-env",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Environment override applied only to the baseline command. Repeat for multiple variables.",
+    )
+    parser.add_argument(
+        "--candidate-env",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Environment override applied only to the candidate command. Repeat for multiple variables.",
+    )
     parser.add_argument("--samples", type=int, default=5, help="Paired samples to collect.")
     parser.add_argument("--warmup", type=int, default=1, help="Warmup command pairs before measurement.")
     parser.add_argument(
@@ -112,6 +127,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     return parser.parse_args()
+
+
+def parse_env_overrides(values: Sequence[str], *, option_name: str) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    for raw in values:
+        if "=" not in raw:
+            raise SystemExit(f"{option_name} expects KEY=VALUE, got {raw!r}")
+        key, value = raw.split("=", 1)
+        if not key:
+            raise SystemExit(f"{option_name} expects a non-empty environment variable name")
+        overrides[key] = value
+    return overrides
 
 
 def extract_json_object(text: str) -> dict[str, Any] | None:
@@ -242,6 +269,10 @@ def run_once(
     timeout_seconds: float | None,
 ) -> dict[str, object]:
     start = time.perf_counter()
+    command_env = env
+    if command.env_overrides:
+        command_env = dict(os.environ if env is None else env)
+        command_env.update(command.env_overrides)
     try:
         proc = subprocess.run(
             command.argv,
@@ -250,7 +281,7 @@ def run_once(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
-            env=env,
+            env=command_env,
             timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired as exc:
@@ -698,8 +729,10 @@ def resolve_cuda_visible_devices(
 
 
 def build_payload(args: argparse.Namespace) -> dict[str, object]:
-    baseline = TimedCommand("baseline", shlex.split(args.baseline))
-    candidate = TimedCommand("candidate", shlex.split(args.candidate))
+    baseline_env = parse_env_overrides(args.baseline_env, option_name="--baseline-env")
+    candidate_env = parse_env_overrides(args.candidate_env, option_name="--candidate-env")
+    baseline = TimedCommand("baseline", shlex.split(args.baseline), baseline_env)
+    candidate = TimedCommand("candidate", shlex.split(args.candidate), candidate_env)
     samples = max(1, args.samples)
     warmup = max(0, args.warmup)
     timeout_seconds = float(args.command_timeout_seconds or 0.0)
@@ -800,6 +833,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "gpu_sample_summary": gpu_sample_summary,
         "baseline_command": baseline.argv,
         "candidate_command": candidate.argv,
+        "baseline_env": baseline.env_overrides,
+        "candidate_env": candidate.env_overrides,
         "baseline_seconds": summarize(baseline_seconds),
         "candidate_seconds": summarize(candidate_seconds),
         "candidate_over_baseline": summarize(ratios),
@@ -832,6 +867,12 @@ def print_text(payload: dict[str, object]) -> None:
         "  max_selected_gpu_utilization_pct: "
         f"{payload.get('max_selected_gpu_utilization_pct', -1.0)}"
     )
+    baseline_env = payload.get("baseline_env")
+    candidate_env = payload.get("candidate_env")
+    if isinstance(baseline_env, dict) and baseline_env:
+        print(f"  baseline_env: {json.dumps(baseline_env, sort_keys=True)}")
+    if isinstance(candidate_env, dict) and candidate_env:
+        print(f"  candidate_env: {json.dumps(candidate_env, sort_keys=True)}")
     gpu_before = payload.get("gpu_before")
     if isinstance(gpu_before, dict):
         gpus = gpu_before.get("gpus")

@@ -39,7 +39,10 @@ leave the environment unchanged. It still alternates pairs in the same sampling
 window and runs one warmup pair by default so first-use CUDA/kernel load does
 not contaminate reported samples. It sets `CUDA_DEVICE_MAX_CONNECTIONS=1` for
 both commands by default; pass `--cuda-device-max-connections ""` to leave that
-environment unchanged. Pass `--require-idle-selected-gpu` for dedicated
+environment unchanged. Pass repeatable `--baseline-env KEY=VALUE` or
+`--candidate-env KEY=VALUE` flags for environment-gated kernel candidates; these
+overrides apply only to that side of the pair and are recorded in the JSON/text
+output. Pass `--require-idle-selected-gpu` for dedicated
 benchmark runs that must abort if `nvidia-smi` reports any compute process on
 the selected CUDA GPU before warmup or a measured pair. The idle check is scoped
 to the selected GPU UUID, so a separate display GPU can still be active. Pass
