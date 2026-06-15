@@ -45,7 +45,11 @@ the resolved `cuda_device_selection`, run-level
 / `paired_samples[].gpu_after` snapshots with GPU identity, display-active
 state, utilization, memory, and active compute-process rows so kernel-speed
 notes show which CUDA device was measured and whether other compute work was
-present for a specific pair. The helper decodes
+present for a specific pair. Text and JSON output also include
+`gpu_sample_summary`, which summarizes selected-GPU utilization, memory, and
+compute-process counts before and after measured samples; use this summary when
+checking that candidate-vs-baseline timing was not skewed by other GPU load.
+The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
 emit non-UTF-8 bytes can still be compared in the same paired run. For
 llm.kittens output, parsed `step ... ms ... tok/s` rows now report

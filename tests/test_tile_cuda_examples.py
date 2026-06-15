@@ -88,6 +88,8 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["cuda_device_max_connections"] == "1"
     assert "gpu_before" in payload
     assert "gpu_after" in payload
+    assert "gpu_sample_summary" in payload
+    assert payload["gpu_sample_summary"]["selected_cuda_visible_devices"] == "test-device"
     assert "test-device\n1\n" in payload["paired_samples"][0]["baseline"]["stdout_tail"]
     assert payload["candidate_native_metrics"]["setup.float_arena_materialize.total_ms"]["mean"] == 0.7
     assert payload["candidate_native_metrics"]["setup.float_arena_materialize.avg_ms"]["mean"] == 0.7
@@ -102,6 +104,7 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "gpus" in payload["paired_samples"][0]["gpu_before"]
     assert "compute_processes" in payload["paired_samples"][0]["gpu_before"]
     assert "gpu_compute_processes_per_sample_before:" in proc.stdout
+    assert "gpu_sample_summary:" in proc.stdout
     assert "test-device" in payload["paired_samples"][0]["baseline"]["stdout_tail"]
     assert payload["paired_samples"][0]["candidate"]["native_metrics"]["status"] == "native-test"
     assert payload["candidate_native_metrics"]["train_loop_wall_ms"]["mean"] == 12.5

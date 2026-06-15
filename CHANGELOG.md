@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Summarize selected-GPU load in paired benchmarks
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now emits a `gpu_sample_summary` block in JSON
+  and text output. It summarizes selected-GPU utilization, selected-GPU memory,
+  selected-GPU compute-process counts, and total compute-process counts before
+  and after measured samples.
+- The raw per-sample `nvidia-smi` snapshots remain in
+  `paired_samples[].gpu_before` and `paired_samples[].gpu_after`; the new
+  summary is for quick review when checking that paired candidate-vs-baseline
+  kernel timings were not skewed by unrelated external GPU load.
+
+#### Verification
+
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran `python -m pytest tests/test_tile_cuda_examples.py -q -k paired_kernel_speed_tool_compiles_and_smokes`.
+- Ran dedicated RTX 5090 paired benchmarks with `CUDA_VISIBLE_DEVICES=0` and
+  `CUDA_DEVICE_MAX_CONNECTIONS=1`; the helper reported the RTX 5090 as
+  display-disabled with zero compute processes before measured samples.
+
 ### 2026-06-15 Store packed-attention LN1 stats for native GPT recompute
 
 #### Changed

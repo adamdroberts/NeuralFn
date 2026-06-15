@@ -422,6 +422,105 @@ def _display_is_inactive(value: object) -> bool:
     return normalized in {"disabled", "no", "off", "false", "0"}
 
 
+def _first_cuda_device_index(cuda_visible_devices: str) -> str:
+    first = cuda_visible_devices.split(",", 1)[0].strip()
+    return first
+
+
+def _selected_gpu(snapshot: dict[str, object], cuda_visible_devices: str) -> dict[str, object] | None:
+    selected_index = _first_cuda_device_index(cuda_visible_devices)
+    if not selected_index:
+        return None
+    gpus = snapshot.get("gpus")
+    if not isinstance(gpus, list):
+        return None
+    for gpu in gpus:
+        if isinstance(gpu, dict) and str(gpu.get("index", "")).strip() == selected_index:
+            return gpu
+    return None
+
+
+def _selected_gpu_uuid(snapshot: dict[str, object], cuda_visible_devices: str) -> str:
+    gpu = _selected_gpu(snapshot, cuda_visible_devices)
+    if not isinstance(gpu, dict):
+        return ""
+    return str(gpu.get("uuid", "")).strip()
+
+
+def _compute_process_count(snapshot: dict[str, object], gpu_uuid: str = "") -> int:
+    processes = snapshot.get("compute_processes")
+    if not isinstance(processes, list):
+        return 0
+    if not gpu_uuid:
+        return len(processes)
+    count = 0
+    for process in processes:
+        if isinstance(process, dict) and str(process.get("gpu_uuid", "")).strip() == gpu_uuid:
+            count += 1
+    return count
+
+
+def summarize_gpu_sample_load(
+    rows: Sequence[dict[str, object]],
+    cuda_visible_devices: str,
+) -> dict[str, object]:
+    before_util: list[float] = []
+    after_util: list[float] = []
+    before_mem: list[float] = []
+    after_mem: list[float] = []
+    total_processes_before: list[float] = []
+    total_processes_after: list[float] = []
+    selected_processes_before: list[float] = []
+    selected_processes_after: list[float] = []
+    selected_index = _first_cuda_device_index(cuda_visible_devices)
+    selected_uuid = ""
+
+    for row in rows:
+        before = row.get("gpu_before")
+        after = row.get("gpu_after")
+        if not isinstance(before, dict) or not isinstance(after, dict):
+            continue
+        before_gpu = _selected_gpu(before, cuda_visible_devices)
+        after_gpu = _selected_gpu(after, cuda_visible_devices)
+        if isinstance(before_gpu, dict):
+            selected_uuid = selected_uuid or str(before_gpu.get("uuid", "")).strip()
+            before_util.append(float(_csv_int(before_gpu.get("utilization.gpu_pct"), 0)))
+            before_mem.append(float(_csv_int(before_gpu.get("memory.used_mib"), 0)))
+        if isinstance(after_gpu, dict):
+            selected_uuid = selected_uuid or str(after_gpu.get("uuid", "")).strip()
+            after_util.append(float(_csv_int(after_gpu.get("utilization.gpu_pct"), 0)))
+            after_mem.append(float(_csv_int(after_gpu.get("memory.used_mib"), 0)))
+        before_uuid = selected_uuid or _selected_gpu_uuid(before, cuda_visible_devices)
+        after_uuid = selected_uuid or _selected_gpu_uuid(after, cuda_visible_devices)
+        total_processes_before.append(float(_compute_process_count(before)))
+        total_processes_after.append(float(_compute_process_count(after)))
+        if before_uuid:
+            selected_processes_before.append(float(_compute_process_count(before, before_uuid)))
+        if after_uuid:
+            selected_processes_after.append(float(_compute_process_count(after, after_uuid)))
+
+    summary: dict[str, object] = {
+        "selected_cuda_visible_devices": cuda_visible_devices,
+        "selected_gpu_index": selected_index,
+        "selected_gpu_uuid": selected_uuid,
+        "sample_count": len(rows),
+    }
+    metric_rows = (
+        ("selected_gpu_utilization_before_pct", before_util),
+        ("selected_gpu_utilization_after_pct", after_util),
+        ("selected_gpu_memory_used_before_mib", before_mem),
+        ("selected_gpu_memory_used_after_mib", after_mem),
+        ("compute_process_count_before", total_processes_before),
+        ("compute_process_count_after", total_processes_after),
+        ("selected_gpu_compute_process_count_before", selected_processes_before),
+        ("selected_gpu_compute_process_count_after", selected_processes_after),
+    )
+    for name, values in metric_rows:
+        if values:
+            summary[name] = summarize(values)
+    return summary
+
+
 def resolve_cuda_visible_devices(
     requested: str,
     snapshot: dict[str, object],
@@ -557,6 +656,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     gpu_after = gpu_snapshot()
     baseline_native_metrics = summarize_metric_rows(sample_rows, "baseline")
     candidate_native_metrics = summarize_metric_rows(sample_rows, "candidate")
+    gpu_sample_summary = summarize_gpu_sample_load(sample_rows, cuda_visible_devices)
 
     return {
         "measurement": "paired_interleaved_commands",
@@ -569,6 +669,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "command_timeout_seconds": timeout_seconds,
         "gpu_before": gpu_before,
         "gpu_after": gpu_after,
+        "gpu_sample_summary": gpu_sample_summary,
         "baseline_command": baseline.argv,
         "candidate_command": candidate.argv,
         "baseline_seconds": summarize(baseline_seconds),
@@ -642,6 +743,29 @@ def print_text(payload: dict[str, object]) -> None:
                 "  gpu_compute_processes_per_sample_before: "
                 f"min={min(sample_process_counts)} max={max(sample_process_counts)}"
             )
+    gpu_sample_summary = payload.get("gpu_sample_summary")
+    if isinstance(gpu_sample_summary, dict):
+        print(
+            "  gpu_sample_summary: "
+            f"selected_index={gpu_sample_summary.get('selected_gpu_index', '')} "
+            f"selected_uuid={gpu_sample_summary.get('selected_gpu_uuid', '')}"
+        )
+        for key in (
+            "selected_gpu_utilization_before_pct",
+            "selected_gpu_utilization_after_pct",
+            "selected_gpu_memory_used_before_mib",
+            "selected_gpu_memory_used_after_mib",
+            "selected_gpu_compute_process_count_before",
+            "selected_gpu_compute_process_count_after",
+            "compute_process_count_before",
+            "compute_process_count_after",
+        ):
+            stats = gpu_sample_summary.get(key)
+            if isinstance(stats, dict):
+                print(
+                    f"    {key}: mean={stats['mean']:.6f} median={stats['median']:.6f} "
+                    f"min={stats['min']:.6f} max={stats['max']:.6f}"
+                )
     for key in ("baseline_seconds", "candidate_seconds", "candidate_over_baseline"):
         stats = payload[key]
         assert isinstance(stats, dict)
