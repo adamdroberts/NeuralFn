@@ -4125,6 +4125,61 @@ __tile_global__ void adamw_step_many_with_device_scale_bf16_param_float32_kernel
   ct::store_masked(exp_avg_sq + idx, next_v, mask);
 }
 
+__tile_global__ void adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32_kernel(
+    std::uint16_t* const* __restrict__ params_bf16_bits,
+    const std::uint16_t* const* __restrict__ grads_bf16_bits,
+    const float* __restrict__ grad_scale,
+    float* const* __restrict__ exp_avgs,
+    float* const* __restrict__ exp_avg_sqs,
+    const std::int64_t* __restrict__ elements,
+    const float* __restrict__ weight_decays,
+    std::int64_t buffer_count,
+    float lr,
+    float beta1,
+    float beta2,
+    float eps,
+    float bias_correction1,
+    float sqrt_bias_correction2) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  const int tensor = ct::bid().x;
+  const int chunk = ct::bid().y;
+  if (static_cast<std::int64_t>(tensor) >= buffer_count) {
+    return;
+  }
+
+  auto* param = ct::assume_aligned(
+      reinterpret_cast<__nv_bfloat16*>(params_bf16_bits[tensor]), 16_ic);
+  const auto* grad = ct::assume_aligned(
+      reinterpret_cast<const __nv_bfloat16*>(grads_bf16_bits[tensor]), 16_ic);
+  grad_scale = ct::assume_aligned(grad_scale, 16_ic);
+  float* exp_avg = ct::assume_aligned(exp_avgs[tensor], 16_ic);
+  float* exp_avg_sq = ct::assume_aligned(exp_avg_sqs[tensor], 16_ic);
+
+  const std::int64_t n = elements[tensor];
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto p = ct::element_cast<float>(ct::load_masked(param + idx, mask));
+  auto g = ct::element_cast<float>(ct::load_masked(grad + idx, mask)) *
+      ct::full<decltype(p)>(*grad_scale);
+  auto m = ct::load_masked(exp_avg + idx, mask);
+  auto v = ct::load_masked(exp_avg_sq + idx, mask);
+  auto one = ct::full<decltype(p)>(1.0f);
+  auto beta1_tile = ct::full<decltype(p)>(beta1);
+  auto beta2_tile = ct::full<decltype(p)>(beta2);
+  auto next_m = beta1_tile * m + (one - beta1_tile) * g;
+  auto next_v = beta2_tile * v + (one - beta2_tile) * g * g;
+  auto decayed = p * (one - ct::full<decltype(p)>(lr * weight_decays[tensor]));
+  auto denom = ct::sqrt(next_v) / ct::full<decltype(p)>(sqrt_bias_correction2) + ct::full<decltype(p)>(eps);
+  auto step_size = ct::full<decltype(p)>(lr / bias_correction1);
+  auto next_p = decayed - step_size * next_m / denom;
+  ct::store_masked(param + idx, ct::element_cast<__nv_bfloat16>(next_p), mask);
+  ct::store_masked(exp_avg + idx, next_m, mask);
+  ct::store_masked(exp_avg_sq + idx, next_v, mask);
+}
+
 __tile_global__ void scalar_ternary_float32_kernel(
     const float* __restrict__ a,
     const float* __restrict__ b,
@@ -9541,6 +9596,45 @@ void launch_adamw_step_many_with_device_scale_bf16_param_float32(
   adamw_step_many_with_device_scale_bf16_param_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
       params_bf16_bits,
       grads,
+      grad_scale,
+      exp_avgs,
+      exp_avg_sqs,
+      elements,
+      weight_decays,
+      buffer_count,
+      lr,
+      beta1,
+      beta2,
+      eps,
+      bias_correction1,
+      sqrt_bias_correction2);
+}
+
+void launch_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32(
+    std::uint16_t* const* params_bf16_bits,
+    const std::uint16_t* const* grads_bf16_bits,
+    const float* grad_scale,
+    float* const* exp_avgs,
+    float* const* exp_avg_sqs,
+    const std::int64_t* elements,
+    const float* weight_decays,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    float lr,
+    float beta1,
+    float beta2,
+    float eps,
+    float bias_correction1,
+    float sqrt_bias_correction2,
+    cudaStream_t stream) {
+  if (buffer_count <= 0 || max_elements <= 0) {
+    return;
+  }
+  const int tensor_blocks = static_cast<int>(buffer_count);
+  const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
+      params_bf16_bits,
+      grads_bf16_bits,
       grad_scale,
       exp_avgs,
       exp_avg_sqs,

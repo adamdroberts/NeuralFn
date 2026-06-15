@@ -509,6 +509,12 @@ path. Token/position/norm/bias tensors keep using the float32 multi-buffer AdamW
 ABI, while QKV, attention projection, MLP FC, and MLP projection weights update
 their BF16 parameter buffers directly through
 `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32`.
+The raw ABI also exports
+`nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32`
+for BF16-primary parameter updates that consume BF16 gradient buffers while
+keeping AdamW first and second moments in float32. The dense GPT trainer still
+uses the float-gradient BF16-param entrypoint until the block-gradient buffers
+move to BF16.
 Checkpoint export syncs those BF16 block weights back into FP32 staging buffers
 before the existing version-5 BF16 checkpoint packer runs. Set
 `NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=0` to reproduce the older FP32-master

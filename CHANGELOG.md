@@ -6,6 +6,36 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Add BF16-gradient AdamW Tile ABI
+
+#### Changed
+
+- The trainer-facing raw Tile ABI now exports
+  `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32`.
+  It updates BF16-primary parameter buffers from BF16 gradient buffers while
+  keeping AdamW first and second moments in float32 and applying the existing
+  device clip scale.
+- The compiled dense GPT required-symbol checks now include the new ABI symbol,
+  so future BF16 block-gradient-buffer wiring cannot silently fall back to a
+  stale Tile ops library. The live dense GPT trainer still uses the existing
+  float-gradient BF16-param AdamW path until that gradient-buffer migration is
+  wired.
+
+#### Verification
+
+- Rebuilt the Tile ops library with `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt the compiled dense GPT CLI with `bash tools/build_native_gpt_cli.sh`.
+- Confirmed the new exported symbol with
+  `nm -D build/libnfn_native_train_tile_ops.so`.
+- Ran
+  `python -m pytest tests/test_native_gpt2.py -q -k 'native_train_tile_ops_builds_torch_free_c_abi or native_gpt2_cpp_cli_builds_and_uses_sm120_defaults or native_transformer_lm'`
+  (`1 passed`, `1 skipped`).
+- Ran a one-step TinyStories smoke pinned to the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --tinystories --max-steps 1 --model-family gpt --train-transformer-lm --no-checkpoint`;
+  the run completed with `missing_symbols: []`, included
+  `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32`
+  in `kernels`, and reported `passed: true`.
+
 ### 2026-06-15 Use CUDA memset for native GPT gradient zeroing
 
 #### Changed

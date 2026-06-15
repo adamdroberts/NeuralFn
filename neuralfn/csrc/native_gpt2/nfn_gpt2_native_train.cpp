@@ -742,6 +742,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_adamw_step_many_with_device_scale_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32",
+        "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32",
         "nfn_native_tile_token_embedding_float32",
         "nfn_native_tile_token_embedding_backward_weight_float32",
         "nfn_native_tile_absolute_position_embedding_float32",
@@ -6957,6 +6958,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_adamw_step_many_with_device_scale_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32",
+        "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32",
     };
 
     using FillFn = int (*)(float*, std::int64_t, float, void*);
