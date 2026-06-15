@@ -137,6 +137,60 @@ step    1/1 | loss 11.032360 (+nanz)| norm 22.1408 (+nanz)| lr 1.00e-05 | 2493.7
     assert metrics["llm_kittens_device_memory_total_mib"] == 32606
 
 
+def test_paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    snapshot = {
+        "gpus": [
+            {
+                "index": "0",
+                "name": "NVIDIA GeForce RTX 5090",
+                "uuid": "GPU-compute",
+                "pci.bus_id": "00000000:01:00.0",
+                "display_active": "Disabled",
+                "utilization.gpu_pct": "0",
+                "memory.used_mib": "334",
+                "memory.total_mib": "32607",
+            },
+            {
+                "index": "1",
+                "name": "NVIDIA Display Adapter",
+                "uuid": "GPU-display",
+                "pci.bus_id": "00000000:02:00.0",
+                "display_active": "Enabled",
+                "utilization.gpu_pct": "1",
+                "memory.used_mib": "1024",
+                "memory.total_mib": "16384",
+            },
+        ],
+        "compute_processes": [
+            {
+                "gpu_uuid": "GPU-display",
+                "pid": "1234",
+                "process_name": "desktop",
+                "used_memory_mib": "512",
+            }
+        ],
+    }
+
+    selection = module.resolve_cuda_visible_devices("auto", snapshot)
+    assert selection["resolved"] == "0"
+    assert selection["mode"] == "auto-dedicated"
+
+    explicit = module.resolve_cuda_visible_devices("", snapshot)
+    assert explicit["resolved"] == ""
+    assert explicit["mode"] == "unchanged"
+
+
 def test_paired_kernel_speed_tool_records_command_timeout() -> None:
     script = Path("tools/paired_kernel_speed.py")
     output_path = Path(tempfile.mkdtemp()) / "paired-timeout.json"

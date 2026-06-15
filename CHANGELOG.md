@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Auto-select dedicated GPU for paired kernel benchmarks
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now defaults `--cuda-visible-devices` to
+  `auto`. When `nvidia-smi` is available, the helper selects the lowest-use
+  display-disabled NVIDIA GPU without active compute processes, which matches
+  the workstation layout where the RTX 5090 is dedicated for CUDA compute and
+  the display is driven separately.
+- Explicit device values still override the selector, and
+  `--cuda-visible-devices ""` still leaves `CUDA_VISIBLE_DEVICES` unchanged.
+  JSON/text output now includes `cuda_device_selection` so benchmark artifacts
+  record whether the device was explicit, auto-dedicated, fallback, or
+  unresolved.
+- Updated README and CLI docs so kernel candidate timing commands no longer
+  require manually remembering `--cuda-visible-devices 0` on the dedicated GPU
+  workstation path.
+
+#### Verification
+
+- Ran
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k 'paired_kernel_speed_tool_compiles_and_smokes or paired_kernel_speed_tool_extracts_llm_kittens_step_metrics or paired_kernel_speed_tool_records_command_timeout or paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu'`.
+- Ran a GPU-visible auto-selection smoke with
+  `python tools/paired_kernel_speed.py --cuda-visible-devices auto ...`; it
+  resolved `CUDA_VISIBLE_DEVICES=0` with `mode=auto-dedicated` and recorded
+  the RTX 5090 as display-disabled with no compute processes.
+
 ### 2026-06-15 Add native no-Torch dependency gate
 
 #### Added

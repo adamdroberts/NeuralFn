@@ -64,8 +64,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup", type=int, default=1, help="Warmup command pairs before measurement.")
     parser.add_argument(
         "--cuda-visible-devices",
-        default="",
-        help="Set CUDA_VISIBLE_DEVICES for both commands, e.g. 0 for a dedicated RTX 5090.",
+        default="auto",
+        help=(
+            "Set CUDA_VISIBLE_DEVICES for both commands. The default 'auto' selects an idle "
+            "display-disabled NVIDIA GPU when nvidia-smi can identify one. Pass an explicit "
+            "device id such as 0, or pass an empty string to leave the environment unchanged."
+        ),
     )
     parser.add_argument(
         "--cuda-device-max-connections",
@@ -397,6 +401,95 @@ def gpu_snapshot() -> dict[str, object]:
     }
 
 
+def _csv_int(value: object, default: int) -> int:
+    if not isinstance(value, str):
+        return default
+    try:
+        return int(value.strip())
+    except ValueError:
+        return default
+
+
+def _display_is_inactive(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().lower()
+    return normalized in {"disabled", "no", "off", "false", "0"}
+
+
+def resolve_cuda_visible_devices(
+    requested: str,
+    snapshot: dict[str, object],
+) -> dict[str, object]:
+    requested = requested.strip()
+    if requested not in {"auto", "dedicated", "dedicated-auto"}:
+        return {
+            "requested": requested,
+            "resolved": requested,
+            "mode": "explicit" if requested else "unchanged",
+            "reason": "explicit CUDA_VISIBLE_DEVICES value" if requested else "explicit empty value",
+        }
+
+    gpus = snapshot.get("gpus")
+    if not isinstance(gpus, list) or not gpus:
+        return {
+            "requested": requested,
+            "resolved": "",
+            "mode": "auto-unresolved",
+            "reason": "nvidia-smi did not return GPU rows",
+        }
+
+    processes = snapshot.get("compute_processes")
+    busy_uuids: set[str] = set()
+    if isinstance(processes, list):
+        for process in processes:
+            if not isinstance(process, dict):
+                continue
+            uuid = process.get("gpu_uuid")
+            if isinstance(uuid, str) and uuid.strip():
+                busy_uuids.add(uuid.strip())
+
+    candidates: list[tuple[int, int, int, dict[str, object]]] = []
+    fallback: list[tuple[int, int, int, dict[str, object]]] = []
+    for gpu in gpus:
+        if not isinstance(gpu, dict):
+            continue
+        index = _csv_int(gpu.get("index"), -1)
+        if index < 0:
+            continue
+        util = _csv_int(gpu.get("utilization.gpu_pct"), 100)
+        mem_used = _csv_int(gpu.get("memory.used_mib"), 1_000_000_000)
+        uuid = str(gpu.get("uuid", "")).strip()
+        row = (util, mem_used, index, gpu)
+        fallback.append(row)
+        if _display_is_inactive(gpu.get("display_active")) and uuid not in busy_uuids:
+            candidates.append(row)
+
+    selected_pool = candidates if candidates else fallback
+    if not selected_pool:
+        return {
+            "requested": requested,
+            "resolved": "",
+            "mode": "auto-unresolved",
+            "reason": "no parseable nvidia-smi GPU index",
+        }
+
+    selected = sorted(selected_pool, key=lambda row: (row[0], row[1], row[2]))[0]
+    mode = "auto-dedicated" if candidates else "auto-fallback"
+    reason = (
+        "selected lowest-utilization display-disabled GPU with no compute processes"
+        if candidates
+        else "no idle display-disabled GPU found; selected lowest-utilization GPU"
+    )
+    return {
+        "requested": requested,
+        "resolved": str(selected[2]),
+        "mode": mode,
+        "reason": reason,
+        "selected_gpu": selected[3],
+    }
+
+
 def build_payload(args: argparse.Namespace) -> dict[str, object]:
     baseline = TimedCommand("baseline", shlex.split(args.baseline))
     candidate = TimedCommand("candidate", shlex.split(args.candidate))
@@ -404,7 +497,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     warmup = max(0, args.warmup)
     timeout_seconds = float(args.command_timeout_seconds or 0.0)
     command_timeout = timeout_seconds if timeout_seconds > 0.0 else None
-    cuda_visible_devices = str(args.cuda_visible_devices or "").strip()
+    gpu_before = gpu_snapshot()
+    cuda_device_selection = resolve_cuda_visible_devices(str(args.cuda_visible_devices or ""), gpu_before)
+    cuda_visible_devices = str(cuda_device_selection.get("resolved", "") or "").strip()
     cuda_device_max_connections = str(args.cuda_device_max_connections or "").strip()
     run_env = None
     if cuda_visible_devices or cuda_device_max_connections:
@@ -414,7 +509,6 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         if cuda_device_max_connections:
             run_env["CUDA_DEVICE_MAX_CONNECTIONS"] = cuda_device_max_connections
 
-    gpu_before = gpu_snapshot()
     for warmup_index in range(warmup):
         for command in ordered_pair(warmup_index, baseline, candidate):
             run_once(
@@ -463,7 +557,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "measurement": "paired_interleaved_commands",
         "samples": samples,
         "warmup": warmup,
+        "cuda_visible_devices_requested": cuda_device_selection.get("requested", ""),
         "cuda_visible_devices": cuda_visible_devices,
+        "cuda_device_selection": cuda_device_selection,
         "cuda_device_max_connections": cuda_device_max_connections,
         "command_timeout_seconds": timeout_seconds,
         "gpu_before": gpu_before,
@@ -489,6 +585,14 @@ def print_text(payload: dict[str, object]) -> None:
     print(f"  measurement: {payload['measurement']}")
     print(f"  samples: {payload['samples']}")
     print(f"  warmup: {payload['warmup']}")
+    cuda_device_selection = payload.get("cuda_device_selection")
+    if isinstance(cuda_device_selection, dict):
+        print(
+            "  cuda_visible_devices: "
+            f"requested={cuda_device_selection.get('requested', '')} "
+            f"resolved={cuda_device_selection.get('resolved', '')} "
+            f"mode={cuda_device_selection.get('mode', '')}"
+        )
     gpu_before = payload.get("gpu_before")
     if isinstance(gpu_before, dict):
         gpus = gpu_before.get("gpus")

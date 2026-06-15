@@ -592,20 +592,23 @@ normal training leaves checkpoint export enabled.
 
 For native kernel candidate comparisons, use
 `python tools/paired_kernel_speed.py --baseline "OLD_COMMAND" --candidate
-"NEW_COMMAND" --samples N --cuda-visible-devices 0 --json-out
-/tmp/result.json`. The helper alternates baseline/candidate order inside one
-script so unrelated external GPU load affects both measurements in the same
+"NEW_COMMAND" --samples N --json-out /tmp/result.json`. The helper defaults
+`--cuda-visible-devices` to `auto`, selecting an idle display-disabled NVIDIA
+GPU from `nvidia-smi` when one is available; pass an explicit device id such as
+`--cuda-visible-devices 0` to pin manually, or `--cuda-visible-devices ""` to
+leave the environment unchanged. It alternates baseline/candidate order inside
+one script so unrelated external GPU load affects both measurements in the same
 sampling window, and it runs one warmup pair by default to keep first-use CUDA
 or kernel-load cost out of the reported samples. It sets
 `CUDA_DEVICE_MAX_CONNECTIONS=1` for both commands by default; pass
 `--cuda-device-max-connections ""` to leave that environment unchanged. When
-`nvidia-smi` is present, the result JSON includes run-level `gpu_before` /
-`gpu_after` snapshots plus per-sample `paired_samples[].gpu_before` /
-`paired_samples[].gpu_after` snapshots containing GPU identity, display-active
-state, utilization, memory, and active compute-process rows. This makes
-dedicated-GPU runs and accidental external GPU load visible both for the whole
-benchmark and for each old/new measurement pair. When a command emits NeuralFn
-native JSON, the helper extracts
+`nvidia-smi` is present, the result JSON includes the resolved
+`cuda_device_selection`, run-level `gpu_before` / `gpu_after` snapshots plus
+per-sample `paired_samples[].gpu_before` / `paired_samples[].gpu_after`
+snapshots containing GPU identity, display-active state, utilization, memory,
+and active compute-process rows. This makes dedicated-GPU runs and accidental
+external GPU load visible both for the whole benchmark and for each old/new
+measurement pair. When a command emits NeuralFn native JSON, the helper extracts
 native-loop counters into `baseline_native_metrics` or
 `candidate_native_metrics`, including `timing.train_loop_wall_ms`,
 `timing.train_tokens_per_second`, setup time, checkpoint time, total native

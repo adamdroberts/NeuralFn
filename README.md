@@ -30,13 +30,17 @@ to the compiled C++ trainer to skip final trained-checkpoint export. Default
 training still writes the final native checkpoint.
 
 Use `python tools/paired_kernel_speed.py --baseline "OLD_COMMAND"
---candidate "NEW_COMMAND" --samples N --cuda-visible-devices 0 --json-out
-/tmp/result.json` for candidate-vs-current CUDA timing pinned to the dedicated
-5090 while still alternating pairs in the same sampling window. The helper runs
-one warmup pair by default so first-use CUDA/kernel load does not contaminate
-reported samples. It sets `CUDA_DEVICE_MAX_CONNECTIONS=1` for both commands by
-default; pass `--cuda-device-max-connections ""` to leave that environment
-unchanged. When `nvidia-smi` is available, the JSON also includes run-level
+--candidate "NEW_COMMAND" --samples N --json-out /tmp/result.json` for
+candidate-vs-current CUDA timing. The helper defaults
+`--cuda-visible-devices` to `auto`, selecting an idle display-disabled NVIDIA
+GPU from `nvidia-smi` when one is available; pass an explicit device id such as
+`--cuda-visible-devices 0` to pin manually, or `--cuda-visible-devices ""` to
+leave the environment unchanged. It still alternates pairs in the same sampling
+window and runs one warmup pair by default so first-use CUDA/kernel load does
+not contaminate reported samples. It sets `CUDA_DEVICE_MAX_CONNECTIONS=1` for
+both commands by default; pass `--cuda-device-max-connections ""` to leave that
+environment unchanged. When `nvidia-smi` is available, the JSON also includes
+the resolved `cuda_device_selection`, run-level
 `gpu_before` / `gpu_after` snapshots and per-sample `paired_samples[].gpu_before`
 / `paired_samples[].gpu_after` snapshots with GPU identity, display-active
 state, utilization, memory, and active compute-process rows so kernel-speed
