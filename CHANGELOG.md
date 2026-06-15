@@ -6,6 +6,53 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 SM120 Tile CUDA trainer build flag alignment
+
+#### Changed
+
+- `tools/build_native_train_tile_ops.sh` now builds the SM120
+  ThunderKittens-backed trainer Tile ops library with the same NVCC threading,
+  host-compiler, data-prep, memory, and LayerNorm tuning flags used by the
+  llm.kittens SM120 trainer. This keeps the native GPT attention bridge closer
+  to the reference compile path while preserving NeuralFn's own initialized
+  cublasLt GEMM dispatch.
+- Added regression coverage so the native GPT static test checks for those
+  SM120 build flags. The llm.kittens `LLMK_SM120_USE_CUBLASLT_GEMM` macro is
+  intentionally not copied because it routes included header matmuls through
+  llm.kittens' singleton cublasLt state and aborts without its initialization.
+
+#### Verification
+
+- Rebuilt the trainer Tile ops library with
+  `bash tools/build_native_train_tile_ops.sh build/libnfn_native_train_tile_ops.so`.
+- Rebuilt the dense GPT compiled CLI with
+  `bash tools/build_native_gpt_cli.sh build/nfn_gpt_native_train`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k cpp_cli_builds_and_uses_sm120_defaults`.
+- Ran a dedicated-RTX-5090 one-step smoke with
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1
+  build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1
+  --eval-every-steps 0 --no-checkpoint --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so`; runtime JSON reported
+  `status: native-transformer-lm-trained` and
+  `attention_backward_strategy:
+  tk-sm120-packed-qkv-bf16-saved-activation-backward-direct-bf16-grad-scratch-handoff`.
+- Profiled the candidate with Nsight Systems using the same dedicated GPU
+  (`/tmp/nfn_sm120_flags_1step_nsys.*`); the dominant
+  `llmk::attention::sm120_detail::bwd_main_kernel<64,true,true>` averaged
+  roughly `16.6 ms` per launch in that profile.
+- Ran paired old-vs-new benchmarks on the display-disabled RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and
+  `--require-idle-selected-gpu`. The 5-sample one-step comparison in
+  `/tmp/nfn_sm120_flags_1step_gpu0_pair.json` reported candidate train loop
+  mean `6427.23 ms` versus baseline `6439.01 ms`
+  (`candidate_over_baseline_native_metrics.train_loop_wall_ms_per_step.mean:
+  0.998209`). The 3-sample three-step comparison in
+  `/tmp/nfn_sm120_flags_gpu0_pair.json` was noisy and recorded candidate mean
+  `5549.62 ms/step` versus baseline `5488.19 ms/step`, so the retained evidence
+  for this change is the profiler-level attention improvement plus the shorter
+  multi-sample end-to-end parity run rather than a claimed large wall-clock
+  throughput win.
+
 ### 2026-06-15 Paired benchmark command-scoped GPU guards
 
 #### Changed

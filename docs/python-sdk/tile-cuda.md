@@ -55,6 +55,11 @@ On the SM120 workstation this defaults to `NFN_TILE_CUDA_USE_TK_ATTENTION=1`,
 ThunderKittens headers via `LLM_KITTENS_ROOT` and `TK_ROOT`. Set
 `NFN_TILE_CUDA_USE_TK_ATTENTION=0` only when you intentionally want the older
 float32 row-scan attention diagnostic build.
+The SM120 trainer build also pins the llm.kittens-style NVCC threading,
+host-compiler, data-prep, memory, and LayerNorm tuning flags for the
+ThunderKittens headers. It does not define llm.kittens' cublasLt GEMM switch
+because NeuralFn owns cublasLt initialization and dispatch in the native
+trainer.
 
 ## Native GPT Trainer Handoff
 
@@ -158,6 +163,10 @@ causal masks. Training JSON reports
 `attention_forward_strategy: "tk-sm120-bf16-flashattention-bridge"`,
 `attention_backward_strategy: "tk-sm120-bf16-recompute-forward-bridge"`,
 `attention_forward_tk_launch_count`, and `attention_backward_tk_launch_count`.
+The trainer-facing build mirrors llm.kittens' SM120 NVCC threading,
+host-compiler, data-prep, memory, and LayerNorm tuning flags for those
+ThunderKittens headers while keeping GEMM on NeuralFn's initialized cublasLt
+path.
 
 Trainer-facing linear GEMMs use the same native ABI, and the full dense GPT
 trainer now defaults QKV, attention projection, MLP FC, and MLP projection

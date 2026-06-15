@@ -179,6 +179,9 @@ training JSON reports `attention_backend_strategy: "tk-sm120-bf16-bridge"`,
 zero row/scalar attention launches when that path is active. Set
 `NFN_TILE_CUDA_USE_TK_ATTENTION=0` before rebuilding only for the older float32
 row-scan diagnostic path.
+The SM120 build uses llm.kittens-style NVCC threading, host-compiler,
+data-prep, memory, and LayerNorm tuning flags for the ThunderKittens headers,
+but leaves GEMM dispatch on NeuralFn's initialized cublasLt path.
 The same trainer-facing build defaults dense GPT block projection weights to the
 BF16-primary path while leaving FP32 gradients and AdamW state in the optimizer
 buffers. The old FP32-master/BF16-shadow path remains available with

@@ -4221,6 +4221,15 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "LLM_KITTENS_ROOT" in script_text
     assert "TK_ROOT" in script_text
     assert "sm_120a" in script_text
+    assert "--threads=0" in script_text
+    assert "-t=0" in script_text
+    assert "-forward-unknown-to-host-compiler" in script_text
+    assert "-Xcompiler=-Wno-psabi" in script_text
+    assert "-Xcompiler=-fno-strict-aliasing" in script_text
+    assert "-ftemplate-backtrace-limit=0" in script_text
+    assert "-DLLMK_SM120_DPREP_WARPS=3" in script_text
+    assert "-DLLMK_SM120_MEMORY_BLOCK_SIZE=1024" in script_text
+    assert "-DLLMK_SM120_LAYERNORM_BWD_BLOCKS_PER_SM=1" in script_text
     assert "kGpt2AttentionHeads = 12" in kernels_text
     assert "kGpt2AttentionHeadDim = 64" in kernels_text
     assert "kGpt2AttentionValueChunks" in kernels_text
