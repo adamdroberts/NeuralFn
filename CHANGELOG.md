@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Retune native GPT LM-head row chunk default to 8192
+
+#### Changed
+
+- Dense GPT native training now defaults the tied LM-head row chunk to 8192
+  rows for the compiled C++ trainer and Python wrapper defaults. This keeps the
+  bounded chunked BF16 LM-head workspace while reducing LM-head chunk overhead
+  versus the previous 6144-row default on the dedicated RTX 5090.
+- Pass `--lm-head-row-chunk-size 6144`,
+  `--native-cuda-lm-head-row-chunk-size 6144`, or
+  `NativeGpt2RunConfig(lm_head_row_chunk_size=6144, ...)` to reproduce the
+  previous smaller-workspace profile.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` after reverting a rejected
+  token-initializer candidate, then confirmed the RTX 5090 is GPU 0 with display
+  disabled and no compute processes before timing.
+- Rejected `NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT=1` because it made the measured
+  train loop `1.001499x` slower and reduced token throughput to `0.998505x`.
+- Rejected `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX=0` because it made the train
+  loop `1.011481x` slower than the current heuristic-index-1 default.
+- Rejected `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` because it made the train loop
+  `1.076918x` slower than the fused MLP projection/DGELU path.
+- Rejected `--lm-head-row-chunk-size 12288` because it made the train loop
+  `1.004425x` slower than 8192, and found `10240` effectively neutral.
+- Confirmed `--lm-head-row-chunk-size 8192` against the previous 6144-row default
+  with six measured three-step TinyStories pairs after one warmup pair on GPU 0.
+  The 8192-row candidate had `train_loop_wall_ms_per_step` ratio `0.998916` and
+  token-throughput ratio `1.001087`.
+
 ### 2026-06-15 Default packed-attention workspace LSE
 
 #### Changed
