@@ -144,6 +144,15 @@ int nfn_native_tile_sumsq_partials_many_float32(
     std::int64_t max_elements,
     void* cuda_stream);
 
+int nfn_native_tile_sumsq_partials_many_bf16_bits_float32(
+    const std::uint16_t* const* buffers,
+    const std::int64_t* elements,
+    const std::int64_t* partial_offsets,
+    float* partials,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    void* cuda_stream);
+
 int nfn_native_tile_sum_partials_float32(
     const float* values,
     float* partials,

@@ -561,11 +561,14 @@ their BF16 parameter buffers directly through
 The raw ABI also exports
 `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32`
 for BF16-primary parameter updates that consume BF16 gradient buffers while
-keeping AdamW first and second moments in float32. The dense GPT trainer binds
-that BF16-gradient AdamW export and reports
-`adamw_bf16_param_bf16_grad_kernel_loaded`, but still uses the float-gradient
-BF16-param entrypoint until the block-gradient arena, global-norm, and zeroing
-buffers move to BF16.
+keeping AdamW first and second moments in float32.
+`nfn_native_tile_sumsq_partials_many_bf16_bits_float32` computes float32
+global-norm partials from BF16 gradient buffers so the BF16-gradient path can
+preserve clipping semantics. The dense GPT trainer binds these BF16-gradient
+exports and reports `adamw_bf16_param_bf16_grad_kernel_loaded` plus
+`gradient_clip_bf16_sumsq_kernel_loaded`, but still uses the float-gradient
+BF16-param entrypoint until the block-gradient arena and zeroing buffers move
+to BF16.
 Checkpoint export syncs those BF16 block weights back into FP32 staging buffers
 before the existing version-5 BF16 checkpoint packer runs. Set
 `NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=0` to reproduce the older FP32-master
@@ -575,6 +578,7 @@ plus BF16-shadow refresh path for bisection. Runtime JSON reports
 `block_weight_bf16_primary_param_update_count`,
 `block_weight_bf16_primary_param_bf16_grad_update_count`,
 `adamw_bf16_param_bf16_grad_kernel_loaded`,
+`gradient_clip_bf16_sumsq_kernel_loaded`,
 `adamw_float_update_descriptor_count`, `adamw_bf16_param_descriptor_count`,
 `adamw_bf16_param_bf16_grad_descriptor_count`,
 `adamw_float_update_kernel_launches`, `adamw_bf16_param_kernel_launches`,

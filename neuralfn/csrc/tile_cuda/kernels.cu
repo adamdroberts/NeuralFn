@@ -3894,6 +3894,39 @@ __tile_global__ void sumsq_partials_many_float32_kernel(
   ct::store(partials + out_idx, ct::sum(squared, 0_ic));
 }
 
+__tile_global__ void sumsq_partials_many_bf16_bits_float32_kernel(
+    const std::uint16_t* const* __restrict__ buffers,
+    const std::int64_t* __restrict__ elements,
+    const std::int64_t* __restrict__ partial_offsets,
+    float* __restrict__ partials,
+    std::int64_t buffer_count) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  const int tensor = ct::bid().x;
+  const int chunk = ct::bid().y;
+  if (static_cast<std::int64_t>(tensor) >= buffer_count) {
+    return;
+  }
+
+  const auto* values = ct::assume_aligned(
+      reinterpret_cast<const __nv_bfloat16*>(buffers[tensor]), 16_ic);
+  partials = ct::assume_aligned(partials, 16_ic);
+  const std::int64_t n = elements[tensor];
+  if (static_cast<std::int64_t>(chunk) * kTileSize >= n) {
+    return;
+  }
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto tile = ct::element_cast<float>(ct::load_masked(values + idx, mask));
+  auto zero = ct::full<decltype(tile)>(0.0f);
+  auto squared = ct::select(mask, tile * tile, zero);
+  using OneIndexTile = ct::tile<std::int64_t, decltype(ct::shape{1_ic})>;
+  auto out_idx = ct::full<OneIndexTile>(partial_offsets[tensor] + static_cast<std::int64_t>(chunk));
+  ct::store(partials + out_idx, ct::sum(squared, 0_ic));
+}
+
 __tile_global__ void scale_inplace_float32_kernel(
     float* __restrict__ values,
     std::int64_t n,
@@ -9588,6 +9621,27 @@ void launch_sumsq_partials_many_float32(
   const int tensor_blocks = static_cast<int>(buffer_count);
   const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
   sumsq_partials_many_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
+      buffers,
+      elements,
+      partial_offsets,
+      partials,
+      buffer_count);
+}
+
+void launch_sumsq_partials_many_bf16_bits_float32(
+    const std::uint16_t* const* buffers,
+    const std::int64_t* elements,
+    const std::int64_t* partial_offsets,
+    float* partials,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    cudaStream_t stream) {
+  if (buffer_count <= 0 || max_elements <= 0) {
+    return;
+  }
+  const int tensor_blocks = static_cast<int>(buffer_count);
+  const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  sumsq_partials_many_bf16_bits_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
       buffers,
       elements,
       partial_offsets,

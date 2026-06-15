@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Add BF16-gradient global-norm sumsq Tile ABI
+
+#### Changed
+
+- Added `nfn_native_tile_sumsq_partials_many_bf16_bits_float32`, a Tile-CUDA
+  multi-buffer sumsq primitive that reads BF16 gradient buffers and writes
+  float32 global-norm partials.
+- Dense GPT native training now requires, loads, and reports that BF16-gradient
+  sumsq primitive as `gradient_clip_bf16_sumsq_kernel_loaded`. The trainer does
+  not call it yet because block-weight gradients still use float32 accumulation
+  buffers.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so`,
+  `build/nfn_gpt_native_train`, and `build/nfn_gpt2_native_train`.
+- Confirmed `nm -D build/libnfn_native_train_tile_ops.so` exports
+  `nfn_native_tile_sumsq_partials_many_bf16_bits_float32`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k 'native_gpt2_cpp_cli_builds_and_uses_sm120_defaults or packed_qkv_uint16_arena_reserves_full_scratch_layout'`.
+- Ran `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt2_native_train --tinystories --tile-ops-lib build/libnfn_native_train_tile_ops.so --train-transformer-lm --max-steps 1 --eval-every-steps 0 --no-checkpoint` on the dedicated RTX 5090. Runtime JSON reported `status: "native-transformer-lm-trained"`, `gradient_clip_bf16_sumsq_kernel_loaded: true`, and `adamw_bf16_param_bf16_grad_kernel_loaded: true`.
+
 ### 2026-06-15 Bind native GPT BF16-gradient AdamW kernel
 
 #### Changed

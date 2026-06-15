@@ -95,6 +95,14 @@ void launch_sumsq_partials_many_float32(
     std::int64_t buffer_count,
     std::int64_t max_elements,
     cudaStream_t stream);
+void launch_sumsq_partials_many_bf16_bits_float32(
+    const std::uint16_t* const* buffers,
+    const std::int64_t* elements,
+    const std::int64_t* partial_offsets,
+    float* partials,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    cudaStream_t stream);
 void launch_sum_partials_float32(const float* values, float* partials, std::int64_t n, cudaStream_t stream);
 void launch_scale_inplace_float32(float* values, std::int64_t n, float scale, cudaStream_t stream);
 void launch_global_norm_clip_scale_float32(
@@ -1588,6 +1596,25 @@ int nfn_native_tile_sumsq_partials_many_float32(
     std::int64_t max_elements,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_sumsq_partials_many_float32(
+        buffers,
+        elements,
+        partial_offsets,
+        partials,
+        buffer_count,
+        max_elements,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_sumsq_partials_many_bf16_bits_float32(
+    const std::uint16_t* const* buffers,
+    const std::int64_t* elements,
+    const std::int64_t* partial_offsets,
+    float* partials,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_sumsq_partials_many_bf16_bits_float32(
         buffers,
         elements,
         partial_offsets,

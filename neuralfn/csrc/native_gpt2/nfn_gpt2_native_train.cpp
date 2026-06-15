@@ -735,6 +735,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_sum_partials_float32",
         "nfn_native_tile_sumsq_partials_float32",
         "nfn_native_tile_sumsq_partials_many_float32",
+        "nfn_native_tile_sumsq_partials_many_bf16_bits_float32",
         "nfn_native_tile_global_norm_clip_scale_float32",
         "nfn_native_tile_scale_inplace_by_device_float32",
         "nfn_native_tile_adamw_step_float32",
@@ -6894,6 +6895,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_sum_partials_float32",
         "nfn_native_tile_sumsq_partials_float32",
         "nfn_native_tile_sumsq_partials_many_float32",
+        "nfn_native_tile_sumsq_partials_many_bf16_bits_float32",
         "nfn_native_tile_global_norm_clip_scale_float32",
         "nfn_native_tile_scale_inplace_by_device_float32",
         "nfn_native_tile_token_embedding_float32",
@@ -7019,6 +7021,8 @@ int run_transformer_lm_training_json(
     using SumPartialsFn = int (*)(const float*, float*, std::int64_t, void*);
     using SumsqPartialsManyFn =
         int (*)(const float* const*, const std::int64_t*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+    using SumsqPartialsManyBf16BitsFn =
+        int (*)(const std::uint16_t* const*, const std::int64_t*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
     using ClipScaleFn = int (*)(const float*, float*, std::int64_t, float, float, void*);
     using TokenEmbeddingFn = int (*)(const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
     using TokenEmbeddingBackwardWeightFn = int (*)(
@@ -7255,6 +7259,7 @@ int run_transformer_lm_training_json(
     GradientAccumulateFn gradient_accumulate = nullptr;
     SumPartialsFn sum_partials = nullptr;
     SumsqPartialsManyFn sumsq_partials_many = nullptr;
+    SumsqPartialsManyBf16BitsFn sumsq_partials_many_bf16_bits = nullptr;
     ClipScaleFn clip_scale = nullptr;
     TokenEmbeddingFn token_embedding = nullptr;
     TokenEmbeddingBackwardWeightFn token_embedding_backward_weight = nullptr;
@@ -7445,6 +7450,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_sum_partials_float32");
                 sumsq_partials_many = load_symbol<SumsqPartialsManyFn>(
                     tile_handle, "nfn_native_tile_sumsq_partials_many_float32");
+                sumsq_partials_many_bf16_bits = load_symbol<SumsqPartialsManyBf16BitsFn>(
+                    tile_handle, "nfn_native_tile_sumsq_partials_many_bf16_bits_float32");
                 clip_scale = load_symbol<ClipScaleFn>(
                     tile_handle, "nfn_native_tile_global_norm_clip_scale_float32");
                 token_embedding = load_symbol<TokenEmbeddingFn>(tile_handle, "nfn_native_tile_token_embedding_float32");
@@ -12819,6 +12826,8 @@ int run_transformer_lm_training_json(
         << "  \"gradient_zero_per_buffer_launches_elided\": "
         << std::max<std::int64_t>(0, (kGlobalParameterBuffers + kPerBlockParameterBuffers * trained_layers) - 1) << ",\n"
         << "  \"gradient_clip_strategy\": \"fused-multi-buffer-sumsq-device-scale\",\n"
+        << "  \"gradient_clip_bf16_sumsq_kernel_loaded\": "
+        << (sumsq_partials_many_bf16_bits != nullptr ? "true" : "false") << ",\n"
         << "  \"gradient_sumsq_kernel_launches\": " << gradient_sumsq_kernel_launches << ",\n"
         << "  \"gradient_sumsq_kernel_launches_per_optimizer_step\": " << (adamw_descriptor_count > 0 ? 1 : 0) << ",\n"
         << "  \"gradient_sumsq_per_buffer_launches_elided\": "
@@ -12962,6 +12971,8 @@ int run_transformer_lm_training_json(
         << "    \"gradient_clip_loop_elided\": true,\n"
         << "    \"gradient_clip_strategy\": \"fused-multi-buffer-sumsq-device-scale\",\n"
         << "    \"gradient_clip_descriptor_count\": " << adamw_descriptor_count << ",\n"
+        << "    \"gradient_clip_bf16_sumsq_kernel_loaded\": "
+        << (sumsq_partials_many_bf16_bits != nullptr ? "true" : "false") << ",\n"
         << "    \"gradient_sumsq_kernel_launches_per_optimizer_step\": " << (adamw_descriptor_count > 0 ? 1 : 0) << ",\n"
         << "    \"gradient_sumsq_per_buffer_launches_elided\": "
         << std::max<std::int64_t>(0, (kGlobalParameterBuffers + kPerBlockParameterBuffers * trained_layers) - 1) << ",\n"

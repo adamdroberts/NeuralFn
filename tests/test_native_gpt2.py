@@ -2431,6 +2431,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "gradient_clip_loop_elided": True,
         "gradient_clip_strategy": "fused-multi-buffer-sumsq-device-scale",
         "gradient_clip_descriptor_count": 0,
+        "gradient_clip_bf16_sumsq_kernel_loaded": False,
         "gradient_sumsq_kernel_launches_per_optimizer_step": 0,
         "gradient_sumsq_per_buffer_launches_elided": 147,
         "adamw_device_clip_scale_fused": True,
@@ -2493,6 +2494,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     }
     assert "nfn_native_tile_sumsq_partials_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_sumsq_partials_many_float32" in train_transformer_payload["kernels"]
+    assert "nfn_native_tile_sumsq_partials_many_bf16_bits_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_global_norm_clip_scale_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_scale_inplace_by_device_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_scaled_dot_product_attention_backward_float32" in train_transformer_payload["kernels"]
@@ -3558,8 +3560,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "setup.zero_init" in gpt2_source_text
     assert "setup.block_weight_bf16_initial_refresh" in gpt2_source_text
     assert "nfn_native_tile_sumsq_partials_many_float32" in header_text
+    assert "nfn_native_tile_sumsq_partials_many_bf16_bits_float32" in header_text
     assert "launch_sumsq_partials_many_float32" in source_text
+    assert "launch_sumsq_partials_many_bf16_bits_float32" in source_text
     assert "sumsq_partials_many_float32_kernel" in kernels_text
+    assert "sumsq_partials_many_bf16_bits_float32_kernel" in kernels_text
+    assert "SumsqPartialsManyBf16BitsFn" in gpt2_source_text
+    assert "gradient_clip_bf16_sumsq_kernel_loaded" in gpt2_source_text
     assert "gradient_partial_offsets" in gpt2_source_text
     assert "fused-multi-buffer-fill-values" in gpt2_source_text
     assert "fused-multi-buffer-sumsq-device-scale" in gpt2_source_text
