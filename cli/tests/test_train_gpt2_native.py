@@ -1458,6 +1458,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             print("DATASET_HF_PATH", args.dataset_hf_path)
             print("DATASET_TRAIN_FILE", args.dataset_train_file)
             print("DATASET_VAL_FILE", args.dataset_val_file)
+            print("LM_HEAD_ROW_CHUNK_SIZE", args.lm_head_row_chunk_size)
             print("TORCH_LOADED", "torch" in sys.modules)
             """
         )
@@ -1478,6 +1479,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("DATASET_HF_PATH roneneldan/TinyStories", proc.stdout)
         self.assertIn("DATASET_TRAIN_FILE TinyStoriesV2-GPT4-train.txt", proc.stdout)
         self.assertIn("DATASET_VAL_FILE TinyStoriesV2-GPT4-valid.txt", proc.stdout)
+        self.assertIn("LM_HEAD_ROW_CHUNK_SIZE 8192", proc.stdout)
         self.assertNotIn("parameter-golf", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
 

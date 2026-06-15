@@ -14,6 +14,9 @@ Future updates should append new entries here rather than replacing older notes.
   rows for the compiled C++ trainer and Python wrapper defaults. This keeps the
   bounded chunked BF16 LM-head workspace while reducing LM-head chunk overhead
   versus the previous 6144-row default on the dedicated RTX 5090.
+- `train_gpt_native.py` and the `train_gpt.py` wrapper defaults now match the
+  compiled trainer and SDK default instead of passing the older 6144-row chunk
+  size into compiled CLI runs.
 - Pass `--lm-head-row-chunk-size 6144`,
   `--native-cuda-lm-head-row-chunk-size 6144`, or
   `NativeGpt2RunConfig(lm_head_row_chunk_size=6144, ...)` to reproduce the

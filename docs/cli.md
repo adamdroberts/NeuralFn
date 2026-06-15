@@ -257,7 +257,8 @@ projection dInput GEMM with saved-BF16 GELU backward. Set
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` to compare against the older separate
 MLP projection dInput plus GELU-backward launches.
 The default `non_block_forward_backward_linear_strategy` is
-`"padded-lm-head-tf32-sgemm-optimized-default"`.
+`"padded-lm-head-tk-sm120-bf16-gemm-default"` when the native Tile ops library
+was built with the SM120 TK GEMM bridge.
 The public GPT-2 tokenizer vocab stays 50,257, while the native tied token
 embedding/LM-head tensor is padded to 50,304 rows for GEMM-friendly layout;
 training JSON reports both `vocab: 50257` and `padded_vocab: 50304`, and
