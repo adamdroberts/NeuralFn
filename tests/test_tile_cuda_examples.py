@@ -60,7 +60,8 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"checkpoint_wall_ms\\\": 0.0, \\\"total_wall_ms\\\": 15.0, "
                 "\\\"stage_timing\\\": [{\\\"name\\\": \\\"lm_head_backward\\\", "
                 "\\\"total_ms\\\": 7.0, \\\"avg_ms\\\": 3.5, \\\"count\\\": 2}]}, "
-                "\\\"linear_tk_gemm_count\\\": 3, \\\"status\\\": \\\"native-test\\\"}')\""
+                "\\\"steps_completed\\\": 5, \\\"linear_tk_gemm_count\\\": 3, "
+                "\\\"status\\\": \\\"native-test\\\"}')\""
             ),
             "--samples",
             "1",
@@ -99,6 +100,8 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "test-device" in payload["paired_samples"][0]["baseline"]["stdout_tail"]
     assert payload["paired_samples"][0]["candidate"]["native_metrics"]["status"] == "native-test"
     assert payload["candidate_native_metrics"]["train_loop_wall_ms"]["mean"] == 12.5
+    assert payload["candidate_native_metrics"]["train_loop_wall_ms_per_step"]["mean"] == 2.5
+    assert payload["candidate_native_metrics"]["steps_completed"]["mean"] == 5.0
     assert payload["candidate_native_metrics"]["train_tokens_per_second"]["mean"] == 42.0
 
 
@@ -122,6 +125,7 @@ step    1/1 | loss 11.032360 (+nanz)| norm 22.1408 (+nanz)| lr 1.00e-05 | 2493.7
     metrics = module.native_metrics_from_stdout(stdout)
     assert metrics["status"] == "llm-kittens-step-log"
     assert metrics["train_loop_wall_ms"] == 2493.74
+    assert metrics["train_loop_wall_ms_per_step"] == 2493.74
     assert metrics["train_tokens_per_second"] == 210242.0
     assert metrics["llm_kittens_bf16_mfu_pct"] == 40.3
     assert metrics["llm_kittens_device_memory_used_mib"] == 28819

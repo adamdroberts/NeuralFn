@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Normalize paired trainer step metrics
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now records `steps_completed` from NeuralFn
+  native JSON and derives `train_loop_wall_ms_per_step` when a native trainer
+  reports total train-loop wall time. The llm.kittens step-log parser now emits
+  the same normalized metric, so NeuralFn-vs-`train_gpt2cu` paired comparisons
+  no longer put total-run timing and per-step timing under one ambiguous field.
+- The text summary now prints `train_loop_wall_ms_per_step` and its paired ratio
+  before the raw `train_loop_wall_ms` metric.
+
+#### Verification
+
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k 'paired_kernel_speed_tool_compiles_and_smokes or paired_kernel_speed_tool_extracts_llm_kittens_step_metrics or paired_kernel_speed_tool_records_command_timeout'`
+  (`3 passed`, `2 deselected`).
+
 ### 2026-06-15 Add BF16-gradient AdamW Tile ABI
 
 #### Changed

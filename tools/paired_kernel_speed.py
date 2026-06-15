@@ -28,6 +28,7 @@ class TimedCommand:
 
 
 NATIVE_METRIC_PATHS = (
+    ("steps_completed", ("steps_completed",)),
     ("train_loop_wall_ms", ("timing", "train_loop_wall_ms")),
     ("setup_wall_ms", ("timing", "setup_wall_ms")),
     ("checkpoint_wall_ms", ("timing", "checkpoint_wall_ms")),
@@ -131,6 +132,16 @@ def native_metrics_from_stdout(stdout: str) -> dict[str, float | int | str | boo
         value = payload.get(key)
         if isinstance(value, (bool, int, float, str)):
             metrics[key] = value
+    train_loop_ms = metrics.get("train_loop_wall_ms")
+    steps_completed = metrics.get("steps_completed")
+    if (
+        isinstance(train_loop_ms, (int, float))
+        and not isinstance(train_loop_ms, bool)
+        and isinstance(steps_completed, (int, float))
+        and not isinstance(steps_completed, bool)
+        and float(steps_completed) > 0.0
+    ):
+        metrics["train_loop_wall_ms_per_step"] = float(train_loop_ms) / float(steps_completed)
     timing = payload.get("timing")
     if isinstance(timing, dict):
         stage_timing = timing.get("stage_timing")
@@ -160,6 +171,7 @@ def llm_kittens_metrics_from_stdout(stdout: str) -> dict[str, float | int | str 
         last_step = step_matches[-1]
         metrics["status"] = "llm-kittens-step-log"
         metrics["train_loop_wall_ms"] = float(last_step.group("step_ms"))
+        metrics["train_loop_wall_ms_per_step"] = float(last_step.group("step_ms"))
         metrics["train_tokens_per_second"] = float(last_step.group("tok_s"))
         metrics["llm_kittens_bf16_mfu_pct"] = float(last_step.group("mfu"))
         metrics["llm_kittens_step_log_count"] = len(step_matches)
@@ -517,7 +529,9 @@ def print_text(payload: dict[str, object]) -> None:
             continue
         print(f"  {section}:")
         for key in (
+            "train_loop_wall_ms_per_step",
             "train_loop_wall_ms",
+            "steps_completed",
             "train_tokens_per_second",
             "llm_kittens_bf16_mfu_pct",
             "llm_kittens_device_memory_used_mib",
@@ -541,6 +555,7 @@ def print_text(payload: dict[str, object]) -> None:
     if isinstance(ratios, dict) and ratios:
         print("  candidate_over_baseline_native_metrics:")
         for key in (
+            "train_loop_wall_ms_per_step",
             "train_loop_wall_ms",
             "train_tokens_per_second",
             "llm_kittens_bf16_mfu_pct",
