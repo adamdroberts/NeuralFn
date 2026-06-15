@@ -2494,6 +2494,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "layer_norm_stats_disabled_by_fused_residual_ln2": False,
             "layer_norm_backward_residual_fusion_enabled": True,
             "layer_norm_backward_residual_strategy": "fused-dinput-residual-add-with-forward-stats",
+            "layer_norm_backward_residual_scratch_buffers_allocated": False,
+            "layer_norm_backward_residual_scratch_buffers_elided": 2,
+            "layer_norm_backward_residual_scratch_elements_elided": 2 * 2 * 768,
             "residual1_backward_consumer_strategy": "bf16-layernorm-backward",
             "gradient_clip_loop": False,
         "gradient_clip_loop_elided": True,
@@ -4105,6 +4108,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "mlp.gelu.backward_inplace" in gpt2_source_text
     assert "mlp_proj_backward_gelu_inplace" in gpt2_source_text
     assert "mlp_proj_backward_grad_act_scratch_allocated" in gpt2_source_text
+    assert "layer_norm_backward_residual_scratch_buffers_allocated" in gpt2_source_text
+    assert "layer_norm_backward_residual_scratch_buffers_elided" in gpt2_source_text
+    assert "layer_norm_backward_residual_scratch_elements_elided" in gpt2_source_text
+    assert "{&grad_residual1_from_mlp, fuse_ln_backward_residual_enabled ? 0 : activation_elements}" in gpt2_source_text
+    assert "{&grad_x_from_attn, fuse_ln_backward_residual_enabled ? 0 : activation_elements}" in gpt2_source_text
     assert "compute_final_output" in gpt2_source_text
     assert "stored_mlp_activation_store_kernel_launches" in gpt2_source_text
     assert "stored_mlp_layer_norm_stats_elements" in gpt2_source_text

@@ -482,7 +482,12 @@ JSON reports `mlp_proj_backward_gelu_inplace: true` and
 Transformer block backward residual-gradient pair additions use
 `nfn_native_tile_scaled_residual_add_float32`, so the trainer avoids the earlier
 zero-fill plus two-accumulate sequence; `block_state_layout.residual_backward_fused`
-reports this path.
+reports this path. When LayerNorm backward residual fusion is enabled, the
+default trainer also skips the fallback-only `grad_residual1_from_mlp` and
+`grad_x_from_attn` activation scratch buffers; runtime JSON reports
+`block_state_layout.layer_norm_backward_residual_scratch_buffers_allocated`,
+`block_state_layout.layer_norm_backward_residual_scratch_buffers_elided`, and
+`block_state_layout.layer_norm_backward_residual_scratch_elements_elided`.
 Gradient clipping feeds the device clip scalar directly into
 `nfn_native_tile_adamw_step_with_device_scale_float32`, avoiding a separate
 per-gradient-buffer scale pass before AdamW;

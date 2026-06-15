@@ -530,7 +530,12 @@ fallback names remain accepted for older scripts.
 Backward residual-gradient pair additions use
 `nfn_native_tile_scaled_residual_add_float32` instead of zero-fill plus two
 gradient-accumulate launches; `block_state_layout.residual_backward_fused`
-reports this path.
+reports this path. With LayerNorm backward residual fusion enabled, the trainer
+does not allocate the fallback-only `grad_residual1_from_mlp` and
+`grad_x_from_attn` activation scratch buffers; JSON reports
+`block_state_layout.layer_norm_backward_residual_scratch_buffers_allocated`,
+`block_state_layout.layer_norm_backward_residual_scratch_buffers_elided`, and
+`block_state_layout.layer_norm_backward_residual_scratch_elements_elided`.
 Gradient clipping feeds the device clip scalar directly into
 `nfn_native_tile_adamw_step_with_device_scale_float32`, avoiding a separate
 per-gradient-buffer scale pass before AdamW;

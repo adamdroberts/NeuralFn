@@ -9133,11 +9133,14 @@ int run_transformer_lm_training_json(
              {&loss_reduce_a, loss_partial_count}, {&loss_reduce_b, loss_partial_count}, {&loss_total, 1},
              {&row_max, lm_head_chunk_rows}, {&row_denom, lm_head_chunk_rows},
              {&grad_lnf, activation_elements},
-            {&grad_residual2, activation_elements}, {&grad_fc_out, hidden_elements},
-             {&grad_ln2, activation_elements}, {&grad_residual1_from_mlp, activation_elements}, {&grad_residual1, activation_elements},
+             {&grad_residual2, activation_elements}, {&grad_fc_out, hidden_elements},
+             {&grad_ln2, activation_elements},
+             {&grad_residual1_from_mlp, fuse_ln_backward_residual_enabled ? 0 : activation_elements},
+             {&grad_residual1, activation_elements},
             {&grad_attn_out, activation_elements},
              {&grad_qkv, qkv_activation_elements}, {&grad_ln1, activation_elements},
-             {&grad_x_from_attn, activation_elements}, {&grad_x, activation_elements},
+             {&grad_x_from_attn, fuse_ln_backward_residual_enabled ? 0 : activation_elements},
+             {&grad_x, activation_elements},
              {&stored_packed_attention_lse_arena, stored_packed_attention_lse_elements},
              {&grad_sumsq_partials, gradient_partial_count}, {&grad_clip_scale, 1},
          }) {
@@ -13097,6 +13100,12 @@ int run_transformer_lm_training_json(
         << (fuse_attention_residual_ln2_enabled && !layer_norm_stats_enabled ? "true" : "false") << ",\n"
         << "    \"layer_norm_backward_residual_fusion_enabled\": "
         << (fuse_ln_backward_residual_enabled ? "true" : "false") << ",\n"
+        << "    \"layer_norm_backward_residual_scratch_buffers_allocated\": "
+        << (fuse_ln_backward_residual_enabled ? "false" : "true") << ",\n"
+        << "    \"layer_norm_backward_residual_scratch_buffers_elided\": "
+        << (fuse_ln_backward_residual_enabled ? 2 : 0) << ",\n"
+        << "    \"layer_norm_backward_residual_scratch_elements_elided\": "
+        << (fuse_ln_backward_residual_enabled ? activation_elements * 2 : 0) << ",\n"
         << "    \"layer_norm_backward_residual_strategy\": \""
         << (fuse_ln_backward_residual_enabled
                 ? "fused-dinput-residual-add-with-forward-stats"

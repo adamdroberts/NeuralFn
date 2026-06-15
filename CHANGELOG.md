@@ -6,6 +6,39 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Native GPT fused LayerNorm scratch elision
+
+#### Changed
+
+- Dense GPT native training no longer reserves the fallback-only
+  `grad_residual1_from_mlp` and `grad_x_from_attn` activation scratch buffers
+  when `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_RESIDUAL` is enabled.
+- Runtime JSON now reports
+  `block_state_layout.layer_norm_backward_residual_scratch_buffers_allocated`,
+  `block_state_layout.layer_norm_backward_residual_scratch_buffers_elided`, and
+  `block_state_layout.layer_norm_backward_residual_scratch_elements_elided` so
+  startup allocation reductions are visible in run artifacts.
+
+#### Verification
+
+- Ran
+  `python -m pytest tests/test_native_gpt2.py -q -k native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`.
+- Built the candidate trainer with
+  `bash tools/build_native_gpt_cli.sh /tmp/nfn_gpt_native_train_ln_residual_scratch_elide`.
+- Ran a dedicated-RTX-5090 one-step smoke with
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 /tmp/nfn_gpt_native_train_ln_residual_scratch_elide --backend tile-cuda --tinystories --max-steps 1 --eval-every-steps 0 --no-checkpoint`;
+  runtime JSON reported `status: native-transformer-lm-trained`,
+  `layer_norm_backward_residual_scratch_buffers_allocated: false`,
+  `layer_norm_backward_residual_scratch_buffers_elided: 2`,
+  `layer_norm_backward_residual_scratch_elements_elided: 100663296`, and
+  `float_arena_requested_elements: 2662695693`.
+- Ran the same one-step smoke with
+  `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_RESIDUAL=0`; runtime JSON reported
+  `layer_norm_backward_residual_scratch_buffers_allocated: true` and
+  `float_arena_requested_elements: 2763358989`, confirming the
+  `100663296`-element arena reduction is exactly the two elided scratch
+  buffers.
+
 ### 2026-06-15 Paired benchmark selected-GPU utilization guard
 
 #### Changed
