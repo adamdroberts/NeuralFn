@@ -79,6 +79,7 @@ struct Config {
     bool smoke_embedding_lm_step = false;
     bool train_embedding_lm = false;
     bool train_transformer_lm = true;
+    bool startup_only = false;
     bool checkpoint_metadata_smoke = false;
     bool write_checkpoint = true;
     bool template_explicit = false;
@@ -282,6 +283,7 @@ void print_usage(const char* program) {
         << "  --smoke-embedding-lm-step         Sample cached tokens and run dense GPT embedding/final-norm/LM-head kernels\n"
         << "  --train-embedding-lm              Train dense GPT embedding/final-norm/LM-head path over cached shards with Tile kernels\n"
         << "  --train-transformer-lm            Run the dense GPT transformer/LM training loop with validation JSON (default)\n"
+        << "  --startup-only                    Run full Tile-CUDA transformer setup and exit before optimizer steps\n"
         << "  --no-train-transformer-lm         Disable the default transformer-LM loop for plan/check/debug commands\n"
         << "  --no-checkpoint                   Skip final trained checkpoint export for speed/preflight runs\n"
         << "  --checkpoint-metadata-smoke       Write a sparse native dense GPT checkpoint-format artifact and DONE marker without CUDA/Torch\n"
@@ -11762,22 +11764,24 @@ int run_transformer_lm_training_json(
 
     const auto train_loop_start_time = Clock::now();
     setup_wall_ms = elapsed_ms(total_start_time, train_loop_start_time);
-    for (std::int64_t step = 1; step <= cfg.max_steps && error.empty(); ++step) {
-        const bool should_run_validation =
-            cfg.eval_every_steps > 0 && (step % cfg.eval_every_steps) == 0;
-        const bool should_record_train_loss = false;
-        const double train_loss_sum = forward_backward_update(step, should_record_train_loss);
-        if (error.empty()) {
-            steps_completed = step;
-            tokens_processed += effective_train_batch_tokens;
-            if (should_record_train_loss) {
-                final_loss_sum = train_loss_sum;
-                final_loss_mean = final_loss_sum / static_cast<double>(effective_train_batch_tokens);
-                train_loss_eval_count += 1;
-                train_loss_last_step = step;
-            }
-            if (should_run_validation) {
-                run_validation(step);
+    if (!cfg.startup_only) {
+        for (std::int64_t step = 1; step <= cfg.max_steps && error.empty(); ++step) {
+            const bool should_run_validation =
+                cfg.eval_every_steps > 0 && (step % cfg.eval_every_steps) == 0;
+            const bool should_record_train_loss = false;
+            const double train_loss_sum = forward_backward_update(step, should_record_train_loss);
+            if (error.empty()) {
+                steps_completed = step;
+                tokens_processed += effective_train_batch_tokens;
+                if (should_record_train_loss) {
+                    final_loss_sum = train_loss_sum;
+                    final_loss_mean = final_loss_sum / static_cast<double>(effective_train_batch_tokens);
+                    train_loss_eval_count += 1;
+                    train_loss_last_step = step;
+                }
+                if (should_run_validation) {
+                    run_validation(step);
+                }
             }
         }
     }
@@ -11796,7 +11800,9 @@ int run_transformer_lm_training_json(
     train_loop_wall_ms = elapsed_ms(train_loop_start_time, train_loop_end_time);
     finalize_stage_timing();
     const double max_weight_delta = std::fabs(static_cast<double>(sampled_token_weight) - initial_token_weight_sample);
-    passed = error.empty() && steps_completed == cfg.max_steps && max_weight_delta > 0.0;
+    passed = error.empty() &&
+        ((cfg.startup_only && steps_completed == 0) ||
+         (!cfg.startup_only && steps_completed == cfg.max_steps && max_weight_delta > 0.0));
 
     auto write_trained_checkpoint = [&]() {
         constexpr std::int32_t kCheckpointMagic = 20240326;
@@ -12313,7 +12319,10 @@ int run_transformer_lm_training_json(
         << "  \"native_cuda_activation\": \"" << json_escape(cfg.activation) << "\",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(selected_graph_support_status(cfg)) << "\",\n"
         << "  \"selected_graph_native_runnable\": " << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ",\n"
-        << "  \"status\": \"" << (passed ? "native-transformer-lm-trained" : "native-transformer-lm-failed") << "\",\n"
+        << "  \"status\": \""
+        << (passed ? (cfg.startup_only ? "native-transformer-lm-startup-ready" : "native-transformer-lm-trained")
+                   : "native-transformer-lm-failed")
+        << "\",\n"
         << "  \"timing\": {\n"
         << "    \"clock\": \"steady_clock_host_wall_ms\",\n"
         << "    \"setup_wall_ms\": " << setup_wall_ms << ",\n"
@@ -12329,6 +12338,7 @@ int run_transformer_lm_training_json(
         << "  },\n"
         << "  \"tile_ops_library\": \"" << json_escape(tile_lib_path) << "\",\n"
         << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_module_loading\": \"" << json_escape(env_or_empty("CUDA_MODULE_LOADING")) << "\",\n"
         << "  \"loaded\": " << (tile_loaded ? "true" : "false") << ",\n"
         << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
         << "  \"cuda_runtime_preflight\": {\n"
@@ -12806,6 +12816,7 @@ int run_transformer_lm_training_json(
                 : "disabled")
         << "\",\n"
         << "  \"max_steps\": " << cfg.max_steps << ",\n"
+        << "  \"startup_only\": " << (cfg.startup_only ? "true" : "false") << ",\n"
         << "  \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
         << "  \"eval_batches\": " << cfg.eval_batches << ",\n"
         << "  \"train_loss_eval_count\": " << train_loss_eval_count << ",\n"
@@ -13815,6 +13826,11 @@ int main(int argc, char** argv) {
         } else if (arg == "--train-transformer-lm") {
             cfg.backend = "tile-cuda";
             cfg.train_transformer_lm = true;
+        } else if (arg == "--startup-only") {
+            cfg.backend = "tile-cuda";
+            cfg.startup_only = true;
+            cfg.train_transformer_lm = true;
+            cfg.write_checkpoint = false;
         } else if (arg == "--no-train-transformer-lm") {
             cfg.train_transformer_lm = false;
         } else if (arg == "--no-checkpoint" || arg == "--native-cuda-no-checkpoint") {
@@ -13929,6 +13945,9 @@ int main(int argc, char** argv) {
     }
     if (std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
         setenv("CUDA_DEVICE_MAX_CONNECTIONS", "1", 0);
+    }
+    if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
+        setenv("CUDA_MODULE_LOADING", "LAZY", 0);
     }
 
     if (cfg.backend == "tile-cuda") {

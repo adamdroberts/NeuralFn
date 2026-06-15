@@ -103,6 +103,7 @@ class NativeGpt2RunConfig:
     smoke_embedding_lm_step: bool = False
     train_embedding_lm: bool = False
     train_transformer_lm: bool = True
+    startup_only: bool = False
     checkpoint_metadata_smoke: bool = False
     write_checkpoint: bool = True
     cuda_runtime_lib: str = ""
@@ -257,6 +258,8 @@ class NativeGpt2RunConfig:
             args.append("--train-embedding-lm")
         if self.train_transformer_lm:
             args.append("--train-transformer-lm")
+        if self.startup_only:
+            args.append("--startup-only")
         if self.checkpoint_metadata_smoke:
             args.append("--checkpoint-metadata-smoke")
         if not self.write_checkpoint:
@@ -657,6 +660,7 @@ def build_native_gpt2_run_config(
     smoke_embedding_lm_step: bool = False,
     train_embedding_lm: bool = False,
     train_transformer_lm: bool = True,
+    startup_only: bool = False,
     checkpoint_metadata_smoke: bool = False,
     cuda_runtime_lib: str = "",
     lm_head_row_chunk_size: int = 8192,
@@ -712,6 +716,7 @@ def build_native_gpt2_run_config(
         smoke_embedding_lm_step=bool(smoke_embedding_lm_step),
         train_embedding_lm=bool(train_embedding_lm),
         train_transformer_lm=bool(train_transformer_lm),
+        startup_only=bool(startup_only),
         checkpoint_metadata_smoke=bool(checkpoint_metadata_smoke),
         cuda_runtime_lib=str(cuda_runtime_lib or ""),
         dataset_alias=str(dataset_path),
@@ -757,6 +762,7 @@ def build_native_gpt2_compiled_cli_run_config(
     smoke_embedding_lm_step: bool = False,
     train_embedding_lm: bool = False,
     train_transformer_lm: bool = True,
+    startup_only: bool = False,
     checkpoint_metadata_smoke: bool = False,
     cuda_runtime_lib: str = "",
     lm_head_row_chunk_size: int = 8192,
@@ -806,6 +812,7 @@ def build_native_gpt2_compiled_cli_run_config(
         smoke_embedding_lm_step=bool(smoke_embedding_lm_step),
         train_embedding_lm=bool(train_embedding_lm),
         train_transformer_lm=bool(train_transformer_lm),
+        startup_only=bool(startup_only),
         checkpoint_metadata_smoke=bool(checkpoint_metadata_smoke),
         cuda_runtime_lib=str(cuda_runtime_lib or ""),
         dataset_alias=str(dataset_alias),
@@ -945,4 +952,5 @@ def _native_gpt2_subprocess_env(config: NativeGpt2RunConfig) -> dict[str, str]:
         env.setdefault("CUDA_VISIBLE_DEVICES", str(config.cuda_visible_devices))
     if str(config.cuda_device_max_connections or "").strip():
         env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", str(config.cuda_device_max_connections))
+    env.setdefault("CUDA_MODULE_LOADING", "LAZY")
     return env

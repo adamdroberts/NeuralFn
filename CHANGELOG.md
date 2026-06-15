@@ -6,6 +6,49 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Native GPT startup-only profiling and lazy CUDA module loading
+
+#### Changed
+
+- Added `--startup-only` to `nfn_gpt_native_train`. It runs the full
+  Tile-CUDA transformer setup path, including cached shard resolution, CUDA
+  runtime loading, arena allocation, descriptor upload, AdamW state zeroing,
+  and parameter initialization, then exits before optimizer steps or checkpoint
+  export with `status: "native-transformer-lm-startup-ready"`.
+- Added `startup_only` to `NativeGpt2RunConfig` and the generic
+  `NativeGptRunConfig` path, and forwards it through compiled-CLI SDK configs.
+- Native GPT direct C++ launches and Python SDK subprocess launchers now default
+  `CUDA_MODULE_LOADING=LAZY` when the caller has not already set it, while
+  preserving explicit caller overrides. Runtime JSON now reports the resolved
+  value as `cuda_module_loading`.
+
+#### Verification
+
+- Rebuilt the dense GPT compiled CLI with
+  `bash tools/build_native_gpt_cli.sh build/nfn_gpt_native_train`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k
+  'compiled_cli_config_can_skip_checkpoint_export or
+  native_gpt2_compiled_cli_runner_executes_cli or
+  native_train_run_config_and_subprocess_runner or
+  cpp_cli_builds_and_uses_sm120_defaults'` (`4 passed`).
+- Ran `python -m pytest tests/test_native_dependencies.py -q` (`3 passed`).
+- Ran `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1
+  build/nfn_gpt_native_train --backend tile-cuda --tinystories --startup-only
+  --eval-every-steps 0 --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so` on the dedicated RTX 5090. Before the
+  default was applied externally, the same mode measured about `6285.63 ms`
+  `setup_wall_ms`; with `CUDA_MODULE_LOADING=LAZY` it measured about
+  `3491.35 ms`; after rebuilding with the new default and no external
+  `CUDA_MODULE_LOADING`, runtime JSON reported `cuda_module_loading: "LAZY"`,
+  `setup_wall_ms: 3048.18`, and `status:
+  "native-transformer-lm-startup-ready"`.
+- Ran a paired one-step dedicated-RTX-5090 comparison in
+  `/tmp/nfn_lazy_vs_eager_startup_pair.json` with the same native command and
+  command-scoped GPU idle guards. `CUDA_MODULE_LOADING=LAZY` reported mean
+  process wall time `8.35s` versus `25.37s` for `EAGER`, mean train-loop wall
+  time `4207.5 ms` versus `19300.55 ms`, and mean setup wall time
+  `2573.99 ms` versus `2851.22 ms`.
+
 ### 2026-06-15 SM120 Tile CUDA trainer build flag alignment
 
 #### Changed

@@ -152,6 +152,7 @@ def run_native_train(config: NativeTrainRunConfig, *, runner: str = "auto") -> i
         raise RuntimeError(f"Native train CLI requested but unavailable: {status.reason}")
     env = os.environ.copy()
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", config.cuda_device_max_connections)
+    env.setdefault("CUDA_MODULE_LOADING", "LAZY")
     proc = subprocess.run(config.argv(), env=env, check=False)
     return int(proc.returncode)
 

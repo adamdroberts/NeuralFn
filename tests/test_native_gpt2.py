@@ -347,6 +347,7 @@ def test_build_native_gpt2_compiled_cli_config_can_skip_checkpoint_export(tmp_pa
         num_layers=12,
         activation="gelu",
         write_checkpoint=False,
+        startup_only=True,
     )
     generic_cfg = build_native_gpt_compiled_cli_run_config(
         dataset_alias="cached-shards",
@@ -370,7 +371,9 @@ def test_build_native_gpt2_compiled_cli_config_can_skip_checkpoint_export(tmp_pa
     )
 
     assert cfg.write_checkpoint is False
-    assert "--no-checkpoint" in cfg.compiled_cli_argv("/opt/nfn/nfn_gpt_native_train")
+    cfg_argv = cfg.compiled_cli_argv("/opt/nfn/nfn_gpt_native_train")
+    assert "--no-checkpoint" in cfg_argv
+    assert "--startup-only" in cfg_argv
     assert isinstance(generic_cfg, NativeGptRunConfig)
     assert generic_cfg.write_checkpoint is False
     assert "--no-checkpoint" in generic_cfg.compiled_cli_argv("/opt/nfn/nfn_gpt_native_train")
@@ -738,8 +741,8 @@ def test_native_gpt2_compiled_cli_runner_executes_cli(
     cli.write_text(
         "#!/usr/bin/env bash\n"
         "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_CLI_ARGS\"\n"
-        "printf 'CUDA_VISIBLE_DEVICES=%s\\nCUDA_DEVICE_MAX_CONNECTIONS=%s\\n' "
-        "\"$CUDA_VISIBLE_DEVICES\" \"$CUDA_DEVICE_MAX_CONNECTIONS\" > \"$NFN_TEST_NATIVE_CLI_ENV\"\n"
+        "printf 'CUDA_VISIBLE_DEVICES=%s\\nCUDA_DEVICE_MAX_CONNECTIONS=%s\\nCUDA_MODULE_LOADING=%s\\n' "
+        "\"$CUDA_VISIBLE_DEVICES\" \"$CUDA_DEVICE_MAX_CONNECTIONS\" \"$CUDA_MODULE_LOADING\" > \"$NFN_TEST_NATIVE_CLI_ENV\"\n"
         "exit 19\n",
         encoding="utf-8",
     )
@@ -786,6 +789,7 @@ def test_native_gpt2_compiled_cli_runner_executes_cli(
     env_lines = env_output.read_text(encoding="utf-8").splitlines()
     assert "CUDA_VISIBLE_DEVICES=0" in env_lines
     assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in env_lines
+    assert "CUDA_MODULE_LOADING=LAZY" in env_lines
 
 
 def test_native_gpt2_cpp_launcher_builds_and_execs(tmp_path: Path) -> None:
@@ -1016,14 +1020,18 @@ def test_native_train_run_config_and_subprocess_runner(
     cli.write_text(
         "#!/usr/bin/env bash\n"
         "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_TRAIN_ARGS\"\n"
+        "printf 'CUDA_DEVICE_MAX_CONNECTIONS=%s\\nCUDA_MODULE_LOADING=%s\\n' "
+        "\"$CUDA_DEVICE_MAX_CONNECTIONS\" \"$CUDA_MODULE_LOADING\" > \"$NFN_TEST_NATIVE_TRAIN_ENV\"\n"
         "exit 29\n",
         encoding="utf-8",
     )
     cli.chmod(0o755)
     output = tmp_path / "native-train-args.txt"
+    env_output = tmp_path / "native-train-env.txt"
     monkeypatch.setenv("NFN_NATIVE_TRAIN_CLI", str(cli))
     monkeypatch.setenv("NFN_NATIVE_TRAIN_BINDING", "0")
     monkeypatch.setenv("NFN_TEST_NATIVE_TRAIN_ARGS", str(output))
+    monkeypatch.setenv("NFN_TEST_NATIVE_TRAIN_ENV", str(env_output))
     cfg = build_native_train_run_config("nano_gpt", ["--tinystories", "--dry-run"])
 
     assert resolve_native_train_cli() == str(cli)
@@ -1035,6 +1043,9 @@ def test_native_train_run_config_and_subprocess_runner(
     assert run_native_train(cfg, runner="auto") == 29
     args = output.read_text(encoding="utf-8").splitlines()
     assert args[:4] == ["--base-model", "nano-gpt", "--tinystories", "--dry-run"]
+    env_lines = env_output.read_text(encoding="utf-8").splitlines()
+    assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in env_lines
+    assert "CUDA_MODULE_LOADING=LAZY" in env_lines
 
     token_lm_cfg = build_native_train_run_config(
         "nanogpt",
@@ -1164,6 +1175,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "--smoke-embedding-lm-step" in help_proc.stdout
     assert "--train-embedding-lm" in help_proc.stdout
     assert "--train-transformer-lm" in help_proc.stdout
+    assert "--startup-only" in help_proc.stdout
     assert "--cuda-runtime-lib PATH" in help_proc.stdout
     assert "--template-name NAME" in help_proc.stdout
     assert "--graph-file PATH" in help_proc.stdout
@@ -4072,6 +4084,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert 'std::getenv("CUDA_VISIBLE_DEVICES")' in gpt2_source_text
     assert 'setenv("CUDA_VISIBLE_DEVICES", "0", 0)' in gpt2_source_text
     assert 'std::getenv("CUDA_DEVICE_MAX_CONNECTIONS")' in gpt2_source_text
+    assert 'setenv("CUDA_MODULE_LOADING", "LAZY", 0)' in gpt2_source_text
+    assert '"cuda_module_loading"' in gpt2_source_text
     assert "--no-checkpoint" in gpt2_source_text
     assert "--native-cuda-no-checkpoint" in gpt2_source_text
     assert "cfg.write_checkpoint = false" in gpt2_source_text

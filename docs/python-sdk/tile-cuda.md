@@ -773,6 +773,16 @@ The native GPT-2 transformer-LM trainer pads only the tensor row count: tokenize
 
 Full GPT-2 `--train-transformer-lm` runs report a `cuda_runtime_preflight` object before allocation. If `cudaDriverGetVersion` returns driver version `0`, or if the loaded CUDA runtime is newer than the reported driver, the trainer exits before `cudaMalloc` so benchmark failures point at GPU access/runtime compatibility instead of kernel execution.
 
+Set `NativeGptRunConfig.startup_only=True` or
+`NativeGpt2RunConfig.startup_only=True` to forward `--startup-only` to the
+compiled CLI. Startup-only runs still resolve cached token shards, load CUDA,
+allocate the full Tile-CUDA transformer training arenas, initialize native
+parameters, and emit normal setup timing, but exit before optimizer steps or
+checkpoint export with `status: "native-transformer-lm-startup-ready"`. Native
+GPT SDK subprocess launchers set `CUDA_MODULE_LOADING=LAZY` by default when the
+caller has not already set that environment variable, and runtime JSON reports
+the resolved value as `cuda_module_loading`.
+
 Set `NativeGptRunConfig.write_checkpoint=False` or
 `NativeGpt2RunConfig.write_checkpoint=False` for benchmark/preflight runs that
 should exclude final trained-checkpoint export. `compiled_cli_argv()` forwards
