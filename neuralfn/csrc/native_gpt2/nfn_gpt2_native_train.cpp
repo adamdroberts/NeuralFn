@@ -7967,7 +7967,11 @@ int run_transformer_lm_training_json(
     std::int64_t stage_timing_dropped_event_count = 0;
     std::vector<StageTimingRecord> stage_timing_records;
     std::vector<StageTimingEvent> stage_timing_events;
-    constexpr std::int64_t kStageTimingMaxEvents = 20000;
+    const std::int64_t stage_timing_max_events = std::max<std::int64_t>(
+        1,
+        env_nonnegative_i64_or({"NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS",
+                                "NFN_NATIVE_GPT2_STAGE_TIMING_MAX_EVENTS"},
+                               20000));
     if (error.empty() && stage_timing_requested) {
         if (cuda_event_create_with_flags == nullptr || cuda_event_record == nullptr ||
             cuda_event_elapsed_time == nullptr || cuda_event_destroy == nullptr) {
@@ -7986,7 +7990,7 @@ int run_transformer_lm_training_json(
         return stage_timing_records.size() - 1;
     };
     auto stage_begin = [&](const std::string& name) -> std::int64_t {
-        if (!stage_timing_enabled || stage_timing_event_count >= kStageTimingMaxEvents) {
+        if (!stage_timing_enabled || stage_timing_event_count >= stage_timing_max_events) {
             if (stage_timing_enabled) {
                 stage_timing_dropped_event_count += 1;
             }
@@ -12153,6 +12157,7 @@ int run_transformer_lm_training_json(
     std::ostringstream stage_timing_json;
     stage_timing_json
         << "    \"stage_timing_enabled\": " << (stage_timing_enabled ? "true" : "false") << ",\n"
+        << "    \"stage_timing_max_events\": " << stage_timing_max_events << ",\n"
         << "    \"stage_timing_event_count\": " << stage_timing_event_count << ",\n"
         << "    \"stage_timing_dropped_event_count\": " << stage_timing_dropped_event_count << ",\n"
         << "    \"stage_timing\": [\n";

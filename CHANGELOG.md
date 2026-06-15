@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Make native GPT stage profiler event cap configurable
+
+#### Changed
+
+- Dense GPT native training now accepts
+  `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS=N` with the
+  `NFN_NATIVE_GPT2_STAGE_TIMING_MAX_EVENTS` compatibility fallback. The default
+  remains 20000 events.
+- Runtime JSON now reports `timing.stage_timing_max_events` alongside
+  `stage_timing_event_count` and `stage_timing_dropped_event_count`, so longer
+  profiling runs can distinguish a real missing stage from a dropped event cap.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` and `build/nfn_gpt2_native_train`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k 'native_gpt2_cpp_cli_builds_and_uses_sm120_defaults or packed_qkv_uint16_arena_reserves_full_scratch_layout'`.
+- Ran a dedicated RTX 5090 stage-timing run with
+  `NFN_NATIVE_GPT_STAGE_TIMING=1` and
+  `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS=40000`; the run reported zero dropped
+  stage-timing events.
+
 ### 2026-06-15 Summarize selected-GPU load in paired benchmarks
 
 #### Changed

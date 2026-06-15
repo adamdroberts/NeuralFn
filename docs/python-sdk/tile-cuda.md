@@ -109,8 +109,8 @@ full-vocab scratch gradient buffer per chunk or per microbatch. The JSON reports
 Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, `NFN_NATIVE_GPT_BINDING`, and
 `NFN_NATIVE_GPT_TRAIN_BIN`. Runtime tuning also prefers
-`NFN_NATIVE_GPT_STAGE_TIMING`, `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION`,
-`NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS`,
+`NFN_NATIVE_GPT_STAGE_TIMING`, `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS`,
+`NFN_NATIVE_GPT_PACKED_QKV_ATTENTION`, `NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS`,
 `NFN_NATIVE_GPT_STORE_MLP_BLOCKS`,
 `NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS`,
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS`,
@@ -316,13 +316,15 @@ final sample copy from device to host. The same `timing` object now includes
 `setup.float_arena_materialize`, `setup.stored_mlp_activation_arena`,
 `setup.zero_init`, and `setup.block_weight_bf16_initial_refresh`; this makes
 allocation and initialization regressions visible without enabling CUDA-event
-stage profiling. Set `NFN_NATIVE_GPT2_STAGE_TIMING=1` to
-add a CUDA-event profiler for the native transformer-LM loop. That diagnostic
-mode records `stage_timing_enabled`, `stage_timing_event_count`,
-`stage_timing_dropped_event_count`, and `stage_timing` entries with per-stage
-`total_ms`, `count`, and `avg_ms` values for token upload, model forward, block
-forward/recompute/backward, LM-head backward, final-norm/embedding backward,
-gradient zero/clip, and AdamW update. Diagnostic runs also emit nested entries
+stage profiling. Set `NFN_NATIVE_GPT_STAGE_TIMING=1` to
+add a CUDA-event profiler for the native transformer-LM loop; the
+`NFN_NATIVE_GPT2_STAGE_TIMING` name remains a compatibility fallback. That
+diagnostic mode records `stage_timing_enabled`, `stage_timing_max_events`,
+`stage_timing_event_count`, `stage_timing_dropped_event_count`, and
+`stage_timing` entries with per-stage `total_ms`, `count`, and `avg_ms` values
+for token upload, model forward, block forward/recompute/backward, LM-head
+backward, final-norm/embedding backward, gradient zero/clip, and AdamW update.
+Diagnostic runs also emit nested entries
 for LM-head logits/CE/dHidden/dWeight, block forward/recompute attention
 substeps such as `block_forward.attention.qkv`,
 `block_forward.attention.sdpa`, and `block_forward.attention.proj`, forward MLP
@@ -333,9 +335,11 @@ block backward records include individual dWeight+bias, dInput, activation,
 residual-add, and attention-to-QKV entries such as
 `block_backward.mlp_proj.dweight_bias`, `block_backward.mlp_proj.dinput`,
 `block_backward.mlp_proj.gelu`,
-`block_backward.attn_sdpa.to_qkv`, and `block_backward.qkv.dweight_bias`. The stage profiler
-synchronizes before reading event timings, so leave it disabled for normal
-throughput runs.
+`block_backward.attn_sdpa.to_qkv`, and `block_backward.qkv.dweight_bias`. The
+stage profiler synchronizes before reading event timings, so leave it disabled
+for normal throughput runs. The default profiler cap is 20000 events; set
+`NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS=N` for longer profiling runs that would
+otherwise report dropped events.
 
 The GPT-2 block backward path uses
 `nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32`

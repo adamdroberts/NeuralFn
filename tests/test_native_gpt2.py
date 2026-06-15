@@ -2085,6 +2085,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["linear_bf16_cached_a_capacity"] == 0
     assert train_transformer_payload["linear_bf16_cache_entry_count"] == 0
     assert train_transformer_payload["timing"]["stage_timing_enabled"] is False
+    assert train_transformer_payload["timing"]["stage_timing_max_events"] == 20000
     assert train_transformer_payload["timing"]["stage_timing_event_count"] == 0
     assert train_transformer_payload["timing"]["stage_timing_dropped_event_count"] == 0
     assert train_transformer_payload["timing"]["stage_timing"] == []
@@ -3978,9 +3979,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "train_tokens_per_second" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STAGE_TIMING" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STAGE_TIMING" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_STAGE_TIMING_MAX_EVENTS" in gpt2_source_text
     assert "cudaEventCreateWithFlags" in gpt2_source_text
     assert "cudaEventElapsedTime" in gpt2_source_text
     assert "stage_timing_enabled" in gpt2_source_text
+    assert "stage_timing_max_events" in gpt2_source_text
     assert "stage_timing_event_count" in gpt2_source_text
     assert "stage_timing_dropped_event_count" in gpt2_source_text
     assert "stage_timing" in gpt2_source_text
