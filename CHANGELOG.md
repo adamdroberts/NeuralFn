@@ -6,6 +6,40 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Retune native GPT LM-head row chunk default to 6144
+
+#### Changed
+
+- Dense GPT native training now defaults the tied LM-head row chunk to 6144
+  rows for the compiled C++ trainer, Python wrapper defaults, and
+  `NativeGpt2RunConfig`. This keeps the bounded chunked BF16 LM-head workspace
+  instead of the rejected full-microbatch logits buffer, while reducing chunk
+  overhead versus the previous 4096-row default on the dedicated RTX 5090.
+- Pass `--lm-head-row-chunk-size 4096`,
+  `--native-cuda-lm-head-row-chunk-size 4096`, or
+  `NativeGpt2RunConfig(lm_head_row_chunk_size=4096, ...)` to reproduce the
+  older smaller-workspace profile.
+
+#### Verification
+
+- Rebuilt the compiled dense GPT CLI with `bash tools/build_native_gpt_cli.sh`.
+- Ran a fresh NeuralFn-vs-llm.kittens paired baseline on the dedicated RTX 5090:
+  NeuralFn default reported `train_loop_wall_ms_per_step: 2812.101667` and
+  llm.kittens reported `2491.430000`, so llm.kittens remains `1.128242x`
+  faster by token throughput.
+- Rejected `--lm-head-row-chunk-size 65536` after it left the candidate process
+  consuming nearly all RTX 5090 memory at 100% utilization and had to be killed.
+- Compared the current 4096-row default against `--lm-head-row-chunk-size 6144`
+  with four measured three-step TinyStories pairs after one warmup pair on GPU
+  0. The 6144-row candidate had `train_loop_wall_ms_per_step` ratio `0.999109`
+  and token-throughput ratio `1.000894`.
+- Checked `--lm-head-row-chunk-size 5120` as a nearby shape; it was essentially
+  neutral with `train_loop_wall_ms_per_step` ratio `0.999805`.
+- Ran a one-step TinyStories native GPT smoke on GPU 0 after rebuilding the
+  compiled trainer; runtime JSON reported `lm_head_row_chunk_size: 6144`,
+  `lm_head_row_chunk_count: 11`, `lm_head_bf16_logit_bytes: 618135552`, no
+  missing symbols, and `passed: true`.
+
 ### 2026-06-15 Default fused LN2 BF16 prepack store
 
 #### Changed
