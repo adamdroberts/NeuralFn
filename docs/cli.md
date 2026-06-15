@@ -610,7 +610,7 @@ native-loop counters into `baseline_native_metrics` or
 `candidate_native_metrics`, including `timing.train_loop_wall_ms`,
 `timing.train_tokens_per_second`, setup time, checkpoint time, total native
 wall time, selected linear/attention kernel counters, emitted
-`timing.stage_timing` totals/averages/counts, and paired native-metric ratios
+`timing.setup_timing` and `timing.stage_timing` totals/averages/counts, and paired native-metric ratios
 when both commands expose the same metric. The helper also parses llm.kittens
 `step ... ms ... tok/s` output into the same metric keys, plus BF16 MFU and
 device-memory fields, so direct `train_gpt2cu` baselines can be compared

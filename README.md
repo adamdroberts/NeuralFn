@@ -51,7 +51,8 @@ the tuning loop. If either command emits NeuralFn native JSON, the helper also
 summarizes native in-loop
 metrics such as `timing.train_loop_wall_ms`, `timing.train_tokens_per_second`,
 setup time, checkpoint time, total native wall time, and any emitted
-`timing.stage_timing` entries separately from outer command runtime. When
+`timing.setup_timing` and `timing.stage_timing` entries separately from outer
+command runtime. When
 native JSON includes `steps_completed`, the helper also reports
 `train_loop_wall_ms_per_step` so total-loop NeuralFn runs can be compared fairly
 with trainers that only log per-step timing. It also parses llm.kittens

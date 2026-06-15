@@ -144,6 +144,23 @@ def native_metrics_from_stdout(stdout: str) -> dict[str, float | int | str | boo
         metrics["train_loop_wall_ms_per_step"] = float(train_loop_ms) / float(steps_completed)
     timing = payload.get("timing")
     if isinstance(timing, dict):
+        setup_timing = timing.get("setup_timing")
+        if isinstance(setup_timing, list):
+            for stage in setup_timing:
+                if not isinstance(stage, dict):
+                    continue
+                name = stage.get("name")
+                if not isinstance(name, str) or not name:
+                    continue
+                metric_name = name if name.startswith("setup.") else "setup." + name
+                for source_key, suffix in (
+                    ("total_ms", "total_ms"),
+                    ("avg_ms", "avg_ms"),
+                    ("count", "count"),
+                ):
+                    value = stage.get(source_key)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        metrics[f"{metric_name}.{suffix}"] = value
         stage_timing = timing.get("stage_timing")
         if isinstance(stage_timing, list):
             for stage in stage_timing:
@@ -536,6 +553,11 @@ def print_text(payload: dict[str, object]) -> None:
             "llm_kittens_bf16_mfu_pct",
             "llm_kittens_device_memory_used_mib",
             "setup_wall_ms",
+            "setup.float_arena_materialize.total_ms",
+            "setup.uint16_arena_materialize.total_ms",
+            "setup.token_weight_init.total_ms",
+            "setup.zero_init.total_ms",
+            "setup.block_weight_bf16_initial_refresh.total_ms",
             "checkpoint_wall_ms",
             "total_wall_ms",
             "stage.lm_head_backward.total_ms",
@@ -559,6 +581,12 @@ def print_text(payload: dict[str, object]) -> None:
             "train_loop_wall_ms",
             "train_tokens_per_second",
             "llm_kittens_bf16_mfu_pct",
+            "setup_wall_ms",
+            "setup.float_arena_materialize.total_ms",
+            "setup.uint16_arena_materialize.total_ms",
+            "setup.token_weight_init.total_ms",
+            "setup.zero_init.total_ms",
+            "setup.block_weight_bf16_initial_refresh.total_ms",
             "total_wall_ms",
             "stage.lm_head_backward.total_ms",
             "stage.block_backward.total_ms",

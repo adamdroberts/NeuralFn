@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Add setup timing metrics to paired kernel benchmarks
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now extracts native
+  `timing.setup_timing` entries into `baseline_native_metrics`,
+  `candidate_native_metrics`, and paired ratio summaries using metric keys such
+  as `setup.float_arena_materialize.total_ms`. Startup kernel experiments can
+  now be accepted or rejected from the same old-vs-new paired JSON as per-step
+  kernel experiments.
+
+#### Verification
+
+- Added a paired-benchmark smoke assertion for setup timing extraction in
+  `tests/test_tile_cuda_examples.py`.
+
 ### 2026-06-15 Retune native GPT LM-head row chunk default to 8192
 
 #### Changed
