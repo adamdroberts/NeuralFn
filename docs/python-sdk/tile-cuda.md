@@ -40,6 +40,16 @@ The trainer-facing raw C ABI build is separate:
 bash tools/build_native_train_tile_ops.sh
 ```
 
+After rebuilding the native GPT CLI or trainer-facing Tile ops library, verify
+the compiled artifacts did not regain Torch, c10, or Python runtime links:
+
+```bash
+python tools/check_native_no_torch_deps.py
+```
+
+Pass explicit artifact paths to check candidate builds, or add `--json` for a
+machine-readable CI report.
+
 On the SM120 workstation this defaults to `NFN_TILE_CUDA_USE_TK_ATTENTION=1`,
 `NFN_TILE_CUDA_ARCH=sm_120a`, and links the local llm.kittens /
 ThunderKittens headers via `LLM_KITTENS_ROOT` and `TK_ROOT`. Set

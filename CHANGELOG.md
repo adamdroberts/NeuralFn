@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Add native no-Torch dependency gate
+
+#### Added
+
+- Added `tools/check_native_no_torch_deps.py`, an `ldd`-based verification
+  gate for native training artifacts. By default it checks
+  `build/nfn_gpt_native_train` and `build/libnfn_native_train_tile_ops.so` and
+  fails if either links Torch, c10, or Python runtime libraries.
+- Documented the gate in the README and CUDA Tile SDK guide so native rebuilds
+  have a repeatable proof that the hot training path remains independent of
+  graph-backed Torch execution.
+
+#### Verification
+
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `python tools/check_native_no_torch_deps.py --json`.
+- Ran `python -m py_compile tools/check_native_no_torch_deps.py`.
+
 ### 2026-06-15 Add setup timing metrics to paired kernel benchmarks
 
 #### Changed

@@ -306,6 +306,13 @@ Torch workflows explicitly when needed:
 pip install -e ".[torch]"
 ```
 
+After rebuilding native training artifacts, run the dependency gate to verify
+the compiled path still avoids Torch, c10, and Python runtime libraries:
+
+```bash
+python tools/check_native_no_torch_deps.py
+```
+
 ### Install the SDK as a package
 
 From the repository root:
