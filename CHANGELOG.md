@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Fix packed-QKV BF16 scratch arena sizing
+
+#### Fixed
+
+- The dense GPT native trainer now reserves the full packed-QKV scratch layout in
+  the combined uint16 arena: LN1 BF16 output, packed QKV BF16, and packed
+  attention output BF16. The previous arena request omitted the LN1 BF16 slice
+  even though the pointer layout used it, which could overlap the following BF16
+  block-weight arena.
+- Runtime JSON now reports the corrected uint16 arena request for the default
+  `64 x 1024` dense GPT path; the one-step smoke reported
+  `uint16_arena_requested_elements: 9355395072`.
+
+#### Verification
+
+- Rebuilt all native GPT/native trainer artifacts with
+  `bash tools/build_native_gpt2_all.sh`.
+- Ran a clean one-step `build/nfn_gpt_native_train --tinystories
+  --tile-ops-lib build/libnfn_native_train_tile_ops.so --train-transformer-lm
+  --max-steps 1 --eval-every-steps 0 --no-checkpoint` smoke on the dedicated
+  RTX 5090.
+- Built the previous committed trainer into `/tmp/nfn_gpt_native_train_eb356ef`
+  and ran paired old-vs-fixed timing. The fix was effectively neutral:
+  candidate train-loop milliseconds-per-step was `1.000631x` and
+  `train_tokens_per_second` was `0.999371x` versus the previous binary.
+- Added a source-level regression assertion in `tests/test_native_gpt2.py` so
+  packed-QKV scratch arena requests must include `activation_elements * 2`.
+
 ### 2026-06-15 Default dense GPT LN1 BF16 QKV forward and BF16 QKV dWeight
 
 #### Changed

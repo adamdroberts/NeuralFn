@@ -519,6 +519,10 @@ Canonical docs:
 - BF16/BF16 QKV dWeight is default-on for full GPT transformer training. It
   reuses the saved LN1 BF16 activation and packed BF16 dQKV through
   `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32`.
+  The combined uint16 arena request must reserve
+  `qkv_activation_elements + activation_elements * 2` for the one-tape packed
+  QKV scratch layout: LN1 BF16, packed QKV BF16, and packed attention output
+  BF16.
   Preserve `block_backward_bf16_qkv_dweight_enabled: true` and
   `block_backward_qkv_dweight_strategy:
   "packed-ln1-bf16-qkv-bf16-grad-dweight-bias-accumulate"` on default runs. Set

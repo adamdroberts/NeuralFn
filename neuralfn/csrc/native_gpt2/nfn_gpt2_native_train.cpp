@@ -9045,7 +9045,7 @@ int run_transformer_lm_training_json(
             "lm_head_bf16_hidden");
         allocate_uint16(&mlp_forward_act_bf16, hidden_elements, "mlp_forward_act_bf16");
         if (packed_qkv_attention_enabled) {
-            const std::int64_t elements_per_tape = qkv_activation_elements + activation_elements;
+            const std::int64_t elements_per_tape = qkv_activation_elements + activation_elements * 2;
             if (elements_per_tape > 0 &&
                 kActivationTapeCount <=
                     std::numeric_limits<std::int64_t>::max() / elements_per_tape) {

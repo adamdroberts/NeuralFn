@@ -768,6 +768,8 @@ BF16 scratch buffer that reuses the MLP BF16 scratch after MLP backward is done,
 then QKV dWeight+bias reuses the saved LN1 BF16 activation with
 `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32`
 and QKV dInput consumes the same BF16 gradient bits with BF16 block weights. Native
+combined uint16 arena allocation must reserve LN1 BF16 output, packed QKV BF16,
+and packed attention output BF16 for this scratch layout.
 plan and training JSON report `qkv_forward_layout_strategy:
 "packed-qkv-bf16-no-split"`, `qkv_bias_layout_strategy:
 "packed-qkv-bf16-bias-fused-tk-gemm"`, `qkv_bias_fused_tk_gemm_enabled`,

@@ -3414,6 +3414,13 @@ def test_large_row_reduction_fallbacks_use_shared_row_chunks() -> None:
         assert "kRowChunkSize = 256" not in function_body
 
 
+def test_packed_qkv_uint16_arena_reserves_full_scratch_layout() -> None:
+    root = Path(__file__).resolve().parents[1]
+    gpt2_source_text = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text()
+
+    assert "const std::int64_t elements_per_tape = qkv_activation_elements + activation_elements * 2;" in gpt2_source_text
+
+
 def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     gpt2_source = root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
