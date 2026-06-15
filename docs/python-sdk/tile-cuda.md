@@ -454,13 +454,20 @@ earlier blocks in a 12-layer run. Set
 lower-memory comparisons, or set `NFN_NATIVE_GPT_FUSE_RESIDUAL1_STORE=0` to
 compare against the older separate `float32_to_bf16` residual store. The default
 fused store uses
-`nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32`.
-The cache adds about 1.03 GiB at the default `64 x 1024 x 768` shape and reports
+`nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_float32`,
+which writes both the residual1 BF16 cache and the prepacked LN2 BF16 activation
+consumed by stored-MLP FC+GELU in the same launch. Set
+`NFN_NATIVE_GPT_FUSE_LN2_BF16_OUT=0` to reproduce the previous separate
+`float32_to_bf16` LN2 prepack. The cache adds about 1.03 GiB at the default
+`64 x 1024 x 768` shape and reports
 `residual1_activation_storage_strategy`, `residual1_activation_store_strategy`,
 `residual1_backward_consumer_strategy`,
 `stored_residual1_activation_blocks`, `stored_residual1_activation_elements`,
-`stored_residual1_activation_bytes`, and store/restore launch counters. The
-default residual1 backward consumer reads the stored BF16 bits directly through
+`stored_residual1_activation_bytes`, `fused_ln2_bf16_out_enabled`,
+`stored_mlp_ln2_bf16_prepack_strategy`,
+`stored_mlp_ln2_bf16_fused_store_kernel_launches`, and store/restore launch
+counters. The default residual1 backward consumer reads the stored BF16 bits
+directly through
 `nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32`
 and
 `nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_bf16_bits_float32`,
@@ -469,8 +476,10 @@ Set `NFN_NATIVE_GPT_BF16_RESIDUAL1_LN_BACKWARD=0` to compare against the older
 restore-to-FP32 LayerNorm backward path. Rebuild the trainer-facing Tile ops
 library after updating, since the compiled GPT-2 trainer now requires
 `nfn_native_tile_bf16_bits_to_float32`,
-`nfn_native_tile_store_mlp_activations_bf16_float32`, and the direct BF16
-backward consumer symbols at startup. Earlier-block recompute stops after the
+`nfn_native_tile_store_mlp_activations_bf16_float32`,
+`nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_float32`,
+and the direct BF16 backward consumer symbols at startup. Earlier-block
+recompute stops after the
 MLP GELU activation because backward does not consume the recomputed MLP
 projection output or final residual output; JSON reports
 `backward_recompute_mlp_projection_elided: true` and
@@ -824,9 +833,11 @@ The stats-preserving variant
 mean/rstd for backward reuse, and
 `nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32`
 additionally writes the native GPT residual1 activation cache in the same
-launch. Dense GPT enables the stats-preserving fused route by default. Runtime
-JSON reports `attention_residual_ln2_strategy` plus launch counters for this
-path.
+launch. `nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_float32`
+also writes the prepacked LN2 BF16 activation for the stored-MLP FC+GELU path,
+which is the native dense-GPT default. Runtime JSON reports
+`attention_residual_ln2_strategy`, `fused_ln2_bf16_out_enabled`,
+`stored_mlp_ln2_bf16_prepack_strategy`, and launch counters for this path.
 
 Full GPT-2 `--train-transformer-lm` also fuses attention-output and MLP
 projection bias with residual addition. `nfn_native_tile_linear_bias_residual_add_float32`

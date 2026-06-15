@@ -6798,6 +6798,7 @@ __tile_global__ void linear_bias_residual_layer_norm_float32_kernel(
     float* __restrict__ mean_out,
     float* __restrict__ rstd_out,
     std::uint16_t* __restrict__ residual_bf16_out,
+    std::uint16_t* __restrict__ norm_bf16_out,
     std::int64_t rows,
     std::int64_t dim,
     float eps) {
@@ -6844,7 +6845,12 @@ __tile_global__ void linear_bias_residual_layer_norm_float32_kernel(
   }
   auto weight_tile = ct::load_masked(norm_weight + d, mask);
   auto bias_tile = ct::load_masked(norm_bias + d, mask);
-  ct::store_masked(norm_out + base + d, centered * norm_scale * weight_tile + bias_tile, mask);
+  auto norm_value = centered * norm_scale * weight_tile + bias_tile;
+  ct::store_masked(norm_out + base + d, norm_value, mask);
+  if (norm_bf16_out != nullptr) {
+    auto* norm_bf16 = reinterpret_cast<__nv_bfloat16*>(norm_bf16_out);
+    ct::store_masked(norm_bf16 + base + d, ct::element_cast<__nv_bfloat16>(norm_value), mask);
+  }
 }
 
 __tile_global__ void gelu_backward_float32_kernel(
@@ -11541,6 +11547,7 @@ void launch_linear_bias_residual_layer_norm_float32(
       nullptr,
       nullptr,
       nullptr,
+      nullptr,
       rows,
       output_dim,
       eps);
@@ -11572,6 +11579,7 @@ void launch_linear_bias_residual_layer_norm_with_stats_float32(
       norm_out,
       mean_out,
       rstd_out,
+      nullptr,
       nullptr,
       rows,
       output_dim,
@@ -11606,6 +11614,42 @@ void launch_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32(
       mean_out,
       rstd_out,
       residual_bf16_out,
+      nullptr,
+      rows,
+      output_dim,
+      eps);
+}
+
+void launch_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_float32(
+    const float* residual,
+    const float* linear_out,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    float* mean_out,
+    float* rstd_out,
+    std::uint16_t* residual_bf16_out,
+    std::uint16_t* norm_bf16_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    cudaStream_t stream) {
+  linear_bias_residual_layer_norm_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      residual,
+      linear_out,
+      linear_bias,
+      residual_scale,
+      norm_weight,
+      norm_bias,
+      residual_out,
+      norm_out,
+      mean_out,
+      rstd_out,
+      residual_bf16_out,
+      norm_bf16_out,
       rows,
       output_dim,
       eps);

@@ -6,6 +6,42 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Default fused LN2 BF16 prepack store
+
+#### Changed
+
+- The native dense-GPT CUDA trainer now defaults to
+  `nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_float32`
+  for the attention projection residual + LN2 forward stage. The fused Tile
+  kernel writes the residual1 BF16 cache and the LN2 BF16 activation consumed by
+  stored-MLP FC+GELU in the same launch, removing the previous separate
+  `float32_to_bf16` LN2 prepack launch on the default stored-MLP path.
+- Set `NFN_NATIVE_GPT_FUSE_LN2_BF16_OUT=0` or
+  `NFN_NATIVE_GPT2_FUSE_LN2_BF16_OUT=0` to reproduce the previous separate LN2
+  prepack path in paired benchmarks.
+- Runtime JSON now reports `fused_ln2_bf16_out_enabled`,
+  `stored_mlp_ln2_bf16_prepack_strategy`, and
+  `stored_mlp_ln2_bf16_fused_store_kernel_launches`.
+
+#### Verification
+
+- Rebuilt the trainer-facing Tile ops library with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt the compiled dense GPT CLI with `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step stage-timed TinyStories native GPT smoke on the dedicated RTX
+  5090 with `NFN_NATIVE_GPT_FUSE_LN2_BF16_OUT=1`; the run completed with no
+  missing symbols, `train_tokens_per_second: 184105`, and
+  `block_forward.mlp_fc_gelu.pack_ln2` reduced to `1.96835 ms` over the step.
+- Ran a paired default-vs-candidate benchmark before changing the default:
+  four measured three-step TinyStories samples after one warmup pair on GPU 0.
+  The fused candidate had `train_loop_wall_ms_per_step` ratio `0.996518` and
+  token-throughput ratio `1.003500`.
+- Ran the final default-vs-old paired check on the dedicated RTX 5090 with the
+  previous separate LN2 prepack forced by `NFN_NATIVE_GPT_FUSE_LN2_BF16_OUT=0`
+  as baseline and the new fused path as candidate. Across four measured
+  three-step TinyStories samples after one warmup pair, candidate train-loop
+  time ratio was `0.995392` and token-throughput ratio was `1.004633`.
+
 ### 2026-06-15 Default fused float32/BF16 dWeight bias reduction
 
 #### Changed
