@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import signal
 import subprocess
 import time
 from dataclasses import dataclass
@@ -274,20 +275,35 @@ def run_once(
         command_env = dict(os.environ if env is None else env)
         command_env.update(command.env_overrides)
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             command.argv,
             text=True,
             errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            check=False,
             env=command_env,
-            timeout=timeout_seconds,
+            start_new_session=True,
         )
+        stdout, stderr = proc.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired as exc:
         seconds = time.perf_counter() - start
         stdout = timeout_output_to_text(exc.stdout)
         stderr = timeout_output_to_text(exc.stderr)
+        process_returncode = -1
+        if "proc" in locals():
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                proc.kill()
+            try:
+                killed_stdout, killed_stderr = proc.communicate(timeout=5.0)
+                stdout += timeout_output_to_text(killed_stdout)
+                stderr += timeout_output_to_text(killed_stderr)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            process_returncode = proc.returncode if proc.returncode is not None else -1
         if not continue_on_error:
             raise SystemExit(
                 f"{command.name} timed out after {timeout_seconds:.3f}s\n"
@@ -300,6 +316,7 @@ def run_once(
             "argv": command.argv,
             "seconds": seconds,
             "returncode": -1,
+            "process_returncode": process_returncode,
             "timed_out": True,
             "timeout_seconds": timeout_seconds,
             "native_metrics": native_metrics_from_stdout(stdout),
@@ -307,21 +324,22 @@ def run_once(
             "stderr_tail": stderr[-2000:],
         }
     seconds = time.perf_counter() - start
-    if proc.returncode != 0 and not continue_on_error:
+    returncode = proc.returncode if proc.returncode is not None else -1
+    if returncode != 0 and not continue_on_error:
         raise SystemExit(
-            f"{command.name} failed with exit {proc.returncode}\n"
+            f"{command.name} failed with exit {returncode}\n"
             f"command: {shlex.join(command.argv)}\n"
-            f"stderr:\n{proc.stderr}"
+            f"stderr:\n{stderr}"
         )
     return {
         "name": command.name,
         "argv": command.argv,
         "seconds": seconds,
-        "returncode": proc.returncode,
+        "returncode": returncode,
         "timed_out": False,
-        "native_metrics": native_metrics_from_stdout(proc.stdout),
-        "stdout_tail": proc.stdout[-2000:],
-        "stderr_tail": proc.stderr[-2000:],
+        "native_metrics": native_metrics_from_stdout(stdout),
+        "stdout_tail": stdout[-2000:],
+        "stderr_tail": stderr[-2000:],
     }
 
 

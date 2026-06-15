@@ -42,7 +42,9 @@ both commands by default; pass `--cuda-device-max-connections ""` to leave that
 environment unchanged. Pass repeatable `--baseline-env KEY=VALUE` or
 `--candidate-env KEY=VALUE` flags for environment-gated kernel candidates; these
 overrides apply only to that side of the pair and are recorded in the JSON/text
-output. Pass `--require-idle-selected-gpu` for dedicated
+output. `--command-timeout-seconds N` terminates the timed-out command's process
+group so a slow native candidate does not leave child GPU work running after the
+sample is recorded. Pass `--require-idle-selected-gpu` for dedicated
 benchmark runs that must abort if `nvidia-smi` reports any compute process on
 the selected CUDA GPU before warmup or a measured pair. The idle check is scoped
 to the selected GPU UUID, so a separate display GPU can still be active. Pass

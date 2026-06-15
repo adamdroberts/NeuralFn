@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Paired benchmark timeout process-group cleanup
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now starts each measured command in its own
+  process group and kills that group when `--command-timeout-seconds` expires.
+  This prevents a slow or wedged native GPU candidate from leaving child
+  training processes running after the paired sample is recorded.
+- Timed-out command JSON keeps the existing `returncode: -1` contract and now
+  also records `process_returncode` for the killed process when available.
+
+#### Verification
+
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k 'paired_kernel_speed_tool_compiles_and_smokes or paired_kernel_speed_tool_applies_command_specific_env or paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu or paired_kernel_speed_tool_require_idle_selected_gpu_checks_selected_uuid or paired_kernel_speed_tool_selected_gpu_utilization_guard or paired_kernel_speed_tool_records_command_timeout or paired_kernel_speed_tool_extracts_llm_kittens_step_metrics or paired_kernel_speed_tool_sums_llm_kittens_step_time'`.
+- The timeout test now launches a child process from the timed-out candidate and
+  verifies the child marker file is not written after the timeout, covering
+  process-group cleanup.
+
 ### 2026-06-15 Paired benchmark per-command env overrides
 
 #### Changed

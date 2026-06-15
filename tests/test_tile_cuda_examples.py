@@ -6,6 +6,7 @@ import py_compile
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -375,7 +376,26 @@ def test_paired_kernel_speed_tool_selected_gpu_utilization_guard() -> None:
 
 def test_paired_kernel_speed_tool_records_command_timeout() -> None:
     script = Path("tools/paired_kernel_speed.py")
-    output_path = Path(tempfile.mkdtemp()) / "paired-timeout.json"
+    temp_dir = Path(tempfile.mkdtemp())
+    output_path = temp_dir / "paired-timeout.json"
+    marker_path = temp_dir / "child-survived.txt"
+    child_script = temp_dir / "timeout_child.py"
+    spawner_script = temp_dir / "timeout_spawner.py"
+    child_script.write_text(
+        "import time\n"
+        "from pathlib import Path\n"
+        "time.sleep(1.0)\n"
+        f"Path({str(marker_path)!r}).write_text('alive')\n",
+        encoding="utf-8",
+    )
+    spawner_script.write_text(
+        "import subprocess\n"
+        "import sys\n"
+        "import time\n"
+        f"subprocess.Popen([sys.executable, {str(child_script)!r}])\n"
+        "time.sleep(5)\n",
+        encoding="utf-8",
+    )
 
     proc = subprocess.run(
         [
@@ -384,7 +404,7 @@ def test_paired_kernel_speed_tool_records_command_timeout() -> None:
             "--baseline",
             f"{sys.executable} -c \"print('baseline-ok')\"",
             "--candidate",
-            f"{sys.executable} -c \"import time; time.sleep(5)\"",
+            f"{sys.executable} {spawner_script}",
             "--samples",
             "1",
             "--warmup",
@@ -410,3 +430,5 @@ def test_paired_kernel_speed_tool_records_command_timeout() -> None:
     assert sample["candidate"]["returncode"] == -1
     assert sample["candidate"]["timeout_seconds"] == 0.1
     assert payload["command_timeout_seconds"] == 0.1
+    time.sleep(1.5)
+    assert not marker_path.exists()
