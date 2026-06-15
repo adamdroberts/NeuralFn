@@ -179,15 +179,17 @@ training JSON reports `attention_backend_strategy: "tk-sm120-bf16-bridge"`,
 zero row/scalar attention launches when that path is active. Set
 `NFN_TILE_CUDA_USE_TK_ATTENTION=0` before rebuilding only for the older float32
 row-scan diagnostic path.
-The same trainer-facing build keeps persistent BF16 shadows for dense GPT block
-projection weights while leaving FP32 master weights, gradients, and AdamW state
-unchanged. The compiled trainer refreshes QKV, attention projection, MLP FC, and
-MLP projection shadows with one `nfn_native_tile_float32_to_bf16_bits_many` call
-after initialization and each AdamW update, then routes block forward/recompute
-and block dInput GEMMs through `nfn_native_tile_linear_weight_bf16_float32`,
+The same trainer-facing build defaults dense GPT block projection weights to the
+BF16-primary path while leaving FP32 gradients and AdamW state in the optimizer
+buffers. The old FP32-master/BF16-shadow path remains available with
+`NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=0`. The compiled trainer routes block
+forward/recompute and block dInput GEMMs through `nfn_native_tile_linear_weight_bf16_float32`,
 `nfn_native_tile_linear_weight_bf16_output_float32`,
 `nfn_native_tile_linear_bf16_input_weight_bf16_float32`, and
-`nfn_native_tile_linear_backward_input_weight_bf16_float32`. Transformer block
+`nfn_native_tile_linear_backward_input_weight_bf16_float32`. LN1 packed-QKV
+forward uses `nfn_native_tile_layer_norm_with_stats_bf16_out_float32` and
+`nfn_native_tile_linear_bf16_input_weight_bf16_output_float32` by default.
+Transformer block
 dWeight+bias accumulation uses
 `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32` or
 `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32`,
@@ -643,6 +645,7 @@ Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO`,
 `NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`,
 `NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF`,
+`NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD`,
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF`,
 `NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH`,
 `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT`, and
@@ -759,10 +762,15 @@ workspace-to-packed-QKV-buffer copy path in paired candidate-vs-baseline
 benchmarks.
 Set `NFN_NATIVE_GPT_FUSE_QKV_BIAS_TK_GEMM=0` to reproduce the older separate
 packed BF16 QKV bias-add launch.
-Set `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=1` to pack LN1 output into the freed
-packed-QKV BF16 buffer and profile BF16/BF16 QKV dWeight+bias accumulation;
+Set `NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD=0` to reproduce the previous
+float32-LN1 QKV forward path.
+BF16/BF16 QKV dWeight+bias accumulation is default-on and reuses the saved LN1
+BF16 buffer;
 runtime JSON reports `block_backward_bf16_qkv_dweight_enabled` and
-`block_backward_qkv_dweight_strategy`.
+`block_backward_qkv_dweight_strategy:
+"packed-ln1-bf16-qkv-bf16-grad-dweight-bias-accumulate"`. Set
+`NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=0` to reproduce the previous float32-LN1
+dWeight path.
 The packed backward batch cap defaults to 64 so the workstation `64 x 1024`
 microbatch runs as one TK backward chunk. Set
 `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48` when reproducing the

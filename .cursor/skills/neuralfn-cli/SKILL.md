@@ -168,23 +168,25 @@ Canonical docs:
   `attention_backward_tk_launch_count` when the optimized path runs.
 - The trainer-facing linear ABI should expose and preserve the linear backend
   telemetry: `linear_backend_strategy`,
-  `linear_bf16_gemm_count`, `linear_sgemm_count`,
+  `linear_bf16_gemm_count`, `linear_tk_gemm_count`, `linear_sgemm_count`,
   `linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
   `linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
   `linear_bf16_cache_entry_count`. Dense GPT transformer block forward/recompute
-  projections should use `nfn_native_tile_linear_bf16_float32`, block dInput
-  GEMMs should use `nfn_native_tile_linear_backward_input_bf16_float32`, and
-  block dWeight accumulation should use
-  `nfn_native_tile_linear_backward_weight_accumulate_bf16_float32`. The tied
-  LM-head logits, dHidden, and dWeight GEMMs should stay on optimized TF32
-  tensor-op `cublasSgemm`, not scalar Tile dot products. The CE backward path
-  should reuse the logits chunk as dlogits through
-  `nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32`
-  and report `grad_logit_workspace_elements: 0`,
-  `lm_head_ce_backward_strategy: "inplace-logits-dlogits-workspace"`, and
-  `lm_head_grad_logits_workspace_allocated: false`. The trainer should
-  report `linear_backend_strategy:
-  "block-forward-dinput-dweight-bf16-lm-head-tf32"`,
+  projections should consume BF16-primary block weights through
+  `nfn_native_tile_linear_weight_bf16_float32`,
+  `nfn_native_tile_linear_weight_bf16_output_float32`, and
+  `nfn_native_tile_linear_bf16_input_weight_bf16_float32`; block dInput GEMMs
+  should use `nfn_native_tile_linear_backward_input_weight_bf16_float32`. The
+  default packed-QKV forward should run LN1 through
+  `nfn_native_tile_layer_norm_with_stats_bf16_out_float32` and QKV through
+  `nfn_native_tile_linear_bf16_input_weight_bf16_output_float32`, reporting
+  `qkv_forward_ln1_bf16_enabled: true`. Tied LM-head logits and CE should stay
+  on the BF16 public-vocab path, reporting `grad_logit_workspace_elements: 0`,
+  `lm_head_ce_backward_strategy:
+  "public-vocab-strided-fused-row-bf16-logits-dlogits"`, and
+  `lm_head_grad_logits_workspace_allocated: false`. The trainer should report
+  `linear_backend_strategy:
+  "block-bf16-cublaslt-shape-gated-lm-head-tk-sm120-default"`,
   `block_forward_linear_strategy`, `block_backward_input_linear_strategy`,
   `block_backward_weight_linear_strategy`,
   and `non_block_forward_backward_linear_strategy`.
@@ -503,17 +505,26 @@ Canonical docs:
   `backward_recompute_mlp_projection_elided: true` and
   `backward_recompute_final_residual_elided: true`.
 - Packed-QKV attention activation storage in full GPT
-  `--train-transformer-lm` stores the first six earlier blocks by default on
-  the RTX 5090 workstation shape.
+  `--train-transformer-lm` stores all 12 trained blocks by default on
+  the dedicated RTX 5090 workstation shape.
   Preserve `packed_attention_activation_storage_strategy:
   "packed-qkv-o-bf16-forward-store-direct-backward"` and
-  `stored_packed_attention_activation_blocks: 6` for the default workstation
+  `stored_packed_attention_activation_blocks: 12` for the default workstation
   path. `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` restores the
   previous lower-memory recompute path, and
   `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` tunes the cap. The
   GPT-2-prefixed names remain fallbacks. Saved packed QKV/O runs should report
   `stored_packed_attention_*` counters and
   `block_recompute_saved_packed_attention` timings.
+- BF16/BF16 QKV dWeight is default-on for full GPT transformer training. It
+  reuses the saved LN1 BF16 activation and packed BF16 dQKV through
+  `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32`.
+  Preserve `block_backward_bf16_qkv_dweight_enabled: true` and
+  `block_backward_qkv_dweight_strategy:
+  "packed-ln1-bf16-qkv-bf16-grad-dweight-bias-accumulate"` on default runs. Set
+  `NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD=0` and
+  `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=0` only when reproducing the older path for
+  paired candidate-vs-baseline timing.
 - MLP projection backward in full GPT-2 `--train-transformer-lm` should write
   projection dInput directly into the MLP fc gradient buffer and then run
   `nfn_native_tile_gelu_backward_inplace_float32`. Do not reintroduce a

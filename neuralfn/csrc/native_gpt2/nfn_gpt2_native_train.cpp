@@ -1111,6 +1111,12 @@ bool print_tile_plan(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF",
                               "NFN_NATIVE_GPT2_BF16_QKV_GRAD_HANDOFF"}),
             true);
+    const bool ln1_bf16_qkv_forward_enabled =
+        packed_qkv_attention_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD",
+                              "NFN_NATIVE_GPT2_LN1_BF16_QKV_FORWARD"}),
+            true);
     const bool direct_bf16_qkv_grad_scratch_enabled =
         bf16_qkv_grad_handoff_enabled &&
         env_flag_enabled_or_default(
@@ -1251,6 +1257,8 @@ bool print_tile_plan(
         << "  \"qkv_forward_layout_strategy\": \""
         << (packed_qkv_attention_enabled ? "packed-qkv-bf16-no-split" : "fused-split-to-heads")
         << "\",\n"
+        << "  \"qkv_forward_ln1_bf16_enabled\": "
+        << (ln1_bf16_qkv_forward_enabled ? "true" : "false") << ",\n"
         << "  \"qkv_forward_layout_kernel_launches_per_block\": " << (packed_qkv_attention_enabled ? 0 : 1) << ",\n"
         << "  \"qkv_forward_layout_legacy_launches_per_block\": 4,\n"
         << "  \"qkv_forward_layout_launches_elided_per_block\": " << (packed_qkv_attention_enabled ? 4 : 3) << ",\n"
@@ -6877,6 +6885,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_merge_heads_float32",
         "nfn_native_tile_layer_norm_float32",
         "nfn_native_tile_layer_norm_with_stats_float32",
+        "nfn_native_tile_layer_norm_with_stats_bf16_out_float32",
         "nfn_native_tile_layer_norm_backward_input_float32",
         "nfn_native_tile_layer_norm_backward_input_with_stats_float32",
         "nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32",
@@ -6889,6 +6898,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_linear_weight_bf16_float32",
         "nfn_native_tile_linear_bf16_output_float32",
         "nfn_native_tile_linear_weight_bf16_output_float32",
+        "nfn_native_tile_linear_bf16_input_weight_bf16_output_float32",
         "nfn_native_tile_bf16_bits_add_bias_inplace_float32",
         "nfn_native_tile_linear_bf16_input_bits_float32",
         "nfn_native_tile_linear_bf16_input_weight_bf16_float32",
@@ -7007,6 +7017,9 @@ int run_transformer_lm_training_json(
         const float*, const float*, const float*, float*, std::int64_t, std::int64_t, float, void*);
     using LayerNormWithStatsFn = int (*)(
         const float*, const float*, const float*, float*, float*, float*, std::int64_t, std::int64_t, float, void*);
+    using LayerNormWithStatsBf16OutFn = int (*)(
+        const float*, const float*, const float*, float*, float*, float*, std::uint16_t*,
+        std::int64_t, std::int64_t, float, void*);
     using LayerNormBackwardInputFn = int (*)(
         const float*, const float*, const float*, float*, std::int64_t, std::int64_t, float, void*);
     using LayerNormBackwardInputWithStatsFn = int (*)(
@@ -7030,6 +7043,9 @@ int run_transformer_lm_training_json(
         std::int64_t, std::int64_t, std::int64_t, bool, void*);
     using LinearWeightBf16OutputFn = int (*)(
         const float*, const std::uint16_t*, const float*, std::uint16_t*,
+        std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearBf16InputWeightBf16OutputFn = int (*)(
+        const std::uint16_t*, const std::uint16_t*, const float*, std::uint16_t*,
         std::int64_t, std::int64_t, std::int64_t, bool, void*);
     using LinearWeightBf16Fn = int (*)(
         const float*, const std::uint16_t*, const float*, float*,
@@ -7217,6 +7233,7 @@ int run_transformer_lm_training_json(
     MergeHeadsFn merge_heads = nullptr;
     LayerNormFn layer_norm = nullptr;
     LayerNormWithStatsFn layer_norm_with_stats = nullptr;
+    LayerNormWithStatsBf16OutFn layer_norm_with_stats_bf16_out = nullptr;
     LayerNormBackwardInputFn layer_norm_backward_input = nullptr;
     LayerNormBackwardInputWithStatsFn layer_norm_backward_input_with_stats = nullptr;
     LayerNormBackwardInputResidualAddWithStatsFn layer_norm_backward_input_residual_add_with_stats = nullptr;
@@ -7230,6 +7247,7 @@ int run_transformer_lm_training_json(
     LinearBf16OutputFn linear_bf16_output = nullptr;
     LinearWeightBf16Fn linear_weight_bf16 = nullptr;
     LinearWeightBf16OutputFn linear_weight_bf16_output = nullptr;
+    LinearBf16InputWeightBf16OutputFn linear_bf16_input_weight_bf16_output = nullptr;
     Bf16BitsAddBiasInplaceFn bf16_bits_add_bias_inplace = nullptr;
     LinearBf16InputWeightBf16Fn linear_bf16_input_weight_bf16 = nullptr;
     LinearWeightBf16GeluBf16Fn linear_weight_bf16_gelu_bf16 = nullptr;
@@ -7411,6 +7429,8 @@ int run_transformer_lm_training_json(
                 layer_norm = load_symbol<LayerNormFn>(tile_handle, "nfn_native_tile_layer_norm_float32");
                 layer_norm_with_stats = load_symbol<LayerNormWithStatsFn>(
                     tile_handle, "nfn_native_tile_layer_norm_with_stats_float32");
+                layer_norm_with_stats_bf16_out = load_symbol<LayerNormWithStatsBf16OutFn>(
+                    tile_handle, "nfn_native_tile_layer_norm_with_stats_bf16_out_float32");
                 layer_norm_backward_input = load_symbol<LayerNormBackwardInputFn>(
                     tile_handle, "nfn_native_tile_layer_norm_backward_input_float32");
                 layer_norm_backward_input_with_stats = load_symbol<LayerNormBackwardInputWithStatsFn>(
@@ -7439,6 +7459,9 @@ int run_transformer_lm_training_json(
                 linear_weight_bf16_output =
                     load_symbol<LinearWeightBf16OutputFn>(
                         tile_handle, "nfn_native_tile_linear_weight_bf16_output_float32");
+                linear_bf16_input_weight_bf16_output =
+                    load_symbol<LinearBf16InputWeightBf16OutputFn>(
+                        tile_handle, "nfn_native_tile_linear_bf16_input_weight_bf16_output_float32");
                 bf16_bits_add_bias_inplace = load_symbol<Bf16BitsAddBiasInplaceFn>(
                     tile_handle, "nfn_native_tile_bf16_bits_add_bias_inplace_float32");
                 linear_bf16_input_weight_bf16 =
@@ -7779,6 +7802,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF",
                               "NFN_NATIVE_GPT2_BF16_QKV_GRAD_HANDOFF"}),
             true);
+    const bool ln1_bf16_qkv_forward_enabled =
+        packed_qkv_attention_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD",
+                              "NFN_NATIVE_GPT2_LN1_BF16_QKV_FORWARD"}),
+            true);
     const bool direct_bf16_qkv_grad_scratch_enabled =
         bf16_qkv_grad_handoff_enabled &&
         env_flag_enabled_or_default(
@@ -7790,7 +7819,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_QKV_DWEIGHT",
                               "NFN_NATIVE_GPT2_BF16_QKV_DWEIGHT"}),
-            false);
+            true);
     const bool fuse_qkv_bias_tk_gemm_enabled =
         packed_qkv_attention_enabled &&
         env_flag_enabled_or_default(
@@ -8281,6 +8310,7 @@ int run_transformer_lm_training_json(
     };
     struct TransformerBlockActivations {
         float* ln1_out = nullptr;
+        std::uint16_t* ln1_out_bf16 = nullptr;
         float* ln1_mean = nullptr;
         float* ln1_rstd = nullptr;
         float* qkv = nullptr;
@@ -8773,7 +8803,7 @@ int run_transformer_lm_training_json(
         if (!error.empty() || !packed_qkv_attention_enabled) {
             return;
         }
-        const std::int64_t elements_per_tape = qkv_activation_elements + activation_elements;
+        const std::int64_t elements_per_tape = qkv_activation_elements + activation_elements * 2;
         if (elements_per_tape <= 0 ||
             elements_per_tape >
                 static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t)) ||
@@ -8799,8 +8829,9 @@ int run_transformer_lm_training_json(
         packed_qkv_attention_bf16_bytes = static_cast<std::int64_t>(bytes);
         for (std::size_t i = 0; i < block_tapes.size(); ++i) {
             const std::int64_t offset = static_cast<std::int64_t>(i) * elements_per_tape;
-            block_tapes[i].qkv_bf16 = base + offset;
-            block_tapes[i].packed_attn_out_bf16 = base + offset + qkv_activation_elements;
+            block_tapes[i].ln1_out_bf16 = base + offset;
+            block_tapes[i].qkv_bf16 = base + offset + activation_elements;
+            block_tapes[i].packed_attn_out_bf16 = base + offset + activation_elements + qkv_activation_elements;
         }
     };
     auto allocate_block_weight_bf16_arena = [&]() {
@@ -9704,6 +9735,30 @@ int run_transformer_lm_training_json(
             run(layer_norm(input, weight, bias, output, active_rows, kDim, kNormEps, nullptr), name);
         }
     };
+    auto run_layer_norm_bf16_out = [&](
+                                       const float* input,
+                                       const float* weight,
+                                       const float* bias,
+                                       float* output,
+                                       float* mean,
+                                       float* rstd,
+                                       std::uint16_t* output_bf16,
+                                       const std::string& name) {
+        if (!error.empty()) {
+            return;
+        }
+        if (output_bf16 != nullptr && layer_norm_stats_enabled && layer_norm_with_stats_bf16_out != nullptr) {
+            run(layer_norm_with_stats_bf16_out(
+                    input, weight, bias, output, mean, rstd, output_bf16, active_rows, kDim, kNormEps, nullptr),
+                name);
+        } else {
+            run_layer_norm(input, weight, bias, output, mean, rstd, name);
+            if (output_bf16 != nullptr && error.empty()) {
+                run(float32_to_bf16_bits(output, output_bf16, active_activation_elements, nullptr),
+                    name + ".store_bf16");
+            }
+        }
+    };
     auto run_layer_norm_backward_affine_accumulate = [&](
                                                         const float* input,
                                                         const float* grad_out,
@@ -10146,24 +10201,50 @@ int run_transformer_lm_training_json(
             fused_packed_attention_store != nullptr ? fused_packed_attention_store->o : tape.packed_attn_out_bf16;
         run_timed_stage(stage_name + ".attention", [&]() {
             run_timed_stage(stage_name + ".attention.ln1", [&]() {
-                run_layer_norm(block_input, block.ln1_weight, block.ln1_bias, tape.ln1_out, tape.ln1_mean, tape.ln1_rstd, label + ".ln1.forward");
+                run_layer_norm_bf16_out(
+                    block_input,
+                    block.ln1_weight,
+                    block.ln1_bias,
+                    tape.ln1_out,
+                    tape.ln1_mean,
+                    tape.ln1_rstd,
+                    ln1_bf16_qkv_forward_enabled ? tape.ln1_out_bf16 : nullptr,
+                    label + ".ln1.forward");
             });
             run_timed_stage(stage_name + ".attention.qkv", [&]() {
                 if (packed_qkv_attention_enabled) {
                     if (error.empty()) {
-                        run(linear_weight_bf16_output(
-                                tape.ln1_out,
-                                block.qkv_weight_bf16,
-                                fuse_qkv_bias_tk_gemm_enabled ? block.qkv_bias : nullptr,
-                                active_qkv_bf16,
-                                active_rows,
-                                kDim,
-                                kQkvDim,
-                                fuse_qkv_bias_tk_gemm_enabled,
-                                nullptr),
-                            fuse_qkv_bias_tk_gemm_enabled
-                                ? label + ".attn.qkv.forward.fused_bias.bf16_bits"
-                                : label + ".attn.qkv.forward.no_bias.bf16_bits");
+                        if (ln1_bf16_qkv_forward_enabled &&
+                            tape.ln1_out_bf16 != nullptr &&
+                            linear_bf16_input_weight_bf16_output != nullptr) {
+                            run(linear_bf16_input_weight_bf16_output(
+                                    tape.ln1_out_bf16,
+                                    block.qkv_weight_bf16,
+                                    fuse_qkv_bias_tk_gemm_enabled ? block.qkv_bias : nullptr,
+                                    active_qkv_bf16,
+                                    active_rows,
+                                    kDim,
+                                    kQkvDim,
+                                    fuse_qkv_bias_tk_gemm_enabled,
+                                    nullptr),
+                                fuse_qkv_bias_tk_gemm_enabled
+                                    ? label + ".attn.qkv.forward.fused_bias.bf16_ln1_bf16_bits"
+                                    : label + ".attn.qkv.forward.no_bias.bf16_ln1_bf16_bits");
+                        } else {
+                            run(linear_weight_bf16_output(
+                                    tape.ln1_out,
+                                    block.qkv_weight_bf16,
+                                    fuse_qkv_bias_tk_gemm_enabled ? block.qkv_bias : nullptr,
+                                    active_qkv_bf16,
+                                    active_rows,
+                                    kDim,
+                                    kQkvDim,
+                                    fuse_qkv_bias_tk_gemm_enabled,
+                                    nullptr),
+                                fuse_qkv_bias_tk_gemm_enabled
+                                    ? label + ".attn.qkv.forward.fused_bias.bf16_bits"
+                                    : label + ".attn.qkv.forward.no_bias.bf16_bits");
+                        }
                     }
                 } else {
                     if (error.empty()) run(linear_weight_bf16(tape.ln1_out, block.qkv_weight_bf16, nullptr, tape.qkv, active_rows, kDim, kQkvDim, false, nullptr), label + ".attn.qkv.forward.no_bias.weight_bf16");
@@ -10994,15 +11075,20 @@ int run_transformer_lm_training_json(
                 if (bf16_qkv_grad_handoff_enabled) {
                     if (error.empty()) {
                         if (bf16_qkv_dweight_enabled) {
-                            run(float32_to_bf16_bits(
-                                    tape.ln1_out,
-                                    active_qkv_bf16,
-                                    active_activation_elements,
-                                    nullptr),
-                                label + ".attn.qkv.ln1_out.to_bf16_bits");
-                            if (error.empty()) {
-                                run(linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits(
+                            const std::uint16_t* ln1_bf16_for_dweight =
+                                ln1_bf16_qkv_forward_enabled ? tape.ln1_out_bf16 : nullptr;
+                            if (ln1_bf16_for_dweight == nullptr) {
+                                run(float32_to_bf16_bits(
+                                        tape.ln1_out,
                                         active_qkv_bf16,
+                                        active_activation_elements,
+                                        nullptr),
+                                    label + ".attn.qkv.ln1_out.to_bf16_bits");
+                                ln1_bf16_for_dweight = active_qkv_bf16;
+                            }
+                            if (error.empty() && ln1_bf16_for_dweight != nullptr) {
+                                run(linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits(
+                                        ln1_bf16_for_dweight,
                                         active_qkv_grad_bf16,
                                         block.accum_grad_qkv_weight,
                                         block.accum_grad_qkv_bias,
@@ -11010,7 +11096,7 @@ int run_transformer_lm_training_json(
                                         kDim,
                                         kQkvDim,
                                         nullptr),
-                                    label + ".attn.qkv.backward_weight_bias.accumulate.bf16_bits_bf16_grad");
+                                    label + ".attn.qkv.backward_weight_bias.accumulate.bf16_ln1_bf16_grad");
                             }
                         } else {
                             run(linear_backward_weight_bias_accumulate_float32_bf16_bits(
@@ -12202,6 +12288,8 @@ int run_transformer_lm_training_json(
         << "  \"qkv_forward_layout_strategy\": \""
         << (packed_qkv_attention_enabled ? "packed-qkv-bf16-no-split" : "fused-split-to-heads")
         << "\",\n"
+        << "  \"qkv_forward_ln1_bf16_enabled\": "
+        << (ln1_bf16_qkv_forward_enabled ? "true" : "false") << ",\n"
         << "  \"qkv_forward_layout_kernel_launches_per_block\": " << (packed_qkv_attention_enabled ? 0 : 1) << ",\n"
         << "  \"qkv_forward_layout_legacy_launches_per_block\": 4,\n"
         << "  \"qkv_forward_layout_launches_elided_per_block\": " << (packed_qkv_attention_enabled ? 4 : 3) << ",\n"

@@ -6,6 +6,51 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Default dense GPT LN1 BF16 QKV forward and BF16 QKV dWeight
+
+#### Changed
+
+- Dense GPT native training now keeps the LN1 activation for packed QKV as BF16
+  during forward and reuses that buffer for QKV dWeight. The default path runs
+  LN1 through `nfn_native_tile_layer_norm_with_stats_bf16_out_float32`, feeds
+  QKV through `nfn_native_tile_linear_bf16_input_weight_bf16_output_float32`, and
+  reports `qkv_forward_ln1_bf16_enabled: true`.
+- `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT` now defaults on. Runtime JSON reports
+  `block_backward_bf16_qkv_dweight_enabled: true` and
+  `block_backward_qkv_dweight_strategy:
+  "packed-ln1-bf16-qkv-bf16-grad-dweight-bias-accumulate"` for the default
+  path.
+- The paired benchmark helper remains the required acceptance gate for kernel
+  candidates. The accepted default measured `0.990066x` train-loop
+  milliseconds-per-step versus the previous path and `1.010040x` train tokens/s
+  on the dedicated RTX 5090. A direct comparison against the corrected
+  llm.kittens baseline still leaves NeuralFn at `1.112816x` train-loop
+  milliseconds-per-step, so further block/LM-head work remains.
+
+#### Breaking changes
+
+- Rebuild `build/libnfn_native_train_tile_ops.so` before running the dense GPT
+  trainer. `nfn_gpt_native_train` now requires the raw ABI symbols
+  `nfn_native_tile_layer_norm_with_stats_bf16_out_float32` and
+  `nfn_native_tile_linear_bf16_input_weight_bf16_output_float32`.
+- To reproduce the previous runtime path for bisection, set both
+  `NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD=0` and
+  `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=0` before launching the trainer. The
+  `NFN_NATIVE_GPT2_*` names remain compatibility fallbacks for older scripts.
+
+#### Verification
+
+- Rebuilt the trainer and Tile ops library with `bash tools/build_native_gpt2_all.sh`.
+- Ran `python tools/check_native_no_torch_deps.py --json`.
+- Ran a clean one-step native transformer-LM smoke on the dedicated RTX 5090:
+  `build/nfn_gpt_native_train --tinystories --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so --train-transformer-lm --max-steps 1
+  --eval-every-steps 0 --no-checkpoint`.
+- Ran the accepted paired old-vs-new benchmark with
+  `NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD=0
+  NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=0` on the baseline side and the new defaults
+  on the candidate side.
+
 ### 2026-06-15 Correct llm.kittens paired benchmark step aggregation
 
 #### Changed

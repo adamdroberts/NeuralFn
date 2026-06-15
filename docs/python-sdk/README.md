@@ -159,7 +159,12 @@ arena with `float_allocation_strategy: "single-arena"`, suballocates BF16
 activation/scratch buffers from a single uint16 CUDA device arena with
 `uint16_allocation_strategy: "single-arena"`, uses combined token arenas with
 `token_buffer_allocation_strategy: "combined-arenas"`, and stays out of
-Python/Torch.
+Python/Torch. The default dense GPT block path keeps LN1 QKV forward and QKV
+dWeight on BF16 Tile/CUDA ABI calls, reporting
+`qkv_forward_ln1_bf16_enabled: true` and
+`block_backward_bf16_qkv_dweight_enabled: true`; set
+`NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD=0` and
+`NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=0` only when reproducing the previous path.
 Backend names are strict: use
 `"llm-kittens"` or `"tile-cuda"`. For the unified native training frontend, `bash
 tools/build_native_train_binding.sh` builds `neuralfn._native_train`, which is

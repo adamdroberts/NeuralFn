@@ -122,6 +122,7 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_FUSE_RESIDUAL1_STORE`,
 `NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`,
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU`,
+`NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD`,
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF`,
 `NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU`,
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`,
@@ -158,12 +159,12 @@ causal masks. Training JSON reports
 `attention_forward_tk_launch_count`, and `attention_backward_tk_launch_count`.
 
 Trainer-facing linear GEMMs use the same native ABI, and the full dense GPT
-trainer now keeps persistent BF16 shadows for block projection weights while
-retaining FP32 master weights, gradients, and AdamW state. The trainer refreshes
-QKV, attention projection, MLP FC, and MLP projection shadows with one
-`nfn_native_tile_float32_to_bf16_bits_many` call after initialization and each
-AdamW update. Transformer block forward/recompute projections and block dInput
-GEMMs consume those shadows through `nfn_native_tile_linear_weight_bf16_float32`,
+trainer now defaults QKV, attention projection, MLP FC, and MLP projection
+weights to the BF16-primary block-weight path while retaining FP32 gradients and
+AdamW state. The old FP32-master/BF16-shadow path remains available with
+`NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=0`. Transformer block
+forward/recompute projections and block dInput GEMMs consume those BF16 weights
+through `nfn_native_tile_linear_weight_bf16_float32`,
 `nfn_native_tile_linear_weight_bf16_output_float32`,
 `nfn_native_tile_linear_bf16_input_weight_bf16_float32`, and
 `nfn_native_tile_linear_backward_input_weight_bf16_float32`. Transformer block
@@ -217,7 +218,10 @@ Set
 bridge. Tied LM-head BF16 logits use the SM120 ThunderKittens GEMM
 bridge by default when the Tile ops library was built with TK support; set
 `NFN_TILE_CUDA_LINEAR_TK_GEMM=0` or `NFN_NATIVE_LINEAR_TK_GEMM=0` to force the
-BF16 `cublasGemmEx` fallback for diagnostics. The BF16 bridge keeps a
+BF16 `cublasGemmEx` fallback for diagnostics. The raw ABI also exposes
+`nfn_native_tile_layer_norm_with_stats_bf16_out_float32` and
+`nfn_native_tile_linear_bf16_input_weight_bf16_output_float32` for the default
+LN1-BF16 packed-QKV forward path. The BF16 bridge keeps a
 128-entry cache for stable packed operands such as weights and biases, but
 BF16-output GEMMs repack mutable activation inputs because native scratch
 activation pointers are reused with new contents. The cache is invalidated
@@ -752,16 +756,18 @@ saved path; the current `64 x 1024` TinyStories probe still regresses to about
 default remains the faster recompute plus process-workspace reuse path.
 
 Full GPT `--train-transformer-lm` now defaults to the packed-QKV attention
-layout. It writes the QKV projection as packed BF16 bits with QKV bias fused
-into the SM120 TK BF16 GEMM, runs the SM120 TK packed attention bridge over
-that row-major packed QKV tensor, and feeds the packed BF16 attention output
-directly into the attention projection forward GEMM and dWeight accumulation.
+layout. It writes LN1 output to BF16 with
+`nfn_native_tile_layer_norm_with_stats_bf16_out_float32`, writes the QKV
+projection as packed BF16 bits with QKV bias fused into the SM120 TK BF16 GEMM,
+runs the SM120 TK packed attention bridge over that row-major packed QKV tensor,
+and feeds the packed BF16 attention output directly into the attention
+projection forward GEMM and dWeight accumulation.
 Backward keeps packed attention `dQKV` in BF16 by
 default: the BF16-output packed backward ABI writes directly into a non-aliased
 BF16 scratch buffer that reuses the MLP BF16 scratch after MLP backward is done,
-then QKV dWeight+bias uses
-`nfn_native_tile_linear_backward_weight_bias_accumulate_float32_bf16_bits` and
-QKV dInput consumes the same BF16 gradient bits with BF16 block weights. Native
+then QKV dWeight+bias reuses the saved LN1 BF16 activation with
+`nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32`
+and QKV dInput consumes the same BF16 gradient bits with BF16 block weights. Native
 plan and training JSON report `qkv_forward_layout_strategy:
 "packed-qkv-bf16-no-split"`, `qkv_bias_layout_strategy:
 "packed-qkv-bf16-bias-fused-tk-gemm"`, `qkv_bias_fused_tk_gemm_enabled`,
@@ -770,6 +776,7 @@ plan and training JSON report `qkv_forward_layout_strategy:
 "elided-direct-bf16-projection"`, `attention_backward_bf16_qkv_grad_handoff_enabled`,
 `attention_backward_direct_bf16_qkv_grad_scratch_enabled`,
 `attention_backward_direct_bf16_qkv_grad_scratch_elements`,
+`qkv_forward_ln1_bf16_enabled`,
 `qkv_backward_layout_strategy: "packed-qkv-bf16-gradient-handoff"`,
 `attention_backward_qkv_bridge_strategy:
 "tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff"`, and
@@ -778,11 +785,14 @@ plan and training JSON report `qkv_forward_layout_strategy:
 active. Set `NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH=0` to reproduce the
 older workspace-to-packed-QKV-buffer copy path, or set
 `NFN_NATIVE_GPT_FUSE_QKV_BIAS_TK_GEMM=0` to reproduce the older separate
-packed BF16 QKV bias-add launch. Set
-`NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=1` to pack LN1 output into the freed packed-QKV
-BF16 buffer and profile BF16/BF16 QKV dWeight+bias accumulation. Runtime JSON
-reports `block_backward_bf16_qkv_dweight_enabled` and
-`block_backward_qkv_dweight_strategy` for that candidate. Set
+packed BF16 QKV bias-add launch, or set
+`NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD=0` to reproduce the previous float32-LN1
+QKV forward path. BF16/BF16 QKV dWeight+bias accumulation is default-on.
+Runtime JSON reports `block_backward_bf16_qkv_dweight_enabled` and
+`block_backward_qkv_dweight_strategy:
+"packed-ln1-bf16-qkv-bf16-grad-dweight-bias-accumulate"`. Set
+`NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=0` to reproduce the previous float32-LN1
+dWeight path. Set
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF=0` to compare against the
 older packed path that expands `dQKV` to float32 before QKV dWeight/dInput. Set
 `NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE=0`,
