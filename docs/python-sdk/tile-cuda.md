@@ -664,14 +664,27 @@ for those tensors. JSON reports
 `startup_per_buffer_zero_fill_launches_elided`; the default 12-layer shape
 elides 369 per-buffer zero-fill launches.
 Nonzero constant parameter initialization uses
-`nfn_native_tile_fill_many_values_float32` over a device descriptor table, so
-position weights, final norm, residual scale, and all block constant weights are
-filled with one Tile launch instead of one launch per tensor. JSON reports
-`parameter_initialization_strategy: "fused-multi-buffer-fill-values"`,
+`nfn_native_tile_fill_many_values_float32` over a device descriptor table for
+float32 weights and `nfn_native_tile_fill_many_values_bf16_bits_float32` for
+BF16-primary transformer block weights. With
+`NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=1`, the dense GPT trainer defaults
+`NFN_NATIVE_GPT_DIRECT_BF16_BLOCK_WEIGHT_INIT=1`, initializes QKV, attention
+projection, MLP FC, and MLP projection weights directly in the BF16 arena, and
+skips the initial `nfn_native_tile_float32_to_bf16_bits_many` block-weight
+refresh. Set `NFN_NATIVE_GPT_DIRECT_BF16_BLOCK_WEIGHT_INIT=0` to reproduce the
+older float32 fill plus BF16 pack startup path while keeping BF16-primary AdamW
+updates enabled. JSON reports
+`direct_bf16_block_weight_initialization_enabled`,
+`block_weight_bf16_initialization_strategy`,
+`parameter_initialization_strategy: "split-float32-and-bf16-fill-many-values"`
+or `"fused-multi-buffer-fill-values"`,
 `parameter_initialization_kernel_launches_per_startup`,
+`bf16_parameter_initialization_descriptor_count`,
+`bf16_parameter_initialization_kernel_launches`,
 `parameter_initialization_per_buffer_launches_elided`, and
-`block_state_layout.parameter_initialization_loop: false`; the default
-12-layer shape elides 74 per-buffer nonzero fill launches.
+`block_state_layout.parameter_initialization_loop: false`. The direct default
+uses one float32 fill-many launch plus one BF16 fill-many launch at the
+12-layer shape.
 The descriptor tables used by parameter fill, gradient zeroing, gradient
 clipping, and AdamW are suballocated from one device descriptor arena and
 uploaded from one host-packed descriptor arena instead of ten separate small

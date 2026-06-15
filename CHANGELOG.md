@@ -6,6 +6,45 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Directly initialize BF16-primary block weights
+
+#### Changed
+
+- Added `nfn_native_tile_fill_many_values_bf16_bits_float32`, a Tile-CUDA
+  descriptor-driven fill primitive for BF16 bit buffers.
+- Dense GPT native training now defaults to direct BF16 startup initialization
+  for BF16-primary transformer block weights. QKV, attention projection, MLP FC,
+  and MLP projection weights are filled directly in the BF16 block-weight arena,
+  skipping the old initial float32 fill plus BF16 pack.
+- Added `NFN_NATIVE_GPT_DIRECT_BF16_BLOCK_WEIGHT_INIT` with the
+  `NFN_NATIVE_GPT2_DIRECT_BF16_BLOCK_WEIGHT_INIT` compatibility fallback. Set it
+  to `0` to reproduce the old startup path while leaving BF16-primary AdamW
+  updates enabled.
+- Runtime JSON now reports
+  `direct_bf16_block_weight_initialization_enabled`,
+  `block_weight_bf16_initialization_strategy`,
+  `bf16_parameter_initialization_descriptor_count`,
+  `bf16_parameter_initialization_max_elements`, and
+  `bf16_parameter_initialization_kernel_launches`.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so`,
+  `build/nfn_gpt_native_train`, and `build/nfn_gpt2_native_train`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k 'native_gpt2_cpp_cli_builds_and_uses_sm120_defaults or packed_qkv_uint16_arena_reserves_full_scratch_layout'`.
+- Ran direct and forced-old one-step native GPT smokes on the dedicated RTX 5090
+  with `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1`. The direct path
+  reported `block_weight_bf16_initialization_strategy:
+  "direct-bf16-fill-many-values"`, 27 float32 fill descriptors, 48 BF16 fill
+  descriptors, and `block_weight_bf16_refresh_count: 0`. The forced-old path
+  reported `block_weight_bf16_initialization_strategy:
+  "float32-fill-then-bf16-pack"`, 75 float32 fill descriptors, no BF16 fill
+  descriptors, and `block_weight_bf16_refresh_count: 1`.
+- Ran `python tools/paired_kernel_speed.py` with 3 measured 5-step samples and
+  one warmup on CUDA device 0. Direct BF16 init reduced mean setup wall time from
+  534.8 ms to 512.9 ms. Mean total 5-step runtime was unchanged within noise
+  because the training loop dominates.
+
 ### 2026-06-15 Add BF16-gradient global-norm sumsq Tile ABI
 
 #### Changed

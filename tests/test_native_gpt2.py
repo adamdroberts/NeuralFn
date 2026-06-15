@@ -2291,14 +2291,18 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["descriptor_arena_suballocation_count"] == 0
     assert train_transformer_payload["descriptor_upload_strategy"] == "single-host-packed-arena-copy"
     assert train_transformer_payload["descriptor_arena_copy_count"] == 0
-    assert train_transformer_payload["descriptor_arena_copy_calls_elided"] == 25
-    assert train_transformer_payload["descriptor_cuda_mallocs_elided"] == 25
+    assert train_transformer_payload["descriptor_arena_copy_calls_elided"] == 28
+    assert train_transformer_payload["descriptor_cuda_mallocs_elided"] == 28
     assert train_transformer_payload["parameter_initialization_strategy"] == "fused-multi-buffer-fill-values"
     assert train_transformer_payload["parameter_initialization_descriptor_count"] == 0
+    assert train_transformer_payload["bf16_parameter_initialization_descriptor_count"] == 0
     assert train_transformer_payload["parameter_initialization_max_elements"] == 0
+    assert train_transformer_payload["bf16_parameter_initialization_max_elements"] == 0
     assert train_transformer_payload["parameter_initialization_kernel_launches"] == 0
+    assert train_transformer_payload["bf16_parameter_initialization_kernel_launches"] == 0
     assert train_transformer_payload["parameter_initialization_kernel_launches_per_startup"] == 0
-    assert train_transformer_payload["parameter_initialization_per_buffer_launches_elided"] == 74
+    assert train_transformer_payload["parameter_initialization_per_buffer_launches_elided"] == 75
+    assert train_transformer_payload["direct_bf16_block_weight_initialization_enabled"] is True
     assert train_transformer_payload["adamw_update_strategy"] in {
         "fused-multi-buffer-device-scale",
         "split-float32-and-bf16-param-multi-buffer-device-scale",
@@ -2365,8 +2369,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "parameter_initialization_loop_elided": True,
         "parameter_initialization_strategy": "fused-multi-buffer-fill-values",
         "parameter_initialization_descriptor_count": 0,
+        "bf16_parameter_initialization_descriptor_count": 0,
         "parameter_initialization_kernel_launches_per_startup": 0,
-        "parameter_initialization_per_buffer_launches_elided": 74,
+        "parameter_initialization_per_buffer_launches_elided": 75,
         "startup_zero_init_strategy": "adamw-state-contiguous-range-cuda-memset",
         "startup_cuda_memset_zero_enabled": True,
         "startup_cuda_memset_zero_available": train_transformer_payload["startup_cuda_memset_zero_available"],
@@ -2383,8 +2388,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "descriptor_arena_suballocation_count": 0,
         "descriptor_upload_strategy": "single-host-packed-arena-copy",
         "descriptor_arena_copy_count": 0,
-        "descriptor_arena_copy_calls_elided": 25,
-        "descriptor_cuda_mallocs_elided": 25,
+        "descriptor_arena_copy_calls_elided": 28,
+        "descriptor_cuda_mallocs_elided": 28,
         "block0_duplicate_allocation_elided": True,
         "block0_duplicate_activation_allocation_elided": True,
         "block0_duplicate_parameter_initialization_elided": True,
@@ -2436,7 +2441,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "gradient_sumsq_per_buffer_launches_elided": 147,
         "adamw_device_clip_scale_fused": True,
         "adamw_bf16_shadow_refresh_strategy": "elided-bf16-primary-params",
+        "block_weight_bf16_initialization_strategy": "direct-bf16-fill-many-values",
         "block_weight_bf16_primary_param_update_enabled": True,
+        "direct_bf16_block_weight_initialization_enabled": True,
         "block_weight_bf16_gradient_storage_strategy": "float32-accumulation-buffer",
         "adamw_bf16_param_bf16_grad_kernel_loaded": False,
         "adamw_update_loop": False,
@@ -2546,6 +2553,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_copy_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_fill_many_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_fill_many_values_float32" in train_transformer_payload["kernels"]
+    assert "nfn_native_tile_fill_many_values_bf16_bits_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_init_gpt2_token_weight_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_uint16_to_int64" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_float32_to_bf16_bits" in train_transformer_payload["kernels"]
@@ -3552,9 +3560,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_fill_float32" in header_text
     assert "nfn_native_tile_fill_many_float32" in header_text
     assert "nfn_native_tile_fill_many_values_float32" in header_text
+    assert "nfn_native_tile_fill_many_values_bf16_bits_float32" in header_text
     assert "launch_fill_many_float32" in source_text
     assert "launch_fill_many_values_float32" in source_text
+    assert "launch_fill_many_values_bf16_bits_float32" in source_text
     assert "fill_many_values_float32_kernel" in kernels_text
+    assert "fill_many_values_bf16_bits_float32_kernel" in kernels_text
+    assert "block_weight_bf16_initialization_strategy" in gpt2_source_text
+    assert "bf16_parameter_initialization_descriptor_count" in gpt2_source_text
     assert "setup_timing" in gpt2_source_text
     assert "setup.float_arena_materialize" in gpt2_source_text
     assert "setup.zero_init" in gpt2_source_text
@@ -4078,6 +4091,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_DIRECT_BF16_BLOCK_WEIGHT_INIT" in gpt2_source_text
     assert "NFN_NATIVE_GPT_FUSE_QKV_BIAS_TK_GEMM" in gpt2_source_text
     assert "NFN_NATIVE_GPT_BF16_QKV_DWEIGHT" in gpt2_source_text
     assert "attention_backward_direct_bf16_qkv_grad_scratch_enabled" in gpt2_source_text

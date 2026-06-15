@@ -3822,6 +3822,31 @@ __tile_global__ void fill_many_values_float32_kernel(
   ct::store_masked(values + idx, tile, mask);
 }
 
+__tile_global__ void fill_many_values_bf16_bits_float32_kernel(
+    std::uint16_t* const* __restrict__ buffers,
+    const std::int64_t* __restrict__ elements,
+    const float* __restrict__ fill_values,
+    std::int64_t buffer_count) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  const int tensor = ct::bid().x;
+  const int chunk = ct::bid().y;
+  if (static_cast<std::int64_t>(tensor) >= buffer_count) {
+    return;
+  }
+
+  auto* values = ct::assume_aligned(
+      reinterpret_cast<__nv_bfloat16*>(buffers[tensor]), 16_ic);
+  const std::int64_t n = elements[tensor];
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto tile = ct::element_cast<__nv_bfloat16>(
+      ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(fill_values[tensor]));
+  ct::store_masked(values + idx, tile, mask);
+}
+
 __tile_global__ void init_gpt2_token_weight_float32_kernel(
     float* __restrict__ values,
     std::int64_t n) {
@@ -9584,6 +9609,25 @@ void launch_fill_many_values_float32(
   const int tensor_blocks = static_cast<int>(buffer_count);
   const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
   fill_many_values_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
+      buffers,
+      elements,
+      values,
+      buffer_count);
+}
+
+void launch_fill_many_values_bf16_bits_float32(
+    std::uint16_t* const* buffers,
+    const std::int64_t* elements,
+    const float* values,
+    std::int64_t buffer_count,
+    std::int64_t max_elements,
+    cudaStream_t stream) {
+  if (buffer_count <= 0 || max_elements <= 0) {
+    return;
+  }
+  const int tensor_blocks = static_cast<int>(buffer_count);
+  const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  fill_many_values_bf16_bits_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
       buffers,
       elements,
       values,
