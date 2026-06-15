@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Paired benchmark idle-GPU guard
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now accepts `--require-idle-selected-gpu`.
+  When enabled, the paired benchmark aborts before warmup or a measured pair if
+  `nvidia-smi` reports any compute process on the selected CUDA GPU.
+- The idle guard checks the selected GPU UUID rather than global NVIDIA process
+  count, so a separate primary display GPU can remain active while the dedicated
+  RTX 5090 compute GPU is required to be idle for candidate-vs-baseline kernel
+  measurements.
+- Text and JSON output now include `require_idle_selected_gpu` so saved
+  benchmark artifacts show whether the guard was active.
+
+#### Verification
+
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k 'paired_kernel_speed_tool_compiles_and_smokes or paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu or paired_kernel_speed_tool_require_idle_selected_gpu_checks_selected_uuid or paired_kernel_speed_tool_records_command_timeout or paired_kernel_speed_tool_extracts_llm_kittens_step_metrics or paired_kernel_speed_tool_sums_llm_kittens_step_time'`.
+- Ran a live dedicated-GPU smoke:
+  `python tools/paired_kernel_speed.py --baseline 'python -c "print(1)"' --candidate 'python -c "print(2)"' --samples 1 --warmup 0 --cuda-visible-devices 0 --require-idle-selected-gpu --json-out /tmp/nfn_idle_guard_smoke.json`;
+  the helper reported `require_idle_selected_gpu: True` and zero compute
+  processes on GPU 0.
+
 ### 2026-06-15 Direct GPT block-output writes
 
 #### Changed

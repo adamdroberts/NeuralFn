@@ -8,6 +8,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 
 def test_tile_cuda_examples_are_present_and_compile() -> None:
     example_dir = Path("examples/tile_cuda")
@@ -86,6 +88,8 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["measurement"] == "paired_interleaved_commands"
     assert payload["cuda_visible_devices"] == "test-device"
     assert payload["cuda_device_max_connections"] == "1"
+    assert payload["require_idle_selected_gpu"] is False
+    assert "require_idle_selected_gpu: False" in proc.stdout
     assert "gpu_before" in payload
     assert "gpu_after" in payload
     assert "gpu_sample_summary" in payload
@@ -220,6 +224,62 @@ def test_paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu() -> No
     explicit = module.resolve_cuda_visible_devices("", snapshot)
     assert explicit["resolved"] == ""
     assert explicit["mode"] == "unchanged"
+
+
+def test_paired_kernel_speed_tool_require_idle_selected_gpu_checks_selected_uuid() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    idle_snapshot = {
+        "gpus": [
+            {
+                "index": "0",
+                "uuid": "GPU-compute",
+                "display_active": "Disabled",
+                "utilization.gpu_pct": "0",
+                "memory.used_mib": "334",
+            },
+            {
+                "index": "1",
+                "uuid": "GPU-display",
+                "display_active": "Enabled",
+                "utilization.gpu_pct": "20",
+                "memory.used_mib": "2048",
+            },
+        ],
+        "compute_processes": [
+            {
+                "gpu_uuid": "GPU-display",
+                "pid": "100",
+                "process_name": "desktop",
+                "used_memory_mib": "512",
+            }
+        ],
+    }
+    module.require_idle_selected_gpu(idle_snapshot, "0", phase="unit test")
+
+    busy_snapshot = {
+        **idle_snapshot,
+        "compute_processes": [
+            *idle_snapshot["compute_processes"],
+            {
+                "gpu_uuid": "GPU-compute",
+                "pid": "200",
+                "process_name": "trainer",
+                "used_memory_mib": "4096",
+            },
+        ],
+    }
+    with pytest.raises(SystemExit, match="trainer"):
+        module.require_idle_selected_gpu(busy_snapshot, "0", phase="unit test")
 
 
 def test_paired_kernel_speed_tool_records_command_timeout() -> None:

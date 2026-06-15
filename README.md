@@ -39,7 +39,11 @@ leave the environment unchanged. It still alternates pairs in the same sampling
 window and runs one warmup pair by default so first-use CUDA/kernel load does
 not contaminate reported samples. It sets `CUDA_DEVICE_MAX_CONNECTIONS=1` for
 both commands by default; pass `--cuda-device-max-connections ""` to leave that
-environment unchanged. When `nvidia-smi` is available, the JSON also includes
+environment unchanged. Pass `--require-idle-selected-gpu` for dedicated
+benchmark runs that must abort if `nvidia-smi` reports any compute process on
+the selected CUDA GPU before warmup or a measured pair. The idle check is scoped
+to the selected GPU UUID, so a separate display GPU can still be active. When
+`nvidia-smi` is available, the JSON also includes
 the resolved `cuda_device_selection`, run-level
 `gpu_before` / `gpu_after` snapshots and per-sample `paired_samples[].gpu_before`
 / `paired_samples[].gpu_after` snapshots with GPU identity, display-active

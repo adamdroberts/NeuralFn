@@ -93,6 +93,14 @@ def parse_args() -> argparse.Namespace:
             "otherwise the run stops at the first timeout."
         ),
     )
+    parser.add_argument(
+        "--require-idle-selected-gpu",
+        action="store_true",
+        help=(
+            "Abort before warmup or measured samples if nvidia-smi reports any compute "
+            "process on the selected CUDA GPU."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -460,6 +468,48 @@ def _compute_process_count(snapshot: dict[str, object], gpu_uuid: str = "") -> i
     return count
 
 
+def _compute_processes_for_gpu(snapshot: dict[str, object], gpu_uuid: str) -> list[dict[str, str]]:
+    processes = snapshot.get("compute_processes")
+    if not isinstance(processes, list) or not gpu_uuid:
+        return []
+    matched: list[dict[str, str]] = []
+    for process in processes:
+        if isinstance(process, dict) and str(process.get("gpu_uuid", "")).strip() == gpu_uuid:
+            matched.append({str(key): str(value) for key, value in process.items()})
+    return matched
+
+
+def require_idle_selected_gpu(
+    snapshot: dict[str, object],
+    cuda_visible_devices: str,
+    *,
+    phase: str,
+) -> None:
+    if not cuda_visible_devices:
+        return
+    selected_gpu = _selected_gpu(snapshot, cuda_visible_devices)
+    if not isinstance(selected_gpu, dict):
+        raise SystemExit(
+            f"--require-idle-selected-gpu could not identify CUDA device "
+            f"{_first_cuda_device_index(cuda_visible_devices)!r} in nvidia-smi output during {phase}"
+        )
+    selected_uuid = str(selected_gpu.get("uuid", "")).strip()
+    processes = _compute_processes_for_gpu(snapshot, selected_uuid)
+    if not processes:
+        return
+    process_lines = "\n".join(
+        "  "
+        f"pid={process.get('pid', '')} name={process.get('process_name', '')} "
+        f"used_memory_mib={process.get('used_memory_mib', '')}"
+        for process in processes
+    )
+    raise SystemExit(
+        f"--require-idle-selected-gpu found {len(processes)} compute process(es) on "
+        f"CUDA device {_first_cuda_device_index(cuda_visible_devices)} "
+        f"({selected_uuid}) during {phase}:\n{process_lines}"
+    )
+
+
 def summarize_gpu_sample_load(
     rows: Sequence[dict[str, object]],
     cuda_visible_devices: str,
@@ -605,6 +655,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     cuda_device_selection = resolve_cuda_visible_devices(str(args.cuda_visible_devices or ""), gpu_before)
     cuda_visible_devices = str(cuda_device_selection.get("resolved", "") or "").strip()
     cuda_device_max_connections = str(args.cuda_device_max_connections or "").strip()
+    if args.require_idle_selected_gpu:
+        require_idle_selected_gpu(gpu_before, cuda_visible_devices, phase="initial snapshot")
     run_env = None
     if cuda_visible_devices or cuda_device_max_connections:
         run_env = dict(os.environ)
@@ -614,6 +666,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             run_env["CUDA_DEVICE_MAX_CONNECTIONS"] = cuda_device_max_connections
 
     for warmup_index in range(warmup):
+        if args.require_idle_selected_gpu:
+            require_idle_selected_gpu(gpu_snapshot(), cuda_visible_devices, phase=f"warmup pair {warmup_index + 1}")
         for command in ordered_pair(warmup_index, baseline, candidate):
             run_once(
                 command,
@@ -627,11 +681,18 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     candidate_seconds: list[float] = []
     ratios: list[float] = []
     for sample_index in range(samples):
+        sample_gpu_before = gpu_snapshot()
+        if args.require_idle_selected_gpu:
+            require_idle_selected_gpu(
+                sample_gpu_before,
+                cuda_visible_devices,
+                phase=f"measured sample {sample_index + 1}",
+            )
         order_names: list[str] = []
         row: dict[str, object] = {
             "sample": sample_index + 1,
             "order": order_names,
-            "gpu_before": gpu_snapshot(),
+            "gpu_before": sample_gpu_before,
         }
         by_name: dict[str, dict[str, object]] = {}
         for command in ordered_pair(sample_index, baseline, candidate):
@@ -666,6 +727,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "cuda_visible_devices": cuda_visible_devices,
         "cuda_device_selection": cuda_device_selection,
         "cuda_device_max_connections": cuda_device_max_connections,
+        "require_idle_selected_gpu": bool(args.require_idle_selected_gpu),
         "command_timeout_seconds": timeout_seconds,
         "gpu_before": gpu_before,
         "gpu_after": gpu_after,
@@ -699,6 +761,7 @@ def print_text(payload: dict[str, object]) -> None:
             f"resolved={cuda_device_selection.get('resolved', '')} "
             f"mode={cuda_device_selection.get('mode', '')}"
         )
+    print(f"  require_idle_selected_gpu: {payload.get('require_idle_selected_gpu', False)}")
     gpu_before = payload.get("gpu_before")
     if isinstance(gpu_before, dict):
         gpus = gpu_before.get("gpus")
