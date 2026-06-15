@@ -1136,7 +1136,7 @@ bool print_tile_plan(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE",
                               "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_LSE"}),
-            true);
+            false);
     constexpr std::int64_t activation_tape_count = 1;
     const std::int64_t packed_qkv_attention_bf16_elements =
         packed_qkv_attention_enabled ? (tokens * 768 * 4 * activation_tape_count) : 0;
@@ -8388,7 +8388,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE",
                               "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_LSE"}),
-            true);
+            false);
     const std::int64_t stored_packed_attention_block_count =
         store_packed_attention_activations_enabled && trained_layers > 0
             ? std::min<std::int64_t>(

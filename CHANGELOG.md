@@ -6,6 +6,43 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Default packed-attention workspace LSE
+
+#### Changed
+
+- Dense GPT native training still stores packed BF16 QKV and packed BF16 O for
+  saved packed-attention blocks by default, but no longer stores per-row TK
+  `lse` unless requested. The default saved packed-attention backward now uses
+  the workspace-LSE consumer strategy
+  `"saved-packed-qkv-o-workspace-lse-bf16-backward-to-qkv"`, trimming the saved
+  float arena while preserving the fast saved-QKV/O backward path.
+- Set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=1` or the
+  `NFN_NATIVE_GPT2_*` fallback to opt into the previous saved-LSE buffer for
+  paired benchmarks.
+
+#### Verification
+
+- Confirmed the dedicated RTX 5090 is GPU 0 with display disabled before timing:
+  `NVIDIA GeForce RTX 5090`, `543/32607` MiB used, `0%` utilization, and no
+  compute processes.
+- After changing the default, compared the old saved-LSE path
+  (`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=1`) against the new workspace-LSE
+  default with four measured three-step TinyStories pairs after one warmup pair
+  on GPU 0. The new default reported `train_loop_wall_ms_per_step` ratio
+  `0.999977`, token-throughput ratio `1.000034`, and total wall-time ratio
+  `0.998713`.
+- Rejected disabling stored MLP activations because it made the training loop
+  `1.311890x` slower despite reducing setup time.
+- Rejected disabling direct BF16 QKV gradient scratch because it made the
+  training loop `1.012255x` slower.
+- Rejected disabling BF16-primary block-weight updates because the FP32-master
+  shadow path was slightly slower with `train_loop_wall_ms_per_step` ratio
+  `1.001927`.
+- Rejected disabling stored packed-attention QKV/O activations because it made
+  the training loop `1.091878x` slower.
+- Rejected disabling BF16 MLP gradient handoff because it made the training
+  loop `1.075134x` slower.
+
 ### 2026-06-15 Retune native GPT LM-head row chunk default to 6144
 
 #### Changed
