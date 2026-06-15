@@ -16,7 +16,12 @@ DEFAULT_NATIVE_GPT2_LAUNCHER = "build/nfn_gpt2_tile_train"
 DEFAULT_NATIVE_GPT_CLI = "build/nfn_gpt_native_train"
 DEFAULT_NATIVE_GPT2_CLI = DEFAULT_NATIVE_GPT_CLI
 LEGACY_NATIVE_GPT2_CLI = "build/nfn_gpt2_native_train"
-NATIVE_GPT2_BINDING_MODULES = ("neuralfn_native_gpt2", "neuralfn._native_gpt2")
+NATIVE_GPT2_BINDING_MODULES = (
+    "neuralfn_native_gpt",
+    "neuralfn._native_gpt",
+    "neuralfn_native_gpt2",
+    "neuralfn._native_gpt2",
+)
 NATIVE_GPT2_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT2_CHECKPOINT_HEADER_INTS = 256
 NATIVE_GPT2_CHECKPOINT_HEADER_BYTES = NATIVE_GPT2_CHECKPOINT_HEADER_INTS * 4
@@ -841,10 +846,10 @@ def _load_native_gpt2_binding():
         except ImportError as exc:
             errors.append(f"{module_name}: {exc}")
             continue
-        runner = getattr(module, "run_gpt2", None) or getattr(module, "run_train", None)
+        runner = getattr(module, "run_gpt", None) or getattr(module, "run_gpt2", None) or getattr(module, "run_train", None)
         if callable(runner):
             return module_name, runner
-        errors.append(f"{module_name}: missing run_gpt2(config_dict) or run_train(config_dict)")
+        errors.append(f"{module_name}: missing run_gpt(config_dict), run_gpt2(config_dict), or run_train(config_dict)")
     raise ImportError("; ".join(errors) if errors else "no native GPT binding modules configured")
 
 

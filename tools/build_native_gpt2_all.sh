@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BINDING_OUT="${NFN_NATIVE_GPT2_BINDING_OUT:-}"
+GPT_BINDING_OUT="${NFN_NATIVE_GPT_BINDING_OUT:-}"
+GPT2_BINDING_OUT="${NFN_NATIVE_GPT2_BINDING_OUT:-}"
 NATIVE_TRAIN_BINDING_OUT="${NFN_NATIVE_TRAIN_BINDING_OUT:-}"
 LAUNCHER_OUT="${NFN_NATIVE_GPT2_LAUNCHER_OUT:-}"
 GPT_CLI_OUT="${NFN_NATIVE_GPT_CLI_OUT:-}"
@@ -11,8 +12,14 @@ NATIVE_TRAIN_OUT="${NFN_NATIVE_TRAIN_CLI_OUT:-}"
 MISSING_TRAINERS_OUT_DIR="${NFN_NATIVE_MISSING_TRAINERS_OUT_DIR:-}"
 NATIVE_TILE_OPS_OUT="${NFN_NATIVE_TRAIN_TILE_OPS_OUT:-}"
 
-if [[ -n "${BINDING_OUT}" ]]; then
-  bash "${ROOT_DIR}/tools/build_native_gpt2_binding.sh" "${BINDING_OUT}"
+if [[ -n "${GPT_BINDING_OUT}" ]]; then
+  bash "${ROOT_DIR}/tools/build_native_gpt_binding.sh" "${GPT_BINDING_OUT}"
+else
+  bash "${ROOT_DIR}/tools/build_native_gpt_binding.sh"
+fi
+
+if [[ -n "${GPT2_BINDING_OUT}" ]]; then
+  bash "${ROOT_DIR}/tools/build_native_gpt2_binding.sh" "${GPT2_BINDING_OUT}"
 else
   bash "${ROOT_DIR}/tools/build_native_gpt2_binding.sh"
 fi

@@ -25,6 +25,7 @@ from neuralfn.native_gpt import (
     native_gpt_runner_status,
     normalize_native_gpt_encoding_name,
     read_native_gpt_checkpoint_info,
+    run_native_gpt,
 )
 from neuralfn.native_gpt2 import (
     NativeGpt2RunConfig,
@@ -648,6 +649,8 @@ def test_native_gpt2_binding_runner_invokes_in_process_module(monkeypatch: pytes
         calls.append(payload)
         return 17
 
+    monkeypatch.delitem(sys.modules, "neuralfn_native_gpt", raising=False)
+    monkeypatch.delitem(sys.modules, "neuralfn._native_gpt", raising=False)
     monkeypatch.setitem(sys.modules, "neuralfn_native_gpt2", SimpleNamespace(run_gpt2=fake_run))
     cfg = NativeGpt2RunConfig(
         executable="train_gpt2cu",
@@ -846,6 +849,8 @@ def test_native_gpt2_cpp_binding_builds_and_runs(
     assert binding.exists()
 
     monkeypatch.setattr(neuralfn, "__path__", [str(package_dir), *list(neuralfn.__path__)])
+    monkeypatch.delitem(sys.modules, "neuralfn_native_gpt", raising=False)
+    monkeypatch.delitem(sys.modules, "neuralfn._native_gpt", raising=False)
     monkeypatch.delitem(sys.modules, "neuralfn_native_gpt2", raising=False)
     monkeypatch.delitem(sys.modules, "neuralfn._native_gpt2", raising=False)
     cfg = NativeGpt2RunConfig(
@@ -873,6 +878,60 @@ def test_native_gpt2_cpp_binding_builds_and_runs(
     assert status.resolved == "binding"
     assert status.binding_module == "neuralfn._native_gpt2"
     assert run_native_gpt2(cfg, runner="auto") == 0
+
+
+def test_native_gpt_cpp_binding_builds_and_runs_generic_module(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if shutil.which("c++") is None:
+        pytest.skip("c++ compiler not available")
+    root = Path(__file__).resolve().parents[1]
+    ext_suffix = sysconfig.get_config_var("EXT_SUFFIX") or ".so"
+    package_dir = tmp_path / "neuralfn"
+    binding = package_dir / f"_native_gpt{ext_suffix}"
+
+    build = subprocess.run(
+        ["bash", str(root / "tools" / "build_native_gpt_binding.sh"), str(binding)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert build.returncode == 0, build.stderr
+    assert binding.exists()
+
+    monkeypatch.setattr(neuralfn, "__path__", [str(package_dir), *list(neuralfn.__path__)])
+    monkeypatch.delitem(sys.modules, "neuralfn_native_gpt", raising=False)
+    monkeypatch.delitem(sys.modules, "neuralfn._native_gpt", raising=False)
+    monkeypatch.delitem(sys.modules, "neuralfn_native_gpt2", raising=False)
+    monkeypatch.delitem(sys.modules, "neuralfn._native_gpt2", raising=False)
+    cfg = NativeGptRunConfig(
+        executable="/bin/true",
+        train_data="train.bin",
+        val_data="val.bin",
+        output_dir="out",
+        model_descriptor="d12",
+        eval_every_steps=250,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        final_lr_fraction=0.0,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=20000,
+    )
+
+    status = native_gpt_runner_status("auto")
+
+    assert status.resolved == "binding"
+    assert status.binding_module == "neuralfn._native_gpt"
+    assert run_native_gpt(cfg, runner="auto") == 0
 
 
 def test_native_gpt2_cpp_binding_uses_compiled_cli_for_alias_only_config(
@@ -909,6 +968,8 @@ def test_native_gpt2_cpp_binding_uses_compiled_cli_for_alias_only_config(
     monkeypatch.setenv("NFN_NATIVE_GPT2_CLI", str(compiled_cli))
     monkeypatch.setenv("NFN_TEST_COMPILED_CLI_ARGS", str(observed_args))
     monkeypatch.setattr(neuralfn, "__path__", [str(package_dir), *list(neuralfn.__path__)])
+    monkeypatch.delitem(sys.modules, "neuralfn_native_gpt", raising=False)
+    monkeypatch.delitem(sys.modules, "neuralfn._native_gpt", raising=False)
     monkeypatch.delitem(sys.modules, "neuralfn_native_gpt2", raising=False)
     monkeypatch.delitem(sys.modules, "neuralfn._native_gpt2", raising=False)
     cfg = build_native_gpt2_compiled_cli_run_config(
@@ -3374,6 +3435,7 @@ def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> N
     root = Path(__file__).resolve().parents[1]
     ext_suffix = sysconfig.get_config_var("EXT_SUFFIX") or ".so"
     env = os.environ.copy()
+    env["NFN_NATIVE_GPT_BINDING_OUT"] = str(tmp_path / f"_native_gpt{ext_suffix}")
     env["NFN_NATIVE_GPT2_BINDING_OUT"] = str(tmp_path / f"_native_gpt2{ext_suffix}")
     env["NFN_NATIVE_TRAIN_BINDING_OUT"] = str(tmp_path / f"_native_train{ext_suffix}")
     env["NFN_NATIVE_GPT2_LAUNCHER_OUT"] = str(tmp_path / "nfn_gpt2_tile_train")
@@ -3394,6 +3456,7 @@ def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> N
     )
 
     assert proc.returncode == 0, proc.stderr
+    assert Path(env["NFN_NATIVE_GPT_BINDING_OUT"]).exists()
     assert Path(env["NFN_NATIVE_GPT2_BINDING_OUT"]).exists()
     assert Path(env["NFN_NATIVE_TRAIN_BINDING_OUT"]).exists()
     assert Path(env["NFN_NATIVE_GPT2_LAUNCHER_OUT"]).exists()

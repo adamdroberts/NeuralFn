@@ -68,10 +68,12 @@ Top-level SDK exports are loaded lazily. Importing `neuralfn` or
 when callers access Torch-backed exports such as `TorchTrainer`,
 `TorchTrainConfig`, or template graph builders.
 
-For the native GPT path, `bash tools/build_native_gpt2_binding.sh` builds the
-compatibility `neuralfn._native_gpt2` C++ extension used by `run_native_gpt(...,
+For the native GPT path, `bash tools/build_native_gpt_binding.sh` builds the
+generic `neuralfn._native_gpt` C++ extension used by `run_native_gpt(...,
 runner="auto")` before falling back to the standalone launcher or subprocess
-path. `build_native_gpt_compiled_cli_run_config()` creates a dense GPT
+path. `bash tools/build_native_gpt2_binding.sh` still builds the compatibility
+`neuralfn._native_gpt2` module, and `run_native_gpt2(...)` can use either
+binding. `build_native_gpt_compiled_cli_run_config()` creates a dense GPT
 compiled-CLI handoff directly from a dataset alias/path, leaving shard metadata
 inspection to the C++ resolver. When that alias-only config is passed through
 the C++ binding, the binding executes `compiled_cli_argv` instead of the raw
@@ -99,7 +101,8 @@ New code should import `neuralfn.native_gpt` for generic dense GPT names:
 `NativeGptRunConfig`, `build_native_gpt_compiled_cli_run_config()`,
 `build_native_gpt_run_config()`, `run_native_gpt()`, and related checkpoint/
 resolver helpers delegate to the same GPT-compatible native implementation
-without importing Torch. CLI users can select `--base-model gpt`, `gpt2`, or
+without importing Torch and prefer the generic `_native_gpt` C++ module when it
+is installed. CLI users can select `--base-model gpt`, `gpt2`, or
 `gpt3`; `gpt3` defaults to a 2048-token context only when no template, graph,
 or explicit sequence length was supplied. Otherwise the template/custom graph
 still determines the architecture, context window, and unsupported-native status.

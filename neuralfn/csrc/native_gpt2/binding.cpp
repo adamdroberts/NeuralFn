@@ -7,10 +7,22 @@
 #include <vector>
 
 #if defined(_WIN32)
-#error "neuralfn._native_gpt2 currently targets POSIX fork/exec environments."
+#error "neuralfn._native_gpt/_native_gpt2 currently targets POSIX fork/exec environments."
 #else
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
+
+#ifndef NFN_NATIVE_GPT_PY_MODULE_NAME
+#define NFN_NATIVE_GPT_PY_MODULE_NAME "_native_gpt2"
+#endif
+
+#ifndef NFN_NATIVE_GPT_PY_MODULE_DOC
+#define NFN_NATIVE_GPT_PY_MODULE_DOC "Native GPT CUDA trainer binding for NeuralFn."
+#endif
+
+#ifndef NFN_NATIVE_GPT_PY_INIT
+#define NFN_NATIVE_GPT_PY_INIT PyInit__native_gpt2
 #endif
 
 namespace {
@@ -112,9 +124,9 @@ int run_exec_and_wait(const std::vector<std::string>& command) {
     return 126;
 }
 
-PyObject* run_gpt2(PyObject*, PyObject* args) {
+PyObject* run_gpt(PyObject*, PyObject* args) {
     PyObject* config = nullptr;
-    if (!PyArg_ParseTuple(args, "O!:run_gpt2", &PyDict_Type, &config)) {
+    if (!PyArg_ParseTuple(args, "O!:run_gpt", &PyDict_Type, &config)) {
         return nullptr;
     }
 
@@ -148,8 +160,8 @@ PyObject* run_gpt2(PyObject*, PyObject* args) {
         PyErr_SetString(
             PyExc_ValueError,
             use_compiled_cli
-                ? "native GPT-2 alias-only config requires a non-empty compiled_cli_argv list"
-                : "native GPT-2 config requires a non-empty argv list");
+                ? "native GPT alias-only config requires a non-empty compiled_cli_argv list"
+                : "native GPT config requires a non-empty argv list");
         return nullptr;
     }
 
@@ -178,15 +190,16 @@ PyObject* run_gpt2(PyObject*, PyObject* args) {
 }
 
 PyMethodDef methods[] = {
-    {"run_gpt2", run_gpt2, METH_VARARGS, "Run the native GPT-2 CUDA trainer from a NeuralFn config dict."},
-    {"run_train", run_gpt2, METH_VARARGS, "Alias for run_gpt2."},
+    {"run_gpt", run_gpt, METH_VARARGS, "Run the native GPT CUDA trainer from a NeuralFn config dict."},
+    {"run_gpt2", run_gpt, METH_VARARGS, "Compatibility alias for run_gpt."},
+    {"run_train", run_gpt, METH_VARARGS, "Alias for run_gpt."},
     {nullptr, nullptr, 0, nullptr},
 };
 
 PyModuleDef module = {
     PyModuleDef_HEAD_INIT,
-    "_native_gpt2",
-    "Native GPT-2 CUDA trainer binding for NeuralFn.",
+    NFN_NATIVE_GPT_PY_MODULE_NAME,
+    NFN_NATIVE_GPT_PY_MODULE_DOC,
     -1,
     methods,
     nullptr,
@@ -197,6 +210,6 @@ PyModuleDef module = {
 
 }  // namespace
 
-PyMODINIT_FUNC PyInit__native_gpt2() {
+PyMODINIT_FUNC NFN_NATIVE_GPT_PY_INIT() {
     return PyModule_Create(&module);
 }

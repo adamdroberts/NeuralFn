@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Generic native GPT C++ binding
+
+#### Changed
+
+- Added `tools/build_native_gpt_binding.sh`, which builds the generic
+  `neuralfn._native_gpt` C++ extension from the native GPT binding source.
+- The native GPT binding source is now module-name parameterized and exports
+  `run_gpt(config_dict)` plus the compatibility `run_gpt2(config_dict)` and
+  `run_train(config_dict)` aliases.
+- `run_native_gpt(..., runner="auto")` and the shared native GPT loader now
+  prefer `neuralfn._native_gpt` / `neuralfn_native_gpt` before falling back to
+  `neuralfn._native_gpt2` / `neuralfn_native_gpt2`.
+- `tools/build_native_gpt2_all.sh` and `cli/install.sh` now build both the
+  generic `_native_gpt` binding and the GPT-2 compatibility `_native_gpt2`
+  binding.
+
+#### Verification
+
+- Built both extension variants:
+  `bash tools/build_native_gpt_binding.sh /tmp/_native_gpt_test$(python -c 'import sysconfig; print(sysconfig.get_config_var("EXT_SUFFIX") or ".so")')`
+  and
+  `bash tools/build_native_gpt2_binding.sh /tmp/_native_gpt2_test$(python -c 'import sysconfig; print(sysconfig.get_config_var("EXT_SUFFIX") or ".so")')`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k 'native_gpt_cpp_binding_builds_and_runs_generic_module or native_gpt2_cpp_binding_builds_and_runs or native_gpt2_cpp_binding_uses_compiled_cli_for_alias_only_config or native_gpt2_binding_runner_invokes_in_process_module or native_gpt_generic_env_names_take_precedence or native_gpt2_build_all_script_supports_temp_outputs'`.
+- Ran `python -m py_compile neuralfn/native_gpt2.py neuralfn/native_gpt.py`.
+
 ### 2026-06-15 Directly initialize BF16-primary block weights
 
 #### Changed
