@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Paired benchmark selected-GPU utilization guard
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now accepts
+  `--max-selected-gpu-utilization-pct N`. When set, the helper aborts before
+  warmup or a measured pair if the selected CUDA GPU's `nvidia-smi`
+  utilization is already above `N`.
+- The utilization guard is scoped to the selected `CUDA_VISIBLE_DEVICES` GPU,
+  matching `--require-idle-selected-gpu`. A busy separate display GPU does not
+  fail a dedicated compute-GPU run.
+- Text and JSON output now include `max_selected_gpu_utilization_pct` so saved
+  benchmark artifacts show whether a utilization ceiling was active.
+
+#### Verification
+
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k 'paired_kernel_speed_tool_compiles_and_smokes or paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu or paired_kernel_speed_tool_require_idle_selected_gpu_checks_selected_uuid or paired_kernel_speed_tool_selected_gpu_utilization_guard or paired_kernel_speed_tool_records_command_timeout or paired_kernel_speed_tool_extracts_llm_kittens_step_metrics or paired_kernel_speed_tool_sums_llm_kittens_step_time'`.
+- Ran a live rejection smoke:
+  `python tools/paired_kernel_speed.py --baseline 'python -c "print(1)"' --candidate 'python -c "print(2)"' --samples 1 --warmup 0 --cuda-visible-devices 0 --max-selected-gpu-utilization-pct 0 --json-out /tmp/nfn_util_guard_smoke.json`;
+  it failed before running commands with
+  `nvidia-smi utilization is 10%`.
+
 ### 2026-06-15 Paired benchmark idle-GPU guard
 
 #### Changed

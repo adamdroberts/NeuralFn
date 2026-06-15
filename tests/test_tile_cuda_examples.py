@@ -89,7 +89,9 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["cuda_visible_devices"] == "test-device"
     assert payload["cuda_device_max_connections"] == "1"
     assert payload["require_idle_selected_gpu"] is False
+    assert payload["max_selected_gpu_utilization_pct"] == -1.0
     assert "require_idle_selected_gpu: False" in proc.stdout
+    assert "max_selected_gpu_utilization_pct: -1.0" in proc.stdout
     assert "gpu_before" in payload
     assert "gpu_after" in payload
     assert "gpu_sample_summary" in payload
@@ -280,6 +282,52 @@ def test_paired_kernel_speed_tool_require_idle_selected_gpu_checks_selected_uuid
     }
     with pytest.raises(SystemExit, match="trainer"):
         module.require_idle_selected_gpu(busy_snapshot, "0", phase="unit test")
+
+
+def test_paired_kernel_speed_tool_selected_gpu_utilization_guard() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    snapshot = {
+        "gpus": [
+            {
+                "index": "0",
+                "uuid": "GPU-compute",
+                "display_active": "Disabled",
+                "utilization.gpu_pct": "3",
+                "memory.used_mib": "334",
+            },
+            {
+                "index": "1",
+                "uuid": "GPU-display",
+                "display_active": "Enabled",
+                "utilization.gpu_pct": "95",
+                "memory.used_mib": "2048",
+            },
+        ],
+        "compute_processes": [],
+    }
+    module.require_selected_gpu_utilization_at_most(
+        snapshot,
+        "0",
+        3.0,
+        phase="unit test",
+    )
+    with pytest.raises(SystemExit, match="utilization is 3%"):
+        module.require_selected_gpu_utilization_at_most(
+            snapshot,
+            "0",
+            2.0,
+            phase="unit test",
+        )
 
 
 def test_paired_kernel_speed_tool_records_command_timeout() -> None:

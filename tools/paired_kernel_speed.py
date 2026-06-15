@@ -101,6 +101,16 @@ def parse_args() -> argparse.Namespace:
             "process on the selected CUDA GPU."
         ),
     )
+    parser.add_argument(
+        "--max-selected-gpu-utilization-pct",
+        type=float,
+        default=-1.0,
+        help=(
+            "Abort before warmup or measured samples when the selected CUDA GPU's "
+            "nvidia-smi utilization exceeds this percentage. Negative values disable "
+            "the utilization guard."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -510,6 +520,49 @@ def require_idle_selected_gpu(
     )
 
 
+def require_selected_gpu_utilization_at_most(
+    snapshot: dict[str, object],
+    cuda_visible_devices: str,
+    max_utilization_pct: float,
+    *,
+    phase: str,
+) -> None:
+    if max_utilization_pct < 0.0 or not cuda_visible_devices:
+        return
+    selected_gpu = _selected_gpu(snapshot, cuda_visible_devices)
+    if not isinstance(selected_gpu, dict):
+        raise SystemExit(
+            f"--max-selected-gpu-utilization-pct could not identify CUDA device "
+            f"{_first_cuda_device_index(cuda_visible_devices)!r} in nvidia-smi output during {phase}"
+        )
+    utilization_pct = float(_csv_int(selected_gpu.get("utilization.gpu_pct"), 100))
+    if utilization_pct <= max_utilization_pct:
+        return
+    raise SystemExit(
+        f"--max-selected-gpu-utilization-pct={max_utilization_pct:g} rejected CUDA device "
+        f"{_first_cuda_device_index(cuda_visible_devices)} during {phase}: "
+        f"nvidia-smi utilization is {utilization_pct:g}%"
+    )
+
+
+def enforce_selected_gpu_guards(
+    snapshot: dict[str, object],
+    cuda_visible_devices: str,
+    *,
+    require_idle: bool,
+    max_utilization_pct: float,
+    phase: str,
+) -> None:
+    if require_idle:
+        require_idle_selected_gpu(snapshot, cuda_visible_devices, phase=phase)
+    require_selected_gpu_utilization_at_most(
+        snapshot,
+        cuda_visible_devices,
+        max_utilization_pct,
+        phase=phase,
+    )
+
+
 def summarize_gpu_sample_load(
     rows: Sequence[dict[str, object]],
     cuda_visible_devices: str,
@@ -655,8 +708,14 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     cuda_device_selection = resolve_cuda_visible_devices(str(args.cuda_visible_devices or ""), gpu_before)
     cuda_visible_devices = str(cuda_device_selection.get("resolved", "") or "").strip()
     cuda_device_max_connections = str(args.cuda_device_max_connections or "").strip()
-    if args.require_idle_selected_gpu:
-        require_idle_selected_gpu(gpu_before, cuda_visible_devices, phase="initial snapshot")
+    max_selected_gpu_utilization_pct = float(args.max_selected_gpu_utilization_pct)
+    enforce_selected_gpu_guards(
+        gpu_before,
+        cuda_visible_devices,
+        require_idle=bool(args.require_idle_selected_gpu),
+        max_utilization_pct=max_selected_gpu_utilization_pct,
+        phase="initial snapshot",
+    )
     run_env = None
     if cuda_visible_devices or cuda_device_max_connections:
         run_env = dict(os.environ)
@@ -666,8 +725,13 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             run_env["CUDA_DEVICE_MAX_CONNECTIONS"] = cuda_device_max_connections
 
     for warmup_index in range(warmup):
-        if args.require_idle_selected_gpu:
-            require_idle_selected_gpu(gpu_snapshot(), cuda_visible_devices, phase=f"warmup pair {warmup_index + 1}")
+        enforce_selected_gpu_guards(
+            gpu_snapshot(),
+            cuda_visible_devices,
+            require_idle=bool(args.require_idle_selected_gpu),
+            max_utilization_pct=max_selected_gpu_utilization_pct,
+            phase=f"warmup pair {warmup_index + 1}",
+        )
         for command in ordered_pair(warmup_index, baseline, candidate):
             run_once(
                 command,
@@ -682,12 +746,13 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     ratios: list[float] = []
     for sample_index in range(samples):
         sample_gpu_before = gpu_snapshot()
-        if args.require_idle_selected_gpu:
-            require_idle_selected_gpu(
-                sample_gpu_before,
-                cuda_visible_devices,
-                phase=f"measured sample {sample_index + 1}",
-            )
+        enforce_selected_gpu_guards(
+            sample_gpu_before,
+            cuda_visible_devices,
+            require_idle=bool(args.require_idle_selected_gpu),
+            max_utilization_pct=max_selected_gpu_utilization_pct,
+            phase=f"measured sample {sample_index + 1}",
+        )
         order_names: list[str] = []
         row: dict[str, object] = {
             "sample": sample_index + 1,
@@ -728,6 +793,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "cuda_device_selection": cuda_device_selection,
         "cuda_device_max_connections": cuda_device_max_connections,
         "require_idle_selected_gpu": bool(args.require_idle_selected_gpu),
+        "max_selected_gpu_utilization_pct": max_selected_gpu_utilization_pct,
         "command_timeout_seconds": timeout_seconds,
         "gpu_before": gpu_before,
         "gpu_after": gpu_after,
@@ -762,6 +828,10 @@ def print_text(payload: dict[str, object]) -> None:
             f"mode={cuda_device_selection.get('mode', '')}"
         )
     print(f"  require_idle_selected_gpu: {payload.get('require_idle_selected_gpu', False)}")
+    print(
+        "  max_selected_gpu_utilization_pct: "
+        f"{payload.get('max_selected_gpu_utilization_pct', -1.0)}"
+    )
     gpu_before = payload.get("gpu_before")
     if isinstance(gpu_before, dict):
         gpus = gpu_before.get("gpus")

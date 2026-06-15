@@ -42,8 +42,10 @@ both commands by default; pass `--cuda-device-max-connections ""` to leave that
 environment unchanged. Pass `--require-idle-selected-gpu` for dedicated
 benchmark runs that must abort if `nvidia-smi` reports any compute process on
 the selected CUDA GPU before warmup or a measured pair. The idle check is scoped
-to the selected GPU UUID, so a separate display GPU can still be active. When
-`nvidia-smi` is available, the JSON also includes
+to the selected GPU UUID, so a separate display GPU can still be active. Pass
+`--max-selected-gpu-utilization-pct N` to also reject samples when the selected
+CUDA GPU's `nvidia-smi` utilization is already above `N` before warmup or a
+measured pair. When `nvidia-smi` is available, the JSON also includes
 the resolved `cuda_device_selection`, run-level
 `gpu_before` / `gpu_after` snapshots and per-sample `paired_samples[].gpu_before`
 / `paired_samples[].gpu_after` snapshots with GPU identity, display-active

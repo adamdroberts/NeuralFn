@@ -608,7 +608,9 @@ or kernel-load cost out of the reported samples. It sets
 `--require-idle-selected-gpu` when a speed test should fail before warmup or a
 measured pair if `nvidia-smi` reports a compute process on the selected CUDA GPU;
 the check uses the selected GPU UUID so a separate display GPU does not fail a
-dedicated compute-GPU run. When
+dedicated compute-GPU run. Pass `--max-selected-gpu-utilization-pct N` to fail
+the run when the selected CUDA GPU's `nvidia-smi` utilization is already above
+`N` before warmup or a measured pair. When
 `nvidia-smi` is present, the result JSON includes the resolved
 `cuda_device_selection`, run-level `gpu_before` / `gpu_after` snapshots plus
 per-sample `paired_samples[].gpu_before` / `paired_samples[].gpu_after`
