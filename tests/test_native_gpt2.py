@@ -3421,6 +3421,26 @@ def test_packed_qkv_uint16_arena_reserves_full_scratch_layout() -> None:
     assert "const std::int64_t elements_per_tape = qkv_activation_elements + activation_elements * 2;" in gpt2_source_text
 
 
+def test_packed_attention_ln1_recompute_uses_stats_only_tile_abi() -> None:
+    root = Path(__file__).resolve().parents[1]
+    gpt2_source_text = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text()
+    header_text = (root / "neuralfn" / "csrc" / "native_train" / "tile_ops.h").read_text()
+    source_text = (root / "neuralfn" / "csrc" / "native_train" / "tile_ops.cu").read_text()
+    kernels_text = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text()
+
+    assert "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_STATS" in gpt2_source_text
+    assert "stored_packed_attention_ln1_stats_enabled" in gpt2_source_text
+    assert "stored_packed_attention_ln1_stats_blocks" in gpt2_source_text
+    assert "stored_packed_attention_ln1_stats_elements" in gpt2_source_text
+    assert "stored_packed_attention_ln1_stats_bytes" in gpt2_source_text
+    assert "std::uint16_t* ln1 = nullptr" not in gpt2_source_text
+    assert "stored_packed_attention_ln1_bf16" not in gpt2_source_text
+    assert "nfn_native_tile_layer_norm_apply_stats_bf16_out_float32" in gpt2_source_text
+    assert "nfn_native_tile_layer_norm_apply_stats_bf16_out_float32" in header_text
+    assert "launch_layer_norm_apply_stats_bf16_out_float32" in source_text
+    assert "layer_norm_apply_stats_bf16_out_float32_kernel" in kernels_text
+
+
 def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     gpt2_source = root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
@@ -3763,6 +3783,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_absolute_position_embedding_backward_accumulate_float32" in header_text
     assert "nfn_native_tile_layer_norm_float32" in header_text
     assert "nfn_native_tile_layer_norm_with_stats_float32" in header_text
+    assert "nfn_native_tile_layer_norm_apply_stats_bf16_out_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_input_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_input_with_stats_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32" in header_text
@@ -3772,10 +3793,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_float32" in header_text
     assert "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32" in header_text
     assert "launch_layer_norm_with_stats_float32" in source_text
+    assert "launch_layer_norm_apply_stats_bf16_out_float32" in source_text
     assert "launch_layer_norm_backward_input_with_stats_float32" in source_text
     assert "launch_layer_norm_backward_input_residual_add_with_stats_float32" in source_text
     assert "launch_layer_norm_backward_affine_accumulate_with_stats_float32" in source_text
     assert "layer_norm_backward_input_residual_add_with_stats_float32_kernel" in kernels_text
+    assert "layer_norm_apply_stats_bf16_out_float32_kernel" in kernels_text
     assert "launch_layer_norm_backward_input_residual_add_with_stats_bf16_bits_float32" in source_text
     assert "launch_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32" in source_text
     assert "layer_norm_backward_input_residual_add_with_stats_bf16_bits_float32_kernel" in kernels_text
@@ -4004,6 +4027,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_BLOCKS" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_LSE" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_STATS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_LN1_STATS" in gpt2_source_text
     assert "kDefaultStoredPackedAttentionBlocks = 12" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_STORE_RESIDUAL1_ACTIVATIONS" in gpt2_source_text
@@ -4048,6 +4073,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "stored_packed_attention_lse_enabled" in gpt2_source_text
     assert "stored_packed_attention_lse_elements" in gpt2_source_text
     assert "stored_packed_attention_lse_bytes" in gpt2_source_text
+    assert "stored_packed_attention_ln1_stats_enabled" in gpt2_source_text
+    assert "stored_packed_attention_ln1_stats_blocks" in gpt2_source_text
+    assert "stored_packed_attention_ln1_stats_elements" in gpt2_source_text
+    assert "stored_packed_attention_ln1_stats_bytes" in gpt2_source_text
     assert "stored_packed_attention_backward_consumer_strategy" in gpt2_source_text
     assert "recompute_block_from_saved_packed_attention" in gpt2_source_text
     assert "recompute_block_from_saved_attention" in gpt2_source_text

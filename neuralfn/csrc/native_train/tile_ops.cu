@@ -750,6 +750,16 @@ void launch_layer_norm_with_stats_bf16_out_float32(
     std::int64_t dim,
     float eps,
     cudaStream_t stream);
+void launch_layer_norm_apply_stats_bf16_out_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    const float* mean,
+    const float* rstd,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t rows,
+    std::int64_t dim,
+    cudaStream_t stream);
 void launch_layer_norm_backward_input_float32(
     const float* x,
     const float* grad_out,
@@ -2832,6 +2842,21 @@ int nfn_native_tile_layer_norm_with_stats_bf16_out_float32(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_layer_norm_with_stats_bf16_out_float32(
         x, weight, bias, out, mean, rstd, out_bf16_bits, rows, dim, eps, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_layer_norm_apply_stats_bf16_out_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    const float* mean,
+    const float* rstd,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t rows,
+    std::int64_t dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_layer_norm_apply_stats_bf16_out_float32(
+        x, weight, bias, mean, rstd, out_bf16_bits, rows, dim, as_stream(cuda_stream));
     return launch_status();
 }
 

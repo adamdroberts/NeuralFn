@@ -116,6 +116,7 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS`,
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS`,
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE`,
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_STATS`,
 `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS`,
 `NFN_NATIVE_GPT_CUDA_MEMSET_ZERO`,
 `NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO`,
@@ -492,7 +493,8 @@ library after updating, since the compiled GPT-2 trainer now requires
 `nfn_native_tile_bf16_bits_to_float32`,
 `nfn_native_tile_store_mlp_activations_bf16_float32`,
 `nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_float32`,
-and the direct BF16 backward consumer symbols at startup. Earlier-block
+`nfn_native_tile_layer_norm_apply_stats_bf16_out_float32`, and the direct BF16
+backward consumer symbols at startup. Earlier-block
 recompute stops after the
 MLP GELU activation because backward does not consume the recomputed MLP
 projection output or final residual output; JSON reports
@@ -503,6 +505,21 @@ buffer and runs `nfn_native_tile_gelu_backward_inplace_float32`, so the full
 trainer does not allocate a separate hidden-size `grad_act` scratch buffer.
 JSON reports `mlp_proj_backward_gelu_inplace: true` and
 `mlp_proj_backward_grad_act_scratch_allocated: false`.
+
+Saved packed-attention blocks also store only LN1 forward stats by default when
+the BF16 QKV dWeight path is active: mean/rstd for the 11 earlier blocks in a
+12-layer run. During backward recompute,
+`nfn_native_tile_layer_norm_apply_stats_bf16_out_float32` applies those saved
+stats to the current block input and writes the LN1 BF16 activation needed by
+QKV dWeight without re-running the full reduction or reserving a full BF16 LN1
+tape. Runtime JSON reports
+`stored_packed_attention_ln1_stats_enabled`,
+`stored_packed_attention_ln1_stats_blocks`,
+`stored_packed_attention_ln1_stats_elements`, and
+`stored_packed_attention_ln1_stats_bytes`. Set
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_STATS=0` for paired regression
+benchmarks against the previous full-recompute path; `NFN_NATIVE_GPT2_*`
+fallback names remain accepted for older scripts.
 Backward residual-gradient pair additions use
 `nfn_native_tile_scaled_residual_add_float32` instead of zero-fill plus two
 gradient-accumulate launches; `block_state_layout.residual_backward_fused`

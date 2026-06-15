@@ -878,6 +878,17 @@ int nfn_native_tile_layer_norm_with_stats_bf16_out_float32(
     float eps,
     void* cuda_stream);
 
+int nfn_native_tile_layer_norm_apply_stats_bf16_out_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    const float* mean,
+    const float* rstd,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t rows,
+    std::int64_t dim,
+    void* cuda_stream);
+
 int nfn_native_tile_layer_norm_backward_input_float32(
     const float* x,
     const float* grad_out,

@@ -516,6 +516,15 @@ Canonical docs:
   GPT-2-prefixed names remain fallbacks. Saved packed QKV/O runs should report
   `stored_packed_attention_*` counters and
   `block_recompute_saved_packed_attention` timings.
+- Saved packed-attention LN1 storage is stats-only by default when BF16 QKV
+  dWeight is active. Keep
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_STATS=1`, the
+  `stored_packed_attention_ln1_stats_*` JSON fields, and the
+  `nfn_native_tile_layer_norm_apply_stats_bf16_out_float32` raw ABI path for
+  recomputing LN1 BF16 from saved mean/rstd. Do not store a full BF16 LN1 tape
+  in `StoredPackedAttentionActivations`; the rejected full-tape version added
+  about 1.03 GiB at the default `64 x 1024 x 768` shape and slowed the one-step
+  trainer.
 - BF16/BF16 QKV dWeight is default-on for full GPT transformer training. It
   reuses the saved LN1 BF16 activation and packed BF16 dQKV through
   `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32`.

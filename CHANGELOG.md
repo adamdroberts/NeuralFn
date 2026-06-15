@@ -6,6 +6,46 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Store packed-attention LN1 stats for native GPT recompute
+
+#### Changed
+
+- Dense GPT native training now stores only LN1 mean/rstd stats for earlier
+  saved packed-attention blocks when the BF16 QKV dWeight path is active and
+  regenerates the LN1 BF16 activation during backward recompute with
+  `nfn_native_tile_layer_norm_apply_stats_bf16_out_float32`.
+- Runtime JSON reports `stored_packed_attention_ln1_stats_enabled`,
+  `stored_packed_attention_ln1_stats_blocks`,
+  `stored_packed_attention_ln1_stats_elements`, and
+  `stored_packed_attention_ln1_stats_bytes`. The default 12-layer
+  `64 x 1024` TinyStories run stores stats for 11 blocks, about 5.5 MiB, rather
+  than adding a full BF16 LN1 activation tape.
+- The opt-out switch for paired regression benchmarks is
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_STATS=0`; GPT-2-prefixed
+  compatibility names remain accepted.
+
+#### Breaking changes
+
+- Rebuild `build/libnfn_native_train_tile_ops.so` before running the dense GPT
+  native trainer. `nfn_gpt_native_train` now requires the raw ABI symbol
+  `nfn_native_tile_layer_norm_apply_stats_bf16_out_float32`.
+
+#### Verification
+
+- Rebuilt native artifacts with `bash tools/build_native_gpt2_all.sh`.
+- Verified the dedicated compute GPU with `nvidia-smi`: RTX 5090 at
+  `display_active Disabled`, `util 0%`, and no active compute processes before
+  clean paired benchmarks.
+- Ran a one-step native transformer-LM smoke on the RTX 5090:
+  `build/nfn_gpt_native_train --tinystories --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so --train-transformer-lm --max-steps 1
+  --eval-every-steps 0 --no-checkpoint`.
+- Ran clean paired old-vs-new timing with
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_STATS=0` on the baseline side.
+  One-step mean train-loop time improved from `2832.33 ms` to `2826.60 ms`
+  (`0.997979x`). Sustained five-step mean train-loop time improved from
+  `2793.65 ms/step` to `2788.38 ms/step` (`0.998119x`).
+
 ### 2026-06-15 Fix packed-QKV BF16 scratch arena sizing
 
 #### Fixed

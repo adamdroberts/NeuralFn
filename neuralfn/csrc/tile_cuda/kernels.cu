@@ -5262,6 +5262,39 @@ __tile_global__ void layer_norm_with_stats_bf16_out_float32_kernel(
   }
 }
 
+__tile_global__ void layer_norm_apply_stats_bf16_out_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ weight,
+    const float* __restrict__ bias,
+    const float* __restrict__ mean,
+    const float* __restrict__ rstd,
+    std::uint16_t* __restrict__ out_bf16_bits,
+    std::int64_t rows,
+    std::int64_t dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  weight = ct::assume_aligned(weight, 16_ic);
+  bias = ct::assume_aligned(bias, 16_ic);
+  mean = ct::assume_aligned(mean, 16_ic);
+  rstd = ct::assume_aligned(rstd, 16_ic);
+  auto* out_bf16 = ct::assume_aligned(reinterpret_cast<__nv_bfloat16*>(out_bf16_bits), 16_ic);
+
+  const int row = ct::bid().x;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto d = ct::iota<IndexTile>();
+  auto mask = d < ct::full<IndexTile>(dim);
+  auto base = ct::full<IndexTile>(static_cast<std::int64_t>(row) * dim);
+  auto x_tile = ct::load_masked(x + base + d, mask);
+  auto mean_tile = ct::full<decltype(x_tile)>(row < rows ? mean[row] : 0.0f);
+  auto rstd_tile = ct::full<decltype(x_tile)>(row < rows ? rstd[row] : 0.0f);
+  auto weight_tile = ct::load_masked(weight + d, mask);
+  auto bias_tile = ct::load_masked(bias + d, mask);
+  auto norm_value = (x_tile - mean_tile) * rstd_tile * weight_tile + bias_tile;
+  ct::store_masked(out_bf16 + base + d, ct::element_cast<__nv_bfloat16>(norm_value), mask);
+}
+
 __tile_global__ void layer_norm_backward_input_float32_kernel(
     const float* __restrict__ x,
     const float* __restrict__ grad_out,
@@ -10206,6 +10239,20 @@ void launch_layer_norm_with_stats_bf16_out_float32(
     cudaStream_t stream) {
   layer_norm_with_stats_bf16_out_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
       x, weight, bias, out, mean, rstd, out_bf16_bits, rows, dim, eps);
+}
+
+void launch_layer_norm_apply_stats_bf16_out_float32(
+    const float* x,
+    const float* weight,
+    const float* bias,
+    const float* mean,
+    const float* rstd,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t rows,
+    std::int64_t dim,
+    cudaStream_t stream) {
+  layer_norm_apply_stats_bf16_out_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      x, weight, bias, mean, rstd, out_bf16_bits, rows, dim);
 }
 
 void launch_layer_norm_backward_input_float32(
