@@ -108,6 +108,10 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "compute_processes" in payload["gpu_before"]
     assert "gpu_before" in payload["paired_samples"][0]
     assert "gpu_after" in payload["paired_samples"][0]
+    assert "gpu_before" in payload["paired_samples"][0]["baseline"]
+    assert "gpu_after" in payload["paired_samples"][0]["baseline"]
+    assert "gpu_before" in payload["paired_samples"][0]["candidate"]
+    assert "gpu_after" in payload["paired_samples"][0]["candidate"]
     assert "gpus" in payload["paired_samples"][0]["gpu_before"]
     assert "compute_processes" in payload["paired_samples"][0]["gpu_before"]
     assert "gpu_compute_processes_per_sample_before:" in proc.stdout

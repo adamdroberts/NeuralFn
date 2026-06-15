@@ -268,6 +268,7 @@ def run_once(
     continue_on_error: bool,
     env: dict[str, str] | None,
     timeout_seconds: float | None,
+    gpu_before: dict[str, object] | None = None,
 ) -> dict[str, object]:
     start = time.perf_counter()
     command_env = env
@@ -311,7 +312,7 @@ def run_once(
                 f"stdout tail:\n{stdout[-2000:]}\n"
                 f"stderr tail:\n{stderr[-2000:]}"
             ) from exc
-        return {
+        result = {
             "name": command.name,
             "argv": command.argv,
             "seconds": seconds,
@@ -323,6 +324,10 @@ def run_once(
             "stdout_tail": stdout[-2000:],
             "stderr_tail": stderr[-2000:],
         }
+        if gpu_before is not None:
+            result["gpu_before"] = gpu_before
+            result["gpu_after"] = gpu_snapshot()
+        return result
     seconds = time.perf_counter() - start
     returncode = proc.returncode if proc.returncode is not None else -1
     if returncode != 0 and not continue_on_error:
@@ -331,7 +336,7 @@ def run_once(
             f"command: {shlex.join(command.argv)}\n"
             f"stderr:\n{stderr}"
         )
-    return {
+    result = {
         "name": command.name,
         "argv": command.argv,
         "seconds": seconds,
@@ -341,6 +346,10 @@ def run_once(
         "stdout_tail": stdout[-2000:],
         "stderr_tail": stderr[-2000:],
     }
+    if gpu_before is not None:
+        result["gpu_before"] = gpu_before
+        result["gpu_after"] = gpu_snapshot()
+    return result
 
 
 def ordered_pair(sample_index: int, baseline: TimedCommand, candidate: TimedCommand) -> list[TimedCommand]:
@@ -612,6 +621,24 @@ def enforce_selected_gpu_guards(
     )
 
 
+def snapshot_and_enforce_selected_gpu_guards(
+    cuda_visible_devices: str,
+    *,
+    require_idle: bool,
+    max_utilization_pct: float,
+    phase: str,
+) -> dict[str, object]:
+    snapshot = gpu_snapshot()
+    enforce_selected_gpu_guards(
+        snapshot,
+        cuda_visible_devices,
+        require_idle=require_idle,
+        max_utilization_pct=max_utilization_pct,
+        phase=phase,
+    )
+    return snapshot
+
+
 def summarize_gpu_sample_load(
     rows: Sequence[dict[str, object]],
     cuda_visible_devices: str,
@@ -784,11 +811,18 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             phase=f"warmup pair {warmup_index + 1}",
         )
         for command in ordered_pair(warmup_index, baseline, candidate):
+            command_gpu_before = snapshot_and_enforce_selected_gpu_guards(
+                cuda_visible_devices,
+                require_idle=bool(args.require_idle_selected_gpu),
+                max_utilization_pct=max_selected_gpu_utilization_pct,
+                phase=f"warmup pair {warmup_index + 1} {command.name}",
+            )
             run_once(
                 command,
                 continue_on_error=args.continue_on_error,
                 env=run_env,
                 timeout_seconds=command_timeout,
+                gpu_before=command_gpu_before,
             )
 
     sample_rows: list[dict[str, object]] = []
@@ -813,11 +847,18 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         by_name: dict[str, dict[str, object]] = {}
         for command in ordered_pair(sample_index, baseline, candidate):
             order_names.append(command.name)
+            command_gpu_before = snapshot_and_enforce_selected_gpu_guards(
+                cuda_visible_devices,
+                require_idle=bool(args.require_idle_selected_gpu),
+                max_utilization_pct=max_selected_gpu_utilization_pct,
+                phase=f"measured sample {sample_index + 1} {command.name}",
+            )
             result = run_once(
                 command,
                 continue_on_error=args.continue_on_error,
                 env=run_env,
                 timeout_seconds=command_timeout,
+                gpu_before=command_gpu_before,
             )
             by_name[command.name] = result
         baseline_time = float(by_name["baseline"]["seconds"])

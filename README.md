@@ -46,17 +46,19 @@ output. `--command-timeout-seconds N` terminates the timed-out command's process
 group so a slow native candidate does not leave child GPU work running after the
 sample is recorded. Pass `--require-idle-selected-gpu` for dedicated
 benchmark runs that must abort if `nvidia-smi` reports any compute process on
-the selected CUDA GPU before warmup or a measured pair. The idle check is scoped
+the selected CUDA GPU before each warmup or measured command. The idle check is scoped
 to the selected GPU UUID, so a separate display GPU can still be active. Pass
 `--max-selected-gpu-utilization-pct N` to also reject samples when the selected
-CUDA GPU's `nvidia-smi` utilization is already above `N` before warmup or a
-measured pair. When `nvidia-smi` is available, the JSON also includes
+CUDA GPU's `nvidia-smi` utilization is already above `N` before each warmup or
+measured command. When `nvidia-smi` is available, the JSON also includes
 the resolved `cuda_device_selection`, run-level
 `gpu_before` / `gpu_after` snapshots and per-sample `paired_samples[].gpu_before`
-/ `paired_samples[].gpu_after` snapshots with GPU identity, display-active
-state, utilization, memory, and active compute-process rows so kernel-speed
-notes show which CUDA device was measured and whether other compute work was
-present for a specific pair. Text and JSON output also include
+/ `paired_samples[].gpu_after` snapshots, plus command-level
+`paired_samples[].baseline.gpu_before` / `gpu_after` and
+`paired_samples[].candidate.gpu_before` / `gpu_after` snapshots with GPU
+identity, display-active state, utilization, memory, and active compute-process
+rows so kernel-speed notes show which CUDA device was measured and whether
+other compute work was present for a specific command. Text and JSON output also include
 `gpu_sample_summary`, which summarizes selected-GPU utilization, memory, and
 compute-process counts before and after measured samples; use this summary when
 checking that candidate-vs-baseline timing was not skewed by other GPU load.

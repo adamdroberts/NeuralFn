@@ -616,18 +616,21 @@ the pair and are recorded in the JSON/text output. `--command-timeout-seconds N`
 terminates the timed-out command's process group so a slow native candidate does
 not leave child GPU work running after the sample is recorded. Pass
 `--require-idle-selected-gpu` when a speed test should fail before warmup or a
-measured pair if `nvidia-smi` reports a compute process on the selected CUDA GPU;
-the check uses the selected GPU UUID so a separate display GPU does not fail a
-dedicated compute-GPU run. Pass `--max-selected-gpu-utilization-pct N` to fail
-the run when the selected CUDA GPU's `nvidia-smi` utilization is already above
-`N` before warmup or a measured pair. When
+measured command if `nvidia-smi` reports a compute process on the selected CUDA
+GPU; the check uses the selected GPU UUID so a separate display GPU does not
+fail a dedicated compute-GPU run. Pass
+`--max-selected-gpu-utilization-pct N` to fail the run when the selected CUDA
+GPU's `nvidia-smi` utilization is already above `N` before each warmup or
+measured command. When
 `nvidia-smi` is present, the result JSON includes the resolved
 `cuda_device_selection`, run-level `gpu_before` / `gpu_after` snapshots plus
 per-sample `paired_samples[].gpu_before` / `paired_samples[].gpu_after`
+snapshots and command-level `paired_samples[].baseline.gpu_before` /
+`gpu_after` plus `paired_samples[].candidate.gpu_before` / `gpu_after`
 snapshots containing GPU identity, display-active state, utilization, memory,
 and active compute-process rows. This makes dedicated-GPU runs and accidental
-external GPU load visible both for the whole benchmark and for each old/new
-measurement pair. When a command emits NeuralFn native JSON, the helper extracts
+external GPU load visible for the whole benchmark, each old/new measurement
+pair, and each individual command. When a command emits NeuralFn native JSON, the helper extracts
 native-loop counters into `baseline_native_metrics` or
 `candidate_native_metrics`, including `timing.train_loop_wall_ms`,
 `timing.train_tokens_per_second`, setup time, checkpoint time, total native
