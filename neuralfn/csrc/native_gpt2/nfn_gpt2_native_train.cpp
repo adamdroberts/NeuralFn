@@ -7222,6 +7222,10 @@ int run_transformer_lm_training_json(
         std::uint16_t* const*, const float* const*, const float*, float* const*, float* const*,
         const std::int64_t*, const float*, std::int64_t, std::int64_t,
         float, float, float, float, float, float, void*);
+    using AdamWManyWithDeviceScaleBf16ParamBf16GradFn = int (*)(
+        std::uint16_t* const*, const std::uint16_t* const*, const float*, float* const*, float* const*,
+        const std::int64_t*, const float*, std::int64_t, std::int64_t,
+        float, float, float, float, float, float, void*);
     using FillManyFn = int (*)(float* const*, const std::int64_t*, std::int64_t, std::int64_t, float, void*);
     using InitGpt2TokenWeightFn = int (*)(float*, std::int64_t, void*);
     using CudaMallocFn = int (*)(void**, std::size_t);
@@ -7367,6 +7371,7 @@ int run_transformer_lm_training_json(
     AdamWManyWithDeviceScaleFn adamw_many_with_device_scale = nullptr;
     AdamWManyWithDeviceScaleBf16ShadowFn adamw_many_with_device_scale_bf16_shadow = nullptr;
     AdamWManyWithDeviceScaleBf16ParamFn adamw_many_with_device_scale_bf16_param = nullptr;
+    AdamWManyWithDeviceScaleBf16ParamBf16GradFn adamw_many_with_device_scale_bf16_param_bf16_grad = nullptr;
     CudaMallocFn cuda_malloc = nullptr;
     CudaFreeFn cuda_free = nullptr;
     CudaMemcpyFn cuda_memcpy = nullptr;
@@ -7416,6 +7421,10 @@ int run_transformer_lm_training_json(
             } else {
                 fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
                 fill_many = load_symbol<FillManyFn>(tile_handle, "nfn_native_tile_fill_many_float32");
+                adamw_many_with_device_scale_bf16_param_bf16_grad =
+                    load_symbol<AdamWManyWithDeviceScaleBf16ParamBf16GradFn>(
+                        tile_handle,
+                        "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32");
                 fill_many_values = load_symbol<FillManyValuesFn>(
                     tile_handle, "nfn_native_tile_fill_many_values_float32");
                 init_gpt2_token_weight =
@@ -8129,9 +8138,12 @@ int run_transformer_lm_training_json(
     std::int64_t adamw_float_update_max_elements = 0;
     std::int64_t adamw_bf16_param_descriptor_count = 0;
     std::int64_t adamw_bf16_param_max_elements = 0;
+    std::int64_t adamw_bf16_param_bf16_grad_descriptor_count = 0;
+    std::int64_t adamw_bf16_param_bf16_grad_max_elements = 0;
     std::int64_t adamw_kernel_launches = 0;
     std::int64_t adamw_float_update_kernel_launches = 0;
     std::int64_t adamw_bf16_param_kernel_launches = 0;
+    std::int64_t adamw_bf16_param_bf16_grad_kernel_launches = 0;
     std::int64_t gradient_sumsq_kernel_launches = 0;
     std::int64_t accumulation_zero_kernel_launches = 0;
     std::int64_t float_arena_requested_elements = 0;
@@ -12368,6 +12380,10 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"block_weight_bf16_primary_param_update_enabled\": "
         << (bf16_block_weight_param_update_enabled ? "true" : "false") << ",\n"
+        << "  \"block_weight_bf16_gradient_storage_strategy\": "
+        << "\"float32-accumulation-buffer\",\n"
+        << "  \"adamw_bf16_param_bf16_grad_kernel_loaded\": "
+        << (adamw_many_with_device_scale_bf16_param_bf16_grad != nullptr ? "true" : "false") << ",\n"
         << "  \"block_weight_bf16_shadow_fused_adamw_refresh_enabled\": "
         << (fuse_adamw_bf16_shadow_refresh_enabled ? "true" : "false") << ",\n"
         << "  \"block_weight_bf16_shadow_elements\": " << block_weight_bf16_arena_elements << ",\n"
@@ -12377,6 +12393,8 @@ int run_transformer_lm_training_json(
         << "  \"block_weight_bf16_refresh_count\": " << block_weight_bf16_refresh_count << ",\n"
         << "  \"block_weight_bf16_fused_adamw_refresh_count\": " << block_weight_bf16_fused_adamw_refresh_count << ",\n"
         << "  \"block_weight_bf16_primary_param_update_count\": " << adamw_bf16_param_kernel_launches << ",\n"
+        << "  \"block_weight_bf16_primary_param_bf16_grad_update_count\": "
+        << adamw_bf16_param_bf16_grad_kernel_launches << ",\n"
         << "  \"attention_backend_strategy\": \""
         << (attention_forward_tk_launches > 0 || attention_backward_tk_launches > 0
                 ? "tk-sm120-bf16-bridge"
@@ -12764,12 +12782,18 @@ int run_transformer_lm_training_json(
         << "  \"adamw_descriptor_count\": " << adamw_descriptor_count << ",\n"
         << "  \"adamw_float_update_descriptor_count\": " << adamw_float_update_descriptor_count << ",\n"
         << "  \"adamw_bf16_param_descriptor_count\": " << adamw_bf16_param_descriptor_count << ",\n"
+        << "  \"adamw_bf16_param_bf16_grad_descriptor_count\": "
+        << adamw_bf16_param_bf16_grad_descriptor_count << ",\n"
         << "  \"adamw_max_elements\": " << adamw_max_elements << ",\n"
         << "  \"adamw_float_update_max_elements\": " << adamw_float_update_max_elements << ",\n"
         << "  \"adamw_bf16_param_max_elements\": " << adamw_bf16_param_max_elements << ",\n"
+        << "  \"adamw_bf16_param_bf16_grad_max_elements\": "
+        << adamw_bf16_param_bf16_grad_max_elements << ",\n"
         << "  \"adamw_kernel_launches\": " << adamw_kernel_launches << ",\n"
         << "  \"adamw_float_update_kernel_launches\": " << adamw_float_update_kernel_launches << ",\n"
         << "  \"adamw_bf16_param_kernel_launches\": " << adamw_bf16_param_kernel_launches << ",\n"
+        << "  \"adamw_bf16_param_bf16_grad_kernel_launches\": "
+        << adamw_bf16_param_bf16_grad_kernel_launches << ",\n"
         << "  \"adamw_step_kernel_launches_per_optimizer_step\": "
         << (bf16_block_weight_param_update_enabled
                 ? ((adamw_float_update_descriptor_count > 0 ? 1 : 0) +
@@ -12956,9 +12980,15 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "    \"block_weight_bf16_primary_param_update_enabled\": "
         << (bf16_block_weight_param_update_enabled ? "true" : "false") << ",\n"
+        << "    \"block_weight_bf16_gradient_storage_strategy\": "
+        << "\"float32-accumulation-buffer\",\n"
+        << "    \"adamw_bf16_param_bf16_grad_kernel_loaded\": "
+        << (adamw_many_with_device_scale_bf16_param_bf16_grad != nullptr ? "true" : "false") << ",\n"
         << "    \"adamw_descriptor_count\": " << adamw_descriptor_count << ",\n"
         << "    \"adamw_float_update_descriptor_count\": " << adamw_float_update_descriptor_count << ",\n"
         << "    \"adamw_bf16_param_descriptor_count\": " << adamw_bf16_param_descriptor_count << ",\n"
+        << "    \"adamw_bf16_param_bf16_grad_descriptor_count\": "
+        << adamw_bf16_param_bf16_grad_descriptor_count << ",\n"
         << "    \"adamw_step_kernel_launches_per_optimizer_step\": "
         << (bf16_block_weight_param_update_enabled
                 ? ((adamw_float_update_descriptor_count > 0 ? 1 : 0) +

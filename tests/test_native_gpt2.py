@@ -2306,9 +2306,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["adamw_descriptor_count"] == 0
     assert train_transformer_payload["adamw_float_update_descriptor_count"] == 0
     assert train_transformer_payload["adamw_bf16_param_descriptor_count"] == 0
+    assert train_transformer_payload["adamw_bf16_param_bf16_grad_descriptor_count"] == 0
     assert train_transformer_payload["adamw_kernel_launches"] == 0
     assert train_transformer_payload["adamw_float_update_kernel_launches"] == 0
     assert train_transformer_payload["adamw_bf16_param_kernel_launches"] == 0
+    assert train_transformer_payload["adamw_bf16_param_bf16_grad_kernel_launches"] == 0
     assert train_transformer_payload["adamw_step_kernel_launches_per_optimizer_step"] == 0
     assert train_transformer_payload["adamw_per_buffer_step_launches_elided"] == 147
     assert train_transformer_payload["gradient_zero_strategy"] == "fused-multi-buffer-accumulation-zero"
@@ -2434,12 +2436,15 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "adamw_device_clip_scale_fused": True,
         "adamw_bf16_shadow_refresh_strategy": "elided-bf16-primary-params",
         "block_weight_bf16_primary_param_update_enabled": True,
+        "block_weight_bf16_gradient_storage_strategy": "float32-accumulation-buffer",
+        "adamw_bf16_param_bf16_grad_kernel_loaded": False,
         "adamw_update_loop": False,
         "adamw_update_loop_elided": True,
         "adamw_update_strategy": "split-float32-and-bf16-param-multi-buffer-device-scale",
         "adamw_descriptor_count": 0,
         "adamw_float_update_descriptor_count": 0,
         "adamw_bf16_param_descriptor_count": 0,
+        "adamw_bf16_param_bf16_grad_descriptor_count": 0,
         "adamw_step_kernel_launches_per_optimizer_step": 0,
         "adamw_per_buffer_step_launches_elided": 147,
         "checkpoint_export_loop": True,
@@ -2553,6 +2558,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_adamw_step_many_with_device_scale_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32" in train_transformer_payload["kernels"]
+    assert (
+        "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32"
+        in train_transformer_payload["kernels"]
+    )
     assert train_transformer_payload["passed"] is False
 
     smaller_eval_transformer_lm = subprocess.run(
@@ -3523,6 +3532,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32" in header_text
     assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32" in header_text
     assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" in header_text
+    assert "AdamWManyWithDeviceScaleBf16ParamBf16GradFn" in gpt2_source_text
+    assert "adamw_many_with_device_scale_bf16_param_bf16_grad" in gpt2_source_text
+    assert "adamw_bf16_param_bf16_grad_kernel_loaded" in gpt2_source_text
+    assert "block_weight_bf16_gradient_storage_strategy" in gpt2_source_text
     assert "launch_adamw_step_many_with_device_scale_float32" in source_text
     assert "launch_adamw_step_many_with_device_scale_bf16_shadow_float32" in source_text
     assert "launch_adamw_step_many_with_device_scale_bf16_param_float32" in source_text

@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-15 Bind native GPT BF16-gradient AdamW kernel
+
+#### Changed
+
+- Dense GPT native training now loads and reports the existing
+  `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32`
+  Tile ABI symbol. Runtime and dry-run JSON include
+  `adamw_bf16_param_bf16_grad_kernel_loaded`,
+  `adamw_bf16_param_bf16_grad_descriptor_count`,
+  `adamw_bf16_param_bf16_grad_kernel_launches`,
+  `block_weight_bf16_gradient_storage_strategy`, and
+  `block_weight_bf16_primary_param_bf16_grad_update_count`.
+- The reported BF16-gradient descriptor and launch counts remain zero for now:
+  block-weight gradients still accumulate in float32 buffers until the native
+  BF16 gradient arena, global-norm, and zeroing path is implemented.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` and `build/nfn_gpt2_native_train`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k 'native_gpt2_cpp_cli_builds_and_uses_sm120_defaults or packed_qkv_uint16_arena_reserves_full_scratch_layout'`.
+- Ran `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt2_native_train --tinystories --tile-ops-lib build/libnfn_native_train_tile_ops.so --train-transformer-lm --max-steps 1 --eval-every-steps 0 --no-checkpoint` on the dedicated RTX 5090. Runtime JSON reported `status: "native-transformer-lm-trained"`, `adamw_bf16_param_bf16_grad_kernel_loaded: true`, and zero BF16-gradient AdamW descriptors/launches.
+
 ### 2026-06-15 Make native GPT stage profiler event cap configurable
 
 #### Changed
