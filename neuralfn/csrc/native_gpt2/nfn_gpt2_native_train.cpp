@@ -8153,6 +8153,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_FUSE_LN2_BF16_OUT",
                               "NFN_NATIVE_GPT2_FUSE_LN2_BF16_OUT"}),
             true);
+    const bool fused_ln2_bf16_norm_float_store_elision_enabled =
+        fused_ln2_bf16_out_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_ELIDE_LN2_BF16_NORM_FLOAT_STORE",
+                              "NFN_NATIVE_GPT2_ELIDE_LN2_BF16_NORM_FLOAT_STORE"}),
+            true);
     const bool bf16_block_weight_param_update_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS",
@@ -8795,6 +8801,8 @@ int run_transformer_lm_training_json(
     std::int64_t stored_mlp_norm_stats_bytes = 0;
     std::int64_t stored_mlp_activation_store_kernel_launches = 0;
     std::int64_t stored_mlp_ln2_bf16_fused_store_kernel_launches = 0;
+    std::int64_t stored_mlp_ln2_bf16_float_store_elided_count = 0;
+    std::int64_t stored_mlp_ln2_bf16_float_store_elided_elements = 0;
     std::int64_t stored_mlp_activation_restore_kernel_launches = 0;
     const std::int64_t stored_residual1_block_count =
         store_residual1_activations_enabled && trained_layers > 1 ? trained_layers - 1 : 0;
@@ -11359,12 +11367,18 @@ int run_transformer_lm_training_json(
                         const bool can_fuse_ln2_bf16_out =
                             fused_ln2_bf16_out_enabled &&
                             fused_mlp_store != nullptr &&
-                            fused_residual1_store != nullptr &&
-                            linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm != nullptr;
+                            ((use_bf16_projection_residual &&
+                              linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm != nullptr) ||
+                             (!use_bf16_projection_residual &&
+                              linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm != nullptr));
+                        const bool elide_ln2_norm_float_store =
+                            can_fuse_ln2_bf16_out &&
+                            fused_ln2_bf16_norm_float_store_elision_enabled;
+                        float* ln2_norm_out =
+                            elide_ln2_norm_float_store ? nullptr : tape.ln2_out;
                         if (fused_residual1_store != nullptr) {
                             if (use_bf16_projection_residual &&
-                                can_fuse_ln2_bf16_out &&
-                                linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm != nullptr) {
+                                can_fuse_ln2_bf16_out) {
                                 run(linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm(
                                         block_input,
                                         tape.proj_out_bf16,
@@ -11373,7 +11387,7 @@ int run_transformer_lm_training_json(
                                         block.ln2_weight,
                                         block.ln2_bias,
                                         tape.residual1,
-                                        tape.ln2_out,
+                                        ln2_norm_out,
                                         ln2_mean,
                                         ln2_rstd,
                                         fused_residual1_store,
@@ -11392,7 +11406,7 @@ int run_transformer_lm_training_json(
                                         block.ln2_weight,
                                         block.ln2_bias,
                                         tape.residual1,
-                                        tape.ln2_out,
+                                        ln2_norm_out,
                                         ln2_mean,
                                         ln2_rstd,
                                         fused_residual1_store,
@@ -11445,11 +11459,43 @@ int run_transformer_lm_training_json(
                                 if (can_fuse_ln2_bf16_out) {
                                     ln2_bf16_prepacked = true;
                                     stored_mlp_ln2_bf16_fused_store_kernel_launches += 1;
+                                    if (elide_ln2_norm_float_store) {
+                                        stored_mlp_ln2_bf16_float_store_elided_count += 1;
+                                        stored_mlp_ln2_bf16_float_store_elided_elements += active_activation_elements;
+                                    }
                                 }
                             }
                         } else {
                             if (use_bf16_projection_residual &&
-                                linear_bias_residual_layer_norm_with_stats_bf16_linear != nullptr) {
+                                can_fuse_ln2_bf16_out) {
+                                run(linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm(
+                                        block_input,
+                                        tape.proj_out_bf16,
+                                        block.attn_proj_bias,
+                                        residual_scale,
+                                        block.ln2_weight,
+                                        block.ln2_bias,
+                                        tape.residual1,
+                                        ln2_norm_out,
+                                        ln2_mean,
+                                        ln2_rstd,
+                                        nullptr,
+                                        fused_mlp_store->ln2_out,
+                                        active_rows,
+                                        kDim,
+                                        kNormEps,
+                                        nullptr),
+                                    label + ".attn.bias_residual_ln2_bf16_linear_bf16_norm");
+                                if (error.empty()) {
+                                    ln2_bf16_prepacked = true;
+                                    stored_mlp_ln2_bf16_fused_store_kernel_launches += 1;
+                                    if (elide_ln2_norm_float_store) {
+                                        stored_mlp_ln2_bf16_float_store_elided_count += 1;
+                                        stored_mlp_ln2_bf16_float_store_elided_elements += active_activation_elements;
+                                    }
+                                }
+                            } else if (use_bf16_projection_residual &&
+                                       linear_bias_residual_layer_norm_with_stats_bf16_linear != nullptr) {
                                 run(linear_bias_residual_layer_norm_with_stats_bf16_linear(
                                         block_input,
                                         tape.proj_out_bf16,
@@ -13746,10 +13792,18 @@ int run_transformer_lm_training_json(
                 ? "fused-bf16-linear-bias-residual-add"
                 : "fused-linear-bias-residual-add")
         << "\",\n"
+        << "  \"fused_ln2_bf16_norm_float_store_elision_enabled\": "
+        << (fused_ln2_bf16_norm_float_store_elision_enabled ? "true" : "false") << ",\n"
+        << "  \"stored_mlp_ln2_bf16_float_store_elided_count\": "
+        << stored_mlp_ln2_bf16_float_store_elided_count << ",\n"
+        << "  \"stored_mlp_ln2_bf16_float_store_elided_elements\": "
+        << stored_mlp_ln2_bf16_float_store_elided_elements << ",\n"
         << "  \"attention_residual_ln2_strategy\": \""
         << (fuse_attention_residual_ln2_enabled
                 ? (bf16_projection_residual_enabled
-                       ? "fused-bf16-linear-bias-residual-layernorm"
+                       ? (fused_ln2_bf16_norm_float_store_elision_enabled
+                              ? "fused-bf16-linear-bias-residual-layernorm-bf16-norm-fp32-store-elided"
+                              : "fused-bf16-linear-bias-residual-layernorm")
                        : "fused-linear-bias-residual-layernorm")
                 : "disabled")
         << "\",\n"

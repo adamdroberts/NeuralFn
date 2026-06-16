@@ -941,7 +941,14 @@ launch while writing LN2 mean/rstd for backward stats reuse. Set
 residual-add plus LN2 route. Native plan and runtime JSON report
 `attention_residual_ln2_strategy: "fused-linear-bias-residual-layernorm"` and
 `block_state_layout.layer_norm_backward_reuses_forward_stats: true` when this
-default route is active.
+default route is active. On the dense GPT runtime path, BF16 stored-MLP training
+also defaults to eliding the redundant FP32 LN2 norm-output store when the fused
+residual+LN2 kernel writes the BF16 LN2 output directly; runtime JSON reports
+`fused_ln2_bf16_norm_float_store_elision_enabled`,
+`stored_mlp_ln2_bf16_float_store_elided_count`, and
+`stored_mlp_ln2_bf16_float_store_elided_elements`. Set
+`NFN_NATIVE_GPT_ELIDE_LN2_BF16_NORM_FLOAT_STORE=0` to restore the older FP32
+store for paired benchmarks.
 
 Block backward also defaults to
 `nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_float32`

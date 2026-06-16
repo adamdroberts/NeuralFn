@@ -2300,7 +2300,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["projection_bias_residual_kernel_launches_per_block"] == 2
     assert train_transformer_payload["projection_bias_residual_legacy_launches_per_block"] == 4
     assert train_transformer_payload["projection_bias_residual_launches_elided_per_block"] == 2
-    assert train_transformer_payload["attention_residual_ln2_strategy"] == "fused-bf16-linear-bias-residual-layernorm"
+    assert (
+        train_transformer_payload["attention_residual_ln2_strategy"]
+        == "fused-bf16-linear-bias-residual-layernorm-bf16-norm-fp32-store-elided"
+    )
+    assert train_transformer_payload["fused_ln2_bf16_norm_float_store_elision_enabled"] is True
+    assert train_transformer_payload["stored_mlp_ln2_bf16_float_store_elided_count"] == 0
+    assert train_transformer_payload["stored_mlp_ln2_bf16_float_store_elided_elements"] == 0
     assert train_transformer_payload["attention_residual_ln2_kernel_launches_per_block"] == 1
     assert train_transformer_payload["attention_residual_ln2_legacy_launches_per_block"] == 2
     assert train_transformer_payload["attention_residual_ln2_launches_elided_per_block"] == 1
@@ -4207,9 +4213,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32" in gpt2_source_text
     assert "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_float32" in gpt2_source_text
     assert "NFN_NATIVE_GPT_FUSE_LN2_BF16_OUT" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_ELIDE_LN2_BF16_NORM_FLOAT_STORE" in gpt2_source_text
+    assert "fused_ln2_bf16_norm_float_store_elision_enabled" in gpt2_source_text
+    assert "stored_mlp_ln2_bf16_float_store_elided_elements" in gpt2_source_text
     assert "stored_mlp_ln2_bf16_prepack_strategy" in gpt2_source_text
     assert "stored_mlp_ln2_bf16_fused_store_kernel_launches" in gpt2_source_text
     assert "attention_residual_ln2_strategy" in gpt2_source_text
+    assert "norm_out != nullptr" in kernels_text
     assert "fused-linear-bias-residual-layernorm" in gpt2_source_text
     assert "token_cross_entropy_backward_rowwise_float32_kernel" in kernels_text
     assert "token_cross_entropy_backward_rowwise_inplace_float32_kernel" in kernels_text

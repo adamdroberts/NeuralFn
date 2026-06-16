@@ -6,6 +6,42 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Elide dense GPT LN2 FP32 norm stores
+
+#### Changed
+
+- Dense native GPT training now skips the redundant FP32 `ln2_out` store inside
+  the fused attention-projection residual+LN2 Tile kernels when the stored-MLP
+  path consumes the BF16 LN2 output directly. The Tile kernels accept
+  `norm_out == nullptr` while still writing mean/rstd and optional BF16 norm
+  output.
+- The default path is controlled by
+  `NFN_NATIVE_GPT_ELIDE_LN2_BF16_NORM_FLOAT_STORE=0` or the GPT2-prefixed
+  fallback for paired bisection.
+- Runtime JSON now reports
+  `fused_ln2_bf16_norm_float_store_elision_enabled`,
+  `stored_mlp_ln2_bf16_float_store_elided_count`,
+  `stored_mlp_ln2_bf16_float_store_elided_elements`, and the
+  `attention_residual_ln2_strategy` suffix
+  `fused-bf16-linear-bias-residual-layernorm-bf16-norm-fp32-store-elided` when
+  the default route is active.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step native GPT Tile-CUDA smoke on the dedicated RTX 5090; runtime
+  JSON reported `stored_mlp_ln2_bf16_float_store_elided_count: 96` and
+  `stored_mlp_ln2_bf16_float_store_elided_elements: 4831838208`.
+- Ran a guarded paired 5-step benchmark on the dedicated RTX 5090 with the
+  baseline flag disabled and the candidate default enabled:
+  `train_loop_wall_ms_per_step` improved from `2726.633333` to `2717.806667`
+  and `train_tokens_per_second` improved from `192289.666667` to
+  `192913.666667`; selected GPU display was disabled with zero compute
+  processes before every sample.
+
 ### 2026-06-16 Fuse native GPT LayerNorm affine and residual backward
 
 #### Changed

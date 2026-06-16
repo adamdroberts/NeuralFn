@@ -1017,7 +1017,14 @@ launch. `nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residua
 also writes the prepacked LN2 BF16 activation for the stored-MLP FC+GELU path,
 which is the native dense-GPT default. Runtime JSON reports
 `attention_residual_ln2_strategy`, `fused_ln2_bf16_out_enabled`,
-`stored_mlp_ln2_bf16_prepack_strategy`, and launch counters for this path.
+`fused_ln2_bf16_norm_float_store_elision_enabled`,
+`stored_mlp_ln2_bf16_prepack_strategy`,
+`stored_mlp_ln2_bf16_fused_store_kernel_launches`,
+`stored_mlp_ln2_bf16_float_store_elided_count`, and
+`stored_mlp_ln2_bf16_float_store_elided_elements` for this path. The default
+training route skips the redundant FP32 LN2 norm-output store when BF16 LN2 is
+the only consumer; set `NFN_NATIVE_GPT_ELIDE_LN2_BF16_NORM_FLOAT_STORE=0` to
+restore the older write for paired kernel bisection.
 
 Full GPT-2 `--train-transformer-lm` also fuses attention-output and MLP
 projection bias with residual addition. `nfn_native_tile_linear_bias_residual_add_float32`

@@ -7767,7 +7767,9 @@ __tile_global__ void linear_bias_residual_layer_norm_float32_kernel(
   norm_weight = ct::assume_aligned(norm_weight, 16_ic);
   norm_bias = ct::assume_aligned(norm_bias, 16_ic);
   residual_out = ct::assume_aligned(residual_out, 16_ic);
-  norm_out = ct::assume_aligned(norm_out, 16_ic);
+  if (norm_out != nullptr) {
+    norm_out = ct::assume_aligned(norm_out, 16_ic);
+  }
 
   const int row = ct::bid().x;
   using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
@@ -7801,7 +7803,9 @@ __tile_global__ void linear_bias_residual_layer_norm_float32_kernel(
   auto weight_tile = ct::load_masked(norm_weight + d, mask);
   auto bias_tile = ct::load_masked(norm_bias + d, mask);
   auto norm_value = centered * norm_scale * weight_tile + bias_tile;
-  ct::store_masked(norm_out + base + d, norm_value, mask);
+  if (norm_out != nullptr) {
+    ct::store_masked(norm_out + base + d, norm_value, mask);
+  }
   if (norm_bf16_out != nullptr) {
     auto* norm_bf16 = reinterpret_cast<__nv_bfloat16*>(norm_bf16_out);
     ct::store_masked(norm_bf16 + base + d, ct::element_cast<__nv_bfloat16>(norm_value), mask);
@@ -7835,7 +7839,9 @@ __tile_global__ void linear_bias_residual_layer_norm_bf16_linear_float32_kernel(
   norm_weight = ct::assume_aligned(norm_weight, 16_ic);
   norm_bias = ct::assume_aligned(norm_bias, 16_ic);
   residual_out = ct::assume_aligned(residual_out, 16_ic);
-  norm_out = ct::assume_aligned(norm_out, 16_ic);
+  if (norm_out != nullptr) {
+    norm_out = ct::assume_aligned(norm_out, 16_ic);
+  }
 
   const int row = ct::bid().x;
   using Shape = decltype(ct::shape{1024_ic});
@@ -7872,7 +7878,9 @@ __tile_global__ void linear_bias_residual_layer_norm_bf16_linear_float32_kernel(
   auto weight_tile = ct::load_masked(norm_weight + d, mask);
   auto bias_tile = ct::load_masked(norm_bias + d, mask);
   auto norm_value = centered * norm_scale * weight_tile + bias_tile;
-  ct::store_masked(norm_out + base + d, norm_value, mask);
+  if (norm_out != nullptr) {
+    ct::store_masked(norm_out + base + d, norm_value, mask);
+  }
   if (norm_bf16_out != nullptr) {
     auto* norm_bf16 = reinterpret_cast<__nv_bfloat16*>(norm_bf16_out);
     ct::store_masked(norm_bf16 + base + d, ct::element_cast<__nv_bfloat16>(norm_value), mask);
