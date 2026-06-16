@@ -916,9 +916,8 @@ runtime JSON switches `attention_activation_storage_strategy` to
 `"tk-sm120-bf16-saved-forward-workspace-bridge"`, and reports saved-attention
 arena sizes plus store/restore/backward counts. For the packed path, the trainer
 stores packed BF16 QKV and packed BF16 O for all 12 trained blocks by default on
-the dedicated RTX 5090 workstation shape, while leaving per-row TK `lse` in the
-shared workspace unless explicitly requested; runtime JSON
-reports `packed_attention_activation_storage_strategy:
+the dedicated RTX 5090 workstation shape, and now stores per-row TK `lse` beside
+those tensors by default; runtime JSON reports `packed_attention_activation_storage_strategy:
 "packed-qkv-o-bf16-forward-store-direct-backward"`,
 `stored_packed_attention_activation_blocks: 12`,
 `stored_packed_attention_lse_enabled`, `stored_packed_attention_*` counts/bytes,
@@ -930,8 +929,8 @@ packed-attention recompute projection/residual subpath; that store is fused into
 the attention residual+LN2 Tile kernel by default. Set
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS=0` or
 `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS=0` for lower-memory comparisons, set
-`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=1` to opt into storing per-row
-packed-attention LSE alongside QKV/O in paired benchmarks, set
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0` to compare against the older shared
+workspace-LSE path in paired benchmarks, set
 `NFN_NATIVE_GPT_FUSE_RESIDUAL1_STORE=0` to compare against the older separate
 residual1 store, or set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=N` to tune
 the saved packed-attention block cap. The GPT-2-prefixed variables remain

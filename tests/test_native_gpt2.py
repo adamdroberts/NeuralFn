@@ -1406,14 +1406,14 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["stored_packed_attention_activation_blocks"] == 12
     assert tile_payload["stored_packed_attention_bf16_elements"] > 0
     assert tile_payload["stored_packed_attention_bf16_bytes"] > 0
-    assert tile_payload["stored_packed_attention_lse_elements"] == 0
-    assert tile_payload["stored_packed_attention_lse_bytes"] == 0
-    assert tile_payload["stored_packed_attention_lse_enabled"] is False
+    assert tile_payload["stored_packed_attention_lse_elements"] > 0
+    assert tile_payload["stored_packed_attention_lse_bytes"] > 0
+    assert tile_payload["stored_packed_attention_lse_enabled"] is True
     assert tile_payload["stored_packed_attention_store_blocks"] == 0
     assert tile_payload["stored_packed_attention_restore_blocks"] == 0
     assert tile_payload["stored_packed_attention_backward_kernel_launches"] == 0
     assert tile_payload["stored_packed_attention_backward_consumer_strategy"] == (
-        "saved-packed-qkv-o-workspace-lse-bf16-backward-to-qkv"
+        "saved-packed-qkv-o-lse-bf16-backward-to-qkv"
     )
     assert tile_payload["attention_backward_recompute_forward_elided_per_block"] == 1
     assert tile_payload["attention_backward_score_reuse_dim"] == 64
@@ -2307,12 +2307,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["stored_packed_attention_bf16_bytes"] == 0
     assert train_transformer_payload["stored_packed_attention_lse_elements"] == 0
     assert train_transformer_payload["stored_packed_attention_lse_bytes"] == 0
-    assert train_transformer_payload["stored_packed_attention_lse_enabled"] is False
+    assert train_transformer_payload["stored_packed_attention_lse_enabled"] is True
     assert train_transformer_payload["stored_packed_attention_store_blocks"] == 0
     assert train_transformer_payload["stored_packed_attention_restore_blocks"] == 0
     assert train_transformer_payload["stored_packed_attention_backward_kernel_launches"] == 0
     assert train_transformer_payload["stored_packed_attention_backward_consumer_strategy"] == (
-        "saved-packed-qkv-o-workspace-lse-bf16-backward-to-qkv"
+        "saved-packed-qkv-o-lse-bf16-backward-to-qkv"
     )
     assert train_transformer_payload["max_steps"] == 2
     assert train_transformer_payload["eval_every_steps"] == 1

@@ -6,6 +6,44 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Default saved packed-attention LSE for native GPT
+
+#### Changed
+
+- Dense GPT native training now stores per-row packed-attention LSE alongside
+  the saved packed BF16 QKV/O activation cache by default. The backward path
+  therefore consumes saved QKV/O/LSE through
+  `saved-packed-qkv-o-lse-bf16-backward-to-qkv` instead of relying on the older
+  shared-workspace LSE path.
+- Runtime and plan JSON now report `stored_packed_attention_lse_enabled: true`,
+  nonzero `stored_packed_attention_lse_elements`/`bytes` for the default
+  full-shape plan, and
+  `stored_packed_attention_backward_consumer_strategy:
+  "saved-packed-qkv-o-lse-bf16-backward-to-qkv"`. Set
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0` or the GPT-2-prefixed fallback
+  only for paired benchmarks against the older shared-workspace-LSE behavior.
+
+#### Verification
+
+- Ran a five-sample paired benchmark on the dedicated RTX 5090 with selected
+  GPU idle guards and no compute processes before samples. The saved-LSE
+  candidate averaged `2776.49 ms` per optimizer step versus `2785.29 ms` for
+  the previous shared-workspace-LSE path, or `0.996841x` train-loop time and
+  `1.003172x` tokens/sec.
+- Ran a GPU-visible one-step TinyStories stage-timed smoke with
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=1`. It reported `passed: true`,
+  `stored_packed_attention_lse_enabled: true`,
+  `stored_packed_attention_lse_bytes: 37748736`,
+  `stored_packed_attention_backward_consumer_strategy:
+  "saved-packed-qkv-o-lse-bf16-backward-to-qkv"`, and 96 saved packed-attention
+  backward launches.
+- Rebuilt `build/nfn_gpt_native_train` and ran a no-override GPU-visible
+  one-step TinyStories smoke on CUDA device 0. It reported `passed: true`,
+  `stored_packed_attention_lse_enabled: true`,
+  `stored_packed_attention_lse_bytes: 37748736`, and
+  `stored_packed_attention_backward_consumer_strategy:
+  "saved-packed-qkv-o-lse-bf16-backward-to-qkv"`.
+
 ### 2026-06-16 Default BF16 projection residual consumers for native GPT
 
 #### Changed

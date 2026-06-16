@@ -1163,7 +1163,7 @@ bool print_tile_plan(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE",
                               "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_LSE"}),
-            false);
+            true);
     const bool store_packed_attention_ln1_stats_enabled =
         store_packed_attention_activations_enabled &&
         ln1_bf16_qkv_forward_enabled &&
@@ -8640,7 +8640,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE",
                               "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_LSE"}),
-            false);
+            true);
     const bool store_packed_attention_ln1_stats_enabled =
         store_packed_attention_activations_enabled &&
         ln1_bf16_qkv_forward_enabled &&
