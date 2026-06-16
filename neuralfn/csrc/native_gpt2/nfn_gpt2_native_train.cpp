@@ -8170,6 +8170,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_DIRECT_BF16_BLOCK_WEIGHT_INIT",
                               "NFN_NATIVE_GPT2_DIRECT_BF16_BLOCK_WEIGHT_INIT"}),
             true);
+    const bool token_weight_bf16_shadow_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW",
+                              "NFN_NATIVE_GPT2_TOKEN_WEIGHT_BF16_SHADOW"}),
+            true);
     const bool fuse_adamw_bf16_shadow_refresh_enabled =
         !bf16_block_weight_param_update_enabled &&
         env_flag_enabled_or_default(
@@ -8890,6 +8895,7 @@ int run_transformer_lm_training_json(
     std::int64_t stored_packed_attention_restore_blocks = 0;
     std::int64_t stored_packed_attention_backward_kernel_launches = 0;
     std::int64_t direct_block_output_write_count = 0;
+    std::uint16_t* token_weight_bf16 = nullptr;
     std::uint16_t* lm_head_bf16_logits = nullptr;
     std::int64_t lm_head_bf16_logit_elements = 0;
     std::int64_t lm_head_bf16_logit_bytes = 0;
@@ -8943,6 +8949,7 @@ int run_transformer_lm_training_json(
     std::int64_t block_dweight_bf16_staging_zero_count = 0;
     std::int64_t block_weight_bf16_refresh_count = 0;
     std::int64_t block_weight_bf16_fused_adamw_refresh_count = 0;
+    std::int64_t token_weight_bf16_refresh_count = 0;
     const float** block_weight_bf16_sources = nullptr;
     std::int64_t* block_weight_bf16_elements = nullptr;
     std::int64_t* block_weight_bf16_offsets = nullptr;
@@ -9611,6 +9618,10 @@ int run_transformer_lm_training_json(
             &stored_residual1_activation_arena,
             stored_residual1_activation_elements,
             "stored_residual1_bf16_arena");
+        allocate_uint16(
+            &token_weight_bf16,
+            token_weight_bf16_shadow_enabled ? kTokenWeightElements : 0,
+            "token_weight_bf16_shadow");
         allocate_uint16(
             &stored_attention_bf16_arena,
             stored_attention_bf16_elements,
@@ -10359,6 +10370,18 @@ int run_transformer_lm_training_json(
             run(init_gpt2_token_weight(token_weight, kTokenWeightElements, nullptr), "token_weight.init_device");
         }
     });
+    auto refresh_token_weight_bf16 = [&](const std::string& name) {
+        if (!token_weight_bf16_shadow_enabled || token_weight_bf16 == nullptr || !error.empty()) {
+            return;
+        }
+        run(float32_to_bf16_bits(token_weight, token_weight_bf16, kTokenWeightElements, nullptr), name);
+        if (error.empty()) {
+            token_weight_bf16_refresh_count += 1;
+        }
+    };
+    run_setup_timed("setup.token_weight_bf16_initial_refresh", [&]() {
+        refresh_token_weight_bf16("token_weight_bf16.initial_refresh");
+    });
     run_setup_timed("setup.nonzero_parameter_fill", [&]() {
         if (error.empty() && parameter_fill_descriptor_count > 0) {
             run(fill_many_values(
@@ -10791,17 +10814,31 @@ int run_transformer_lm_training_json(
             const std::int64_t* target_chunk = active_targets + row_start;
             const std::uint16_t* target_chunk_u16 = active_targets_u16 + row_start;
             if (lm_head_bf16_loss_enabled) {
-                run(linear_bf16_output(
-                        hidden_chunk,
-                        token_weight,
-                        nullptr,
-                        lm_head_bf16_logits,
-                        row_count,
-                        kDim,
-                        kPaddedVocab,
-                        false,
-                        nullptr),
-                    label + ".lm_head.forward.bf16_logits");
+                if (token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
+                    run(linear_weight_bf16_output(
+                            hidden_chunk,
+                            token_weight_bf16,
+                            nullptr,
+                            lm_head_bf16_logits,
+                            row_count,
+                            kDim,
+                            kPaddedVocab,
+                            false,
+                            nullptr),
+                        label + ".lm_head.forward.bf16_shadow_logits");
+                } else {
+                    run(linear_bf16_output(
+                            hidden_chunk,
+                            token_weight,
+                            nullptr,
+                            lm_head_bf16_logits,
+                            row_count,
+                            kDim,
+                            kPaddedVocab,
+                            false,
+                            nullptr),
+                        label + ".lm_head.forward.bf16_logits");
+                }
             } else {
                 run(linear(hidden_chunk, token_weight, nullptr, logits, row_count, kDim, kPaddedVocab, false, nullptr),
                     label + ".lm_head.forward");
@@ -10908,29 +10945,57 @@ int run_transformer_lm_training_json(
             run_timed_stage("lm_head_backward.logits", [&]() {
                 if (lm_head_bf16_logits_enabled) {
                     if (lm_head_prepack_bf16_hidden_enabled) {
-                        run(linear_bf16_input_float_weight_bf16_output(
-                                hidden_bf16_chunk,
-                                token_weight,
-                                nullptr,
-                                lm_head_bf16_logits,
-                                row_count,
-                                kDim,
-                                kPaddedVocab,
-                                false,
-                                nullptr),
-                            "lm_head.forward.recompute.prepacked_hidden_bf16_logits");
+                        if (token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
+                            run(linear_bf16_input_weight_bf16_output(
+                                    hidden_bf16_chunk,
+                                    token_weight_bf16,
+                                    nullptr,
+                                    lm_head_bf16_logits,
+                                    row_count,
+                                    kDim,
+                                    kPaddedVocab,
+                                    false,
+                                    nullptr),
+                                "lm_head.forward.recompute.prepacked_hidden_bf16_shadow_logits");
+                        } else {
+                            run(linear_bf16_input_float_weight_bf16_output(
+                                    hidden_bf16_chunk,
+                                    token_weight,
+                                    nullptr,
+                                    lm_head_bf16_logits,
+                                    row_count,
+                                    kDim,
+                                    kPaddedVocab,
+                                    false,
+                                    nullptr),
+                                "lm_head.forward.recompute.prepacked_hidden_bf16_logits");
+                        }
                     } else {
-                        run(linear_bf16_output(
-                                hidden_chunk,
-                                token_weight,
-                                nullptr,
-                                lm_head_bf16_logits,
-                                row_count,
-                                kDim,
-                                kPaddedVocab,
-                                false,
-                                nullptr),
-                            "lm_head.forward.recompute.bf16_logits");
+                        if (token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
+                            run(linear_weight_bf16_output(
+                                    hidden_chunk,
+                                    token_weight_bf16,
+                                    nullptr,
+                                    lm_head_bf16_logits,
+                                    row_count,
+                                    kDim,
+                                    kPaddedVocab,
+                                    false,
+                                    nullptr),
+                                "lm_head.forward.recompute.bf16_shadow_logits");
+                        } else {
+                            run(linear_bf16_output(
+                                    hidden_chunk,
+                                    token_weight,
+                                    nullptr,
+                                    lm_head_bf16_logits,
+                                    row_count,
+                                    kDim,
+                                    kPaddedVocab,
+                                    false,
+                                    nullptr),
+                                "lm_head.forward.recompute.bf16_logits");
+                        }
                     }
                 } else {
                     run(linear(hidden_chunk, token_weight, nullptr, logits, row_count, kDim, kPaddedVocab, false, nullptr),
@@ -11009,15 +11074,27 @@ int run_transformer_lm_training_json(
             run_timed_stage("lm_head_backward.dhidden", [&]() {
                 if (error.empty()) {
                     if (lm_head_bf16_logits_enabled) {
-                        run(linear_backward_input_bf16_bits(
-                                lm_head_bf16_logits,
-                                token_weight,
-                                grad_hidden_chunk,
-                                row_count,
-                                kDim,
-                                kPaddedVocab,
-                                nullptr),
-                            "lm_head.backward_input.bf16_bits");
+                        if (token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
+                            run(linear_backward_input_bf16_bits_weight_bf16(
+                                    lm_head_bf16_logits,
+                                    token_weight_bf16,
+                                    grad_hidden_chunk,
+                                    row_count,
+                                    kDim,
+                                    kPaddedVocab,
+                                    nullptr),
+                                "lm_head.backward_input.bf16_bits_weight_bf16_shadow");
+                        } else {
+                            run(linear_backward_input_bf16_bits(
+                                    lm_head_bf16_logits,
+                                    token_weight,
+                                    grad_hidden_chunk,
+                                    row_count,
+                                    kDim,
+                                    kPaddedVocab,
+                                    nullptr),
+                                "lm_head.backward_input.bf16_bits");
+                        }
                     } else {
                         run(linear_backward_input(
                                 logits, token_weight, grad_hidden_chunk, row_count, kDim, kPaddedVocab, nullptr),
@@ -12762,6 +12839,7 @@ int run_transformer_lm_training_json(
                 } else {
                     refresh_block_weight_bf16("block_weight_bf16.post_adamw_refresh");
                 }
+                refresh_token_weight_bf16("token_weight_bf16.post_adamw_refresh");
             }
             stage_end(stage_event, "adamw_update");
         }
@@ -13641,6 +13719,8 @@ int run_transformer_lm_training_json(
         << "  \"block_weight_bf16_shadow_max_elements\": " << block_weight_bf16_max_elements << ",\n"
         << "  \"block_weight_bf16_refresh_count\": " << block_weight_bf16_refresh_count << ",\n"
         << "  \"block_weight_bf16_fused_adamw_refresh_count\": " << block_weight_bf16_fused_adamw_refresh_count << ",\n"
+        << "  \"token_weight_bf16_shadow_enabled\": " << (token_weight_bf16_shadow_enabled ? "true" : "false") << ",\n"
+        << "  \"token_weight_bf16_refresh_count\": " << token_weight_bf16_refresh_count << ",\n"
         << "  \"block_weight_bf16_primary_param_update_count\": " << adamw_bf16_param_kernel_launches << ",\n"
         << "  \"block_weight_bf16_primary_param_bf16_grad_update_count\": "
         << adamw_bf16_param_bf16_grad_kernel_launches << ",\n"
@@ -14373,6 +14453,9 @@ int run_transformer_lm_training_json(
                 ? "direct-bf16-fill-many-values"
                 : "float32-fill-then-bf16-pack")
         << "\",\n"
+        << "    \"token_weight_bf16_shadow_enabled\": "
+        << (token_weight_bf16_shadow_enabled ? "true" : "false") << ",\n"
+        << "    \"token_weight_bf16_refresh_count\": " << token_weight_bf16_refresh_count << ",\n"
         << "    \"block_weight_bf16_primary_param_update_enabled\": "
         << (bf16_block_weight_param_update_enabled ? "true" : "false") << ",\n"
         << "    \"direct_bf16_block_weight_initialization_enabled\": "

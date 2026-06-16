@@ -201,9 +201,15 @@ shapes and fall back inside the ABI to separate dWeight plus Tile bias
 reduction when unsupported. Tied LM-head
 logits, dHidden, and dWeight chunks also default to the BF16 classifier path,
 which writes BF16 logits, overwrites them with BF16 dlogits, then feeds BF16
-dlogits into the LM-head dHidden and dWeight GEMMs. Set
-`NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS=0` to return only the tied LM-head chunks to
-the older optimized TF32 tensor-op `cublasSgemm` path for debugging.
+dlogits into the LM-head dHidden and dWeight GEMMs. The tied token
+embedding/LM-head weight also keeps a persistent BF16 shadow by default for
+LM-head logits and dHidden while retaining the FP32 master for token embedding,
+AdamW state, and checkpoint export. Runtime JSON reports
+`token_weight_bf16_shadow_enabled` and `token_weight_bf16_refresh_count`. Set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW=0` only for paired benchmarks against
+the older per-step BF16 bridge/cache route, or set
+`NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS=0` to return only the tied LM-head chunks
+to the older optimized TF32 tensor-op `cublasSgemm` path for debugging.
 `nfn_native_tile_linear_weight_bf16_gelu_bf16_float32` now handles stored-MLP
 FC+bias+GELU and
 `nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_float32` handles

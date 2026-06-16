@@ -6,6 +6,44 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Default dense GPT LM-head to persistent token BF16 shadow
+
+#### Changed
+
+- Dense native GPT training now allocates a persistent BF16 shadow of the tied
+  token embedding/LM-head weight by default. LM-head logits and dHidden GEMMs
+  consume the BF16 shadow while token embedding, AdamW state, and checkpoint
+  export keep using the FP32 master weight.
+- Added `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW=0` /
+  `NFN_NATIVE_GPT2_TOKEN_WEIGHT_BF16_SHADOW=0` as the paired-benchmark
+  bisection switch for the older per-step BF16 bridge/cache route.
+- Runtime JSON now reports `token_weight_bf16_shadow_enabled` and
+  `token_weight_bf16_refresh_count` at the top level and inside
+  `block_state_layout`.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step native CUDA smoke on the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1
+  NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW=1 build/nfn_gpt_native_train
+  --backend tile-cuda --tinystories --max-steps 1 --eval-every-steps 0
+  --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so`;
+  the trainer reported `passed: true`,
+  `token_weight_bf16_shadow_enabled: true`, and
+  `token_weight_bf16_refresh_count: 2`.
+- Ran paired 5-step timing with `tools/paired_kernel_speed.py` on the
+  dedicated RTX 5090, comparing the same binary with the shadow disabled
+  against `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW=1`. Over 3 samples,
+  selected GPU display was disabled with zero compute processes before each
+  sample; candidate train-loop step time was `0.994401x` baseline and
+  train-token throughput was `1.005634x`.
+- Ran a longer paired 10-step timing check on the same dedicated RTX 5090. Over
+  2 samples, selected GPU display was disabled with zero compute processes
+  before each sample; candidate train-loop step time was `0.994084x`, total
+  native wall time was `0.994352x`, and train-token throughput was `1.005960x`.
+
 ### 2026-06-16 Stop dense GPT train-loop timing before diagnostic sample copies
 
 #### Changed

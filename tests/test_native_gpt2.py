@@ -2471,6 +2471,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["parameter_initialization_kernel_launches_per_startup"] == 0
     assert train_transformer_payload["parameter_initialization_per_buffer_launches_elided"] == 75
     assert train_transformer_payload["direct_bf16_block_weight_initialization_enabled"] is True
+    assert train_transformer_payload["token_weight_bf16_shadow_enabled"] is True
+    assert train_transformer_payload["token_weight_bf16_refresh_count"] == 0
     assert train_transformer_payload["adamw_update_strategy"] in {
         "fused-multi-buffer-device-scale",
         "split-float32-and-bf16-param-multi-buffer-device-scale",
@@ -2629,6 +2631,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "adamw_device_clip_scale_fused": True,
         "adamw_bf16_shadow_refresh_strategy": "elided-bf16-primary-params",
         "block_weight_bf16_initialization_strategy": "direct-bf16-fill-many-values",
+        "token_weight_bf16_shadow_enabled": True,
+        "token_weight_bf16_refresh_count": 0,
         "block_weight_bf16_primary_param_update_enabled": True,
         "direct_bf16_block_weight_initialization_enabled": True,
         "block_weight_bf16_gradient_storage_strategy": "float32-accumulation-buffer",
@@ -3745,6 +3749,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "adamw_many_with_device_scale_bf16_param_bf16_grad" in gpt2_source_text
     assert "adamw_bf16_param_bf16_grad_kernel_loaded" in gpt2_source_text
     assert "block_weight_bf16_gradient_storage_strategy" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW" in gpt2_source_text
+    assert "token_weight_bf16_shadow_enabled" in gpt2_source_text
+    assert "token_weight_bf16_refresh_count" in gpt2_source_text
+    assert "token_weight_bf16.initial_refresh" in gpt2_source_text
+    assert "nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_float32" in header_text
     assert "launch_adamw_step_many_with_device_scale_float32" in source_text
     assert "launch_adamw_step_many_with_device_scale_bf16_shadow_float32" in source_text
     assert "launch_adamw_step_many_with_device_scale_bf16_param_float32" in source_text

@@ -143,6 +143,7 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS`,
 `NFN_NATIVE_GPT_PUBLIC_VOCAB_CE`, and
 `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN`,
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW`,
 `NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE`, and
 `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC`. The older `NFN_NATIVE_GPT2_*`
 variables remain compatibility fallbacks for existing GPT-2-named wrappers.
@@ -212,6 +213,15 @@ logits, dHidden, and dWeight chunks also default to the BF16 classifier path.
 `nfn_native_tile_linear_bf16_output_float32` writes BF16 logits,
 `nfn_native_tile_linear_bf16_input_float_weight_bf16_output_float32` reuses a
 full-microbatch BF16 final-norm hidden prepack with FP32 tied token weights,
+and the default tied token embedding/LM-head BF16 shadow routes logits and
+dHidden through `nfn_native_tile_linear_weight_bf16_output_float32`,
+`nfn_native_tile_linear_bf16_input_weight_bf16_output_float32`, and
+`nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_float32` while the
+FP32 master remains authoritative for token embedding, AdamW state, and
+checkpoint export. Set `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW=0` only for
+paired benchmarks against the older per-step BF16 bridge/cache route. Runtime
+JSON reports `token_weight_bf16_shadow_enabled` and
+`token_weight_bf16_refresh_count`.
 `nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits` computes
 validation/test CE partials over the public vocab while walking the padded
 logit row stride,
