@@ -223,6 +223,15 @@ float-gradient handoff. Runtime JSON reports
 `stored_mlp_activation_backward_consumer_strategy` when the handoff is active.
 The older float-gradient path still uses the fused dInput+dGELU ABI and only
 hands the following MLP FC backward a float gradient when the handoff is forced off.
+The raw Tile library also exports
+`nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_to_bf16_bits_float32`
+for profiling BF16/BF16 block dWeight accumulation into BF16 staging buffers.
+Set `NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING=1` only for paired benchmarks; it
+is default-off because the dedicated RTX 5090 candidate-vs-baseline run measured
+about `1.0245x` slower train-loop time than the current cuBLASLt bgrad path.
+Runtime JSON reports `block_dweight_bf16_staging_enabled`,
+`block_dweight_bf16_staging_strategy`, staging bytes, zero count, and
+BF16-to-FP32 flush launches when the experiment is enabled.
 The mixed float32-hidden/BF16-grad dWeight+bias ABI can opt into a cuBLASLt
 bgrad epilogue route for QKV profiling with
 `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=1` or
@@ -822,6 +831,11 @@ runtime JSON reports `block_backward_bf16_qkv_dweight_enabled` and
 "packed-ln1-bf16-qkv-bf16-grad-dweight-bias-accumulate"`. Set
 `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=0` to reproduce the previous float32-LN1
 dWeight path.
+`NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING=1` moves the QKV and MLP FC BF16/BF16
+dWeight outputs into BF16 staging buffers and flushes them back to the normal
+float32 accumulation buffers before clipping and AdamW. Keep it off for normal
+training; the paired RTX 5090 benchmark showed the staging candidate slower than
+the current default.
 The packed backward batch cap defaults to 64 so the workstation `64 x 1024`
 microbatch runs as one TK backward chunk. Set
 `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48` when reproducing the

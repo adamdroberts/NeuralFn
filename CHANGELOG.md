@@ -6,6 +6,53 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Add opt-in native BF16 dWeight staging ABI
+
+#### Changed
+
+- Added the raw trainer Tile ABI symbol
+  `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_to_bf16_bits_float32`
+  for BF16 activation plus BF16 gradient dWeight accumulation into a BF16
+  staging buffer, with bias accumulation kept in float32.
+- Dense GPT native training now binds and audits that ABI and can route QKV and
+  MLP FC BF16/BF16 dWeight accumulation through BF16 staging buffers when
+  `NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING=1` is set. The trainer flushes the
+  staged BF16 dWeights back to the existing float32 accumulation buffers before
+  gradient clipping and AdamW.
+- The staging experiment is intentionally default-off. The current default
+  remains the cuBLASLt bgrad-backed float32 accumulation path because paired
+  RTX 5090 timing measured the BF16 staging candidate slower.
+- Runtime JSON now reports `block_dweight_bf16_staging_enabled`,
+  `block_dweight_bf16_staging_elements`, `block_dweight_bf16_staging_bytes`,
+  `block_dweight_bf16_staging_zero_count`,
+  `block_dweight_bf16_staging_convert_kernel_launches`, and
+  `block_dweight_bf16_staging_strategy`.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`
+  and rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran a GPU-visible one-step TinyStories smoke on CUDA device 0 with the
+  default path. It reported `passed: true`,
+  `block_dweight_bf16_staging_enabled: false`,
+  `block_dweight_bf16_staging_strategy:
+  "disabled-fp32-accumulation-default"`, `linear_cublaslt_gemm_count: 672`, and
+  about `2785.80 ms` train-loop time.
+- Ran a GPU-visible one-step TinyStories smoke with
+  `NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING=1`. It reported `passed: true`,
+  `block_dweight_bf16_staging_enabled: true`,
+  `block_dweight_bf16_staging_bytes: 99090432`,
+  `block_dweight_bf16_staging_convert_kernel_launches: 24`, and
+  `gradient_zero_kernel_launches_per_optimizer_step: 3`, confirming the extra
+  BF16 staging zero launch is counted.
+- Ran an earlier paired candidate-vs-baseline benchmark on the dedicated RTX
+  5090 with selected-GPU idle guards, comparing
+  `NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING=0` against the staging candidate.
+  The candidate measured `1.024508x` median train-loop time and about
+  `0.976971x` mean tokens/sec versus the default, so the feature remains
+  opt-in.
+
 ### 2026-06-16 Prepack native GPT LM-head hidden BF16
 
 #### Changed

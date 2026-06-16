@@ -904,7 +904,18 @@ Runtime JSON reports `block_backward_bf16_qkv_dweight_enabled` and
 `block_backward_qkv_dweight_strategy:
 "packed-ln1-bf16-qkv-bf16-grad-dweight-bias-accumulate"`. Set
 `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=0` to reproduce the previous float32-LN1
-dWeight path. Set
+dWeight path. The trainer ABI also exports
+`nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_to_bf16_bits_float32`,
+which accumulates BF16 activation and BF16 gradient dWeight into a BF16 staging
+buffer while still accumulating bias in float32. Dense GPT can opt into that
+QKV and MLP FC staging experiment with
+`NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING=1`, then flushes staged BF16 dWeights
+to the existing float32 accumulation buffers before gradient clipping and
+AdamW. It remains default-off because the paired dedicated-RTX-5090 benchmark
+measured the candidate at about `1.0245x` the default train-loop time; runtime
+JSON reports `block_dweight_bf16_staging_enabled`,
+`block_dweight_bf16_staging_strategy`, staging allocation sizes, zero count, and
+flush-launch counts. Set
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF=0` to compare against the
 older packed path that expands `dQKV` to float32 before QKV dWeight/dInput. Set
 `NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE=0`,

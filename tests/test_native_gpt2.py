@@ -2426,6 +2426,14 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["steps_completed"] == 0
     assert train_transformer_payload["train_microbatches_completed"] == 0
     assert train_transformer_payload["weight_update_count"] == 148
+    assert train_transformer_payload["block_dweight_bf16_staging_enabled"] is False
+    assert train_transformer_payload["block_dweight_bf16_staging_elements"] == 0
+    assert train_transformer_payload["block_dweight_bf16_staging_bytes"] == 0
+    assert train_transformer_payload["block_dweight_bf16_staging_zero_count"] == 0
+    assert train_transformer_payload["block_dweight_bf16_staging_convert_kernel_launches"] == 0
+    assert train_transformer_payload["block_dweight_bf16_staging_strategy"] == (
+        "disabled-fp32-accumulation-default"
+    )
     assert train_transformer_payload["block_state_layout"] == {
         "allocated_block_count": 12,
         "target_block_count": 12,
@@ -2508,6 +2516,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "token_gradient_accumulation_direct": True,
         "token_gradient_scratch_buffer_allocated": False,
         "block_linear_weight_gradient_accumulation_direct": True,
+        "block_dweight_bf16_staging_enabled": False,
+        "block_dweight_bf16_staging_elements": 0,
+        "block_dweight_bf16_staging_zero_count": 0,
+        "block_dweight_bf16_staging_convert_kernel_launches": 0,
         "block_linear_weight_gradient_scratch_buffers_allocated": False,
         "block_linear_weight_gradient_microbatch_full_copy_elided": True,
         "layer_norm_affine_gradient_accumulation_direct": True,
