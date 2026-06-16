@@ -4478,6 +4478,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "fused-bias-preactivation-gelu" in gpt2_source_text
     assert "launch_fill_float32" in source_text
     assert "launch_init_gpt2_token_weight_float32" in source_text
+    assert "ct::shape{2048_ic}" in kernels_text
     assert "launch_uint16_to_int64" in source_text
     assert "atomic_add_masked" in kernels_text
     assert "vocab <= kTileSize" in kernels_text

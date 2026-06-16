@@ -4274,12 +4274,15 @@ __tile_global__ void init_gpt2_token_weight_float32_kernel(
   values = ct::assume_aligned(values, 16_ic);
 
   const int bx = ct::bid().x;
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
-  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  constexpr int kTokenInitTileSize = 2048;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{2048_ic})>;
+  auto idx = ct::iota<IndexTile>() +
+      ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTokenInitTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto bucket = idx % ct::full<IndexTile>(17);
   auto shifted = bucket - ct::full<IndexTile>(8);
-  auto value = ct::element_cast<float>(shifted) * ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.01f);
+  auto value = ct::element_cast<float>(shifted) *
+      ct::full<ct::tile<float, decltype(ct::shape{2048_ic})>>(0.01f);
   ct::store_masked(values + idx, value, mask);
 }
 
@@ -10362,7 +10365,8 @@ void launch_init_gpt2_token_weight_float32(
     float* values,
     std::int64_t n,
     cudaStream_t stream) {
-  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  constexpr int kTokenInitTileSize = 2048;
+  const int blocks = static_cast<int>((n + kTokenInitTileSize - 1) / kTokenInitTileSize);
   init_gpt2_token_weight_float32_kernel<<<blocks, 1, 0, stream>>>(values, n);
 }
 

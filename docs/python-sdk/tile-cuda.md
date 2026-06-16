@@ -474,7 +474,10 @@ The same native trainer initializes the tied token embedding/LM-head weight on
 device with `nfn_native_tile_init_gpt2_token_weight_float32`. Native JSON reports
 `token_weight_init_strategy: "device-tile-deterministic"` and
 `token_weight_host_materialization: false`, so startup no longer constructs and
-copies the full token-weight matrix through host RAM.
+copies the full token-weight matrix through host RAM. The initializer uses
+2048-element CUDA Tile blocks for the full padded vocabulary table to reduce
+startup launch fanout while keeping the deterministic modulo-17 value pattern
+unchanged.
 
 The compiled GPT-2 transformer-LM trainer does not sample train loss in the hot
 path. Ordinary optimizer steps run the forward activations needed for backward,

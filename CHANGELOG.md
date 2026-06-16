@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Retile native GPT token-weight startup initialization
+
+#### Changed
+
+- `nfn_native_tile_init_gpt2_token_weight_float32` now initializes the native
+  dense GPT tied token embedding/LM-head table with 2048-element CUDA Tile
+  blocks instead of 1024-element blocks. The deterministic modulo-17
+  initialization pattern is unchanged; the retile only reduces startup launch
+  fanout for the full padded vocabulary table.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran paired dedicated-RTX-5090 startup-only timing with selected-GPU idle
+  guards comparing the rebuilt 1024-tile baseline against the 2048-tile
+  candidate through the same compiled trainer. Over 3 measured samples after 1
+  warmup pair, the candidate measured `0.978511x` mean setup wall time,
+  `0.978822x` mean token-weight init time, and `0.982087x` mean total native
+  startup wall time.
+
 ### 2026-06-16 Reduce native GPT SDK binding launch overhead
 
 #### Changed
