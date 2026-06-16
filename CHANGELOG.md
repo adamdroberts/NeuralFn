@@ -6,6 +6,44 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Add opt-in native GPT cudaMallocAsync allocator telemetry
+
+#### Changed
+
+- Dense GPT transformer-LM startup now has an opt-in allocator profiling switch,
+  `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1`, with the GPT-2 compatibility fallback
+  `NFN_NATIVE_GPT2_CUDA_MALLOC_ASYNC=1`.
+- When enabled and the CUDA runtime exports `cudaMallocAsync` /
+  `cudaFreeAsync`, the native C++ trainer routes its large device arenas
+  through the async allocator, falls back to `cudaMalloc` if an async allocation
+  fails, frees async pointers with `cudaFreeAsync`, and synchronizes before
+  teardown completes.
+- Runtime JSON now reports `device_allocator_strategy`,
+  `device_cuda_malloc_async_requested`, `device_cuda_malloc_async_enabled`,
+  async symbol availability, async allocation/free counts, and
+  `device_cuda_malloc_async_fallback_count`.
+- The async allocator remains default-off. Dedicated RTX 5090 paired timing
+  measured it slower than the existing arena `cudaMalloc` path.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran a GPU-visible TinyStories one-step smoke on CUDA device 0 with
+  `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1`; it reported `passed: true`,
+  `device_allocator_strategy: "cudaMallocAsync-null-stream"`,
+  `device_cuda_malloc_async_count: 6`,
+  `device_cuda_free_async_count: 6`, and
+  `device_cuda_malloc_async_fallback_count: 0`.
+- Ran paired dedicated-RTX-5090 timing with selected-GPU idle guards comparing
+  default `cudaMalloc` against `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1`. The async
+  allocator measured about `1.034x` median command wall time,
+  `1.033x` median total wall time, `1.196x` median setup wall time, and
+  `1.003x` median train-loop time, so the feature remains opt-in.
+- Ran paired dedicated-RTX-5090 control checks for cuBLASLt heuristic index 0
+  and 2, LM-head BF16 hidden prepack, BF16 dWeight+bias bgrad, and packed
+  attention LN1 stats. None produced a clear default-changing win, so the
+  existing optimized defaults were retained.
+
 ### 2026-06-16 Add opt-in native BF16 dWeight staging ABI
 
 #### Changed

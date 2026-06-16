@@ -184,6 +184,24 @@ def test_packed_qkv_attention_backward_chunks_large_batches() -> None:
     assert "workspace->packed_grad_bf + batch_begin * packed_elements_per_batch" in source
 
 
+def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "neuralfn"
+        / "csrc"
+        / "native_gpt2"
+        / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert "NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC" in source
+    assert "cudaMallocAsync" in source
+    assert "cudaFreeAsync" in source
+    assert "device_cuda_malloc_async_requested" in source
+    assert "device_cuda_malloc_async_enabled" in source
+    assert "device_cuda_malloc_async_fallback_count" in source
+    assert "cudaDeviceSynchronize after cudaFreeAsync" in source
+
+
 def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) -> None:
     dataset_path, meta = _write_raw_text_dataset(tmp_path)
 

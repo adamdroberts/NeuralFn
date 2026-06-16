@@ -369,6 +369,15 @@ BF16 `cudaMalloc` path during paired benchmarks. JSON reports
 `uint16_allocation_request_count`, `uint16_arena_requested_elements`,
 `uint16_arena_allocated_elements`, `uint16_arena_cuda_malloc_count`, and
 `uint16_arena_suballocation_count`.
+Set `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` only for allocator profiling. It routes
+the same large native GPT device arenas through CUDA runtime `cudaMallocAsync`
+and frees them with `cudaFreeAsync` when those symbols are available, falling
+back to `cudaMalloc` if an async allocation fails. The path is default-off
+because paired dedicated-RTX-5090 timing measured it slower than the default
+arena `cudaMalloc` path. JSON reports `device_allocator_strategy`,
+`device_cuda_malloc_async_requested`, `device_cuda_malloc_async_enabled`, async
+symbol availability, async allocation/free counts, and
+`device_cuda_malloc_async_fallback_count`.
 Startup zeroes only AdamW first/second moment state as coalesced contiguous
 ranges with `cudaMemsetAsync` by default, then overwrites nonzero weights with
 device initializers and zeroes gradients per optimizer step. Set
@@ -692,6 +701,7 @@ Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE`,
 `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP`,
 `NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO`,
+`NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC`,
 `NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`,
 `NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF`,
 `NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD`,

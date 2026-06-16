@@ -143,7 +143,8 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS`,
 `NFN_NATIVE_GPT_PUBLIC_VOCAB_CE`, and
 `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN`,
-`NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE`. The older `NFN_NATIVE_GPT2_*`
+`NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE`, and
+`NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC`. The older `NFN_NATIVE_GPT2_*`
 variables remain compatibility fallbacks for existing GPT-2-named wrappers.
 The tokenizer-visible GPT-2 vocab remains 50,257, but native transformer-LM
 parameter layout pads the tied token embedding/LM-head rows to 50,304 for the
@@ -916,6 +917,13 @@ measured the candidate at about `1.0245x` the default train-loop time; runtime
 JSON reports `block_dweight_bf16_staging_enabled`,
 `block_dweight_bf16_staging_strategy`, staging allocation sizes, zero count, and
 flush-launch counts. Set
+`NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` to profile dense GPT transformer-LM startup
+through CUDA runtime `cudaMallocAsync` / `cudaFreeAsync` for the large device
+arenas. The async allocator path is default-off because paired dedicated-RTX-5090
+timing measured it slower than the default `cudaMalloc` arena path; runtime JSON
+reports `device_allocator_strategy`, `device_cuda_malloc_async_requested`,
+`device_cuda_malloc_async_enabled`, async symbol availability, allocation/free
+counts, and `device_cuda_malloc_async_fallback_count`. Set
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF=0` to compare against the
 older packed path that expands `dQKV` to float32 before QKV dWeight/dInput. Set
 `NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE=0`,

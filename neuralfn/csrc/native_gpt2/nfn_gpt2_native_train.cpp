@@ -7335,6 +7335,8 @@ int run_transformer_lm_training_json(
     using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
     using CudaMemcpyAsyncFn = int (*)(void*, const void*, std::size_t, int, void*);
     using CudaMemsetAsyncFn = int (*)(void*, int, std::size_t, void*);
+    using CudaMallocAsyncFn = int (*)(void**, std::size_t, void*);
+    using CudaFreeAsyncFn = int (*)(void*, void*);
     using CudaHostAllocFn = int (*)(void**, std::size_t, unsigned int);
     using CudaFreeHostFn = int (*)(void*);
     using CudaDeviceSynchronizeFn = int (*)();
@@ -7498,6 +7500,8 @@ int run_transformer_lm_training_json(
     CudaMemcpyFn cuda_memcpy = nullptr;
     CudaMemcpyAsyncFn cuda_memcpy_async = nullptr;
     CudaMemsetAsyncFn cuda_memset_async = nullptr;
+    CudaMallocAsyncFn cuda_malloc_async = nullptr;
+    CudaFreeAsyncFn cuda_free_async = nullptr;
     CudaHostAllocFn cuda_host_alloc = nullptr;
     CudaFreeHostFn cuda_free_host = nullptr;
     CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
@@ -7888,6 +7892,8 @@ int run_transformer_lm_training_json(
         cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
         cuda_memcpy_async = load_symbol<CudaMemcpyAsyncFn>(cuda_handle, "cudaMemcpyAsync");
         cuda_memset_async = load_symbol<CudaMemsetAsyncFn>(cuda_handle, "cudaMemsetAsync");
+        cuda_malloc_async = load_symbol<CudaMallocAsyncFn>(cuda_handle, "cudaMallocAsync");
+        cuda_free_async = load_symbol<CudaFreeAsyncFn>(cuda_handle, "cudaFreeAsync");
         cuda_host_alloc = load_symbol<CudaHostAllocFn>(cuda_handle, "cudaHostAlloc");
         cuda_free_host = load_symbol<CudaFreeHostFn>(cuda_handle, "cudaFreeHost");
         cuda_device_synchronize = load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
@@ -8383,6 +8389,49 @@ int run_transformer_lm_training_json(
         (bf16_block_weight_param_update_enabled ? kBf16ParamUpdateDescriptorDeviceTableCount : 0);
     const std::int64_t descriptor_cuda_mallocs_elided = descriptor_device_table_count - 1;
     const std::int64_t descriptor_arena_copy_calls_elided = descriptor_device_table_count - 1;
+    const bool async_device_allocator_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC",
+                              "NFN_NATIVE_GPT2_CUDA_MALLOC_ASYNC"}),
+            false);
+    const bool async_device_allocator_enabled =
+        async_device_allocator_requested && cuda_malloc_async != nullptr && cuda_free_async != nullptr;
+    std::vector<void*> async_device_ptrs;
+    std::int64_t device_cuda_malloc_async_count = 0;
+    std::int64_t device_cuda_free_async_count = 0;
+    std::int64_t device_cuda_malloc_async_fallback_count = 0;
+    auto device_malloc = [&](void** ptr, std::size_t bytes) -> int {
+        if (async_device_allocator_enabled) {
+            const int status = cuda_malloc_async(ptr, bytes, nullptr);
+            if (status == 0) {
+                async_device_ptrs.push_back(*ptr);
+                device_cuda_malloc_async_count += 1;
+                return 0;
+            }
+            device_cuda_malloc_async_fallback_count += 1;
+        }
+        return cuda_malloc(ptr, bytes);
+    };
+    auto device_pointer_was_async_allocated = [&](void* ptr) {
+        return std::find(async_device_ptrs.begin(), async_device_ptrs.end(), ptr) != async_device_ptrs.end();
+    };
+    auto device_free = [&](void* ptr, const std::string& name) {
+        if (ptr == nullptr) {
+            return;
+        }
+        int status = 0;
+        if (device_pointer_was_async_allocated(ptr) && cuda_free_async != nullptr) {
+            status = cuda_free_async(ptr, nullptr);
+            if (status == 0) {
+                device_cuda_free_async_count += 1;
+            }
+        } else if (cuda_free != nullptr) {
+            status = cuda_free(ptr);
+        }
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, name);
+        }
+    };
     auto align_float_arena_offset = [](std::int64_t value) {
         return ((value + kFloatArenaAlignmentElements - 1) / kFloatArenaAlignmentElements) *
                kFloatArenaAlignmentElements;
@@ -8437,7 +8486,7 @@ int run_transformer_lm_training_json(
             error = "float arena allocation byte size overflow";
             return;
         }
-        const int status = cuda_malloc(
+        const int status = device_malloc(
             reinterpret_cast<void**>(&float_arena),
             sizeof(float) * static_cast<std::size_t>(float_arena_allocated_elements));
         if (status != 0) {
@@ -8491,7 +8540,7 @@ int run_transformer_lm_training_json(
             error = "uint16 arena allocation byte size overflow";
             return;
         }
-        const int status = cuda_malloc(
+        const int status = device_malloc(
             reinterpret_cast<void**>(&uint16_arena),
             sizeof(std::uint16_t) * static_cast<std::size_t>(uint16_arena_allocated_elements));
         if (status != 0) {
@@ -8815,7 +8864,7 @@ int run_transformer_lm_training_json(
         }
         token_device_arena_requested_bytes = token_i64_bytes + token_u16_device_bytes;
         token_device_arena_bytes = align_token_device_offset(token_u16_device_offset + token_u16_device_bytes);
-        int status = cuda_malloc(&token_device_arena, token_device_arena_bytes);
+        int status = device_malloc(&token_device_arena, token_device_arena_bytes);
         if (status != 0) {
             error = cuda_error(status, "cudaMalloc transformer_lm_token_device_arena");
             return;
@@ -8857,7 +8906,7 @@ int run_transformer_lm_training_json(
             sizeof(std::uint16_t) * static_cast<std::size_t>(stored_mlp_activation_elements);
         if (stored_mlp_activation_arena == nullptr) {
             void* raw = nullptr;
-            const int status = cuda_malloc(&raw, bytes);
+            const int status = device_malloc(&raw, bytes);
             if (status != 0) {
                 error = cuda_error(status, "cudaMalloc stored_mlp_activation_bf16_arena");
                 return;
@@ -8876,7 +8925,7 @@ int run_transformer_lm_training_json(
         }
         void* raw_stats = nullptr;
         const std::size_t stats_bytes = sizeof(float) * static_cast<std::size_t>(norm_stats_elements);
-        const int stats_status = cuda_malloc(&raw_stats, stats_bytes);
+        const int stats_status = device_malloc(&raw_stats, stats_bytes);
         if (stats_status != 0) {
             error = cuda_error(stats_status, "cudaMalloc stored_mlp_norm_stats_arena");
             return;
@@ -8909,7 +8958,7 @@ int run_transformer_lm_training_json(
             sizeof(std::uint16_t) * static_cast<std::size_t>(stored_residual1_activation_elements);
         if (stored_residual1_activation_arena == nullptr) {
             void* raw = nullptr;
-            const int status = cuda_malloc(&raw, bytes);
+            const int status = device_malloc(&raw, bytes);
             if (status != 0) {
                 error = cuda_error(status, "cudaMalloc stored_residual1_bf16_arena");
                 return;
@@ -8942,7 +8991,7 @@ int run_transformer_lm_training_json(
         int status = 0;
         if (stored_attention_bf16_arena == nullptr) {
             void* raw_bf16 = nullptr;
-            status = cuda_malloc(&raw_bf16, bf16_bytes);
+            status = device_malloc(&raw_bf16, bf16_bytes);
             if (status != 0) {
                 error = cuda_error(status, "cudaMalloc stored_attention_bf16_arena");
                 return;
@@ -8955,7 +9004,7 @@ int run_transformer_lm_training_json(
 
         void* raw_lse = nullptr;
         const std::size_t lse_bytes = sizeof(float) * static_cast<std::size_t>(stored_attention_lse_elements);
-        status = cuda_malloc(&raw_lse, lse_bytes);
+        status = device_malloc(&raw_lse, lse_bytes);
         if (status != 0) {
             error = cuda_error(status, "cudaMalloc stored_attention_lse_arena");
             return;
@@ -8990,7 +9039,7 @@ int run_transformer_lm_training_json(
             sizeof(std::uint16_t) * static_cast<std::size_t>(stored_packed_attention_bf16_elements);
         if (stored_packed_attention_bf16_arena == nullptr) {
             void* raw = nullptr;
-            const int status = cuda_malloc(&raw, bytes);
+            const int status = device_malloc(&raw, bytes);
             if (status != 0) {
                 error = cuda_error(status, "cudaMalloc stored_packed_attention_bf16_arena");
                 return;
@@ -9027,7 +9076,7 @@ int run_transformer_lm_training_json(
             sizeof(float) * static_cast<std::size_t>(stored_packed_attention_ln1_stats_elements);
         if (stored_packed_attention_ln1_stats_arena == nullptr) {
             void* raw = nullptr;
-            const int status = cuda_malloc(&raw, stats_bytes);
+            const int status = device_malloc(&raw, stats_bytes);
             if (status != 0) {
                 error = cuda_error(status, "cudaMalloc stored_packed_attention_ln1_stats_arena");
                 return;
@@ -9058,7 +9107,7 @@ int run_transformer_lm_training_json(
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(logit_elements);
         if (lm_head_bf16_logits == nullptr) {
             void* raw = nullptr;
-            const int status = cuda_malloc(&raw, bytes);
+            const int status = device_malloc(&raw, bytes);
             if (status != 0) {
                 error = cuda_error(status, "cudaMalloc lm_head_bf16_logits");
                 return;
@@ -9083,7 +9132,7 @@ int run_transformer_lm_training_json(
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(elements);
         if (lm_head_bf16_hidden == nullptr) {
             void* raw = nullptr;
-            const int status = cuda_malloc(&raw, bytes);
+            const int status = device_malloc(&raw, bytes);
             if (status != 0) {
                 error = cuda_error(status, "cudaMalloc lm_head_bf16_hidden");
                 return;
@@ -9106,7 +9155,7 @@ int run_transformer_lm_training_json(
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(hidden_elements);
         if (mlp_forward_act_bf16 == nullptr) {
             void* raw = nullptr;
-            const int status = cuda_malloc(&raw, bytes);
+            const int status = device_malloc(&raw, bytes);
             if (status != 0) {
                 error = cuda_error(status, "cudaMalloc mlp_forward_act_bf16");
                 return;
@@ -9133,7 +9182,7 @@ int run_transformer_lm_training_json(
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(total_elements);
         if (projection_bf16_scratch == nullptr) {
             void* raw = nullptr;
-            const int status = cuda_malloc(&raw, bytes);
+            const int status = device_malloc(&raw, bytes);
             if (status != 0) {
                 error = cuda_error(status, "cudaMalloc projection_bf16_scratch");
                 return;
@@ -9165,7 +9214,7 @@ int run_transformer_lm_training_json(
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(total_elements);
         if (packed_qkv_attention_bf16_arena == nullptr) {
             void* raw = nullptr;
-            const int status = cuda_malloc(&raw, bytes);
+            const int status = device_malloc(&raw, bytes);
             if (status != 0) {
                 error = cuda_error(status, "cudaMalloc packed_qkv_attention_bf16");
                 return;
@@ -9198,7 +9247,7 @@ int run_transformer_lm_training_json(
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(total_elements);
         if (block_weight_bf16_arena == nullptr) {
             void* raw = nullptr;
-            const int status = cuda_malloc(&raw, bytes);
+            const int status = device_malloc(&raw, bytes);
             if (status != 0) {
                 error = cuda_error(status, "cudaMalloc block_weight_bf16_arena");
                 return;
@@ -9236,7 +9285,7 @@ int run_transformer_lm_training_json(
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(total_elements);
         if (block_dweight_bf16_staging_arena == nullptr) {
             void* raw = nullptr;
-            const int status = cuda_malloc(&raw, bytes);
+            const int status = device_malloc(&raw, bytes);
             if (status != 0) {
                 error = cuda_error(status, "cudaMalloc block_dweight_bf16_staging_arena");
                 return;
@@ -10054,7 +10103,7 @@ int run_transformer_lm_training_json(
             return;
         }
         descriptor_arena_bytes = align_descriptor_offset(descriptor_arena_bytes);
-        const int status = cuda_malloc(&descriptor_arena, descriptor_arena_bytes);
+        const int status = device_malloc(&descriptor_arena, descriptor_arena_bytes);
         if (status != 0) {
             error = cuda_error(status, "cudaMalloc transformer_lm_descriptor_arena");
             return;
@@ -12539,7 +12588,7 @@ int run_transformer_lm_training_json(
             void* raw_checkpoint_buffer = nullptr;
             const std::size_t checkpoint_buffer_bytes =
                 sizeof(std::uint16_t) * static_cast<std::size_t>(payload_offset);
-            const int alloc_status = cuda_malloc(&raw_checkpoint_buffer, checkpoint_buffer_bytes);
+            const int alloc_status = device_malloc(&raw_checkpoint_buffer, checkpoint_buffer_bytes);
             if (alloc_status != 0) {
                 error = cuda_error(alloc_status, "cudaMalloc checkpoint_bf16_device");
                 return;
@@ -12554,12 +12603,12 @@ int run_transformer_lm_training_json(
         void* raw_sources_device = nullptr;
         void* raw_elements_device = nullptr;
         void* raw_offsets_device = nullptr;
-        run(cuda_malloc(&raw_sources_device, source_bytes), "cudaMalloc checkpoint_sources_device");
+        run(device_malloc(&raw_sources_device, source_bytes), "cudaMalloc checkpoint_sources_device");
         if (error.empty()) {
-            run(cuda_malloc(&raw_elements_device, i64_bytes), "cudaMalloc checkpoint_elements_device");
+            run(device_malloc(&raw_elements_device, i64_bytes), "cudaMalloc checkpoint_elements_device");
         }
         if (error.empty()) {
-            run(cuda_malloc(&raw_offsets_device, i64_bytes), "cudaMalloc checkpoint_offsets_device");
+            run(device_malloc(&raw_offsets_device, i64_bytes), "cudaMalloc checkpoint_offsets_device");
         }
         if (!error.empty()) {
             return;
@@ -12797,44 +12846,19 @@ int run_transformer_lm_training_json(
         std::max<std::int64_t>(0, attention_forward_row_launches - attention_forward_row_fallbacks);
 
     for (void* ptr : descriptor_ptrs) {
-        if (ptr != nullptr && cuda_free != nullptr) {
-            const int status = cuda_free(ptr);
-            if (status != 0 && error.empty()) {
-                error = cuda_error(status, "cudaFree transformer_lm_descriptor_buffer");
-            }
-        }
+        device_free(ptr, "cudaFree transformer_lm_descriptor_buffer");
     }
     for (float* ptr : float_ptrs) {
-        if (ptr != nullptr && cuda_free != nullptr) {
-            const int status = cuda_free(ptr);
-            if (status != 0 && error.empty()) {
-                error = cuda_error(status, "cudaFree transformer_lm_buffer");
-            }
-        }
+        device_free(ptr, "cudaFree transformer_lm_buffer");
     }
     for (void* ptr : token_device_ptrs) {
-        if (ptr != nullptr && cuda_free != nullptr) {
-            const int status = cuda_free(ptr);
-            if (status != 0 && error.empty()) {
-                error = cuda_error(status, "cudaFree transformer_lm_token_device_arena");
-            }
-        }
+        device_free(ptr, "cudaFree transformer_lm_token_device_arena");
     }
     for (std::int64_t* ptr : int_ptrs) {
-        if (ptr != nullptr && cuda_free != nullptr) {
-            const int status = cuda_free(ptr);
-            if (status != 0 && error.empty()) {
-                error = cuda_error(status, "cudaFree transformer_lm_i64_buffer");
-            }
-        }
+        device_free(ptr, "cudaFree transformer_lm_i64_buffer");
     }
     for (std::uint16_t* ptr : uint16_ptrs) {
-        if (ptr != nullptr && cuda_free != nullptr) {
-            const int status = cuda_free(ptr);
-            if (status != 0 && error.empty()) {
-                error = cuda_error(status, "cudaFree transformer_lm_u16_buffer");
-            }
-        }
+        device_free(ptr, "cudaFree transformer_lm_u16_buffer");
     }
     for (std::uint16_t* ptr : pinned_uint16_ptrs) {
         if (ptr != nullptr && cuda_free_host != nullptr) {
@@ -12842,6 +12866,12 @@ int run_transformer_lm_training_json(
             if (status != 0 && error.empty()) {
                 error = cuda_error(status, "cudaFreeHost transformer_lm_pinned_u16_buffer");
             }
+        }
+    }
+    if (device_cuda_free_async_count > 0 && cuda_device_synchronize != nullptr) {
+        const int status = cuda_device_synchronize();
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaDeviceSynchronize after cudaFreeAsync");
         }
     }
     if (cuda_handle != nullptr) {
@@ -13526,6 +13556,20 @@ int run_transformer_lm_training_json(
         << "  \"token_id_host_validation\": false,\n"
         << "  \"token_buffer_allocation_strategy\": \"combined-arenas\",\n"
         << "  \"token_device_allocation_strategy\": \"single-device-arena\",\n"
+        << "  \"device_allocator_strategy\": \""
+        << (async_device_allocator_enabled ? "cudaMallocAsync-null-stream" : "cudaMalloc") << "\",\n"
+        << "  \"device_cuda_malloc_async_requested\": "
+        << (async_device_allocator_requested ? "true" : "false") << ",\n"
+        << "  \"device_cuda_malloc_async_enabled\": "
+        << (async_device_allocator_enabled ? "true" : "false") << ",\n"
+        << "  \"device_cuda_malloc_async_symbol_loaded\": "
+        << (cuda_malloc_async != nullptr ? "true" : "false") << ",\n"
+        << "  \"device_cuda_free_async_symbol_loaded\": "
+        << (cuda_free_async != nullptr ? "true" : "false") << ",\n"
+        << "  \"device_cuda_malloc_async_count\": " << device_cuda_malloc_async_count << ",\n"
+        << "  \"device_cuda_free_async_count\": " << device_cuda_free_async_count << ",\n"
+        << "  \"device_cuda_malloc_async_fallback_count\": "
+        << device_cuda_malloc_async_fallback_count << ",\n"
         << "  \"token_device_arena_cuda_malloc_count\": " << token_device_arena_cuda_malloc_count << ",\n"
         << "  \"token_device_arena_requested_bytes\": " << token_device_arena_requested_bytes << ",\n"
         << "  \"token_device_arena_bytes\": " << token_device_arena_bytes << ",\n"
