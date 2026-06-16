@@ -845,8 +845,24 @@ int nfn_native_tile_token_embedding_float32(
     std::int64_t model_dim,
     void* cuda_stream);
 
+int nfn_native_tile_token_embedding_u16_float32(
+    const float* weight,
+    const std::uint16_t* token_ids,
+    float* out,
+    std::int64_t tokens,
+    std::int64_t model_dim,
+    void* cuda_stream);
+
 int nfn_native_tile_token_embedding_backward_weight_float32(
     const std::int64_t* token_ids,
+    const float* grad_out,
+    float* grad_weight,
+    std::int64_t tokens,
+    std::int64_t model_dim,
+    void* cuda_stream);
+
+int nfn_native_tile_token_embedding_backward_weight_u16_float32(
+    const std::uint16_t* token_ids,
     const float* grad_out,
     float* grad_weight,
     std::int64_t tokens,
@@ -1046,6 +1062,15 @@ int nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits(
     std::int64_t row_stride,
     void* cuda_stream);
 
+int nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits_u16_targets(
+    const std::uint16_t* logits_bf16_bits,
+    const std::uint16_t* targets,
+    float* partials,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    void* cuda_stream);
+
 int nfn_native_tile_masked_token_cross_entropy_partials_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -1111,6 +1136,17 @@ int nfn_native_tile_token_cross_entropy_backward_inplace_strided_with_workspace_
 int nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace(
     std::uint16_t* logits,
     const std::int64_t* targets,
+    float* row_max_workspace,
+    float* row_denom_workspace,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    void* cuda_stream);
+
+int nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_with_workspace(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
     float* row_max_workspace,
     float* row_denom_workspace,
     std::int64_t rows,

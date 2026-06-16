@@ -6919,7 +6919,9 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_global_norm_clip_scale_float32",
         "nfn_native_tile_scale_inplace_by_device_float32",
         "nfn_native_tile_token_embedding_float32",
+        "nfn_native_tile_token_embedding_u16_float32",
         "nfn_native_tile_token_embedding_backward_weight_float32",
+        "nfn_native_tile_token_embedding_backward_weight_u16_float32",
         "nfn_native_tile_absolute_position_embedding_float32",
         "nfn_native_tile_absolute_position_embedding_backward_accumulate_float32",
         "nfn_native_tile_scaled_residual_add_float32",
@@ -7016,10 +7018,12 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_token_cross_entropy_partials_bf16_bits",
         "nfn_native_tile_token_cross_entropy_partials_strided_float32",
         "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits",
+        "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits_u16_targets",
         "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32",
         "nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace",
         "nfn_native_tile_token_cross_entropy_backward_inplace_strided_with_workspace_float32",
         "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace",
+        "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_with_workspace",
         "nfn_native_tile_adamw_step_float32",
         "nfn_native_tile_adamw_step_with_device_scale_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_float32",
@@ -7048,8 +7052,12 @@ int run_transformer_lm_training_json(
         int (*)(const std::uint16_t* const*, const std::int64_t*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
     using ClipScaleFn = int (*)(const float*, float*, std::int64_t, float, float, void*);
     using TokenEmbeddingFn = int (*)(const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+    using TokenEmbeddingU16Fn =
+        int (*)(const float*, const std::uint16_t*, float*, std::int64_t, std::int64_t, void*);
     using TokenEmbeddingBackwardWeightFn = int (*)(
         const std::int64_t*, const float*, float*, std::int64_t, std::int64_t, void*);
+    using TokenEmbeddingBackwardWeightU16Fn = int (*)(
+        const std::uint16_t*, const float*, float*, std::int64_t, std::int64_t, void*);
     using PositionEmbeddingFn = int (*)(const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using PositionEmbeddingBackwardAccumulateFn =
         int (*)(const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
@@ -7227,6 +7235,8 @@ int run_transformer_lm_training_json(
         const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using TokenCrossEntropyPartialsStridedBf16BitsFn = int (*)(
         const std::uint16_t*, const std::int64_t*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using TokenCrossEntropyPartialsStridedBf16BitsU16TargetsFn = int (*)(
+        const std::uint16_t*, const std::uint16_t*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using TokenCrossEntropyBackwardInplaceWorkspaceFn = int (*)(
         float*, const std::int64_t*, float*, float*,
         std::int64_t, std::int64_t, float, void*);
@@ -7238,6 +7248,9 @@ int run_transformer_lm_training_json(
         std::int64_t, std::int64_t, std::int64_t, float, void*);
     using TokenCrossEntropyBackwardInplaceStridedBf16BitsWorkspaceFn = int (*)(
         std::uint16_t*, const std::int64_t*, float*, float*,
+        std::int64_t, std::int64_t, std::int64_t, float, void*);
+    using TokenCrossEntropyBackwardInplaceStridedBf16BitsU16TargetsWorkspaceFn = int (*)(
+        std::uint16_t*, const std::uint16_t*, float*, float*,
         std::int64_t, std::int64_t, std::int64_t, float, void*);
     using AdamWManyWithDeviceScaleFn = int (*)(
         float* const*, const float* const*, const float*, float* const*, float* const*,
@@ -7287,7 +7300,9 @@ int run_transformer_lm_training_json(
     SumsqPartialsManyBf16BitsFn sumsq_partials_many_bf16_bits = nullptr;
     ClipScaleFn clip_scale = nullptr;
     TokenEmbeddingFn token_embedding = nullptr;
+    TokenEmbeddingU16Fn token_embedding_u16 = nullptr;
     TokenEmbeddingBackwardWeightFn token_embedding_backward_weight = nullptr;
+    TokenEmbeddingBackwardWeightU16Fn token_embedding_backward_weight_u16 = nullptr;
     PositionEmbeddingFn position_embedding = nullptr;
     PositionEmbeddingBackwardAccumulateFn position_embedding_backward_accumulate = nullptr;
     ResidualAddFn residual_add = nullptr;
@@ -7395,10 +7410,14 @@ int run_transformer_lm_training_json(
     TokenCrossEntropyPartialsBf16BitsFn ce_partials_bf16_bits = nullptr;
     TokenCrossEntropyPartialsStridedFn ce_partials_strided = nullptr;
     TokenCrossEntropyPartialsStridedBf16BitsFn ce_partials_strided_bf16_bits = nullptr;
+    TokenCrossEntropyPartialsStridedBf16BitsU16TargetsFn
+        ce_partials_strided_bf16_bits_u16_targets = nullptr;
     TokenCrossEntropyBackwardInplaceWorkspaceFn ce_backward_inplace_workspace = nullptr;
     TokenCrossEntropyBackwardInplaceBf16BitsWorkspaceFn ce_backward_inplace_bf16_bits_workspace = nullptr;
     TokenCrossEntropyBackwardInplaceStridedWorkspaceFn ce_backward_inplace_strided_workspace = nullptr;
     TokenCrossEntropyBackwardInplaceStridedBf16BitsWorkspaceFn ce_backward_inplace_strided_bf16_bits_workspace = nullptr;
+    TokenCrossEntropyBackwardInplaceStridedBf16BitsU16TargetsWorkspaceFn
+        ce_backward_inplace_strided_bf16_bits_u16_targets_workspace = nullptr;
     FillManyFn fill_many = nullptr;
     AdamWManyWithDeviceScaleFn adamw_many_with_device_scale = nullptr;
     AdamWManyWithDeviceScaleBf16ShadowFn adamw_many_with_device_scale_bf16_shadow = nullptr;
@@ -7483,8 +7502,12 @@ int run_transformer_lm_training_json(
                 clip_scale = load_symbol<ClipScaleFn>(
                     tile_handle, "nfn_native_tile_global_norm_clip_scale_float32");
                 token_embedding = load_symbol<TokenEmbeddingFn>(tile_handle, "nfn_native_tile_token_embedding_float32");
+                token_embedding_u16 =
+                    load_symbol<TokenEmbeddingU16Fn>(tile_handle, "nfn_native_tile_token_embedding_u16_float32");
                 token_embedding_backward_weight = load_symbol<TokenEmbeddingBackwardWeightFn>(
                     tile_handle, "nfn_native_tile_token_embedding_backward_weight_float32");
+                token_embedding_backward_weight_u16 = load_symbol<TokenEmbeddingBackwardWeightU16Fn>(
+                    tile_handle, "nfn_native_tile_token_embedding_backward_weight_u16_float32");
                 position_embedding = load_symbol<PositionEmbeddingFn>(
                     tile_handle, "nfn_native_tile_absolute_position_embedding_float32");
                 position_embedding_backward_accumulate = load_symbol<PositionEmbeddingBackwardAccumulateFn>(
@@ -7715,6 +7738,10 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_token_cross_entropy_partials_strided_float32");
                 ce_partials_strided_bf16_bits = load_symbol<TokenCrossEntropyPartialsStridedBf16BitsFn>(
                     tile_handle, "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits");
+                ce_partials_strided_bf16_bits_u16_targets =
+                    load_symbol<TokenCrossEntropyPartialsStridedBf16BitsU16TargetsFn>(
+                        tile_handle,
+                        "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits_u16_targets");
                 ce_backward_inplace_workspace = load_symbol<TokenCrossEntropyBackwardInplaceWorkspaceFn>(
                     tile_handle, "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32");
                 ce_backward_inplace_bf16_bits_workspace =
@@ -7728,6 +7755,10 @@ int run_transformer_lm_training_json(
                     load_symbol<TokenCrossEntropyBackwardInplaceStridedBf16BitsWorkspaceFn>(
                         tile_handle,
                         "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace");
+                ce_backward_inplace_strided_bf16_bits_u16_targets_workspace =
+                    load_symbol<TokenCrossEntropyBackwardInplaceStridedBf16BitsU16TargetsWorkspaceFn>(
+                        tile_handle,
+                        "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_with_workspace");
                 adamw_many_with_device_scale = load_symbol<AdamWManyWithDeviceScaleFn>(
                     tile_handle, "nfn_native_tile_adamw_step_many_with_device_scale_float32");
                 adamw_many_with_device_scale_bf16_shadow =
@@ -7985,6 +8016,14 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT_STRIDED_PUBLIC_VOCAB_CE",
                               "NFN_NATIVE_GPT2_PUBLIC_VOCAB_CE",
                               "NFN_NATIVE_GPT2_STRIDED_PUBLIC_VOCAB_CE"}),
+            true);
+    const bool direct_u16_token_ids_enabled =
+        lm_head_bf16_loss_enabled &&
+        lm_head_bf16_logits_enabled &&
+        lm_head_public_vocab_ce_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_DIRECT_U16_TOKENS",
+                              "NFN_NATIVE_GPT2_DIRECT_U16_TOKENS"}),
             true);
     const bool startup_zero_adamw_state_only_enabled =
         env_flag_enabled_or_default(
@@ -9933,6 +9972,7 @@ int run_transformer_lm_training_json(
     std::int64_t active_hidden_elements = hidden_elements;
     std::int64_t active_qkv_activation_elements = qkv_activation_elements;
     std::int64_t* active_targets = targets;
+    std::uint16_t* active_targets_u16 = targets_u16;
     std::uint16_t* active_targets_pinned = targets_pinned;
     auto set_active_batch_size = [&](std::int64_t value) {
         if (!error.empty()) {
@@ -9950,6 +9990,7 @@ int run_transformer_lm_training_json(
         active_hidden_elements = active_rows * kHidden;
         active_qkv_activation_elements = active_rows * kQkvDim;
         active_targets = token_i64_arena + active_rows;
+        active_targets_u16 = token_u16_device_arena + active_rows;
         active_targets_pinned = token_u16_pinned_arena + active_rows;
     };
     set_active_batch_size(batch_size);
@@ -10153,7 +10194,7 @@ int run_transformer_lm_training_json(
                 kCudaMemcpyHostToDevice,
                 nullptr),
             "token_u16_arena.copy_async");
-        if (error.empty()) {
+        if (error.empty() && !direct_u16_token_ids_enabled) {
             run(uint16_to_int64(token_u16_device_arena, token_i64_arena, active_rows * 2, nullptr),
                 "token_i64_arena.device_widen");
         }
@@ -10168,6 +10209,7 @@ int run_transformer_lm_training_json(
                 (row_start + lm_head_chunk_rows < active_rows) ? lm_head_chunk_rows : (active_rows - row_start);
             const float* hidden_chunk = lnf_out + row_start * kDim;
             const std::int64_t* target_chunk = active_targets + row_start;
+            const std::uint16_t* target_chunk_u16 = active_targets_u16 + row_start;
             if (lm_head_bf16_loss_enabled) {
                 run(linear_bf16_output(
                         hidden_chunk,
@@ -10187,15 +10229,27 @@ int run_transformer_lm_training_json(
             if (error.empty()) {
                 if (lm_head_bf16_loss_enabled) {
                     if (lm_head_public_vocab_ce_enabled) {
-                        run(ce_partials_strided_bf16_bits(
-                                lm_head_bf16_logits,
-                                target_chunk,
-                                loss_partials,
-                                row_count,
-                                kVocab,
-                                kPaddedVocab,
-                                nullptr),
-                            label + ".ce.forward.public_vocab_strided_bf16_bits");
+                        if (direct_u16_token_ids_enabled) {
+                            run(ce_partials_strided_bf16_bits_u16_targets(
+                                    lm_head_bf16_logits,
+                                    target_chunk_u16,
+                                    loss_partials,
+                                    row_count,
+                                    kVocab,
+                                    kPaddedVocab,
+                                    nullptr),
+                                label + ".ce.forward.public_vocab_strided_bf16_bits_u16_targets");
+                        } else {
+                            run(ce_partials_strided_bf16_bits(
+                                    lm_head_bf16_logits,
+                                    target_chunk,
+                                    loss_partials,
+                                    row_count,
+                                    kVocab,
+                                    kPaddedVocab,
+                                    nullptr),
+                                label + ".ce.forward.public_vocab_strided_bf16_bits");
+                        }
                     } else {
                         run(ce_partials_bf16_bits(
                                 lm_head_bf16_logits,
@@ -10257,6 +10311,7 @@ int run_transformer_lm_training_json(
                 (row_start + lm_head_chunk_rows < active_rows) ? lm_head_chunk_rows : (active_rows - row_start);
             const float* hidden_chunk = lnf_out + row_start * kDim;
             const std::int64_t* target_chunk = active_targets + row_start;
+            const std::uint16_t* target_chunk_u16 = active_targets_u16 + row_start;
             float* grad_hidden_chunk = grad_lnf + row_start * kDim;
             run_timed_stage("lm_head_backward.logits", [&]() {
                 if (lm_head_bf16_logits_enabled) {
@@ -10280,17 +10335,31 @@ int run_transformer_lm_training_json(
                 if (error.empty()) {
                     if (lm_head_bf16_logits_enabled) {
                         if (lm_head_public_vocab_ce_enabled) {
-                            run(ce_backward_inplace_strided_bf16_bits_workspace(
-                                    lm_head_bf16_logits,
-                                    target_chunk,
-                                    row_max,
-                                    row_denom,
-                                    row_count,
-                                    kVocab,
-                                    kPaddedVocab,
-                                    accumulation_scale / static_cast<float>(active_rows),
-                                    nullptr),
-                                "ce.backward.inplace.public_vocab_strided_bf16_bits");
+                            if (direct_u16_token_ids_enabled) {
+                                run(ce_backward_inplace_strided_bf16_bits_u16_targets_workspace(
+                                        lm_head_bf16_logits,
+                                        target_chunk_u16,
+                                        row_max,
+                                        row_denom,
+                                        row_count,
+                                        kVocab,
+                                        kPaddedVocab,
+                                        accumulation_scale / static_cast<float>(active_rows),
+                                        nullptr),
+                                    "ce.backward.inplace.public_vocab_strided_bf16_bits_u16_targets");
+                            } else {
+                                run(ce_backward_inplace_strided_bf16_bits_workspace(
+                                        lm_head_bf16_logits,
+                                        target_chunk,
+                                        row_max,
+                                        row_denom,
+                                        row_count,
+                                        kVocab,
+                                        kPaddedVocab,
+                                        accumulation_scale / static_cast<float>(active_rows),
+                                        nullptr),
+                                    "ce.backward.inplace.public_vocab_strided_bf16_bits");
+                            }
                         } else {
                             run(ce_backward_inplace_bf16_bits_workspace(
                                     lm_head_bf16_logits,
@@ -11461,7 +11530,15 @@ int run_transformer_lm_training_json(
 
     auto forward_loss = [&](const std::string& label, bool compute_loss, bool preserve_block_outputs) -> double {
         const std::int64_t stage_event = stage_begin(label + ".model_forward");
-        if (error.empty()) run(token_embedding(token_weight, token_ids, token_out, active_rows, kDim, nullptr), label + ".wte.forward");
+        if (error.empty()) {
+            if (direct_u16_token_ids_enabled) {
+                run(token_embedding_u16(token_weight, token_ids_u16, token_out, active_rows, kDim, nullptr),
+                    label + ".wte.forward.u16");
+            } else {
+                run(token_embedding(token_weight, token_ids, token_out, active_rows, kDim, nullptr),
+                    label + ".wte.forward");
+            }
+        }
         if (error.empty()) run(position_embedding(position_weight, position_out, active_batch_size, seq_len, kDim, nullptr), label + ".wpe.forward");
         if (error.empty()) run(residual_add(token_out, position_out, residual_scale, x, active_activation_elements, nullptr), label + ".embedding.residual");
         const float* block_input = x;
@@ -11616,7 +11693,27 @@ int run_transformer_lm_training_json(
             std::swap(incoming_grad, output_grad);
         }
         const std::int64_t embedding_backward_event = stage_begin("embedding_backward");
-        if (error.empty()) run(token_embedding_backward_weight(token_ids, incoming_grad, accum_grad_token_weight, active_rows, kDim, nullptr), "wte.backward_weight");
+        if (error.empty()) {
+            if (direct_u16_token_ids_enabled) {
+                run(token_embedding_backward_weight_u16(
+                        token_ids_u16,
+                        incoming_grad,
+                        accum_grad_token_weight,
+                        active_rows,
+                        kDim,
+                        nullptr),
+                    "wte.backward_weight.u16");
+            } else {
+                run(token_embedding_backward_weight(
+                        token_ids,
+                        incoming_grad,
+                        accum_grad_token_weight,
+                        active_rows,
+                        kDim,
+                        nullptr),
+                    "wte.backward_weight");
+            }
+        }
         if (error.empty()) run(position_embedding_backward_accumulate(incoming_grad, accum_grad_position_weight, active_batch_size, seq_len, kDim, nullptr), "wpe.backward_weight.accumulate");
         stage_end(embedding_backward_event, "embedding_backward");
         return train_loss_sum;
@@ -12928,14 +13025,23 @@ int run_transformer_lm_training_json(
         << "  \"train_loss_sparse\": false,\n"
         << "  \"train_loss_sampling\": \"disabled\",\n"
         << "  \"train_loss_on_validation_steps\": false,\n"
-        << "  \"token_id_upload_strategy\": \"uint16-pinned-async-h2d-device-widen\",\n"
+        << "  \"token_id_direct_u16_enabled\": " << (direct_u16_token_ids_enabled ? "true" : "false") << ",\n"
+        << "  \"token_id_upload_strategy\": \""
+        << (direct_u16_token_ids_enabled
+                ? "uint16-pinned-async-h2d-direct-kernel-consumption"
+                : "uint16-pinned-async-h2d-device-widen")
+        << "\",\n"
         << "  \"token_id_host_staging\": \"pinned\",\n"
         << "  \"token_id_h2d_copy\": \"cudaMemcpyAsync-contiguous-arena\",\n"
         << "  \"token_id_h2d_copy_calls_per_microbatch\": 1,\n"
         << "  \"token_id_h2d_copy_calls_elided_per_microbatch\": 1,\n"
-        << "  \"token_id_widen_strategy\": \"single-contiguous-arena-kernel\",\n"
-        << "  \"token_id_widen_kernel_launches_per_microbatch\": 1,\n"
-        << "  \"token_id_widen_kernel_launches_elided_per_microbatch\": 1,\n"
+        << "  \"token_id_widen_strategy\": \""
+        << (direct_u16_token_ids_enabled ? "elided-direct-u16-kernels" : "single-contiguous-arena-kernel")
+        << "\",\n"
+        << "  \"token_id_widen_kernel_launches_per_microbatch\": "
+        << (direct_u16_token_ids_enabled ? 0 : 1) << ",\n"
+        << "  \"token_id_widen_kernel_launches_elided_per_microbatch\": "
+        << (direct_u16_token_ids_enabled ? 2 : 1) << ",\n"
         << "  \"token_batch_staging_strategy\": \"direct-sampler-to-pinned-arena\",\n"
         << "  \"token_batch_vector_materialization\": false,\n"
         << "  \"token_batch_vector_copy_to_pinned_elided\": true,\n"

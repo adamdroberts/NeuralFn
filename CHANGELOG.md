@@ -6,6 +6,46 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Direct uint16 token ids for native GPT training
+
+#### Changed
+
+- Added trainer-facing Tile CUDA ABI symbols for uint16 token/target
+  consumption: `nfn_native_tile_token_embedding_u16_float32`,
+  `nfn_native_tile_token_embedding_backward_weight_u16_float32`,
+  `nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits_u16_targets`,
+  and
+  `nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_with_workspace`.
+- Dense GPT native training now keeps cached shard token and target ids in the
+  uint16 device arena by default. Token embedding, BF16 public-vocab CE
+  forward, CE backward, and token-embedding weight backward consume those ids
+  directly, so the previous per-microbatch `uint16_to_int64` widening launch is
+  elided in the default path.
+- Runtime JSON now reports `token_id_direct_u16_enabled`,
+  `token_id_upload_strategy:
+  "uint16-pinned-async-h2d-direct-kernel-consumption"`,
+  `token_id_widen_strategy: "elided-direct-u16-kernels"`, and zero
+  `token_id_widen_kernel_launches_per_microbatch`. Set
+  `NFN_NATIVE_GPT_DIRECT_U16_TOKENS=0` or
+  `NFN_NATIVE_GPT2_DIRECT_U16_TOKENS=0` only for paired benchmarking against
+  the older single-kernel device-widen path.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran a GPU-visible one-step TinyStories smoke on the dedicated RTX 5090; it
+  reported `passed: true`, `token_id_direct_u16_enabled: true`,
+  `token_id_widen_kernel_launches_per_microbatch: 0`,
+  `sample_gradient_clip_scale: 0.0836959`, and
+  `sample_updated_token_weight: -0.0793953`.
+- Ran a five-sample paired benchmark on the dedicated RTX 5090 with selected
+  GPU idle guards and no compute processes before samples. Direct uint16 ids
+  averaged `2764.01 ms` per optimizer step versus `2766.64 ms` for the old
+  widening path, or `0.999054x` train-loop time and `1.000949x` tokens/sec.
+
 ### 2026-06-16 cuBLASLt descriptor-cache hits for native GPT linear GEMMs
 
 #### Changed

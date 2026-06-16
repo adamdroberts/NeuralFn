@@ -2308,14 +2308,17 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["train_loss_sparse"] is False
     assert train_transformer_payload["train_loss_sampling"] == "disabled"
     assert train_transformer_payload["train_loss_on_validation_steps"] is False
-    assert train_transformer_payload["token_id_upload_strategy"] == "uint16-pinned-async-h2d-device-widen"
+    assert train_transformer_payload["token_id_direct_u16_enabled"] is True
+    assert train_transformer_payload["token_id_upload_strategy"] == (
+        "uint16-pinned-async-h2d-direct-kernel-consumption"
+    )
     assert train_transformer_payload["token_id_host_staging"] == "pinned"
     assert train_transformer_payload["token_id_h2d_copy"] == "cudaMemcpyAsync-contiguous-arena"
     assert train_transformer_payload["token_id_h2d_copy_calls_per_microbatch"] == 1
     assert train_transformer_payload["token_id_h2d_copy_calls_elided_per_microbatch"] == 1
-    assert train_transformer_payload["token_id_widen_strategy"] == "single-contiguous-arena-kernel"
-    assert train_transformer_payload["token_id_widen_kernel_launches_per_microbatch"] == 1
-    assert train_transformer_payload["token_id_widen_kernel_launches_elided_per_microbatch"] == 1
+    assert train_transformer_payload["token_id_widen_strategy"] == "elided-direct-u16-kernels"
+    assert train_transformer_payload["token_id_widen_kernel_launches_per_microbatch"] == 0
+    assert train_transformer_payload["token_id_widen_kernel_launches_elided_per_microbatch"] == 2
     assert train_transformer_payload["token_batch_staging_strategy"] == "direct-sampler-to-pinned-arena"
     assert train_transformer_payload["token_batch_vector_materialization"] is False
     assert train_transformer_payload["token_batch_vector_copy_to_pinned_elided"] is True
@@ -2620,11 +2623,19 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_token_cross_entropy_partials_strided_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits" in train_transformer_payload["kernels"]
     assert (
+        "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits_u16_targets"
+        in train_transformer_payload["kernels"]
+    )
+    assert (
         "nfn_native_tile_token_cross_entropy_backward_inplace_strided_with_workspace_float32"
         in train_transformer_payload["kernels"]
     )
     assert (
         "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace"
+        in train_transformer_payload["kernels"]
+    )
+    assert (
+        "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_with_workspace"
         in train_transformer_payload["kernels"]
     )
     assert "nfn_native_tile_linear_backward_weight_accumulate_float32" in train_transformer_payload["kernels"]
@@ -2635,6 +2646,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_fill_many_values_bf16_bits_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_init_gpt2_token_weight_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_uint16_to_int64" in train_transformer_payload["kernels"]
+    assert "nfn_native_tile_token_embedding_u16_float32" in train_transformer_payload["kernels"]
+    assert "nfn_native_tile_token_embedding_backward_weight_u16_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_float32_to_bf16_bits" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_bf16_bits_to_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_store_mlp_activations_bf16_float32" in train_transformer_payload["kernels"]
@@ -3936,6 +3949,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_token_cross_entropy_partials_bf16_bits" in header_text
     assert "nfn_native_tile_token_cross_entropy_partials_strided_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits" in header_text
+    assert "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits_u16_targets" in header_text
+    assert "nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits_u16_targets" in source_text
     assert "nfn_native_tile_masked_token_cross_entropy_partials_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_backward_float32" in header_text
     assert "nfn_native_tile_masked_token_cross_entropy_backward_float32" in header_text
@@ -3944,10 +3959,20 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace" in header_text
     assert "nfn_native_tile_token_cross_entropy_backward_inplace_strided_with_workspace_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace" in header_text
+    assert (
+        "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_with_workspace"
+        in header_text
+    )
+    assert (
+        "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_with_workspace"
+        in source_text
+    )
     assert "token_cross_entropy_partials_strided_float32_kernel" in kernels_text
     assert "token_cross_entropy_partials_strided_bf16_bits_kernel" in kernels_text
+    assert "token_cross_entropy_partials_strided_bf16_bits_u16_targets_kernel" in kernels_text
     assert "token_cross_entropy_backward_inplace_strided_float32_fused_kernel" in kernels_text
     assert "token_cross_entropy_backward_inplace_strided_bf16_bits_fused_kernel" in kernels_text
+    assert "token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_fused_kernel" in kernels_text
     assert "nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32" in header_text
@@ -4070,8 +4095,23 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "gelu_backward_float32_kernel" in kernels_text
     assert "gelu_backward_inplace_float32_kernel" in kernels_text
     assert "token_embedding_backward_weight_float32_kernel" in kernels_text
+    assert "token_embedding_u16_float32_kernel" in kernels_text
+    assert "token_embedding_backward_weight_u16_float32_kernel" in kernels_text
+    assert "nfn_native_tile_token_embedding_u16_float32" in header_text
+    assert "nfn_native_tile_token_embedding_u16_float32" in source_text
+    assert "nfn_native_tile_token_embedding_backward_weight_u16_float32" in header_text
+    assert "nfn_native_tile_token_embedding_backward_weight_u16_float32" in source_text
     assert "init_gpt2_token_weight_float32_kernel" in kernels_text
     assert "uint16_to_int64_kernel" in kernels_text
+    assert "NFN_NATIVE_GPT_DIRECT_U16_TOKENS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_DIRECT_U16_TOKENS" in gpt2_source_text
+    assert "direct_u16_token_ids_enabled" in gpt2_source_text
+    assert "active_targets_u16 = token_u16_device_arena + active_rows" in gpt2_source_text
+    assert ".wte.forward.u16" in gpt2_source_text
+    assert ".ce.forward.public_vocab_strided_bf16_bits_u16_targets" in gpt2_source_text
+    assert "ce.backward.inplace.public_vocab_strided_bf16_bits_u16_targets" in gpt2_source_text
+    assert "wte.backward_weight.u16" in gpt2_source_text
+    assert "elided-direct-u16-kernels" in gpt2_source_text
     assert "token_u16_arena.copy_async" in gpt2_source_text
     assert "token_i64_arena.device_widen" in gpt2_source_text
     assert "next_into(token_ids_pinned, targets_pinned, active_rows)" in gpt2_source_text
