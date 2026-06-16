@@ -716,6 +716,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_fill_many_values_float32",
         "nfn_native_tile_fill_many_values_bf16_bits_float32",
         "nfn_native_tile_init_gpt2_token_weight_float32",
+        "nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32",
         "nfn_native_tile_uint16_to_int64",
         "nfn_native_tile_float32_to_bf16_bits",
         "nfn_native_tile_bf16_bits_to_float32",
@@ -6952,6 +6953,7 @@ int run_transformer_lm_training_json(
     std::int64_t checkpoint_d2h_copy_count = 0;
     std::int64_t checkpoint_d2h_bytes = 0;
     std::int64_t checkpoint_float32_d2h_bytes_elided = 0;
+    bool token_weight_bf16_initial_refresh_elided = false;
     void* tile_handle = nullptr;
     void* cuda_handle = nullptr;
     std::vector<std::string> missing_symbols;
@@ -6961,6 +6963,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_fill_many_values_float32",
         "nfn_native_tile_fill_many_values_bf16_bits_float32",
         "nfn_native_tile_init_gpt2_token_weight_float32",
+        "nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32",
         "nfn_native_tile_copy_float32",
         "nfn_native_tile_uint16_to_int64",
         "nfn_native_tile_float32_to_bf16_bits",
@@ -7380,6 +7383,8 @@ int run_transformer_lm_training_json(
         float, float, float, float, float, float, void*);
     using FillManyFn = int (*)(float* const*, const std::int64_t*, std::int64_t, std::int64_t, float, void*);
     using InitGpt2TokenWeightFn = int (*)(float*, std::int64_t, void*);
+    using InitGpt2TokenWeightWithBf16ShadowFn = int (*)(
+        float*, std::uint16_t*, std::int64_t, void*);
     using CudaMallocFn = int (*)(void**, std::size_t);
     using CudaFreeFn = int (*)(void*);
     using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
@@ -7401,6 +7406,7 @@ int run_transformer_lm_training_json(
     FillManyValuesFn fill_many_values = nullptr;
     FillManyValuesBf16BitsFn fill_many_values_bf16_bits = nullptr;
     InitGpt2TokenWeightFn init_gpt2_token_weight = nullptr;
+    InitGpt2TokenWeightWithBf16ShadowFn init_gpt2_token_weight_with_bf16_shadow = nullptr;
     Uint16ToInt64Fn uint16_to_int64 = nullptr;
     Bf16BitsToFloat32Fn bf16_bits_to_float32 = nullptr;
     Float32ToBf16BitsFn float32_to_bf16_bits = nullptr;
@@ -7615,6 +7621,10 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_fill_many_values_bf16_bits_float32");
                 init_gpt2_token_weight =
                     load_symbol<InitGpt2TokenWeightFn>(tile_handle, "nfn_native_tile_init_gpt2_token_weight_float32");
+                init_gpt2_token_weight_with_bf16_shadow =
+                    load_symbol<InitGpt2TokenWeightWithBf16ShadowFn>(
+                        tile_handle,
+                        "nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32");
                 uint16_to_int64 = load_symbol<Uint16ToInt64Fn>(tile_handle, "nfn_native_tile_uint16_to_int64");
                 bf16_bits_to_float32 =
                     load_symbol<Bf16BitsToFloat32Fn>(tile_handle, "nfn_native_tile_bf16_bits_to_float32");
@@ -8174,6 +8184,12 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW",
                               "NFN_NATIVE_GPT2_TOKEN_WEIGHT_BF16_SHADOW"}),
+            true);
+    const bool fuse_token_weight_bf16_initial_refresh_enabled =
+        token_weight_bf16_shadow_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT",
+                              "NFN_NATIVE_GPT2_FUSE_TOKEN_WEIGHT_BF16_INIT"}),
             true);
     const bool fuse_adamw_bf16_shadow_refresh_enabled =
         !bf16_block_weight_param_update_enabled &&
@@ -10367,7 +10383,22 @@ int run_transformer_lm_training_json(
     });
     run_setup_timed("setup.token_weight_init", [&]() {
         if (error.empty()) {
-            run(init_gpt2_token_weight(token_weight, kTokenWeightElements, nullptr), "token_weight.init_device");
+            if (fuse_token_weight_bf16_initial_refresh_enabled &&
+                token_weight_bf16 != nullptr) {
+                run(init_gpt2_token_weight_with_bf16_shadow(
+                        token_weight,
+                        token_weight_bf16,
+                        kTokenWeightElements,
+                        nullptr),
+                    "token_weight.init_device_with_bf16_shadow");
+                if (error.empty()) {
+                    token_weight_bf16_refresh_count += 1;
+                    token_weight_bf16_initial_refresh_elided = true;
+                }
+            } else {
+                run(init_gpt2_token_weight(token_weight, kTokenWeightElements, nullptr),
+                    "token_weight.init_device");
+            }
         }
     });
     auto refresh_token_weight_bf16 = [&](const std::string& name) {
@@ -10380,6 +10411,9 @@ int run_transformer_lm_training_json(
         }
     };
     run_setup_timed("setup.token_weight_bf16_initial_refresh", [&]() {
+        if (token_weight_bf16_initial_refresh_elided) {
+            return;
+        }
         refresh_token_weight_bf16("token_weight_bf16.initial_refresh");
     });
     run_setup_timed("setup.nonzero_parameter_fill", [&]() {
@@ -13720,6 +13754,8 @@ int run_transformer_lm_training_json(
         << "  \"block_weight_bf16_refresh_count\": " << block_weight_bf16_refresh_count << ",\n"
         << "  \"block_weight_bf16_fused_adamw_refresh_count\": " << block_weight_bf16_fused_adamw_refresh_count << ",\n"
         << "  \"token_weight_bf16_shadow_enabled\": " << (token_weight_bf16_shadow_enabled ? "true" : "false") << ",\n"
+        << "  \"token_weight_bf16_initial_refresh_fusion_enabled\": "
+        << (fuse_token_weight_bf16_initial_refresh_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_bf16_refresh_count\": " << token_weight_bf16_refresh_count << ",\n"
         << "  \"block_weight_bf16_primary_param_update_count\": " << adamw_bf16_param_kernel_launches << ",\n"
         << "  \"block_weight_bf16_primary_param_bf16_grad_update_count\": "
@@ -14133,7 +14169,15 @@ int run_transformer_lm_training_json(
         << "  \"token_i64_arena_elements\": " << token_i64_arena_elements << ",\n"
         << "  \"token_u16_device_arena_elements\": " << token_u16_device_arena_elements << ",\n"
         << "  \"token_u16_pinned_arena_elements\": " << token_u16_pinned_arena_elements << ",\n"
-        << "  \"token_weight_init_strategy\": \"device-tile-deterministic\",\n"
+        << "  \"token_weight_init_strategy\": \""
+        << (token_weight_bf16_initial_refresh_elided
+                ? "device-tile-deterministic-fused-bf16-shadow"
+                : "device-tile-deterministic")
+        << "\",\n"
+        << "  \"token_weight_bf16_initial_refresh_elided\": "
+        << (token_weight_bf16_initial_refresh_elided ? "true" : "false") << ",\n"
+        << "  \"token_weight_bf16_initial_refresh_fusion_enabled\": "
+        << (fuse_token_weight_bf16_initial_refresh_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_host_materialization\": false,\n"
         << "  \"float_allocation_strategy\": \"single-arena\",\n"
         << "  \"float_allocation_cuda_malloc_count\": " << float_arena_cuda_malloc_count << ",\n"
@@ -14456,6 +14500,10 @@ int run_transformer_lm_training_json(
         << "    \"token_weight_bf16_shadow_enabled\": "
         << (token_weight_bf16_shadow_enabled ? "true" : "false") << ",\n"
         << "    \"token_weight_bf16_refresh_count\": " << token_weight_bf16_refresh_count << ",\n"
+        << "    \"token_weight_bf16_initial_refresh_fusion_enabled\": "
+        << (fuse_token_weight_bf16_initial_refresh_enabled ? "true" : "false") << ",\n"
+        << "    \"token_weight_bf16_initial_refresh_elided\": "
+        << (token_weight_bf16_initial_refresh_elided ? "true" : "false") << ",\n"
         << "    \"block_weight_bf16_primary_param_update_enabled\": "
         << (bf16_block_weight_param_update_enabled ? "true" : "false") << ",\n"
         << "    \"direct_bf16_block_weight_initialization_enabled\": "

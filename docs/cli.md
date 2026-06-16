@@ -657,6 +657,16 @@ trained-checkpoint export. Runtime JSON then reports `checkpoint.enabled:
 false`, `checkpoint.checkpoint_written: false`, and zero checkpoint wall time;
 normal training leaves checkpoint export enabled.
 
+Native GPT startup initializes the tied token FP32 master weight and persistent
+BF16 LM-head shadow in a single CUDA Tile ABI call,
+`nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32`, when the
+default token BF16 shadow is enabled. Set
+`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=0` (or the `GPT2`-prefixed alias) to
+reproduce the older two-pass token init plus BF16 refresh path. Runtime JSON
+reports `token_weight_bf16_initial_refresh_fusion_enabled` and
+`token_weight_bf16_initial_refresh_elided`; use `--startup-only` when comparing
+this setup-only path.
+
 For native kernel candidate comparisons, use
 `python tools/paired_kernel_speed.py --baseline "OLD_COMMAND" --candidate
 "NEW_COMMAND" --samples N --json-out /tmp/result.json`. The helper defaults

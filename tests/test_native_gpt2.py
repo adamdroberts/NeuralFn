@@ -714,6 +714,7 @@ def test_native_gpt2_binding_runner_invokes_in_process_module(monkeypatch: pytes
     monkeypatch.delitem(sys.modules, "neuralfn_native_gpt", raising=False)
     monkeypatch.delitem(sys.modules, "neuralfn._native_gpt", raising=False)
     monkeypatch.setitem(sys.modules, "neuralfn_native_gpt2", SimpleNamespace(run_gpt2=fake_run))
+    monkeypatch.setattr(native_gpt2_module, "NATIVE_GPT2_BINDING_MODULES", ("neuralfn_native_gpt2",))
     cfg = NativeGpt2RunConfig(
         executable="train_gpt2cu",
         train_data="train.bin",
@@ -2428,6 +2429,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["token_u16_device_arena_elements"] == 0
     assert train_transformer_payload["token_u16_pinned_arena_elements"] == 0
     assert train_transformer_payload["token_weight_init_strategy"] == "device-tile-deterministic"
+    assert train_transformer_payload["token_weight_bf16_initial_refresh_fusion_enabled"] is True
+    assert train_transformer_payload["token_weight_bf16_initial_refresh_elided"] is False
     assert train_transformer_payload["token_weight_host_materialization"] is False
     assert train_transformer_payload["float_allocation_strategy"] == "single-arena"
     assert train_transformer_payload["float_allocation_cuda_malloc_count"] == 0
@@ -2633,6 +2636,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "block_weight_bf16_initialization_strategy": "direct-bf16-fill-many-values",
         "token_weight_bf16_shadow_enabled": True,
         "token_weight_bf16_refresh_count": 0,
+        "token_weight_bf16_initial_refresh_fusion_enabled": True,
+        "token_weight_bf16_initial_refresh_elided": False,
         "block_weight_bf16_primary_param_update_enabled": True,
         "direct_bf16_block_weight_initialization_enabled": True,
         "block_weight_bf16_gradient_storage_strategy": "float32-accumulation-buffer",
@@ -3750,8 +3755,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "adamw_bf16_param_bf16_grad_kernel_loaded" in gpt2_source_text
     assert "block_weight_bf16_gradient_storage_strategy" in gpt2_source_text
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT" in gpt2_source_text
     assert "token_weight_bf16_shadow_enabled" in gpt2_source_text
     assert "token_weight_bf16_refresh_count" in gpt2_source_text
+    assert "token_weight_bf16_initial_refresh_elided" in gpt2_source_text
     assert "token_weight_bf16.initial_refresh" in gpt2_source_text
     assert "nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_float32" in header_text
     assert "launch_adamw_step_many_with_device_scale_float32" in source_text
@@ -3792,6 +3799,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "fused-multi-buffer-fill-values" in gpt2_source_text
     assert "fused-multi-buffer-sumsq-device-scale" in gpt2_source_text
     assert "nfn_native_tile_init_gpt2_token_weight_float32" in header_text
+    assert "nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32" in header_text
+    assert "launch_init_gpt2_token_weight_with_bf16_shadow_float32" in source_text
+    assert "init_gpt2_token_weight_with_bf16_shadow_float32_kernel" in kernels_text
     assert "nfn_native_tile_copy_float32" in header_text
     assert "nfn_native_tile_uint16_to_int64" in header_text
     assert "nfn_native_tile_float32_to_bf16_bits" in header_text

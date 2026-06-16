@@ -6,6 +6,66 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Fuse native GPT token BF16-shadow startup init
+
+#### Changed
+
+- Added the raw CUDA Tile ABI
+  `nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32`, which
+  initializes the tied token FP32 master weight and persistent BF16 LM-head
+  shadow in one Tile kernel.
+- Dense native GPT startup now uses that fused initializer by default whenever
+  the token BF16 shadow is enabled. Set
+  `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=0` or the `GPT2`-prefixed alias
+  to reproduce the older two-pass token init plus BF16 refresh path for paired
+  benchmarking.
+- Runtime JSON now reports
+  `token_weight_bf16_initial_refresh_fusion_enabled` and
+  `token_weight_bf16_initial_refresh_elided`.
+
+#### Breaking changes
+
+- Existing `libnfn_native_train_tile_ops.so` builds that do not export
+  `nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32` no longer
+  satisfy the dense GPT trainer's required Tile ABI symbol list. Rebuild with
+  `bash tools/build_native_train_tile_ops.sh` before running
+  `build/nfn_gpt_native_train` or the SDK/native CLI paths.
+
+#### Verification
+
+- Rebuilt the Tile ops library with `bash tools/build_native_train_tile_ops.sh`
+  and confirmed `nm -D build/libnfn_native_train_tile_ops.so` exports both the
+  old token initializer and the new fused BF16-shadow initializer.
+- Rebuilt the native GPT CLI with `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step native CUDA smoke on the dedicated display-disabled RTX 5090:
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1
+  build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1
+  --eval-every-steps 0 --no-checkpoint --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so`. The JSON reported
+  `passed: true`, `token_weight_bf16_initial_refresh_elided: true`, and the new
+  ABI in the kernel list.
+- Ran same-script startup-only paired timing with
+  `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=0` as the baseline and the fused
+  default as the candidate:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train
+  --backend tile-cuda --tinystories --startup-only --max-steps 1
+  --eval-every-steps 0 --no-checkpoint --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train
+  --backend tile-cuda --tinystories --startup-only --max-steps 1
+  --eval-every-steps 0 --no-checkpoint --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so" --baseline-env
+  NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=0 --samples 7 --warmup 1
+  --cuda-visible-devices auto --cuda-device-max-connections 1
+  --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15`. The
+  selected GPU was the display-disabled RTX 5090 with zero compute processes;
+  candidate startup wall time was `0.960798x`, setup wall time was `0.954613x`,
+  and total native wall time was `0.962174x` versus the two-pass baseline.
+- Also ran a full five-step paired timing with the same old-vs-new setup. That
+  run showed setup improvement (`0.982298x`) but noisy train-loop and total
+  ratios (`1.008343x` train-loop step time, `1.007016x` total), so this change
+  is treated as a startup optimization rather than a train-loop throughput
+  improvement.
+
 ### 2026-06-16 Default SM120 parity benchmark GPU selection to auto
 
 #### Changed

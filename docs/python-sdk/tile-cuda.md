@@ -653,6 +653,16 @@ plus BF16-shadow refresh path for bisection. Runtime JSON reports
 `adamw_float_update_kernel_launches`, `adamw_bf16_param_kernel_launches`,
 `adamw_bf16_param_bf16_grad_kernel_launches`, and
 `checkpoint.bf16_param_sync_kernel_launches`.
+Native GPT startup also fuses tied token-weight initialization with the
+persistent BF16 LM-head shadow refresh through
+`nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32`. The default
+SDK/native launch path uses that fused CUDA Tile ABI whenever
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW=1`; set
+`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=0` to reproduce the older two-pass
+startup path. Runtime JSON reports
+`token_weight_bf16_initial_refresh_fusion_enabled` and
+`token_weight_bf16_initial_refresh_elided`, and `startup_only=True` isolates the
+setup cost for SDK-side paired timing.
 Token, position, and block Linear weight gradients accumulate directly into
 optimizer-step accumulation buffers in the full GPT-2 trainer. The tied LM-head
 CE backward scale includes the microbatch accumulation factor, LM-head dWeight
