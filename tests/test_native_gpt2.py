@@ -202,6 +202,46 @@ def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     assert "cudaDeviceSynchronize after cudaFreeAsync" in source
 
 
+def test_native_gpt_transformer_lm_exposes_opt_in_bf16_attention_grad_out_handoff() -> None:
+    root = Path(__file__).resolve().parents[1]
+    gpt_source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
+        encoding="utf-8"
+    )
+    tile_header = (root / "neuralfn" / "csrc" / "native_train" / "tile_ops.h").read_text(
+        encoding="utf-8"
+    )
+    tile_source = (root / "neuralfn" / "csrc" / "native_train" / "tile_ops.cu").read_text(
+        encoding="utf-8"
+    )
+    kernels_source = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text(
+        encoding="utf-8"
+    )
+
+    assert "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT" in gpt_source
+    assert "NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT" in gpt_source
+    assert 'NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT"}),\n            false)' in gpt_source
+    assert "attention_backward_bf16_grad_out_handoff_enabled" in gpt_source
+    assert "attention_backward_grad_out_dtype" in gpt_source
+    assert "attention_backward_bf16_grad_out_scratch_elements" in gpt_source
+    assert "linear_backward_input_weight_bf16_to_bf16_bits" in gpt_source
+    assert "packed_attention_backward_to_qkv_bf16_bits_from_bf16_grad" in gpt_source
+    assert "tk-sm120-packed-qkv-bf16-grad-out-direct-bf16-qkv-handoff" in gpt_source
+
+    assert "packed_attention_dprep_bf16_grad_kernel" in kernels_source
+    assert "linear_backward_input_weight_bf16_bits_to_bf16_bits_float32_kernel" in kernels_source
+    assert "launch_linear_backward_input_weight_bf16_to_bf16_bits_float32" in kernels_source
+    assert "launch_tk_attention_packed_qkv_backward_to_qkv_bf16_bits_from_bf16_grad_bits" in kernels_source
+    assert "launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_bf16_merged_grad_float32" in kernels_source
+    assert "launch_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_bf16_merged_grad_float32" in kernels_source
+
+    assert "nfn_native_tile_linear_backward_input_weight_bf16_to_bf16_bits_float32" in tile_header
+    assert "nfn_native_tile_linear_backward_input_weight_bf16_to_bf16_bits_float32" in tile_source
+    assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_bf16_merged_grad_float32" in tile_header
+    assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_bf16_merged_grad_float32" in tile_source
+    assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_bf16_merged_grad_float32" in tile_header
+    assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_bf16_merged_grad_float32" in tile_source
+
+
 def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) -> None:
     dataset_path, meta = _write_raw_text_dataset(tmp_path)
 

@@ -906,6 +906,21 @@ Runtime JSON reports `block_backward_bf16_qkv_dweight_enabled` and
 "packed-ln1-bf16-qkv-bf16-grad-dweight-bias-accumulate"`. Set
 `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=0` to reproduce the previous float32-LN1
 dWeight path. The trainer ABI also exports
+`nfn_native_tile_linear_backward_input_weight_bf16_to_bf16_bits_float32`,
+`nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_bf16_merged_grad_float32`,
+and
+`nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_bf16_merged_grad_float32`
+for the opt-in BF16 attention grad-out handoff experiment. Set
+`NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1` only for paired profiling: attention
+projection dInput writes BF16 grad-out bits directly, and packed attention
+backward consumes those bits before writing BF16 `dQKV`. Runtime JSON reports
+`attention_backward_bf16_grad_out_handoff_enabled`,
+`attention_backward_grad_out_dtype`,
+`attention_backward_bf16_grad_out_scratch_elements`,
+`attention_backward_bf16_grad_out_scratch_bytes`, and the updated
+`attention_backward_qkv_bridge_strategy`. The path remains default-off because
+paired dedicated-RTX-5090 timing measured it slower than the current float
+grad-out default. The trainer ABI also exports
 `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_to_bf16_bits_float32`,
 which accumulates BF16 activation and BF16 gradient dWeight into a BF16 staging
 buffer while still accumulating bias in float32. Dense GPT can opt into that

@@ -6,6 +6,45 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Add opt-in native GPT BF16 attention grad-out handoff
+
+#### Changed
+
+- Added the trainer Tile ABI symbols
+  `nfn_native_tile_linear_backward_input_weight_bf16_to_bf16_bits_float32`,
+  `nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_bf16_merged_grad_float32`,
+  and
+  `nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_bf16_merged_grad_float32`.
+- Dense GPT native training can now opt into
+  `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1` with the
+  `NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT=1` compatibility fallback. The path
+  makes attention projection dInput write BF16 grad-out bits directly, then
+  feeds those bits into packed-attention backward so the QKV grad handoff stays
+  BF16 one stage earlier.
+- Runtime and plan JSON report
+  `attention_backward_bf16_grad_out_handoff_enabled`,
+  `attention_backward_grad_out_dtype`,
+  `attention_backward_bf16_grad_out_scratch_elements`,
+  `attention_backward_bf16_grad_out_scratch_bytes`, and the updated
+  `attention_backward_qkv_bridge_strategy`.
+- The feature remains default-off because paired dedicated-RTX-5090 timing
+  measured it slower than the existing float grad-out default.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran a GPU-visible TinyStories one-step smoke on CUDA device 0 with
+  `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1`; it reported `passed: true`,
+  `attention_backward_grad_out_dtype: "bf16"`,
+  `attention_backward_bf16_grad_out_scratch_elements: 50331648`, and the new
+  ABI symbols in `kernels`.
+- Ran paired dedicated-RTX-5090 timing with selected-GPU idle guards comparing
+  the current default against `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1`. The
+  candidate measured `1.015507x` median train-loop time and `0.984731x` median
+  tokens/sec, so the default remains unchanged.
+
 ### 2026-06-16 Add opt-in native GPT cudaMallocAsync allocator telemetry
 
 #### Changed

@@ -767,6 +767,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_linear_bf16_input_weight_bf16_float32",
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_input_weight_bf16_float32",
+        "nfn_native_tile_linear_backward_input_weight_bf16_to_bf16_bits_float32",
         "nfn_native_tile_linear_backward_weight_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32",
         "nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits",
@@ -837,6 +838,8 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_saved_lse_bf16_from_merged_grad_float32",
         "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_merged_grad_float32",
         "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_merged_grad_float32",
+        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_bf16_merged_grad_float32",
+        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_bf16_merged_grad_float32",
         "nfn_native_tile_scaled_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_add_bf16_linear_float32",
@@ -1123,6 +1126,13 @@ bool print_tile_plan(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF",
                               "NFN_NATIVE_GPT2_BF16_QKV_GRAD_HANDOFF"}),
             true);
+    const bool bf16_attention_grad_out_handoff_enabled =
+        packed_qkv_attention_enabled &&
+        bf16_qkv_grad_handoff_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT",
+                              "NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT"}),
+            false);
     const bool ln1_bf16_qkv_forward_enabled =
         packed_qkv_attention_enabled &&
         env_flag_enabled_or_default(
@@ -1179,6 +1189,10 @@ bool print_tile_plan(
         packed_qkv_attention_enabled ? (tokens * 768 * 4 * activation_tape_count) : 0;
     const std::int64_t packed_qkv_attention_bf16_bytes =
         packed_qkv_attention_bf16_elements * static_cast<std::int64_t>(sizeof(std::uint16_t));
+    const std::int64_t attention_grad_out_bf16_elements =
+        bf16_attention_grad_out_handoff_enabled ? hidden : 0;
+    const std::int64_t attention_grad_out_bf16_bytes =
+        attention_grad_out_bf16_elements * static_cast<std::int64_t>(sizeof(std::uint16_t));
     const std::int64_t projection_bf16_scratch_elements =
         bf16_projection_residual_enabled ? (hidden * activation_tape_count) : 0;
     const std::int64_t projection_bf16_scratch_bytes =
@@ -1330,13 +1344,23 @@ bool print_tile_plan(
         << "  \"qkv_backward_layout_launches_elided_per_block\": 3,\n"
         << "  \"attention_backward_bf16_qkv_grad_handoff_enabled\": "
         << (bf16_qkv_grad_handoff_enabled ? "true" : "false") << ",\n"
+        << "  \"attention_backward_bf16_grad_out_handoff_enabled\": "
+        << (bf16_attention_grad_out_handoff_enabled ? "true" : "false") << ",\n"
+        << "  \"attention_backward_grad_out_dtype\": \""
+        << (bf16_attention_grad_out_handoff_enabled ? "bf16" : "float32") << "\",\n"
+        << "  \"attention_backward_bf16_grad_out_scratch_elements\": "
+        << attention_grad_out_bf16_elements << ",\n"
+        << "  \"attention_backward_bf16_grad_out_scratch_bytes\": "
+        << attention_grad_out_bf16_bytes << ",\n"
         << "  \"attention_backward_direct_bf16_qkv_grad_scratch_enabled\": "
         << (direct_bf16_qkv_grad_scratch_enabled ? "true" : "false") << ",\n"
         << "  \"attention_backward_direct_bf16_qkv_grad_scratch_elements\": "
         << (direct_bf16_qkv_grad_scratch_enabled ? qkv_activation_elements : 0) << ",\n"
         << "  \"attention_backward_qkv_bridge_strategy\": \""
         << (packed_qkv_attention_enabled
-                ? (bf16_qkv_grad_handoff_enabled
+                ? (bf16_attention_grad_out_handoff_enabled
+                       ? "tk-sm120-packed-qkv-bf16-grad-out-direct-bf16-qkv-handoff"
+                   : bf16_qkv_grad_handoff_enabled
                        ? (direct_bf16_qkv_grad_scratch_enabled
                               ? "tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff"
                               : "tk-sm120-packed-qkv-packed-bf16-grad-handoff")
@@ -7004,6 +7028,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_input_bf16_float32",
         "nfn_native_tile_linear_backward_input_weight_bf16_float32",
+        "nfn_native_tile_linear_backward_input_weight_bf16_to_bf16_bits_float32",
         "nfn_native_tile_linear_backward_input_bf16_bits_float32",
         "nfn_native_tile_linear_backward_input_dgelu_bf16_bits_float32",
         "nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_float32",
@@ -7052,6 +7077,8 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_from_saved_lse_bf16_from_merged_grad_float32",
         "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_merged_grad_float32",
         "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_merged_grad_float32",
+        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_bf16_merged_grad_float32",
+        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_bf16_merged_grad_float32",
         "nfn_native_tile_scaled_dot_product_attention_store_tk_bf16_float32",
         "nfn_native_tile_attention_tk_store_forward_workspace_bf16",
         "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_merged_grad_float32",
@@ -7193,6 +7220,9 @@ int run_transformer_lm_training_json(
         const std::uint16_t*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardInputWeightBf16Fn = int (*)(
         const float*, const std::uint16_t*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using LinearBackwardInputWeightBf16ToBf16BitsFn = int (*)(
+        const float*, const std::uint16_t*, std::uint16_t*,
+        std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardInputBf16BitsWeightBf16Fn = int (*)(
         const std::uint16_t*, const std::uint16_t*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
     using LinearBackwardInputDgeluWeightBf16BitsFn = int (*)(
@@ -7269,6 +7299,16 @@ int run_transformer_lm_training_json(
         std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
     using PackedAttentionBackwardToQkvBf16BitsSavedLseFn = int (*)(
         const std::uint16_t*, const std::uint16_t*, const float*, const float*, std::uint16_t*,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t,
+        std::int64_t, std::int64_t, std::int64_t, float, bool, bool, bool,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using PackedAttentionBackwardToQkvBf16BitsFromBf16GradFn = int (*)(
+        const std::uint16_t*, const std::uint16_t*, const std::uint16_t*, std::uint16_t*,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t,
+        std::int64_t, std::int64_t, std::int64_t, float, bool, bool, bool,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using PackedAttentionBackwardToQkvBf16BitsSavedLseFromBf16GradFn = int (*)(
+        const std::uint16_t*, const std::uint16_t*, const float*, const std::uint16_t*, std::uint16_t*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t,
         std::int64_t, std::int64_t, std::int64_t, float, bool, bool, bool,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
@@ -7409,6 +7449,7 @@ int run_transformer_lm_training_json(
     LinearBackwardInputFn linear_backward_input = nullptr;
     LinearBackwardInputBf16BitsFn linear_backward_input_bf16_bits = nullptr;
     LinearBackwardInputWeightBf16Fn linear_backward_input_weight_bf16 = nullptr;
+    LinearBackwardInputWeightBf16ToBf16BitsFn linear_backward_input_weight_bf16_to_bf16_bits = nullptr;
     LinearBackwardInputBf16BitsWeightBf16Fn linear_backward_input_bf16_bits_weight_bf16 = nullptr;
     LinearBackwardInputDgeluWeightBf16BitsFn linear_backward_input_dgelu_weight_bf16_bits = nullptr;
     LinearBackwardInputDgeluWeightBf16BitsOnlyFn
@@ -7475,6 +7516,10 @@ int run_transformer_lm_training_json(
     PackedAttentionBackwardToQkvSavedLseFn packed_attention_backward_to_qkv_saved_lse = nullptr;
     PackedAttentionBackwardToQkvBf16BitsFn packed_attention_backward_to_qkv_bf16_bits = nullptr;
     PackedAttentionBackwardToQkvBf16BitsSavedLseFn packed_attention_backward_to_qkv_bf16_bits_saved_lse = nullptr;
+    PackedAttentionBackwardToQkvBf16BitsFromBf16GradFn
+        packed_attention_backward_to_qkv_bf16_bits_from_bf16_grad = nullptr;
+    PackedAttentionBackwardToQkvBf16BitsSavedLseFromBf16GradFn
+        packed_attention_backward_to_qkv_bf16_bits_saved_lse_from_bf16_grad = nullptr;
     AttentionStoreForwardTkFn attention_store_forward_tk = nullptr;
     StoreAttentionTkWorkspaceFn store_attention_tk_workspace = nullptr;
     AttentionBackwardToQkvFromSavedTkFn attention_backward_to_qkv_from_saved_tk = nullptr;
@@ -7673,6 +7718,9 @@ int run_transformer_lm_training_json(
                 linear_backward_input_weight_bf16 =
                     load_symbol<LinearBackwardInputWeightBf16Fn>(
                         tile_handle, "nfn_native_tile_linear_backward_input_weight_bf16_float32");
+                linear_backward_input_weight_bf16_to_bf16_bits =
+                    load_symbol<LinearBackwardInputWeightBf16ToBf16BitsFn>(
+                        tile_handle, "nfn_native_tile_linear_backward_input_weight_bf16_to_bf16_bits_float32");
                 linear_backward_input_bf16_bits_weight_bf16 =
                     load_symbol<LinearBackwardInputBf16BitsWeightBf16Fn>(
                         tile_handle, "nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_float32");
@@ -7818,6 +7866,14 @@ int run_transformer_lm_training_json(
                     load_symbol<PackedAttentionBackwardToQkvBf16BitsSavedLseFn>(
                         tile_handle,
                         "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_merged_grad_float32");
+                packed_attention_backward_to_qkv_bf16_bits_from_bf16_grad =
+                    load_symbol<PackedAttentionBackwardToQkvBf16BitsFromBf16GradFn>(
+                        tile_handle,
+                        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_bf16_merged_grad_float32");
+                packed_attention_backward_to_qkv_bf16_bits_saved_lse_from_bf16_grad =
+                    load_symbol<PackedAttentionBackwardToQkvBf16BitsSavedLseFromBf16GradFn>(
+                        tile_handle,
+                        "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_bf16_merged_grad_float32");
                 attention_store_forward_tk = load_symbol<AttentionStoreForwardTkFn>(
                     tile_handle, "nfn_native_tile_scaled_dot_product_attention_store_tk_bf16_float32");
                 store_attention_tk_workspace = load_symbol<StoreAttentionTkWorkspaceFn>(
@@ -8015,6 +8071,13 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF",
                               "NFN_NATIVE_GPT2_BF16_QKV_GRAD_HANDOFF"}),
             true);
+    const bool bf16_attention_grad_out_handoff_enabled =
+        packed_qkv_attention_enabled &&
+        bf16_qkv_grad_handoff_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT",
+                              "NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT"}),
+            false);
     const bool ln1_bf16_qkv_forward_enabled =
         packed_qkv_attention_enabled &&
         env_flag_enabled_or_default(
@@ -8788,6 +8851,9 @@ int run_transformer_lm_training_json(
     std::uint16_t* packed_qkv_attention_bf16_arena = nullptr;
     std::int64_t packed_qkv_attention_bf16_elements = 0;
     std::int64_t packed_qkv_attention_bf16_bytes = 0;
+    std::uint16_t* attention_grad_out_bf16 = nullptr;
+    std::int64_t attention_grad_out_bf16_elements = 0;
+    std::int64_t attention_grad_out_bf16_bytes = 0;
 
     float *token_weight = nullptr, *position_weight = nullptr, *residual_scale = nullptr;
     float *lnf_weight = nullptr, *lnf_bias = nullptr;
@@ -9232,6 +9298,30 @@ int run_transformer_lm_training_json(
             block_tapes[i].packed_attn_out_bf16 = base + offset + activation_elements + qkv_activation_elements;
         }
     };
+    auto allocate_attention_grad_out_bf16 = [&]() {
+        if (!error.empty() || !bf16_attention_grad_out_handoff_enabled) {
+            return;
+        }
+        if (activation_elements <= 0 ||
+            activation_elements >
+                static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
+            error = "attention grad-out bf16 scratch allocation byte size overflow";
+            return;
+        }
+        const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(activation_elements);
+        if (attention_grad_out_bf16 == nullptr) {
+            void* raw = nullptr;
+            const int status = device_malloc(&raw, bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc attention_grad_out_bf16");
+                return;
+            }
+            attention_grad_out_bf16 = static_cast<std::uint16_t*>(raw);
+            uint16_ptrs.push_back(attention_grad_out_bf16);
+        }
+        attention_grad_out_bf16_elements = activation_elements;
+        attention_grad_out_bf16_bytes = static_cast<std::int64_t>(bytes);
+    };
     auto allocate_block_weight_bf16_arena = [&]() {
         if (!error.empty() || trained_layers <= 0) {
             return;
@@ -9441,7 +9531,7 @@ int run_transformer_lm_training_json(
              {&grad_ln2, activation_elements},
              {&grad_residual1_from_mlp, fuse_ln_backward_residual_enabled ? 0 : activation_elements},
              {&grad_residual1, activation_elements},
-            {&grad_attn_out, activation_elements},
+             {&grad_attn_out, bf16_attention_grad_out_handoff_enabled ? 0 : activation_elements},
              {&grad_qkv, qkv_activation_elements}, {&grad_ln1, activation_elements},
              {&grad_x_from_attn, fuse_ln_backward_residual_enabled ? 0 : activation_elements},
              {&grad_x, activation_elements},
@@ -9496,6 +9586,10 @@ int run_transformer_lm_training_json(
                     "packed_qkv_attention_bf16");
             }
         }
+        allocate_uint16(
+            &attention_grad_out_bf16,
+            bf16_attention_grad_out_handoff_enabled ? activation_elements : 0,
+            "attention_grad_out_bf16");
         if (trained_layers > 0 &&
             kBlockWeightBf16ElementsPerBlock > 0 &&
             trained_layers <=
@@ -9560,6 +9654,9 @@ int run_transformer_lm_training_json(
     });
     run_setup_timed("setup.packed_qkv_attention_scratch", [&]() {
         allocate_packed_qkv_attention_scratch();
+    });
+    run_setup_timed("setup.attention_grad_out_bf16", [&]() {
+        allocate_attention_grad_out_bf16();
     });
     run_setup_timed("setup.block_weight_bf16_arena", [&]() {
         allocate_block_weight_bf16_arena();
@@ -11540,6 +11637,8 @@ int run_transformer_lm_training_json(
                     mlp_forward_act_bf16_elements >= qkv_activation_elements
                 ? mlp_forward_act_bf16
                 : active_qkv_bf16;
+        std::uint16_t* active_attention_grad_out_bf16 =
+            bf16_attention_grad_out_handoff_enabled ? attention_grad_out_bf16 : nullptr;
         const std::uint16_t* active_packed_attn_out_bf16 =
             stored_packed_attention != nullptr ? stored_packed_attention->o : tape.packed_attn_out_bf16;
         const float* active_ln1_mean =
@@ -11760,7 +11859,21 @@ int run_transformer_lm_training_json(
                 }
             });
             run_timed_stage("block_backward.attn_proj.dinput", [&]() {
-                if (error.empty()) run(linear_backward_input_weight_bf16(grad_residual1, block.attn_proj_weight_bf16, grad_attn_out, active_rows, kDim, kDim, nullptr), label + ".attn.out.backward_input.weight_bf16");
+                if (bf16_attention_grad_out_handoff_enabled) {
+                    if (error.empty()) {
+                        run(linear_backward_input_weight_bf16_to_bf16_bits(
+                                grad_residual1,
+                                block.attn_proj_weight_bf16,
+                                active_attention_grad_out_bf16,
+                                active_rows,
+                                kDim,
+                                kDim,
+                                nullptr),
+                            label + ".attn.out.backward_input.weight_bf16_to_bf16_bits");
+                    }
+                } else {
+                    if (error.empty()) run(linear_backward_input_weight_bf16(grad_residual1, block.attn_proj_weight_bf16, grad_attn_out, active_rows, kDim, kDim, nullptr), label + ".attn.out.backward_input.weight_bf16");
+                }
             });
         });
         run_timed_stage("block_backward.attn_sdpa", [&]() {
@@ -11769,7 +11882,31 @@ int run_transformer_lm_training_json(
                     if (error.empty()) {
                         if (stored_packed_attention != nullptr &&
                             stored_packed_attention->lse != nullptr) {
-                            if (bf16_qkv_grad_handoff_enabled) {
+                            if (bf16_attention_grad_out_handoff_enabled) {
+                                run(packed_attention_backward_to_qkv_bf16_bits_saved_lse_from_bf16_grad(
+                                        active_qkv_bf16,
+                                        active_packed_attn_out_bf16,
+                                        stored_packed_attention->lse,
+                                        active_attention_grad_out_bf16,
+                                        active_qkv_grad_bf16,
+                                        active_batch_size,
+                                        kHeads,
+                                        kHeads,
+                                        seq_len,
+                                        seq_len,
+                                        kHeadDim,
+                                        kHeadDim,
+                                        attention_scale,
+                                        true,
+                                        false,
+                                        false,
+                                        0,
+                                        0,
+                                        0,
+                                        0,
+                                        nullptr),
+                                    label + ".attn.sdpa.backward_packed_qkv_to_qkv_bf16_from_bf16_grad_saved_lse");
+                            } else if (bf16_qkv_grad_handoff_enabled) {
                                 run(packed_attention_backward_to_qkv_bf16_bits_saved_lse(
                                         active_qkv_bf16,
                                         active_packed_attn_out_bf16,
@@ -11819,7 +11956,30 @@ int run_transformer_lm_training_json(
                                     label + ".attn.sdpa.backward_packed_qkv_to_qkv_saved_lse");
                             }
                         } else {
-                            if (bf16_qkv_grad_handoff_enabled) {
+                            if (bf16_attention_grad_out_handoff_enabled) {
+                                run(packed_attention_backward_to_qkv_bf16_bits_from_bf16_grad(
+                                        active_qkv_bf16,
+                                        active_packed_attn_out_bf16,
+                                        active_attention_grad_out_bf16,
+                                        active_qkv_grad_bf16,
+                                        active_batch_size,
+                                        kHeads,
+                                        kHeads,
+                                        seq_len,
+                                        seq_len,
+                                        kHeadDim,
+                                        kHeadDim,
+                                        attention_scale,
+                                        true,
+                                        false,
+                                        false,
+                                        0,
+                                        0,
+                                        0,
+                                        0,
+                                        nullptr),
+                                    label + ".attn.sdpa.backward_packed_qkv_to_qkv_bf16_from_bf16_grad");
+                            } else if (bf16_qkv_grad_handoff_enabled) {
                                 run(packed_attention_backward_to_qkv_bf16_bits(
                                         active_qkv_bf16,
                                         active_packed_attn_out_bf16,
@@ -13297,13 +13457,23 @@ int run_transformer_lm_training_json(
         << "  \"qkv_backward_layout_launches_elided_per_block\": 3,\n"
         << "  \"attention_backward_bf16_qkv_grad_handoff_enabled\": "
         << (bf16_qkv_grad_handoff_enabled ? "true" : "false") << ",\n"
+        << "  \"attention_backward_bf16_grad_out_handoff_enabled\": "
+        << (bf16_attention_grad_out_handoff_enabled ? "true" : "false") << ",\n"
+        << "  \"attention_backward_grad_out_dtype\": \""
+        << (bf16_attention_grad_out_handoff_enabled ? "bf16" : "float32") << "\",\n"
+        << "  \"attention_backward_bf16_grad_out_scratch_elements\": "
+        << attention_grad_out_bf16_elements << ",\n"
+        << "  \"attention_backward_bf16_grad_out_scratch_bytes\": "
+        << attention_grad_out_bf16_bytes << ",\n"
         << "  \"attention_backward_direct_bf16_qkv_grad_scratch_enabled\": "
         << (direct_bf16_qkv_grad_scratch_enabled ? "true" : "false") << ",\n"
         << "  \"attention_backward_direct_bf16_qkv_grad_scratch_elements\": "
         << (direct_bf16_qkv_grad_scratch_enabled ? qkv_activation_elements : 0) << ",\n"
         << "  \"attention_backward_qkv_bridge_strategy\": \""
         << (packed_qkv_attention_enabled
-                ? (bf16_qkv_grad_handoff_enabled
+                ? (bf16_attention_grad_out_handoff_enabled
+                       ? "tk-sm120-packed-qkv-bf16-grad-out-direct-bf16-qkv-handoff"
+                   : bf16_qkv_grad_handoff_enabled
                        ? (direct_bf16_qkv_grad_scratch_enabled
                               ? "tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff"
                               : "tk-sm120-packed-qkv-packed-bf16-grad-handoff")
@@ -13365,12 +13535,16 @@ int run_transformer_lm_training_json(
         << "  \"attention_backward_strategy\": \""
         << (packed_qkv_attention_enabled
                 ? (stored_packed_attention_backward_kernel_launches > 0
-                       ? (bf16_qkv_grad_handoff_enabled
+                       ? (bf16_attention_grad_out_handoff_enabled
+                              ? "tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-out-handoff"
+                          : bf16_qkv_grad_handoff_enabled
                               ? (direct_bf16_qkv_grad_scratch_enabled
                                      ? "tk-sm120-packed-qkv-bf16-saved-activation-backward-direct-bf16-grad-scratch-handoff"
                                      : "tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-handoff")
                               : "tk-sm120-packed-qkv-bf16-saved-activation-backward-bridge")
-                       : (bf16_qkv_grad_handoff_enabled
+                       : (bf16_attention_grad_out_handoff_enabled
+                              ? "tk-sm120-packed-qkv-bf16-backward-bf16-grad-out-handoff"
+                          : bf16_qkv_grad_handoff_enabled
                               ? (direct_bf16_qkv_grad_scratch_enabled
                                      ? "tk-sm120-packed-qkv-bf16-backward-direct-bf16-grad-scratch-handoff"
                                      : "tk-sm120-packed-qkv-bf16-backward-bf16-grad-handoff")

@@ -706,6 +706,7 @@ Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF`,
 `NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD`,
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF`,
+`NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT`,
 `NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH`,
 `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT`, and
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`. The older `NFN_NATIVE_GPT2_*`
@@ -810,6 +811,15 @@ forward pass and by the BF16-bits dWeight accumulator for that projection, so
 the packed route does not unpack `O` to float32 before the projection.
 Set `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF=0` to force the older packed
 attention backward path that expands `dQKV` to float32 before QKV dWeight/dInput.
+Set `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1` only for profiling the BF16
+attention-projection dInput handoff candidate: it makes the attention projection
+dInput GEMM write BF16 grad-out bits and feeds those bits into packed attention
+backward. Runtime JSON reports
+`attention_backward_bf16_grad_out_handoff_enabled`,
+`attention_backward_grad_out_dtype`, BF16 grad-out scratch sizes, and the
+updated `attention_backward_qkv_bridge_strategy`. Keep it off for normal
+training; paired dedicated-RTX-5090 timing measured the candidate slower than
+the current float grad-out default.
 Set `NFN_NATIVE_GPT2_PACKED_QKV_ATTENTION=0` to force the older split bridge for
 profiling. Native plan and runtime JSON report `packed_qkv_attention_enabled`,
 `packed_qkv_attention_bf16_bytes`,
