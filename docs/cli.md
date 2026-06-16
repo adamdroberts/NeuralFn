@@ -794,8 +794,10 @@ Compiled GPT-2 `--train-transformer-lm` training results include a `timing`
 object with host wall-clock phase timers: `setup_wall_ms`,
 `train_loop_wall_ms`, `validation_wall_ms`, `train_compute_wall_ms`,
 `checkpoint_wall_ms`, `total_wall_ms`, `optimizer_steps_per_second`, and
-`train_tokens_per_second`. These fields do not add synchronization points; the
-train-loop timer ends after the existing final sample copy from device to host.
+`train_tokens_per_second`. The train-loop timer ends after an explicit
+end-of-loop device synchronization and before the diagnostic final sample copies
+from device to host, so short parity runs exclude post-training metadata copy
+overhead.
 
 The full GPT-2 transformer-LM forward path uses
 `nfn_native_tile_split_qkv_to_heads_add_bias_float32` to apply Q/K/V bias while

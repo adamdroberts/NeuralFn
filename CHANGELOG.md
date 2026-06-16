@@ -6,6 +6,39 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Stop dense GPT train-loop timing before diagnostic sample copies
+
+#### Changed
+
+- Dense native GPT training now synchronizes at the end of the actual training
+  loop, records `timing.train_loop_wall_ms`, and only then copies the sampled
+  token weight and gradient clip scale back to the host for status JSON. This
+  keeps `train_tokens_per_second` and SM120 parity comparisons focused on
+  training work instead of including post-training diagnostic metadata copies.
+
+#### Verification
+
+- Ran `python -m pytest
+  tests/test_native_gpt2.py::test_large_row_reduction_fallbacks_use_shared_row_chunks
+  -q`.
+- Ran `bash -n tools/build_native_gpt_cli.sh`, then rebuilt with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran `python tools/check_native_no_torch_deps.py --json`; both
+  `build/nfn_gpt_native_train` and `build/libnfn_native_train_tile_ops.so`
+  had no forbidden Torch/Python dependencies.
+- Ran a one-step native CUDA smoke on the dedicated RTX 5090 with
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1
+  build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1
+  --eval-every-steps 0 --no-checkpoint --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so`; the trainer reported
+  `passed: true`.
+- Ran a five-step paired parity smoke with
+  `NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_post_timing_patch_5step.json
+  tools/bench_native_gpt_sm120_parity.sh`; the selected RTX 5090 was display
+  disabled with zero compute processes, llm.kittens train-loop throughput was
+  `170,438 tok/s`, and NeuralFn native train-loop throughput was
+  `180,160 tok/s`.
+
 ### 2026-06-16 Fix SM120 parity benchmark timing cadence
 
 #### Changed

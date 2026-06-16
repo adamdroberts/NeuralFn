@@ -4271,6 +4271,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "steady_clock_host_wall_ms" in gpt2_source_text
     assert "setup_wall_ms" in gpt2_source_text
     assert "train_loop_wall_ms" in gpt2_source_text
+    assert 'run(cuda_device_synchronize(), "train_loop.complete");' in gpt2_source_text
+    assert (
+        gpt2_source_text.index('run(cuda_device_synchronize(), "train_loop.complete");')
+        < gpt2_source_text.index("train_loop_wall_ms = elapsed_ms(train_loop_start_time, train_loop_end_time);")
+        < gpt2_source_text.index('"token_weight.sample"')
+    )
     assert "validation_wall_ms" in gpt2_source_text
     assert "checkpoint_wall_ms" in gpt2_source_text
     assert 'std::getenv("CUDA_VISIBLE_DEVICES")' in gpt2_source_text

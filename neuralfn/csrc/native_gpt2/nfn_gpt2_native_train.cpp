@@ -12827,6 +12827,11 @@ int run_transformer_lm_training_json(
         }
     }
 
+    if (error.empty()) {
+        run(cuda_device_synchronize(), "train_loop.complete");
+    }
+    const auto train_loop_end_time = Clock::now();
+    train_loop_wall_ms = elapsed_ms(train_loop_start_time, train_loop_end_time);
     float sampled_token_weight = initial_token_weight_sample;
     if (error.empty()) {
         run(cuda_memcpy(&sampled_token_weight, token_weight, sizeof(float), kCudaMemcpyDeviceToHost),
@@ -12837,8 +12842,6 @@ int run_transformer_lm_training_json(
         run(cuda_memcpy(&sampled_clip_scale, grad_clip_scale, sizeof(float), kCudaMemcpyDeviceToHost),
             "gradient_clip_scale.sample");
     }
-    const auto train_loop_end_time = Clock::now();
-    train_loop_wall_ms = elapsed_ms(train_loop_start_time, train_loop_end_time);
     finalize_stage_timing();
     const double max_weight_delta = std::fabs(static_cast<double>(sampled_token_weight) - initial_token_weight_sample);
     passed = error.empty() &&
