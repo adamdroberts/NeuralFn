@@ -595,6 +595,17 @@ The RTX 5090 dense GPT harness at `cli/scripts/train_gpt.py` is native-only; `tr
 
 The compiled GPT-2 `--train-transformer-lm` JSON includes `cuda_runtime_preflight` before any allocation. Driver version `0` or a loaded CUDA runtime newer than the driver exits early with an actionable GPU-access/runtime error, which is the expected gate before live SM120 throughput comparison.
 
+For the canonical RTX 5090 SM120 parity benchmark, run
+`tools/bench_native_gpt_sm120_parity.sh`. It compares the local
+`/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu` TinyStories command
+using the `train-sm120.sh` shape against
+`build/nfn_gpt_native_train --backend tile-cuda` through
+`tools/paired_kernel_speed.py`, with selected-GPU idle/process guards and JSON
+output enabled. Set `NFN_SM120_PARITY_STEPS`, `NFN_SM120_PARITY_SAMPLES`,
+`NFN_SM120_PARITY_WARMUP`, `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES`,
+`NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT`, or
+`NFN_SM120_PARITY_JSON_OUT` to adjust the run without editing the command.
+
 For timing-only native GPT probes, pass wrapper
 `--native-cuda-no-checkpoint` or compiled C++ `--no-checkpoint` to skip final
 trained-checkpoint export. Runtime JSON then reports `checkpoint.enabled:

@@ -124,6 +124,39 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["train_tokens_per_second"]["mean"] == 42.0
 
 
+def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
+    script = Path("tools/bench_native_gpt_sm120_parity.sh")
+
+    proc = subprocess.run(
+        ["bash", "-n", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    text = script.read_text(encoding="utf-8")
+    assert "tools/paired_kernel_speed.py" in text
+    assert "--require-idle-selected-gpu" in text
+    assert "--max-selected-gpu-utilization-pct" in text
+    assert "TinyStories_train.bin" in text
+    assert "TinyStories_val.bin" in text
+    assert "-b 64" in text
+    assert "-t 1024" in text
+    assert "-d 524288" in text
+    assert "-l 0.0006" in text
+    assert "-q 0.0" in text
+    assert "-u 60" in text
+    assert "-n 200" in text
+    assert "-af \"$ACTIVATION\"" in text
+    assert "--backend tile-cuda" in text
+    assert "--max-steps \"$STEPS\"" in text
+    assert "--eval-every-steps 0" in text
+    assert "--no-checkpoint" in text
+    assert "--tile-ops-lib \"$NFN_NATIVE_TILE_OPS_LIB\"" in text
+
+
 def test_paired_kernel_speed_tool_applies_command_specific_env() -> None:
     script = Path("tools/paired_kernel_speed.py")
     output_path = Path(tempfile.mkdtemp()) / "paired-env.json"

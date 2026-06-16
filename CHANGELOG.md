@@ -6,6 +6,50 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 SM120 native GPT parity benchmark wrapper
+
+#### Added
+
+- Added `tools/bench_native_gpt_sm120_parity.sh`, a dedicated wrapper around
+  `tools/paired_kernel_speed.py` that compares the local llm.kittens
+  `train_gpt2cu` TinyStories SM120 reference shape against NeuralFn's compiled
+  `nfn_gpt_native_train --backend tile-cuda` path. The wrapper pins the same
+  `64 x 1024 -> 524288` token batch shape, learning rate, weight decay, warmup,
+  activation, sample/checkpoint cadence, and selected-GPU guard settings used
+  for the workstation RTX 5090 parity loop. Runtime knobs are environment
+  variables: `NFN_SM120_PARITY_STEPS`, `NFN_SM120_PARITY_SAMPLES`,
+  `NFN_SM120_PARITY_WARMUP`, `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES`,
+  `NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT`, and
+  `NFN_SM120_PARITY_JSON_OUT`.
+
+#### Verification
+
+- Ran a manual 3-step paired benchmark on the dedicated RTX 5090 using the same
+  commands now encoded by the wrapper. llm.kittens reported about
+  `214,470 tok/s`; NeuralFn native reported about `193,049 tok/s`, or roughly
+  `90.0%` of the reference training-loop throughput for that short run.
+- Ran the new wrapper itself with `NFN_SM120_PARITY_STEPS=3`,
+  `NFN_SM120_PARITY_SAMPLES=1`, and
+  `NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_wrapper_3step.json`;
+  llm.kittens reported about `214,170 tok/s` and NeuralFn native reported
+  about `193,450 tok/s`, or roughly `90.3%` of the reference training-loop
+  throughput.
+- Ran a manual 10-step paired benchmark on the dedicated RTX 5090. llm.kittens
+  reported about `213,236 tok/s`; NeuralFn native reported about
+  `193,226 tok/s`, or roughly `90.6%` of the reference training-loop
+  throughput.
+- Captured a NeuralFn one-step CUDA-event stage profile in
+  `/tmp/nfn_current_stage_1step.json`; the largest remaining buckets were
+  `block_backward` at about `1357 ms`, `train.model_forward` at about
+  `741 ms`, and `lm_head_backward` at about `645 ms`.
+- Rejected measured default changes for the current pass: 16k LM-head chunks
+  were about `12.5%` slower than 8192-row chunks, 4k LM-head chunks were
+  neutral to slightly slower, BF16/BF16 LM-head dWeight was about `0.6%`
+  slower, saved packed-attention LSE was neutral, disabling MLP activation
+  storage was about `31.7%` slower, disabling BF16 MLP gradient handoff was
+  about `8.2%` slower, disabling direct BF16 QKV gradient scratch was about
+  `2.8%` slower, and disabling BF16 QKV dWeight was neutral on loop time.
+
 ### 2026-06-15 Native GPT startup-only profiling and lazy CUDA module loading
 
 #### Changed
