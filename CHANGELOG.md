@@ -6,6 +6,59 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Fuse native GPT LayerNorm affine and residual backward
+
+#### Changed
+
+- Added trainer-facing Tile-CUDA ABI symbols
+  `nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_float32`
+  and
+  `nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits_float32`.
+  For GPT-width `dim <= 1024` shapes, these kernels accumulate LayerNorm
+  dWeight/dBias, compute dInput from stored mean/rstd, apply the residual scale,
+  and add the upstream residual gradient in one launch.
+- Dense native GPT training now uses the fused LayerNorm backward path by
+  default for LN1 and LN2. Set
+  `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_AFFINE_RESIDUAL=0` or the GPT2-prefixed
+  fallback to reproduce the previous affine-accumulate plus dInput/residual-add
+  pair for paired benchmarks.
+- The BF16 QKV-gradient handoff path now elides the unused float32 `grad_qkv`
+  scratch allocation from the startup float arena. Set
+  `NFN_NATIVE_GPT_ELIDE_QKV_FLOAT_GRAD_SCRATCH=0` or the GPT2-prefixed fallback
+  to reproduce the previous reservation.
+- Runtime JSON now reports
+  `attention_backward_qkv_float_grad_scratch_elided`,
+  `attention_backward_qkv_float_grad_scratch_elements`,
+  `attention_backward_qkv_float_grad_scratch_bytes_elided`,
+  `attention_backward_qkv_float_grad_scratch_strategy`,
+  `block_state_layout.layer_norm_backward_affine_residual_fusion_enabled`, and
+  `block_state_layout.layer_norm_backward_affine_residual_fused_kernel_launches`.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt the native GPT binaries with `bash tools/build_native_gpt_cli.sh` and
+  `bash tools/build_native_gpt2_cli.sh`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran
+  `python -m pytest tests/test_native_gpt2.py -q -k 'native_gpt2_cpp_cli_builds_and_uses_sm120_defaults or packed_qkv_uint16_arena_reserves_full_scratch_layout'`.
+- Ran a one-step TinyStories native GPT smoke on the dedicated RTX 5090. The
+  payload reported
+  `block_state_layout.layer_norm_backward_affine_residual_fused_kernel_launches: 192`
+  and
+  `attention_backward_qkv_float_grad_scratch_bytes_elided: 603979776`.
+- Ran paired 5-step TinyStories timing on the dedicated RTX 5090 with the idle
+  GPU guard, comparing
+  `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_AFFINE_RESIDUAL=0` against the new default.
+  Over 3 measured samples after 1 warmup pair, the candidate measured
+  `0.989125x` mean train-loop wall time and `1.011001x` mean train tokens/sec.
+- Ran paired 5-step TinyStories timing comparing
+  `NFN_NATIVE_GPT_ELIDE_QKV_FLOAT_GRAD_SCRATCH=0` against the new default. The
+  scratch elision was timing-neutral (`0.999864x` mean train-loop wall time) but
+  removes the unused 604 MiB float scratch reservation when BF16 QKV gradient
+  handoff is active.
+
 ### 2026-06-16 Defer native GPT validation MLP float scratch
 
 #### Changed

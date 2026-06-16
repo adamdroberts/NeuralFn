@@ -926,6 +926,34 @@ void launch_layer_norm_backward_input_residual_add_with_stats_bf16_bits_float32(
     std::int64_t rows,
     std::int64_t dim,
     cudaStream_t stream);
+bool launch_layer_norm_backward_affine_residual_add_accumulate_with_stats_float32(
+    const float* x,
+    const float* grad_out,
+    const float* weight,
+    const float* mean,
+    const float* rstd,
+    const float* residual_grad,
+    const float* residual_scale,
+    float* out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
+    cudaStream_t stream);
+bool launch_layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    const float* grad_out,
+    const float* weight,
+    const float* mean,
+    const float* rstd,
+    const float* residual_grad,
+    const float* residual_scale,
+    float* out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
+    cudaStream_t stream);
 void launch_layer_norm_backward_affine_float32(
     const float* x,
     const float* grad_out,
@@ -3415,6 +3443,48 @@ int nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_bf16_bits_
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_layer_norm_backward_input_residual_add_with_stats_bf16_bits_float32(
         x_bf16_bits, grad_out, weight, mean, rstd, residual_grad, residual_scale, out, rows, dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_float32(
+    const float* x,
+    const float* grad_out,
+    const float* weight,
+    const float* mean,
+    const float* rstd,
+    const float* residual_grad,
+    const float* residual_scale,
+    float* out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
+    void* cuda_stream) {
+    if (!neuralfn::tile_cuda::launch_layer_norm_backward_affine_residual_add_accumulate_with_stats_float32(
+            x, grad_out, weight, mean, rstd, residual_grad, residual_scale, out, grad_weight, grad_bias, rows, dim, as_stream(cuda_stream))) {
+        return 2;
+    }
+    return launch_status();
+}
+
+int nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    const float* grad_out,
+    const float* weight,
+    const float* mean,
+    const float* rstd,
+    const float* residual_grad,
+    const float* residual_scale,
+    float* out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
+    void* cuda_stream) {
+    if (!neuralfn::tile_cuda::launch_layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits_float32(
+            x_bf16_bits, grad_out, weight, mean, rstd, residual_grad, residual_scale, out, grad_weight, grad_bias, rows, dim, as_stream(cuda_stream))) {
+        return 2;
+    }
     return launch_status();
 }
 

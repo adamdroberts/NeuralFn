@@ -944,14 +944,21 @@ residual-add plus LN2 route. Native plan and runtime JSON report
 default route is active.
 
 Block backward also defaults to
-`nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32` for
-LN1 and LN2 residual paths. The fused Tile pass consumes stored LayerNorm
-mean/rstd, computes dInput, applies the residual scale, and adds the upstream
-residual gradient in one launch. Set `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_RESIDUAL=0`
-or `NFN_NATIVE_GPT2_FUSE_LN_BACKWARD_RESIDUAL=0` to force the older separate
+`nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_float32`
+and
+`nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits_float32`
+for GPT-width LN1/LN2 residual paths. The fused Tile pass consumes stored
+LayerNorm mean/rstd, accumulates dWeight/dBias, computes dInput, applies the
+residual scale, and adds the upstream residual gradient in one launch. Set
+`NFN_NATIVE_GPT_FUSE_LN_BACKWARD_AFFINE_RESIDUAL=0` or
+`NFN_NATIVE_GPT2_FUSE_LN_BACKWARD_AFFINE_RESIDUAL=0` to force the previous
+affine-accumulate plus dInput/residual-add pair; set
+`NFN_NATIVE_GPT_FUSE_LN_BACKWARD_RESIDUAL=0` or
+`NFN_NATIVE_GPT2_FUSE_LN_BACKWARD_RESIDUAL=0` to force the older separate
 LayerNorm dInput plus residual-add route. Runtime JSON reports
-`block_state_layout.layer_norm_backward_residual_fusion_enabled` and
-`block_state_layout.layer_norm_backward_residual_strategy`.
+`block_state_layout.layer_norm_backward_affine_residual_fusion_enabled`,
+`block_state_layout.layer_norm_backward_affine_residual_fused_kernel_launches`,
+and `block_state_layout.layer_norm_backward_residual_strategy`.
 
 The full GPT-2 transformer-LM trainer also uses
 `nfn_native_tile_fill_many_values_float32` for startup nonzero constant

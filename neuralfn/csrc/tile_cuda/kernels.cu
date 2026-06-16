@@ -6314,6 +6314,136 @@ __tile_global__ void layer_norm_backward_affine_chunked_atomic_with_stats_bf16_b
   ct::atomic_add_masked<ct::memory_order::relaxed>(grad_bias + d, grad_bias_acc, active);
 }
 
+__tile_global__ void layer_norm_backward_affine_residual_add_chunked_atomic_with_stats_float32_kernel(
+    const float* __restrict__ x,
+    const float* __restrict__ grad_out,
+    const float* __restrict__ weight,
+    const float* __restrict__ mean,
+    const float* __restrict__ rstd,
+    const float* __restrict__ residual_grad,
+    const float* __restrict__ residual_scale,
+    float* __restrict__ out,
+    float* __restrict__ grad_weight,
+    float* __restrict__ grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
+    std::int64_t row_chunk_size,
+    std::int64_t row_chunks) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  weight = ct::assume_aligned(weight, 16_ic);
+  mean = ct::assume_aligned(mean, 16_ic);
+  rstd = ct::assume_aligned(rstd, 16_ic);
+  residual_grad = ct::assume_aligned(residual_grad, 16_ic);
+  residual_scale = ct::assume_aligned(residual_scale, 16_ic);
+  out = ct::assume_aligned(out, 16_ic);
+  grad_weight = ct::assume_aligned(grad_weight, 16_ic);
+  grad_bias = ct::assume_aligned(grad_bias, 16_ic);
+
+  const std::int64_t dim_block = static_cast<std::int64_t>(ct::bid().x);
+  const std::int64_t row_chunk = static_cast<std::int64_t>(ct::bid().y);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto d = ct::iota<IndexTile>() + ct::full<IndexTile>(dim_block * kTileSize);
+  auto mask = d < ct::full<IndexTile>(dim);
+  auto zero = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  auto weight_tile = ct::load_masked(weight + d, mask);
+  auto scale_tile = ct::full<decltype(zero)>(*residual_scale);
+  auto dim_f = ct::full<decltype(zero)>(static_cast<float>(dim));
+  auto grad_weight_acc = zero;
+  auto grad_bias_acc = zero;
+  const std::int64_t row_start = row_chunk * row_chunk_size;
+  const std::int64_t row_end = (row_start + row_chunk_size < rows) ? row_start + row_chunk_size : rows;
+  for (std::int64_t row = row_start; row < row_end; ++row) {
+    auto base = ct::full<IndexTile>(row * dim);
+    auto x_tile = ct::load_masked(x + base + d, mask);
+    auto grad_tile = ct::load_masked(grad_out + base + d, mask);
+    auto valid_grad = ct::select(mask, grad_tile, zero);
+    auto mean_tile = ct::full<decltype(zero)>(mean[row]);
+    auto inv_std = ct::full<decltype(zero)>(rstd[row]);
+    auto centered = ct::select(mask, x_tile - mean_tile, zero);
+    auto xhat = centered * inv_std;
+    grad_weight_acc = grad_weight_acc + valid_grad * xhat;
+    grad_bias_acc = grad_bias_acc + valid_grad;
+    auto grad_norm = ct::select(mask, grad_tile * weight_tile, zero);
+    auto sum_grad = ct::sum(grad_norm, 0_ic);
+    auto sum_grad_xhat = ct::sum(grad_norm * xhat, 0_ic);
+    auto grad_x_tile = (grad_norm * dim_f - sum_grad - xhat * sum_grad_xhat) * (inv_std / dim_f);
+    auto residual_tile = ct::load_masked(residual_grad + base + d, mask);
+    ct::store_masked(out + base + d, residual_tile + scale_tile * grad_x_tile, mask);
+  }
+  auto active = row_chunk < row_chunks ? mask : ct::full<decltype(mask)>(false);
+  ct::atomic_add_masked<ct::memory_order::relaxed>(grad_weight + d, grad_weight_acc, active);
+  ct::atomic_add_masked<ct::memory_order::relaxed>(grad_bias + d, grad_bias_acc, active);
+}
+
+__tile_global__ void layer_norm_backward_affine_residual_add_chunked_atomic_with_stats_bf16_bits_float32_kernel(
+    const std::uint16_t* __restrict__ x_bf16_bits,
+    const float* __restrict__ grad_out,
+    const float* __restrict__ weight,
+    const float* __restrict__ mean,
+    const float* __restrict__ rstd,
+    const float* __restrict__ residual_grad,
+    const float* __restrict__ residual_scale,
+    float* __restrict__ out,
+    float* __restrict__ grad_weight,
+    float* __restrict__ grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
+    std::int64_t row_chunk_size,
+    std::int64_t row_chunks) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  const auto* x_bf16 = ct::assume_aligned(reinterpret_cast<const __nv_bfloat16*>(x_bf16_bits), 16_ic);
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  weight = ct::assume_aligned(weight, 16_ic);
+  mean = ct::assume_aligned(mean, 16_ic);
+  rstd = ct::assume_aligned(rstd, 16_ic);
+  residual_grad = ct::assume_aligned(residual_grad, 16_ic);
+  residual_scale = ct::assume_aligned(residual_scale, 16_ic);
+  out = ct::assume_aligned(out, 16_ic);
+  grad_weight = ct::assume_aligned(grad_weight, 16_ic);
+  grad_bias = ct::assume_aligned(grad_bias, 16_ic);
+
+  const std::int64_t dim_block = static_cast<std::int64_t>(ct::bid().x);
+  const std::int64_t row_chunk = static_cast<std::int64_t>(ct::bid().y);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  auto d = ct::iota<IndexTile>() + ct::full<IndexTile>(dim_block * kTileSize);
+  auto mask = d < ct::full<IndexTile>(dim);
+  auto zero = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
+  auto weight_tile = ct::load_masked(weight + d, mask);
+  auto scale_tile = ct::full<decltype(zero)>(*residual_scale);
+  auto dim_f = ct::full<decltype(zero)>(static_cast<float>(dim));
+  auto grad_weight_acc = zero;
+  auto grad_bias_acc = zero;
+  const std::int64_t row_start = row_chunk * row_chunk_size;
+  const std::int64_t row_end = (row_start + row_chunk_size < rows) ? row_start + row_chunk_size : rows;
+  for (std::int64_t row = row_start; row < row_end; ++row) {
+    auto base = ct::full<IndexTile>(row * dim);
+    auto x_tile = ct::element_cast<float>(ct::load_masked(x_bf16 + base + d, mask));
+    auto grad_tile = ct::load_masked(grad_out + base + d, mask);
+    auto valid_grad = ct::select(mask, grad_tile, zero);
+    auto mean_tile = ct::full<decltype(zero)>(mean[row]);
+    auto inv_std = ct::full<decltype(zero)>(rstd[row]);
+    auto centered = ct::select(mask, x_tile - mean_tile, zero);
+    auto xhat = centered * inv_std;
+    grad_weight_acc = grad_weight_acc + valid_grad * xhat;
+    grad_bias_acc = grad_bias_acc + valid_grad;
+    auto grad_norm = ct::select(mask, grad_tile * weight_tile, zero);
+    auto sum_grad = ct::sum(grad_norm, 0_ic);
+    auto sum_grad_xhat = ct::sum(grad_norm * xhat, 0_ic);
+    auto grad_x_tile = (grad_norm * dim_f - sum_grad - xhat * sum_grad_xhat) * (inv_std / dim_f);
+    auto residual_tile = ct::load_masked(residual_grad + base + d, mask);
+    ct::store_masked(out + base + d, residual_tile + scale_tile * grad_x_tile, mask);
+  }
+  auto active = row_chunk < row_chunks ? mask : ct::full<decltype(mask)>(false);
+  ct::atomic_add_masked<ct::memory_order::relaxed>(grad_weight + d, grad_weight_acc, active);
+  ct::atomic_add_masked<ct::memory_order::relaxed>(grad_bias + d, grad_bias_acc, active);
+}
+
 __tile_global__ void softmax_lastdim_float32_kernel(
     const float* __restrict__ x,
     float* __restrict__ out,
@@ -11263,6 +11393,90 @@ void launch_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32(
   }
   layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32_kernel<<<1, 1, 0, stream>>>(
       x_bf16_bits, grad_out, mean, rstd, grad_weight, grad_bias, rows, dim);
+}
+
+bool launch_layer_norm_backward_affine_residual_add_accumulate_with_stats_float32(
+    const float* x,
+    const float* grad_out,
+    const float* weight,
+    const float* mean,
+    const float* rstd,
+    const float* residual_grad,
+    const float* residual_scale,
+    float* out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
+    cudaStream_t stream) {
+  if (dim > kTileSize) {
+    return false;
+  }
+  const std::int64_t kRowChunkSize = layer_norm_backward_affine_row_chunk_size();
+  const std::int64_t dim_blocks = (dim + kTileSize - 1) / kTileSize;
+  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
+  layer_norm_backward_affine_residual_add_chunked_atomic_with_stats_float32_kernel<<<
+      dim3(static_cast<unsigned int>(dim_blocks), static_cast<unsigned int>(row_chunks), 1),
+      1,
+      0,
+      stream>>>(
+      x,
+      grad_out,
+      weight,
+      mean,
+      rstd,
+      residual_grad,
+      residual_scale,
+      out,
+      grad_weight,
+      grad_bias,
+      rows,
+      dim,
+      kRowChunkSize,
+      row_chunks);
+  return true;
+}
+
+bool launch_layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    const float* grad_out,
+    const float* weight,
+    const float* mean,
+    const float* rstd,
+    const float* residual_grad,
+    const float* residual_scale,
+    float* out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t dim,
+    cudaStream_t stream) {
+  if (dim > kTileSize) {
+    return false;
+  }
+  const std::int64_t kRowChunkSize = layer_norm_backward_affine_row_chunk_size();
+  const std::int64_t dim_blocks = (dim + kTileSize - 1) / kTileSize;
+  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
+  layer_norm_backward_affine_residual_add_chunked_atomic_with_stats_bf16_bits_float32_kernel<<<
+      dim3(static_cast<unsigned int>(dim_blocks), static_cast<unsigned int>(row_chunks), 1),
+      1,
+      0,
+      stream>>>(
+      x_bf16_bits,
+      grad_out,
+      weight,
+      mean,
+      rstd,
+      residual_grad,
+      residual_scale,
+      out,
+      grad_weight,
+      grad_bias,
+      rows,
+      dim,
+      kRowChunkSize,
+      row_chunks);
+  return true;
 }
 
 void launch_softmax_lastdim_float32(

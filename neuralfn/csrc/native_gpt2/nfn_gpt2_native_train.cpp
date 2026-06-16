@@ -759,6 +759,8 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_layer_norm_backward_affine_float32",
         "nfn_native_tile_layer_norm_backward_affine_accumulate_float32",
         "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32",
+        "nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_float32",
+        "nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits_float32",
         "nfn_native_tile_linear_float32",
         "nfn_native_tile_linear_bf16_float32",
         "nfn_native_tile_linear_weight_bf16_float32",
@@ -7012,6 +7014,8 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_layer_norm_backward_affine_accumulate_float32",
         "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_float32",
         "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32",
+        "nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_float32",
+        "nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits_float32",
         "nfn_native_tile_linear_float32",
         "nfn_native_tile_linear_bf16_float32",
         "nfn_native_tile_linear_weight_bf16_float32",
@@ -7186,6 +7190,12 @@ int run_transformer_lm_training_json(
         const float*, const float*, const float*, const float*, float*, float*, std::int64_t, std::int64_t, void*);
     using LayerNormBackwardAffineAccumulateWithStatsBf16BitsFn = int (*)(
         const std::uint16_t*, const float*, const float*, const float*, float*, float*, std::int64_t, std::int64_t, void*);
+    using LayerNormBackwardAffineResidualAddAccumulateWithStatsFn = int (*)(
+        const float*, const float*, const float*, const float*, const float*,
+        const float*, const float*, float*, float*, float*, std::int64_t, std::int64_t, void*);
+    using LayerNormBackwardAffineResidualAddAccumulateWithStatsBf16BitsFn = int (*)(
+        const std::uint16_t*, const float*, const float*, const float*, const float*,
+        const float*, const float*, float*, float*, float*, std::int64_t, std::int64_t, void*);
     using LinearFn = int (*)(
         const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
     using LinearBf16OutputFn = int (*)(
@@ -7436,6 +7446,10 @@ int run_transformer_lm_training_json(
     LayerNormBackwardAffineAccumulateWithStatsFn layer_norm_backward_affine_accumulate_with_stats = nullptr;
     LayerNormBackwardAffineAccumulateWithStatsBf16BitsFn
         layer_norm_backward_affine_accumulate_with_stats_bf16_bits = nullptr;
+    LayerNormBackwardAffineResidualAddAccumulateWithStatsFn
+        layer_norm_backward_affine_residual_add_accumulate_with_stats = nullptr;
+    LayerNormBackwardAffineResidualAddAccumulateWithStatsBf16BitsFn
+        layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits = nullptr;
     LinearFn linear = nullptr;
     LinearBf16OutputFn linear_bf16_output = nullptr;
     LinearWeightBf16Fn linear_weight_bf16 = nullptr;
@@ -7688,6 +7702,14 @@ int run_transformer_lm_training_json(
                     load_symbol<LayerNormBackwardAffineAccumulateWithStatsBf16BitsFn>(
                         tile_handle,
                         "nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32");
+                layer_norm_backward_affine_residual_add_accumulate_with_stats =
+                    load_symbol<LayerNormBackwardAffineResidualAddAccumulateWithStatsFn>(
+                        tile_handle,
+                        "nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_float32");
+                layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits =
+                    load_symbol<LayerNormBackwardAffineResidualAddAccumulateWithStatsBf16BitsFn>(
+                        tile_handle,
+                        "nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits_float32");
                 linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
                 linear_weight_bf16 =
                     load_symbol<LinearWeightBf16Fn>(tile_handle, "nfn_native_tile_linear_weight_bf16_float32");
@@ -8090,6 +8112,18 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH",
                               "NFN_NATIVE_GPT2_DIRECT_BF16_QKV_GRAD_SCRATCH"}),
             true);
+    const bool grad_qkv_float_scratch_elided =
+        bf16_qkv_grad_handoff_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_ELIDE_QKV_FLOAT_GRAD_SCRATCH",
+                              "NFN_NATIVE_GPT2_ELIDE_QKV_FLOAT_GRAD_SCRATCH"}),
+            true);
+    const std::int64_t grad_qkv_float_scratch_elements =
+        grad_qkv_float_scratch_elided ? 0 : qkv_activation_elements;
+    const std::int64_t grad_qkv_float_scratch_bytes_elided =
+        grad_qkv_float_scratch_elided
+            ? qkv_activation_elements * static_cast<std::int64_t>(sizeof(float))
+            : 0;
     const bool bf16_qkv_dweight_enabled =
         direct_bf16_qkv_grad_scratch_enabled &&
         env_flag_enabled_or_default(
@@ -8147,6 +8181,12 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_FUSE_LN_BACKWARD_RESIDUAL",
                               "NFN_NATIVE_GPT2_FUSE_LN_BACKWARD_RESIDUAL"}),
+            true);
+    const bool fuse_ln_backward_affine_residual_enabled =
+        fuse_ln_backward_residual_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_FUSE_LN_BACKWARD_AFFINE_RESIDUAL",
+                              "NFN_NATIVE_GPT2_FUSE_LN_BACKWARD_AFFINE_RESIDUAL"}),
             true);
     const bool bf16_residual1_ln_backward_enabled =
         layer_norm_stats_enabled &&
@@ -9543,7 +9583,7 @@ int run_transformer_lm_training_json(
              {&grad_residual1_from_mlp, fuse_ln_backward_residual_enabled ? 0 : activation_elements},
              {&grad_residual1, activation_elements},
              {&grad_attn_out, bf16_attention_grad_out_handoff_enabled ? 0 : activation_elements},
-             {&grad_qkv, qkv_activation_elements}, {&grad_ln1, activation_elements},
+             {&grad_qkv, grad_qkv_float_scratch_elements}, {&grad_ln1, activation_elements},
              {&grad_x_from_attn, fuse_ln_backward_residual_enabled ? 0 : activation_elements},
              {&grad_x, activation_elements},
              {&stored_packed_attention_lse_arena, stored_packed_attention_lse_elements},
@@ -10500,6 +10540,75 @@ int run_transformer_lm_training_json(
         run(layer_norm_backward_affine_accumulate_with_stats_bf16_bits(
                 input_bf16_bits, grad_out, mean, rstd, grad_weight, grad_bias, active_rows, kDim, nullptr),
             name);
+    };
+    std::int64_t layer_norm_backward_affine_residual_fused_kernel_launches = 0;
+    auto run_layer_norm_backward_affine_residual_add_accumulate = [&](
+                                                                      const float* input,
+                                                                      const float* grad_out,
+                                                                      const float* weight,
+                                                                      const float* mean,
+                                                                      const float* rstd,
+                                                                      const float* residual_grad,
+                                                                      const float* residual_scale_ptr,
+                                                                      float* out,
+                                                                      float* grad_weight,
+                                                                      float* grad_bias,
+                                                                      const std::string& name) {
+        if (!error.empty()) {
+            return;
+        }
+        run(layer_norm_backward_affine_residual_add_accumulate_with_stats(
+                input,
+                grad_out,
+                weight,
+                mean,
+                rstd,
+                residual_grad,
+                residual_scale_ptr,
+                out,
+                grad_weight,
+                grad_bias,
+                active_rows,
+                kDim,
+                nullptr),
+            name);
+        if (error.empty()) {
+            layer_norm_backward_affine_residual_fused_kernel_launches += 1;
+        }
+    };
+    auto run_layer_norm_backward_affine_residual_add_accumulate_bf16_bits = [&](
+                                                                                const std::uint16_t* input_bf16_bits,
+                                                                                const float* grad_out,
+                                                                                const float* weight,
+                                                                                const float* mean,
+                                                                                const float* rstd,
+                                                                                const float* residual_grad,
+                                                                                const float* residual_scale_ptr,
+                                                                                float* out,
+                                                                                float* grad_weight,
+                                                                                float* grad_bias,
+                                                                                const std::string& name) {
+        if (!error.empty()) {
+            return;
+        }
+        run(layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits(
+                input_bf16_bits,
+                grad_out,
+                weight,
+                mean,
+                rstd,
+                residual_grad,
+                residual_scale_ptr,
+                out,
+                grad_weight,
+                grad_bias,
+                active_rows,
+                kDim,
+                nullptr),
+            name);
+        if (error.empty()) {
+            layer_norm_backward_affine_residual_fused_kernel_launches += 1;
+        }
     };
     auto run_layer_norm_backward_input = [&](
                                              const float* input,
@@ -11825,28 +11934,60 @@ int run_transformer_lm_training_json(
             const float* ln2_rstd = stored_mlp != nullptr ? stored_mlp->ln2_rstd : tape.ln2_rstd;
             const bool use_bf16_residual1_ln_backward =
                 bf16_residual1_ln_backward_enabled && stored_residual1_bf16 != nullptr;
-            run_timed_stage("block_backward.ln2_residual.affine", [&]() {
-                if (use_bf16_residual1_ln_backward) {
-                    run_layer_norm_backward_affine_accumulate_bf16_bits(
-                        stored_residual1_bf16,
-                        grad_ln2,
-                        ln2_mean,
-                        ln2_rstd,
-                        block.accum_grad_ln2_weight,
-                        block.accum_grad_ln2_bias,
-                        label + ".ln2.backward_affine.accumulate.bf16_bits");
-                } else {
-                    run_layer_norm_backward_affine_accumulate(
-                        tape.residual1,
-                        grad_ln2,
-                        ln2_mean,
-                        ln2_rstd,
-                        block.accum_grad_ln2_weight,
-                        block.accum_grad_ln2_bias,
-                        label + ".ln2.backward_affine.accumulate");
-                }
-            });
-            if (fuse_ln_backward_residual_enabled) {
+            const bool use_fused_ln2_affine_residual =
+                fuse_ln_backward_affine_residual_enabled && active_rows > 0 && kDim <= 1024;
+            if (use_fused_ln2_affine_residual) {
+                run_timed_stage("block_backward.ln2_residual.fused_affine_dinput_add", [&]() {
+                    if (use_bf16_residual1_ln_backward) {
+                        run_layer_norm_backward_affine_residual_add_accumulate_bf16_bits(
+                            stored_residual1_bf16,
+                            grad_ln2,
+                            block.ln2_weight,
+                            ln2_mean,
+                            ln2_rstd,
+                            incoming_grad,
+                            residual_scale,
+                            grad_residual1,
+                            block.accum_grad_ln2_weight,
+                            block.accum_grad_ln2_bias,
+                            label + ".ln2.backward_affine_input_residual_add.accumulate.bf16_bits");
+                    } else {
+                        run_layer_norm_backward_affine_residual_add_accumulate(
+                            tape.residual1,
+                            grad_ln2,
+                            block.ln2_weight,
+                            ln2_mean,
+                            ln2_rstd,
+                            incoming_grad,
+                            residual_scale,
+                            grad_residual1,
+                            block.accum_grad_ln2_weight,
+                            block.accum_grad_ln2_bias,
+                            label + ".ln2.backward_affine_input_residual_add.accumulate");
+                    }
+                });
+            } else if (fuse_ln_backward_residual_enabled) {
+                run_timed_stage("block_backward.ln2_residual.affine", [&]() {
+                    if (use_bf16_residual1_ln_backward) {
+                        run_layer_norm_backward_affine_accumulate_bf16_bits(
+                            stored_residual1_bf16,
+                            grad_ln2,
+                            ln2_mean,
+                            ln2_rstd,
+                            block.accum_grad_ln2_weight,
+                            block.accum_grad_ln2_bias,
+                            label + ".ln2.backward_affine.accumulate.bf16_bits");
+                    } else {
+                        run_layer_norm_backward_affine_accumulate(
+                            tape.residual1,
+                            grad_ln2,
+                            ln2_mean,
+                            ln2_rstd,
+                            block.accum_grad_ln2_weight,
+                            block.accum_grad_ln2_bias,
+                            label + ".ln2.backward_affine.accumulate");
+                    }
+                });
                 run_timed_stage("block_backward.ln2_residual.dinput_add", [&]() {
                     if (error.empty()) {
                         if (use_bf16_residual1_ln_backward) {
@@ -11881,6 +12022,16 @@ int run_transformer_lm_training_json(
                     }
                 });
             } else {
+                run_timed_stage("block_backward.ln2_residual.affine", [&]() {
+                    run_layer_norm_backward_affine_accumulate(
+                        tape.residual1,
+                        grad_ln2,
+                        ln2_mean,
+                        ln2_rstd,
+                        block.accum_grad_ln2_weight,
+                        block.accum_grad_ln2_bias,
+                        label + ".ln2.backward_affine.accumulate");
+                });
                 run_timed_stage("block_backward.ln2_residual.dinput", [&]() {
                     run_layer_norm_backward_input(tape.residual1, grad_ln2, block.ln2_weight, ln2_mean, ln2_rstd, grad_residual1_from_mlp, label + ".ln2.backward_input");
                 });
@@ -12193,10 +12344,27 @@ int run_transformer_lm_training_json(
             });
         });
         run_timed_stage("block_backward.ln1_residual", [&]() {
-            run_timed_stage("block_backward.ln1_residual.affine", [&]() {
-                run_layer_norm_backward_affine_accumulate(block_input, grad_ln1, active_ln1_mean, active_ln1_rstd, block.accum_grad_ln1_weight, block.accum_grad_ln1_bias, label + ".ln1.backward_affine.accumulate");
-            });
-            if (fuse_ln_backward_residual_enabled) {
+            const bool use_fused_ln1_affine_residual =
+                fuse_ln_backward_affine_residual_enabled && active_rows > 0 && kDim <= 1024;
+            if (use_fused_ln1_affine_residual) {
+                run_timed_stage("block_backward.ln1_residual.fused_affine_dinput_add", [&]() {
+                    run_layer_norm_backward_affine_residual_add_accumulate(
+                        block_input,
+                        grad_ln1,
+                        block.ln1_weight,
+                        active_ln1_mean,
+                        active_ln1_rstd,
+                        grad_residual1,
+                        residual_scale,
+                        output_grad,
+                        block.accum_grad_ln1_weight,
+                        block.accum_grad_ln1_bias,
+                        label + ".ln1.backward_affine_input_residual_add.accumulate");
+                });
+            } else if (fuse_ln_backward_residual_enabled) {
+                run_timed_stage("block_backward.ln1_residual.affine", [&]() {
+                    run_layer_norm_backward_affine_accumulate(block_input, grad_ln1, active_ln1_mean, active_ln1_rstd, block.accum_grad_ln1_weight, block.accum_grad_ln1_bias, label + ".ln1.backward_affine.accumulate");
+                });
                 run_timed_stage("block_backward.ln1_residual.dinput_add", [&]() {
                     if (error.empty()) {
                         run(layer_norm_backward_input_residual_add_with_stats(
@@ -12215,6 +12383,9 @@ int run_transformer_lm_training_json(
                     }
                 });
             } else {
+                run_timed_stage("block_backward.ln1_residual.affine", [&]() {
+                    run_layer_norm_backward_affine_accumulate(block_input, grad_ln1, active_ln1_mean, active_ln1_rstd, block.accum_grad_ln1_weight, block.accum_grad_ln1_bias, label + ".ln1.backward_affine.accumulate");
+                });
                 run_timed_stage("block_backward.ln1_residual.dinput", [&]() {
                     run_layer_norm_backward_input(block_input, grad_ln1, block.ln1_weight, active_ln1_mean, active_ln1_rstd, grad_x_from_attn, label + ".ln1.backward_input");
                 });
@@ -13516,6 +13687,17 @@ int run_transformer_lm_training_json(
         << attention_grad_out_bf16_elements << ",\n"
         << "  \"attention_backward_bf16_grad_out_scratch_bytes\": "
         << attention_grad_out_bf16_bytes << ",\n"
+        << "  \"attention_backward_qkv_float_grad_scratch_elided\": "
+        << (grad_qkv_float_scratch_elided ? "true" : "false") << ",\n"
+        << "  \"attention_backward_qkv_float_grad_scratch_elements\": "
+        << grad_qkv_float_scratch_elements << ",\n"
+        << "  \"attention_backward_qkv_float_grad_scratch_bytes_elided\": "
+        << grad_qkv_float_scratch_bytes_elided << ",\n"
+        << "  \"attention_backward_qkv_float_grad_scratch_strategy\": \""
+        << (grad_qkv_float_scratch_elided
+                ? "elided-bf16-qkv-grad-handoff"
+                : "float32-qkv-grad-expansion")
+        << "\",\n"
         << "  \"attention_backward_direct_bf16_qkv_grad_scratch_enabled\": "
         << (direct_bf16_qkv_grad_scratch_enabled ? "true" : "false") << ",\n"
         << "  \"attention_backward_direct_bf16_qkv_grad_scratch_elements\": "
@@ -14084,6 +14266,10 @@ int run_transformer_lm_training_json(
         << (fuse_attention_residual_ln2_enabled && !layer_norm_stats_enabled ? "true" : "false") << ",\n"
         << "    \"layer_norm_backward_residual_fusion_enabled\": "
         << (fuse_ln_backward_residual_enabled ? "true" : "false") << ",\n"
+        << "    \"layer_norm_backward_affine_residual_fusion_enabled\": "
+        << (fuse_ln_backward_affine_residual_enabled ? "true" : "false") << ",\n"
+        << "    \"layer_norm_backward_affine_residual_fused_kernel_launches\": "
+        << layer_norm_backward_affine_residual_fused_kernel_launches << ",\n"
         << "    \"layer_norm_backward_residual_scratch_buffers_allocated\": "
         << (fuse_ln_backward_residual_enabled ? "false" : "true") << ",\n"
         << "    \"layer_norm_backward_residual_scratch_buffers_elided\": "
@@ -14091,7 +14277,9 @@ int run_transformer_lm_training_json(
         << "    \"layer_norm_backward_residual_scratch_elements_elided\": "
         << (fuse_ln_backward_residual_enabled ? activation_elements * 2 : 0) << ",\n"
         << "    \"layer_norm_backward_residual_strategy\": \""
-        << (fuse_ln_backward_residual_enabled
+        << (fuse_ln_backward_affine_residual_enabled
+                ? "fused-affine-dinput-residual-add-with-forward-stats"
+                : fuse_ln_backward_residual_enabled
                 ? "fused-dinput-residual-add-with-forward-stats"
                 : "separate-dinput-plus-residual-add")
         << "\",\n"
