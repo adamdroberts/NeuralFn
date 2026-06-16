@@ -616,6 +616,15 @@ void launch_linear_bias_residual_add_float32(
     std::int64_t rows,
     std::int64_t output_dim,
     cudaStream_t stream);
+void launch_linear_bias_residual_add_bf16_linear_float32(
+    const float* residual,
+    const std::uint16_t* linear_out_bf16_bits,
+    const float* bias,
+    const float* residual_scale,
+    float* out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    cudaStream_t stream);
 void launch_linear_bias_residual_layer_norm_float32(
     const float* residual,
     const float* linear_out,
@@ -644,6 +653,21 @@ void launch_linear_bias_residual_layer_norm_with_stats_float32(
     std::int64_t output_dim,
     float eps,
     cudaStream_t stream);
+void launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32(
+    const float* residual,
+    const std::uint16_t* linear_out_bf16_bits,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    float* mean_out,
+    float* rstd_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    cudaStream_t stream);
 void launch_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32(
     const float* residual,
     const float* linear_out,
@@ -660,9 +684,42 @@ void launch_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32(
     std::int64_t output_dim,
     float eps,
     cudaStream_t stream);
+void launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_float32(
+    const float* residual,
+    const std::uint16_t* linear_out_bf16_bits,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    float* mean_out,
+    float* rstd_out,
+    std::uint16_t* residual_bf16_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    cudaStream_t stream);
 void launch_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_float32(
     const float* residual,
     const float* linear_out,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    float* mean_out,
+    float* rstd_out,
+    std::uint16_t* residual_bf16_out,
+    std::uint16_t* norm_bf16_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    cudaStream_t stream);
+void launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm_float32(
+    const float* residual,
+    const std::uint16_t* linear_out_bf16_bits,
     const float* linear_bias,
     const float* residual_scale,
     const float* norm_weight,
@@ -2663,6 +2720,20 @@ int nfn_native_tile_linear_bias_residual_add_float32(
     return launch_status();
 }
 
+int nfn_native_tile_linear_bias_residual_add_bf16_linear_float32(
+    const float* residual,
+    const std::uint16_t* linear_out_bf16_bits,
+    const float* bias,
+    const float* residual_scale,
+    float* out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_bias_residual_add_bf16_linear_float32(
+        residual, linear_out_bf16_bits, bias, residual_scale, out, rows, output_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_linear_bias_residual_layer_norm_float32(
     const float* residual,
     const float* linear_out,
@@ -2725,6 +2796,39 @@ int nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32(
     return launch_status();
 }
 
+int nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32(
+    const float* residual,
+    const std::uint16_t* linear_out_bf16_bits,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    float* mean_out,
+    float* rstd_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32(
+        residual,
+        linear_out_bf16_bits,
+        linear_bias,
+        residual_scale,
+        norm_weight,
+        norm_bias,
+        residual_out,
+        norm_out,
+        mean_out,
+        rstd_out,
+        rows,
+        output_dim,
+        eps,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32(
     const float* residual,
     const float* linear_out,
@@ -2744,6 +2848,41 @@ int nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_flo
     neuralfn::tile_cuda::launch_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32(
         residual,
         linear_out,
+        linear_bias,
+        residual_scale,
+        norm_weight,
+        norm_bias,
+        residual_out,
+        norm_out,
+        mean_out,
+        rstd_out,
+        residual_bf16_out,
+        rows,
+        output_dim,
+        eps,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_float32(
+    const float* residual,
+    const std::uint16_t* linear_out_bf16_bits,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    float* mean_out,
+    float* rstd_out,
+    std::uint16_t* residual_bf16_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_float32(
+        residual,
+        linear_out_bf16_bits,
         linear_bias,
         residual_scale,
         norm_weight,
@@ -2780,6 +2919,43 @@ int nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf1
     neuralfn::tile_cuda::launch_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_float32(
         residual,
         linear_out,
+        linear_bias,
+        residual_scale,
+        norm_weight,
+        norm_bias,
+        residual_out,
+        norm_out,
+        mean_out,
+        rstd_out,
+        residual_bf16_out,
+        norm_bf16_out,
+        rows,
+        output_dim,
+        eps,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm_float32(
+    const float* residual,
+    const std::uint16_t* linear_out_bf16_bits,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    float* mean_out,
+    float* rstd_out,
+    std::uint16_t* residual_bf16_out,
+    std::uint16_t* norm_bf16_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm_float32(
+        residual,
+        linear_out_bf16_bits,
         linear_bias,
         residual_scale,
         norm_weight,

@@ -837,10 +837,14 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_merged_grad_float32",
         "nfn_native_tile_scaled_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_add_float32",
+        "nfn_native_tile_linear_bias_residual_add_bf16_linear_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32",
+        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32",
+        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_float32",
+        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm_float32",
         "nfn_native_tile_gelu_float32",
         "nfn_native_tile_gelu_add_bias_float32",
         "nfn_native_tile_gelu_backward_float32",
@@ -1143,6 +1147,11 @@ bool print_tile_plan(
                 true);
     const std::int64_t qkv_activation_elements = hidden * 3;
     const bool fuse_attention_residual_ln2_enabled = fuse_attention_residual_ln2_default_enabled();
+    const bool bf16_projection_residual_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_BF16_PROJECTION_RESIDUAL",
+                              "NFN_NATIVE_GPT2_BF16_PROJECTION_RESIDUAL"}),
+            true);
     const std::string store_packed_attention_activations_env =
         env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_ACTIVATIONS",
                           "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_ACTIVATIONS"});
@@ -1168,6 +1177,10 @@ bool print_tile_plan(
         packed_qkv_attention_enabled ? (tokens * 768 * 4 * activation_tape_count) : 0;
     const std::int64_t packed_qkv_attention_bf16_bytes =
         packed_qkv_attention_bf16_elements * static_cast<std::int64_t>(sizeof(std::uint16_t));
+    const std::int64_t projection_bf16_scratch_elements =
+        bf16_projection_residual_enabled ? (hidden * activation_tape_count) : 0;
+    const std::int64_t projection_bf16_scratch_bytes =
+        projection_bf16_scratch_elements * static_cast<std::int64_t>(sizeof(std::uint16_t));
     const bool packed_qkv_float_attention_tape_elided = packed_qkv_attention_enabled;
     const std::int64_t packed_qkv_float_attention_tape_elements_elided =
         packed_qkv_float_attention_tape_elided ? (tokens * 768 * 8) : 0;
@@ -1332,8 +1345,14 @@ bool print_tile_plan(
         << (packed_qkv_attention_enabled ? 2 : 1) << ",\n"
         << "  \"attention_backward_qkv_bridge_legacy_launches_per_block\": 4,\n"
         << "  \"attention_backward_qkv_bridge_launches_elided_per_block\": 3,\n"
+        << "  \"bf16_projection_residual_enabled\": "
+        << (bf16_projection_residual_enabled ? "true" : "false") << ",\n"
         << "  \"attention_projection_input_strategy\": \""
-        << (packed_qkv_attention_enabled ? "packed-o-bf16-direct-gemm" : "float32-attention-output-bf16-gemm")
+        << (bf16_projection_residual_enabled
+                ? (packed_qkv_attention_enabled
+                       ? "packed-o-bf16-direct-gemm-bf16-residual-consumer"
+                       : "float32-attention-output-bf16-gemm-bf16-residual-consumer")
+                : (packed_qkv_attention_enabled ? "packed-o-bf16-direct-gemm" : "float32-attention-output-bf16-gemm"))
         << "\",\n"
         << "  \"attention_packed_output_unpack_strategy\": \""
         << (packed_qkv_attention_enabled ? "elided-direct-bf16-projection" : "not-packed")
@@ -1342,12 +1361,26 @@ bool print_tile_plan(
         << "  \"mlp_fc_bias_gelu_kernel_launches_per_block\": 1,\n"
         << "  \"mlp_fc_bias_gelu_legacy_launches_per_block\": 2,\n"
         << "  \"mlp_fc_bias_gelu_launches_elided_per_block\": 1,\n"
-        << "  \"mlp_proj_forward_activation_strategy\": \"fused-gelu-bf16-act-direct-gemm\",\n"
+        << "  \"mlp_proj_forward_activation_strategy\": \""
+        << (bf16_projection_residual_enabled
+                ? "fused-gelu-bf16-act-direct-bf16-output-gemm"
+                : "fused-gelu-bf16-act-direct-gemm")
+        << "\",\n"
         << "  \"mlp_forward_act_bf16_elements\": 0,\n"
         << "  \"mlp_forward_act_bf16_bytes\": 0,\n"
-        << "  \"projection_bias_residual_strategy\": \"fused-linear-bias-residual-add\",\n"
+        << "  \"projection_bf16_scratch_elements\": " << projection_bf16_scratch_elements << ",\n"
+        << "  \"projection_bf16_scratch_bytes\": " << projection_bf16_scratch_bytes << ",\n"
+        << "  \"projection_bias_residual_strategy\": \""
+        << (bf16_projection_residual_enabled
+                ? "fused-bf16-linear-bias-residual-add"
+                : "fused-linear-bias-residual-add")
+        << "\",\n"
         << "  \"attention_residual_ln2_strategy\": \""
-        << (fuse_attention_residual_ln2_enabled ? "fused-linear-bias-residual-layernorm" : "disabled")
+        << (fuse_attention_residual_ln2_enabled
+                ? (bf16_projection_residual_enabled
+                       ? "fused-bf16-linear-bias-residual-layernorm"
+                       : "fused-linear-bias-residual-layernorm")
+                : "disabled")
         << "\",\n"
         << "  \"attention_residual_ln2_kernel_launches_per_block\": "
         << (fuse_attention_residual_ln2_enabled ? 1 : 0) << ",\n"
@@ -6926,10 +6959,14 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_absolute_position_embedding_backward_accumulate_float32",
         "nfn_native_tile_scaled_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_add_float32",
+        "nfn_native_tile_linear_bias_residual_add_bf16_linear_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32",
+        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32",
+        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_float32",
+        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm_float32",
         "nfn_native_tile_split_qkv_float32",
         "nfn_native_tile_split_qkv_to_heads_float32",
         "nfn_native_tile_split_qkv_to_heads_add_bias_float32",
@@ -7064,14 +7101,27 @@ int run_transformer_lm_training_json(
     using ResidualAddFn = int (*)(const float*, const float*, const float*, float*, std::int64_t, void*);
     using LinearBiasResidualAddFn =
         int (*)(const float*, const float*, const float*, const float*, float*, std::int64_t, std::int64_t, void*);
+    using LinearBiasResidualAddBf16LinearFn =
+        int (*)(const float*, const std::uint16_t*, const float*, const float*, float*,
+                std::int64_t, std::int64_t, void*);
     using LinearBiasResidualLayerNormWithStatsFn =
         int (*)(const float*, const float*, const float*, const float*, const float*, const float*,
+                float*, float*, float*, float*, std::int64_t, std::int64_t, float, void*);
+    using LinearBiasResidualLayerNormWithStatsBf16LinearFn =
+        int (*)(const float*, const std::uint16_t*, const float*, const float*, const float*, const float*,
                 float*, float*, float*, float*, std::int64_t, std::int64_t, float, void*);
     using LinearBiasResidualLayerNormWithStatsBf16ResidualFn =
         int (*)(const float*, const float*, const float*, const float*, const float*, const float*,
                 float*, float*, float*, float*, std::uint16_t*, std::int64_t, std::int64_t, float, void*);
+    using LinearBiasResidualLayerNormWithStatsBf16LinearBf16ResidualFn =
+        int (*)(const float*, const std::uint16_t*, const float*, const float*, const float*, const float*,
+                float*, float*, float*, float*, std::uint16_t*, std::int64_t, std::int64_t, float, void*);
     using LinearBiasResidualLayerNormWithStatsBf16ResidualBf16NormFn =
         int (*)(const float*, const float*, const float*, const float*, const float*, const float*,
+                float*, float*, float*, float*, std::uint16_t*, std::uint16_t*,
+                std::int64_t, std::int64_t, float, void*);
+    using LinearBiasResidualLayerNormWithStatsBf16LinearBf16ResidualBf16NormFn =
+        int (*)(const float*, const std::uint16_t*, const float*, const float*, const float*, const float*,
                 float*, float*, float*, float*, std::uint16_t*, std::uint16_t*,
                 std::int64_t, std::int64_t, float, void*);
     using SplitQkvToHeadsAddBiasFn = int (*)(
@@ -7307,11 +7357,18 @@ int run_transformer_lm_training_json(
     PositionEmbeddingBackwardAccumulateFn position_embedding_backward_accumulate = nullptr;
     ResidualAddFn residual_add = nullptr;
     LinearBiasResidualAddFn linear_bias_residual_add = nullptr;
+    LinearBiasResidualAddBf16LinearFn linear_bias_residual_add_bf16_linear = nullptr;
     LinearBiasResidualLayerNormWithStatsFn linear_bias_residual_layer_norm_with_stats = nullptr;
+    LinearBiasResidualLayerNormWithStatsBf16LinearFn
+        linear_bias_residual_layer_norm_with_stats_bf16_linear = nullptr;
     LinearBiasResidualLayerNormWithStatsBf16ResidualFn
         linear_bias_residual_layer_norm_with_stats_bf16_residual = nullptr;
+    LinearBiasResidualLayerNormWithStatsBf16LinearBf16ResidualFn
+        linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual = nullptr;
     LinearBiasResidualLayerNormWithStatsBf16ResidualBf16NormFn
         linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm = nullptr;
+    LinearBiasResidualLayerNormWithStatsBf16LinearBf16ResidualBf16NormFn
+        linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm = nullptr;
     SplitQkvToHeadsAddBiasFn split_qkv_to_heads_add_bias = nullptr;
     MergeHeadsFn merge_heads = nullptr;
     LayerNormFn layer_norm = nullptr;
@@ -7515,16 +7572,30 @@ int run_transformer_lm_training_json(
                 residual_add = load_symbol<ResidualAddFn>(tile_handle, "nfn_native_tile_scaled_residual_add_float32");
                 linear_bias_residual_add = load_symbol<LinearBiasResidualAddFn>(
                     tile_handle, "nfn_native_tile_linear_bias_residual_add_float32");
+                linear_bias_residual_add_bf16_linear = load_symbol<LinearBiasResidualAddBf16LinearFn>(
+                    tile_handle, "nfn_native_tile_linear_bias_residual_add_bf16_linear_float32");
                 linear_bias_residual_layer_norm_with_stats = load_symbol<LinearBiasResidualLayerNormWithStatsFn>(
                     tile_handle, "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32");
+                linear_bias_residual_layer_norm_with_stats_bf16_linear =
+                    load_symbol<LinearBiasResidualLayerNormWithStatsBf16LinearFn>(
+                        tile_handle,
+                        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32");
                 linear_bias_residual_layer_norm_with_stats_bf16_residual =
                     load_symbol<LinearBiasResidualLayerNormWithStatsBf16ResidualFn>(
                         tile_handle,
                         "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32");
+                linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual =
+                    load_symbol<LinearBiasResidualLayerNormWithStatsBf16LinearBf16ResidualFn>(
+                        tile_handle,
+                        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_float32");
                 linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm =
                     load_symbol<LinearBiasResidualLayerNormWithStatsBf16ResidualBf16NormFn>(
                         tile_handle,
                         "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_float32");
+                linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm =
+                    load_symbol<LinearBiasResidualLayerNormWithStatsBf16LinearBf16ResidualBf16NormFn>(
+                        tile_handle,
+                        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm_float32");
                 split_qkv_to_heads_add_bias = load_symbol<SplitQkvToHeadsAddBiasFn>(
                     tile_handle, "nfn_native_tile_split_qkv_to_heads_add_bias_float32");
                 merge_heads = load_symbol<MergeHeadsFn>(tile_handle, "nfn_native_tile_merge_heads_float32");
@@ -8046,6 +8117,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO",
                               "NFN_NATIVE_GPT2_CUDA_MEMSET_GRAD_ZERO"}),
             true);
+    const bool bf16_projection_residual_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_BF16_PROJECTION_RESIDUAL",
+                              "NFN_NATIVE_GPT2_BF16_PROJECTION_RESIDUAL"}),
+            true);
     const std::string startup_zero_init_strategy =
         startup_zero_adamw_state_only_enabled
             ? (startup_zero_adamw_state_ranges_enabled
@@ -8468,6 +8544,7 @@ int run_transformer_lm_training_json(
         float* attn_heads = nullptr;
         float* attn_out = nullptr;
         float* attn_proj = nullptr;
+        std::uint16_t* proj_out_bf16 = nullptr;
         float* residual1 = nullptr;
         float* ln2_out = nullptr;
         float* ln2_mean = nullptr;
@@ -8620,6 +8697,9 @@ int run_transformer_lm_training_json(
     std::uint16_t* mlp_forward_act_bf16 = nullptr;
     std::int64_t mlp_forward_act_bf16_elements = 0;
     std::int64_t mlp_forward_act_bf16_bytes = 0;
+    std::uint16_t* projection_bf16_scratch = nullptr;
+    std::int64_t projection_bf16_scratch_elements = 0;
+    std::int64_t projection_bf16_scratch_bytes = 0;
     std::uint16_t* packed_qkv_attention_bf16_arena = nullptr;
     std::int64_t packed_qkv_attention_bf16_elements = 0;
     std::int64_t packed_qkv_attention_bf16_bytes = 0;
@@ -8995,6 +9075,37 @@ int run_transformer_lm_training_json(
         mlp_forward_act_bf16_elements = hidden_elements;
         mlp_forward_act_bf16_bytes = static_cast<std::int64_t>(bytes);
     };
+    auto allocate_projection_bf16_scratch = [&]() {
+        if (!error.empty() || !bf16_projection_residual_enabled) {
+            return;
+        }
+        if (activation_elements <= 0 ||
+            kActivationTapeCount >
+                std::numeric_limits<std::int64_t>::max() / activation_elements ||
+            activation_elements * kActivationTapeCount >
+                static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
+            error = "projection bf16 scratch allocation byte size overflow";
+            return;
+        }
+        const std::int64_t total_elements = activation_elements * kActivationTapeCount;
+        const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(total_elements);
+        if (projection_bf16_scratch == nullptr) {
+            void* raw = nullptr;
+            const int status = cuda_malloc(&raw, bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc projection_bf16_scratch");
+                return;
+            }
+            projection_bf16_scratch = static_cast<std::uint16_t*>(raw);
+            uint16_ptrs.push_back(projection_bf16_scratch);
+        }
+        projection_bf16_scratch_elements = total_elements;
+        projection_bf16_scratch_bytes = static_cast<std::int64_t>(bytes);
+        for (std::size_t i = 0; i < block_tapes.size(); ++i) {
+            block_tapes[i].proj_out_bf16 =
+                projection_bf16_scratch + static_cast<std::int64_t>(i) * activation_elements;
+        }
+    };
     auto allocate_packed_qkv_attention_scratch = [&]() {
         if (!error.empty() || !packed_qkv_attention_enabled) {
             return;
@@ -9243,6 +9354,10 @@ int run_transformer_lm_training_json(
             lm_head_bf16_dweight_enabled ? lm_head_chunk_rows * kDim : 0,
             "lm_head_bf16_hidden");
         allocate_uint16(&mlp_forward_act_bf16, hidden_elements, "mlp_forward_act_bf16");
+        allocate_uint16(
+            &projection_bf16_scratch,
+            bf16_projection_residual_enabled ? activation_elements * kActivationTapeCount : 0,
+            "projection_bf16_scratch");
         if (packed_qkv_attention_enabled) {
             const std::int64_t elements_per_tape = qkv_activation_elements + activation_elements * 2;
             if (elements_per_tape > 0 &&
@@ -9302,6 +9417,9 @@ int run_transformer_lm_training_json(
     });
     run_setup_timed("setup.mlp_forward_act_bf16", [&]() {
         allocate_mlp_forward_act_bf16();
+    });
+    run_setup_timed("setup.projection_bf16_scratch", [&]() {
+        allocate_projection_bf16_scratch();
     });
     run_setup_timed("setup.packed_qkv_attention_scratch", [&]() {
         allocate_packed_qkv_attention_scratch();
@@ -10701,23 +10819,49 @@ int run_transformer_lm_training_json(
             run_timed_stage(stage_name + ".attention.proj", [&]() {
                 if (packed_qkv_attention_enabled) {
                     if (error.empty()) {
-                        run(linear_bf16_input_weight_bf16(
-                                active_packed_attn_out_bf16,
-                                block.attn_proj_weight_bf16,
-                                nullptr,
-                                tape.attn_proj,
-                                active_rows,
-                                kDim,
-                                kDim,
-                                false,
-                                nullptr),
-                            label + ".attn.out.forward.no_bias.packed_o_bf16_bits");
+                        if (bf16_projection_residual_enabled &&
+                            tape.proj_out_bf16 != nullptr &&
+                            linear_bf16_input_weight_bf16_output != nullptr) {
+                            run(linear_bf16_input_weight_bf16_output(
+                                    active_packed_attn_out_bf16,
+                                    block.attn_proj_weight_bf16,
+                                    nullptr,
+                                    tape.proj_out_bf16,
+                                    active_rows,
+                                    kDim,
+                                    kDim,
+                                    false,
+                                    nullptr),
+                                label + ".attn.out.forward.no_bias.packed_o_bf16_bits_to_bf16");
+                        } else {
+                            run(linear_bf16_input_weight_bf16(
+                                    active_packed_attn_out_bf16,
+                                    block.attn_proj_weight_bf16,
+                                    nullptr,
+                                    tape.attn_proj,
+                                    active_rows,
+                                    kDim,
+                                    kDim,
+                                    false,
+                                    nullptr),
+                                label + ".attn.out.forward.no_bias.packed_o_bf16_bits");
+                        }
                     }
                 } else {
-                    if (error.empty()) run(linear_weight_bf16(tape.attn_out, block.attn_proj_weight_bf16, nullptr, tape.attn_proj, active_rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.weight_bf16");
+                    if (error.empty()) {
+                        if (bf16_projection_residual_enabled &&
+                            tape.proj_out_bf16 != nullptr &&
+                            linear_weight_bf16_output != nullptr) {
+                            run(linear_weight_bf16_output(tape.attn_out, block.attn_proj_weight_bf16, nullptr, tape.proj_out_bf16, active_rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.weight_bf16_to_bf16");
+                        } else {
+                            run(linear_weight_bf16(tape.attn_out, block.attn_proj_weight_bf16, nullptr, tape.attn_proj, active_rows, kDim, kDim, false, nullptr), label + ".attn.out.forward.no_bias.weight_bf16");
+                        }
+                    }
                 }
             });
             run_timed_stage(stage_name + ".attention.residual", [&]() {
+                const bool use_bf16_projection_residual =
+                    bf16_projection_residual_enabled && tape.proj_out_bf16 != nullptr;
                 if (compute_mlp_activations && fuse_attention_residual_ln2_enabled) {
                     if (error.empty()) {
                         float* ln2_mean = fused_mlp_store != nullptr ? fused_mlp_store->ln2_mean : tape.ln2_mean;
@@ -10728,7 +10872,28 @@ int run_transformer_lm_training_json(
                             fused_residual1_store != nullptr &&
                             linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm != nullptr;
                         if (fused_residual1_store != nullptr) {
-                            if (can_fuse_ln2_bf16_out) {
+                            if (use_bf16_projection_residual &&
+                                can_fuse_ln2_bf16_out &&
+                                linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm != nullptr) {
+                                run(linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm(
+                                        block_input,
+                                        tape.proj_out_bf16,
+                                        block.attn_proj_bias,
+                                        residual_scale,
+                                        block.ln2_weight,
+                                        block.ln2_bias,
+                                        tape.residual1,
+                                        tape.ln2_out,
+                                        ln2_mean,
+                                        ln2_rstd,
+                                        fused_residual1_store,
+                                        fused_mlp_store->ln2_out,
+                                        active_rows,
+                                        kDim,
+                                        kNormEps,
+                                        nullptr),
+                                    label + ".attn.bias_residual_ln2_bf16_linear_bf16_residual_bf16_norm");
+                            } else if (can_fuse_ln2_bf16_out) {
                                 run(linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm(
                                         block_input,
                                         tape.attn_proj,
@@ -10747,6 +10912,25 @@ int run_transformer_lm_training_json(
                                         kNormEps,
                                         nullptr),
                                     label + ".attn.bias_residual_ln2_bf16_residual_bf16_norm");
+                            } else if (use_bf16_projection_residual &&
+                                       linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual != nullptr) {
+                                run(linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual(
+                                        block_input,
+                                        tape.proj_out_bf16,
+                                        block.attn_proj_bias,
+                                        residual_scale,
+                                        block.ln2_weight,
+                                        block.ln2_bias,
+                                        tape.residual1,
+                                        tape.ln2_out,
+                                        ln2_mean,
+                                        ln2_rstd,
+                                        fused_residual1_store,
+                                        active_rows,
+                                        kDim,
+                                        kNormEps,
+                                        nullptr),
+                                    label + ".attn.bias_residual_ln2_bf16_linear_bf16_residual");
                             } else {
                                 run(linear_bias_residual_layer_norm_with_stats_bf16_residual(
                                         block_input,
@@ -10774,7 +10958,26 @@ int run_transformer_lm_training_json(
                                 }
                             }
                         } else {
-                            run(linear_bias_residual_layer_norm_with_stats(
+                            if (use_bf16_projection_residual &&
+                                linear_bias_residual_layer_norm_with_stats_bf16_linear != nullptr) {
+                                run(linear_bias_residual_layer_norm_with_stats_bf16_linear(
+                                        block_input,
+                                        tape.proj_out_bf16,
+                                        block.attn_proj_bias,
+                                        residual_scale,
+                                        block.ln2_weight,
+                                        block.ln2_bias,
+                                        tape.residual1,
+                                        tape.ln2_out,
+                                        ln2_mean,
+                                        ln2_rstd,
+                                        active_rows,
+                                        kDim,
+                                        kNormEps,
+                                        nullptr),
+                                    label + ".attn.bias_residual_ln2_bf16_linear");
+                            } else {
+                                run(linear_bias_residual_layer_norm_with_stats(
                                     block_input,
                                     tape.attn_proj,
                                     block.attn_proj_bias,
@@ -10789,12 +10992,19 @@ int run_transformer_lm_training_json(
                                     kDim,
                                     kNormEps,
                                     nullptr),
-                                label + ".attn.bias_residual_ln2");
+                                    label + ".attn.bias_residual_ln2");
+                            }
                         }
                         ln2_precomputed = error.empty();
                     }
                 } else {
-                    if (error.empty()) run(linear_bias_residual_add(block_input, tape.attn_proj, block.attn_proj_bias, residual_scale, tape.residual1, active_rows, kDim, nullptr), label + ".attn.bias_residual");
+                    if (error.empty()) {
+                        if (use_bf16_projection_residual && linear_bias_residual_add_bf16_linear != nullptr) {
+                            run(linear_bias_residual_add_bf16_linear(block_input, tape.proj_out_bf16, block.attn_proj_bias, residual_scale, tape.residual1, active_rows, kDim, nullptr), label + ".attn.bias_residual_bf16_linear");
+                        } else {
+                            run(linear_bias_residual_add(block_input, tape.attn_proj, block.attn_proj_bias, residual_scale, tape.residual1, active_rows, kDim, nullptr), label + ".attn.bias_residual");
+                        }
+                    }
                 }
             });
         });
@@ -10860,12 +11070,28 @@ int run_transformer_lm_training_json(
                 run_timed_stage(stage_name + ".mlp_proj.proj", [&]() {
                     const std::uint16_t* act_bits =
                         fused_mlp_store != nullptr ? fused_mlp_store->act : mlp_forward_act_bf16;
-                    if (error.empty()) run(linear_bf16_input_weight_bf16(act_bits, block.mlp_proj_weight_bf16, nullptr, tape.mlp_out, active_rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias.bf16_act_weight_bf16");
+                    if (error.empty()) {
+                        if (bf16_projection_residual_enabled &&
+                            tape.proj_out_bf16 != nullptr &&
+                            linear_bf16_input_weight_bf16_output != nullptr) {
+                            run(linear_bf16_input_weight_bf16_output(act_bits, block.mlp_proj_weight_bf16, nullptr, tape.proj_out_bf16, active_rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias.bf16_act_weight_bf16_to_bf16");
+                        } else {
+                            run(linear_bf16_input_weight_bf16(act_bits, block.mlp_proj_weight_bf16, nullptr, tape.mlp_out, active_rows, kHidden, kDim, false, nullptr), label + ".mlp.proj.forward.no_bias.bf16_act_weight_bf16");
+                        }
+                    }
                 });
                 run_timed_stage(stage_name + ".mlp_proj.residual", [&]() {
                     float* residual2_output =
                         direct_residual2_output != nullptr ? direct_residual2_output : tape.residual2;
-                    if (error.empty()) run(linear_bias_residual_add(tape.residual1, tape.mlp_out, block.mlp_proj_bias, residual_scale, residual2_output, active_rows, kDim, nullptr), label + ".mlp.bias_residual");
+                    if (error.empty()) {
+                        if (bf16_projection_residual_enabled &&
+                            tape.proj_out_bf16 != nullptr &&
+                            linear_bias_residual_add_bf16_linear != nullptr) {
+                            run(linear_bias_residual_add_bf16_linear(tape.residual1, tape.proj_out_bf16, block.mlp_proj_bias, residual_scale, residual2_output, active_rows, kDim, nullptr), label + ".mlp.bias_residual_bf16_linear");
+                        } else {
+                            run(linear_bias_residual_add(tape.residual1, tape.mlp_out, block.mlp_proj_bias, residual_scale, residual2_output, active_rows, kDim, nullptr), label + ".mlp.bias_residual");
+                        }
+                    }
                 });
             });
         }
@@ -12825,8 +13051,14 @@ int run_transformer_lm_training_json(
         << "  \"attention_backward_qkv_bridge_kernel_launches_per_block\": " << (packed_qkv_attention_enabled ? 2 : 1) << ",\n"
         << "  \"attention_backward_qkv_bridge_legacy_launches_per_block\": 4,\n"
         << "  \"attention_backward_qkv_bridge_launches_elided_per_block\": 3,\n"
+        << "  \"bf16_projection_residual_enabled\": "
+        << (bf16_projection_residual_enabled ? "true" : "false") << ",\n"
         << "  \"attention_projection_input_strategy\": \""
-        << (packed_qkv_attention_enabled ? "packed-o-bf16-direct-gemm" : "float32-attention-output-bf16-gemm")
+        << (bf16_projection_residual_enabled
+                ? (packed_qkv_attention_enabled
+                       ? "packed-o-bf16-direct-gemm-bf16-residual-consumer"
+                       : "float32-attention-output-bf16-gemm-bf16-residual-consumer")
+                : (packed_qkv_attention_enabled ? "packed-o-bf16-direct-gemm" : "float32-attention-output-bf16-gemm"))
         << "\",\n"
         << "  \"attention_packed_output_unpack_strategy\": \""
         << (packed_qkv_attention_enabled ? "elided-direct-bf16-projection" : "not-packed")
@@ -12835,12 +13067,26 @@ int run_transformer_lm_training_json(
         << "  \"mlp_fc_bias_gelu_kernel_launches_per_block\": 1,\n"
         << "  \"mlp_fc_bias_gelu_legacy_launches_per_block\": 2,\n"
         << "  \"mlp_fc_bias_gelu_launches_elided_per_block\": 1,\n"
-        << "  \"mlp_proj_forward_activation_strategy\": \"fused-gelu-bf16-act-direct-gemm\",\n"
+        << "  \"mlp_proj_forward_activation_strategy\": \""
+        << (bf16_projection_residual_enabled
+                ? "fused-gelu-bf16-act-direct-bf16-output-gemm"
+                : "fused-gelu-bf16-act-direct-gemm")
+        << "\",\n"
         << "  \"mlp_forward_act_bf16_elements\": " << mlp_forward_act_bf16_elements << ",\n"
         << "  \"mlp_forward_act_bf16_bytes\": " << mlp_forward_act_bf16_bytes << ",\n"
-        << "  \"projection_bias_residual_strategy\": \"fused-linear-bias-residual-add\",\n"
+        << "  \"projection_bf16_scratch_elements\": " << projection_bf16_scratch_elements << ",\n"
+        << "  \"projection_bf16_scratch_bytes\": " << projection_bf16_scratch_bytes << ",\n"
+        << "  \"projection_bias_residual_strategy\": \""
+        << (bf16_projection_residual_enabled
+                ? "fused-bf16-linear-bias-residual-add"
+                : "fused-linear-bias-residual-add")
+        << "\",\n"
         << "  \"attention_residual_ln2_strategy\": \""
-        << (fuse_attention_residual_ln2_enabled ? "fused-linear-bias-residual-layernorm" : "disabled")
+        << (fuse_attention_residual_ln2_enabled
+                ? (bf16_projection_residual_enabled
+                       ? "fused-bf16-linear-bias-residual-layernorm"
+                       : "fused-linear-bias-residual-layernorm")
+                : "disabled")
         << "\",\n"
         << "  \"attention_residual_ln2_kernel_launches_per_block\": "
         << (fuse_attention_residual_ln2_enabled ? 1 : 0) << ",\n"

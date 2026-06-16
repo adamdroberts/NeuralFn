@@ -6,6 +6,52 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Default BF16 projection residual consumers for native GPT
+
+#### Changed
+
+- Added trainer-facing Tile CUDA ABI symbols for BF16 projection-output
+  residual consumers:
+  `nfn_native_tile_linear_bias_residual_add_bf16_linear_float32`,
+  `nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32`,
+  `nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_float32`,
+  and
+  `nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm_float32`.
+- Dense GPT native training now defaults attention and MLP projection forward
+  GEMMs to BF16-output scratch when the following residual consumer can read
+  BF16 bits directly. This avoids converting the rejected TK BF16-output
+  candidate back to float32 just so residual/LN kernels can consume it.
+- Runtime and plan JSON now report `bf16_projection_residual_enabled`,
+  `projection_bf16_scratch_elements`, `projection_bf16_scratch_bytes`,
+  `attention_projection_input_strategy:
+  "packed-o-bf16-direct-gemm-bf16-residual-consumer"`,
+  `mlp_proj_forward_activation_strategy:
+  "fused-gelu-bf16-act-direct-bf16-output-gemm"`,
+  `projection_bias_residual_strategy:
+  "fused-bf16-linear-bias-residual-add"`, and
+  `attention_residual_ln2_strategy:
+  "fused-bf16-linear-bias-residual-layernorm"` for the default path. Set
+  `NFN_NATIVE_GPT_BF16_PROJECTION_RESIDUAL=0` or the
+  `NFN_NATIVE_GPT2_*` fallback only for paired benchmarks against the older
+  float projection-output residual path.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt `build/nfn_gpt_native_train` with
+  `bash tools/build_native_gpt_cli.sh`.
+- Ran a GPU-visible one-step TinyStories smoke on CUDA device 0 with linear
+  shape stats enabled. It reported `passed: true`,
+  `linear_tk_float_out_gemm_count: 0`, `linear_cublaslt_gemm_count: 672`,
+  `sample_gradient_clip_scale: 0.0837135`, and
+  `sample_updated_token_weight: -0.0793953`.
+- Ran a five-sample paired benchmark on the dedicated RTX 5090 with selected
+  GPU idle guards and no compute processes before samples. The BF16
+  projection-residual candidate averaged `2765.24 ms` per optimizer step
+  versus `2768.63 ms` for the old float residual-consumer path, or `0.998779x`
+  train-loop time and `1.001224x` tokens/sec.
+
 ### 2026-06-16 Direct uint16 token ids for native GPT training
 
 #### Changed

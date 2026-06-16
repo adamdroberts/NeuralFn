@@ -1367,20 +1367,25 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["attention_backward_qkv_bridge_kernel_launches_per_block"] == 2
     assert tile_payload["attention_backward_qkv_bridge_legacy_launches_per_block"] == 4
     assert tile_payload["attention_backward_qkv_bridge_launches_elided_per_block"] == 3
-    assert tile_payload["attention_projection_input_strategy"] == "packed-o-bf16-direct-gemm"
+    assert tile_payload["bf16_projection_residual_enabled"] is True
+    assert tile_payload["attention_projection_input_strategy"] == (
+        "packed-o-bf16-direct-gemm-bf16-residual-consumer"
+    )
     assert tile_payload["attention_packed_output_unpack_strategy"] == "elided-direct-bf16-projection"
     assert tile_payload["mlp_fc_bias_gelu_strategy"] == "fused-bias-preactivation-gelu"
     assert tile_payload["mlp_fc_bias_gelu_kernel_launches_per_block"] == 1
     assert tile_payload["mlp_fc_bias_gelu_legacy_launches_per_block"] == 2
     assert tile_payload["mlp_fc_bias_gelu_launches_elided_per_block"] == 1
-    assert tile_payload["mlp_proj_forward_activation_strategy"] == "fused-gelu-bf16-act-direct-gemm"
+    assert tile_payload["mlp_proj_forward_activation_strategy"] == "fused-gelu-bf16-act-direct-bf16-output-gemm"
     assert tile_payload["mlp_forward_act_bf16_elements"] == 0
     assert tile_payload["mlp_forward_act_bf16_bytes"] == 0
-    assert tile_payload["projection_bias_residual_strategy"] == "fused-linear-bias-residual-add"
+    assert tile_payload["projection_bf16_scratch_elements"] == 64 * 1024 * 768
+    assert tile_payload["projection_bf16_scratch_bytes"] == 64 * 1024 * 768 * 2
+    assert tile_payload["projection_bias_residual_strategy"] == "fused-bf16-linear-bias-residual-add"
     assert tile_payload["projection_bias_residual_kernel_launches_per_block"] == 2
     assert tile_payload["projection_bias_residual_legacy_launches_per_block"] == 4
     assert tile_payload["projection_bias_residual_launches_elided_per_block"] == 2
-    assert tile_payload["attention_residual_ln2_strategy"] == "fused-linear-bias-residual-layernorm"
+    assert tile_payload["attention_residual_ln2_strategy"] == "fused-bf16-linear-bias-residual-layernorm"
     assert tile_payload["attention_residual_ln2_kernel_launches_per_block"] == 1
     assert tile_payload["attention_residual_ln2_legacy_launches_per_block"] == 2
     assert tile_payload["attention_residual_ln2_launches_elided_per_block"] == 1
@@ -1551,6 +1556,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_merge_heads_to_qkv_float32" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_gelu_add_bias_float32" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_linear_bias_residual_add_float32" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_linear_bias_residual_add_bf16_linear_float32" in tile_payload[
+        "available_native_kernels"
+    ]
     assert tile_payload["required_native_work"] == []
     assert any("SM120 throughput" in item for item in tile_payload["remaining_validation"])
 
@@ -2202,20 +2210,27 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["attention_backward_qkv_bridge_kernel_launches_per_block"] == 2
     assert train_transformer_payload["attention_backward_qkv_bridge_legacy_launches_per_block"] == 4
     assert train_transformer_payload["attention_backward_qkv_bridge_launches_elided_per_block"] == 3
-    assert train_transformer_payload["attention_projection_input_strategy"] == "packed-o-bf16-direct-gemm"
+    assert train_transformer_payload["bf16_projection_residual_enabled"] is True
+    assert train_transformer_payload["attention_projection_input_strategy"] == (
+        "packed-o-bf16-direct-gemm-bf16-residual-consumer"
+    )
     assert train_transformer_payload["attention_packed_output_unpack_strategy"] == "elided-direct-bf16-projection"
     assert train_transformer_payload["mlp_fc_bias_gelu_strategy"] == "fused-bias-preactivation-gelu"
     assert train_transformer_payload["mlp_fc_bias_gelu_kernel_launches_per_block"] == 1
     assert train_transformer_payload["mlp_fc_bias_gelu_legacy_launches_per_block"] == 2
     assert train_transformer_payload["mlp_fc_bias_gelu_launches_elided_per_block"] == 1
-    assert train_transformer_payload["mlp_proj_forward_activation_strategy"] == "fused-gelu-bf16-act-direct-gemm"
+    assert train_transformer_payload["mlp_proj_forward_activation_strategy"] == (
+        "fused-gelu-bf16-act-direct-bf16-output-gemm"
+    )
     assert train_transformer_payload["mlp_forward_act_bf16_elements"] == 0
     assert train_transformer_payload["mlp_forward_act_bf16_bytes"] == 0
-    assert train_transformer_payload["projection_bias_residual_strategy"] == "fused-linear-bias-residual-add"
+    assert train_transformer_payload["projection_bf16_scratch_elements"] == 0
+    assert train_transformer_payload["projection_bf16_scratch_bytes"] == 0
+    assert train_transformer_payload["projection_bias_residual_strategy"] == "fused-bf16-linear-bias-residual-add"
     assert train_transformer_payload["projection_bias_residual_kernel_launches_per_block"] == 2
     assert train_transformer_payload["projection_bias_residual_legacy_launches_per_block"] == 4
     assert train_transformer_payload["projection_bias_residual_launches_elided_per_block"] == 2
-    assert train_transformer_payload["attention_residual_ln2_strategy"] == "fused-linear-bias-residual-layernorm"
+    assert train_transformer_payload["attention_residual_ln2_strategy"] == "fused-bf16-linear-bias-residual-layernorm"
     assert train_transformer_payload["attention_residual_ln2_kernel_launches_per_block"] == 1
     assert train_transformer_payload["attention_residual_ln2_legacy_launches_per_block"] == 2
     assert train_transformer_payload["attention_residual_ln2_launches_elided_per_block"] == 1
@@ -3901,14 +3916,38 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_linear_backward_bias_accumulate_float32" in header_text
     assert "nfn_native_tile_scaled_residual_add_float32" in header_text
     assert "nfn_native_tile_linear_bias_residual_add_float32" in header_text
+    assert "nfn_native_tile_linear_bias_residual_add_bf16_linear_float32" in header_text
     assert "nfn_native_tile_linear_bias_residual_layer_norm_float32" in header_text
     assert "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32" in header_text
+    assert "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32" in header_text
     assert "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32" in header_text
+    assert (
+        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_float32"
+        in header_text
+    )
     assert "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_float32" in header_text
+    assert (
+        "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm_float32"
+        in header_text
+    )
     assert "launch_linear_bias_residual_layer_norm_float32" in source_text
+    assert "launch_linear_bias_residual_add_bf16_linear_float32" in source_text
     assert "launch_linear_bias_residual_layer_norm_with_stats_float32" in source_text
+    assert "launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32" in source_text
     assert "launch_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32" in source_text
+    assert "launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_float32" in source_text
     assert "launch_linear_bias_residual_layer_norm_with_stats_bf16_residual_bf16_norm_float32" in source_text
+    assert (
+        "launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm_float32"
+        in source_text
+    )
+    assert "linear_bias_residual_add_bf16_linear_float32_kernel" in kernels_text
+    assert "linear_bias_residual_layer_norm_bf16_linear_float32_kernel" in kernels_text
+    assert "NFN_NATIVE_GPT_BF16_PROJECTION_RESIDUAL" in gpt2_source_text
+    assert "bf16_projection_residual_enabled" in gpt2_source_text
+    assert "projection_bf16_scratch_elements" in gpt2_source_text
+    assert "fused-bf16-linear-bias-residual-add" in gpt2_source_text
+    assert "fused-bf16-linear-bias-residual-layernorm" in gpt2_source_text
     assert "nfn_native_tile_gelu_float32" in header_text
     assert "nfn_native_tile_gelu_add_bias_float32" in header_text
     assert "nfn_native_tile_gelu_backward_float32" in header_text
@@ -4961,6 +5000,16 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_linear_backward_bias_float32" in exported
         assert "nfn_native_tile_linear_backward_bias_accumulate_float32" in exported
         assert "nfn_native_tile_scaled_residual_add_float32" in exported
+        assert "nfn_native_tile_linear_bias_residual_add_bf16_linear_float32" in exported
+        assert "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32" in exported
+        assert (
+            "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_float32"
+            in exported
+        )
+        assert (
+            "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm_float32"
+            in exported
+        )
         assert "nfn_native_tile_gelu_float32" in exported
         assert "nfn_native_tile_gelu_backward_float32" in exported
         assert "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32" in exported

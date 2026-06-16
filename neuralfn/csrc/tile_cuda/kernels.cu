@@ -7278,6 +7278,38 @@ __tile_global__ void linear_bias_residual_add_float32_kernel(
   ct::store_masked(out + idx, result, mask);
 }
 
+__tile_global__ void linear_bias_residual_add_bf16_linear_float32_kernel(
+    const float* __restrict__ residual,
+    const std::uint16_t* __restrict__ linear_out_bf16_bits,
+    const float* __restrict__ bias,
+    const float* __restrict__ residual_scale,
+    float* __restrict__ out,
+    std::int64_t n,
+    std::int64_t output_dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  residual = ct::assume_aligned(residual, 16_ic);
+  auto* linear_out = ct::assume_aligned(
+      reinterpret_cast<const __nv_bfloat16*>(linear_out_bf16_bits), 16_ic);
+  bias = ct::assume_aligned(bias, 16_ic);
+  residual_scale = ct::assume_aligned(residual_scale, 16_ic);
+  out = ct::assume_aligned(out, 16_ic);
+
+  const int bx = ct::bid().x;
+  using Shape = decltype(ct::shape{1024_ic});
+  using IndexTile = ct::tile<std::int64_t, Shape>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto out_col = idx % ct::full<IndexTile>(output_dim);
+  auto scale = ct::full<ct::tile<float, Shape>>(*residual_scale);
+  auto projected =
+      ct::element_cast<float>(ct::load_masked(linear_out + idx, mask)) +
+      ct::load_masked(bias + out_col, mask);
+  auto result = ct::load_masked(residual + idx, mask) + projected * scale;
+  ct::store_masked(out + idx, result, mask);
+}
+
 __tile_global__ void linear_bias_residual_layer_norm_float32_kernel(
     const float* __restrict__ residual,
     const float* __restrict__ linear_out,
@@ -7314,6 +7346,77 @@ __tile_global__ void linear_bias_residual_layer_norm_float32_kernel(
   auto scale = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(*residual_scale);
   auto residual_tile = ct::load_masked(residual + base + d, mask);
   auto projected = ct::load_masked(linear_out + base + d, mask) + ct::load_masked(linear_bias + d, mask);
+  auto combined = residual_tile + projected * scale;
+  auto zero = ct::full<decltype(combined)>(0.0f);
+  auto valid = ct::select(mask, combined, zero);
+  ct::store_masked(residual_out + base + d, combined, mask);
+  if (residual_bf16_out != nullptr) {
+    auto* residual_bf16 = reinterpret_cast<__nv_bfloat16*>(residual_bf16_out);
+    ct::store_masked(residual_bf16 + base + d, ct::element_cast<__nv_bfloat16>(combined), mask);
+  }
+  auto sum_x = ct::sum(valid, 0_ic);
+  auto dim_f = ct::full<decltype(sum_x)>(static_cast<float>(dim));
+  auto mean = sum_x / dim_f;
+  auto centered = ct::select(mask, combined - mean, zero);
+  auto sum_sq = ct::sum(centered * centered, 0_ic);
+  auto var = sum_sq / ct::full<decltype(sum_sq)>(static_cast<float>(dim));
+  auto norm_scale = ct::rsqrt(var + ct::full<decltype(var)>(eps));
+  if (mean_out != nullptr && row < rows) {
+    mean_out[row] = static_cast<float>(mean);
+  }
+  if (rstd_out != nullptr && row < rows) {
+    rstd_out[row] = static_cast<float>(norm_scale);
+  }
+  auto weight_tile = ct::load_masked(norm_weight + d, mask);
+  auto bias_tile = ct::load_masked(norm_bias + d, mask);
+  auto norm_value = centered * norm_scale * weight_tile + bias_tile;
+  ct::store_masked(norm_out + base + d, norm_value, mask);
+  if (norm_bf16_out != nullptr) {
+    auto* norm_bf16 = reinterpret_cast<__nv_bfloat16*>(norm_bf16_out);
+    ct::store_masked(norm_bf16 + base + d, ct::element_cast<__nv_bfloat16>(norm_value), mask);
+  }
+}
+
+__tile_global__ void linear_bias_residual_layer_norm_bf16_linear_float32_kernel(
+    const float* __restrict__ residual,
+    const std::uint16_t* __restrict__ linear_out_bf16_bits,
+    const float* __restrict__ linear_bias,
+    const float* __restrict__ residual_scale,
+    const float* __restrict__ norm_weight,
+    const float* __restrict__ norm_bias,
+    float* __restrict__ residual_out,
+    float* __restrict__ norm_out,
+    float* __restrict__ mean_out,
+    float* __restrict__ rstd_out,
+    std::uint16_t* __restrict__ residual_bf16_out,
+    std::uint16_t* __restrict__ norm_bf16_out,
+    std::int64_t rows,
+    std::int64_t dim,
+    float eps) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  residual = ct::assume_aligned(residual, 16_ic);
+  auto* linear_out = ct::assume_aligned(
+      reinterpret_cast<const __nv_bfloat16*>(linear_out_bf16_bits), 16_ic);
+  linear_bias = ct::assume_aligned(linear_bias, 16_ic);
+  residual_scale = ct::assume_aligned(residual_scale, 16_ic);
+  norm_weight = ct::assume_aligned(norm_weight, 16_ic);
+  norm_bias = ct::assume_aligned(norm_bias, 16_ic);
+  residual_out = ct::assume_aligned(residual_out, 16_ic);
+  norm_out = ct::assume_aligned(norm_out, 16_ic);
+
+  const int row = ct::bid().x;
+  using Shape = decltype(ct::shape{1024_ic});
+  using IndexTile = ct::tile<std::int64_t, Shape>;
+  auto d = ct::iota<IndexTile>();
+  auto mask = (ct::full<IndexTile>(row) < ct::full<IndexTile>(rows)) && (d < ct::full<IndexTile>(dim));
+  auto base = ct::full<IndexTile>(static_cast<std::int64_t>(row) * dim);
+  auto scale = ct::full<ct::tile<float, Shape>>(*residual_scale);
+  auto residual_tile = ct::load_masked(residual + base + d, mask);
+  auto projected =
+      ct::element_cast<float>(ct::load_masked(linear_out + base + d, mask)) +
+      ct::load_masked(linear_bias + d, mask);
   auto combined = residual_tile + projected * scale;
   auto zero = ct::full<decltype(combined)>(0.0f);
   auto valid = ct::select(mask, combined, zero);
@@ -12233,6 +12336,21 @@ void launch_linear_bias_residual_add_float32(
       residual, linear_out, bias, residual_scale, out, n, output_dim);
 }
 
+void launch_linear_bias_residual_add_bf16_linear_float32(
+    const float* residual,
+    const std::uint16_t* linear_out_bf16_bits,
+    const float* bias,
+    const float* residual_scale,
+    float* out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * output_dim;
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  linear_bias_residual_add_bf16_linear_float32_kernel<<<blocks, 1, 0, stream>>>(
+      residual, linear_out_bf16_bits, bias, residual_scale, out, n, output_dim);
+}
+
 void launch_linear_bias_residual_layer_norm_float32(
     const float* residual,
     const float* linear_out,
@@ -12259,6 +12377,108 @@ void launch_linear_bias_residual_layer_norm_float32(
       nullptr,
       nullptr,
       nullptr,
+      rows,
+      output_dim,
+      eps);
+}
+
+void launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32(
+    const float* residual,
+    const std::uint16_t* linear_out_bf16_bits,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    float* mean_out,
+    float* rstd_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    cudaStream_t stream) {
+  linear_bias_residual_layer_norm_bf16_linear_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      residual,
+      linear_out_bf16_bits,
+      linear_bias,
+      residual_scale,
+      norm_weight,
+      norm_bias,
+      residual_out,
+      norm_out,
+      mean_out,
+      rstd_out,
+      nullptr,
+      nullptr,
+      rows,
+      output_dim,
+      eps);
+}
+
+void launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_float32(
+    const float* residual,
+    const std::uint16_t* linear_out_bf16_bits,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    float* mean_out,
+    float* rstd_out,
+    std::uint16_t* residual_bf16_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    cudaStream_t stream) {
+  linear_bias_residual_layer_norm_bf16_linear_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      residual,
+      linear_out_bf16_bits,
+      linear_bias,
+      residual_scale,
+      norm_weight,
+      norm_bias,
+      residual_out,
+      norm_out,
+      mean_out,
+      rstd_out,
+      residual_bf16_out,
+      nullptr,
+      rows,
+      output_dim,
+      eps);
+}
+
+void launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_bf16_norm_float32(
+    const float* residual,
+    const std::uint16_t* linear_out_bf16_bits,
+    const float* linear_bias,
+    const float* residual_scale,
+    const float* norm_weight,
+    const float* norm_bias,
+    float* residual_out,
+    float* norm_out,
+    float* mean_out,
+    float* rstd_out,
+    std::uint16_t* residual_bf16_out,
+    std::uint16_t* norm_bf16_out,
+    std::int64_t rows,
+    std::int64_t output_dim,
+    float eps,
+    cudaStream_t stream) {
+  linear_bias_residual_layer_norm_bf16_linear_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
+      residual,
+      linear_out_bf16_bits,
+      linear_bias,
+      residual_scale,
+      norm_weight,
+      norm_bias,
+      residual_out,
+      norm_out,
+      mean_out,
+      rstd_out,
+      residual_bf16_out,
+      norm_bf16_out,
       rows,
       output_dim,
       eps);
