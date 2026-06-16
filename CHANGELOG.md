@@ -6,6 +6,42 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Defer native GPT validation MLP float scratch
+
+#### Changed
+
+- Dense GPT native training now leaves the validation-only float MLP scratch
+  buffers (`fc_out` and `act`) out of the startup float arena when stored BF16
+  MLP activations cover every transformer block. Training forwards continue to
+  use the BF16 stored-MLP path; the two float hidden-size buffers are allocated
+  lazily only if a validation pass runs with the preserve=false scratch tape.
+- The default 12-layer `64 x 1024` shape reduces
+  `float_arena_requested_elements` by `402,653,184` elements. Set
+  `NFN_NATIVE_GPT_LAZY_VALIDATION_MLP_FLOAT_SCRATCH=0` or
+  `NFN_NATIVE_GPT2_LAZY_VALIDATION_MLP_FLOAT_SCRATCH=0` to reproduce the older
+  startup arena layout for paired comparisons.
+- Runtime JSON now reports `lazy_validation_mlp_float_scratch_enabled`,
+  `lazy_validation_mlp_float_scratch_elements`,
+  `lazy_validation_mlp_float_scratch_bytes`, and
+  `lazy_validation_mlp_float_scratch_cuda_malloc_count`.
+
+#### Verification
+
+- Rebuilt the native GPT binaries with `bash tools/build_native_gpt_cli.sh` and
+  `bash tools/build_native_gpt2_cli.sh`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran a startup-only opt-in smoke on the dedicated RTX 5090; the candidate
+  reported `float_arena_requested_elements: 2269479693` versus the previous
+  `2672132877`, with no lazy validation scratch allocation before validation.
+- Ran a one-step validation smoke with `--eval-every-steps 1 --eval-batches 1`;
+  it allocated `1,610,612,736` bytes across 2 lazy scratch `cudaMalloc` calls
+  and emitted one validation loss record.
+- Ran paired startup-only timing over 3 measured samples after 1 warmup pair.
+  The candidate measured `0.857059x` mean total native startup wall time.
+- Ran paired 5-step TinyStories timing over 3 measured samples after 1 warmup
+  pair. The candidate measured `0.987446x` mean train-loop wall time and
+  `1.012769x` mean train tokens/sec.
+
 ### 2026-06-16 Retile native GPT token-weight startup initialization
 
 #### Changed

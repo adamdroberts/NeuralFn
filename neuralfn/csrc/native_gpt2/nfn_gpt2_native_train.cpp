@@ -8739,6 +8739,12 @@ int run_transformer_lm_training_json(
     const std::int64_t stored_mlp_activation_elements_per_block = activation_elements + hidden_elements * 2;
     const std::int64_t stored_mlp_activation_elements =
         stored_mlp_activation_block_count * stored_mlp_activation_elements_per_block;
+    const bool lazy_validation_mlp_float_scratch_enabled =
+        stored_mlp_activation_block_count >= trained_layers &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LAZY_VALIDATION_MLP_FLOAT_SCRATCH",
+                              "NFN_NATIVE_GPT2_LAZY_VALIDATION_MLP_FLOAT_SCRATCH"}),
+            true);
     std::vector<StoredMlpActivations> stored_mlp_activations(
         static_cast<std::size_t>(stored_mlp_activation_block_count));
     std::uint16_t* stored_mlp_activation_arena = nullptr;
@@ -8845,6 +8851,9 @@ int run_transformer_lm_training_json(
     std::uint16_t* mlp_forward_act_bf16 = nullptr;
     std::int64_t mlp_forward_act_bf16_elements = 0;
     std::int64_t mlp_forward_act_bf16_bytes = 0;
+    std::int64_t lazy_validation_mlp_float_scratch_elements = 0;
+    std::int64_t lazy_validation_mlp_float_scratch_bytes = 0;
+    std::int64_t lazy_validation_mlp_float_scratch_cuda_malloc_count = 0;
     std::uint16_t* projection_bf16_scratch = nullptr;
     std::int64_t projection_bf16_scratch_elements = 0;
     std::int64_t projection_bf16_scratch_bytes = 0;
@@ -9484,8 +9493,10 @@ int run_transformer_lm_training_json(
             visit(&tape.ln2_out, activation_elements, prefix + ".ln2.out");
             visit(&tape.ln2_mean, rows, prefix + ".ln2.mean");
             visit(&tape.ln2_rstd, rows, prefix + ".ln2.rstd");
-            visit(&tape.fc_out, hidden_elements, prefix + ".mlp.fc");
-            visit(&tape.act, hidden_elements, prefix + ".mlp.act");
+            if (!lazy_validation_mlp_float_scratch_enabled) {
+                visit(&tape.fc_out, hidden_elements, prefix + ".mlp.fc");
+                visit(&tape.act, hidden_elements, prefix + ".mlp.act");
+            }
             visit(&tape.mlp_out, activation_elements, prefix + ".mlp.out");
             visit(&tape.residual2, activation_elements, prefix + ".residual2");
         }
@@ -9674,6 +9685,45 @@ int run_transformer_lm_training_json(
     auto run = [&](int status, const std::string& name) {
         if (status != 0 && error.empty()) {
             error = cuda_error(status, name);
+        }
+    };
+    auto allocate_validation_mlp_float_scratch = [&]() {
+        if (!lazy_validation_mlp_float_scratch_enabled || !error.empty()) {
+            return;
+        }
+        if (hidden_elements <= 0 ||
+            hidden_elements > static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(float))) {
+            error = "validation MLP float scratch allocation byte size overflow";
+            return;
+        }
+        const std::size_t bytes = sizeof(float) * static_cast<std::size_t>(hidden_elements);
+        for (TransformerBlockActivations& tape : block_tapes) {
+            if (tape.fc_out == nullptr) {
+                void* raw = nullptr;
+                const int status = device_malloc(&raw, bytes);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMalloc validation_mlp_fc_out");
+                    return;
+                }
+                tape.fc_out = static_cast<float*>(raw);
+                float_ptrs.push_back(tape.fc_out);
+                lazy_validation_mlp_float_scratch_cuda_malloc_count += 1;
+                lazy_validation_mlp_float_scratch_elements += hidden_elements;
+                lazy_validation_mlp_float_scratch_bytes += static_cast<std::int64_t>(bytes);
+            }
+            if (tape.act == nullptr) {
+                void* raw = nullptr;
+                const int status = device_malloc(&raw, bytes);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaMalloc validation_mlp_act");
+                    return;
+                }
+                tape.act = static_cast<float*>(raw);
+                float_ptrs.push_back(tape.act);
+                lazy_validation_mlp_float_scratch_cuda_malloc_count += 1;
+                lazy_validation_mlp_float_scratch_elements += hidden_elements;
+                lazy_validation_mlp_float_scratch_bytes += static_cast<std::int64_t>(bytes);
+            }
         }
     };
     auto fill_buffer = [&](float* ptr, std::int64_t elements, float value, const std::string& name) {
@@ -12519,6 +12569,7 @@ int run_transformer_lm_training_json(
                 }
             }
             upload_pinned_batch();
+            allocate_validation_mlp_float_scratch();
             const double loss_sum = forward_loss("validation", true, false);
             if (!error.empty()) {
                 break;
@@ -13702,6 +13753,14 @@ int run_transformer_lm_training_json(
         << "  \"startup_only\": " << (cfg.startup_only ? "true" : "false") << ",\n"
         << "  \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
         << "  \"eval_batches\": " << cfg.eval_batches << ",\n"
+        << "  \"lazy_validation_mlp_float_scratch_enabled\": "
+        << (lazy_validation_mlp_float_scratch_enabled ? "true" : "false") << ",\n"
+        << "  \"lazy_validation_mlp_float_scratch_elements\": "
+        << lazy_validation_mlp_float_scratch_elements << ",\n"
+        << "  \"lazy_validation_mlp_float_scratch_bytes\": "
+        << lazy_validation_mlp_float_scratch_bytes << ",\n"
+        << "  \"lazy_validation_mlp_float_scratch_cuda_malloc_count\": "
+        << lazy_validation_mlp_float_scratch_cuda_malloc_count << ",\n"
         << "  \"train_loss_eval_count\": " << train_loss_eval_count << ",\n"
         << "  \"train_loss_last_step\": " << train_loss_last_step << ",\n"
         << "  \"train_loss_sparse\": false,\n"

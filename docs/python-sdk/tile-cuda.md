@@ -708,6 +708,17 @@ scratch, and block BF16 weight shadows. Set
 `uint16_allocation_request_count`, `uint16_arena_requested_elements`,
 `uint16_arena_allocated_elements`, `uint16_arena_cuda_malloc_count`, and
 `uint16_arena_suballocation_count`.
+When stored BF16 MLP activations cover every transformer block, the dense GPT
+trainer also defers the validation-only float MLP scratch buffers (`fc_out` and
+`act`) instead of reserving them in the startup float arena. The buffers are
+allocated on the first validation pass that uses the preserve=false scratch tape.
+Set `NFN_NATIVE_GPT_LAZY_VALIDATION_MLP_FLOAT_SCRATCH=0` or
+`NFN_NATIVE_GPT2_LAZY_VALIDATION_MLP_FLOAT_SCRATCH=0` to reproduce the older
+startup arena layout during paired benchmarks. JSON reports
+`lazy_validation_mlp_float_scratch_enabled`,
+`lazy_validation_mlp_float_scratch_elements`,
+`lazy_validation_mlp_float_scratch_bytes`, and
+`lazy_validation_mlp_float_scratch_cuda_malloc_count`.
 Startup zeroes only AdamW first/second moment state as coalesced contiguous
 ranges with Tile fills by default, overwrites nonzero weights through device
 initializers, and zeroes gradients at each optimizer step. Set
