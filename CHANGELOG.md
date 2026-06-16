@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 cuBLASLt descriptor-cache hits for native GPT linear GEMMs
+
+#### Changed
+
+- Native Tile-CUDA trainer cuBLASLt plans now retain their matmul descriptors
+  and matrix layouts, so cached plan hits skip per-GEMM descriptor construction
+  and launch directly with the cached descriptors. Bias epilogue pointers are
+  still refreshed at launch time, so shared shape plans remain valid across
+  layers and parameter buffers.
+- Added `NFN_TILE_CUDA_CUBLASLT_DESCRIPTOR_CACHE=0` /
+  `NFN_NATIVE_LINEAR_CUBLASLT_DESCRIPTOR_CACHE=0` as a profiling-only opt-out
+  for the previous descriptor-recreate behavior.
+- Dense GPT runtime JSON now reports
+  `linear_cublaslt_descriptor_cache_enabled` alongside the existing linear GEMM
+  strategy and counter fields.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran GPU-visible one-step TinyStories smokes on the dedicated RTX 5090 for
+  both descriptor-cache-on and descriptor-cache-off paths; both reported
+  `passed: true`.
+- Ran a five-sample paired benchmark on the dedicated RTX 5090 with selected
+  GPU idle guards and no compute processes before samples. Cache-on averaged
+  `2766.47 ms` per optimizer step versus `2772.46 ms` for cache-off, or
+  `0.997843x` train-loop time and `1.002169x` tokens/sec.
+
 ### 2026-06-16 Native linear dispatch shape profiler
 
 #### Added

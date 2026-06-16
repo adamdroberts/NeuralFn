@@ -6864,6 +6864,11 @@ int run_transformer_lm_training_json(
     std::int64_t linear_bf16_workspace_b_capacity = 0;
     std::int64_t linear_bf16_cached_a_capacity = 0;
     std::int64_t linear_bf16_cache_entry_count = 0;
+    const bool linear_cublaslt_descriptor_cache_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_TILE_CUDA_CUBLASLT_DESCRIPTOR_CACHE",
+                              "NFN_NATIVE_LINEAR_CUBLASLT_DESCRIPTOR_CACHE"}),
+            true);
     struct LinearShapeStat {
         int path = 0;
         int m = 0;
@@ -12571,6 +12576,8 @@ int run_transformer_lm_training_json(
         << "  \"linear_tk_gemm_count\": " << linear_tk_gemm_count << ",\n"
         << "  \"linear_tk_float_out_gemm_count\": " << linear_tk_float_out_gemm_count << ",\n"
         << "  \"linear_cublaslt_gemm_count\": " << linear_cublaslt_gemm_count << ",\n"
+        << "  \"linear_cublaslt_descriptor_cache_enabled\": "
+        << (linear_cublaslt_descriptor_cache_enabled ? "true" : "false") << ",\n"
         << "  \"linear_sgemm_count\": " << linear_sgemm_count << ",\n"
         << "  \"linear_bf16_a_pack_count\": " << linear_bf16_a_pack_count << ",\n"
         << "  \"linear_bf16_a_cache_hit_count\": " << linear_bf16_a_cache_hit_count << ",\n"

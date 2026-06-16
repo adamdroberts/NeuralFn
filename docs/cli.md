@@ -246,10 +246,16 @@ faster default. GPT-2 training JSON reports `linear_backend_strategy:
 `block_backward_mlp_proj_dgelu_strategy`,
 `block_backward_weight_linear_strategy`,
 `non_block_forward_backward_linear_strategy`,
-`linear_bf16_gemm_count`, `linear_cublaslt_gemm_count`, `linear_sgemm_count`,
+`linear_bf16_gemm_count`, `linear_cublaslt_gemm_count`,
+`linear_cublaslt_descriptor_cache_enabled`, `linear_sgemm_count`,
 `linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
 `linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
 `linear_bf16_cache_entry_count`.
+The cuBLASLt descriptor cache is enabled by default, so cached plans retain
+matmul descriptors and matrix layouts instead of recreating them for every
+GEMM; set `NFN_TILE_CUDA_CUBLASLT_DESCRIPTOR_CACHE=0` or
+`NFN_NATIVE_LINEAR_CUBLASLT_DESCRIPTOR_CACHE=0` only for paired profiling
+against the older descriptor-recreate path.
 The BF16 operand cache is only for stable operands such as weights and biases;
 BF16-output GEMMs repack mutable activation inputs because native scratch
 activation pointers are reused with new contents.

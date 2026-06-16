@@ -256,10 +256,16 @@ block cuBLASLt plus TK LM-head path runs,
 `block_backward_weight_linear_strategy`,
 `non_block_forward_backward_linear_strategy`, `lm_head_logits_linear_strategy`,
 `linear_bf16_gemm_count`, `linear_tk_gemm_count`,
-`linear_tk_float_out_gemm_count`, `linear_cublaslt_gemm_count`, `linear_sgemm_count`,
+`linear_tk_float_out_gemm_count`, `linear_cublaslt_gemm_count`,
+`linear_cublaslt_descriptor_cache_enabled`, `linear_sgemm_count`,
 `linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
 `linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
 `linear_bf16_cache_entry_count`.
+The cuBLASLt descriptor cache is enabled by default, so cached plans retain
+matmul descriptors and matrix layouts instead of recreating them for every
+GEMM; set `NFN_TILE_CUDA_CUBLASLT_DESCRIPTOR_CACHE=0` or
+`NFN_NATIVE_LINEAR_CUBLASLT_DESCRIPTOR_CACHE=0` only for paired profiling
+against the older descriptor-recreate path.
 The default `non_block_forward_backward_linear_strategy` is
 `"padded-lm-head-tk-sm120-bf16-gemm-default"` when TK GEMM is available.
 The default dense GPT path also exposes

@@ -1231,6 +1231,10 @@ struct TrainerLinearCublasLtPlanKey {
 
 struct TrainerLinearCublasLtPlan {
   TrainerLinearCublasLtPlanKey key;
+  cublasLtMatmulDesc_t matmul_desc = nullptr;
+  cublasLtMatrixLayout_t a_desc = nullptr;
+  cublasLtMatrixLayout_t b_desc = nullptr;
+  cublasLtMatrixLayout_t c_desc = nullptr;
   cublasLtMatmulAlgo_t algo{};
   std::size_t workspace_size = 0;
   bool valid = false;
@@ -1248,6 +1252,7 @@ struct TrainerLinearBgradWorkspace {
 };
 
 bool trainer_linear_cublaslt_enabled();
+bool trainer_linear_cublaslt_descriptor_cache_enabled();
 int trainer_linear_cublaslt_heuristic_index_override();
 
 TrainerLinearCublasLtWorkspace g_trainer_linear_cublaslt_workspace;
@@ -1374,6 +1379,19 @@ void destroy_trainer_linear_cublaslt_layouts(
   if (matmul_desc != nullptr) cublasLtMatmulDescDestroy(matmul_desc);
 }
 
+void destroy_trainer_linear_cublaslt_plan(TrainerLinearCublasLtPlan& plan) {
+  destroy_trainer_linear_cublaslt_layouts(
+      plan.matmul_desc,
+      plan.a_desc,
+      plan.b_desc,
+      plan.c_desc);
+  plan.matmul_desc = nullptr;
+  plan.a_desc = nullptr;
+  plan.b_desc = nullptr;
+  plan.c_desc = nullptr;
+  plan.valid = false;
+}
+
 TrainerLinearCublasLtPlan* trainer_linear_cublaslt_plan_for(
     cublasLtHandle_t handle,
     const TrainerLinearCublasLtPlanKey& key,
@@ -1427,11 +1445,48 @@ TrainerLinearCublasLtPlan* trainer_linear_cublaslt_plan_for(
     return nullptr;
   }
   if (g_trainer_linear_cublaslt_workspace.plans.size() >= kTrainerLinearCublasLtPlanLimit) {
+    destroy_trainer_linear_cublaslt_plan(g_trainer_linear_cublaslt_workspace.plans.front());
     g_trainer_linear_cublaslt_workspace.plans.erase(g_trainer_linear_cublaslt_workspace.plans.begin());
   }
-  g_trainer_linear_cublaslt_workspace.plans.push_back(
-      TrainerLinearCublasLtPlan{key, results[selected].algo, results[selected].workspaceSize, true});
+  TrainerLinearCublasLtPlan plan{};
+  plan.key = key;
+  if (trainer_linear_cublaslt_descriptor_cache_enabled()) {
+    plan.matmul_desc = matmul_desc;
+    plan.a_desc = a_desc;
+    plan.b_desc = b_desc;
+    plan.c_desc = c_desc;
+  }
+  plan.algo = results[selected].algo;
+  plan.workspace_size = results[selected].workspaceSize;
+  plan.valid = true;
+  g_trainer_linear_cublaslt_workspace.plans.push_back(plan);
   return &g_trainer_linear_cublaslt_workspace.plans.back();
+}
+
+bool find_trainer_linear_cublaslt_plan(
+    const TrainerLinearCublasLtPlanKey& key,
+    TrainerLinearCublasLtPlan* plan_copy) {
+  std::lock_guard<std::mutex> lock(g_trainer_linear_cublaslt_workspace_mutex);
+  for (const TrainerLinearCublasLtPlan& plan : g_trainer_linear_cublaslt_workspace.plans) {
+    if (plan.valid && plan.key == key) {
+      *plan_copy = plan;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool set_trainer_linear_cublaslt_runtime_pointers(
+    cublasLtMatmulDesc_t matmul_desc,
+    float* bias_pointer) {
+  if (bias_pointer == nullptr) {
+    return true;
+  }
+  return cublasLtMatmulDescSetAttribute(
+             matmul_desc,
+             CUBLASLT_MATMUL_DESC_BIAS_POINTER,
+             &bias_pointer,
+             sizeof(bias_pointer)) == CUBLAS_STATUS_SUCCESS;
 }
 
 bool cublaslt_linear_matmul(
@@ -1459,33 +1514,6 @@ bool cublaslt_linear_matmul(
     return false;
   }
 
-  cublasLtMatmulDesc_t matmul_desc = nullptr;
-  cublasLtMatrixLayout_t a_desc = nullptr;
-  cublasLtMatrixLayout_t b_desc = nullptr;
-  cublasLtMatrixLayout_t c_desc = nullptr;
-  if (!create_trainer_linear_cublaslt_layouts(
-          op_a,
-          op_b,
-          a_type,
-          b_type,
-          c_type,
-          compute_type,
-          m,
-          n,
-          k,
-          lda,
-          ldb,
-          ldc,
-          epilogue,
-          bias_pointer,
-          &matmul_desc,
-          &a_desc,
-          &b_desc,
-          &c_desc)) {
-    destroy_trainer_linear_cublaslt_layouts(matmul_desc, a_desc, b_desc, c_desc);
-    return false;
-  }
-
   TrainerLinearCublasLtPlanKey key{
       m,
       n,
@@ -1501,7 +1529,38 @@ bool cublaslt_linear_matmul(
       static_cast<int>(compute_type),
       static_cast<int>(epilogue)};
   TrainerLinearCublasLtPlan plan_copy;
-  {
+  bool has_plan = false;
+  if (trainer_linear_cublaslt_descriptor_cache_enabled()) {
+    has_plan = find_trainer_linear_cublaslt_plan(key, &plan_copy);
+  }
+
+  cublasLtMatmulDesc_t matmul_desc = nullptr;
+  cublasLtMatrixLayout_t a_desc = nullptr;
+  cublasLtMatrixLayout_t b_desc = nullptr;
+  cublasLtMatrixLayout_t c_desc = nullptr;
+  if (!has_plan) {
+    if (!create_trainer_linear_cublaslt_layouts(
+            op_a,
+            op_b,
+            a_type,
+            b_type,
+            c_type,
+            compute_type,
+            m,
+            n,
+            k,
+            lda,
+            ldb,
+            ldc,
+            epilogue,
+            bias_pointer,
+            &matmul_desc,
+            &a_desc,
+            &b_desc,
+            &c_desc)) {
+      destroy_trainer_linear_cublaslt_layouts(matmul_desc, a_desc, b_desc, c_desc);
+      return false;
+    }
     std::lock_guard<std::mutex> lock(g_trainer_linear_cublaslt_workspace_mutex);
     TrainerLinearCublasLtPlan* plan =
         trainer_linear_cublaslt_plan_for(handle, key, matmul_desc, a_desc, b_desc, c_desc);
@@ -1512,22 +1571,40 @@ bool cublaslt_linear_matmul(
     plan_copy = *plan;
   }
 
+  cublasLtMatmulDesc_t launch_matmul_desc =
+      plan_copy.matmul_desc != nullptr ? plan_copy.matmul_desc : matmul_desc;
+  cublasLtMatrixLayout_t launch_a_desc = plan_copy.a_desc != nullptr ? plan_copy.a_desc : a_desc;
+  cublasLtMatrixLayout_t launch_b_desc = plan_copy.b_desc != nullptr ? plan_copy.b_desc : b_desc;
+  cublasLtMatrixLayout_t launch_c_desc = plan_copy.c_desc != nullptr ? plan_copy.c_desc : c_desc;
+  const bool retained_new_descriptors = launch_matmul_desc == matmul_desc && matmul_desc != nullptr &&
+      trainer_linear_cublaslt_descriptor_cache_enabled();
+  if (retained_new_descriptors) {
+    matmul_desc = nullptr;
+    a_desc = nullptr;
+    b_desc = nullptr;
+    c_desc = nullptr;
+  }
+  if (!set_trainer_linear_cublaslt_runtime_pointers(launch_matmul_desc, bias_pointer)) {
+    destroy_trainer_linear_cublaslt_layouts(matmul_desc, a_desc, b_desc, c_desc);
+    return false;
+  }
+
   const float alpha = 1.0f;
   const float beta = beta_value;
   void* workspace = plan_copy.workspace_size > 0 ? g_trainer_linear_cublaslt_workspace.data : nullptr;
   const cublasStatus_t status = cublasLtMatmul(
       handle,
-      matmul_desc,
+      launch_matmul_desc,
       &alpha,
       a,
-      a_desc,
+      launch_a_desc,
       b,
-      b_desc,
+      launch_b_desc,
       &beta,
       c,
-      c_desc,
+      launch_c_desc,
       c,
-      c_desc,
+      launch_c_desc,
       &plan_copy.algo,
       workspace,
       plan_copy.workspace_size,
@@ -1757,6 +1834,31 @@ bool trainer_linear_cublaslt_enabled() {
       value = std::getenv("NFN_NATIVE_LINEAR_CUBLASLT");
     }
     if (value == nullptr) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
+bool trainer_linear_cublaslt_descriptor_cache_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_CUBLASLT_DESCRIPTOR_CACHE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_CUBLASLT_DESCRIPTOR_CACHE");
+    }
+    if (value == nullptr) {
+      return true;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
       return false;
     }
     return std::strcmp(value, "1") == 0 ||

@@ -2146,6 +2146,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["linear_bf16_gemm_count"] == 0
     assert train_transformer_payload["linear_tk_gemm_count"] == 0
     assert train_transformer_payload["linear_cublaslt_gemm_count"] == 0
+    assert train_transformer_payload["linear_cublaslt_descriptor_cache_enabled"] is True
     assert train_transformer_payload["linear_sgemm_count"] == 0
     assert train_transformer_payload["linear_bf16_a_pack_count"] == 0
     assert train_transformer_payload["linear_bf16_a_cache_hit_count"] == 0
@@ -3842,6 +3843,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "trainer_linear_cublaslt_heuristic_index_override" in kernels_text
     assert 'std::getenv("NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX")' in kernels_text
     assert 'std::getenv("NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX")' in kernels_text
+    assert "trainer_linear_cublaslt_descriptor_cache_enabled" in kernels_text
+    assert 'std::getenv("NFN_TILE_CUDA_CUBLASLT_DESCRIPTOR_CACHE")' in kernels_text
+    assert 'std::getenv("NFN_NATIVE_LINEAR_CUBLASLT_DESCRIPTOR_CACHE")' in kernels_text
     assert "int selected = returned > 1 ? 1 : 0" in kernels_text
     assert "tk_linear_backward_input_dgelu_bf16_bits_float32" in kernels_text
     assert "tk_linear_backward_input_dgelu_weight_bf16_bits_float32" in kernels_text
