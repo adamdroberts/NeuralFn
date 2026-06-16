@@ -3800,6 +3800,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_LINEAR_TK_GEMM" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_TK_FLOAT_OUT" in kernels_text
     assert "NFN_NATIVE_LINEAR_TK_FLOAT_OUT" in kernels_text
+    assert "NFN_TILE_CUDA_LINEAR_SHAPE_STATS" in kernels_text
+    assert "NFN_NATIVE_LINEAR_SHAPE_STATS" in kernels_text
+    assert "trainer_linear_shape_stats_entry" in kernels_text
     assert "return false;" in kernels_text
     assert 'std::strcmp(value, "1") == 0' in kernels_text
     assert "tf32-cublaslt-optimized" in gpt2_source_text
@@ -3807,6 +3810,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_logits_linear_strategy" in gpt2_source_text
     assert "linear_tk_gemm_count" in gpt2_source_text
     assert "linear_tk_float_out_gemm_count" in gpt2_source_text
+    assert "linear_shape_stats" in gpt2_source_text
+    assert "cublaslt" in gpt2_source_text
+    assert "tk_bf16" in gpt2_source_text
+    assert "cublas_sgemm" in gpt2_source_text
     assert "block-bf16-cublaslt-shape-gated-lm-head-tk-sm120-default" in gpt2_source_text
     assert "padded-lm-head-tk-sm120-bf16-gemm-default" in gpt2_source_text
     assert "block-forward-dinput-dweight-bf16-lm-head-tf32" in gpt2_source_text
@@ -4085,7 +4092,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert 'setenv("CUDA_VISIBLE_DEVICES", "0", 0)' in gpt2_source_text
     assert 'std::getenv("CUDA_DEVICE_MAX_CONNECTIONS")' in gpt2_source_text
     assert 'setenv("CUDA_MODULE_LOADING", "LAZY", 0)' in gpt2_source_text
-    assert '"cuda_module_loading"' in gpt2_source_text
+    assert '\\"cuda_module_loading\\"' in gpt2_source_text
     assert "--no-checkpoint" in gpt2_source_text
     assert "--native-cuda-no-checkpoint" in gpt2_source_text
     assert "cfg.write_checkpoint = false" in gpt2_source_text
@@ -4892,6 +4899,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_trainer_linear_bf16_workspace_allocation_count" in exported
         assert "nfn_native_tile_trainer_linear_bf16_cached_a_capacity" in exported
         assert "nfn_native_tile_trainer_linear_bf16_cache_entry_count" in exported
+        assert "nfn_native_tile_trainer_linear_shape_stats_count" in exported
+        assert "nfn_native_tile_trainer_linear_shape_stats_entry" in exported
         assert "nfn_native_tile_adamw_step_with_device_scale_float32" in exported
         assert "nfn_native_tile_global_norm_clip_scale_float32" in exported
         assert "nfn_native_tile_scale_inplace_by_device_float32" in exported

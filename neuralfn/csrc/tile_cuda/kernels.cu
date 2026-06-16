@@ -71,6 +71,25 @@ std::atomic<std::int64_t> g_linear_bf16_workspace_a_capacity{0};
 std::atomic<std::int64_t> g_linear_bf16_workspace_b_capacity{0};
 std::atomic<std::int64_t> g_linear_bf16_cached_a_capacity{0};
 std::atomic<std::int64_t> g_linear_bf16_cache_entry_count{0};
+struct LinearShapeStat {
+  int path = 0;
+  int m = 0;
+  int n = 0;
+  int k = 0;
+  int op_a = 0;
+  int op_b = 0;
+  std::int64_t calls = 0;
+};
+std::vector<LinearShapeStat> g_linear_shape_stats;
+std::mutex g_linear_shape_stats_mutex;
+bool trainer_linear_shape_stats_enabled();
+void record_linear_shape_stat(
+    int path,
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b);
 #endif
 std::atomic<bool> g_attention_forward_row_launch_disabled{false};
 
@@ -1516,6 +1535,7 @@ bool cublaslt_linear_matmul(
   destroy_trainer_linear_cublaslt_layouts(matmul_desc, a_desc, b_desc, c_desc);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_cublaslt_gemm_count.fetch_add(1, std::memory_order_relaxed);
+    record_linear_shape_stat(1, m, n, k, op_a, op_b);
     return true;
   }
   return false;
@@ -1621,6 +1641,63 @@ bool trainer_linear_bf16_cublaslt_enabled() {
         std::strcmp(value, "ON") == 0;
   }();
   return enabled;
+}
+
+bool trainer_linear_shape_stats_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_NATIVE_LINEAR_SHAPE_STATS");
+    if (value == nullptr) {
+      value = std::getenv("NFN_TILE_CUDA_LINEAR_SHAPE_STATS");
+    }
+    if (value == nullptr) {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
+void record_linear_shape_stat(
+    int path,
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  if (!trainer_linear_shape_stats_enabled()) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(g_linear_shape_stats_mutex);
+  for (LinearShapeStat& stat : g_linear_shape_stats) {
+    if (stat.path == path && stat.m == m && stat.n == n && stat.k == k &&
+        stat.op_a == static_cast<int>(op_a) && stat.op_b == static_cast<int>(op_b)) {
+      stat.calls += 1;
+      return;
+    }
+  }
+  if (g_linear_shape_stats.size() >= 256) {
+    return;
+  }
+  g_linear_shape_stats.push_back(
+      LinearShapeStat{
+          path,
+          m,
+          n,
+          k,
+          static_cast<int>(op_a),
+          static_cast<int>(op_b),
+          1});
 }
 
 bool trainer_linear_bf16_cublaslt_shape_supported(int m, int n, int k) {
@@ -2580,6 +2657,7 @@ bool tk_linear_gemm_bf16_forward_to_bf16_bits(
   ::matmul_forward(out, inp, weight, bias, 1, rows, input_dim, output_dim, stream);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  record_linear_shape_stat(2, output_dim, rows, input_dim, op_a, op_b);
   return true;
 #else
   (void)weight_bf16;
@@ -2623,6 +2701,7 @@ bool tk_linear_gemm_bf16_forward_to_float32(
   const int blocks = static_cast<int>((elements + threads - 1) / threads);
   bf16_bits_to_f32_kernel<<<blocks, threads, 0, stream>>>(out_bf16_bits, out, elements);
   g_linear_tk_float_out_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  record_linear_shape_stat(3, output_dim, rows, input_dim, op_a, op_b);
   return true;
 #else
   (void)weight_bf16;
@@ -2707,6 +2786,7 @@ bool tk_linear_gemm_bf16_forward_gelu_to_bf16_bits(
       stream);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  record_linear_shape_stat(2, output_dim, rows, input_dim, CUBLAS_OP_T, CUBLAS_OP_N);
   return true;
 #else
   (void)x;
@@ -2786,6 +2866,7 @@ bool tk_linear_gemm_bf16_forward_gelu_weight_bf16_to_bf16_bits(
       stream);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  record_linear_shape_stat(2, output_dim, rows, input_dim, CUBLAS_OP_T, CUBLAS_OP_N);
   return true;
 #else
   (void)x;
@@ -2857,6 +2938,7 @@ bool tk_linear_backward_input_dgelu_bf16_bits_float32(
   bf16_bits_to_f32_kernel<<<blocks, threads, 0, stream>>>(grad_x_bf16_bits, grad_x, elements);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  record_linear_shape_stat(2, input_dim, rows, output_dim, CUBLAS_OP_N, CUBLAS_OP_N);
   return true;
 #else
   (void)grad_out;
@@ -2926,6 +3008,7 @@ bool tk_linear_backward_input_dgelu_weight_bf16_bits_float32(
   }
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  record_linear_shape_stat(2, input_dim, rows, output_dim, CUBLAS_OP_N, CUBLAS_OP_N);
   return true;
 #else
   (void)grad_out;
@@ -3099,6 +3182,7 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32_to_bf16_bits(
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+    record_linear_shape_stat(4, m, n, k, op_a, op_b);
     if (has_bias && bias != nullptr) {
       const std::int64_t elements = static_cast<std::int64_t>(n) * m;
       if (bf16_bits_add_bias_tile_enabled()) {
@@ -3276,6 +3360,7 @@ bool cublas_linear_forward_float32(
       m);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_sgemm_count.fetch_add(1, std::memory_order_relaxed);
+    record_linear_shape_stat(5, m, n, k, CUBLAS_OP_T, CUBLAS_OP_N);
     return true;
   }
   return false;
@@ -3356,6 +3441,7 @@ bool cublas_linear_backward_input_float32(
       m);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_sgemm_count.fetch_add(1, std::memory_order_relaxed);
+    record_linear_shape_stat(5, m, n, k, CUBLAS_OP_N, CUBLAS_OP_N);
     return true;
   }
   return false;
@@ -3436,6 +3522,7 @@ bool cublas_linear_backward_weight_float32(
       m);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_sgemm_count.fetch_add(1, std::memory_order_relaxed);
+    record_linear_shape_stat(5, m, n, k, CUBLAS_OP_N, CUBLAS_OP_T);
     return true;
   }
   return false;
@@ -11123,6 +11210,13 @@ void launch_linear_bf16_input_weight_bf16_gelu_bf16_float32(
           stream);
       g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
       g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+      record_linear_shape_stat(
+          2,
+          static_cast<int>(output_dim),
+          static_cast<int>(rows),
+          static_cast<int>(input_dim),
+          CUBLAS_OP_T,
+          CUBLAS_OP_N);
       return;
     }
   }
@@ -12618,8 +12712,14 @@ void reset_trainer_linear_launch_stats() {
   g_linear_bf16_a_cache_hit_count.store(0, std::memory_order_relaxed);
   g_linear_bf16_cache_reset_count.store(0, std::memory_order_relaxed);
   g_linear_bf16_workspace_allocation_count.store(0, std::memory_order_relaxed);
-  std::lock_guard<std::mutex> lock(g_trainer_linear_bf16_workspace_mutex);
-  invalidate_trainer_linear_bf16_cache(g_trainer_linear_bf16_workspace);
+  {
+    std::lock_guard<std::mutex> lock(g_trainer_linear_bf16_workspace_mutex);
+    invalidate_trainer_linear_bf16_cache(g_trainer_linear_bf16_workspace);
+  }
+  {
+    std::lock_guard<std::mutex> lock(g_linear_shape_stats_mutex);
+    g_linear_shape_stats.clear();
+  }
 #endif
 }
 
@@ -12732,6 +12832,65 @@ std::int64_t trainer_linear_bf16_cache_entry_count() {
   return g_linear_bf16_cache_entry_count.load(std::memory_order_relaxed);
 #else
   return 0;
+#endif
+}
+
+std::int64_t trainer_linear_shape_stats_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  std::lock_guard<std::mutex> lock(g_linear_shape_stats_mutex);
+  return static_cast<std::int64_t>(g_linear_shape_stats.size());
+#else
+  return 0;
+#endif
+}
+
+bool trainer_linear_shape_stats_entry(
+    std::int64_t index,
+    int* path,
+    int* m,
+    int* n,
+    int* k,
+    int* op_a,
+    int* op_b,
+    std::int64_t* calls) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  std::lock_guard<std::mutex> lock(g_linear_shape_stats_mutex);
+  if (index < 0 || index >= static_cast<std::int64_t>(g_linear_shape_stats.size())) {
+    return false;
+  }
+  const LinearShapeStat& stat = g_linear_shape_stats[static_cast<std::size_t>(index)];
+  if (path != nullptr) {
+    *path = stat.path;
+  }
+  if (m != nullptr) {
+    *m = stat.m;
+  }
+  if (n != nullptr) {
+    *n = stat.n;
+  }
+  if (k != nullptr) {
+    *k = stat.k;
+  }
+  if (op_a != nullptr) {
+    *op_a = stat.op_a;
+  }
+  if (op_b != nullptr) {
+    *op_b = stat.op_b;
+  }
+  if (calls != nullptr) {
+    *calls = stat.calls;
+  }
+  return true;
+#else
+  (void)index;
+  (void)path;
+  (void)m;
+  (void)n;
+  (void)k;
+  (void)op_a;
+  (void)op_b;
+  (void)calls;
+  return false;
 #endif
 }
 

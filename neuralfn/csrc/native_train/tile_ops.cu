@@ -41,6 +41,16 @@ std::int64_t trainer_linear_bf16_workspace_a_capacity();
 std::int64_t trainer_linear_bf16_workspace_b_capacity();
 std::int64_t trainer_linear_bf16_cached_a_capacity();
 std::int64_t trainer_linear_bf16_cache_entry_count();
+std::int64_t trainer_linear_shape_stats_count();
+bool trainer_linear_shape_stats_entry(
+    std::int64_t index,
+    int* path,
+    int* m,
+    int* n,
+    int* k,
+    int* op_a,
+    int* op_b,
+    std::int64_t* calls);
 void launch_gradient_accumulate_float32(float* buffer, const float* grad, std::int64_t n, float scale, cudaStream_t stream);
 void launch_copy_float32(const float* source, float* dest, std::int64_t n, cudaStream_t stream);
 void launch_uint16_to_int64(const std::uint16_t* source, std::int64_t* dest, std::int64_t n, cudaStream_t stream);
@@ -1447,6 +1457,23 @@ std::int64_t nfn_native_tile_trainer_linear_bf16_cached_a_capacity() {
 
 std::int64_t nfn_native_tile_trainer_linear_bf16_cache_entry_count() {
     return neuralfn::tile_cuda::trainer_linear_bf16_cache_entry_count();
+}
+
+std::int64_t nfn_native_tile_trainer_linear_shape_stats_count() {
+    return neuralfn::tile_cuda::trainer_linear_shape_stats_count();
+}
+
+bool nfn_native_tile_trainer_linear_shape_stats_entry(
+    std::int64_t index,
+    int* path,
+    int* m,
+    int* n,
+    int* k,
+    int* op_a,
+    int* op_b,
+    std::int64_t* calls) {
+    return neuralfn::tile_cuda::trainer_linear_shape_stats_entry(
+        index, path, m, n, k, op_a, op_b, calls);
 }
 
 int nfn_native_tile_gradient_accumulate_float32(

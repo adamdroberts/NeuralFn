@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Native linear dispatch shape profiler
+
+#### Added
+
+- Added optional native linear dispatch shape profiling to the raw CUDA Tile
+  trainer ABI. Set `NFN_NATIVE_LINEAR_SHAPE_STATS=1` or
+  `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1` to record successful GEMM dispatch
+  buckets for TK BF16, TK BF16 plus float-output conversion, cuBLASLt, cuBLAS
+  GEMMEx BF16, and SGEMM paths.
+- `nfn_gpt_native_train` now emits `linear_shape_stats_enabled`,
+  `linear_shape_stats_count`, and `linear_shape_stats` JSON fields when the
+  profiler records buckets. Each entry reports `path_name`, `m`, `n`, `k`,
+  transpose flags, and `calls`, which makes the SM120 paired benchmark loop
+  target specific kernel shapes instead of inferring from aggregate GEMM
+  counters.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step dedicated RTX 5090 TinyStories pass with
+  `NFN_NATIVE_LINEAR_SHAPE_STATS=1`; runtime JSON reported 13 shape buckets,
+  `linear_sgemm_count: 0`, 352 TK GEMMs, and 864 cuBLASLt GEMMs. The buckets
+  confirmed TK coverage for QKV, MLP FC/GELU, LM-head, and fused dGELU paths,
+  with remaining cuBLASLt buckets concentrated in block projection, dInput, and
+  dWeight shapes.
+- Rejected measured cuBLASLt heuristic-index default changes: index 1 was about
+  `1.3%` slower in train-loop time and index 2 was about `2.7%` slower in
+  train-loop time for the short paired 3-step RTX 5090 runs.
+
 ### 2026-06-16 SM120 native GPT parity benchmark wrapper
 
 #### Added

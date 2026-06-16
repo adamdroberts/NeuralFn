@@ -820,6 +820,8 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_trainer_linear_bf16_workspace_b_capacity",
         "nfn_native_tile_trainer_linear_bf16_cached_a_capacity",
         "nfn_native_tile_trainer_linear_bf16_cache_entry_count",
+        "nfn_native_tile_trainer_linear_shape_stats_count",
+        "nfn_native_tile_trainer_linear_shape_stats_entry",
         "nfn_native_tile_scaled_dot_product_attention_backward_float32",
         "nfn_native_tile_scaled_dot_product_attention_backward_from_merged_grad_float32",
         "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32",
@@ -6862,6 +6864,16 @@ int run_transformer_lm_training_json(
     std::int64_t linear_bf16_workspace_b_capacity = 0;
     std::int64_t linear_bf16_cached_a_capacity = 0;
     std::int64_t linear_bf16_cache_entry_count = 0;
+    struct LinearShapeStat {
+        int path = 0;
+        int m = 0;
+        int n = 0;
+        int k = 0;
+        int op_a = 0;
+        int op_b = 0;
+        std::int64_t calls = 0;
+    };
+    std::vector<LinearShapeStat> linear_shape_stats;
     std::string checkpoint_path_json;
     std::string done_marker_json;
     std::int64_t checkpoint_step = 0;
@@ -6981,6 +6993,8 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_trainer_linear_bf16_workspace_b_capacity",
         "nfn_native_tile_trainer_linear_bf16_cached_a_capacity",
         "nfn_native_tile_trainer_linear_bf16_cache_entry_count",
+        "nfn_native_tile_trainer_linear_shape_stats_count",
+        "nfn_native_tile_trainer_linear_shape_stats_entry",
         "nfn_native_tile_scaled_dot_product_attention_backward_float32",
         "nfn_native_tile_scaled_dot_product_attention_backward_from_merged_grad_float32",
         "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32",
@@ -7148,6 +7162,8 @@ int run_transformer_lm_training_json(
     using AttentionStatsErrorFn = int (*)();
     using TrainerLinearStatsResetFn = void (*)();
     using TrainerLinearStatsCountFn = std::int64_t (*)();
+    using TrainerLinearShapeStatsEntryFn = bool (*)(
+        std::int64_t, int*, int*, int*, int*, int*, int*, std::int64_t*);
     using AttentionBackwardToQkvReuseForwardFn = int (*)(
         const float*, float*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t,
@@ -7358,6 +7374,8 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_bf16_workspace_b_capacity_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_cached_a_capacity_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_cache_entry_count_fn = nullptr;
+    TrainerLinearStatsCountFn trainer_linear_shape_stats_count_fn = nullptr;
+    TrainerLinearShapeStatsEntryFn trainer_linear_shape_stats_entry_fn = nullptr;
     AttentionBackwardToQkvReuseForwardFn attention_backward_to_qkv_reuse_forward = nullptr;
     PackedAttentionForwardFn packed_attention_forward = nullptr;
     PackedAttentionForwardStoreLseFn packed_attention_forward_store_lse = nullptr;
@@ -7651,6 +7669,10 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_trainer_linear_bf16_cached_a_capacity");
                 trainer_linear_bf16_cache_entry_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_bf16_cache_entry_count");
+                trainer_linear_shape_stats_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_shape_stats_count");
+                trainer_linear_shape_stats_entry_fn = load_symbol<TrainerLinearShapeStatsEntryFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_shape_stats_entry");
                 attention_stats_reset();
                 trainer_linear_stats_reset();
                 attention_backward_to_qkv_reuse_forward = load_symbol<AttentionBackwardToQkvReuseForwardFn>(
@@ -12209,6 +12231,26 @@ int run_transformer_lm_training_json(
     if (trainer_linear_bf16_cache_entry_count_fn != nullptr) {
         linear_bf16_cache_entry_count = trainer_linear_bf16_cache_entry_count_fn();
     }
+    if (trainer_linear_shape_stats_count_fn != nullptr &&
+        trainer_linear_shape_stats_entry_fn != nullptr) {
+        const std::int64_t shape_stat_count = trainer_linear_shape_stats_count_fn();
+        const std::int64_t capped_shape_stat_count = std::min<std::int64_t>(shape_stat_count, 256);
+        linear_shape_stats.reserve(static_cast<std::size_t>(capped_shape_stat_count));
+        for (std::int64_t index = 0; index < capped_shape_stat_count; ++index) {
+            LinearShapeStat stat;
+            if (trainer_linear_shape_stats_entry_fn(
+                    index,
+                    &stat.path,
+                    &stat.m,
+                    &stat.n,
+                    &stat.k,
+                    &stat.op_a,
+                    &stat.op_b,
+                    &stat.calls)) {
+                linear_shape_stats.push_back(stat);
+            }
+        }
+    }
     attention_forward_row_successes =
         std::max<std::int64_t>(0, attention_forward_row_launches - attention_forward_row_fallbacks);
 
@@ -12305,6 +12347,57 @@ int run_transformer_lm_training_json(
         stage_timing_json << "\n";
     }
     stage_timing_json << "    ]\n";
+
+    auto linear_shape_path_name = [](int path) -> const char* {
+        switch (path) {
+            case 1:
+                return "cublaslt";
+            case 2:
+                return "tk_bf16";
+            case 3:
+                return "tk_bf16_float_out";
+            case 4:
+                return "cublas_gemmex_bf16";
+            case 5:
+                return "cublas_sgemm";
+            default:
+                return "unknown";
+        }
+    };
+    auto linear_shape_op_name = [](int op) -> const char* {
+        switch (op) {
+            case 0:
+                return "N";
+            case 1:
+                return "T";
+            case 2:
+                return "C";
+            default:
+                return "?";
+        }
+    };
+    std::ostringstream linear_shape_stats_json;
+    linear_shape_stats_json << "  \"linear_shape_stats\": [\n";
+    for (std::size_t i = 0; i < linear_shape_stats.size(); ++i) {
+        const LinearShapeStat& stat = linear_shape_stats[i];
+        linear_shape_stats_json
+            << "    {\"path\": " << stat.path
+            << ", \"path_name\": \"" << linear_shape_path_name(stat.path) << "\""
+            << ", \"m\": " << stat.m
+            << ", \"n\": " << stat.n
+            << ", \"k\": " << stat.k
+            << ", \"op_a\": " << stat.op_a
+            << ", \"op_a_name\": \"" << linear_shape_op_name(stat.op_a) << "\""
+            << ", \"op_b\": " << stat.op_b
+            << ", \"op_b_name\": \"" << linear_shape_op_name(stat.op_b) << "\""
+            << ", \"calls\": " << stat.calls
+            << "}";
+        if (i + 1 != linear_shape_stats.size()) {
+            linear_shape_stats_json << ",";
+        }
+        linear_shape_stats_json << "\n";
+    }
+    linear_shape_stats_json << "  ],\n";
 
     std::cout
         << "{\n"
@@ -12493,6 +12586,10 @@ int run_transformer_lm_training_json(
         << "  \"linear_bf16_workspace_b_capacity\": " << linear_bf16_workspace_b_capacity << ",\n"
         << "  \"linear_bf16_cached_a_capacity\": " << linear_bf16_cached_a_capacity << ",\n"
         << "  \"linear_bf16_cache_entry_count\": " << linear_bf16_cache_entry_count << ",\n"
+        << "  \"linear_shape_stats_enabled\": "
+        << (!linear_shape_stats.empty() ? "true" : "false") << ",\n"
+        << "  \"linear_shape_stats_count\": " << linear_shape_stats.size() << ",\n"
+        << linear_shape_stats_json.str()
         << "  \"block_weight_bf16_shadow_strategy\": \""
         << (bf16_block_weight_param_update_enabled
                 ? "persistent-bf16-primary-block-weight-adamw"

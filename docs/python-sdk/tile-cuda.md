@@ -111,6 +111,13 @@ row chunk. Tied LM-head dWeight chunks accumulate directly into the optimizer-st
 full-vocab scratch gradient buffer per chunk or per microbatch. The JSON reports
 `lm_head_row_chunk_count` and `loss_partial_count`.
 
+For SDK-launched native GPT profiling, include
+`NFN_NATIVE_LINEAR_SHAPE_STATS=1` or `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1` in the
+subprocess environment. The compiled trainer then reports `linear_shape_stats`
+JSON buckets that identify the successful TK BF16, cuBLASLt, cuBLAS GEMMEx BF16,
+and SGEMM linear dispatch shapes and call counts. This is intended for kernel
+candidate comparisons and should stay disabled in normal training runs.
+
 Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, `NFN_NATIVE_GPT_BINDING`, and
 `NFN_NATIVE_GPT_TRAIN_BIN`. Runtime tuning also prefers
