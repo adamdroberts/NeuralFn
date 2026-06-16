@@ -763,6 +763,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_linear_bf16_float32",
         "nfn_native_tile_linear_weight_bf16_float32",
         "nfn_native_tile_linear_weight_bf16_output_float32",
+        "nfn_native_tile_linear_bf16_input_float_weight_bf16_output_float32",
         "nfn_native_tile_linear_bf16_input_weight_bf16_float32",
         "nfn_native_tile_linear_backward_input_float32",
         "nfn_native_tile_linear_backward_input_weight_bf16_float32",
@@ -6991,6 +6992,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_linear_bf16_output_float32",
         "nfn_native_tile_linear_weight_bf16_output_float32",
         "nfn_native_tile_linear_bf16_input_weight_bf16_output_float32",
+        "nfn_native_tile_linear_bf16_input_float_weight_bf16_output_float32",
         "nfn_native_tile_bf16_bits_add_bias_inplace_float32",
         "nfn_native_tile_linear_bf16_input_bits_float32",
         "nfn_native_tile_linear_bf16_input_weight_bf16_float32",
@@ -7165,6 +7167,9 @@ int run_transformer_lm_training_json(
         std::int64_t, std::int64_t, std::int64_t, bool, void*);
     using LinearBf16InputWeightBf16OutputFn = int (*)(
         const std::uint16_t*, const std::uint16_t*, const float*, std::uint16_t*,
+        std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using LinearBf16InputFloatWeightBf16OutputFn = int (*)(
+        const std::uint16_t*, const float*, const float*, std::uint16_t*,
         std::int64_t, std::int64_t, std::int64_t, bool, void*);
     using LinearWeightBf16Fn = int (*)(
         const float*, const std::uint16_t*, const float*, float*,
@@ -7389,6 +7394,7 @@ int run_transformer_lm_training_json(
     LinearWeightBf16Fn linear_weight_bf16 = nullptr;
     LinearWeightBf16OutputFn linear_weight_bf16_output = nullptr;
     LinearBf16InputWeightBf16OutputFn linear_bf16_input_weight_bf16_output = nullptr;
+    LinearBf16InputFloatWeightBf16OutputFn linear_bf16_input_float_weight_bf16_output = nullptr;
     Bf16BitsAddBiasInplaceFn bf16_bits_add_bias_inplace = nullptr;
     LinearBf16InputWeightBf16Fn linear_bf16_input_weight_bf16 = nullptr;
     LinearWeightBf16GeluBf16Fn linear_weight_bf16_gelu_bf16 = nullptr;
@@ -7637,6 +7643,9 @@ int run_transformer_lm_training_json(
                 linear_bf16_input_weight_bf16_output =
                     load_symbol<LinearBf16InputWeightBf16OutputFn>(
                         tile_handle, "nfn_native_tile_linear_bf16_input_weight_bf16_output_float32");
+                linear_bf16_input_float_weight_bf16_output =
+                    load_symbol<LinearBf16InputFloatWeightBf16OutputFn>(
+                        tile_handle, "nfn_native_tile_linear_bf16_input_float_weight_bf16_output_float32");
                 bf16_bits_add_bias_inplace = load_symbol<Bf16BitsAddBiasInplaceFn>(
                     tile_handle, "nfn_native_tile_bf16_bits_add_bias_inplace_float32");
                 linear_bf16_input_weight_bf16 =
@@ -8081,6 +8090,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT",
                               "NFN_NATIVE_GPT2_LM_HEAD_BF16_DWEIGHT"}),
             false);
+    const bool lm_head_prepack_bf16_hidden_enabled =
+        lm_head_bf16_logits_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN",
+                              "NFN_NATIVE_GPT2_LM_HEAD_PREPACK_BF16_HIDDEN"}),
+            true);
     const bool lm_head_public_vocab_ce_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_PUBLIC_VOCAB_CE",
@@ -9029,10 +9044,11 @@ int run_transformer_lm_training_json(
         lm_head_bf16_logit_bytes = static_cast<std::int64_t>(bytes);
     };
     auto allocate_lm_head_bf16_hidden = [&]() {
-        if (!error.empty() || !lm_head_bf16_dweight_enabled) {
+        if (!error.empty() || (!lm_head_bf16_dweight_enabled && !lm_head_prepack_bf16_hidden_enabled)) {
             return;
         }
-        const std::int64_t elements = lm_head_chunk_rows * kDim;
+        const std::int64_t elements =
+            lm_head_prepack_bf16_hidden_enabled ? activation_elements : (lm_head_chunk_rows * kDim);
         if (elements <= 0 ||
             elements > static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
             error = "LM-head bf16 hidden allocation byte size overflow";
@@ -9351,7 +9367,9 @@ int run_transformer_lm_training_json(
             "lm_head_bf16_logits");
         allocate_uint16(
             &lm_head_bf16_hidden,
-            lm_head_bf16_dweight_enabled ? lm_head_chunk_rows * kDim : 0,
+            (lm_head_bf16_dweight_enabled || lm_head_prepack_bf16_hidden_enabled)
+                ? (lm_head_prepack_bf16_hidden_enabled ? activation_elements : lm_head_chunk_rows * kDim)
+                : 0,
             "lm_head_bf16_hidden");
         allocate_uint16(&mlp_forward_act_bf16, hidden_elements, "mlp_forward_act_bf16");
         allocate_uint16(
@@ -10424,26 +10442,52 @@ int run_transformer_lm_training_json(
 
     auto lm_head_backward = [&](float accumulation_scale) {
         const std::int64_t stage_event = stage_begin("lm_head_backward");
+        if (lm_head_prepack_bf16_hidden_enabled) {
+            run_timed_stage("lm_head_backward.hidden_prepack", [&]() {
+                run(float32_to_bf16_bits(
+                        lnf_out,
+                        lm_head_bf16_hidden,
+                        active_rows * kDim,
+                        nullptr),
+                    "lm_head.hidden_full.to_bf16_bits");
+            });
+        }
         for (std::int64_t row_start = 0; row_start < active_rows && error.empty(); row_start += lm_head_chunk_rows) {
             const std::int64_t row_count =
                 (row_start + lm_head_chunk_rows < active_rows) ? lm_head_chunk_rows : (active_rows - row_start);
             const float* hidden_chunk = lnf_out + row_start * kDim;
+            const std::uint16_t* hidden_bf16_chunk =
+                lm_head_prepack_bf16_hidden_enabled ? (lm_head_bf16_hidden + row_start * kDim) : lm_head_bf16_hidden;
             const std::int64_t* target_chunk = active_targets + row_start;
             const std::uint16_t* target_chunk_u16 = active_targets_u16 + row_start;
             float* grad_hidden_chunk = grad_lnf + row_start * kDim;
             run_timed_stage("lm_head_backward.logits", [&]() {
                 if (lm_head_bf16_logits_enabled) {
-                    run(linear_bf16_output(
-                            hidden_chunk,
-                            token_weight,
-                            nullptr,
-                            lm_head_bf16_logits,
-                            row_count,
-                            kDim,
-                            kPaddedVocab,
-                            false,
-                            nullptr),
-                        "lm_head.forward.recompute.bf16_logits");
+                    if (lm_head_prepack_bf16_hidden_enabled) {
+                        run(linear_bf16_input_float_weight_bf16_output(
+                                hidden_bf16_chunk,
+                                token_weight,
+                                nullptr,
+                                lm_head_bf16_logits,
+                                row_count,
+                                kDim,
+                                kPaddedVocab,
+                                false,
+                                nullptr),
+                            "lm_head.forward.recompute.prepacked_hidden_bf16_logits");
+                    } else {
+                        run(linear_bf16_output(
+                                hidden_chunk,
+                                token_weight,
+                                nullptr,
+                                lm_head_bf16_logits,
+                                row_count,
+                                kDim,
+                                kPaddedVocab,
+                                false,
+                                nullptr),
+                            "lm_head.forward.recompute.bf16_logits");
+                    }
                 } else {
                     run(linear(hidden_chunk, token_weight, nullptr, logits, row_count, kDim, kPaddedVocab, false, nullptr),
                         "lm_head.forward.recompute");
@@ -10540,7 +10584,17 @@ int run_transformer_lm_training_json(
             run_timed_stage("lm_head_backward.dweight", [&]() {
                 if (error.empty()) {
                     if (lm_head_bf16_logits_enabled) {
-                        if (lm_head_bf16_dweight_enabled) {
+                        if (lm_head_prepack_bf16_hidden_enabled) {
+                            run(linear_backward_weight_accumulate_bf16_bits_bf16_bits(
+                                    hidden_bf16_chunk,
+                                    lm_head_bf16_logits,
+                                    accum_grad_token_weight,
+                                    row_count,
+                                    kDim,
+                                    kPaddedVocab,
+                                    nullptr),
+                                "lm_head.backward_weight.accumulate.prepacked_bf16_bits_bf16_bits");
+                        } else if (lm_head_bf16_dweight_enabled) {
                             run(float32_to_bf16_bits(
                                     hidden_chunk,
                                     lm_head_bf16_hidden,
@@ -12807,16 +12861,22 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_bf16_logit_bytes\": " << lm_head_bf16_logit_bytes << ",\n"
         << "  \"lm_head_bf16_dweight_enabled\": "
         << (lm_head_bf16_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_prepack_bf16_hidden_enabled\": "
+        << (lm_head_prepack_bf16_hidden_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_bf16_hidden_elements\": " << lm_head_bf16_hidden_elements << ",\n"
         << "  \"lm_head_bf16_hidden_bytes\": " << lm_head_bf16_hidden_bytes << ",\n"
         << "  \"lm_head_dweight_input_dtype\": \""
-        << (lm_head_bf16_dweight_enabled ? "bf16" : (lm_head_bf16_logits_enabled ? "float32" : "float32")) << "\",\n"
+        << ((lm_head_prepack_bf16_hidden_enabled || lm_head_bf16_dweight_enabled)
+                ? "bf16"
+                : (lm_head_bf16_logits_enabled ? "float32" : "float32")) << "\",\n"
         << "  \"lm_head_dweight_strategy\": \""
-        << (lm_head_bf16_dweight_enabled
+        << (lm_head_prepack_bf16_hidden_enabled
+                ? "full-final-norm-bf16-prepack-bf16-dlogit-dweight-accumulate"
+                : (lm_head_bf16_dweight_enabled
                 ? "chunked-final-norm-bf16-pack-bf16-dlogit-dweight-accumulate"
                 : (lm_head_bf16_logits_enabled
                        ? "float32-hidden-bf16-dlogit-dweight-accumulate"
-                       : "float32-hidden-float32-dlogit-dweight-accumulate"))
+                       : "float32-hidden-float32-dlogit-dweight-accumulate")))
         << "\",\n"
         << "  \"lm_head_ce_backward_strategy\": \""
         << (lm_head_public_vocab_ce_enabled

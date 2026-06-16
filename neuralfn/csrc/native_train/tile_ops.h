@@ -446,6 +446,17 @@ int nfn_native_tile_linear_bf16_input_weight_bf16_output_float32(
     bool has_bias,
     void* cuda_stream);
 
+int nfn_native_tile_linear_bf16_input_float_weight_bf16_output_float32(
+    const std::uint16_t* x_bf16_bits,
+    const float* weight,
+    const float* bias,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    void* cuda_stream);
+
 int nfn_native_tile_bf16_bits_add_bias_inplace_float32(
     std::uint16_t* values,
     const float* bias,

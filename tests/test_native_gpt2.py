@@ -3702,6 +3702,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_restore_mlp_activations_bf16_float32" in header_text
     assert "nfn_native_tile_linear_weight_bf16_float32" in header_text
     assert "nfn_native_tile_linear_weight_bf16_output_float32" in header_text
+    assert "nfn_native_tile_linear_bf16_input_float_weight_bf16_output_float32" in header_text
     assert "nfn_native_tile_linear_bf16_input_bits_float32" in header_text
     assert "nfn_native_tile_linear_bf16_input_weight_bf16_float32" in header_text
     assert "nfn_native_tile_linear_bf16_gelu_bf16_float32" in header_text
@@ -3718,7 +3719,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32" in header_text
     assert "NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT" in gpt2_source_text
     assert "lm_head_bf16_dweight_enabled" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN" in gpt2_source_text
+    assert "lm_head_prepack_bf16_hidden_enabled" in gpt2_source_text
     assert "lm_head_dweight_strategy" in gpt2_source_text
+    assert "full-final-norm-bf16-prepack-bf16-dlogit-dweight-accumulate" in gpt2_source_text
+    assert "lm_head_backward.hidden_prepack" in gpt2_source_text
+    assert "launch_linear_bf16_input_float_weight_bf16_output_float32" in source_text
+    assert "linear_bf16_input_float_weight_bf16_output_float32_kernel" in kernels_text
+    assert "cublas_linear_gemm_ex_float32_a_bf16_bits_b_to_bf16_bits" in kernels_text
     assert "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32" in header_text
     assert "nfn_native_tile_float32_to_bf16_bits_many" in header_text
     assert "nfn_native_tile_trainer_linear_stats_reset" in header_text
@@ -4958,6 +4966,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_linear_weight_bf16_float32" in exported
         assert "nfn_native_tile_linear_bf16_output_float32" in exported
         assert "nfn_native_tile_linear_weight_bf16_output_float32" in exported
+        assert "nfn_native_tile_linear_bf16_input_float_weight_bf16_output_float32" in exported
         assert "nfn_native_tile_linear_bf16_input_bits_float32" in exported
         assert "nfn_native_tile_linear_bf16_input_weight_bf16_float32" in exported
         assert "nfn_native_tile_linear_bf16_gelu_bf16_float32" in exported

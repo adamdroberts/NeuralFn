@@ -6,6 +6,48 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Prepack native GPT LM-head hidden BF16
+
+#### Changed
+
+- Added the raw trainer Tile ABI symbol
+  `nfn_native_tile_linear_bf16_input_float_weight_bf16_output_float32` for
+  BF16 input activations with FP32 weights and BF16 output logits.
+- Dense GPT native training now prepackages the full final LayerNorm hidden
+  activation to BF16 once per microbatch by default. The LM-head logits GEMM
+  reuses that BF16 hidden buffer, and tied token-weight dWeight accumulation now
+  consumes the same BF16 hidden plus BF16 dlogits instead of packing each
+  LM-head chunk separately.
+- Runtime JSON now reports `lm_head_prepack_bf16_hidden_enabled: true`,
+  `lm_head_bf16_hidden_elements` for the full microbatch hidden buffer,
+  `lm_head_dweight_input_dtype: "bf16"`, and
+  `lm_head_dweight_strategy:
+  "full-final-norm-bf16-prepack-bf16-dlogit-dweight-accumulate"`. Set
+  `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0` or the GPT-2-prefixed fallback
+  to reproduce the older per-chunk hidden-packing path.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh` and rebuilt
+  `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran a GPU-visible one-step TinyStories smoke on CUDA device 0. It reported
+  `passed: true`, `lm_head_prepack_bf16_hidden_enabled: true`,
+  `lm_head_bf16_hidden_elements: 50331648`, and
+  `lm_head_dweight_strategy:
+  "full-final-norm-bf16-prepack-bf16-dlogit-dweight-accumulate"`.
+- Ran a five-sample paired benchmark on the dedicated RTX 5090 with selected
+  GPU idle guards and no compute processes before samples, comparing
+  `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0` against the new default. The
+  default averaged `2767.83 ms` per optimizer step versus `2769.58 ms` for the
+  disabled-prepack baseline, or `0.999368x` train-loop time and `1.000636x`
+  tokens/sec. BF16 linear pack count dropped from 711 to 327 over each 3-step
+  measured run.
+- Ran `python tools/check_native_no_torch_deps.py` and
+  `python -m pytest tests/test_native_gpt2.py -q -k
+  'native_train_tile_ops_builds_torch_free_c_abi or
+  native_gpt2_cpp_cli_builds_and_uses_sm120_defaults'`.
+
 ### 2026-06-16 Default saved packed-attention LSE for native GPT
 
 #### Changed

@@ -3301,6 +3301,103 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32_to_bf16_bits(
   return false;
 }
 
+bool cublas_linear_gemm_ex_float32_a_bf16_bits_b_to_bf16_bits(
+    const float* a,
+    const std::uint16_t* b_bf16_bits,
+    const float* bias,
+    std::uint16_t* c_bf16_bits,
+    std::int64_t a_elements,
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b,
+    int lda,
+    int ldb,
+    int ldc,
+    bool cache_a_operand,
+    bool force_bf16,
+    bool has_bias,
+    cudaStream_t stream) {
+  if (!force_bf16 && !trainer_linear_bf16_bridge_enabled()) {
+    return false;
+  }
+  const std::int64_t bias_elements = has_bias && bias != nullptr ? static_cast<std::int64_t>(m) : 1;
+  TrainerLinearBf16Workspace* workspace = ensure_trainer_linear_bf16_workspace(a_elements, bias_elements);
+  if (workspace == nullptr) {
+    return false;
+  }
+  cublasHandle_t handle = trainer_linear_cublas_handle(stream);
+  if (handle == nullptr) {
+    return false;
+  }
+  __nv_bfloat16* a_bf16 = trainer_linear_bf16_a_operand(workspace, a, a_elements, cache_a_operand, stream);
+  if (a_bf16 == nullptr) {
+    return false;
+  }
+  constexpr int threads = 256;
+  __nv_bfloat16* bias_bf16 = nullptr;
+  if (has_bias && bias != nullptr) {
+    const int bias_blocks = static_cast<int>((bias_elements + threads - 1) / threads);
+    f32_to_bf16_kernel<<<bias_blocks, threads, 0, stream>>>(bias, workspace->b, bias_elements);
+    bias_bf16 = workspace->b;
+  }
+  const auto* b_bf16 = reinterpret_cast<const __nv_bfloat16*>(b_bf16_bits);
+  if (tk_linear_gemm_bf16_forward_to_bf16_bits(
+          a_bf16,
+          b_bf16,
+          bias_bf16,
+          c_bf16_bits,
+          n,
+          k,
+          m,
+          op_a,
+          op_b,
+          stream)) {
+    return true;
+  }
+  const float alpha = 1.0f;
+  const float beta = 0.0f;
+  auto* c_bf16 = reinterpret_cast<__nv_bfloat16*>(c_bf16_bits);
+  const cublasStatus_t status = cublasGemmEx(
+      handle,
+      op_a,
+      op_b,
+      m,
+      n,
+      k,
+      &alpha,
+      a_bf16,
+      CUDA_R_16BF,
+      lda,
+      b_bf16,
+      CUDA_R_16BF,
+      ldb,
+      &beta,
+      c_bf16,
+      CUDA_R_16BF,
+      ldc,
+      CUBLAS_COMPUTE_32F,
+      CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+  if (status == CUBLAS_STATUS_SUCCESS) {
+    g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+    record_linear_shape_stat(5, m, n, k, op_a, op_b);
+    if (has_bias && bias != nullptr) {
+      const std::int64_t elements = static_cast<std::int64_t>(n) * m;
+      if (bf16_bits_add_bias_tile_enabled()) {
+        const int blocks = static_cast<int>((elements + kTileSize - 1) / kTileSize);
+        bf16_bits_add_bias_inplace_tile_float32_kernel<<<blocks, 1, 0, stream>>>(
+            c_bf16_bits, bias, elements, m);
+      } else {
+        const int blocks = static_cast<int>((elements + threads - 1) / threads);
+        bf16_bits_add_bias_inplace_kernel<<<blocks, threads, 0, stream>>>(c_bf16_bits, bias, elements, m);
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
 bool cublas_linear_gemm_ex_bf16_bits_ab_to_bf16_bits(
     const std::uint16_t* a_bf16_bits,
     const std::uint16_t* b_bf16_bits,
@@ -6898,6 +6995,30 @@ __global__ void linear_bf16_input_weight_bf16_output_float32_kernel(
   float acc = has_bias ? bias[col] : 0.0f;
   for (std::int64_t i = 0; i < input_dim; ++i) {
     acc += bf16_bits_to_f32_device(x_row[i]) * bf16_bits_to_f32_device(w_row[i]);
+  }
+  out_bf16_bits[idx] = f32_to_bf16_bits_device(acc);
+}
+
+__global__ void linear_bf16_input_float_weight_bf16_output_float32_kernel(
+    const std::uint16_t* __restrict__ x_bf16_bits,
+    const float* __restrict__ weight,
+    const float* __restrict__ bias,
+    std::uint16_t* __restrict__ out_bf16_bits,
+    std::int64_t n,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const std::int64_t row = idx / output_dim;
+  const std::int64_t col = idx % output_dim;
+  const std::uint16_t* x_row = x_bf16_bits + row * input_dim;
+  const float* w_row = weight + col * input_dim;
+  float acc = has_bias ? bias[col] : 0.0f;
+  for (std::int64_t i = 0; i < input_dim; ++i) {
+    acc += bf16_bits_to_f32_device(x_row[i]) * w_row[i];
   }
   out_bf16_bits[idx] = f32_to_bf16_bits_device(acc);
 }
@@ -11350,6 +11471,46 @@ void launch_linear_bf16_input_weight_bf16_output_float32(
   const int blocks = static_cast<int>((n + threads - 1) / threads);
   linear_bf16_input_weight_bf16_output_float32_kernel<<<blocks, threads, 0, stream>>>(
       x_bf16_bits, weight_bf16_bits, bias, out_bf16_bits, n, input_dim, output_dim, has_bias);
+}
+
+void launch_linear_bf16_input_float_weight_bf16_output_float32(
+    const std::uint16_t* x_bf16_bits,
+    const float* weight,
+    const float* bias,
+    std::uint16_t* out_bf16_bits,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    bool has_bias,
+    cudaStream_t stream) {
+  const std::int64_t n = rows * output_dim;
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
+      cublas_linear_gemm_ex_float32_a_bf16_bits_b_to_bf16_bits(
+          weight,
+          x_bf16_bits,
+          bias,
+          out_bf16_bits,
+          output_dim * input_dim,
+          static_cast<int>(output_dim),
+          static_cast<int>(rows),
+          static_cast<int>(input_dim),
+          CUBLAS_OP_T,
+          CUBLAS_OP_N,
+          static_cast<int>(input_dim),
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          true,
+          true,
+          has_bias,
+          stream)) {
+    return;
+  }
+#endif
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  linear_bf16_input_float_weight_bf16_output_float32_kernel<<<blocks, threads, 0, stream>>>(
+      x_bf16_bits, weight, bias, out_bf16_bits, n, input_dim, output_dim, has_bias);
 }
 
 void launch_bf16_bits_add_bias_inplace_float32(

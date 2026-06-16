@@ -142,6 +142,7 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`,
 `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS`,
 `NFN_NATIVE_GPT_PUBLIC_VOCAB_CE`, and
+`NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN`,
 `NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE`. The older `NFN_NATIVE_GPT2_*`
 variables remain compatibility fallbacks for existing GPT-2-named wrappers.
 The tokenizer-visible GPT-2 vocab remains 50,257, but native transformer-LM
@@ -208,14 +209,19 @@ shapes and fall back inside the ABI to separate dWeight plus Tile bias
 reduction when unsupported. Tied LM-head
 logits, dHidden, and dWeight chunks also default to the BF16 classifier path.
 `nfn_native_tile_linear_bf16_output_float32` writes BF16 logits,
+`nfn_native_tile_linear_bf16_input_float_weight_bf16_output_float32` reuses a
+full-microbatch BF16 final-norm hidden prepack with FP32 tied token weights,
 `nfn_native_tile_token_cross_entropy_partials_strided_bf16_bits` computes
 validation/test CE partials over the public vocab while walking the padded
 logit row stride,
 `nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace`
 overwrites public-vocab logits with BF16 dlogits and zeroes padded dlogit
 columns, and the BF16 dlogits feed
-`nfn_native_tile_linear_backward_input_bf16_bits_float32` plus
-`nfn_native_tile_linear_backward_weight_accumulate_float32_bf16_bits`.
+`nfn_native_tile_linear_backward_input_bf16_bits_float32` plus the prepacked
+BF16-hidden/BF16-dlogit
+`nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32`
+path by default. Set `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0` to
+benchmark the older per-chunk final-hidden packing route.
 The mixed float32-hidden/BF16-grad dWeight+bias ABI also has an opt-in
 cuBLASLt bgrad epilogue route for QKV profiling; set
 `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=1` or
