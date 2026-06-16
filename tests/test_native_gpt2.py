@@ -12,6 +12,7 @@ import struct
 from types import SimpleNamespace
 
 import neuralfn
+import neuralfn.native_gpt2 as native_gpt2_module
 import pytest
 
 from neuralfn.config import SHIPPED_GPT_TEMPLATE_PRESETS
@@ -915,6 +916,7 @@ def test_native_gpt2_cpp_binding_builds_and_runs(
     monkeypatch.delitem(sys.modules, "neuralfn._native_gpt", raising=False)
     monkeypatch.delitem(sys.modules, "neuralfn_native_gpt2", raising=False)
     monkeypatch.delitem(sys.modules, "neuralfn._native_gpt2", raising=False)
+    monkeypatch.setattr(native_gpt2_module, "NATIVE_GPT2_BINDING_MODULES", ("neuralfn._native_gpt2",))
     cfg = NativeGpt2RunConfig(
         executable="/bin/true",
         train_data="train.bin",
@@ -994,6 +996,16 @@ def test_native_gpt_cpp_binding_builds_and_runs_generic_module(
     assert status.resolved == "binding"
     assert status.binding_module == "neuralfn._native_gpt"
     assert run_native_gpt(cfg, runner="auto") == 0
+
+
+def test_native_gpt_cpp_binding_uses_spawn_and_lazy_cuda_module_loading() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "neuralfn" / "csrc" / "native_gpt2" / "binding.cpp").read_text(encoding="utf-8")
+
+    assert "#include <spawn.h>" in source
+    assert "posix_spawnp(&pid" in source
+    assert 'setenv("CUDA_MODULE_LOADING", "LAZY", 0)' in source
+    assert "fork()" not in source
 
 
 def test_native_gpt2_cpp_binding_uses_compiled_cli_for_alias_only_config(

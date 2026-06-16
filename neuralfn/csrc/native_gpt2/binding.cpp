@@ -9,6 +9,7 @@
 #if defined(_WIN32)
 #error "neuralfn._native_gpt/_native_gpt2 currently targets POSIX fork/exec environments."
 #else
+#include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -24,6 +25,8 @@
 #ifndef NFN_NATIVE_GPT_PY_INIT
 #define NFN_NATIVE_GPT_PY_INIT PyInit__native_gpt2
 #endif
+
+extern "C" char** environ;
 
 namespace {
 
@@ -89,21 +92,18 @@ bool optional_string_from_config(PyObject* config, const char* key, std::string*
 }
 
 int run_exec_and_wait(const std::vector<std::string>& command) {
-    pid_t pid = fork();
-    if (pid < 0) {
-        PyErr_Format(PyExc_OSError, "fork failed: %s", std::strerror(errno));
-        return -1;
+    std::vector<char*> exec_args;
+    exec_args.reserve(command.size() + 1);
+    for (const std::string& item : command) {
+        exec_args.push_back(const_cast<char*>(item.c_str()));
     }
+    exec_args.push_back(nullptr);
 
-    if (pid == 0) {
-        std::vector<char*> exec_args;
-        exec_args.reserve(command.size() + 1);
-        for (const std::string& item : command) {
-            exec_args.push_back(const_cast<char*>(item.c_str()));
-        }
-        exec_args.push_back(nullptr);
-        execvp(command[0].c_str(), exec_args.data());
-        _exit(errno == ENOENT ? 127 : 126);
+    pid_t pid = 0;
+    const int spawn_status = posix_spawnp(&pid, command[0].c_str(), nullptr, nullptr, exec_args.data(), environ);
+    if (spawn_status != 0) {
+        PyErr_Format(PyExc_OSError, "posix_spawnp failed for %s: %s", command[0].c_str(), std::strerror(spawn_status));
+        return -1;
     }
 
     int status = 0;
@@ -179,6 +179,9 @@ PyObject* run_gpt(PyObject*, PyObject* args) {
     }
     if (!max_connections.empty() && std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
         setenv("CUDA_DEVICE_MAX_CONNECTIONS", max_connections.c_str(), 0);
+    }
+    if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
+        setenv("CUDA_MODULE_LOADING", "LAZY", 0);
     }
 
     const int return_code = run_exec_and_wait(command);

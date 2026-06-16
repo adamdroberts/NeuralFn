@@ -81,9 +81,11 @@ the C++ binding, the binding executes `compiled_cli_argv` instead of the raw
 path. Set `kernel_backend="tile-cuda"` plus `tile_ops_lib=...` on the config to
 inspect/check or run the NeuralFn-owned raw Tile GPT plan. Native GPT configs
 default `cuda_visible_devices="0"` and `cuda_device_max_connections="1"` before
-launching subprocess, launcher, compiled-CLI, or binding runs; set the
-corresponding environment variable yourself when you need a different CUDA
-device routing. The default
+launching subprocess, launcher, compiled-CLI, or binding runs; the C++ binding
+uses `posix_spawnp()` instead of `fork()` and defaults
+`CUDA_MODULE_LOADING=LAZY` when the caller has not set it. Set the corresponding
+environment variable yourself when you need a different CUDA device routing.
+The default
 `template_name="gpt"` is the public dense GPT native template alias and reports
 `resolved_native_template_name: "gpt2"` in compiled JSON while the current
 implementation template is still named `gpt2`. Set

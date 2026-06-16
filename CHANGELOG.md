@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Reduce native GPT SDK binding launch overhead
+
+#### Changed
+
+- The generic `neuralfn._native_gpt` and compatibility
+  `neuralfn._native_gpt2` C++ bindings now launch compiled native trainer
+  commands with `posix_spawnp()` instead of `fork()` plus `execvp()`. This keeps
+  SDK native runs on the compiled command path while avoiding Python-process
+  fork overhead before the CUDA trainer starts.
+- The binding now sets `CUDA_MODULE_LOADING=LAZY` when the caller has not
+  supplied a module-loading policy, matching the standalone subprocess native
+  runner default.
+
+#### Verification
+
+- `bash tools/build_native_gpt_binding.sh`
+- `bash tools/build_native_gpt2_binding.sh`
+- `python -m pytest tests/test_native_gpt2.py -q -k 'cpp_binding or spawn_and_lazy_cuda_module_loading'`
+
 ### 2026-06-16 Add opt-in native GPT BF16 attention grad-out handoff
 
 #### Changed
