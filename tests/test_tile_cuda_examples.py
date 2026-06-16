@@ -140,6 +140,7 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "tools/paired_kernel_speed.py" in text
     assert "--require-idle-selected-gpu" in text
     assert "--max-selected-gpu-utilization-pct" in text
+    assert 'CUDA_VISIBLE_DEVICES_VALUE="${NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES:-auto}"' in text
     assert "TinyStories_train.bin" in text
     assert "TinyStories_val.bin" in text
     assert "-b 64" in text

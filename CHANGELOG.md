@@ -6,6 +6,39 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Default SM120 parity benchmark GPU selection to auto
+
+#### Changed
+
+- `tools/bench_native_gpt_sm120_parity.sh` now defaults
+  `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=auto` instead of hard-pinning CUDA
+  device `0`. The paired harness therefore selects an idle display-disabled
+  NVIDIA GPU by default on workstations where a separate GPU drives the
+  display.
+- Explicit pinning still works with
+  `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=0` or another CUDA device value. The
+  selected-GPU idle/process guard and utilization guard remain enabled.
+
+#### Verification
+
+- Ran `python -m pytest tests/test_tile_cuda_examples.py -q`.
+- Ran `bash -n tools/bench_native_gpt_sm120_parity.sh`.
+- Ran a one-step live parity smoke with
+  `NFN_SM120_PARITY_STEPS=1 NFN_SM120_PARITY_SAMPLES=1
+  NFN_SM120_PARITY_WARMUP=0
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_auto_gpu_smoke.json
+  tools/bench_native_gpt_sm120_parity.sh`; the wrapper reported
+  `requested=auto resolved=0 mode=auto-dedicated`, selected the
+  display-disabled RTX 5090, and found zero compute processes before/after the
+  sample.
+- Rejected four native-trainer performance candidates on the dedicated RTX
+  5090 using `tools/paired_kernel_speed.py` with
+  `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`,
+  `--require-idle-selected-gpu`, and same-script paired samples:
+  token BF16-shadow AdamW fusion was `1.002344x` train-loop step time,
+  LayerNorm affine row chunk `128` was `1.003970x`, LM-head hidden prepack off
+  was `1.005337x`, and packed-attention saved-LSE off was `1.001135x`.
+
 ### 2026-06-16 Default dense GPT LM-head to persistent token BF16 shadow
 
 #### Changed

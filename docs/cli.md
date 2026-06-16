@@ -635,6 +635,9 @@ output enabled. Set `NFN_SM120_PARITY_STEPS`, `NFN_SM120_PARITY_SAMPLES`,
 `NFN_SM120_PARITY_WARMUP`, `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT`, or
 `NFN_SM120_PARITY_JSON_OUT` to adjust the run without editing the command.
+`NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES` defaults to `auto`, which selects an
+idle display-disabled NVIDIA GPU for mixed display/compute workstations; set it
+to `0` or another explicit CUDA device value when you want manual pinning.
 Short parity runs default to timing-only cadence with
 `NFN_SM120_PARITY_SAMPLE_EVERY=0` and
 `NFN_SM120_PARITY_CHECKPOINT_EVERY=0`, because llm.kittens samples and writes
