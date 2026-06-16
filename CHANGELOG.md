@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-16 Fix SM120 parity benchmark timing cadence
+
+#### Changed
+
+- `tools/bench_native_gpt_sm120_parity.sh` now separates benchmark step count
+  from the llm.kittens reference sample/checkpoint cadence. Short parity runs
+  default to timing-only reference settings,
+  `NFN_SM120_PARITY_SAMPLE_EVERY=0` and
+  `NFN_SM120_PARITY_CHECKPOINT_EVERY=0`, and pass the same cadence knobs to the
+  NeuralFn native candidate while keeping `--no-checkpoint`.
+- Added `NFN_SM120_PARITY_SAMPLE_EVERY`,
+  `NFN_SM120_PARITY_CHECKPOINT_EVERY`, and
+  `NFN_SM120_PARITY_GENERATE_TOKENS` as explicit wrapper controls. Use
+  `20000`, `200`, and `144` respectively to reproduce the full
+  `train-sm120.sh` sample/checkpoint cadence instead of timing-only throughput.
+
+#### Verification
+
+- Ran `bash -n tools/bench_native_gpt_sm120_parity.sh`.
+- Ran `python -m pytest tests/test_tile_cuda_examples.py -q -k
+  native_gpt_sm120_parity_wrapper_uses_reference_shape`.
+- Ran `git diff --check`.
+- Ran a one-step live wrapper smoke on the dedicated RTX 5090:
+  `NFN_SM120_PARITY_STEPS=1 NFN_SM120_PARITY_SAMPLES=1
+  NFN_SM120_PARITY_WARMUP=0
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_timing_only_1step.json
+  tools/bench_native_gpt_sm120_parity.sh`. The selected GPU was display
+  disabled with zero compute processes, llm.kittens train-loop throughput was
+  `210,769 tok/s`, and NeuralFn native train-loop throughput was
+  `190,804 tok/s`.
+
 ### 2026-06-16 Elide dense GPT LN2 FP32 norm stores
 
 #### Changed

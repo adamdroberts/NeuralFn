@@ -148,11 +148,19 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "-l 0.0006" in text
     assert "-q 0.0" in text
     assert "-u 60" in text
-    assert "-n 200" in text
+    assert "NFN_SM120_PARITY_SAMPLE_EVERY" in text
+    assert "NFN_SM120_PARITY_CHECKPOINT_EVERY" in text
+    assert "NFN_SM120_PARITY_GENERATE_TOKENS" in text
+    assert "-s \"$SAMPLE_EVERY\"" in text
+    assert "-g \"$GENERATE_TOKENS\"" in text
+    assert "-n \"$CHECKPOINT_EVERY\"" in text
     assert "-af \"$ACTIVATION\"" in text
     assert "--backend tile-cuda" in text
     assert "--max-steps \"$STEPS\"" in text
     assert "--eval-every-steps 0" in text
+    assert "--native-cuda-sample-every \"$SAMPLE_EVERY\"" in text
+    assert "--native-cuda-generate-tokens \"$GENERATE_TOKENS\"" in text
+    assert "--native-cuda-checkpoint-every \"$CHECKPOINT_EVERY\"" in text
     assert "--no-checkpoint" in text
     assert "--tile-ops-lib \"$NFN_NATIVE_TILE_OPS_LIB\"" in text
 

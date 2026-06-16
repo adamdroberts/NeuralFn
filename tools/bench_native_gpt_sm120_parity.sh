@@ -16,6 +16,9 @@ CUDA_DEVICE_MAX_CONNECTIONS_VALUE="${NFN_SM120_PARITY_CUDA_DEVICE_MAX_CONNECTION
 MAX_GPU_UTILIZATION="${NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT:-15}"
 COMMAND_TIMEOUT_SECONDS="${NFN_SM120_PARITY_COMMAND_TIMEOUT_SECONDS:-300}"
 ACTIVATION="${NFN_SM120_PARITY_ACTIVATION:-gelu}"
+SAMPLE_EVERY="${NFN_SM120_PARITY_SAMPLE_EVERY:-0}"
+CHECKPOINT_EVERY="${NFN_SM120_PARITY_CHECKPOINT_EVERY:-0}"
+GENERATE_TOKENS="${NFN_SM120_PARITY_GENERATE_TOKENS:-144}"
 JSON_OUT="${NFN_SM120_PARITY_JSON_OUT:-/tmp/nfn_sm120_parity_${STEPS}step.json}"
 REFERENCE_OUTPUT_DIR="${NFN_SM120_PARITY_REFERENCE_OUTPUT_DIR:-/tmp/nfn_llmk_sm120_parity}"
 
@@ -49,8 +52,8 @@ baseline_cmd="$(
     -j "$LLM_KITTENS_TINYSTORIES_DIR/TinyStories_val.bin" \
     -o "$REFERENCE_OUTPUT_DIR" \
     -v 250 \
-    -s "$STEPS" \
-    -g 144 \
+    -s "$SAMPLE_EVERY" \
+    -g "$GENERATE_TOKENS" \
     -h 0 \
     -b 64 \
     -t 1024 \
@@ -61,7 +64,7 @@ baseline_cmd="$(
     -l 0.0006 \
     -q 0.0 \
     -u 60 \
-    -n 200 \
+    -n "$CHECKPOINT_EVERY" \
     -y 0 \
     -e d12 \
     -af "$ACTIVATION" \
@@ -75,6 +78,9 @@ candidate_cmd="$(
     --tinystories \
     --max-steps "$STEPS" \
     --eval-every-steps 0 \
+    --native-cuda-sample-every "$SAMPLE_EVERY" \
+    --native-cuda-generate-tokens "$GENERATE_TOKENS" \
+    --native-cuda-checkpoint-every "$CHECKPOINT_EVERY" \
     --no-checkpoint \
     --tile-ops-lib "$NFN_NATIVE_TILE_OPS_LIB"
 )"

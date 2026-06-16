@@ -629,6 +629,18 @@ output enabled. Set `NFN_SM120_PARITY_STEPS`, `NFN_SM120_PARITY_SAMPLES`,
 `NFN_SM120_PARITY_WARMUP`, `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT`, or
 `NFN_SM120_PARITY_JSON_OUT` to adjust the run without editing the command.
+Short parity runs default to timing-only cadence with
+`NFN_SM120_PARITY_SAMPLE_EVERY=0` and
+`NFN_SM120_PARITY_CHECKPOINT_EVERY=0`, because llm.kittens samples and writes
+checkpoints on the final step whenever those intervals are positive. Compare
+`train_loop_wall_ms_per_step` and `train_tokens_per_second` under the native
+metrics summaries rather than child-process `seconds`; the llm.kittens
+reference still runs its built-in validation passes around short runs. Set
+`NFN_SM120_PARITY_SAMPLE_EVERY=20000`,
+`NFN_SM120_PARITY_CHECKPOINT_EVERY=200`, and
+`NFN_SM120_PARITY_GENERATE_TOKENS=144` when deliberately reproducing the full
+`train-sm120.sh` sample/checkpoint cadence instead of measuring only training
+throughput.
 
 For timing-only native GPT probes, pass wrapper
 `--native-cuda-no-checkpoint` or compiled C++ `--no-checkpoint` to skip final
