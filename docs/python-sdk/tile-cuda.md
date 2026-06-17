@@ -252,6 +252,18 @@ JSON reports `lm_head_bf16_dweight_enabled`, `lm_head_dweight_input_dtype`,
 older optimized TF32 tensor-op `cublasSgemm` path for debugging. Set
 `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS=0` to keep BF16 training backward while
 comparing validation/test loss against the older float logits loss workspace.
+Dense GPT dWeight GEMMs use first-write-then-accumulate semantics by default:
+the first gradient-accumulation microbatch launches the beta-capable raw ABI
+with GEMM `beta=0`, and subsequent microbatches use `beta=1`. That path covers
+the tied LM-head BF16/BF16 dWeight route plus QKV, attention projection, MLP FC,
+and MLP projection block dWeight+bias calls that use the trainer cuBLASLt
+routes. Set `NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO=0` (or the
+compatibility `NFN_NATIVE_GPT2_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO=0`) only for
+paired comparisons against the previous always-accumulate path. Runtime JSON
+reports `dweight_first_microbatch_beta_zero_enabled`,
+`dweight_first_microbatch_beta_strategy`, and `first-write-then-accumulate`
+suffixes in `lm_head_dweight_strategy`, `block_backward_qkv_dweight_strategy`,
+and `block_backward_weight_linear_strategy`.
 Set
 `NFN_TILE_CUDA_LINEAR_BF16=1` or
 `NFN_NATIVE_LINEAR_BF16=1` only when profiling the normal linear ABI's BF16

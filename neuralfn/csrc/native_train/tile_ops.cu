@@ -589,6 +589,16 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_float32(
     std::int64_t input_dim,
     std::int64_t output_dim,
     cudaStream_t stream);
+void launch_linear_backward_weight_bias_accumulate_bf16_bits_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const float* grad_out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    cudaStream_t stream);
 void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32(
     const std::uint16_t* x_bf16_bits,
     const std::uint16_t* grad_out_bf16_bits,
@@ -597,6 +607,16 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32(
     std::int64_t rows,
     std::int64_t input_dim,
     std::int64_t output_dim,
+    cudaStream_t stream);
+void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
     cudaStream_t stream);
 void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_to_bf16_bits_float32(
     const std::uint16_t* x_bf16_bits,
@@ -615,6 +635,15 @@ void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32(
     std::int64_t input_dim,
     std::int64_t output_dim,
     cudaStream_t stream);
+void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    cudaStream_t stream);
 void launch_linear_backward_weight_accumulate_float32_bf16_bits(
     const float* x,
     const std::uint16_t* grad_out_bf16_bits,
@@ -631,6 +660,16 @@ void launch_linear_backward_weight_bias_accumulate_float32_bf16_bits(
     std::int64_t rows,
     std::int64_t input_dim,
     std::int64_t output_dim,
+    cudaStream_t stream);
+void launch_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta(
+    const float* x,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
     cudaStream_t stream);
 void launch_linear_backward_bias_float32(
     const float* grad_out,
@@ -2750,6 +2789,21 @@ int nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32(
     return launch_status();
 }
 
+int nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const float* grad_out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_backward_weight_bias_accumulate_bf16_bits_float32_beta(
+        x_bf16_bits, grad_out, grad_weight, grad_bias, rows, input_dim, output_dim, beta, as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32(
     const std::uint16_t* x_bf16_bits,
     const std::uint16_t* grad_out_bf16_bits,
@@ -2767,6 +2821,29 @@ int nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_f
         rows,
         input_dim,
         output_dim,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_beta(
+        x_bf16_bits,
+        grad_out_bf16_bits,
+        grad_weight,
+        grad_bias,
+        rows,
+        input_dim,
+        output_dim,
+        beta,
         as_stream(cuda_stream));
     return launch_status();
 }
@@ -2811,6 +2888,27 @@ int nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float3
     return launch_status();
 }
 
+int nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+        x_bf16_bits,
+        grad_out_bf16_bits,
+        grad_weight,
+        rows,
+        input_dim,
+        output_dim,
+        beta,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_linear_backward_weight_bias_accumulate_float32_bf16_bits(
     const float* x,
     const std::uint16_t* grad_out_bf16_bits,
@@ -2828,6 +2926,29 @@ int nfn_native_tile_linear_backward_weight_bias_accumulate_float32_bf16_bits(
         rows,
         input_dim,
         output_dim,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta(
+    const float* x,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta(
+        x,
+        grad_out_bf16_bits,
+        grad_weight,
+        grad_bias,
+        rows,
+        input_dim,
+        output_dim,
+        beta,
         as_stream(cuda_stream));
     return launch_status();
 }

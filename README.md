@@ -108,6 +108,15 @@ The native float32-input/BF16-gradient dWeight+bias path now uses the optimized
 cuBLASLt bias-gradient epilogue by default for supported shapes; set
 `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=0` to reproduce the previous
 split dWeight plus Tile bias-reduction path in paired benchmarks.
+Dense GPT dWeight GEMMs now also match the llm.kittens accumulation contract:
+the first gradient-accumulation microbatch writes dWeight with GEMM `beta=0`,
+and later microbatches accumulate with `beta=1`. This is enabled by default for
+LM-head, QKV, attention projection, and MLP block dWeights through the raw
+Tile-CUDA beta ABI. Set `NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO=0`
+only for paired benchmarks against the older always-accumulate path. Runtime
+JSON reports `dweight_first_microbatch_beta_zero_enabled`,
+`dweight_first_microbatch_beta_strategy`, and `first-write-then-accumulate`
+strategy suffixes for the active dWeight routes.
 
 ## Current state of play
 

@@ -12801,6 +12801,49 @@ launch_linear_backward_bias_accumulate_float32(
     std::int64_t output_dim,
     cudaStream_t stream);
 
+void launch_linear_backward_weight_bias_accumulate_bf16_bits_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const float* grad_out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    cudaStream_t stream);
+
+void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    cudaStream_t stream);
+
+void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    cudaStream_t stream);
+
+void launch_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta(
+    const float* x,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    cudaStream_t stream);
+
 void launch_linear_backward_weight_bias_accumulate_bf16_float32(
     const float* x,
     const float* grad_out,
@@ -12853,6 +12896,20 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_float32(
     std::int64_t input_dim,
     std::int64_t output_dim,
     cudaStream_t stream) {
+  launch_linear_backward_weight_bias_accumulate_bf16_bits_float32_beta(
+      x_bf16_bits, grad_out, grad_weight, grad_bias, rows, input_dim, output_dim, 1.0f, stream);
+}
+
+void launch_linear_backward_weight_bias_accumulate_bf16_bits_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const float* grad_out,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    cudaStream_t stream) {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim)) {
     float* bias_gradient = ensure_trainer_linear_bgrad_workspace(output_dim);
@@ -12871,7 +12928,7 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_float32(
             static_cast<int>(input_dim),
             static_cast<int>(output_dim),
             static_cast<int>(input_dim),
-            1.0f,
+            beta,
             true,
             stream)) {
       launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
@@ -12893,6 +12950,20 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32(
     std::int64_t input_dim,
     std::int64_t output_dim,
     cudaStream_t stream) {
+  launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_beta(
+      x_bf16_bits, grad_out_bf16_bits, grad_weight, grad_bias, rows, input_dim, output_dim, 1.0f, stream);
+}
+
+void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    cudaStream_t stream) {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim)) {
     float* bias_gradient = ensure_trainer_linear_bgrad_workspace(output_dim);
@@ -12910,7 +12981,7 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32(
             static_cast<int>(input_dim),
             static_cast<int>(output_dim),
             static_cast<int>(input_dim),
-            1.0f,
+            beta,
             true,
             stream)) {
       launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
@@ -12984,6 +13055,19 @@ void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32(
     std::int64_t input_dim,
     std::int64_t output_dim,
     cudaStream_t stream) {
+  launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+      x_bf16_bits, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, 1.0f, stream);
+}
+
+void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    cudaStream_t stream) {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
       cublas_linear_gemm_ex_bf16_bits_ab_float32(
@@ -12998,7 +13082,7 @@ void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32(
           static_cast<int>(input_dim),
           static_cast<int>(output_dim),
           static_cast<int>(input_dim),
-          1.0f,
+          beta,
           true,
           stream)) {
     return;
@@ -13065,6 +13149,20 @@ void launch_linear_backward_weight_bias_accumulate_float32_bf16_bits(
     std::int64_t input_dim,
     std::int64_t output_dim,
     cudaStream_t stream) {
+  launch_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta(
+      x, grad_out_bf16_bits, grad_weight, grad_bias, rows, input_dim, output_dim, 1.0f, stream);
+}
+
+void launch_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta(
+    const float* x,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    float* grad_bias,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    cudaStream_t stream) {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   if (trainer_linear_float32_bf16_bgrad_enabled() &&
       fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim)) {
@@ -13084,7 +13182,7 @@ void launch_linear_backward_weight_bias_accumulate_float32_bf16_bits(
             static_cast<int>(input_dim),
             static_cast<int>(output_dim),
             static_cast<int>(input_dim),
-            1.0f,
+            beta,
             // x is a reused activation scratch pointer whose contents change across
             // gradient-accumulation microbatches; caching by pointer would reuse stale BF16 data.
             false,

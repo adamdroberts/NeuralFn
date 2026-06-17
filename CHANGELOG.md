@@ -6,6 +6,39 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Default dense GPT dWeight GEMMs to first-write-then-accumulate
+
+#### Changed
+
+- Added beta-capable raw Tile-CUDA dWeight ABI variants for BF16/BF16,
+  BF16/FP32, and FP32/BF16 dWeight paths.
+- Dense GPT transformer-LM now launches the first gradient-accumulation
+  microbatch dWeight GEMMs with `beta=0` and later microbatches with `beta=1`,
+  matching the llm.kittens SM120 accumulation contract while keeping gradients
+  in direct optimizer-step accumulation buffers.
+- Runtime JSON now reports
+  `dweight_first_microbatch_beta_zero_enabled`,
+  `dweight_first_microbatch_beta_strategy`, and
+  `first-write-then-accumulate` strategy suffixes for LM-head, QKV, and block
+  dWeight routes. Set `NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO=0`
+  to reproduce the previous always-accumulate path for paired bisection.
+
+#### Verification
+
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k
+  "native_train_tile_ops_builds_torch_free_c_abi or transformer_lm"`.
+- Ran `build/nfn_gpt_native_train --backend tile-cuda --tinystories
+  --train-transformer-lm --max-steps 3 --eval-every-steps 0 --no-checkpoint
+  --profile-json /tmp/nfn_dweight_beta_default.json` on the dedicated RTX 5090;
+  the JSON reported `passed: true`,
+  `dweight_first_microbatch_beta_zero_enabled: true`, and
+  `first-write-then-accumulate` strategy suffixes.
+- Ran `tools/paired_kernel_speed.py` against
+  `NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO=0` for two measured
+  3-step samples on the idle display-disabled RTX 5090. The candidate measured
+  `0.997584x` train-loop time and `1.002434x` tokens/sec versus the previous
+  always-accumulate path.
+
 ### 2026-06-17 Default native GPT token initialization to fast Tile power-of-two pattern
 
 #### Changed
