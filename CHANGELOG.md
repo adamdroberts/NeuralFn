@@ -24,6 +24,8 @@ Future updates should append new entries here rather than replacing older notes.
   route change: `3072,768,65536,N,T,0` measured only a small mean/median win,
   while `768,3072,65536,N,T,0` reversed on the five-sample confirmation and
   measured slower than the default heuristic selection.
+- Recorded the LM-head dWeight hot-shape bisection
+  `768,50304,8192,N,T,0` as slower than the default heuristic selection.
 
 #### Verification
 
@@ -46,6 +48,10 @@ Future updates should append new entries here rather than replacing older notes.
   a 5-sample confirmation after a noisy 3-sample result; the confirmation
   measured `1.015160x` train-loop wall time and `0.985688x` tokens/sec, so the
   default heuristic selection remains unchanged.
+- Ran `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,50304,8192,N,T,0` through
+  the same 3-sample paired benchmark; it measured `1.002294x` train-loop wall
+  time and `0.997718x` tokens/sec, so the LM-head dWeight route keeps the
+  default heuristic selection.
 
 ### 2026-06-17 Add canonical GPT inference entrypoint
 
