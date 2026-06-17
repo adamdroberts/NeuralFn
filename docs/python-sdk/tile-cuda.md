@@ -295,6 +295,10 @@ cuBLASLt with `CUBLAS_COMPUTE_32F_FAST_16BF` by default and select cuBLASLt
 heuristic index 1 when that candidate is available on the workstation RTX 5090
 shape. Set `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX=N` or
 `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX=N` only for paired kernel profiling.
+Set `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_SHAPE=m,n,k,opA,opB,index` or
+`NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=m,n,k,opA,opB,index` for a
+single-shape bisection; it only changes the matching cuBLASLt plan and leaves
+the default/global heuristic route in place for every other GEMM.
 Set `NFN_TILE_CUDA_LINEAR_CUBLASLT_WORKSPACE_MB=N` or
 `NFN_NATIVE_LINEAR_CUBLASLT_WORKSPACE_MB=N` only for paired diagnostics that
 change the cuBLASLt heuristic workspace cap. The default remains 128 MiB because

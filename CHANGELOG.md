@@ -6,6 +6,35 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add shape-specific cuBLASLt heuristic bisection
+
+#### Changed
+
+- Added `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_SHAPE=m,n,k,opA,opB,index` and
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=m,n,k,opA,opB,index` for
+  one-shape cuBLASLt heuristic bisection in the trainer-facing Tile-CUDA linear
+  path.
+- The shape-specific override only applies to the matching cuBLASLt plan; other
+  GEMMs continue using the current default/global heuristic selection.
+- Recorded the first QKV dWeight hot-shape bisection as diagnostic-only:
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,2304,65536,N,T,0` measured
+  noise-equivalent mean train-loop time and slightly slower median train-loop
+  time versus the default heuristic selection, so no default route changed.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py::test_native_train_tile_ops_builds_torch_free_c_abi -q`
+  (static assertions passed; the test skipped the optional runtime portion in
+  this environment).
+- Ran the dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --train-batch-tokens 524288 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --train-batch-tokens 524288 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,2304,65536,N,T,0 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 25 --command-timeout-seconds 1800 --append-native-profile-json-dir /tmp/nfn_shape_h0_qkv_dweight_profiles --json-out /tmp/nfn_shape_h0_qkv_dweight_pair.json`.
+- The paired benchmark measured candidate/default at `0.999825x` mean
+  train-loop wall time, `1.001401x` median train-loop wall time, and
+  `1.000185x` mean tokens/sec, so the shape-specific override remains
+  diagnostic-only.
+
 ### 2026-06-17 Add canonical GPT inference entrypoint
 
 #### Changed

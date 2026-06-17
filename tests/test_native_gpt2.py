@@ -4471,6 +4471,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "trainer_linear_cublaslt_heuristic_index_override" in kernels_text
     assert 'std::getenv("NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX")' in kernels_text
     assert 'std::getenv("NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX")' in kernels_text
+    assert "trainer_linear_cublaslt_shape_heuristic_index_override" in kernels_text
+    assert 'std::getenv("NFN_TILE_CUDA_CUBLASLT_HEURISTIC_SHAPE")' in kernels_text
+    assert 'std::getenv("NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE")' in kernels_text
+    assert '"%d,%d,%d,%7[^,],%7[^,],%d"' in kernels_text
     assert "trainer_linear_cublaslt_descriptor_cache_enabled" in kernels_text
     assert 'std::getenv("NFN_TILE_CUDA_CUBLASLT_DESCRIPTOR_CACHE")' in kernels_text
     assert 'std::getenv("NFN_NATIVE_LINEAR_CUBLASLT_DESCRIPTOR_CACHE")' in kernels_text

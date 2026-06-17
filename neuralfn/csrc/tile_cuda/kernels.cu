@@ -1413,6 +1413,12 @@ struct TrainerLinearBgradWorkspace {
 bool trainer_linear_cublaslt_enabled();
 bool trainer_linear_cublaslt_descriptor_cache_enabled();
 int trainer_linear_cublaslt_heuristic_index_override();
+int trainer_linear_cublaslt_shape_heuristic_index_override(
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b);
 
 TrainerLinearCublasLtWorkspace g_trainer_linear_cublaslt_workspace;
 std::mutex g_trainer_linear_cublaslt_workspace_mutex;
@@ -1616,7 +1622,16 @@ TrainerLinearCublasLtPlan* trainer_linear_cublaslt_plan_for(
   }
 
   int selected = returned > 1 ? 1 : 0;
-  const int requested_index = trainer_linear_cublaslt_heuristic_index_override();
+  int requested_index =
+      trainer_linear_cublaslt_shape_heuristic_index_override(
+          key.m,
+          key.n,
+          key.k,
+          static_cast<cublasOperation_t>(key.op_a),
+          static_cast<cublasOperation_t>(key.op_b));
+  if (requested_index < 0) {
+    requested_index = trainer_linear_cublaslt_heuristic_index_override();
+  }
   if (requested_index >= 0 && requested_index < returned) {
     selected = requested_index;
   }
@@ -2217,6 +2232,71 @@ int trainer_linear_cublaslt_heuristic_index_override() {
     return static_cast<int>(parsed);
   }();
   return index;
+}
+
+int trainer_linear_cublaslt_shape_heuristic_index_override(
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  struct ShapeOverride {
+    int m = 0;
+    int n = 0;
+    int k = 0;
+    int op_a = CUBLAS_OP_N;
+    int op_b = CUBLAS_OP_N;
+    int index = -1;
+    bool valid = false;
+  };
+  static const ShapeOverride override = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_CUBLASLT_HEURISTIC_SHAPE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE");
+    }
+    ShapeOverride shape{};
+    if (value == nullptr || value[0] == '\0') {
+      return shape;
+    }
+    int parsed_m = 0;
+    int parsed_n = 0;
+    int parsed_k = 0;
+    int parsed_index = -1;
+    char parsed_op_a[8] = {};
+    char parsed_op_b[8] = {};
+    if (std::sscanf(
+            value,
+            "%d,%d,%d,%7[^,],%7[^,],%d",
+            &parsed_m,
+            &parsed_n,
+            &parsed_k,
+            parsed_op_a,
+            parsed_op_b,
+            &parsed_index) != 6) {
+      return shape;
+    }
+    cublasOperation_t parsed_a = CUBLAS_OP_N;
+    cublasOperation_t parsed_b = CUBLAS_OP_N;
+    if (parsed_m <= 0 || parsed_n <= 0 || parsed_k <= 0 ||
+        parsed_index < 0 || parsed_index > 31 ||
+        !parse_cublas_op_token(parsed_op_a, &parsed_a) ||
+        !parse_cublas_op_token(parsed_op_b, &parsed_b)) {
+      return shape;
+    }
+    shape.m = parsed_m;
+    shape.n = parsed_n;
+    shape.k = parsed_k;
+    shape.op_a = static_cast<int>(parsed_a);
+    shape.op_b = static_cast<int>(parsed_b);
+    shape.index = parsed_index;
+    shape.valid = true;
+    return shape;
+  }();
+  if (!override.valid || override.m != m || override.n != n || override.k != k ||
+      override.op_a != static_cast<int>(op_a) || override.op_b != static_cast<int>(op_b)) {
+    return -1;
+  }
+  return override.index;
 }
 
 cublasComputeType_t trainer_linear_bf16_gemm_ex_compute_type() {
