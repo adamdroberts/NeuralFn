@@ -767,3 +767,9 @@ checkpoint embeddings/final norm are unpacked on device, then token embedding,
 position embedding, residual add, final LayerNorm, and tied LM-head logits run
 without Torch or graph-editor tensors. Transformer blocks remain pending for
 full generation.
+Use `nfn_gpt_native_train --checkpoint-qkv-smoke --native-checkpoint PATH
+--prompt-tokens IDS --checkpoint-block-index N` for the next checkpoint-backed
+transformer-block stage: checkpoint embeddings plus the selected block's
+`ln_1` and `attn.c_attn` tensors are unpacked on device, then embedding
+residual, block LayerNorm, and QKV projection run through CUDA Tile kernels.
+Attention, MLP, and generation-loop sampling remain pending.

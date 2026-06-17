@@ -1267,6 +1267,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "--inspect-checkpoint PATH" in help_proc.stdout
     assert "--sample-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
     assert "--checkpoint-logits-smoke --native-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
+    assert "--checkpoint-qkv-smoke --native-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
+    assert "--checkpoint-block-index N" in help_proc.stdout
     assert "--checkpoint-load-smoke --native-checkpoint PATH" in help_proc.stdout
     assert "--checkpoint-load-tensor NAME" in help_proc.stdout
     assert "--checkpoint-layout --native-checkpoint PATH" in help_proc.stdout
@@ -2991,6 +2993,25 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert logits_bad_token.returncode == 2
     assert "outside checkpoint vocab" in logits_bad_token.stderr
+
+    qkv_bad_block = subprocess.run(
+        [
+            str(cli),
+            "--checkpoint-qkv-smoke",
+            "--native-checkpoint",
+            str(checkpoint_path),
+            "--prompt-tokens",
+            "1,2,3",
+            "--checkpoint-block-index",
+            "999",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert qkv_bad_block.returncode == 2
+    assert "outside checkpoint layer range" in qkv_bad_block.stderr
 
     missing_load_smoke = subprocess.run(
         [

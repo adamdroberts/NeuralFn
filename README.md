@@ -254,6 +254,13 @@ final norm tensors, converts them on device, and runs token embedding, position
 embedding, residual add, final LayerNorm, and tied LM-head logits through CUDA
 Tile kernels for the last prompt token. Transformer blocks are still pending for
 complete prompt generation.
+`nfn_gpt_native_train --checkpoint-qkv-smoke --native-checkpoint
+model_########.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0` loads the
+same checkpoint embeddings plus `h.N.ln_1` and `h.N.attn.c_attn` tensors, then
+runs embedding residual, the selected block's first LayerNorm, and QKV
+projection through CUDA Tile kernels. This is a checkpoint-backed transformer
+block-stage smoke only; attention, MLP, and generation-loop sampling remain the
+next native inference steps.
 
 The compiled dense GPT trainer can inspect native `model_########.bin`
 checkpoints without CUDA, Torch, Python dataset setup, or graph nodes using

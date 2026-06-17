@@ -1117,6 +1117,7 @@ nfn_gpt_native_train --inspect-checkpoint ~/NeuralFn/artifacts/gpt2/model_000200
 nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 16
 nfn_gpt_native_train --sample-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 16
 nfn_gpt_native_train --checkpoint-logits-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3
+nfn_gpt_native_train --checkpoint-qkv-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0
 nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --checkpoint-load-tensor h.0.ln_1.weight --checkpoint-load-elements 1024
 nfn_gpt_native_train --checkpoint-layout --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin
 ```
@@ -1144,6 +1145,12 @@ it loads checkpoint embeddings and final norm tensors, converts bf16 weights on
 device, and runs token embedding, position embedding, residual add, final
 LayerNorm, and tied LM-head logits for the last prompt token. It does not yet
 execute transformer blocks.
+`--checkpoint-qkv-smoke` advances that path into a selected transformer block:
+it loads `wte.weight`, `wpe.weight`, `h.N.ln_1.weight`, `h.N.ln_1.bias`,
+`h.N.attn.c_attn.weight`, and `h.N.attn.c_attn.bias`, converts them on device,
+and runs embedding residual, block LayerNorm, and QKV projection through CUDA
+Tile kernels. Use `--checkpoint-block-index N` to select the block. It still
+does not execute attention, MLP, or the generation loop.
 
 For flat Parameter Golf checkpoints, architecture comes from tensor shapes plus
 compatible metadata. A supplied training log may provide safe runtime hints
