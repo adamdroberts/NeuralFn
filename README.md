@@ -180,10 +180,11 @@ measurements similarly. For native binary or environment-flag experiments, run
 kernels in the same alternating script. Add
 `--append-native-profile-json-dir /tmp/nfn-profiles`
 when comparing native NeuralFn commands that do not already write JSON; the
-harness appends unique `--profile-json` files, enables
-`NFN_NATIVE_GPT_STAGE_TIMING=1` for those native commands, and reports paired
-`stage.*` metrics such as `stage.block_backward.total_ms` beside total step
-time. Use `tools/bench_native_gpt_sm120_parity.sh` for the canonical RTX 5090
+harness appends unique `--profile-json` files without changing the timed native
+command. Add `--native-stage-timing` only for attribution runs that should set
+`NFN_NATIVE_GPT_STAGE_TIMING=1` and report paired `stage.*` metrics such as
+`stage.block_backward.total_ms` beside total step time. Use
+`tools/bench_native_gpt_sm120_parity.sh` for the canonical RTX 5090
 SM120 parity check against `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`;
 it runs the llm.kittens `train_gpt2cu` reference and
 `build/nfn_gpt_native_train --backend tile-cuda` through the same paired harness
@@ -193,12 +194,13 @@ timing-only sample/checkpoint cadence (`NFN_SM120_PARITY_SAMPLE_EVERY=0`,
 `train_loop_wall_ms_per_step` and `train_tokens_per_second` in the native
 metrics block rather than child-process `seconds`, because the llm.kittens
 reference still performs its built-in validation passes around short runs. It
-also writes NeuralFn native stage sidecars through
-`--append-native-profile-json-dir`, defaulting to
+also writes NeuralFn native sidecars through `--append-native-profile-json-dir`,
+defaulting to
 `/tmp/nfn_sm120_parity_profiles_${NFN_SM120_PARITY_STEPS:-10}step`; set
 `NFN_SM120_PARITY_PROFILE_DIR` to keep those profiles somewhere else, or set it
 to `none`, `off`, or `0` when you need an actual throughput comparison without
-CUDA-event stage profiling. Profiled parity runs default
+JSON sidecars. Set `NFN_SM120_PARITY_STAGE_TIMING=1` when you need CUDA-event
+stage attribution; stage-timed parity runs default
 `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS=80000` unless already set, so 10-step
 SM120 sidecars should not silently truncate stage totals. Set the
 cadence variables to `20000` and `200` when deliberately reproducing the full

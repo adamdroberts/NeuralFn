@@ -104,6 +104,14 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--native-stage-timing",
+        action="store_true",
+        help=(
+            "Set NFN_NATIVE_GPT_STAGE_TIMING=1 for native NeuralFn commands. "
+            "Use this for attribution runs; leave it off for throughput comparisons."
+        ),
+    )
+    parser.add_argument(
         "--continue-on-error",
         action="store_true",
         help="Record failed commands instead of stopping at the first nonzero exit.",
@@ -283,13 +291,13 @@ def command_env_with_auto_stage_timing(
     command: TimedCommand,
     *,
     env: dict[str, str] | None,
-    profile_json_dir: Path | None,
+    native_stage_timing: bool,
 ) -> dict[str, str] | None:
     command_env = env
     if command.env_overrides:
         command_env = dict(os.environ if env is None else env)
         command_env.update(command.env_overrides)
-    if profile_json_dir is not None and looks_like_neuralfn_native_command(command.argv):
+    if native_stage_timing and looks_like_neuralfn_native_command(command.argv):
         command_env = dict(os.environ if command_env is None else command_env)
         command_env.setdefault("NFN_NATIVE_GPT_STAGE_TIMING", "1")
     return command_env
@@ -359,6 +367,7 @@ def run_once(
     env: dict[str, str] | None,
     timeout_seconds: float | None,
     profile_json_dir: Path | None,
+    native_stage_timing: bool,
     gpu_before: dict[str, object] | None = None,
 ) -> dict[str, object]:
     start = time.perf_counter()
@@ -370,7 +379,7 @@ def run_once(
     command_env = command_env_with_auto_stage_timing(
         command,
         env=env,
-        profile_json_dir=profile_json_dir,
+        native_stage_timing=native_stage_timing,
     )
     try:
         proc = subprocess.Popen(
@@ -925,6 +934,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                 env=run_env,
                 timeout_seconds=command_timeout,
                 profile_json_dir=profile_json_dir,
+                native_stage_timing=bool(args.native_stage_timing),
                 gpu_before=command_gpu_before,
             )
 
@@ -962,6 +972,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                 env=run_env,
                 timeout_seconds=command_timeout,
                 profile_json_dir=profile_json_dir,
+                native_stage_timing=bool(args.native_stage_timing),
                 gpu_before=command_gpu_before,
             )
             by_name[command.name] = result
@@ -999,6 +1010,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "baseline_env": baseline.env_overrides,
         "candidate_env": candidate.env_overrides,
         "append_native_profile_json_dir": str(profile_json_dir) if profile_json_dir is not None else "",
+        "native_stage_timing": bool(args.native_stage_timing),
         "baseline_seconds": summarize(baseline_seconds),
         "candidate_seconds": summarize(candidate_seconds),
         "candidate_over_baseline": summarize(ratios),
@@ -1040,6 +1052,7 @@ def print_text(payload: dict[str, object]) -> None:
     profile_json_dir = payload.get("append_native_profile_json_dir")
     if isinstance(profile_json_dir, str) and profile_json_dir:
         print(f"  append_native_profile_json_dir: {profile_json_dir}")
+    print(f"  native_stage_timing: {payload.get('native_stage_timing', False)}")
     gpu_before = payload.get("gpu_before")
     if isinstance(gpu_before, dict):
         gpus = gpu_before.get("gpus")

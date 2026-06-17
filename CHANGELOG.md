@@ -6,6 +6,48 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Keep paired native profile sidecars timing-neutral
+
+#### Changed
+
+- Changed `tools/paired_kernel_speed.py --append-native-profile-json-dir` so it
+  only appends per-command `--profile-json` sidecars. It no longer silently sets
+  `NFN_NATIVE_GPT_STAGE_TIMING=1`, keeping same-script NeuralFn-vs-llm.kittens
+  throughput comparisons on the normal training path.
+- Added explicit `tools/paired_kernel_speed.py --native-stage-timing` for
+  attribution runs that should record CUDA-event `timing.stage_timing` buckets
+  and paired `stage.*` metrics.
+- Updated `tools/bench_native_gpt_sm120_parity.sh` so
+  `NFN_SM120_PARITY_STAGE_TIMING=1` is the opt-in for stage-timed parity
+  sidecars; plain sidecars remain enabled by default without modifying the
+  measured command.
+
+#### Breaking changes
+
+- Before this change, `--append-native-profile-json-dir` enabled native GPT
+  stage timing as a side effect for NeuralFn native commands. Callers that rely
+  on paired `stage.*` metrics must now add `--native-stage-timing`, or set
+  `NFN_SM120_PARITY_STAGE_TIMING=1` when using the SM120 parity wrapper.
+
+#### Verification
+
+- Dedicated RTX 5090 baseline check before the harness correction showed the
+  plain native 5-step command at `174287` tokens/sec with
+  `stage_timing_enabled: false`, while the old sidecar harness enabled
+  `stage_timing_enabled: true` and recorded `20000` stage events per candidate
+  sample, skewing the comparison.
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran `python -m pytest tests/test_tile_cuda_examples.py -q -k 'paired_kernel_speed_tool_reads_native_json_out_sidecar or paired_kernel_speed_tool_stage_timing_is_explicit or paired_kernel_speed_tool_compiles_and_smokes'`.
+- Ran `bash -n tools/bench_native_gpt_sm120_parity.sh`.
+- Ran `git diff --check`.
+- Ran a dedicated RTX 5090 smoke parity sample with
+  `NFN_SM120_PARITY_STEPS=5`, `NFN_SM120_PARITY_SAMPLES=1`,
+  `NFN_SM120_PARITY_PROFILE_DIR=/tmp/nfn_sm120_parity_profiles_nostage_fix`,
+  and `NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_nostage_fix.json`.
+  The paired payload reported `native_stage_timing: false`, read candidate
+  metrics from `json-out`, emitted no `stage.*` candidate metrics, and the
+  sidecar had no `stage_timing_enabled` or `stage_timing_event_count` fields.
+
 ### 2026-06-17 Align native CUDA module-loading defaults
 
 #### Changed

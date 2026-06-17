@@ -21,6 +21,7 @@ CHECKPOINT_EVERY="${NFN_SM120_PARITY_CHECKPOINT_EVERY:-0}"
 GENERATE_TOKENS="${NFN_SM120_PARITY_GENERATE_TOKENS:-144}"
 JSON_OUT="${NFN_SM120_PARITY_JSON_OUT:-/tmp/nfn_sm120_parity_${STEPS}step.json}"
 PROFILE_DIR_RAW="${NFN_SM120_PARITY_PROFILE_DIR:-/tmp/nfn_sm120_parity_profiles_${STEPS}step}"
+STAGE_TIMING="${NFN_SM120_PARITY_STAGE_TIMING:-0}"
 REFERENCE_OUTPUT_DIR="${NFN_SM120_PARITY_REFERENCE_OUTPUT_DIR:-/tmp/nfn_llmk_sm120_parity}"
 
 profile_args=()
@@ -29,7 +30,12 @@ case "${PROFILE_DIR_RAW,,}" in
     ;;
   *)
     profile_args=(--append-native-profile-json-dir "$PROFILE_DIR_RAW")
-    export NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS="${NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS:-80000}"
+    case "${STAGE_TIMING,,}" in
+      "1"|"true"|"yes"|"on")
+        profile_args+=(--native-stage-timing)
+        export NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS="${NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS:-80000}"
+        ;;
+    esac
     ;;
 esac
 

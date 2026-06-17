@@ -315,6 +315,39 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["stage.block_backward.total_ms"] == 9.0
 
 
+def test_paired_kernel_speed_tool_stage_timing_is_explicit() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    command = module.TimedCommand(
+        name="candidate",
+        argv=["nfn_gpt_native_train", "--profile-json", "/tmp/native.json"],
+        env_overrides={},
+    )
+
+    assert (
+        module.command_env_with_auto_stage_timing(
+            command,
+            env={},
+            native_stage_timing=False,
+        )
+        == {}
+    )
+    assert module.command_env_with_auto_stage_timing(
+        command,
+        env={},
+        native_stage_timing=True,
+    )["NFN_NATIVE_GPT_STAGE_TIMING"] == "1"
+
+
 def test_paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu() -> None:
     script = Path("tools/paired_kernel_speed.py")
     spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
