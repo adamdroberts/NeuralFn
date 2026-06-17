@@ -777,3 +777,8 @@ Use `nfn_gpt_native_train --checkpoint-attention-smoke --native-checkpoint PATH
 checkpoint-backed block stage through split-to-heads, causal scaled-dot-product
 attention, and merge-heads. Attention output projection, residual, MLP, and
 generation-loop sampling remain pending.
+Use `nfn_gpt_native_train --checkpoint-attention-residual-smoke
+--native-checkpoint PATH --prompt-tokens IDS --checkpoint-block-index N` to load
+the selected block's `attn.c_proj` tensors and continue through attention output
+projection plus residual add. `ln_2`, MLP, and generation-loop sampling remain
+pending.
