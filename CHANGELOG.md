@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add Tile-CUDA candidate build flags
+
+#### Changed
+
+- `tools/build_native_train_tile_ops.sh` now appends optional
+  whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and
+  `NFN_TILE_CUDA_EXTRA_LDLIBS` after the default SM120 flags. This keeps the
+  supported build unchanged while making temporary compile-time kernel
+  candidates reproducible for `tools/paired_kernel_speed.py`.
+
+#### Verification
+
+- Built a temporary Tile-CUDA shared library under `/tmp` while checking the
+  SM120 dGELU candidate path.
+- Benchmarked that candidate against the default Tile ops library with
+  `tools/paired_kernel_speed.py` on the dedicated display-disabled RTX 5090.
+  The selected GPU had zero compute processes; the candidate was not promoted
+  because train-loop step time was `1.008620x` versus the default.
+
 ### 2026-06-16 Fuse native GPT token BF16-shadow startup init
 
 #### Changed

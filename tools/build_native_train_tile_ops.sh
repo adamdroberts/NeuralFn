@@ -35,6 +35,16 @@ if [[ "${USE_TK_ATTENTION}" == "1" ]]; then
   )
   EXTRA_LDLIBS+=("-lcuda")
 fi
+if [[ -n "${NFN_TILE_CUDA_EXTRA_NVCC_FLAGS:-}" ]]; then
+  # Local kernel-candidate builds use simple whitespace-separated flags such as
+  # -DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1.
+  read -r -a NFN_TILE_CUDA_USER_NVCC_FLAGS <<< "${NFN_TILE_CUDA_EXTRA_NVCC_FLAGS}"
+  EXTRA_NVCC_FLAGS+=("${NFN_TILE_CUDA_USER_NVCC_FLAGS[@]}")
+fi
+if [[ -n "${NFN_TILE_CUDA_EXTRA_LDLIBS:-}" ]]; then
+  read -r -a NFN_TILE_CUDA_USER_LDLIBS <<< "${NFN_TILE_CUDA_EXTRA_LDLIBS}"
+  EXTRA_LDLIBS+=("${NFN_TILE_CUDA_USER_LDLIBS[@]}")
+fi
 
 mkdir -p "$(dirname "${OUT}")"
 "${NVCC_BIN}" -std=c++20 -O3 --shared -Xcompiler -fPIC \

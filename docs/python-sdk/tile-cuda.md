@@ -804,6 +804,15 @@ paired native benchmarks. JSON reports
 `layer_norm_backward_affine_strategy: "auto-chunked-atomic-accumulate"` under
 `block_state_layout`.
 
+For local compile-time kernel candidates, `tools/build_native_train_tile_ops.sh`
+accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and
+`NFN_TILE_CUDA_EXTRA_LDLIBS` and appends them after the default SM120
+ThunderKittens flags. This is intended for paired benchmark builds such as
+setting
+`NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1"`
+and running `bash tools/build_native_train_tile_ops.sh /tmp/libnfn_candidate.so`;
+the default library build should leave both variables unset.
+
 Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is metadata-only on the default `compiled-cli` runner: Python builds the compiled C++ argv from the dataset alias/path and leaves shard validation or raw-text rejection to the compiled frontend. It must not import `server.dataset_manager`, NumPy, tiktoken, or Torch, must not write `fineweb_train_*.bin` shards, and must not add the external `--target train_gpt2cu` bridge argument for the default Tile-CUDA backend. The compiled Tile-CUDA frontend also treats `--print-command` as a no-data/no-CUDA action, printing the exact `nfn_gpt_native_train ...` invocation before token-shard resolution, CUDA runtime loading, or driver preflight. The explicit `llm-kittens` backend remains the exception because it receives `--target` and resolves train/validation shards to print the delegated `train_gpt2cu -i/-j` command.
 
 Dense GPT native `--dry-run` / `--print-plan` JSON reports the implemented

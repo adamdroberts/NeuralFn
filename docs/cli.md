@@ -638,6 +638,13 @@ output enabled. Set `NFN_SM120_PARITY_STEPS`, `NFN_SM120_PARITY_SAMPLES`,
 `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES` defaults to `auto`, which selects an
 idle display-disabled NVIDIA GPU for mixed display/compute workstations; set it
 to `0` or another explicit CUDA device value when you want manual pinning.
+For compile-time kernel experiments, `tools/build_native_train_tile_ops.sh`
+accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and
+`NFN_TILE_CUDA_EXTRA_LDLIBS` and appends them after the default SM120 flags.
+Use this for temporary paired benchmark candidates; for example, set
+`NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1"`
+and run `bash tools/build_native_train_tile_ops.sh /tmp/libnfn_candidate.so`.
+Leave the variables unset for the default build.
 Short parity runs default to timing-only cadence with
 `NFN_SM120_PARITY_SAMPLE_EVERY=0` and
 `NFN_SM120_PARITY_CHECKPOINT_EVERY=0`, because llm.kittens samples and writes
