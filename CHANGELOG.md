@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Replace native checkpoint token sampler pending plan with CUDA Tile next-token inference
+
+#### Changed
+
+- `nfn_gpt_native_train --sample-checkpoint PATH --prompt-tokens IDS --max-new-tokens N`
+  now executes one full checkpoint forward pass through CUDA Tile kernels instead
+  of returning the old `native-checkpoint-sampler-pending` plan JSON.
+- When the CUDA forward succeeds and `N > 0`, the JSON returns
+  `status: "native-checkpoint-sampler"`, `forward_pass_status:
+  "cuda-tile-forward-executed"`, `generated_token_count: 1`, and the next token
+  in `generated_tokens`, while keeping `torch_required: false` and
+  `graph_editor_node_flow: false`.
+- Native checkpoint metadata now reports
+  `prompt_generation_status: "native-single-token-sampler-available"`.
+  Autoregressive multi-token looping and native text prompt tokenization remain
+  pending.
+
+#### Verification
+
+- Ran `bash tools/build_native_gpt_cli.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `git diff --check`.
+- Ran `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --sample-checkpoint /tmp/nfn_checkpoint_forward_2layer_smoke/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 4 --tile-ops-lib build/libnfn_native_train_tile_ops.so` outside the sandbox because sandboxed GPU access cannot allocate on the CUDA device.
+
 ### 2026-06-17 Add checkpoint-backed native GPT full-stack logits smoke
 
 #### Changed

@@ -1132,9 +1132,10 @@ marker state. The compiled `nfn_gpt_native_train` forms emit JSON and return
 before CUDA, token-shard resolution, Torch, Python dataset setup, or graph-node
 execution. The prompt-token forms dispatch to compiled C++ and validate the
 checkpoint, context window, vocab bounds, and token list without Torch or
-graph-node flow, then return `status: "native-checkpoint-sampler-pending"` until
-the CUDA Tile forward sampler is implemented. Text prompt generation from native
-`.bin` checkpoints still uses the transitional sampler script bridge; the
+graph-node flow, then execute one full CUDA Tile checkpoint forward pass and
+return the next token in `generated_tokens` when `--max-new-tokens` is positive.
+Autoregressive multi-token looping remains pending. Text prompt generation from
+native `.bin` checkpoints still uses the transitional sampler script bridge; the
 graph-backed chat path will not attempt to load them as Torch checkpoints.
 `--checkpoint-load-smoke` is the compiled CUDA prerequisite check for that
 sampler: it reads a bounded bf16 payload slice from the checkpoint, copies it to

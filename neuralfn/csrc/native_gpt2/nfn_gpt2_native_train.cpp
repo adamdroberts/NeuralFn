@@ -862,128 +862,9 @@ int print_native_checkpoint_info_json(const Config& cfg) {
         << "  \"checkpoint_step\": " << step << ",\n"
         << "  \"done_marker\": \"" << json_escape(step >= 0 ? done_marker.string() : std::string()) << "\",\n"
         << "  \"done_marker_exists\": " << (done_marker_exists ? "true" : "false") << ",\n"
-        << "  \"prompt_generation_status\": \"dedicated-native-sampler-pending\"\n"
+        << "  \"prompt_generation_status\": \"native-single-token-sampler-available\"\n"
         << "}\n";
     return size_matches ? 0 : 2;
-}
-
-int print_native_checkpoint_sample_plan_json(const Config& cfg) {
-    constexpr std::int32_t kCheckpointMagic = 20240326;
-    constexpr std::int64_t kCheckpointHeaderInts = 256;
-    constexpr std::int64_t kCheckpointHeaderBytes = kCheckpointHeaderInts * 4;
-    const fs::path checkpoint_path = expand_user_path(cfg.native_checkpoint);
-    std::string error;
-
-    const std::vector<std::int64_t> prompt_tokens =
-        parse_csv_i64(cfg.sample_prompt_tokens, "--prompt-tokens");
-    if (prompt_tokens.empty()) {
-        std::cerr << "--sample-checkpoint requires non-empty --prompt-tokens IDS\n";
-        return 2;
-    }
-    if (cfg.sample_max_new_tokens < 0) {
-        std::cerr << "--max-new-tokens must be non-negative\n";
-        return 2;
-    }
-
-    std::ifstream in(checkpoint_path, std::ios::binary);
-    if (!in) {
-        std::cerr << "failed to open native checkpoint: " << checkpoint_path.string() << "\n";
-        return 2;
-    }
-    std::vector<std::int32_t> header(static_cast<std::size_t>(kCheckpointHeaderInts), 0);
-    in.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(kCheckpointHeaderBytes));
-    if (in.gcount() != kCheckpointHeaderBytes) {
-        std::cerr << "native checkpoint header is truncated: " << checkpoint_path.string() << "\n";
-        return 2;
-    }
-    if (header[0] != kCheckpointMagic) {
-        std::cerr << "not a native GPT checkpoint: " << checkpoint_path.string() << "\n";
-        return 2;
-    }
-    const int version = header[1];
-    int bytes_per_param = 0;
-    std::string precision;
-    if (version == 3) {
-        bytes_per_param = 4;
-        precision = "fp32";
-    } else if (version == 5) {
-        bytes_per_param = 2;
-        precision = "bf16";
-    } else {
-        std::cerr << "unsupported native GPT checkpoint version " << version
-                  << " in " << checkpoint_path.string() << "\n";
-        return 2;
-    }
-
-    const std::int64_t max_seq_len = header[2];
-    const std::int64_t vocab_size = header[3];
-    const std::int64_t num_layers = header[4];
-    const std::int64_t num_heads = header[5];
-    const std::int64_t channels = header[6];
-    const std::int64_t padded_vocab_size = header[7];
-    if (max_seq_len <= 0 || vocab_size <= 0 || num_layers <= 0 ||
-        num_heads <= 0 || channels <= 0 || padded_vocab_size <= 0) {
-        std::cerr << "native checkpoint shape values must be positive: "
-                  << checkpoint_path.string() << "\n";
-        return 2;
-    }
-    if (static_cast<std::int64_t>(prompt_tokens.size()) > max_seq_len) {
-        std::cerr << "--prompt-tokens length " << prompt_tokens.size()
-                  << " exceeds checkpoint context window " << max_seq_len << "\n";
-        return 2;
-    }
-    for (std::size_t i = 0; i < prompt_tokens.size(); ++i) {
-        if (prompt_tokens[i] < 0 || prompt_tokens[i] >= vocab_size) {
-            std::cerr << "--prompt-tokens id at index " << i << " is outside checkpoint vocab: "
-                      << prompt_tokens[i] << " not in [0, " << (vocab_size - 1) << "]\n";
-            return 2;
-        }
-    }
-
-    const std::int64_t parameter_count =
-        native_gpt2_parameter_count(max_seq_len, padded_vocab_size, num_layers, channels);
-    const std::int64_t parameter_bytes =
-        parameter_count * static_cast<std::int64_t>(bytes_per_param);
-    const std::int64_t expected_file_size = kCheckpointHeaderBytes + parameter_bytes;
-    const std::int64_t actual_file_size = file_size_bytes(checkpoint_path, &error);
-    if (actual_file_size < 0) {
-        std::cerr << error << "\n";
-        return 2;
-    }
-    const bool size_matches = actual_file_size == expected_file_size;
-    const std::int64_t step = native_gpt_checkpoint_step(checkpoint_path);
-
-    std::cout
-        << "{\n"
-        << "  \"status\": \"native-checkpoint-sampler-pending\",\n"
-        << "  \"runtime\": \"native-cpp\",\n"
-        << "  \"backend\": \"tile-cuda\",\n"
-        << "  \"path\": \"" << json_escape(checkpoint_path.string()) << "\",\n"
-        << "  \"version\": " << version << ",\n"
-        << "  \"precision\": \"" << json_escape(precision) << "\",\n"
-        << "  \"max_seq_len\": " << max_seq_len << ",\n"
-        << "  \"vocab_size\": " << vocab_size << ",\n"
-        << "  \"padded_vocab_size\": " << padded_vocab_size << ",\n"
-        << "  \"num_layers\": " << num_layers << ",\n"
-        << "  \"num_heads\": " << num_heads << ",\n"
-        << "  \"channels\": " << channels << ",\n"
-        << "  \"parameter_count\": " << parameter_count << ",\n"
-        << "  \"expected_file_size\": " << expected_file_size << ",\n"
-        << "  \"actual_file_size\": " << actual_file_size << ",\n"
-        << "  \"size_matches\": " << (size_matches ? "true" : "false") << ",\n"
-        << "  \"checkpoint_step\": " << step << ",\n"
-        << "  \"prompt_token_count\": " << prompt_tokens.size() << ",\n"
-        << "  \"max_new_tokens\": " << cfg.sample_max_new_tokens << ",\n"
-        << "  \"tokenizer_required\": false,\n"
-        << "  \"graph_editor_node_flow\": false,\n"
-        << "  \"torch_required\": false,\n"
-        << "  \"forward_pass_status\": \"dedicated-native-sampler-pending\",\n"
-        << "  \"message\": \"Native checkpoint and prompt tokens validated in C++; CUDA Tile forward sampling is the next implementation step.\"\n"
-        << "}\n";
-    if (!size_matches) {
-        return 2;
-    }
-    return 2;
 }
 
 double parse_double(const std::string& value, const std::string& flag) {
@@ -1741,12 +1622,15 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     constexpr float kNormEps = 1.0e-5f;
     const fs::path checkpoint_path = expand_user_path(cfg.native_checkpoint);
     std::string error;
-    const bool run_all_layers = cfg.checkpoint_forward_logits_smoke;
+    const bool run_sampler = cfg.sample_checkpoint;
+    const bool run_all_layers = cfg.checkpoint_forward_logits_smoke || run_sampler;
     const bool run_final_logits = cfg.checkpoint_block_logits_smoke || run_all_layers;
     const bool run_mlp = cfg.checkpoint_block_smoke || run_final_logits;
     const bool run_attention_projection = cfg.checkpoint_attention_residual_smoke || run_mlp;
     const bool run_attention = cfg.checkpoint_attention_smoke || run_attention_projection;
-    const std::string mode_flag = run_all_layers
+    const std::string mode_flag = run_sampler
+        ? "--sample-checkpoint"
+        : (run_all_layers
         ? "--checkpoint-forward-logits-smoke"
         : (run_final_logits
         ? "--checkpoint-block-logits-smoke"
@@ -1754,11 +1638,15 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         ? "--checkpoint-block-smoke"
         : (run_attention_projection
         ? "--checkpoint-attention-residual-smoke"
-        : (run_attention ? "--checkpoint-attention-smoke" : "--checkpoint-qkv-smoke"))));
+        : (run_attention ? "--checkpoint-attention-smoke" : "--checkpoint-qkv-smoke")))));
     const std::vector<std::int64_t> prompt_tokens =
         parse_csv_i64(cfg.sample_prompt_tokens, "--prompt-tokens");
     if (prompt_tokens.empty()) {
         std::cerr << mode_flag << " requires non-empty --prompt-tokens IDS\n";
+        return 2;
+    }
+    if (run_sampler && cfg.sample_max_new_tokens < 0) {
+        std::cerr << "--max-new-tokens must be non-negative\n";
         return 2;
     }
 
@@ -2515,7 +2403,9 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     std::cout
         << "{\n"
         << "  \"status\": \""
-        << (run_all_layers
+        << (run_sampler
+                ? "native-checkpoint-sampler"
+                : (run_all_layers
                 ? "native-checkpoint-forward-logits-smoke"
                 : (run_final_logits
                 ? "native-checkpoint-block-logits-smoke"
@@ -2523,7 +2413,7 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
                 ? "native-checkpoint-block-smoke"
                 : (run_attention_projection
                 ? "native-checkpoint-attention-residual-smoke"
-                : (run_attention ? "native-checkpoint-attention-smoke" : "native-checkpoint-qkv-smoke")))))
+                : (run_attention ? "native-checkpoint-attention-smoke" : "native-checkpoint-qkv-smoke"))))))
         << "\",\n"
         << "  \"runtime\": \"native-cpp\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
@@ -2536,6 +2426,8 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         << "  \"checkpoint_version\": " << version << ",\n"
         << "  \"precision\": \"bf16\",\n"
         << "  \"prompt_token_count\": " << rows << ",\n"
+        << "  \"max_new_tokens\": " << (run_sampler ? cfg.sample_max_new_tokens : 0) << ",\n"
+        << "  \"generated_token_count\": " << (run_sampler && passed && cfg.sample_max_new_tokens > 0 ? 1 : 0) << ",\n"
         << "  \"vocab_size\": " << vocab_size << ",\n"
         << "  \"padded_vocab_size\": " << padded_vocab_size << ",\n"
         << "  \"num_layers\": " << num_layers << ",\n"
@@ -2596,7 +2488,15 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         << "  \"sample_logit\": " << sample_logit << ",\n"
         << "  \"top_token\": " << top_token << ",\n"
         << "  \"top_logit\": " << top_logit << ",\n"
+        << "  \"generated_tokens\": [";
+    if (run_sampler && passed && cfg.sample_max_new_tokens > 0) {
+        std::cout << top_token;
+    }
+    std::cout
+        << "],\n"
+        << "  \"forward_pass_status\": \"" << (run_sampler ? (passed ? "cuda-tile-forward-executed" : "cuda-tile-forward-failed") : "") << "\",\n"
         << "  \"max_abs_sample\": " << max_abs_sample << ",\n"
+        << "  \"tokenizer_required\": false,\n"
         << "  \"torch_required\": false,\n"
         << "  \"graph_editor_node_flow\": false,\n"
         << "  \"transformer_blocks_executed\": " << (run_all_layers ? "true" : "false") << ",\n"
@@ -18049,7 +17949,7 @@ int main(int argc, char** argv) {
             std::cerr << "--sample-checkpoint requires PATH\n";
             return 2;
         }
-        return print_native_checkpoint_sample_plan_json(cfg);
+        return print_native_checkpoint_qkv_smoke_json(cfg, argv[0]);
     }
     if (cfg.checkpoint_logits_smoke) {
         if (cfg.native_checkpoint.empty()) {
