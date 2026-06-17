@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add compiled native GPT checkpoint inspection
+
+#### Changed
+
+- `nfn_gpt_native_train` now supports
+  `--native-info --native-checkpoint PATH` and
+  `--inspect-checkpoint PATH`. Both modes read native dense GPT
+  `model_*.bin` checkpoints directly from compiled C++, validate the header and
+  expected file size, report DONE-marker state, and exit before CUDA, Torch,
+  dataset resolution, or graph-editor node setup.
+- The JSON reports `status: "native-checkpoint-info"`, `runtime: "native-cpp"`,
+  checkpoint shape/precision fields, and
+  `prompt_generation_status: "dedicated-native-sampler-pending"` so the
+  remaining prompt-generation gap is explicit.
+- Aligned the compiled native GPT test expectation for current descriptor-arena
+  elision counts, which now report `37` elided descriptor copies/mallocs in the
+  existing plan JSON.
+
+#### Verification
+
+- Ran `bash tools/build_native_gpt_cli.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+
 ### 2026-06-17 Reject LM-head hidden prepack disable
 
 #### Changed

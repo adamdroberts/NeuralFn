@@ -226,6 +226,14 @@ Compiled CUDA Tile graphs can opt into runtime NVFP4 activation packing with `gr
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
+The compiled dense GPT trainer can inspect native `model_########.bin`
+checkpoints without CUDA, Torch, Python dataset setup, or graph nodes using
+`nfn_gpt_native_train --native-info --native-checkpoint model_########.bin` or
+`nfn_gpt_native_train --inspect-checkpoint model_########.bin`. The JSON reports
+shape, precision, file-size validation, DONE marker state, and
+`prompt_generation_status: "dedicated-native-sampler-pending"` while the
+dedicated CUDA Tile prompt-generation executable is still pending.
+
 Native GPT launchers also default `CUDA_MODULE_LOADING=LAZY` when the variable is unset, alongside the existing dedicated-GPU defaults, so direct C++ and SDK launches avoid eager CUDA module-load startup cost unless the caller overrides the environment. Use `--startup-only` or SDK `startup_only=True` to run full Tile-CUDA transformer setup, emit `status: "native-transformer-lm-startup-ready"`, and exit before optimizer steps or checkpoint export when measuring startup.
 
 For the generic SDK path, build `neuralfn._native_gpt` with `bash tools/build_native_gpt_binding.sh`; build `neuralfn._native_gpt2` with `bash tools/build_native_gpt2_binding.sh` only for GPT-2 compatibility imports. `tools/build_native_gpt2_all.sh` and `cli/install.sh` build both modules, and `run_native_gpt(..., runner="auto")` prefers the generic `_native_gpt` binding before falling back to the compatibility binding, launcher, or compiled CLI. The binding launches compiled native commands with `posix_spawnp()` instead of `fork()` plus `execvp()`, and sets `CUDA_MODULE_LOADING=LAZY` when the caller has not supplied a module-loading policy, so SDK runs avoid avoidable Python-process fork overhead and eager CUDA module loading.

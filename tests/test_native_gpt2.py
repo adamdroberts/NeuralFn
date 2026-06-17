@@ -1263,6 +1263,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "--smoke-transformer-lm-step" in help_proc.stdout
     assert "--smoke-embedding-lm-step" in help_proc.stdout
     assert "--train-embedding-lm" in help_proc.stdout
+    assert "--native-info --native-checkpoint PATH" in help_proc.stdout
+    assert "--inspect-checkpoint PATH" in help_proc.stdout
     assert "--train-transformer-lm" in help_proc.stdout
     assert "--startup-only" in help_proc.stdout
     assert "--cuda-runtime-lib PATH" in help_proc.stdout
@@ -2490,8 +2492,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["descriptor_arena_suballocation_count"] == 0
     assert train_transformer_payload["descriptor_upload_strategy"] == "single-host-packed-arena-copy"
     assert train_transformer_payload["descriptor_arena_copy_count"] == 0
-    assert train_transformer_payload["descriptor_arena_copy_calls_elided"] == 28
-    assert train_transformer_payload["descriptor_cuda_mallocs_elided"] == 28
+    assert train_transformer_payload["descriptor_arena_copy_calls_elided"] == 37
+    assert train_transformer_payload["descriptor_cuda_mallocs_elided"] == 37
     assert train_transformer_payload["parameter_initialization_strategy"] == "fused-multi-buffer-fill-values"
     assert train_transformer_payload["parameter_initialization_descriptor_count"] == 0
     assert train_transformer_payload["bf16_parameter_initialization_descriptor_count"] == 0
@@ -2599,8 +2601,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "descriptor_arena_suballocation_count": 0,
         "descriptor_upload_strategy": "single-host-packed-arena-copy",
         "descriptor_arena_copy_count": 0,
-        "descriptor_arena_copy_calls_elided": 28,
-        "descriptor_cuda_mallocs_elided": 28,
+        "descriptor_arena_copy_calls_elided": 37,
+        "descriptor_cuda_mallocs_elided": 37,
         "block0_duplicate_allocation_elided": True,
         "block0_duplicate_activation_allocation_elided": True,
         "block0_duplicate_parameter_initialization_elided": True,
@@ -2905,6 +2907,41 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert checkpoint_info.size_matches is True
     assert checkpoint_info.done_marker_exists is True
     assert latest_native_gpt2_checkpoint(checkpoint_out) == checkpoint_path
+
+    native_info = subprocess.run(
+        [str(cli), "--native-info", "--native-checkpoint", str(checkpoint_path)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert native_info.returncode == 0, native_info.stderr
+    native_info_payload = json.loads(native_info.stdout)
+    assert native_info_payload["status"] == "native-checkpoint-info"
+    assert native_info_payload["runtime"] == "native-cpp"
+    assert native_info_payload["backend"] == "tile-cuda"
+    assert native_info_payload["path"] == str(checkpoint_path)
+    assert native_info_payload["precision"] == "bf16"
+    assert native_info_payload["max_seq_len"] == 8
+    assert native_info_payload["vocab_size"] == 50257
+    assert native_info_payload["padded_vocab_size"] == 50304
+    assert native_info_payload["num_layers"] == 12
+    assert native_info_payload["num_heads"] == 12
+    assert native_info_payload["channels"] == 768
+    assert native_info_payload["size_matches"] is True
+    assert native_info_payload["checkpoint_step"] == 2
+    assert native_info_payload["done_marker_exists"] is True
+    assert native_info_payload["prompt_generation_status"] == "dedicated-native-sampler-pending"
+
+    inspect_info = subprocess.run(
+        [str(cli), "--inspect-checkpoint", str(checkpoint_path)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert inspect_info.returncode == 0, inspect_info.stderr
+    assert json.loads(inspect_info.stdout)["status"] == "native-checkpoint-info"
 
     bad_backend = subprocess.run(
         [str(cli), "--dataset-alias", str(dataset_path), "--backend", "tile_cuda", "--print-plan"],
