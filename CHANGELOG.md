@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Record SM120 native GPT kernel bisection rejects
+
+#### Benchmark evidence
+
+- Rebuilt `libnfn_native_train_tile_ops.so` and `nfn_gpt_native_train` from the
+  clean source before measuring new candidates on the dedicated display-disabled
+  RTX 5090 with `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and
+  `tools/paired_kernel_speed.py --require-idle-selected-gpu`.
+- Rejected `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1`: the two-sample paired
+  run measured `1.016116x` train-loop time and `0.984144x` tokens/sec versus
+  the default float attention-gradient handoff.
+- Rejected `NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING=1`: the two-sample paired
+  run measured `1.028320x` train-loop time and `0.972468x` tokens/sec versus
+  the default float-gradient accumulation path.
+- Rejected `NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO=0`: the
+  two-sample paired run measured `1.009501x` train-loop time and `0.990594x`
+  tokens/sec versus the default first-write-then-accumulate dWeight path.
+- Kept the SM120 TK fused-dGELU-dInput compile-time candidate opt-in. A
+  two-sample run of a separate library built with
+  `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS='-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP
+  -DLLMK_SM120_APPROX_DGELU_TANH=1'` measured a narrow
+  `0.998849x` train-loop time, but the four-sample repeat was effectively
+  neutral at `0.999900x` train-loop time and `1.000109x` tokens/sec.
+- Rejected `NFN_NATIVE_GPT_FUSE_QKV_BIAS_TK_GEMM=0`: the two-sample paired run
+  measured `1.016504x` train-loop time and `0.983770x` tokens/sec, confirming
+  the default fused QKV bias+TK path is still the faster route.
+
 ### 2026-06-17 Enable large-shape BF16 cuBLASLt trainer GEMMs by default
 
 #### Changed

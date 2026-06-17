@@ -278,6 +278,12 @@ For native GEMM profiling, set `NFN_NATIVE_LINEAR_SHAPE_STATS=1` or `NFN_TILE_CU
 
 The default dense GPT MLP projection backward now uses the BF16-only dGELU handoff path when BF16 MLP grad handoff is active, so the Tile kernel writes the BF16 gradient consumed by the following MLP FC backward stage without also converting it to an unused FP32 gradient buffer. Training JSON reports `block_backward_mlp_dgelu_float_grad_elided` and the `...-no-float-grad` strategy suffix. Set `NFN_NATIVE_GPT_ELIDE_MLP_DGELU_FLOAT_GRAD=0` to restore the prior conversion path for paired kernel benchmarks.
 
+Keep compile-time kernel candidates isolated until a same-script paired run
+holds up. For example, a Tile ops library built with
+`NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1"`
+remains an opt-in benchmark candidate because the dedicated RTX 5090 four-sample
+repeat was noise-equivalent to the default library.
+
 For profiling only, `NFN_TILE_CUDA_LINEAR_TK_FLOAT_OUT=1` or `NFN_NATIVE_LINEAR_TK_FLOAT_OUT=1` routes eligible BF16 linear forward GEMMs through the TK BF16-output bridge and converts the result back to float32. This path reports `linear_tk_float_out_gemm_count` in native GPT-2 JSON and remains disabled by default because the current full-shape TinyStories probe regressed overall throughput.
 
 The same raw ABI also exposes TK attention backward-to-QKV forward-workspace reuse for trainer loops that own the matching forward/backward ordering, plus a saved-workspace variant for loops that store the TK BF16 forward state per block.
