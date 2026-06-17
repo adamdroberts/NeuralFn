@@ -6,6 +6,40 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add native SM120 candidate benchmark wrapper
+
+#### Added
+
+- Added `tools/bench_native_gpt_sm120_candidate.sh`, a native-vs-native dense GPT
+  SM120 benchmark wrapper for CUDA Tile kernel bisection. The wrapper keeps the
+  same compiled native GPT command shape on both sides, pins
+  `--train-batch-tokens 524288` by default, compares the current Tile ops
+  library/default environment against `NFN_SM120_NATIVE_CANDIDATE_ENV` or
+  `NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB`, and reuses the selected-GPU
+  idle/utilization guards from `tools/paired_kernel_speed.py`.
+- Documented the wrapper in README and added the task/evidence to
+  `todo-tile-cuda.md`.
+
+#### Notes
+
+- Rejected fresh one-step stage probes for
+  `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1`,
+  `NFN_NATIVE_GPT_REUSE_MLP_PROJ_BF16_GRAD_OUT=0`, and cublasLt heuristic index
+  `0` for the `768,65536,3072,N,N`, `768,65536,2304,N,N`, and
+  `768,65536,768,N,N` dInput shapes. None produced a stable targeted-stage win
+  worth promoting to a default.
+
+#### Verification
+
+- Ran GPU-visible one-step native GPT stage probes on the dedicated RTX 5090 for
+  the rejected runtime candidates listed above. Each completed with
+  `status: native-transformer-lm-trained` and `passed: true`.
+- Ran `bash -n tools/bench_native_gpt_sm120_candidate.sh`.
+- Ran
+  `NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1 NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES=0 NFN_SM120_NATIVE_PROFILE_DIR=none NFN_SM120_NATIVE_CANDIDATE_ENV=NFN_NATIVE_GPT_REUSE_MLP_PROJ_BF16_GRAD_OUT=0 tools/bench_native_gpt_sm120_candidate.sh`;
+  the paired wrapper completed, wrote `/tmp/nfn_sm120_native_candidate_wrapper_smoke.json`,
+  and recorded zero selected-GPU compute processes before and after the sample.
+
 ### 2026-06-17 Pin SM120 parity batch-token contract
 
 #### Changed

@@ -177,7 +177,18 @@ paired ratios so unrelated external GPU load affects baseline and candidate
 measurements similarly. For native binary or environment-flag experiments, run
 `tools/paired_kernel_speed.py` with `--baseline "OLD_COMMAND"`,
 `--candidate "NEW_COMMAND"`, and `--samples N` to compare older and candidate
-kernels in the same alternating script. Add
+kernels in the same alternating script. For dense GPT SM120 kernel bisection,
+`tools/bench_native_gpt_sm120_candidate.sh` wraps that helper with the same
+native command on both sides, selected-GPU idle guards, and
+`--train-batch-tokens 524288` by default. Set
+`NFN_SM120_NATIVE_CANDIDATE_ENV="KEY=VALUE OTHER=1"` to test an env-gated
+candidate against the current default, or set
+`NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB=/tmp/libnfn_candidate.so` to compare a
+candidate Tile ops build against `build/libnfn_native_train_tile_ops.so`. Common
+controls include `NFN_SM120_NATIVE_STEPS`, `NFN_SM120_NATIVE_SAMPLES`,
+`NFN_SM120_NATIVE_WARMUP`, `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`,
+`NFN_SM120_NATIVE_TEMPLATE_NAME`, `NFN_SM120_NATIVE_GRAPH_FILE`, and
+`NFN_SM120_NATIVE_STAGE_TIMING=1` for attribution sidecars. Add
 `--append-native-profile-json-dir /tmp/nfn-profiles`
 when comparing native NeuralFn commands that do not already write JSON; the
 harness appends unique `--profile-json` files without changing the timed native
