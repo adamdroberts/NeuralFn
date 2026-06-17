@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Retile native GPT token initializer to 4096
+
+#### Changed
+
+- Made the dense GPT native token-weight CUDA Tile initializer size a
+  compile-time constant controlled by
+  `NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE`, accepting `1024`, `2048`, or
+  `4096`.
+- Changed the default trainer-facing Tile build from the previous 2048-element
+  token initializer tile to 4096 elements, keeping the non-threaded CUDA Tile
+  path as the default and leaving the threaded CUDA initializer diagnostic-only.
+
+#### Verification
+
+- Ran `bash tools/build_native_train_tile_ops.sh`.
+- Ran a dedicated RTX 5090 startup-only same-script comparison between the
+  preserved 2048-tile library and the rebuilt 4096-tile library:
+  candidate `setup.token_weight_init.total_ms` measured `0.895736x` mean versus
+  baseline, while total startup was noisy/slower at `1.179639x`.
+- Rejected the 1024-tile candidate after a dedicated RTX 5090 startup-only
+  comparison measured `1.007101x` token-init time and `1.012266x` total wall
+  time versus the preserved 2048-tile baseline.
+- Ran a dedicated RTX 5090 one-step native training comparison between the
+  preserved 2048-tile library and the rebuilt 4096-tile library; the candidate
+  measured `0.991404x` total wall time, `0.999314x` train-loop wall time, and
+  `1.000805x` tokens/sec versus baseline.
+
 ### 2026-06-17 Wire dense GPT native layer-evo ABI cadence
 
 #### Added

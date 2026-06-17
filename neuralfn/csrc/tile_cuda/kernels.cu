@@ -26,6 +26,24 @@
 
 namespace neuralfn::tile_cuda {
 
+#ifndef NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE
+#define NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE 4096
+#endif
+
+static_assert(
+    NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE == 1024 ||
+        NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE == 2048 ||
+        NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE == 4096,
+    "NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE must be 1024, 2048, or 4096");
+
+#if NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE == 1024
+#define NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE 1024_ic
+#elif NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE == 2048
+#define NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE 2048_ic
+#elif NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE == 4096
+#define NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE 4096_ic
+#endif
+
 namespace {
 
 constexpr int kTileSize = 1024;
@@ -4883,15 +4901,16 @@ __tile_global__ void init_gpt2_token_weight_float32_kernel(
   values = ct::assume_aligned(values, 16_ic);
 
   const int bx = ct::bid().x;
-  constexpr int kTokenInitTileSize = 2048;
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{2048_ic})>;
+  constexpr int kTokenInitTileSize = NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE;
+  using IndexTile =
+      ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE})>;
   auto idx = ct::iota<IndexTile>() +
       ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTokenInitTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto bucket = idx % ct::full<IndexTile>(17);
   auto shifted = bucket - ct::full<IndexTile>(8);
   auto value = ct::element_cast<float>(shifted) *
-      ct::full<ct::tile<float, decltype(ct::shape{2048_ic})>>(0.01f);
+      ct::full<ct::tile<float, decltype(ct::shape{NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE})>>(0.01f);
   ct::store_masked(values + idx, value, mask);
 }
 
@@ -4904,15 +4923,16 @@ __tile_global__ void init_gpt2_token_weight_fast_float32_kernel(
   values = ct::assume_aligned(values, 16_ic);
 
   const int bx = ct::bid().x;
-  constexpr int kTokenInitTileSize = 2048;
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{2048_ic})>;
+  constexpr int kTokenInitTileSize = NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE;
+  using IndexTile =
+      ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE})>;
   auto idx = ct::iota<IndexTile>() +
       ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTokenInitTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto bucket = idx % ct::full<IndexTile>(16);
   auto shifted = bucket - ct::full<IndexTile>(8);
   auto value = ct::element_cast<float>(shifted) *
-      ct::full<ct::tile<float, decltype(ct::shape{2048_ic})>>(0.01f);
+      ct::full<ct::tile<float, decltype(ct::shape{NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE})>>(0.01f);
   ct::store_masked(values + idx, value, mask);
 }
 
@@ -4928,15 +4948,16 @@ __tile_global__ void init_gpt2_token_weight_with_bf16_shadow_float32_kernel(
       reinterpret_cast<__nv_bfloat16*>(shadow_bf16_bits), 16_ic);
 
   const int bx = ct::bid().x;
-  constexpr int kTokenInitTileSize = 2048;
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{2048_ic})>;
+  constexpr int kTokenInitTileSize = NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE;
+  using IndexTile =
+      ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE})>;
   auto idx = ct::iota<IndexTile>() +
       ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTokenInitTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto bucket = idx % ct::full<IndexTile>(17);
   auto shifted = bucket - ct::full<IndexTile>(8);
   auto value = ct::element_cast<float>(shifted) *
-      ct::full<ct::tile<float, decltype(ct::shape{2048_ic})>>(0.01f);
+      ct::full<ct::tile<float, decltype(ct::shape{NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE})>>(0.01f);
   ct::store_masked(values + idx, value, mask);
   ct::store_masked(shadow + idx, ct::element_cast<__nv_bfloat16>(value), mask);
 }
@@ -4953,15 +4974,16 @@ __tile_global__ void init_gpt2_token_weight_fast_with_bf16_shadow_float32_kernel
       reinterpret_cast<__nv_bfloat16*>(shadow_bf16_bits), 16_ic);
 
   const int bx = ct::bid().x;
-  constexpr int kTokenInitTileSize = 2048;
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{2048_ic})>;
+  constexpr int kTokenInitTileSize = NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE;
+  using IndexTile =
+      ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE})>;
   auto idx = ct::iota<IndexTile>() +
       ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTokenInitTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto bucket = idx % ct::full<IndexTile>(16);
   auto shifted = bucket - ct::full<IndexTile>(8);
   auto value = ct::element_cast<float>(shifted) *
-      ct::full<ct::tile<float, decltype(ct::shape{2048_ic})>>(0.01f);
+      ct::full<ct::tile<float, decltype(ct::shape{NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE})>>(0.01f);
   ct::store_masked(values + idx, value, mask);
   ct::store_masked(shadow + idx, ct::element_cast<__nv_bfloat16>(value), mask);
 }
@@ -11471,7 +11493,7 @@ void launch_init_gpt2_token_weight_float32(
     launch_init_gpt2_token_weight_threaded_float32(values, nullptr, n, false, stream);
     return;
   }
-  constexpr int kTokenInitTileSize = 2048;
+  constexpr int kTokenInitTileSize = NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE;
   const int blocks = static_cast<int>((n + kTokenInitTileSize - 1) / kTokenInitTileSize);
   init_gpt2_token_weight_float32_kernel<<<blocks, 1, 0, stream>>>(values, n);
 }
@@ -11484,7 +11506,7 @@ void launch_init_gpt2_token_weight_fast_float32(
     launch_init_gpt2_token_weight_threaded_float32(values, nullptr, n, true, stream);
     return;
   }
-  constexpr int kTokenInitTileSize = 2048;
+  constexpr int kTokenInitTileSize = NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE;
   const int blocks = static_cast<int>((n + kTokenInitTileSize - 1) / kTokenInitTileSize);
   init_gpt2_token_weight_fast_float32_kernel<<<blocks, 1, 0, stream>>>(values, n);
 }
@@ -11502,7 +11524,7 @@ void launch_init_gpt2_token_weight_with_bf16_shadow_float32(
     launch_init_gpt2_token_weight_threaded_float32(values, shadow_bf16_bits, n, false, stream);
     return;
   }
-  constexpr int kTokenInitTileSize = 2048;
+  constexpr int kTokenInitTileSize = NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE;
   const int blocks = static_cast<int>((n + kTokenInitTileSize - 1) / kTokenInitTileSize);
   init_gpt2_token_weight_with_bf16_shadow_float32_kernel<<<blocks, 1, 0, stream>>>(
       values, shadow_bf16_bits, n);
@@ -11521,7 +11543,7 @@ void launch_init_gpt2_token_weight_fast_with_bf16_shadow_float32(
     launch_init_gpt2_token_weight_threaded_float32(values, shadow_bf16_bits, n, true, stream);
     return;
   }
-  constexpr int kTokenInitTileSize = 2048;
+  constexpr int kTokenInitTileSize = NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE;
   const int blocks = static_cast<int>((n + kTokenInitTileSize - 1) / kTokenInitTileSize);
   init_gpt2_token_weight_fast_with_bf16_shadow_float32_kernel<<<blocks, 1, 0, stream>>>(
       values, shadow_bf16_bits, n);
