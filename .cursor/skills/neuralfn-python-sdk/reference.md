@@ -782,3 +782,7 @@ Use `nfn_gpt_native_train --checkpoint-attention-residual-smoke
 the selected block's `attn.c_proj` tensors and continue through attention output
 projection plus residual add. `ln_2`, MLP, and generation-loop sampling remain
 pending.
+Use `nfn_gpt_native_train --checkpoint-block-smoke --native-checkpoint PATH
+--prompt-tokens IDS --checkpoint-block-index N` to continue through `ln_2`, MLP
+fc, GELU+bias, MLP projection, and final block residual add. Final norm, tied
+LM-head logits, and generation-loop sampling remain pending.

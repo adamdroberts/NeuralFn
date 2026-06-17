@@ -1120,6 +1120,7 @@ nfn_gpt_native_train --checkpoint-logits-smoke --native-checkpoint ~/NeuralFn/ar
 nfn_gpt_native_train --checkpoint-qkv-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0
 nfn_gpt_native_train --checkpoint-attention-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0
 nfn_gpt_native_train --checkpoint-attention-residual-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0
+nfn_gpt_native_train --checkpoint-block-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0
 nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --checkpoint-load-tensor h.0.ln_1.weight --checkpoint-load-elements 1024
 nfn_gpt_native_train --checkpoint-layout --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin
 ```
@@ -1161,6 +1162,9 @@ add, MLP, and generation-loop sampling.
 `h.N.attn.c_proj.bias`, then runs the attention output projection and residual
 add on CUDA Tile kernels. It still stops before `ln_2`, MLP, and generation-loop
 sampling.
+`--checkpoint-block-smoke` continues through `ln_2`, MLP fc, GELU+bias, MLP
+projection, and the final block residual add on CUDA Tile kernels. It still
+stops before final LayerNorm, tied LM-head logits, and generation-loop sampling.
 
 For flat Parameter Golf checkpoints, architecture comes from tensor shapes plus
 compatible metadata. A supplied training log may provide safe runtime hints
