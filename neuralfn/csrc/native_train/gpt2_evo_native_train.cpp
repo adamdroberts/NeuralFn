@@ -313,7 +313,8 @@ void print_usage(const char* program) {
         << "  --cuda-runtime-lib PATH         CUDA runtime path for evo kernel smoke; env NFN_CUDA_RUNTIME_LIB also works\n"
         << "  --smoke-evo-kernels             Execute tiny mutate/select/adopt evo Tile kernels and exit\n"
         << "  --print-plan                    Print the native JSON plan and exit 0\n"
-        << "  --dry-run                       Print the plan, then fail because training is not implemented\n";
+        << "  --dry-run                       Print the plan, then fail because training is not implemented\n"
+        << "  --native-cuda-*                 Wrapper aliases are accepted for print-plan, smoke, and library paths\n";
 }
 
 void validate_plan(const Gpt2EvoPlan& plan) {
@@ -715,7 +716,7 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run) {
             print_usage(argv[0]);
             std::exit(0);
         }
-        if (arg == "--print-plan" || arg == "--json") {
+        if (arg == "--print-plan" || arg == "--native-cuda-print-plan" || arg == "--json") {
             *print_plan = true;
             continue;
         }
@@ -723,7 +724,7 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run) {
             *dry_run = true;
             continue;
         }
-        if (arg == "--smoke-evo-kernels") {
+        if (arg == "--smoke-evo-kernels" || arg == "--native-cuda-smoke-evo-kernels") {
             plan.smoke_evo_kernels = true;
             continue;
         }
@@ -855,7 +856,7 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run) {
             plan.tile_activation_dtype = value_for(arg);
             continue;
         }
-        if (arg == "--tile-ops-lib") {
+        if (arg == "--tile-ops-lib" || arg == "--native-cuda-tile-ops-lib") {
             plan.tile_ops_lib = value_for(arg);
             continue;
         }
@@ -863,12 +864,20 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run) {
             plan.tile_ops_lib = after_equals("--tile-ops-lib=");
             continue;
         }
-        if (arg == "--cuda-runtime-lib") {
+        if (arg.rfind("--native-cuda-tile-ops-lib=", 0) == 0) {
+            plan.tile_ops_lib = after_equals("--native-cuda-tile-ops-lib=");
+            continue;
+        }
+        if (arg == "--cuda-runtime-lib" || arg == "--native-cuda-cuda-runtime-lib") {
             plan.cuda_runtime_lib = value_for(arg);
             continue;
         }
         if (arg.rfind("--cuda-runtime-lib=", 0) == 0) {
             plan.cuda_runtime_lib = after_equals("--cuda-runtime-lib=");
+            continue;
+        }
+        if (arg.rfind("--native-cuda-cuda-runtime-lib=", 0) == 0) {
+            plan.cuda_runtime_lib = after_equals("--native-cuda-cuda-runtime-lib=");
             continue;
         }
         if (arg == "--evo-layer-index") {

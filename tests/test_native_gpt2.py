@@ -3461,11 +3461,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--tile-ops-lib PATH" in evo_help.stdout
     assert "--cuda-runtime-lib PATH" in evo_help.stdout
     assert "--smoke-evo-kernels" in evo_help.stdout
+    assert "--native-cuda-*" in evo_help.stdout
 
     evo_plan_proc = subprocess.run(
         [
             str(gpt2_evo),
-            "--print-plan",
+            "--native-cuda-print-plan",
             "--dataset-alias",
             "/tmp/native-cache",
             "--eval-every-steps",

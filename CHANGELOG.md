@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Accept native-cuda aliases in GPT-2 evo preflight
+
+#### Changed
+
+- The compiled `nfn_gpt2_evo_native_train` preflight now accepts wrapper-style
+  native-cuda aliases directly for `--native-cuda-print-plan`,
+  `--native-cuda-smoke-evo-kernels`, `--native-cuda-tile-ops-lib`, and
+  `--native-cuda-cuda-runtime-lib`.
+- Updated README, CLI docs, and Python SDK Tile-CUDA docs so direct binary,
+  direct script, and wrapper behavior describe the same preflight contract.
+
+#### Verification
+
+- Ran `python -m pytest tests/test_native_gpt2.py::test_missing_family_native_trainers_build_and_unified_frontend_dispatches -q`.
+- Ran `python -m py_compile cli/scripts/native_training_guard.py cli/tests/test_train_gpt2_native.py`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Normalize native preflight aliases for guarded scripts
 
 #### Changed
