@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Reject current LM-head and projection-residual probes
+
+#### Changed
+
+- Retested `--lm-head-row-chunk-size 32768` against the current dense native
+  GPT default. The candidate is not promoted: train-loop time was noise-level
+  at `0.999895x`, total wall time regressed to `1.007049x`, and
+  `stage.lm_head_backward.total_ms` regressed to `1.007987x`.
+- Retested `NFN_NATIVE_GPT_BF16_PROJECTION_RESIDUAL=0` against the current
+  default. The candidate is rejected: train-loop time regressed to `1.015959x`,
+  tokens/sec fell to `0.984297x`, and `stage.block_backward.total_ms`
+  regressed to `1.010018x`.
+- Ran a one-step shape-stat diagnostic for a narrow LM-head dHidden cuBLASLt
+  large-`k` probe. The shape `m=768,n=8192,k=50304,op=N,N` still fell back to
+  `cublas_gemmex_bf16`, so no dispatch change was retained.
+
+#### Verification
+
+- Ran `python tools/paired_kernel_speed.py` on the dedicated display-disabled
+  RTX 5090 with `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`,
+  `--require-idle-selected-gpu`,
+  `--append-native-profile-json-dir /tmp/nfn_lm32768_profiles`, and candidate
+  `--lm-head-row-chunk-size 32768`.
+- Ran the same paired harness with
+  `--append-native-profile-json-dir /tmp/nfn_proj_residual_off_profiles` and
+  candidate `NFN_NATIVE_GPT_BF16_PROJECTION_RESIDUAL=0`.
+- Ran `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1 NFN_NATIVE_GPT_STAGE_TIMING=1`
+  one-step native profiling to inspect current GEMM dispatch, then rebuilt
+  `build/libnfn_native_train_tile_ops.so` after removing the ineffective
+  cuBLASLt large-`k` experiment.
+
 ### 2026-06-17 Reject primary float/uint16 arena startup probe
 
 #### Changed
