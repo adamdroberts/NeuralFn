@@ -899,6 +899,9 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run) {
 }  // namespace
 
 int main(int argc, char** argv) {
+    if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
+        setenv("CUDA_MODULE_LOADING", "LAZY", 0);
+    }
     bool print_plan = false;
     bool dry_run = false;
     Gpt2EvoPlan plan = parse_args(argc, argv, &print_plan, &dry_run);

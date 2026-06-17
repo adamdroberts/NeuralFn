@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Align native CUDA module-loading defaults
+
+#### Changed
+
+- Set `CUDA_MODULE_LOADING=LAZY` when unset across the native SDK binding,
+  unified native C++ frontend, GPT-2 launcher, NanoGPT native trainer, and
+  GPT-2 evo native preflight. The dense GPT trainer already used this default;
+  sibling native entrypoints now match before command execution or Tile
+  library/runtime loading.
+- Updated the GPT-2 launcher help text and native GPT SDK docs so the default
+  CUDA runtime environment is explicit.
+
+#### Verification
+
+- Ran `python -m py_compile tools/check_native_no_torch_deps.py`.
+- Ran `python tools/check_native_no_torch_deps.py --skip-artifacts --json`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Reject startup-only token/BF16 arena fallbacks
 
 #### Changed

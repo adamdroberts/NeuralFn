@@ -191,6 +191,9 @@ PyObject* run_train(PyObject*, PyObject* args) {
     if (!max_connections.empty() && std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
         setenv("CUDA_DEVICE_MAX_CONNECTIONS", max_connections.c_str(), 0);
     }
+    if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
+        setenv("CUDA_MODULE_LOADING", "LAZY", 0);
+    }
 
     const int return_code = run_exec_and_wait(command);
     if (return_code < 0) {

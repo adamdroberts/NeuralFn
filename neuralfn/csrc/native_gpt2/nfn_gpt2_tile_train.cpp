@@ -46,7 +46,7 @@ void print_usage(const char* program) {
     std::cout
         << "Usage: " << program << " [--target PATH] [--dry-run] [--print-command] -- <train_gpt2cu args...>\n"
         << "\n"
-        << "Sets CUDA_VISIBLE_DEVICES=0 and CUDA_DEVICE_MAX_CONNECTIONS=1 when unset, then execs the target GPT-2 CUDA trainer.\n"
+        << "Sets CUDA_VISIBLE_DEVICES=0, CUDA_DEVICE_MAX_CONNECTIONS=1, and CUDA_MODULE_LOADING=LAZY when unset, then execs the target GPT-2 CUDA trainer.\n"
         << "Target resolution: --target, then NFN_NATIVE_GPT2_TRAIN_BIN, then train_gpt2cu.\n";
 }
 
@@ -104,6 +104,9 @@ int main(int argc, char** argv) {
     }
     if (std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
         setenv("CUDA_DEVICE_MAX_CONNECTIONS", "1", 0);
+    }
+    if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
+        setenv("CUDA_MODULE_LOADING", "LAZY", 0);
     }
 
     std::vector<std::string> command;

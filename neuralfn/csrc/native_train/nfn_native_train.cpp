@@ -406,6 +406,9 @@ int main(int argc, char** argv) {
             if (std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
                 setenv("CUDA_DEVICE_MAX_CONNECTIONS", "1", 0);
             }
+            if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
+                setenv("CUDA_MODULE_LOADING", "LAZY", 0);
+            }
             std::vector<std::string> command;
             command.push_back(target_cli);
             if (dense_gpt) {
@@ -439,6 +442,9 @@ int main(int argc, char** argv) {
     }
     if (std::getenv("CUDA_DEVICE_MAX_CONNECTIONS") == nullptr) {
         setenv("CUDA_DEVICE_MAX_CONNECTIONS", "1", 0);
+    }
+    if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
+        setenv("CUDA_MODULE_LOADING", "LAZY", 0);
     }
 
     std::vector<std::string> command;

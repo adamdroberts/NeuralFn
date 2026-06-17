@@ -6413,6 +6413,9 @@ int main(int argc, char** argv) {
     bool dry_run = false;
     NanoGptPlan plan = parse_args(argc, argv, &print_plan, &dry_run);
     validate_plan(plan);
+    if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
+        setenv("CUDA_MODULE_LOADING", "LAZY", 0);
+    }
     if (plan.smoke_tile_ops) {
         return print_tile_ops_smoke_json(plan, argv[0]);
     }
