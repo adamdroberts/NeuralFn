@@ -108,6 +108,30 @@ int nfn_native_tile_copy_float32(
     std::int64_t n,
     void* cuda_stream);
 
+int nfn_native_tile_evo_mutate_candidates_float32(
+    const float* base,
+    float* candidates,
+    std::int64_t elements,
+    std::int64_t candidate_count,
+    float mutation_scale,
+    std::int64_t seed,
+    void* cuda_stream);
+
+int nfn_native_tile_evo_select_best_loss_float32(
+    const float* losses,
+    std::int64_t candidate_count,
+    std::int64_t* best_index,
+    float* best_loss,
+    void* cuda_stream);
+
+int nfn_native_tile_evo_adopt_candidate_float32(
+    const float* candidates,
+    const std::int64_t* best_index,
+    float* target,
+    std::int64_t elements,
+    std::int64_t candidate_count,
+    void* cuda_stream);
+
 int nfn_native_tile_uint16_to_int64(
     const std::uint16_t* source,
     std::int64_t* dest,

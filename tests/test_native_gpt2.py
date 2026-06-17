@@ -3116,8 +3116,19 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert evo_plan["estimated_parameters"] > evo_plan["layer_evo"]["evo_block_parameters"]
     assert "NVFP4 activation intent preserved in the compiled native plan" in evo_plan["available_native_kernels"]
     assert "template/custom graph selector parsed before graph-backed runtime import" in evo_plan["available_native_kernels"]
-    assert "forward-only candidate evaluation for current plus mutated evo-layer weights" in evo_plan["required_native_kernels"]
-    assert "copy/adopt best evo block candidate without host graph-editor tensor flow" in evo_plan["required_native_kernels"]
+    assert (
+        "device-side evo candidate mutation, best-loss selection, and best-candidate adoption Tile ABI"
+        in evo_plan["available_native_kernels"]
+    )
+    assert (
+        "forward-only candidate evaluation for current plus mutated evo-layer weights using the native evo Tile ABI"
+        in evo_plan["required_native_kernels"]
+    )
+    assert (
+        "wire the native evo Tile ABI into the layer-evolution loop without host graph-editor tensor flow"
+        in evo_plan["required_native_kernels"]
+    )
+    assert "copy/adopt best evo block candidate without host graph-editor tensor flow" not in evo_plan["required_native_kernels"]
 
     evo_custom_graph = subprocess.run(
         [
@@ -5146,6 +5157,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_linear_backward_weight_bias_accumulate_float32_bf16_bits" in exported
         assert "nfn_native_tile_linear_backward_bias_float32" in exported
         assert "nfn_native_tile_linear_backward_bias_accumulate_float32" in exported
+        assert "nfn_native_tile_evo_mutate_candidates_float32" in exported
+        assert "nfn_native_tile_evo_select_best_loss_float32" in exported
+        assert "nfn_native_tile_evo_adopt_candidate_float32" in exported
         assert "nfn_native_tile_scaled_residual_add_float32" in exported
         assert "nfn_native_tile_linear_bias_residual_add_bf16_linear_float32" in exported
         assert "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32" in exported

@@ -4161,6 +4161,75 @@ __tile_global__ void copy_float32_kernel(
   dest_view.store_masked(source_tile, bx);
 }
 
+__device__ float deterministic_uniform_value(std::int64_t linear_idx, std::int64_t counter, std::int64_t salt);
+
+__global__ void evo_mutate_candidates_float32_kernel(
+    const float* __restrict__ base,
+    float* __restrict__ candidates,
+    std::int64_t elements,
+    std::int64_t candidate_count,
+    float mutation_scale,
+    std::int64_t seed) {
+  const std::int64_t total = elements * candidate_count;
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= total || elements <= 0 || candidate_count <= 0) {
+    return;
+  }
+  const std::int64_t candidate = idx / elements;
+  const std::int64_t element = idx - candidate * elements;
+  const float value = base[element];
+  if (candidate == 0 || mutation_scale == 0.0f) {
+    candidates[idx] = value;
+    return;
+  }
+  const std::int64_t salt = 65537 + candidate * 131071;
+  const float u1 = fmaxf(deterministic_uniform_value(element, seed, salt), 1.0e-7f);
+  const float u2 = deterministic_uniform_value(element, seed, salt + 17);
+  const float radius = sqrtf(-2.0f * logf(u1));
+  const float theta = 6.2831853071795864769f * u2;
+  candidates[idx] = value + mutation_scale * radius * cosf(theta);
+}
+
+__global__ void evo_select_best_loss_float32_kernel(
+    const float* __restrict__ losses,
+    std::int64_t candidate_count,
+    std::int64_t* __restrict__ best_index,
+    float* __restrict__ best_loss) {
+  if (threadIdx.x != 0 || blockIdx.x != 0 || candidate_count <= 0) {
+    return;
+  }
+  std::int64_t index = 0;
+  float value = losses[0];
+  for (std::int64_t i = 1; i < candidate_count; ++i) {
+    const float candidate = losses[i];
+    if (candidate < value) {
+      value = candidate;
+      index = i;
+    }
+  }
+  *best_index = index;
+  *best_loss = value;
+}
+
+__global__ void evo_adopt_candidate_float32_kernel(
+    const float* __restrict__ candidates,
+    const std::int64_t* __restrict__ best_index,
+    float* __restrict__ target,
+    std::int64_t elements,
+    std::int64_t candidate_count) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= elements || elements <= 0 || candidate_count <= 0) {
+    return;
+  }
+  std::int64_t selected = *best_index;
+  if (selected < 0) {
+    selected = 0;
+  } else if (selected >= candidate_count) {
+    selected = candidate_count - 1;
+  }
+  target[idx] = candidates[selected * elements + idx];
+}
+
 __tile_global__ void uint16_to_int64_kernel(
     const std::uint16_t* __restrict__ source,
     std::int64_t* __restrict__ dest,
@@ -10384,6 +10453,53 @@ void launch_copy_float32(
     cudaStream_t stream) {
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   copy_float32_kernel<<<blocks, 1, 0, stream>>>(source, dest, n);
+}
+
+void launch_evo_mutate_candidates_float32(
+    const float* base,
+    float* candidates,
+    std::int64_t elements,
+    std::int64_t candidate_count,
+    float mutation_scale,
+    std::int64_t seed,
+    cudaStream_t stream) {
+  if (elements <= 0 || candidate_count <= 0) {
+    return;
+  }
+  constexpr int threads = 256;
+  const std::int64_t total = elements * candidate_count;
+  const int blocks = static_cast<int>((total + threads - 1) / threads);
+  evo_mutate_candidates_float32_kernel<<<blocks, threads, 0, stream>>>(
+      base, candidates, elements, candidate_count, mutation_scale, seed);
+}
+
+void launch_evo_select_best_loss_float32(
+    const float* losses,
+    std::int64_t candidate_count,
+    std::int64_t* best_index,
+    float* best_loss,
+    cudaStream_t stream) {
+  if (candidate_count <= 0) {
+    return;
+  }
+  evo_select_best_loss_float32_kernel<<<1, 1, 0, stream>>>(
+      losses, candidate_count, best_index, best_loss);
+}
+
+void launch_evo_adopt_candidate_float32(
+    const float* candidates,
+    const std::int64_t* best_index,
+    float* target,
+    std::int64_t elements,
+    std::int64_t candidate_count,
+    cudaStream_t stream) {
+  if (elements <= 0 || candidate_count <= 0) {
+    return;
+  }
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((elements + threads - 1) / threads);
+  evo_adopt_candidate_float32_kernel<<<blocks, threads, 0, stream>>>(
+      candidates, best_index, target, elements, candidate_count);
 }
 
 void launch_uint16_to_int64(

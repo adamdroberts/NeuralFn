@@ -53,6 +53,27 @@ bool trainer_linear_shape_stats_entry(
     std::int64_t* calls);
 void launch_gradient_accumulate_float32(float* buffer, const float* grad, std::int64_t n, float scale, cudaStream_t stream);
 void launch_copy_float32(const float* source, float* dest, std::int64_t n, cudaStream_t stream);
+void launch_evo_mutate_candidates_float32(
+    const float* base,
+    float* candidates,
+    std::int64_t elements,
+    std::int64_t candidate_count,
+    float mutation_scale,
+    std::int64_t seed,
+    cudaStream_t stream);
+void launch_evo_select_best_loss_float32(
+    const float* losses,
+    std::int64_t candidate_count,
+    std::int64_t* best_index,
+    float* best_loss,
+    cudaStream_t stream);
+void launch_evo_adopt_candidate_float32(
+    const float* candidates,
+    const std::int64_t* best_index,
+    float* target,
+    std::int64_t elements,
+    std::int64_t candidate_count,
+    cudaStream_t stream);
 void launch_uint16_to_int64(const std::uint16_t* source, std::int64_t* dest, std::int64_t n, cudaStream_t stream);
 void launch_float32_to_bf16_bits(const float* source, std::uint16_t* dest, std::int64_t n, cudaStream_t stream);
 void launch_bf16_bits_to_float32(const std::uint16_t* source, float* dest, std::int64_t n, cudaStream_t stream);
@@ -1734,6 +1755,57 @@ int nfn_native_tile_fill_many_values_bf16_bits_float32(
         values,
         buffer_count,
         max_elements,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_evo_mutate_candidates_float32(
+    const float* base,
+    float* candidates,
+    std::int64_t elements,
+    std::int64_t candidate_count,
+    float mutation_scale,
+    std::int64_t seed,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_evo_mutate_candidates_float32(
+        base,
+        candidates,
+        elements,
+        candidate_count,
+        mutation_scale,
+        seed,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_evo_select_best_loss_float32(
+    const float* losses,
+    std::int64_t candidate_count,
+    std::int64_t* best_index,
+    float* best_loss,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_evo_select_best_loss_float32(
+        losses,
+        candidate_count,
+        best_index,
+        best_loss,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_evo_adopt_candidate_float32(
+    const float* candidates,
+    const std::int64_t* best_index,
+    float* target,
+    std::int64_t elements,
+    std::int64_t candidate_count,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_evo_adopt_candidate_float32(
+        candidates,
+        best_index,
+        target,
+        elements,
+        candidate_count,
         as_stream(cuda_stream));
     return launch_status();
 }

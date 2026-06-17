@@ -87,7 +87,8 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Live-validate GPT-2 `--train-transformer-lm` memory/runtime behavior at the SM120 default batch shape and compare throughput against `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`.
   - 2026-06-16 dedicated RTX 5090 check: `tools/bench_native_gpt_sm120_parity.sh` with `NFN_SM120_PARITY_STEPS=10`, `NFN_SM120_PARITY_SAMPLES=1`, `CUDA_VISIBLE_DEVICES=0`, and idle-GPU guards wrote `/tmp/nfn_sm120_parity_10step_current.json`. llm.kittens averaged `2478.839 ms/step` and `212051.9 tok/s`; NeuralFn averaged `2735.720 ms/step` and `191646 tok/s`, or `1.103630x` train-loop time and `0.903769x` tokens/sec versus the reference.
 - [ ] Finish replacing the dense GPT-2 external `llm.kittens` bridge by live-validating the NeuralFn-owned `libnfn_native_train_tile_ops.so` loop against the `llm.kittens` SM120 script and removing any remaining external bridge dependency.
-- [ ] Implement GPT-2 evo native layer-evolution candidate evaluation, device-side mutation, candidate loss reduction, and best-candidate adoption kernels without graph-editor tensor flow.
+- [x] Add GPT-2 evo raw Tile-CUDA trainer ABI for device-side candidate mutation, best-loss selection, and best-candidate adoption without graph-editor tensor flow.
+- [ ] Wire GPT-2 evo native layer-evolution forward-only candidate evaluation into the dense GPT trainer loop and call the evo ABI primitives without graph-editor tensor flow.
 - [x] Expose NanoGPT preflight JSON with separate `available_native_kernels` and `required_native_kernels` lists.
 - [x] Add NanoGPT `--check-tile-ops` compiled C++ path that `dlopen`s `libnfn_native_train_tile_ops.so` and verifies required raw ABI symbols without Python/Torch.
 - [x] Add NanoGPT `--smoke-tile-ops` compiled C++ path that dynamically loads CUDA runtime, executes `nfn_native_tile_fill_float32`, and verifies device-to-host copyback without Python/Torch.

@@ -6,6 +6,35 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add native evo Tile ABI primitives
+
+#### Changed
+
+- Added trainer-facing CUDA Tile ABI symbols for GPT-2 evo layer search:
+  `nfn_native_tile_evo_mutate_candidates_float32`,
+  `nfn_native_tile_evo_select_best_loss_float32`, and
+  `nfn_native_tile_evo_adopt_candidate_float32`.
+- `nfn_gpt2_evo_native_train --print-plan` now reports device-side evo
+  mutation, best-loss selection, and best-candidate adoption as available
+  native pieces. The remaining missing work is wiring the forward-only
+  candidate-evaluation loop to those primitives without graph-editor tensor
+  flow.
+
+#### Verification
+
+- Rebuilt `libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt the missing-family trainer binaries with
+  `bash tools/build_native_missing_trainers.sh`.
+- Ran `nm -D build/libnfn_native_train_tile_ops.so | rg
+  'nfn_native_tile_evo_(mutate_candidates|select_best_loss|adopt_candidate)_float32'`
+  and confirmed all three symbols are exported.
+- Ran `build/nfn_gpt2_evo_native_train --print-plan --eval-every-steps 1000
+  --tile-cuda-activation-dtype nvfp4` and confirmed the new evo Tile ABI is
+  listed under `available_native_kernels`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k "missing_family or native_train_tile_ops_builds_torch_free_c_abi"`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Parse native JSON sidecars in paired benchmarks
 
 #### Changed
