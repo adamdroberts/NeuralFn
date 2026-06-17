@@ -271,8 +271,12 @@ CUDA Tile kernels.
 `nfn_gpt_native_train --checkpoint-block-smoke --native-checkpoint
 model_########.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0` continues
 through `ln_2`, MLP fc, GELU+bias, MLP projection, and the final block residual
-add on CUDA Tile kernels. Final norm, tied logits, and generation-loop sampling
-remain the next native inference steps.
+add on CUDA Tile kernels.
+`nfn_gpt_native_train --checkpoint-block-logits-smoke --native-checkpoint
+model_########.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0` continues
+through final LayerNorm and tied LM-head logits for the last prompt token.
+Multi-layer forward and generation-loop sampling remain the next native
+inference steps.
 
 The compiled dense GPT trainer can inspect native `model_########.bin`
 checkpoints without CUDA, Torch, Python dataset setup, or graph nodes using

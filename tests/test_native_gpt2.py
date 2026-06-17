@@ -1271,6 +1271,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "--checkpoint-attention-smoke --native-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
     assert "--checkpoint-attention-residual-smoke --native-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
     assert "--checkpoint-block-smoke --native-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
+    assert "--checkpoint-block-logits-smoke --native-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
     assert "--checkpoint-block-index N" in help_proc.stdout
     assert "--checkpoint-load-smoke --native-checkpoint PATH" in help_proc.stdout
     assert "--checkpoint-load-tensor NAME" in help_proc.stdout
