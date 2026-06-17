@@ -3784,6 +3784,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32" in header_text
     assert "AdamWManyWithDeviceScaleBf16ParamBf16GradFn" in gpt2_source_text
     assert "adamw_many_with_device_scale_bf16_param_bf16_grad" in gpt2_source_text
+    assert "adamw_bf16_param_bf16_grad_host" in gpt2_source_text
+    assert "adamw_bf16_param_bf16_grad_partial_offsets" in gpt2_source_text
+    assert "accumulated_gradients.bf16_params_bf16_grads.sumsq_partials_many" in gpt2_source_text
+    assert "qkv-fc-bf16-dweight-staging-direct-bf16-param-adamw" in gpt2_source_text
     assert "adamw_bf16_param_bf16_grad_kernel_loaded" in gpt2_source_text
     assert "block_weight_bf16_gradient_storage_strategy" in gpt2_source_text
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW" in gpt2_source_text

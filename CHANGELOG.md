@@ -6,6 +6,41 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add direct BF16 dWeight optimizer profiling path
+
+#### Changed
+
+- `NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING=1` now routes staged QKV and MLP
+  FC BF16 dWeights through BF16 sumsq clipping descriptors and
+  `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32`
+  when BF16 primary block weights are enabled. This skips the previous
+  BF16-to-FP32 staging flush for that opt-in profiling path.
+- The dense GPT trainer JSON now reports the direct BF16 dWeight staging
+  strategy, BF16-gradient AdamW descriptor counts, BF16 sumsq launch counts, and
+  BF16-gradient AdamW launch counts.
+- The path remains default-off. The current optimized default uses the faster
+  float-gradient accumulation path backed by the trainer cuBLASLt bgrad route.
+
+#### Verification
+
+- Rebuilt the native GPT CLI with `bash tools/build_native_gpt_cli.sh`.
+- Ran `build/nfn_gpt_native_train --backend tile-cuda --tinystories
+  --train-transformer-lm --max-steps 2 --eval-every-steps 0 --no-checkpoint
+  --profile-json /tmp/nfn_bf16_dweight_direct.json` with GPU access on the
+  dedicated RTX 5090. The JSON reported
+  `block_dweight_bf16_staging_strategy:
+  "qkv-fc-bf16-dweight-staging-direct-bf16-param-adamw"`,
+  `block_weight_bf16_gradient_storage_strategy:
+  "qkv-fc-bf16-accumulation-buffer"`, 24 BF16-gradient AdamW descriptors, and
+  zero staging flush launches.
+- Ran the required same-script paired benchmark with
+  `tools/paired_kernel_speed.py`, comparing
+  `NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING=0` against the direct BF16
+  staging candidate for two measured 2-step samples on the idle display-disabled
+  RTX 5090. The candidate measured `1.032515x` baseline train-loop time and
+  `0.968528x` baseline tokens/sec, so it was kept opt-in instead of promoted to
+  the default.
+
 ### 2026-06-17 Add GPT-2 evo native ABI smoke
 
 #### Changed

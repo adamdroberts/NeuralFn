@@ -974,13 +974,17 @@ grad-out default. The trainer ABI also exports
 which accumulates BF16 activation and BF16 gradient dWeight into a BF16 staging
 buffer while still accumulating bias in float32. Dense GPT can opt into that
 QKV and MLP FC staging experiment with
-`NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING=1`, then flushes staged BF16 dWeights
-to the existing float32 accumulation buffers before gradient clipping and
-AdamW. It remains default-off because the paired dedicated-RTX-5090 benchmark
-measured the candidate at about `1.0245x` the default train-loop time; runtime
-JSON reports `block_dweight_bf16_staging_enabled`,
-`block_dweight_bf16_staging_strategy`, staging allocation sizes, zero count, and
-flush-launch counts. Set
+`NFN_NATIVE_GPT_BF16_BLOCK_DWEIGHT_STAGING=1`. With BF16 primary block weights,
+the staged gradients feed
+`nfn_native_tile_sumsq_partials_many_bf16_bits_float32` and
+`nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32`
+directly, so the old BF16-to-FP32 staging flush is skipped. It remains
+default-off because the paired dedicated-RTX-5090 benchmark measured the direct
+BF16 optimizer candidate at `1.0325x` the default train-loop time, while the
+older flush candidate measured about `1.0245x` slower; runtime JSON reports
+`block_dweight_bf16_staging_enabled`, `block_dweight_bf16_staging_strategy`,
+staging allocation sizes, zero count, BF16 clip/AdamW descriptor counts, and
+BF16-gradient AdamW launch counts. Set
 `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` to profile dense GPT transformer-LM startup
 through CUDA runtime `cudaMallocAsync` / `cudaFreeAsync` for the large device
 arenas. The async allocator path is default-off because paired dedicated-RTX-5090
