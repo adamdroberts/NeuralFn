@@ -124,6 +124,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --graph PATH
           --weights PATH
           --checkpoint PATH
+          --native-checkpoint PATH
           --checkpoint-tokenizer PATH
           --native-info
           --native-sampler-script PATH (deprecated for native .bin prompts)
@@ -291,7 +292,7 @@ def _native_infer_checkpoint_arg(argv: list[str]) -> str | None:
         return None
     if _has_any(argv, "-h", "--help", "--graph", "--plan", "--plan-auto"):
         return None
-    return _arg_value(argv, "--checkpoint", "--weights")
+    return _arg_value(argv, "--native-checkpoint", "--checkpoint", "--weights")
 
 
 def _is_lightweight_native_gpt_infer(argv: list[str]) -> bool:
@@ -299,9 +300,9 @@ def _is_lightweight_native_gpt_infer(argv: list[str]) -> bool:
     if not checkpoint:
         return False
     try:
-        from neuralfn.native_gpt2 import is_native_gpt2_checkpoint
+        from neuralfn.native_gpt import is_native_gpt_checkpoint
 
-        return is_native_gpt2_checkpoint(Path(checkpoint).expanduser())
+        return is_native_gpt_checkpoint(Path(checkpoint).expanduser())
     except Exception:
         return False
 
@@ -311,9 +312,9 @@ def _lightweight_native_gpt_infer_main(argv: list[str] | None = None) -> int:
     checkpoint = _native_infer_checkpoint_arg(tokens)
     if not checkpoint:
         return 2
-    from neuralfn.native_gpt2 import read_native_gpt2_checkpoint_info
+    from neuralfn.native_gpt import read_native_gpt_checkpoint_info
 
-    info = read_native_gpt2_checkpoint_info(Path(checkpoint).expanduser())
+    info = read_native_gpt_checkpoint_info(Path(checkpoint).expanduser())
     print("Native GPT checkpoint detected")
     print(f"  path: {info.path}")
     print(f"  precision: {info.precision} (version {info.version})")
@@ -325,7 +326,7 @@ def _lightweight_native_gpt_infer_main(argv: list[str] | None = None) -> int:
     if _has_any(tokens, "--native-info"):
         return 0
     from argparse import Namespace
-    from infer_gpt2 import run_native_checkpoint_sampler
+    from infer_gpt import run_native_checkpoint_sampler
 
     args = Namespace(
         checkpoint=checkpoint,

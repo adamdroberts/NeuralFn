@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add canonical GPT inference entrypoint
+
+#### Changed
+
+- Added `cli/scripts/infer_gpt.py` as the canonical GPT inference script.
+  `cli/scripts/infer_gpt2.py` remains a compatibility entrypoint over the same
+  graph-backed and native checkpoint implementation.
+- Updated `nfn infer` to accept `--native-checkpoint` as an explicit alias for
+  native dense GPT `.bin` checkpoints, while preserving `--checkpoint` and
+  `--weights` detection.
+- Switched the lightweight native checkpoint detection path in `nfn infer` to
+  the generic `neuralfn.native_gpt` SDK aliases so native dense GPT checkpoints
+  are reported as GPT runtime artifacts rather than GPT-2-only artifacts.
+- Updated CLI docs and README to direct users to `infer_gpt.py` and the compiled
+  `nfn_gpt_native_train --sample-checkpoint` inference path.
+
+#### Verification
+
+- Ran `python -m py_compile cli/scripts/infer_gpt.py cli/scripts/infer_gpt2.py cli/nfn.py`.
+- Ran `python -m pytest cli/tests/test_cli_help_behavior.py -q`.
+- Ran `python -m pytest cli/tests/test_infer_megakernel_artifacts.py -q -k 'gpt or raw_text'`.
+- Ran `python -m pytest cli/tests/test_train_gpt2_native.py -q -k 'infer_gpt or nfn_infer_native_checkpoint_is_recognized'`.
+
 ### 2026-06-17 Keep paired native profile sidecars timing-neutral
 
 #### Changed

@@ -1585,6 +1585,70 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertNotIn("--target ", proc.stdout)
         self.assertNotIn("train_gpt2cu", proc.stdout)
 
+    def test_infer_gpt_parser_and_help_do_not_import_torch(self) -> None:
+        cases = (
+            "import",
+            "parse-evo-defaults",
+            "help",
+        )
+        for module_name in ("infer_gpt", "infer_gpt2"):
+            script_name = f"{module_name}.py"
+            for case in cases:
+                with self.subTest(script=module_name, case=case):
+                    code = textwrap.dedent(
+                        f"""
+                        import importlib
+                        from pathlib import Path
+                        import runpy
+                        import sys
+
+                        root = Path({str(NEURALFN_ROOT)!r})
+                        sys.path.insert(0, str(root / "cli" / "scripts"))
+                        sys.path.insert(0, str(root))
+
+                        if {case!r} == "help":
+                            sys.argv = [str(root / "cli" / "scripts" / {script_name!r}), "--evo", "--help"]
+                            try:
+                                runpy.run_path(str(root / "cli" / "scripts" / {script_name!r}), run_name="__main__")
+                            except SystemExit as exc:
+                                exit_code = int(exc.code or 0)
+                            else:
+                                exit_code = 0
+                        else:
+                            module = importlib.import_module({module_name!r})
+                            exit_code = 0
+                            if {case!r} == "parse-evo-defaults":
+                                parser = module.build_parser()
+                                args = parser.parse_args(["--evo"])
+                                module.resolve_mode_defaults(args)
+                                print("GRAPH", args.graph)
+                                print("WEIGHTS", args.weights)
+                        print("TORCH_LOADED", "torch" in sys.modules)
+                        print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
+                        print("NUMPY_LOADED", "numpy" in sys.modules)
+                        raise SystemExit(exit_code)
+                        """
+                    )
+                    env = os.environ.copy()
+                    env.pop("PYTHONPATH", None)
+                    proc = subprocess.run(
+                        [sys.executable, "-c", code],
+                        cwd=NEURALFN_ROOT,
+                        env=env,
+                        text=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        check=False,
+                    )
+
+                    self.assertEqual(0, proc.returncode, proc.stderr)
+                    if case == "parse-evo-defaults":
+                        self.assertIn("gpt2_evo.json", proc.stdout)
+                        self.assertIn("gpt2_evo.pt", proc.stdout)
+                    self.assertIn("TORCH_LOADED False", proc.stdout)
+                    self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
+                    self.assertIn("NUMPY_LOADED False", proc.stdout)
+
     def test_infer_gpt2_parser_and_help_do_not_import_torch(self) -> None:
         cases = (
             "import",
@@ -1647,6 +1711,72 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
                 self.assertIn("NUMPY_LOADED False", proc.stdout)
 
+    def test_infer_gpt_native_checkpoint_info_does_not_import_torch(self) -> None:
+        for module_name in ("infer_gpt", "infer_gpt2"):
+            script_name = f"{module_name}.py"
+            with self.subTest(script=module_name):
+                code = textwrap.dedent(
+                    f"""
+                    from pathlib import Path
+                    import runpy
+                    import struct
+                    import sys
+                    import tempfile
+
+                    root = Path({str(NEURALFN_ROOT)!r})
+                    sys.path.insert(0, str(root / "cli" / "scripts"))
+                    sys.path.insert(0, str(root))
+                    from neuralfn.native_gpt import native_gpt_parameter_count
+
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        checkpoint = Path(tmpdir) / "model_00000010.bin"
+                        header = [0] * 256
+                        header[:8] = [20240326, 5, 8, 16, 1, 1, 4, 16]
+                        nparams = native_gpt_parameter_count(
+                            max_seq_len=8,
+                            padded_vocab_size=16,
+                            num_layers=1,
+                            channels=4,
+                        )
+                        checkpoint.write_bytes(struct.pack("<" + "i" * 256, *header) + b"\\0" * (nparams * 2))
+                        (Path(tmpdir) / "DONE_00000010").write_text("", encoding="utf-8")
+                        sys.argv = [
+                            str(root / "cli" / "scripts" / {script_name!r}),
+                            "--native-checkpoint",
+                            str(checkpoint),
+                            "--native-info",
+                        ]
+                        try:
+                            runpy.run_path(str(root / "cli" / "scripts" / {script_name!r}), run_name="__main__")
+                        except SystemExit as exc:
+                            exit_code = int(exc.code or 0)
+                        else:
+                            exit_code = 0
+                        print("TORCH_LOADED", "torch" in sys.modules)
+                        print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
+                        print("NUMPY_LOADED", "numpy" in sys.modules)
+                        raise SystemExit(exit_code)
+                    """
+                )
+                env = os.environ.copy()
+                env.pop("PYTHONPATH", None)
+                proc = subprocess.run(
+                    [sys.executable, "-c", code],
+                    cwd=NEURALFN_ROOT,
+                    env=env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+
+                self.assertEqual(0, proc.returncode, proc.stderr)
+                self.assertIn("Native GPT checkpoint detected", proc.stdout)
+                self.assertIn("checkpoint_step: 10", proc.stdout)
+                self.assertIn("TORCH_LOADED False", proc.stdout)
+                self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
+                self.assertIn("NUMPY_LOADED False", proc.stdout)
+
     def test_infer_gpt2_native_checkpoint_info_does_not_import_torch(self) -> None:
         code = textwrap.dedent(
             f"""
@@ -1659,13 +1789,13 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             root = Path({str(NEURALFN_ROOT)!r})
             sys.path.insert(0, str(root / "cli" / "scripts"))
             sys.path.insert(0, str(root))
-            from neuralfn.native_gpt2 import native_gpt2_parameter_count
+            from neuralfn.native_gpt import native_gpt_parameter_count
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 checkpoint = Path(tmpdir) / "model_00000010.bin"
                 header = [0] * 256
                 header[:8] = [20240326, 5, 8, 16, 1, 1, 4, 16]
-                nparams = native_gpt2_parameter_count(
+                nparams = native_gpt_parameter_count(
                     max_seq_len=8,
                     padded_vocab_size=16,
                     num_layers=1,
@@ -1739,7 +1869,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 sys.argv = [
                     str(root / "cli" / "nfn.py"),
                     "infer",
-                    "--checkpoint",
+                    "--native-checkpoint",
                     str(checkpoint),
                     "--native-info",
                 ]

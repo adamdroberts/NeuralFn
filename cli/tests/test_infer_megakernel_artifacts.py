@@ -24,6 +24,7 @@ from cli_utils import artifact_path
 
 MEGAKERNEL_SCRIPT_CASES = [
     ("infer_jepa_semantic", "jepa_semantic_hybrid", "jepa_semantic_hybrid_megakernel"),
+    ("infer_gpt", "gpt2", "gpt2_megakernel"),
     ("infer_gpt2", "gpt2", "gpt2_megakernel"),
     ("infer_mixllama_fast", "mixllama_fast", "mixllama_fast_megakernel"),
     ("infer_nanogpt", "nanogpt", "nanogpt_megakernel"),
@@ -31,6 +32,7 @@ MEGAKERNEL_SCRIPT_CASES = [
 ]
 RAW_TEXT_TOKENIZER_FLAG_SCRIPTS = [
     "infer_jepa_semantic",
+    "infer_gpt",
     "infer_gpt2",
     "infer_mixllama_fast",
     "infer_nanogpt",
@@ -73,16 +75,18 @@ class InferMegakernelArtifactTest(unittest.TestCase):
                 self.assertEqual(Path(args.weights), module.default_weights_artifact(megakernel=True))
                 self.assertEqual(Path(args.graph), module.default_graph_artifact(megakernel=True))
 
-    def test_gpt2_inference_evo_defaults_follow_eager_artifacts(self) -> None:
-        module = self.load_module("infer_gpt2")
+    def test_gpt_inference_evo_defaults_follow_eager_artifacts(self) -> None:
+        for module_name in ("infer_gpt", "infer_gpt2"):
+            module = self.load_module(module_name)
 
-        args = self.parse_args(module, ["--evo"])
+            with self.subTest(script=module_name):
+                args = self.parse_args(module, ["--evo"])
 
-        self.assertTrue(args.evo)
-        self.assertFalse(args.megakernel)
-        self.assertEqual("gpt2_evo", module.mode_name(megakernel=False, evo=True))
-        self.assertEqual(artifact_path("gpt2_evo.pt"), Path(args.weights))
-        self.assertEqual(artifact_path("gpt2_evo.json"), Path(args.graph))
+                self.assertTrue(args.evo)
+                self.assertFalse(args.megakernel)
+                self.assertEqual("gpt2_evo", module.mode_name(megakernel=False, evo=True))
+                self.assertEqual(artifact_path("gpt2_evo.pt"), Path(args.weights))
+                self.assertEqual(artifact_path("gpt2_evo.json"), Path(args.graph))
 
     def test_llama_megakernel_wrapper_defaults_stay_runtime_specific(self) -> None:
         module = self.load_module("infer_llama_megakernel")

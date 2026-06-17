@@ -104,18 +104,18 @@ def repetition_penalty_arg(raw: str) -> float:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = create_argument_parser(description="Run text generation with exported gpt2 artifacts on CUDA.")
+    parser = create_argument_parser(description="Run text generation with exported GPT artifacts on CUDA.")
     parser.add_argument("--megakernel", action="store_true", help="Use the gpt2_megakernel artifacts.")
     parser.add_argument("--evo", action="store_true", help="Use the gpt2_evo eager artifacts.")
     parser.add_argument(
         "--native-checkpoint",
         default="",
-        help="Path to a native llm.kittens/NeuralFn GPT-2 model_*.bin checkpoint.",
+        help="Path to a native llm.kittens/NeuralFn GPT model_*.bin checkpoint.",
     )
     parser.add_argument(
         "--native-info",
         action="store_true",
-        help="Print native GPT-2 checkpoint metadata without importing the graph-backed runtime.",
+        help="Print native GPT checkpoint metadata without importing the graph-backed runtime.",
     )
     parser.add_argument(
         "--native-sampler-script",
