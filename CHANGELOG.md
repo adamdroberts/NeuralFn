@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add BF16 CE vector-store bisection selector
+
+#### Changed
+
+- Native CUDA Tile BF16 cross-entropy backward launchers now accept
+  `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1`,
+  `NFN_NATIVE_GPT2_CE_BF16_VEC_STORES=1`, or
+  `NFN_TILE_CUDA_CE_BF16_VEC_STORES=1` to test a 128-bit streaming-store path
+  for BF16 dlogits. The default remains the scalar store path.
+- The selector exists only for same-script kernel bisection. The dedicated RTX
+  5090 paired benchmark rejected the vector-store path as a default:
+  `1.000271x` train-loop time and `0.999738x` tokens/sec versus the scalar
+  store baseline.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -rs -k
+  "native_train_tile_ops_builds_torch_free_c_abi or
+  native_gpt_transformer_lm_exposes_opt_in_bf16_attention_grad_out_handoff"`.
+- Ran `tools/paired_kernel_speed.py` on the dedicated display-disabled RTX
+  5090 with `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and
+  `--require-idle-selected-gpu` for
+  `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1`.
+
 ### 2026-06-17 Report BF16 cublasGemmEx fallback shapes
 
 #### Changed

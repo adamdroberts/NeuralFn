@@ -4030,6 +4030,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS" in kernels_text
     assert "NFN_NATIVE_GPT2_CE_BF16_THREADS" in kernels_text
     assert "cross_entropy_bf16_threads_per_row" in kernels_text
+    assert "NFN_TILE_CUDA_CE_BF16_VEC_STORES" in kernels_text
+    assert "NFN_NATIVE_GPT_CE_BF16_VEC_STORES" in kernels_text
+    assert "NFN_NATIVE_GPT2_CE_BF16_VEC_STORES" in kernels_text
+    assert "cross_entropy_bf16_vec_stores_enabled" in kernels_text
+    assert "store_bf16_vec8_streaming" in kernels_text
+    assert "__stcs(reinterpret_cast<int4*>(dst)" in kernels_text
     assert "record_linear_shape_stat(4, m, n, k, op_a, op_b)" in kernels_text
     assert 'return "cublas_gemmex_bf16"' in gpt2_source_text
     assert "trainer_linear_shape_stats_entry" in kernels_text

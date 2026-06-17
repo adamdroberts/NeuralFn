@@ -158,6 +158,8 @@ For same-script kernel candidate builds, `tools/build_native_train_tile_ops.sh` 
 
 Native GPT BF16 cross-entropy kernels default to 1024 threads per row. For paired launch-configuration bisection, set `NFN_NATIVE_GPT_CE_BF16_THREADS`, `NFN_NATIVE_GPT2_CE_BF16_THREADS`, or `NFN_TILE_CUDA_CE_BF16_THREADS` to one of `128`, `256`, `512`, or `1024`; unsupported values fall back to 1024.
 
+For BF16 classifier dlogit store bisection, set `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1`, `NFN_NATIVE_GPT2_CE_BF16_VEC_STORES=1`, or `NFN_TILE_CUDA_CE_BF16_VEC_STORES=1` to test the opt-in 128-bit streaming-store path. It remains disabled by default because the RTX 5090 paired benchmark measured it as noise-equivalent/slightly slower than scalar stores.
+
 Native BF16 `cublasGemmEx` fallback paths default to `CUBLAS_COMPUTE_32F` for the non-cuBLASLt cases. For same-script fallback bisection, set `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF=1` or `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_FAST_16BF=1` to test `CUBLAS_COMPUTE_32F_FAST_16BF` without changing cuBLASLt dispatch.
 
 `tools/bench_native_gpt_sm120_parity.sh` now defaults `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=auto`, so the parity run selects an idle display-disabled NVIDIA GPU on mixed display/compute workstations. Set `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=0` or another explicit value to pin the benchmark manually.
