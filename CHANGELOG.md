@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Report BF16 cublasGemmEx fallback shapes
+
+#### Changed
+
+- Native CUDA Tile linear shape stats now record BF16 `cublasGemmEx` fallback
+  success branches into the existing `cublas_gemmex_bf16` bucket. This closes a
+  profiling blind spot where TK and cuBLASLt shapes were visible but the
+  remaining BF16 fallback GEMM shape was not.
+- A one-step RTX 5090 shape profile now reports the remaining fallback as
+  `m=768, n=8192, k=50304, op_a=N, op_b=N, calls=64`, matching the LM-head
+  dHidden chunk path.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran `NFN_NATIVE_LINEAR_SHAPE_STATS=1 CUDA_VISIBLE_DEVICES=0
+  CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --backend tile-cuda
+  --tinystories --train-transformer-lm --max-steps 1 --eval-every-steps 0
+  --no-checkpoint --profile-json /tmp/nfn_gemmex_shape_stats.json`; the JSON
+  reported `passed: true`, `linear_shape_stats_count: 15`, and one
+  `cublas_gemmex_bf16` entry.
+
 ### 2026-06-17 Add BF16 cublasGemmEx fallback compute-mode selector
 
 #### Changed

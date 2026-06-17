@@ -2387,6 +2387,7 @@ bool cublas_linear_gemm_ex_bf16_float32(
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+    record_linear_shape_stat(4, m, n, k, op_a, op_b);
     return true;
   }
   return false;
@@ -2469,6 +2470,7 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32(
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+    record_linear_shape_stat(4, m, n, k, op_a, op_b);
     return true;
   }
   return false;
@@ -2710,6 +2712,7 @@ bool cublas_linear_gemm_ex_bf16_bits_b_float32(
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+    record_linear_shape_stat(4, m, n, k, op_a, op_b);
     return true;
   }
   return false;
@@ -2839,6 +2842,7 @@ bool cublas_linear_gemm_ex_bf16_bits_ab_float32(
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+    record_linear_shape_stat(4, m, n, k, op_a, op_b);
     return true;
   }
   return false;
@@ -3414,6 +3418,7 @@ bool cublas_linear_gemm_ex_bf16_float32_to_bf16_bits(
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+    record_linear_shape_stat(4, m, n, k, op_a, op_b);
     return true;
   }
   return false;
