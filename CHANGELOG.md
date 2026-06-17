@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Reject LM-head hidden prepack disable
+
+#### Changed
+
+- Retested `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0` against the current
+  dense native GPT default. The candidate is not promoted: train-loop time
+  regressed to `1.009504x`, tokens/sec fell to `0.990583x`, and
+  `stage.lm_head_backward.total_ms` regressed to `1.039531x`.
+- The result keeps the full-microbatch BF16 final-norm hidden prepack as the
+  LM-head default while the remaining parity work targets other hot buckets.
+
+#### Verification
+
+- Ran `python tools/paired_kernel_speed.py` on the dedicated display-disabled
+  RTX 5090 with `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`,
+  `--require-idle-selected-gpu`,
+  `--append-native-profile-json-dir /tmp/nfn_lm_prepack_off_profiles`, and
+  candidate `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0`.
+
 ### 2026-06-17 Capture SM120 parity stage profiles by default
 
 #### Changed
