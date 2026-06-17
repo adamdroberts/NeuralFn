@@ -248,6 +248,12 @@ Use `nfn_gpt_native_train --checkpoint-layout --native-checkpoint
 model_########.bin` to decode the native tensor layout, payload offsets, file
 offsets, and bounded payload samples from the checkpoint header as compiled C++
 JSON without CUDA, datasets, Torch, or graph-editor tensors.
+`nfn_gpt_native_train --checkpoint-logits-smoke --native-checkpoint
+model_########.bin --prompt-tokens 1,2,3` now loads checkpoint embeddings and
+final norm tensors, converts them on device, and runs token embedding, position
+embedding, residual add, final LayerNorm, and tied LM-head logits through CUDA
+Tile kernels for the last prompt token. Transformer blocks are still pending for
+complete prompt generation.
 
 The compiled dense GPT trainer can inspect native `model_########.bin`
 checkpoints without CUDA, Torch, Python dataset setup, or graph nodes using

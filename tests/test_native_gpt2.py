@@ -1266,6 +1266,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "--native-info --native-checkpoint PATH" in help_proc.stdout
     assert "--inspect-checkpoint PATH" in help_proc.stdout
     assert "--sample-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
+    assert "--checkpoint-logits-smoke --native-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
     assert "--checkpoint-load-smoke --native-checkpoint PATH" in help_proc.stdout
     assert "--checkpoint-load-tensor NAME" in help_proc.stdout
     assert "--checkpoint-layout --native-checkpoint PATH" in help_proc.stdout
@@ -2973,6 +2974,23 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert sample_plan_payload["torch_required"] is False
     assert sample_plan_payload["graph_editor_node_flow"] is False
     assert sample_plan_payload["forward_pass_status"] == "dedicated-native-sampler-pending"
+
+    logits_bad_token = subprocess.run(
+        [
+            str(cli),
+            "--checkpoint-logits-smoke",
+            "--native-checkpoint",
+            str(checkpoint_path),
+            "--prompt-tokens",
+            "999999",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert logits_bad_token.returncode == 2
+    assert "outside checkpoint vocab" in logits_bad_token.stderr
 
     missing_load_smoke = subprocess.run(
         [

@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add checkpoint-backed native GPT logits smoke
+
+#### Changed
+
+- `nfn_gpt_native_train` now supports
+  `--checkpoint-logits-smoke --native-checkpoint PATH --prompt-tokens IDS`.
+  The mode loads `wte.weight`, `wpe.weight`, `ln_f.weight`, and `ln_f.bias`
+  from the native bf16 checkpoint, converts them to float32 on device with the
+  Tile bf16 unpack kernel, and runs token embedding, absolute position
+  embedding, residual add, final LayerNorm, and tied LM-head linear logits for
+  the last prompt token.
+- The smoke reports the loaded tensors, executed Tile kernels, top token/logit,
+  and explicitly marks `transformer_blocks_executed: false`. This is a real
+  checkpoint-backed CUDA Tile forward slice without Torch, Python datasets, or
+  graph-editor tensor flow; full prompt generation still needs transformer
+  block execution wired into the sampler.
+
+#### Verification
+
+- Ran `bash tools/build_native_gpt_cli.sh`.
+- Ran `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --checkpoint-logits-smoke --native-checkpoint /tmp/nfn_checkpoint_layout_smoke/model_00020000.bin --prompt-tokens 1,2,3 --tile-ops-lib build/libnfn_native_train_tile_ops.so` outside the sandbox because sandboxed GPU/NVML access is blocked.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Add named tensor checkpoint load smoke
 
 #### Changed

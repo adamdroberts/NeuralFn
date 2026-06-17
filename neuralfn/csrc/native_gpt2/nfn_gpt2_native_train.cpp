@@ -17,6 +17,7 @@
 #include <sstream>
 #include <string>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 #if defined(_WIN32)
@@ -91,6 +92,7 @@ struct Config {
     bool sample_checkpoint = false;
     std::string sample_prompt_tokens;
     int sample_max_new_tokens = 64;
+    bool checkpoint_logits_smoke = false;
     bool checkpoint_load_smoke = false;
     int checkpoint_load_elements = 1024;
     std::string checkpoint_load_tensor;
@@ -348,6 +350,8 @@ void print_usage(const char* program) {
         << "  --inspect-checkpoint PATH         Alias for --native-info --native-checkpoint PATH\n"
         << "  --sample-checkpoint PATH --prompt-tokens IDS\n"
         << "                                     Validate native checkpoint prompt-token sampling inputs in compiled C++; CUDA Tile forward sampling is reported pending\n"
+        << "  --checkpoint-logits-smoke --native-checkpoint PATH --prompt-tokens IDS\n"
+        << "                                     Load checkpoint embeddings/final norm and run last-token tied LM-head logits on CUDA Tile kernels\n"
         << "  --checkpoint-load-smoke --native-checkpoint PATH\n"
         << "                                     Load a bounded bf16 checkpoint payload slice to CUDA and convert it through Tile kernels\n"
         << "  --checkpoint-load-tensor NAME     Optional tensor name for --checkpoint-load-smoke; defaults to payload start\n"
@@ -1290,6 +1294,413 @@ int print_native_checkpoint_load_smoke_json(const Config& cfg, const char* progr
         << "  \"max_abs_error\": " << max_abs_error << ",\n"
         << "  \"torch_required\": false,\n"
         << "  \"graph_editor_node_flow\": false,\n"
+        << "  \"passed\": " << (passed ? "true" : "false");
+    if (!error.empty()) {
+        std::cout << ",\n"
+                  << "  \"error\": \"" << json_escape(error) << "\"\n";
+    } else {
+        std::cout << "\n";
+    }
+    std::cout << "}\n";
+    return passed ? 0 : 2;
+}
+
+int print_native_checkpoint_logits_smoke_json(const Config& cfg, const char* program) {
+    constexpr std::int32_t kCheckpointMagic = 20240326;
+    constexpr std::int64_t kCheckpointHeaderInts = 256;
+    constexpr std::int64_t kCheckpointHeaderBytes = kCheckpointHeaderInts * 4;
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr float kNormEps = 1.0e-5f;
+    const fs::path checkpoint_path = expand_user_path(cfg.native_checkpoint);
+    std::string error;
+    const std::vector<std::int64_t> prompt_tokens =
+        parse_csv_i64(cfg.sample_prompt_tokens, "--prompt-tokens");
+    if (prompt_tokens.empty()) {
+        std::cerr << "--checkpoint-logits-smoke requires non-empty --prompt-tokens IDS\n";
+        return 2;
+    }
+
+    std::ifstream in(checkpoint_path, std::ios::binary);
+    if (!in) {
+        std::cerr << "failed to open native checkpoint: " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    std::vector<std::int32_t> header(static_cast<std::size_t>(kCheckpointHeaderInts), 0);
+    in.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(kCheckpointHeaderBytes));
+    if (in.gcount() != kCheckpointHeaderBytes) {
+        std::cerr << "native checkpoint header is truncated: " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    if (header[0] != kCheckpointMagic) {
+        std::cerr << "not a native GPT checkpoint: " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    const int version = header[1];
+    if (version != 5) {
+        std::cerr << "--checkpoint-logits-smoke currently expects bf16 native checkpoint version 5; got "
+                  << version << "\n";
+        return 2;
+    }
+    const std::int64_t max_seq_len = header[2];
+    const std::int64_t vocab_size = header[3];
+    const std::int64_t num_layers = header[4];
+    const std::int64_t num_heads = header[5];
+    const std::int64_t channels = header[6];
+    const std::int64_t padded_vocab_size = header[7];
+    if (max_seq_len <= 0 || vocab_size <= 0 || num_layers <= 0 ||
+        num_heads <= 0 || channels <= 0 || padded_vocab_size <= 0) {
+        std::cerr << "native checkpoint shape values must be positive: "
+                  << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    if (static_cast<std::int64_t>(prompt_tokens.size()) > max_seq_len) {
+        std::cerr << "--prompt-tokens length " << prompt_tokens.size()
+                  << " exceeds checkpoint context window " << max_seq_len << "\n";
+        return 2;
+    }
+    for (std::size_t i = 0; i < prompt_tokens.size(); ++i) {
+        if (prompt_tokens[i] < 0 || prompt_tokens[i] >= vocab_size) {
+            std::cerr << "--prompt-tokens id at index " << i << " is outside checkpoint vocab: "
+                      << prompt_tokens[i] << " not in [0, " << (vocab_size - 1) << "]\n";
+            return 2;
+        }
+    }
+    const std::int64_t parameter_count =
+        native_gpt2_parameter_count(max_seq_len, padded_vocab_size, num_layers, channels);
+    const std::int64_t expected_file_size =
+        kCheckpointHeaderBytes + parameter_count * static_cast<std::int64_t>(sizeof(std::uint16_t));
+    const std::int64_t actual_file_size = file_size_bytes(checkpoint_path, &error);
+    if (actual_file_size < 0) {
+        std::cerr << error << "\n";
+        return 2;
+    }
+    if (actual_file_size != expected_file_size) {
+        std::cerr << "bad native checkpoint size: got " << actual_file_size
+                  << " bytes, expected " << expected_file_size << "\n";
+        return 2;
+    }
+
+    const std::vector<BufferPlan> layout =
+        build_native_gpt_checkpoint_layout(max_seq_len, padded_vocab_size, num_layers, channels);
+    auto find_buffer = [&](const std::string& name) -> const BufferPlan* {
+        for (const BufferPlan& buffer : layout) {
+            if (buffer.name == name) {
+                return &buffer;
+            }
+        }
+        return nullptr;
+    };
+    auto read_bf16_tensor = [&](const std::string& name) -> std::vector<std::uint16_t> {
+        const BufferPlan* buffer = find_buffer(name);
+        if (buffer == nullptr) {
+            error = "checkpoint tensor not found: " + name;
+            return {};
+        }
+        std::vector<std::uint16_t> values(static_cast<std::size_t>(buffer->count), 0);
+        const std::int64_t file_offset =
+            kCheckpointHeaderBytes + buffer->offset * static_cast<std::int64_t>(sizeof(std::uint16_t));
+        in.clear();
+        in.seekg(static_cast<std::streamoff>(file_offset), std::ios::beg);
+        if (!in) {
+            error = "failed to seek checkpoint tensor payload: " + name;
+            return {};
+        }
+        in.read(
+            reinterpret_cast<char*>(values.data()),
+            static_cast<std::streamsize>(values.size() * sizeof(std::uint16_t)));
+        if (in.gcount() != static_cast<std::streamsize>(values.size() * sizeof(std::uint16_t))) {
+            error = "failed to read checkpoint tensor payload: " + name;
+            return {};
+        }
+        return values;
+    };
+
+    std::vector<std::uint16_t> host_token_weight = read_bf16_tensor("wte.weight");
+    std::vector<std::uint16_t> host_position_weight;
+    std::vector<std::uint16_t> host_ln_weight;
+    std::vector<std::uint16_t> host_ln_bias;
+    if (error.empty()) host_position_weight = read_bf16_tensor("wpe.weight");
+    if (error.empty()) host_ln_weight = read_bf16_tensor("ln_f.weight");
+    if (error.empty()) host_ln_bias = read_bf16_tensor("ln_f.bias");
+    if (!error.empty()) {
+        std::cerr << error << "\n";
+        return 2;
+    }
+
+    const std::string tile_lib_path = cfg.tile_ops_lib.empty() ? default_tile_ops_lib(program) : cfg.tile_ops_lib;
+    std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path = runtime_candidates.empty() ? "libcudart.so" : runtime_candidates.front();
+    bool tile_loaded = false;
+    bool cuda_runtime_loaded = false;
+    bool kernels_loaded = false;
+    bool passed = false;
+    std::int64_t top_token = 0;
+    float top_logit = 0.0f;
+    float sample_ln = 0.0f;
+    float sample_logit = 0.0f;
+    double max_abs_sample = 0.0;
+
+    using Bf16BitsToFloat32Fn = int (*)(const std::uint16_t*, float*, std::int64_t, void*);
+    using TokenEmbeddingFn = int (*)(const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+    using PositionEmbeddingFn = int (*)(const float*, float*, std::int64_t, std::int64_t, std::int64_t, void*);
+    using ResidualAddFn = int (*)(const float*, const float*, const float*, float*, std::int64_t, void*);
+    using LayerNormFn = int (*)(const float*, const float*, const float*, float*, std::int64_t, std::int64_t, float, void*);
+    using LinearFn = int (*)(
+        const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+
+    void* tile_handle = nullptr;
+    void* cuda_handle = nullptr;
+    Bf16BitsToFloat32Fn bf16_to_float = nullptr;
+    TokenEmbeddingFn token_embedding = nullptr;
+    PositionEmbeddingFn position_embedding = nullptr;
+    ResidualAddFn residual_add = nullptr;
+    LayerNormFn layer_norm = nullptr;
+    LinearFn linear = nullptr;
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed with code " << code;
+        if (cuda_get_error_string != nullptr) {
+            out << " (" << cuda_get_error_string(code) << ")";
+        }
+        return out.str();
+    };
+    auto run = [&](int status, const std::string& context) {
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, context);
+        }
+    };
+
+    tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (tile_handle == nullptr) {
+        error = dl_last_error("dlopen tile ops failed");
+    } else {
+        tile_loaded = true;
+        bf16_to_float = load_symbol<Bf16BitsToFloat32Fn>(tile_handle, "nfn_native_tile_bf16_bits_to_float32");
+        token_embedding = load_symbol<TokenEmbeddingFn>(tile_handle, "nfn_native_tile_token_embedding_float32");
+        position_embedding = load_symbol<PositionEmbeddingFn>(
+            tile_handle, "nfn_native_tile_absolute_position_embedding_float32");
+        residual_add = load_symbol<ResidualAddFn>(tile_handle, "nfn_native_tile_scaled_residual_add_float32");
+        layer_norm = load_symbol<LayerNormFn>(tile_handle, "nfn_native_tile_layer_norm_float32");
+        linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
+        kernels_loaded = bf16_to_float != nullptr && token_embedding != nullptr &&
+            position_embedding != nullptr && residual_add != nullptr &&
+            layer_norm != nullptr && linear != nullptr;
+        if (!kernels_loaded) {
+            error = "missing Tile ABI symbol for checkpoint logits smoke";
+        }
+    }
+    if (error.empty()) {
+        std::string runtime_error;
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_runtime_loaded = true;
+                cuda_lib_path = candidate;
+                break;
+            }
+            runtime_error = dl_last_error("dlopen CUDA runtime failed");
+        }
+        if (!cuda_runtime_loaded) {
+            error = runtime_error.empty() ? "failed to load CUDA runtime" : runtime_error;
+        }
+    }
+    if (error.empty()) {
+        cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+        cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+        cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+        cuda_device_synchronize = load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+        cuda_get_error_string = load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+        if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+            cuda_device_synchronize == nullptr || cuda_get_error_string == nullptr) {
+            error = "missing CUDA runtime symbols for checkpoint logits smoke";
+        }
+    }
+
+    std::vector<void*> allocations;
+    auto allocate = [&](auto** ptr, std::size_t bytes, const std::string& name) {
+        if (!error.empty()) {
+            return;
+        }
+        void* raw = nullptr;
+        const int status = cuda_malloc(&raw, bytes);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc " + name);
+            return;
+        }
+        allocations.push_back(raw);
+        using Pointer = std::remove_reference_t<decltype(*ptr)>;
+        using Pointee = std::remove_pointer_t<Pointer>;
+        *ptr = static_cast<Pointee*>(raw);
+    };
+    auto copy_h2d = [&](void* dst, const void* src, std::size_t bytes, const std::string& name) {
+        if (!error.empty()) {
+            return;
+        }
+        run(cuda_memcpy(dst, src, bytes, kCudaMemcpyHostToDevice), "cudaMemcpy H2D " + name);
+    };
+    auto convert_tensor = [&](const std::vector<std::uint16_t>& host, std::uint16_t** device_bf16, float** device_float, const std::string& name) {
+        const std::size_t bf16_bytes = host.size() * sizeof(std::uint16_t);
+        const std::size_t float_bytes = host.size() * sizeof(float);
+        allocate(device_bf16, bf16_bytes, name + ".bf16");
+        allocate(device_float, float_bytes, name + ".float");
+        copy_h2d(*device_bf16, host.data(), bf16_bytes, name + ".bf16");
+        if (error.empty()) {
+            run(bf16_to_float(*device_bf16, *device_float, static_cast<std::int64_t>(host.size()), nullptr),
+                "bf16_to_float " + name);
+        }
+    };
+
+    std::uint16_t* token_weight_bf16 = nullptr;
+    std::uint16_t* position_weight_bf16 = nullptr;
+    std::uint16_t* ln_weight_bf16 = nullptr;
+    std::uint16_t* ln_bias_bf16 = nullptr;
+    float* token_weight = nullptr;
+    float* position_weight = nullptr;
+    float* ln_weight = nullptr;
+    float* ln_bias = nullptr;
+    float* token_out = nullptr;
+    float* position_out = nullptr;
+    float* residual = nullptr;
+    float* ln_out = nullptr;
+    float* logits = nullptr;
+    float* residual_scale = nullptr;
+    std::int64_t* token_ids = nullptr;
+    const std::int64_t rows = static_cast<std::int64_t>(prompt_tokens.size());
+    const std::int64_t activation_elements = rows * channels;
+
+    convert_tensor(host_token_weight, &token_weight_bf16, &token_weight, "wte.weight");
+    convert_tensor(host_position_weight, &position_weight_bf16, &position_weight, "wpe.weight");
+    convert_tensor(host_ln_weight, &ln_weight_bf16, &ln_weight, "ln_f.weight");
+    convert_tensor(host_ln_bias, &ln_bias_bf16, &ln_bias, "ln_f.bias");
+    allocate(&token_out, sizeof(float) * static_cast<std::size_t>(activation_elements), "token_out");
+    allocate(&position_out, sizeof(float) * static_cast<std::size_t>(activation_elements), "position_out");
+    allocate(&residual, sizeof(float) * static_cast<std::size_t>(activation_elements), "residual");
+    allocate(&ln_out, sizeof(float) * static_cast<std::size_t>(activation_elements), "ln_out");
+    allocate(&logits, sizeof(float) * static_cast<std::size_t>(padded_vocab_size), "logits");
+    allocate(&residual_scale, sizeof(float), "residual_scale");
+    allocate(&token_ids, sizeof(std::int64_t) * static_cast<std::size_t>(rows), "token_ids");
+
+    const float host_residual_scale = 1.0f;
+    copy_h2d(token_ids, prompt_tokens.data(), sizeof(std::int64_t) * static_cast<std::size_t>(rows), "prompt_tokens");
+    copy_h2d(residual_scale, &host_residual_scale, sizeof(float), "residual_scale");
+    if (error.empty()) {
+        run(token_embedding(token_weight, token_ids, token_out, rows, channels, nullptr), "wte.forward");
+    }
+    if (error.empty()) {
+        run(position_embedding(position_weight, position_out, 1, rows, channels, nullptr), "wpe.forward");
+    }
+    if (error.empty()) {
+        run(residual_add(token_out, position_out, residual_scale, residual, activation_elements, nullptr),
+            "embedding_residual.forward");
+    }
+    if (error.empty()) {
+        run(layer_norm(residual, ln_weight, ln_bias, ln_out, rows, channels, kNormEps, nullptr), "ln_f.forward");
+    }
+    if (error.empty()) {
+        const float* last_hidden = ln_out + (rows - 1) * channels;
+        run(linear(last_hidden, token_weight, nullptr, logits, 1, channels, padded_vocab_size, false, nullptr),
+            "lm_head.forward.last_token");
+    }
+    std::vector<float> host_logits(static_cast<std::size_t>(padded_vocab_size), 0.0f);
+    if (error.empty()) {
+        run(cuda_device_synchronize(), "cudaDeviceSynchronize checkpoint logits smoke");
+    }
+    if (error.empty()) {
+        run(cuda_memcpy(host_logits.data(), logits, host_logits.size() * sizeof(float), kCudaMemcpyDeviceToHost),
+            "cudaMemcpy logits D2H");
+    }
+    if (error.empty()) {
+        top_token = 0;
+        top_logit = host_logits.empty() ? 0.0f : host_logits[0];
+        for (std::int64_t i = 1; i < vocab_size; ++i) {
+            const float value = host_logits[static_cast<std::size_t>(i)];
+            if (value > top_logit) {
+                top_logit = value;
+                top_token = i;
+            }
+        }
+        sample_logit = host_logits.empty() ? 0.0f : host_logits[0];
+        std::vector<float> host_ln_sample(static_cast<std::size_t>(std::min<std::int64_t>(channels, 8)), 0.0f);
+        run(cuda_memcpy(
+                host_ln_sample.data(),
+                ln_out + (rows - 1) * channels,
+                host_ln_sample.size() * sizeof(float),
+                kCudaMemcpyDeviceToHost),
+            "cudaMemcpy ln sample D2H");
+        if (error.empty()) {
+            sample_ln = host_ln_sample.empty() ? 0.0f : host_ln_sample[0];
+            for (float value : host_ln_sample) {
+                if (!std::isfinite(value)) {
+                    error = "checkpoint logits smoke produced non-finite final-norm sample";
+                    break;
+                }
+                max_abs_sample = std::max(max_abs_sample, std::fabs(static_cast<double>(value)));
+            }
+            for (std::int64_t i = 0; i < std::min<std::int64_t>(vocab_size, 32); ++i) {
+                const float value = host_logits[static_cast<std::size_t>(i)];
+                if (!std::isfinite(value)) {
+                    error = "checkpoint logits smoke produced non-finite logits sample";
+                    break;
+                }
+                max_abs_sample = std::max(max_abs_sample, std::fabs(static_cast<double>(value)));
+            }
+            passed = error.empty() && top_token >= 0 && top_token < vocab_size;
+        }
+    }
+
+    if (cuda_free != nullptr) {
+        for (void* ptr : allocations) {
+            if (ptr != nullptr) {
+                cuda_free(ptr);
+            }
+        }
+    }
+    if (tile_handle != nullptr) {
+        dlclose(tile_handle);
+    }
+    if (cuda_handle != nullptr) {
+        dlclose(cuda_handle);
+    }
+
+    std::cout
+        << "{\n"
+        << "  \"status\": \"native-checkpoint-logits-smoke\",\n"
+        << "  \"runtime\": \"native-cpp\",\n"
+        << "  \"backend\": \"tile-cuda\",\n"
+        << "  \"path\": \"" << json_escape(checkpoint_path.string()) << "\",\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_lib_path) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"kernels_loaded\": " << (kernels_loaded ? "true" : "false") << ",\n"
+        << "  \"checkpoint_version\": " << version << ",\n"
+        << "  \"precision\": \"bf16\",\n"
+        << "  \"prompt_token_count\": " << rows << ",\n"
+        << "  \"vocab_size\": " << vocab_size << ",\n"
+        << "  \"padded_vocab_size\": " << padded_vocab_size << ",\n"
+        << "  \"channels\": " << channels << ",\n"
+        << "  \"loaded_tensors\": [\"wte.weight\", \"wpe.weight\", \"ln_f.weight\", \"ln_f.bias\"],\n"
+        << "  \"executed_kernels\": [\"nfn_native_tile_bf16_bits_to_float32\", \"nfn_native_tile_token_embedding_float32\", \"nfn_native_tile_absolute_position_embedding_float32\", \"nfn_native_tile_scaled_residual_add_float32\", \"nfn_native_tile_layer_norm_float32\", \"nfn_native_tile_linear_float32\"],\n"
+        << "  \"top_token\": " << top_token << ",\n"
+        << "  \"top_logit\": " << top_logit << ",\n"
+        << "  \"sample_ln\": " << sample_ln << ",\n"
+        << "  \"sample_logit\": " << sample_logit << ",\n"
+        << "  \"max_abs_sample\": " << max_abs_sample << ",\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_node_flow\": false,\n"
+        << "  \"transformer_blocks_executed\": false,\n"
         << "  \"passed\": " << (passed ? "true" : "false");
     if (!error.empty()) {
         std::cout << ",\n"
@@ -16573,6 +16984,9 @@ int main(int argc, char** argv) {
             cfg.sample_max_new_tokens = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg.rfind("--max-new-tokens=", 0) == 0) {
             cfg.sample_max_new_tokens = parse_int(value_after_equals("--max-new-tokens="), "--max-new-tokens");
+        } else if (arg == "--checkpoint-logits-smoke") {
+            cfg.backend = "tile-cuda";
+            cfg.checkpoint_logits_smoke = true;
         } else if (arg == "--checkpoint-load-smoke") {
             cfg.backend = "tile-cuda";
             cfg.checkpoint_load_smoke = true;
@@ -16709,6 +17123,13 @@ int main(int argc, char** argv) {
             return 2;
         }
         return print_native_checkpoint_sample_plan_json(cfg);
+    }
+    if (cfg.checkpoint_logits_smoke) {
+        if (cfg.native_checkpoint.empty()) {
+            std::cerr << "--checkpoint-logits-smoke requires --native-checkpoint PATH\n";
+            return 2;
+        }
+        return print_native_checkpoint_logits_smoke_json(cfg, argv[0]);
     }
     if (cfg.checkpoint_load_smoke) {
         if (cfg.native_checkpoint.empty()) {

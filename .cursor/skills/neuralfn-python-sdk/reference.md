@@ -761,3 +761,9 @@ Use `nfn_gpt_native_train --checkpoint-layout --native-checkpoint PATH` for the
 compiled no-CUDA tensor map: it reports header-derived tensor shapes, payload
 offsets, file offsets, and bounded payload samples without Python-side layout
 inference.
+Use `nfn_gpt_native_train --checkpoint-logits-smoke --native-checkpoint PATH
+--prompt-tokens IDS` for the first checkpoint-backed CUDA Tile forward slice:
+checkpoint embeddings/final norm are unpacked on device, then token embedding,
+position embedding, residual add, final LayerNorm, and tied LM-head logits run
+without Torch or graph-editor tensors. Transformer blocks remain pending for
+full generation.

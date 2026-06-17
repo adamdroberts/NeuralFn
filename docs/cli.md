@@ -1116,6 +1116,7 @@ nfn_gpt_native_train --native-info --native-checkpoint ~/NeuralFn/artifacts/gpt2
 nfn_gpt_native_train --inspect-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin
 nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 16
 nfn_gpt_native_train --sample-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 16
+nfn_gpt_native_train --checkpoint-logits-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3
 nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --checkpoint-load-tensor h.0.ln_1.weight --checkpoint-load-elements 1024
 nfn_gpt_native_train --checkpoint-layout --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin
 ```
@@ -1138,6 +1139,11 @@ tensor using the decoded checkpoint layout before copying the slice.
 `--checkpoint-layout` is the no-CUDA companion for sampler wiring: it decodes
 the header-derived tensor layout, payload offsets, file offsets, and bounded
 payload samples as compiled C++ JSON.
+`--checkpoint-logits-smoke` is the first checkpoint-backed CUDA forward slice:
+it loads checkpoint embeddings and final norm tensors, converts bf16 weights on
+device, and runs token embedding, position embedding, residual add, final
+LayerNorm, and tied LM-head logits for the last prompt token. It does not yet
+execute transformer blocks.
 
 For flat Parameter Golf checkpoints, architecture comes from tensor shapes plus
 compatible metadata. A supplied training log may provide safe runtime hints
