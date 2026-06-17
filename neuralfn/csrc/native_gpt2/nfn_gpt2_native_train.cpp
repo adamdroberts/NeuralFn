@@ -94,6 +94,7 @@ struct Config {
     int sample_max_new_tokens = 64;
     bool checkpoint_logits_smoke = false;
     bool checkpoint_qkv_smoke = false;
+    bool checkpoint_attention_smoke = false;
     bool checkpoint_load_smoke = false;
     int checkpoint_load_elements = 1024;
     std::string checkpoint_load_tensor;
@@ -356,6 +357,8 @@ void print_usage(const char* program) {
         << "                                     Load checkpoint embeddings/final norm and run last-token tied LM-head logits on CUDA Tile kernels\n"
         << "  --checkpoint-qkv-smoke --native-checkpoint PATH --prompt-tokens IDS\n"
         << "                                     Load checkpoint embeddings plus one block ln_1/c_attn tensors and run CUDA Tile QKV projection\n"
+        << "  --checkpoint-attention-smoke --native-checkpoint PATH --prompt-tokens IDS\n"
+        << "                                     Run checkpoint QKV projection, split-to-heads, causal attention, and merge-heads on CUDA Tile kernels\n"
         << "  --checkpoint-block-index N        Block index for checkpoint block-stage smokes; defaults to 0\n"
         << "  --checkpoint-load-smoke --native-checkpoint PATH\n"
         << "                                     Load a bounded bf16 checkpoint payload slice to CUDA and convert it through Tile kernels\n"
@@ -1726,10 +1729,12 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     constexpr float kNormEps = 1.0e-5f;
     const fs::path checkpoint_path = expand_user_path(cfg.native_checkpoint);
     std::string error;
+    const bool run_attention = cfg.checkpoint_attention_smoke;
     const std::vector<std::int64_t> prompt_tokens =
         parse_csv_i64(cfg.sample_prompt_tokens, "--prompt-tokens");
     if (prompt_tokens.empty()) {
-        std::cerr << "--checkpoint-qkv-smoke requires non-empty --prompt-tokens IDS\n";
+        std::cerr << (run_attention ? "--checkpoint-attention-smoke" : "--checkpoint-qkv-smoke")
+                  << " requires non-empty --prompt-tokens IDS\n";
         return 2;
     }
 
@@ -1750,8 +1755,8 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     }
     const int version = header[1];
     if (version != 5) {
-        std::cerr << "--checkpoint-qkv-smoke currently expects bf16 native checkpoint version 5; got "
-                  << version << "\n";
+        std::cerr << (run_attention ? "--checkpoint-attention-smoke" : "--checkpoint-qkv-smoke")
+                  << " currently expects bf16 native checkpoint version 5; got " << version << "\n";
         return 2;
     }
     const std::int64_t max_seq_len = header[2];
@@ -1765,6 +1770,11 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         num_heads <= 0 || channels <= 0 || padded_vocab_size <= 0) {
         std::cerr << "native checkpoint shape values must be positive: "
                   << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    if (run_attention && channels % num_heads != 0) {
+        std::cerr << "--checkpoint-attention-smoke requires channels divisible by num_heads; got channels="
+                  << channels << " num_heads=" << num_heads << "\n";
         return 2;
     }
     if (block_index < 0 || block_index >= num_layers) {
@@ -1860,6 +1870,7 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     bool passed = false;
     float sample_ln = 0.0f;
     float sample_qkv = 0.0f;
+    float sample_attention = 0.0f;
     double max_abs_sample = 0.0;
 
     using Bf16BitsToFloat32Fn = int (*)(const std::uint16_t*, float*, std::int64_t, void*);
@@ -1869,6 +1880,30 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     using LayerNormFn = int (*)(const float*, const float*, const float*, float*, std::int64_t, std::int64_t, float, void*);
     using LinearFn = int (*)(
         const float*, const float*, const float*, float*, std::int64_t, std::int64_t, std::int64_t, bool, void*);
+    using SplitQkvToHeadsFn = int (*)(
+        const float*, float*, float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
+    using AttentionFn = int (*)(
+        const float*,
+        const float*,
+        const float*,
+        float*,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        float,
+        bool,
+        bool,
+        bool,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        void*);
+    using MergeHeadsFn = int (*)(const float*, float*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, void*);
     using CudaMallocFn = int (*)(void**, std::size_t);
     using CudaFreeFn = int (*)(void*);
     using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
@@ -1883,6 +1918,9 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     ResidualAddFn residual_add = nullptr;
     LayerNormFn layer_norm = nullptr;
     LinearFn linear = nullptr;
+    SplitQkvToHeadsFn split_qkv_to_heads = nullptr;
+    AttentionFn attention = nullptr;
+    MergeHeadsFn merge_heads = nullptr;
     CudaMallocFn cuda_malloc = nullptr;
     CudaFreeFn cuda_free = nullptr;
     CudaMemcpyFn cuda_memcpy = nullptr;
@@ -1915,11 +1953,24 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         residual_add = load_symbol<ResidualAddFn>(tile_handle, "nfn_native_tile_scaled_residual_add_float32");
         layer_norm = load_symbol<LayerNormFn>(tile_handle, "nfn_native_tile_layer_norm_float32");
         linear = load_symbol<LinearFn>(tile_handle, "nfn_native_tile_linear_float32");
+        if (run_attention) {
+            split_qkv_to_heads = load_symbol<SplitQkvToHeadsFn>(
+                tile_handle, "nfn_native_tile_split_qkv_to_heads_float32");
+            attention = load_symbol<AttentionFn>(
+                tile_handle, "nfn_native_tile_scaled_dot_product_attention_float32");
+            merge_heads = load_symbol<MergeHeadsFn>(tile_handle, "nfn_native_tile_merge_heads_float32");
+        }
         kernels_loaded = bf16_to_float != nullptr && token_embedding != nullptr &&
             position_embedding != nullptr && residual_add != nullptr &&
-            layer_norm != nullptr && linear != nullptr;
+            layer_norm != nullptr && linear != nullptr &&
+            (!run_attention || (
+                split_qkv_to_heads != nullptr &&
+                attention != nullptr &&
+                merge_heads != nullptr));
         if (!kernels_loaded) {
-            error = "missing Tile ABI symbol for checkpoint QKV smoke";
+            error = run_attention
+                ? "missing Tile ABI symbol for checkpoint attention smoke"
+                : "missing Tile ABI symbol for checkpoint QKV smoke";
         }
     }
     if (error.empty()) {
@@ -2000,11 +2051,20 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     float* residual = nullptr;
     float* ln_out = nullptr;
     float* qkv_out = nullptr;
+    float* q_heads = nullptr;
+    float* k_heads = nullptr;
+    float* v_heads = nullptr;
+    float* attn_heads = nullptr;
+    float* attn_out = nullptr;
     float* residual_scale = nullptr;
     std::int64_t* token_ids = nullptr;
     const std::int64_t rows = static_cast<std::int64_t>(prompt_tokens.size());
     const std::int64_t activation_elements = rows * channels;
     const std::int64_t qkv_elements = rows * channels * 3;
+    const std::int64_t head_dim = run_attention ? (channels / num_heads) : 0;
+    const float attention_scale = run_attention
+        ? (1.0f / std::sqrt(static_cast<float>(head_dim)))
+        : 0.0f;
 
     convert_tensor(host_token_weight, &token_weight_bf16, &token_weight, "wte.weight");
     convert_tensor(host_position_weight, &position_weight_bf16, &position_weight, "wpe.weight");
@@ -2017,6 +2077,13 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     allocate(&residual, sizeof(float) * static_cast<std::size_t>(activation_elements), "residual");
     allocate(&ln_out, sizeof(float) * static_cast<std::size_t>(activation_elements), "ln_out");
     allocate(&qkv_out, sizeof(float) * static_cast<std::size_t>(qkv_elements), "qkv_out");
+    if (run_attention) {
+        allocate(&q_heads, sizeof(float) * static_cast<std::size_t>(activation_elements), "q_heads");
+        allocate(&k_heads, sizeof(float) * static_cast<std::size_t>(activation_elements), "k_heads");
+        allocate(&v_heads, sizeof(float) * static_cast<std::size_t>(activation_elements), "v_heads");
+        allocate(&attn_heads, sizeof(float) * static_cast<std::size_t>(activation_elements), "attn_heads");
+        allocate(&attn_out, sizeof(float) * static_cast<std::size_t>(activation_elements), "attn_out");
+    }
     allocate(&residual_scale, sizeof(float), "residual_scale");
     allocate(&token_ids, sizeof(std::int64_t) * static_cast<std::size_t>(rows), "token_ids");
 
@@ -2041,11 +2108,44 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         run(linear(ln_out, qkv_weight, qkv_bias, qkv_out, rows, channels, channels * 3, true, nullptr),
             prefix + "attn.c_attn.forward");
     }
+    if (run_attention && error.empty()) {
+        run(split_qkv_to_heads(qkv_out, q_heads, k_heads, v_heads, 1, rows, num_heads, head_dim, nullptr),
+            prefix + "attn.qkv.split_to_heads");
+    }
+    if (run_attention && error.empty()) {
+        run(attention(
+                q_heads,
+                k_heads,
+                v_heads,
+                attn_heads,
+                activation_elements,
+                num_heads,
+                num_heads,
+                rows,
+                rows,
+                head_dim,
+                head_dim,
+                attention_scale,
+                true,
+                false,
+                false,
+                0,
+                0,
+                0,
+                0,
+                nullptr),
+            prefix + "attn.sdpa.forward");
+    }
+    if (run_attention && error.empty()) {
+        run(merge_heads(attn_heads, attn_out, 1, num_heads, rows, head_dim, nullptr),
+            prefix + "attn.merge_heads");
+    }
     if (error.empty()) {
         run(cuda_device_synchronize(), "cudaDeviceSynchronize checkpoint QKV smoke");
     }
     std::vector<float> host_ln_sample(static_cast<std::size_t>(std::min<std::int64_t>(channels, 8)), 0.0f);
     std::vector<float> host_qkv_sample(static_cast<std::size_t>(std::min<std::int64_t>(qkv_elements, 16)), 0.0f);
+    std::vector<float> host_attention_sample(static_cast<std::size_t>(std::min<std::int64_t>(activation_elements, 16)), 0.0f);
     if (error.empty()) {
         run(cuda_memcpy(
                 host_ln_sample.data(),
@@ -2062,9 +2162,18 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
                 kCudaMemcpyDeviceToHost),
             "cudaMemcpy qkv sample D2H");
     }
+    if (run_attention && error.empty()) {
+        run(cuda_memcpy(
+                host_attention_sample.data(),
+                attn_out,
+                host_attention_sample.size() * sizeof(float),
+                kCudaMemcpyDeviceToHost),
+            "cudaMemcpy attention sample D2H");
+    }
     if (error.empty()) {
         sample_ln = host_ln_sample.empty() ? 0.0f : host_ln_sample[0];
         sample_qkv = host_qkv_sample.empty() ? 0.0f : host_qkv_sample[0];
+        sample_attention = host_attention_sample.empty() ? 0.0f : host_attention_sample[0];
         for (float value : host_ln_sample) {
             if (!std::isfinite(value)) {
                 error = "checkpoint QKV smoke produced non-finite ln_1 sample";
@@ -2078,6 +2187,15 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
                 break;
             }
             max_abs_sample = std::max(max_abs_sample, std::fabs(static_cast<double>(value)));
+        }
+        if (run_attention) {
+            for (float value : host_attention_sample) {
+                if (!std::isfinite(value)) {
+                    error = "checkpoint attention smoke produced non-finite attention sample";
+                    break;
+                }
+                max_abs_sample = std::max(max_abs_sample, std::fabs(static_cast<double>(value)));
+            }
         }
         passed = error.empty();
     }
@@ -2098,7 +2216,7 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
 
     std::cout
         << "{\n"
-        << "  \"status\": \"native-checkpoint-qkv-smoke\",\n"
+        << "  \"status\": \"" << (run_attention ? "native-checkpoint-attention-smoke" : "native-checkpoint-qkv-smoke") << "\",\n"
         << "  \"runtime\": \"native-cpp\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
         << "  \"path\": \"" << json_escape(checkpoint_path.string()) << "\",\n"
@@ -2116,17 +2234,25 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         << "  \"num_heads\": " << num_heads << ",\n"
         << "  \"channels\": " << channels << ",\n"
         << "  \"block_index\": " << block_index << ",\n"
-        << "  \"block_stage\": \"ln1_qkv_projection\",\n"
+        << "  \"head_dim\": " << (run_attention ? head_dim : 0) << ",\n"
+        << "  \"block_stage\": \"" << (run_attention ? "ln1_qkv_causal_attention" : "ln1_qkv_projection") << "\",\n"
         << "  \"qkv_elements\": " << qkv_elements << ",\n"
         << "  \"loaded_tensors\": [\"wte.weight\", \"wpe.weight\", \"" << json_escape(prefix) << "ln_1.weight\", \"" << json_escape(prefix) << "ln_1.bias\", \"" << json_escape(prefix) << "attn.c_attn.weight\", \"" << json_escape(prefix) << "attn.c_attn.bias\"],\n"
-        << "  \"executed_kernels\": [\"nfn_native_tile_bf16_bits_to_float32\", \"nfn_native_tile_token_embedding_float32\", \"nfn_native_tile_absolute_position_embedding_float32\", \"nfn_native_tile_scaled_residual_add_float32\", \"nfn_native_tile_layer_norm_float32\", \"nfn_native_tile_linear_float32\"],\n"
+        << "  \"executed_kernels\": [\"nfn_native_tile_bf16_bits_to_float32\", \"nfn_native_tile_token_embedding_float32\", \"nfn_native_tile_absolute_position_embedding_float32\", \"nfn_native_tile_scaled_residual_add_float32\", \"nfn_native_tile_layer_norm_float32\", \"nfn_native_tile_linear_float32\"";
+    if (run_attention) {
+        std::cout << ", \"nfn_native_tile_split_qkv_to_heads_float32\", \"nfn_native_tile_scaled_dot_product_attention_float32\", \"nfn_native_tile_merge_heads_float32\"";
+    }
+    std::cout
+        << "],\n"
         << "  \"sample_ln\": " << sample_ln << ",\n"
         << "  \"sample_qkv\": " << sample_qkv << ",\n"
+        << "  \"sample_attention\": " << sample_attention << ",\n"
         << "  \"max_abs_sample\": " << max_abs_sample << ",\n"
         << "  \"torch_required\": false,\n"
         << "  \"graph_editor_node_flow\": false,\n"
         << "  \"transformer_blocks_executed\": false,\n"
         << "  \"block_qkv_projection_executed\": true,\n"
+        << "  \"block_attention_executed\": " << (run_attention ? "true" : "false") << ",\n"
         << "  \"passed\": " << (passed ? "true" : "false");
     if (!error.empty()) {
         std::cout << ",\n"
@@ -17416,6 +17542,9 @@ int main(int argc, char** argv) {
         } else if (arg == "--checkpoint-qkv-smoke") {
             cfg.backend = "tile-cuda";
             cfg.checkpoint_qkv_smoke = true;
+        } else if (arg == "--checkpoint-attention-smoke") {
+            cfg.backend = "tile-cuda";
+            cfg.checkpoint_attention_smoke = true;
         } else if (arg == "--checkpoint-block-index") {
             cfg.checkpoint_block_index = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg.rfind("--checkpoint-block-index=", 0) == 0) {
@@ -17568,6 +17697,13 @@ int main(int argc, char** argv) {
     if (cfg.checkpoint_qkv_smoke) {
         if (cfg.native_checkpoint.empty()) {
             std::cerr << "--checkpoint-qkv-smoke requires --native-checkpoint PATH\n";
+            return 2;
+        }
+        return print_native_checkpoint_qkv_smoke_json(cfg, argv[0]);
+    }
+    if (cfg.checkpoint_attention_smoke) {
+        if (cfg.native_checkpoint.empty()) {
+            std::cerr << "--checkpoint-attention-smoke requires --native-checkpoint PATH\n";
             return 2;
         }
         return print_native_checkpoint_qkv_smoke_json(cfg, argv[0]);

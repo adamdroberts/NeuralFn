@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add checkpoint-backed native GPT attention smoke
+
+#### Changed
+
+- `nfn_gpt_native_train` now supports
+  `--checkpoint-attention-smoke --native-checkpoint PATH --prompt-tokens IDS`
+  plus `--checkpoint-block-index N`.
+- The smoke reuses the checkpoint-backed embedding, `ln_1`, and QKV projection
+  path, then runs split-to-heads, causal scaled-dot-product attention, and
+  merge-heads through CUDA Tile kernels without Torch, Python datasets, or
+  graph-editor tensor flow.
+- The JSON output reports `block_attention_executed: true` and still stops
+  before attention output projection, residual add, MLP, and generation-loop
+  sampling.
+
+#### Verification
+
+- Ran `bash tools/build_native_gpt_cli.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `git diff --check`.
+- Ran `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --checkpoint-attention-smoke --native-checkpoint /tmp/nfn_checkpoint_layout_smoke/model_00020000.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0 --tile-ops-lib build/libnfn_native_train_tile_ops.so` outside the sandbox because sandboxed GPU access cannot allocate on the CUDA device.
+
 ### 2026-06-17 Add checkpoint-backed native GPT QKV smoke
 
 #### Changed

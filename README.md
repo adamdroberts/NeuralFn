@@ -259,8 +259,12 @@ model_########.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0` loads the
 same checkpoint embeddings plus `h.N.ln_1` and `h.N.attn.c_attn` tensors, then
 runs embedding residual, the selected block's first LayerNorm, and QKV
 projection through CUDA Tile kernels. This is a checkpoint-backed transformer
-block-stage smoke only; attention, MLP, and generation-loop sampling remain the
-next native inference steps.
+block-stage smoke only.
+`nfn_gpt_native_train --checkpoint-attention-smoke --native-checkpoint
+model_########.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0` continues
+through split-to-heads, causal scaled-dot-product attention, and merge-heads on
+CUDA Tile kernels. Attention output projection, residual add, MLP, and
+generation-loop sampling remain the next native inference steps.
 
 The compiled dense GPT trainer can inspect native `model_########.bin`
 checkpoints without CUDA, Torch, Python dataset setup, or graph nodes using

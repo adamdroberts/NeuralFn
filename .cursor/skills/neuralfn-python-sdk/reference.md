@@ -772,4 +772,8 @@ Use `nfn_gpt_native_train --checkpoint-qkv-smoke --native-checkpoint PATH
 transformer-block stage: checkpoint embeddings plus the selected block's
 `ln_1` and `attn.c_attn` tensors are unpacked on device, then embedding
 residual, block LayerNorm, and QKV projection run through CUDA Tile kernels.
-Attention, MLP, and generation-loop sampling remain pending.
+Use `nfn_gpt_native_train --checkpoint-attention-smoke --native-checkpoint PATH
+--prompt-tokens IDS --checkpoint-block-index N` to continue that same
+checkpoint-backed block stage through split-to-heads, causal scaled-dot-product
+attention, and merge-heads. Attention output projection, residual, MLP, and
+generation-loop sampling remain pending.
