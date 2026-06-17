@@ -4864,6 +4864,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_FULL_ACTIVATION_TAPE" in gpt2_source_text
     assert "full-forward-tape-bf16-stored-packed-attention-and-mlp-direct-backward" in gpt2_source_text
     assert "NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K" in kernels_text
+    assert "NFN_NATIVE_LINEAR_CUBLASLT_WORKSPACE_MB" in kernels_text
     assert "bool next_into(std::uint16_t* tokens, std::uint16_t* targets" in token_shards_header_text
     assert "SequentialTokenBatchSampler::next_into" in token_shards_source_text
     assert "append_contiguous_chunks_into" in token_shards_source_text

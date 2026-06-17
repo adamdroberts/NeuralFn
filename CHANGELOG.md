@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add cuBLASLt workspace bisection switch and reject larger cap as default
+
+#### Changed
+
+- Added `NFN_TILE_CUDA_LINEAR_CUBLASLT_WORKSPACE_MB=N` /
+  `NFN_NATIVE_LINEAR_CUBLASLT_WORKSPACE_MB=N` as a diagnostic-only Tile linear
+  switch for changing the trainer-facing cuBLASLt heuristic workspace cap.
+- Kept the default cap at 128 MiB. A 256 MiB cap looked slightly faster on a
+  one-microbatch probe, but the normal 5-step paired run was train-loop
+  neutral/slightly slower.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Dedicated RTX 5090 one-microbatch paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_LINEAR_CUBLASLT_WORKSPACE_MB=256 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --command-timeout-seconds 900 --json-out /tmp/nfn_cublaslt_workspace_256_pair.json`
+  measured `0.996460x` train-loop wall time and `1.003563x` tokens/sec, so it
+  was promoted to a normal-shape 5-step check.
+- Dedicated RTX 5090 one-microbatch paired benchmark with 512 MiB:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_LINEAR_CUBLASLT_WORKSPACE_MB=512 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --command-timeout-seconds 900 --json-out /tmp/nfn_cublaslt_workspace_512_pair.json`
+  measured `0.999774x` train-loop wall time and `1.000231x` tokens/sec, so 512
+  MiB was treated as noise.
+- Dedicated RTX 5090 normal 5-step paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_LINEAR_CUBLASLT_WORKSPACE_MB=256 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --command-timeout-seconds 1800 --json-out /tmp/nfn_cublaslt_workspace_256_5step_pair.json`
+  measured `1.000863x` train-loop wall time and `0.999150x` tokens/sec, so the
+  default remains 128 MiB.
+
 ### 2026-06-17 Add extra-large-K cuBLASLt bisection switch and reject it as default
 
 #### Changed

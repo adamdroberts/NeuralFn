@@ -291,6 +291,11 @@ cuBLASLt with `CUBLAS_COMPUTE_32F_FAST_16BF` by default and select cuBLASLt
 heuristic index 1 when that candidate is available on the workstation RTX 5090
 shape. Set `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX=N` or
 `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX=N` only for paired kernel profiling.
+Set `NFN_TILE_CUDA_LINEAR_CUBLASLT_WORKSPACE_MB=N` or
+`NFN_NATIVE_LINEAR_CUBLASLT_WORKSPACE_MB=N` only for paired diagnostics that
+change the cuBLASLt heuristic workspace cap. The default remains 128 MiB because
+the normal 5-step dedicated RTX 5090 run rejected a 256 MiB cap as train-loop
+neutral/slightly slower.
 Trainer-facing BF16/BF16 backward GEMMs also allow larger dense GPT LM-head
 chunk shapes through cuBLASLt by default; set
 `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_LARGE_SHAPES=0` or

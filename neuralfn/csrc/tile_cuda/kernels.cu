@@ -1420,6 +1420,26 @@ std::mutex g_trainer_linear_bgrad_workspace_mutex;
 constexpr std::size_t kTrainerLinearCublasLtWorkspaceBytes = 128ull * 1024ull * 1024ull;
 constexpr std::size_t kTrainerLinearCublasLtPlanLimit = 128;
 
+std::size_t trainer_linear_cublaslt_workspace_limit_bytes() {
+  static const std::size_t bytes = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_CUBLASLT_WORKSPACE_MB");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_CUBLASLT_WORKSPACE_MB");
+    }
+    if (value == nullptr || value[0] == '\0') {
+      return kTrainerLinearCublasLtWorkspaceBytes;
+    }
+    char* end = nullptr;
+    const unsigned long long mib = std::strtoull(value, &end, 10);
+    if (end == value || mib == 0ull || mib > 2048ull) {
+      return kTrainerLinearCublasLtWorkspaceBytes;
+    }
+    return static_cast<std::size_t>(
+        mib * static_cast<unsigned long long>(1024ull * 1024ull));
+  }();
+  return bytes;
+}
+
 bool ensure_trainer_linear_cublaslt_workspace(std::size_t bytes) {
   if (bytes == 0) {
     return true;
@@ -1566,7 +1586,7 @@ TrainerLinearCublasLtPlan* trainer_linear_cublaslt_plan_for(
   if (cublasLtMatmulPreferenceCreate(&preference) != CUBLAS_STATUS_SUCCESS) {
     return nullptr;
   }
-  const std::size_t max_workspace = kTrainerLinearCublasLtWorkspaceBytes;
+  const std::size_t max_workspace = trainer_linear_cublaslt_workspace_limit_bytes();
   const cublasStatus_t pref_status = cublasLtMatmulPreferenceSetAttribute(
       preference,
       CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
