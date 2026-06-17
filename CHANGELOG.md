@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Record QKV dWeight fallback reject
+
+#### Changed
+
+- Recorded the same-script RTX 5090 bisection for
+  `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=0`, which forces the older
+  float32-LN1/BF16-grad QKV dWeight route instead of the default saved-LN1
+  BF16-input dWeight path.
+- The candidate was rejected and added to `todo-tile-cuda.md` because it slowed
+  the native GPT train loop.
+
+#### Verification
+
+- Dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=0 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --json-out /tmp/nfn_bisect_bf16_qkv_dweight_off_3sample.json`
+  measured the fallback at `1.009870x` train-loop wall time and `0.990246x`
+  tokens/sec versus the default BF16-input QKV dWeight route.
+
 ### 2026-06-17 Add BF16 CE exp2 profiling gate
 
 #### Changed
