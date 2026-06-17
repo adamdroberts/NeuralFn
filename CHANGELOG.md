@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Record BF16 residual backward reject
+
+#### Changed
+
+- Rejected `NFN_NATIVE_GPT_BF16_RESIDUAL1_LN_BACKWARD=0` for the dense GPT
+  SM120 trainer. The candidate kept residual1 activation storage enabled but
+  disabled the BF16 residual LayerNorm backward consumer; paired timing showed
+  the current BF16 residual backward path is faster.
+
+#### Verification
+
+- Dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_GPT_BF16_RESIDUAL1_LN_BACKWARD=0 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --command-timeout-seconds 1800 --json-out /tmp/nfn_bf16_residual1_ln_backward_off_pair.json`
+  measured `1.014258x` train-loop time and `0.985954x` tokens/sec, so the
+  default BF16 residual backward path remains enabled.
+
 ### 2026-06-17 Record residual1 activation storage reject
 
 #### Changed
