@@ -10599,7 +10599,7 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT",
                               "NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT",
                               "NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT"}),
-            true);
+            false);
     const bool fuse_adamw_bf16_shadow_refresh_enabled =
         !bf16_block_weight_param_update_enabled &&
         env_flag_enabled_or_default(

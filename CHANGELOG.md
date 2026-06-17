@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-18 Align BGRADB direct-bias reporting with the faster default
+
+#### Changed
+
+- Dense GPT native runtime JSON now reports
+  `linear_bias_gradient_first_write_bgrad_direct_enabled: false` unless
+  `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1`,
+  `NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT=1`, or
+  `NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT=1` is set. This matches the
+  low-level Tile-CUDA behavior and avoids claiming the direct BGRADB bias path
+  is active when the default route is still scratch plus accumulation.
+- Updated README, Python SDK Tile-CUDA docs, and the Tile-CUDA checklist to
+  describe direct BGRADB bias writes as an opt-in diagnostic instead of the
+  default. The 2026-06-18 paired re-check measured the direct path
+  neutral-to-slower, so no kernel default was promoted.
+
+#### Verification
+
+- Ran a dedicated RTX 5090 same-script 5-step, 3-sample paired benchmark with
+  `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1`; the candidate measured
+  `1.000529x` train-loop wall time and `0.999486x` tokens/sec versus the
+  current scratch-accumulate default.
+
 ### 2026-06-18 Record current SM120 GEMM and attention handoff rejections
 
 #### Changed
