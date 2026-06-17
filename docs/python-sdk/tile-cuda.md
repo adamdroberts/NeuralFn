@@ -897,11 +897,11 @@ and optimizer stage sequence for the current 12-layer trainer.
 
 `run_native_gpt2(config, runner="auto")` now has an explicit runner boundary:
 
-- `auto` prefers an in-process C++ binding module named `neuralfn_native_gpt2` or `neuralfn._native_gpt2`, then the compiled no-Python CLI, then the compiled launcher, then direct subprocess execution. Alias-only configs created by `build_native_gpt2_compiled_cli_run_config()` still execute the compiled CLI argv through that binding, so SDK auto mode keeps shard resolution in C++ instead of attempting raw `train_gpt2cu` with empty `-i` / `-j` values.
+- `auto` prefers an in-process C++ binding module named `neuralfn_native_gpt2` or `neuralfn._native_gpt2`, then the compiled no-Python CLI, then the compiled launcher. It no longer falls through to the external `train_gpt2cu` subprocess when NeuralFn native artifacts are missing. Alias-only configs created by `build_native_gpt2_compiled_cli_run_config()` still execute the compiled CLI argv through that binding, so SDK auto mode keeps shard resolution in C++ instead of attempting raw `train_gpt2cu` with empty `-i` / `-j` values.
 - `binding` requires that C++ binding and raises if it is unavailable.
 - `compiled-cli` requires the compiled `nfn_gpt_native_train` binary and raises if it is unavailable. The old `cli` spelling is no longer accepted.
 - `launcher` requires the compiled `nfn_gpt2_tile_train` launcher and raises if it is unavailable.
-- `subprocess` always launches the external `train_gpt2cu` executable.
+- `subprocess` is the explicit external bridge and always launches the configured `train_gpt2cu`-style executable.
 
 `native_gpt_runner_status()` returns the resolved mode and diagnostic reason, and `write_native_gpt_run_config()` includes that status in the JSON payload. Set `NFN_NATIVE_GPT_BINDING=0` to test launcher/subprocess fallback paths even when the compatibility `neuralfn._native_gpt2` binding is built locally; the older `native_gpt2_runner_status()`, `write_native_gpt2_run_config()`, and `NFN_NATIVE_GPT2_BINDING` names remain compatibility fallbacks.
 

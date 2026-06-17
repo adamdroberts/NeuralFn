@@ -70,8 +70,10 @@ when callers access Torch-backed exports such as `TorchTrainer`,
 
 For the native GPT path, `bash tools/build_native_gpt_binding.sh` builds the
 generic `neuralfn._native_gpt` C++ extension used by `run_native_gpt(...,
-runner="auto")` before falling back to the standalone launcher or subprocess
-path. `bash tools/build_native_gpt2_binding.sh` still builds the compatibility
+runner="auto")` before falling back to the compiled CLI or standalone launcher.
+The auto route no longer falls through to the external `train_gpt2cu`
+subprocess; request `runner="subprocess"` explicitly when testing that bridge.
+`bash tools/build_native_gpt2_binding.sh` still builds the compatibility
 `neuralfn._native_gpt2` module, and `run_native_gpt2(...)` can use either
 binding. `build_native_gpt_compiled_cli_run_config()` creates a dense GPT
 compiled-CLI handoff directly from a dataset alias/path, leaving shard metadata

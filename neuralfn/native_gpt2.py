@@ -775,8 +775,13 @@ def build_native_gpt2_compiled_cli_run_config(
 
     lr = float(learning_rate)
     final_lr_fraction = 0.0 if min_lr is None else max(0.0, min(float(min_lr) / lr, 1.0))
+    resolved_kernel_backend = native_gpt2_kernel_backend(kernel_backend)
     return NativeGpt2RunConfig(
-        executable=resolve_native_gpt2_executable(executable),
+        executable=(
+            resolve_native_gpt2_executable(executable)
+            if resolved_kernel_backend == "llm-kittens"
+            else resolve_native_gpt2_cli(executable)
+        ),
         train_data="",
         val_data="",
         output_dir=str(output_dir),
@@ -799,7 +804,7 @@ def build_native_gpt2_compiled_cli_run_config(
         max_steps=int(max_steps),
         activation=_native_gpt2_activation_for_template(template_name, activation),
         moa_interval=int(moa_interval),
-        kernel_backend=native_gpt2_kernel_backend(kernel_backend),
+        kernel_backend=resolved_kernel_backend,
         tile_ops_lib=str(tile_ops_lib or ""),
         smoke_tile_ops=bool(smoke_tile_ops),
         smoke_optimizer_step=bool(smoke_optimizer_step),
@@ -910,9 +915,12 @@ def native_gpt2_runner_status(requested: str = "auto") -> NativeGpt2RunnerStatus
             )
         return NativeGpt2RunnerStatus(
             requested=normalized,
-            resolved="subprocess",
-            available=True,
-            reason=f"native binding unavailable and compiled native GPT CLI/launcher not found: {exc}",
+            resolved="compiled-cli",
+            available=False,
+            reason=(
+                "native binding unavailable and compiled native GPT CLI/launcher not found; "
+                f"subprocess external bridge requires runner='subprocess': {exc}"
+            ),
         )
     return NativeGpt2RunnerStatus(
         requested=normalized,
@@ -940,6 +948,8 @@ def run_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "auto") -> int
         env = _native_gpt2_subprocess_env(config)
         proc = subprocess.run(config.launcher_argv(), env=env, check=False)
         return int(proc.returncode)
+    if status.resolved != "subprocess":
+        raise RuntimeError(f"Native GPT runner unavailable: {status.reason}")
 
     env = _native_gpt2_subprocess_env(config)
     proc = subprocess.run(config.argv(), env=env, check=False)

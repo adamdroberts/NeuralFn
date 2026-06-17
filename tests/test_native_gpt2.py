@@ -456,6 +456,61 @@ def test_build_native_gpt2_compiled_cli_config_can_skip_checkpoint_export(tmp_pa
     assert "--no-checkpoint" in generic_cfg.compiled_cli_argv("/opt/nfn/nfn_gpt_native_train")
 
 
+def test_build_native_gpt2_compiled_cli_config_defaults_to_neuralfn_cli(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native_cli = tmp_path / "nfn_gpt_native_train"
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", str(native_cli))
+    monkeypatch.setenv("NFN_NATIVE_GPT_TRAIN_BIN", "/opt/nfn/train_gpt2cu")
+
+    cfg = build_native_gpt2_compiled_cli_run_config(
+        dataset_alias="cached-shards",
+        executable=None,
+        output_dir=tmp_path / "gpt",
+        eval_every_steps=1000,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=1,
+        num_layers=12,
+        activation="gelu",
+    )
+    llm_cfg = build_native_gpt2_compiled_cli_run_config(
+        dataset_alias="cached-shards",
+        executable=None,
+        output_dir=tmp_path / "gpt-llm",
+        eval_every_steps=1000,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=1,
+        num_layers=12,
+        activation="gelu",
+        kernel_backend="llm-kittens",
+    )
+
+    assert cfg.executable == str(native_cli)
+    assert cfg.kernel_backend == "tile-cuda"
+    assert "--target" not in cfg.compiled_cli_argv()
+    assert llm_cfg.executable == "/opt/nfn/train_gpt2cu"
+    assert llm_cfg.kernel_backend == "llm-kittens"
+
+
 def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path: Path) -> None:
     cfg = build_native_gpt_compiled_cli_run_config(
         dataset_alias="cached-shards",
@@ -635,7 +690,7 @@ def test_native_gpt2_kernel_backend_rejects_unknown_value(tmp_path: Path) -> Non
         )
 
 
-def test_native_gpt2_runner_status_falls_back_to_subprocess_without_binding(
+def test_native_gpt2_runner_status_auto_requires_neuralfn_native_artifacts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -645,10 +700,11 @@ def test_native_gpt2_runner_status_falls_back_to_subprocess_without_binding(
     status = native_gpt2_runner_status("auto")
 
     assert status.requested == "auto"
-    assert status.resolved == "subprocess"
-    assert status.available is True
+    assert status.resolved == "compiled-cli"
+    assert status.available is False
     assert "binding unavailable" in status.reason
     assert "compiled native GPT CLI/launcher not found" in status.reason
+    assert "runner='subprocess'" in status.reason
 
 
 def test_native_gpt2_runner_status_uses_compiled_cli_when_present(

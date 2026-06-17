@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Native GPT runner auto no longer external-falls back
+
+#### Changed
+
+- Tightened the SDK native GPT runner boundary so `runner="auto"` only selects
+  NeuralFn-owned native artifacts: the C++ binding, compiled no-Python GPT CLI,
+  or compiled launcher.
+- `build_native_gpt2_compiled_cli_run_config(..., kernel_backend="tile-cuda")`
+  now resolves its default executable field through the NeuralFn compiled GPT
+  CLI resolver instead of the external `train_gpt2cu` resolver. The explicit
+  `kernel_backend="llm-kittens"` bridge still resolves the external target for
+  parity benchmarks.
+
+#### Breaking changes
+
+- Before: `run_native_gpt(..., runner="auto")` and
+  `run_native_gpt2(..., runner="auto")` could silently fall through to the raw
+  external `train_gpt2cu` subprocess when the NeuralFn binding, compiled CLI,
+  and launcher were missing.
+- Now: `runner="auto"` reports an unavailable NeuralFn native runner in that
+  state and `run_native_gpt*` raises. Callers that intentionally want the
+  external bridge must pass `runner="subprocess"` or use
+  `kernel_backend="llm-kittens"` for compiled-CLI parity checks.
+
+#### Verification
+
+- `python -m pytest tests/test_native_gpt2.py -q -k 'compiled_cli_config or runner_status or binding_runner or launcher_runner or compiled_cli_runner'`
+- `python -m pytest tests/test_native_dependencies.py -q`
+- `python -m pytest tests/test_native_gpt2.py -q -k 'auto_requires_neuralfn_native_artifacts or defaults_to_neuralfn_cli or generic_env_names_take_precedence or uses_compiled_cli_when_present or uses_compiled_launcher_when_present'`
+- `git diff --check`
+
 ### 2026-06-17 Record BF16-output dInput reject
 
 #### Changed
