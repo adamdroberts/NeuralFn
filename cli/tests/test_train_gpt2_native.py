@@ -1181,6 +1181,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                     sys.executable,
                     str(NEURALFN_ROOT / "cli" / "scripts" / "train_gpt2_evo.py"),
                     "--native-cuda-print-plan",
+                    "--native-cuda-smoke-evo-kernels",
                     "--native-cuda-tile-ops-lib",
                     "/tmp/libnfn_native_train_tile_ops.so",
                     "--native-cuda-cuda-runtime-lib=/tmp/libcudart.so",
@@ -1199,6 +1200,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("EVO_NATIVE_DIRECT", proc.stdout)
         self.assertIn("--print-plan", proc.stdout)
         self.assertNotIn("--native-cuda-print-plan", proc.stdout)
+        self.assertIn("--smoke-evo-kernels", proc.stdout)
+        self.assertNotIn("--native-cuda-smoke-evo-kernels", proc.stdout)
         self.assertIn("--tile-ops-lib", proc.stdout)
         self.assertIn("/tmp/libnfn_native_train_tile_ops.so", proc.stdout)
         self.assertIn("--cuda-runtime-lib=/tmp/libcudart.so", proc.stdout)
