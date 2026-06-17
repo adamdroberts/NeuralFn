@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Capture SM120 parity stage profiles by default
+
+#### Changed
+
+- `tools/bench_native_gpt_sm120_parity.sh` now passes
+  `--append-native-profile-json-dir` to the paired benchmark harness by default,
+  using `/tmp/nfn_sm120_parity_profiles_${NFN_SM120_PARITY_STEPS:-10}step`
+  unless `NFN_SM120_PARITY_PROFILE_DIR` is set.
+- The canonical NeuralFn-vs-llm.kittens SM120 parity run now records the
+  NeuralFn native stage sidecars needed to attribute the remaining throughput
+  gap while still comparing both trainers in the same alternating benchmark
+  script.
+
+#### Verification
+
+- Ran `bash -n tools/bench_native_gpt_sm120_parity.sh`.
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran `python -m pytest tests/test_tile_cuda_examples.py -q -k native_gpt_sm120_parity_wrapper_uses_reference_shape`.
+
 ### 2026-06-17 Reject current LM-head and projection-residual probes
 
 #### Changed

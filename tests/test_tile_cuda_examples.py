@@ -152,6 +152,7 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "NFN_SM120_PARITY_SAMPLE_EVERY" in text
     assert "NFN_SM120_PARITY_CHECKPOINT_EVERY" in text
     assert "NFN_SM120_PARITY_GENERATE_TOKENS" in text
+    assert "NFN_SM120_PARITY_PROFILE_DIR" in text
     assert "-s \"$SAMPLE_EVERY\"" in text
     assert "-g \"$GENERATE_TOKENS\"" in text
     assert "-n \"$CHECKPOINT_EVERY\"" in text
@@ -164,6 +165,7 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "--native-cuda-checkpoint-every \"$CHECKPOINT_EVERY\"" in text
     assert "--no-checkpoint" in text
     assert "--tile-ops-lib \"$NFN_NATIVE_TILE_OPS_LIB\"" in text
+    assert "--append-native-profile-json-dir \"$PROFILE_DIR\"" in text
 
 
 def test_paired_kernel_speed_tool_applies_command_specific_env() -> None:

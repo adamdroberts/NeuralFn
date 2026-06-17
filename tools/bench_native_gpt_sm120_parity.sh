@@ -20,6 +20,7 @@ SAMPLE_EVERY="${NFN_SM120_PARITY_SAMPLE_EVERY:-0}"
 CHECKPOINT_EVERY="${NFN_SM120_PARITY_CHECKPOINT_EVERY:-0}"
 GENERATE_TOKENS="${NFN_SM120_PARITY_GENERATE_TOKENS:-144}"
 JSON_OUT="${NFN_SM120_PARITY_JSON_OUT:-/tmp/nfn_sm120_parity_${STEPS}step.json}"
+PROFILE_DIR="${NFN_SM120_PARITY_PROFILE_DIR:-/tmp/nfn_sm120_parity_profiles_${STEPS}step}"
 REFERENCE_OUTPUT_DIR="${NFN_SM120_PARITY_REFERENCE_OUTPUT_DIR:-/tmp/nfn_llmk_sm120_parity}"
 
 if [[ ! -x "$LLM_KITTENS_TRAIN_BIN" ]]; then
@@ -96,4 +97,5 @@ python tools/paired_kernel_speed.py \
   --require-idle-selected-gpu \
   --max-selected-gpu-utilization-pct "$MAX_GPU_UTILIZATION" \
   --command-timeout-seconds "$COMMAND_TIMEOUT_SECONDS" \
+  --append-native-profile-json-dir "$PROFILE_DIR" \
   --json-out "$JSON_OUT"
