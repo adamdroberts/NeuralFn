@@ -836,7 +836,11 @@ The same trainer suballocates float buffers from one aligned CUDA device arena
 instead of calling `cudaMalloc` for each float tensor. JSON reports
 `float_allocation_strategy: "single-arena"`,
 `float_allocation_cuda_malloc_count`, `float_allocation_request_count`,
-`float_arena_requested_elements`, and `float_arena_allocated_elements`.
+`float_arena_requested_elements`, and `float_arena_allocated_elements`. Stored
+MLP LayerNorm stats and saved packed-attention LN1 stats sidecars are part of
+that float arena by default; set `NFN_NATIVE_GPT_FLOAT_STATS_ARENA=0` or
+`NFN_NATIVE_GPT2_FLOAT_STATS_ARENA=0` only for paired startup comparisons
+against the older separate sidecar allocations.
 BF16 activation and scratch buffers are also suballocated from one uint16 CUDA
 device arena by default, covering stored MLP activations, residual1 caches,
 packed attention stores, LM-head BF16 logits, MLP BF16 scratch, packed-QKV BF16

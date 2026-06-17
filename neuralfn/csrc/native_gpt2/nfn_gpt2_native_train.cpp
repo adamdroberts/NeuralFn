@@ -11238,6 +11238,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LAZY_VALIDATION_MLP_FLOAT_SCRATCH",
                               "NFN_NATIVE_GPT2_LAZY_VALIDATION_MLP_FLOAT_SCRATCH"}),
             true);
+    const bool float_stats_sidecars_in_arena_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_FLOAT_STATS_ARENA",
+                              "NFN_NATIVE_GPT2_FLOAT_STATS_ARENA"}),
+            true);
     std::vector<StoredMlpActivations> stored_mlp_activations(
         static_cast<std::size_t>(stored_mlp_activation_block_count));
     std::uint16_t* stored_mlp_activation_arena = nullptr;
@@ -12155,6 +12160,10 @@ int run_transformer_lm_training_json(
              {&grad_qkv, grad_qkv_float_scratch_elements}, {&grad_ln1, activation_elements},
              {&grad_x_from_attn, fuse_ln_backward_residual_enabled ? 0 : activation_elements},
              {&grad_x, activation_elements},
+             {&stored_mlp_norm_stats_arena,
+              float_stats_sidecars_in_arena_enabled ? stored_mlp_activation_block_count * rows * 2 : 0},
+             {&stored_packed_attention_ln1_stats_arena,
+              float_stats_sidecars_in_arena_enabled ? stored_packed_attention_ln1_stats_elements : 0},
              {&stored_packed_attention_lse_arena, stored_packed_attention_lse_elements},
              {&grad_sumsq_partials, gradient_partial_count}, {&grad_clip_scale, 1},
          }) {
@@ -17209,6 +17218,8 @@ int run_transformer_lm_training_json(
         << lazy_validation_mlp_float_scratch_bytes << ",\n"
         << "  \"lazy_validation_mlp_float_scratch_cuda_malloc_count\": "
         << lazy_validation_mlp_float_scratch_cuda_malloc_count << ",\n"
+        << "  \"float_stats_sidecars_in_arena_enabled\": "
+        << (float_stats_sidecars_in_arena_enabled ? "true" : "false") << ",\n"
         << "  \"train_loss_eval_count\": " << train_loss_eval_count << ",\n"
         << "  \"train_loss_last_step\": " << train_loss_last_step << ",\n"
         << "  \"train_loss_sparse\": false,\n"

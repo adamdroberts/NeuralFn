@@ -6,6 +6,36 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-18 Suballocate native GPT float stats sidecars
+
+#### Changed
+
+- Dense GPT native training now reserves stored MLP LayerNorm stats and saved
+  packed-attention LN1 stats through the existing single float arena instead of
+  issuing separate float `cudaMalloc` calls during startup.
+- Updated README, Python SDK Tile-CUDA docs, and the Tile-CUDA checklist to
+  describe those stats sidecars as part of the default float arena. Set
+  `NFN_NATIVE_GPT_FLOAT_STATS_ARENA=0` or
+  `NFN_NATIVE_GPT2_FLOAT_STATS_ARENA=0` only for paired startup comparisons
+  against the older sidecar allocation route.
+
+#### Verification
+
+- Rebuilt `nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran default and `NFN_NATIVE_GPT_FLOAT_STATS_ARENA=0` one-step TinyStories
+  native smokes. Default JSON reported
+  `float_stats_sidecars_in_arena_enabled: true`,
+  `float_allocation_cuda_malloc_count: 1`,
+  `float_allocation_request_count: 639`,
+  `stored_mlp_layer_norm_stats_elements: 1572864`, and
+  `stored_packed_attention_ln1_stats_elements: 1441792`; the opt-out smoke
+  reported `float_stats_sidecars_in_arena_enabled: false` and preserved the
+  same stats sidecar shapes.
+- Ran a dedicated RTX 5090 same-script startup-only 5-sample comparison against
+  `NFN_NATIVE_GPT_FLOAT_STATS_ARENA=0`; the opt-out measured `1.001616x` setup
+  wall time and `1.003047x` total wall time versus the new default, so the
+  arena-backed stats sidecars remain the default.
+
 ### 2026-06-18 Suballocate saved packed-attention LN1 BF16 tape
 
 #### Changed
