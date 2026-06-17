@@ -253,6 +253,17 @@ Compiled CUDA Tile graphs can opt into runtime NVFP4 activation packing with `gr
 
 Native compiled entrypoints and SDK bindings set `CUDA_MODULE_LOADING=LAZY` when unset before executing native trainers or loading Tile CUDA libraries, matching the dense GPT C++ trainer. Existing user-provided `CUDA_MODULE_LOADING` values still take precedence.
 
+Dense GPT native training now accepts `--layer-evo` /
+`--native-cuda-layer-evo` plus `--evo-layer-index`,
+`--evo-layer-interval`, `--evo-layer-population`, and
+`--evo-layer-mutation-scale` on the compiled C++ trainer. The current native
+cadence allocates device candidate workspace for the selected block's
+`block_N.ln1.weight`, runs raw Tile-CUDA mutate/select/adopt ABI kernels during
+the optimizer loop, and reports `layer_evo.graph_editor_tensor_flow: false` in
+plan/runtime JSON. Forward-only candidate loss evaluation is still tracked as
+remaining work, so this path currently selects the current-weight candidate on
+device and is meant as the first trainer-loop ABI integration step.
+
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
 Native checkpoint prompt-token requests now take a compiled C++ path instead of

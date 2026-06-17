@@ -62,9 +62,13 @@ struct Config {
     int eval_batches = 1;
     int eval_batch_size = 0;
     int lm_head_row_chunk_size = kDefaultLmHeadRowChunkSize;
+    int evo_layer_index = 6;
+    int evo_layer_interval = 10;
+    int evo_layer_population = 8;
     double learning_rate = 0.0006;
     double final_lr_fraction = 0.0;
     double weight_decay = 0.1;
+    double evo_layer_mutation_scale = 0.02;
     bool allow_train_as_val = false;
     bool dry_run = false;
     bool print_command = false;
@@ -105,6 +109,7 @@ struct Config {
     int checkpoint_block_index = 0;
     bool checkpoint_layout = false;
     int checkpoint_layout_sample_buffers = 8;
+    bool layer_evo_enabled = false;
 };
 
 struct BufferPlan {
@@ -384,6 +389,12 @@ void print_usage(const char* program) {
         << "  --train-batch-tokens, --learning-rate, --final-lr-fraction, --weight-decay, --warmup-steps, and --max-steps.\n"
         << "  --lm-head-row-chunk-size N        Tied LM-head full-vocab row chunk size for the Tile-CUDA transformer loop; default "
         << kDefaultLmHeadRowChunkSize << ".\n"
+        << "  --layer-evo                      Enable native device-side evo ABI cadence for the selected block\n"
+        << "  --evo-layer-index N              Evo block index; default 6\n"
+        << "  --evo-layer-interval N           Evo cadence in optimizer steps; default 10\n"
+        << "  --evo-layer-population N         Evo candidate population; default 8\n"
+        << "  --evo-layer-mutation-scale X     Evo mutation scale; default 0.02\n"
+        << "  --no-layer-evo                   Disable native layer-evo cadence\n"
         << "Dataset default: roneneldan__TinyStories__TinyStoriesV2-GPT4.\n"
         << "SM120 defaults match llm.kittens/train-sm120.sh: -v 250 -b 64 -t 1024 -d 524288 -l 0.0006 -q 0.0 -c 0.1 -u 60 -x 20000.\n";
 }
@@ -2699,6 +2710,9 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_init_gpt2_token_weight_fast_float32",
         "nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32",
         "nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32",
+        "nfn_native_tile_evo_mutate_candidates_float32",
+        "nfn_native_tile_evo_select_best_loss_float32",
+        "nfn_native_tile_evo_adopt_candidate_float32",
         "nfn_native_tile_uint16_to_int64",
         "nfn_native_tile_float32_to_bf16_bits",
         "nfn_native_tile_bf16_bits_to_float32",
@@ -3506,6 +3520,16 @@ bool print_tile_plan(
         << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
         << ", \"eval_every_steps\": " << cfg.eval_every_steps
         << ", \"warmup_steps\": " << cfg.warmup_steps << "},\n"
+        << "  \"layer_evo\": {\"enabled\": " << (cfg.layer_evo_enabled ? "true" : "false")
+        << ", \"graph_editor_tensor_flow\": false"
+        << ", \"target_parameter\": \"block_" << cfg.evo_layer_index << ".ln1.weight\""
+        << ", \"target_parameter_dtype\": \"float32\""
+        << ", \"layer_index\": " << cfg.evo_layer_index
+        << ", \"interval\": " << cfg.evo_layer_interval
+        << ", \"population\": " << cfg.evo_layer_population
+        << ", \"mutation_scale\": " << cfg.evo_layer_mutation_scale
+        << ", \"forward_candidate_eval_enabled\": false"
+        << ", \"candidate_loss_source\": \"placeholder-device-zero-loss-selects-current-candidate\"},\n"
         << "  \"checkpoint_export_enabled\": " << (cfg.write_checkpoint ? "true" : "false") << ",\n"
         << "  \"estimated_stage_elements\": {\"hidden\": " << hidden
         << ", \"logits\": " << logits
@@ -9103,6 +9127,12 @@ int run_transformer_lm_training_json(
             target_layers <= 0 || cfg.lm_head_row_chunk_size <= 0)) {
         error = "batch size, seq_len, num_layers, max_steps, and lm_head_row_chunk_size must be positive";
     }
+    if (error.empty() && cfg.layer_evo_enabled &&
+        (cfg.evo_layer_index < 0 || cfg.evo_layer_index >= target_layers ||
+         cfg.evo_layer_interval <= 0 || cfg.evo_layer_population <= 0 ||
+         cfg.evo_layer_mutation_scale < 0.0)) {
+        error = "evo layer index/cadence/population/mutation scale are outside the valid range";
+    }
 
     bool tile_loaded = false;
     bool cuda_runtime_loaded = false;
@@ -9180,6 +9210,19 @@ int run_transformer_lm_training_json(
     std::int64_t checkpoint_d2h_bytes = 0;
     std::int64_t checkpoint_float32_d2h_bytes_elided = 0;
     bool token_weight_bf16_initial_refresh_elided = false;
+    bool layer_evo_runtime_enabled = false;
+    bool layer_evo_forward_candidate_eval_enabled = false;
+    std::int64_t layer_evo_runs = 0;
+    std::int64_t layer_evo_mutate_kernel_launches = 0;
+    std::int64_t layer_evo_select_kernel_launches = 0;
+    std::int64_t layer_evo_adopt_kernel_launches = 0;
+    std::int64_t layer_evo_parameter_elements = 0;
+    std::int64_t layer_evo_candidate_elements = 0;
+    std::int64_t layer_evo_seed = 1337;
+    float* layer_evo_candidates = nullptr;
+    float* layer_evo_candidate_losses = nullptr;
+    std::int64_t* layer_evo_best_index = nullptr;
+    float* layer_evo_best_loss = nullptr;
     void* tile_handle = nullptr;
     void* cuda_handle = nullptr;
     std::vector<std::string> missing_symbols;
@@ -9192,6 +9235,9 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_init_gpt2_token_weight_fast_float32",
         "nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32",
         "nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32",
+        "nfn_native_tile_evo_mutate_candidates_float32",
+        "nfn_native_tile_evo_select_best_loss_float32",
+        "nfn_native_tile_evo_adopt_candidate_float32",
         "nfn_native_tile_copy_float32",
         "nfn_native_tile_uint16_to_int64",
         "nfn_native_tile_float32_to_bf16_bits",
@@ -9637,6 +9683,11 @@ int run_transformer_lm_training_json(
     using InitGpt2TokenWeightFn = int (*)(float*, std::int64_t, void*);
     using InitGpt2TokenWeightWithBf16ShadowFn = int (*)(
         float*, std::uint16_t*, std::int64_t, void*);
+    using EvoMutateFn = int (*)(
+        const float*, float*, std::int64_t, std::int64_t, float, std::int64_t, void*);
+    using EvoSelectFn = int (*)(const float*, std::int64_t, std::int64_t*, float*, void*);
+    using EvoAdoptFn = int (*)(
+        const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
     using CudaMallocFn = int (*)(void**, std::size_t);
     using CudaFreeFn = int (*)(void*);
     using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
@@ -9661,6 +9712,9 @@ int run_transformer_lm_training_json(
     InitGpt2TokenWeightFn init_gpt2_token_weight_fast = nullptr;
     InitGpt2TokenWeightWithBf16ShadowFn init_gpt2_token_weight_with_bf16_shadow = nullptr;
     InitGpt2TokenWeightWithBf16ShadowFn init_gpt2_token_weight_fast_with_bf16_shadow = nullptr;
+    EvoMutateFn evo_mutate_candidates = nullptr;
+    EvoSelectFn evo_select_best_loss = nullptr;
+    EvoAdoptFn evo_adopt_candidate = nullptr;
     Uint16ToInt64Fn uint16_to_int64 = nullptr;
     Bf16BitsToFloat32Fn bf16_bits_to_float32 = nullptr;
     Float32ToBf16BitsFn float32_to_bf16_bits = nullptr;
@@ -9896,6 +9950,15 @@ int run_transformer_lm_training_json(
                     load_symbol<InitGpt2TokenWeightWithBf16ShadowFn>(
                         tile_handle,
                         "nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32");
+                evo_mutate_candidates = load_symbol<EvoMutateFn>(
+                    tile_handle,
+                    "nfn_native_tile_evo_mutate_candidates_float32");
+                evo_select_best_loss = load_symbol<EvoSelectFn>(
+                    tile_handle,
+                    "nfn_native_tile_evo_select_best_loss_float32");
+                evo_adopt_candidate = load_symbol<EvoAdoptFn>(
+                    tile_handle,
+                    "nfn_native_tile_evo_adopt_candidate_float32");
                 uint16_to_int64 = load_symbol<Uint16ToInt64Fn>(tile_handle, "nfn_native_tile_uint16_to_int64");
                 bf16_bits_to_float32 =
                     load_symbol<Bf16BitsToFloat32Fn>(tile_handle, "nfn_native_tile_bf16_bits_to_float32");
@@ -11856,6 +11919,68 @@ int run_transformer_lm_training_json(
             block.accum_grad_fc_weight_bf16 = base;
         }
     };
+    auto allocate_layer_evo_workspace = [&]() {
+        if (!error.empty() || !cfg.layer_evo_enabled) {
+            return;
+        }
+        if (cfg.evo_layer_index < 0 ||
+            cfg.evo_layer_index >= static_cast<int>(blocks.size()) ||
+            cfg.evo_layer_population <= 0) {
+            error = "invalid native layer-evo workspace shape";
+            return;
+        }
+        layer_evo_runtime_enabled = true;
+        layer_evo_parameter_elements = kDim;
+        if (layer_evo_parameter_elements >
+            std::numeric_limits<std::int64_t>::max() / cfg.evo_layer_population) {
+            error = "layer-evo candidate element count overflow";
+            return;
+        }
+        layer_evo_candidate_elements =
+            layer_evo_parameter_elements * static_cast<std::int64_t>(cfg.evo_layer_population);
+        if (layer_evo_candidate_elements >
+            static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(float))) {
+            error = "layer-evo candidate workspace byte size overflow";
+            return;
+        }
+        void* raw = nullptr;
+        std::size_t bytes = sizeof(float) * static_cast<std::size_t>(layer_evo_candidate_elements);
+        int status = device_malloc(&raw, bytes);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc layer_evo_candidates");
+            return;
+        }
+        layer_evo_candidates = static_cast<float*>(raw);
+        float_ptrs.push_back(layer_evo_candidates);
+
+        raw = nullptr;
+        bytes = sizeof(float) * static_cast<std::size_t>(cfg.evo_layer_population);
+        status = device_malloc(&raw, bytes);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc layer_evo_candidate_losses");
+            return;
+        }
+        layer_evo_candidate_losses = static_cast<float*>(raw);
+        float_ptrs.push_back(layer_evo_candidate_losses);
+
+        raw = nullptr;
+        status = device_malloc(&raw, sizeof(float));
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc layer_evo_best_loss");
+            return;
+        }
+        layer_evo_best_loss = static_cast<float*>(raw);
+        float_ptrs.push_back(layer_evo_best_loss);
+
+        raw = nullptr;
+        status = device_malloc(&raw, sizeof(std::int64_t));
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc layer_evo_best_index");
+            return;
+        }
+        layer_evo_best_index = static_cast<std::int64_t*>(raw);
+        int_ptrs.push_back(layer_evo_best_index);
+    };
 
     auto visit_block_parameter_ptrs = [&](auto&& visit) {
         for (std::size_t i = 0; i < blocks.size(); ++i) {
@@ -12134,6 +12259,9 @@ int run_transformer_lm_training_json(
     });
     run_setup_timed("setup.block_dweight_bf16_staging_arena", [&]() {
         allocate_block_dweight_bf16_staging_arena();
+    });
+    run_setup_timed("setup.layer_evo_workspace", [&]() {
+        allocate_layer_evo_workspace();
     });
     const std::int64_t startup_per_buffer_zero_fill_launches_elided =
         1 + trained_layers * 6 + 8 + trained_layers * kPerBlockAdamWStateBuffers;
@@ -13323,6 +13451,67 @@ int run_transformer_lm_training_json(
                 "gradient_clip_scale");
         }
         stage_end(stage_event, "gradient_clip");
+    };
+
+    auto run_layer_evo_step = [&](std::int64_t step) {
+        if (!layer_evo_runtime_enabled || !cfg.layer_evo_enabled || !error.empty()) {
+            return;
+        }
+        if (step <= 0 || cfg.evo_layer_interval <= 0 || (step % cfg.evo_layer_interval) != 0) {
+            return;
+        }
+        if (evo_mutate_candidates == nullptr || evo_select_best_loss == nullptr ||
+            evo_adopt_candidate == nullptr || layer_evo_candidates == nullptr ||
+            layer_evo_candidate_losses == nullptr || layer_evo_best_index == nullptr ||
+            layer_evo_best_loss == nullptr) {
+            error = "native layer-evo requested but evo Tile workspace or symbols are unavailable";
+            return;
+        }
+        TransformerBlockParams& block = blocks[static_cast<std::size_t>(cfg.evo_layer_index)];
+        const std::int64_t stage_event = stage_begin("layer_evo");
+        run(evo_mutate_candidates(
+                block.ln1_weight,
+                layer_evo_candidates,
+                layer_evo_parameter_elements,
+                cfg.evo_layer_population,
+                static_cast<float>(cfg.evo_layer_mutation_scale),
+                layer_evo_seed + step,
+                nullptr),
+            "layer_evo.mutate_candidates.ln1_weight");
+        if (error.empty()) {
+            layer_evo_mutate_kernel_launches += 1;
+            run(fill(
+                    layer_evo_candidate_losses,
+                    cfg.evo_layer_population,
+                    0.0f,
+                    nullptr),
+                "layer_evo.placeholder_candidate_losses.fill_zero");
+        }
+        if (error.empty()) {
+            run(evo_select_best_loss(
+                    layer_evo_candidate_losses,
+                    cfg.evo_layer_population,
+                    layer_evo_best_index,
+                    layer_evo_best_loss,
+                    nullptr),
+                "layer_evo.select_best_loss");
+        }
+        if (error.empty()) {
+            layer_evo_select_kernel_launches += 1;
+            run(evo_adopt_candidate(
+                    layer_evo_candidates,
+                    layer_evo_best_index,
+                    block.ln1_weight,
+                    layer_evo_parameter_elements,
+                    cfg.evo_layer_population,
+                    nullptr),
+                "layer_evo.adopt_candidate.ln1_weight");
+        }
+        if (error.empty()) {
+            layer_evo_adopt_kernel_launches += 1;
+            layer_evo_runs += 1;
+        }
+        stage_end(stage_event, "layer_evo");
     };
 
     auto upload_pinned_batch = [&]() {
@@ -15610,6 +15799,7 @@ int run_transformer_lm_training_json(
             }
             stage_end(stage_event, "adamw_update");
         }
+        run_layer_evo_step(step);
         return train_loss_sum;
     };
 
@@ -17381,6 +17571,26 @@ int run_transformer_lm_training_json(
         << "    \"expected_file_size\": " << checkpoint_expected_file_size << ",\n"
         << "    \"actual_file_size\": " << checkpoint_actual_file_size << "\n"
         << "  },\n"
+        << "  \"layer_evo\": {\n"
+        << "    \"enabled\": " << (cfg.layer_evo_enabled ? "true" : "false") << ",\n"
+        << "    \"runtime_enabled\": " << (layer_evo_runtime_enabled ? "true" : "false") << ",\n"
+        << "    \"graph_editor_tensor_flow\": false,\n"
+        << "    \"target_parameter\": \"block_" << cfg.evo_layer_index << ".ln1.weight\",\n"
+        << "    \"target_parameter_dtype\": \"float32\",\n"
+        << "    \"layer_index\": " << cfg.evo_layer_index << ",\n"
+        << "    \"interval\": " << cfg.evo_layer_interval << ",\n"
+        << "    \"population\": " << cfg.evo_layer_population << ",\n"
+        << "    \"mutation_scale\": " << cfg.evo_layer_mutation_scale << ",\n"
+        << "    \"parameter_elements\": " << layer_evo_parameter_elements << ",\n"
+        << "    \"candidate_elements\": " << layer_evo_candidate_elements << ",\n"
+        << "    \"runs\": " << layer_evo_runs << ",\n"
+        << "    \"mutate_kernel_launches\": " << layer_evo_mutate_kernel_launches << ",\n"
+        << "    \"select_kernel_launches\": " << layer_evo_select_kernel_launches << ",\n"
+        << "    \"adopt_kernel_launches\": " << layer_evo_adopt_kernel_launches << ",\n"
+        << "    \"forward_candidate_eval_enabled\": " << (layer_evo_forward_candidate_eval_enabled ? "true" : "false") << ",\n"
+        << "    \"candidate_loss_source\": \"placeholder-device-zero-loss-selects-current-candidate\",\n"
+        << "    \"required_next_step\": \"forward-only candidate loss evaluation for mutated evo-layer weights\"\n"
+        << "  },\n"
         << "  \"validation\": {\n"
         << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
         << "    \"eval_batches\": " << cfg.eval_batches << ",\n"
@@ -18076,6 +18286,35 @@ int main(int argc, char** argv) {
             cfg.lm_head_row_chunk_size = parse_int(
                 value_after_equals("--native-cuda-lm-head-row-chunk-size="),
                 "--native-cuda-lm-head-row-chunk-size");
+        } else if (arg == "--layer-evo" || arg == "--enable-layer-evo" || arg == "--native-cuda-layer-evo") {
+            cfg.layer_evo_enabled = true;
+        } else if (arg == "--no-layer-evo") {
+            cfg.layer_evo_enabled = false;
+        } else if (arg == "--evo-layer-index") {
+            cfg.layer_evo_enabled = true;
+            cfg.evo_layer_index = parse_int(require_value(argc, argv, &i, arg), arg);
+        } else if (arg.rfind("--evo-layer-index=", 0) == 0) {
+            cfg.layer_evo_enabled = true;
+            cfg.evo_layer_index = parse_int(value_after_equals("--evo-layer-index="), "--evo-layer-index");
+        } else if (arg == "--evo-layer-interval") {
+            cfg.layer_evo_enabled = true;
+            cfg.evo_layer_interval = parse_int(require_value(argc, argv, &i, arg), arg);
+        } else if (arg.rfind("--evo-layer-interval=", 0) == 0) {
+            cfg.layer_evo_enabled = true;
+            cfg.evo_layer_interval = parse_int(value_after_equals("--evo-layer-interval="), "--evo-layer-interval");
+        } else if (arg == "--evo-layer-population") {
+            cfg.layer_evo_enabled = true;
+            cfg.evo_layer_population = parse_int(require_value(argc, argv, &i, arg), arg);
+        } else if (arg.rfind("--evo-layer-population=", 0) == 0) {
+            cfg.layer_evo_enabled = true;
+            cfg.evo_layer_population = parse_int(value_after_equals("--evo-layer-population="), "--evo-layer-population");
+        } else if (arg == "--evo-layer-mutation-scale") {
+            cfg.layer_evo_enabled = true;
+            cfg.evo_layer_mutation_scale = parse_double(require_value(argc, argv, &i, arg), arg);
+        } else if (arg.rfind("--evo-layer-mutation-scale=", 0) == 0) {
+            cfg.layer_evo_enabled = true;
+            cfg.evo_layer_mutation_scale =
+                parse_double(value_after_equals("--evo-layer-mutation-scale="), "--evo-layer-mutation-scale");
         } else if (arg == "--batch-size") {
             cfg.batch_size = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--train-seq-len") {

@@ -159,6 +159,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Extend native GPT checkpoint text-prompt inference with GPT-2 tokenization in the lightweight wrapper so `.bin` checkpoint inference no longer needs the transitional external sampler bridge.
 - [x] Add GPT-2 evo raw Tile-CUDA trainer ABI for device-side candidate mutation, best-loss selection, and best-candidate adoption without graph-editor tensor flow.
 - [x] Add GPT-2 evo compiled C++ `--smoke-evo-kernels` path that loads the raw evo ABI, launches mutate/select/adopt on CUDA device buffers, and verifies best-candidate copyback without Python/Torch, datasets, or graph-editor payloads.
+- [x] Wire the dense GPT native `--train-transformer-lm` loop to the raw layer-evo mutate/select/adopt ABI cadence behind `--layer-evo`, targeting the selected block's float32 `ln1.weight` on device and reporting `graph_editor_tensor_flow: false` in plan/runtime JSON. Candidate losses are still placeholder device zeros, so the full forward-only candidate-evaluation task below remains open.
 - [ ] Wire GPT-2 evo native layer-evolution forward-only candidate evaluation into the dense GPT trainer loop and call the evo ABI primitives without graph-editor tensor flow.
 - [x] Expose NanoGPT preflight JSON with separate `available_native_kernels` and `required_native_kernels` lists.
 - [x] Add NanoGPT `--check-tile-ops` compiled C++ path that `dlopen`s `libnfn_native_train_tile_ops.so` and verifies required raw ABI symbols without Python/Torch.

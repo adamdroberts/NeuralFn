@@ -1593,6 +1593,18 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["training_step_plan"]["backward_stage_count"] > 0
     assert any(stage["name"] == "h.0.attn.sdpa.forward" for stage in tile_payload["training_step_plan"]["stages"])
     assert any(stage["name"] == "adamw_step" for stage in tile_payload["training_step_plan"]["stages"])
+    assert tile_payload["layer_evo"] == {
+        "enabled": False,
+        "graph_editor_tensor_flow": False,
+        "target_parameter": "block_6.ln1.weight",
+        "target_parameter_dtype": "float32",
+        "layer_index": 6,
+        "interval": 10,
+        "population": 8,
+        "mutation_scale": 0.02,
+        "forward_candidate_eval_enabled": False,
+        "candidate_loss_source": "placeholder-device-zero-loss-selects-current-candidate",
+    }
     assert tile_payload["attention_forward_strategy"] == "tk-sm120-packed-qkv-bf16-flashattention"
     assert tile_payload["attention_forward_score_reuse_value_dim"] == 64
     assert tile_payload["attention_forward_scalar_cta_elision_factor"] == 64
@@ -1713,6 +1725,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         == "nfn_native_tile_linear_backward_weight_accumulate_float32"
     )
     assert "nfn_native_tile_scaled_dot_product_attention_backward_float32" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_evo_mutate_candidates_float32" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_evo_select_best_loss_float32" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_evo_adopt_candidate_float32" in tile_payload["available_native_kernels"]
     assert (
         "nfn_native_tile_scaled_dot_product_attention_backward_from_merged_grad_float32"
         in tile_payload["available_native_kernels"]
@@ -2381,6 +2396,26 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["seq_len"] == 2
     assert train_transformer_payload["trained_layers"] == 12
     assert train_transformer_payload["target_layers"] == 12
+    assert train_transformer_payload["layer_evo"] == {
+        "enabled": False,
+        "runtime_enabled": False,
+        "graph_editor_tensor_flow": False,
+        "target_parameter": "block_6.ln1.weight",
+        "target_parameter_dtype": "float32",
+        "layer_index": 6,
+        "interval": 10,
+        "population": 8,
+        "mutation_scale": 0.02,
+        "parameter_elements": 0,
+        "candidate_elements": 0,
+        "runs": 0,
+        "mutate_kernel_launches": 0,
+        "select_kernel_launches": 0,
+        "adopt_kernel_launches": 0,
+        "forward_candidate_eval_enabled": False,
+        "candidate_loss_source": "placeholder-device-zero-loss-selects-current-candidate",
+        "required_next_step": "forward-only candidate loss evaluation for mutated evo-layer weights",
+    }
     assert train_transformer_payload["vocab"] == 50257
     assert train_transformer_payload["padded_vocab"] == 50304
     assert train_transformer_payload["lm_head_public_vocab_ce_enabled"] is True
@@ -2980,6 +3015,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32"
         in train_transformer_payload["kernels"]
     )
+    assert "nfn_native_tile_evo_mutate_candidates_float32" in train_transformer_payload["kernels"]
+    assert "nfn_native_tile_evo_select_best_loss_float32" in train_transformer_payload["kernels"]
+    assert "nfn_native_tile_evo_adopt_candidate_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_uint16_to_int64" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_token_embedding_u16_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_token_embedding_backward_weight_u16_float32" in train_transformer_payload["kernels"]
@@ -4219,6 +4257,15 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "setup.float_arena_materialize" in gpt2_source_text
     assert "setup.zero_init" in gpt2_source_text
     assert "setup.block_weight_bf16_initial_refresh" in gpt2_source_text
+    assert "--layer-evo" in gpt2_source_text
+    assert "--native-cuda-layer-evo" in gpt2_source_text
+    assert "layer_evo.graph_editor_tensor_flow" not in gpt2_source_text
+    assert "graph_editor_tensor_flow" in gpt2_source_text
+    assert "layer_evo.mutate_candidates.ln1_weight" in gpt2_source_text
+    assert "layer_evo.select_best_loss" in gpt2_source_text
+    assert "layer_evo.adopt_candidate.ln1_weight" in gpt2_source_text
+    assert "placeholder-device-zero-loss-selects-current-candidate" in gpt2_source_text
+    assert "forward-only candidate loss evaluation for mutated evo-layer weights" in gpt2_source_text
     assert "nfn_native_tile_sumsq_partials_many_float32" in header_text
     assert "nfn_native_tile_sumsq_partials_many_bf16_bits_float32" in header_text
     assert "launch_sumsq_partials_many_float32" in source_text

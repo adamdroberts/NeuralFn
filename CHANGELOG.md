@@ -6,6 +6,38 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Wire dense GPT native layer-evo ABI cadence
+
+#### Added
+
+- Added `--layer-evo`, `--enable-layer-evo`, `--native-cuda-layer-evo`,
+  `--no-layer-evo`, `--evo-layer-index`, `--evo-layer-interval`,
+  `--evo-layer-population`, and `--evo-layer-mutation-scale` to the compiled
+  dense GPT native trainer.
+- Dense GPT `--print-plan` and training JSON now include a `layer_evo` block
+  reporting the selected target parameter, cadence, population, mutation scale,
+  kernel launch counters, and `graph_editor_tensor_flow: false`.
+- The native `--train-transformer-lm` optimizer loop now allocates device
+  candidate workspace for the selected block's float32 `block_N.ln1.weight` and
+  calls the raw Tile-CUDA mutate/select/adopt ABI kernels when `--layer-evo` is
+  enabled. Candidate losses are currently placeholder device zeros, so
+  forward-only candidate loss evaluation remains the next step before this is
+  the full GPT-2 evo training algorithm.
+
+#### Verification
+
+- Ran `bash tools/build_native_gpt_cli.sh`.
+- Ran a one-step live CUDA smoke with
+  `build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --batch-size 1 --train-seq-len 1024 --train-batch-tokens 1024 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 1 --native-cuda-checkpoint-every 0 --no-checkpoint --layer-evo --evo-layer-interval 1 --evo-layer-population 3 --tile-ops-lib build/libnfn_native_train_tile_ops.so --json-out /tmp/nfn_layer_evo_smoke.json`,
+  which completed with `passed: true`, `layer_evo.runs: 1`, and one
+  mutate/select/adopt launch each.
+- Rejected a refreshed `--lm-head-row-chunk-size 4096` candidate in the paired
+  same-script native benchmark because it measured `1.003888x` train-loop wall
+  time and `0.996133x` tokens/sec versus the current default.
+- Ran `python -m pytest tests/test_native_gpt2.py::test_missing_family_native_trainers_build_and_unified_frontend_dispatches -q`.
+- Ran `python -m pytest tests/test_native_gpt2.py::test_native_train_tile_ops_builds_torch_free_c_abi -q`
+  (skipped after reaching the local build/device gate).
+
 ### 2026-06-17 Fix NanoGPT native vocabulary default
 
 #### Changed
