@@ -356,7 +356,7 @@ void print_usage(const char* program) {
         << "                                     Inspect a native dense GPT model_*.bin checkpoint as compiled C++ JSON without CUDA/Torch/dataset setup\n"
         << "  --inspect-checkpoint PATH         Alias for --native-info --native-checkpoint PATH\n"
         << "  --sample-checkpoint PATH --prompt-tokens IDS\n"
-        << "                                     Validate native checkpoint prompt-token sampling inputs in compiled C++; CUDA Tile forward sampling is reported pending\n"
+        << "                                     Run one CUDA Tile checkpoint forward pass and return the next token for prompt-token input\n"
         << "  --checkpoint-logits-smoke --native-checkpoint PATH --prompt-tokens IDS\n"
         << "                                     Load checkpoint embeddings/final norm and run last-token tied LM-head logits on CUDA Tile kernels\n"
         << "  --checkpoint-qkv-smoke --native-checkpoint PATH --prompt-tokens IDS\n"
