@@ -20,6 +20,10 @@ Future updates should append new entries here rather than replacing older notes.
   `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,2304,65536,N,T,0` measured
   noise-equivalent mean train-loop time and slightly slower median train-loop
   time versus the default heuristic selection, so no default route changed.
+- Recorded two follow-up MLP dWeight hot-shape bisections without promoting a
+  route change: `3072,768,65536,N,T,0` measured only a small mean/median win,
+  while `768,3072,65536,N,T,0` reversed on the five-sample confirmation and
+  measured slower than the default heuristic selection.
 
 #### Verification
 
@@ -34,6 +38,14 @@ Future updates should append new entries here rather than replacing older notes.
   train-loop wall time, `1.001401x` median train-loop wall time, and
   `1.000185x` mean tokens/sec, so the shape-specific override remains
   diagnostic-only.
+- Ran `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=3072,768,65536,N,T,0` through
+  the same 3-sample paired benchmark; it measured `0.998065x` mean train-loop
+  wall time and `0.998219x` median train-loop wall time, which is too small to
+  justify a default change.
+- Ran `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,3072,65536,N,T,0` through
+  a 5-sample confirmation after a noisy 3-sample result; the confirmation
+  measured `1.015160x` train-loop wall time and `0.985688x` tokens/sec, so the
+  default heuristic selection remains unchanged.
 
 ### 2026-06-17 Add canonical GPT inference entrypoint
 
