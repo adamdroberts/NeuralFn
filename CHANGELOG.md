@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Record LM-head 12288 row-chunk reject
+
+#### Changed
+
+- Rejected `--lm-head-row-chunk-size 12288` for the dense GPT SM120 default
+  shape. It sits between the current 8192-row default and the already-rejected
+  16384-row probe, but it was slower in same-script comparison.
+- No runtime default changed. The 8192-row LM-head chunk remains the selected
+  workstation profile.
+
+#### Verification
+
+- Dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so --lm-head-row-chunk-size 12288" --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --command-timeout-seconds 1800 --json-out /tmp/nfn_lm_head_row_chunk_12288_pair.json`
+  measured the candidate at `1.006439x` train-loop wall time and `0.993616x`
+  tokens/sec versus the 8192-row default.
+
 ### 2026-06-17 Native GPT runner auto no longer external-falls back
 
 #### Changed
