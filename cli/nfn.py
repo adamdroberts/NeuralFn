@@ -126,6 +126,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --checkpoint PATH
           --checkpoint-tokenizer PATH
           --native-info
+          --native-sampler-script PATH
           --prompt TEXT
           --prompt-tokens IDS
           --max-new-tokens N
@@ -138,6 +139,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
         examples:
           nfn infer --graph ~/NeuralFn/artifacts/gpt2_evo.json --weights ~/NeuralFn/artifacts/gpt2_evo.pt --prompt "Once upon a time"
           nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --native-info
+          nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt "Once upon a time"
           nfn infer --checkpoint ~/NeuralFn/artifacts/final_model.pt --checkpoint-tokenizer tokenizer.model --prompt "Hello"
         """,
     "eval": """\
@@ -320,14 +322,22 @@ def _lightweight_native_gpt_infer_main(argv: list[str] | None = None) -> int:
     if info.step is not None:
         marker = "present" if info.done_marker_exists else "missing"
         print(f"  checkpoint_step: {info.step} (DONE marker {marker})")
-    print()
-    print(
-        "Native GPT prompt inference is not wired yet. This checkpoint is a "
-        "llm.kittens/NeuralFn native .bin artifact, not a graph-backed Torch .pt file. "
-        "Use train-time sampling with --native-cuda-sample-every today, or build the "
-        "native GPT inference executable before using this checkpoint for prompt generation."
+    if _has_any(tokens, "--native-info"):
+        return 0
+    from argparse import Namespace
+    from infer_gpt2 import run_native_checkpoint_sampler
+
+    args = Namespace(
+        checkpoint=checkpoint,
+        native_sampler_script=_arg_value(tokens, "--native-sampler-script") or "",
+        prompt=_arg_value(tokens, "--prompt") or "",
+        prompt_tokens=_arg_value(tokens, "--prompt-tokens") or "",
+        max_new_tokens=int(_arg_value(tokens, "--max-new-tokens") or 64),
+        temperature=float(_arg_value(tokens, "--temperature") or 1.0),
+        top_k=int(_arg_value(tokens, "--top-k") or 0),
+        device=_arg_value(tokens, "--device") or "auto",
     )
-    return 0 if _has_any(tokens, "--native-info") else 2
+    return run_native_checkpoint_sampler(args, checkpoint)
 
 
 def _native_gpt_argv(argv: list[str]) -> list[str]:

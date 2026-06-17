@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Route native GPT checkpoint inference to a matching sampler
+
+#### Changed
+
+- `python cli/scripts/infer_gpt2.py --native-checkpoint model_*.bin --prompt ...`
+  and `nfn infer --checkpoint model_*.bin --prompt ...` now recognize
+  llm.kittens/NeuralFn native GPT `.bin` checkpoints and dispatch prompt
+  generation to a matching sampler script instead of falling into the
+  graph-backed runtime or stopping after metadata.
+- The sampler path defaults to `/mnt/disk2/dev/open-source/llm.kittens/sample_gpt2.py`
+  when present and can be overridden with `NFN_NATIVE_GPT_SAMPLE_SCRIPT` or
+  `--native-sampler-script`. The parent `nfn` lightweight checkpoint path still
+  avoids importing `nfn_impl`; `--native-info` remains a Torch-free metadata
+  inspection path.
+- This is a compatibility bridge for prompt generation from native `.bin`
+  checkpoints while the dedicated CUDA Tile native GPT inference executable is
+  still pending.
+
+#### Verification
+
+- Ran `python -m pytest cli/tests/test_train_gpt2_native.py -q -k
+  "native_checkpoint_info or native_checkpoint_is_recognized or native_checkpoint_dispatches_sampler"`.
+
 ### 2026-06-17 Record SM120 native GPT kernel bisection rejects
 
 #### Benchmark evidence

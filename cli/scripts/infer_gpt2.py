@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 from pathlib import Path
+import subprocess
 import sys
 
 from cli_utils import artifact_path, create_argument_parser
@@ -114,6 +116,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print native GPT-2 checkpoint metadata without importing the graph-backed runtime.",
     )
+    parser.add_argument(
+        "--native-sampler-script",
+        default=os.environ.get("NFN_NATIVE_GPT_SAMPLE_SCRIPT", ""),
+        help=(
+            "Optional prompt-capable sampler for native .bin checkpoints. Defaults to "
+            "llm.kittens/sample_gpt2.py when it is present."
+        ),
+    )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--graph", default="")
     parser.add_argument("--weights", default="")
@@ -152,6 +162,62 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def resolve_native_sampler_script(raw: str = "") -> Path | None:
+    requested = str(raw or os.environ.get("NFN_NATIVE_GPT_SAMPLE_SCRIPT", "")).strip()
+    candidates = []
+    if requested:
+        candidates.append(Path(requested).expanduser())
+    candidates.append(Path("/mnt/disk2/dev/open-source/llm.kittens/sample_gpt2.py"))
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+
+def native_checkpoint_sampler_argv(args: argparse.Namespace, checkpoint: str | Path) -> list[str] | None:
+    script = resolve_native_sampler_script(getattr(args, "native_sampler_script", ""))
+    if script is None:
+        return None
+    top_k = getattr(args, "top_k", None)
+    top_k_value = "None" if top_k is None or int(top_k) <= 0 else str(int(top_k))
+    device = str(getattr(args, "device", "auto") or "auto")
+    return [
+        sys.executable,
+        str(script),
+        "--checkpoint",
+        str(Path(checkpoint).expanduser()),
+        "--prompt",
+        str(getattr(args, "prompt", "") or ""),
+        "--max_tokens",
+        str(int(getattr(args, "max_new_tokens", 64))),
+        "--temperature",
+        str(float(getattr(args, "temperature", 1.0))),
+        "--top_k",
+        top_k_value,
+        "--device",
+        device,
+    ]
+
+
+def run_native_checkpoint_sampler(args: argparse.Namespace, checkpoint: str | Path) -> int:
+    if str(getattr(args, "prompt_tokens", "") or "").strip():
+        print("Native .bin checkpoint sampling currently accepts --prompt text, not --prompt-tokens.", file=sys.stderr)
+        return 2
+    command = native_checkpoint_sampler_argv(args, checkpoint)
+    if command is None:
+        print(
+            "Native GPT prompt inference needs a sampler script. Set "
+            "NFN_NATIVE_GPT_SAMPLE_SCRIPT or --native-sampler-script to "
+            "llm.kittens/sample_gpt2.py while the CUDA Tile inference executable is being built.",
+            file=sys.stderr,
+        )
+        return 2
+    env = os.environ.copy()
+    env.setdefault("CUDA_VISIBLE_DEVICES", "0")
+    env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
+    return int(subprocess.run(command, env=env, check=False).returncode)
+
+
 def handle_native_checkpoint_request(args: argparse.Namespace) -> int | None:
     native_checkpoint = str(getattr(args, "native_checkpoint", "") or "").strip()
     if not native_checkpoint and not bool(getattr(args, "native_info", False)):
@@ -172,12 +238,7 @@ def handle_native_checkpoint_request(args: argparse.Namespace) -> int | None:
         print(f"  checkpoint_step: {info.step} (DONE marker {marker})")
     if bool(getattr(args, "native_info", False)):
         return 0
-    print(
-        "Native GPT prompt inference is not wired yet. This checkpoint is not a "
-        "graph-backed Torch artifact; use train-time sampling today or build the "
-        "native GPT inference executable before prompt generation."
-    )
-    return 2
+    return run_native_checkpoint_sampler(args, native_checkpoint)
 
 
 def main() -> int:
