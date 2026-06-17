@@ -754,7 +754,9 @@ Keep that path compiled-C++ only: it validates checkpoint metadata, file size,
 context length, vocab bounds, and token parsing before CUDA, Torch, dataset
 setup, or graph-editor node flow, then executes one full CUDA Tile checkpoint
 forward pass per generated token and returns up to `--max-new-tokens` IDs in
-`generated_tokens`.
+`generated_tokens`. Successful wrapper calls reprint the compiled JSON and then
+print `Generated token ids` plus GPT-2-decoded `Generated text` without importing
+Torch.
 Use `nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint PATH
 --checkpoint-load-tensor NAME --checkpoint-load-elements N` to verify the next
 native sampler prerequisite: named tensor selection from the decoded layout,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 from pathlib import Path
@@ -211,7 +212,14 @@ def run_native_checkpoint_token_sampler(args: argparse.Namespace, checkpoint: st
     env.setdefault("CUDA_VISIBLE_DEVICES", "0")
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
     try:
-        return int(subprocess.run(command, env=env, check=False).returncode)
+        result = subprocess.run(
+            command,
+            env=env,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
     except FileNotFoundError:
         print(
             "Native GPT prompt-token inference needs the compiled nfn_gpt_native_train binary. "
@@ -219,6 +227,39 @@ def run_native_checkpoint_token_sampler(args: argparse.Namespace, checkpoint: st
             file=sys.stderr,
         )
         return 2
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+    if result.stderr:
+        print(result.stderr, end="" if result.stderr.endswith("\n") else "\n", file=sys.stderr)
+    if result.returncode == 0:
+        render_native_checkpoint_sampler_text(result.stdout)
+    return int(result.returncode)
+
+
+def render_native_checkpoint_sampler_text(stdout: str) -> None:
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        return
+    generated_tokens = payload.get("generated_tokens")
+    if not isinstance(generated_tokens, list) or not generated_tokens:
+        return
+    token_ids: list[int] = []
+    for token_id in generated_tokens:
+        if not isinstance(token_id, int):
+            return
+        token_ids.append(int(token_id))
+    print(f"Generated token ids: {token_ids}")
+    try:
+        import tiktoken
+    except Exception:
+        return
+    try:
+        generated_text = tiktoken.get_encoding("gpt2").decode(token_ids)
+    except Exception:
+        return
+    print("Generated text:")
+    print(generated_text)
 
 
 def run_native_checkpoint_sampler(args: argparse.Namespace, checkpoint: str | Path) -> int:

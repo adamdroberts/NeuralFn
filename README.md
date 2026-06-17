@@ -237,7 +237,9 @@ autoregressive CUDA Tile checkpoint forward passes and returns up to
 `--max-new-tokens` IDs in `generated_tokens`. Text prompts are tokenized with
 the GPT-2 tokenizer in the lightweight wrapper and then use the same compiled
 sampler path, so native `.bin` checkpoint prompts no longer need the external
-sampler bridge.
+sampler bridge. After a successful compiled sampler run, the wrapper also prints
+the generated token IDs and GPT-2-decoded generated text without importing
+Torch.
 
 `nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint
 model_########.bin --checkpoint-load-elements 1024` is the next compiled

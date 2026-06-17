@@ -21,10 +21,14 @@ Future updates should append new entries here rather than replacing older notes.
 - Empty native checkpoint prompts seed generation with the GPT-2 end-of-text
   token `50256`; non-GPT-2 tokenizer overrides are rejected before launching the
   compiled sampler.
+- Successful native sampler runs still print the compiled JSON, then the wrapper
+  prints `Generated token ids` and GPT-2-decoded `Generated text` without
+  importing Torch.
 
 #### Verification
 
 - Ran `python -m pytest cli/tests/test_train_gpt2_native.py -q -k native_checkpoint`.
+- Ran `python -m pytest cli/tests/test_train_gpt2_native.py -q -k native_checkpoint_decodes_compiled_sampler_tokens`.
 - Ran `python -m pytest cli/tests/test_train_gpt2_native.py -q -k native_checkpoint_text_prompt_dispatches_compiled_sampler`.
 - Ran `python tools/check_native_no_torch_deps.py`.
 - Ran `git diff --check`.
