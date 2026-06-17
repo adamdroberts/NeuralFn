@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Record SM120 parity bisection rejects
+
+#### Changed
+
+- Updated `todo-tile-cuda.md` with the clean unprofiled 10-step NeuralFn versus
+  llm.kittens parity result after the profiling-control fix. The dedicated RTX
+  5090 run measured NeuralFn at `1.054152x` llm.kittens train-loop time and
+  `0.947113x` tokens/sec.
+- Added the latest rejected same-script kernel bisections so the next pass does
+  not retest slower cuBLASLt heuristic, packed-attention tape, LayerNorm affine
+  row-chunk, or LM-head row-chunk candidates.
+
+#### Verification
+
+- Ran same-script paired benchmarks on the dedicated RTX 5090 for
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX=2`,
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE=0`,
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_STATS=0`,
+  `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=512`,
+  `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128`, and
+  `--lm-head-row-chunk-size 16384`; each candidate regressed train-loop time
+  against the current default.
+
 ### 2026-06-17 Make SM120 parity profiling explicit
 
 #### Changed
