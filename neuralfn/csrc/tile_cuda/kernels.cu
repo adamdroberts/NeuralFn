@@ -248,6 +248,31 @@ std::int64_t tk_packed_attention_backward_max_batch_per_launch() {
   return value;
 }
 
+bool tk_packed_attention_dprep_grid3d_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_GRID3D");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_PACKED_ATTENTION_DPREP_GRID3D");
+    }
+    if (value == nullptr || value[0] == '\0') {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
 void release_tk_attention_workspace(TkAttentionWorkspace& workspace) {
   if (workspace.q_bf != nullptr) cudaFree(workspace.q_bf);
   if (workspace.k_bf != nullptr) cudaFree(workspace.k_bf);
@@ -480,6 +505,42 @@ __global__ void packed_attention_dprep_kernel(
   }
 }
 
+__global__ void packed_attention_dprep_grid3d_kernel(
+    const std::uint16_t* __restrict__ out_btc_bf16_bits,
+    const float* __restrict__ grad_out_btc,
+    __nv_bfloat16* __restrict__ out_heads_bf16,
+    __nv_bfloat16* __restrict__ grad_out_heads_bf16,
+    float* __restrict__ d,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim) {
+  const std::int64_t t = static_cast<std::int64_t>(blockIdx.x) * blockDim.y + threadIdx.y;
+  const std::int64_t h = static_cast<std::int64_t>(blockIdx.y);
+  const std::int64_t b = static_cast<std::int64_t>(blockIdx.z);
+  if (b >= batch || h >= heads || t >= seq_len) {
+    return;
+  }
+  const std::int64_t merged_base = ((b * seq_len + t) * heads + h) * head_dim;
+  const std::int64_t row = (b * heads + h) * seq_len + t;
+  const std::int64_t head_base = row * head_dim;
+  float acc = 0.0f;
+  for (std::int64_t d_idx = threadIdx.x; d_idx < head_dim; d_idx += warpSize) {
+    const std::uint16_t out_bits = out_btc_bf16_bits[merged_base + d_idx];
+    const float out_value = bf16_bits_to_f32_device(out_bits);
+    const float grad_value = grad_out_btc[merged_base + d_idx];
+    out_heads_bf16[head_base + d_idx] = reinterpret_cast<const __nv_bfloat16&>(out_bits);
+    grad_out_heads_bf16[head_base + d_idx] = __float2bfloat16(grad_value);
+    acc += out_value * grad_value;
+  }
+  for (int offset = warpSize / 2; offset > 0; offset /= 2) {
+    acc += __shfl_down_sync(0xffffffff, acc, offset);
+  }
+  if (threadIdx.x == 0) {
+    d[row] = acc;
+  }
+}
+
 __global__ void packed_attention_dprep_bf16_grad_kernel(
     const std::uint16_t* __restrict__ out_btc_bf16_bits,
     const std::uint16_t* __restrict__ grad_out_btc_bf16_bits,
@@ -499,6 +560,43 @@ __global__ void packed_attention_dprep_bf16_grad_kernel(
   const std::int64_t h = (row / seq_len) % heads;
   const std::int64_t b = row / (heads * seq_len);
   const std::int64_t merged_base = ((b * seq_len + t) * heads + h) * head_dim;
+  const std::int64_t head_base = row * head_dim;
+  float acc = 0.0f;
+  for (std::int64_t d_idx = threadIdx.x; d_idx < head_dim; d_idx += warpSize) {
+    const std::uint16_t out_bits = out_btc_bf16_bits[merged_base + d_idx];
+    const std::uint16_t grad_bits = grad_out_btc_bf16_bits[merged_base + d_idx];
+    const float out_value = bf16_bits_to_f32_device(out_bits);
+    const float grad_value = bf16_bits_to_f32_device(grad_bits);
+    out_heads_bf16[head_base + d_idx] = reinterpret_cast<const __nv_bfloat16&>(out_bits);
+    grad_out_heads_bf16[head_base + d_idx] = reinterpret_cast<const __nv_bfloat16&>(grad_bits);
+    acc += out_value * grad_value;
+  }
+  for (int offset = warpSize / 2; offset > 0; offset /= 2) {
+    acc += __shfl_down_sync(0xffffffff, acc, offset);
+  }
+  if (threadIdx.x == 0) {
+    d[row] = acc;
+  }
+}
+
+__global__ void packed_attention_dprep_bf16_grad_grid3d_kernel(
+    const std::uint16_t* __restrict__ out_btc_bf16_bits,
+    const std::uint16_t* __restrict__ grad_out_btc_bf16_bits,
+    __nv_bfloat16* __restrict__ out_heads_bf16,
+    __nv_bfloat16* __restrict__ grad_out_heads_bf16,
+    float* __restrict__ d,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim) {
+  const std::int64_t t = static_cast<std::int64_t>(blockIdx.x) * blockDim.y + threadIdx.y;
+  const std::int64_t h = static_cast<std::int64_t>(blockIdx.y);
+  const std::int64_t b = static_cast<std::int64_t>(blockIdx.z);
+  if (b >= batch || h >= heads || t >= seq_len) {
+    return;
+  }
+  const std::int64_t merged_base = ((b * seq_len + t) * heads + h) * head_dim;
+  const std::int64_t row = (b * heads + h) * seq_len + t;
   const std::int64_t head_base = row * head_dim;
   float acc = 0.0f;
   for (std::int64_t d_idx = threadIdx.x; d_idx < head_dim; d_idx += warpSize) {
@@ -985,29 +1083,59 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
     const std::int64_t chunk_batch = std::min(max_batch_per_launch, batch - batch_begin);
     const std::int64_t chunk_rows = chunk_batch * row_elements_per_batch;
     dim3 dprep_block(32, 3, 1);
-    const int dprep_grid = static_cast<int>((chunk_rows + dprep_block.y - 1) / dprep_block.y);
-    if (grad_out_bf16_bits != nullptr) {
-      packed_attention_dprep_bf16_grad_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
-          out_bf16_bits + batch_begin * merged_elements_per_batch,
-          grad_out_bf16_bits + batch_begin * merged_elements_per_batch,
-          workspace->o_bf + batch_begin * head_elements_per_batch,
-          workspace->go_bf + batch_begin * head_elements_per_batch,
-          workspace->d + batch_begin * row_elements_per_batch,
-          chunk_batch,
-          heads,
-          seq_len,
-          head_dim);
+    if (tk_packed_attention_dprep_grid3d_enabled()) {
+      dim3 dprep_grid(
+          static_cast<unsigned int>((seq_len + dprep_block.y - 1) / dprep_block.y),
+          static_cast<unsigned int>(heads),
+          static_cast<unsigned int>(chunk_batch));
+      if (grad_out_bf16_bits != nullptr) {
+        packed_attention_dprep_bf16_grad_grid3d_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
+            out_bf16_bits + batch_begin * merged_elements_per_batch,
+            grad_out_bf16_bits + batch_begin * merged_elements_per_batch,
+            workspace->o_bf + batch_begin * head_elements_per_batch,
+            workspace->go_bf + batch_begin * head_elements_per_batch,
+            workspace->d + batch_begin * row_elements_per_batch,
+            chunk_batch,
+            heads,
+            seq_len,
+            head_dim);
+      } else {
+        packed_attention_dprep_grid3d_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
+            out_bf16_bits + batch_begin * merged_elements_per_batch,
+            grad_out + batch_begin * merged_elements_per_batch,
+            workspace->o_bf + batch_begin * head_elements_per_batch,
+            workspace->go_bf + batch_begin * head_elements_per_batch,
+            workspace->d + batch_begin * row_elements_per_batch,
+            chunk_batch,
+            heads,
+            seq_len,
+            head_dim);
+      }
     } else {
-      packed_attention_dprep_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
-          out_bf16_bits + batch_begin * merged_elements_per_batch,
-          grad_out + batch_begin * merged_elements_per_batch,
-          workspace->o_bf + batch_begin * head_elements_per_batch,
-          workspace->go_bf + batch_begin * head_elements_per_batch,
-          workspace->d + batch_begin * row_elements_per_batch,
-          chunk_batch,
-          heads,
-          seq_len,
-          head_dim);
+      const int dprep_grid = static_cast<int>((chunk_rows + dprep_block.y - 1) / dprep_block.y);
+      if (grad_out_bf16_bits != nullptr) {
+        packed_attention_dprep_bf16_grad_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
+            out_bf16_bits + batch_begin * merged_elements_per_batch,
+            grad_out_bf16_bits + batch_begin * merged_elements_per_batch,
+            workspace->o_bf + batch_begin * head_elements_per_batch,
+            workspace->go_bf + batch_begin * head_elements_per_batch,
+            workspace->d + batch_begin * row_elements_per_batch,
+            chunk_batch,
+            heads,
+            seq_len,
+            head_dim);
+      } else {
+        packed_attention_dprep_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
+            out_bf16_bits + batch_begin * merged_elements_per_batch,
+            grad_out + batch_begin * merged_elements_per_batch,
+            workspace->o_bf + batch_begin * head_elements_per_batch,
+            workspace->go_bf + batch_begin * head_elements_per_batch,
+            workspace->d + batch_begin * row_elements_per_batch,
+            chunk_batch,
+            heads,
+            seq_len,
+            head_dim);
+      }
     }
     auto* qkv = const_cast<__nv_bfloat16*>(
         reinterpret_cast<const __nv_bfloat16*>(

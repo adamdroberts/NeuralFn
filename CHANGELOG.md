@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Reject 3D packed-attention dprep default
+
+#### Changed
+
+- Added diagnostic packed-attention dprep kernels that launch over
+  batch/head/time dimensions instead of remapping a flat row index with
+  per-row division and modulo.
+- Added `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_GRID3D=1` and the
+  `NFN_NATIVE_GPT2_PACKED_ATTENTION_DPREP_GRID3D=1` fallback to test the 3D
+  dprep launch during paired timing; the row-linear dprep launch remains the
+  default because the 3D candidate measured slower.
+- Updated README, CLI docs, and Python SDK Tile-CUDA docs for the diagnostic
+  packed attention dprep route and fallback switch.
+
+#### Verification
+
+- Ran `python -m pytest tests/test_native_gpt2.py::test_native_train_tile_ops_builds_torch_free_c_abi -q` (static assertions passed; the optional runtime portion skipped in this environment).
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with `bash tools/build_native_train_tile_ops.sh`.
+- Ran `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 16 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so --profile-json /tmp/nfn_dprep_grid3d_smoke.json`.
+- Rebuilt after restoring the row-linear default and reran the one-step smoke
+  with `--profile-json /tmp/nfn_dprep_default_off_smoke.json`.
+- Ran a 3-sample paired benchmark with the old row-linear dprep as baseline and the 3D dprep as candidate; it measured `0.999295x` mean train-loop wall time and `1.000730x` mean tokens/sec, which was too small to promote by itself.
+- Ran a 5-sample paired confirmation with the same baseline/candidate; it measured `1.008389x` train-loop wall time and `0.991895x` tokens/sec, so the 3D dprep remains diagnostic-only and default-off.
+
 ### 2026-06-17 Add shape-specific cuBLASLt heuristic bisection
 
 #### Changed

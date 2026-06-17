@@ -1114,7 +1114,10 @@ CUDA BF16 bias kernel. Set `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=0` only when
 comparing against the older split-to-heads bridge. The packed backward batch cap
 defaults to 64 so the workstation `64 x 1024` microbatch runs as one TK backward
 chunk; set `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48` to reproduce
-the previous split for paired benchmarks. `attention_backward_tk_launch_count`
+the previous split for paired benchmarks. Packed attention dprep keeps the older row-linear launch by default; set
+`NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_GRID3D=1` only for paired timing of the
+diagnostic 3D batch/head/time launch, which avoids per-row division/modulo but
+measured slower on the dedicated RTX 5090. `attention_backward_tk_launch_count`
 now counts packed backward chunks instead of only wrapper calls. When
 `NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS=1` is set with the split path,
 runtime JSON switches `attention_activation_storage_strategy` to
