@@ -753,7 +753,8 @@ setup, or graph-editor node flow. It currently reports
 `native-checkpoint-sampler-pending` until the CUDA Tile forward sampler lands;
 text prompts still use the temporary sampler bridge.
 Use `nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint PATH
---checkpoint-load-elements N` to verify the next native sampler prerequisite:
+--checkpoint-load-tensor NAME --checkpoint-load-elements N` to verify the next
+native sampler prerequisite: named tensor selection from the decoded layout,
 bounded bf16 payload loading, CUDA copy, Tile bf16-to-float conversion, and
 copyback without Torch or graph-editor tensors.
 Use `nfn_gpt_native_train --checkpoint-layout --native-checkpoint PATH` for the

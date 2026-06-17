@@ -93,6 +93,7 @@ struct Config {
     int sample_max_new_tokens = 64;
     bool checkpoint_load_smoke = false;
     int checkpoint_load_elements = 1024;
+    std::string checkpoint_load_tensor;
     bool checkpoint_layout = false;
     int checkpoint_layout_sample_buffers = 8;
 };
@@ -349,6 +350,7 @@ void print_usage(const char* program) {
         << "                                     Validate native checkpoint prompt-token sampling inputs in compiled C++; CUDA Tile forward sampling is reported pending\n"
         << "  --checkpoint-load-smoke --native-checkpoint PATH\n"
         << "                                     Load a bounded bf16 checkpoint payload slice to CUDA and convert it through Tile kernels\n"
+        << "  --checkpoint-load-tensor NAME     Optional tensor name for --checkpoint-load-smoke; defaults to payload start\n"
         << "  --checkpoint-layout --native-checkpoint PATH\n"
         << "                                     Decode native checkpoint tensor layout and payload offsets as compiled C++ JSON\n"
         << "  --cuda-runtime-lib PATH           libcudart path for Tile-CUDA smokes/training; defaults to NFN_CUDA_RUNTIME_LIB/libcudart.so\n"
@@ -1025,6 +1027,11 @@ Fn load_symbol(void* handle, const char* name);
 std::string dl_last_error(const char* fallback);
 std::vector<std::string> cuda_runtime_candidates(const Config& cfg);
 std::string default_tile_ops_lib(const char* program);
+std::vector<BufferPlan> build_native_gpt_checkpoint_layout(
+    std::int64_t max_seq_len,
+    std::int64_t padded_vocab_size,
+    std::int64_t num_layers,
+    std::int64_t channels);
 
 int print_native_checkpoint_load_smoke_json(const Config& cfg, const char* program) {
     constexpr std::int32_t kCheckpointMagic = 20240326;
@@ -1088,8 +1095,36 @@ int print_native_checkpoint_load_smoke_json(const Config& cfg, const char* progr
                   << " bytes, expected " << expected_file_size << "\n";
         return 2;
     }
-    const std::int64_t load_elements = std::min(requested_elements, parameter_count);
+    std::string selected_tensor = cfg.checkpoint_load_tensor.empty() ? "payload_start" : cfg.checkpoint_load_tensor;
+    std::int64_t selected_tensor_offset = 0;
+    std::int64_t selected_tensor_count = parameter_count;
+    if (!cfg.checkpoint_load_tensor.empty()) {
+        const std::vector<BufferPlan> layout =
+            build_native_gpt_checkpoint_layout(max_seq_len, padded_vocab_size, num_layers, channels);
+        bool found_tensor = false;
+        for (const BufferPlan& buffer : layout) {
+            if (buffer.name == cfg.checkpoint_load_tensor) {
+                selected_tensor_offset = buffer.offset;
+                selected_tensor_count = buffer.count;
+                found_tensor = true;
+                break;
+            }
+        }
+        if (!found_tensor) {
+            std::cerr << "checkpoint tensor not found: " << cfg.checkpoint_load_tensor << "\n";
+            return 2;
+        }
+    }
+    const std::int64_t load_elements = std::min(requested_elements, selected_tensor_count);
     std::vector<std::uint16_t> host_bf16(static_cast<std::size_t>(load_elements), 0);
+    const std::int64_t selected_file_offset =
+        kCheckpointHeaderBytes + selected_tensor_offset * static_cast<std::int64_t>(sizeof(std::uint16_t));
+    in.clear();
+    in.seekg(static_cast<std::streamoff>(selected_file_offset), std::ios::beg);
+    if (!in) {
+        std::cerr << "failed to seek checkpoint tensor payload: " << selected_tensor << "\n";
+        return 2;
+    }
     in.read(
         reinterpret_cast<char*>(host_bf16.data()),
         static_cast<std::streamsize>(host_bf16.size() * sizeof(std::uint16_t)));
@@ -1242,6 +1277,10 @@ int print_native_checkpoint_load_smoke_json(const Config& cfg, const char* progr
         << "  \"checkpoint_version\": " << version << ",\n"
         << "  \"precision\": \"bf16\",\n"
         << "  \"parameter_count\": " << parameter_count << ",\n"
+        << "  \"selected_tensor\": \"" << json_escape(selected_tensor) << "\",\n"
+        << "  \"selected_tensor_offset\": " << selected_tensor_offset << ",\n"
+        << "  \"selected_tensor_count\": " << selected_tensor_count << ",\n"
+        << "  \"selected_tensor_file_offset_bytes\": " << selected_file_offset << ",\n"
         << "  \"load_elements\": " << load_elements << ",\n"
         << "  \"load_bytes_bf16\": " << (load_elements * static_cast<std::int64_t>(sizeof(std::uint16_t))) << ",\n"
         << "  \"load_bytes_float32\": " << (load_elements * static_cast<std::int64_t>(sizeof(float))) << ",\n"
@@ -16542,6 +16581,10 @@ int main(int argc, char** argv) {
         } else if (arg.rfind("--checkpoint-load-elements=", 0) == 0) {
             cfg.checkpoint_load_elements =
                 parse_int(value_after_equals("--checkpoint-load-elements="), "--checkpoint-load-elements");
+        } else if (arg == "--checkpoint-load-tensor") {
+            cfg.checkpoint_load_tensor = require_value(argc, argv, &i, arg);
+        } else if (arg.rfind("--checkpoint-load-tensor=", 0) == 0) {
+            cfg.checkpoint_load_tensor = value_after_equals("--checkpoint-load-tensor=");
         } else if (arg == "--checkpoint-layout") {
             cfg.backend = "tile-cuda";
             cfg.checkpoint_layout = true;

@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add named tensor checkpoint load smoke
+
+#### Changed
+
+- `nfn_gpt_native_train --checkpoint-load-smoke` now accepts
+  `--checkpoint-load-tensor NAME`. The smoke resolves `NAME` through the
+  compiled checkpoint tensor layout, seeks to that tensor's payload/file offset,
+  copies a bounded bf16 slice to CUDA memory, converts it through the Tile
+  bf16-to-float kernel, and verifies copyback parity.
+- The default load-smoke behavior still reads from the payload start. Named
+  tensor loading is the next native inference prerequisite after layout decode:
+  the sampler can now prove that individual checkpoint tensors can be selected
+  and moved to device buffers without Torch, Python datasets, or graph-editor
+  tensor flow.
+
+#### Verification
+
+- Ran `bash tools/build_native_gpt_cli.sh`.
+- Ran `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint /tmp/nfn_checkpoint_layout_smoke/model_00020000.bin --checkpoint-load-tensor h.0.ln_1.weight --checkpoint-load-elements 16 --tile-ops-lib build/libnfn_native_train_tile_ops.so` outside the sandbox because sandboxed GPU/NVML access is blocked.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Add native GPT checkpoint tensor layout decode
 
 #### Changed

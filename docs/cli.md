@@ -1116,7 +1116,7 @@ nfn_gpt_native_train --native-info --native-checkpoint ~/NeuralFn/artifacts/gpt2
 nfn_gpt_native_train --inspect-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin
 nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 16
 nfn_gpt_native_train --sample-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 16
-nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --checkpoint-load-elements 1024
+nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --checkpoint-load-tensor h.0.ln_1.weight --checkpoint-load-elements 1024
 nfn_gpt_native_train --checkpoint-layout --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin
 ```
 
@@ -1133,7 +1133,8 @@ graph-backed chat path will not attempt to load them as Torch checkpoints.
 sampler: it reads a bounded bf16 payload slice from the checkpoint, copies it to
 device memory, converts it with `nfn_native_tile_bf16_bits_to_float32`, and
 verifies copyback without Torch, token-shard resolution, Python datasets, or
-graph-editor tensors.
+graph-editor tensors. Pass `--checkpoint-load-tensor NAME` to seek to a named
+tensor using the decoded checkpoint layout before copying the slice.
 `--checkpoint-layout` is the no-CUDA companion for sampler wiring: it decodes
 the header-derived tensor layout, payload offsets, file offsets, and bounded
 payload samples as compiled C++ JSON.

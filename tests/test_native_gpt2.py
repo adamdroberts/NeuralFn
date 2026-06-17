@@ -1267,6 +1267,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "--inspect-checkpoint PATH" in help_proc.stdout
     assert "--sample-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
     assert "--checkpoint-load-smoke --native-checkpoint PATH" in help_proc.stdout
+    assert "--checkpoint-load-tensor NAME" in help_proc.stdout
     assert "--checkpoint-layout --native-checkpoint PATH" in help_proc.stdout
     assert "--train-transformer-lm" in help_proc.stdout
     assert "--startup-only" in help_proc.stdout
@@ -2989,6 +2990,25 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert missing_load_smoke.returncode == 2
     assert "failed to open native checkpoint" in missing_load_smoke.stderr
+
+    bad_load_tensor = subprocess.run(
+        [
+            str(cli),
+            "--checkpoint-load-smoke",
+            "--native-checkpoint",
+            str(checkpoint_path),
+            "--checkpoint-load-tensor",
+            "h.999.not_a_tensor",
+            "--checkpoint-load-elements",
+            "8",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert bad_load_tensor.returncode == 2
+    assert "checkpoint tensor not found" in bad_load_tensor.stderr
 
     layout_proc = subprocess.run(
         [
