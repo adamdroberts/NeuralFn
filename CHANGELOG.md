@@ -19,6 +19,9 @@ Future updates should append new entries here rather than replacing older notes.
 - Switched the lightweight native checkpoint detection path in `nfn infer` to
   the generic `neuralfn.native_gpt` SDK aliases so native dense GPT checkpoints
   are reported as GPT runtime artifacts rather than GPT-2-only artifacts.
+- Extended `tools/check_native_no_torch_deps.py` to verify native GPT inference
+  metadata entrypoints using a synthetic native checkpoint under the same
+  Torch/NumPy/tiktoken/dataset-manager/`nfn_impl` import blocker.
 - Updated CLI docs and README to direct users to `infer_gpt.py` and the compiled
   `nfn_gpt_native_train --sample-checkpoint` inference path.
 
@@ -28,6 +31,9 @@ Future updates should append new entries here rather than replacing older notes.
 - Ran `python -m pytest cli/tests/test_cli_help_behavior.py -q`.
 - Ran `python -m pytest cli/tests/test_infer_megakernel_artifacts.py -q -k 'gpt or raw_text'`.
 - Ran `python -m pytest cli/tests/test_train_gpt2_native.py -q -k 'infer_gpt or nfn_infer_native_checkpoint_is_recognized'`.
+- Ran `python -m py_compile tools/check_native_no_torch_deps.py cli/scripts/infer_gpt.py cli/scripts/infer_gpt2.py cli/nfn.py`.
+- Ran `python tools/check_native_no_torch_deps.py --skip-artifacts --json`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k 'native_no_torch_dependency_verifier'`.
 
 ### 2026-06-17 Keep paired native profile sidecars timing-neutral
 

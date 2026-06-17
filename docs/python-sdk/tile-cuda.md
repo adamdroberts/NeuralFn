@@ -910,10 +910,11 @@ Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is metadata-on
 
 `tools/check_native_no_torch_deps.py` is the native dependency gate for this
 path. In addition to `ldd` checks for Torch/c10/Python runtime libraries on the
-compiled artifacts, it runs `cli/scripts/train_gpt.py`, `cli/nfn.py train`, and
-`neuralfn.native_gpt*` imports under an import blocker for `torch`, NumPy,
-tiktoken, `server.dataset_manager`, and `nfn_impl`, using a stub compiled CLI so
-the check does not need CUDA.
+compiled artifacts, it runs `cli/scripts/train_gpt.py`, `cli/nfn.py train`,
+`cli/scripts/infer_gpt.py --native-info`, `cli/nfn.py infer --native-checkpoint`,
+and `neuralfn.native_gpt*` imports under an import blocker for `torch`, NumPy,
+tiktoken, `server.dataset_manager`, and `nfn_impl`, using a stub compiled CLI
+and synthetic native checkpoint so the check does not need CUDA.
 
 Dense GPT native `--dry-run` / `--print-plan` JSON reports the implemented
 compiled trainer as `native-transformer-lm-ready` with

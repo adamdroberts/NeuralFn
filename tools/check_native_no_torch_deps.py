@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import struct
 import sys
 import tempfile
 from textwrap import dedent
@@ -65,6 +66,37 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
         ),
     ),
 )
+NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
+NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256
+
+
+def _native_gpt_parameter_count(
+    *,
+    max_seq_len: int,
+    padded_vocab_size: int,
+    num_layers: int,
+    channels: int,
+) -> int:
+    c = int(channels)
+    l = int(num_layers)
+    return int(
+        int(padded_vocab_size) * c
+        + int(max_seq_len) * c
+        + l * c
+        + l * c
+        + l * 3 * c * c
+        + l * 3 * c
+        + l * c * c
+        + l * c
+        + l * c
+        + l * c
+        + l * 4 * c * c
+        + l * 4 * c
+        + l * c * 4 * c
+        + l * c
+        + c
+        + c
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -112,6 +144,39 @@ def _write_native_cli_stub(root: Path) -> Path:
     return stub
 
 
+def _write_native_checkpoint_stub(root: Path) -> Path:
+    checkpoint = root / "model_00000010.bin"
+    max_seq_len = 8
+    vocab_size = 16
+    num_layers = 1
+    num_heads = 1
+    channels = 4
+    padded_vocab_size = 16
+    header = [0] * NATIVE_GPT_CHECKPOINT_HEADER_INTS
+    header[:8] = [
+        NATIVE_GPT_CHECKPOINT_MAGIC,
+        5,
+        max_seq_len,
+        vocab_size,
+        num_layers,
+        num_heads,
+        channels,
+        padded_vocab_size,
+    ]
+    parameter_count = _native_gpt_parameter_count(
+        max_seq_len=max_seq_len,
+        padded_vocab_size=padded_vocab_size,
+        num_layers=num_layers,
+        channels=channels,
+    )
+    checkpoint.write_bytes(
+        struct.pack("<" + "i" * NATIVE_GPT_CHECKPOINT_HEADER_INTS, *header) +
+        b"\0" * (parameter_count * 2)
+    )
+    (root / "DONE_00000010").write_text("", encoding="utf-8")
+    return checkpoint
+
+
 def _write_import_blocker(root: Path) -> None:
     root.joinpath("sitecustomize.py").write_text(
         dedent(
@@ -143,6 +208,7 @@ def python_entrypoint_report(repo_root: Path) -> list[dict[str, object]]:
         temp_root = Path(tmp)
         _write_import_blocker(temp_root)
         native_cli = _write_native_cli_stub(temp_root)
+        native_checkpoint = _write_native_checkpoint_stub(temp_root)
         env = os.environ.copy()
         env["NFN_NATIVE_GPT_CLI"] = str(native_cli)
         env["NFN_NATIVE_GPT2_CLI"] = str(native_cli)
@@ -151,7 +217,31 @@ def python_entrypoint_report(repo_root: Path) -> list[dict[str, object]]:
         )
         env.setdefault("CUDA_VISIBLE_DEVICES", "0")
         env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
-        for name, command in DEFAULT_PYTHON_ENTRYPOINTS:
+        entrypoints = [
+            *DEFAULT_PYTHON_ENTRYPOINTS,
+            (
+                "infer_gpt_native_info",
+                (
+                    sys.executable,
+                    "cli/scripts/infer_gpt.py",
+                    "--native-checkpoint",
+                    str(native_checkpoint),
+                    "--native-info",
+                ),
+            ),
+            (
+                "nfn_infer_native_info",
+                (
+                    sys.executable,
+                    "cli/nfn.py",
+                    "infer",
+                    "--native-checkpoint",
+                    str(native_checkpoint),
+                    "--native-info",
+                ),
+            ),
+        ]
+        for name, command in entrypoints:
             proc = subprocess.run(
                 list(command),
                 cwd=repo_root,

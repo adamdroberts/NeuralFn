@@ -551,9 +551,9 @@ pip install -e ".[torch]"
 
 After rebuilding native training artifacts, run the dependency gate to verify
 the compiled artifacts still avoid Torch, c10, and Python runtime libraries and
-that default native GPT Python entrypoints can construct their compiled-C++
-commands while imports of `torch`, NumPy, tiktoken, `server.dataset_manager`,
-and `nfn_impl` are blocked:
+that default native GPT Python training and inference entrypoints can construct
+their compiled-C++ commands or inspect native checkpoints while imports of
+`torch`, NumPy, tiktoken, `server.dataset_manager`, and `nfn_impl` are blocked:
 
 ```bash
 python tools/check_native_no_torch_deps.py
