@@ -96,6 +96,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--json", action="store_true", help="Print JSON instead of a text summary.")
     parser.add_argument("--json-out", default="", help="Write the JSON payload to this file.")
     parser.add_argument(
+        "--append-native-profile-json-dir",
+        default="",
+        help=(
+            "Append a unique --profile-json PATH under this directory to native NeuralFn commands "
+            "that do not already specify --json-out, --profile-json, or --stage-profile-json."
+        ),
+    )
+    parser.add_argument(
         "--continue-on-error",
         action="store_true",
         help="Record failed commands instead of stopping at the first nonzero exit.",
@@ -240,6 +248,53 @@ def native_json_out_path_from_argv(argv: Sequence[str]) -> Path | None:
     return None
 
 
+def looks_like_neuralfn_native_command(argv: Sequence[str]) -> bool:
+    if not argv:
+        return False
+    executable = Path(argv[0]).name
+    return executable in {
+        "nfn_gpt_native_train",
+        "nfn-native-train",
+        "nfn-gpt-native",
+        "nfn-gpt-native-train",
+    }
+
+
+def argv_with_auto_profile_json(
+    argv: Sequence[str],
+    *,
+    command_name: str,
+    profile_json_dir: Path | None,
+) -> list[str]:
+    next_argv = list(argv)
+    if profile_json_dir is None:
+        return next_argv
+    if not looks_like_neuralfn_native_command(next_argv):
+        return next_argv
+    if native_json_out_path_from_argv(next_argv) is not None:
+        return next_argv
+    profile_json_dir.mkdir(parents=True, exist_ok=True)
+    path = profile_json_dir / f"{command_name}_{time.time_ns()}.json"
+    next_argv.extend(["--profile-json", str(path)])
+    return next_argv
+
+
+def command_env_with_auto_stage_timing(
+    command: TimedCommand,
+    *,
+    env: dict[str, str] | None,
+    profile_json_dir: Path | None,
+) -> dict[str, str] | None:
+    command_env = env
+    if command.env_overrides:
+        command_env = dict(os.environ if env is None else env)
+        command_env.update(command.env_overrides)
+    if profile_json_dir is not None and looks_like_neuralfn_native_command(command.argv):
+        command_env = dict(os.environ if command_env is None else command_env)
+        command_env.setdefault("NFN_NATIVE_GPT_STAGE_TIMING", "1")
+    return command_env
+
+
 def native_metrics_from_json_out(argv: Sequence[str]) -> dict[str, float | int | str | bool]:
     path = native_json_out_path_from_argv(argv)
     if path is None or not path.exists():
@@ -303,16 +358,23 @@ def run_once(
     continue_on_error: bool,
     env: dict[str, str] | None,
     timeout_seconds: float | None,
+    profile_json_dir: Path | None,
     gpu_before: dict[str, object] | None = None,
 ) -> dict[str, object]:
     start = time.perf_counter()
-    command_env = env
-    if command.env_overrides:
-        command_env = dict(os.environ if env is None else env)
-        command_env.update(command.env_overrides)
+    run_argv = argv_with_auto_profile_json(
+        command.argv,
+        command_name=command.name,
+        profile_json_dir=profile_json_dir,
+    )
+    command_env = command_env_with_auto_stage_timing(
+        command,
+        env=env,
+        profile_json_dir=profile_json_dir,
+    )
     try:
         proc = subprocess.Popen(
-            command.argv,
+            run_argv,
             text=True,
             errors="replace",
             stdout=subprocess.PIPE,
@@ -343,19 +405,19 @@ def run_once(
         if not continue_on_error:
             raise SystemExit(
                 f"{command.name} timed out after {timeout_seconds:.3f}s\n"
-                f"command: {shlex.join(command.argv)}\n"
+                f"command: {shlex.join(run_argv)}\n"
                 f"stdout tail:\n{stdout[-2000:]}\n"
                 f"stderr tail:\n{stderr[-2000:]}"
             ) from exc
         result = {
             "name": command.name,
-            "argv": command.argv,
+            "argv": run_argv,
             "seconds": seconds,
             "returncode": -1,
             "process_returncode": process_returncode,
             "timed_out": True,
             "timeout_seconds": timeout_seconds,
-            "native_metrics": native_metrics_from_command_output(command.argv, stdout),
+            "native_metrics": native_metrics_from_command_output(run_argv, stdout),
             "stdout_tail": stdout[-2000:],
             "stderr_tail": stderr[-2000:],
         }
@@ -368,16 +430,16 @@ def run_once(
     if returncode != 0 and not continue_on_error:
         raise SystemExit(
             f"{command.name} failed with exit {returncode}\n"
-            f"command: {shlex.join(command.argv)}\n"
+            f"command: {shlex.join(run_argv)}\n"
             f"stderr:\n{stderr}"
         )
     result = {
         "name": command.name,
-        "argv": command.argv,
+        "argv": run_argv,
         "seconds": seconds,
         "returncode": returncode,
         "timed_out": False,
-        "native_metrics": native_metrics_from_command_output(command.argv, stdout),
+        "native_metrics": native_metrics_from_command_output(run_argv, stdout),
         "stdout_tail": stdout[-2000:],
         "stderr_tail": stderr[-2000:],
     }
@@ -817,6 +879,11 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     warmup = max(0, args.warmup)
     timeout_seconds = float(args.command_timeout_seconds or 0.0)
     command_timeout = timeout_seconds if timeout_seconds > 0.0 else None
+    profile_json_dir = (
+        Path(str(args.append_native_profile_json_dir)).expanduser()
+        if str(args.append_native_profile_json_dir or "").strip()
+        else None
+    )
     gpu_before = gpu_snapshot()
     cuda_device_selection = resolve_cuda_visible_devices(str(args.cuda_visible_devices or ""), gpu_before)
     cuda_visible_devices = str(cuda_device_selection.get("resolved", "") or "").strip()
@@ -857,6 +924,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                 continue_on_error=args.continue_on_error,
                 env=run_env,
                 timeout_seconds=command_timeout,
+                profile_json_dir=profile_json_dir,
                 gpu_before=command_gpu_before,
             )
 
@@ -893,6 +961,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                 continue_on_error=args.continue_on_error,
                 env=run_env,
                 timeout_seconds=command_timeout,
+                profile_json_dir=profile_json_dir,
                 gpu_before=command_gpu_before,
             )
             by_name[command.name] = result
@@ -929,6 +998,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "candidate_command": candidate.argv,
         "baseline_env": baseline.env_overrides,
         "candidate_env": candidate.env_overrides,
+        "append_native_profile_json_dir": str(profile_json_dir) if profile_json_dir is not None else "",
         "baseline_seconds": summarize(baseline_seconds),
         "candidate_seconds": summarize(candidate_seconds),
         "candidate_over_baseline": summarize(ratios),
@@ -967,6 +1037,9 @@ def print_text(payload: dict[str, object]) -> None:
         print(f"  baseline_env: {json.dumps(baseline_env, sort_keys=True)}")
     if isinstance(candidate_env, dict) and candidate_env:
         print(f"  candidate_env: {json.dumps(candidate_env, sort_keys=True)}")
+    profile_json_dir = payload.get("append_native_profile_json_dir")
+    if isinstance(profile_json_dir, str) and profile_json_dir:
+        print(f"  append_native_profile_json_dir: {profile_json_dir}")
     gpu_before = payload.get("gpu_before")
     if isinstance(gpu_before, dict):
         gpus = gpu_before.get("gpus")

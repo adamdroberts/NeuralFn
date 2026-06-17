@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add paired native stage-profile sidecars
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now accepts
+  `--append-native-profile-json-dir DIR`. When enabled, the harness appends a
+  unique `--profile-json` path under `DIR` to NeuralFn native commands that do
+  not already specify a JSON output flag and enables
+  `NFN_NATIVE_GPT_STAGE_TIMING=1` for those profiled native commands unless the
+  caller already set it.
+- This makes paired kernel comparisons report native `stage.*` metrics for both
+  baseline and candidate commands without manually editing each command string,
+  so external GPU load is still controlled by the same alternating script while
+  per-stage regressions are visible.
+
+#### Verification
+
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran a one-sample paired RTX 5090 smoke with
+  `--append-native-profile-json-dir /tmp/nfn_pair_profiles_smoke` and confirmed
+  the text output included `stage.block_backward.total_ms`,
+  `stage.lm_head_backward.total_ms`, and candidate-over-baseline stage ratios.
+
 ### 2026-06-17 Add llm.kittens SM120 cuBLASLt candidate initialization
 
 #### Changed
