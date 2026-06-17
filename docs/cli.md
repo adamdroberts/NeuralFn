@@ -1117,6 +1117,7 @@ nfn_gpt_native_train --inspect-checkpoint ~/NeuralFn/artifacts/gpt2/model_000200
 nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 16
 nfn_gpt_native_train --sample-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 16
 nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --checkpoint-load-elements 1024
+nfn_gpt_native_train --checkpoint-layout --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin
 ```
 
 This reports the native header shape, precision, expected size, and `DONE_*`
@@ -1133,6 +1134,9 @@ sampler: it reads a bounded bf16 payload slice from the checkpoint, copies it to
 device memory, converts it with `nfn_native_tile_bf16_bits_to_float32`, and
 verifies copyback without Torch, token-shard resolution, Python datasets, or
 graph-editor tensors.
+`--checkpoint-layout` is the no-CUDA companion for sampler wiring: it decodes
+the header-derived tensor layout, payload offsets, file offsets, and bounded
+payload samples as compiled C++ JSON.
 
 For flat Parameter Golf checkpoints, architecture comes from tensor shapes plus
 compatible metadata. A supplied training log may provide safe runtime hints

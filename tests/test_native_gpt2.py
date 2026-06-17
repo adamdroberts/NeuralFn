@@ -1267,6 +1267,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "--inspect-checkpoint PATH" in help_proc.stdout
     assert "--sample-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
     assert "--checkpoint-load-smoke --native-checkpoint PATH" in help_proc.stdout
+    assert "--checkpoint-layout --native-checkpoint PATH" in help_proc.stdout
     assert "--train-transformer-lm" in help_proc.stdout
     assert "--startup-only" in help_proc.stdout
     assert "--cuda-runtime-lib PATH" in help_proc.stdout
@@ -2988,6 +2989,36 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert missing_load_smoke.returncode == 2
     assert "failed to open native checkpoint" in missing_load_smoke.stderr
+
+    layout_proc = subprocess.run(
+        [
+            str(cli),
+            "--checkpoint-layout",
+            "--native-checkpoint",
+            str(checkpoint_path),
+            "--checkpoint-layout-sample-buffers",
+            "3",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert layout_proc.returncode == 0, layout_proc.stderr
+    layout_payload = json.loads(layout_proc.stdout)
+    assert layout_payload["status"] == "native-checkpoint-layout"
+    assert layout_payload["runtime"] == "native-cpp"
+    assert layout_payload["torch_required"] is False
+    assert layout_payload["cuda_required"] is False
+    assert layout_payload["graph_editor_node_flow"] is False
+    assert layout_payload["checkpoint_payload_layout_matches_writer"] is True
+    assert layout_payload["layout_parameter_count"] == layout_payload["parameter_count"]
+    assert layout_payload["parameter_layout"]["buffer_count"] == 2 + (12 * 12) + 2
+    assert layout_payload["parameter_layout"]["buffers"][0]["name"] == "wte.weight"
+    assert layout_payload["parameter_layout"]["buffers"][0]["offset"] == 0
+    assert layout_payload["parameter_layout"]["buffers"][1]["name"] == "wpe.weight"
+    assert len(layout_payload["payload_samples"]) == 3
+    assert layout_payload["payload_samples"][0]["file_offset_bytes"] == 1024
 
     bad_backend = subprocess.run(
         [str(cli), "--dataset-alias", str(dataset_path), "--backend", "tile_cuda", "--print-plan"],

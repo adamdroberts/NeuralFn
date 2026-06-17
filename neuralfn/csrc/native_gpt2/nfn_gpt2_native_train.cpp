@@ -93,6 +93,8 @@ struct Config {
     int sample_max_new_tokens = 64;
     bool checkpoint_load_smoke = false;
     int checkpoint_load_elements = 1024;
+    bool checkpoint_layout = false;
+    int checkpoint_layout_sample_buffers = 8;
 };
 
 struct BufferPlan {
@@ -347,6 +349,8 @@ void print_usage(const char* program) {
         << "                                     Validate native checkpoint prompt-token sampling inputs in compiled C++; CUDA Tile forward sampling is reported pending\n"
         << "  --checkpoint-load-smoke --native-checkpoint PATH\n"
         << "                                     Load a bounded bf16 checkpoint payload slice to CUDA and convert it through Tile kernels\n"
+        << "  --checkpoint-layout --native-checkpoint PATH\n"
+        << "                                     Decode native checkpoint tensor layout and payload offsets as compiled C++ JSON\n"
         << "  --cuda-runtime-lib PATH           libcudart path for Tile-CUDA smokes/training; defaults to NFN_CUDA_RUNTIME_LIB/libcudart.so\n"
         << "  --json-out PATH                   Write native JSON output to PATH instead of stdout\n"
         << "  --profile-json PATH               Alias for --json-out; useful with NFN_NATIVE_GPT_STAGE_TIMING=1\n"
@@ -1523,6 +1527,49 @@ std::vector<BufferPlan> build_gpt2_parameter_layout(const Config& cfg) {
     return layout;
 }
 
+std::vector<BufferPlan> build_native_gpt_checkpoint_layout(
+    std::int64_t max_seq_len,
+    std::int64_t padded_vocab_size,
+    std::int64_t num_layers,
+    std::int64_t channels) {
+    std::vector<BufferPlan> layout;
+    std::int64_t offset = 0;
+    const std::int64_t dim = channels;
+    const std::int64_t mlp_dim = dim * 4;
+
+    auto add = [&](std::string name, std::vector<std::int64_t> shape, bool weight_decay) {
+        BufferPlan buffer;
+        buffer.name = std::move(name);
+        buffer.shape = std::move(shape);
+        buffer.offset = offset;
+        buffer.count = shape_count(buffer.shape);
+        buffer.weight_decay = weight_decay;
+        offset += buffer.count;
+        layout.push_back(std::move(buffer));
+    };
+
+    add("wte.weight", {padded_vocab_size, dim}, true);
+    add("wpe.weight", {max_seq_len, dim}, true);
+    for (std::int64_t layer = 0; layer < num_layers; ++layer) {
+        const std::string prefix = "h." + std::to_string(layer) + ".";
+        add(prefix + "ln_1.weight", {dim}, false);
+        add(prefix + "ln_1.bias", {dim}, false);
+        add(prefix + "attn.c_attn.weight", {3 * dim, dim}, true);
+        add(prefix + "attn.c_attn.bias", {3 * dim}, false);
+        add(prefix + "attn.c_proj.weight", {dim, dim}, true);
+        add(prefix + "attn.c_proj.bias", {dim}, false);
+        add(prefix + "ln_2.weight", {dim}, false);
+        add(prefix + "ln_2.bias", {dim}, false);
+        add(prefix + "mlp.c_fc.weight", {mlp_dim, dim}, true);
+        add(prefix + "mlp.c_fc.bias", {mlp_dim}, false);
+        add(prefix + "mlp.c_proj.weight", {dim, mlp_dim}, true);
+        add(prefix + "mlp.c_proj.bias", {dim}, false);
+    }
+    add("ln_f.weight", {dim}, false);
+    add("ln_f.bias", {dim}, false);
+    return layout;
+}
+
 std::int64_t layout_count(const std::vector<BufferPlan>& layout) {
     if (layout.empty()) {
         return 0;
@@ -1587,6 +1634,173 @@ void print_parameter_layout_json(const std::vector<BufferPlan>& layout) {
         std::cout << "\n";
     }
     std::cout << "    ]\n  }";
+}
+
+int print_native_checkpoint_layout_json(const Config& cfg) {
+    constexpr std::int32_t kCheckpointMagic = 20240326;
+    constexpr std::int64_t kCheckpointHeaderInts = 256;
+    constexpr std::int64_t kCheckpointHeaderBytes = kCheckpointHeaderInts * 4;
+    const fs::path checkpoint_path = expand_user_path(cfg.native_checkpoint);
+    std::string error;
+
+    std::ifstream in(checkpoint_path, std::ios::binary);
+    if (!in) {
+        std::cerr << "failed to open native checkpoint: " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    std::vector<std::int32_t> header(static_cast<std::size_t>(kCheckpointHeaderInts), 0);
+    in.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(kCheckpointHeaderBytes));
+    if (in.gcount() != kCheckpointHeaderBytes) {
+        std::cerr << "native checkpoint header is truncated: " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    if (header[0] != kCheckpointMagic) {
+        std::cerr << "not a native GPT checkpoint: " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    const int version = header[1];
+    int bytes_per_param = 0;
+    std::string precision;
+    if (version == 3) {
+        bytes_per_param = 4;
+        precision = "fp32";
+    } else if (version == 5) {
+        bytes_per_param = 2;
+        precision = "bf16";
+    } else {
+        std::cerr << "unsupported native GPT checkpoint version " << version
+                  << " in " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+
+    const std::int64_t max_seq_len = header[2];
+    const std::int64_t vocab_size = header[3];
+    const std::int64_t num_layers = header[4];
+    const std::int64_t num_heads = header[5];
+    const std::int64_t channels = header[6];
+    const std::int64_t padded_vocab_size = header[7];
+    if (max_seq_len <= 0 || vocab_size <= 0 || num_layers <= 0 ||
+        num_heads <= 0 || channels <= 0 || padded_vocab_size <= 0) {
+        std::cerr << "native checkpoint shape values must be positive: "
+                  << checkpoint_path.string() << "\n";
+        return 2;
+    }
+
+    const std::vector<BufferPlan> layout =
+        build_native_gpt_checkpoint_layout(max_seq_len, padded_vocab_size, num_layers, channels);
+    const std::int64_t layout_parameters = layout_count(layout);
+    const std::int64_t expected_parameters =
+        native_gpt2_parameter_count(max_seq_len, padded_vocab_size, num_layers, channels);
+    const std::int64_t expected_file_size =
+        kCheckpointHeaderBytes + expected_parameters * static_cast<std::int64_t>(bytes_per_param);
+    const std::int64_t actual_file_size = file_size_bytes(checkpoint_path, &error);
+    if (actual_file_size < 0) {
+        std::cerr << error << "\n";
+        return 2;
+    }
+    const bool size_matches = actual_file_size == expected_file_size;
+    const bool layout_count_matches = layout_parameters == expected_parameters;
+    const std::int64_t sample_count = std::min<std::int64_t>(
+        std::max<std::int64_t>(0, cfg.checkpoint_layout_sample_buffers),
+        static_cast<std::int64_t>(layout.size()));
+
+    struct LayoutSample {
+        std::string name;
+        std::int64_t offset = 0;
+        std::uint32_t bits = 0;
+        float bf16_float = 0.0f;
+    };
+    std::vector<LayoutSample> samples;
+    samples.reserve(static_cast<std::size_t>(sample_count));
+    if (size_matches && layout_count_matches) {
+        for (std::int64_t i = 0; i < sample_count; ++i) {
+            const BufferPlan& buffer = layout[static_cast<std::size_t>(i)];
+            const std::int64_t byte_offset =
+                kCheckpointHeaderBytes + buffer.offset * static_cast<std::int64_t>(bytes_per_param);
+            in.clear();
+            in.seekg(static_cast<std::streamoff>(byte_offset), std::ios::beg);
+            if (!in) {
+                std::cerr << "failed to seek checkpoint payload at tensor " << buffer.name << "\n";
+                return 2;
+            }
+            LayoutSample sample;
+            sample.name = buffer.name;
+            sample.offset = buffer.offset;
+            if (version == 5) {
+                std::uint16_t bits = 0;
+                in.read(reinterpret_cast<char*>(&bits), static_cast<std::streamsize>(sizeof(bits)));
+                if (in.gcount() != static_cast<std::streamsize>(sizeof(bits))) {
+                    std::cerr << "failed to read checkpoint payload sample at tensor " << buffer.name << "\n";
+                    return 2;
+                }
+                sample.bits = bits;
+                sample.bf16_float = bf16_bits_to_float_host(bits);
+            } else {
+                float value = 0.0f;
+                in.read(reinterpret_cast<char*>(&value), static_cast<std::streamsize>(sizeof(value)));
+                if (in.gcount() != static_cast<std::streamsize>(sizeof(value))) {
+                    std::cerr << "failed to read checkpoint payload sample at tensor " << buffer.name << "\n";
+                    return 2;
+                }
+                std::uint32_t bits = 0;
+                std::memcpy(&bits, &value, sizeof(bits));
+                sample.bits = bits;
+                sample.bf16_float = value;
+            }
+            samples.push_back(std::move(sample));
+        }
+    }
+
+    std::cout
+        << "{\n"
+        << "  \"status\": \"native-checkpoint-layout\",\n"
+        << "  \"runtime\": \"native-cpp\",\n"
+        << "  \"backend\": \"tile-cuda\",\n"
+        << "  \"path\": \"" << json_escape(checkpoint_path.string()) << "\",\n"
+        << "  \"version\": " << version << ",\n"
+        << "  \"precision\": \"" << json_escape(precision) << "\",\n"
+        << "  \"max_seq_len\": " << max_seq_len << ",\n"
+        << "  \"vocab_size\": " << vocab_size << ",\n"
+        << "  \"padded_vocab_size\": " << padded_vocab_size << ",\n"
+        << "  \"num_layers\": " << num_layers << ",\n"
+        << "  \"num_heads\": " << num_heads << ",\n"
+        << "  \"channels\": " << channels << ",\n"
+        << "  \"parameter_count\": " << expected_parameters << ",\n"
+        << "  \"layout_parameter_count\": " << layout_parameters << ",\n"
+        << "  \"layout_count_matches\": " << (layout_count_matches ? "true" : "false") << ",\n"
+        << "  \"expected_file_size\": " << expected_file_size << ",\n"
+        << "  \"actual_file_size\": " << actual_file_size << ",\n"
+        << "  \"size_matches\": " << (size_matches ? "true" : "false") << ",\n"
+        << "  \"payload_offset_bytes\": " << kCheckpointHeaderBytes << ",\n"
+        << "  \"bytes_per_parameter\": " << bytes_per_param << ",\n"
+        << "  \"checkpoint_payload_layout_matches_writer\": "
+        << (layout_count_matches && size_matches ? "true" : "false") << ",\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"cuda_required\": false,\n"
+        << "  \"graph_editor_node_flow\": false,\n"
+        << "  \"parameter_layout\": ";
+    print_parameter_layout_json(layout);
+    std::cout
+        << ",\n"
+        << "  \"payload_samples\": [\n";
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        const LayoutSample& sample = samples[i];
+        std::cout
+            << "    {\"name\": \"" << json_escape(sample.name)
+            << "\", \"offset\": " << sample.offset
+            << ", \"file_offset_bytes\": "
+            << (kCheckpointHeaderBytes + sample.offset * static_cast<std::int64_t>(bytes_per_param))
+            << ", \"raw_bits\": " << sample.bits
+            << ", \"as_float\": " << sample.bf16_float << "}";
+        if (i + 1 != samples.size()) {
+            std::cout << ",";
+        }
+        std::cout << "\n";
+    }
+    std::cout
+        << "  ]\n"
+        << "}\n";
+    return (size_matches && layout_count_matches) ? 0 : 2;
 }
 
 std::vector<StagePlan> build_gpt2_stage_plan(const Config& cfg) {
@@ -16328,6 +16542,15 @@ int main(int argc, char** argv) {
         } else if (arg.rfind("--checkpoint-load-elements=", 0) == 0) {
             cfg.checkpoint_load_elements =
                 parse_int(value_after_equals("--checkpoint-load-elements="), "--checkpoint-load-elements");
+        } else if (arg == "--checkpoint-layout") {
+            cfg.backend = "tile-cuda";
+            cfg.checkpoint_layout = true;
+        } else if (arg == "--checkpoint-layout-sample-buffers") {
+            cfg.checkpoint_layout_sample_buffers = parse_int(require_value(argc, argv, &i, arg), arg);
+        } else if (arg.rfind("--checkpoint-layout-sample-buffers=", 0) == 0) {
+            cfg.checkpoint_layout_sample_buffers = parse_int(
+                value_after_equals("--checkpoint-layout-sample-buffers="),
+                "--checkpoint-layout-sample-buffers");
         } else if (arg == "--cuda-runtime-lib") {
             cfg.cuda_runtime_lib = require_value(argc, argv, &i, arg);
         } else if (arg.rfind("--cuda-runtime-lib=", 0) == 0) {
@@ -16450,6 +16673,13 @@ int main(int argc, char** argv) {
             return 2;
         }
         return print_native_checkpoint_load_smoke_json(cfg, argv[0]);
+    }
+    if (cfg.checkpoint_layout) {
+        if (cfg.native_checkpoint.empty()) {
+            std::cerr << "--checkpoint-layout requires --native-checkpoint PATH\n";
+            return 2;
+        }
+        return print_native_checkpoint_layout_json(cfg);
     }
 
     if (cfg.backend == "tile-cuda" && cfg.print_command) {

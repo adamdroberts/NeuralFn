@@ -756,3 +756,7 @@ Use `nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint PATH
 --checkpoint-load-elements N` to verify the next native sampler prerequisite:
 bounded bf16 payload loading, CUDA copy, Tile bf16-to-float conversion, and
 copyback without Torch or graph-editor tensors.
+Use `nfn_gpt_native_train --checkpoint-layout --native-checkpoint PATH` for the
+compiled no-CUDA tensor map: it reports header-derived tensor shapes, payload
+offsets, file offsets, and bounded payload samples without Python-side layout
+inference.

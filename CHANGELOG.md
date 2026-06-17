@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add native GPT checkpoint tensor layout decode
+
+#### Changed
+
+- `nfn_gpt_native_train` now supports
+  `--checkpoint-layout --native-checkpoint PATH`. The mode reads the native
+  checkpoint header, derives the exact tensor layout from the checkpoint shape,
+  verifies the layout parameter count against the file-size contract, and emits
+  payload/file offsets plus bounded payload samples as compiled C++ JSON.
+- The layout path exits before CUDA, token-shard resolution, Torch, Python
+  dataset setup, or graph-editor tensor flow. This gives the upcoming native
+  forward sampler an authoritative checkpoint tensor map instead of relying on
+  graph-backed or Python-side checkpoint interpretation.
+
+#### Verification
+
+- Ran `bash tools/build_native_gpt_cli.sh`.
+- Ran `build/nfn_gpt_native_train --checkpoint-metadata-smoke --output-dir /tmp/nfn_checkpoint_layout_smoke --num-layers 1 --train-seq-len 8`.
+- Ran `build/nfn_gpt_native_train --checkpoint-layout --native-checkpoint /tmp/nfn_checkpoint_layout_smoke/model_00020000.bin --checkpoint-layout-sample-buffers 3`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Add native GPT checkpoint payload load smoke
 
 #### Changed
