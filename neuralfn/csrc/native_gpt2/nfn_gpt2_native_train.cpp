@@ -3384,6 +3384,14 @@ bool print_tile_plan(
             env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_STATS",
                               "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_LN1_STATS"}),
             true);
+    const bool store_packed_attention_ln1_bf16_enabled =
+        store_packed_attention_activations_enabled &&
+        ln1_bf16_qkv_forward_enabled &&
+        bf16_qkv_dweight_enabled &&
+            env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_BF16",
+                              "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_LN1_BF16"}),
+            true);
     constexpr std::int64_t activation_tape_count = 1;
     const std::int64_t packed_qkv_attention_bf16_elements =
         packed_qkv_attention_enabled ? (tokens * 768 * 4 * activation_tape_count) : 0;
@@ -3422,6 +3430,14 @@ bool print_tile_plan(
         stored_packed_attention_ln1_stats_block_count * tokens * 2;
     const std::int64_t stored_packed_attention_ln1_stats_bytes =
         stored_packed_attention_ln1_stats_elements * static_cast<std::int64_t>(sizeof(float));
+    const std::int64_t stored_packed_attention_ln1_bf16_block_count =
+        store_packed_attention_ln1_bf16_enabled && stored_packed_attention_block_count > 0
+            ? std::min<std::int64_t>(
+                  stored_packed_attention_block_count,
+                  std::max<std::int64_t>(cfg.num_layers - 1, 0))
+            : 0;
+    const std::int64_t stored_packed_attention_ln1_bf16_elements =
+        stored_packed_attention_ln1_bf16_block_count * tokens * 768;
     const std::int64_t stored_packed_attention_lse_elements =
         store_packed_attention_lse_enabled ? stored_packed_attention_block_count * attention_row_count : 0;
     const std::int64_t stored_packed_attention_lse_bytes =
@@ -3650,6 +3666,12 @@ bool print_tile_plan(
         << "  \"stored_packed_attention_ln1_stats_blocks\": " << stored_packed_attention_ln1_stats_block_count << ",\n"
         << "  \"stored_packed_attention_ln1_stats_elements\": " << stored_packed_attention_ln1_stats_elements << ",\n"
         << "  \"stored_packed_attention_ln1_stats_bytes\": " << stored_packed_attention_ln1_stats_bytes << ",\n"
+        << "  \"stored_packed_attention_ln1_bf16_enabled\": "
+        << (store_packed_attention_ln1_bf16_enabled ? "true" : "false") << ",\n"
+        << "  \"stored_packed_attention_ln1_bf16_blocks\": " << stored_packed_attention_ln1_bf16_block_count << ",\n"
+        << "  \"stored_packed_attention_ln1_bf16_elements\": " << stored_packed_attention_ln1_bf16_elements << ",\n"
+        << "  \"stored_packed_attention_ln1_bf16_bytes\": "
+        << (stored_packed_attention_ln1_bf16_elements * static_cast<std::int64_t>(sizeof(std::uint16_t))) << ",\n"
         << "  \"stored_packed_attention_lse_elements\": " << stored_packed_attention_lse_elements << ",\n"
         << "  \"stored_packed_attention_lse_bytes\": " << stored_packed_attention_lse_bytes << ",\n"
         << "  \"stored_packed_attention_lse_enabled\": "
@@ -11094,6 +11116,7 @@ int run_transformer_lm_training_json(
     struct StoredPackedAttentionActivations {
         float* ln1_mean = nullptr;
         float* ln1_rstd = nullptr;
+        std::uint16_t* ln1_out_bf16 = nullptr;
         std::uint16_t* qkv = nullptr;
         std::uint16_t* o = nullptr;
         float* lse = nullptr;
@@ -11182,6 +11205,14 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_STATS",
                               "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_LN1_STATS"}),
             true);
+    const bool store_packed_attention_ln1_bf16_enabled =
+        store_packed_attention_activations_enabled &&
+        ln1_bf16_qkv_forward_enabled &&
+        bf16_qkv_dweight_enabled &&
+            env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_BF16",
+                              "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_LN1_BF16"}),
+            true);
     const std::int64_t stored_packed_attention_block_count =
         store_packed_attention_activations_enabled && trained_layers > 0
             ? std::min<std::int64_t>(
@@ -11214,6 +11245,15 @@ int run_transformer_lm_training_json(
     float* stored_packed_attention_ln1_stats_arena = nullptr;
     std::int64_t stored_packed_attention_ln1_stats_arena_elements = 0;
     std::int64_t stored_packed_attention_ln1_stats_arena_bytes = 0;
+    const std::int64_t stored_packed_attention_ln1_bf16_block_count =
+        store_packed_attention_ln1_bf16_enabled && stored_packed_attention_block_count > 0
+            ? std::min<std::int64_t>(stored_packed_attention_block_count, std::max<std::int64_t>(trained_layers - 1, 0))
+            : 0;
+    const std::int64_t stored_packed_attention_ln1_bf16_elements =
+        stored_packed_attention_ln1_bf16_block_count * activation_elements;
+    std::uint16_t* stored_packed_attention_ln1_bf16_arena = nullptr;
+    std::int64_t stored_packed_attention_ln1_bf16_arena_elements = 0;
+    std::int64_t stored_packed_attention_ln1_bf16_arena_bytes = 0;
     float* stored_packed_attention_lse_arena = nullptr;
     std::int64_t stored_packed_attention_lse_arena_elements = 0;
     std::int64_t stored_packed_attention_lse_arena_bytes = 0;
@@ -11549,6 +11589,38 @@ int run_transformer_lm_training_json(
             const std::int64_t stats_base = i * rows * 2;
             stored.ln1_mean = stored_packed_attention_ln1_stats_arena + stats_base;
             stored.ln1_rstd = stored_packed_attention_ln1_stats_arena + stats_base + rows;
+        }
+    };
+    auto allocate_stored_packed_attention_ln1_bf16_arena = [&]() {
+        if (!error.empty() || stored_packed_attention_ln1_bf16_block_count <= 0) {
+            return;
+        }
+        if (stored_packed_attention_ln1_bf16_elements <= 0 ||
+            stored_packed_attention_ln1_bf16_elements >
+                static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
+            error = "stored packed attention LN1 bf16 arena byte size overflow";
+            return;
+        }
+        const std::size_t bytes =
+            sizeof(std::uint16_t) * static_cast<std::size_t>(stored_packed_attention_ln1_bf16_elements);
+        if (stored_packed_attention_ln1_bf16_arena == nullptr) {
+            void* raw = nullptr;
+            const int status = device_malloc(&raw, bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc stored_packed_attention_ln1_bf16_arena");
+                return;
+            }
+            stored_packed_attention_ln1_bf16_arena = static_cast<std::uint16_t*>(raw);
+            uint16_ptrs.push_back(stored_packed_attention_ln1_bf16_arena);
+        }
+        stored_packed_attention_ln1_bf16_arena_elements = stored_packed_attention_ln1_bf16_elements;
+        stored_packed_attention_ln1_bf16_arena_bytes = static_cast<std::int64_t>(bytes);
+
+        for (std::int64_t i = 0; i < stored_packed_attention_ln1_bf16_block_count; ++i) {
+            StoredPackedAttentionActivations& stored =
+                stored_packed_attention_activations[static_cast<std::size_t>(i)];
+            stored.ln1_out_bf16 =
+                stored_packed_attention_ln1_bf16_arena + i * activation_elements;
         }
     };
     auto allocate_lm_head_bf16_logits = [&]() {
@@ -12035,6 +12107,9 @@ int run_transformer_lm_training_json(
     });
     run_setup_timed("setup.stored_packed_attention_ln1_stats_arena", [&]() {
         allocate_stored_packed_attention_ln1_stats_arena();
+    });
+    run_setup_timed("setup.stored_packed_attention_ln1_bf16_arena", [&]() {
+        allocate_stored_packed_attention_ln1_bf16_arena();
     });
     run_setup_timed("setup.lm_head_bf16_logits", [&]() {
         allocate_lm_head_bf16_logits();
@@ -13723,7 +13798,10 @@ int run_transformer_lm_training_json(
             fused_packed_attention_store != nullptr ? fused_packed_attention_store->qkv : tape.qkv_bf16;
         std::uint16_t* active_packed_attn_out_bf16 =
             fused_packed_attention_store != nullptr ? fused_packed_attention_store->o : tape.packed_attn_out_bf16;
-        std::uint16_t* active_ln1_out_bf16 = tape.ln1_out_bf16;
+        std::uint16_t* active_ln1_out_bf16 =
+            fused_packed_attention_store != nullptr && fused_packed_attention_store->ln1_out_bf16 != nullptr
+                ? fused_packed_attention_store->ln1_out_bf16
+                : tape.ln1_out_bf16;
         float* active_ln1_mean =
             fused_packed_attention_store != nullptr && fused_packed_attention_store->ln1_mean != nullptr
                 ? fused_packed_attention_store->ln1_mean
@@ -14260,6 +14338,9 @@ int run_transformer_lm_training_json(
         const std::int64_t stage_event = stage_begin(stage_name);
         bool ln2_precomputed = false;
         run_timed_stage(stage_name + ".ln1", [&]() {
+            if (stored_attention.ln1_out_bf16 != nullptr) {
+                return;
+            }
             if (stored_attention.ln1_mean != nullptr &&
                 stored_attention.ln1_rstd != nullptr) {
                 run_layer_norm_apply_stats_bf16_out(
@@ -15016,7 +15097,9 @@ int run_transformer_lm_training_json(
                     if (error.empty()) {
                         if (bf16_qkv_dweight_enabled) {
                             const std::uint16_t* ln1_bf16_for_dweight =
-                                ln1_bf16_qkv_forward_enabled ? tape.ln1_out_bf16 : nullptr;
+                                stored_packed_attention != nullptr && stored_packed_attention->ln1_out_bf16 != nullptr
+                                    ? stored_packed_attention->ln1_out_bf16
+                                    : (ln1_bf16_qkv_forward_enabled ? tape.ln1_out_bf16 : nullptr);
                             if (ln1_bf16_for_dweight == nullptr) {
                                 run(float32_to_bf16_bits(
                                         tape.ln1_out,
@@ -16770,6 +16853,16 @@ int run_transformer_lm_training_json(
         << "  \"stored_packed_attention_ln1_stats_blocks\": " << stored_packed_attention_ln1_stats_block_count << ",\n"
         << "  \"stored_packed_attention_ln1_stats_elements\": " << stored_packed_attention_ln1_stats_arena_elements << ",\n"
         << "  \"stored_packed_attention_ln1_stats_bytes\": " << stored_packed_attention_ln1_stats_arena_bytes << ",\n"
+        << "  \"stored_packed_attention_ln1_bf16_enabled\": "
+        << (store_packed_attention_ln1_bf16_enabled ? "true" : "false") << ",\n"
+        << "  \"stored_packed_attention_ln1_bf16_blocks\": " << stored_packed_attention_ln1_bf16_block_count << ",\n"
+        << "  \"stored_packed_attention_ln1_bf16_elements\": " << stored_packed_attention_ln1_bf16_arena_elements << ",\n"
+        << "  \"stored_packed_attention_ln1_bf16_bytes\": " << stored_packed_attention_ln1_bf16_arena_bytes << ",\n"
+        << "  \"stored_packed_attention_ln1_bf16_strategy\": \""
+        << (stored_packed_attention_ln1_bf16_block_count > 0
+                ? "saved-forward-ln1-bf16-direct-qkv-dweight"
+                : "disabled")
+        << "\",\n"
         << "  \"stored_packed_attention_lse_elements\": " << stored_packed_attention_lse_arena_elements << ",\n"
         << "  \"stored_packed_attention_lse_bytes\": " << stored_packed_attention_lse_arena_bytes << ",\n"
         << "  \"stored_packed_attention_lse_enabled\": "

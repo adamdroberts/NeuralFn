@@ -1640,6 +1640,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["stored_packed_attention_lse_elements"] > 0
     assert tile_payload["stored_packed_attention_lse_bytes"] > 0
     assert tile_payload["stored_packed_attention_lse_enabled"] is True
+    assert tile_payload["stored_packed_attention_ln1_bf16_enabled"] is True
+    assert tile_payload["stored_packed_attention_ln1_bf16_blocks"] == 11
+    assert tile_payload["stored_packed_attention_ln1_bf16_elements"] > 0
+    assert tile_payload["stored_packed_attention_ln1_bf16_bytes"] > 0
     assert tile_payload["stored_packed_attention_store_blocks"] == 0
     assert tile_payload["stored_packed_attention_restore_blocks"] == 0
     assert tile_payload["stored_packed_attention_backward_kernel_launches"] == 0
@@ -2554,6 +2558,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["stored_packed_attention_lse_elements"] == 0
     assert train_transformer_payload["stored_packed_attention_lse_bytes"] == 0
     assert train_transformer_payload["stored_packed_attention_lse_enabled"] is True
+    assert train_transformer_payload["stored_packed_attention_ln1_bf16_enabled"] is True
+    assert train_transformer_payload["stored_packed_attention_ln1_bf16_blocks"] == 11
+    assert train_transformer_payload["stored_packed_attention_ln1_bf16_elements"] > 0
+    assert train_transformer_payload["stored_packed_attention_ln1_bf16_bytes"] > 0
     assert train_transformer_payload["stored_packed_attention_store_blocks"] == 0
     assert train_transformer_payload["stored_packed_attention_restore_blocks"] == 0
     assert train_transformer_payload["stored_packed_attention_backward_kernel_launches"] == 0
@@ -4039,7 +4047,11 @@ def test_packed_attention_ln1_recompute_uses_stats_only_tile_abi() -> None:
     assert "stored_packed_attention_ln1_stats_elements" in gpt2_source_text
     assert "stored_packed_attention_ln1_stats_bytes" in gpt2_source_text
     assert "std::uint16_t* ln1 = nullptr" not in gpt2_source_text
-    assert "stored_packed_attention_ln1_bf16" not in gpt2_source_text
+    assert "NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_BF16" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_LN1_BF16" in gpt2_source_text
+    assert "stored_packed_attention_ln1_bf16_enabled" in gpt2_source_text
+    assert "stored_packed_attention_ln1_bf16_strategy" in gpt2_source_text
+    assert "saved-forward-ln1-bf16-direct-qkv-dweight" in gpt2_source_text
     assert "nfn_native_tile_layer_norm_apply_stats_bf16_out_float32" in gpt2_source_text
     assert "nfn_native_tile_layer_norm_apply_stats_bf16_out_float32" in header_text
     assert "launch_layer_norm_apply_stats_bf16_out_float32" in source_text
@@ -4857,6 +4869,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "stored_packed_attention_ln1_stats_blocks" in gpt2_source_text
     assert "stored_packed_attention_ln1_stats_elements" in gpt2_source_text
     assert "stored_packed_attention_ln1_stats_bytes" in gpt2_source_text
+    assert "stored_packed_attention_ln1_bf16_enabled" in gpt2_source_text
+    assert "stored_packed_attention_ln1_bf16_blocks" in gpt2_source_text
+    assert "stored_packed_attention_ln1_bf16_elements" in gpt2_source_text
+    assert "stored_packed_attention_ln1_bf16_bytes" in gpt2_source_text
     assert "stored_packed_attention_backward_consumer_strategy" in gpt2_source_text
     assert "recompute_block_from_saved_packed_attention" in gpt2_source_text
     assert "recompute_block_from_saved_attention" in gpt2_source_text

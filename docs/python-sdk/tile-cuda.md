@@ -132,6 +132,7 @@ absolute path for that target. Runtime tuning also prefers
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS`,
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LSE`,
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_STATS`,
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_BF16`,
 `NFN_NATIVE_GPT_STORE_RESIDUAL1_ACTIVATIONS`,
 `NFN_NATIVE_GPT_CUDA_MEMSET_ZERO`,
 `NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO`,
@@ -240,12 +241,11 @@ benchmark the older per-chunk final-hidden packing route. Set
 `NFN_TILE_CUDA_CE_BF16_EXP2=1` only for paired profiling of the BF16 CE+dlogits
 kernel's `exp2f(x * log2(e))` path; the default remains `expf`, and runtime
 JSON reports `lm_head_ce_bf16_exp2_enabled`.
-The mixed float32-hidden/BF16-grad dWeight+bias ABI also has an opt-in
-cuBLASLt bgrad epilogue route for QKV profiling; set
-`NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=1` or
-`NFN_TILE_CUDA_LINEAR_FLOAT32_BF16_BGRAD=1` to compare it against the default
-split-bias route. It remains default-off after paired dedicated-RTX-5090 timing
-showed a slight train-loop regression.
+The mixed float32-hidden/BF16-grad dWeight+bias ABI now uses the cuBLASLt bgrad
+epilogue route by default for supported QKV profiling shapes; set
+`NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=0` or
+`NFN_TILE_CUDA_LINEAR_FLOAT32_BF16_BGRAD=0` to compare it against the previous
+split-bias route.
 The raw ABI also exports
 `nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32`
 for LM-head dWeight accumulation that packs the final LayerNorm hidden state to
@@ -655,6 +655,16 @@ tape. Runtime JSON reports
 `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_STATS=0` for paired regression
 benchmarks against the previous full-recompute path; `NFN_NATIVE_GPT2_*`
 fallback names remain accepted for older scripts.
+The saved-attention tape stores earlier-block LN1 BF16 outputs by default on
+the workstation dense GPT path, uses them directly for QKV dWeight, and skips
+saved-attention LN1 apply-stats recompute. Set
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_BF16=0` for the previous lower-memory
+recompute route. Runtime JSON reports
+`stored_packed_attention_ln1_bf16_enabled`,
+`stored_packed_attention_ln1_bf16_blocks`,
+`stored_packed_attention_ln1_bf16_elements`,
+`stored_packed_attention_ln1_bf16_bytes`, and
+`stored_packed_attention_ln1_bf16_strategy`.
 Backward residual-gradient pair additions use
 `nfn_native_tile_scaled_residual_add_float32` instead of zero-fill plus two
 gradient-accumulate launches; `block_state_layout.residual_backward_fused`

@@ -6,6 +6,48 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Default saved LN1 BF16 for packed attention backward
+
+#### Changed
+
+- Added `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_BF16` /
+  `NFN_NATIVE_GPT2_STORE_PACKED_ATTENTION_LN1_BF16` and defaulted it on for the
+  dense GPT native trainer. Earlier packed-attention blocks now store the LN1
+  BF16 activation during forward, use it directly for QKV dWeight, and skip the
+  saved-attention LN1 apply-stats recompute.
+- Runtime and dry-plan JSON now report
+  `stored_packed_attention_ln1_bf16_enabled`,
+  `stored_packed_attention_ln1_bf16_blocks`,
+  `stored_packed_attention_ln1_bf16_elements`,
+  `stored_packed_attention_ln1_bf16_bytes`, and
+  `stored_packed_attention_ln1_bf16_strategy`.
+- The default costs about 1.03 GiB at the workstation `64 x 1024 x 768` shape.
+  Set `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_BF16=0` for the previous
+  lower-memory saved-attention LN1 apply-stats recompute route.
+
+#### Verification
+
+- Rebuilt `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k 'train_transformer_lm or packed_attention_ln1_recompute or packed_qkv_uint16_arena'`
+  (`2 passed, 43 deselected`).
+- One-step candidate smoke with
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_BF16=1 NFN_NATIVE_GPT_STAGE_TIMING=1`
+  reported `stored_packed_attention_ln1_bf16_blocks: 11`,
+  `stored_packed_attention_ln1_bf16_bytes: 1107296256`, and reduced
+  `block_recompute_saved_packed_attention.ln1` to `0.045632 ms` across 88
+  calls.
+- Dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_BF16=1 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 25 --command-timeout-seconds 1800 --json-out /tmp/nfn_store_packed_attention_ln1_bf16_pair.json`
+  measured the candidate at `0.991351x` train-loop wall time and `1.008731x`
+  tokens/sec versus the previous default. No GPU compute processes were present;
+  selected-GPU utilization before samples averaged `6.333333%`.
+- Default one-step smoke after promotion completed with
+  `status: "native-transformer-lm-trained"`,
+  `stored_packed_attention_ln1_bf16_enabled: true`,
+  `stored_packed_attention_ln1_bf16_blocks: 11`, and
+  `stored_packed_attention_ln1_bf16_strategy:
+  "saved-forward-ln1-bf16-direct-qkv-dweight"`.
+
 ### 2026-06-17 Retire broken packed-LN2 FC+GELU fallback
 
 #### Breaking changes
