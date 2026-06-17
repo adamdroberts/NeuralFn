@@ -903,6 +903,13 @@ tokens/sec.
 
 Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is metadata-only on the default `compiled-cli` runner: Python builds the compiled C++ argv from the dataset alias/path and leaves shard validation or raw-text rejection to the compiled frontend. It must not import `server.dataset_manager`, NumPy, tiktoken, or Torch, must not write `fineweb_train_*.bin` shards, and must not add the external `--target train_gpt2cu` bridge argument for the default Tile-CUDA backend. The compiled Tile-CUDA frontend also treats `--print-command` as a no-data/no-CUDA action, printing the exact `nfn_gpt_native_train ...` invocation before token-shard resolution, CUDA runtime loading, or driver preflight. The explicit `llm-kittens` backend remains the exception because it receives `--target` and resolves train/validation shards to print the delegated `train_gpt2cu -i/-j` command.
 
+`tools/check_native_no_torch_deps.py` is the native dependency gate for this
+path. In addition to `ldd` checks for Torch/c10/Python runtime libraries on the
+compiled artifacts, it runs `cli/scripts/train_gpt.py`, `cli/nfn.py train`, and
+`neuralfn.native_gpt*` imports under an import blocker for `torch`, NumPy,
+tiktoken, `server.dataset_manager`, and `nfn_impl`, using a stub compiled CLI so
+the check does not need CUDA.
+
 Dense GPT native `--dry-run` / `--print-plan` JSON reports the implemented
 compiled trainer as `native-transformer-lm-ready` with
 `training_step_plan.status: "ready"`. SDK callers should treat

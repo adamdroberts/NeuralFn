@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Strengthen native GPT no-Torch dependency gate
+
+#### Changed
+
+- Extended `tools/check_native_no_torch_deps.py` beyond compiled artifact
+  linkage checks. The gate now also runs the default native GPT Python
+  entrypoints with imports of `torch`, NumPy, tiktoken, `server.dataset_manager`,
+  and `nfn_impl` blocked, using a stub compiled CLI to prove command
+  construction reaches the native C++ path without those dependencies.
+- Added `--skip-artifacts` and `--skip-python-entrypoints` switches so CI can
+  check the Python no-import contract without local build outputs, or check only
+  compiled binary linkage when needed.
+- Updated package metadata, README, and Python SDK Tile-CUDA docs to describe
+  the stronger native dependency gate.
+
+#### Verification
+
+- Ran `python tools/check_native_no_torch_deps.py --json`; it passed for
+  `build/nfn_gpt_native_train`, `build/libnfn_native_train_tile_ops.so`,
+  `cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run --native-cuda-print-command`,
+  `cli/nfn.py train --tinystories --native-cuda-dry-run --native-cuda-print-command`,
+  and `import neuralfn; import neuralfn.native_gpt; import neuralfn.native_gpt2`
+  under the import blocker.
+
 ### 2026-06-17 Reject LayerNorm affine-residual split fallback
 
 #### Changed

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "neuralfn"
 version = "0.0.0a0"
-description = "Graph-native neural network framework with torch-backed template presets."
+description = "Graph-native neural network framework with optional Torch graph runtimes and native CUDA trainers."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

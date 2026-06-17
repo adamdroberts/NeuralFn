@@ -113,6 +113,39 @@ def _write_native_checkpoint(path: Path, *, step: int | None = None, version: in
     return path
 
 
+def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None:
+    root = Path(__file__).resolve().parents[1]
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "tools" / "check_native_no_torch_deps.py"),
+            "--skip-artifacts",
+            "--json",
+        ],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    assert payload["passed"] is True
+    assert payload["artifacts"] == []
+    assert set(payload["forbidden_python_import_roots"]) >= {
+        "torch",
+        "numpy",
+        "tiktoken",
+        "server.dataset_manager",
+        "nfn_impl",
+    }
+    entrypoints = {entry["name"]: entry for entry in payload["python_entrypoints"]}
+    assert entrypoints["train_gpt_fast_command"]["passed"] is True
+    assert entrypoints["nfn_train_fast_command"]["passed"] is True
+    assert entrypoints["native_sdk_imports"]["passed"] is True
+
+
 def test_resolve_native_gpt2_token_shards_materializes_uint16_cache(tmp_path: Path) -> None:
     dataset_path, meta = _write_raw_text_dataset(tmp_path)
 
