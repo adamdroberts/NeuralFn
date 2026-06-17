@@ -188,7 +188,10 @@ command. Add `--native-stage-timing` only for attribution runs that should set
 SM120 parity check against `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`;
 it runs the llm.kittens `train_gpt2cu` reference and
 `build/nfn_gpt_native_train --backend tile-cuda` through the same paired harness
-with selected-GPU idle guards. The parity wrapper defaults short runs to
+with selected-GPU idle guards. The NeuralFn candidate side passes
+`--train-batch-tokens 524288` explicitly so it stays locked to the reference
+`train-sm120.sh` `-d 524288` contract even if native trainer defaults change.
+The parity wrapper defaults short runs to
 timing-only sample/checkpoint cadence (`NFN_SM120_PARITY_SAMPLE_EVERY=0`,
 `NFN_SM120_PARITY_CHECKPOINT_EVERY=0`); compare
 `train_loop_wall_ms_per_step` and `train_tokens_per_second` in the native

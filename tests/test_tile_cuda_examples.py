@@ -162,6 +162,7 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "-af \"$ACTIVATION\"" in text
     assert "--backend tile-cuda" in text
     assert "--max-steps \"$STEPS\"" in text
+    assert "--train-batch-tokens 524288" in text
     assert "--eval-every-steps 0" in text
     assert "--native-cuda-sample-every \"$SAMPLE_EVERY\"" in text
     assert "--native-cuda-generate-tokens \"$GENERATE_TOKENS\"" in text

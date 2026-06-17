@@ -94,6 +94,7 @@ candidate_cmd="$(
     --backend tile-cuda \
     --tinystories \
     --max-steps "$STEPS" \
+    --train-batch-tokens 524288 \
     --eval-every-steps 0 \
     --native-cuda-sample-every "$SAMPLE_EVERY" \
     --native-cuda-generate-tokens "$GENERATE_TOKENS" \

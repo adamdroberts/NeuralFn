@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Pin SM120 parity batch-token contract
+
+#### Changed
+
+- Updated `tools/bench_native_gpt_sm120_parity.sh` so the NeuralFn candidate
+  command passes `--train-batch-tokens 524288` explicitly, matching the
+  `llm.kittens/train-sm120.sh` reference `-d 524288` setting in the same paired
+  benchmark script.
+- Updated README, Python SDK Tile-CUDA docs, and the CUDA Tile checklist to
+  document that the parity wrapper now locks both sides to the same effective
+  token batch.
+
+#### Verification
+
+- Regenerated a GPU-visible one-step NeuralFn stage/shape profile on the
+  dedicated RTX 5090 with `NFN_NATIVE_GPT_STAGE_TIMING=1` and
+  `NFN_NATIVE_LINEAR_SHAPE_STATS=1`; the current native path completed one
+  optimizer step and reported active cuBLASLt/TK hot paths.
+- Static verification is covered by
+  `tests/test_tile_cuda_examples.py::test_native_gpt_sm120_parity_wrapper_uses_reference_shape`.
+
 ### 2026-06-17 Align token-weight initializer default
 
 #### Changed

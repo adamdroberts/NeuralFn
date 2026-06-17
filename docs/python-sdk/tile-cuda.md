@@ -929,9 +929,11 @@ compiled trainer as `native-transformer-lm-ready` with
 `training_step_plan.status: "ready"`. SDK callers should treat
 `remaining_validation` as the current work to close the measured SM120
 throughput gap; `tools/bench_native_gpt_sm120_parity.sh` is the same-script RTX
-5090 comparison gate against `llm.kittens/train-sm120.sh`. Unsupported template
-names and custom graph files still report `selected-graph-native-trainer-missing`
-instead of falling back to Torch.
+5090 comparison gate against `llm.kittens/train-sm120.sh`. The parity wrapper
+passes the NeuralFn candidate `--train-batch-tokens 524288` explicitly to match
+the reference `-d 524288` batch-token contract instead of relying on a default.
+Unsupported template names and custom graph files still report
+`selected-graph-native-trainer-missing` instead of falling back to Torch.
 
 `NativeGpt2RunConfig` carries `kernel_backend` and `tile_ops_lib` for the
 compiled CLI path. `kernel_backend` now defaults to `"tile-cuda"` and
