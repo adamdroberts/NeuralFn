@@ -20,8 +20,18 @@ SAMPLE_EVERY="${NFN_SM120_PARITY_SAMPLE_EVERY:-0}"
 CHECKPOINT_EVERY="${NFN_SM120_PARITY_CHECKPOINT_EVERY:-0}"
 GENERATE_TOKENS="${NFN_SM120_PARITY_GENERATE_TOKENS:-144}"
 JSON_OUT="${NFN_SM120_PARITY_JSON_OUT:-/tmp/nfn_sm120_parity_${STEPS}step.json}"
-PROFILE_DIR="${NFN_SM120_PARITY_PROFILE_DIR:-/tmp/nfn_sm120_parity_profiles_${STEPS}step}"
+PROFILE_DIR_RAW="${NFN_SM120_PARITY_PROFILE_DIR:-/tmp/nfn_sm120_parity_profiles_${STEPS}step}"
 REFERENCE_OUTPUT_DIR="${NFN_SM120_PARITY_REFERENCE_OUTPUT_DIR:-/tmp/nfn_llmk_sm120_parity}"
+
+profile_args=()
+case "${PROFILE_DIR_RAW,,}" in
+  ""|"0"|"false"|"no"|"none"|"off")
+    ;;
+  *)
+    profile_args=(--append-native-profile-json-dir "$PROFILE_DIR_RAW")
+    export NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS="${NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS:-80000}"
+    ;;
+esac
 
 if [[ ! -x "$LLM_KITTENS_TRAIN_BIN" ]]; then
   echo "llm.kittens train_gpt2cu is not executable: $LLM_KITTENS_TRAIN_BIN" >&2
@@ -97,5 +107,5 @@ python tools/paired_kernel_speed.py \
   --require-idle-selected-gpu \
   --max-selected-gpu-utilization-pct "$MAX_GPU_UTILIZATION" \
   --command-timeout-seconds "$COMMAND_TIMEOUT_SECONDS" \
-  --append-native-profile-json-dir "$PROFILE_DIR" \
+  "${profile_args[@]}" \
   --json-out "$JSON_OUT"

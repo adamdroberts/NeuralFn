@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Make SM120 parity profiling explicit
+
+#### Changed
+
+- `tools/bench_native_gpt_sm120_parity.sh` now accepts
+  `NFN_SM120_PARITY_PROFILE_DIR=none|off|0|false|no` to skip the
+  `--append-native-profile-json-dir` diagnostic sidecar and measure actual
+  trainer throughput without CUDA-event stage profiling.
+- Profiled parity runs now default
+  `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS=80000` unless the caller already set
+  it, so the default 10-step SM120 profile sidecar captures complete stage
+  timings instead of truncating at 20,000 events.
+
+#### Verification
+
+- Ran `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS=80000 NFN_SM120_PARITY_STEPS=10 NFN_SM120_PARITY_SAMPLES=1 NFN_SM120_PARITY_WARMUP=0 NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=0 NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT=15 NFN_SM120_PARITY_PROFILE_DIR=/tmp/nfn_sm120_parity_profiles_full_events NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_full_events.json bash tools/bench_native_gpt_sm120_parity.sh` outside the sandbox. The complete profile reported `stage_timing_event_count=41150`, `stage_timing_dropped_event_count=0`, llm.kittens at `2480.754 ms/step`, and NeuralFn at `2622.440 ms/step`.
+- Ran `NFN_SM120_PARITY_STEPS=10 NFN_SM120_PARITY_SAMPLES=1 NFN_SM120_PARITY_WARMUP=0 NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=0 NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT=15 NFN_SM120_PARITY_PROFILE_DIR= NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_no_profile.json bash tools/bench_native_gpt_sm120_parity.sh` outside the sandbox, which confirmed the old empty override still used the default profile directory before this fix.
+- Ran `NFN_SM120_PARITY_STEPS=1 NFN_SM120_PARITY_SAMPLES=1 NFN_SM120_PARITY_WARMUP=0 NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=0 NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT=15 NFN_SM120_PARITY_PROFILE_DIR=none NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_no_profile_mode.json bash tools/bench_native_gpt_sm120_parity.sh` outside the sandbox after the fix. The JSON kept `append_native_profile_json_dir` empty and emitted no `stage.*` native metrics, confirming the no-profile path.
+- Ran `python -m pytest tests/test_tile_cuda_examples.py -q -k sm120_parity`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Route native checkpoint text prompts through the compiled sampler
 
 #### Changed

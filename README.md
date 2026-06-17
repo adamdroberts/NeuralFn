@@ -189,7 +189,11 @@ reference still performs its built-in validation passes around short runs. It
 also writes NeuralFn native stage sidecars through
 `--append-native-profile-json-dir`, defaulting to
 `/tmp/nfn_sm120_parity_profiles_${NFN_SM120_PARITY_STEPS:-10}step`; set
-`NFN_SM120_PARITY_PROFILE_DIR` to keep those profiles somewhere else. Set the
+`NFN_SM120_PARITY_PROFILE_DIR` to keep those profiles somewhere else, or set it
+to `none`, `off`, or `0` when you need an actual throughput comparison without
+CUDA-event stage profiling. Profiled parity runs default
+`NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS=80000` unless already set, so 10-step
+SM120 sidecars should not silently truncate stage totals. Set the
 cadence variables to `20000` and `200` when deliberately reproducing the full
 script sample/checkpoint cadence. `tools/build_native_train_tile_ops.sh`
 defaults to the SM120 ThunderKittens-backed bf16 attention bridge when

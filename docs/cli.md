@@ -647,6 +647,10 @@ output enabled. Set `NFN_SM120_PARITY_STEPS`, `NFN_SM120_PARITY_SAMPLES`,
 `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES` defaults to `auto`, which selects an
 idle display-disabled NVIDIA GPU for mixed display/compute workstations; set it
 to `0` or another explicit CUDA device value when you want manual pinning.
+The wrapper writes NeuralFn native profile sidecars by default. Set
+`NFN_SM120_PARITY_PROFILE_DIR=none` for an unprofiled throughput run, or set it
+to a directory to keep sidecars; profiled runs default
+`NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS=80000` unless you override it.
 For compile-time kernel experiments, `tools/build_native_train_tile_ops.sh`
 accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and
 `NFN_TILE_CUDA_EXTRA_LDLIBS` and appends them after the default SM120 flags.
