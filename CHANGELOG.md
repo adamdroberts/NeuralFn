@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-18 Record current SM120 GEMM and attention handoff rejections
+
+#### Changed
+
+- Recorded three current dense GPT native trainer bisections as rejected
+  defaults so they are not retested while closing the remaining llm.kittens
+  parity gap: low-level BGRADB first-write direct via
+  `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1`, non-cuBLASLt BF16 GEMMEx
+  `CUBLAS_COMPUTE_32F_FAST_16BF` via
+  `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF=1`, and BF16 attention-gradient
+  handoff via `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1`.
+- No runtime default was promoted in this slice; the measured candidates were
+  neutral-to-slower than the current native Tile-CUDA route.
+
+#### Verification
+
+- Ran a dedicated RTX 5090 same-script 5-step, 3-sample paired benchmark with
+  `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1`; the candidate measured
+  `1.000529x` train-loop wall time and `0.999486x` tokens/sec versus the
+  current environment-default path.
+- Ran a dedicated RTX 5090 same-script 5-step, 3-sample paired benchmark with
+  `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF=1`; the candidate measured
+  `1.004222x` train-loop wall time and `0.995808x` tokens/sec.
+- Ran a dedicated RTX 5090 same-script 5-step, 3-sample paired benchmark with
+  `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1`; the candidate measured
+  `1.011370x` train-loop wall time and `0.988829x` tokens/sec.
+
 ### 2026-06-17 Guard default package dependencies against Torch regressions
 
 #### Changed
