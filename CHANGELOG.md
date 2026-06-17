@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Reject disabling float32/BF16 BGRADB fusion
+
+#### Changed
+
+- Kept `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD` enabled for the dense
+  GPT native trainer. Disabling the mixed float32-hidden/BF16-gradient BGRADB
+  dWeight route was noise-equivalent overall and slightly worse by median
+  train-loop time, with no useful movement in the hot block-backward buckets.
+
+#### Verification
+
+- Dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=0 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 25 --command-timeout-seconds 1800 --append-native-profile-json-dir /tmp/nfn_disable_float32_bf16_bgrad_profiles --json-out /tmp/nfn_disable_float32_bf16_bgrad_pair.json`
+  measured the disabled-fusion candidate at `0.998810x` mean train-loop wall
+  time but `1.000652x` median train-loop wall time and `1.001197x` mean
+  tokens/sec versus the default. `stage.block_backward.total_ms` stayed
+  effectively unchanged at `0.999848x` mean / `1.002266x` median. No GPU compute
+  processes were present; selected-GPU utilization before samples averaged
+  `5.666667%`.
+
 ### 2026-06-17 Update native GPT dry-run throughput validation status
 
 #### Changed
