@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Record BF16 LM-head loss fallback bisection
+
+#### Changed
+
+- Recorded the `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS=0` same-script bisection for
+  the dense GPT SM120 trainer. The older float-workspace LM-head loss path was
+  not promoted because the 5-sample paired run was noise-dominated: mean train
+  loop time improved, but median train loop time was slightly slower than the
+  current BF16 fused CE default.
+
+#### Verification
+
+- Dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS=0 --samples 5 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --command-timeout-seconds 1800 --json-out /tmp/nfn_bf16_lm_head_loss_off_pair_5sample.json`
+  measured `0.992803x` mean train-loop time but `1.000689x` median train-loop
+  time and `0.999310x` median tokens/sec, so the default remains unchanged.
+
 ### 2026-06-17 Preserve disabled native GPT cadences in SDK handoff
 
 #### Changed
