@@ -39,6 +39,9 @@ Future updates should append new entries here rather than replacing older notes.
   `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=11`, and
   `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1`; each candidate regressed train-loop
   time or setup wall time against the current default.
+- Ran a same-script paired benchmark for
+  `NFN_NATIVE_LINEAR_CUBLASLT_DESCRIPTOR_CACHE=0`; disabling descriptor caching
+  regressed train-loop time, so the current cached-descriptor default remains.
 
 ### 2026-06-17 Make SM120 parity profiling explicit
 
