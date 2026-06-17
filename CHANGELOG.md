@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Preserve disabled native GPT cadences in SDK handoff
+
+#### Changed
+
+- `build_native_gpt_compiled_cli_run_config()` and
+  `build_native_gpt2_compiled_cli_run_config()` now preserve
+  `eval_every_steps=0`, `sample_every_steps=0`, and
+  `checkpoint_every_steps=0` instead of clamping them to `1`.
+- This aligns the Python/SDK handoff with the compiled C++ trainer contract, where
+  zero disables validation, prompt sampling, or checkpoint cadence. Same-script
+  CUDA Tile kernel benchmarks can now suppress that side work through the SDK path
+  without silently re-enabling it.
+
+#### Verification
+
+- `python -m pytest tests/test_native_gpt2.py -q -k 'zero_cadences or compiled_cli_config_can_skip_checkpoint_export'`
+- `git diff --check`
+
 ### 2026-06-17 Remove hardcoded external GPT trainer path
 
 #### Changed

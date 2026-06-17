@@ -101,6 +101,11 @@ source of truth. The compatibility
 `NativeGpt2RunConfig` and `build_native_gpt2_*` helpers now canonicalize dense
 GPT selectors to `model_family="gpt"`; pass `template_name` or `graph_file` for
 architecture selection instead of keying off the model-family label.
+`build_native_gpt_compiled_cli_run_config()` and the GPT-2 compatibility helper
+preserve `eval_every_steps=0`, `sample_every_steps=0`, and
+`checkpoint_every_steps=0` as explicit disabled cadences, matching the compiled
+C++ trainer. Use those zero values for same-script kernel benchmarks when
+validation, prompt sampling, and checkpoint export cadence should not run.
 New code should import `neuralfn.native_gpt` for generic dense GPT names:
 `NativeGptRunConfig`, `build_native_gpt_compiled_cli_run_config()`,
 `build_native_gpt_run_config()`, `run_native_gpt()`, and related checkpoint/

@@ -456,6 +456,63 @@ def test_build_native_gpt2_compiled_cli_config_can_skip_checkpoint_export(tmp_pa
     assert "--no-checkpoint" in generic_cfg.compiled_cli_argv("/opt/nfn/nfn_gpt_native_train")
 
 
+def test_build_native_gpt_compiled_cli_config_preserves_zero_cadences(tmp_path: Path) -> None:
+    cfg = build_native_gpt2_compiled_cli_run_config(
+        dataset_alias="cached-shards",
+        executable=None,
+        output_dir=tmp_path / "gpt2",
+        eval_every_steps=0,
+        sample_every_steps=0,
+        generate_tokens=144,
+        checkpoint_every_steps=0,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=5,
+        num_layers=12,
+        activation="gelu",
+    )
+    generic_cfg = build_native_gpt_compiled_cli_run_config(
+        dataset_alias="cached-shards",
+        executable=None,
+        output_dir=tmp_path / "gpt",
+        eval_every_steps=0,
+        sample_every_steps=0,
+        generate_tokens=144,
+        checkpoint_every_steps=0,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=5,
+        num_layers=12,
+        activation="gelu",
+    )
+
+    cfg_argv = cfg.compiled_cli_argv("/opt/nfn/nfn_gpt_native_train")
+    generic_argv = generic_cfg.compiled_cli_argv("/opt/nfn/nfn_gpt_native_train")
+
+    assert cfg.eval_every_steps == 0
+    assert cfg.sample_every_steps == 0
+    assert cfg.checkpoint_every_steps == 0
+    assert cfg_argv[cfg_argv.index("--eval-every-steps") + 1] == "0"
+    assert cfg_argv[cfg_argv.index("--native-cuda-sample-every") + 1] == "0"
+    assert cfg_argv[cfg_argv.index("--native-cuda-checkpoint-every") + 1] == "0"
+    assert generic_cfg.eval_every_steps == 0
+    assert generic_cfg.sample_every_steps == 0
+    assert generic_cfg.checkpoint_every_steps == 0
+    assert generic_argv[generic_argv.index("--eval-every-steps") + 1] == "0"
+    assert generic_argv[generic_argv.index("--native-cuda-sample-every") + 1] == "0"
+    assert generic_argv[generic_argv.index("--native-cuda-checkpoint-every") + 1] == "0"
+
+
 def test_build_native_gpt2_compiled_cli_config_defaults_to_neuralfn_cli(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
