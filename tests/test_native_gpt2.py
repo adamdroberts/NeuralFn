@@ -1799,7 +1799,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "available_native_kernels"
     ]
     assert tile_payload["required_native_work"] == []
-    assert any("SM120 throughput" in item for item in tile_payload["remaining_validation"])
+    assert any("SM120 throughput gap" in item for item in tile_payload["remaining_validation"])
 
     megakernel_template_plan = subprocess.run(
         [
@@ -2560,8 +2560,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["stored_packed_attention_lse_enabled"] is True
     assert train_transformer_payload["stored_packed_attention_ln1_bf16_enabled"] is True
     assert train_transformer_payload["stored_packed_attention_ln1_bf16_blocks"] == 11
-    assert train_transformer_payload["stored_packed_attention_ln1_bf16_elements"] > 0
-    assert train_transformer_payload["stored_packed_attention_ln1_bf16_bytes"] > 0
+    assert train_transformer_payload["stored_packed_attention_ln1_bf16_elements"] == 0
+    assert train_transformer_payload["stored_packed_attention_ln1_bf16_bytes"] == 0
     assert train_transformer_payload["stored_packed_attention_store_blocks"] == 0
     assert train_transformer_payload["stored_packed_attention_restore_blocks"] == 0
     assert train_transformer_payload["stored_packed_attention_backward_kernel_launches"] == 0

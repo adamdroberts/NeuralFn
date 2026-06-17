@@ -3724,7 +3724,7 @@ bool print_tile_plan(
     std::cout
         << "  ],\n"
         << "  \"remaining_validation\": [\n"
-        << "    \"live-validate SM120 throughput against /mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh on a GPU-visible process\"\n"
+        << "    \"close the measured SM120 throughput gap against /mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh; use tools/bench_native_gpt_sm120_parity.sh for same-script RTX 5090 comparisons\"\n"
         << "  ]";
     if (include_symbol_check) {
         std::cout << ",\n"

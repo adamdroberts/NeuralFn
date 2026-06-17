@@ -186,7 +186,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Tune GPT-compatible SDPA forward resources so the live SM120 trainer no longer needs row-vector or scalar-launch safety fallbacks; the current packed-QKV TK path reports `attention_forward_row_launch_fallback_count: 0`, `attention_forward_scalar_launch_count: 0`, and `attention_forward_tk_launch_count` for the full loop.
 - [x] Keep the older GPT-2-compatible row-vector SDPA kernel out of the hot trainer path when packed SM120 TK attention is active, so the scalar fallback remains unused on the live dedicated-RTX-5090 probe.
 - [x] Cover every shipped GPT template name in the native GPT-2 training selector via `--template-name` / `--preset`, and cover custom graph selection via `--graph-file`, returning explicit native-trainer-missing JSON for unsupported templates instead of falling back to Torch or graph-editor tensor flow.
-- [x] Update dense GPT-2 native dry-run/plan JSON to report `native-transformer-lm-ready` and `training_step_plan.status: "ready"` for the implemented compiled Tile-CUDA loop, leaving only live SM120 throughput comparison under `remaining_validation`.
+- [x] Update dense GPT-2 native dry-run/plan JSON to report `native-transformer-lm-ready` and `training_step_plan.status: "ready"` for the implemented compiled Tile-CUDA loop; `remaining_validation` now tracks closing the measured SM120 throughput gap via `tools/bench_native_gpt_sm120_parity.sh` instead of saying live validation has not happened.
 - [ ] Wire full NanoGPT transformer training loop to the token-shard sampler and the ready native forward/backward/optimizer stages without importing Torch.
 
 ## Backend scaffolding

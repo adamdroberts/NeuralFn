@@ -787,8 +787,10 @@ shards to print its delegated `train_gpt2cu -i/-j` command.
 Dense GPT native `--dry-run` / `--print-plan` JSON reports the implemented
 Tile-CUDA transformer-LM path as `native-transformer-lm-ready` with
 `training_step_plan.status: "ready"`. `required_native_work` is empty for the
-native-runnable dense presets, and `remaining_validation` tracks the live SM120
-throughput comparison still required against `llm.kittens/train-sm120.sh`.
+native-runnable dense presets, and `remaining_validation` tracks the current
+work to close the measured SM120 throughput gap. Use
+`tools/bench_native_gpt_sm120_parity.sh` for same-script RTX 5090 comparisons
+against `llm.kittens/train-sm120.sh`.
 
 For startup profiling, pass `--startup-only` to `nfn_gpt_native_train` or
 through the native wrapper/SDK config. The compiled frontend still resolves

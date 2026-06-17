@@ -906,7 +906,9 @@ Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is metadata-on
 Dense GPT native `--dry-run` / `--print-plan` JSON reports the implemented
 compiled trainer as `native-transformer-lm-ready` with
 `training_step_plan.status: "ready"`. SDK callers should treat
-`remaining_validation` as the live SM120 benchmark gate; unsupported template
+`remaining_validation` as the current work to close the measured SM120
+throughput gap; `tools/bench_native_gpt_sm120_parity.sh` is the same-script RTX
+5090 comparison gate against `llm.kittens/train-sm120.sh`. Unsupported template
 names and custom graph files still report `selected-graph-native-trainer-missing`
 instead of falling back to Torch.
 

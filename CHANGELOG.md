@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Update native GPT dry-run throughput validation status
+
+#### Changed
+
+- Dense GPT native `--dry-run` / `--print-plan` JSON no longer says live SM120
+  throughput validation still needs to happen. `remaining_validation` now names
+  the real remaining operational item: closing the measured SM120 throughput gap
+  against `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh` using
+  `tools/bench_native_gpt_sm120_parity.sh` for same-script RTX 5090 comparisons.
+- Updated README, CLI docs, Python SDK Tile-CUDA docs, and the Tile-CUDA
+  checklist to match the new plan JSON wording.
+
+#### Verification
+
+- Refreshed current no-profile parity with
+  `NFN_SM120_PARITY_STEPS=10 NFN_SM120_PARITY_SAMPLES=1 NFN_SM120_PARITY_WARMUP=0 NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=0 NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT=25 NFN_SM120_PARITY_PROFILE_DIR=none bash tools/bench_native_gpt_sm120_parity.sh`.
+  The same-script run measured llm.kittens at `203289.6 tok/s` and NeuralFn at
+  `193426 tok/s`, or `0.951480x` tokens/sec and `1.048909x` train-loop time.
+  No compute processes were present on GPU 0.
+- Refreshed current one-step stage timing with
+  `NFN_NATIVE_GPT_STAGE_TIMING=1 CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --train-batch-tokens 524288 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so --profile-json /tmp/nfn_current_fullstep_stage.json`;
+  the run reported `195875 tok/s` and kept the same hot buckets:
+  `block_backward`, `lm_head_backward`, and `train.model_forward`.
+
 ### 2026-06-17 Reject MLP projection dWeight cuBLASLt shape fallback
 
 #### Changed
