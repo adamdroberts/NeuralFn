@@ -199,10 +199,39 @@ def native_checkpoint_sampler_argv(args: argparse.Namespace, checkpoint: str | P
     ]
 
 
+def native_checkpoint_token_sampler_argv(args: argparse.Namespace, checkpoint: str | Path) -> list[str]:
+    from neuralfn.native_gpt2 import resolve_native_gpt2_cli
+
+    return [
+        resolve_native_gpt2_cli(),
+        "--sample-checkpoint",
+        str(Path(checkpoint).expanduser()),
+        "--prompt-tokens",
+        str(getattr(args, "prompt_tokens", "") or ""),
+        "--max-new-tokens",
+        str(int(getattr(args, "max_new_tokens", 64))),
+    ]
+
+
+def run_native_checkpoint_token_sampler(args: argparse.Namespace, checkpoint: str | Path) -> int:
+    command = native_checkpoint_token_sampler_argv(args, checkpoint)
+    env = os.environ.copy()
+    env.setdefault("CUDA_VISIBLE_DEVICES", "0")
+    env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
+    try:
+        return int(subprocess.run(command, env=env, check=False).returncode)
+    except FileNotFoundError:
+        print(
+            "Native GPT prompt-token inference needs the compiled nfn_gpt_native_train binary. "
+            "Build it with tools/build_native_gpt_cli.sh or set NFN_NATIVE_GPT_CLI.",
+            file=sys.stderr,
+        )
+        return 2
+
+
 def run_native_checkpoint_sampler(args: argparse.Namespace, checkpoint: str | Path) -> int:
     if str(getattr(args, "prompt_tokens", "") or "").strip():
-        print("Native .bin checkpoint sampling currently accepts --prompt text, not --prompt-tokens.", file=sys.stderr)
-        return 2
+        return run_native_checkpoint_token_sampler(args, checkpoint)
     command = native_checkpoint_sampler_argv(args, checkpoint)
     if command is None:
         print(

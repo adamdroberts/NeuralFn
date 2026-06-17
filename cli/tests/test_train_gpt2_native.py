@@ -1854,6 +1854,84 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
 
+    def test_nfn_infer_native_checkpoint_prompt_tokens_dispatches_compiled_sampler(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import os
+            import runpy
+            import struct
+            import sys
+            import tempfile
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root))
+            from neuralfn.native_gpt2 import native_gpt2_parameter_count
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmp = Path(tmpdir)
+                checkpoint = tmp / "model_00000010.bin"
+                native_cli = tmp / "nfn_gpt_native_train"
+                native_cli.write_text(
+                    "#!/usr/bin/env bash\\n"
+                    "printf 'NATIVE_CLI_ARGV %s\\\\n' \\"$*\\"\\n"
+                    "printf 'NATIVE_CLI_CUDA_VISIBLE_DEVICES %s\\\\n' \\"${{CUDA_VISIBLE_DEVICES:-}}\\"\\n"
+                    "exit 2\\n",
+                    encoding="utf-8",
+                )
+                native_cli.chmod(0o755)
+                header = [0] * 256
+                header[:8] = [20240326, 5, 8, 16, 1, 1, 4, 16]
+                nparams = native_gpt2_parameter_count(
+                    max_seq_len=8,
+                    padded_vocab_size=16,
+                    num_layers=1,
+                    channels=4,
+                )
+                checkpoint.write_bytes(struct.pack("<" + "i" * 256, *header) + b"\\0" * (nparams * 2))
+                os.environ["NFN_NATIVE_GPT_CLI"] = str(native_cli)
+                sys.argv = [
+                    str(root / "cli" / "nfn.py"),
+                    "infer",
+                    "--checkpoint",
+                    str(checkpoint),
+                    "--prompt-tokens",
+                    "1,2,3",
+                    "--max-new-tokens",
+                    "7",
+                ]
+                try:
+                    runpy.run_path(str(root / "cli" / "nfn.py"), run_name="__main__")
+                except SystemExit as exc:
+                    exit_code = int(exc.code or 0)
+                else:
+                    exit_code = 0
+                print("TORCH_LOADED", "torch" in sys.modules)
+                print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
+                raise SystemExit(exit_code)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(2, proc.returncode, proc.stderr)
+        self.assertIn("Native GPT checkpoint detected", proc.stdout)
+        self.assertIn("NATIVE_CLI_ARGV --sample-checkpoint", proc.stdout)
+        self.assertIn("--prompt-tokens 1,2,3", proc.stdout)
+        self.assertIn("--max-new-tokens 7", proc.stdout)
+        self.assertIn("NATIVE_CLI_CUDA_VISIBLE_DEVICES 0", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

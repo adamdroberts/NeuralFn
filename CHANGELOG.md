@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add compiled native GPT prompt-token checkpoint sampler contract
+
+#### Changed
+
+- `nfn_gpt_native_train` now accepts
+  `--sample-checkpoint PATH --prompt-tokens IDS --max-new-tokens N`. The mode
+  validates native dense GPT checkpoint metadata, file size, context length,
+  vocab bounds, and prompt-token parsing from compiled C++ before CUDA, Torch,
+  token-shard resolution, Python dataset setup, or graph-editor node execution.
+- `nfn infer --checkpoint model_*.bin --prompt-tokens ...` and
+  `python cli/scripts/infer_gpt2.py --native-checkpoint model_*.bin
+  --prompt-tokens ...` now dispatch to that compiled binary instead of rejecting
+  prompt-token native checkpoint requests or using the transitional Python text
+  sampler bridge.
+- The compiled path currently returns
+  `status: "native-checkpoint-sampler-pending"` with
+  `forward_pass_status: "dedicated-native-sampler-pending"` and a nonzero exit
+  code until the CUDA Tile forward generation loop is implemented.
+
+#### Verification
+
+- Ran `python -m py_compile cli/tests/test_train_gpt2_native.py cli/scripts/infer_gpt2.py`.
+- Ran `bash tools/build_native_gpt_cli.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`.
+- Ran `python -m pytest cli/tests/test_train_gpt2_native.py -q -k 'native_checkpoint_prompt_tokens or native_checkpoint_dispatches_sampler or native_checkpoint_info'`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Add compiled native GPT checkpoint inspection
 
 #### Changed

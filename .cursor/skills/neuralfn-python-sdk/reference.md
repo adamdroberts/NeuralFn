@@ -741,3 +741,14 @@ from neuralfn.neuron import encode_module_state_dict, decode_module_state_dict
 blob: str = encode_module_state_dict(state_dict)   # base64-encoded torch.save
 state_dict: dict = decode_module_state_dict(blob)   # torch.load from base64
 ```
+
+## Native checkpoint prompt-token inference
+
+`nfn infer --checkpoint PATH --prompt-tokens IDS` and
+`python cli/scripts/infer_gpt2.py --native-checkpoint PATH --prompt-tokens IDS`
+dispatch to `nfn_gpt_native_train --sample-checkpoint PATH --prompt-tokens IDS`.
+Keep that path compiled-C++ only: it validates checkpoint metadata, file size,
+context length, vocab bounds, and token parsing before CUDA, Torch, dataset
+setup, or graph-editor node flow. It currently reports
+`native-checkpoint-sampler-pending` until the CUDA Tile forward sampler lands;
+text prompts still use the temporary sampler bridge.

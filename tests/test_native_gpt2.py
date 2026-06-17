@@ -1265,6 +1265,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "--train-embedding-lm" in help_proc.stdout
     assert "--native-info --native-checkpoint PATH" in help_proc.stdout
     assert "--inspect-checkpoint PATH" in help_proc.stdout
+    assert "--sample-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
     assert "--train-transformer-lm" in help_proc.stdout
     assert "--startup-only" in help_proc.stdout
     assert "--cuda-runtime-lib PATH" in help_proc.stdout
@@ -2942,6 +2943,33 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert inspect_info.returncode == 0, inspect_info.stderr
     assert json.loads(inspect_info.stdout)["status"] == "native-checkpoint-info"
+
+    sample_plan = subprocess.run(
+        [
+            str(cli),
+            "--sample-checkpoint",
+            str(checkpoint_path),
+            "--prompt-tokens",
+            "1,2,3",
+            "--max-new-tokens",
+            "4",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert sample_plan.returncode == 2
+    sample_plan_payload = json.loads(sample_plan.stdout)
+    assert sample_plan_payload["status"] == "native-checkpoint-sampler-pending"
+    assert sample_plan_payload["runtime"] == "native-cpp"
+    assert sample_plan_payload["backend"] == "tile-cuda"
+    assert sample_plan_payload["path"] == str(checkpoint_path)
+    assert sample_plan_payload["prompt_token_count"] == 3
+    assert sample_plan_payload["max_new_tokens"] == 4
+    assert sample_plan_payload["torch_required"] is False
+    assert sample_plan_payload["graph_editor_node_flow"] is False
+    assert sample_plan_payload["forward_pass_status"] == "dedicated-native-sampler-pending"
 
     bad_backend = subprocess.run(
         [str(cli), "--dataset-alias", str(dataset_path), "--backend", "tile_cuda", "--print-plan"],

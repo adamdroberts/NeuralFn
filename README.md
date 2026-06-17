@@ -226,6 +226,17 @@ Compiled CUDA Tile graphs can opt into runtime NVFP4 activation packing with `gr
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
+Native checkpoint prompt-token requests now take a compiled C++ path instead of
+the transitional Python sampler bridge: `nfn infer --checkpoint
+model_########.bin --prompt-tokens 1,2,3` and `python cli/scripts/infer_gpt2.py
+--native-checkpoint model_########.bin --prompt-tokens 1,2,3` dispatch to
+`nfn_gpt_native_train --sample-checkpoint ... --prompt-tokens ...`. That path
+validates the checkpoint, context window, vocab bounds, and token list before
+CUDA, dataset setup, Torch, or graph-editor node flow. It currently exits with
+`status: "native-checkpoint-sampler-pending"` until the dedicated CUDA Tile
+forward sampler lands; text prompts still use the temporary sampler script
+bridge described above.
+
 The compiled dense GPT trainer can inspect native `model_########.bin`
 checkpoints without CUDA, Torch, Python dataset setup, or graph nodes using
 `nfn_gpt_native_train --native-info --native-checkpoint model_########.bin` or

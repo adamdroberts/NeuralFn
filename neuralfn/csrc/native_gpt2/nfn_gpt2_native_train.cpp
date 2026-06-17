@@ -88,6 +88,9 @@ struct Config {
     std::string cuda_runtime_lib;
     bool native_info = false;
     std::string native_checkpoint;
+    bool sample_checkpoint = false;
+    std::string sample_prompt_tokens;
+    int sample_max_new_tokens = 64;
 };
 
 struct BufferPlan {
@@ -338,6 +341,8 @@ void print_usage(const char* program) {
         << "  --native-info --native-checkpoint PATH\n"
         << "                                     Inspect a native dense GPT model_*.bin checkpoint as compiled C++ JSON without CUDA/Torch/dataset setup\n"
         << "  --inspect-checkpoint PATH         Alias for --native-info --native-checkpoint PATH\n"
+        << "  --sample-checkpoint PATH --prompt-tokens IDS\n"
+        << "                                     Validate native checkpoint prompt-token sampling inputs in compiled C++; CUDA Tile forward sampling is reported pending\n"
         << "  --cuda-runtime-lib PATH           libcudart path for Tile-CUDA smokes/training; defaults to NFN_CUDA_RUNTIME_LIB/libcudart.so\n"
         << "  --json-out PATH                   Write native JSON output to PATH instead of stdout\n"
         << "  --profile-json PATH               Alias for --json-out; useful with NFN_NATIVE_GPT_STAGE_TIMING=1\n"
@@ -729,6 +734,8 @@ fs::path expand_user_path(const std::string& raw) {
     return fs::path(raw);
 }
 
+std::vector<std::int64_t> parse_csv_i64(const std::string& raw, const std::string& flag);
+
 int print_native_checkpoint_info_json(const Config& cfg) {
     constexpr std::int32_t kCheckpointMagic = 20240326;
     constexpr std::int64_t kCheckpointHeaderInts = 256;
@@ -826,6 +833,125 @@ int print_native_checkpoint_info_json(const Config& cfg) {
     return size_matches ? 0 : 2;
 }
 
+int print_native_checkpoint_sample_plan_json(const Config& cfg) {
+    constexpr std::int32_t kCheckpointMagic = 20240326;
+    constexpr std::int64_t kCheckpointHeaderInts = 256;
+    constexpr std::int64_t kCheckpointHeaderBytes = kCheckpointHeaderInts * 4;
+    const fs::path checkpoint_path = expand_user_path(cfg.native_checkpoint);
+    std::string error;
+
+    const std::vector<std::int64_t> prompt_tokens =
+        parse_csv_i64(cfg.sample_prompt_tokens, "--prompt-tokens");
+    if (prompt_tokens.empty()) {
+        std::cerr << "--sample-checkpoint requires non-empty --prompt-tokens IDS\n";
+        return 2;
+    }
+    if (cfg.sample_max_new_tokens < 0) {
+        std::cerr << "--max-new-tokens must be non-negative\n";
+        return 2;
+    }
+
+    std::ifstream in(checkpoint_path, std::ios::binary);
+    if (!in) {
+        std::cerr << "failed to open native checkpoint: " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    std::vector<std::int32_t> header(static_cast<std::size_t>(kCheckpointHeaderInts), 0);
+    in.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(kCheckpointHeaderBytes));
+    if (in.gcount() != kCheckpointHeaderBytes) {
+        std::cerr << "native checkpoint header is truncated: " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    if (header[0] != kCheckpointMagic) {
+        std::cerr << "not a native GPT checkpoint: " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    const int version = header[1];
+    int bytes_per_param = 0;
+    std::string precision;
+    if (version == 3) {
+        bytes_per_param = 4;
+        precision = "fp32";
+    } else if (version == 5) {
+        bytes_per_param = 2;
+        precision = "bf16";
+    } else {
+        std::cerr << "unsupported native GPT checkpoint version " << version
+                  << " in " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+
+    const std::int64_t max_seq_len = header[2];
+    const std::int64_t vocab_size = header[3];
+    const std::int64_t num_layers = header[4];
+    const std::int64_t num_heads = header[5];
+    const std::int64_t channels = header[6];
+    const std::int64_t padded_vocab_size = header[7];
+    if (max_seq_len <= 0 || vocab_size <= 0 || num_layers <= 0 ||
+        num_heads <= 0 || channels <= 0 || padded_vocab_size <= 0) {
+        std::cerr << "native checkpoint shape values must be positive: "
+                  << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    if (static_cast<std::int64_t>(prompt_tokens.size()) > max_seq_len) {
+        std::cerr << "--prompt-tokens length " << prompt_tokens.size()
+                  << " exceeds checkpoint context window " << max_seq_len << "\n";
+        return 2;
+    }
+    for (std::size_t i = 0; i < prompt_tokens.size(); ++i) {
+        if (prompt_tokens[i] < 0 || prompt_tokens[i] >= vocab_size) {
+            std::cerr << "--prompt-tokens id at index " << i << " is outside checkpoint vocab: "
+                      << prompt_tokens[i] << " not in [0, " << (vocab_size - 1) << "]\n";
+            return 2;
+        }
+    }
+
+    const std::int64_t parameter_count =
+        native_gpt2_parameter_count(max_seq_len, padded_vocab_size, num_layers, channels);
+    const std::int64_t parameter_bytes =
+        parameter_count * static_cast<std::int64_t>(bytes_per_param);
+    const std::int64_t expected_file_size = kCheckpointHeaderBytes + parameter_bytes;
+    const std::int64_t actual_file_size = file_size_bytes(checkpoint_path, &error);
+    if (actual_file_size < 0) {
+        std::cerr << error << "\n";
+        return 2;
+    }
+    const bool size_matches = actual_file_size == expected_file_size;
+    const std::int64_t step = native_gpt_checkpoint_step(checkpoint_path);
+
+    std::cout
+        << "{\n"
+        << "  \"status\": \"native-checkpoint-sampler-pending\",\n"
+        << "  \"runtime\": \"native-cpp\",\n"
+        << "  \"backend\": \"tile-cuda\",\n"
+        << "  \"path\": \"" << json_escape(checkpoint_path.string()) << "\",\n"
+        << "  \"version\": " << version << ",\n"
+        << "  \"precision\": \"" << json_escape(precision) << "\",\n"
+        << "  \"max_seq_len\": " << max_seq_len << ",\n"
+        << "  \"vocab_size\": " << vocab_size << ",\n"
+        << "  \"padded_vocab_size\": " << padded_vocab_size << ",\n"
+        << "  \"num_layers\": " << num_layers << ",\n"
+        << "  \"num_heads\": " << num_heads << ",\n"
+        << "  \"channels\": " << channels << ",\n"
+        << "  \"parameter_count\": " << parameter_count << ",\n"
+        << "  \"expected_file_size\": " << expected_file_size << ",\n"
+        << "  \"actual_file_size\": " << actual_file_size << ",\n"
+        << "  \"size_matches\": " << (size_matches ? "true" : "false") << ",\n"
+        << "  \"checkpoint_step\": " << step << ",\n"
+        << "  \"prompt_token_count\": " << prompt_tokens.size() << ",\n"
+        << "  \"max_new_tokens\": " << cfg.sample_max_new_tokens << ",\n"
+        << "  \"tokenizer_required\": false,\n"
+        << "  \"graph_editor_node_flow\": false,\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"forward_pass_status\": \"dedicated-native-sampler-pending\",\n"
+        << "  \"message\": \"Native checkpoint and prompt tokens validated in C++; CUDA Tile forward sampling is the next implementation step.\"\n"
+        << "}\n";
+    if (!size_matches) {
+        return 2;
+    }
+    return 2;
+}
+
 double parse_double(const std::string& value, const std::string& flag) {
     try {
         std::size_t consumed = 0;
@@ -848,6 +974,35 @@ std::string lower_activation(std::string value) {
         value = "sd-prelu";
     }
     return value;
+}
+
+std::vector<std::int64_t> parse_csv_i64(const std::string& raw, const std::string& flag) {
+    std::vector<std::int64_t> values;
+    std::stringstream stream(raw);
+    std::string item;
+    while (std::getline(stream, item, ',')) {
+        item.erase(item.begin(), std::find_if(item.begin(), item.end(), [](unsigned char ch) {
+            return !std::isspace(ch);
+        }));
+        item.erase(std::find_if(item.rbegin(), item.rend(), [](unsigned char ch) {
+            return !std::isspace(ch);
+        }).base(), item.end());
+        if (item.empty()) {
+            continue;
+        }
+        try {
+            std::size_t consumed = 0;
+            const long long parsed = std::stoll(item, &consumed);
+            if (consumed != item.size()) {
+                throw std::invalid_argument("trailing characters");
+            }
+            values.push_back(static_cast<std::int64_t>(parsed));
+        } catch (const std::exception&) {
+            std::cerr << flag << " expects comma-separated integer token ids, got " << raw << "\n";
+            std::exit(2);
+        }
+    }
+    return values;
 }
 
 bool valid_activation(const std::string& value) {
@@ -15896,6 +16051,22 @@ int main(int argc, char** argv) {
             cfg.backend = "tile-cuda";
             cfg.native_info = true;
             cfg.native_checkpoint = value_after_equals("--inspect-checkpoint=");
+        } else if (arg == "--sample-checkpoint") {
+            cfg.backend = "tile-cuda";
+            cfg.sample_checkpoint = true;
+            cfg.native_checkpoint = require_value(argc, argv, &i, arg);
+        } else if (arg.rfind("--sample-checkpoint=", 0) == 0) {
+            cfg.backend = "tile-cuda";
+            cfg.sample_checkpoint = true;
+            cfg.native_checkpoint = value_after_equals("--sample-checkpoint=");
+        } else if (arg == "--prompt-tokens") {
+            cfg.sample_prompt_tokens = require_value(argc, argv, &i, arg);
+        } else if (arg.rfind("--prompt-tokens=", 0) == 0) {
+            cfg.sample_prompt_tokens = value_after_equals("--prompt-tokens=");
+        } else if (arg == "--max-new-tokens") {
+            cfg.sample_max_new_tokens = parse_int(require_value(argc, argv, &i, arg), arg);
+        } else if (arg.rfind("--max-new-tokens=", 0) == 0) {
+            cfg.sample_max_new_tokens = parse_int(value_after_equals("--max-new-tokens="), "--max-new-tokens");
         } else if (arg == "--cuda-runtime-lib") {
             cfg.cuda_runtime_lib = require_value(argc, argv, &i, arg);
         } else if (arg.rfind("--cuda-runtime-lib=", 0) == 0) {
@@ -16004,6 +16175,13 @@ int main(int argc, char** argv) {
             return 2;
         }
         return print_native_checkpoint_info_json(cfg);
+    }
+    if (cfg.sample_checkpoint) {
+        if (cfg.native_checkpoint.empty()) {
+            std::cerr << "--sample-checkpoint requires PATH\n";
+            return 2;
+        }
+        return print_native_checkpoint_sample_plan_json(cfg);
     }
 
     if (cfg.backend == "tile-cuda" && cfg.print_command) {

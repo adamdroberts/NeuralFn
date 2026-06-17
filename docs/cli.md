@@ -1114,14 +1114,19 @@ nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --native-inf
 python cli/scripts/infer_gpt2.py --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --native-info
 nfn_gpt_native_train --native-info --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin
 nfn_gpt_native_train --inspect-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin
+nfn infer --checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 16
+nfn_gpt_native_train --sample-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 16
 ```
 
 This reports the native header shape, precision, expected size, and `DONE_*`
 marker state. The compiled `nfn_gpt_native_train` forms emit JSON and return
 before CUDA, token-shard resolution, Torch, Python dataset setup, or graph-node
-execution. Prompt generation from native `.bin` checkpoints still requires a
-dedicated native GPT-2 inference executable; the graph-backed chat path will not
-attempt to load them as Torch checkpoints.
+execution. The prompt-token forms dispatch to compiled C++ and validate the
+checkpoint, context window, vocab bounds, and token list without Torch or
+graph-node flow, then return `status: "native-checkpoint-sampler-pending"` until
+the CUDA Tile forward sampler is implemented. Text prompt generation from native
+`.bin` checkpoints still uses the transitional sampler script bridge; the
+graph-backed chat path will not attempt to load them as Torch checkpoints.
 
 For flat Parameter Golf checkpoints, architecture comes from tensor shapes plus
 compatible metadata. A supplied training log may provide safe runtime hints
