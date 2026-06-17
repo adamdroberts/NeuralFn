@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Reject 16k LM-head row chunks after saved-LN1 default
+
+#### Changed
+
+- Kept the dense GPT native trainer's LM-head row chunk default at 8192 rows.
+  A fresh current-runtime paired check after the saved-LN1-BF16 default showed
+  `--lm-head-row-chunk-size 16384` was still slower despite halving the number
+  of LM-head chunks.
+
+#### Verification
+
+- Dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --lm-head-row-chunk-size 16384 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 25 --command-timeout-seconds 1800 --json-out /tmp/nfn_lm_head_chunk_16384_pair_after_ln1_bf16.json`
+  measured the 16384-row candidate at `1.014421x` train-loop wall time and
+  `0.985784x` tokens/sec versus the 8192-row default. No GPU compute processes
+  were present; selected-GPU utilization before samples averaged `6.000000%`.
+
 ### 2026-06-17 Default saved LN1 BF16 for packed attention backward
 
 #### Changed
