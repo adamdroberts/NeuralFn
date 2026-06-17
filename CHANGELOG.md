@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Route native checkpoint text prompts through the compiled sampler
+
+#### Changed
+
+- `nfn infer --checkpoint PATH --prompt TEXT` and
+  `python cli/scripts/infer_gpt2.py --native-checkpoint PATH --prompt TEXT`
+  now tokenize text prompts with the GPT-2 tokenizer and dispatch to
+  `nfn_gpt_native_train --sample-checkpoint PATH --prompt-tokens IDS`, matching
+  the explicit token-ID path.
+- `NFN_NATIVE_GPT_SAMPLE_SCRIPT` and `--native-sampler-script` are deprecated
+  for native `.bin` checkpoint prompts. The inference path no longer depends on
+  `/mnt/disk2/dev/open-source/llm.kittens/sample_gpt2.py`.
+- Empty native checkpoint prompts seed generation with the GPT-2 end-of-text
+  token `50256`; non-GPT-2 tokenizer overrides are rejected before launching the
+  compiled sampler.
+
+#### Verification
+
+- Ran `python -m pytest cli/tests/test_train_gpt2_native.py -q -k native_checkpoint`.
+- Ran `python -m pytest cli/tests/test_train_gpt2_native.py -q -k native_checkpoint_text_prompt_dispatches_compiled_sampler`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Add autoregressive native checkpoint token sampler loop
 
 #### Changed
@@ -18,8 +41,7 @@ Future updates should append new entries here rather than replacing older notes.
   ID in `generated_tokens`; successful runs set `generated_token_count` to the
   number of generated IDs.
 - Requests where `prompt_tokens + max_new_tokens` exceed the checkpoint context
-  window now fail before CUDA allocation. Native text prompt tokenization still
-  uses the transitional sampler bridge.
+  window now fail before CUDA allocation.
 
 #### Verification
 

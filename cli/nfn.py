@@ -126,7 +126,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --checkpoint PATH
           --checkpoint-tokenizer PATH
           --native-info
-          --native-sampler-script PATH
+          --native-sampler-script PATH (deprecated for native .bin prompts)
           --prompt TEXT
           --prompt-tokens IDS
           --max-new-tokens N
@@ -336,6 +336,9 @@ def _lightweight_native_gpt_infer_main(argv: list[str] | None = None) -> int:
         temperature=float(_arg_value(tokens, "--temperature") or 1.0),
         top_k=int(_arg_value(tokens, "--top-k") or 0),
         device=_arg_value(tokens, "--device") or "auto",
+        raw_text_encoding_override=(
+            _arg_value(tokens, "--tokenizer") or ("gpt2" if _has_any(tokens, "--tokgpt2") else None)
+        ),
     )
     return run_native_checkpoint_sampler(args, checkpoint)
 

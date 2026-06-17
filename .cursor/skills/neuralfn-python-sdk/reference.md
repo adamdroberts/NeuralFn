@@ -742,17 +742,19 @@ blob: str = encode_module_state_dict(state_dict)   # base64-encoded torch.save
 state_dict: dict = decode_module_state_dict(blob)   # torch.load from base64
 ```
 
-## Native checkpoint prompt-token inference
+## Native checkpoint prompt inference
 
 `nfn infer --checkpoint PATH --prompt-tokens IDS` and
 `python cli/scripts/infer_gpt2.py --native-checkpoint PATH --prompt-tokens IDS`
 dispatch to `nfn_gpt_native_train --sample-checkpoint PATH --prompt-tokens IDS`.
+Text prompts such as `nfn infer --checkpoint PATH --prompt "Once upon a time"`
+are tokenized with the GPT-2 tokenizer in the lightweight wrapper and then use
+that same compiled sampler command.
 Keep that path compiled-C++ only: it validates checkpoint metadata, file size,
 context length, vocab bounds, and token parsing before CUDA, Torch, dataset
 setup, or graph-editor node flow, then executes one full CUDA Tile checkpoint
 forward pass per generated token and returns up to `--max-new-tokens` IDs in
-`generated_tokens`. Text prompts still use the temporary sampler bridge until
-native tokenization lands.
+`generated_tokens`.
 Use `nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint PATH
 --checkpoint-load-tensor NAME --checkpoint-load-elements N` to verify the next
 native sampler prerequisite: named tensor selection from the decoded layout,

@@ -1772,7 +1772,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
 
-    def test_nfn_infer_native_checkpoint_dispatches_sampler(self) -> None:
+    def test_nfn_infer_native_checkpoint_text_prompt_dispatches_compiled_sampler(self) -> None:
         code = textwrap.dedent(
             f"""
             from pathlib import Path
@@ -1789,13 +1789,15 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmpdir:
                 tmp = Path(tmpdir)
                 checkpoint = tmp / "model_00000010.bin"
-                sampler = tmp / "fake_sampler.py"
-                sampler.write_text(
-                    "import os, sys\\n"
-                    "print('SAMPLER_ARGV', ' '.join(sys.argv[1:]))\\n"
-                    "print('SAMPLER_CUDA_VISIBLE_DEVICES', os.environ.get('CUDA_VISIBLE_DEVICES'))\\n",
+                native_cli = tmp / "nfn_gpt_native_train"
+                native_cli.write_text(
+                    "#!/usr/bin/env bash\\n"
+                    "printf 'NATIVE_CLI_ARGV %s\\\\n' \\"$*\\"\\n"
+                    "printf 'NATIVE_CLI_CUDA_VISIBLE_DEVICES %s\\\\n' \\"${{CUDA_VISIBLE_DEVICES:-}}\\"\\n"
+                    "exit 2\\n",
                     encoding="utf-8",
                 )
+                native_cli.chmod(0o755)
                 header = [0] * 256
                 header[:8] = [20240326, 5, 8, 16, 1, 1, 4, 16]
                 nparams = native_gpt2_parameter_count(
@@ -1805,7 +1807,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                     channels=4,
                 )
                 checkpoint.write_bytes(struct.pack("<" + "i" * 256, *header) + b"\\0" * (nparams * 2))
-                os.environ["NFN_NATIVE_GPT_SAMPLE_SCRIPT"] = str(sampler)
+                os.environ["NFN_NATIVE_GPT_CLI"] = str(native_cli)
                 sys.argv = [
                     str(root / "cli" / "nfn.py"),
                     "infer",
@@ -1843,14 +1845,12 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertEqual(2, proc.returncode, proc.stderr)
         self.assertIn("Native GPT checkpoint detected", proc.stdout)
-        self.assertIn("SAMPLER_ARGV --checkpoint", proc.stdout)
-        self.assertIn("--prompt Once upon a time", proc.stdout)
-        self.assertIn("--max_tokens 7", proc.stdout)
-        self.assertIn("--temperature 0.5", proc.stdout)
-        self.assertIn("--top_k 12", proc.stdout)
-        self.assertIn("SAMPLER_CUDA_VISIBLE_DEVICES 0", proc.stdout)
+        self.assertIn("NATIVE_CLI_ARGV --sample-checkpoint", proc.stdout)
+        self.assertIn("--prompt-tokens", proc.stdout)
+        self.assertIn("--max-new-tokens 7", proc.stdout)
+        self.assertIn("NATIVE_CLI_CUDA_VISIBLE_DEVICES 0", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
 

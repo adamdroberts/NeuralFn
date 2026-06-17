@@ -120,8 +120,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--native-sampler-script",
         default=os.environ.get("NFN_NATIVE_GPT_SAMPLE_SCRIPT", ""),
         help=(
-            "Optional prompt-capable sampler for native .bin checkpoints. Defaults to "
-            "llm.kittens/sample_gpt2.py when it is present."
+            "Deprecated; native .bin checkpoint prompts are tokenized locally and "
+            "run through the compiled CUDA Tile sampler."
         ),
     )
     parser.add_argument("--device", default="cuda")
@@ -162,41 +162,29 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def resolve_native_sampler_script(raw: str = "") -> Path | None:
-    requested = str(raw or os.environ.get("NFN_NATIVE_GPT_SAMPLE_SCRIPT", "")).strip()
-    candidates = []
-    if requested:
-        candidates.append(Path(requested).expanduser())
-    candidates.append(Path("/mnt/disk2/dev/open-source/llm.kittens/sample_gpt2.py"))
-    for candidate in candidates:
-        if candidate.exists() and candidate.is_file():
-            return candidate
-    return None
-
-
-def native_checkpoint_sampler_argv(args: argparse.Namespace, checkpoint: str | Path) -> list[str] | None:
-    script = resolve_native_sampler_script(getattr(args, "native_sampler_script", ""))
-    if script is None:
-        return None
-    top_k = getattr(args, "top_k", None)
-    top_k_value = "None" if top_k is None or int(top_k) <= 0 else str(int(top_k))
-    device = str(getattr(args, "device", "auto") or "auto")
-    return [
-        sys.executable,
-        str(script),
-        "--checkpoint",
-        str(Path(checkpoint).expanduser()),
-        "--prompt",
-        str(getattr(args, "prompt", "") or ""),
-        "--max_tokens",
-        str(int(getattr(args, "max_new_tokens", 64))),
-        "--temperature",
-        str(float(getattr(args, "temperature", 1.0))),
-        "--top_k",
-        top_k_value,
-        "--device",
-        device,
-    ]
+def native_checkpoint_prompt_tokens(args: argparse.Namespace) -> str:
+    prompt_tokens = str(getattr(args, "prompt_tokens", "") or "").strip()
+    if prompt_tokens:
+        return prompt_tokens
+    encoding_name = str(getattr(args, "raw_text_encoding_override", "") or "gpt2").strip()
+    if encoding_name != "gpt2":
+        raise ValueError(
+            f"Native GPT .bin checkpoint prompt inference requires the gpt2 tokenizer, got {encoding_name!r}."
+        )
+    prompt = str(getattr(args, "prompt", "") or "")
+    if not prompt:
+        return "50256"
+    try:
+        import tiktoken
+    except Exception as exc:  # pragma: no cover - environment/package failure
+        raise RuntimeError(
+            "Native GPT .bin checkpoint prompt inference requires tiktoken for GPT-2 tokenization. "
+            "Install NeuralFn dependencies or pass --prompt-tokens IDS."
+        ) from exc
+    token_ids = tiktoken.get_encoding("gpt2").encode(prompt)
+    if not token_ids:
+        return "50256"
+    return ",".join(str(int(token_id)) for token_id in token_ids)
 
 
 def native_checkpoint_token_sampler_argv(args: argparse.Namespace, checkpoint: str | Path) -> list[str]:
@@ -207,14 +195,18 @@ def native_checkpoint_token_sampler_argv(args: argparse.Namespace, checkpoint: s
         "--sample-checkpoint",
         str(Path(checkpoint).expanduser()),
         "--prompt-tokens",
-        str(getattr(args, "prompt_tokens", "") or ""),
+        native_checkpoint_prompt_tokens(args),
         "--max-new-tokens",
         str(int(getattr(args, "max_new_tokens", 64))),
     ]
 
 
 def run_native_checkpoint_token_sampler(args: argparse.Namespace, checkpoint: str | Path) -> int:
-    command = native_checkpoint_token_sampler_argv(args, checkpoint)
+    try:
+        command = native_checkpoint_token_sampler_argv(args, checkpoint)
+    except (RuntimeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     env = os.environ.copy()
     env.setdefault("CUDA_VISIBLE_DEVICES", "0")
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
@@ -230,21 +222,7 @@ def run_native_checkpoint_token_sampler(args: argparse.Namespace, checkpoint: st
 
 
 def run_native_checkpoint_sampler(args: argparse.Namespace, checkpoint: str | Path) -> int:
-    if str(getattr(args, "prompt_tokens", "") or "").strip():
-        return run_native_checkpoint_token_sampler(args, checkpoint)
-    command = native_checkpoint_sampler_argv(args, checkpoint)
-    if command is None:
-        print(
-            "Native GPT prompt inference needs a sampler script. Set "
-            "NFN_NATIVE_GPT_SAMPLE_SCRIPT or --native-sampler-script to "
-            "llm.kittens/sample_gpt2.py while the CUDA Tile inference executable is being built.",
-            file=sys.stderr,
-        )
-        return 2
-    env = os.environ.copy()
-    env.setdefault("CUDA_VISIBLE_DEVICES", "0")
-    env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
-    return int(subprocess.run(command, env=env, check=False).returncode)
+    return run_native_checkpoint_token_sampler(args, checkpoint)
 
 
 def handle_native_checkpoint_request(args: argparse.Namespace) -> int | None:

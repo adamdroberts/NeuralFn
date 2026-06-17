@@ -1134,9 +1134,10 @@ execution. The prompt-token forms dispatch to compiled C++ and validate the
 checkpoint, context window, vocab bounds, and token list without Torch or
 graph-node flow, then execute autoregressive CUDA Tile checkpoint forward passes
 and return up to `--max-new-tokens` IDs in `generated_tokens`. Text prompt
-generation from native `.bin` checkpoints still uses the transitional sampler
-script bridge until native tokenization lands; the graph-backed chat path will
-not attempt to load them as Torch checkpoints.
+generation from native `.bin` checkpoints now tokenizes with the GPT-2 tokenizer
+in the lightweight wrapper and then uses the same compiled sampler path; the
+graph-backed chat path will not attempt to load native `.bin` files as Torch
+checkpoints.
 `--checkpoint-load-smoke` is the compiled CUDA prerequisite check for that
 sampler: it reads a bounded bf16 payload slice from the checkpoint, copies it to
 device memory, converts it with `nfn_native_tile_bf16_bits_to_float32`, and
