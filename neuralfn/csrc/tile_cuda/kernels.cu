@@ -2139,7 +2139,7 @@ bool trainer_linear_bgrad_first_write_direct_enabled() {
       value = std::getenv("NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT");
     }
     if (value == nullptr || value[0] == '\0') {
-      return true;
+      return false;
     }
     if (std::strcmp(value, "0") == 0 ||
         std::strcmp(value, "false") == 0 ||
@@ -4756,6 +4756,42 @@ __tile_global__ void init_gpt2_token_weight_fast_with_bf16_shadow_float32_kernel
       ct::full<ct::tile<float, decltype(ct::shape{2048_ic})>>(0.01f);
   ct::store_masked(values + idx, value, mask);
   ct::store_masked(shadow + idx, ct::element_cast<__nv_bfloat16>(value), mask);
+}
+
+__global__ void init_gpt2_token_weight_threaded_float32_kernel(
+    float* __restrict__ values,
+    std::int64_t n,
+    int bucket_mask,
+    int bucket_mod) {
+  const std::int64_t stride = static_cast<std::int64_t>(blockDim.x) * gridDim.x;
+  for (std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       idx < n;
+       idx += stride) {
+    const int bucket = bucket_mask > 0
+        ? (static_cast<int>(idx) & bucket_mask)
+        : static_cast<int>(idx % bucket_mod);
+    values[idx] = static_cast<float>(bucket - 8) * 0.01f;
+  }
+}
+
+__global__ void init_gpt2_token_weight_threaded_with_bf16_shadow_float32_kernel(
+    float* __restrict__ values,
+    std::uint16_t* __restrict__ shadow_bf16_bits,
+    std::int64_t n,
+    int bucket_mask,
+    int bucket_mod) {
+  auto* shadow = reinterpret_cast<__nv_bfloat16*>(shadow_bf16_bits);
+  const std::int64_t stride = static_cast<std::int64_t>(blockDim.x) * gridDim.x;
+  for (std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       idx < n;
+       idx += stride) {
+    const int bucket = bucket_mask > 0
+        ? (static_cast<int>(idx) & bucket_mask)
+        : static_cast<int>(idx % bucket_mod);
+    const float value = static_cast<float>(bucket - 8) * 0.01f;
+    values[idx] = value;
+    shadow[idx] = __float2bfloat16(value);
+  }
 }
 
 __tile_global__ void sumsq_partials_float32_kernel(
@@ -11166,10 +11202,67 @@ void launch_fill_many_values_bf16_bits_float32(
       buffer_count);
 }
 
+bool token_weight_threaded_init_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_TOKEN_WEIGHT_THREADED_INIT");
+    }
+    if (value == nullptr || value[0] == '\0') {
+      return true;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
+void launch_init_gpt2_token_weight_threaded_float32(
+    float* values,
+    std::uint16_t* shadow_bf16_bits,
+    std::int64_t n,
+    bool power2_bucket,
+    cudaStream_t stream) {
+  if (n <= 0) {
+    return;
+  }
+  constexpr int kThreads = 256;
+  constexpr int kMaxBlocks = 4096;
+  const int blocks = std::min<int>(
+      kMaxBlocks,
+      static_cast<int>((n + kThreads - 1) / kThreads));
+  const int bucket_mask = power2_bucket ? 15 : 0;
+  const int bucket_mod = power2_bucket ? 16 : 17;
+  if (shadow_bf16_bits != nullptr) {
+    init_gpt2_token_weight_threaded_with_bf16_shadow_float32_kernel<<<blocks, kThreads, 0, stream>>>(
+        values, shadow_bf16_bits, n, bucket_mask, bucket_mod);
+  } else {
+    init_gpt2_token_weight_threaded_float32_kernel<<<blocks, kThreads, 0, stream>>>(
+        values, n, bucket_mask, bucket_mod);
+  }
+}
+
 void launch_init_gpt2_token_weight_float32(
     float* values,
     std::int64_t n,
     cudaStream_t stream) {
+  if (token_weight_threaded_init_enabled()) {
+    launch_init_gpt2_token_weight_threaded_float32(values, nullptr, n, false, stream);
+    return;
+  }
   constexpr int kTokenInitTileSize = 2048;
   const int blocks = static_cast<int>((n + kTokenInitTileSize - 1) / kTokenInitTileSize);
   init_gpt2_token_weight_float32_kernel<<<blocks, 1, 0, stream>>>(values, n);
@@ -11179,6 +11272,10 @@ void launch_init_gpt2_token_weight_fast_float32(
     float* values,
     std::int64_t n,
     cudaStream_t stream) {
+  if (token_weight_threaded_init_enabled()) {
+    launch_init_gpt2_token_weight_threaded_float32(values, nullptr, n, true, stream);
+    return;
+  }
   constexpr int kTokenInitTileSize = 2048;
   const int blocks = static_cast<int>((n + kTokenInitTileSize - 1) / kTokenInitTileSize);
   init_gpt2_token_weight_fast_float32_kernel<<<blocks, 1, 0, stream>>>(values, n);
@@ -11191,6 +11288,10 @@ void launch_init_gpt2_token_weight_with_bf16_shadow_float32(
     cudaStream_t stream) {
   if (shadow_bf16_bits == nullptr) {
     launch_init_gpt2_token_weight_float32(values, n, stream);
+    return;
+  }
+  if (token_weight_threaded_init_enabled()) {
+    launch_init_gpt2_token_weight_threaded_float32(values, shadow_bf16_bits, n, false, stream);
     return;
   }
   constexpr int kTokenInitTileSize = 2048;
@@ -11206,6 +11307,10 @@ void launch_init_gpt2_token_weight_fast_with_bf16_shadow_float32(
     cudaStream_t stream) {
   if (shadow_bf16_bits == nullptr) {
     launch_init_gpt2_token_weight_fast_float32(values, n, stream);
+    return;
+  }
+  if (token_weight_threaded_init_enabled()) {
+    launch_init_gpt2_token_weight_threaded_float32(values, shadow_bf16_bits, n, true, stream);
     return;
   }
   constexpr int kTokenInitTileSize = 2048;

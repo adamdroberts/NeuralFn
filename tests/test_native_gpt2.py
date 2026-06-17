@@ -2598,6 +2598,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["token_u16_device_arena_elements"] == 0
     assert train_transformer_payload["token_u16_pinned_arena_elements"] == 0
     assert train_transformer_payload["token_weight_init_strategy"] == "device-tile-power2-deterministic"
+    assert train_transformer_payload["token_weight_threaded_init_enabled"] is False
     assert train_transformer_payload["token_weight_init_legacy_mod17_enabled"] is False
     assert train_transformer_payload["token_weight_bf16_initial_refresh_fusion_enabled"] is True
     assert train_transformer_payload["token_weight_bf16_initial_refresh_elided"] is False
@@ -4089,6 +4090,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "token_weight.init_device" in gpt2_source_text
     assert "nfn_native_tile_init_gpt2_token_weight_float32" in gpt2_source_text
     assert "nfn_native_tile_init_gpt2_token_weight_fast_float32" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT" in kernels_text
+    assert "NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT" in kernels_text
     assert "FloatArenaRequest" in gpt2_source_text
     assert "Uint16ArenaRequest" in gpt2_source_text
     assert "cudaMalloc transformer_lm_float_arena" in gpt2_source_text
@@ -4187,6 +4190,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "launch_init_gpt2_token_weight_fast_with_bf16_shadow_float32" in source_text
     assert "init_gpt2_token_weight_with_bf16_shadow_float32_kernel" in kernels_text
     assert "init_gpt2_token_weight_fast_with_bf16_shadow_float32_kernel" in kernels_text
+    assert "init_gpt2_token_weight_threaded_with_bf16_shadow_float32_kernel" in kernels_text
     assert "nfn_native_tile_copy_float32" in header_text
     assert "nfn_native_tile_uint16_to_int64" in header_text
     assert "nfn_native_tile_float32_to_bf16_bits" in header_text

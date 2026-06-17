@@ -6,6 +6,39 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add token-weight threaded startup diagnostic and keep Tile default
+
+#### Changed
+
+- Added `NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT=1` /
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` /
+  `NFN_NATIVE_GPT2_TOKEN_WEIGHT_THREADED_INIT=1` as a diagnostic-only native GPT
+  startup switch for comparing a plain threaded CUDA token-weight initializer
+  against the default CUDA Tile initializer.
+- Kept the default on the CUDA Tile deterministic initializer. The threaded
+  candidate was noise-equivalent in the current reproducible startup-only pair,
+  so it was not promoted. Runtime JSON now reports
+  `token_weight_threaded_init_enabled` and distinguishes
+  threaded versus Tile token-weight initialization in `token_weight_init_strategy`.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k 'train_transformer_lm or packed_attention_ln1_recompute or packed_qkv_uint16_arena'`
+  (`2 passed, 43 deselected`).
+- Ran a default startup-only probe:
+  `build/nfn_gpt_native_train --backend tile-cuda --tinystories --startup-only --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so --json-out /tmp/nfn_startup_default_token_init.json`;
+  it reported `token_weight_init_strategy:
+  "device-tile-power2-deterministic-fused-bf16-shadow"` and
+  `token_weight_threaded_init_enabled: false`.
+- Dedicated RTX 5090 startup-only paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --startup-only --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --startup-only --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1 --samples 5 --warmup 1 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --command-timeout-seconds 900 --json-out /tmp/nfn_token_threaded_startup_candidate_env_pair.json`
+  measured the threaded candidate at noise-equivalent `0.996666x` token init
+  time and `0.997098x` total wall time versus the Tile initializer, so threaded
+  init stays opt-in only.
+
 ### 2026-06-17 Add BF16 cuBLASLt shape-bisection switch and reject tested fallbacks
 
 #### Changed

@@ -10471,6 +10471,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_INIT_LEGACY_MOD17",
                               "NFN_NATIVE_GPT2_TOKEN_WEIGHT_INIT_LEGACY_MOD17"}),
             false);
+    const bool token_weight_threaded_init_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT",
+                              "NFN_NATIVE_GPT2_TOKEN_WEIGHT_THREADED_INIT",
+                              "NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT"}),
+            false);
     const bool dweight_first_microbatch_beta_zero_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO",
@@ -16851,12 +16857,22 @@ int run_transformer_lm_training_json(
         << "  \"token_weight_init_strategy\": \""
         << (legacy_mod17_token_weight_init_enabled
                 ? (token_weight_bf16_initial_refresh_elided
-                       ? "device-tile-mod17-deterministic-fused-bf16-shadow"
-                       : "device-tile-mod17-deterministic")
+                       ? (token_weight_threaded_init_enabled
+                              ? "device-threaded-mod17-deterministic-fused-bf16-shadow"
+                              : "device-tile-mod17-deterministic-fused-bf16-shadow")
+                       : (token_weight_threaded_init_enabled
+                              ? "device-threaded-mod17-deterministic"
+                              : "device-tile-mod17-deterministic"))
                 : (token_weight_bf16_initial_refresh_elided
-                       ? "device-tile-power2-deterministic-fused-bf16-shadow"
-                       : "device-tile-power2-deterministic"))
+                       ? (token_weight_threaded_init_enabled
+                              ? "device-threaded-power2-deterministic-fused-bf16-shadow"
+                              : "device-tile-power2-deterministic-fused-bf16-shadow")
+                       : (token_weight_threaded_init_enabled
+                              ? "device-threaded-power2-deterministic"
+                              : "device-tile-power2-deterministic")))
         << "\",\n"
+        << "  \"token_weight_threaded_init_enabled\": "
+        << (token_weight_threaded_init_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_init_legacy_mod17_enabled\": "
         << (legacy_mod17_token_weight_init_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_bf16_initial_refresh_elided\": "

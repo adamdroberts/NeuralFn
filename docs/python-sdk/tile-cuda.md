@@ -548,13 +548,15 @@ validation pass, not in the per-step CPU hot path.
 The same native trainer initializes the tied token embedding/LM-head weight on
 device with `nfn_native_tile_init_gpt2_token_weight_fast_float32`. Native JSON
 reports `token_weight_init_strategy: "device-tile-power2-deterministic"` or the
-fused BF16-shadow variant, plus `token_weight_init_legacy_mod17_enabled` and
+fused BF16-shadow variant, plus `token_weight_threaded_init_enabled`,
+`token_weight_init_legacy_mod17_enabled`, and
 `token_weight_host_materialization: false`, so startup no longer constructs and
 copies the full token-weight matrix through host RAM. The default initializer
-uses 2048-element CUDA Tile blocks and a power-of-two deterministic value
-pattern for the full padded vocabulary table. Set
+uses CUDA Tile and a power-of-two deterministic value pattern for the full
+padded vocabulary table. Set `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` only
+when comparing against the not-promoted threaded CUDA initializer, and set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_INIT_LEGACY_MOD17=1` only when reproducing the older
-modulo-17 startup initializer in a paired benchmark.
+modulo-17 values in a paired benchmark.
 
 The compiled GPT-2 transformer-LM trainer does not sample train loss in the hot
 path. Ordinary optimizer steps run the forward activations needed for backward,
@@ -723,10 +725,13 @@ plus BF16-shadow refresh path for bisection. Runtime JSON reports
 Native GPT startup also fuses tied token-weight initialization with the
 persistent BF16 LM-head shadow refresh through
 `nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32`. The
-default SDK/native launch path uses that fused CUDA Tile ABI whenever
-`NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW=1`; set
+default SDK/native launch path uses the CUDA Tile initializer inside that fused
+ABI whenever `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW=1`; set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` or
+`NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT=1` only for paired comparison against
+the not-promoted threaded CUDA initializer, set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_INIT_LEGACY_MOD17=1` to reproduce the previous
-modulo-17 initializer, or set `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=0` to
+modulo-17 values, or set `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=0` to
 reproduce the older two-pass startup path. Runtime JSON reports
 `token_weight_init_strategy`, `token_weight_init_legacy_mod17_enabled`,
 `token_weight_bf16_initial_refresh_fusion_enabled`, and
