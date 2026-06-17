@@ -4209,6 +4209,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "linear_bias_gradient_first_write_bgrad_direct_enabled" in gpt2_source_text
     assert "NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_FLOAT32_BF16_BGRAD" in kernels_text
+    assert "cross_entropy_bf16_exp2_enabled" in kernels_text
+    assert "cross_entropy_exp_device" in kernels_text
+    assert "NFN_NATIVE_GPT_CE_BF16_EXP2" in kernels_text
+    assert "NFN_NATIVE_GPT2_CE_BF16_EXP2" in kernels_text
+    assert "NFN_TILE_CUDA_CE_BF16_EXP2" in kernels_text
+    assert "lm_head_ce_bf16_exp2_enabled" in gpt2_source_text
     assert "CUBLAS_COMPUTE_32F_FAST_TF32" in kernels_text
     assert "CUBLAS_COMPUTE_32F_FAST_16BF" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_BF16" in kernels_text

@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add BF16 CE exp2 profiling gate
+
+#### Changed
+
+- Added an opt-in BF16 CE+dlogits exponent candidate for the native Tile-CUDA
+  GPT trainer. Set `NFN_NATIVE_GPT_CE_BF16_EXP2=1`,
+  `NFN_NATIVE_GPT2_CE_BF16_EXP2=1`, or
+  `NFN_TILE_CUDA_CE_BF16_EXP2=1` to use `exp2f(x * log2(e))` inside the BF16
+  in-place CE kernels instead of the default `expf` path.
+- Dense GPT runtime JSON now reports `lm_head_ce_bf16_exp2_enabled`.
+- The candidate remains default-off because the dedicated RTX 5090 paired
+  benchmark was noise-equivalent/slightly slower than the default.
+
+#### Verification
+
+- `bash tools/build_native_train_tile_ops.sh`
+- `bash tools/build_native_gpt_cli.sh`
+- `python -m pytest tests/test_native_gpt2.py -q -k native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`
+- `git diff --check`
+- Dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_GPT_CE_BF16_EXP2=1 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --json-out /tmp/nfn_bisect_ce_bf16_exp2_3sample.json`
+  measured the exp2 candidate at `1.000721x` train-loop wall time and
+  `0.999293x` tokens/sec versus the default expf path, so it was not promoted.
+
 ### 2026-06-17 Elide first-write BGRADB bias accumulation launch
 
 #### Changed

@@ -141,7 +141,8 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_BF16_PROJECTION_RESIDUAL`,
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`,
 `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS`,
-`NFN_NATIVE_GPT_PUBLIC_VOCAB_CE`, and
+`NFN_NATIVE_GPT_PUBLIC_VOCAB_CE`,
+`NFN_NATIVE_GPT_CE_BF16_EXP2`, and
 `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN`,
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW`,
 `NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE`, and
@@ -232,7 +233,11 @@ columns, and the BF16 dlogits feed
 BF16-hidden/BF16-dlogit
 `nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32`
 path by default. Set `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0` to
-benchmark the older per-chunk final-hidden packing route.
+benchmark the older per-chunk final-hidden packing route. Set
+`NFN_NATIVE_GPT_CE_BF16_EXP2=1`, `NFN_NATIVE_GPT2_CE_BF16_EXP2=1`, or
+`NFN_TILE_CUDA_CE_BF16_EXP2=1` only for paired profiling of the BF16 CE+dlogits
+kernel's `exp2f(x * log2(e))` path; the default remains `expf`, and runtime
+JSON reports `lm_head_ce_bf16_exp2_enabled`.
 The mixed float32-hidden/BF16-grad dWeight+bias ABI also has an opt-in
 cuBLASLt bgrad epilogue route for QKV profiling; set
 `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=1` or
@@ -734,6 +739,7 @@ Accumulation buffers are zeroed once per optimizer step. JSON reports
 `linear_bias_gradient_accumulation_strategy:
 "direct-device-accumulation-buffer"`,
 `linear_bias_gradient_first_write_bgrad_direct_enabled: true`,
+`lm_head_ce_bf16_exp2_enabled: false`,
 `per_block_gradient_buffers: 0`,
 `per_block_direct_accum_gradient_buffers: 12`,
 `gradient_accumulation_loop: false`,
