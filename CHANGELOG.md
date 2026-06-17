@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Record gradient zero Tile-fill fallback reject
+
+#### Changed
+
+- Rejected `NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO=0` for the dense GPT SM120
+  trainer. The candidate replaces the default CUDA memset gradient-zero ranges
+  with the Tile `fill_many` fallback, but paired timing measured it slower in the
+  train loop.
+
+#### Verification
+
+- Dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO=0 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --command-timeout-seconds 1800 --json-out /tmp/nfn_cuda_memset_grad_zero_off_pair.json`
+  measured `1.003087x` train-loop time and `0.996930x` tokens/sec, so CUDA
+  memset gradient zeroing remains the default.
+
 ### 2026-06-17 Record BF16 LM-head loss fallback bisection
 
 #### Changed
