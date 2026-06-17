@@ -1161,6 +1161,52 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("TRAIN_JEPA_LOADED False", proc.stdout)
 
+    def test_train_gpt2_evo_direct_script_normalizes_native_cuda_preflight_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            native_evo = Path(tmpdir) / "nfn_gpt2_evo_native_train"
+            native_evo.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf 'EVO_NATIVE_DIRECT\\n'\n"
+                "printf '%s\\n' \"$@\"\n"
+                "exit 23\n",
+                encoding="utf-8",
+            )
+            native_evo.chmod(0o755)
+            env = os.environ.copy()
+            env["NFN_NATIVE_GPT2_EVO_CLI"] = str(native_evo)
+            env.pop("PYTHONPATH", None)
+            env.pop("NFN_ALLOW_TORCH_TRAINING", None)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(NEURALFN_ROOT / "cli" / "scripts" / "train_gpt2_evo.py"),
+                    "--native-cuda-print-plan",
+                    "--native-cuda-tile-ops-lib",
+                    "/tmp/libnfn_native_train_tile_ops.so",
+                    "--native-cuda-cuda-runtime-lib=/tmp/libcudart.so",
+                    "--template",
+                    "gpt2-moa",
+                ],
+                cwd=NEURALFN_ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+        self.assertEqual(23, proc.returncode)
+        self.assertIn("EVO_NATIVE_DIRECT", proc.stdout)
+        self.assertIn("--print-plan", proc.stdout)
+        self.assertNotIn("--native-cuda-print-plan", proc.stdout)
+        self.assertIn("--tile-ops-lib", proc.stdout)
+        self.assertIn("/tmp/libnfn_native_train_tile_ops.so", proc.stdout)
+        self.assertIn("--cuda-runtime-lib=/tmp/libcudart.so", proc.stdout)
+        self.assertNotIn("--native-cuda-cuda-runtime-lib", proc.stdout)
+        self.assertIn("--template", proc.stdout)
+        self.assertIn("gpt2-moa", proc.stdout)
+        self.assertNotIn("--base-model", proc.stdout)
+
     def test_train_nanogpt_direct_script_defaults_to_native_token_lm(self) -> None:
         code = textwrap.dedent(
             f"""

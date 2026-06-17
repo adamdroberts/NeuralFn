@@ -12,20 +12,62 @@ _NATIVE_ACTION_FLAGS = {
     "--check-tile-ops",
     "--help",
     "--json",
+    "--native-cuda-check-tile-ops",
+    "--native-cuda-print-plan",
+    "--native-cuda-smoke-attention-step",
+    "--native-cuda-smoke-embedding-lm-step",
+    "--native-cuda-smoke-embedding-norm-step",
+    "--native-cuda-smoke-fused-qkv-attention-step",
+    "--native-cuda-smoke-lm-step",
+    "--native-cuda-smoke-mlp-step",
+    "--native-cuda-smoke-norm-residual-step",
+    "--native-cuda-smoke-optimizer-step",
+    "--native-cuda-smoke-qkv-layout-step",
+    "--native-cuda-smoke-tile-ops",
+    "--native-cuda-smoke-token-train-step",
+    "--native-cuda-smoke-training-loop-step",
+    "--native-cuda-smoke-transformer-block-step",
+    "--native-cuda-smoke-transformer-lm-step",
     "--print-plan",
     "--sample-token-batch",
     "--smoke-attention-step",
+    "--smoke-embedding-lm-step",
     "--smoke-embedding-norm-step",
     "--smoke-fused-qkv-attention-step",
     "--smoke-lm-step",
     "--smoke-mlp-step",
+    "--smoke-norm-residual-step",
     "--smoke-optimizer-step",
     "--smoke-qkv-layout-step",
     "--smoke-tile-ops",
     "--smoke-token-train-step",
     "--smoke-training-loop-step",
     "--smoke-transformer-block-step",
+    "--smoke-transformer-lm-step",
+    "--smoke-evo-kernels",
     "--train-token-lm",
+}
+_NATIVE_BOOL_ALIASES = {
+    "--native-cuda-check-tile-ops": "--check-tile-ops",
+    "--native-cuda-print-plan": "--print-plan",
+    "--native-cuda-smoke-attention-step": "--smoke-attention-step",
+    "--native-cuda-smoke-embedding-lm-step": "--smoke-embedding-lm-step",
+    "--native-cuda-smoke-embedding-norm-step": "--smoke-embedding-norm-step",
+    "--native-cuda-smoke-fused-qkv-attention-step": "--smoke-fused-qkv-attention-step",
+    "--native-cuda-smoke-lm-step": "--smoke-lm-step",
+    "--native-cuda-smoke-mlp-step": "--smoke-mlp-step",
+    "--native-cuda-smoke-norm-residual-step": "--smoke-norm-residual-step",
+    "--native-cuda-smoke-optimizer-step": "--smoke-optimizer-step",
+    "--native-cuda-smoke-qkv-layout-step": "--smoke-qkv-layout-step",
+    "--native-cuda-smoke-tile-ops": "--smoke-tile-ops",
+    "--native-cuda-smoke-token-train-step": "--smoke-token-train-step",
+    "--native-cuda-smoke-training-loop-step": "--smoke-training-loop-step",
+    "--native-cuda-smoke-transformer-block-step": "--smoke-transformer-block-step",
+    "--native-cuda-smoke-transformer-lm-step": "--smoke-transformer-lm-step",
+}
+_NATIVE_VALUE_ALIASES = {
+    "--native-cuda-cuda-runtime-lib": "--cuda-runtime-lib",
+    "--native-cuda-tile-ops-lib": "--tile-ops-lib",
 }
 
 
@@ -75,14 +117,40 @@ def _has_native_action(args: list[str]) -> bool:
     return False
 
 
+def _normalize_forwarded_args(args: list[str]) -> list[str]:
+    normalized: list[str] = []
+    idx = 0
+    while idx < len(args):
+        arg = args[idx]
+        if arg in _NATIVE_BOOL_ALIASES:
+            normalized.append(_NATIVE_BOOL_ALIASES[arg])
+            idx += 1
+            continue
+        value_alias = _NATIVE_VALUE_ALIASES.get(arg)
+        if value_alias is not None:
+            normalized.append(value_alias)
+            if idx + 1 < len(args):
+                normalized.append(args[idx + 1])
+            idx += 2
+            continue
+        matched_value_alias = next((flag for flag in _NATIVE_VALUE_ALIASES if arg.startswith(flag + "=")), None)
+        if matched_value_alias is not None:
+            normalized.append(f"{_NATIVE_VALUE_ALIASES[matched_value_alias]}={arg.split('=', 1)[1]}")
+            idx += 1
+            continue
+        normalized.append(arg)
+        idx += 1
+    return normalized
+
+
 def _forwarded_args(model_family: str, native_default_args: list[str]) -> list[str]:
-    args = list(sys.argv[1:])
+    args = _normalize_forwarded_args(list(sys.argv[1:]))
     defaults = [] if _has_native_action(args) else native_default_args
     return [_resolve_native_train_cli(), "--base-model", model_family, *defaults, *args]
 
 
 def _family_forwarded_args(command: str, native_default_args: list[str]) -> list[str]:
-    args = list(sys.argv[1:])
+    args = _normalize_forwarded_args(list(sys.argv[1:]))
     defaults = [] if _has_native_action(args) else native_default_args
     return [command, *defaults, *args]
 

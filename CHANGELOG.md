@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Normalize native preflight aliases for guarded scripts
+
+#### Changed
+
+- Direct guarded training scripts now recognize wrapper-level native-cuda
+  preflight actions before graph-backed imports and normalize them to the
+  canonical C++ flags before forwarding to family-specific native binaries.
+- `python cli/scripts/train_gpt2_evo.py --native-cuda-print-plan ...` now
+  forwards `--print-plan`, and native-cuda Tile ops / CUDA runtime value aliases
+  forward as `--tile-ops-lib` / `--cuda-runtime-lib`, so GPT-2 evo preflight and
+  smoke commands stay on the compiled family binary path without touching Torch
+  or graph-editor training code.
+- Updated README, CLI docs, and Python SDK Tile-CUDA docs for the direct-script
+  alias forwarding behavior.
+
+#### Verification
+
+- Ran `python -m pytest cli/tests/test_train_gpt2_native.py::TrainGpt2NativeStartupTest::test_train_gpt2_evo_direct_script_normalizes_native_cuda_preflight_aliases cli/tests/test_train_gpt2_native.py::TrainGpt2NativeStartupTest::test_train_gpt2_evo_direct_script_prefers_family_native_preflight cli/tests/test_train_gpt2_native.py::TrainGpt2NativeStartupTest::test_train_nanogpt_direct_script_defaults_to_native_token_lm -q`.
+
 ### 2026-06-17 Reject 3D packed-attention dprep default
 
 #### Changed
