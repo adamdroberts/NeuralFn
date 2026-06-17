@@ -46,6 +46,7 @@ struct Config {
     std::string activation = "gelu";
     std::string template_name = "gpt";
     std::string graph_file;
+    std::string json_out_path;
     int moa_interval = 50;
     int eval_every_steps = 250;
     int sample_every_steps = 20000;
@@ -114,6 +115,51 @@ std::string env_or_empty(const char* name) {
     const char* value = std::getenv(name);
     return value == nullptr ? std::string() : std::string(value);
 }
+
+class ScopedStdoutRedirect {
+  public:
+    ScopedStdoutRedirect() = default;
+
+    ScopedStdoutRedirect(const ScopedStdoutRedirect&) = delete;
+    ScopedStdoutRedirect& operator=(const ScopedStdoutRedirect&) = delete;
+
+    ~ScopedStdoutRedirect() {
+        if (previous_ != nullptr) {
+            std::cout.rdbuf(previous_);
+        }
+    }
+
+    bool open(const std::string& path, std::string* error) {
+        if (path.empty()) {
+            return true;
+        }
+        const fs::path out_path(path);
+        const fs::path parent = out_path.parent_path();
+        if (!parent.empty()) {
+            std::error_code ec;
+            fs::create_directories(parent, ec);
+            if (ec) {
+                if (error != nullptr) {
+                    *error = "failed to create JSON output directory " + parent.string() + ": " + ec.message();
+                }
+                return false;
+            }
+        }
+        file_.open(out_path, std::ios::out | std::ios::trunc);
+        if (!file_) {
+            if (error != nullptr) {
+                *error = "failed to open JSON output file " + out_path.string() + ": " + std::strerror(errno);
+            }
+            return false;
+        }
+        previous_ = std::cout.rdbuf(file_.rdbuf());
+        return true;
+    }
+
+  private:
+    std::ofstream file_;
+    std::streambuf* previous_ = nullptr;
+};
 
 std::string env_or_empty_any(std::initializer_list<const char*> names) {
     for (const char* name : names) {
@@ -288,6 +334,8 @@ void print_usage(const char* program) {
         << "  --no-checkpoint                   Skip final trained checkpoint export for speed/preflight runs\n"
         << "  --checkpoint-metadata-smoke       Write a sparse native dense GPT checkpoint-format artifact and DONE marker without CUDA/Torch\n"
         << "  --cuda-runtime-lib PATH           libcudart path for Tile-CUDA smokes/training; defaults to NFN_CUDA_RUNTIME_LIB/libcudart.so\n"
+        << "  --json-out PATH                   Write native JSON output to PATH instead of stdout\n"
+        << "  --profile-json PATH               Alias for --json-out; useful with NFN_NATIVE_GPT_STAGE_TIMING=1\n"
         << "  --print-plan                      Print native backend JSON plan and exit\n"
         << "  --output-dir PATH                 Native output directory\n"
         << "  --dry-run                         Print/resolve without exec\n"
@@ -15193,6 +15241,14 @@ int main(int argc, char** argv) {
             cfg.cuda_runtime_lib = require_value(argc, argv, &i, arg);
         } else if (arg.rfind("--cuda-runtime-lib=", 0) == 0) {
             cfg.cuda_runtime_lib = value_after_equals("--cuda-runtime-lib=");
+        } else if (arg == "--json-out" || arg == "--profile-json" || arg == "--stage-profile-json") {
+            cfg.json_out_path = require_value(argc, argv, &i, arg);
+        } else if (arg.rfind("--json-out=", 0) == 0) {
+            cfg.json_out_path = value_after_equals("--json-out=");
+        } else if (arg.rfind("--profile-json=", 0) == 0) {
+            cfg.json_out_path = value_after_equals("--profile-json=");
+        } else if (arg.rfind("--stage-profile-json=", 0) == 0) {
+            cfg.json_out_path = value_after_equals("--stage-profile-json=");
         } else if (arg == "--print-plan" || arg == "--json") {
             cfg.print_plan = true;
         } else if (arg == "--output-dir" || arg == "--native-cuda-output-dir") {
@@ -15297,6 +15353,15 @@ int main(int argc, char** argv) {
     }
     if (std::getenv("CUDA_MODULE_LOADING") == nullptr) {
         setenv("CUDA_MODULE_LOADING", "LAZY", 0);
+    }
+
+    ScopedStdoutRedirect stdout_redirect;
+    if (!cfg.json_out_path.empty()) {
+        std::string redirect_error;
+        if (!stdout_redirect.open(cfg.json_out_path, &redirect_error)) {
+            std::cerr << redirect_error << "\n";
+            return 2;
+        }
     }
 
     if (cfg.backend == "tile-cuda") {

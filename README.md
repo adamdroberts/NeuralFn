@@ -77,7 +77,11 @@ summarizes native in-loop
 metrics such as `timing.train_loop_wall_ms`, `timing.train_tokens_per_second`,
 setup time, checkpoint time, total native wall time, and any emitted
 `timing.setup_timing` and `timing.stage_timing` entries separately from outer
-command runtime. When
+command runtime. Compiled native GPT commands can write that JSON directly with
+`--json-out PATH`; `--profile-json PATH` and `--stage-profile-json PATH` are
+aliases for profiling runs such as
+`NFN_NATIVE_GPT_STAGE_TIMING=1 build/nfn_gpt_native_train ... --profile-json /tmp/nfn_profile.json`.
+When
 native JSON includes `steps_completed`, the helper also reports
 `train_loop_wall_ms_per_step` so total-loop NeuralFn runs can be compared fairly
 with trainers that only log per-step timing. It also parses llm.kittens

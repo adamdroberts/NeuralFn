@@ -203,6 +203,24 @@ def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     assert "cudaDeviceSynchronize after cudaFreeAsync" in source
 
 
+def test_native_gpt_cli_supports_json_output_file_aliases() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "neuralfn"
+        / "csrc"
+        / "native_gpt2"
+        / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert "ScopedStdoutRedirect" in source
+    assert "--json-out PATH" in source
+    assert "--profile-json PATH" in source
+    assert '"--json-out"' in source
+    assert '"--profile-json"' in source
+    assert '"--stage-profile-json"' in source
+    assert "cfg.json_out_path" in source
+
+
 def test_native_gpt_transformer_lm_exposes_opt_in_bf16_attention_grad_out_handoff() -> None:
     root = Path(__file__).resolve().parents[1]
     gpt_source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(

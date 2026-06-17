@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add native GPT JSON output file flag
+
+#### Changed
+
+- `nfn_gpt_native_train` now accepts `--json-out PATH` and the profiling
+  aliases `--profile-json PATH` / `--stage-profile-json PATH`. The flag
+  redirects the compiled C++ trainer's JSON stdout to the requested file after
+  argument validation, so plan, smoke, startup, training, and stage-timed
+  profiling runs can be captured without shell redirection.
+- README and CLI documentation now show the flag alongside the paired kernel
+  benchmark workflow.
+
+#### Verification
+
+- Rebuilt the native GPT CLI with `bash tools/build_native_gpt_cli.sh`.
+- Ran `build/nfn_gpt_native_train --backend tile-cuda --tinystories
+  --print-plan --json-out /tmp/nfn_native_gpt_plan_json_out_smoke.json`; stdout
+  was empty and the file contained valid native plan JSON with
+  `status: "native-transformer-lm-ready"`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q` (`41 passed, 1 skipped`).
+- Ran `git diff --check`.
+
 ### 2026-06-17 Add Tile-CUDA candidate build flags
 
 #### Changed

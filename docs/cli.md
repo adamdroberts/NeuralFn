@@ -166,6 +166,11 @@ using the token/position embedding, transformer, final norm, tied LM head, CE
 backward, a row-chunked tied LM-head/CE workspace, device-side global norm
 gradient clipping, scratch-recompute activation tape, and 148-buffer AdamW raw
 Tile kernels without Python/Torch.
+Native JSON normally prints to stdout. Add `--json-out PATH` to the compiled
+trainer to write that JSON directly to a file, or use the aliases
+`--profile-json PATH` / `--stage-profile-json PATH` when collecting profiler
+runs such as `NFN_NATIVE_GPT_STAGE_TIMING=1 build/nfn_gpt_native_train ...
+--profile-json /tmp/nfn_profile.json`.
 Validation uses a separate C++ validation sampler and active forward batch size
 from `--eval-batch-size`; that value must be at least 1 and no larger than the
 training `--batch-size` because the fixed activation arena is allocated for the
