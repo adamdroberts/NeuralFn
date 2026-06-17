@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Enable large-shape BF16 cuBLASLt trainer GEMMs by default
+
+#### Changed
+
+- Trainer-facing BF16/BF16 linear backward GEMMs now allow larger cuBLASLt
+  shapes by default, covering dense GPT LM-head dHidden/dWeight chunk GEMMs
+  that previously fell back to BF16 `cublasGemmEx`.
+- Set `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_LARGE_SHAPES=0` or
+  `NFN_NATIVE_LINEAR_BF16_CUBLASLT_LARGE_SHAPES=0` to restore the previous
+  small-shape-only cuBLASLt gate for paired bisection.
+
+#### Verification
+
+- Rebuilt the raw Tile ops library with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_LARGE_SHAPES=1
+  build/nfn_gpt_native_train --backend tile-cuda --tinystories
+  --train-transformer-lm --max-steps 1 --eval-every-steps 0 --no-checkpoint
+  --profile-json /tmp/nfn_cublaslt_large_smoke.json` on the dedicated RTX 5090;
+  the JSON reported `passed: true` and `linear_cublaslt_gemm_count: 736`.
+- Ran `tools/paired_kernel_speed.py` against
+  `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_LARGE_SHAPES=0` for two measured 3-step
+  samples on the idle display-disabled RTX 5090. The default large cuBLASLt
+  shape path measured `0.999395x` train-loop time and `1.000607x` tokens/sec
+  versus the previous BF16 `cublasGemmEx` fallback for those larger shapes.
+
 ### 2026-06-17 Reuse BF16 MLP projection grad-out in native GPT backward
 
 #### Changed
