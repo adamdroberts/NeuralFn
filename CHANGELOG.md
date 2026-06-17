@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Reject primary float/uint16 arena startup probe
+
+#### Changed
+
+- Tested a native GPT startup candidate that backed the main float arena and
+  combined uint16/BF16 arena with one primary CUDA allocation. The candidate is
+  not retained: it regressed startup-only setup time to `1.075212x` and total
+  startup wall time to `1.047410x` versus the existing separate float and
+  uint16 arenas.
+- The sidecar profiles showed the intended allocation reduction was outweighed
+  by slower subsequent startup work. `setup.token_weight_init.total_ms`
+  measured `1.464730x` in the candidate run.
+
+#### Verification
+
+- Ran `python tools/paired_kernel_speed.py` on the dedicated display-disabled
+  RTX 5090 with `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`,
+  `--require-idle-selected-gpu`,
+  `--append-native-profile-json-dir /tmp/nfn_primary_arena_profiles`,
+  baseline `NFN_NATIVE_GPT_PRIMARY_FLOAT_UINT16_ARENA=0`, and candidate
+  `NFN_NATIVE_GPT_PRIMARY_FLOAT_UINT16_ARENA=1`.
+
 ### 2026-06-17 Reject cuBLASLt heuristic index 3 for native GPT
 
 #### Changed
