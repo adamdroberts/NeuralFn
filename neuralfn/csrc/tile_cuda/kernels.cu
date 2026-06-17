@@ -56,6 +56,10 @@ constexpr std::int64_t kLayerNormBackwardAffineDefaultRowChunkSize = 256;
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
 std::atomic<std::int64_t> g_attention_forward_tk_launch_count{0};
 std::atomic<std::int64_t> g_attention_backward_tk_launch_count{0};
+std::atomic<std::int64_t> g_attention_backward_dprep_timing_us{0};
+std::atomic<std::int64_t> g_attention_backward_dprep_timing_count{0};
+std::atomic<std::int64_t> g_attention_backward_tk_timing_us{0};
+std::atomic<std::int64_t> g_attention_backward_tk_timing_count{0};
 std::atomic<std::int64_t> g_attention_tk_workspace_allocation_count{0};
 std::atomic<std::int64_t> g_attention_tk_workspace_element_capacity{0};
 std::atomic<std::int64_t> g_attention_tk_workspace_row_capacity{0};
@@ -309,6 +313,90 @@ int tk_packed_attention_dprep_warps_per_block() {
   }();
   return warps;
 }
+
+bool tk_attention_backward_section_timing_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_ATTENTION_BACKWARD_SECTION_TIMING");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_TILE_CUDA_ATTENTION_BACKWARD_SECTION_TIMING");
+    }
+    if (value == nullptr || value[0] == '\0') {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
+class CudaSectionTimer {
+ public:
+  CudaSectionTimer(
+      bool enabled,
+      cudaStream_t stream,
+      std::atomic<std::int64_t>& total_us,
+      std::atomic<std::int64_t>& count)
+      : stream_(stream), total_us_(total_us), count_(count) {
+    if (!enabled) {
+      return;
+    }
+    if (cudaEventCreateWithFlags(&start_, cudaEventDefault) != cudaSuccess) {
+      start_ = nullptr;
+      return;
+    }
+    if (cudaEventCreateWithFlags(&stop_, cudaEventDefault) != cudaSuccess) {
+      cudaEventDestroy(start_);
+      start_ = nullptr;
+      stop_ = nullptr;
+      return;
+    }
+    if (cudaEventRecord(start_, stream_) == cudaSuccess) {
+      active_ = true;
+    }
+  }
+
+  ~CudaSectionTimer() {
+    if (active_) {
+      if (cudaEventRecord(stop_, stream_) == cudaSuccess &&
+          cudaEventSynchronize(stop_) == cudaSuccess) {
+        float elapsed_ms = 0.0f;
+        if (cudaEventElapsedTime(&elapsed_ms, start_, stop_) == cudaSuccess) {
+          const auto elapsed_us =
+              static_cast<std::int64_t>(std::llround(static_cast<double>(elapsed_ms) * 1000.0));
+          total_us_.fetch_add(elapsed_us, std::memory_order_relaxed);
+          count_.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
+    }
+    if (stop_ != nullptr) {
+      cudaEventDestroy(stop_);
+    }
+    if (start_ != nullptr) {
+      cudaEventDestroy(start_);
+    }
+  }
+
+ private:
+  cudaStream_t stream_ = nullptr;
+  std::atomic<std::int64_t>& total_us_;
+  std::atomic<std::int64_t>& count_;
+  cudaEvent_t start_ = nullptr;
+  cudaEvent_t stop_ = nullptr;
+  bool active_ = false;
+};
 
 void release_tk_attention_workspace(TkAttentionWorkspace& workspace) {
   if (workspace.q_bf != nullptr) cudaFree(workspace.q_bf);
@@ -1115,63 +1203,71 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
   const std::int64_t row_elements_per_batch = heads * seq_len;
   const std::int64_t packed_elements_per_batch = seq_len * heads * head_dim * 3;
   const std::int64_t merged_elements_per_batch = seq_len * heads * head_dim;
+  const bool time_backward_sections = tk_attention_backward_section_timing_enabled();
   std::int64_t tk_backward_chunk_launches = 0;
   for (std::int64_t batch_begin = 0; batch_begin < batch; batch_begin += max_batch_per_launch) {
     const std::int64_t chunk_batch = std::min(max_batch_per_launch, batch - batch_begin);
     const std::int64_t chunk_rows = chunk_batch * row_elements_per_batch;
     dim3 dprep_block(32, static_cast<unsigned int>(tk_packed_attention_dprep_warps_per_block()), 1);
-    if (tk_packed_attention_dprep_grid3d_enabled()) {
-      dim3 dprep_grid(
-          static_cast<unsigned int>((seq_len + dprep_block.y - 1) / dprep_block.y),
-          static_cast<unsigned int>(heads),
-          static_cast<unsigned int>(chunk_batch));
-      if (grad_out_bf16_bits != nullptr) {
-        packed_attention_dprep_bf16_grad_grid3d_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
-            out_bf16_bits + batch_begin * merged_elements_per_batch,
-            grad_out_bf16_bits + batch_begin * merged_elements_per_batch,
-            workspace->o_bf + batch_begin * head_elements_per_batch,
-            workspace->go_bf + batch_begin * head_elements_per_batch,
-            workspace->d + batch_begin * row_elements_per_batch,
-            chunk_batch,
-            heads,
-            seq_len,
-            head_dim);
+    {
+      CudaSectionTimer timer(
+          time_backward_sections,
+          stream,
+          g_attention_backward_dprep_timing_us,
+          g_attention_backward_dprep_timing_count);
+      if (tk_packed_attention_dprep_grid3d_enabled()) {
+        dim3 dprep_grid(
+            static_cast<unsigned int>((seq_len + dprep_block.y - 1) / dprep_block.y),
+            static_cast<unsigned int>(heads),
+            static_cast<unsigned int>(chunk_batch));
+        if (grad_out_bf16_bits != nullptr) {
+          packed_attention_dprep_bf16_grad_grid3d_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
+              out_bf16_bits + batch_begin * merged_elements_per_batch,
+              grad_out_bf16_bits + batch_begin * merged_elements_per_batch,
+              workspace->o_bf + batch_begin * head_elements_per_batch,
+              workspace->go_bf + batch_begin * head_elements_per_batch,
+              workspace->d + batch_begin * row_elements_per_batch,
+              chunk_batch,
+              heads,
+              seq_len,
+              head_dim);
+        } else {
+          packed_attention_dprep_grid3d_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
+              out_bf16_bits + batch_begin * merged_elements_per_batch,
+              grad_out + batch_begin * merged_elements_per_batch,
+              workspace->o_bf + batch_begin * head_elements_per_batch,
+              workspace->go_bf + batch_begin * head_elements_per_batch,
+              workspace->d + batch_begin * row_elements_per_batch,
+              chunk_batch,
+              heads,
+              seq_len,
+              head_dim);
+        }
       } else {
-        packed_attention_dprep_grid3d_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
-            out_bf16_bits + batch_begin * merged_elements_per_batch,
-            grad_out + batch_begin * merged_elements_per_batch,
-            workspace->o_bf + batch_begin * head_elements_per_batch,
-            workspace->go_bf + batch_begin * head_elements_per_batch,
-            workspace->d + batch_begin * row_elements_per_batch,
-            chunk_batch,
-            heads,
-            seq_len,
-            head_dim);
-      }
-    } else {
-      const int dprep_grid = static_cast<int>((chunk_rows + dprep_block.y - 1) / dprep_block.y);
-      if (grad_out_bf16_bits != nullptr) {
-        packed_attention_dprep_bf16_grad_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
-            out_bf16_bits + batch_begin * merged_elements_per_batch,
-            grad_out_bf16_bits + batch_begin * merged_elements_per_batch,
-            workspace->o_bf + batch_begin * head_elements_per_batch,
-            workspace->go_bf + batch_begin * head_elements_per_batch,
-            workspace->d + batch_begin * row_elements_per_batch,
-            chunk_batch,
-            heads,
-            seq_len,
-            head_dim);
-      } else {
-        packed_attention_dprep_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
-            out_bf16_bits + batch_begin * merged_elements_per_batch,
-            grad_out + batch_begin * merged_elements_per_batch,
-            workspace->o_bf + batch_begin * head_elements_per_batch,
-            workspace->go_bf + batch_begin * head_elements_per_batch,
-            workspace->d + batch_begin * row_elements_per_batch,
-            chunk_batch,
-            heads,
-            seq_len,
-            head_dim);
+        const int dprep_grid = static_cast<int>((chunk_rows + dprep_block.y - 1) / dprep_block.y);
+        if (grad_out_bf16_bits != nullptr) {
+          packed_attention_dprep_bf16_grad_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
+              out_bf16_bits + batch_begin * merged_elements_per_batch,
+              grad_out_bf16_bits + batch_begin * merged_elements_per_batch,
+              workspace->o_bf + batch_begin * head_elements_per_batch,
+              workspace->go_bf + batch_begin * head_elements_per_batch,
+              workspace->d + batch_begin * row_elements_per_batch,
+              chunk_batch,
+              heads,
+              seq_len,
+              head_dim);
+        } else {
+          packed_attention_dprep_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
+              out_bf16_bits + batch_begin * merged_elements_per_batch,
+              grad_out + batch_begin * merged_elements_per_batch,
+              workspace->o_bf + batch_begin * head_elements_per_batch,
+              workspace->go_bf + batch_begin * head_elements_per_batch,
+              workspace->d + batch_begin * row_elements_per_batch,
+              chunk_batch,
+              heads,
+              seq_len,
+              head_dim);
+        }
       }
     }
     auto* qkv = const_cast<__nv_bfloat16*>(
@@ -1187,32 +1283,39 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
       packed_grad_target = reinterpret_cast<__nv_bfloat16*>(
           grad_qkv_bf16_bits + batch_begin * packed_elements_per_batch);
     }
-    if (head_dim == 64) {
-      llmk::attention::launch_backward_causal_packed_qkv_packed_grads<64>(
-          llmk::to_bf16(qkv),
-          llmk::to_bf16(workspace->o_bf + batch_begin * head_elements_per_batch),
-          lse,
-          llmk::to_bf16(workspace->go_bf + batch_begin * head_elements_per_batch),
-          workspace->d + batch_begin * row_elements_per_batch,
-          llmk::to_bf16(packed_grad_target),
-          static_cast<int>(chunk_batch),
-          static_cast<int>(heads),
-          static_cast<int>(seq_len),
+    {
+      CudaSectionTimer timer(
+          time_backward_sections,
           stream,
-          true);
-    } else {
-      llmk::attention::launch_backward_causal_packed_qkv_packed_grads<128>(
-          llmk::to_bf16(qkv),
-          llmk::to_bf16(workspace->o_bf + batch_begin * head_elements_per_batch),
-          lse,
-          llmk::to_bf16(workspace->go_bf + batch_begin * head_elements_per_batch),
-          workspace->d + batch_begin * row_elements_per_batch,
-          llmk::to_bf16(packed_grad_target),
-          static_cast<int>(chunk_batch),
-          static_cast<int>(heads),
-          static_cast<int>(seq_len),
-          stream,
-          true);
+          g_attention_backward_tk_timing_us,
+          g_attention_backward_tk_timing_count);
+      if (head_dim == 64) {
+        llmk::attention::launch_backward_causal_packed_qkv_packed_grads<64>(
+            llmk::to_bf16(qkv),
+            llmk::to_bf16(workspace->o_bf + batch_begin * head_elements_per_batch),
+            lse,
+            llmk::to_bf16(workspace->go_bf + batch_begin * head_elements_per_batch),
+            workspace->d + batch_begin * row_elements_per_batch,
+            llmk::to_bf16(packed_grad_target),
+            static_cast<int>(chunk_batch),
+            static_cast<int>(heads),
+            static_cast<int>(seq_len),
+            stream,
+            true);
+      } else {
+        llmk::attention::launch_backward_causal_packed_qkv_packed_grads<128>(
+            llmk::to_bf16(qkv),
+            llmk::to_bf16(workspace->o_bf + batch_begin * head_elements_per_batch),
+            lse,
+            llmk::to_bf16(workspace->go_bf + batch_begin * head_elements_per_batch),
+            workspace->d + batch_begin * row_elements_per_batch,
+            llmk::to_bf16(packed_grad_target),
+            static_cast<int>(chunk_batch),
+            static_cast<int>(heads),
+            static_cast<int>(seq_len),
+            stream,
+            true);
+      }
     }
     tk_backward_chunk_launches += 1;
   }
@@ -15037,6 +15140,10 @@ void reset_attention_forward_launch_stats() {
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   g_attention_forward_tk_launch_count.store(0, std::memory_order_relaxed);
   g_attention_backward_tk_launch_count.store(0, std::memory_order_relaxed);
+  g_attention_backward_dprep_timing_us.store(0, std::memory_order_relaxed);
+  g_attention_backward_dprep_timing_count.store(0, std::memory_order_relaxed);
+  g_attention_backward_tk_timing_us.store(0, std::memory_order_relaxed);
+  g_attention_backward_tk_timing_count.store(0, std::memory_order_relaxed);
   g_attention_tk_workspace_allocation_count.store(0, std::memory_order_relaxed);
 #endif
   g_attention_forward_row_launch_count.store(0, std::memory_order_relaxed);
@@ -15266,6 +15373,38 @@ std::int64_t attention_forward_tk_launch_count() {
 std::int64_t attention_backward_tk_launch_count() {
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_backward_tk_launch_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_backward_dprep_timing_us() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return g_attention_backward_dprep_timing_us.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_backward_dprep_timing_count() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return g_attention_backward_dprep_timing_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_backward_tk_timing_us() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return g_attention_backward_tk_timing_us.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_backward_tk_timing_count() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return g_attention_backward_tk_timing_count.load(std::memory_order_relaxed);
 #else
   return 0;
 #endif

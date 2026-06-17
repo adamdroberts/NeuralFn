@@ -2794,6 +2794,10 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_attention_forward_row_launch_count",
         "nfn_native_tile_attention_forward_tk_launch_count",
         "nfn_native_tile_attention_backward_tk_launch_count",
+        "nfn_native_tile_attention_backward_dprep_timing_us",
+        "nfn_native_tile_attention_backward_dprep_timing_count",
+        "nfn_native_tile_attention_backward_tk_timing_us",
+        "nfn_native_tile_attention_backward_tk_timing_count",
         "nfn_native_tile_attention_tk_workspace_allocation_count",
         "nfn_native_tile_attention_tk_workspace_element_capacity",
         "nfn_native_tile_attention_tk_workspace_row_capacity",
@@ -9150,6 +9154,10 @@ int run_transformer_lm_training_json(
     std::int64_t attention_forward_row_launches = 0;
     std::int64_t attention_forward_tk_launches = 0;
     std::int64_t attention_backward_tk_launches = 0;
+    std::int64_t attention_backward_dprep_timing_us = 0;
+    std::int64_t attention_backward_dprep_timing_count = 0;
+    std::int64_t attention_backward_tk_timing_us = 0;
+    std::int64_t attention_backward_tk_timing_count = 0;
     std::int64_t attention_tk_workspace_allocations = 0;
     std::int64_t attention_tk_workspace_element_capacity = 0;
     std::int64_t attention_tk_workspace_row_capacity = 0;
@@ -9338,6 +9346,10 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_scaled_dot_product_attention_float32",
         "nfn_native_tile_attention_forward_tk_launch_count",
         "nfn_native_tile_attention_backward_tk_launch_count",
+        "nfn_native_tile_attention_backward_dprep_timing_us",
+        "nfn_native_tile_attention_backward_dprep_timing_count",
+        "nfn_native_tile_attention_backward_tk_timing_us",
+        "nfn_native_tile_attention_backward_tk_timing_count",
         "nfn_native_tile_attention_tk_workspace_allocation_count",
         "nfn_native_tile_attention_tk_workspace_element_capacity",
         "nfn_native_tile_attention_tk_workspace_row_capacity",
@@ -9811,6 +9823,10 @@ int run_transformer_lm_training_json(
     AttentionStatsCountFn attention_row_launch_count = nullptr;
     AttentionStatsCountFn attention_forward_tk_launch_count = nullptr;
     AttentionStatsCountFn attention_backward_tk_launch_count = nullptr;
+    AttentionStatsCountFn attention_backward_dprep_timing_us_fn = nullptr;
+    AttentionStatsCountFn attention_backward_dprep_timing_count_fn = nullptr;
+    AttentionStatsCountFn attention_backward_tk_timing_us_fn = nullptr;
+    AttentionStatsCountFn attention_backward_tk_timing_count_fn = nullptr;
     AttentionStatsCountFn attention_tk_workspace_allocation_count_fn = nullptr;
     AttentionStatsCountFn attention_tk_workspace_element_capacity_fn = nullptr;
     AttentionStatsCountFn attention_tk_workspace_row_capacity_fn = nullptr;
@@ -10160,6 +10176,14 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_attention_forward_tk_launch_count");
                 attention_backward_tk_launch_count = load_symbol<AttentionStatsCountFn>(
                     tile_handle, "nfn_native_tile_attention_backward_tk_launch_count");
+                attention_backward_dprep_timing_us_fn = load_symbol<AttentionStatsCountFn>(
+                    tile_handle, "nfn_native_tile_attention_backward_dprep_timing_us");
+                attention_backward_dprep_timing_count_fn = load_symbol<AttentionStatsCountFn>(
+                    tile_handle, "nfn_native_tile_attention_backward_dprep_timing_count");
+                attention_backward_tk_timing_us_fn = load_symbol<AttentionStatsCountFn>(
+                    tile_handle, "nfn_native_tile_attention_backward_tk_timing_us");
+                attention_backward_tk_timing_count_fn = load_symbol<AttentionStatsCountFn>(
+                    tile_handle, "nfn_native_tile_attention_backward_tk_timing_count");
                 attention_tk_workspace_allocation_count_fn = load_symbol<AttentionStatsCountFn>(
                     tile_handle, "nfn_native_tile_attention_tk_workspace_allocation_count");
                 attention_tk_workspace_element_capacity_fn = load_symbol<AttentionStatsCountFn>(
@@ -16277,6 +16301,18 @@ int run_transformer_lm_training_json(
     if (attention_backward_tk_launch_count != nullptr) {
         attention_backward_tk_launches = attention_backward_tk_launch_count();
     }
+    if (attention_backward_dprep_timing_us_fn != nullptr) {
+        attention_backward_dprep_timing_us = attention_backward_dprep_timing_us_fn();
+    }
+    if (attention_backward_dprep_timing_count_fn != nullptr) {
+        attention_backward_dprep_timing_count = attention_backward_dprep_timing_count_fn();
+    }
+    if (attention_backward_tk_timing_us_fn != nullptr) {
+        attention_backward_tk_timing_us = attention_backward_tk_timing_us_fn();
+    }
+    if (attention_backward_tk_timing_count_fn != nullptr) {
+        attention_backward_tk_timing_count = attention_backward_tk_timing_count_fn();
+    }
     if (attention_tk_workspace_allocation_count_fn != nullptr) {
         attention_tk_workspace_allocations = attention_tk_workspace_allocation_count_fn();
     }
@@ -17006,6 +17042,13 @@ int run_transformer_lm_training_json(
         << (attention_backward_tk_launches > 0 || stored_packed_attention_backward_kernel_launches > 0 ? 1 : 0)
         << ",\n"
         << "  \"attention_backward_tk_launch_count\": " << attention_backward_tk_launches << ",\n"
+        << "  \"attention_backward_section_timing_enabled\": "
+        << (attention_backward_dprep_timing_count > 0 || attention_backward_tk_timing_count > 0 ? "true" : "false")
+        << ",\n"
+        << "  \"attention_backward_dprep_timing_us\": " << attention_backward_dprep_timing_us << ",\n"
+        << "  \"attention_backward_dprep_timing_count\": " << attention_backward_dprep_timing_count << ",\n"
+        << "  \"attention_backward_tk_timing_us\": " << attention_backward_tk_timing_us << ",\n"
+        << "  \"attention_backward_tk_timing_count\": " << attention_backward_tk_timing_count << ",\n"
         << "  \"attention_backward_row_count\": " << (rows * kHeads) << ",\n"
         << "  \"attention_backward_scalar_output_count\": " << (rows * kDim * 3) << ",\n"
         << "  \"attention_backward_score_reuse_dim\": " << kAttentionBackwardDimReuse << ",\n"

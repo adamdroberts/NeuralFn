@@ -1772,6 +1772,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert "nfn_native_tile_attention_forward_stats_reset" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_attention_forward_row_launch_count" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_attention_backward_dprep_timing_us" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_attention_backward_tk_timing_us" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_attention_forward_row_fallback_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_attention_forward_scalar_launch_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_attention_forward_row_prelaunch_clear_error" in tile_payload["available_native_kernels"]
@@ -5004,9 +5006,15 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "tk-sm120-bf16-bridge" in gpt2_source_text
     assert "attention_forward_tk_launch_count" in gpt2_source_text
     assert "attention_backward_tk_launch_count" in gpt2_source_text
+    assert "attention_backward_dprep_timing_us" in gpt2_source_text
+    assert "attention_backward_tk_timing_us" in gpt2_source_text
     assert "nfn_native_tile_attention_forward_tk_launch_count" in header_text
     assert "nfn_native_tile_attention_backward_tk_launch_count" in header_text
+    assert "nfn_native_tile_attention_backward_dprep_timing_us" in header_text
+    assert "nfn_native_tile_attention_backward_tk_timing_us" in header_text
     assert "nfn_native_tile_attention_forward_tk_launch_count" in source_text
+    assert "nfn_native_tile_attention_backward_dprep_timing_us" in source_text
+    assert "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING" in kernels_text
     assert "NFN_TILE_CUDA_USE_TK_ATTENTION:-1" in script_text
     assert "LLM_KITTENS_ROOT" in script_text
     assert "TK_ROOT" in script_text

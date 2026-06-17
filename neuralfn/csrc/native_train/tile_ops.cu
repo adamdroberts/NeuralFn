@@ -8,6 +8,10 @@ void reset_attention_forward_launch_stats();
 std::int64_t attention_forward_row_launch_count();
 std::int64_t attention_forward_tk_launch_count();
 std::int64_t attention_backward_tk_launch_count();
+std::int64_t attention_backward_dprep_timing_us();
+std::int64_t attention_backward_dprep_timing_count();
+std::int64_t attention_backward_tk_timing_us();
+std::int64_t attention_backward_tk_timing_count();
 std::int64_t attention_tk_workspace_allocation_count();
 std::int64_t attention_tk_workspace_element_capacity();
 std::int64_t attention_tk_workspace_row_capacity();
@@ -1592,6 +1596,22 @@ std::int64_t nfn_native_tile_attention_forward_tk_launch_count() {
 
 std::int64_t nfn_native_tile_attention_backward_tk_launch_count() {
     return neuralfn::tile_cuda::attention_backward_tk_launch_count();
+}
+
+std::int64_t nfn_native_tile_attention_backward_dprep_timing_us() {
+    return neuralfn::tile_cuda::attention_backward_dprep_timing_us();
+}
+
+std::int64_t nfn_native_tile_attention_backward_dprep_timing_count() {
+    return neuralfn::tile_cuda::attention_backward_dprep_timing_count();
+}
+
+std::int64_t nfn_native_tile_attention_backward_tk_timing_us() {
+    return neuralfn::tile_cuda::attention_backward_tk_timing_us();
+}
+
+std::int64_t nfn_native_tile_attention_backward_tk_timing_count() {
+    return neuralfn::tile_cuda::attention_backward_tk_timing_count();
 }
 
 std::int64_t nfn_native_tile_attention_tk_workspace_allocation_count() {

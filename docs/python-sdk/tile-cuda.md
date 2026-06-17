@@ -208,6 +208,12 @@ causal masks. Training JSON reports
 `attention_forward_strategy: "tk-sm120-bf16-flashattention-bridge"`,
 `attention_backward_strategy: "tk-sm120-bf16-recompute-forward-bridge"`,
 `attention_forward_tk_launch_count`, and `attention_backward_tk_launch_count`.
+Set `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` only for short
+diagnostic runs that need packed-backward section timing: it uses CUDA events
+and synchronizes the stream to report dprep and TK backward totals/counts as
+`attention_backward_dprep_timing_us`,
+`attention_backward_dprep_timing_count`, `attention_backward_tk_timing_us`, and
+`attention_backward_tk_timing_count`.
 The trainer-facing build mirrors llm.kittens' SM120 NVCC threading,
 host-compiler, data-prep, memory, and LayerNorm tuning flags for those
 ThunderKittens headers while keeping GEMM on NeuralFn's initialized cublasLt
@@ -1146,6 +1152,16 @@ diagnostic 3D batch/head/time launch, which avoids per-row division/modulo but
 measured slower on the dedicated RTX 5090. Set
 `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS=N` only for row-grouping
 bisection of that dprep launch; the default remains `3`.
+Set `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` only for one-off
+diagnostics that need direct dprep-vs-TK timing inside packed attention
+backward. The diagnostic path records CUDA events around each section and
+therefore synchronizes the stream; runtime JSON reports
+`attention_backward_section_timing_enabled`,
+`attention_backward_dprep_timing_us`,
+`attention_backward_dprep_timing_count`, `attention_backward_tk_timing_us`, and
+`attention_backward_tk_timing_count`. The GPT-2-prefixed
+`NFN_NATIVE_GPT2_ATTENTION_BACKWARD_SECTION_TIMING` and low-level
+`NFN_TILE_CUDA_ATTENTION_BACKWARD_SECTION_TIMING` names remain fallbacks.
 `attention_backward_tk_launch_count`
 now counts packed backward chunks instead of only wrapper calls. When
 `NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS=1` is set with the split path,

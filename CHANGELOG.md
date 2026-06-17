@@ -6,6 +6,45 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add packed-attention backward section timing
+
+#### Added
+
+- Added opt-in CUDA-event timing for packed-attention backward dprep versus the
+  SM120 TK backward launch. Set
+  `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` for short diagnostic
+  runs; `NFN_NATIVE_GPT2_ATTENTION_BACKWARD_SECTION_TIMING` and
+  `NFN_TILE_CUDA_ATTENTION_BACKWARD_SECTION_TIMING` remain fallbacks.
+- Runtime JSON now reports `attention_backward_section_timing_enabled`,
+  `attention_backward_dprep_timing_us`,
+  `attention_backward_dprep_timing_count`, `attention_backward_tk_timing_us`,
+  and `attention_backward_tk_timing_count`. The diagnostic path synchronizes
+  CUDA events, so it is not part of normal training timing.
+- The raw Tile-CUDA trainer ABI now exports
+  `nfn_native_tile_attention_backward_dprep_timing_us`,
+  `nfn_native_tile_attention_backward_dprep_timing_count`,
+  `nfn_native_tile_attention_backward_tk_timing_us`, and
+  `nfn_native_tile_attention_backward_tk_timing_count`.
+
+#### Verification
+
+- Ran `bash tools/build_native_train_tile_ops.sh`.
+- Ran `bash tools/build_native_gpt_cli.sh`.
+- Ran `bash tools/build_native_gpt2_cli.sh`.
+- Ran a dedicated RTX 5090 one-step native GPT diagnostic with
+  `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1`; runtime JSON reported
+  `attention_backward_section_timing_enabled: true`,
+  `attention_backward_tk_launch_count: 96`,
+  `attention_backward_dprep_timing_us: 32587`,
+  `attention_backward_dprep_timing_count: 96`,
+  `attention_backward_tk_timing_us: 244217`, and
+  `attention_backward_tk_timing_count: 96`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran
+  `python -m pytest tests/test_native_gpt2.py::test_native_train_tile_ops_builds_torch_free_c_abi -q`;
+  the source-level assertions passed and the optional temp `nvcc` rebuild path
+  skipped because `nvcc` is not on PATH in the test environment.
+
 ### 2026-06-17 Add packed-attention dprep warps bisection knob
 
 #### Added
