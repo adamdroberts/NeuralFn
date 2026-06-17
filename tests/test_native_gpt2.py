@@ -3615,6 +3615,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert plan["shape"]["num_layers"] == 5
     assert plan["shape"]["model_dim"] == 320
     assert plan["shape"]["num_heads"] == 5
+    assert plan["shape"]["vocab_size"] == 50257
     assert plan["shape"]["dropout_p"] == 0
     assert plan["schedule"]["eval_every_steps"] == 1000
     assert plan["optimizer"]["profile"] == "adamw"
@@ -3635,9 +3636,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert layout["required_device_buffers"]["clip_scale"] == 1
     assert buffers[0] == {
         "name": "tok_emb.weight",
-        "shape": [1024, 320],
+        "shape": [50257, 320],
         "offset": 0,
-        "count": 327680,
+        "count": 16082240,
         "weight_decay": True,
     }
     assert buffers[-1]["name"] == "ln_f.weight"
@@ -3671,7 +3672,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert stages_by_name["lm_head.backward_input"]["kernel_abi"] == "nfn_native_tile_linear_backward_input_float32"
     assert stages_by_name["lm_head.backward_input"]["elements"] == 20971520
     assert stages_by_name["lm_head.backward_weight_tied"]["kernel_abi"] == "nfn_native_tile_linear_backward_weight_float32"
-    assert stages_by_name["lm_head.backward_weight_tied"]["elements"] == 327680
+    assert stages_by_name["lm_head.backward_weight_tied"]["elements"] == 16082240
     assert stages_by_name["blocks.0.attn.qkv.split"]["status"] == "ready"
     assert stages_by_name["blocks.0.attn.qkv.split"]["kernel_abi"] == "nfn_native_tile_split_qkv_float32"
     assert stages_by_name["blocks.0.attn.sdpa.backward"]["kernel_abi"] == (

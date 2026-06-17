@@ -26,7 +26,7 @@ struct NanoGptPlan {
     std::int64_t eval_batch_size = 64;
     std::int64_t eval_every_steps = 250;
     std::int64_t warmup_steps = 60;
-    std::int64_t vocab_size = 1024;
+    std::int64_t vocab_size = 50257;
     std::int64_t num_layers = 5;
     std::int64_t model_dim = 320;
     std::int64_t num_heads = 5;
@@ -5999,7 +5999,7 @@ void print_usage(const char* program) {
         << "  --eval-every-steps N            Validation-loss cadence over val shards, default 250\n"
         << "  --eval-batches N                Validation batches per eval, default 10\n"
         << "  --eval-batch-size N             Validation microbatch rows, default 8\n"
-        << "  --vocab-size N                  Vocabulary size, default 1024\n"
+        << "  --vocab-size N                  Vocabulary size, default 50257\n"
         << "  --num-layers N                  Transformer layers, default 5\n"
         << "  --model-dim N                   Width, default 320\n"
         << "  --num-heads N                   Attention heads, default 5\n"

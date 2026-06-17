@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Fix NanoGPT native vocabulary default
+
+#### Changed
+
+- Updated the compiled `nfn_nanogpt_native_train` default vocabulary from the
+  old 1024-token reduced shape to the GPT-2 tokenizer vocabulary size
+  (`50257`). This keeps the implemented native `--train-token-lm` path aligned
+  with the default TinyStories/GPT-2-tokenized cached shards unless callers
+  explicitly pass `--vocab-size` for a tiny smoke.
+- Updated native NanoGPT preflight tests and docs to expect the full-vocab
+  parameter layout by default.
+
+#### Verification
+
+- Ran `python -m pytest tests/test_native_gpt2.py::test_missing_family_native_trainers_build_and_unified_frontend_dispatches -q`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Fix GPT-2 evo native preflight vocabulary default
 
 #### Changed
