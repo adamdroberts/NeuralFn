@@ -115,6 +115,36 @@ std::int64_t layer_norm_backward_affine_row_chunk_size() {
   return value;
 }
 
+int cross_entropy_bf16_threads_per_row() {
+  static const int value = []() {
+    const char* raw = std::getenv("NFN_TILE_CUDA_CE_BF16_THREADS");
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT_CE_BF16_THREADS");
+    }
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT2_CE_BF16_THREADS");
+    }
+    if (raw == nullptr || raw[0] == '\0') {
+      return 1024;
+    }
+    char* end = nullptr;
+    const long parsed = std::strtol(raw, &end, 10);
+    if (end == raw || (end != nullptr && *end != '\0')) {
+      return 1024;
+    }
+    switch (parsed) {
+      case 128:
+      case 256:
+      case 512:
+      case 1024:
+        return static_cast<int>(parsed);
+      default:
+        return 1024;
+    }
+  }();
+  return value;
+}
+
 __tile_global__ void fill_float32_kernel(
     float* __restrict__ values,
     std::int64_t n,
@@ -13880,7 +13910,7 @@ void launch_token_cross_entropy_backward_inplace_bf16_bits_with_workspace(
     cudaStream_t stream) {
   (void)row_max;
   (void)row_denom;
-  constexpr int threads = 1024;
+  const int threads = cross_entropy_bf16_threads_per_row();
   token_cross_entropy_backward_inplace_bf16_bits_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
       logits, targets, rows, vocab, loss_scale);
 }
@@ -13924,7 +13954,7 @@ void launch_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspac
   }
   (void)row_max;
   (void)row_denom;
-  constexpr int threads = 1024;
+  const int threads = cross_entropy_bf16_threads_per_row();
   token_cross_entropy_backward_inplace_strided_bf16_bits_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
       logits, targets, rows, vocab, row_stride, loss_scale);
 }
@@ -13941,7 +13971,7 @@ void launch_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_w
     cudaStream_t stream) {
   (void)row_max;
   (void)row_denom;
-  constexpr int threads = 1024;
+  const int threads = cross_entropy_bf16_threads_per_row();
   token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
       logits, targets, rows, vocab, row_stride, loss_scale);
 }

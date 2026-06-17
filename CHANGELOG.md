@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add BF16 CE launch bisection selector
+
+#### Changed
+
+- Native CUDA Tile GPT BF16 cross-entropy backward launchers now accept
+  `NFN_NATIVE_GPT_CE_BF16_THREADS`, `NFN_NATIVE_GPT2_CE_BF16_THREADS`, or
+  `NFN_TILE_CUDA_CE_BF16_THREADS` to choose `128`, `256`, `512`, or `1024`
+  threads per row. The supported default remains `1024`; invalid values fall
+  back to the default.
+- This is a diagnostic kernel bisection control, not a training-default change.
+  The same-script RTX 5090 benchmarks rejected lower defaults: `512` measured
+  `0.999774x` train-loop time and `1.000234x` tokens/sec, while `256` measured
+  `1.011218x` train-loop time and `0.988908x` tokens/sec versus the current
+  1024-thread path.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k
+  "native_train_tile_ops_builds_torch_free_c_abi or
+  native_gpt_transformer_lm_exposes_opt_in_bf16_attention_grad_out_handoff"`.
+- Ran `python -m py_compile tools/paired_kernel_speed.py`.
+- Ran `tools/paired_kernel_speed.py` on the dedicated display-disabled RTX
+  5090 with `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and
+  `--require-idle-selected-gpu` for the `512` and `256` CE-thread candidates.
+
 ### 2026-06-17 Route native GPT checkpoint inference to a matching sampler
 
 #### Changed

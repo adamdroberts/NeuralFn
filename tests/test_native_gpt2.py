@@ -4023,6 +4023,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_LINEAR_TK_FLOAT_OUT" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_SHAPE_STATS" in kernels_text
     assert "NFN_NATIVE_LINEAR_SHAPE_STATS" in kernels_text
+    assert "NFN_TILE_CUDA_CE_BF16_THREADS" in kernels_text
+    assert "NFN_NATIVE_GPT_CE_BF16_THREADS" in kernels_text
+    assert "NFN_NATIVE_GPT2_CE_BF16_THREADS" in kernels_text
+    assert "cross_entropy_bf16_threads_per_row" in kernels_text
     assert "trainer_linear_shape_stats_entry" in kernels_text
     assert "return false;" in kernels_text
     assert 'std::strcmp(value, "1") == 0' in kernels_text
