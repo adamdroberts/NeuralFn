@@ -46,7 +46,24 @@ Future updates should append new entries here rather than replacing older notes.
   and `NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_nostage_fix.json`.
   The paired payload reported `native_stage_timing: false`, read candidate
   metrics from `json-out`, emitted no `stage.*` candidate metrics, and the
-  sidecar had no `stage_timing_enabled` or `stage_timing_event_count` fields.
+  sidecar reported `timing.stage_timing_enabled: false` with
+  `stage_timing_event_count: 0`.
+
+### 2026-06-17 Reject narrow LM-head extra-large-K cuBLASLt heuristic
+
+#### Changed
+
+- Kept the default LM-head backward-input route on BF16 `cublasGemmEx` for the
+  `m=768,n=8192,k=50304` shape. Re-testing the extra-large-K cuBLASLt route
+  with heuristic index `1` remained slower than the current default.
+
+#### Verification
+
+- Dedicated RTX 5090 same-script paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --train-batch-tokens 524288 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --train-batch-tokens 524288 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1 --candidate-env NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX=1 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 25 --command-timeout-seconds 1800 --append-native-profile-json-dir /tmp/nfn_lmhead_extralargek_h1_profiles --json-out /tmp/nfn_lmhead_extralargek_h1_pair.json`.
+- The candidate measured `1.028831x` train-loop wall time,
+  `0.971991x` tokens/sec, and `1.027085x` total wall time versus the current
+  default.
 
 ### 2026-06-17 Align native CUDA module-loading defaults
 
