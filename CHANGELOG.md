@@ -17,6 +17,9 @@ Future updates should append new entries here rather than replacing older notes.
 - Added the latest rejected same-script kernel bisections so the next pass does
   not retest slower cuBLASLt heuristic, packed-attention tape, LayerNorm affine
   row-chunk, or LM-head row-chunk candidates.
+- Added follow-up rejected tape/allocation candidates for one-block-reduced MLP
+  storage, one-block-reduced packed-attention storage, and the async allocator
+  startup switch.
 
 #### Verification
 
@@ -28,6 +31,11 @@ Future updates should append new entries here rather than replacing older notes.
   `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128`, and
   `--lm-head-row-chunk-size 16384`; each candidate regressed train-loop time
   against the current default.
+- Ran same-script paired benchmarks on the dedicated RTX 5090 for
+  `NFN_NATIVE_GPT_STORE_MLP_BLOCKS=11`,
+  `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=11`, and
+  `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1`; each candidate regressed train-loop
+  time or setup wall time against the current default.
 
 ### 2026-06-17 Make SM120 parity profiling explicit
 
