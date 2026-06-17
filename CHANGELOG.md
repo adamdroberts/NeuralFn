@@ -6,6 +6,40 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Reject startup-only token/BF16 arena fallbacks
+
+#### Changed
+
+- Kept the fused token-weight BF16 shadow initializer enabled. Disabling
+  `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT` was too small and noisy to
+  promote as a startup default.
+- Kept the combined BF16 arena enabled. Disabling
+  `NFN_NATIVE_GPT_COMBINED_BF16_ARENA` removed the
+  `setup.uint16_arena_materialize` bucket in startup-only profiling, but it
+  regressed the normal training loop and total wall time.
+
+#### Verification
+
+- Current startup-only profile:
+  `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --backend tile-cuda --tinystories --startup-only --max-steps 1 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so --profile-json /tmp/nfn_startup_current.json`.
+  The largest setup buckets were `setup.float_arena_materialize` (`152.29 ms`),
+  `setup.token_weight_init` (`147.439 ms`), and
+  `setup.uint16_arena_materialize` (`101.249 ms`).
+- Dedicated RTX 5090 startup-only paired benchmark for
+  `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=0`:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --startup-only --max-steps 1 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --startup-only --max-steps 1 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=0 --samples 5 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 25 --command-timeout-seconds 600 --append-native-profile-json-dir /tmp/nfn_startup_disable_token_bf16_fuse_profiles --json-out /tmp/nfn_startup_disable_token_bf16_fuse_pair.json`
+  measured `0.993382x` setup wall time and `0.993560x` total wall time versus
+  the fused default, with noisy sample spread.
+- Dedicated RTX 5090 startup-only paired benchmark for
+  `NFN_NATIVE_GPT_COMBINED_BF16_ARENA=0`:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --startup-only --max-steps 1 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --startup-only --max-steps 1 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_GPT_COMBINED_BF16_ARENA=0 --samples 5 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 25 --command-timeout-seconds 600 --append-native-profile-json-dir /tmp/nfn_startup_disable_combined_bf16_arena_profiles --json-out /tmp/nfn_startup_disable_combined_bf16_arena_pair.json`
+  measured `0.986733x` setup wall time and `0.992135x` total wall time.
+- Dedicated RTX 5090 normal 5-step paired benchmark for
+  `NFN_NATIVE_GPT_COMBINED_BF16_ARENA=0`:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_GPT_COMBINED_BF16_ARENA=0 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 25 --command-timeout-seconds 1800 --append-native-profile-json-dir /tmp/nfn_disable_combined_bf16_arena_train_profiles --json-out /tmp/nfn_disable_combined_bf16_arena_train_pair.json`
+  measured `1.020957x` train-loop wall time, `0.979932x` tokens/sec, and
+  `1.019949x` total wall time versus the combined-arena default.
+
 ### 2026-06-17 Strengthen native GPT no-Torch dependency gate
 
 #### Changed
