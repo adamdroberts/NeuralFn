@@ -2446,7 +2446,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["token_i64_arena_elements"] == 0
     assert train_transformer_payload["token_u16_device_arena_elements"] == 0
     assert train_transformer_payload["token_u16_pinned_arena_elements"] == 0
-    assert train_transformer_payload["token_weight_init_strategy"] == "device-tile-deterministic"
+    assert train_transformer_payload["token_weight_init_strategy"] == "device-tile-power2-deterministic"
+    assert train_transformer_payload["token_weight_init_legacy_mod17_enabled"] is False
     assert train_transformer_payload["token_weight_bf16_initial_refresh_fusion_enabled"] is True
     assert train_transformer_payload["token_weight_bf16_initial_refresh_elided"] is False
     assert train_transformer_payload["token_weight_host_materialization"] is False
@@ -2777,6 +2778,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_fill_many_values_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_fill_many_values_bf16_bits_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_init_gpt2_token_weight_float32" in train_transformer_payload["kernels"]
+    assert "nfn_native_tile_init_gpt2_token_weight_fast_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_uint16_to_int64" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_token_embedding_u16_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_token_embedding_backward_weight_u16_float32" in train_transformer_payload["kernels"]
@@ -3744,6 +3746,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "cudaMalloc transformer_lm_token_u16_device_arena" not in gpt2_source_text
     assert "token_weight.init_device" in gpt2_source_text
     assert "nfn_native_tile_init_gpt2_token_weight_float32" in gpt2_source_text
+    assert "nfn_native_tile_init_gpt2_token_weight_fast_float32" in gpt2_source_text
     assert "FloatArenaRequest" in gpt2_source_text
     assert "Uint16ArenaRequest" in gpt2_source_text
     assert "cudaMalloc transformer_lm_float_arena" in gpt2_source_text
@@ -3835,9 +3838,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "fused-multi-buffer-fill-values" in gpt2_source_text
     assert "fused-multi-buffer-sumsq-device-scale" in gpt2_source_text
     assert "nfn_native_tile_init_gpt2_token_weight_float32" in header_text
+    assert "nfn_native_tile_init_gpt2_token_weight_fast_float32" in header_text
     assert "nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32" in header_text
+    assert "nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32" in header_text
     assert "launch_init_gpt2_token_weight_with_bf16_shadow_float32" in source_text
+    assert "launch_init_gpt2_token_weight_fast_with_bf16_shadow_float32" in source_text
     assert "init_gpt2_token_weight_with_bf16_shadow_float32_kernel" in kernels_text
+    assert "init_gpt2_token_weight_fast_with_bf16_shadow_float32_kernel" in kernels_text
     assert "nfn_native_tile_copy_float32" in header_text
     assert "nfn_native_tile_uint16_to_int64" in header_text
     assert "nfn_native_tile_float32_to_bf16_bits" in header_text
@@ -4554,6 +4561,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "fused-bias-preactivation-gelu" in gpt2_source_text
     assert "launch_fill_float32" in source_text
     assert "launch_init_gpt2_token_weight_float32" in source_text
+    assert "launch_init_gpt2_token_weight_fast_float32" in source_text
     assert "ct::shape{2048_ic}" in kernels_text
     assert "launch_uint16_to_int64" in source_text
     assert "atomic_add_masked" in kernels_text
@@ -5139,6 +5147,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         exported = symbols.stdout
         assert "nfn_native_tile_fill_float32" in exported
         assert "nfn_native_tile_init_gpt2_token_weight_float32" in exported
+        assert "nfn_native_tile_init_gpt2_token_weight_fast_float32" in exported
+        assert "nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32" in exported
         assert "nfn_native_tile_copy_float32" in exported
         assert "nfn_native_tile_uint16_to_int64" in exported
         assert "nfn_native_tile_float32_to_bf16_bits" in exported

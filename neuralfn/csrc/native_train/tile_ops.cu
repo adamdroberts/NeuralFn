@@ -124,7 +124,13 @@ void launch_fill_many_values_bf16_bits_float32(
     std::int64_t max_elements,
     cudaStream_t stream);
 void launch_init_gpt2_token_weight_float32(float* values, std::int64_t n, cudaStream_t stream);
+void launch_init_gpt2_token_weight_fast_float32(float* values, std::int64_t n, cudaStream_t stream);
 void launch_init_gpt2_token_weight_with_bf16_shadow_float32(
+    float* values,
+    std::uint16_t* shadow_bf16_bits,
+    std::int64_t n,
+    cudaStream_t stream);
+void launch_init_gpt2_token_weight_fast_with_bf16_shadow_float32(
     float* values,
     std::uint16_t* shadow_bf16_bits,
     std::int64_t n,
@@ -1818,12 +1824,30 @@ int nfn_native_tile_init_gpt2_token_weight_float32(
     return launch_status();
 }
 
+int nfn_native_tile_init_gpt2_token_weight_fast_float32(
+    float* values,
+    std::int64_t n,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_init_gpt2_token_weight_fast_float32(values, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32(
     float* values,
     std::uint16_t* shadow_bf16_bits,
     std::int64_t n,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_init_gpt2_token_weight_with_bf16_shadow_float32(
+        values, shadow_bf16_bits, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32(
+    float* values,
+    std::uint16_t* shadow_bf16_bits,
+    std::int64_t n,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_init_gpt2_token_weight_fast_with_bf16_shadow_float32(
         values, shadow_bf16_bits, n, as_stream(cuda_stream));
     return launch_status();
 }

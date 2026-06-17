@@ -4355,6 +4355,27 @@ __tile_global__ void init_gpt2_token_weight_float32_kernel(
   ct::store_masked(values + idx, value, mask);
 }
 
+__tile_global__ void init_gpt2_token_weight_fast_float32_kernel(
+    float* __restrict__ values,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  values = ct::assume_aligned(values, 16_ic);
+
+  const int bx = ct::bid().x;
+  constexpr int kTokenInitTileSize = 2048;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{2048_ic})>;
+  auto idx = ct::iota<IndexTile>() +
+      ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTokenInitTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto bucket = idx % ct::full<IndexTile>(16);
+  auto shifted = bucket - ct::full<IndexTile>(8);
+  auto value = ct::element_cast<float>(shifted) *
+      ct::full<ct::tile<float, decltype(ct::shape{2048_ic})>>(0.01f);
+  ct::store_masked(values + idx, value, mask);
+}
+
 __tile_global__ void init_gpt2_token_weight_with_bf16_shadow_float32_kernel(
     float* __restrict__ values,
     std::uint16_t* __restrict__ shadow_bf16_bits,
@@ -4373,6 +4394,31 @@ __tile_global__ void init_gpt2_token_weight_with_bf16_shadow_float32_kernel(
       ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTokenInitTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto bucket = idx % ct::full<IndexTile>(17);
+  auto shifted = bucket - ct::full<IndexTile>(8);
+  auto value = ct::element_cast<float>(shifted) *
+      ct::full<ct::tile<float, decltype(ct::shape{2048_ic})>>(0.01f);
+  ct::store_masked(values + idx, value, mask);
+  ct::store_masked(shadow + idx, ct::element_cast<__nv_bfloat16>(value), mask);
+}
+
+__tile_global__ void init_gpt2_token_weight_fast_with_bf16_shadow_float32_kernel(
+    float* __restrict__ values,
+    std::uint16_t* __restrict__ shadow_bf16_bits,
+    std::int64_t n) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  values = ct::assume_aligned(values, 16_ic);
+  auto* shadow = ct::assume_aligned(
+      reinterpret_cast<__nv_bfloat16*>(shadow_bf16_bits), 16_ic);
+
+  const int bx = ct::bid().x;
+  constexpr int kTokenInitTileSize = 2048;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{2048_ic})>;
+  auto idx = ct::iota<IndexTile>() +
+      ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTokenInitTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto bucket = idx % ct::full<IndexTile>(16);
   auto shifted = bucket - ct::full<IndexTile>(8);
   auto value = ct::element_cast<float>(shifted) *
       ct::full<ct::tile<float, decltype(ct::shape{2048_ic})>>(0.01f);
@@ -10649,6 +10695,15 @@ void launch_init_gpt2_token_weight_float32(
   init_gpt2_token_weight_float32_kernel<<<blocks, 1, 0, stream>>>(values, n);
 }
 
+void launch_init_gpt2_token_weight_fast_float32(
+    float* values,
+    std::int64_t n,
+    cudaStream_t stream) {
+  constexpr int kTokenInitTileSize = 2048;
+  const int blocks = static_cast<int>((n + kTokenInitTileSize - 1) / kTokenInitTileSize);
+  init_gpt2_token_weight_fast_float32_kernel<<<blocks, 1, 0, stream>>>(values, n);
+}
+
 void launch_init_gpt2_token_weight_with_bf16_shadow_float32(
     float* values,
     std::uint16_t* shadow_bf16_bits,
@@ -10661,6 +10716,21 @@ void launch_init_gpt2_token_weight_with_bf16_shadow_float32(
   constexpr int kTokenInitTileSize = 2048;
   const int blocks = static_cast<int>((n + kTokenInitTileSize - 1) / kTokenInitTileSize);
   init_gpt2_token_weight_with_bf16_shadow_float32_kernel<<<blocks, 1, 0, stream>>>(
+      values, shadow_bf16_bits, n);
+}
+
+void launch_init_gpt2_token_weight_fast_with_bf16_shadow_float32(
+    float* values,
+    std::uint16_t* shadow_bf16_bits,
+    std::int64_t n,
+    cudaStream_t stream) {
+  if (shadow_bf16_bits == nullptr) {
+    launch_init_gpt2_token_weight_fast_float32(values, n, stream);
+    return;
+  }
+  constexpr int kTokenInitTileSize = 2048;
+  const int blocks = static_cast<int>((n + kTokenInitTileSize - 1) / kTokenInitTileSize);
+  init_gpt2_token_weight_fast_with_bf16_shadow_float32_kernel<<<blocks, 1, 0, stream>>>(
       values, shadow_bf16_bits, n);
 }
 

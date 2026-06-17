@@ -764,7 +764,9 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_fill_many_values_float32",
         "nfn_native_tile_fill_many_values_bf16_bits_float32",
         "nfn_native_tile_init_gpt2_token_weight_float32",
+        "nfn_native_tile_init_gpt2_token_weight_fast_float32",
         "nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32",
+        "nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32",
         "nfn_native_tile_uint16_to_int64",
         "nfn_native_tile_float32_to_bf16_bits",
         "nfn_native_tile_bf16_bits_to_float32",
@@ -7011,7 +7013,9 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_fill_many_values_float32",
         "nfn_native_tile_fill_many_values_bf16_bits_float32",
         "nfn_native_tile_init_gpt2_token_weight_float32",
+        "nfn_native_tile_init_gpt2_token_weight_fast_float32",
         "nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32",
+        "nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32",
         "nfn_native_tile_copy_float32",
         "nfn_native_tile_uint16_to_int64",
         "nfn_native_tile_float32_to_bf16_bits",
@@ -7454,7 +7458,9 @@ int run_transformer_lm_training_json(
     FillManyValuesFn fill_many_values = nullptr;
     FillManyValuesBf16BitsFn fill_many_values_bf16_bits = nullptr;
     InitGpt2TokenWeightFn init_gpt2_token_weight = nullptr;
+    InitGpt2TokenWeightFn init_gpt2_token_weight_fast = nullptr;
     InitGpt2TokenWeightWithBf16ShadowFn init_gpt2_token_weight_with_bf16_shadow = nullptr;
+    InitGpt2TokenWeightWithBf16ShadowFn init_gpt2_token_weight_fast_with_bf16_shadow = nullptr;
     Uint16ToInt64Fn uint16_to_int64 = nullptr;
     Bf16BitsToFloat32Fn bf16_bits_to_float32 = nullptr;
     Float32ToBf16BitsFn float32_to_bf16_bits = nullptr;
@@ -7669,10 +7675,18 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_fill_many_values_bf16_bits_float32");
                 init_gpt2_token_weight =
                     load_symbol<InitGpt2TokenWeightFn>(tile_handle, "nfn_native_tile_init_gpt2_token_weight_float32");
+                init_gpt2_token_weight_fast =
+                    load_symbol<InitGpt2TokenWeightFn>(
+                        tile_handle,
+                        "nfn_native_tile_init_gpt2_token_weight_fast_float32");
                 init_gpt2_token_weight_with_bf16_shadow =
                     load_symbol<InitGpt2TokenWeightWithBf16ShadowFn>(
                         tile_handle,
                         "nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32");
+                init_gpt2_token_weight_fast_with_bf16_shadow =
+                    load_symbol<InitGpt2TokenWeightWithBf16ShadowFn>(
+                        tile_handle,
+                        "nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32");
                 uint16_to_int64 = load_symbol<Uint16ToInt64Fn>(tile_handle, "nfn_native_tile_uint16_to_int64");
                 bf16_bits_to_float32 =
                     load_symbol<Bf16BitsToFloat32Fn>(tile_handle, "nfn_native_tile_bf16_bits_to_float32");
@@ -8239,6 +8253,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT",
                               "NFN_NATIVE_GPT2_FUSE_TOKEN_WEIGHT_BF16_INIT"}),
             true);
+    const bool legacy_mod17_token_weight_init_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_INIT_LEGACY_MOD17",
+                              "NFN_NATIVE_GPT2_TOKEN_WEIGHT_INIT_LEGACY_MOD17"}),
+            false);
     const bool fuse_adamw_bf16_shadow_refresh_enabled =
         !bf16_block_weight_param_update_enabled &&
         env_flag_enabled_or_default(
@@ -10510,7 +10529,11 @@ int run_transformer_lm_training_json(
         if (error.empty()) {
             if (fuse_token_weight_bf16_initial_refresh_enabled &&
                 token_weight_bf16 != nullptr) {
-                run(init_gpt2_token_weight_with_bf16_shadow(
+                auto* init_with_shadow =
+                    legacy_mod17_token_weight_init_enabled
+                        ? init_gpt2_token_weight_with_bf16_shadow
+                        : init_gpt2_token_weight_fast_with_bf16_shadow;
+                run(init_with_shadow(
                         token_weight,
                         token_weight_bf16,
                         kTokenWeightElements,
@@ -10521,7 +10544,11 @@ int run_transformer_lm_training_json(
                     token_weight_bf16_initial_refresh_elided = true;
                 }
             } else {
-                run(init_gpt2_token_weight(token_weight, kTokenWeightElements, nullptr),
+                auto* init_without_shadow =
+                    legacy_mod17_token_weight_init_enabled
+                        ? init_gpt2_token_weight
+                        : init_gpt2_token_weight_fast;
+                run(init_without_shadow(token_weight, kTokenWeightElements, nullptr),
                     "token_weight.init_device");
             }
         }
@@ -14371,10 +14398,16 @@ int run_transformer_lm_training_json(
         << "  \"token_u16_device_arena_elements\": " << token_u16_device_arena_elements << ",\n"
         << "  \"token_u16_pinned_arena_elements\": " << token_u16_pinned_arena_elements << ",\n"
         << "  \"token_weight_init_strategy\": \""
-        << (token_weight_bf16_initial_refresh_elided
-                ? "device-tile-deterministic-fused-bf16-shadow"
-                : "device-tile-deterministic")
+        << (legacy_mod17_token_weight_init_enabled
+                ? (token_weight_bf16_initial_refresh_elided
+                       ? "device-tile-mod17-deterministic-fused-bf16-shadow"
+                       : "device-tile-mod17-deterministic")
+                : (token_weight_bf16_initial_refresh_elided
+                       ? "device-tile-power2-deterministic-fused-bf16-shadow"
+                       : "device-tile-power2-deterministic"))
         << "\",\n"
+        << "  \"token_weight_init_legacy_mod17_enabled\": "
+        << (legacy_mod17_token_weight_init_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_bf16_initial_refresh_elided\": "
         << (token_weight_bf16_initial_refresh_elided ? "true" : "false") << ",\n"
         << "  \"token_weight_bf16_initial_refresh_fusion_enabled\": "

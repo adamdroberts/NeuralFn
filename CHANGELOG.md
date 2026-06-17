@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Default native GPT token initialization to fast Tile power-of-two pattern
+
+#### Changed
+
+- Dense GPT transformer-LM startup now uses
+  `nfn_native_tile_init_gpt2_token_weight_fast_float32` by default, or
+  `nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32` when
+  the persistent BF16 LM-head shadow is enabled.
+- The older modulo-17 deterministic initializer remains available only for
+  paired bisection with `NFN_NATIVE_GPT_TOKEN_WEIGHT_INIT_LEGACY_MOD17=1`.
+- Runtime JSON now reports `token_weight_init_legacy_mod17_enabled` and the
+  default `token_weight_init_strategy` values
+  `"device-tile-power2-deterministic"` or
+  `"device-tile-power2-deterministic-fused-bf16-shadow"`.
+
+#### Verification
+
+- Rebuilt the raw Tile ops library with `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt the native GPT CLI with `bash tools/build_native_gpt_cli.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k
+  "native_train_tile_ops_builds_torch_free_c_abi or transformer_lm"`.
+- Ran `tools/paired_kernel_speed.py` against the legacy modulo-17 initializer
+  for five measured startup-only samples on the idle RTX 5090. The fast
+  initializer measured `0.982065x` setup time and `0.960453x` token-init time.
+- Ran the same paired script for two measured 3-step training samples. The
+  fast initializer measured `0.977302x` train-loop time and `1.023233x`
+  tokens/sec.
+
 ### 2026-06-17 Default dense GPT LM-head dWeight to BF16 hidden
 
 #### Changed
