@@ -156,6 +156,8 @@ CUDA Tile source builds require CUDA Toolkit 13.3+, `cuda_tile.h`, C++20, `nvcc 
 
 For same-script kernel candidate builds, `tools/build_native_train_tile_ops.sh` accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and `NFN_TILE_CUDA_EXTRA_LDLIBS`, for example `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1" bash tools/build_native_train_tile_ops.sh /tmp/libnfn_candidate.so`; leave those variables unset for the default supported library.
 
+The SM120 bridge also supports candidate builds with `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_CUBLASLT_GEMM"`; NeuralFn initializes the llm.kittens cuBLASLt handles before dispatching through that compile-mode path. It remains a benchmark-only candidate because the RTX 5090 paired run measured it slower than the default NeuralFn dispatch.
+
 Native GPT BF16 cross-entropy kernels default to 1024 threads per row. For paired launch-configuration bisection, set `NFN_NATIVE_GPT_CE_BF16_THREADS`, `NFN_NATIVE_GPT2_CE_BF16_THREADS`, or `NFN_TILE_CUDA_CE_BF16_THREADS` to one of `128`, `256`, `512`, or `1024`; unsupported values fall back to 1024.
 
 For BF16 classifier dlogit store bisection, set `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1`, `NFN_NATIVE_GPT2_CE_BF16_VEC_STORES=1`, or `NFN_TILE_CUDA_CE_BF16_VEC_STORES=1` to test the opt-in 128-bit streaming-store path. It remains disabled by default because the RTX 5090 paired benchmark measured it as noise-equivalent/slightly slower than scalar stores.

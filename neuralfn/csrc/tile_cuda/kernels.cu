@@ -162,6 +162,18 @@ bool cross_entropy_bf16_vec_stores_enabled() {
   return value;
 }
 
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && defined(LLMK_SM120_USE_CUBLASLT_GEMM) && defined(KITTENS_SM120)
+std::once_flag g_llmk_sm120_cublaslt_init_once;
+
+void ensure_llmk_sm120_cublaslt_initialized() {
+  std::call_once(g_llmk_sm120_cublaslt_init_once, []() {
+    llmk::cublaslt_sm120::init();
+  });
+}
+#else
+void ensure_llmk_sm120_cublaslt_initialized() {}
+#endif
+
 __tile_global__ void fill_float32_kernel(
     float* __restrict__ values,
     std::int64_t n,
@@ -2941,6 +2953,7 @@ bool tk_linear_gemm_bf16_forward_to_bf16_bits(
   const auto* inp = reinterpret_cast<const floatX*>(x_bf16);
   const auto* weight = reinterpret_cast<const floatX*>(weight_bf16);
   const auto* bias = reinterpret_cast<const floatX*>(bias_bf16);
+  ensure_llmk_sm120_cublaslt_initialized();
   ::matmul_forward(out, inp, weight, bias, 1, rows, input_dim, output_dim, stream);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -3060,6 +3073,7 @@ bool tk_linear_gemm_bf16_forward_gelu_to_bf16_bits(
   }
   auto* out = reinterpret_cast<floatX*>(gelu_bf16_bits);
   auto* pre_gelu = reinterpret_cast<floatX*>(pre_gelu_bf16_bits);
+  ensure_llmk_sm120_cublaslt_initialized();
   ::matmul_forward_gelu(
       out,
       pre_gelu,
@@ -3140,6 +3154,7 @@ bool tk_linear_gemm_bf16_forward_gelu_weight_bf16_to_bf16_bits(
   }
   auto* out = reinterpret_cast<floatX*>(gelu_bf16_bits);
   auto* pre_gelu = reinterpret_cast<floatX*>(pre_gelu_bf16_bits);
+  ensure_llmk_sm120_cublaslt_initialized();
   ::matmul_forward_gelu(
       out,
       pre_gelu,
@@ -3209,6 +3224,7 @@ bool tk_linear_backward_input_dgelu_bf16_bits_float32(
   if (weight_bf16 == nullptr) {
     return false;
   }
+  ensure_llmk_sm120_cublaslt_initialized();
   ::matmul_dispatch_tk_ab(
       reinterpret_cast<floatX*>(grad_x_bf16_bits),
       reinterpret_cast<const floatX*>(grad_out_bf16),
@@ -3277,6 +3293,7 @@ bool tk_linear_backward_input_dgelu_weight_bf16_bits_float32(
   if (grad_out_bf16 == nullptr) {
     return false;
   }
+  ensure_llmk_sm120_cublaslt_initialized();
   ::matmul_dispatch_tk_ab(
       reinterpret_cast<floatX*>(grad_x_bf16_bits),
       reinterpret_cast<const floatX*>(grad_out_bf16),
@@ -3333,6 +3350,7 @@ bool tk_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_float32(
       rows % 128 != 0 || input_dim % 128 != 0 || output_dim % 64 != 0) {
     return false;
   }
+  ensure_llmk_sm120_cublaslt_initialized();
   ::matmul_dispatch_tk_ab(
       reinterpret_cast<floatX*>(grad_x_bf16_bits),
       reinterpret_cast<const floatX*>(grad_out_bf16_bits),
@@ -12643,6 +12661,7 @@ void launch_linear_bf16_input_weight_bf16_gelu_bf16_float32(
         f32_to_bf16_kernel<<<pack_blocks, pack_threads, 0, stream>>>(bias, bias_entry->data, output_dim);
         g_linear_bf16_a_pack_count.fetch_add(1, std::memory_order_relaxed);
       }
+      ensure_llmk_sm120_cublaslt_initialized();
       ::matmul_forward_gelu(
           reinterpret_cast<floatX*>(gelu_bf16_bits),
           reinterpret_cast<floatX*>(pre_gelu_bf16_bits),

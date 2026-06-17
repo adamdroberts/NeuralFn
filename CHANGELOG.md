@@ -6,6 +6,35 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add llm.kittens SM120 cuBLASLt candidate initialization
+
+#### Changed
+
+- CUDA Tile SM120 bridge builds now initialize the llm.kittens
+  `llmk::cublaslt_sm120` handles before dispatching through its matmul helpers
+  when a candidate library is compiled with
+  `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_CUBLASLT_GEMM"`. This makes
+  that compile mode runnable for same-script bisection instead of aborting on
+  the upstream `handle != nullptr` assertion.
+- The compile mode is not the default. The dedicated RTX 5090 paired benchmark
+  rejected it for NeuralFn's current native loop: `1.014933x` train-loop time
+  and `0.985289x` tokens/sec versus the default library.
+
+#### Verification
+
+- Rebuilt the default `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Built the candidate library with
+  `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_CUBLASLT_GEMM"
+  bash tools/build_native_train_tile_ops.sh
+  /tmp/libnfn_native_train_tile_ops_llmk_cublaslt.so`.
+- Ran a one-step RTX 5090 smoke with the candidate library and confirmed
+  `passed: true`.
+- Ran `tools/paired_kernel_speed.py` on the dedicated display-disabled RTX
+  5090 with `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and
+  `--require-idle-selected-gpu` comparing the default library against
+  `/tmp/libnfn_native_train_tile_ops_llmk_cublaslt.so`.
+
 ### 2026-06-17 Add BF16 CE vector-store bisection selector
 
 #### Changed
