@@ -563,6 +563,15 @@ void launch_linear_backward_weight_accumulate_bf16_float32(
     std::int64_t input_dim,
     std::int64_t output_dim,
     cudaStream_t stream);
+void launch_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    const std::uint16_t* weight_bf16_bits,
+    const std::uint16_t* pre_gelu_bf16_bits,
+    std::uint16_t* grad_x_bf16_bits,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    cudaStream_t stream);
 void launch_linear_backward_weight_accumulate_bf16_bits_float32(
     const std::uint16_t* x_bf16_bits,
     const float* grad_out,
@@ -2702,6 +2711,27 @@ int nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_only_float32(
         pre_gelu_bf16_bits,
         grad_x_bf16_bits,
         grad_x_fallback,
+        rows,
+        input_dim,
+        output_dim,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    const std::uint16_t* weight_bf16_bits,
+    const std::uint16_t* pre_gelu_bf16_bits,
+    std::uint16_t* grad_x_bf16_bits,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32(
+        grad_out_bf16_bits,
+        weight_bf16_bits,
+        pre_gelu_bf16_bits,
+        grad_x_bf16_bits,
         rows,
         input_dim,
         output_dim,

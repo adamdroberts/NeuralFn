@@ -605,6 +605,16 @@ int nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_only_float32(
     std::int64_t output_dim,
     void* cuda_stream);
 
+int nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    const std::uint16_t* weight_bf16_bits,
+    const std::uint16_t* pre_gelu_bf16_bits,
+    std::uint16_t* grad_x_bf16_bits,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    void* cuda_stream);
+
 int nfn_native_tile_linear_backward_input_weight_bf16_to_bf16_bits_float32(
     const float* grad_out,
     const std::uint16_t* weight_bf16_bits,

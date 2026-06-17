@@ -6,6 +6,43 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Reuse BF16 MLP projection grad-out in native GPT backward
+
+#### Changed
+
+- Added the raw Tile-CUDA ABI
+  `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32`
+  for SM120 TK fused MLP projection dInput+dGELU when the caller already has
+  BF16 grad-out bits.
+- Dense GPT transformer-LM now packs the MLP projection incoming gradient to
+  BF16 once, reuses that scratch for MLP projection dWeight+bias, and feeds it
+  into the fused dInput+dGELU path.
+- Runtime JSON reports
+  `block_backward_mlp_proj_bf16_grad_out_reuse_enabled` and the
+  `tk-sm120-fused-dinput-dgelu-reused-bf16-grad-out-bf16-store-bf16-shadow-weight`
+  strategy when active. Set
+  `NFN_NATIVE_GPT_REUSE_MLP_PROJ_BF16_GRAD_OUT=0` to reproduce the previous
+  per-stage pack path for paired bisection.
+
+#### Verification
+
+- Rebuilt the raw Tile ops library with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Rebuilt the native GPT CLI with `bash tools/build_native_gpt_cli.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k
+  "native_train_tile_ops_builds_torch_free_c_abi or transformer_lm"`.
+- Ran `build/nfn_gpt_native_train --backend tile-cuda --tinystories
+  --train-transformer-lm --max-steps 3 --eval-every-steps 0 --no-checkpoint
+  --profile-json /tmp/nfn_mlp_grad_reuse_default.json` on the dedicated RTX
+  5090; the JSON reported `passed: true`,
+  `block_backward_mlp_proj_bf16_grad_out_reuse_enabled: true`, and the reused
+  BF16 grad-out strategy.
+- Ran `tools/paired_kernel_speed.py` against
+  `NFN_NATIVE_GPT_REUSE_MLP_PROJ_BF16_GRAD_OUT=0` for two measured 3-step
+  samples on the idle display-disabled RTX 5090. The candidate measured
+  `0.994156x` train-loop time and `1.005886x` tokens/sec versus the previous
+  per-stage pack path.
+
 ### 2026-06-17 Default dense GPT dWeight GEMMs to first-write-then-accumulate
 
 #### Changed

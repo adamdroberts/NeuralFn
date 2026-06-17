@@ -299,6 +299,7 @@ block cuBLASLt plus TK LM-head path runs,
 `block_weight_bf16_fused_adamw_refresh_count`,
 `adamw_bf16_shadow_refresh_strategy`,
 `block_backward_mlp_proj_dgelu_strategy`,
+`block_backward_mlp_proj_bf16_grad_out_reuse_enabled`,
 `block_backward_weight_linear_strategy`,
 `non_block_forward_backward_linear_strategy`, `lm_head_logits_linear_strategy`,
 `linear_bf16_gemm_count`, `linear_tk_gemm_count`,
@@ -322,6 +323,13 @@ FC+bias+GELU and
 `nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_float32` for fused
 MLP projection dInput plus saved-BF16 GELU backward. Both consume persistent
 BF16 block-weight shadows while keeping FP32 masters and optimizer state.
+The default MLP projection backward path also exposes
+`nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32`,
+packs the incoming projection gradient to BF16 once, reuses that scratch for
+MLP projection dWeight+bias and fused dInput+dGELU, and reports
+`block_backward_mlp_proj_bf16_grad_out_reuse_enabled: true` when active.
+Set `NFN_NATIVE_GPT_REUSE_MLP_PROJ_BF16_GRAD_OUT=0` to compare against the
+previous per-stage pack path.
 Active runs report `stored_mlp_forward_strategy` as
 `"tk-sm120-fused-fc-bias-gelu-prepacked-ln2-bf16-shadow-weight"` and
 `reuse_packed_ln2_fc_gelu_enabled: true` when the prepacked-LN2 route is active,
@@ -329,6 +337,8 @@ or `"tk-sm120-fused-fc-bias-gelu-bf16-store-bf16-shadow-weight"` when forced
 back to the older route. Set `NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU=0` to
 force that older route for paired benchmarks. Active runs report
 `block_backward_mlp_proj_dgelu_strategy` as
+`"tk-sm120-fused-dinput-dgelu-reused-bf16-grad-out-bf16-store-bf16-shadow-weight"`
+when the default BF16 grad-out reuse is active, or as
 `"tk-sm120-fused-dinput-dgelu-bf16-store-bf16-shadow-weight-bf16-grad-handoff-no-float-grad"`
 when the default BF16-only handoff elides the unused FP32 gradient conversion.
 Set `NFN_NATIVE_GPT_ELIDE_MLP_DGELU_FLOAT_GRAD=0` to compare against the
@@ -908,6 +918,12 @@ marker. Training JSON reports `checkpoint.payload_pack_strategy:
 `bash tools/build_native_train_tile_ops.sh` builds `libnfn_native_train_tile_ops.so`, a raw C ABI over CUDA Tile kernels from `neuralfn/csrc/tile_cuda/kernels.cu`. Native C++ trainers should link this library for single-buffer and multi-buffer fill/zeroing, single-buffer and multi-buffer sumsq partials, single-buffer and multi-buffer AdamW, gradient accumulation, deterministic GPT-2 token-weight initialization, device float32-to-bf16 checkpoint payload packing, device-side global-norm clip scale finalization, device-scalar gradient scaling, reductions, linear, forced-BF16 linear, BF16-input linear, linear input/forced-BF16 input/weight/weight-accumulate/forced-BF16 weight-accumulate/forced-BF16 weight+bias-accumulate/float-input plus BF16-bits weight+bias-accumulate/bias/bias-accumulate backward, scaled residual add, fused projection bias+residual add, BF16-linear projection bias+residual add and BF16-linear residual+LayerNorm, fused QKV split/merge, fused GPT-2 QKV split-to-heads, fused GPT-2 QKV bias+split-to-heads, fused GPT-2 heads-to-QKV gradient merge, fused TK bf16 attention-gradient heads-to-QKV bridge, saved TK BF16 attention workspace copy/backward, packed GPT-2 QKV TK attention backward with BF16-gradient output, reshape-heads/merge-heads, GELU forward, fused bias+GELU forward, fused bias+GELU with BF16 activation output, GELU backward, token embedding forward/weight backward, uint16-token embedding forward/weight backward, absolute-position embedding forward/backward/backward-accumulate, RMSNorm, RMSNorm input backward, LayerNorm, LayerNorm forward-with-stats, LayerNorm input plus fused input/residual-add, affine, affine-accumulate backward, stats-consuming affine+dInput+residual-add backward for float and BF16-bit inputs, LayerNorm stats-consuming input and affine-accumulate backward, softmax, float token and masked token cross-entropy partials, BF16-bits token cross-entropy partials, strided float/BF16-bits token cross-entropy partials, strided BF16-bits token cross-entropy partials with uint16 targets, token and masked token cross-entropy logits backward, strided in-place token cross-entropy logits backward, strided BF16-bits in-place token cross-entropy logits backward with uint16 targets, and scaled dot-product attention forward/backward instead of importing the PyTorch extension binding. The trainer build defines `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1` and links `libcublas`, so the exported native linear forward, BF16-input linear forward, dInput, dWeight, and accumulate-dWeight ABI symbols use GPU GEMM; the forced-BF16 and BF16-bits weight+bias accumulate ABIs use cuBLASLt `BGRADB` when supported and fall back to separate dWeight plus Tile bias-reduction launchers. The generic Tile extension build keeps the pure Tile fallback. CE logits backward uses a row-wise Tile path for vocabularies up to 1024 and a chunked row-wise path with reusable row-stat workspace for full GPT-class vocabularies; the strided variants let GPT trainers compute CE over public tokenizer vocab while treating padded LM-head rows as row stride and zeroing padded dlogit columns. Linear weight, accumulate-weight, bias, and accumulate-bias backward keep the row-chunked tiled atomic fallback for builds or shapes that do not use the trainer cuBLAS path.
 
 Full GPT-2 `--train-transformer-lm` uses `nfn_native_tile_gelu_add_bias_bf16_act_float32` to write float preactivation, float GELU activation, and BF16 GELU activation bits from one CUDA Tile launch. The BF16 saved-activation backward route uses `nfn_native_tile_gelu_backward_inplace_bf16_bits_float32` as a CUDA Tile kernel too, so the BF16 GELU forward/backward path no longer falls back to scalar CUDA element kernels. The MLP projection then consumes those BF16 bits through `nfn_native_tile_linear_bf16_input_bits_float32`, avoiding another activation pack before GEMM. Training JSON reports `mlp_proj_forward_activation_strategy`, `mlp_forward_act_bf16_elements`, and `mlp_forward_act_bf16_bytes` for this scratch.
+
+Full GPT-2 `--train-transformer-lm` also exposes
+`nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32`
+for the SM120 TK fused MLP projection dInput+dGELU path when the caller already
+packed the projection grad-out to BF16. The dense GPT trainer uses this ABI by
+default so dWeight+bias and dInput+dGELU share one BF16 grad-out pack.
 
 Dense GPT-2 `--train-transformer-lm` uses the LayerNorm stats ABI by default. Forward writes row mean/rstd for each scratch-tape LayerNorm, and earlier blocks that reuse stored BF16 MLP activations keep their LN2 stats in a small float sidecar so backward can call the stats-consuming kernels without recomputing row statistics from stale scratch-tape state. Block backward uses `nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_float32` for float LN1/fallback LN2 and `nfn_native_tile_layer_norm_backward_affine_residual_add_accumulate_with_stats_bf16_bits_float32` for stored-BF16 residual1 LN2. These fused kernels accumulate dWeight/dBias, compute dInput, apply residual scaling, and add the upstream residual gradient in one launch for GPT-width `dim <= 1024` shapes. Set `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_AFFINE_RESIDUAL=0` for the previous affine-accumulate plus dInput/residual-add pair, set `NFN_NATIVE_GPT_BF16_RESIDUAL1_LN_BACKWARD=0` for the older restore-to-FP32 residual1 path, or set `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_RESIDUAL=0` for the older separate LayerNorm dInput plus residual-add route. Training JSON reports `layer_norm_stats_strategy`, `layer_norm_backward_reuses_forward_stats`, `layer_norm_stats_disabled_by_fused_residual_ln2`, `layer_norm_backward_residual_fusion_enabled`, `layer_norm_backward_affine_residual_fusion_enabled`, `layer_norm_backward_affine_residual_fused_kernel_launches`, `layer_norm_backward_residual_strategy`, `residual1_backward_consumer_strategy`, `stored_mlp_layer_norm_stats_elements`, and `stored_mlp_layer_norm_stats_bytes`.
 
