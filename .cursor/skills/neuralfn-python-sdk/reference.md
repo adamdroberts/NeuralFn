@@ -752,3 +752,7 @@ context length, vocab bounds, and token parsing before CUDA, Torch, dataset
 setup, or graph-editor node flow. It currently reports
 `native-checkpoint-sampler-pending` until the CUDA Tile forward sampler lands;
 text prompts still use the temporary sampler bridge.
+Use `nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint PATH
+--checkpoint-load-elements N` to verify the next native sampler prerequisite:
+bounded bf16 payload loading, CUDA copy, Tile bf16-to-float conversion, and
+copyback without Torch or graph-editor tensors.

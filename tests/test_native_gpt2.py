@@ -1266,6 +1266,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "--native-info --native-checkpoint PATH" in help_proc.stdout
     assert "--inspect-checkpoint PATH" in help_proc.stdout
     assert "--sample-checkpoint PATH --prompt-tokens IDS" in help_proc.stdout
+    assert "--checkpoint-load-smoke --native-checkpoint PATH" in help_proc.stdout
     assert "--train-transformer-lm" in help_proc.stdout
     assert "--startup-only" in help_proc.stdout
     assert "--cuda-runtime-lib PATH" in help_proc.stdout
@@ -2970,6 +2971,23 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert sample_plan_payload["torch_required"] is False
     assert sample_plan_payload["graph_editor_node_flow"] is False
     assert sample_plan_payload["forward_pass_status"] == "dedicated-native-sampler-pending"
+
+    missing_load_smoke = subprocess.run(
+        [
+            str(cli),
+            "--checkpoint-load-smoke",
+            "--native-checkpoint",
+            str(checkpoint_path.with_name("missing.bin")),
+            "--checkpoint-load-elements",
+            "8",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert missing_load_smoke.returncode == 2
+    assert "failed to open native checkpoint" in missing_load_smoke.stderr
 
     bad_backend = subprocess.run(
         [str(cli), "--dataset-alias", str(dataset_path), "--backend", "tile_cuda", "--print-plan"],

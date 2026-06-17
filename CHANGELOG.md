@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add native GPT checkpoint payload load smoke
+
+#### Changed
+
+- `nfn_gpt_native_train` now supports
+  `--checkpoint-load-smoke --native-checkpoint PATH
+  --checkpoint-load-elements N`. The mode validates the native bf16 checkpoint,
+  reads a bounded payload slice, copies it to CUDA memory, converts it through
+  `nfn_native_tile_bf16_bits_to_float32`, copies float32 values back, and checks
+  exact host-vs-device conversion parity without importing Torch, resolving
+  token shards, setting up Python datasets, or flowing tensors through graph
+  editor nodes.
+- This is a focused prerequisite for the dedicated native GPT forward sampler:
+  checkpoint payload movement and bf16 unpacking are now covered by compiled
+  C++/CUDA Tile before wiring logits generation.
+
+#### Verification
+
+- Ran `bash tools/build_native_gpt_cli.sh`.
+- Ran `build/nfn_gpt_native_train --checkpoint-metadata-smoke --output-dir /tmp/nfn_checkpoint_load_smoke --num-layers 1 --train-seq-len 8`.
+- Ran `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint /tmp/nfn_checkpoint_load_smoke/model_00020000.bin --checkpoint-load-elements 16 --tile-ops-lib build/libnfn_native_train_tile_ops.so` outside the sandbox because sandboxed GPU/NVML access is blocked.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Add compiled native GPT prompt-token checkpoint sampler contract
 
 #### Changed

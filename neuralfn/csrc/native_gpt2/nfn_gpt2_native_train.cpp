@@ -91,6 +91,8 @@ struct Config {
     bool sample_checkpoint = false;
     std::string sample_prompt_tokens;
     int sample_max_new_tokens = 64;
+    bool checkpoint_load_smoke = false;
+    int checkpoint_load_elements = 1024;
 };
 
 struct BufferPlan {
@@ -343,6 +345,8 @@ void print_usage(const char* program) {
         << "  --inspect-checkpoint PATH         Alias for --native-info --native-checkpoint PATH\n"
         << "  --sample-checkpoint PATH --prompt-tokens IDS\n"
         << "                                     Validate native checkpoint prompt-token sampling inputs in compiled C++; CUDA Tile forward sampling is reported pending\n"
+        << "  --checkpoint-load-smoke --native-checkpoint PATH\n"
+        << "                                     Load a bounded bf16 checkpoint payload slice to CUDA and convert it through Tile kernels\n"
         << "  --cuda-runtime-lib PATH           libcudart path for Tile-CUDA smokes/training; defaults to NFN_CUDA_RUNTIME_LIB/libcudart.so\n"
         << "  --json-out PATH                   Write native JSON output to PATH instead of stdout\n"
         << "  --profile-json PATH               Alias for --json-out; useful with NFN_NATIVE_GPT_STAGE_TIMING=1\n"
@@ -1003,6 +1007,255 @@ std::vector<std::int64_t> parse_csv_i64(const std::string& raw, const std::strin
         }
     }
     return values;
+}
+
+float bf16_bits_to_float_host(std::uint16_t bits) {
+    std::uint32_t raw = static_cast<std::uint32_t>(bits) << 16;
+    float value = 0.0f;
+    std::memcpy(&value, &raw, sizeof(value));
+    return value;
+}
+
+template <typename Fn>
+Fn load_symbol(void* handle, const char* name);
+std::string dl_last_error(const char* fallback);
+std::vector<std::string> cuda_runtime_candidates(const Config& cfg);
+std::string default_tile_ops_lib(const char* program);
+
+int print_native_checkpoint_load_smoke_json(const Config& cfg, const char* program) {
+    constexpr std::int32_t kCheckpointMagic = 20240326;
+    constexpr std::int64_t kCheckpointHeaderInts = 256;
+    constexpr std::int64_t kCheckpointHeaderBytes = kCheckpointHeaderInts * 4;
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+    const fs::path checkpoint_path = expand_user_path(cfg.native_checkpoint);
+    const std::int64_t requested_elements = cfg.checkpoint_load_elements;
+    std::string error;
+
+    if (requested_elements <= 0) {
+        std::cerr << "--checkpoint-load-elements must be positive\n";
+        return 2;
+    }
+
+    std::ifstream in(checkpoint_path, std::ios::binary);
+    if (!in) {
+        std::cerr << "failed to open native checkpoint: " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    std::vector<std::int32_t> header(static_cast<std::size_t>(kCheckpointHeaderInts), 0);
+    in.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(kCheckpointHeaderBytes));
+    if (in.gcount() != kCheckpointHeaderBytes) {
+        std::cerr << "native checkpoint header is truncated: " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    if (header[0] != kCheckpointMagic) {
+        std::cerr << "not a native GPT checkpoint: " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    const int version = header[1];
+    if (version != 5) {
+        std::cerr << "--checkpoint-load-smoke currently expects bf16 native checkpoint version 5; got "
+                  << version << "\n";
+        return 2;
+    }
+    const std::int64_t max_seq_len = header[2];
+    const std::int64_t vocab_size = header[3];
+    const std::int64_t num_layers = header[4];
+    const std::int64_t num_heads = header[5];
+    const std::int64_t channels = header[6];
+    const std::int64_t padded_vocab_size = header[7];
+    if (max_seq_len <= 0 || vocab_size <= 0 || num_layers <= 0 ||
+        num_heads <= 0 || channels <= 0 || padded_vocab_size <= 0) {
+        std::cerr << "native checkpoint shape values must be positive: "
+                  << checkpoint_path.string() << "\n";
+        return 2;
+    }
+    const std::int64_t parameter_count =
+        native_gpt2_parameter_count(max_seq_len, padded_vocab_size, num_layers, channels);
+    const std::int64_t expected_file_size =
+        kCheckpointHeaderBytes + parameter_count * static_cast<std::int64_t>(sizeof(std::uint16_t));
+    const std::int64_t actual_file_size = file_size_bytes(checkpoint_path, &error);
+    if (actual_file_size < 0) {
+        std::cerr << error << "\n";
+        return 2;
+    }
+    if (actual_file_size != expected_file_size) {
+        std::cerr << "bad native checkpoint size: got " << actual_file_size
+                  << " bytes, expected " << expected_file_size << "\n";
+        return 2;
+    }
+    const std::int64_t load_elements = std::min(requested_elements, parameter_count);
+    std::vector<std::uint16_t> host_bf16(static_cast<std::size_t>(load_elements), 0);
+    in.read(
+        reinterpret_cast<char*>(host_bf16.data()),
+        static_cast<std::streamsize>(host_bf16.size() * sizeof(std::uint16_t)));
+    if (in.gcount() != static_cast<std::streamsize>(host_bf16.size() * sizeof(std::uint16_t))) {
+        std::cerr << "native checkpoint payload is truncated: " << checkpoint_path.string() << "\n";
+        return 2;
+    }
+
+    const std::string tile_lib_path = cfg.tile_ops_lib.empty() ? default_tile_ops_lib(program) : cfg.tile_ops_lib;
+    std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
+    std::string cuda_lib_path = runtime_candidates.empty() ? "libcudart.so" : runtime_candidates.front();
+    bool tile_loaded = false;
+    bool cuda_runtime_loaded = false;
+    bool kernel_loaded = false;
+    bool passed = false;
+    double max_abs_error = 0.0;
+    float sample_float = 0.0f;
+    float expected_sample = host_bf16.empty() ? 0.0f : bf16_bits_to_float_host(host_bf16[0]);
+
+    using Bf16BitsToFloat32Fn = int (*)(const std::uint16_t*, float*, std::int64_t, void*);
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+
+    void* tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    void* cuda_handle = nullptr;
+    Bf16BitsToFloat32Fn bf16_to_float = nullptr;
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+    std::uint16_t* device_bf16 = nullptr;
+    float* device_float = nullptr;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed with code " << code;
+        if (cuda_get_error_string != nullptr) {
+            out << " (" << cuda_get_error_string(code) << ")";
+        }
+        return out.str();
+    };
+    auto run = [&](int status, const std::string& context) {
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, context);
+        }
+    };
+
+    if (tile_handle == nullptr) {
+        error = dl_last_error("dlopen tile ops failed");
+    } else {
+        tile_loaded = true;
+        bf16_to_float = load_symbol<Bf16BitsToFloat32Fn>(tile_handle, "nfn_native_tile_bf16_bits_to_float32");
+        kernel_loaded = bf16_to_float != nullptr;
+        if (!kernel_loaded) {
+            error = "missing Tile ABI symbol nfn_native_tile_bf16_bits_to_float32";
+        }
+    }
+    if (error.empty()) {
+        std::string runtime_error;
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_runtime_loaded = true;
+                cuda_lib_path = candidate;
+                break;
+            }
+            runtime_error = dl_last_error("dlopen CUDA runtime failed");
+        }
+        if (!cuda_runtime_loaded) {
+            error = runtime_error.empty() ? "failed to load CUDA runtime" : runtime_error;
+        }
+    }
+    if (error.empty()) {
+        cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+        cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+        cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+        cuda_device_synchronize = load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+        cuda_get_error_string = load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+        if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
+            cuda_device_synchronize == nullptr || cuda_get_error_string == nullptr) {
+            error = "missing CUDA runtime symbols for checkpoint load smoke";
+        }
+    }
+    if (error.empty()) {
+        const std::size_t bf16_bytes = host_bf16.size() * sizeof(std::uint16_t);
+        const std::size_t float_bytes = host_bf16.size() * sizeof(float);
+        void* raw_bf16 = nullptr;
+        void* raw_float = nullptr;
+        run(cuda_malloc(&raw_bf16, bf16_bytes), "cudaMalloc checkpoint_bf16");
+        if (error.empty()) {
+            run(cuda_malloc(&raw_float, float_bytes), "cudaMalloc checkpoint_float");
+        }
+        device_bf16 = static_cast<std::uint16_t*>(raw_bf16);
+        device_float = static_cast<float*>(raw_float);
+        if (error.empty()) {
+            run(cuda_memcpy(device_bf16, host_bf16.data(), bf16_bytes, kCudaMemcpyHostToDevice),
+                "cudaMemcpy checkpoint bf16 H2D");
+        }
+        if (error.empty()) {
+            run(bf16_to_float(device_bf16, device_float, load_elements, nullptr),
+                "nfn_native_tile_bf16_bits_to_float32 checkpoint payload");
+        }
+        if (error.empty()) {
+            run(cuda_device_synchronize(), "cudaDeviceSynchronize checkpoint load smoke");
+        }
+        std::vector<float> host_float(static_cast<std::size_t>(load_elements), 0.0f);
+        if (error.empty()) {
+            run(cuda_memcpy(host_float.data(), device_float, float_bytes, kCudaMemcpyDeviceToHost),
+                "cudaMemcpy checkpoint float D2H");
+        }
+        if (error.empty()) {
+            for (std::int64_t i = 0; i < load_elements; ++i) {
+                const float expected = bf16_bits_to_float_host(host_bf16[static_cast<std::size_t>(i)]);
+                const float got = host_float[static_cast<std::size_t>(i)];
+                max_abs_error = std::max(max_abs_error, std::fabs(static_cast<double>(got - expected)));
+            }
+            sample_float = host_float.empty() ? 0.0f : host_float[0];
+            passed = max_abs_error == 0.0;
+        }
+    }
+
+    if (device_bf16 != nullptr && cuda_free != nullptr) {
+        cuda_free(device_bf16);
+    }
+    if (device_float != nullptr && cuda_free != nullptr) {
+        cuda_free(device_float);
+    }
+    if (tile_handle != nullptr) {
+        dlclose(tile_handle);
+    }
+    if (cuda_handle != nullptr) {
+        dlclose(cuda_handle);
+    }
+
+    std::cout
+        << "{\n"
+        << "  \"status\": \"native-checkpoint-load-smoke\",\n"
+        << "  \"runtime\": \"native-cpp\",\n"
+        << "  \"backend\": \"tile-cuda\",\n"
+        << "  \"path\": \"" << json_escape(checkpoint_path.string()) << "\",\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_lib_path) << "\",\n"
+        << "  \"tile_ops_loaded\": " << (tile_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"kernel_loaded\": " << (kernel_loaded ? "true" : "false") << ",\n"
+        << "  \"checkpoint_version\": " << version << ",\n"
+        << "  \"precision\": \"bf16\",\n"
+        << "  \"parameter_count\": " << parameter_count << ",\n"
+        << "  \"load_elements\": " << load_elements << ",\n"
+        << "  \"load_bytes_bf16\": " << (load_elements * static_cast<std::int64_t>(sizeof(std::uint16_t))) << ",\n"
+        << "  \"load_bytes_float32\": " << (load_elements * static_cast<std::int64_t>(sizeof(float))) << ",\n"
+        << "  \"sample_bf16_bits\": " << (host_bf16.empty() ? 0 : host_bf16[0]) << ",\n"
+        << "  \"sample_float\": " << sample_float << ",\n"
+        << "  \"expected_sample_float\": " << expected_sample << ",\n"
+        << "  \"max_abs_error\": " << max_abs_error << ",\n"
+        << "  \"torch_required\": false,\n"
+        << "  \"graph_editor_node_flow\": false,\n"
+        << "  \"passed\": " << (passed ? "true" : "false");
+    if (!error.empty()) {
+        std::cout << ",\n"
+                  << "  \"error\": \"" << json_escape(error) << "\"\n";
+    } else {
+        std::cout << "\n";
+    }
+    std::cout << "}\n";
+    return passed ? 0 : 2;
 }
 
 bool valid_activation(const std::string& value) {
@@ -16067,6 +16320,14 @@ int main(int argc, char** argv) {
             cfg.sample_max_new_tokens = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg.rfind("--max-new-tokens=", 0) == 0) {
             cfg.sample_max_new_tokens = parse_int(value_after_equals("--max-new-tokens="), "--max-new-tokens");
+        } else if (arg == "--checkpoint-load-smoke") {
+            cfg.backend = "tile-cuda";
+            cfg.checkpoint_load_smoke = true;
+        } else if (arg == "--checkpoint-load-elements") {
+            cfg.checkpoint_load_elements = parse_int(require_value(argc, argv, &i, arg), arg);
+        } else if (arg.rfind("--checkpoint-load-elements=", 0) == 0) {
+            cfg.checkpoint_load_elements =
+                parse_int(value_after_equals("--checkpoint-load-elements="), "--checkpoint-load-elements");
         } else if (arg == "--cuda-runtime-lib") {
             cfg.cuda_runtime_lib = require_value(argc, argv, &i, arg);
         } else if (arg.rfind("--cuda-runtime-lib=", 0) == 0) {
@@ -16182,6 +16443,13 @@ int main(int argc, char** argv) {
             return 2;
         }
         return print_native_checkpoint_sample_plan_json(cfg);
+    }
+    if (cfg.checkpoint_load_smoke) {
+        if (cfg.native_checkpoint.empty()) {
+            std::cerr << "--checkpoint-load-smoke requires --native-checkpoint PATH\n";
+            return 2;
+        }
+        return print_native_checkpoint_load_smoke_json(cfg, argv[0]);
     }
 
     if (cfg.backend == "tile-cuda" && cfg.print_command) {

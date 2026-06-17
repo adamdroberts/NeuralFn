@@ -237,6 +237,12 @@ CUDA, dataset setup, Torch, or graph-editor node flow. It currently exits with
 forward sampler lands; text prompts still use the temporary sampler script
 bridge described above.
 
+`nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint
+model_########.bin --checkpoint-load-elements 1024` is the next compiled
+inference prerequisite: it reads a bounded bf16 checkpoint payload slice, copies
+it to CUDA memory, converts it through `nfn_native_tile_bf16_bits_to_float32`,
+and verifies GPU copyback without Torch, datasets, or graph-editor tensors.
+
 The compiled dense GPT trainer can inspect native `model_########.bin`
 checkpoints without CUDA, Torch, Python dataset setup, or graph nodes using
 `nfn_gpt_native_train --native-info --native-checkpoint model_########.bin` or
