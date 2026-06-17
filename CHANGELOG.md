@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add checkpoint-backed native GPT full-stack logits smoke
+
+#### Changed
+
+- `nfn_gpt_native_train` now supports
+  `--checkpoint-forward-logits-smoke --native-checkpoint PATH --prompt-tokens IDS`.
+- The smoke loads checkpoint embeddings, every GPT block in order, final
+  LayerNorm, and tied LM-head logits through CUDA Tile kernels without Torch,
+  Python datasets, or graph-editor tensor flow.
+- The JSON output reports `block_index: -1`, `blocks_executed`,
+  `transformer_blocks_executed: true`, `final_logits_executed: true`, and keeps
+  `graph_editor_node_flow: false`. Generation-loop sampling remains pending.
+
+#### Verification
+
+- Ran `bash tools/build_native_gpt_cli.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `git diff --check`.
+- Ran `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --checkpoint-forward-logits-smoke --native-checkpoint /tmp/nfn_checkpoint_layout_smoke/model_00020000.bin --prompt-tokens 1,2,3 --tile-ops-lib build/libnfn_native_train_tile_ops.so` outside the sandbox because sandboxed GPU access cannot allocate on the CUDA device.
+
 ### 2026-06-17 Add checkpoint-backed native GPT block logits smoke
 
 #### Changed

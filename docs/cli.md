@@ -1122,6 +1122,7 @@ nfn_gpt_native_train --checkpoint-attention-smoke --native-checkpoint ~/NeuralFn
 nfn_gpt_native_train --checkpoint-attention-residual-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0
 nfn_gpt_native_train --checkpoint-block-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0
 nfn_gpt_native_train --checkpoint-block-logits-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3 --checkpoint-block-index 0
+nfn_gpt_native_train --checkpoint-forward-logits-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --prompt-tokens 1,2,3
 nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin --checkpoint-load-tensor h.0.ln_1.weight --checkpoint-load-elements 1024
 nfn_gpt_native_train --checkpoint-layout --native-checkpoint ~/NeuralFn/artifacts/gpt2/model_00020000.bin
 ```
@@ -1170,6 +1171,11 @@ stops before final LayerNorm, tied LM-head logits, and generation-loop sampling.
 LM-head logits for the last prompt token, reporting top token/logit metadata.
 It still runs only the selected checkpoint block rather than a multi-layer
 forward loop.
+`--checkpoint-forward-logits-smoke` runs every checkpoint GPT block in order,
+then final LayerNorm and the tied LM head for the last prompt token. It reports
+`transformer_blocks_executed: true`, `blocks_executed`, and
+`graph_editor_node_flow: false`; generation-loop sampling is still the remaining
+native inference step.
 
 For flat Parameter Golf checkpoints, architecture comes from tensor shapes plus
 compatible metadata. A supplied training log may provide safe runtime hints

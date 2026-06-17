@@ -98,6 +98,7 @@ struct Config {
     bool checkpoint_attention_residual_smoke = false;
     bool checkpoint_block_smoke = false;
     bool checkpoint_block_logits_smoke = false;
+    bool checkpoint_forward_logits_smoke = false;
     bool checkpoint_load_smoke = false;
     int checkpoint_load_elements = 1024;
     std::string checkpoint_load_tensor;
@@ -368,6 +369,8 @@ void print_usage(const char* program) {
         << "                                     Run one checkpoint-backed GPT block forward through attention, ln_2, MLP, and residual add\n"
         << "  --checkpoint-block-logits-smoke --native-checkpoint PATH --prompt-tokens IDS\n"
         << "                                     Continue checkpoint block smoke through final LayerNorm and tied LM-head logits\n"
+        << "  --checkpoint-forward-logits-smoke --native-checkpoint PATH --prompt-tokens IDS\n"
+        << "                                     Run every checkpoint GPT block, final LayerNorm, and tied LM-head logits on CUDA Tile kernels\n"
         << "  --checkpoint-block-index N        Block index for checkpoint block-stage smokes; defaults to 0\n"
         << "  --checkpoint-load-smoke --native-checkpoint PATH\n"
         << "                                     Load a bounded bf16 checkpoint payload slice to CUDA and convert it through Tile kernels\n"
@@ -1738,17 +1741,20 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     constexpr float kNormEps = 1.0e-5f;
     const fs::path checkpoint_path = expand_user_path(cfg.native_checkpoint);
     std::string error;
-    const bool run_final_logits = cfg.checkpoint_block_logits_smoke;
+    const bool run_all_layers = cfg.checkpoint_forward_logits_smoke;
+    const bool run_final_logits = cfg.checkpoint_block_logits_smoke || run_all_layers;
     const bool run_mlp = cfg.checkpoint_block_smoke || run_final_logits;
     const bool run_attention_projection = cfg.checkpoint_attention_residual_smoke || run_mlp;
     const bool run_attention = cfg.checkpoint_attention_smoke || run_attention_projection;
-    const std::string mode_flag = run_final_logits
+    const std::string mode_flag = run_all_layers
+        ? "--checkpoint-forward-logits-smoke"
+        : (run_final_logits
         ? "--checkpoint-block-logits-smoke"
         : (run_mlp
         ? "--checkpoint-block-smoke"
         : (run_attention_projection
         ? "--checkpoint-attention-residual-smoke"
-        : (run_attention ? "--checkpoint-attention-smoke" : "--checkpoint-qkv-smoke")));
+        : (run_attention ? "--checkpoint-attention-smoke" : "--checkpoint-qkv-smoke"))));
     const std::vector<std::int64_t> prompt_tokens =
         parse_csv_i64(cfg.sample_prompt_tokens, "--prompt-tokens");
     if (prompt_tokens.empty()) {
@@ -1794,7 +1800,7 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
                   << channels << " num_heads=" << num_heads << "\n";
         return 2;
     }
-    if (block_index < 0 || block_index >= num_layers) {
+    if (!run_all_layers && (block_index < 0 || block_index >= num_layers)) {
         std::cerr << "--checkpoint-block-index " << block_index
                   << " is outside checkpoint layer range [0, " << (num_layers - 1) << "]\n";
         return 2;
@@ -1879,18 +1885,18 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     std::vector<std::uint16_t> host_final_ln_weight;
     std::vector<std::uint16_t> host_final_ln_bias;
     if (error.empty()) host_position_weight = read_bf16_tensor("wpe.weight");
-    if (error.empty()) host_ln_weight = read_bf16_tensor(prefix + "ln_1.weight");
-    if (error.empty()) host_ln_bias = read_bf16_tensor(prefix + "ln_1.bias");
-    if (error.empty()) host_qkv_weight = read_bf16_tensor(prefix + "attn.c_attn.weight");
-    if (error.empty()) host_qkv_bias = read_bf16_tensor(prefix + "attn.c_attn.bias");
-    if (run_attention_projection && error.empty()) host_attn_proj_weight = read_bf16_tensor(prefix + "attn.c_proj.weight");
-    if (run_attention_projection && error.empty()) host_attn_proj_bias = read_bf16_tensor(prefix + "attn.c_proj.bias");
-    if (run_mlp && error.empty()) host_ln2_weight = read_bf16_tensor(prefix + "ln_2.weight");
-    if (run_mlp && error.empty()) host_ln2_bias = read_bf16_tensor(prefix + "ln_2.bias");
-    if (run_mlp && error.empty()) host_fc_weight = read_bf16_tensor(prefix + "mlp.c_fc.weight");
-    if (run_mlp && error.empty()) host_fc_bias = read_bf16_tensor(prefix + "mlp.c_fc.bias");
-    if (run_mlp && error.empty()) host_mlp_proj_weight = read_bf16_tensor(prefix + "mlp.c_proj.weight");
-    if (run_mlp && error.empty()) host_mlp_proj_bias = read_bf16_tensor(prefix + "mlp.c_proj.bias");
+    if (!run_all_layers && error.empty()) host_ln_weight = read_bf16_tensor(prefix + "ln_1.weight");
+    if (!run_all_layers && error.empty()) host_ln_bias = read_bf16_tensor(prefix + "ln_1.bias");
+    if (!run_all_layers && error.empty()) host_qkv_weight = read_bf16_tensor(prefix + "attn.c_attn.weight");
+    if (!run_all_layers && error.empty()) host_qkv_bias = read_bf16_tensor(prefix + "attn.c_attn.bias");
+    if (!run_all_layers && run_attention_projection && error.empty()) host_attn_proj_weight = read_bf16_tensor(prefix + "attn.c_proj.weight");
+    if (!run_all_layers && run_attention_projection && error.empty()) host_attn_proj_bias = read_bf16_tensor(prefix + "attn.c_proj.bias");
+    if (!run_all_layers && run_mlp && error.empty()) host_ln2_weight = read_bf16_tensor(prefix + "ln_2.weight");
+    if (!run_all_layers && run_mlp && error.empty()) host_ln2_bias = read_bf16_tensor(prefix + "ln_2.bias");
+    if (!run_all_layers && run_mlp && error.empty()) host_fc_weight = read_bf16_tensor(prefix + "mlp.c_fc.weight");
+    if (!run_all_layers && run_mlp && error.empty()) host_fc_bias = read_bf16_tensor(prefix + "mlp.c_fc.bias");
+    if (!run_all_layers && run_mlp && error.empty()) host_mlp_proj_weight = read_bf16_tensor(prefix + "mlp.c_proj.weight");
+    if (!run_all_layers && run_mlp && error.empty()) host_mlp_proj_bias = read_bf16_tensor(prefix + "mlp.c_proj.bias");
     if (run_final_logits && error.empty()) host_final_ln_weight = read_bf16_tensor("ln_f.weight");
     if (run_final_logits && error.empty()) host_final_ln_bias = read_bf16_tensor("ln_f.bias");
     if (!error.empty()) {
@@ -2139,6 +2145,7 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     float* logits = nullptr;
     float* residual_scale = nullptr;
     std::int64_t* token_ids = nullptr;
+    const float* final_block_output = nullptr;
     const std::int64_t rows = static_cast<std::int64_t>(prompt_tokens.size());
     const std::int64_t activation_elements = rows * channels;
     const std::int64_t qkv_elements = rows * channels * 3;
@@ -2151,15 +2158,17 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
 
     convert_tensor(host_token_weight, &token_weight_bf16, &token_weight, "wte.weight");
     convert_tensor(host_position_weight, &position_weight_bf16, &position_weight, "wpe.weight");
-    convert_tensor(host_ln_weight, &ln_weight_bf16, &ln_weight, prefix + "ln_1.weight");
-    convert_tensor(host_ln_bias, &ln_bias_bf16, &ln_bias, prefix + "ln_1.bias");
-    convert_tensor(host_qkv_weight, &qkv_weight_bf16, &qkv_weight, prefix + "attn.c_attn.weight");
-    convert_tensor(host_qkv_bias, &qkv_bias_bf16, &qkv_bias, prefix + "attn.c_attn.bias");
-    if (run_attention_projection) {
+    if (!run_all_layers) {
+        convert_tensor(host_ln_weight, &ln_weight_bf16, &ln_weight, prefix + "ln_1.weight");
+        convert_tensor(host_ln_bias, &ln_bias_bf16, &ln_bias, prefix + "ln_1.bias");
+        convert_tensor(host_qkv_weight, &qkv_weight_bf16, &qkv_weight, prefix + "attn.c_attn.weight");
+        convert_tensor(host_qkv_bias, &qkv_bias_bf16, &qkv_bias, prefix + "attn.c_attn.bias");
+    }
+    if (!run_all_layers && run_attention_projection) {
         convert_tensor(host_attn_proj_weight, &attn_proj_weight_bf16, &attn_proj_weight, prefix + "attn.c_proj.weight");
         convert_tensor(host_attn_proj_bias, &attn_proj_bias_bf16, &attn_proj_bias, prefix + "attn.c_proj.bias");
     }
-    if (run_mlp) {
+    if (!run_all_layers && run_mlp) {
         convert_tensor(host_ln2_weight, &ln2_weight_bf16, &ln2_weight, prefix + "ln_2.weight");
         convert_tensor(host_ln2_bias, &ln2_bias_bf16, &ln2_bias, prefix + "ln_2.bias");
         convert_tensor(host_fc_weight, &fc_weight_bf16, &fc_weight, prefix + "mlp.c_fc.weight");
@@ -2214,76 +2223,129 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         run(residual_add(token_out, position_out, residual_scale, residual, activation_elements, nullptr),
             "embedding_residual.forward");
     }
-    if (error.empty()) {
-        run(layer_norm(residual, ln_weight, ln_bias, ln_out, rows, channels, kNormEps, nullptr),
-            prefix + "ln_1.forward");
-    }
-    if (error.empty()) {
-        run(linear(ln_out, qkv_weight, qkv_bias, qkv_out, rows, channels, channels * 3, true, nullptr),
-            prefix + "attn.c_attn.forward");
-    }
-    if (run_attention && error.empty()) {
-        run(split_qkv_to_heads(qkv_out, q_heads, k_heads, v_heads, 1, rows, num_heads, head_dim, nullptr),
-            prefix + "attn.qkv.split_to_heads");
-    }
-    if (run_attention && error.empty()) {
-        run(attention(
-                q_heads,
-                k_heads,
-                v_heads,
-                attn_heads,
-                activation_elements,
-                num_heads,
-                num_heads,
-                rows,
-                rows,
-                head_dim,
-                head_dim,
-                attention_scale,
-                true,
-                false,
-                false,
-                0,
-                0,
-                0,
-                0,
-                nullptr),
-            prefix + "attn.sdpa.forward");
-    }
-    if (run_attention && error.empty()) {
-        run(merge_heads(attn_heads, attn_out, 1, num_heads, rows, head_dim, nullptr),
-            prefix + "attn.merge_heads");
-    }
-    if (run_attention_projection && error.empty()) {
-        run(linear(attn_out, attn_proj_weight, attn_proj_bias, attn_proj, rows, channels, channels, true, nullptr),
-            prefix + "attn.c_proj.forward");
-    }
-    if (run_attention_projection && error.empty()) {
-        run(residual_add(residual, attn_proj, residual_scale, residual1, activation_elements, nullptr),
-            prefix + "attn.residual.forward");
-    }
-    if (run_mlp && error.empty()) {
-        run(layer_norm(residual1, ln2_weight, ln2_bias, ln2_out, rows, channels, kNormEps, nullptr),
-            prefix + "ln_2.forward");
-    }
-    if (run_mlp && error.empty()) {
-        run(linear(ln2_out, fc_weight, nullptr, fc_out, rows, channels, mlp_dim, false, nullptr),
-            prefix + "mlp.c_fc.forward");
-    }
-    if (run_mlp && error.empty()) {
-        run(gelu_add_bias(fc_out, fc_bias, fc_out, act, rows, mlp_dim, nullptr),
-            prefix + "mlp.bias_gelu.forward");
-    }
-    if (run_mlp && error.empty()) {
-        run(linear(act, mlp_proj_weight, mlp_proj_bias, mlp_proj, rows, mlp_dim, channels, true, nullptr),
-            prefix + "mlp.c_proj.forward");
-    }
-    if (run_mlp && error.empty()) {
-        run(residual_add(residual1, mlp_proj, residual_scale, residual2, activation_elements, nullptr),
-            prefix + "mlp.residual.forward");
+    auto run_checkpoint_block = [&](std::int64_t layer_index, const float* block_input, float* block_output) {
+        const std::string layer_prefix = "h." + std::to_string(layer_index) + ".";
+        float* block_ln_weight = ln_weight;
+        float* block_ln_bias = ln_bias;
+        float* block_qkv_weight = qkv_weight;
+        float* block_qkv_bias = qkv_bias;
+        float* block_attn_proj_weight = attn_proj_weight;
+        float* block_attn_proj_bias = attn_proj_bias;
+        float* block_ln2_weight = ln2_weight;
+        float* block_ln2_bias = ln2_bias;
+        float* block_fc_weight = fc_weight;
+        float* block_fc_bias = fc_bias;
+        float* block_mlp_proj_weight = mlp_proj_weight;
+        float* block_mlp_proj_bias = mlp_proj_bias;
+        if (run_all_layers && error.empty()) {
+            std::uint16_t* block_ln_weight_bf16 = nullptr;
+            std::uint16_t* block_ln_bias_bf16 = nullptr;
+            std::uint16_t* block_qkv_weight_bf16 = nullptr;
+            std::uint16_t* block_qkv_bias_bf16 = nullptr;
+            std::uint16_t* block_attn_proj_weight_bf16 = nullptr;
+            std::uint16_t* block_attn_proj_bias_bf16 = nullptr;
+            std::uint16_t* block_ln2_weight_bf16 = nullptr;
+            std::uint16_t* block_ln2_bias_bf16 = nullptr;
+            std::uint16_t* block_fc_weight_bf16 = nullptr;
+            std::uint16_t* block_fc_bias_bf16 = nullptr;
+            std::uint16_t* block_mlp_proj_weight_bf16 = nullptr;
+            std::uint16_t* block_mlp_proj_bias_bf16 = nullptr;
+            convert_tensor(read_bf16_tensor(layer_prefix + "ln_1.weight"), &block_ln_weight_bf16, &block_ln_weight, layer_prefix + "ln_1.weight");
+            convert_tensor(read_bf16_tensor(layer_prefix + "ln_1.bias"), &block_ln_bias_bf16, &block_ln_bias, layer_prefix + "ln_1.bias");
+            convert_tensor(read_bf16_tensor(layer_prefix + "attn.c_attn.weight"), &block_qkv_weight_bf16, &block_qkv_weight, layer_prefix + "attn.c_attn.weight");
+            convert_tensor(read_bf16_tensor(layer_prefix + "attn.c_attn.bias"), &block_qkv_bias_bf16, &block_qkv_bias, layer_prefix + "attn.c_attn.bias");
+            convert_tensor(read_bf16_tensor(layer_prefix + "attn.c_proj.weight"), &block_attn_proj_weight_bf16, &block_attn_proj_weight, layer_prefix + "attn.c_proj.weight");
+            convert_tensor(read_bf16_tensor(layer_prefix + "attn.c_proj.bias"), &block_attn_proj_bias_bf16, &block_attn_proj_bias, layer_prefix + "attn.c_proj.bias");
+            convert_tensor(read_bf16_tensor(layer_prefix + "ln_2.weight"), &block_ln2_weight_bf16, &block_ln2_weight, layer_prefix + "ln_2.weight");
+            convert_tensor(read_bf16_tensor(layer_prefix + "ln_2.bias"), &block_ln2_bias_bf16, &block_ln2_bias, layer_prefix + "ln_2.bias");
+            convert_tensor(read_bf16_tensor(layer_prefix + "mlp.c_fc.weight"), &block_fc_weight_bf16, &block_fc_weight, layer_prefix + "mlp.c_fc.weight");
+            convert_tensor(read_bf16_tensor(layer_prefix + "mlp.c_fc.bias"), &block_fc_bias_bf16, &block_fc_bias, layer_prefix + "mlp.c_fc.bias");
+            convert_tensor(read_bf16_tensor(layer_prefix + "mlp.c_proj.weight"), &block_mlp_proj_weight_bf16, &block_mlp_proj_weight, layer_prefix + "mlp.c_proj.weight");
+            convert_tensor(read_bf16_tensor(layer_prefix + "mlp.c_proj.bias"), &block_mlp_proj_bias_bf16, &block_mlp_proj_bias, layer_prefix + "mlp.c_proj.bias");
+        }
+        if (error.empty()) {
+            run(layer_norm(block_input, block_ln_weight, block_ln_bias, ln_out, rows, channels, kNormEps, nullptr),
+                layer_prefix + "ln_1.forward");
+        }
+        if (error.empty()) {
+            run(linear(ln_out, block_qkv_weight, block_qkv_bias, qkv_out, rows, channels, channels * 3, true, nullptr),
+                layer_prefix + "attn.c_attn.forward");
+        }
+        if (run_attention && error.empty()) {
+            run(split_qkv_to_heads(qkv_out, q_heads, k_heads, v_heads, 1, rows, num_heads, head_dim, nullptr),
+                layer_prefix + "attn.qkv.split_to_heads");
+        }
+        if (run_attention && error.empty()) {
+            run(attention(
+                    q_heads,
+                    k_heads,
+                    v_heads,
+                    attn_heads,
+                    activation_elements,
+                    num_heads,
+                    num_heads,
+                    rows,
+                    rows,
+                    head_dim,
+                    head_dim,
+                    attention_scale,
+                    true,
+                    false,
+                    false,
+                    0,
+                    0,
+                    0,
+                    0,
+                    nullptr),
+                layer_prefix + "attn.sdpa.forward");
+        }
+        if (run_attention && error.empty()) {
+            run(merge_heads(attn_heads, attn_out, 1, num_heads, rows, head_dim, nullptr),
+                layer_prefix + "attn.merge_heads");
+        }
+        if (run_attention_projection && error.empty()) {
+            run(linear(attn_out, block_attn_proj_weight, block_attn_proj_bias, attn_proj, rows, channels, channels, true, nullptr),
+                layer_prefix + "attn.c_proj.forward");
+        }
+        if (run_attention_projection && error.empty()) {
+            run(residual_add(block_input, attn_proj, residual_scale, residual1, activation_elements, nullptr),
+                layer_prefix + "attn.residual.forward");
+        }
+        if (run_mlp && error.empty()) {
+            run(layer_norm(residual1, block_ln2_weight, block_ln2_bias, ln2_out, rows, channels, kNormEps, nullptr),
+                layer_prefix + "ln_2.forward");
+        }
+        if (run_mlp && error.empty()) {
+            run(linear(ln2_out, block_fc_weight, nullptr, fc_out, rows, channels, mlp_dim, false, nullptr),
+                layer_prefix + "mlp.c_fc.forward");
+        }
+        if (run_mlp && error.empty()) {
+            run(gelu_add_bias(fc_out, block_fc_bias, fc_out, act, rows, mlp_dim, nullptr),
+                layer_prefix + "mlp.bias_gelu.forward");
+        }
+        if (run_mlp && error.empty()) {
+            run(linear(act, block_mlp_proj_weight, block_mlp_proj_bias, mlp_proj, rows, mlp_dim, channels, true, nullptr),
+                layer_prefix + "mlp.c_proj.forward");
+        }
+        if (run_mlp && error.empty()) {
+            run(residual_add(residual1, mlp_proj, residual_scale, block_output, activation_elements, nullptr),
+                layer_prefix + "mlp.residual.forward");
+        }
+    };
+    if (run_all_layers) {
+        const float* block_input = residual;
+        for (std::int64_t layer = 0; layer < num_layers && error.empty(); ++layer) {
+            float* block_output = (layer % 2 == 0) ? residual2 : residual;
+            run_checkpoint_block(layer, block_input, block_output);
+            block_input = block_output;
+        }
+        final_block_output = block_input;
+    } else {
+        run_checkpoint_block(block_index, residual, residual2);
+        final_block_output = residual2;
     }
     if (run_final_logits && error.empty()) {
-        run(layer_norm(residual2, final_ln_weight, final_ln_bias, final_ln_out, rows, channels, kNormEps, nullptr),
+        run(layer_norm(final_block_output, final_ln_weight, final_ln_bias, final_ln_out, rows, channels, kNormEps, nullptr),
             "ln_f.forward");
     }
     if (run_final_logits && error.empty()) {
@@ -2336,7 +2398,7 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     if (run_mlp && error.empty()) {
         run(cuda_memcpy(
                 host_block_sample.data(),
-                residual2,
+                final_block_output,
                 host_block_sample.size() * sizeof(float),
                 kCudaMemcpyDeviceToHost),
             "cudaMemcpy block output sample D2H");
@@ -2453,13 +2515,15 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     std::cout
         << "{\n"
         << "  \"status\": \""
-        << (run_final_logits
+        << (run_all_layers
+                ? "native-checkpoint-forward-logits-smoke"
+                : (run_final_logits
                 ? "native-checkpoint-block-logits-smoke"
                 : (run_mlp
                 ? "native-checkpoint-block-smoke"
                 : (run_attention_projection
                 ? "native-checkpoint-attention-residual-smoke"
-                : (run_attention ? "native-checkpoint-attention-smoke" : "native-checkpoint-qkv-smoke"))))
+                : (run_attention ? "native-checkpoint-attention-smoke" : "native-checkpoint-qkv-smoke")))))
         << "\",\n"
         << "  \"runtime\": \"native-cpp\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
@@ -2477,31 +2541,40 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         << "  \"num_layers\": " << num_layers << ",\n"
         << "  \"num_heads\": " << num_heads << ",\n"
         << "  \"channels\": " << channels << ",\n"
-        << "  \"block_index\": " << block_index << ",\n"
+        << "  \"block_index\": " << (run_all_layers ? -1 : block_index) << ",\n"
+        << "  \"blocks_executed\": " << (run_all_layers ? num_layers : 1) << ",\n"
         << "  \"head_dim\": " << (run_attention ? head_dim : 0) << ",\n"
         << "  \"block_stage\": \""
-        << (run_final_logits
+        << (run_all_layers
+                ? "multi_layer_forward_final_norm_logits"
+                : (run_final_logits
                 ? "single_block_forward_final_norm_logits"
                 : (run_mlp
                 ? "full_block_forward"
                 : (run_attention_projection
                 ? "ln1_qkv_causal_attention_projection_residual"
-                : (run_attention ? "ln1_qkv_causal_attention" : "ln1_qkv_projection"))))
+                : (run_attention ? "ln1_qkv_causal_attention" : "ln1_qkv_projection")))))
         << "\",\n"
         << "  \"qkv_elements\": " << qkv_elements << ",\n"
-        << "  \"mlp_elements\": " << (run_mlp ? mlp_elements : 0) << ",\n"
-        << "  \"loaded_tensors\": [\"wte.weight\", \"wpe.weight\", \"" << json_escape(prefix) << "ln_1.weight\", \"" << json_escape(prefix) << "ln_1.bias\", \"" << json_escape(prefix) << "attn.c_attn.weight\", \"" << json_escape(prefix) << "attn.c_attn.bias\"";
-    if (run_attention_projection) {
-        std::cout << ", \"" << json_escape(prefix) << "attn.c_proj.weight\", \"" << json_escape(prefix) << "attn.c_proj.bias\"";
-    }
-    if (run_mlp) {
+        << "  \"mlp_elements\": " << (run_mlp ? mlp_elements : 0) << ",\n";
+    if (run_all_layers) {
         std::cout
-            << ", \"" << json_escape(prefix) << "ln_2.weight\", \"" << json_escape(prefix) << "ln_2.bias\""
-            << ", \"" << json_escape(prefix) << "mlp.c_fc.weight\", \"" << json_escape(prefix) << "mlp.c_fc.bias\""
-            << ", \"" << json_escape(prefix) << "mlp.c_proj.weight\", \"" << json_escape(prefix) << "mlp.c_proj.bias\"";
-    }
-    if (run_final_logits) {
-        std::cout << ", \"ln_f.weight\", \"ln_f.bias\"";
+            << "  \"loaded_tensors\": [\"wte.weight\", \"wpe.weight\", \"h.*.ln_1.weight\", \"h.*.ln_1.bias\", \"h.*.attn.c_attn.weight\", \"h.*.attn.c_attn.bias\", \"h.*.attn.c_proj.weight\", \"h.*.attn.c_proj.bias\", \"h.*.ln_2.weight\", \"h.*.ln_2.bias\", \"h.*.mlp.c_fc.weight\", \"h.*.mlp.c_fc.bias\", \"h.*.mlp.c_proj.weight\", \"h.*.mlp.c_proj.bias\", \"ln_f.weight\", \"ln_f.bias\"";
+    } else {
+        std::cout
+            << "  \"loaded_tensors\": [\"wte.weight\", \"wpe.weight\", \"" << json_escape(prefix) << "ln_1.weight\", \"" << json_escape(prefix) << "ln_1.bias\", \"" << json_escape(prefix) << "attn.c_attn.weight\", \"" << json_escape(prefix) << "attn.c_attn.bias\"";
+        if (run_attention_projection) {
+            std::cout << ", \"" << json_escape(prefix) << "attn.c_proj.weight\", \"" << json_escape(prefix) << "attn.c_proj.bias\"";
+        }
+        if (run_mlp) {
+            std::cout
+                << ", \"" << json_escape(prefix) << "ln_2.weight\", \"" << json_escape(prefix) << "ln_2.bias\""
+                << ", \"" << json_escape(prefix) << "mlp.c_fc.weight\", \"" << json_escape(prefix) << "mlp.c_fc.bias\""
+                << ", \"" << json_escape(prefix) << "mlp.c_proj.weight\", \"" << json_escape(prefix) << "mlp.c_proj.bias\"";
+        }
+        if (run_final_logits) {
+            std::cout << ", \"ln_f.weight\", \"ln_f.bias\"";
+        }
     }
     std::cout
         << "],\n"
@@ -2526,7 +2599,7 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         << "  \"max_abs_sample\": " << max_abs_sample << ",\n"
         << "  \"torch_required\": false,\n"
         << "  \"graph_editor_node_flow\": false,\n"
-        << "  \"transformer_blocks_executed\": false,\n"
+        << "  \"transformer_blocks_executed\": " << (run_all_layers ? "true" : "false") << ",\n"
         << "  \"block_qkv_projection_executed\": true,\n"
         << "  \"block_attention_executed\": " << (run_attention ? "true" : "false") << ",\n"
         << "  \"block_attention_residual_executed\": " << (run_attention_projection ? "true" : "false") << ",\n"
@@ -17833,6 +17906,9 @@ int main(int argc, char** argv) {
         } else if (arg == "--checkpoint-block-logits-smoke") {
             cfg.backend = "tile-cuda";
             cfg.checkpoint_block_logits_smoke = true;
+        } else if (arg == "--checkpoint-forward-logits-smoke") {
+            cfg.backend = "tile-cuda";
+            cfg.checkpoint_forward_logits_smoke = true;
         } else if (arg == "--checkpoint-block-index") {
             cfg.checkpoint_block_index = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg.rfind("--checkpoint-block-index=", 0) == 0) {
@@ -18013,6 +18089,13 @@ int main(int argc, char** argv) {
     if (cfg.checkpoint_block_logits_smoke) {
         if (cfg.native_checkpoint.empty()) {
             std::cerr << "--checkpoint-block-logits-smoke requires --native-checkpoint PATH\n";
+            return 2;
+        }
+        return print_native_checkpoint_qkv_smoke_json(cfg, argv[0]);
+    }
+    if (cfg.checkpoint_forward_logits_smoke) {
+        if (cfg.native_checkpoint.empty()) {
+            std::cerr << "--checkpoint-forward-logits-smoke requires --native-checkpoint PATH\n";
             return 2;
         }
         return print_native_checkpoint_qkv_smoke_json(cfg, argv[0]);

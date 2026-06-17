@@ -788,5 +788,9 @@ fc, GELU+bias, MLP projection, and final block residual add. Final norm, tied
 LM-head logits, and generation-loop sampling remain pending.
 Use `nfn_gpt_native_train --checkpoint-block-logits-smoke --native-checkpoint
 PATH --prompt-tokens IDS --checkpoint-block-index N` to continue through final
-LayerNorm and tied LM-head logits for the last prompt token. Multi-layer forward
-and generation-loop sampling remain pending.
+LayerNorm and tied LM-head logits for the last prompt token.
+Use `nfn_gpt_native_train --checkpoint-forward-logits-smoke --native-checkpoint
+PATH --prompt-tokens IDS` to run every checkpoint GPT block in order, final
+LayerNorm, and the tied LM head for the last prompt token. It reports
+`transformer_blocks_executed: true`, `blocks_executed`, and
+`graph_editor_node_flow: false`; generation-loop sampling remains pending.
