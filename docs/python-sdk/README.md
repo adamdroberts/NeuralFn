@@ -163,7 +163,9 @@ copy with `cudaMemcpyAsync`, widens them to int64 on device through one
 embedding/LM-head weight on device through
 `nfn_native_tile_init_gpt2_token_weight_float32` without host materialization,
 uses one scratch activation tape with backward recomputation plus persistent
-block outputs, keeps block-0 allocation/initialization/AdamW-state zeroing under
+block outputs by default; the per-block full activation tape env switch is
+diagnostic-only after paired RTX 5090 timing rejected it. It keeps block-0
+allocation/initialization/AdamW-state zeroing under
 the same block-vector visitors as every other transformer block, reports the
 `block0_duplicate_*_elided` startup flags, including activation allocation,
 under `block_state_layout`, suballocates float buffers from a single CUDA device

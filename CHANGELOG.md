@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add full activation tape bisection switch and reject it as default
+
+#### Changed
+
+- Added `NFN_NATIVE_GPT_FULL_ACTIVATION_TAPE=1` /
+  `NFN_NATIVE_GPT2_FULL_ACTIVATION_TAPE=1` as a diagnostic-only dense GPT
+  trainer switch. When enabled, the native C++ loop allocates one transformer
+  activation tape per block, uses each block's own forward tape during
+  backward, skips backward recompute, and reports `full_activation_tape_enabled`,
+  `activation_tape_count`, `backward_recompute_blocks`, and a
+  `full-forward-tape...` strategy under `block_state_layout`.
+- Kept the default on the existing scratch-recompute tape because paired RTX
+  5090 timing showed the full-tape candidate is much slower and substantially
+  increases setup pressure.
+
+#### Verification
+
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k 'train_transformer_lm or packed_attention_ln1_recompute or packed_qkv_uint16_arena'`
+  (`2 passed, 43 deselected`).
+- Rebuilt the compiled native GPT CLI with `bash tools/build_native_gpt_cli.sh`.
+- Dedicated RTX 5090 one-microbatch paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_GPT_FULL_ACTIVATION_TAPE=1 --samples 1 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --command-timeout-seconds 900 --json-out /tmp/nfn_full_activation_tape_one_microbatch_pair.json`
+  measured the candidate at `61.335739x` train-loop wall time and `0.016304x`
+  tokens/sec versus the default scratch-recompute path, so the full-tape route
+  remains diagnostic-only.
+
 ### 2026-06-17 Record LN1 BF16 QKV handoff reject
 
 #### Changed

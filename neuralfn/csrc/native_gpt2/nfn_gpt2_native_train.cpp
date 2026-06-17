@@ -8945,7 +8945,6 @@ int run_transformer_lm_training_json(
     const char* program) {
     constexpr std::int64_t kHeads = 12;
     constexpr std::int64_t kDefaultTargetLayers = 12;
-    constexpr std::int64_t kActivationTapeCount = 1;
     constexpr std::int64_t kVocab = 50257;
     constexpr std::int64_t kPaddedVocab = 50304;
     constexpr std::int64_t kDim = 768;
@@ -9011,8 +9010,16 @@ int run_transformer_lm_training_json(
     const std::int64_t seq_len = cfg.seq_len;
     const std::int64_t target_layers = cfg.num_layers > 0 ? cfg.num_layers : kDefaultTargetLayers;
     const std::int64_t trained_layers = target_layers;
+    const bool full_activation_tape_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_FULL_ACTIVATION_TAPE",
+                              "NFN_NATIVE_GPT2_FULL_ACTIVATION_TAPE"}),
+            false);
+    const std::int64_t activation_tape_count =
+        full_activation_tape_enabled && trained_layers > 0 ? trained_layers : 1;
     const std::int64_t persistent_block_output_count = trained_layers > 0 ? trained_layers - 1 : 0;
-    const std::int64_t backward_recompute_block_count = trained_layers > 0 ? trained_layers - 1 : 0;
+    const std::int64_t backward_recompute_block_count =
+        full_activation_tape_enabled ? 0 : (trained_layers > 0 ? trained_layers - 1 : 0);
     const std::int64_t rows = batch_size * seq_len;
     const std::int64_t activation_elements = rows * kDim;
     const std::int64_t hidden_elements = rows * kHidden;
@@ -11090,7 +11097,7 @@ int run_transformer_lm_training_json(
         float* lse = nullptr;
     };
     std::vector<TransformerBlockParams> blocks(static_cast<std::size_t>(trained_layers));
-    std::vector<TransformerBlockActivations> block_tapes(static_cast<std::size_t>(kActivationTapeCount));
+    std::vector<TransformerBlockActivations> block_tapes(static_cast<std::size_t>(activation_tape_count));
     std::vector<float*> block_outputs(static_cast<std::size_t>(persistent_block_output_count), nullptr);
     constexpr std::int64_t kBlockWeightBf16ElementsPerBlock =
         kQkvWeightElements + kAttnProjWeightElements + kFcWeightElements + kMlpProjWeightElements;
@@ -11618,14 +11625,14 @@ int run_transformer_lm_training_json(
             return;
         }
         if (activation_elements <= 0 ||
-            kActivationTapeCount >
+            activation_tape_count >
                 std::numeric_limits<std::int64_t>::max() / activation_elements ||
-            activation_elements * kActivationTapeCount >
+            activation_elements * activation_tape_count >
                 static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
             error = "projection bf16 scratch allocation byte size overflow";
             return;
         }
-        const std::int64_t total_elements = activation_elements * kActivationTapeCount;
+        const std::int64_t total_elements = activation_elements * activation_tape_count;
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(total_elements);
         if (projection_bf16_scratch == nullptr) {
             void* raw = nullptr;
@@ -11652,12 +11659,12 @@ int run_transformer_lm_training_json(
         if (elements_per_tape <= 0 ||
             elements_per_tape >
                 static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t)) ||
-            kActivationTapeCount >
+            activation_tape_count >
                 std::numeric_limits<std::int64_t>::max() / elements_per_tape) {
             error = "packed QKV attention bf16 scratch allocation byte size overflow";
             return;
         }
-        const std::int64_t total_elements = elements_per_tape * kActivationTapeCount;
+        const std::int64_t total_elements = elements_per_tape * activation_tape_count;
         const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(total_elements);
         if (packed_qkv_attention_bf16_arena == nullptr) {
             void* raw = nullptr;
@@ -11960,16 +11967,16 @@ int run_transformer_lm_training_json(
         allocate_uint16(&mlp_forward_act_bf16, hidden_elements, "mlp_forward_act_bf16");
         allocate_uint16(
             &projection_bf16_scratch,
-            bf16_projection_residual_enabled ? activation_elements * kActivationTapeCount : 0,
+            bf16_projection_residual_enabled ? activation_elements * activation_tape_count : 0,
             "projection_bf16_scratch");
         if (packed_qkv_attention_enabled) {
             const std::int64_t elements_per_tape = qkv_activation_elements + activation_elements * 2;
             if (elements_per_tape > 0 &&
-                kActivationTapeCount <=
+                activation_tape_count <=
                     std::numeric_limits<std::int64_t>::max() / elements_per_tape) {
                 allocate_uint16(
                     &packed_qkv_attention_bf16_arena,
-                    elements_per_tape * kActivationTapeCount,
+                    elements_per_tape * activation_tape_count,
                     "packed_qkv_attention_bf16");
             }
         }
@@ -15182,7 +15189,8 @@ int run_transformer_lm_training_json(
         const float* block_input = x;
         float* final_block_output = x;
         for (std::size_t i = 0; i < blocks.size(); ++i) {
-            TransformerBlockActivations& tape = block_tapes[0];
+            TransformerBlockActivations& tape =
+                block_tapes[full_activation_tape_enabled ? i : 0];
             StoredMlpActivations* fused_mlp_store =
                 preserve_block_outputs && i < stored_mlp_activations.size() ? &stored_mlp_activations[i] : nullptr;
             StoredAttentionActivations* fused_attention_store =
@@ -15271,11 +15279,12 @@ int run_transformer_lm_training_json(
         float* output_grad = grad_x;
         for (std::size_t reverse_index = blocks.size(); reverse_index > 0 && error.empty(); --reverse_index) {
             const std::size_t i = reverse_index - 1;
-            TransformerBlockActivations& tape = block_tapes[0];
+            TransformerBlockActivations& tape =
+                block_tapes[full_activation_tape_enabled ? i : 0];
             const float* block_input = block_input_for(i);
             const std::uint16_t* stored_residual1_bf16 =
                 i < stored_residual1_activations.size() ? stored_residual1_activations[i] : nullptr;
-            if (reverse_index != blocks.size()) {
+            if (!full_activation_tape_enabled && reverse_index != blocks.size()) {
                 const bool use_stored_mlp_activations = i < stored_mlp_activations.size();
                 if (i < stored_attention_activations.size()) {
                     recompute_block_from_saved_attention(
@@ -16987,7 +16996,9 @@ int run_transformer_lm_training_json(
         << "  \"block_state_layout\": {\n"
         << "    \"allocated_block_count\": " << trained_layers << ",\n"
         << "    \"target_block_count\": " << target_layers << ",\n"
-        << "    \"activation_tape_count\": " << kActivationTapeCount << ",\n"
+        << "    \"activation_tape_count\": " << activation_tape_count << ",\n"
+        << "    \"full_activation_tape_enabled\": "
+        << (full_activation_tape_enabled ? "true" : "false") << ",\n"
         << "    \"packed_qkv_float_attention_tape_elided\": "
         << (packed_qkv_float_attention_tape_elided ? "true" : "false") << ",\n"
         << "    \"packed_qkv_float_attention_tape_elements_elided\": "
@@ -17015,7 +17026,17 @@ int run_transformer_lm_training_json(
         << "    \"mlp_proj_backward_gelu_inplace\": true,\n"
         << "    \"mlp_proj_backward_grad_act_scratch_allocated\": false,\n"
         << "    \"activation_tape_strategy\": \""
-        << (stored_packed_attention_block_count > 0 && stored_mlp_activation_block_count > 0
+        << (full_activation_tape_enabled && stored_packed_attention_block_count > 0 && stored_mlp_activation_block_count > 0
+                ? "full-forward-tape-bf16-stored-packed-attention-and-mlp-direct-backward"
+                : full_activation_tape_enabled && stored_packed_attention_block_count > 0
+                ? "full-forward-tape-bf16-stored-packed-attention-direct-backward"
+                : full_activation_tape_enabled && stored_attention_block_count > 0 && stored_mlp_activation_block_count > 0
+                ? "full-forward-tape-bf16-stored-attention-and-mlp-direct-backward"
+                : full_activation_tape_enabled && stored_mlp_activation_block_count > 0
+                ? "full-forward-tape-bf16-stored-mlp-direct-backward-opt-in"
+                : full_activation_tape_enabled
+                ? "full-forward-tape"
+                : stored_packed_attention_block_count > 0 && stored_mlp_activation_block_count > 0
                 ? "scratch-recompute-bf16-stored-packed-attention-and-mlp-direct-backward"
                 : stored_packed_attention_block_count > 0
                 ? "scratch-recompute-bf16-stored-packed-attention-direct-backward"

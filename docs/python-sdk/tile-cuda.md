@@ -894,6 +894,12 @@ state/tape vectors; `block_state_layout` includes loop flags for those paths
 plus separate global and per-block gradient partial counts. The trained block
 count is now the configured GPT-2 layer count; the default dense GPT-2 path uses
 12 trained layers with one scratch activation tape and 11 persistent block outputs.
+`NFN_NATIVE_GPT_FULL_ACTIVATION_TAPE=1` / `NFN_NATIVE_GPT2_FULL_ACTIVATION_TAPE=1`
+is a diagnostic-only benchmark switch that allocates one activation tape per
+block and skips backward recompute, reporting `full_activation_tape_enabled`,
+`activation_tape_count`, and a `full-forward-tape...` strategy in
+`block_state_layout`. The default remains scratch-recompute because the
+dedicated RTX 5090 paired check measured the full-tape candidate much slower.
 `kernel_backend="llm-kittens"` remains available only as an explicit external
 bridge. The Tile plan includes a GPT-2 parameter layout plus forward, backward,
 and optimizer stage sequence for the current 12-layer trainer.
