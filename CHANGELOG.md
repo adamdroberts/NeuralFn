@@ -24,6 +24,12 @@ Future updates should append new entries here rather than replacing older notes.
   dedicated RTX 5090 with `NFN_NATIVE_GPT_STAGE_TIMING=1` and
   `NFN_NATIVE_LINEAR_SHAPE_STATS=1`; the current native path completed one
   optimizer step and reported active cuBLASLt/TK hot paths.
+- Ran the updated explicit-batch parity wrapper with `NFN_SM120_PARITY_STEPS=10`,
+  `NFN_SM120_PARITY_SAMPLES=3`, `NFN_SM120_PARITY_WARMUP=0`,
+  `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=0`, and
+  `NFN_SM120_PARITY_PROFILE_DIR=none`. It measured NeuralFn at `1.033656x`
+  train-loop wall time and `0.967400x` tokens/sec versus `llm.kittens`, with
+  zero selected-GPU compute processes before or after every paired sample.
 - Static verification is covered by
   `tests/test_tile_cuda_examples.py::test_native_gpt_sm120_parity_wrapper_uses_reference_shape`.
 
