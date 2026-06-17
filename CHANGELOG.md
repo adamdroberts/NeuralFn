@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add extra-large-K cuBLASLt bisection switch and reject it as default
+
+#### Changed
+
+- Added `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1` /
+  `NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1` as a diagnostic-only Tile
+  linear switch. It lets trainer-facing BF16 cuBLASLt attempt LM-head-sized
+  shapes with `k > 32768`, including the dense GPT LM-head dHidden shape
+  `m=768,n=8192,k=50304`.
+- Kept the default cap at `k <= 32768` because paired RTX 5090 timing showed
+  cuBLASLt was slower than the existing BF16 `cublasGemmEx` fallback for that
+  LM-head dHidden shape.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran a one-microbatch shape-stat probe with
+  `NFN_NATIVE_LINEAR_SHAPE_STATS=1 NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1 build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so --profile-json /tmp/nfn_extra_large_k_shape_stats.json`.
+  The LM-head dHidden shape moved from `path_name: "cublas_gemmex_bf16"` to
+  `path_name: "cublaslt"`.
+- Dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --command-timeout-seconds 900 --json-out /tmp/nfn_extra_large_k_pair.json`
+  measured `1.021534x` train-loop wall time and `0.978930x` tokens/sec versus
+  the default GEMMEx route, so the extra-large-K cuBLASLt path remains
+  diagnostic-only.
+
 ### 2026-06-17 Add full activation tape bisection switch and reject it as default
 
 #### Changed

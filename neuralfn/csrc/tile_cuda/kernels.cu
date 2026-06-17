@@ -1960,10 +1960,31 @@ bool trainer_linear_bf16_cublaslt_shape_supported(int m, int n, int k) {
         std::strcmp(value, "on") == 0 ||
         std::strcmp(value, "ON") == 0;
   }();
+  static const bool extra_large_k_enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K");
+    }
+    if (value == nullptr) {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
   return large_shape_enabled &&
       m <= 50304 &&
       n <= 50304 &&
-      k <= 32768;
+      (k <= 32768 || (extra_large_k_enabled && k <= 65536));
 }
 
 bool trainer_linear_float32_bf16_bgrad_enabled() {

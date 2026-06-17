@@ -296,7 +296,11 @@ chunk shapes through cuBLASLt by default; set
 `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_LARGE_SHAPES=0` or
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_LARGE_SHAPES=0` to restore the previous
 small-shape-only gate and fall back to BF16 `cublasGemmEx` for those chunks.
-Set
+Set `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1` or
+`NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1` only for paired diagnostics
+that try LM-head-sized BF16 shapes with `k > 32768` through cuBLASLt. The
+dedicated RTX 5090 check routed LM-head dHidden to cuBLASLt but measured it
+slower than the default GEMMEx fallback, so this remains default-off. Set
 `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT=0` or
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT=0` to force the older BF16 `cublasGemmEx`
 bridge. Tied LM-head BF16 logits use the SM120 ThunderKittens GEMM
