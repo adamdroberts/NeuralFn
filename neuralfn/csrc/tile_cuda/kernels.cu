@@ -2028,6 +2028,31 @@ int trainer_linear_cublaslt_heuristic_index_override() {
   return index;
 }
 
+cublasComputeType_t trainer_linear_bf16_gemm_ex_compute_type() {
+  static const bool fast_16bf = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_FAST_16BF");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF");
+    }
+    if (value == nullptr || value[0] == '\0') {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return fast_16bf ? CUBLAS_COMPUTE_32F_FAST_16BF : CUBLAS_COMPUTE_32F;
+}
+
 struct TrainerLinearBf16Workspace {
   struct CacheEntry {
     __nv_bfloat16* data = nullptr;
@@ -2358,7 +2383,7 @@ bool cublas_linear_gemm_ex_bf16_float32(
       c,
       CUDA_R_32F,
       ldc,
-      CUBLAS_COMPUTE_32F,
+      trainer_linear_bf16_gemm_ex_compute_type(),
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -2440,7 +2465,7 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32(
       c,
       CUDA_R_32F,
       ldc,
-      CUBLAS_COMPUTE_32F,
+      trainer_linear_bf16_gemm_ex_compute_type(),
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -2681,7 +2706,7 @@ bool cublas_linear_gemm_ex_bf16_bits_b_float32(
       c,
       CUDA_R_32F,
       ldc,
-      CUBLAS_COMPUTE_32F,
+      trainer_linear_bf16_gemm_ex_compute_type(),
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -2810,7 +2835,7 @@ bool cublas_linear_gemm_ex_bf16_bits_ab_float32(
       c,
       CUDA_R_32F,
       ldc,
-      CUBLAS_COMPUTE_32F,
+      trainer_linear_bf16_gemm_ex_compute_type(),
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -3385,7 +3410,7 @@ bool cublas_linear_gemm_ex_bf16_float32_to_bf16_bits(
       c_bf16,
       CUDA_R_16BF,
       ldc,
-      CUBLAS_COMPUTE_32F,
+      trainer_linear_bf16_gemm_ex_compute_type(),
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -3467,7 +3492,7 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32_to_bf16_bits(
       c_bf16,
       CUDA_R_16BF,
       ldc,
-      CUBLAS_COMPUTE_32F,
+      trainer_linear_bf16_gemm_ex_compute_type(),
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -3564,7 +3589,7 @@ bool cublas_linear_gemm_ex_float32_a_bf16_bits_b_to_bf16_bits(
       c_bf16,
       CUDA_R_16BF,
       ldc,
-      CUBLAS_COMPUTE_32F,
+      trainer_linear_bf16_gemm_ex_compute_type(),
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -3652,7 +3677,7 @@ bool cublas_linear_gemm_ex_bf16_bits_ab_to_bf16_bits(
       c_bf16,
       CUDA_R_16BF,
       ldc,
-      CUBLAS_COMPUTE_32F,
+      trainer_linear_bf16_gemm_ex_compute_type(),
       CUBLAS_GEMM_DEFAULT_TENSOR_OP);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -3712,7 +3737,7 @@ bool cublas_linear_gemm_ex_bf16_bits_ab_to_bf16_bits_accumulate(
       c_bf16,
       CUDA_R_16BF,
       ldc,
-      CUBLAS_COMPUTE_32F,
+      trainer_linear_bf16_gemm_ex_compute_type(),
       CUBLAS_GEMM_DEFAULT);
   if (status == CUBLAS_STATUS_SUCCESS) {
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);

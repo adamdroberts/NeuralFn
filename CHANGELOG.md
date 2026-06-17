@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add BF16 cublasGemmEx fallback compute-mode selector
+
+#### Changed
+
+- Native CUDA Tile BF16 `cublasGemmEx` fallback paths now accept
+  `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF=1` or
+  `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_FAST_16BF=1` to test
+  `CUBLAS_COMPUTE_32F_FAST_16BF` on non-cuBLASLt fallback GEMMs. The default
+  remains `CUBLAS_COMPUTE_32F` because the RTX 5090 paired benchmark measured
+  the fast-16BF candidate as neutral: `1.000141x` train-loop time and
+  `0.999865x` tokens/sec.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran `tools/paired_kernel_speed.py` on the dedicated display-disabled RTX
+  5090 with `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and
+  `--require-idle-selected-gpu` for
+  `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF=1`.
+
 ### 2026-06-17 Add BF16 CE launch bisection selector
 
 #### Changed

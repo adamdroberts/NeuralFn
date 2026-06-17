@@ -4002,6 +4002,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "cublasLtMatmul" in kernels_text
     assert "CUBLASLT_EPILOGUE_BGRADB" in kernels_text
     assert "CUBLASLT_MATMUL_DESC_BIAS_POINTER" in kernels_text
+    assert "NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_FAST_16BF" in kernels_text
+    assert "NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF" in kernels_text
+    assert "trainer_linear_bf16_gemm_ex_compute_type" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_float32_with_bgrad" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_bits_a_float32_with_bgrad" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_bits_b_float32_with_bgrad" in kernels_text
