@@ -3488,6 +3488,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert evo_plan["shape"]["num_layers"] == 12
     assert evo_plan["shape"]["model_dim"] == 768
     assert evo_plan["shape"]["num_heads"] == 12
+    assert evo_plan["shape"]["vocab_size"] == 50257
     assert evo_plan["schedule"]["eval_every_steps"] == 1000
     assert evo_plan["schedule"]["grad_accum_steps"] == 8
     assert evo_plan["optimizer"]["profile"] == "adamw"

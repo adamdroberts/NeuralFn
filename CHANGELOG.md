@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Fix GPT-2 evo native preflight vocabulary default
+
+#### Changed
+
+- Updated the compiled `nfn_gpt2_evo_native_train` preflight to default to the
+  real GPT-2 tokenizer vocabulary size (`50257`) instead of the old 1024-token
+  parameter-golf shape. Plan JSON and estimated parameter counts now reflect
+  the intended GPT-2 evo default unless callers explicitly pass
+  `--vocab-size`.
+- Updated README and framework-guide docs so the GPT-2 evo native plan is
+  described as a full-vocab GPT-2 shape.
+
+#### Verification
+
+- Ran `python -m pytest tests/test_native_gpt2.py::test_missing_family_native_trainers_build_and_unified_frontend_dispatches -q`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Remove dense GPT llm.kittens training bridge
 
 #### Changed

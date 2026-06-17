@@ -29,7 +29,7 @@ struct Gpt2EvoPlan {
     std::int64_t eval_batch_size = 64;
     std::int64_t eval_every_steps = 250;
     std::int64_t warmup_steps = 60;
-    std::int64_t vocab_size = 1024;
+    std::int64_t vocab_size = 50257;
     std::int64_t num_layers = 12;
     std::int64_t model_dim = 768;
     std::int64_t num_heads = 12;
@@ -298,7 +298,7 @@ void print_usage(const char* program) {
         << "  --batch-size N                  Microbatch rows, default 64\n"
         << "  --train-batch-tokens N          Effective tokens/step, default 524288\n"
         << "  --eval-every-steps N            Validation cadence, default 250\n"
-        << "  --vocab-size N                  Vocabulary size, default 1024\n"
+        << "  --vocab-size N                  Vocabulary size, default 50257\n"
         << "  --num-layers N                  Transformer layers, default 12\n"
         << "  --model-dim N                   Width, default 768\n"
         << "  --num-heads N                   Attention heads, default 12\n"
