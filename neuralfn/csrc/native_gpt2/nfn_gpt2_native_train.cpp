@@ -12185,6 +12185,10 @@ int run_transformer_lm_training_json(
             stored_packed_attention_bf16_elements,
             "stored_packed_attention_bf16_arena");
         allocate_uint16(
+            &stored_packed_attention_ln1_bf16_arena,
+            stored_packed_attention_ln1_bf16_elements,
+            "stored_packed_attention_ln1_bf16_arena");
+        allocate_uint16(
             &lm_head_bf16_logits,
             lm_head_bf16_logits_enabled ? logit_elements : 0,
             "lm_head_bf16_logits");

@@ -840,7 +840,7 @@ instead of calling `cudaMalloc` for each float tensor. JSON reports
 BF16 activation and scratch buffers are also suballocated from one uint16 CUDA
 device arena by default, covering stored MLP activations, residual1 caches,
 packed attention stores, LM-head BF16 logits, MLP BF16 scratch, packed-QKV BF16
-scratch, and block BF16 weight shadows. Set
+scratch, saved packed-attention LN1 BF16 tape, and block BF16 weight shadows. Set
 `NFN_NATIVE_GPT_COMBINED_BF16_ARENA=0` or
 `NFN_NATIVE_GPT2_COMBINED_BF16_ARENA=0` to reproduce the older per-buffer BF16
 `cudaMalloc` path during paired benchmarks. JSON reports

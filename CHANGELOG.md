@@ -6,6 +6,38 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-18 Suballocate saved packed-attention LN1 BF16 tape
+
+#### Changed
+
+- Dense GPT native training now reserves the saved packed-attention LN1 BF16
+  tape through the default combined uint16 arena instead of issuing a separate
+  BF16 `cudaMalloc`. This keeps the saved packed-attention BF16 activation
+  layout under one allocation and makes `uint16_arena_suballocation_count`
+  account for that tape.
+- Updated README, Python SDK Tile-CUDA docs, and the Tile-CUDA checklist to
+  describe the saved LN1 BF16 tape as part of the default uint16 arena. The
+  `NFN_NATIVE_GPT_COMBINED_BF16_ARENA=0` /
+  `NFN_NATIVE_GPT2_COMBINED_BF16_ARENA=0` fallback still reproduces the older
+  per-buffer allocation path.
+
+#### Verification
+
+- Rebuilt `nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran a dedicated RTX 5090 one-step TinyStories native smoke. Runtime JSON
+  reported `uint16_allocation_strategy: "single-arena"`,
+  `uint16_allocation_cuda_malloc_count: 1`,
+  `uint16_arena_suballocation_count: 11`,
+  `stored_packed_attention_ln1_bf16_enabled: true`,
+  `stored_packed_attention_ln1_bf16_blocks: 11`, and
+  `stored_packed_attention_ln1_bf16_bytes: 1107296256`.
+- Ran a same-script 5-step, 3-sample diagnostic comparison against the broad
+  `NFN_NATIVE_GPT_COMBINED_BF16_ARENA=0` per-buffer fallback. The fallback
+  measured `0.996650x` mean train-loop wall time and `1.003578x` mean
+  tokens/sec, but median train-loop wall time was `1.004820x`, so this
+  comparison was treated as noisy and no broader allocation fallback was
+  promoted.
+
 ### 2026-06-18 Align BGRADB direct-bias reporting with the faster default
 
 #### Changed
