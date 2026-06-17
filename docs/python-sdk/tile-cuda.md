@@ -301,6 +301,11 @@ chunk shapes through cuBLASLt by default; set
 `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_LARGE_SHAPES=0` or
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_LARGE_SHAPES=0` to restore the previous
 small-shape-only gate and fall back to BF16 `cublasGemmEx` for those chunks.
+Set `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE=m,n,k,opA,opB` or
+`NFN_NATIVE_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE=m,n,k,opA,opB` only for paired
+shape bisection; for example `768,65536,3072,N,N` routes that one BF16
+cuBLASLt shape bucket back through the older BF16 `cublasGemmEx` fallback while
+leaving other shapes on the default cuBLASLt path.
 Set `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1` or
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1` only for paired diagnostics
 that try LM-head-sized BF16 shapes with `k > 32768` through cuBLASLt. The

@@ -6,6 +6,41 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add BF16 cuBLASLt shape-bisection switch and reject tested fallbacks
+
+#### Changed
+
+- Added `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE=m,n,k,opA,opB` /
+  `NFN_NATIVE_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE=m,n,k,opA,opB` as a
+  diagnostic-only Tile linear switch for routing one BF16 cuBLASLt shape bucket
+  back through BF16 `cublasGemmEx` during paired bisection.
+- Kept all tested hot BF16 buckets on the default cuBLASLt route. The global
+  BF16 cuBLASLt opt-out and the tested one-shape fallbacks were slower in the
+  actual native train-loop metric.
+
+#### Verification
+
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with
+  `bash tools/build_native_train_tile_ops.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k 'train_transformer_lm or packed_attention_ln1_recompute or packed_qkv_uint16_arena'`
+  (`2 passed, 43 deselected`).
+- Dedicated RTX 5090 one-microbatch paired benchmark with
+  `NFN_NATIVE_LINEAR_BF16_CUBLASLT=0` measured `6.171959x` train-loop wall time
+  and `0.162057x` tokens/sec versus default, rejecting the global BF16 GEMMEx
+  fallback.
+- Dedicated RTX 5090 one-microbatch paired benchmark with
+  `NFN_NATIVE_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE=768,65536,3072,N,N` measured
+  `1.007716x` train-loop wall time and `0.992349x` tokens/sec, rejecting the
+  MLP projection dInput fallback.
+- Dedicated RTX 5090 one-microbatch paired benchmark with
+  `NFN_NATIVE_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE=768,65536,768,N,N` measured
+  `1.008810x` train-loop wall time and `0.991317x` tokens/sec, rejecting the
+  smaller dInput fallback.
+- Dedicated RTX 5090 one-microbatch paired benchmark with
+  `NFN_NATIVE_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE=768,3072,65536,N,T` measured
+  `2.857882x` train-loop wall time and `0.351320x` tokens/sec, rejecting the
+  MLP projection dWeight fallback.
+
 ### 2026-06-17 Add cuBLASLt workspace bisection switch and reject larger cap as default
 
 #### Changed

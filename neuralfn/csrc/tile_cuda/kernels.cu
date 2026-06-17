@@ -16,6 +16,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -1955,7 +1956,82 @@ void record_linear_shape_stat(
           1});
 }
 
-bool trainer_linear_bf16_cublaslt_shape_supported(int m, int n, int k) {
+bool parse_cublas_op_token(const char* token, cublasOperation_t* op) {
+  if (token == nullptr || op == nullptr) {
+    return false;
+  }
+  if (std::strcmp(token, "N") == 0 || std::strcmp(token, "n") == 0 ||
+      std::strcmp(token, "0") == 0) {
+    *op = CUBLAS_OP_N;
+    return true;
+  }
+  if (std::strcmp(token, "T") == 0 || std::strcmp(token, "t") == 0 ||
+      std::strcmp(token, "1") == 0) {
+    *op = CUBLAS_OP_T;
+    return true;
+  }
+  return false;
+}
+
+bool trainer_linear_bf16_cublaslt_shape_disabled(
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  static const LinearShapeStat disabled_shape = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE");
+    }
+    LinearShapeStat shape{};
+    if (value == nullptr || value[0] == '\0') {
+      return shape;
+    }
+    int parsed_m = 0;
+    int parsed_n = 0;
+    int parsed_k = 0;
+    char parsed_op_a[8] = {};
+    char parsed_op_b[8] = {};
+    if (std::sscanf(
+            value,
+            "%d,%d,%d,%7[^,],%7s",
+            &parsed_m,
+            &parsed_n,
+            &parsed_k,
+            parsed_op_a,
+            parsed_op_b) != 5) {
+      return shape;
+    }
+    cublasOperation_t parsed_a = CUBLAS_OP_N;
+    cublasOperation_t parsed_b = CUBLAS_OP_N;
+    if (parsed_m <= 0 || parsed_n <= 0 || parsed_k <= 0 ||
+        !parse_cublas_op_token(parsed_op_a, &parsed_a) ||
+        !parse_cublas_op_token(parsed_op_b, &parsed_b)) {
+      return shape;
+    }
+    shape.path = 1;
+    shape.m = parsed_m;
+    shape.n = parsed_n;
+    shape.k = parsed_k;
+    shape.op_a = static_cast<int>(parsed_a);
+    shape.op_b = static_cast<int>(parsed_b);
+    return shape;
+  }();
+  return disabled_shape.path == 1 && disabled_shape.m == m && disabled_shape.n == n &&
+      disabled_shape.k == k && disabled_shape.op_a == static_cast<int>(op_a) &&
+      disabled_shape.op_b == static_cast<int>(op_b);
+}
+
+bool trainer_linear_bf16_cublaslt_shape_supported(
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  if (trainer_linear_bf16_cublaslt_shape_disabled(m, n, k, op_a, op_b)) {
+    return false;
+  }
   if (m <= 3072 && (n <= 3072 || k <= 3072)) {
     return true;
   }
@@ -2457,7 +2533,7 @@ bool cublas_linear_gemm_ex_bf16_float32(
     return true;
   }
   if (trainer_linear_bf16_cublaslt_enabled() &&
-      trainer_linear_bf16_cublaslt_shape_supported(m, n, k) &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k, op_a, op_b) &&
       cublaslt_linear_matmul(
           a_bf16,
           b_bf16,
@@ -2540,7 +2616,7 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32(
   f32_to_bf16_kernel<<<b_blocks, threads, 0, stream>>>(b, workspace->b, b_elements);
   const auto* a_bf16 = reinterpret_cast<const __nv_bfloat16*>(a_bf16_bits);
   if (trainer_linear_bf16_cublaslt_enabled() &&
-      trainer_linear_bf16_cublaslt_shape_supported(m, n, k) &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k, op_a, op_b) &&
       cublaslt_linear_matmul(
           a_bf16,
           workspace->b,
@@ -2628,7 +2704,7 @@ bool cublas_linear_gemm_ex_bf16_float32_with_bgrad(
     return false;
   }
   return trainer_linear_bf16_cublaslt_enabled() &&
-      trainer_linear_bf16_cublaslt_shape_supported(m, n, k) &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k, op_a, op_b) &&
       cublaslt_linear_matmul(
           a_bf16,
           b_bf16,
@@ -2680,7 +2756,7 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32_with_bgrad(
   f32_to_bf16_kernel<<<b_blocks, threads, 0, stream>>>(b, workspace->b, b_elements);
   const auto* a_bf16 = reinterpret_cast<const __nv_bfloat16*>(a_bf16_bits);
   return trainer_linear_bf16_cublaslt_enabled() &&
-      trainer_linear_bf16_cublaslt_shape_supported(m, n, k) &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k, op_a, op_b) &&
       cublaslt_linear_matmul(
           a_bf16,
           workspace->b,
@@ -2725,7 +2801,7 @@ bool cublas_linear_gemm_ex_bf16_bits_ab_float32_with_bgrad(
   const auto* a_bf16 = reinterpret_cast<const __nv_bfloat16*>(a_bf16_bits);
   const auto* b_bf16 = reinterpret_cast<const __nv_bfloat16*>(b_bf16_bits);
   return trainer_linear_bf16_cublaslt_enabled() &&
-      trainer_linear_bf16_cublaslt_shape_supported(m, n, k) &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k, op_a, op_b) &&
       cublaslt_linear_matmul(
           a_bf16,
           b_bf16,
@@ -2782,7 +2858,7 @@ bool cublas_linear_gemm_ex_bf16_bits_b_float32(
   }
   const auto* b_bf16 = reinterpret_cast<const __nv_bfloat16*>(b_bf16_bits);
   if (trainer_linear_bf16_cublaslt_enabled() &&
-      trainer_linear_bf16_cublaslt_shape_supported(m, n, k) &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k, op_a, op_b) &&
       cublaslt_linear_matmul(
           a_bf16,
           b_bf16,
@@ -2864,7 +2940,7 @@ bool cublas_linear_gemm_ex_bf16_bits_b_float32_with_bgrad(
   }
   const auto* b_bf16 = reinterpret_cast<const __nv_bfloat16*>(b_bf16_bits);
   return trainer_linear_bf16_cublaslt_enabled() &&
-      trainer_linear_bf16_cublaslt_shape_supported(m, n, k) &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k, op_a, op_b) &&
       cublaslt_linear_matmul(
           a_bf16,
           b_bf16,
@@ -2912,7 +2988,7 @@ bool cublas_linear_gemm_ex_bf16_bits_ab_float32(
   const auto* a_bf16 = reinterpret_cast<const __nv_bfloat16*>(a_bf16_bits);
   const auto* b_bf16 = reinterpret_cast<const __nv_bfloat16*>(b_bf16_bits);
   if (trainer_linear_bf16_cublaslt_enabled() &&
-      trainer_linear_bf16_cublaslt_shape_supported(m, n, k) &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k, op_a, op_b) &&
       cublaslt_linear_matmul(
           a_bf16,
           b_bf16,

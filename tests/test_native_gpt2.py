@@ -4352,6 +4352,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_LINEAR_BF16_CUBLASLT" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_LARGE_SHAPES" in kernels_text
     assert "NFN_NATIVE_LINEAR_BF16_CUBLASLT_LARGE_SHAPES" in kernels_text
+    assert "NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE" in kernels_text
+    assert "NFN_NATIVE_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_CUBLASLT" in kernels_text
     assert "NFN_NATIVE_LINEAR_CUBLASLT" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_TK_GEMM" in kernels_text
