@@ -13974,6 +13974,8 @@ void launch_linear_backward_weight_bias_accumulate_float32_bf16_bits(
     std::int64_t input_dim,
     std::int64_t output_dim,
     cudaStream_t stream) {
+  // Fallback chunking is applied by the beta overload with
+  // kRowChunkSize = kLinearBackwardBiasRowChunkSize.
   launch_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta(
       x, grad_out_bf16_bits, grad_weight, grad_bias, rows, input_dim, output_dim, 1.0f, stream);
 }
