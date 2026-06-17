@@ -277,7 +277,7 @@ bool tk_packed_attention_dprep_grid3d_enabled() {
       value = std::getenv("NFN_NATIVE_GPT2_PACKED_ATTENTION_DPREP_GRID3D");
     }
     if (value == nullptr || value[0] == '\0') {
-      return false;
+      return true;
     }
     if (std::strcmp(value, "0") == 0 ||
         std::strcmp(value, "false") == 0 ||
@@ -312,6 +312,31 @@ int tk_packed_attention_dprep_warps_per_block() {
     return static_cast<int>(parsed);
   }();
   return warps;
+}
+
+bool tk_packed_attention_dprep_hd64_specialized_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED");
+    }
+    if (value == nullptr || value[0] == '\0') {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
 }
 
 bool tk_attention_backward_section_timing_enabled() {
@@ -700,6 +725,49 @@ __global__ void packed_attention_dprep_bf16_grad_kernel(
     acc += __shfl_down_sync(0xffffffff, acc, offset);
   }
   if (threadIdx.x == 0) {
+    d[row] = acc;
+  }
+}
+
+__global__ void packed_attention_dprep_bf16_grad_hd64_h12_kernel(
+    const std::uint16_t* __restrict__ out_btc_bf16_bits,
+    const std::uint16_t* __restrict__ grad_out_btc_bf16_bits,
+    __nv_bfloat16* __restrict__ out_heads_bf16,
+    __nv_bfloat16* __restrict__ grad_out_heads_bf16,
+    float* __restrict__ d,
+    std::int64_t batch,
+    std::int64_t seq_len) {
+  constexpr std::int64_t kHeads = 12;
+  constexpr std::int64_t kHeadDim = 64;
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x) * blockDim.y + threadIdx.y;
+  const std::int64_t rows = batch * kHeads * seq_len;
+  if (row >= rows) {
+    return;
+  }
+  const std::int64_t t = row % seq_len;
+  const std::int64_t bh = row / seq_len;
+  const std::int64_t h = bh % kHeads;
+  const std::int64_t b = bh / kHeads;
+  const std::int64_t merged_base = ((b * seq_len + t) * kHeads + h) * kHeadDim;
+  const std::int64_t head_base = row * kHeadDim;
+  const int lane = threadIdx.x;
+  const int d0 = lane;
+  const int d1 = lane + 32;
+  const std::uint16_t out0 = out_btc_bf16_bits[merged_base + d0];
+  const std::uint16_t grad0 = grad_out_btc_bf16_bits[merged_base + d0];
+  const std::uint16_t out1 = out_btc_bf16_bits[merged_base + d1];
+  const std::uint16_t grad1 = grad_out_btc_bf16_bits[merged_base + d1];
+  out_heads_bf16[head_base + d0] = reinterpret_cast<const __nv_bfloat16&>(out0);
+  grad_out_heads_bf16[head_base + d0] = reinterpret_cast<const __nv_bfloat16&>(grad0);
+  out_heads_bf16[head_base + d1] = reinterpret_cast<const __nv_bfloat16&>(out1);
+  grad_out_heads_bf16[head_base + d1] = reinterpret_cast<const __nv_bfloat16&>(grad1);
+  float acc =
+      bf16_bits_to_f32_device(out0) * bf16_bits_to_f32_device(grad0) +
+      bf16_bits_to_f32_device(out1) * bf16_bits_to_f32_device(grad1);
+  for (int offset = warpSize / 2; offset > 0; offset /= 2) {
+    acc += __shfl_down_sync(0xffffffff, acc, offset);
+  }
+  if (lane == 0) {
     d[row] = acc;
   }
 }
@@ -1245,7 +1313,19 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
         }
       } else {
         const int dprep_grid = static_cast<int>((chunk_rows + dprep_block.y - 1) / dprep_block.y);
-        if (grad_out_bf16_bits != nullptr) {
+        if (grad_out_bf16_bits != nullptr &&
+            head_dim == 64 &&
+            heads == kGpt2AttentionHeads &&
+            tk_packed_attention_dprep_hd64_specialized_enabled()) {
+          packed_attention_dprep_bf16_grad_hd64_h12_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
+              out_bf16_bits + batch_begin * merged_elements_per_batch,
+              grad_out_bf16_bits + batch_begin * merged_elements_per_batch,
+              workspace->o_bf + batch_begin * head_elements_per_batch,
+              workspace->go_bf + batch_begin * head_elements_per_batch,
+              workspace->d + batch_begin * row_elements_per_batch,
+              chunk_batch,
+              seq_len);
+        } else if (grad_out_bf16_bits != nullptr) {
           packed_attention_dprep_bf16_grad_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
               out_bf16_bits + batch_begin * merged_elements_per_batch,
               grad_out_bf16_bits + batch_begin * merged_elements_per_batch,

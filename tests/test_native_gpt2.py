@@ -5015,6 +5015,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_attention_forward_tk_launch_count" in source_text
     assert "nfn_native_tile_attention_backward_dprep_timing_us" in source_text
     assert "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING" in kernels_text
+    assert "packed_attention_dprep_bf16_grad_hd64_h12_kernel" in kernels_text
+    assert "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED" in kernels_text
     assert "NFN_TILE_CUDA_USE_TK_ATTENTION:-1" in script_text
     assert "LLM_KITTENS_ROOT" in script_text
     assert "TK_ROOT" in script_text

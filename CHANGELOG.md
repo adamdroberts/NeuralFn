@@ -6,6 +6,35 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Specialize packed-attention dprep for GPT HD64
+
+#### Changed
+
+- Packed-attention backward dprep now defaults to a specialized unrolled
+  BF16-grad kernel for the dense GPT `heads=12, head_dim=64` path. Set
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED=0` to reproduce the
+  older generic row dprep kernel; `NFN_NATIVE_GPT2_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED`
+  remains the fallback name.
+
+#### Verification
+
+- Ran `bash tools/build_native_train_tile_ops.sh`.
+- Ran a dedicated RTX 5090 same-script 5-step, 3-sample paired benchmark with
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED=1` as the only
+  candidate difference; the candidate measured `0.997290x` mean train-loop wall
+  time and `1.002726x` mean tokens/sec versus the older generic row dprep path.
+- Ran a dedicated RTX 5090 same-script 5-step, 3-sample paired benchmark after
+  promoting the specialization by default and forcing the older path with
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED=0` as baseline; the
+  promoted default measured `0.985815x` mean train-loop wall time and
+  `1.014540x` mean tokens/sec.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran
+  `python -m pytest tests/test_native_gpt2.py::test_native_train_tile_ops_builds_torch_free_c_abi -q`;
+  the source-level assertions passed and the optional temp `nvcc` rebuild path
+  skipped because `nvcc` is not on PATH in the test environment.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Add packed-attention backward section timing
 
 #### Added

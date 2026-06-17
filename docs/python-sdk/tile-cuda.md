@@ -154,6 +154,7 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`,
 `NFN_NATIVE_GPT_FUSE_MLP_RESIDUAL_NEXT_LN1`,
 `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS`,
+`NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED`,
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU`,
 `NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD`,
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF`,
@@ -1152,6 +1153,11 @@ diagnostic 3D batch/head/time launch, which avoids per-row division/modulo but
 measured slower on the dedicated RTX 5090. Set
 `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS=N` only for row-grouping
 bisection of that dprep launch; the default remains `3`.
+Within the row-linear route, GPT `heads=12, head_dim=64` BF16-grad dprep now
+defaults to a specialized unrolled HD64 kernel. Set
+`NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED=0` to reproduce the
+older generic row dprep kernel for paired bisection; the GPT-2-prefixed name
+remains the fallback.
 Set `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` only for one-off
 diagnostics that need direct dprep-vs-TK timing inside packed attention
 backward. The diagnostic path records CUDA events around each section and
