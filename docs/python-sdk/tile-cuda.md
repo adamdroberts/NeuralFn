@@ -140,7 +140,6 @@ absolute path for that target. Runtime tuning also prefers
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU`,
 `NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD`,
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF`,
-`NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU`,
 `NFN_NATIVE_GPT_BF16_PROJECTION_RESIDUAL`,
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`,
 `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS`,
@@ -367,10 +366,9 @@ Set `NFN_NATIVE_GPT_REUSE_MLP_PROJ_BF16_GRAD_OUT=0` to compare against the
 previous per-stage pack path.
 Active runs report `stored_mlp_forward_strategy` as
 `"tk-sm120-fused-fc-bias-gelu-prepacked-ln2-bf16-shadow-weight"` and
-`reuse_packed_ln2_fc_gelu_enabled: true` when the prepacked-LN2 route is active,
-or `"tk-sm120-fused-fc-bias-gelu-bf16-store-bf16-shadow-weight"` when forced
-back to the older route. Set `NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU=0` to
-force that older route for paired benchmarks. Active runs report
+`reuse_packed_ln2_fc_gelu_enabled: true` because the native trainer always uses
+the prepacked-LN2 route. The older `NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU=0`
+fallback has been retired. Active runs report
 `block_backward_mlp_proj_dgelu_strategy` as
 `"tk-sm120-fused-dinput-dgelu-reused-bf16-grad-out-bf16-store-bf16-shadow-weight"`
 when the default BF16 grad-out reuse is active, or as

@@ -4788,7 +4788,6 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "stored_mlp_layer_norm_stats_elements" in gpt2_source_text
     assert "stored_mlp_layer_norm_stats_bytes" in gpt2_source_text
     assert "stored_mlp_activation_backward_consumer_strategy" in gpt2_source_text
-    assert "NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU" in gpt2_source_text
     assert "reuse_packed_ln2_fc_gelu_enabled" in gpt2_source_text
     assert "stored_mlp_forward_strategy" in gpt2_source_text
     assert "tk-sm120-fused-fc-bias-gelu-prepacked-ln2-bf16-shadow-weight" in gpt2_source_text

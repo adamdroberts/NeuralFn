@@ -10427,11 +10427,7 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_FUSE_QKV_BIAS_TK_GEMM",
                               "NFN_NATIVE_GPT2_FUSE_QKV_BIAS_TK_GEMM"}),
             true);
-    const bool reuse_packed_ln2_fc_gelu_enabled =
-        env_flag_enabled_or_default(
-            env_or_empty_any({"NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU",
-                              "NFN_NATIVE_GPT2_REUSE_PACKED_LN2_FC_GELU"}),
-            true);
+    const bool reuse_packed_ln2_fc_gelu_enabled = true;
     const bool fused_ln2_bf16_out_enabled =
         reuse_packed_ln2_fc_gelu_enabled &&
         env_flag_enabled_or_default(

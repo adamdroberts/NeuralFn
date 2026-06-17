@@ -6,6 +6,39 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Retire broken packed-LN2 FC+GELU fallback
+
+#### Breaking changes
+
+- Removed the native GPT diagnostic fallback controlled by
+  `NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU=0` /
+  `NFN_NATIVE_GPT2_REUSE_PACKED_LN2_FC_GELU=0`. Dense GPT native training now
+  always uses the prepacked-LN2 `nfn_native_tile_linear_bf16_input_weight_bf16_gelu_bf16_float32`
+  route for stored-MLP FC+bias+GELU. Callers should remove that environment
+  override instead of trying to force the older repack-inside-GEMM path.
+
+#### Changed
+
+- Hard-pinned `reuse_packed_ln2_fc_gelu_enabled` to `true` in the compiled native
+  GPT trainer after the fallback path failed a current one-step TinyStories run
+  with CUDA illegal memory access.
+- Updated README and Python SDK Tile-CUDA docs so the retired fallback is no
+  longer advertised as a valid paired-benchmark switch.
+
+#### Verification
+
+- `NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU=0 CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so --json-out /tmp/nfn_reuse_packed_ln2_fc_gelu_off_failure.json`
+  reproduced the old fallback failure as `lm_head.backward_input.bf16_bits_weight_bf16_shadow failed with CUDA error 700`.
+- Rebuilt `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k 'train_transformer_lm or packed_attention_ln1_recompute or packed_qkv_uint16_arena'`
+  (`2 passed, 43 deselected`).
+- Reran the same env override after the rebuild:
+  `NFN_NATIVE_GPT_REUSE_PACKED_LN2_FC_GELU=0 CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so --json-out /tmp/nfn_reuse_packed_ln2_fc_gelu_ignored_success.json`;
+  it completed with `status: "native-transformer-lm-trained"`,
+  `reuse_packed_ln2_fc_gelu_enabled: true`, and
+  `stored_mlp_forward_strategy:
+  "tk-sm120-fused-fc-bias-gelu-prepacked-ln2-bf16-shadow-weight"`.
+
 ### 2026-06-17 Record padded-vocab CE rejection for native GPT
 
 #### Changed
