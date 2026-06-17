@@ -152,6 +152,7 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_CUDA_MEMSET_GRAD_ZERO`,
 `NFN_NATIVE_GPT_FUSE_RESIDUAL1_STORE`,
 `NFN_NATIVE_GPT_FUSE_ATTENTION_RESIDUAL_LN2`,
+`NFN_NATIVE_GPT_FUSE_MLP_RESIDUAL_NEXT_LN1`,
 `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU`,
 `NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD`,
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF`,
@@ -628,7 +629,13 @@ fused store uses
 which writes both the residual1 BF16 cache and the prepacked LN2 BF16 activation
 consumed by stored-MLP FC+GELU in the same launch. Set
 `NFN_NATIVE_GPT_FUSE_LN2_BF16_OUT=0` to reproduce the previous separate
-`float32_to_bf16` LN2 prepack. The cache adds about 1.03 GiB at the default
+`float32_to_bf16` LN2 prepack. Dense GPT forward also fuses each stored MLP
+projection bias/residual into the next block's LN1 stats and BF16 output when
+packed LN1 storage or scratch tape is available; set
+`NFN_NATIVE_GPT_FUSE_MLP_RESIDUAL_NEXT_LN1=0` to reproduce the previous
+next-block LN1 launch. Runtime JSON reports
+`mlp_residual_next_ln1_fusion_enabled`, `mlp_residual_next_ln1_fusion_count`,
+and `mlp_residual_next_ln1_strategy`. The cache adds about 1.03 GiB at the default
 `64 x 1024 x 768` shape and reports
 `residual1_activation_storage_strategy`, `residual1_activation_store_strategy`,
 `residual1_backward_consumer_strategy`,

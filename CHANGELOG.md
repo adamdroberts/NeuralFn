@@ -6,6 +6,41 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Fuse dense GPT MLP residual into next LN1
+
+#### Changed
+
+- Dense GPT native `--train-transformer-lm` now fuses each stored MLP
+  projection bias/residual into the next block's LN1 stats and BF16 output when
+  packed LN1 storage or scratch tape is available.
+- Added `NFN_NATIVE_GPT_FUSE_MLP_RESIDUAL_NEXT_LN1` with
+  `NFN_NATIVE_GPT2_FUSE_MLP_RESIDUAL_NEXT_LN1` as the legacy fallback opt-out
+  for paired bisection.
+- Runtime JSON now reports
+  `block_state_layout.mlp_residual_next_ln1_fusion_enabled`,
+  `block_state_layout.mlp_residual_next_ln1_fusion_count`, and
+  `block_state_layout.mlp_residual_next_ln1_strategy`.
+
+#### Verification
+
+- Ran `bash tools/build_native_gpt_cli.sh`.
+- Ran a dedicated RTX 5090 one-step stage probe with
+  `NFN_NATIVE_GPT_STAGE_TIMING=1` and shape stats enabled; it completed with
+  `status: "native-transformer-lm-trained"` and reported
+  `mlp_residual_next_ln1_fusion_count: 88`, matching 8 grad-accum
+  microbatches across 11 block boundaries.
+- Ran a dedicated RTX 5090 same-script paired benchmark against
+  `NFN_NATIVE_GPT_FUSE_MLP_RESIDUAL_NEXT_LN1=0`; the default fused candidate
+  measured `0.995763x` mean train-loop wall time and `1.004256x` tokens/sec
+  over three samples, with zero selected-GPU compute processes before and after
+  each sample.
+- Ran
+  `python -m pytest tests/test_native_gpt2.py::test_native_train_tile_ops_builds_torch_free_c_abi -q`;
+  the source-level assertions passed and the optional temp `nvcc` rebuild path
+  skipped because `nvcc` is not on PATH in the test environment.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Retile native GPT token initializer to 4096
 
 #### Changed

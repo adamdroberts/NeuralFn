@@ -4775,6 +4775,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_FUSE_LN2_BF16_OUT" in gpt2_source_text
     assert "NFN_NATIVE_GPT_ELIDE_LN2_BF16_NORM_FLOAT_STORE" in gpt2_source_text
     assert "fused_ln2_bf16_norm_float_store_elision_enabled" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_FUSE_MLP_RESIDUAL_NEXT_LN1" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_FUSE_MLP_RESIDUAL_NEXT_LN1" in gpt2_source_text
+    assert ".mlp.bias_residual_next_ln1_bf16_linear_bf16_norm" in gpt2_source_text
+    assert "mlp_residual_next_ln1_fusion_count" in gpt2_source_text
+    assert "fused-mlp-bias-residual-next-ln1-when-packed-ln1-storage-is-available" in gpt2_source_text
     assert "stored_mlp_ln2_bf16_float_store_elided_elements" in gpt2_source_text
     assert "stored_mlp_ln2_bf16_prepack_strategy" in gpt2_source_text
     assert "stored_mlp_ln2_bf16_fused_store_kernel_launches" in gpt2_source_text
