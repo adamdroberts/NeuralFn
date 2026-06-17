@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Record LN1 BF16 QKV handoff reject
+
+#### Changed
+
+- Rejected `NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD=0` for the dense GPT SM120
+  trainer. Disabling the BF16 LN1-to-QKV handoff slowed the train loop, so the
+  current BF16 handoff remains enabled.
+
+#### Verification
+
+- Dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD=0 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --command-timeout-seconds 1800 --json-out /tmp/nfn_ln1_bf16_qkv_forward_off_pair.json`
+  measured `1.015832x` train-loop time and `0.984423x` tokens/sec, so the
+  default BF16 LN1-to-QKV handoff remains enabled.
+
 ### 2026-06-17 Record BF16 residual backward reject
 
 #### Changed
