@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Record BF16-output dInput reject
+
+#### Changed
+
+- Rejected a narrow SM120 candidate that kept cuBLASLt for BF16-gradient /
+  BF16-weight plain dInput GEMMs but wrote BF16 dInput into Tile-owned scratch
+  before converting it back to float32 for the existing trainer consumers.
+- No runtime switch or kernel route was kept because the current float-output
+  cuBLASLt dInput path was materially faster on the workstation shape. The
+  rejection is recorded in `todo-tile-cuda.md`.
+
+#### Verification
+
+- `bash tools/build_native_train_tile_ops.sh`
+- `bash tools/build_native_gpt_cli.sh`
+- `python -m pytest tests/test_native_gpt2.py -q -k native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`
+- GPU smoke of the temporary opt-in branch:
+  `NFN_NATIVE_LINEAR_BF16_DINPUT_OUT=1 CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 16 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so --json-out /tmp/nfn_bf16_dinput_out_smoke.json`
+  completed successfully and reported `passed: true`.
+- Dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_LINEAR_BF16_DINPUT_OUT=1 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --command-timeout-seconds 1800 --json-out /tmp/nfn_bf16_dinput_out_pair.json`
+  measured the candidate at `1.040670x` train-loop wall time and `0.960945x`
+  tokens/sec versus the default float-output cuBLASLt dInput route.
+- `git diff --check`
+
 ### 2026-06-17 Record LM-head 65536 row-chunk reject
 
 #### Changed
