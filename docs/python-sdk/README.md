@@ -69,12 +69,12 @@ when callers access Torch-backed exports such as `TorchTrainer`,
 `TorchTrainConfig`, or template graph builders.
 
 `python tools/check_native_no_torch_deps.py` verifies both sides of that
-contract: it checks the compiled native GPT artifacts with `ldd` for Torch,
-c10, or Python runtime libraries, then runs the default native GPT Python
-training and inference entrypoints under an import blocker for `torch`, NumPy,
-tiktoken, `server.dataset_manager`, and `nfn_impl`. Use `--skip-artifacts` when
-only the Python no-import contract should be checked without local build
-outputs.
+contract: it checks `pyproject.toml` so Torch remains optional-only, checks the
+compiled native GPT artifacts with `ldd` for Torch, c10, or Python runtime
+libraries, then runs the default native GPT Python training and inference
+entrypoints under an import blocker for `torch`, NumPy, tiktoken,
+`server.dataset_manager`, and `nfn_impl`. Use `--skip-artifacts` when only the
+Python no-import contract should be checked without local build outputs.
 
 For the native GPT path, `bash tools/build_native_gpt_binding.sh` builds the
 generic `neuralfn._native_gpt` C++ extension used by `run_native_gpt(...,

@@ -12,6 +12,7 @@ import struct
 import sys
 import tempfile
 from textwrap import dedent
+import tomllib
 
 
 DEFAULT_ARTIFACTS = (
@@ -32,6 +33,11 @@ FORBIDDEN_PYTHON_IMPORT_ROOTS = (
     "tiktoken",
     "server.dataset_manager",
     "nfn_impl",
+)
+FORBIDDEN_PROJECT_DEPENDENCY_PREFIXES = (
+    "torch",
+    "torchvision",
+    "torchaudio",
 )
 DEFAULT_PYTHON_ENTRYPOINTS = (
     (
@@ -264,6 +270,32 @@ def python_entrypoint_report(repo_root: Path) -> list[dict[str, object]]:
     return entries
 
 
+def project_dependency_report(repo_root: Path) -> dict[str, object]:
+    pyproject = repo_root / "pyproject.toml"
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    dependencies = list(data.get("project", {}).get("dependencies", []))
+    optional_torch = list(data.get("project", {}).get("optional-dependencies", {}).get("torch", []))
+    offenders: list[str] = []
+    for dependency in dependencies:
+        normalized = str(dependency).strip().lower().replace("_", "-")
+        for prefix in FORBIDDEN_PROJECT_DEPENDENCY_PREFIXES:
+            if (
+                normalized == prefix
+                or normalized.startswith(prefix + ">")
+                or normalized.startswith(prefix + "=")
+                or normalized.startswith(prefix + "[")
+            ):
+                offenders.append(str(dependency))
+                break
+    return {
+        "name": "pyproject_default_dependencies",
+        "path": str(pyproject),
+        "passed": not offenders and any(str(item).lower().startswith("torch") for item in optional_torch),
+        "offenders": offenders,
+        "optional_torch": optional_torch,
+    }
+
+
 def main() -> int:
     args = parse_args()
     artifact_report: list[dict[str, object]] = []
@@ -289,8 +321,11 @@ def main() -> int:
             artifact_report.append(entry)
 
     python_report: list[dict[str, object]] = []
+    dependency_report: dict[str, object] | None = None
     if not args.skip_python_entrypoints:
         repo_root = Path(__file__).resolve().parents[1]
+        dependency_report = project_dependency_report(repo_root)
+        failed = failed or not bool(dependency_report["passed"])
         python_report = python_entrypoint_report(repo_root)
         failed = failed or any(not bool(entry["passed"]) for entry in python_report)
 
@@ -301,6 +336,7 @@ def main() -> int:
                     "passed": not failed,
                     "forbidden_python_import_roots": list(FORBIDDEN_PYTHON_IMPORT_ROOTS),
                     "artifacts": artifact_report,
+                    "project_dependencies": dependency_report,
                     "python_entrypoints": python_report,
                 },
                 indent=2,
@@ -318,6 +354,13 @@ def main() -> int:
                     print(f"  {line}", file=sys.stderr)
             else:
                 print(f"{entry['artifact']}: ok")
+        if dependency_report is not None:
+            if dependency_report["passed"]:
+                print(f"{dependency_report['name']}: ok")
+            else:
+                print(f"{dependency_report['name']}: failed", file=sys.stderr)
+                for dependency in dependency_report["offenders"]:
+                    print(f"  hard dependency: {dependency}", file=sys.stderr)
         for entry in python_report:
             if entry["passed"]:
                 print(f"{entry['name']}: ok")

@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Guard default package dependencies against Torch regressions
+
+#### Changed
+
+- Extended `tools/check_native_no_torch_deps.py` to inspect `pyproject.toml`
+  and fail if Torch, torchvision, or torchaudio return as default project
+  dependencies. The same check also verifies that the optional `torch` extra is
+  still present for graph-backed workflows.
+- Updated the README and Python SDK Tile-CUDA docs to describe the package
+  metadata portion of the native no-Torch dependency gate.
+
+#### Verification
+
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `python tools/check_native_no_torch_deps.py --json`.
+
 ### 2026-06-17 Specialize packed-attention dprep for GPT HD64
 
 #### Changed
