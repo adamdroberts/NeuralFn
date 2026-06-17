@@ -717,7 +717,10 @@ native-loop counters into `baseline_native_metrics` or
 `timing.train_tokens_per_second`, setup time, checkpoint time, total native
 wall time, selected linear/attention kernel counters, emitted
 `timing.setup_timing` and `timing.stage_timing` totals/averages/counts, and paired native-metric ratios
-when both commands expose the same metric. The helper also parses llm.kittens
+when both commands expose the same metric. If a child command uses
+`--json-out`, `--profile-json`, or `--stage-profile-json`, the helper reads
+that sidecar JSON when stdout has no native payload, so profiled native runs can
+keep stdout small without dropping metric summaries. The helper also parses llm.kittens
 `step ... ms ... tok/s` output into the same metric keys, plus BF16 MFU and
 device-memory fields, so direct `train_gpt2cu` baselines can be compared
 against NeuralFn native JSON without relying on outer subprocess wall time.

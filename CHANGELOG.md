@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Parse native JSON sidecars in paired benchmarks
+
+#### Changed
+
+- `tools/paired_kernel_speed.py` now detects `--json-out`,
+  `--profile-json`, and `--stage-profile-json` in baseline/candidate child
+  commands. When the child stdout does not contain native JSON, the helper reads
+  the sidecar file and extracts the same native-loop timing, setup, stage, and
+  kernel-counter metrics used for paired summaries and ratios.
+- README and CLI workflow docs now note that native profiled runs can keep
+  stdout small without losing benchmark metric summaries.
+
+#### Verification
+
+- Ran `python -m pytest tests/test_tile_cuda_examples.py -q` (`12 passed`).
+- Ran `git diff --check`.
+
 ### 2026-06-17 Add native GPT JSON output file flag
 
 #### Changed

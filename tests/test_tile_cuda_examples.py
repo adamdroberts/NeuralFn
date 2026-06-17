@@ -264,6 +264,52 @@ step    2/2 | loss 10.0 (+nanz)| norm 20.0 (+nanz)| lr 2.00e-05 | 2600.00 ms | 4
     assert metrics["llm_kittens_step_log_count"] == 2
 
 
+def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    sidecar = tmp_path / "native-profile.json"
+    sidecar.write_text(
+        json.dumps(
+            {
+                "status": "native-sidecar-test",
+                "steps_completed": 4,
+                "timing": {
+                    "train_loop_wall_ms": 20.0,
+                    "train_tokens_per_second": 123.0,
+                    "stage_timing": [
+                        {"name": "block_backward", "total_ms": 9.0, "avg_ms": 3.0, "count": 3}
+                    ],
+                },
+                "linear_tk_gemm_count": 8,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    metrics = module.native_metrics_from_command_output(
+        ["nfn_gpt_native_train", "--profile-json", str(sidecar)],
+        "",
+    )
+
+    assert metrics["native_metrics_source"] == "json-out"
+    assert metrics["status"] == "native-sidecar-test"
+    assert metrics["steps_completed"] == 4
+    assert metrics["train_loop_wall_ms"] == 20.0
+    assert metrics["train_loop_wall_ms_per_step"] == 5.0
+    assert metrics["train_tokens_per_second"] == 123.0
+    assert metrics["linear_tk_gemm_count"] == 8
+    assert metrics["stage.block_backward.total_ms"] == 9.0
+
+
 def test_paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu() -> None:
     script = Path("tools/paired_kernel_speed.py")
     spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)

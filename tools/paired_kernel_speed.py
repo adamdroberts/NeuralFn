@@ -43,6 +43,7 @@ NATIVE_METRIC_PATHS = (
     ("attention_forward_tk_launch_count", ("attention_forward_tk_launch_count",)),
     ("attention_backward_tk_launch_count", ("attention_backward_tk_launch_count",)),
 )
+NATIVE_JSON_OUT_FLAGS = ("--json-out", "--profile-json", "--stage-profile-json")
 
 LLM_KITTENS_STEP_RE = re.compile(
     r"^step\s+\d+/\d+\s+\|.*?\|\s+"
@@ -163,10 +164,7 @@ def value_at_path(payload: dict[str, Any], path: Sequence[str]) -> Any:
     return current
 
 
-def native_metrics_from_stdout(stdout: str) -> dict[str, float | int | str | bool]:
-    payload = extract_json_object(stdout)
-    if payload is None:
-        return llm_kittens_metrics_from_stdout(stdout)
+def native_metrics_from_payload(payload: dict[str, Any]) -> dict[str, float | int | str | bool]:
     metrics: dict[str, float | int | str | bool] = {}
     for name, path in NATIVE_METRIC_PATHS:
         value = value_at_path(payload, path)
@@ -229,6 +227,43 @@ def native_metrics_from_stdout(stdout: str) -> dict[str, float | int | str | boo
                     if isinstance(value, (int, float)) and not isinstance(value, bool):
                         metrics[f"{metric_name}.{suffix}"] = value
     return metrics
+
+
+def native_json_out_path_from_argv(argv: Sequence[str]) -> Path | None:
+    for index, arg in enumerate(argv):
+        if arg in NATIVE_JSON_OUT_FLAGS and index + 1 < len(argv):
+            return Path(argv[index + 1])
+        for flag in NATIVE_JSON_OUT_FLAGS:
+            prefix = flag + "="
+            if arg.startswith(prefix):
+                return Path(arg[len(prefix) :])
+    return None
+
+
+def native_metrics_from_json_out(argv: Sequence[str]) -> dict[str, float | int | str | bool]:
+    path = native_json_out_path_from_argv(argv)
+    if path is None or not path.exists():
+        return {}
+    payload = extract_json_object(path.read_text(encoding="utf-8", errors="replace"))
+    return native_metrics_from_payload(payload) if payload is not None else {}
+
+
+def native_metrics_from_command_output(argv: Sequence[str], stdout: str) -> dict[str, float | int | str | bool]:
+    payload = extract_json_object(stdout)
+    if payload is not None:
+        return native_metrics_from_payload(payload)
+    sidecar_metrics = native_metrics_from_json_out(argv)
+    if sidecar_metrics:
+        sidecar_metrics["native_metrics_source"] = "json-out"
+        return sidecar_metrics
+    return llm_kittens_metrics_from_stdout(stdout)
+
+
+def native_metrics_from_stdout(stdout: str) -> dict[str, float | int | str | bool]:
+    payload = extract_json_object(stdout)
+    if payload is None:
+        return llm_kittens_metrics_from_stdout(stdout)
+    return native_metrics_from_payload(payload)
 
 
 def llm_kittens_metrics_from_stdout(stdout: str) -> dict[str, float | int | str | bool]:
@@ -320,7 +355,7 @@ def run_once(
             "process_returncode": process_returncode,
             "timed_out": True,
             "timeout_seconds": timeout_seconds,
-            "native_metrics": native_metrics_from_stdout(stdout),
+            "native_metrics": native_metrics_from_command_output(command.argv, stdout),
             "stdout_tail": stdout[-2000:],
             "stderr_tail": stderr[-2000:],
         }
@@ -342,7 +377,7 @@ def run_once(
         "seconds": seconds,
         "returncode": returncode,
         "timed_out": False,
-        "native_metrics": native_metrics_from_stdout(stdout),
+        "native_metrics": native_metrics_from_command_output(command.argv, stdout),
         "stdout_tail": stdout[-2000:],
         "stderr_tail": stderr[-2000:],
     }
