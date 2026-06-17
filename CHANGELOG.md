@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Record LM-head 65536 row-chunk reject
+
+#### Changed
+
+- Rejected `--lm-head-row-chunk-size 65536` as a dense GPT SM120 candidate for
+  the default `64 x 1024` training shape. The larger chunk would reduce LM-head
+  loop count, but it put the tied LM-head BF16 logit workspace under severe
+  memory pressure and ran far outside the expected 5-step paired-benchmark
+  envelope.
+- No default or runtime behavior changed. The current 8192-row LM-head default
+  remains the practical workstation profile.
+
+#### Verification
+
+- Started the paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so --lm-head-row-chunk-size 65536" --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --continue-on-error --command-timeout-seconds 1800 --json-out /tmp/nfn_lm_head_row_chunk_65536_pair.json`.
+- Stopped the run after the candidate remained active well past the expected
+  5-step envelope. `nvidia-smi` showed the dedicated RTX 5090 at `100%`
+  utilization and about `31926 MiB / 32607 MiB` used by the candidate process.
+- Confirmed the benchmark processes were stopped and the RTX 5090 returned to
+  idle at `0%` utilization and about `652 MiB` used memory.
+
 ### 2026-06-17 Record TK plain-dInput reject
 
 #### Changed
