@@ -20,6 +20,9 @@ Future updates should append new entries here rather than replacing older notes.
 - Added follow-up rejected tape/allocation candidates for one-block-reduced MLP
   storage, one-block-reduced packed-attention storage, and the async allocator
   startup switch.
+- Closed the stale row-vector SDPA fallback TODOs because the current packed
+  SM120 TK attention path reports zero row-launch fallbacks and zero scalar
+  forward launches in the live dense GPT loop.
 
 #### Verification
 
