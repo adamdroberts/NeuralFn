@@ -750,9 +750,9 @@ dispatch to `nfn_gpt_native_train --sample-checkpoint PATH --prompt-tokens IDS`.
 Keep that path compiled-C++ only: it validates checkpoint metadata, file size,
 context length, vocab bounds, and token parsing before CUDA, Torch, dataset
 setup, or graph-editor node flow, then executes one full CUDA Tile checkpoint
-forward pass and returns the next token in `generated_tokens` when
-`--max-new-tokens` is positive. Autoregressive multi-token looping remains
-pending; text prompts still use the temporary sampler bridge.
+forward pass per generated token and returns up to `--max-new-tokens` IDs in
+`generated_tokens`. Text prompts still use the temporary sampler bridge until
+native tokenization lands.
 Use `nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint PATH
 --checkpoint-load-tensor NAME --checkpoint-load-elements N` to verify the next
 native sampler prerequisite: named tensor selection from the decoded layout,

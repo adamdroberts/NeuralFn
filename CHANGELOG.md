@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add autoregressive native checkpoint token sampler loop
+
+#### Changed
+
+- `nfn_gpt_native_train --sample-checkpoint PATH --prompt-tokens IDS --max-new-tokens N`
+  now runs an autoregressive token-ID loop through the CUDA Tile checkpoint
+  forward path, appending each selected token and rerunning the growing context
+  until `N` tokens are generated.
+- The sampler JSON now reports `sequence_token_count` and returns every emitted
+  ID in `generated_tokens`; successful runs set `generated_token_count` to the
+  number of generated IDs.
+- Requests where `prompt_tokens + max_new_tokens` exceed the checkpoint context
+  window now fail before CUDA allocation. Native text prompt tokenization still
+  uses the transitional sampler bridge.
+
+#### Verification
+
+- Ran `bash tools/build_native_gpt_cli.sh`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `git diff --check`.
+- Ran `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --sample-checkpoint /tmp/nfn_checkpoint_forward_2layer_smoke/model_00020000.bin --prompt-tokens 1,2,3 --max-new-tokens 4 --tile-ops-lib build/libnfn_native_train_tile_ops.so` outside the sandbox because sandboxed GPU access cannot allocate on the CUDA device.
+
 ### 2026-06-17 Replace native checkpoint token sampler pending plan with CUDA Tile next-token inference
 
 #### Changed
@@ -19,7 +42,7 @@ Future updates should append new entries here rather than replacing older notes.
   in `generated_tokens`, while keeping `torch_required: false` and
   `graph_editor_node_flow: false`.
 - Native checkpoint metadata now reports
-  `prompt_generation_status: "native-single-token-sampler-available"`.
+  `prompt_generation_status: "native-token-sampler-available"`.
   Autoregressive multi-token looping and native text prompt tokenization remain
   pending.
 

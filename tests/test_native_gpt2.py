@@ -2943,7 +2943,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert native_info_payload["size_matches"] is True
     assert native_info_payload["checkpoint_step"] == 2
     assert native_info_payload["done_marker_exists"] is True
-    assert native_info_payload["prompt_generation_status"] == "native-single-token-sampler-available"
+    assert native_info_payload["prompt_generation_status"] == "native-token-sampler-available"
 
     inspect_info = subprocess.run(
         [str(cli), "--inspect-checkpoint", str(checkpoint_path)],
@@ -2977,6 +2977,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert sample_plan_payload["backend"] == "tile-cuda"
     assert sample_plan_payload["path"] == str(checkpoint_path)
     assert sample_plan_payload["prompt_token_count"] == 3
+    assert sample_plan_payload["sequence_token_count"] in {3, 7}
     assert sample_plan_payload["max_new_tokens"] == 4
     assert sample_plan_payload["blocks_executed"] == 12
     assert sample_plan_payload["transformer_blocks_executed"] is True
@@ -2985,10 +2986,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert sample_plan_payload["graph_editor_node_flow"] is False
     if sample_plan.returncode == 0:
         assert sample_plan_payload["forward_pass_status"] == "cuda-tile-forward-executed"
-        assert sample_plan_payload["generated_token_count"] == 1
-        assert len(sample_plan_payload["generated_tokens"]) == 1
+        assert sample_plan_payload["sequence_token_count"] == 7
+        assert sample_plan_payload["generated_token_count"] == 4
+        assert len(sample_plan_payload["generated_tokens"]) == 4
     else:
         assert sample_plan_payload["forward_pass_status"] == "cuda-tile-forward-failed"
+        assert sample_plan_payload["sequence_token_count"] == 3
         assert sample_plan_payload["generated_token_count"] == 0
         assert sample_plan_payload["generated_tokens"] == []
 

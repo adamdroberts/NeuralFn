@@ -356,7 +356,7 @@ void print_usage(const char* program) {
         << "                                     Inspect a native dense GPT model_*.bin checkpoint as compiled C++ JSON without CUDA/Torch/dataset setup\n"
         << "  --inspect-checkpoint PATH         Alias for --native-info --native-checkpoint PATH\n"
         << "  --sample-checkpoint PATH --prompt-tokens IDS\n"
-        << "                                     Run one CUDA Tile checkpoint forward pass and return the next token for prompt-token input\n"
+        << "                                     Run autoregressive CUDA Tile checkpoint forwards and return generated token ids for prompt-token input\n"
         << "  --checkpoint-logits-smoke --native-checkpoint PATH --prompt-tokens IDS\n"
         << "                                     Load checkpoint embeddings/final norm and run last-token tied LM-head logits on CUDA Tile kernels\n"
         << "  --checkpoint-qkv-smoke --native-checkpoint PATH --prompt-tokens IDS\n"
@@ -862,7 +862,7 @@ int print_native_checkpoint_info_json(const Config& cfg) {
         << "  \"checkpoint_step\": " << step << ",\n"
         << "  \"done_marker\": \"" << json_escape(step >= 0 ? done_marker.string() : std::string()) << "\",\n"
         << "  \"done_marker_exists\": " << (done_marker_exists ? "true" : "false") << ",\n"
-        << "  \"prompt_generation_status\": \"native-single-token-sampler-available\"\n"
+        << "  \"prompt_generation_status\": \"native-token-sampler-available\"\n"
         << "}\n";
     return size_matches ? 0 : 2;
 }
@@ -1698,6 +1698,13 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
                   << " exceeds checkpoint context window " << max_seq_len << "\n";
         return 2;
     }
+    if (run_sampler &&
+        static_cast<std::int64_t>(prompt_tokens.size()) + cfg.sample_max_new_tokens > max_seq_len) {
+        std::cerr << "--prompt-tokens length " << prompt_tokens.size()
+                  << " plus --max-new-tokens " << cfg.sample_max_new_tokens
+                  << " exceeds checkpoint context window " << max_seq_len << "\n";
+        return 2;
+    }
     for (std::size_t i = 0; i < prompt_tokens.size(); ++i) {
         if (prompt_tokens[i] < 0 || prompt_tokens[i] >= vocab_size) {
             std::cerr << "--prompt-tokens id at index " << i << " is outside checkpoint vocab: "
@@ -2049,11 +2056,23 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         float* mlp_proj_bias = nullptr;
     };
     std::vector<DeviceCheckpointBlockWeights> all_layer_weights;
-    const std::int64_t rows = static_cast<std::int64_t>(prompt_tokens.size());
-    const std::int64_t activation_elements = rows * channels;
-    const std::int64_t qkv_elements = rows * channels * 3;
+    std::vector<std::int64_t> working_tokens = prompt_tokens;
+    std::vector<std::int64_t> generated_tokens;
+    if (run_sampler && cfg.sample_max_new_tokens > 0) {
+        generated_tokens.reserve(static_cast<std::size_t>(cfg.sample_max_new_tokens));
+        working_tokens.reserve(prompt_tokens.size() + static_cast<std::size_t>(cfg.sample_max_new_tokens));
+    }
+    std::int64_t rows = static_cast<std::int64_t>(prompt_tokens.size());
+    std::int64_t activation_elements = rows * channels;
+    std::int64_t qkv_elements = rows * channels * 3;
+    const std::int64_t capacity_rows = run_sampler
+        ? static_cast<std::int64_t>(prompt_tokens.size()) + cfg.sample_max_new_tokens
+        : rows;
+    const std::int64_t capacity_activation_elements = capacity_rows * channels;
+    const std::int64_t capacity_qkv_elements = capacity_rows * channels * 3;
     const std::int64_t mlp_dim = channels * 4;
-    const std::int64_t mlp_elements = rows * mlp_dim;
+    std::int64_t mlp_elements = rows * mlp_dim;
+    const std::int64_t capacity_mlp_elements = capacity_rows * mlp_dim;
     const std::int64_t head_dim = run_attention ? (channels / num_heads) : 0;
     const float attention_scale = run_attention
         ? (1.0f / std::sqrt(static_cast<float>(head_dim)))
@@ -2114,49 +2133,38 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
             convert_tensor(read_bf16_tensor(layer_prefix + "mlp.c_proj.bias"), &block_mlp_proj_bias_bf16, &weights.mlp_proj_bias, layer_prefix + "mlp.c_proj.bias");
         }
     }
-    allocate(&token_out, sizeof(float) * static_cast<std::size_t>(activation_elements), "token_out");
-    allocate(&position_out, sizeof(float) * static_cast<std::size_t>(activation_elements), "position_out");
-    allocate(&residual, sizeof(float) * static_cast<std::size_t>(activation_elements), "residual");
-    allocate(&ln_out, sizeof(float) * static_cast<std::size_t>(activation_elements), "ln_out");
-    allocate(&qkv_out, sizeof(float) * static_cast<std::size_t>(qkv_elements), "qkv_out");
+    allocate(&token_out, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "token_out");
+    allocate(&position_out, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "position_out");
+    allocate(&residual, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "residual");
+    allocate(&ln_out, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "ln_out");
+    allocate(&qkv_out, sizeof(float) * static_cast<std::size_t>(capacity_qkv_elements), "qkv_out");
     if (run_attention) {
-        allocate(&q_heads, sizeof(float) * static_cast<std::size_t>(activation_elements), "q_heads");
-        allocate(&k_heads, sizeof(float) * static_cast<std::size_t>(activation_elements), "k_heads");
-        allocate(&v_heads, sizeof(float) * static_cast<std::size_t>(activation_elements), "v_heads");
-        allocate(&attn_heads, sizeof(float) * static_cast<std::size_t>(activation_elements), "attn_heads");
-        allocate(&attn_out, sizeof(float) * static_cast<std::size_t>(activation_elements), "attn_out");
+        allocate(&q_heads, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "q_heads");
+        allocate(&k_heads, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "k_heads");
+        allocate(&v_heads, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "v_heads");
+        allocate(&attn_heads, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "attn_heads");
+        allocate(&attn_out, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "attn_out");
     }
     if (run_attention_projection) {
-        allocate(&attn_proj, sizeof(float) * static_cast<std::size_t>(activation_elements), "attn_proj");
-        allocate(&residual1, sizeof(float) * static_cast<std::size_t>(activation_elements), "residual1");
+        allocate(&attn_proj, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "attn_proj");
+        allocate(&residual1, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "residual1");
     }
     if (run_mlp) {
-        allocate(&ln2_out, sizeof(float) * static_cast<std::size_t>(activation_elements), "ln2_out");
-        allocate(&fc_out, sizeof(float) * static_cast<std::size_t>(mlp_elements), "fc_out");
-        allocate(&act, sizeof(float) * static_cast<std::size_t>(mlp_elements), "act");
-        allocate(&mlp_proj, sizeof(float) * static_cast<std::size_t>(activation_elements), "mlp_proj");
-        allocate(&residual2, sizeof(float) * static_cast<std::size_t>(activation_elements), "residual2");
+        allocate(&ln2_out, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "ln2_out");
+        allocate(&fc_out, sizeof(float) * static_cast<std::size_t>(capacity_mlp_elements), "fc_out");
+        allocate(&act, sizeof(float) * static_cast<std::size_t>(capacity_mlp_elements), "act");
+        allocate(&mlp_proj, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "mlp_proj");
+        allocate(&residual2, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "residual2");
     }
     if (run_final_logits) {
-        allocate(&final_ln_out, sizeof(float) * static_cast<std::size_t>(activation_elements), "final_ln_out");
+        allocate(&final_ln_out, sizeof(float) * static_cast<std::size_t>(capacity_activation_elements), "final_ln_out");
         allocate(&logits, sizeof(float) * static_cast<std::size_t>(padded_vocab_size), "logits");
     }
     allocate(&residual_scale, sizeof(float), "residual_scale");
-    allocate(&token_ids, sizeof(std::int64_t) * static_cast<std::size_t>(rows), "token_ids");
+    allocate(&token_ids, sizeof(std::int64_t) * static_cast<std::size_t>(capacity_rows), "token_ids");
 
     const float host_residual_scale = 1.0f;
-    copy_h2d(token_ids, prompt_tokens.data(), sizeof(std::int64_t) * static_cast<std::size_t>(rows), "prompt_tokens");
     copy_h2d(residual_scale, &host_residual_scale, sizeof(float), "residual_scale");
-    if (error.empty()) {
-        run(token_embedding(token_weight, token_ids, token_out, rows, channels, nullptr), "wte.forward");
-    }
-    if (error.empty()) {
-        run(position_embedding(position_weight, position_out, 1, rows, channels, nullptr), "wpe.forward");
-    }
-    if (error.empty()) {
-        run(residual_add(token_out, position_out, residual_scale, residual, activation_elements, nullptr),
-            "embedding_residual.forward");
-    }
     auto run_checkpoint_block = [&](std::int64_t layer_index, const float* block_input, float* block_output) {
         const std::string layer_prefix = "h." + std::to_string(layer_index) + ".";
         float* block_ln_weight = ln_weight;
@@ -2255,29 +2263,94 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
                 layer_prefix + "mlp.residual.forward");
         }
     };
-    if (run_all_layers) {
-        const float* block_input = residual;
-        for (std::int64_t layer = 0; layer < num_layers && error.empty(); ++layer) {
-            float* block_output = (layer % 2 == 0) ? residual2 : residual;
-            run_checkpoint_block(layer, block_input, block_output);
-            block_input = block_output;
+    std::vector<float> host_logits(static_cast<std::size_t>(run_final_logits ? padded_vocab_size : 0), 0.0f);
+    auto copy_logits_and_select_top = [&]() {
+        if (!run_final_logits || !error.empty()) {
+            return;
         }
-        final_block_output = block_input;
+        run(cuda_memcpy(
+                host_logits.data(),
+                logits,
+                host_logits.size() * sizeof(float),
+                kCudaMemcpyDeviceToHost),
+            "cudaMemcpy logits D2H");
+        if (!error.empty()) {
+            return;
+        }
+        top_token = 0;
+        top_logit = host_logits.empty() ? 0.0f : host_logits[0];
+        for (std::int64_t i = 1; i < vocab_size; ++i) {
+            const float value = host_logits[static_cast<std::size_t>(i)];
+            if (!std::isfinite(value)) {
+                error = "checkpoint block logits smoke produced non-finite logits sample";
+                break;
+            }
+            if (value > top_logit) {
+                top_logit = value;
+                top_token = i;
+            }
+            if (i < 32) {
+                max_abs_sample = std::max(max_abs_sample, std::fabs(static_cast<double>(value)));
+            }
+        }
+    };
+    auto run_checkpoint_forward = [&]() {
+        rows = static_cast<std::int64_t>(working_tokens.size());
+        activation_elements = rows * channels;
+        qkv_elements = rows * channels * 3;
+        mlp_elements = rows * mlp_dim;
+        copy_h2d(
+            token_ids,
+            working_tokens.data(),
+            sizeof(std::int64_t) * static_cast<std::size_t>(rows),
+            "prompt_tokens");
+        if (error.empty()) {
+            run(token_embedding(token_weight, token_ids, token_out, rows, channels, nullptr), "wte.forward");
+        }
+        if (error.empty()) {
+            run(position_embedding(position_weight, position_out, 1, rows, channels, nullptr), "wpe.forward");
+        }
+        if (error.empty()) {
+            run(residual_add(token_out, position_out, residual_scale, residual, activation_elements, nullptr),
+                "embedding_residual.forward");
+        }
+        if (run_all_layers) {
+            const float* block_input = residual;
+            for (std::int64_t layer = 0; layer < num_layers && error.empty(); ++layer) {
+                float* block_output = (layer % 2 == 0) ? residual2 : residual;
+                run_checkpoint_block(layer, block_input, block_output);
+                block_input = block_output;
+            }
+            final_block_output = block_input;
+        } else {
+            run_checkpoint_block(block_index, residual, residual2);
+            final_block_output = residual2;
+        }
+        if (run_final_logits && error.empty()) {
+            run(layer_norm(final_block_output, final_ln_weight, final_ln_bias, final_ln_out, rows, channels, kNormEps, nullptr),
+                "ln_f.forward");
+        }
+        if (run_final_logits && error.empty()) {
+            const float* last_hidden = final_ln_out + (rows - 1) * channels;
+            run(linear(last_hidden, token_weight, nullptr, logits, 1, channels, padded_vocab_size, false, nullptr),
+                "lm_head.forward.last_token");
+        }
+        if (error.empty()) {
+            run(cuda_device_synchronize(), "cudaDeviceSynchronize checkpoint QKV smoke");
+        }
+    };
+    if (run_sampler) {
+        const std::int64_t generation_steps = std::max<std::int64_t>(1, cfg.sample_max_new_tokens);
+        for (std::int64_t step = 0; step < generation_steps && error.empty(); ++step) {
+            run_checkpoint_forward();
+            copy_logits_and_select_top();
+            if (step < cfg.sample_max_new_tokens && error.empty()) {
+                generated_tokens.push_back(top_token);
+                working_tokens.push_back(top_token);
+            }
+        }
     } else {
-        run_checkpoint_block(block_index, residual, residual2);
-        final_block_output = residual2;
-    }
-    if (run_final_logits && error.empty()) {
-        run(layer_norm(final_block_output, final_ln_weight, final_ln_bias, final_ln_out, rows, channels, kNormEps, nullptr),
-            "ln_f.forward");
-    }
-    if (run_final_logits && error.empty()) {
-        const float* last_hidden = final_ln_out + (rows - 1) * channels;
-        run(linear(last_hidden, token_weight, nullptr, logits, 1, channels, padded_vocab_size, false, nullptr),
-            "lm_head.forward.last_token");
-    }
-    if (error.empty()) {
-        run(cuda_device_synchronize(), "cudaDeviceSynchronize checkpoint QKV smoke");
+        run_checkpoint_forward();
     }
     std::vector<float> host_ln_sample(static_cast<std::size_t>(std::min<std::int64_t>(channels, 8)), 0.0f);
     std::vector<float> host_qkv_sample(static_cast<std::size_t>(std::min<std::int64_t>(qkv_elements, 16)), 0.0f);
@@ -2285,7 +2358,6 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     std::vector<float> host_residual_sample(static_cast<std::size_t>(std::min<std::int64_t>(activation_elements, 16)), 0.0f);
     std::vector<float> host_block_sample(static_cast<std::size_t>(std::min<std::int64_t>(activation_elements, 16)), 0.0f);
     std::vector<float> host_final_ln_sample(static_cast<std::size_t>(std::min<std::int64_t>(channels, 8)), 0.0f);
-    std::vector<float> host_logits(static_cast<std::size_t>(run_final_logits ? padded_vocab_size : 0), 0.0f);
     if (error.empty()) {
         run(cuda_memcpy(
                 host_ln_sample.data(),
@@ -2460,9 +2532,10 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         << "  \"kernels_loaded\": " << (kernels_loaded ? "true" : "false") << ",\n"
         << "  \"checkpoint_version\": " << version << ",\n"
         << "  \"precision\": \"bf16\",\n"
-        << "  \"prompt_token_count\": " << rows << ",\n"
+        << "  \"prompt_token_count\": " << prompt_tokens.size() << ",\n"
+        << "  \"sequence_token_count\": " << working_tokens.size() << ",\n"
         << "  \"max_new_tokens\": " << (run_sampler ? cfg.sample_max_new_tokens : 0) << ",\n"
-        << "  \"generated_token_count\": " << (run_sampler && passed && cfg.sample_max_new_tokens > 0 ? 1 : 0) << ",\n"
+        << "  \"generated_token_count\": " << (run_sampler && passed ? generated_tokens.size() : 0) << ",\n"
         << "  \"vocab_size\": " << vocab_size << ",\n"
         << "  \"padded_vocab_size\": " << padded_vocab_size << ",\n"
         << "  \"num_layers\": " << num_layers << ",\n"
@@ -2524,8 +2597,13 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         << "  \"top_token\": " << top_token << ",\n"
         << "  \"top_logit\": " << top_logit << ",\n"
         << "  \"generated_tokens\": [";
-    if (run_sampler && passed && cfg.sample_max_new_tokens > 0) {
-        std::cout << top_token;
+    if (run_sampler && passed) {
+        for (std::size_t i = 0; i < generated_tokens.size(); ++i) {
+            if (i > 0) {
+                std::cout << ", ";
+            }
+            std::cout << generated_tokens[i];
+        }
     }
     std::cout
         << "],\n"

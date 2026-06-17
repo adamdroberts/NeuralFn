@@ -232,11 +232,10 @@ model_########.bin --prompt-tokens 1,2,3` and `python cli/scripts/infer_gpt2.py
 --native-checkpoint model_########.bin --prompt-tokens 1,2,3` dispatch to
 `nfn_gpt_native_train --sample-checkpoint ... --prompt-tokens ...`. That path
 validates the checkpoint, context window, vocab bounds, and token list before
-CUDA, dataset setup, Torch, or graph-editor node flow, then executes one full
-checkpoint forward pass through CUDA Tile kernels and returns the next token in
-`generated_tokens` when `--max-new-tokens` is positive. Autoregressive multi-token
-looping is still pending; text prompts still use the temporary sampler script
-bridge described above.
+CUDA, dataset setup, Torch, or graph-editor node flow, then executes
+autoregressive CUDA Tile checkpoint forward passes and returns up to
+`--max-new-tokens` IDs in `generated_tokens`. Text prompts still use the
+temporary sampler script bridge described above until native tokenization lands.
 
 `nfn_gpt_native_train --checkpoint-load-smoke --native-checkpoint
 model_########.bin --checkpoint-load-elements 1024` is the next compiled
@@ -288,8 +287,8 @@ checkpoints without CUDA, Torch, Python dataset setup, or graph nodes using
 `nfn_gpt_native_train --native-info --native-checkpoint model_########.bin` or
 `nfn_gpt_native_train --inspect-checkpoint model_########.bin`. The JSON reports
 shape, precision, file-size validation, DONE marker state, and
-`prompt_generation_status: "native-single-token-sampler-available"` while the
-full autoregressive CUDA Tile prompt-generation loop is still pending.
+`prompt_generation_status: "native-token-sampler-available"` while native text
+prompt tokenization is still pending.
 
 Native GPT launchers also default `CUDA_MODULE_LOADING=LAZY` when the variable is unset, alongside the existing dedicated-GPU defaults, so direct C++ and SDK launches avoid eager CUDA module-load startup cost unless the caller overrides the environment. Use `--startup-only` or SDK `startup_only=True` to run full Tile-CUDA transformer setup, emit `status: "native-transformer-lm-startup-ready"`, and exit before optimizer steps or checkpoint export when measuring startup.
 
