@@ -291,6 +291,25 @@ bool tk_packed_attention_dprep_grid3d_enabled() {
   return enabled;
 }
 
+int tk_packed_attention_dprep_warps_per_block() {
+  static const int warps = []() {
+    const char* raw = std::getenv("NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS");
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT2_PACKED_ATTENTION_DPREP_WARPS");
+    }
+    if (raw == nullptr || raw[0] == '\0') {
+      return 3;
+    }
+    char* end = nullptr;
+    const long parsed = std::strtol(raw, &end, 10);
+    if (end == raw || parsed < 1 || parsed > 8) {
+      return 3;
+    }
+    return static_cast<int>(parsed);
+  }();
+  return warps;
+}
+
 void release_tk_attention_workspace(TkAttentionWorkspace& workspace) {
   if (workspace.q_bf != nullptr) cudaFree(workspace.q_bf);
   if (workspace.k_bf != nullptr) cudaFree(workspace.k_bf);
@@ -1100,7 +1119,7 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
   for (std::int64_t batch_begin = 0; batch_begin < batch; batch_begin += max_batch_per_launch) {
     const std::int64_t chunk_batch = std::min(max_batch_per_launch, batch - batch_begin);
     const std::int64_t chunk_rows = chunk_batch * row_elements_per_batch;
-    dim3 dprep_block(32, 3, 1);
+    dim3 dprep_block(32, static_cast<unsigned int>(tk_packed_attention_dprep_warps_per_block()), 1);
     if (tk_packed_attention_dprep_grid3d_enabled()) {
       dim3 dprep_grid(
           static_cast<unsigned int>((seq_len + dprep_block.y - 1) / dprep_block.y),

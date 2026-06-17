@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add packed-attention dprep warps bisection knob
+
+#### Added
+
+- Added `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS=N` with
+  `NFN_NATIVE_GPT2_PACKED_ATTENTION_DPREP_WARPS` as a legacy fallback for
+  packed-attention backward dprep row-grouping bisection. The default remains
+  the existing 3 warps per dprep block.
+
+#### Verification
+
+- Ran `bash tools/build_native_train_tile_ops.sh`.
+- Ran a dedicated RTX 5090 same-script one-step bisection with
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS=2`; the candidate measured
+  `1.002758x` mean train-loop wall time and `0.997257x` tokens/sec versus the
+  default, so it was not promoted.
+- Ran a dedicated RTX 5090 same-script one-step bisection with
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS=4`; the candidate measured
+  `1.001645x` mean train-loop wall time and `0.998425x` tokens/sec versus the
+  default despite a slightly faster median, so it was not promoted.
+- Ran
+  `python -m pytest tests/test_native_gpt2.py::test_native_train_tile_ops_builds_torch_free_c_abi -q`;
+  the source-level assertions passed and the optional temp `nvcc` rebuild path
+  skipped because `nvcc` is not on PATH in the test environment.
+- Ran `python tools/check_native_no_torch_deps.py`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Fuse dense GPT MLP residual into next LN1
 
 #### Changed

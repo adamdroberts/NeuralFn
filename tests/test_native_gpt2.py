@@ -4941,6 +4941,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_GRID3D" in kernels_text
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_DPREP_GRID3D" in kernels_text
+    assert "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS" in kernels_text
+    assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_DPREP_WARPS" in kernels_text
     assert "packed_attention_dprep_grid3d_kernel" in kernels_text
     assert "packed_attention_dprep_bf16_grad_grid3d_kernel" in kernels_text
     assert "NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH" in gpt2_source_text
