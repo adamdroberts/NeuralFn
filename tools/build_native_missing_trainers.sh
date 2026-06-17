@@ -33,7 +33,7 @@ build_nanogpt() {
 }
 
 "${CXX_BIN}" -std=c++20 -O3 -Wall -Wextra -pedantic \
-  "${GPT2_EVO_SRC}" -o "${OUT_DIR}/nfn_gpt2_evo_native_train"
+  "${GPT2_EVO_SRC}" -ldl -o "${OUT_DIR}/nfn_gpt2_evo_native_train"
 printf '%s\n' "${OUT_DIR}/nfn_gpt2_evo_native_train"
 build_nanogpt
 build_one "llama" "nfn_llama_native_train" "LLaMA RoPE/RMSNorm/SwiGLU attention and MLP CUDA Tile trainer"

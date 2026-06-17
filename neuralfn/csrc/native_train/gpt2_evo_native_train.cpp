@@ -1,7 +1,10 @@
-#include <cctype>
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <dlfcn.h>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -41,6 +44,9 @@ struct Gpt2EvoPlan {
     double grad_clip_norm = 1.0;
     double evo_layer_mutation_scale = 0.02;
     bool layer_evo_enabled = true;
+    bool smoke_evo_kernels = false;
+    std::string tile_ops_lib;
+    std::string cuda_runtime_lib;
     std::vector<std::string> unparsed_args;
 };
 
@@ -109,6 +115,54 @@ double parse_f64(const std::string& value, const std::string& flag) {
 
 std::int64_t ceil_div(std::int64_t lhs, std::int64_t rhs) {
     return (lhs + rhs - 1) / rhs;
+}
+
+std::string resolve_tile_ops_lib(const Gpt2EvoPlan& plan, const char* program) {
+    if (!plan.tile_ops_lib.empty()) {
+        return plan.tile_ops_lib;
+    }
+    const char* env = std::getenv("NFN_NATIVE_TRAIN_TILE_OPS_LIB");
+    if (env != nullptr && std::string_view(env).size() > 0) {
+        return std::string(env);
+    }
+    std::filesystem::path exe_path(program);
+    if (exe_path.has_parent_path()) {
+        std::filesystem::path sibling = exe_path.parent_path() / "libnfn_native_train_tile_ops.so";
+        if (std::filesystem::exists(sibling)) {
+            return sibling.string();
+        }
+    }
+    std::filesystem::path build_path = std::filesystem::current_path() / "build" / "libnfn_native_train_tile_ops.so";
+    if (std::filesystem::exists(build_path)) {
+        return build_path.string();
+    }
+    return "libnfn_native_train_tile_ops.so";
+}
+
+std::vector<std::string> cuda_runtime_candidates(const Gpt2EvoPlan& plan) {
+    if (!plan.cuda_runtime_lib.empty()) {
+        return {plan.cuda_runtime_lib};
+    }
+    const char* env = std::getenv("NFN_CUDA_RUNTIME_LIB");
+    if (env != nullptr && std::string_view(env).size() > 0) {
+        return {std::string(env)};
+    }
+    return {"libcudart.so", "libcudart.so.13", "libcudart.so.12"};
+}
+
+template <typename Fn>
+Fn load_symbol(void* handle, const char* name) {
+    dlerror();
+    void* symbol = dlsym(handle, name);
+    if (symbol == nullptr) {
+        return nullptr;
+    }
+    return reinterpret_cast<Fn>(symbol);
+}
+
+std::string dl_last_error(const char* fallback) {
+    const char* error = dlerror();
+    return error == nullptr ? std::string(fallback) : std::string(error);
 }
 
 std::string normalize_template_name(const std::string& value) {
@@ -255,6 +309,9 @@ void print_usage(const char* program) {
         << "  --evo-layer-population N        Candidate population, default 8\n"
         << "  --evo-layer-mutation-scale X    Gaussian mutation scale, default 0.02\n"
         << "  --no-layer-evo                  Disable evo-layer metadata in the plan\n"
+        << "  --tile-ops-lib PATH             Raw libnfn_native_train_tile_ops.so path for evo kernel smoke\n"
+        << "  --cuda-runtime-lib PATH         CUDA runtime path for evo kernel smoke; env NFN_CUDA_RUNTIME_LIB also works\n"
+        << "  --smoke-evo-kernels             Execute tiny mutate/select/adopt evo Tile kernels and exit\n"
         << "  --print-plan                    Print the native JSON plan and exit 0\n"
         << "  --dry-run                       Print the plan, then fail because training is not implemented\n";
 }
@@ -389,6 +446,261 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
     std::cout << "]\n}\n";
 }
 
+int print_evo_kernel_smoke_json(const Gpt2EvoPlan& plan, const char* program) {
+    constexpr std::int64_t kElements = 4;
+    constexpr std::int64_t kCandidateCount = 3;
+    constexpr float kMutationScale = 0.0f;
+    constexpr std::int64_t kSeed = 123;
+    constexpr int kCudaMemcpyHostToDevice = 1;
+    constexpr int kCudaMemcpyDeviceToHost = 2;
+
+    const std::vector<float> host_base = {1.0f, -2.0f, 0.5f, 4.0f};
+    const std::vector<float> host_losses = {3.0f, 1.25f, 2.0f};
+    const std::string tile_lib_path = resolve_tile_ops_lib(plan, program);
+    std::vector<std::string> runtime_candidates = cuda_runtime_candidates(plan);
+    std::string cuda_lib_path = runtime_candidates.empty() ? "libcudart.so" : runtime_candidates.front();
+    bool tile_loaded = false;
+    bool cuda_runtime_loaded = false;
+    bool mutate_loaded = false;
+    bool select_loaded = false;
+    bool adopt_loaded = false;
+    bool passed = false;
+    std::int64_t host_best_index = -1;
+    float host_best_loss = 0.0f;
+    double max_adopt_abs_error = 0.0;
+    std::string error;
+
+    using EvoMutateFn = int (*)(
+        const float*, float*, std::int64_t, std::int64_t, float, std::int64_t, void*);
+    using EvoSelectFn = int (*)(const float*, std::int64_t, std::int64_t*, float*, void*);
+    using EvoAdoptFn = int (*)(
+        const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
+    using CudaMallocFn = int (*)(void**, std::size_t);
+    using CudaFreeFn = int (*)(void*);
+    using CudaMemcpyFn = int (*)(void*, const void*, std::size_t, int);
+    using CudaDeviceSynchronizeFn = int (*)();
+    using CudaGetErrorStringFn = const char* (*)(int);
+
+    void* tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    void* cuda_handle = nullptr;
+    EvoMutateFn mutate = nullptr;
+    EvoSelectFn select = nullptr;
+    EvoAdoptFn adopt = nullptr;
+    CudaMallocFn cuda_malloc = nullptr;
+    CudaFreeFn cuda_free = nullptr;
+    CudaMemcpyFn cuda_memcpy = nullptr;
+    CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
+    CudaGetErrorStringFn cuda_get_error_string = nullptr;
+
+    auto cuda_error = [&](int code, const std::string& context) {
+        std::ostringstream out;
+        out << context << " failed with CUDA error " << code;
+        if (cuda_get_error_string != nullptr) {
+            const char* message = cuda_get_error_string(code);
+            if (message != nullptr) {
+                out << ": " << message;
+            }
+        }
+        return out.str();
+    };
+
+    if (tile_handle == nullptr) {
+        error = dl_last_error("dlopen tile ops failed");
+    } else {
+        tile_loaded = true;
+        mutate = load_symbol<EvoMutateFn>(tile_handle, "nfn_native_tile_evo_mutate_candidates_float32");
+        select = load_symbol<EvoSelectFn>(tile_handle, "nfn_native_tile_evo_select_best_loss_float32");
+        adopt = load_symbol<EvoAdoptFn>(tile_handle, "nfn_native_tile_evo_adopt_candidate_float32");
+        mutate_loaded = mutate != nullptr;
+        select_loaded = select != nullptr;
+        adopt_loaded = adopt != nullptr;
+        if (mutate == nullptr || select == nullptr || adopt == nullptr) {
+            error = dl_last_error("dlsym evo kernels failed");
+        }
+    }
+
+    if (error.empty()) {
+        std::string runtime_error;
+        for (const std::string& candidate : runtime_candidates) {
+            cuda_lib_path = candidate;
+            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (cuda_handle != nullptr) {
+                cuda_runtime_loaded = true;
+                break;
+            }
+            runtime_error = dl_last_error("dlopen CUDA runtime failed");
+        }
+        if (cuda_handle == nullptr) {
+            error = runtime_error.empty() ? "could not load CUDA runtime" : runtime_error;
+        }
+    }
+
+    if (error.empty()) {
+        cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+        cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
+        cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
+        cuda_device_synchronize = load_symbol<CudaDeviceSynchronizeFn>(cuda_handle, "cudaDeviceSynchronize");
+        cuda_get_error_string = load_symbol<CudaGetErrorStringFn>(cuda_handle, "cudaGetErrorString");
+        if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr || cuda_device_synchronize == nullptr) {
+            error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaDeviceSynchronize";
+        }
+    }
+
+    float* device_base = nullptr;
+    float* device_candidates = nullptr;
+    float* device_losses = nullptr;
+    std::int64_t* device_best_index = nullptr;
+    float* device_best_loss = nullptr;
+    float* device_adopted = nullptr;
+    auto allocate = [&](auto** ptr, std::size_t bytes, const std::string& name) {
+        if (!error.empty()) {
+            return;
+        }
+        int status = cuda_malloc(reinterpret_cast<void**>(ptr), bytes);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMalloc " + name);
+        }
+    };
+    allocate(&device_base, sizeof(float) * kElements, "base");
+    allocate(&device_candidates, sizeof(float) * kElements * kCandidateCount, "candidates");
+    allocate(&device_losses, sizeof(float) * kCandidateCount, "losses");
+    allocate(&device_best_index, sizeof(std::int64_t), "best_index");
+    allocate(&device_best_loss, sizeof(float), "best_loss");
+    allocate(&device_adopted, sizeof(float) * kElements, "adopted");
+
+    auto copy_to_device = [&](void* dest, const void* source, std::size_t bytes, const std::string& name) {
+        if (!error.empty()) {
+            return;
+        }
+        int status = cuda_memcpy(dest, source, bytes, kCudaMemcpyHostToDevice);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMemcpy host-to-device " + name);
+        }
+    };
+    copy_to_device(device_base, host_base.data(), sizeof(float) * kElements, "base");
+    copy_to_device(device_losses, host_losses.data(), sizeof(float) * kCandidateCount, "losses");
+
+    if (error.empty()) {
+        int status = mutate(
+            device_base,
+            device_candidates,
+            kElements,
+            kCandidateCount,
+            kMutationScale,
+            kSeed,
+            nullptr);
+        if (status != 0) {
+            error = cuda_error(status, "nfn_native_tile_evo_mutate_candidates_float32");
+        }
+    }
+    if (error.empty()) {
+        int status = select(device_losses, kCandidateCount, device_best_index, device_best_loss, nullptr);
+        if (status != 0) {
+            error = cuda_error(status, "nfn_native_tile_evo_select_best_loss_float32");
+        }
+    }
+    if (error.empty()) {
+        int status = adopt(
+            device_candidates,
+            device_best_index,
+            device_adopted,
+            kElements,
+            kCandidateCount,
+            nullptr);
+        if (status != 0) {
+            error = cuda_error(status, "nfn_native_tile_evo_adopt_candidate_float32");
+        }
+    }
+    if (error.empty()) {
+        int status = cuda_device_synchronize();
+        if (status != 0) {
+            error = cuda_error(status, "cudaDeviceSynchronize");
+        }
+    }
+
+    std::vector<float> host_adopted(static_cast<std::size_t>(kElements), 0.0f);
+    auto copy_from_device = [&](void* dest, const void* source, std::size_t bytes, const std::string& name) {
+        if (!error.empty()) {
+            return;
+        }
+        int status = cuda_memcpy(dest, source, bytes, kCudaMemcpyDeviceToHost);
+        if (status != 0) {
+            error = cuda_error(status, "cudaMemcpy device-to-host " + name);
+        }
+    };
+    copy_from_device(&host_best_index, device_best_index, sizeof(std::int64_t), "best_index");
+    copy_from_device(&host_best_loss, device_best_loss, sizeof(float), "best_loss");
+    copy_from_device(host_adopted.data(), device_adopted, sizeof(float) * kElements, "adopted");
+
+    if (error.empty()) {
+        for (std::int64_t i = 0; i < kElements; ++i) {
+            max_adopt_abs_error = std::max(
+                max_adopt_abs_error,
+                std::fabs(static_cast<double>(host_adopted[static_cast<std::size_t>(i)]) -
+                          static_cast<double>(host_base[static_cast<std::size_t>(i)])));
+        }
+        passed = host_best_index == 1 &&
+                 std::fabs(static_cast<double>(host_best_loss) - 1.25) <= 1e-6 &&
+                 max_adopt_abs_error <= 1e-6;
+        if (!passed) {
+            std::ostringstream out;
+            out << "evo smoke failed: best_index=" << host_best_index
+                << " best_loss=" << host_best_loss
+                << " max_adopt_abs_error=" << max_adopt_abs_error;
+            error = out.str();
+        }
+    }
+
+    auto free_device = [&](void* ptr, const std::string& name) {
+        if (ptr != nullptr && cuda_free != nullptr) {
+            int status = cuda_free(ptr);
+            if (status != 0 && error.empty()) {
+                error = cuda_error(status, "cudaFree " + name);
+            }
+        }
+    };
+    free_device(device_base, "base");
+    free_device(device_candidates, "candidates");
+    free_device(device_losses, "losses");
+    free_device(device_best_index, "best_index");
+    free_device(device_best_loss, "best_loss");
+    free_device(device_adopted, "adopted");
+    if (cuda_handle != nullptr) {
+        dlclose(cuda_handle);
+    }
+    if (tile_handle != nullptr) {
+        dlclose(tile_handle);
+    }
+
+    std::cout
+        << "{\n"
+        << "  \"model_family\": \"gpt2-evo\",\n"
+        << "  \"smoke\": \"evo_kernels\",\n"
+        << "  \"tile_ops_library\": \"" << json_escape(tile_lib_path) << "\",\n"
+        << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"loaded\": " << (tile_loaded ? "true" : "false") << ",\n"
+        << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
+        << "  \"mutate_kernel_loaded\": " << (mutate_loaded ? "true" : "false") << ",\n"
+        << "  \"select_kernel_loaded\": " << (select_loaded ? "true" : "false") << ",\n"
+        << "  \"adopt_kernel_loaded\": " << (adopt_loaded ? "true" : "false") << ",\n"
+        << "  \"elements\": " << kElements << ",\n"
+        << "  \"candidate_count\": " << kCandidateCount << ",\n"
+        << "  \"mutation_scale\": " << kMutationScale << ",\n"
+        << "  \"best_index\": " << host_best_index << ",\n"
+        << "  \"best_loss\": " << host_best_loss << ",\n"
+        << "  \"max_adopt_abs_error\": " << max_adopt_abs_error << ",\n"
+        << "  \"passed\": " << (passed ? "true" : "false");
+    if (!error.empty()) {
+        std::cout << ",\n"
+                  << "  \"error\": \"" << json_escape(error) << "\"\n";
+    } else {
+        std::cout << "\n";
+    }
+    std::cout << "}\n";
+
+    return passed ? 0 : 2;
+}
+
 Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run) {
     Gpt2EvoPlan plan;
     for (int i = 1; i < argc; ++i) {
@@ -409,6 +721,10 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run) {
         }
         if (arg == "--dry-run" || arg == "--native-cuda-dry-run") {
             *dry_run = true;
+            continue;
+        }
+        if (arg == "--smoke-evo-kernels") {
+            plan.smoke_evo_kernels = true;
             continue;
         }
         if (arg == "--tinystories") {
@@ -539,6 +855,22 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run) {
             plan.tile_activation_dtype = value_for(arg);
             continue;
         }
+        if (arg == "--tile-ops-lib") {
+            plan.tile_ops_lib = value_for(arg);
+            continue;
+        }
+        if (arg.rfind("--tile-ops-lib=", 0) == 0) {
+            plan.tile_ops_lib = after_equals("--tile-ops-lib=");
+            continue;
+        }
+        if (arg == "--cuda-runtime-lib") {
+            plan.cuda_runtime_lib = value_for(arg);
+            continue;
+        }
+        if (arg.rfind("--cuda-runtime-lib=", 0) == 0) {
+            plan.cuda_runtime_lib = after_equals("--cuda-runtime-lib=");
+            continue;
+        }
         if (arg == "--evo-layer-index") {
             plan.evo_layer_index = parse_i64(value_for(arg), arg);
             continue;
@@ -571,6 +903,9 @@ int main(int argc, char** argv) {
     bool dry_run = false;
     Gpt2EvoPlan plan = parse_args(argc, argv, &print_plan, &dry_run);
     validate_plan(plan);
+    if (plan.smoke_evo_kernels) {
+        return print_evo_kernel_smoke_json(plan, argv[0]);
+    }
     if (print_plan || dry_run) {
         print_plan_json(plan);
     }

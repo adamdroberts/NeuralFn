@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Add GPT-2 evo native ABI smoke
+
+#### Changed
+
+- Added `nfn_gpt2_evo_native_train --smoke-evo-kernels` with
+  `--tile-ops-lib` and `--cuda-runtime-lib` support. The action loads the raw
+  trainer Tile ops shared library and CUDA runtime, runs evo candidate mutation,
+  best-loss selection, and best-candidate adoption over tiny device buffers, and
+  reports JSON before any dataset, Torch, Python graph runtime, or graph-editor
+  payload path is opened.
+- `tools/build_native_missing_trainers.sh` now links the GPT-2 evo native
+  preflight binary with `-ldl` so it can validate raw Tile ABI symbols directly.
+- The full GPT-2 evo forward-only candidate-evaluation trainer loop is still
+  intentionally reported as missing; this change proves the exported evo ABI is
+  executable from the family-specific C++ binary.
+
+#### Verification
+
+- Rebuilt missing-family native binaries with
+  `bash tools/build_native_missing_trainers.sh`.
+- Ran `build/nfn_gpt2_evo_native_train --smoke-evo-kernels --tile-ops-lib
+  build/libnfn_native_train_tile_ops.so` with GPU access on the dedicated RTX
+  5090. The JSON reported `passed: true`, `best_index: 1`, `best_loss: 1.25`,
+  and `max_adopt_abs_error: 0`.
+- Confirmed `nvidia-smi` reported the RTX 5090 as display-disabled and idle
+  before the smoke.
+
 ### 2026-06-17 Add native evo Tile ABI primitives
 
 #### Changed

@@ -3071,6 +3071,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--tile-cuda-activation-dtype nvfp4|float32|none" in evo_help.stdout
     assert "--evo-layer-index N" in evo_help.stdout
     assert "--evo-layer-population N" in evo_help.stdout
+    assert "--tile-ops-lib PATH" in evo_help.stdout
+    assert "--cuda-runtime-lib PATH" in evo_help.stdout
+    assert "--smoke-evo-kernels" in evo_help.stdout
 
     evo_plan_proc = subprocess.run(
         [
@@ -4528,6 +4531,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "launch_merge_heads_to_qkv_float32" in source_text
     assert "launch_reshape_heads_float32" in source_text
     assert "launch_merge_heads_float32" in source_text
+    assert "launch_evo_mutate_candidates_float32" in source_text
+    assert "launch_evo_select_best_loss_float32" in source_text
+    assert "launch_evo_adopt_candidate_float32" in source_text
     assert "qkv_forward_layout_strategy" in gpt2_source_text
     assert "fused-split-to-heads" in gpt2_source_text
     assert "qkv_bias_layout_strategy" in gpt2_source_text
@@ -4584,7 +4590,33 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
             check=False,
         )
         assert build_missing.returncode == 0, build_missing.stderr
+        gpt2_evo = native_out / "nfn_gpt2_evo_native_train"
         nanogpt = native_out / "nfn_nanogpt_native_train"
+        evo_smoke = subprocess.run(
+            [str(gpt2_evo), "--smoke-evo-kernels", "--tile-ops-lib", str(out)],
+            cwd=root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        evo_payload = json.loads(evo_smoke.stdout)
+        if evo_smoke.returncode != 0:
+            pytest.skip(f"CUDA runtime/device not available for native GPT-2 evo smoke: {evo_payload.get('error')}")
+        assert evo_payload["model_family"] == "gpt2-evo"
+        assert evo_payload["smoke"] == "evo_kernels"
+        assert evo_payload["loaded"] is True
+        assert evo_payload["cuda_runtime_loaded"] is True
+        assert evo_payload["mutate_kernel_loaded"] is True
+        assert evo_payload["select_kernel_loaded"] is True
+        assert evo_payload["adopt_kernel_loaded"] is True
+        assert evo_payload["elements"] == 4
+        assert evo_payload["candidate_count"] == 3
+        assert evo_payload["mutation_scale"] == 0
+        assert evo_payload["best_index"] == 1
+        assert evo_payload["best_loss"] == 1.25
+        assert evo_payload["max_adopt_abs_error"] <= 1e-6
+        assert evo_payload["passed"] is True
         tile_check = subprocess.run(
             [str(nanogpt), "--check-tile-ops", "--tile-ops-lib", str(out)],
             cwd=root,
