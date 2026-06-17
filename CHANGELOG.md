@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Reject cuBLASLt heuristic index 3 for native GPT
+
+#### Changed
+
+- Ran a same-script RTX 5090 bisection for
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX=3` using paired native stage
+  profile sidecars. The candidate is not promoted: it measured `1.005321x`
+  train-loop time and `0.994708x` tokens/sec versus the default heuristic-index
+  selection.
+- Stage ratios showed the regression in the hot path rather than setup:
+  `stage.lm_head_backward.total_ms` measured `1.007437x` and
+  `stage.block_backward.total_ms` measured `1.004799x`, with the largest
+  block sub-bucket movement in `stage.block_backward.attn_sdpa.total_ms` at
+  `1.008118x`.
+
+#### Verification
+
+- Ran `tools/paired_kernel_speed.py` on the dedicated display-disabled RTX
+  5090 with `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`,
+  `--require-idle-selected-gpu`,
+  `--append-native-profile-json-dir /tmp/nfn_cublaslt_h3_profiles`, and
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX=3`.
+
 ### 2026-06-17 Add paired native stage-profile sidecars
 
 #### Changed
