@@ -2034,6 +2034,21 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     float* residual_scale = nullptr;
     std::int64_t* token_ids = nullptr;
     const float* final_block_output = nullptr;
+    struct DeviceCheckpointBlockWeights {
+        float* ln_weight = nullptr;
+        float* ln_bias = nullptr;
+        float* qkv_weight = nullptr;
+        float* qkv_bias = nullptr;
+        float* attn_proj_weight = nullptr;
+        float* attn_proj_bias = nullptr;
+        float* ln2_weight = nullptr;
+        float* ln2_bias = nullptr;
+        float* fc_weight = nullptr;
+        float* fc_bias = nullptr;
+        float* mlp_proj_weight = nullptr;
+        float* mlp_proj_bias = nullptr;
+    };
+    std::vector<DeviceCheckpointBlockWeights> all_layer_weights;
     const std::int64_t rows = static_cast<std::int64_t>(prompt_tokens.size());
     const std::int64_t activation_elements = rows * channels;
     const std::int64_t qkv_elements = rows * channels * 3;
@@ -2067,6 +2082,37 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     if (run_final_logits) {
         convert_tensor(host_final_ln_weight, &final_ln_weight_bf16, &final_ln_weight, "ln_f.weight");
         convert_tensor(host_final_ln_bias, &final_ln_bias_bf16, &final_ln_bias, "ln_f.bias");
+    }
+    if (run_all_layers && error.empty()) {
+        all_layer_weights.resize(static_cast<std::size_t>(num_layers));
+        for (std::int64_t layer = 0; layer < num_layers && error.empty(); ++layer) {
+            const std::string layer_prefix = "h." + std::to_string(layer) + ".";
+            std::uint16_t* block_ln_weight_bf16 = nullptr;
+            std::uint16_t* block_ln_bias_bf16 = nullptr;
+            std::uint16_t* block_qkv_weight_bf16 = nullptr;
+            std::uint16_t* block_qkv_bias_bf16 = nullptr;
+            std::uint16_t* block_attn_proj_weight_bf16 = nullptr;
+            std::uint16_t* block_attn_proj_bias_bf16 = nullptr;
+            std::uint16_t* block_ln2_weight_bf16 = nullptr;
+            std::uint16_t* block_ln2_bias_bf16 = nullptr;
+            std::uint16_t* block_fc_weight_bf16 = nullptr;
+            std::uint16_t* block_fc_bias_bf16 = nullptr;
+            std::uint16_t* block_mlp_proj_weight_bf16 = nullptr;
+            std::uint16_t* block_mlp_proj_bias_bf16 = nullptr;
+            DeviceCheckpointBlockWeights& weights = all_layer_weights[static_cast<std::size_t>(layer)];
+            convert_tensor(read_bf16_tensor(layer_prefix + "ln_1.weight"), &block_ln_weight_bf16, &weights.ln_weight, layer_prefix + "ln_1.weight");
+            convert_tensor(read_bf16_tensor(layer_prefix + "ln_1.bias"), &block_ln_bias_bf16, &weights.ln_bias, layer_prefix + "ln_1.bias");
+            convert_tensor(read_bf16_tensor(layer_prefix + "attn.c_attn.weight"), &block_qkv_weight_bf16, &weights.qkv_weight, layer_prefix + "attn.c_attn.weight");
+            convert_tensor(read_bf16_tensor(layer_prefix + "attn.c_attn.bias"), &block_qkv_bias_bf16, &weights.qkv_bias, layer_prefix + "attn.c_attn.bias");
+            convert_tensor(read_bf16_tensor(layer_prefix + "attn.c_proj.weight"), &block_attn_proj_weight_bf16, &weights.attn_proj_weight, layer_prefix + "attn.c_proj.weight");
+            convert_tensor(read_bf16_tensor(layer_prefix + "attn.c_proj.bias"), &block_attn_proj_bias_bf16, &weights.attn_proj_bias, layer_prefix + "attn.c_proj.bias");
+            convert_tensor(read_bf16_tensor(layer_prefix + "ln_2.weight"), &block_ln2_weight_bf16, &weights.ln2_weight, layer_prefix + "ln_2.weight");
+            convert_tensor(read_bf16_tensor(layer_prefix + "ln_2.bias"), &block_ln2_bias_bf16, &weights.ln2_bias, layer_prefix + "ln_2.bias");
+            convert_tensor(read_bf16_tensor(layer_prefix + "mlp.c_fc.weight"), &block_fc_weight_bf16, &weights.fc_weight, layer_prefix + "mlp.c_fc.weight");
+            convert_tensor(read_bf16_tensor(layer_prefix + "mlp.c_fc.bias"), &block_fc_bias_bf16, &weights.fc_bias, layer_prefix + "mlp.c_fc.bias");
+            convert_tensor(read_bf16_tensor(layer_prefix + "mlp.c_proj.weight"), &block_mlp_proj_weight_bf16, &weights.mlp_proj_weight, layer_prefix + "mlp.c_proj.weight");
+            convert_tensor(read_bf16_tensor(layer_prefix + "mlp.c_proj.bias"), &block_mlp_proj_bias_bf16, &weights.mlp_proj_bias, layer_prefix + "mlp.c_proj.bias");
+        }
     }
     allocate(&token_out, sizeof(float) * static_cast<std::size_t>(activation_elements), "token_out");
     allocate(&position_out, sizeof(float) * static_cast<std::size_t>(activation_elements), "position_out");
@@ -2125,31 +2171,20 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         float* block_fc_bias = fc_bias;
         float* block_mlp_proj_weight = mlp_proj_weight;
         float* block_mlp_proj_bias = mlp_proj_bias;
-        if (run_all_layers && error.empty()) {
-            std::uint16_t* block_ln_weight_bf16 = nullptr;
-            std::uint16_t* block_ln_bias_bf16 = nullptr;
-            std::uint16_t* block_qkv_weight_bf16 = nullptr;
-            std::uint16_t* block_qkv_bias_bf16 = nullptr;
-            std::uint16_t* block_attn_proj_weight_bf16 = nullptr;
-            std::uint16_t* block_attn_proj_bias_bf16 = nullptr;
-            std::uint16_t* block_ln2_weight_bf16 = nullptr;
-            std::uint16_t* block_ln2_bias_bf16 = nullptr;
-            std::uint16_t* block_fc_weight_bf16 = nullptr;
-            std::uint16_t* block_fc_bias_bf16 = nullptr;
-            std::uint16_t* block_mlp_proj_weight_bf16 = nullptr;
-            std::uint16_t* block_mlp_proj_bias_bf16 = nullptr;
-            convert_tensor(read_bf16_tensor(layer_prefix + "ln_1.weight"), &block_ln_weight_bf16, &block_ln_weight, layer_prefix + "ln_1.weight");
-            convert_tensor(read_bf16_tensor(layer_prefix + "ln_1.bias"), &block_ln_bias_bf16, &block_ln_bias, layer_prefix + "ln_1.bias");
-            convert_tensor(read_bf16_tensor(layer_prefix + "attn.c_attn.weight"), &block_qkv_weight_bf16, &block_qkv_weight, layer_prefix + "attn.c_attn.weight");
-            convert_tensor(read_bf16_tensor(layer_prefix + "attn.c_attn.bias"), &block_qkv_bias_bf16, &block_qkv_bias, layer_prefix + "attn.c_attn.bias");
-            convert_tensor(read_bf16_tensor(layer_prefix + "attn.c_proj.weight"), &block_attn_proj_weight_bf16, &block_attn_proj_weight, layer_prefix + "attn.c_proj.weight");
-            convert_tensor(read_bf16_tensor(layer_prefix + "attn.c_proj.bias"), &block_attn_proj_bias_bf16, &block_attn_proj_bias, layer_prefix + "attn.c_proj.bias");
-            convert_tensor(read_bf16_tensor(layer_prefix + "ln_2.weight"), &block_ln2_weight_bf16, &block_ln2_weight, layer_prefix + "ln_2.weight");
-            convert_tensor(read_bf16_tensor(layer_prefix + "ln_2.bias"), &block_ln2_bias_bf16, &block_ln2_bias, layer_prefix + "ln_2.bias");
-            convert_tensor(read_bf16_tensor(layer_prefix + "mlp.c_fc.weight"), &block_fc_weight_bf16, &block_fc_weight, layer_prefix + "mlp.c_fc.weight");
-            convert_tensor(read_bf16_tensor(layer_prefix + "mlp.c_fc.bias"), &block_fc_bias_bf16, &block_fc_bias, layer_prefix + "mlp.c_fc.bias");
-            convert_tensor(read_bf16_tensor(layer_prefix + "mlp.c_proj.weight"), &block_mlp_proj_weight_bf16, &block_mlp_proj_weight, layer_prefix + "mlp.c_proj.weight");
-            convert_tensor(read_bf16_tensor(layer_prefix + "mlp.c_proj.bias"), &block_mlp_proj_bias_bf16, &block_mlp_proj_bias, layer_prefix + "mlp.c_proj.bias");
+        if (run_all_layers) {
+            const DeviceCheckpointBlockWeights& weights = all_layer_weights[static_cast<std::size_t>(layer_index)];
+            block_ln_weight = weights.ln_weight;
+            block_ln_bias = weights.ln_bias;
+            block_qkv_weight = weights.qkv_weight;
+            block_qkv_bias = weights.qkv_bias;
+            block_attn_proj_weight = weights.attn_proj_weight;
+            block_attn_proj_bias = weights.attn_proj_bias;
+            block_ln2_weight = weights.ln2_weight;
+            block_ln2_bias = weights.ln2_bias;
+            block_fc_weight = weights.fc_weight;
+            block_fc_bias = weights.fc_bias;
+            block_mlp_proj_weight = weights.mlp_proj_weight;
+            block_mlp_proj_bias = weights.mlp_proj_bias;
         }
         if (error.empty()) {
             run(layer_norm(block_input, block_ln_weight, block_ln_bias, ln_out, rows, channels, kNormEps, nullptr),
