@@ -79,16 +79,13 @@ outputs.
 For the native GPT path, `bash tools/build_native_gpt_binding.sh` builds the
 generic `neuralfn._native_gpt` C++ extension used by `run_native_gpt(...,
 runner="auto")` before falling back to the compiled CLI or standalone launcher.
-The auto route no longer falls through to the external `train_gpt2cu`
-subprocess; request `runner="subprocess"` explicitly when testing that bridge.
+The auto route no longer falls through to an external `train_gpt2cu` subprocess, and `runner="subprocess"` is no longer a GPT training runner.
 `bash tools/build_native_gpt2_binding.sh` still builds the compatibility
 `neuralfn._native_gpt2` module, and `run_native_gpt2(...)` can use either
 binding. `build_native_gpt_compiled_cli_run_config()` creates a dense GPT
 compiled-CLI handoff directly from a dataset alias/path, leaving shard metadata
 inspection to the C++ resolver. When that alias-only config is passed through
-the C++ binding, the binding executes `compiled_cli_argv` instead of the raw
-`train_gpt2cu` argv so SDK `runner="auto"` keeps the no-Python shard resolver
-path. Set `kernel_backend="tile-cuda"` plus `tile_ops_lib=...` on the config to
+the C++ binding, the binding executes `compiled_cli_argv` instead of the raw external-trainer argv so SDK `runner="auto"` keeps the no-Python shard resolver path. Set `kernel_backend="tile-cuda"` plus `tile_ops_lib=...` on the config to
 inspect/check or run the NeuralFn-owned raw Tile GPT plan. Native GPT configs
 default `cuda_visible_devices="0"` and `cuda_device_max_connections="1"` before
 launching subprocess, launcher, compiled-CLI, or binding runs; the C++ binding
@@ -187,8 +184,7 @@ dWeight on BF16 Tile/CUDA ABI calls, reporting
 `block_backward_bf16_qkv_dweight_enabled: true`; set
 `NFN_NATIVE_GPT_LN1_BF16_QKV_FORWARD=0` and
 `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT=0` only when reproducing the previous path.
-Backend names are strict: use
-`"llm-kittens"` or `"tile-cuda"`. For the unified native training frontend, `bash
+Backend names are strict: use `"tile-cuda"`. For the unified native training frontend, `bash
 tools/build_native_train_binding.sh` builds `neuralfn._native_train`, which is
 used by `run_native_train(..., runner="auto")` to hand off to `nfn_native_train`
 without importing Torch. Use `native_train_model_registry()` to inspect the

@@ -15,7 +15,6 @@ for candidate in (SCRIPT_DIR, REPO_ROOT):
 
 
 _TINYSTORIES_ALIAS = "roneneldan__TinyStories__TinyStoriesV2-GPT4"
-_DEFAULT_NATIVE_GPT_TARGET = "train_gpt2cu"
 
 
 def _arg_value(argv: list[str], *flags: str) -> str | None:
@@ -44,16 +43,6 @@ def _native_cli_path() -> str:
     if requested:
         return requested
     return str(REPO_ROOT / "build" / "nfn_gpt_native_train")
-
-
-def _native_target_path() -> str:
-    requested = os.environ.get("NFN_NATIVE_GPT_TRAIN_BIN", "").strip()
-    if requested:
-        return requested
-    requested = os.environ.get("NFN_NATIVE_GPT2_TRAIN_BIN", "").strip()
-    if requested:
-        return requested
-    return _DEFAULT_NATIVE_GPT_TARGET
 
 
 def _append_value(out: list[str], flag: str, value: str) -> None:
@@ -126,7 +115,7 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         or os.environ.get("NFN_NATIVE_GPT_RUNNER")
         or os.environ.get("NFN_NATIVE_GPT2_RUNNER", "compiled-cli")
     )
-    if runner.strip().lower().replace("_", "-") not in {"", "compiled-cli", "cli"}:
+    if runner.strip().lower().replace("_", "-") not in {"", "compiled-cli"}:
         return None
     if _has_any(argv, "-h", "--help", "--native-cuda-config-out") or any(
         arg.startswith("--native-cuda-config-out=") for arg in argv
@@ -316,8 +305,10 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         _append_value(out, "--train-seq-len", "2048")
     if "--dataset-alias" not in out and "--dataset-path" not in out and "--tinystories" not in out:
         _append_value(out, "--dataset-alias", os.environ.get("DATASET_ALIAS", _TINYSTORIES_ALIAS))
-    if "--target" not in out and _native_backend_name(out) == "llm-kittens":
-        _append_value(out, "--target", _native_target_path())
+    if _native_backend_name(out) != "tile-cuda":
+        raise ValueError("native GPT kernel backend must be tile-cuda")
+    if "--backend" not in out:
+        _append_value(out, "--backend", "tile-cuda")
     final_lr = _final_lr_fraction(argv)
     if final_lr is not None and "--final-lr-fraction" not in out:
         _append_value(out, "--final-lr-fraction", final_lr)
@@ -329,7 +320,11 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
 
 
 def _fast_compiled_cli_main(argv: list[str]) -> int | None:
-    command = _fast_compiled_cli_argv(argv)
+    try:
+        command = _fast_compiled_cli_argv(argv)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     if command is None:
         return None
     env = os.environ.copy()

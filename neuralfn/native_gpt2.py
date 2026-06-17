@@ -11,7 +11,7 @@ import struct
 from typing import Any
 
 
-DEFAULT_NATIVE_GPT2_EXECUTABLE = "train_gpt2cu"
+DEFAULT_NATIVE_GPT2_EXECUTABLE = "nfn_gpt_native_train"
 DEFAULT_NATIVE_GPT2_LAUNCHER = "build/nfn_gpt2_tile_train"
 DEFAULT_NATIVE_GPT_CLI = "build/nfn_gpt_native_train"
 DEFAULT_NATIVE_GPT2_CLI = DEFAULT_NATIVE_GPT_CLI
@@ -232,8 +232,6 @@ class NativeGpt2RunConfig:
             "--native-cuda-activation",
             self.activation,
         ]
-        if str(self.kernel_backend).strip().lower().replace("_", "-") == "llm-kittens":
-            args.extend(["--target", self.executable])
         if str(self.tile_ops_lib or "").strip():
             args.extend(["--tile-ops-lib", self.tile_ops_lib])
         if self.smoke_tile_ops:
@@ -325,8 +323,7 @@ def resolve_native_gpt2_executable(value: str | None = None) -> str:
     env_value = str(os.environ.get("NFN_NATIVE_GPT2_TRAIN_BIN", "")).strip()
     if env_value:
         return env_value
-    default_path = Path(DEFAULT_NATIVE_GPT2_EXECUTABLE)
-    return str(default_path if default_path.exists() else "train_gpt2cu")
+    return resolve_native_gpt2_cli(value)
 
 
 def resolve_native_gpt2_launcher(value: str | None = None) -> str:
@@ -573,8 +570,8 @@ def _native_gpt2_activation_for_template(template_name: str | None, activation: 
 
 def native_gpt2_kernel_backend(value: str | None) -> str:
     normalized = str(value or "tile-cuda").strip().lower()
-    if normalized not in {"llm-kittens", "tile-cuda"}:
-        raise ValueError("native GPT kernel backend must be one of: llm-kittens, tile-cuda")
+    if normalized != "tile-cuda":
+        raise ValueError("native GPT kernel backend must be tile-cuda")
     return normalized
 
 
@@ -777,11 +774,7 @@ def build_native_gpt2_compiled_cli_run_config(
     final_lr_fraction = 0.0 if min_lr is None else max(0.0, min(float(min_lr) / lr, 1.0))
     resolved_kernel_backend = native_gpt2_kernel_backend(kernel_backend)
     return NativeGpt2RunConfig(
-        executable=(
-            resolve_native_gpt2_executable(executable)
-            if resolved_kernel_backend == "llm-kittens"
-            else resolve_native_gpt2_cli(executable)
-        ),
+        executable=resolve_native_gpt2_cli(executable),
         train_data="",
         val_data="",
         output_dir=str(output_dir),
@@ -867,10 +860,8 @@ def _load_native_gpt2_binding():
 
 def native_gpt2_runner_status(requested: str = "auto") -> NativeGpt2RunnerStatus:
     normalized = str(requested or "auto").strip().lower().replace("_", "-")
-    if normalized not in {"auto", "binding", "compiled-cli", "launcher", "subprocess"}:
-        raise ValueError("native GPT runner must be one of: auto, binding, compiled-cli, launcher, subprocess")
-    if normalized == "subprocess":
-        return NativeGpt2RunnerStatus(requested=normalized, resolved="subprocess")
+    if normalized not in {"auto", "binding", "compiled-cli", "launcher"}:
+        raise ValueError("native GPT runner must be one of: auto, binding, compiled-cli, launcher")
     if normalized == "compiled-cli":
         cli = Path(resolve_native_gpt2_cli())
         return NativeGpt2RunnerStatus(
@@ -918,8 +909,8 @@ def native_gpt2_runner_status(requested: str = "auto") -> NativeGpt2RunnerStatus
             resolved="compiled-cli",
             available=False,
             reason=(
-                "native binding unavailable and compiled native GPT CLI/launcher not found; "
-                f"subprocess external bridge requires runner='subprocess': {exc}"
+                "native binding unavailable and compiled native GPT CLI/launcher not found: "
+                f"{exc}"
             ),
         )
     return NativeGpt2RunnerStatus(
@@ -948,12 +939,7 @@ def run_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "auto") -> int
         env = _native_gpt2_subprocess_env(config)
         proc = subprocess.run(config.launcher_argv(), env=env, check=False)
         return int(proc.returncode)
-    if status.resolved != "subprocess":
-        raise RuntimeError(f"Native GPT runner unavailable: {status.reason}")
-
-    env = _native_gpt2_subprocess_env(config)
-    proc = subprocess.run(config.argv(), env=env, check=False)
-    return int(proc.returncode)
+    raise RuntimeError(f"Native GPT runner unavailable: {status.reason}")
 
 
 def _native_gpt2_subprocess_env(config: NativeGpt2RunConfig) -> dict[str, str]:

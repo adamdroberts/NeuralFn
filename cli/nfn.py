@@ -93,13 +93,13 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --tinystories
           --pretraining-file PATH
           --runtime native-cuda
-          --kernel-backend {auto,torch,tile-cuda}
+          --kernel-backend tile-cuda
           --template-name NAME, --template NAME, --preset NAME
           --graph-file PATH, --graph PATH
           --tile-cuda-strict, --no-tile-cuda-strict
           --eval-every-steps N
           --native-cuda-lm-head-row-chunk-size N
-          --native-cuda-runner {auto,binding,compiled-cli,launcher,subprocess}
+          --native-cuda-runner {auto,binding,compiled-cli,launcher}
           --native-cuda-dry-run
 
         examples:
@@ -671,6 +671,8 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         and not _explicit_arg(out, "--graph-file", "--graph")
     ):
         _append_value_arg(out, "--train-seq-len", "2048")
+    if dense_gpt and not _explicit_arg(out, "--backend"):
+        _append_value_arg(out, "--backend", "tile-cuda")
     return out
 
 

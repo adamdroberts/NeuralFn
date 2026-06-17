@@ -217,8 +217,6 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                     "--dataset-alias",
                     str(dataset),
                     "--no-download-if-missing",
-                    "--native-cuda-runner",
-                    "subprocess",
                     "--native-cuda-dry-run",
                     "--native-cuda-print-command",
                 ]
@@ -238,6 +236,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
         env = os.environ.copy()
         env["PYTHONPATH"] = f"{NEURALFN_ROOT / 'cli' / 'scripts'}:{NEURALFN_ROOT}"
+        env["NFN_NATIVE_GPT2_CLI"] = "/bin/echo"
         proc = subprocess.run(
             [sys.executable, "-c", code],
             cwd=NEURALFN_ROOT,
@@ -249,8 +248,9 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn("Native CUDA runner: subprocess (requested=subprocess)", proc.stdout)
-        self.assertIn("Estimated train rows:", proc.stdout)
+        self.assertIn("--dataset-alias", proc.stdout)
+        self.assertIn("--backend tile-cuda", proc.stdout)
+        self.assertNotIn("train_gpt2cu", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
         self.assertIn("NUMPY_LOADED False", proc.stdout)
@@ -391,7 +391,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("TIKTOKEN_LOADED False", proc.stdout)
         self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
 
-    def test_native_dry_run_llm_kittens_backend_keeps_external_target(self) -> None:
+    def test_native_dry_run_llm_kittens_backend_is_rejected(self) -> None:
         code = textwrap.dedent(
             f"""
             from pathlib import Path
@@ -433,10 +433,9 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             check=False,
         )
 
-        self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn("--backend llm-kittens", proc.stdout)
-        self.assertIn("--target ", proc.stdout)
-        self.assertIn("train_gpt2cu", proc.stdout)
+        self.assertEqual(2, proc.returncode)
+        self.assertIn("native GPT kernel backend must be tile-cuda", proc.stderr)
+        self.assertNotIn("train_gpt2cu", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
 
     def test_native_dry_run_does_not_import_torch(self) -> None:
@@ -464,8 +463,6 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                     "--dataset-alias",
                     str(dataset),
                     "--no-download-if-missing",
-                    "--native-cuda-runner",
-                    "subprocess",
                     "--native-cuda-dry-run",
                     "--native-cuda-print-command",
                     "--eval-every-steps",
@@ -483,9 +480,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
         env = os.environ.copy()
         env["PYTHONPATH"] = f"{NEURALFN_ROOT / 'cli' / 'scripts'}:{NEURALFN_ROOT}"
-        env["NFN_NATIVE_GPT2_BINDING"] = "0"
-        env["NFN_NATIVE_GPT2_CLI"] = str(NEURALFN_ROOT / "build" / "missing-test-native-cli")
-        env["NFN_NATIVE_GPT2_LAUNCHER"] = str(NEURALFN_ROOT / "build" / "missing-test-launcher")
+        env["NFN_NATIVE_GPT2_CLI"] = "/bin/echo"
         proc = subprocess.run(
             [sys.executable, "-c", code],
             cwd=NEURALFN_ROOT,
@@ -497,10 +492,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn("Native CUDA validation eval: every 1000 optimizer steps", proc.stdout)
-        self.assertIn("Native CUDA runner: subprocess (requested=subprocess)", proc.stdout)
-        self.assertIn("train_gpt2cu -i", proc.stdout)
-        self.assertIn("-v 1000", proc.stdout)
+        self.assertIn("--dataset-alias", proc.stdout)
+        self.assertIn("--eval-every-steps 1000", proc.stdout)
+        self.assertIn("--backend tile-cuda", proc.stdout)
+        self.assertNotIn("train_gpt2cu", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
 
     def test_nfn_train_gpt_native_dry_run_does_not_import_torch(self) -> None:
@@ -532,8 +527,6 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                     str(dataset),
                     "--no-download-if-missing",
                     "--no-tile-cuda-strict",
-                    "--native-cuda-runner",
-                    "subprocess",
                     "--native-cuda-dry-run",
                     "--native-cuda-print-command",
                     "--eval-every-steps",
@@ -551,9 +544,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
         env = os.environ.copy()
         env["PYTHONPATH"] = f"{NEURALFN_ROOT / 'cli'}:{NEURALFN_ROOT / 'cli' / 'scripts'}:{NEURALFN_ROOT}"
-        env["NFN_NATIVE_GPT2_BINDING"] = "0"
-        env["NFN_NATIVE_GPT2_CLI"] = str(NEURALFN_ROOT / "build" / "missing-test-native-cli")
-        env["NFN_NATIVE_GPT2_LAUNCHER"] = str(NEURALFN_ROOT / "build" / "missing-test-launcher")
+        env["NFN_NATIVE_GPT2_CLI"] = "/bin/echo"
         proc = subprocess.run(
             [sys.executable, "-c", code],
             cwd=NEURALFN_ROOT,
@@ -565,10 +556,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn("Native CUDA validation eval: every 1000 optimizer steps", proc.stdout)
-        self.assertIn("Native CUDA runner: subprocess (requested=subprocess)", proc.stdout)
-        self.assertIn("train_gpt2cu -i", proc.stdout)
-        self.assertIn("-v 1000", proc.stdout)
+        self.assertIn("--dataset-alias", proc.stdout)
+        self.assertIn("--eval-every-steps 1000", proc.stdout)
+        self.assertIn("--backend tile-cuda", proc.stdout)
+        self.assertNotIn("train_gpt2cu", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
 
     def test_nfn_train_gpt_alias_default_dispatches_directly_to_compiled_cli(self) -> None:
@@ -1320,9 +1311,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
             env = os.environ.copy()
             env.pop("PYTHONPATH", None)
-            env["NFN_NATIVE_GPT2_BINDING"] = "0"
-            env["NFN_NATIVE_GPT2_CLI"] = str(NEURALFN_ROOT / "build" / "missing-test-native-cli")
-            env["NFN_NATIVE_GPT2_LAUNCHER"] = str(NEURALFN_ROOT / "build" / "missing-test-launcher")
+            env["NFN_NATIVE_GPT2_CLI"] = "/bin/echo"
             proc = subprocess.run(
                 [
                     sys.executable,
@@ -1334,8 +1323,6 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                     str(dataset),
                     "--no-download-if-missing",
                     "--no-tile-cuda-strict",
-                    "--native-cuda-runner",
-                    "subprocess",
                     "--native-cuda-dry-run",
                     "--native-cuda-print-command",
                     "--eval-every-steps",
@@ -1351,9 +1338,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
         self.assertEqual(0, proc.returncode, proc.stderr)
         self.assertNotIn("ModuleNotFoundError", proc.stderr)
-        self.assertIn("Native CUDA runner: subprocess (requested=subprocess)", proc.stdout)
-        self.assertIn("Native CUDA validation eval: every 1000 optimizer steps", proc.stdout)
-        self.assertIn("train_gpt2cu -i", proc.stdout)
+        self.assertIn("--dataset-alias", proc.stdout)
+        self.assertIn("--eval-every-steps 1000", proc.stdout)
+        self.assertIn("--backend tile-cuda", proc.stdout)
+        self.assertNotIn("train_gpt2cu", proc.stdout)
 
     def test_direct_gpt2_script_dispatches_to_native_without_pythonpath(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1365,9 +1353,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
             env = os.environ.copy()
             env.pop("PYTHONPATH", None)
-            env["NFN_NATIVE_GPT2_BINDING"] = "0"
-            env["NFN_NATIVE_GPT2_CLI"] = str(NEURALFN_ROOT / "build" / "missing-test-native-cli")
-            env["NFN_NATIVE_GPT2_LAUNCHER"] = str(NEURALFN_ROOT / "build" / "missing-test-launcher")
+            env["NFN_NATIVE_GPT2_CLI"] = "/bin/echo"
             proc = subprocess.run(
                 [
                     sys.executable,
@@ -1375,8 +1361,6 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                     "--dataset-alias",
                     str(dataset),
                     "--no-download-if-missing",
-                    "--native-cuda-runner",
-                    "subprocess",
                     "--native-cuda-dry-run",
                     "--native-cuda-print-command",
                     "--eval-every-steps",
@@ -1392,9 +1376,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
         self.assertEqual(0, proc.returncode, proc.stderr)
         self.assertNotIn("ModuleNotFoundError", proc.stderr)
-        self.assertIn("Native CUDA runner: subprocess (requested=subprocess)", proc.stdout)
-        self.assertIn("Native CUDA validation eval: every 1000 optimizer steps", proc.stdout)
-        self.assertIn("train_gpt2cu -i", proc.stdout)
+        self.assertIn("--dataset-alias", proc.stdout)
+        self.assertIn("--eval-every-steps 1000", proc.stdout)
+        self.assertIn("--backend tile-cuda", proc.stdout)
+        self.assertNotIn("train_gpt2cu", proc.stdout)
 
     def test_direct_gpt_script_uses_fast_path_without_compat_imports(self) -> None:
         code = textwrap.dedent(

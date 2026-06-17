@@ -6,6 +6,42 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Remove dense GPT llm.kittens training bridge
+
+#### Changed
+
+- Dense GPT training now accepts only the NeuralFn-owned `tile-cuda` backend in
+  the Python wrappers, SDK config builders, top-level `nfn train` direct
+  dispatch, and compiled `nfn_gpt_native_train` frontend.
+- The compiled GPT frontend no longer carries the dead external fast-path tail
+  or `train_gpt2cu` default target; benchmark comparisons now live only in
+  `tools/bench_native_gpt_sm120_parity.sh`.
+- Wrapper dry-runs now emit `--backend tile-cuda` explicitly on the compiled
+  native GPT command so the no-Torch route is visible in command inspection.
+- `run_native_gpt(..., runner="subprocess")` / `run_native_gpt2(...,
+  runner="subprocess")` is no longer a valid GPT training runner. Use
+  `compiled-cli`, `auto`, `binding`, or `launcher`, all of which stay on
+  NeuralFn native artifacts.
+- `tools/bench_native_gpt_sm120_parity.sh` remains the llm.kittens reference
+  comparator; it is benchmark tooling, not a selectable training backend.
+
+#### Breaking changes
+
+- `--backend llm-kittens`, `--native-cuda-kernel-backend llm-kittens`, SDK
+  `kernel_backend="llm-kittens"`, and GPT SDK `runner="subprocess"` now fail
+  validation. Use `--backend tile-cuda` / `kernel_backend="tile-cuda"` and a
+  NeuralFn native runner instead.
+- The GPT wrapper no longer auto-adds `--target train_gpt2cu`, and
+  `NFN_NATIVE_GPT_TRAIN_BIN` / `NFN_NATIVE_GPT2_TRAIN_BIN` are no longer part of
+  normal GPT training dispatch.
+
+#### Verification
+
+- Ran `python -m py_compile neuralfn/native_gpt2.py cli/scripts/train_gpt_native.py cli/scripts/train_gpt.py cli/nfn.py`.
+- Ran `python -m pytest cli/tests/test_train_gpt2_native.py -q`.
+- Ran `python -m pytest tests/test_native_gpt2.py -q -k "cpp_cli_builds_and_uses_sm120_defaults or kernel_backend or external_bridge or compiled_cli_config or runner_status or write_native_gpt2_run_config"`.
+- Ran `git diff --check`.
+
 ### 2026-06-17 Add native SM120 candidate benchmark wrapper
 
 #### Added

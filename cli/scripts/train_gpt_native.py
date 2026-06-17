@@ -345,14 +345,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--native-cuda-runner",
-        choices=("auto", "binding", "compiled-cli", "cli", "launcher", "subprocess"),
+        choices=("auto", "binding", "compiled-cli", "launcher"),
         default=env_str(
             "NFN_NATIVE_GPT_RUNNER",
             env_str("NFN_NATIVE_GPT2_RUNNER", NATIVE_GPT_DEFAULTS["native_cuda_runner"]),
         ),
         help=(
             "Native GPT launch mode. The default requires the compiled no-Python cached-shard CLI; "
-            "use auto, binding, launcher, or subprocess explicitly for fallback/debug runs."
+            "use auto, binding, or launcher explicitly for alternate NeuralFn-native launch modes."
         ),
     )
     parser.add_argument("--native-cuda-output-dir", default=env_str("NATIVE_CUDA_OUTPUT_DIR", ""))
@@ -398,7 +398,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--native-cuda-kernel-backend",
         "--kernel-backend",
-        choices=("llm-kittens", "tile-cuda"),
+        choices=("tile-cuda",),
         default=env_str("NATIVE_CUDA_KERNEL_BACKEND", NATIVE_GPT_DEFAULTS["native_cuda_kernel_backend"]),
     )
     parser.add_argument(

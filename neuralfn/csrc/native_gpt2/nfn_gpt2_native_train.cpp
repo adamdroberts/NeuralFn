@@ -258,7 +258,7 @@ std::string default_target() {
     if (!env_target.empty()) {
         return env_target;
     }
-    return "train_gpt2cu";
+    return "nfn_gpt_native_train";
 }
 
 std::string default_output_dir() {
@@ -329,8 +329,8 @@ void print_usage(const char* program) {
         << "  --template-name NAME              GPT template preset or alias to select; default gpt resolves to the dense GPT native implementation\n"
         << "  --graph-file PATH                 Custom NeuralFn graph JSON to select; reports missing native graph trainer until implemented\n\n"
         << "Launch options:\n"
-        << "  --backend llm-kittens|tile-cuda   Backend; defaults to tile-cuda and the NeuralFn-owned trainer path\n"
-        << "  --target PATH                     llm-kittens train_gpt2cu path; unused by the default tile-cuda backend\n"
+        << "  --backend tile-cuda               NeuralFn-owned CUDA Tile backend (default and only training backend)\n"
+        << "  --target PATH                     Ignored compatibility option; external training bridges are not supported\n"
         << "  --tile-ops-lib PATH               libnfn_native_train_tile_ops.so path for --backend tile-cuda checks\n"
         << "  --check-tile-ops                  Verify raw NeuralFn Tile trainer ABI symbols and exit\n"
         << "  --smoke-tile-ops                  Launch nfn_native_tile_fill_float32 through CUDA runtime and verify copyback\n"
@@ -2644,7 +2644,7 @@ void apply_template_activation_defaults(Config& cfg) {
 }
 
 bool valid_backend(const std::string& value) {
-    return value == "llm-kittens" || value == "tile-cuda";
+    return value == "tile-cuda";
 }
 
 std::string normalize_backend(std::string value) {
@@ -17853,50 +17853,6 @@ int print_norm_residual_step_smoke_json(const Config& cfg, const char* program) 
     return passed ? 0 : 2;
 }
 
-std::vector<std::string> build_command(const Config& cfg, const fs::path& train_shard, const fs::path& val_shard) {
-    std::vector<std::string> args = {
-        cfg.target,
-        "-i", train_shard.string(),
-        "-j", val_shard.string(),
-        "-o", cfg.output_dir,
-        "-v", std::to_string(cfg.eval_every_steps),
-        "-s", std::to_string(cfg.sample_every_steps),
-        "-g", std::to_string(cfg.generate_tokens),
-        "-h", "0",
-        "-b", std::to_string(cfg.batch_size),
-        "-t", std::to_string(cfg.seq_len),
-        "-d", std::to_string(cfg.train_batch_tokens),
-        "-r", "0",
-        "-z", "1",
-        "-c", number_string(cfg.weight_decay),
-        "-l", number_string(cfg.learning_rate),
-        "-q", number_string(cfg.final_lr_fraction),
-        "-u", std::to_string(cfg.warmup_steps),
-        "-n", std::to_string(cfg.checkpoint_every_steps),
-        "-y", "0",
-        "-e", "d" + std::to_string(cfg.num_layers),
-        "-af", cfg.activation,
-        "-x", std::to_string(cfg.max_steps),
-    };
-    if (cfg.activation == "moa") {
-        args.push_back("-ak");
-        args.push_back(std::to_string(cfg.moa_interval));
-    }
-    return args;
-}
-
-int exec_command(std::vector<std::string>& command) {
-    std::vector<char*> exec_args;
-    exec_args.reserve(command.size() + 1);
-    for (std::string& item : command) {
-        exec_args.push_back(item.data());
-    }
-    exec_args.push_back(nullptr);
-    execvp(command[0].c_str(), exec_args.data());
-    std::cerr << "Failed to exec " << command[0] << ": " << std::strerror(errno) << '\n';
-    return errno == ENOENT ? 127 : 126;
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -18359,30 +18315,6 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    if (cfg.print_plan) {
-        std::cout
-            << "{\n"
-            << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
-            << "  \"backend\": \"llm-kittens\",\n"
-            << "  \"status\": \"external-fast-path\",\n"
-            << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
-            << "  \"resolved_native_template_name\": \"" << json_escape(resolved_native_template_name(cfg.template_name)) << "\",\n"
-            << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
-            << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
-            << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
-            << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
-            << "  \"dataset_path\": \"" << json_escape(dataset.dataset_path.string()) << "\",\n"
-            << "  \"target\": \"" << json_escape(cfg.target) << "\"\n"
-            << "}\n";
-        return 0;
-    }
-
-    std::vector<std::string> command = build_command(cfg, dataset.train_shards[0].path, dataset.val_shards[0].path);
-    if (cfg.print_command || cfg.dry_run) {
-        print_command(command);
-    }
-    if (cfg.dry_run) {
-        return 0;
-    }
-    return exec_command(command);
+    std::cerr << "Invalid backend: " << cfg.backend << "\n";
+    return 2;
 }

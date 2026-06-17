@@ -414,29 +414,27 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
     assert cfg.write_checkpoint is True
     assert "--no-checkpoint" not in argv
 
-    llm_cfg = build_native_gpt2_compiled_cli_run_config(
-        dataset_alias="roneneldan__TinyStories__TinyStoriesV2-GPT4",
-        executable="/opt/nfn/train_gpt2cu",
-        output_dir=tmp_path / "gpt2-llm",
-        eval_every_steps=250,
-        sample_every_steps=20000,
-        generate_tokens=144,
-        checkpoint_every_steps=200,
-        batch_size=64,
-        seq_len=1024,
-        train_batch_tokens=524288,
-        learning_rate=0.0006,
-        min_lr=None,
-        warmup_steps=60,
-        weight_decay=0.1,
-        max_steps=20000,
-        num_layers=12,
-        activation="gelu",
-        kernel_backend="llm-kittens",
-    )
-    llm_argv = llm_cfg.compiled_cli_argv("/opt/nfn/nfn_gpt2_native_train")
-    assert llm_argv[llm_argv.index("--backend") + 1] == "llm-kittens"
-    assert llm_argv[llm_argv.index("--target") + 1] == "/opt/nfn/train_gpt2cu"
+    with pytest.raises(ValueError, match="kernel backend must be tile-cuda"):
+        build_native_gpt2_compiled_cli_run_config(
+            dataset_alias="roneneldan__TinyStories__TinyStoriesV2-GPT4",
+            executable="/opt/nfn/train_gpt2cu",
+            output_dir=tmp_path / "gpt2-llm",
+            eval_every_steps=250,
+            sample_every_steps=20000,
+            generate_tokens=144,
+            checkpoint_every_steps=200,
+            batch_size=64,
+            seq_len=1024,
+            train_batch_tokens=524288,
+            learning_rate=0.0006,
+            min_lr=None,
+            warmup_steps=60,
+            weight_decay=0.1,
+            max_steps=20000,
+            num_layers=12,
+            activation="gelu",
+            kernel_backend="llm-kittens",
+        )
 
 
 def test_build_native_gpt2_compiled_cli_config_can_skip_checkpoint_export(tmp_path: Path) -> None:
@@ -575,35 +573,33 @@ def test_build_native_gpt2_compiled_cli_config_defaults_to_neuralfn_cli(
         num_layers=12,
         activation="gelu",
     )
-    llm_cfg = build_native_gpt2_compiled_cli_run_config(
-        dataset_alias="cached-shards",
-        executable=None,
-        output_dir=tmp_path / "gpt-llm",
-        eval_every_steps=1000,
-        sample_every_steps=20000,
-        generate_tokens=144,
-        checkpoint_every_steps=200,
-        batch_size=64,
-        seq_len=1024,
-        train_batch_tokens=524288,
-        learning_rate=0.0006,
-        min_lr=None,
-        warmup_steps=60,
-        weight_decay=0.1,
-        max_steps=1,
-        num_layers=12,
-        activation="gelu",
-        kernel_backend="llm-kittens",
-    )
-
     assert cfg.executable == str(native_cli)
     assert cfg.kernel_backend == "tile-cuda"
     assert "--target" not in cfg.compiled_cli_argv()
-    assert llm_cfg.executable == "/opt/nfn/train_gpt2cu"
-    assert llm_cfg.kernel_backend == "llm-kittens"
+    with pytest.raises(ValueError, match="kernel backend must be tile-cuda"):
+        build_native_gpt2_compiled_cli_run_config(
+            dataset_alias="cached-shards",
+            executable=None,
+            output_dir=tmp_path / "gpt-llm",
+            eval_every_steps=1000,
+            sample_every_steps=20000,
+            generate_tokens=144,
+            checkpoint_every_steps=200,
+            batch_size=64,
+            seq_len=1024,
+            train_batch_tokens=524288,
+            learning_rate=0.0006,
+            min_lr=None,
+            warmup_steps=60,
+            weight_decay=0.1,
+            max_steps=1,
+            num_layers=12,
+            activation="gelu",
+            kernel_backend="llm-kittens",
+        )
 
 
-def test_native_gpt_external_bridge_defaults_are_path_or_env_based() -> None:
+def test_native_gpt_external_bridge_defaults_are_removed_from_training_paths() -> None:
     root = Path(__file__).resolve().parents[1]
     native_sdk_source = (root / "neuralfn" / "native_gpt2.py").read_text(encoding="utf-8")
     train_gpt_source = (root / "cli" / "scripts" / "train_gpt.py").read_text(encoding="utf-8")
@@ -611,11 +607,14 @@ def test_native_gpt_external_bridge_defaults_are_path_or_env_based() -> None:
         root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
     ).read_text(encoding="utf-8")
 
-    assert 'DEFAULT_NATIVE_GPT2_EXECUTABLE = "train_gpt2cu"' in native_sdk_source
-    assert '_DEFAULT_NATIVE_GPT_TARGET = "train_gpt2cu"' in train_gpt_source
+    assert 'DEFAULT_NATIVE_GPT2_EXECUTABLE = "nfn_gpt_native_train"' in native_sdk_source
+    assert '_DEFAULT_NATIVE_GPT_TARGET = "train_gpt2cu"' not in train_gpt_source
     assert "/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu" not in native_sdk_source
     assert "/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu" not in train_gpt_source
     assert "/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu" not in native_cli_source
+    assert 'return "train_gpt2cu"' not in native_cli_source
+    assert '"status": "external-fast-path"' not in native_cli_source
+    assert "build_command(const Config& cfg" not in native_cli_source
 
 
 def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path: Path) -> None:
@@ -811,7 +810,7 @@ def test_native_gpt2_runner_status_auto_requires_neuralfn_native_artifacts(
     assert status.available is False
     assert "binding unavailable" in status.reason
     assert "compiled native GPT CLI/launcher not found" in status.reason
-    assert "runner='subprocess'" in status.reason
+    assert "subprocess" not in status.reason
 
 
 def test_native_gpt2_runner_status_uses_compiled_cli_when_present(
@@ -1546,15 +1545,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert external_plan.returncode == 0, external_plan.stderr
-    external_payload = json.loads(external_plan.stdout)
-    assert external_payload["backend"] == "llm-kittens"
-    assert external_payload["status"] == "external-fast-path"
-    assert external_payload["template_name"] == "gpt"
-    assert external_payload["resolved_native_template_name"] == "gpt2"
-    assert external_payload["graph_file"] == ""
-    assert external_payload["architecture_source"] == "template"
-    assert external_payload["architecture_contract"] == "gpt-template-preset"
+    assert external_plan.returncode == 2
+    assert "Invalid backend: llm-kittens" in external_plan.stderr
+    assert external_plan.stdout == ""
 
     tile_plan = subprocess.run(
         [
@@ -3329,9 +3322,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert executed.returncode == 0, executed.stderr
-    assert "-af moa" in executed.stdout
-    assert "-ak 7" in executed.stdout
+    assert executed.returncode == 2
+    assert "Invalid backend: llm-kittens" in executed.stderr
+    assert executed.stdout == ""
 
 
 def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_rejects_unsupported(tmp_path: Path) -> None:
