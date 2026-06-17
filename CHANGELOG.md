@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Reject MLP projection dWeight cuBLASLt shape fallback
+
+#### Changed
+
+- Kept the dense GPT native trainer on the current BF16 cuBLASLt BGRADB route
+  for the MLP projection dWeight bucket `3072,768,65536,N,T`. Routing that one
+  bucket through the existing fallback path is not a viable llm.kittens parity
+  shortcut: it massively regresses block backward.
+
+#### Verification
+
+- Dedicated RTX 5090 shape-stat probe:
+  `NFN_NATIVE_LINEAR_SHAPE_STATS=1 NFN_NATIVE_GPT_STAGE_TIMING=1 CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so --profile-json /tmp/nfn_shape_stats_current.json`
+  confirmed the default bucket was `path_name: "cublaslt"`,
+  `m: 3072`, `n: 768`, `k: 65536`, `op_a_name: "N"`, `op_b_name: "T"`.
+- Dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate-env NFN_NATIVE_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE=3072,768,65536,N,T --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 25 --command-timeout-seconds 1800 --append-native-profile-json-dir /tmp/nfn_disable_mlp_proj_dweight_profiles --json-out /tmp/nfn_disable_mlp_proj_dweight_pair.json`
+  measured the fallback candidate at `3.199175x` train-loop wall time and
+  `0.312590x` tokens/sec versus the default. `stage.block_backward.total_ms`
+  regressed to `5.406332x`. No GPU compute processes were present; selected-GPU
+  utilization before samples averaged `9.000000%`.
+
 ### 2026-06-17 Reject 16k LM-head row chunks after saved-LN1 default
 
 #### Changed
