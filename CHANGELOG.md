@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Remove hardcoded external GPT trainer path
+
+#### Changed
+
+- Removed the workstation-specific
+  `/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu` default from the native
+  GPT SDK resolver, `cli/scripts/train_gpt.py` wrapper, and compiled GPT CLI
+  target resolver.
+- Explicit external `llm-kittens` bridge runs now resolve `train_gpt2cu` from
+  `NFN_NATIVE_GPT_TRAIN_BIN`, `NFN_NATIVE_GPT2_TRAIN_BIN`, an explicit
+  `--native-cuda-executable` / `--target` or SDK `executable=...`, or `PATH`.
+  The dedicated parity script still owns its reference `LLM_KITTENS_ROOT` /
+  `LLM_KITTENS_TRAIN_BIN` settings.
+
+#### Breaking changes
+
+- Before: explicit external bridge runs could silently pick up the local
+  `/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu` binary when no target
+  override was supplied.
+- Now: SDK/CLI external bridge defaults are path/env based and resolve to the
+  command name `train_gpt2cu` unless callers pass an explicit target or env var.
+
+#### Verification
+
+- `python -m pytest tests/test_native_gpt2.py -q -k 'external_bridge_defaults_are_path_or_env_based or compiled_cli_config or generic_env_names_take_precedence or native_gpt2_cpp_cli_builds'`
+- `python -m pytest cli/tests/test_train_gpt2_native.py -q -k 'llm_kittens or native_dry_run or print_command or compiled_cli'`
+- `git diff --check`
+
 ### 2026-06-17 Record LM-head 12288 row-chunk reject
 
 #### Changed

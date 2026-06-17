@@ -511,6 +511,21 @@ def test_build_native_gpt2_compiled_cli_config_defaults_to_neuralfn_cli(
     assert llm_cfg.kernel_backend == "llm-kittens"
 
 
+def test_native_gpt_external_bridge_defaults_are_path_or_env_based() -> None:
+    root = Path(__file__).resolve().parents[1]
+    native_sdk_source = (root / "neuralfn" / "native_gpt2.py").read_text(encoding="utf-8")
+    train_gpt_source = (root / "cli" / "scripts" / "train_gpt.py").read_text(encoding="utf-8")
+    native_cli_source = (
+        root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert 'DEFAULT_NATIVE_GPT2_EXECUTABLE = "train_gpt2cu"' in native_sdk_source
+    assert '_DEFAULT_NATIVE_GPT_TARGET = "train_gpt2cu"' in train_gpt_source
+    assert "/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu" not in native_sdk_source
+    assert "/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu" not in train_gpt_source
+    assert "/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu" not in native_cli_source
+
+
 def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path: Path) -> None:
     cfg = build_native_gpt_compiled_cli_run_config(
         dataset_alias="cached-shards",

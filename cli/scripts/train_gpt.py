@@ -15,7 +15,7 @@ for candidate in (SCRIPT_DIR, REPO_ROOT):
 
 
 _TINYSTORIES_ALIAS = "roneneldan__TinyStories__TinyStoriesV2-GPT4"
-_DEFAULT_NATIVE_GPT_TARGET = "/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu"
+_DEFAULT_NATIVE_GPT_TARGET = "train_gpt2cu"
 
 
 def _arg_value(argv: list[str], *flags: str) -> str | None:
@@ -53,8 +53,7 @@ def _native_target_path() -> str:
     requested = os.environ.get("NFN_NATIVE_GPT2_TRAIN_BIN", "").strip()
     if requested:
         return requested
-    default_path = Path(_DEFAULT_NATIVE_GPT_TARGET)
-    return str(default_path if default_path.exists() else "train_gpt2cu")
+    return _DEFAULT_NATIVE_GPT_TARGET
 
 
 def _append_value(out: list[str], flag: str, value: str) -> None:

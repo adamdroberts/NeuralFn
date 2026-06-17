@@ -258,10 +258,6 @@ std::string default_target() {
     if (!env_target.empty()) {
         return env_target;
     }
-    fs::path known = "/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu";
-    if (fs::exists(known)) {
-        return known.string();
-    }
     return "train_gpt2cu";
 }
 

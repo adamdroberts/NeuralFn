@@ -74,7 +74,7 @@ config, updated_meta = build_native_gpt_run_config(
     dataset_path=Path("~/.cache/nfn/datasets/roneneldan__TinyStories__TinyStoriesV2-GPT4").expanduser(),
     dataset_meta={},
     encoding_name="gpt2",
-    executable="/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu",
+    executable="train_gpt2cu",
     output_dir=Path("~/NeuralFn/artifacts/gpt").expanduser(),
     eval_every_steps=1000,
     sample_every_steps=20000,
@@ -120,7 +120,10 @@ candidate comparisons and should stay disabled in normal training runs.
 
 Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, `NFN_NATIVE_GPT_BINDING`, and
-`NFN_NATIVE_GPT_TRAIN_BIN`. Runtime tuning also prefers
+`NFN_NATIVE_GPT_TRAIN_BIN`. Explicit external `llm-kittens` bridge runs resolve
+`train_gpt2cu` from `NFN_NATIVE_GPT_TRAIN_BIN`, `NFN_NATIVE_GPT2_TRAIN_BIN`, an
+explicit `executable=...`, or `PATH`; NeuralFn no longer embeds a workstation
+absolute path for that target. Runtime tuning also prefers
 `NFN_NATIVE_GPT_STAGE_TIMING`, `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS`,
 `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION`, `NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS`,
 `NFN_NATIVE_GPT_STORE_MLP_BLOCKS`,

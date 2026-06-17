@@ -11,7 +11,7 @@ import struct
 from typing import Any
 
 
-DEFAULT_NATIVE_GPT2_EXECUTABLE = "/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu"
+DEFAULT_NATIVE_GPT2_EXECUTABLE = "train_gpt2cu"
 DEFAULT_NATIVE_GPT2_LAUNCHER = "build/nfn_gpt2_tile_train"
 DEFAULT_NATIVE_GPT_CLI = "build/nfn_gpt_native_train"
 DEFAULT_NATIVE_GPT2_CLI = DEFAULT_NATIVE_GPT_CLI

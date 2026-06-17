@@ -747,7 +747,10 @@ VRAM.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, `NFN_NATIVE_GPT_BINDING`, and
-`NFN_NATIVE_GPT_TRAIN_BIN`. Runtime tuning also prefers
+`NFN_NATIVE_GPT_TRAIN_BIN`. Explicit external `llm-kittens` bridge runs resolve
+`train_gpt2cu` from `NFN_NATIVE_GPT_TRAIN_BIN`, `NFN_NATIVE_GPT2_TRAIN_BIN`,
+`--native-cuda-executable` / `--target`, or `PATH`; the native wrapper no
+longer embeds a workstation absolute path for that target. Runtime tuning also prefers
 `NFN_NATIVE_GPT_STAGE_TIMING`, `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION`,
 `NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS`,
 `NFN_NATIVE_GPT_STORE_ATTENTION_ACTIVATIONS`,
