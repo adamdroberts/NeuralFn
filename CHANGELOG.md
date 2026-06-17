@@ -32,6 +32,7 @@ Future updates should append new entries here rather than replacing older notes.
 - Ran `python -m pytest cli/tests/test_train_gpt2_native.py -q -k native_checkpoint_text_prompt_dispatches_compiled_sampler`.
 - Ran `python tools/check_native_no_torch_deps.py`.
 - Ran `git diff --check`.
+- Ran `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 python cli/scripts/infer_gpt2.py --native-checkpoint /tmp/nfn_checkpoint_forward_2layer_smoke/model_00020000.bin --prompt Hello --max-new-tokens 1` outside the sandbox to verify real CUDA text-prompt inference and GPT-2 decoded output.
 
 ### 2026-06-17 Add autoregressive native checkpoint token sampler loop
 
