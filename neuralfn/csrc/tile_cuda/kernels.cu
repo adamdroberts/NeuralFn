@@ -11420,7 +11420,7 @@ bool token_weight_threaded_init_enabled() {
       value = std::getenv("NFN_NATIVE_GPT2_TOKEN_WEIGHT_THREADED_INIT");
     }
     if (value == nullptr || value[0] == '\0') {
-      return true;
+      return false;
     }
     if (std::strcmp(value, "0") == 0 ||
         std::strcmp(value, "false") == 0 ||

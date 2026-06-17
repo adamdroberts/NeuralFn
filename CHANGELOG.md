@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Align token-weight initializer default
+
+#### Changed
+
+- Changed the low-level native Tile token-weight initializer helper so
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT` / `NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT`
+  default off inside `libnfn_native_train_tile_ops.so`, matching the compiled
+  GPT trainer, README, SDK docs, and runtime JSON.
+- The diagnostic threaded CUDA initializer is still available by setting
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1`; the default path remains the
+  fast CUDA Tile deterministic initializer with fused BF16 LM-head shadow
+  initialization.
+- Updated README, Python SDK Tile-CUDA docs, and the CUDA Tile checklist with
+  the corrected default and benchmark result.
+
+#### Verification
+
+- Ran `python -m pytest tests/test_native_gpt2.py::test_native_train_tile_ops_builds_torch_free_c_abi -q` (static assertions passed; the optional runtime portion skipped).
+- Rebuilt `build/libnfn_native_train_tile_ops.so` with `bash tools/build_native_train_tile_ops.sh`.
+- Ran `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --backend tile-cuda --tinystories --startup-only --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 16 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so --profile-json /tmp/nfn_token_init_default_aligned_startup.json`.
+- Ran the same startup probe with `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1`
+  and wrote `/tmp/nfn_token_init_threaded_startup_after_default_fix.json`.
+- Ran a 5-sample paired startup benchmark against
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1`; the corrected default measured
+  `0.940074x` token init time, `0.974488x` setup wall time, and `0.976437x`
+  total wall time.
+- Ran `CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 1 --train-batch-tokens 65536 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 16 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so --profile-json /tmp/nfn_token_init_default_aligned_train_smoke.json`.
+
 ### 2026-06-17 Accept native-cuda aliases in GPT-2 evo preflight
 
 #### Changed

@@ -560,8 +560,10 @@ fused BF16-shadow variant, plus `token_weight_threaded_init_enabled`,
 `token_weight_host_materialization: false`, so startup no longer constructs and
 copies the full token-weight matrix through host RAM. The default initializer
 uses CUDA Tile and a power-of-two deterministic value pattern for the full
-padded vocabulary table. Set `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` only
-when comparing against the not-promoted threaded CUDA initializer, and set
+padded vocabulary table; direct low-level Tile ABI calls use that same
+non-threaded default when no token-init environment variable is set. Set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` only when comparing against the
+not-promoted threaded CUDA initializer, and set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_INIT_LEGACY_MOD17=1` only when reproducing the older
 modulo-17 values in a paired benchmark.
 
@@ -743,7 +745,9 @@ Native GPT startup also fuses tied token-weight initialization with the
 persistent BF16 LM-head shadow refresh through
 `nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32`. The
 default SDK/native launch path uses the CUDA Tile initializer inside that fused
-ABI whenever `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW=1`; set
+ABI whenever `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW=1`, and the low-level
+Tile ABI defaults to the same non-threaded initializer when no token-init
+environment variable is set; set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT=1` only for paired comparison against
 the not-promoted threaded CUDA initializer, set
