@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Default dense GPT LM-head dWeight to BF16 hidden
+
+#### Changed
+
+- Dense GPT transformer-LM now enables `NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT`
+  by default, so tied LM-head dWeight accumulation consumes the prepacked BF16
+  final-norm hidden buffer with BF16 dlogits instead of the previous
+  float-hidden path.
+- Set `NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT=0` to reproduce the previous
+  float-hidden LM-head dWeight path for paired bisection.
+
+#### Verification
+
+- Ran `tools/paired_kernel_speed.py` with two measured 2-step samples on the
+  idle display-disabled RTX 5090, comparing the previous default against
+  `--candidate-env NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT=1`. The candidate
+  measured `0.996147x` baseline train-loop time and `1.003872x` baseline
+  tokens/sec.
+
 ### 2026-06-17 Add direct BF16 dWeight optimizer profiling path
 
 #### Changed

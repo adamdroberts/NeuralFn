@@ -8287,10 +8287,10 @@ int run_transformer_lm_training_json(
             true);
     const bool lm_head_bf16_dweight_enabled =
         lm_head_bf16_logits_enabled &&
-        env_flag_enabled_or_default(
+            env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT",
                               "NFN_NATIVE_GPT2_LM_HEAD_BF16_DWEIGHT"}),
-            false);
+            true);
     const bool lm_head_prepack_bf16_hidden_enabled =
         lm_head_bf16_logits_enabled &&
         env_flag_enabled_or_default(

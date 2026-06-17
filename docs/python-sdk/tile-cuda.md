@@ -241,9 +241,11 @@ split-bias route. It remains default-off after paired dedicated-RTX-5090 timing
 showed a slight train-loop regression.
 The raw ABI also exports
 `nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32`
-for candidate LM-head dWeight profiles that pack the final LayerNorm hidden
-chunk to BF16 before accumulating against BF16 dlogits. Set
-`NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT=1` to enable that profiling path; runtime
+for LM-head dWeight accumulation that packs the final LayerNorm hidden state to
+BF16 before accumulating against BF16 dlogits. Dense GPT enables this by default
+after paired dedicated-RTX-5090 timing measured it slightly faster than the
+previous float-hidden dWeight path; set
+`NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT=0` to reproduce the older path. Runtime
 JSON reports `lm_head_bf16_dweight_enabled`, `lm_head_dweight_input_dtype`,
 `lm_head_bf16_hidden_elements`, and `lm_head_dweight_strategy`. Set
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS=0` to return the tied LM-head chunks to the
