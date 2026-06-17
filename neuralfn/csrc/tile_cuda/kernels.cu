@@ -1995,6 +1995,34 @@ bool trainer_linear_bf16_bridge_enabled() {
   return enabled;
 }
 
+bool trainer_linear_bgrad_first_write_direct_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT");
+    }
+    if (value == nullptr || value[0] == '\0') {
+      return true;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
 bool trainer_linear_cublaslt_enabled() {
   static const bool enabled = []() {
     const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_CUBLASLT");
@@ -13248,7 +13276,8 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_float32_beta(
     cudaStream_t stream) {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim)) {
-    float* bias_gradient = ensure_trainer_linear_bgrad_workspace(output_dim);
+    const bool first_write_bias = beta == 0.0f && trainer_linear_bgrad_first_write_direct_enabled();
+    float* bias_gradient = first_write_bias ? grad_bias : ensure_trainer_linear_bgrad_workspace(output_dim);
     if (bias_gradient != nullptr &&
         cublas_linear_gemm_ex_bf16_bits_a_float32_with_bgrad(
             x_bf16_bits,
@@ -13267,7 +13296,9 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_float32_beta(
             beta,
             true,
             stream)) {
-      launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
+      if (!first_write_bias) {
+        launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
+      }
       return;
     }
   }
@@ -13302,7 +13333,8 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_b
     cudaStream_t stream) {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim)) {
-    float* bias_gradient = ensure_trainer_linear_bgrad_workspace(output_dim);
+    const bool first_write_bias = beta == 0.0f && trainer_linear_bgrad_first_write_direct_enabled();
+    float* bias_gradient = first_write_bias ? grad_bias : ensure_trainer_linear_bgrad_workspace(output_dim);
     if (bias_gradient != nullptr &&
         cublas_linear_gemm_ex_bf16_bits_ab_float32_with_bgrad(
             x_bf16_bits,
@@ -13320,7 +13352,9 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_b
             beta,
             true,
             stream)) {
-      launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
+      if (!first_write_bias) {
+        launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
+      }
       return;
     }
   }
@@ -13502,7 +13536,8 @@ void launch_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta(
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   if (trainer_linear_float32_bf16_bgrad_enabled() &&
       fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim)) {
-    float* bias_gradient = ensure_trainer_linear_bgrad_workspace(output_dim);
+    const bool first_write_bias = beta == 0.0f && trainer_linear_bgrad_first_write_direct_enabled();
+    float* bias_gradient = first_write_bias ? grad_bias : ensure_trainer_linear_bgrad_workspace(output_dim);
     if (bias_gradient != nullptr &&
         cublas_linear_gemm_ex_bf16_bits_b_float32_with_bgrad(
             x,
@@ -13524,7 +13559,9 @@ void launch_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta(
             false,
             true,
             stream)) {
-      launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
+      if (!first_write_bias) {
+        launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
+      }
       return;
     }
   }

@@ -10473,6 +10473,13 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO",
                               "NFN_NATIVE_GPT2_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO"}),
             true);
+    const bool bgrad_first_write_direct_enabled =
+        dweight_first_microbatch_beta_zero_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT",
+                              "NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT",
+                              "NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT"}),
+            true);
     const bool fuse_adamw_bf16_shadow_refresh_enabled =
         !bf16_block_weight_param_update_enabled &&
         env_flag_enabled_or_default(
@@ -16650,6 +16657,8 @@ int run_transformer_lm_training_json(
         << "  \"layer_norm_affine_gradient_scratch_buffers_allocated\": false,\n"
         << "  \"layer_norm_affine_gradient_microbatch_full_copy_elided\": true,\n"
         << "  \"linear_bias_gradient_accumulation_strategy\": \"direct-device-accumulation-buffer\",\n"
+        << "  \"linear_bias_gradient_first_write_bgrad_direct_enabled\": "
+        << (bgrad_first_write_direct_enabled ? "true" : "false") << ",\n"
         << "  \"linear_bias_gradient_scratch_buffers_allocated\": false,\n"
         << "  \"linear_bias_gradient_microbatch_full_copy_elided\": true,\n"
         << "  \"position_gradient_accumulation_strategy\": \"direct-device-accumulation-buffer\",\n"

@@ -4199,6 +4199,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "cublas_linear_gemm_ex_bf16_float32_with_bgrad" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_bits_a_float32_with_bgrad" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_bits_b_float32_with_bgrad" in kernels_text
+    assert "trainer_linear_bgrad_first_write_direct_enabled" in kernels_text
+    assert "NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT" in kernels_text
+    assert "NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT" in kernels_text
+    assert "NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT" in kernels_text
+    assert "first_write_bias ? grad_bias : ensure_trainer_linear_bgrad_workspace(output_dim)" in kernels_text
+    assert "if (!first_write_bias)" in kernels_text
+    assert "bgrad_first_write_direct_enabled" in gpt2_source_text
+    assert "linear_bias_gradient_first_write_bgrad_direct_enabled" in gpt2_source_text
     assert "NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_FLOAT32_BF16_BGRAD" in kernels_text
     assert "CUBLAS_COMPUTE_32F_FAST_TF32" in kernels_text

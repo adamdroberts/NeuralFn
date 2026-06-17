@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+### 2026-06-17 Elide first-write BGRADB bias accumulation launch
+
+#### Changed
+
+- cuBLASLt BGRADB dWeight+bias routes now write the first beta-zero
+  gradient-accumulation microbatch's bias gradient directly into `grad_bias`
+  instead of writing Tile-owned scratch and launching a separate
+  `launch_gradient_accumulate_float32` add into an otherwise zeroed bias buffer.
+- Later beta-one microbatches keep the previous scratch-plus-accumulate path, so
+  accumulation semantics are unchanged after the first microbatch.
+- Dense GPT runtime JSON now reports
+  `linear_bias_gradient_first_write_bgrad_direct_enabled` alongside the existing
+  direct gradient-accumulation fields.
+
+#### Verification
+
+- `bash tools/build_native_train_tile_ops.sh`
+- `bash tools/build_native_gpt_cli.sh`
+- `python -m pytest tests/test_native_gpt2.py -q -k native_gpt2_cpp_cli_builds_and_uses_sm120_defaults`
+- `git diff --check`
+- Dedicated RTX 5090 paired benchmark:
+  `python tools/paired_kernel_speed.py --baseline "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --candidate "build/nfn_gpt_native_train --backend tile-cuda --tinystories --max-steps 5 --eval-every-steps 0 --native-cuda-sample-every 0 --native-cuda-generate-tokens 144 --native-cuda-checkpoint-every 0 --no-checkpoint --tile-ops-lib build/libnfn_native_train_tile_ops.so" --baseline-env NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=0 --samples 3 --warmup 0 --cuda-visible-devices 0 --cuda-device-max-connections 1 --require-idle-selected-gpu --max-selected-gpu-utilization-pct 15 --json-out /tmp/nfn_bisect_bgrad_first_write_direct_3sample.json`
+  measured the direct first-write path at `0.999871x` train-loop wall time and
+  `1.000129x` tokens/sec versus the old scratch-first path.
+
 ### 2026-06-17 Record SM120 parity bisection rejects
 
 #### Changed

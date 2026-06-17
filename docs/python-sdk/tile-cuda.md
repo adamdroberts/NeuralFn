@@ -263,7 +263,15 @@ paired comparisons against the previous always-accumulate path. Runtime JSON
 reports `dweight_first_microbatch_beta_zero_enabled`,
 `dweight_first_microbatch_beta_strategy`, and `first-write-then-accumulate`
 suffixes in `lm_head_dweight_strategy`, `block_backward_qkv_dweight_strategy`,
-and `block_backward_weight_linear_strategy`.
+and `block_backward_weight_linear_strategy`. For cuBLASLt BGRADB dWeight+bias
+routes, that first beta-zero microbatch writes the epilogue bias gradient
+directly into `grad_bias`; later beta-one microbatches keep the Tile scratch plus
+accumulation launch. Runtime JSON reports
+`linear_bias_gradient_first_write_bgrad_direct_enabled` when this shortcut is
+active. Set `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=0`,
+`NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT=0`, or
+`NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT=0` only for paired comparisons
+against the older first-write scratch path.
 Set
 `NFN_TILE_CUDA_LINEAR_BF16=1` or
 `NFN_NATIVE_LINEAR_BF16=1` only when profiling the normal linear ABI's BF16
@@ -725,6 +733,7 @@ Accumulation buffers are zeroed once per optimizer step. JSON reports
 "direct-device-accumulation-buffer"`,
 `linear_bias_gradient_accumulation_strategy:
 "direct-device-accumulation-buffer"`,
+`linear_bias_gradient_first_write_bgrad_direct_enabled: true`,
 `per_block_gradient_buffers: 0`,
 `per_block_direct_accum_gradient_buffers: 12`,
 `gradient_accumulation_loop: false`,
