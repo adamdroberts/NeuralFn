@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Exposed the native dense GPT geometry contract in compiled C++ plan/runtime
+  JSON. `nfn_gpt_native_train --print-plan` and `--train-transformer-lm` now
+  emit `native_geometry_contract`, explicitly naming the current
+  `gpt2-compatible-fixed-dense-transformer` loop, its compiled shape source,
+  model dimension, head geometry, padded vocab, sequence length, selected layer
+  count, and the fact that template/custom-graph geometry is not yet dynamic.
+  This keeps GPT/NanoGPT/GPT-3-context selector routing honest while the
+  remaining work generalizes the hot CUDA Tile loop beyond GPT-2-compatible
+  dimensions. Verification: focused native GPT tests and C++ rebuild.
+
 - Changed NanoGPT’s default native training route to the shared dense GPT
   transformer-LM trainer. `nfn train --base-model nanogpt ...` and direct
   `python cli/scripts/train_nanogpt.py ...` now dispatch before Torch imports

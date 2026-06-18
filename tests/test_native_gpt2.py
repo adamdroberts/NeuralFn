@@ -1480,6 +1480,38 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         default_payload["model_family_context_policy"]
         == "dense-gpt-selectors-canonicalize-to-gpt-template-or-graph-selects-architecture"
     )
+    assert default_payload["native_geometry_contract"] == {
+        "name": "gpt2-compatible-fixed-dense-transformer",
+        "shape_source": "compiled_dense_gpt_defaults",
+        "template_selector": "gpt",
+        "resolved_template_selector": "gpt2",
+        "graph_file": "",
+        "selector_native_runnable": True,
+        "template_geometry_dynamic": False,
+        "custom_graph_geometry_dynamic": False,
+        "model_dim": 768,
+        "num_heads": 12,
+        "head_dim": 64,
+        "mlp_multiplier": 4,
+        "vocab_size": 50257,
+        "padded_vocab_size": 50304,
+        "num_layers": 12,
+        "seq_len": 1024,
+        "position_encoding": "absolute",
+        "norm": "layernorm",
+        "attention": "causal-packed-qkv-sm120-bf16",
+        "mlp": "gelu-4x",
+        "dropout_p": 0,
+        "supported_template_selectors": [
+            "gpt",
+            "gpt2",
+            "gpt3",
+            "gpt2_megakernel",
+            "gpt2_moa",
+            "nanogpt",
+        ],
+        "unsupported_geometry_next_step": "generalize-native-loop-dimensions-dropout-and-graph-shape-loading",
+    }
     assert default_payload["selected_graph_native_runnable"] is True
     assert default_payload["train_shard"].endswith("fineweb_train_000000.bin")
     assert default_payload["val_shard"].endswith("fineweb_val_000000.bin")
@@ -1579,6 +1611,15 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         tile_payload["model_family_context_policy"]
         == "dense-gpt-selectors-canonicalize-to-gpt-template-or-graph-selects-architecture"
     )
+    assert tile_payload["native_geometry_contract"]["name"] == "gpt2-compatible-fixed-dense-transformer"
+    assert tile_payload["native_geometry_contract"]["shape_source"] == "compiled_dense_gpt_defaults"
+    assert tile_payload["native_geometry_contract"]["selector_native_runnable"] is True
+    assert tile_payload["native_geometry_contract"]["template_geometry_dynamic"] is False
+    assert tile_payload["native_geometry_contract"]["custom_graph_geometry_dynamic"] is False
+    assert tile_payload["native_geometry_contract"]["model_dim"] == 768
+    assert tile_payload["native_geometry_contract"]["num_heads"] == 12
+    assert tile_payload["native_geometry_contract"]["vocab_size"] == 50257
+    assert tile_payload["native_geometry_contract"]["padded_vocab_size"] == 50304
     assert tile_payload["template_known"] is True
     assert tile_payload["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert tile_payload["shipped_template_catalog"] == list(SHIPPED_GPT_TEMPLATE_PRESETS)
@@ -1918,9 +1959,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         assert preset_payload["template_name"] == preset
         assert preset_payload["template_known"] is True
         assert preset_payload["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
-        if preset in {"gpt2", "gpt2_megakernel", "gpt2_moa"}:
+        if preset in {"gpt2", "gpt2_megakernel", "gpt2_moa", "nanogpt"}:
             assert preset_payload["selected_graph_support_status"] == "native-transformer-lm"
             assert preset_payload["selected_graph_native_runnable"] is True
+            assert preset_payload["native_geometry_contract"]["shape_source"] == "compiled_dense_gpt_defaults"
+            assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is False
         else:
             assert preset_payload["selected_graph_support_status"] == "template-native-trainer-missing"
             assert preset_payload["selected_graph_native_runnable"] is False
@@ -1998,6 +2041,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert custom_payload["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert custom_payload["selected_graph_support_status"] == "custom-graph-native-trainer-missing"
     assert custom_payload["selected_graph_native_runnable"] is False
+    assert custom_payload["native_geometry_contract"]["graph_file"].endswith("custom-graph.json")
+    assert custom_payload["native_geometry_contract"]["selector_native_runnable"] is False
+    assert custom_payload["native_geometry_contract"]["custom_graph_geometry_dynamic"] is False
 
     missing_ops = subprocess.run(
         [
@@ -2397,6 +2443,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["status"] == "native-transformer-lm-failed"
     assert train_transformer_payload["loaded"] is False
     assert train_transformer_payload["cuda_runtime_loaded"] is False
+    assert train_transformer_payload["native_geometry_contract"]["name"] == "gpt2-compatible-fixed-dense-transformer"
+    assert train_transformer_payload["native_geometry_contract"]["shape_source"] == "compiled_dense_gpt_defaults"
+    assert train_transformer_payload["native_geometry_contract"]["selector_native_runnable"] is True
+    assert train_transformer_payload["native_geometry_contract"]["template_geometry_dynamic"] is False
+    assert train_transformer_payload["native_geometry_contract"]["custom_graph_geometry_dynamic"] is False
+    assert train_transformer_payload["native_geometry_contract"]["model_dim"] == 768
+    assert train_transformer_payload["native_geometry_contract"]["seq_len"] == 2
     assert train_transformer_payload["batch_size"] == 1
     assert train_transformer_payload["seq_len"] == 2
     assert train_transformer_payload["trained_layers"] == 12

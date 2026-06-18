@@ -616,6 +616,39 @@ std::string model_family_context_policy(const Config& cfg) {
     return "dense-gpt-selectors-canonicalize-to-gpt-template-or-graph-selects-architecture";
 }
 
+std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
+    std::ostringstream out;
+    out
+        << "{"
+        << "\"name\":\"gpt2-compatible-fixed-dense-transformer\","
+        << "\"shape_source\":\"compiled_dense_gpt_defaults\","
+        << "\"template_selector\":\"" << json_escape(normalize_template_name(cfg.template_name)) << "\","
+        << "\"resolved_template_selector\":\"" << json_escape(resolved_native_template_name(cfg.template_name)) << "\","
+        << "\"graph_file\":\"" << json_escape(cfg.graph_file) << "\","
+        << "\"selector_native_runnable\":" << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ","
+        << "\"template_geometry_dynamic\":false,"
+        << "\"custom_graph_geometry_dynamic\":false,"
+        << "\"model_dim\":768,"
+        << "\"num_heads\":12,"
+        << "\"head_dim\":64,"
+        << "\"mlp_multiplier\":4,"
+        << "\"vocab_size\":50257,"
+        << "\"padded_vocab_size\":50304,"
+        << "\"num_layers\":" << (cfg.num_layers > 0 ? cfg.num_layers : 12) << ","
+        << "\"seq_len\":" << (cfg.seq_len > 0 ? cfg.seq_len : 1024) << ","
+        << "\"position_encoding\":\"absolute\","
+        << "\"norm\":\"layernorm\","
+        << "\"attention\":\"causal-packed-qkv-sm120-bf16\","
+        << "\"mlp\":\"gelu-4x\","
+        << "\"dropout_p\":0,"
+        << "\"supported_template_selectors\":["
+        << "\"gpt\",\"gpt2\",\"gpt3\",\"gpt2_megakernel\",\"gpt2_moa\",\"nanogpt\""
+        << "],"
+        << "\"unsupported_geometry_next_step\":\"generalize-native-loop-dimensions-dropout-and-graph-shape-loading\""
+        << "}";
+    return out.str();
+}
+
 std::int64_t native_gpt2_parameter_count(
     std::int64_t max_seq_len,
     std::int64_t padded_vocab_size,
@@ -3497,6 +3530,7 @@ bool print_tile_plan(
         << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
         << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
         << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
+        << "  \"native_geometry_contract\": " << native_dense_gpt_geometry_contract_json(cfg) << ",\n"
         << "  \"native_cuda_activation\": \"" << json_escape(cfg.activation) << "\",\n"
         << "  \"template_known\": " << (shipped_template ? "true" : "false") << ",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
@@ -17029,6 +17063,7 @@ int run_transformer_lm_training_json(
         << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
         << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
         << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
+        << "  \"native_geometry_contract\": " << native_dense_gpt_geometry_contract_json(cfg) << ",\n"
         << "  \"native_cuda_activation\": \"" << json_escape(cfg.activation) << "\",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(selected_graph_support_status(cfg)) << "\",\n"
         << "  \"selected_graph_native_runnable\": " << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ",\n"

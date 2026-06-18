@@ -290,7 +290,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Keep the older GPT-2-compatible row-vector SDPA kernel out of the hot trainer path when packed SM120 TK attention is active, so the scalar fallback remains unused on the live dedicated-RTX-5090 probe.
 - [x] Cover every shipped GPT template name in the native GPT-2 training selector via `--template-name` / `--preset`, and cover custom graph selection via `--graph-file`, returning explicit native-trainer-missing JSON for unsupported templates instead of falling back to Torch or graph-editor tensor flow.
 - [x] Update dense GPT-2 native dry-run/plan JSON to report `native-transformer-lm-ready` and `training_step_plan.status: "ready"` for the implemented compiled Tile-CUDA loop; `remaining_validation` now tracks closing the measured SM120 throughput gap via `tools/bench_native_gpt_sm120_parity.sh` instead of saying live validation has not happened.
-- [ ] Generalize the shared dense GPT transformer-LM loop so NanoGPT-specific dimensions/dropout can be driven entirely from the selected template or graph instead of the current dense GPT trainer shape defaults.
+- [ ] Generalize the shared dense GPT transformer-LM loop so NanoGPT-specific dimensions/dropout can be driven entirely from the selected template or graph instead of the current dense GPT trainer shape defaults. Until then, plan/runtime JSON exposes `native_geometry_contract.name: "gpt2-compatible-fixed-dense-transformer"`, `shape_source: "compiled_dense_gpt_defaults"`, and `template_geometry_dynamic: false` / `custom_graph_geometry_dynamic: false`.
 
 ## Backend scaffolding
 
