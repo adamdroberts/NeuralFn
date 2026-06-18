@@ -408,6 +408,7 @@ block cuBLASLt plus TK LM-head path runs,
 `adamw_bf16_shadow_refresh_strategy`,
 `block_backward_mlp_proj_dgelu_strategy`,
 `block_backward_mlp_proj_bf16_grad_out_reuse_enabled`,
+`block_backward_mlp_proj_dinput_before_dweight_enabled`,
 `block_backward_weight_linear_strategy`,
 `non_block_forward_backward_linear_strategy`, `lm_head_logits_linear_strategy`,
 `lm_head_dhidden_linear_strategy`,
@@ -433,9 +434,17 @@ FC+bias+GELU and
 MLP projection dInput plus saved-BF16 GELU backward. Both consume persistent
 BF16 block-weight shadows while keeping FP32 masters and optimizer state.
 The default MLP projection backward path also exposes
+`NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT=1` as a diagnostic ordering
+switch. It runs fused MLP projection dInput+dGELU before dWeight+bias to mirror
+the llm.kittens `matmul_backward` order, and runtime JSON reports
+`block_backward_mlp_proj_dinput_before_dweight_enabled`. It remains disabled by
+default because the dedicated RTX 5090 5-step, 3-sample paired benchmark
+measured `1.000405x` train-loop wall time and `0.999602x` tokens/sec versus the
+current dWeight+bias-first order.
+The default path still uses
 `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32`,
-packs the incoming projection gradient to BF16 once, reuses that scratch for
-MLP projection dWeight+bias and fused dInput+dGELU, and reports
+packs the incoming projection gradient to BF16 once, reuses that scratch for MLP
+projection dWeight+bias and fused dInput+dGELU, and reports
 `block_backward_mlp_proj_bf16_grad_out_reuse_enabled: true` when active.
 Set `NFN_NATIVE_GPT_REUSE_MLP_PROJ_BF16_GRAD_OUT=0` to compare against the
 previous per-stage pack path.
