@@ -2760,6 +2760,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["block_dweight_bf16_staging_strategy"] == (
         "disabled-fp32-accumulation-default"
     )
+    assert train_transformer_payload["block_backward_mlp_fc_grad_out_float_buffer_elided"] is True
+    assert train_transformer_payload["block_backward_mlp_fc_grad_out_float_elements"] == 0
+    assert train_transformer_payload["block_backward_mlp_fc_grad_out_float_bytes_elided"] == 2 * 1 * 3072 * 4
     assert train_transformer_payload["block_state_layout"] == {
         "allocated_block_count": 12,
         "target_block_count": 12,
@@ -2788,6 +2791,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "float_projection_output_buffers_allocated": 2,
         "float_projection_output_buffers_elided": 0,
         "float_projection_output_elements_elided": 0,
+        "mlp_fc_grad_out_float_buffer_elided": True,
+        "mlp_fc_grad_out_float_elements": 0,
+        "mlp_fc_grad_out_float_bytes_elided": 2 * 1 * 3072 * 4,
         "activation_tape_strategy": "scratch-recompute-bf16-stored-packed-attention-and-mlp-direct-backward",
         "forward_row_qkv_scratch_allocated": False,
         "forward_row_qkv_scratch_buffers_elided": 3,

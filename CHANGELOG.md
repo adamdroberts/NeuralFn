@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native training now elides the FP32 `mlp.fc.grad_out` arena buffer
+  when the default BF16-only MLP dGELU handoff covers every trained block. The
+  MLP projection dInput+dGELU Tile kernel writes BF16 bits directly into the
+  scratch consumed by the following MLP FC dWeight/dInput kernels, so the
+  805 MB FP32 hidden-gradient buffer at the default `64 x 1024 x 3072` shape is
+  no longer reserved. Runtime JSON reports
+  `block_backward_mlp_fc_grad_out_float_buffer_elided`,
+  `block_backward_mlp_fc_grad_out_float_elements`, and
+  `block_backward_mlp_fc_grad_out_float_bytes_elided`, with matching
+  `block_state_layout` fields. Verification: rebuilt `build/nfn_gpt_native_train`,
+  ran startup-only TinyStories profiles showing float arena bytes dropping from
+  `8,485,997,620` to `7,680,691,252`, and ran a dedicated RTX 5090 paired
+  benchmark against the old path forced by
+  `NFN_NATIVE_GPT_ELIDE_MLP_DGELU_FLOAT_GRAD=0`; the new default measured
+  `0.969357x` train-loop wall time, `1.031616x` tokens/sec, and `0.965683x`
+  setup wall time versus baseline. A same-script 3-step llm.kittens parity
+  snapshot after the change measured NeuralFn at `1.033420x` train-loop wall
+  time and `0.967534x` tokens/sec versus
+  `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`, so the remaining
+  parity gap is still open.
+
 - Dense GPT native arena diagnostics now name the main transformer-LM global
   float-buffer requests individually instead of grouping them all under
   `transformer_lm_buffer`. The total arena shape is unchanged, but

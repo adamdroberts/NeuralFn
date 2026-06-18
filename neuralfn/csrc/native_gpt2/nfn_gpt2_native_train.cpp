@@ -11256,6 +11256,16 @@ int run_transformer_lm_training_json(
     const std::int64_t stored_mlp_activation_elements_per_block = activation_elements + hidden_elements * 2;
     const std::int64_t stored_mlp_activation_elements =
         stored_mlp_activation_block_count * stored_mlp_activation_elements_per_block;
+    const bool mlp_fc_grad_out_float_buffer_elided =
+        elide_mlp_dgelu_float_grad_enabled &&
+        stored_mlp_activation_block_count >= trained_layers &&
+        trained_layers > 0;
+    const std::int64_t mlp_fc_grad_out_float_elements =
+        mlp_fc_grad_out_float_buffer_elided ? 0 : hidden_elements;
+    const std::int64_t mlp_fc_grad_out_float_bytes_elided =
+        mlp_fc_grad_out_float_buffer_elided
+            ? hidden_elements * static_cast<std::int64_t>(sizeof(float))
+            : 0;
     const bool lazy_validation_mlp_float_scratch_enabled =
         stored_mlp_activation_block_count >= trained_layers &&
         env_flag_enabled_or_default(
@@ -12203,7 +12213,7 @@ int run_transformer_lm_training_json(
              {&row_denom, lm_head_chunk_rows, "lm_head.row_denom"},
              {&grad_lnf, activation_elements, "lnf.grad_input"},
              {&grad_residual2, activation_elements, "residual2.grad"},
-             {&grad_fc_out, hidden_elements, "mlp.fc.grad_out"},
+             {&grad_fc_out, mlp_fc_grad_out_float_elements, "mlp.fc.grad_out"},
              {&grad_ln2, activation_elements, "ln2.grad_input"},
              {&grad_residual1_from_mlp,
               fuse_ln_backward_residual_enabled ? 0 : activation_elements,
@@ -16937,6 +16947,12 @@ int run_transformer_lm_training_json(
         << (bf16_mlp_grad_handoff_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_mlp_dgelu_float_grad_elided\": "
         << (elide_mlp_dgelu_float_grad_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_mlp_fc_grad_out_float_buffer_elided\": "
+        << (mlp_fc_grad_out_float_buffer_elided ? "true" : "false") << ",\n"
+        << "  \"block_backward_mlp_fc_grad_out_float_elements\": "
+        << mlp_fc_grad_out_float_elements << ",\n"
+        << "  \"block_backward_mlp_fc_grad_out_float_bytes_elided\": "
+        << mlp_fc_grad_out_float_bytes_elided << ",\n"
         << "  \"block_backward_mlp_proj_bf16_grad_out_reuse_enabled\": "
         << (reuse_mlp_proj_bf16_grad_out_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_mlp_proj_dgelu_strategy\": \""
@@ -17669,6 +17685,12 @@ int run_transformer_lm_training_json(
         << (elide_float_projection_outputs_enabled ? activation_tape_count * 2 : 0) << ",\n"
         << "    \"float_projection_output_elements_elided\": "
         << float_projection_output_elements_elided << ",\n"
+        << "    \"mlp_fc_grad_out_float_buffer_elided\": "
+        << (mlp_fc_grad_out_float_buffer_elided ? "true" : "false") << ",\n"
+        << "    \"mlp_fc_grad_out_float_elements\": "
+        << mlp_fc_grad_out_float_elements << ",\n"
+        << "    \"mlp_fc_grad_out_float_bytes_elided\": "
+        << mlp_fc_grad_out_float_bytes_elided << ",\n"
         << "    \"packed_qkv_float_attention_tape_elided\": "
         << (packed_qkv_float_attention_tape_elided ? "true" : "false") << ",\n"
         << "    \"packed_qkv_float_attention_tape_elements_elided\": "

@@ -242,6 +242,14 @@ for the default BF16 MLP gradient handoff; set
 float-gradient handoff. Runtime JSON reports
 `block_backward_bf16_mlp_grad_handoff_enabled` and switches
 `stored_mlp_activation_backward_consumer_strategy` when the handoff is active.
+When the BF16-only dGELU handoff covers every trained block, the trainer also
+skips the old FP32 `mlp.fc.grad_out` arena buffer. Runtime JSON reports
+`block_backward_mlp_fc_grad_out_float_buffer_elided`,
+`block_backward_mlp_fc_grad_out_float_elements`,
+`block_backward_mlp_fc_grad_out_float_bytes_elided`, and matching
+`block_state_layout.mlp_fc_grad_out_float_*` counters. Set
+`NFN_NATIVE_GPT_ELIDE_MLP_DGELU_FLOAT_GRAD=0` to compare against the older
+float-gradient conversion/allocation path.
 The older float-gradient path still uses the fused dInput+dGELU ABI and only
 hands the following MLP FC backward a float gradient when the handoff is forced off.
 The raw Tile library also exports
