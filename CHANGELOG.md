@@ -17,6 +17,13 @@ Future updates should append new entries here rather than replacing older notes.
   Verification: focused native dispatch tests, CLI startup tests, and native
   no-Torch dependency checks.
 
+- Refreshed the same-script SM120 parity baseline on the dedicated RTX 5090
+  after the routing/fallback commits. The 10-step, 1-sample run kept the
+  selected GPU idle before and after the paired sample and measured NeuralFn at
+  `1.033761x` train-loop step time and `0.965977x` tokens/sec versus the
+  llm.kittens reference, so the throughput-gap checklist item remains open.
+  Verification JSON: `/tmp/nfn_sm120_parity_after_nanogpt_route_20260618.json`.
+
 - Replaced the no-cuBLAS large-row linear dWeight fallback with a shared-memory
   2D tiled CUDA kernel for float32-output dWeight accumulation across float32
   and BF16 activation/gradient combinations. The normal native GPT workstation
