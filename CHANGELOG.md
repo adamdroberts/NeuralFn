@@ -16,6 +16,12 @@ Future updates should append new entries here rather than replacing older notes.
   SM120 parity smoke with `tools/bench_native_gpt_sm120_parity.sh` at 3 steps,
   1 sample, no warmup.
 
+- Rechecked the default-off `NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1`
+  attention-backward path after the WSL CUDA 13.3 update. The dedicated RTX
+  5090 native-vs-native 10-step, 3-sample benchmark measured `1.006112x`
+  train-loop wall time and `0.993932x` tokens/sec versus the current default,
+  confirming the route remains diagnostic-only and should not be promoted.
+
 - The compiled `nfn_native_train` frontend now accepts the high-level GPT
   training flags that previously required the Python `nfn train` or
   `train_gpt.py` argument shim: `--dataset tinystories`, `--output`,
