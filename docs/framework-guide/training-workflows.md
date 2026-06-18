@@ -15,9 +15,10 @@ Default CLI training now requires a compiled native CUDA/C++ entrypoint. Dense
 GPT has that path through `nfn train --base-model gpt`; `gpt2` and `gpt3` are
 aliases for the same native trainer, and `gpt3` only changes the default
 context window to 2048 when no explicit template, graph, or `--train-seq-len`
-is supplied. Other graph-backed `TorchTrainer` harnesses are disabled before Torch import unless
-`NFN_ALLOW_TORCH_TRAINING=1` is set for one-off legacy debugging while native
-trainers are being added.
+is supplied. Other graph-backed `TorchTrainer` harnesses are disabled before
+Torch import, and the old `NFN_ALLOW_TORCH_TRAINING` CLI bypass is ignored.
+Legacy graph-backed experiments should call the Python SDK trainer APIs
+directly while native trainers are being added.
 
 GPT template selection is explicit on the native path. The default public
 template alias is `gpt`, which currently resolves to the implemented dense GPT

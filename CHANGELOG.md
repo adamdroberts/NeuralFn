@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- **Breaking changes: native-only CLI training.** `nfn train` and direct
+  `cli/scripts/train_*.py` execution no longer honor
+  `NFN_ALLOW_TORCH_TRAINING=1` as a graph-backed TorchTrainer bypass. Before,
+  setting that environment variable could route unsupported model-family
+  training through the legacy Python/Torch harness. Now CLI training always
+  dispatches to compiled native CUDA/C++ entrypoints or fails before importing
+  Torch when no native trainer exists. For one-off legacy graph-backed
+  experiments, call the Python SDK trainer APIs directly instead of routing
+  through CLI training entrypoints. Updated `README.md`, `docs/cli.md`,
+  `docs/framework-guide/training-workflows.md`, `cli/README.md`, and the local
+  NeuralFn CLI/SDK skills. Verification: added regressions proving
+  `NFN_ALLOW_TORCH_TRAINING=1` is ignored by `nfn train --base-model llama`
+  and by direct legacy script execution while Torch and `nfn_impl` remain
+  unloaded.
+
 - The master `nfn train` native dense-GPT dispatcher now uses the generic
   `gpt` template selector as its implicit default, matching
   `cli/scripts/train_gpt.py`, the SDK native GPT config, and the compiled C++

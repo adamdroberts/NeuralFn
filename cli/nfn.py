@@ -403,8 +403,6 @@ def _is_direct_native_train_cli_train(argv: list[str]) -> bool:
             return False
         runner = _native_gpt_requested_runner(argv)
         return runner == "compiled-cli"
-    if _torch_training_allowed():
-        return False
     return True
 
 
@@ -700,10 +698,6 @@ def _native_output_dir_from_output(value: str) -> str:
     return str(path)
 
 
-def _torch_training_allowed() -> bool:
-    return str(os.environ.get("NFN_ALLOW_TORCH_TRAINING", "")).strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _is_legacy_graph_train(argv: list[str]) -> bool:
     if not argv or argv[0] != "train":
         return False
@@ -711,7 +705,7 @@ def _is_legacy_graph_train(argv: list[str]) -> bool:
         return False
     if _is_explicit_native_gpt_train(argv):
         return False
-    return not _torch_training_allowed()
+    return True
 
 
 def _legacy_graph_train_main(_argv: list[str] | None = None) -> int:
@@ -719,8 +713,8 @@ def _legacy_graph_train_main(_argv: list[str] | None = None) -> int:
         "This training command would enter the graph-backed TorchTrainer path, which is disabled by default.\n"
         "Default NeuralFn training must use compiled native CUDA/C++ entrypoints. Today the default compiled "
         "training route is dense GPT: nfn train --base-model gpt --tinystories.\n"
-        "Build a matching native trainer for this model family before running it. For one-off legacy debugging "
-        "only, set NFN_ALLOW_TORCH_TRAINING=1.",
+        "Build a matching native trainer for this model family before running it. Legacy graph-backed "
+        "experiments must call the Python SDK trainer APIs directly instead of routing through nfn train.",
         file=sys.stderr,
     )
     return 2

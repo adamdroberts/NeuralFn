@@ -7,7 +7,6 @@ import shutil
 import sys
 
 
-_ALLOW_ENV = "NFN_ALLOW_TORCH_TRAINING"
 _NATIVE_ACTION_FLAGS = {
     "--check-tile-ops",
     "--help",
@@ -71,10 +70,6 @@ _NATIVE_VALUE_ALIASES = {
     "--native-cuda-cuda-runtime-lib": "--cuda-runtime-lib",
     "--native-cuda-tile-ops-lib": "--tile-ops-lib",
 }
-
-
-def torch_training_allowed() -> bool:
-    return str(os.environ.get(_ALLOW_ENV, "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _resolve_native_train_cli() -> str:
@@ -173,8 +168,6 @@ def reject_torch_training_by_default(
     script execution should not silently start the slow TorchTrainer path.
     """
 
-    if torch_training_allowed():
-        return
     family = (model_family or native_target.rsplit(" ", 1)[-1]).strip()
     resolved_family_env = family_native_cli_env or _family_native_cli_env(family)
     resolved_family_name = family_native_cli_name or _family_native_cli_name(family)
@@ -196,7 +189,7 @@ def reject_torch_training_by_default(
             f"{script_name} is still a graph-backed TorchTrainer harness and is disabled by default.\n"
             f"Default NeuralFn training must use compiled native CUDA/C++ entrypoints, but {command[0]!r} was not found.\n"
             f"Build the native frontend with `bash tools/build_native_train_cli.sh`, install `nfn-native-train`, "
-            f"or set NFN_NATIVE_TRAIN_CLI. For one-off legacy debugging only, set {_ALLOW_ENV}=1."
+            f"or set NFN_NATIVE_TRAIN_CLI. Legacy graph-backed experiments must call the Python SDK trainer APIs directly."
         )
         print(message, file=sys.stderr)
         raise SystemExit(127)

@@ -242,9 +242,10 @@ through the SDK binding, so cached-shard resolution stays in C++ even when
 Non-dense-GPT `nfn train` commands now fail from the compiled native registry by
 default. Direct legacy training scripts hand off to the same native registry
 before they import Torch, because their internal implementation still uses the
-graph-backed `TorchTrainer` path. Set
-`NFN_ALLOW_TORCH_TRAINING=1` only for one-off legacy debugging while native C++
-trainers are added for those model families. NanoGPT normal training invocations
+graph-backed `TorchTrainer` path. The old `NFN_ALLOW_TORCH_TRAINING` bypass is
+ignored by CLI training entrypoints; call the Python SDK trainer APIs directly
+for one-off graph-backed experiments while native C++ trainers are added for
+those model families. NanoGPT normal training invocations
 are routed to the implemented partial path: `nfn train --base-model nanogpt ...`
 and `python cli/scripts/train_nanogpt.py ...` add `--train-token-lm`
 automatically. `--dry-run` and `--print-command` inspect that same default route
