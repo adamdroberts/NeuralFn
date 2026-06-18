@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revisited the CUDA 13.3 WSL failure surfaces with GPU-visible execution. A
+  sandboxed native benchmark still failed because `nvidia-smi`/NVML and
+  `cudaDriverGetVersion` were blocked by the operating system, but the same
+  machine outside the sandbox reported the dedicated RTX 5090 on CUDA UMD 13.3
+  with no compute processes. With real GPU access, the CUDA Tile GPU pytest
+  suite passed (`537 passed`) and the native GPT suite passed (`52 passed`).
+  The CUDA 13.3 same-script RTX 5090 retest also kept two LM-head/CE candidate
+  switches rejected: `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0` measured
+  `1.005791x` train-loop wall time and `0.994247x` tokens/sec, while
+  `NFN_NATIVE_GPT_CE_BF16_EXP2=1` measured `1.003930x` train-loop wall time and
+  `0.996089x` tokens/sec. Verification:
+  `NFN_TILE_CUDA_TEST=1 NFN_TILE_CUDA_BUILD=1 NFN_TILE_CUDA_ARCH=sm_120 python -m pytest tests/test_tile_cuda_ops.py tests/test_tile_cuda_modules.py tests/test_tile_cuda_optimizer.py tests/test_tile_cuda_gpu.py -q -rs`;
+  `python -m pytest tests/test_native_gpt2.py -q`; paired candidate benchmarks
+  with selected-GPU idle checks.
+
 - Added v2 native Tile linear shape stats for cuBLASLt plan selection. When
   `NFN_NATIVE_LINEAR_SHAPE_STATS=1` or the GPT-specific aliases are enabled,
   cuBLASLt `linear_shape_stats` rows now report
