@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/paired_kernel_speed.py` now preserves categorical native strategy
+  summaries in paired benchmark output. Native JSON fields such as
+  `lm_head_logits_linear_strategy`, `lm_head_dhidden_linear_strategy`,
+  `lm_head_dweight_strategy`, block linear strategies, and attention strategies
+  are summarized under `baseline_native_metric_values` and
+  `candidate_native_metric_values`, so kernel-candidate benchmarks show whether
+  the intended route changed in addition to numeric timing ratios.
+  Verification: added a focused sidecar regression test and used the paired
+  native benchmark wrapper on the dedicated RTX 5090 while probing the rejected
+  LM-head logits cuBLASLt heuristic candidate.
+
 - Added native dense GPT train-loss cadence controls:
   `--train-loss-every-steps N`, `--train-log-every N`, and
   `--train-log-every-steps N`. The default remains `0` so timing-only SM120

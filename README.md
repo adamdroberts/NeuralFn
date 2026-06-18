@@ -94,7 +94,11 @@ native JSON includes `steps_completed`, the helper also reports
 with trainers that only log per-step timing. It also parses llm.kittens
 `step ... ms ... tok/s` logs, so direct NeuralFn-vs-`train_gpt2cu` comparisons
 report both trainers' normalized in-loop step time and token throughput in the
-same paired JSON.
+same paired JSON. Paired native JSON also summarizes route/strategy strings such
+as `lm_head_logits_linear_strategy`, `lm_head_dhidden_linear_strategy`,
+`lm_head_dweight_strategy`, block linear strategies, and attention strategies
+under `baseline_native_metric_values` and `candidate_native_metric_values`, so
+kernel-candidate results show whether a route actually changed.
 
 The native dense-GPT BF16 LM-head CE backward path keeps the forward
 row-chunk order because paired dedicated-RTX-5090 timing showed reverse chunk

@@ -1011,6 +1011,12 @@ throughput gap; `tools/bench_native_gpt_sm120_parity.sh` is the same-script RTX
 5090 comparison gate against `llm.kittens/train-sm120.sh`. The parity wrapper
 passes the NeuralFn candidate `--train-batch-tokens 524288` explicitly to match
 the reference `-d 524288` batch-token contract instead of relying on a default.
+`tools/paired_kernel_speed.py` also summarizes categorical native strategy
+fields under `baseline_native_metric_values` and
+`candidate_native_metric_values`, including LM-head logits/dHidden/dWeight
+routes, block linear routes, and attention routes. Use those summaries with the
+numeric ratios to verify that a candidate benchmark actually exercised the
+intended kernel path.
 Unsupported template names and custom graph files still report
 `selected-graph-native-trainer-missing` instead of falling back to Torch.
 

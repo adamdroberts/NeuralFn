@@ -43,6 +43,19 @@ NATIVE_METRIC_PATHS = (
     ("attention_forward_tk_launch_count", ("attention_forward_tk_launch_count",)),
     ("attention_backward_tk_launch_count", ("attention_backward_tk_launch_count",)),
 )
+NATIVE_STRATEGY_METRIC_KEYS = (
+    "status",
+    "selected_graph_support_status",
+    "lm_head_training_logits_dtype",
+    "lm_head_logits_linear_strategy",
+    "lm_head_dhidden_linear_strategy",
+    "lm_head_dweight_strategy",
+    "block_forward_linear_strategy",
+    "block_backward_input_linear_strategy",
+    "block_backward_weight_linear_strategy",
+    "attention_backend_strategy",
+    "attention_backward_strategy",
+)
 NATIVE_JSON_OUT_FLAGS = ("--json-out", "--profile-json", "--stage-profile-json")
 
 LLM_KITTENS_STEP_RE = re.compile(
@@ -186,13 +199,7 @@ def native_metrics_from_payload(payload: dict[str, Any]) -> dict[str, float | in
         value = value_at_path(payload, path)
         if isinstance(value, (bool, int, float, str)):
             metrics[name] = value
-    for key in (
-        "status",
-        "selected_graph_support_status",
-        "lm_head_training_logits_dtype",
-        "block_backward_weight_linear_strategy",
-        "attention_backward_strategy",
-    ):
+    for key in NATIVE_STRATEGY_METRIC_KEYS:
         value = payload.get(key)
         if isinstance(value, (bool, int, float, str)):
             metrics[key] = value
@@ -486,6 +493,30 @@ def summarize_metric_rows(rows: Sequence[dict[str, object]], command_name: str) 
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 values_by_metric.setdefault(key, []).append(float(value))
     return {key: summarize(values) for key, values in values_by_metric.items() if values}
+
+
+def summarize_categorical_metric_rows(rows: Sequence[dict[str, object]], command_name: str) -> dict[str, list[str]]:
+    values_by_metric: dict[str, list[str]] = {}
+    for row in rows:
+        command = row.get(command_name)
+        if not isinstance(command, dict):
+            continue
+        metrics = command.get("native_metrics")
+        if not isinstance(metrics, dict):
+            continue
+        for key in NATIVE_STRATEGY_METRIC_KEYS:
+            value = metrics.get(key)
+            if isinstance(value, bool):
+                text = "true" if value else "false"
+            elif isinstance(value, (int, float)):
+                text = str(value)
+            elif isinstance(value, str):
+                text = value
+            else:
+                continue
+            if text not in values_by_metric.setdefault(key, []):
+                values_by_metric[key].append(text)
+    return {key: values for key, values in values_by_metric.items() if values}
 
 
 def summarize_metric_ratios(
@@ -989,6 +1020,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     gpu_after = gpu_snapshot()
     baseline_native_metrics = summarize_metric_rows(sample_rows, "baseline")
     candidate_native_metrics = summarize_metric_rows(sample_rows, "candidate")
+    baseline_native_metric_values = summarize_categorical_metric_rows(sample_rows, "baseline")
+    candidate_native_metric_values = summarize_categorical_metric_rows(sample_rows, "candidate")
     gpu_sample_summary = summarize_gpu_sample_load(sample_rows, cuda_visible_devices)
 
     return {
@@ -1016,6 +1049,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "candidate_over_baseline": summarize(ratios),
         "baseline_native_metrics": baseline_native_metrics,
         "candidate_native_metrics": candidate_native_metrics,
+        "baseline_native_metric_values": baseline_native_metric_values,
+        "candidate_native_metric_values": candidate_native_metric_values,
         "candidate_over_baseline_native_metrics": summarize_metric_ratios(
             sample_rows,
             baseline_native_metrics,
@@ -1163,6 +1198,15 @@ def print_text(payload: dict[str, object]) -> None:
                     f"    {key}: mean={stats['mean']:.6f} median={stats['median']:.6f} "
                     f"min={stats['min']:.6f} max={stats['max']:.6f}"
                 )
+    for section in ("baseline_native_metric_values", "candidate_native_metric_values"):
+        values = payload.get(section)
+        if not isinstance(values, dict) or not values:
+            continue
+        print(f"  {section}:")
+        for key in NATIVE_STRATEGY_METRIC_KEYS:
+            observed = values.get(key)
+            if isinstance(observed, list) and observed:
+                print(f"    {key}: {', '.join(str(item) for item in observed)}")
     ratios = payload.get("candidate_over_baseline_native_metrics")
     if isinstance(ratios, dict) and ratios:
         print("  candidate_over_baseline_native_metrics:")

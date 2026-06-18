@@ -296,6 +296,8 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                     ],
                 },
                 "linear_tk_gemm_count": 8,
+                "lm_head_logits_linear_strategy": "padded-lm-head-bf16-cublaslt-fallback",
+                "lm_head_dhidden_linear_strategy": "bf16-cublas-gemmex",
             }
         ),
         encoding="utf-8",
@@ -314,6 +316,15 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["train_tokens_per_second"] == 123.0
     assert metrics["linear_tk_gemm_count"] == 8
     assert metrics["stage.block_backward.total_ms"] == 9.0
+    assert metrics["lm_head_logits_linear_strategy"] == "padded-lm-head-bf16-cublaslt-fallback"
+    assert metrics["lm_head_dhidden_linear_strategy"] == "bf16-cublas-gemmex"
+
+    rows = [{"baseline": {"native_metrics": metrics}, "candidate": {"native_metrics": metrics}}]
+    assert module.summarize_categorical_metric_rows(rows, "baseline") == {
+        "status": ["native-sidecar-test"],
+        "lm_head_logits_linear_strategy": ["padded-lm-head-bf16-cublaslt-fallback"],
+        "lm_head_dhidden_linear_strategy": ["bf16-cublas-gemmex"],
+    }
 
 
 def test_paired_kernel_speed_tool_stage_timing_is_explicit() -> None:
