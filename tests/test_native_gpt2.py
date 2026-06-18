@@ -4870,7 +4870,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "bf16_parameter_initialization_descriptor_count" in gpt2_source_text
     assert "setup_timing" in gpt2_source_text
     assert "post_train_sample_wall_ms" in gpt2_source_text
-    assert "post_train_diagnostic_samples_elided = cfg.startup_only" in gpt2_source_text
+    assert "post_train_diagnostic_samples_elided = cfg.startup_only || cfg.sample_every_steps <= 0" in gpt2_source_text
     assert "post_train_diagnostic_sample_d2h_count_elided" in gpt2_source_text
     assert "post_train_diagnostic_sample_d2h_count_elided = 2" in gpt2_source_text
     assert "cleanup_wall_ms" in gpt2_source_text

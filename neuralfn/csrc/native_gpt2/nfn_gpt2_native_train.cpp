@@ -16602,7 +16602,7 @@ int run_transformer_lm_training_json(
     train_loop_wall_ms = elapsed_ms(train_loop_start_time, train_loop_end_time);
     const auto post_train_sample_start_time = Clock::now();
     float sampled_token_weight = initial_token_weight_sample;
-    post_train_diagnostic_samples_elided = cfg.startup_only;
+    post_train_diagnostic_samples_elided = cfg.startup_only || cfg.sample_every_steps <= 0;
     if (error.empty() && !post_train_diagnostic_samples_elided) {
         run(cuda_memcpy(&sampled_token_weight, token_weight, sizeof(float), kCudaMemcpyDeviceToHost),
             "token_weight.sample");
@@ -16626,7 +16626,8 @@ int run_transformer_lm_training_json(
     const double max_weight_delta = std::fabs(static_cast<double>(sampled_token_weight) - initial_token_weight_sample);
     passed = error.empty() &&
         ((cfg.startup_only && steps_completed == 0) ||
-         (!cfg.startup_only && steps_completed == cfg.max_steps && max_weight_delta > 0.0));
+         (!cfg.startup_only && steps_completed == cfg.max_steps &&
+          (post_train_diagnostic_samples_elided || max_weight_delta > 0.0)));
 
     auto write_trained_checkpoint = [&]() {
         constexpr std::int32_t kCheckpointMagic = 20240326;

@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Removed benchmark-mode post-train diagnostic D2H samples from the dense GPT
+  native trainer. Runs with `--native-cuda-sample-every 0` now skip the final
+  token-weight and clip-scale host copies, report
+  `post_train_diagnostic_samples_elided: true`, and still pass based on
+  completed optimizer steps instead of requiring the diagnostic weight-delta
+  sample. This keeps short CUDA Tile benchmark runs from adding an avoidable
+  end-of-run CPU/GPU synchronization when sampling is explicitly disabled.
+  Verification: rebuilt `build/nfn_gpt_native_train`; ran a one-step RTX 5090
+  smoke with sampling/checkpoint/eval disabled that reported
+  `post_train_diagnostic_sample_d2h_count: 0`,
+  `post_train_diagnostic_sample_d2h_count_elided: 2`, and `passed: true`; ran
+  the focused native GPT pytest selection (`1 passed, 1 skipped`). A fresh
+  post-change parity sample measured NeuralFn at `1.033683x` train-loop wall
+  time versus `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`, so the
+  main remaining gap is still inside the CUDA training loop rather than this
+  post-loop diagnostic path.
+
 - Fused the default dense GPT tied token-weight BF16 LM-head shadow refresh into
   the float32 descriptor AdamW update. In the BF16-primary block-weight path,
   token/position/norm/bias tensors still use the float32 multi-buffer AdamW
