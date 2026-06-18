@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/bench_native_gpt_sm120_candidate.sh` now supports
+  `NFN_SM120_NATIVE_STARTUP_ONLY=1` for startup-only native GPT bisections. The
+  wrapper appends `--startup-only` to both baseline and candidate commands while
+  preserving the same dense GPT command shape, TinyStories shard resolution,
+  checkpoint-disabled benchmark settings, selected-GPU idle guard, and
+  external-load controls. The CUDA Tile checklist now records the current
+  2026-06-18 llm.kittens parity snapshot and rejected startup/train-loop
+  candidates, including the reduced saved-activation storage candidate that
+  improved setup time but regressed train-loop time too much to promote.
+  Verification: ran `bash -n tools/bench_native_gpt_sm120_candidate.sh`, a
+  startup-only baseline-vs-baseline smoke with
+  `NFN_SM120_NATIVE_STARTUP_ONLY=1`, and the current same-script 3-step parity
+  and candidate bisections on the dedicated RTX 5090.
+
 - `nfn_gpt2_evo_native_train` now delegates dense GPT-2-compatible training
   runs to `nfn_gpt_native_train --train-transformer-lm --layer-evo` instead of
   exiting after the C++ preflight. The family binary still owns

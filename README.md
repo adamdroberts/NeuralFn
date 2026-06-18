@@ -187,7 +187,10 @@ candidate Tile ops build against `build/libnfn_native_train_tile_ops.so`. Common
 controls include `NFN_SM120_NATIVE_STEPS`, `NFN_SM120_NATIVE_SAMPLES`,
 `NFN_SM120_NATIVE_WARMUP`, `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_NATIVE_TEMPLATE_NAME`, `NFN_SM120_NATIVE_GRAPH_FILE`, and
-`NFN_SM120_NATIVE_STAGE_TIMING=1` for attribution sidecars. Add
+`NFN_SM120_NATIVE_STAGE_TIMING=1` for attribution sidecars. Set
+`NFN_SM120_NATIVE_STARTUP_ONLY=1` for startup bisections; the wrapper appends
+`--startup-only` to both baseline and candidate while preserving the same
+dataset, batch, checkpoint-disabled, selected-GPU, and idle-load controls. Add
 `--append-native-profile-json-dir /tmp/nfn-profiles`
 when comparing native NeuralFn commands that do not already write JSON; the
 harness appends unique `--profile-json` files without changing the timed native

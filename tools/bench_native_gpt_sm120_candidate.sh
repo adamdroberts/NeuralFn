@@ -20,6 +20,7 @@ GENERATE_TOKENS="${NFN_SM120_NATIVE_GENERATE_TOKENS:-16}"
 JSON_OUT="${NFN_SM120_NATIVE_JSON_OUT:-/tmp/nfn_sm120_native_candidate_${STEPS}step.json}"
 PROFILE_DIR_RAW="${NFN_SM120_NATIVE_PROFILE_DIR:-/tmp/nfn_sm120_native_candidate_profiles_${STEPS}step}"
 STAGE_TIMING="${NFN_SM120_NATIVE_STAGE_TIMING:-0}"
+STARTUP_ONLY="${NFN_SM120_NATIVE_STARTUP_ONLY:-0}"
 BASELINE_ENV_RAW="${NFN_SM120_NATIVE_BASELINE_ENV:-}"
 CANDIDATE_ENV_RAW="${NFN_SM120_NATIVE_CANDIDATE_ENV:-}"
 COMMON_EXTRA_ARGS_RAW="${NFN_SM120_NATIVE_EXTRA_ARGS:-}"
@@ -72,6 +73,11 @@ common_args=(
   --native-cuda-checkpoint-every "$CHECKPOINT_EVERY"
   --no-checkpoint
 )
+case "${STARTUP_ONLY,,}" in
+  "1"|"true"|"yes"|"on")
+    common_args+=(--startup-only)
+    ;;
+esac
 if [[ -n "$TEMPLATE_NAME" ]]; then
   common_args+=(--template-name "$TEMPLATE_NAME")
 fi
