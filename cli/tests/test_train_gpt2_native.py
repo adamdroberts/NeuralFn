@@ -732,6 +732,70 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
         self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
 
+    def test_nfn_train_native_dispatch_sets_cuda_compute_defaults(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import os
+            import runpy
+            import stat
+            import sys
+            import tempfile
+            import textwrap
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            with tempfile.TemporaryDirectory() as tmpdir:
+                stub = Path(tmpdir) / "native-train-stub.py"
+                stub.write_text(
+                    textwrap.dedent('''
+                    #!/usr/bin/env python3
+                    import os
+                    print("STUB_CUDA_VISIBLE_DEVICES", os.environ.get("CUDA_VISIBLE_DEVICES"))
+                    print("STUB_CUDA_DEVICE_MAX_CONNECTIONS", os.environ.get("CUDA_DEVICE_MAX_CONNECTIONS"))
+                    ''').lstrip(),
+                    encoding="utf-8",
+                )
+                stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+                os.environ["NFN_NATIVE_TRAIN_CLI"] = str(stub)
+                sys.argv = [
+                    str(root / "cli" / "nfn.py"),
+                    "train",
+                    "--base-model",
+                    "gpt",
+                    "--dataset-alias=/tmp/native-cache",
+                    "--native-cuda-dry-run",
+                ]
+                try:
+                    runpy.run_path(str(root / "cli" / "nfn.py"), run_name="__main__")
+                except SystemExit as exc:
+                    exit_code = int(exc.code or 0)
+                else:
+                    exit_code = 0
+            print("TORCH_LOADED", "torch" in sys.modules)
+            print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
+            raise SystemExit(exit_code)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env.pop("CUDA_VISIBLE_DEVICES", None)
+        env.pop("CUDA_DEVICE_MAX_CONNECTIONS", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("STUB_CUDA_VISIBLE_DEVICES 0", proc.stdout)
+        self.assertIn("STUB_CUDA_DEVICE_MAX_CONNECTIONS 1", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
+
     def test_nfn_train_gpt2_direct_compiled_cli_accepts_every_template_selector(self) -> None:
         for preset in SHIPPED_GPT_TEMPLATE_PRESETS:
             with self.subTest(preset=preset):

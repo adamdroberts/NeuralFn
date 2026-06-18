@@ -15,6 +15,15 @@ Future updates should append new entries here rather than replacing older notes.
   Verification: added a no-Torch dry-run regression for `nfn train
   --base-model gpt` and checked the internal default selector reports `gpt`.
 
+- The master `nfn train` native dispatcher now sets the same workstation CUDA
+  defaults as the canonical GPT script before invoking a native trainer:
+  `CUDA_VISIBLE_DEVICES=0` and `CUDA_DEVICE_MAX_CONNECTIONS=1` are supplied
+  only when the caller has not already set them. This keeps direct `nfn train`
+  runs on the dedicated NVIDIA compute GPU by default on mixed display/compute
+  machines. Verification: added a no-Torch subprocess regression using a
+  temporary native-train stub that confirms both environment values are passed
+  through the direct native dispatch path.
+
 - Dense GPT native layer-evo now performs real forward-only candidate scoring
   instead of placeholder device-zero loss selection. After AdamW, the
   `--layer-evo` loop mutates the selected block's float32 `ln1.weight`, resets
