@@ -1775,6 +1775,7 @@ struct TrainerLinearBgradWorkspace {
 bool trainer_linear_cublaslt_enabled();
 bool trainer_linear_cublaslt_descriptor_cache_enabled();
 int trainer_linear_cublaslt_heuristic_index_override();
+int trainer_linear_cublaslt_heuristic_policy();
 int trainer_linear_cublaslt_shape_heuristic_index_override(
     int m,
     int n,
@@ -1984,6 +1985,18 @@ TrainerLinearCublasLtPlan* trainer_linear_cublaslt_plan_for(
   }
 
   int selected = returned > 1 ? 1 : 0;
+  const int policy = trainer_linear_cublaslt_heuristic_policy();
+  if (policy == 1 || policy == 2) {
+    selected = 0;
+    for (int i = 1; i < returned; ++i) {
+      const bool better = policy == 1
+          ? results[i].wavesCount < results[selected].wavesCount
+          : results[i].wavesCount > results[selected].wavesCount;
+      if (better) {
+        selected = i;
+      }
+    }
+  }
   int requested_index =
       trainer_linear_cublaslt_shape_heuristic_index_override(
           key.m,
@@ -2751,6 +2764,30 @@ int trainer_linear_cublaslt_heuristic_index_override() {
     return static_cast<int>(parsed);
   }();
   return index;
+}
+
+int trainer_linear_cublaslt_heuristic_policy() {
+  static const int policy = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_CUBLASLT_HEURISTIC_POLICY");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY");
+    }
+    if (value == nullptr || value[0] == '\0') {
+      return 0;
+    }
+    if (std::strcmp(value, "min_waves") == 0 ||
+        std::strcmp(value, "MIN_WAVES") == 0 ||
+        std::strcmp(value, "llmk") == 0 ||
+        std::strcmp(value, "LLMK") == 0) {
+      return 1;
+    }
+    if (std::strcmp(value, "max_waves") == 0 ||
+        std::strcmp(value, "MAX_WAVES") == 0) {
+      return 2;
+    }
+    return 0;
+  }();
+  return policy;
 }
 
 int trainer_linear_cublaslt_shape_heuristic_index_override(

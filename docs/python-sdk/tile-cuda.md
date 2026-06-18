@@ -360,6 +360,10 @@ cuBLASLt with `CUBLAS_COMPUTE_32F_FAST_16BF` by default and select cuBLASLt
 heuristic index 1 when that candidate is available on the workstation RTX 5090
 shape. Set `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX=N` or
 `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX=N` only for paired kernel profiling.
+Set `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_POLICY=min_waves` or
+`NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY=min_waves` to compare against the
+llm.kittens-style lowest-waves selector, or `max_waves` for the highest-waves
+selector; explicit index overrides still win.
 Set `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_SHAPE=m,n,k,opA,opB,index` or
 `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=m,n,k,opA,opB,index` for a
 single-shape bisection; it only changes the matching cuBLASLt plan and leaves

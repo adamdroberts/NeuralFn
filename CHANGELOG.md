@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_POLICY` /
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY` as a default-off native GPT
+  cuBLASLt profiling control. `min_waves` selects the returned cuBLASLt
+  heuristic with the lowest `wavesCount`, matching the llm.kittens default
+  policy, and `max_waves` selects the highest-waves candidate. Existing global
+  and shape-specific explicit index overrides still take precedence. The
+  NeuralFn default remains index 1 because same-script dedicated RTX 5090
+  5-step, 3-sample candidate benchmarks rejected both policies: `min_waves`
+  measured `1.001205x` train-loop wall time and `0.998809x` tokens/sec, while
+  `max_waves` measured `1.001045x` train-loop wall time and `0.998964x`
+  tokens/sec versus the current default. Verification: rebuilt the Tile-CUDA
+  native trainer, ran no-Torch/focused source guards, and ran
+  `tools/bench_native_gpt_sm120_candidate.sh` for both policies with selected
+  GPU idle checks.
+
 - Rejected the older float32/TF32 tied LM-head route against the current dense
   GPT default. Setting `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS=0` moved the
   LM-head logits/dHidden/dWeight path to the float-logits strategy, but the
