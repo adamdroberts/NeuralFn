@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Promoted the dense GPT token-weight fast int32 Tile-index initializer to the
+  default when the token table fits in int32. The previous int64 Tile-index
+  route remains available with `NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT=0`,
+  `NFN_NATIVE_GPT2_TOKEN_WEIGHT_FAST_INT32_INIT=0`, or
+  `NFN_TILE_CUDA_TOKEN_WEIGHT_FAST_INT32_INIT=0` for paired startup bisection.
+  Runtime JSON now reports `token_weight_fast_int32_init_enabled` beside the
+  existing token initialization strategy fields. On CUDA 13.3, the dedicated
+  RTX 5090 startup-only 5-sample benchmark measured `0.955863x`
+  token-weight-init time, `0.988331x` setup wall time, and `0.988772x` total
+  startup versus the previous default; the normal one-step 3-sample run kept
+  train-loop timing neutral at `1.000072x`. Verification: ran the startup-only
+  and normal paired candidate benchmarks; rebuilt
+  `build/libnfn_native_train_tile_ops.so` and `build/nfn_gpt_native_train`;
+  ran a startup-only smoke that reported
+  `token_weight_fast_int32_init_enabled: true`; ran
+  `python -m pytest tests/test_native_gpt2.py -q` (`52 passed`);
+  ran the CUDA Tile GPU suite (`537 passed`); ran
+  `python tools/check_native_no_torch_deps.py`.
+
 - Added a diagnostic-only BF16 cuBLASLt allow-list for one-shape paired
   bisection. `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=m,n,k,opA,opB`
   and `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=m,n,k,opA,opB` force one

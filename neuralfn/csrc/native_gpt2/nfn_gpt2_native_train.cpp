@@ -10835,6 +10835,15 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT2_TOKEN_WEIGHT_THREADED_INIT",
                               "NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT"}),
             false);
+    const bool token_weight_fast_int32_init_enabled =
+        !token_weight_threaded_init_enabled &&
+        !legacy_mod17_token_weight_init_enabled &&
+        kTokenWeightElements <= static_cast<std::int64_t>(std::numeric_limits<int>::max()) &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT",
+                              "NFN_NATIVE_GPT2_TOKEN_WEIGHT_FAST_INT32_INIT",
+                              "NFN_TILE_CUDA_TOKEN_WEIGHT_FAST_INT32_INIT"}),
+            true);
     const bool dweight_first_microbatch_beta_zero_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO",
@@ -18138,6 +18147,8 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"token_weight_threaded_init_enabled\": "
         << (token_weight_threaded_init_enabled ? "true" : "false") << ",\n"
+        << "  \"token_weight_fast_int32_init_enabled\": "
+        << (token_weight_fast_int32_init_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_init_legacy_mod17_enabled\": "
         << (legacy_mod17_token_weight_init_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_bf16_initial_refresh_elided\": "

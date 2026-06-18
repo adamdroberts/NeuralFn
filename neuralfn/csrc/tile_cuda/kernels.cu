@@ -12451,7 +12451,7 @@ bool token_weight_fast_int32_tile_init_enabled() {
       value = std::getenv("NFN_NATIVE_GPT2_TOKEN_WEIGHT_FAST_INT32_INIT");
     }
     if (value == nullptr || value[0] == '\0') {
-      return false;
+      return true;
     }
     if (std::strcmp(value, "0") == 0 ||
         std::strcmp(value, "false") == 0 ||

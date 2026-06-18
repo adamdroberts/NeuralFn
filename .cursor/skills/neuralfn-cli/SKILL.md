@@ -377,9 +377,13 @@ Canonical docs:
 - GPT-2 native transformer-LM startup should initialize the tied token
   embedding/LM-head weight on device with
   `nfn_native_tile_init_gpt2_token_weight_float32`; do not rebuild the old
-  154 MB host float matrix for the real training path. JSON should report
-  `token_weight_init_strategy: "device-tile-deterministic"` and
-  `token_weight_host_materialization: false`.
+  154 MB host float matrix for the real training path. The default fast Tile
+  initializer uses int32 Tile indices when the table fits in int32; use
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT=0` only for paired comparison
+  against the older int64-index Tile path. JSON should report
+  `token_weight_init_strategy: "device-tile-deterministic"`,
+  `token_weight_fast_int32_init_enabled`, and `token_weight_host_materialization:
+  false`.
 - GPT native `--backend tile-cuda` / wrapper `--kernel-backend tile-cuda`
   is a NeuralFn-owned raw Tile ABI path with smoke coverage plus a tiny
   12-layer `--train-transformer-lm` loop. Full dense GPT Tile training should

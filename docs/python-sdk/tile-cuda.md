@@ -751,22 +751,22 @@ The same native trainer initializes the tied token embedding/LM-head weight on
 device with `nfn_native_tile_init_gpt2_token_weight_fast_float32`. Native JSON
 reports `token_weight_init_strategy: "device-tile-power2-deterministic"` or the
 fused BF16-shadow variant, plus `token_weight_threaded_init_enabled`,
-`token_weight_init_legacy_mod17_enabled`, and
+`token_weight_fast_int32_init_enabled`, `token_weight_init_legacy_mod17_enabled`,
+and
 `token_weight_host_materialization: false`, so startup no longer constructs and
 copies the full token-weight matrix through host RAM. The default initializer
-uses CUDA Tile and a power-of-two deterministic value pattern for the full
-padded vocabulary table; direct low-level Tile ABI calls use that same
-non-threaded default when no token-init environment variable is set. Set
+uses CUDA Tile, int32 Tile indices when the table fits in int32, and a
+power-of-two deterministic value pattern for the full padded vocabulary table;
+direct low-level Tile ABI calls use that same non-threaded default when no
+token-init environment variable is set. Set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT=0`,
+`NFN_NATIVE_GPT2_TOKEN_WEIGHT_FAST_INT32_INIT=0`, or
+`NFN_TILE_CUDA_TOKEN_WEIGHT_FAST_INT32_INIT=0` only when reproducing the older
+int64 Tile-index startup route in a paired benchmark. Set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` only when comparing against the
 not-promoted threaded CUDA initializer, and set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_INIT_LEGACY_MOD17=1` only when reproducing the older
 modulo-17 values in a paired benchmark.
-`NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT=1`,
-`NFN_NATIVE_GPT2_TOKEN_WEIGHT_FAST_INT32_INIT=1`, or
-`NFN_TILE_CUDA_TOKEN_WEIGHT_FAST_INT32_INIT=1` is a diagnostic-only variant of
-the power-of-two CUDA Tile initializer that computes bucket indices with int32
-Tile values; the RTX 5090 startup-only comparison measured it slower, so the
-default remains the existing int64 Tile path.
 
 The compiled GPT-2 transformer-LM trainer does not sample train loss in the hot
 path. Ordinary optimizer steps run the forward activations needed for backward,
@@ -961,10 +961,11 @@ the not-promoted threaded CUDA initializer, set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_INIT_LEGACY_MOD17=1` to reproduce the previous
 modulo-17 values, or set `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=0` to
 reproduce the older two-pass startup path. Runtime JSON reports
-`token_weight_init_strategy`, `token_weight_init_legacy_mod17_enabled`,
+`token_weight_init_strategy`, `token_weight_fast_int32_init_enabled`,
+`token_weight_init_legacy_mod17_enabled`,
 `token_weight_bf16_initial_refresh_fusion_enabled`, and
-`token_weight_bf16_initial_refresh_elided`, and `startup_only=True` isolates the
-setup cost for SDK-side paired timing.
+`token_weight_bf16_initial_refresh_elided`, and `startup_only=True` isolates
+the setup cost for SDK-side paired timing.
 Token, position, and block Linear weight gradients accumulate directly into
 optimizer-step accumulation buffers in the full GPT-2 trainer. The tied LM-head
 CE backward scale includes the microbatch accumulation factor, LM-head dWeight

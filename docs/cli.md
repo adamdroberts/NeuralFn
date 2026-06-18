@@ -515,9 +515,13 @@ false`.
 
 Startup initializes the tied token embedding/LM-head weight directly on device
 with `nfn_native_tile_init_gpt2_token_weight_float32` instead of building and
-copying a 154 MB host float matrix. Output JSON reports
-`token_weight_init_strategy: "device-tile-deterministic"` and
-`token_weight_host_materialization: false`.
+copying a 154 MB host float matrix. The default fast Tile initializer uses
+int32 Tile indices when the table fits in int32; set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT=0` only for paired comparison
+against the older int64-index Tile path. Output JSON reports
+`token_weight_init_strategy: "device-tile-deterministic"`,
+`token_weight_fast_int32_init_enabled`, and `token_weight_host_materialization:
+false`.
 
 For performance, the compiled GPT-2 transformer-LM trainer does not compute
 training loss in the hot path. Ordinary steps run the forward activations
