@@ -3618,7 +3618,8 @@ bool print_tile_plan(
         << ", \"population\": " << cfg.evo_layer_population
         << ", \"mutation_scale\": " << cfg.evo_layer_mutation_scale
         << ", \"forward_candidate_eval_enabled\": true"
-        << ", \"candidate_loss_source\": \"native-forward-loss-current-batch\"},\n"
+        << ", \"candidate_loss_source\": \"native-forward-loss-device-resident-current-batch\""
+        << ", \"candidate_loss_transport\": \"device-to-device\"},\n"
         << "  \"checkpoint_export_enabled\": " << (cfg.write_checkpoint ? "true" : "false") << ",\n"
         << "  \"estimated_stage_elements\": {\"hidden\": " << hidden
         << ", \"logits\": " << logits
@@ -9318,6 +9319,8 @@ int run_transformer_lm_training_json(
     std::int64_t layer_evo_select_kernel_launches = 0;
     std::int64_t layer_evo_adopt_kernel_launches = 0;
     std::int64_t layer_evo_forward_candidate_evals = 0;
+    std::int64_t layer_evo_candidate_loss_device_copy_count = 0;
+    std::int64_t layer_evo_candidate_loss_host_roundtrips_elided = 0;
     std::int64_t layer_evo_parameter_elements = 0;
     std::int64_t layer_evo_candidate_elements = 0;
     std::int64_t layer_evo_seed = 1337;
@@ -13807,7 +13810,7 @@ int run_transformer_lm_training_json(
         }
     };
 
-    auto lm_head_forward_loss = [&](const std::string& label) -> double {
+    auto lm_head_forward_loss = [&](const std::string& label, bool copy_loss_to_host) -> double {
         const std::int64_t stage_event = stage_begin(label + ".lm_head_loss");
         fill_buffer(loss_total, 1, 0.0f, label + ".loss_total.zero");
         for (std::int64_t row_start = 0; row_start < active_rows && error.empty(); row_start += lm_head_chunk_rows) {
@@ -13856,15 +13859,15 @@ int run_transformer_lm_training_json(
                     lm_head_bf16_loss_enabled);
             }
         }
-        if (error.empty()) {
+        if (error.empty() && copy_loss_to_host) {
             run(cuda_device_synchronize(), label + ".cudaDeviceSynchronize");
         }
-        if (error.empty()) {
+        if (error.empty() && copy_loss_to_host) {
             run(cuda_memcpy(host_loss.data(), loss_total, sizeof(float), kCudaMemcpyDeviceToHost),
                 label + ".loss.copy");
         }
         stage_end(stage_event, label + ".lm_head_loss");
-        return error.empty() ? static_cast<double>(host_loss[0]) : 0.0;
+        return error.empty() && copy_loss_to_host ? static_cast<double>(host_loss[0]) : 0.0;
     };
 
     auto lm_head_backward = [&](float accumulation_scale, bool dweight_accumulate, bool record_loss) -> double {
@@ -15838,7 +15841,11 @@ int run_transformer_lm_training_json(
         stage_end(stage_event, "block_backward");
     };
 
-    auto forward_loss = [&](const std::string& label, bool compute_loss, bool preserve_block_outputs) -> double {
+    auto forward_loss = [&](
+        const std::string& label,
+        bool compute_loss,
+        bool preserve_block_outputs,
+        bool copy_loss_to_host) -> double {
         const std::int64_t stage_event = stage_begin(label + ".model_forward");
         if (error.empty()) {
             if (direct_u16_token_ids_enabled) {
@@ -15944,7 +15951,7 @@ int run_transformer_lm_training_json(
         lnf_input = final_block_output;
         run_layer_norm(lnf_input, lnf_weight, lnf_bias, lnf_out, lnf_mean, lnf_rstd, label + ".ln_f.forward");
         stage_end(stage_event, label + ".model_forward");
-        return (error.empty() && compute_loss) ? lm_head_forward_loss(label) : 0.0;
+        return (error.empty() && compute_loss) ? lm_head_forward_loss(label, copy_loss_to_host) : 0.0;
     };
 
     auto run_layer_evo_step = [&](std::int64_t step) {
@@ -15990,17 +15997,19 @@ int run_transformer_lm_training_json(
                     sizeof(float) * static_cast<std::size_t>(layer_evo_parameter_elements),
                     kCudaMemcpyDeviceToDevice),
                 "layer_evo.candidate.copy_to_ln1_weight");
-            const double candidate_loss =
-                error.empty() ? forward_loss("layer_evo.candidate" + std::to_string(candidate_index), true, false) : 0.0;
             if (error.empty()) {
-                const float loss_value = static_cast<float>(candidate_loss);
+                forward_loss("layer_evo.candidate" + std::to_string(candidate_index), true, false, false);
+            }
+            if (error.empty()) {
                 run(cuda_memcpy(
                         layer_evo_candidate_losses + candidate_index,
-                        &loss_value,
+                        loss_total,
                         sizeof(float),
-                        kCudaMemcpyHostToDevice),
-                    "layer_evo.candidate_loss.copy_host_to_device");
+                        kCudaMemcpyDeviceToDevice),
+                    "layer_evo.candidate_loss.copy_device_to_device");
                 if (error.empty()) {
+                    layer_evo_candidate_loss_device_copy_count += 1;
+                    layer_evo_candidate_loss_host_roundtrips_elided += 1;
                     layer_evo_forward_candidate_evals += 1;
                 }
             }
@@ -16050,7 +16059,7 @@ int run_transformer_lm_training_json(
 
     auto run_backward_microbatch = [&](bool record_train_loss, float accumulation_scale, bool dweight_accumulate) -> double {
         zero_gradients();
-        forward_loss("train", false, true);
+        forward_loss("train", false, true, true);
         const double train_loss_sum =
             error.empty() ? lm_head_backward(accumulation_scale, dweight_accumulate, record_train_loss) : 0.0;
         const std::int64_t final_norm_event = stage_begin("final_norm_backward");
@@ -16335,7 +16344,7 @@ int run_transformer_lm_training_json(
             }
             upload_pinned_batch();
             allocate_validation_mlp_float_scratch();
-            const double loss_sum = forward_loss("validation", true, false);
+            const double loss_sum = forward_loss("validation", true, false, true);
             if (!error.empty()) {
                 break;
             }
@@ -18399,7 +18408,12 @@ int run_transformer_lm_training_json(
         << "    \"adopt_kernel_launches\": " << layer_evo_adopt_kernel_launches << ",\n"
         << "    \"forward_candidate_evals\": " << layer_evo_forward_candidate_evals << ",\n"
         << "    \"forward_candidate_eval_enabled\": " << (layer_evo_forward_candidate_eval_enabled ? "true" : "false") << ",\n"
-        << "    \"candidate_loss_source\": \"native-forward-loss-current-batch\",\n"
+        << "    \"candidate_loss_source\": \"native-forward-loss-device-resident-current-batch\",\n"
+        << "    \"candidate_loss_transport\": \"device-to-device\",\n"
+        << "    \"candidate_loss_device_copy_count\": "
+        << layer_evo_candidate_loss_device_copy_count << ",\n"
+        << "    \"candidate_loss_host_roundtrips_elided\": "
+        << layer_evo_candidate_loss_host_roundtrips_elided << ",\n"
         << "    \"required_next_step\": \"expand candidate targets beyond block ln1.weight when broader evo mutations are enabled\"\n"
         << "  },\n"
         << "  \"validation\": {\n"

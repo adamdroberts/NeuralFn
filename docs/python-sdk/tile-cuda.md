@@ -129,7 +129,11 @@ loop, and reports `graph_editor_tensor_flow: false` in `layer_evo` plan/runtime
 JSON. Candidate losses are scored by running native CUDA forward loss over the
 current batch for each mutated candidate; runtime JSON reports
 `forward_candidate_evals` and
-`candidate_loss_source: "native-forward-loss-current-batch"`.
+`candidate_loss_source: "native-forward-loss-device-resident-current-batch"`,
+`candidate_loss_transport: "device-to-device"`, and
+`candidate_loss_host_roundtrips_elided` because the scalar loss is copied
+directly from the native forward-loss device buffer into the candidate-loss
+device array.
 
 Native compiled entrypoints and SDK bindings set `CUDA_MODULE_LOADING=LAZY`
 when unset before executing native trainers or loading Tile CUDA libraries,
@@ -635,7 +639,9 @@ catalog for SDK/subprocess callers. Dense GPT-2-compatible templates now report
 `selected_graph_support_status: "native-dense-gpt-layer-evo-delegate"`, and
 `selected_graph_native_runnable: true` because real runs exec the dense GPT
 native trainer with `--layer-evo`. Runtime JSON from that delegate still reports
-`candidate_loss_source: "native-forward-loss-current-batch"` and
+`candidate_loss_source:
+"native-forward-loss-device-resident-current-batch"`,
+`candidate_loss_transport: "device-to-device"`, and
 `forward_candidate_evals` after native CUDA forward-only candidate scoring.
 Structurally
 different shipped templates, custom graph files, and typoed template names still

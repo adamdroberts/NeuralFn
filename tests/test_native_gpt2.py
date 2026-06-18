@@ -238,6 +238,25 @@ def test_native_gpt_direct_u16_path_elides_int64_token_arena() -> None:
     assert "token_i64_device_arena_bytes_elided" in source
 
 
+def test_native_gpt_layer_evo_candidate_loss_stays_device_resident() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "neuralfn"
+        / "csrc"
+        / "native_gpt2"
+        / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert "copy_loss_to_host" in source
+    assert "native-forward-loss-device-resident-current-batch" in source
+    assert "candidate_loss_transport" in source
+    assert "device-to-device" in source
+    assert "layer_evo.candidate_loss.copy_device_to_device" in source
+    assert "layer_evo.candidate_loss.copy_host_to_device" not in source
+    assert "layer_evo_candidate_loss_device_copy_count" in source
+    assert "layer_evo_candidate_loss_host_roundtrips_elided" in source
+
+
 def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     source = (
         Path(__file__).resolve().parents[1]
@@ -1697,7 +1716,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "population": 8,
         "mutation_scale": 0.02,
         "forward_candidate_eval_enabled": True,
-        "candidate_loss_source": "native-forward-loss-current-batch",
+        "candidate_loss_source": "native-forward-loss-device-resident-current-batch",
+        "candidate_loss_transport": "device-to-device",
     }
     assert tile_payload["attention_forward_strategy"] == "tk-sm120-packed-qkv-bf16-flashattention"
     assert tile_payload["attention_forward_score_reuse_value_dim"] == 64
@@ -2601,7 +2621,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "adopt_kernel_launches": 0,
         "forward_candidate_evals": 0,
         "forward_candidate_eval_enabled": False,
-        "candidate_loss_source": "native-forward-loss-current-batch",
+        "candidate_loss_source": "native-forward-loss-device-resident-current-batch",
+        "candidate_loss_transport": "device-to-device",
+        "candidate_loss_device_copy_count": 0,
+        "candidate_loss_host_roundtrips_elided": 0,
         "required_next_step": "expand candidate targets beyond block ln1.weight when broader evo mutations are enabled",
     }
     assert train_transformer_payload["vocab"] == 50257
@@ -4555,7 +4578,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "layer_evo.mutate_candidates.ln1_weight" in gpt2_source_text
     assert "layer_evo.select_best_loss" in gpt2_source_text
     assert "layer_evo.adopt_candidate.ln1_weight" in gpt2_source_text
-    assert "native-forward-loss-current-batch" in gpt2_source_text
+    assert "native-forward-loss-device-resident-current-batch" in gpt2_source_text
+    assert "candidate_loss.copy_device_to_device" in gpt2_source_text
+    assert "candidate_loss.copy_host_to_device" not in gpt2_source_text
+    assert "layer_evo_candidate_loss_host_roundtrips_elided" in gpt2_source_text
     assert "layer_evo_forward_candidate_evals" in gpt2_source_text
     assert "nfn_native_tile_sumsq_partials_many_float32" in header_text
     assert "nfn_native_tile_sumsq_partials_many_bf16_bits_float32" in header_text

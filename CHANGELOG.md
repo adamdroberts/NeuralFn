@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Kept native dense GPT layer-evo candidate losses device-resident during
+  forward-only scoring. The `--layer-evo` loop now runs candidate forward loss
+  without forcing a host loss copy, then copies the resulting scalar directly
+  from the native loss device buffer into the device candidate-loss array before
+  raw evo best-loss selection. Plan/runtime JSON now reports
+  `candidate_loss_source:
+  "native-forward-loss-device-resident-current-batch"`,
+  `candidate_loss_transport: "device-to-device"`,
+  `candidate_loss_device_copy_count`, and
+  `candidate_loss_host_roundtrips_elided` so benchmark sidecars expose the
+  removed host round-trip. Verification: focused native GPT source tests and
+  C++ rebuild.
+
 - Elided the unused int64 token/target device subarena from the default native
   dense GPT direct-uint16 token path. The trainer now reserves only the uint16
   token/target device copy buffer when direct-u16 embedding and CE kernels are
