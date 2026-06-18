@@ -220,6 +220,24 @@ def test_packed_qkv_attention_backward_chunks_large_batches() -> None:
     assert "workspace->packed_grad_bf + batch_begin * packed_elements_per_batch" in source
 
 
+def test_native_gpt_direct_u16_path_elides_int64_token_arena() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "neuralfn"
+        / "csrc"
+        / "native_gpt2"
+        / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert "token_i64_arena_elements = direct_u16_token_ids_enabled ? 0 : rows * 2" in source
+    assert "token_device_arena_suballocation_count = direct_u16_token_ids_enabled ? 1 : 2" in source
+    assert "targets = direct_u16_token_ids_enabled ? nullptr : (token_i64_arena + rows)" in source
+    assert "active_targets = direct_u16_token_ids_enabled ? nullptr : (token_i64_arena + active_rows)" in source
+    assert "direct_u16_token_ids_enabled ? nullptr : (active_targets + row_start)" in source
+    assert "token_i64_device_arena_elided" in source
+    assert "token_i64_device_arena_bytes_elided" in source
+
+
 def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     source = (
         Path(__file__).resolve().parents[1]
@@ -4425,6 +4443,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "token_device_allocation_strategy" in gpt2_source_text
     assert "token_device_arena_cuda_malloc_count" in gpt2_source_text
     assert "token_i64_arena_cuda_malloc_count" in gpt2_source_text
+    assert "token_i64_arena_elements = direct_u16_token_ids_enabled ? 0 : rows * 2" in gpt2_source_text
+    assert "token_i64_device_arena_elided" in gpt2_source_text
+    assert "token_i64_device_arena_bytes_elided" in gpt2_source_text
+    assert "targets = direct_u16_token_ids_enabled ? nullptr : (token_i64_arena + rows)" in gpt2_source_text
+    assert "active_targets = direct_u16_token_ids_enabled ? nullptr : (token_i64_arena + active_rows)" in gpt2_source_text
     assert "cudaMalloc transformer_lm_token_i64_arena" not in gpt2_source_text
     assert "cudaMalloc transformer_lm_token_u16_device_arena" not in gpt2_source_text
     assert "token_weight.init_device" in gpt2_source_text

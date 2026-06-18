@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Elided the unused int64 token/target device subarena from the default native
+  dense GPT direct-uint16 token path. The trainer now reserves only the uint16
+  token/target device copy buffer when direct-u16 embedding and CE kernels are
+  active, while preserving the old int64 arena for
+  `NFN_NATIVE_GPT_DIRECT_U16_TOKENS=0` bisections. Runtime JSON reports
+  `token_i64_device_arena_elided` and
+  `token_i64_device_arena_bytes_elided` so startup allocation reductions are
+  visible in benchmark sidecars. Verification: focused native source tests and
+  C++ rebuild.
+
 - Added native dense GPT sample/checkpoint cadence fields to C++ plan/runtime
   JSON. `--print-plan` now reports `schedule.sample_every_steps`,
   `schedule.generate_tokens`, and `schedule.checkpoint_every_steps`; runtime

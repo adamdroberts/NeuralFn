@@ -11590,7 +11590,7 @@ int run_transformer_lm_training_json(
             error = "token arena row count overflow";
             return;
         }
-        token_i64_arena_elements = rows * 2;
+        token_i64_arena_elements = direct_u16_token_ids_enabled ? 0 : rows * 2;
         token_u16_device_arena_elements = rows * 2;
         token_u16_pinned_arena_elements = rows * 2;
         if (token_i64_arena_elements >
@@ -11628,12 +11628,14 @@ int run_transformer_lm_training_json(
         }
         token_device_ptrs.push_back(token_device_arena);
         token_device_arena_cuda_malloc_count = 1;
-        token_device_arena_suballocation_count = 2;
+        token_device_arena_suballocation_count = direct_u16_token_ids_enabled ? 1 : 2;
         auto* token_device_base = static_cast<unsigned char*>(token_device_arena);
-        token_i64_arena = reinterpret_cast<std::int64_t*>(token_device_base + token_i64_offset);
+        token_i64_arena = direct_u16_token_ids_enabled
+            ? nullptr
+            : reinterpret_cast<std::int64_t*>(token_device_base + token_i64_offset);
         token_u16_device_arena = reinterpret_cast<std::uint16_t*>(token_device_base + token_u16_device_offset);
         token_ids = token_i64_arena;
-        targets = token_i64_arena + rows;
+        targets = direct_u16_token_ids_enabled ? nullptr : (token_i64_arena + rows);
         token_ids_u16 = token_u16_device_arena;
         targets_u16 = token_u16_device_arena + rows;
 
@@ -13349,7 +13351,7 @@ int run_transformer_lm_training_json(
         active_activation_elements = active_rows * kDim;
         active_hidden_elements = active_rows * kHidden;
         active_qkv_activation_elements = active_rows * kQkvDim;
-        active_targets = token_i64_arena + active_rows;
+        active_targets = direct_u16_token_ids_enabled ? nullptr : (token_i64_arena + active_rows);
         active_targets_u16 = token_u16_device_arena + active_rows;
         active_targets_pinned = token_u16_pinned_arena + active_rows;
     };
@@ -13812,7 +13814,8 @@ int run_transformer_lm_training_json(
             const std::int64_t row_count =
                 (row_start + lm_head_chunk_rows < active_rows) ? lm_head_chunk_rows : (active_rows - row_start);
             const float* hidden_chunk = lnf_out + row_start * kDim;
-            const std::int64_t* target_chunk = active_targets + row_start;
+            const std::int64_t* target_chunk =
+                direct_u16_token_ids_enabled ? nullptr : (active_targets + row_start);
             const std::uint16_t* target_chunk_u16 = active_targets_u16 + row_start;
             if (lm_head_bf16_loss_enabled) {
                 if (token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
@@ -13885,7 +13888,8 @@ int run_transformer_lm_training_json(
             const float* hidden_chunk = lnf_out + row_start * kDim;
             const std::uint16_t* hidden_bf16_chunk =
                 lm_head_prepack_bf16_hidden_enabled ? (lm_head_bf16_hidden + row_start * kDim) : lm_head_bf16_hidden;
-            const std::int64_t* target_chunk = active_targets + row_start;
+            const std::int64_t* target_chunk =
+                direct_u16_token_ids_enabled ? nullptr : (active_targets + row_start);
             const std::uint16_t* target_chunk_u16 = active_targets_u16 + row_start;
             float* grad_hidden_chunk = grad_lnf + row_start * kDim;
             const bool first_lm_head_dweight_chunk =
@@ -17861,6 +17865,12 @@ int run_transformer_lm_training_json(
         << (direct_u16_token_ids_enabled ? 0 : 1) << ",\n"
         << "  \"token_id_widen_kernel_launches_elided_per_microbatch\": "
         << (direct_u16_token_ids_enabled ? 2 : 1) << ",\n"
+        << "  \"token_i64_device_arena_elided\": "
+        << (direct_u16_token_ids_enabled ? "true" : "false") << ",\n"
+        << "  \"token_i64_device_arena_bytes_elided\": "
+        << (direct_u16_token_ids_enabled
+                ? (rows * 2 * static_cast<std::int64_t>(sizeof(std::int64_t)))
+                : 0) << ",\n"
         << "  \"token_batch_staging_strategy\": \"direct-sampler-to-pinned-arena\",\n"
         << "  \"token_batch_vector_materialization\": false,\n"
         << "  \"token_batch_vector_copy_to_pinned_elided\": true,\n"
