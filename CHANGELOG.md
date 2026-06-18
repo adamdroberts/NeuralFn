@@ -24,6 +24,24 @@ Future updates should append new entries here rather than replacing older notes.
   temporary native-train stub that confirms both environment values are passed
   through the direct native dispatch path.
 
+- Corrected the packed-attention backward dprep default so the rejected 3D
+  batch/head/time launch remains opt-in under
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_GRID3D=1`. This aligns the low-level
+  Tile-CUDA behavior with the documented row-linear default and the previous
+  RTX 5090 paired benchmark rejection. Verification: added a native GPT source
+  regression for the default-off dprep helper and rebuilt the Tile ops library.
+
+- Added a diagnostic-only GPT token-weight initializer variant controlled by
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT=1` (with GPT-2 and Tile-CUDA
+  aliases). It keeps the same power-of-two deterministic values but computes
+  Tile bucket indices through int32 Tile values for GPT-sized tables. It remains
+  off by default because the dedicated RTX 5090 startup-only comparison
+  measured the existing int64 Tile path faster: the old path opt-out was
+  `0.980751x` setup wall time, `0.984024x` token-init time, and `0.993102x`
+  total wall time versus the int32 candidate. Verification: rebuilt
+  `build/libnfn_native_train_tile_ops.so` and ran the paired startup-only
+  benchmark with `NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT=0`.
+
 - Dense GPT native layer-evo now performs real forward-only candidate scoring
   instead of placeholder device-zero loss selection. After AdamW, the
   `--layer-evo` loop mutates the selected block's float32 `ln1.weight`, resets

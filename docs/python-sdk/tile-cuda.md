@@ -601,6 +601,12 @@ non-threaded default when no token-init environment variable is set. Set
 not-promoted threaded CUDA initializer, and set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_INIT_LEGACY_MOD17=1` only when reproducing the older
 modulo-17 values in a paired benchmark.
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT=1`,
+`NFN_NATIVE_GPT2_TOKEN_WEIGHT_FAST_INT32_INIT=1`, or
+`NFN_TILE_CUDA_TOKEN_WEIGHT_FAST_INT32_INIT=1` is a diagnostic-only variant of
+the power-of-two CUDA Tile initializer that computes bucket indices with int32
+Tile values; the RTX 5090 startup-only comparison measured it slower, so the
+default remains the existing int64 Tile path.
 
 The compiled GPT-2 transformer-LM trainer does not sample train loss in the hot
 path. Ordinary optimizer steps run the forward activations needed for backward,

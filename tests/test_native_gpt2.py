@@ -4182,6 +4182,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "ct::shape{NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE}" in kernels_text
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT" in kernels_text
     assert "NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT" in kernels_text
+    assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT" in kernels_text
+    assert "NFN_TILE_CUDA_TOKEN_WEIGHT_FAST_INT32_INIT" in kernels_text
+    assert "init_gpt2_token_weight_fast_int32_with_bf16_shadow_float32_kernel" in kernels_text
     token_threaded_init_helper = kernels_text[
         kernels_text.index("bool token_weight_threaded_init_enabled()") :
         kernels_text.index("void launch_init_gpt2_token_weight_threaded_float32")
@@ -4275,8 +4278,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "layer_evo.mutate_candidates.ln1_weight" in gpt2_source_text
     assert "layer_evo.select_best_loss" in gpt2_source_text
     assert "layer_evo.adopt_candidate.ln1_weight" in gpt2_source_text
-    assert "placeholder-device-zero-loss-selects-current-candidate" in gpt2_source_text
-    assert "forward-only candidate loss evaluation for mutated evo-layer weights" in gpt2_source_text
+    assert "native-forward-loss-current-batch" in gpt2_source_text
+    assert "layer_evo_forward_candidate_evals" in gpt2_source_text
     assert "nfn_native_tile_sumsq_partials_many_float32" in header_text
     assert "nfn_native_tile_sumsq_partials_many_bf16_bits_float32" in header_text
     assert "launch_sumsq_partials_many_float32" in source_text
@@ -4953,6 +4956,19 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_GRID3D" in kernels_text
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_DPREP_GRID3D" in kernels_text
+    assert (
+        "bool tk_packed_attention_dprep_grid3d_enabled() {\n"
+        "  static const bool enabled = []() {\n"
+        "    const char* value = std::getenv(\"NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_GRID3D\");\n"
+        "    if (value == nullptr) {\n"
+        "      value = std::getenv(\"NFN_NATIVE_GPT2_PACKED_ATTENTION_DPREP_GRID3D\");\n"
+        "    }\n"
+        "    if (value == nullptr || value[0] == '\\0') {\n"
+        "      return false;\n"
+        "    }\n"
+        "    if (std::strcmp(value, \"0\") == 0"
+        in kernels_text
+    )
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS" in kernels_text
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_DPREP_WARPS" in kernels_text
     assert "packed_attention_dprep_grid3d_kernel" in kernels_text
