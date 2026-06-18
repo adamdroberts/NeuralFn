@@ -56,7 +56,8 @@ bool nfn_native_tile_trainer_linear_shape_stats_entry(
     int* k,
     int* op_a,
     int* op_b,
-    std::int64_t* calls);
+    std::int64_t* calls,
+    std::int64_t* total_us);
 
 int nfn_native_tile_gradient_accumulate_float32(
     float* buffer,

@@ -4520,9 +4520,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "__stcs(reinterpret_cast<int4*>(dst)" in kernels_text
     assert "ensure_llmk_sm120_cublaslt_initialized" in kernels_text
     assert "llmk::cublaslt_sm120::init()" in kernels_text
-    assert "record_linear_shape_stat(4, m, n, k, op_a, op_b)" in kernels_text
+    assert "record_linear_shape_stat(4, m, n, k, op_a, op_b, elapsed_us)" in kernels_text
+    assert "begin_linear_shape_timing(stream)" in kernels_text
+    assert "finish_linear_shape_timing(&timing)" in kernels_text
     assert 'return "cublas_gemmex_bf16"' in gpt2_source_text
     assert "trainer_linear_shape_stats_entry" in kernels_text
+    assert "total_us" in kernels_text
     assert "return false;" in kernels_text
     assert 'std::strcmp(value, "1") == 0' in kernels_text
     assert "tf32-cublaslt-optimized" in gpt2_source_text
@@ -4531,6 +4534,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "linear_tk_gemm_count" in gpt2_source_text
     assert "linear_tk_float_out_gemm_count" in gpt2_source_text
     assert "linear_shape_stats" in gpt2_source_text
+    assert '\\"total_us\\"' in gpt2_source_text
+    assert '\\"avg_us\\"' in gpt2_source_text
     assert "cublaslt" in gpt2_source_text
     assert "tk_bf16" in gpt2_source_text
     assert "cublas_sgemm" in gpt2_source_text

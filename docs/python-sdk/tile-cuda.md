@@ -135,8 +135,10 @@ For SDK-launched native GPT profiling, include
 `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1`, or `NFN_NATIVE_GPT2_LINEAR_SHAPE_STATS=1` in the
 subprocess environment. The compiled trainer then reports `linear_shape_stats`
 JSON buckets that identify the successful TK BF16, cuBLASLt, cuBLAS GEMMEx BF16,
-and SGEMM linear dispatch shapes and call counts. This is intended for kernel
-candidate comparisons and should stay disabled in normal training runs.
+and SGEMM linear dispatch shapes, call counts, `total_us`, and `avg_us`. The
+timing path uses CUDA events and synchronizes measured GEMMs, so it is intended
+for kernel candidate comparisons and should stay disabled in normal training
+runs.
 Runtime timing separates `setup_wall_ms`, `train_loop_wall_ms`,
 `post_train_sample_wall_ms`, `cleanup_wall_ms`, and `total_wall_ms`, so SDK
 and CLI benchmarks can distinguish startup from in-loop training. For

@@ -9207,6 +9207,7 @@ int run_transformer_lm_training_json(
         int op_a = 0;
         int op_b = 0;
         std::int64_t calls = 0;
+        std::int64_t total_us = 0;
     };
     std::vector<LinearShapeStat> linear_shape_stats;
     std::string checkpoint_path_json;
@@ -9594,7 +9595,7 @@ int run_transformer_lm_training_json(
     using TrainerLinearStatsResetFn = void (*)();
     using TrainerLinearStatsCountFn = std::int64_t (*)();
     using TrainerLinearShapeStatsEntryFn = bool (*)(
-        std::int64_t, int*, int*, int*, int*, int*, int*, std::int64_t*);
+        std::int64_t, int*, int*, int*, int*, int*, int*, std::int64_t*, std::int64_t*);
     using AttentionBackwardToQkvReuseForwardFn = int (*)(
         const float*, float*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t,
@@ -16594,7 +16595,8 @@ int run_transformer_lm_training_json(
                     &stat.k,
                     &stat.op_a,
                     &stat.op_b,
-                    &stat.calls)) {
+                    &stat.calls,
+                    &stat.total_us)) {
                 linear_shape_stats.push_back(stat);
             }
         }
@@ -16726,6 +16728,8 @@ int run_transformer_lm_training_json(
             << ", \"op_b\": " << stat.op_b
             << ", \"op_b_name\": \"" << linear_shape_op_name(stat.op_b) << "\""
             << ", \"calls\": " << stat.calls
+            << ", \"total_us\": " << stat.total_us
+            << ", \"avg_us\": " << (stat.calls > 0 ? stat.total_us / stat.calls : 0)
             << "}";
         if (i + 1 != linear_shape_stats.size()) {
             linear_shape_stats_json << ",";

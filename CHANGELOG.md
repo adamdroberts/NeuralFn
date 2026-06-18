@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- **Breaking changes:** `nfn_native_tile_trainer_linear_shape_stats_entry` now
+  takes one additional `std::int64_t* total_us` output argument. Native GPT
+  callers built with this workspace should pass the new pointer and read
+  `linear_shape_stats[].total_us` / `avg_us` from runtime JSON when
+  `NFN_NATIVE_LINEAR_SHAPE_STATS=1` or a GPT-prefixed alias is enabled. Normal
+  training is unchanged because the stats path is opt-in; profiling mode now
+  uses CUDA events and synchronizes measured GEMMs. Verification: rebuilt
+  `build/libnfn_native_train_tile_ops.so` and `build/nfn_gpt_native_train`.
+
 - Recorded the post-LM-head-beta-fix native GPT kernel bisection results without
   changing the default runtime route. `NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO=0`
   remained slower at `1.009049x` train-loop wall time and `0.991044x` tokens/sec,

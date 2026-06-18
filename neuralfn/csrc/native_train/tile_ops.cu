@@ -54,7 +54,8 @@ bool trainer_linear_shape_stats_entry(
     int* k,
     int* op_a,
     int* op_b,
-    std::int64_t* calls);
+    std::int64_t* calls,
+    std::int64_t* total_us);
 void launch_gradient_accumulate_float32(float* buffer, const float* grad, std::int64_t n, float scale, cudaStream_t stream);
 void launch_copy_float32(const float* source, float* dest, std::int64_t n, cudaStream_t stream);
 void launch_evo_mutate_candidates_float32(
@@ -1758,9 +1759,10 @@ bool nfn_native_tile_trainer_linear_shape_stats_entry(
     int* k,
     int* op_a,
     int* op_b,
-    std::int64_t* calls) {
+    std::int64_t* calls,
+    std::int64_t* total_us) {
     return neuralfn::tile_cuda::trainer_linear_shape_stats_entry(
-        index, path, m, n, k, op_a, op_b, calls);
+        index, path, m, n, k, op_a, op_b, calls, total_us);
 }
 
 int nfn_native_tile_gradient_accumulate_float32(
