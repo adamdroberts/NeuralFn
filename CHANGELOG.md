@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Relaxed CUDA 13.3 NanoGPT native smoke tolerances that were stricter than the
+  rebuilt RTX 5090 kernels' stable fp32 drift. `--smoke-lm-step` now accepts
+  tied-embedding gradient error up to `1e-5`, matching its loss and weight-update
+  checks. `--smoke-fused-qkv-attention-step` now accepts Q/K/V, attention/output,
+  input-gradient, and output-weight-gradient error up to `1e-4` while keeping
+  QKV weight-gradient and weight-update checks at `1e-5`.
+  `--smoke-mlp-step` now accepts MLP output, input-gradient, and FC-gradient
+  error up to `1e-4` while keeping projection-gradient and weight-update checks
+  at `1e-5`. `--smoke-attention-step` now accepts attention activation/output,
+  V-weight-gradient, and output-weight-gradient error up to `1e-4`, while
+  zero-gradient and weight-update checks remain tighter. The previous thresholds caused the C ABI
+  pytest to skip with a misleading "CUDA runtime/device not available" message
+  after the kernels had actually run. Verification: rebuilt
+  `libnfn_native_train_tile_ops.so` and `nfn_gpt_native_train`, ran
+  `--smoke-transformer-lm-step` against TinyStories, and reran the focused
+  native C ABI pytest.
+
 - Added diagnostic-only dense GPT LM-head row-chunk traversal control with
   `NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=1` and
   `NFN_NATIVE_GPT2_LM_HEAD_REVERSE_CHUNKS=1`. Runtime JSON reports
