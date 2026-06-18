@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native selection now fails fast when a shipped template's requested
+  geometry does not match the compiled transformer-LM loop. The visible case is
+  `--template-name nanogpt`: it now reports
+  `template-geometry-native-trainer-missing` instead of running the fixed GPT-2
+  geometry under a NanoGPT selector. Breaking changes: full-transformer NanoGPT
+  native runs must use `nfn_nanogpt_native_train --train-token-lm` for the
+  implemented token-LM path or wait for the dynamic NanoGPT transformer loop;
+  callers should not treat `nanogpt` as a runnable alias of the dense GPT-2
+  native trainer. Verification: focused native GPT selector tests and C++
+  rebuild.
+
 - Dense GPT native plan/runtime JSON now includes
   `native_geometry_contract.selected_template_geometry` and
   `geometry_matches_compiled_loop`. This keeps the current fixed GPT-2-compatible

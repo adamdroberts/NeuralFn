@@ -2148,27 +2148,28 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         assert preset_payload["template_name"] == preset
         assert preset_payload["template_known"] is True
         assert preset_payload["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
-        if preset in {"gpt2", "gpt2_megakernel", "gpt2_moa", "nanogpt"}:
+        if preset in {"gpt2", "gpt2_megakernel", "gpt2_moa"}:
             assert preset_payload["selected_graph_support_status"] == "native-transformer-lm"
             assert preset_payload["selected_graph_native_runnable"] is True
             assert preset_payload["native_geometry_contract"]["shape_source"] == "compiled_dense_gpt_defaults"
             assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is False
-            if preset == "nanogpt":
-                assert preset_payload["native_geometry_contract"]["selected_template_geometry"] == {
-                    "source": "template",
-                    "model_dim": 320,
-                    "num_heads": 5,
-                    "head_dim": 64,
-                    "mlp_multiplier": 4,
-                    "vocab_size": 50257,
-                    "padded_vocab_size": 50304,
-                    "num_layers": 5,
-                    "seq_len": 1024,
-                    "dropout_p": 0.1,
-                }
-                assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is False
-            else:
-                assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
+            assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
+        elif preset == "nanogpt":
+            assert preset_payload["selected_graph_support_status"] == "template-geometry-native-trainer-missing"
+            assert preset_payload["selected_graph_native_runnable"] is False
+            assert preset_payload["native_geometry_contract"]["selected_template_geometry"] == {
+                "source": "template",
+                "model_dim": 320,
+                "num_heads": 5,
+                "head_dim": 64,
+                "mlp_multiplier": 4,
+                "vocab_size": 50257,
+                "padded_vocab_size": 50304,
+                "num_layers": 5,
+                "seq_len": 1024,
+                "dropout_p": 0.1,
+            }
+            assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is False
         else:
             assert preset_payload["selected_graph_support_status"] == "template-native-trainer-missing"
             assert preset_payload["selected_graph_native_runnable"] is False

@@ -596,8 +596,12 @@ bool selected_template_is_native_dense_gpt_compatible(const Config& cfg) {
     return name == "gpt2" || name == "gpt2_megakernel" || name == "gpt2_moa" || name == "nanogpt";
 }
 
+bool selected_template_geometry_matches_compiled_loop(const Config& cfg);
+
 bool selected_graph_is_native_runnable(const Config& cfg) {
-    return cfg.graph_file.empty() && selected_template_is_native_dense_gpt_compatible(cfg);
+    return cfg.graph_file.empty() &&
+        selected_template_is_native_dense_gpt_compatible(cfg) &&
+        selected_template_geometry_matches_compiled_loop(cfg);
 }
 
 bool custom_graph_file_exists(const Config& cfg) {
@@ -632,6 +636,10 @@ std::string selected_graph_support_status(const Config& cfg) {
     }
     if (!selected_template_is_shipped(cfg)) {
         return "unknown-template";
+    }
+    if (selected_template_is_native_dense_gpt_compatible(cfg) &&
+        !selected_template_geometry_matches_compiled_loop(cfg)) {
+        return "template-geometry-native-trainer-missing";
     }
     return selected_template_is_native_dense_gpt_compatible(cfg) ? "native-transformer-lm"
                                                                 : "template-native-trainer-missing";
@@ -706,8 +714,6 @@ std::string selected_template_geometry_json(const Config& cfg) {
 
 bool selected_template_geometry_matches_compiled_loop(const Config& cfg) {
     const DenseGptTemplateGeometry geometry = selected_template_geometry(cfg);
-    const std::int64_t compiled_num_layers = cfg.num_layers > 0 ? cfg.num_layers : 12;
-    const std::int64_t compiled_seq_len = cfg.seq_len > 0 ? cfg.seq_len : 1024;
     return cfg.graph_file.empty() &&
         geometry.model_dim == 768 &&
         geometry.num_heads == 12 &&
@@ -715,8 +721,6 @@ bool selected_template_geometry_matches_compiled_loop(const Config& cfg) {
         geometry.mlp_multiplier == 4 &&
         geometry.vocab_size == 50257 &&
         geometry.padded_vocab_size == 50304 &&
-        geometry.num_layers == compiled_num_layers &&
-        geometry.seq_len == compiled_seq_len &&
         geometry.dropout_p == 0.0;
 }
 
@@ -19537,7 +19541,7 @@ int main(int argc, char** argv) {
             print_tile_plan(cfg, dataset, argv[0], false);
             return 0;
         }
-        if ((cfg.train_embedding_lm || cfg.train_transformer_lm) && !selected_graph_is_native_runnable(cfg)) {
+        if (cfg.train_transformer_lm && !selected_graph_is_native_runnable(cfg)) {
             return print_selected_graph_unsupported_json(cfg, dataset);
         }
         if (cfg.train_embedding_lm) {
