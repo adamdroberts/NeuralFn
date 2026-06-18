@@ -2729,6 +2729,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["timing"]["stage_timing_event_count"] == 0
     assert train_transformer_payload["timing"]["stage_timing_dropped_event_count"] == 0
     assert train_transformer_payload["timing"]["stage_timing"] == []
+    assert train_transformer_payload["timing"]["post_train_diagnostic_samples_elided"] is False
+    assert train_transformer_payload["timing"]["post_train_diagnostic_sample_d2h_count"] == 0
+    assert train_transformer_payload["timing"]["post_train_diagnostic_sample_d2h_count_elided"] == 0
     assert train_transformer_payload["attention_forward_strategy"] == "tk-sm120-packed-qkv-bf16-flashattention"
     assert train_transformer_payload["attention_forward_row_count"] == 24
     assert train_transformer_payload["attention_forward_scalar_output_count"] == 1536
@@ -4580,6 +4583,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "bf16_parameter_initialization_descriptor_count" in gpt2_source_text
     assert "setup_timing" in gpt2_source_text
     assert "post_train_sample_wall_ms" in gpt2_source_text
+    assert "post_train_diagnostic_samples_elided = cfg.startup_only" in gpt2_source_text
+    assert "post_train_diagnostic_sample_d2h_count_elided" in gpt2_source_text
+    assert "post_train_diagnostic_sample_d2h_count_elided = 2" in gpt2_source_text
     assert "cleanup_wall_ms" in gpt2_source_text
     assert "setup.float_arena_materialize" in gpt2_source_text
     assert "setup.zero_init" in gpt2_source_text

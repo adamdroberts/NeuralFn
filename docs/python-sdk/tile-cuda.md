@@ -173,8 +173,11 @@ for kernel candidate comparisons and should stay disabled in normal training
 runs.
 Runtime timing separates `setup_wall_ms`, `train_loop_wall_ms`,
 `post_train_sample_wall_ms`, `cleanup_wall_ms`, and `total_wall_ms`, so SDK
-and CLI benchmarks can distinguish startup from in-loop training. For
-startup-specific native candidate bisections, set
+and CLI benchmarks can distinguish startup from in-loop training.
+`--startup-only` still synchronizes the setup path, but elides the post-train
+diagnostic device-to-host sample copies and reports
+`post_train_diagnostic_samples_elided: true`. For startup-specific native
+candidate bisections, set
 `NFN_SM120_NATIVE_STARTUP_ONLY=1` when using
 `tools/bench_native_gpt_sm120_candidate.sh`; the helper appends
 `--startup-only` to both baseline and candidate while preserving the same

@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Elided dense GPT startup-only post-train diagnostic D2H sample copies.
+  `--startup-only` still runs the end-of-setup CUDA synchronization so readiness
+  timing reflects completed CUDA work, but it skips the token-weight and
+  clip-scale device-to-host sample copies that are only needed to prove weight
+  updates after real optimizer steps. Runtime JSON now reports
+  `timing.post_train_diagnostic_samples_elided`,
+  `timing.post_train_diagnostic_sample_d2h_count`, and
+  `timing.post_train_diagnostic_sample_d2h_count_elided` for benchmark
+  sidecars. Verification: focused native GPT source/JSON tests and C++ rebuild.
+
 - Aligned generic native-train subprocess dispatch with the GPT-specific
   native launchers. `NativeTrainRunConfig` now exposes
   `cuda_visible_devices` (default `"0"`), `run_native_train(...,

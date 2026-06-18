@@ -9145,6 +9145,9 @@ int run_transformer_lm_training_json(
     double train_loop_wall_ms = 0.0;
     double validation_wall_ms = 0.0;
     double post_train_sample_wall_ms = 0.0;
+    bool post_train_diagnostic_samples_elided = false;
+    std::int64_t post_train_diagnostic_sample_d2h_count = 0;
+    std::int64_t post_train_diagnostic_sample_d2h_count_elided = 0;
     double cleanup_wall_ms = 0.0;
     double checkpoint_wall_ms = 0.0;
     double total_wall_ms = 0.0;
@@ -16392,14 +16395,24 @@ int run_transformer_lm_training_json(
     train_loop_wall_ms = elapsed_ms(train_loop_start_time, train_loop_end_time);
     const auto post_train_sample_start_time = Clock::now();
     float sampled_token_weight = initial_token_weight_sample;
-    if (error.empty()) {
+    post_train_diagnostic_samples_elided = cfg.startup_only;
+    if (error.empty() && !post_train_diagnostic_samples_elided) {
         run(cuda_memcpy(&sampled_token_weight, token_weight, sizeof(float), kCudaMemcpyDeviceToHost),
             "token_weight.sample");
+        if (error.empty()) {
+            post_train_diagnostic_sample_d2h_count += 1;
+        }
     }
     float sampled_clip_scale = 0.0f;
-    if (error.empty()) {
+    if (error.empty() && !post_train_diagnostic_samples_elided) {
         run(cuda_memcpy(&sampled_clip_scale, grad_clip_scale, sizeof(float), kCudaMemcpyDeviceToHost),
             "gradient_clip_scale.sample");
+        if (error.empty()) {
+            post_train_diagnostic_sample_d2h_count += 1;
+        }
+    }
+    if (post_train_diagnostic_samples_elided) {
+        post_train_diagnostic_sample_d2h_count_elided = 2;
     }
     finalize_stage_timing();
     post_train_sample_wall_ms = elapsed_ms(post_train_sample_start_time, Clock::now());
@@ -17148,6 +17161,12 @@ int run_transformer_lm_training_json(
         << "    \"validation_wall_ms\": " << validation_wall_ms << ",\n"
         << "    \"train_compute_wall_ms\": " << (train_loop_wall_ms - validation_wall_ms) << ",\n"
         << "    \"post_train_sample_wall_ms\": " << post_train_sample_wall_ms << ",\n"
+        << "    \"post_train_diagnostic_samples_elided\": "
+        << (post_train_diagnostic_samples_elided ? "true" : "false") << ",\n"
+        << "    \"post_train_diagnostic_sample_d2h_count\": "
+        << post_train_diagnostic_sample_d2h_count << ",\n"
+        << "    \"post_train_diagnostic_sample_d2h_count_elided\": "
+        << post_train_diagnostic_sample_d2h_count_elided << ",\n"
         << "    \"cleanup_wall_ms\": " << cleanup_wall_ms << ",\n"
         << "    \"checkpoint_wall_ms\": " << checkpoint_wall_ms << ",\n"
         << "    \"total_wall_ms\": " << total_wall_ms << ",\n"
