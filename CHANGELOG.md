@@ -14,7 +14,12 @@ Future updates should append new entries here rather than replacing older notes.
   the old TK route for bisection; `...DISABLE_SHAPE=m,n,k,opA,opB` still works
   for one additional forward/fused-GELU TK shape. Verification: a dedicated
   RTX 5090 same-script 10-step, 3-sample comparison measured `0.990336x`
-  train-loop wall time and `1.009770x` tokens/sec versus the old TK route.
+  train-loop wall time and `1.009770x` tokens/sec versus the old TK route. A
+  follow-up same-script parity run against `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`
+  measured NeuralFn at `1.025419x` train-loop wall time and `0.974765x`
+  tokens/sec versus the reference, so the remaining parity gap is still open.
+  Runtime JSON now derives `lm_head_logits_linear_strategy` from the exact
+  LM-head logits shape bucket instead of the global TK GEMM counter.
 
 - **Breaking changes:** `nfn_native_tile_trainer_linear_shape_stats_entry` now
   takes one additional `std::int64_t* total_us` output argument. Native GPT

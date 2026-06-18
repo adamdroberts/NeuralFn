@@ -16713,6 +16713,21 @@ int run_transformer_lm_training_json(
                 return "?";
         }
     };
+    auto has_linear_shape_stat = [&](int path, int m, int n, int k, int op_a, int op_b) {
+        for (const LinearShapeStat& stat : linear_shape_stats) {
+            if (stat.path == path && stat.m == m && stat.n == n && stat.k == k &&
+                stat.op_a == op_a && stat.op_b == op_b && stat.calls > 0) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const bool lm_head_logits_tk_shape_used =
+        has_linear_shape_stat(2, kPaddedVocab, lm_head_chunk_rows, kDim, 1, 0);
+    const bool lm_head_logits_cublaslt_shape_used =
+        has_linear_shape_stat(1, kPaddedVocab, lm_head_chunk_rows, kDim, 1, 0);
+    const bool lm_head_logits_gemmex_shape_used =
+        has_linear_shape_stat(4, kPaddedVocab, lm_head_chunk_rows, kDim, 1, 0);
     std::ostringstream linear_shape_stats_json;
     linear_shape_stats_json << "  \"linear_shape_stats\": [\n";
     for (std::size_t i = 0; i < linear_shape_stats.size(); ++i) {
@@ -17086,19 +17101,23 @@ int run_transformer_lm_training_json(
                 : "forced-bf16-gemmex-dweight-plus-bias-accumulate-fallback")
         << "\",\n"
         << "  \"non_block_forward_backward_linear_strategy\": \""
-        << (lm_head_bf16_logits_enabled && linear_tk_gemm_count > 0
+        << (lm_head_bf16_logits_enabled && lm_head_logits_tk_shape_used
                 ? "padded-lm-head-tk-sm120-bf16-gemm-default"
                 : (lm_head_bf16_logits_enabled
-                ? "padded-lm-head-bf16-gemmex-fallback"
+                ? (lm_head_logits_cublaslt_shape_used
+                       ? "padded-lm-head-bf16-cublaslt-fallback"
+                       : "padded-lm-head-bf16-gemmex-fallback")
                 : (linear_cublaslt_gemm_count > 0
                        ? "padded-lm-head-tf32-cublaslt-optimized-opt-in"
                        : "padded-lm-head-tf32-sgemm-optimized-default")))
         << "\",\n"
         << "  \"lm_head_logits_linear_strategy\": \""
-        << (lm_head_bf16_logits_enabled && linear_tk_gemm_count > 0
+        << (lm_head_bf16_logits_enabled && lm_head_logits_tk_shape_used
                 ? "tk-sm120-bf16-gemm-default"
                 : (lm_head_bf16_logits_enabled
-                       ? "bf16-gemmex-fallback"
+                       ? (lm_head_logits_cublaslt_shape_used
+                              ? "bf16-cublaslt-fallback"
+                              : "bf16-gemmex-fallback")
                        : "tf32-sgemm-or-cublaslt"))
         << "\",\n"
         << "  \"linear_bf16_gemm_count\": " << linear_bf16_gemm_count << ",\n"

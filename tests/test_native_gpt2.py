@@ -4535,6 +4535,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "tf32-cublaslt-optimized" in gpt2_source_text
     assert "tf32-sgemm-optimized" in gpt2_source_text
     assert "lm_head_logits_linear_strategy" in gpt2_source_text
+    assert "lm_head_logits_tk_shape_used" in gpt2_source_text
+    assert "lm_head_logits_gemmex_shape_used" in gpt2_source_text
     assert "linear_tk_gemm_count" in gpt2_source_text
     assert "linear_tk_float_out_gemm_count" in gpt2_source_text
     assert "linear_shape_stats" in gpt2_source_text
