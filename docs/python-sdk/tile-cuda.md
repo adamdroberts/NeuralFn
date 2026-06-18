@@ -136,6 +136,10 @@ subprocess environment. The compiled trainer then reports `linear_shape_stats`
 JSON buckets that identify the successful TK BF16, cuBLASLt, cuBLAS GEMMEx BF16,
 and SGEMM linear dispatch shapes and call counts. This is intended for kernel
 candidate comparisons and should stay disabled in normal training runs.
+Runtime timing separates `setup_wall_ms`, `train_loop_wall_ms`,
+`post_train_sample_wall_ms`, `cleanup_wall_ms`, and `total_wall_ms`, so SDK
+callers can distinguish time-to-ready from explicit CUDA teardown when
+profiling startup.
 For one-shape TK forward bisection from the SDK, pass
 `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` or
 `NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` in the same

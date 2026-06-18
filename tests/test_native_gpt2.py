@@ -4259,6 +4259,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block_weight_bf16_initialization_strategy" in gpt2_source_text
     assert "bf16_parameter_initialization_descriptor_count" in gpt2_source_text
     assert "setup_timing" in gpt2_source_text
+    assert "post_train_sample_wall_ms" in gpt2_source_text
+    assert "cleanup_wall_ms" in gpt2_source_text
     assert "setup.float_arena_materialize" in gpt2_source_text
     assert "setup.zero_init" in gpt2_source_text
     assert "setup.block_weight_bf16_initial_refresh" in gpt2_source_text

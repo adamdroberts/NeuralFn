@@ -9053,6 +9053,8 @@ int run_transformer_lm_training_json(
     double setup_wall_ms = 0.0;
     double train_loop_wall_ms = 0.0;
     double validation_wall_ms = 0.0;
+    double post_train_sample_wall_ms = 0.0;
+    double cleanup_wall_ms = 0.0;
     double checkpoint_wall_ms = 0.0;
     double total_wall_ms = 0.0;
 
@@ -15986,6 +15988,7 @@ int run_transformer_lm_training_json(
     }
     const auto train_loop_end_time = Clock::now();
     train_loop_wall_ms = elapsed_ms(train_loop_start_time, train_loop_end_time);
+    const auto post_train_sample_start_time = Clock::now();
     float sampled_token_weight = initial_token_weight_sample;
     if (error.empty()) {
         run(cuda_memcpy(&sampled_token_weight, token_weight, sizeof(float), kCudaMemcpyDeviceToHost),
@@ -15997,6 +16000,7 @@ int run_transformer_lm_training_json(
             "gradient_clip_scale.sample");
     }
     finalize_stage_timing();
+    post_train_sample_wall_ms = elapsed_ms(post_train_sample_start_time, Clock::now());
     const double max_weight_delta = std::fabs(static_cast<double>(sampled_token_weight) - initial_token_weight_sample);
     passed = error.empty() &&
         ((cfg.startup_only && steps_completed == 0) ||
@@ -16442,6 +16446,7 @@ int run_transformer_lm_training_json(
     attention_forward_row_successes =
         std::max<std::int64_t>(0, attention_forward_row_launches - attention_forward_row_fallbacks);
 
+    const auto cleanup_start_time = Clock::now();
     for (void* ptr : descriptor_ptrs) {
         device_free(ptr, "cudaFree transformer_lm_descriptor_buffer");
     }
@@ -16477,6 +16482,7 @@ int run_transformer_lm_training_json(
     if (tile_handle != nullptr) {
         dlclose(tile_handle);
     }
+    cleanup_wall_ms = elapsed_ms(cleanup_start_time, Clock::now());
     total_wall_ms = elapsed_ms(total_start_time, Clock::now());
     std::ostringstream setup_timing_json;
     setup_timing_json
@@ -16591,6 +16597,8 @@ int run_transformer_lm_training_json(
         << "    \"train_loop_wall_ms\": " << train_loop_wall_ms << ",\n"
         << "    \"validation_wall_ms\": " << validation_wall_ms << ",\n"
         << "    \"train_compute_wall_ms\": " << (train_loop_wall_ms - validation_wall_ms) << ",\n"
+        << "    \"post_train_sample_wall_ms\": " << post_train_sample_wall_ms << ",\n"
+        << "    \"cleanup_wall_ms\": " << cleanup_wall_ms << ",\n"
         << "    \"checkpoint_wall_ms\": " << checkpoint_wall_ms << ",\n"
         << "    \"total_wall_ms\": " << total_wall_ms << ",\n"
         << "    \"optimizer_steps_per_second\": " << (train_loop_wall_ms > 0.0 ? (static_cast<double>(steps_completed) * 1000.0 / train_loop_wall_ms) : 0.0) << ",\n"

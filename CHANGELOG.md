@@ -6,6 +6,11 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native runtime JSON now reports `timing.post_train_sample_wall_ms`
+  and `timing.cleanup_wall_ms` separately. Startup-only and short benchmark
+  runs can now distinguish time-to-ready/setup from post-loop diagnostic sample
+  copies and explicit CUDA teardown of large arenas.
+
 - Added GPT-prefixed aliases for the native Tile-CUDA linear shape-stat profiler.
   `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1` and
   `NFN_NATIVE_GPT2_LINEAR_SHAPE_STATS=1` now behave like the existing
