@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rejected a BF16-output cuBLASLt probe for the dense GPT LM-head logits route.
+  A candidate Tile ops library attempted to route the no-bias BF16/BF16
+  `50304,8192,768,T,N` logits GEMM through cuBLASLt with BF16 output, but the
+  GPU-visible one-step shape-stat smoke still reported the LM-head logits
+  bucket on BF16 `cublasGemmEx` (`330916 us` over 64 calls), so the attempted
+  route was removed rather than leaving a no-op diagnostic flag. Verification:
+  built `/tmp/libnfn_tile_bf16out_cublaslt.so` and ran
+  `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1` against
+  `/tmp/nfn_bf16out_cublaslt_shape_smoke.json` on the dedicated RTX 5090.
+
 - The dense GPT token-weight CUDA Tile initializer now accepts
   `NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE=8192` for local candidate library
   builds, while keeping the measured 4096-element default. The 8192 candidate
