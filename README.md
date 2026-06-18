@@ -270,6 +270,10 @@ CLI flags with `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` or the short
 argument. Set
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` to emit the resolved paired commands, selected
 CUDA device policy, and alternating sample order without launching the GPU jobs.
+LM-head row-order bisections can use
+`NFN_SM120_CANDIDATE_ENV=NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=1`; the switch
+is diagnostic-only and remains off by default because the CUDA 13.3 RTX 5090
+same-script run measured neutral/slightly slower training throughput.
 Set
 `NFN_SM120_NATIVE_STARTUP_ONLY=1` for startup bisections; the wrapper appends
 `--startup-only` to both baseline and candidate while preserving the same

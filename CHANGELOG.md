@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added diagnostic-only dense GPT LM-head row-chunk traversal control with
+  `NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=1` and
+  `NFN_NATIVE_GPT2_LM_HEAD_REVERSE_CHUNKS=1`. Runtime JSON reports
+  `lm_head_reverse_chunk_order_enabled`, and the first dWeight beta-zero write
+  now follows the first processed LM-head row chunk so reverse traversal remains
+  well-defined. The CUDA 13.3 dedicated RTX 5090 same-script benchmark rejected
+  promotion: reverse chunks measured `1.000499x` train-loop wall time and
+  `0.999506x` tokens/sec versus the default forward order. Verification:
+  rebuilt `libnfn_native_train_tile_ops.so` and `nfn_gpt_native_train`, ran a
+  one-step reverse-chunk smoke, and ran
+  `tools/bench_native_gpt_sm120_candidate.sh` with selected-GPU idle checks.
+
 - `tools/bench_native_gpt_sm120_candidate.sh` now uses
   `NFN_SM120_CANDIDATE_EXTRA_ARGS` as the short alias for candidate-only CLI
   flags, matching the canonical `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`.

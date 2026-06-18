@@ -10838,6 +10838,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN",
                               "NFN_NATIVE_GPT2_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN"}),
             false);
+    const bool lm_head_reverse_chunk_order_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS",
+                              "NFN_NATIVE_GPT2_LM_HEAD_REVERSE_CHUNKS"}),
+            false);
     const bool bgrad_first_write_direct_enabled =
         dweight_first_microbatch_beta_zero_enabled &&
         env_flag_enabled_or_default(
@@ -13933,7 +13938,10 @@ int run_transformer_lm_training_json(
     auto lm_head_forward_loss = [&](const std::string& label, bool copy_loss_to_host) -> double {
         const std::int64_t stage_event = stage_begin(label + ".lm_head_loss");
         fill_buffer(loss_total, 1, 0.0f, label + ".loss_total.zero");
-        for (std::int64_t row_start = 0; row_start < active_rows && error.empty(); row_start += lm_head_chunk_rows) {
+        for (std::int64_t chunk_index = 0; chunk_index < lm_head_chunk_count && error.empty(); ++chunk_index) {
+            const std::int64_t logical_chunk_index =
+                lm_head_reverse_chunk_order_enabled ? (lm_head_chunk_count - 1 - chunk_index) : chunk_index;
+            const std::int64_t row_start = logical_chunk_index * lm_head_chunk_rows;
             const std::int64_t row_count =
                 (row_start + lm_head_chunk_rows < active_rows) ? lm_head_chunk_rows : (active_rows - row_start);
             const float* hidden_chunk = lnf_out + row_start * kDim;
@@ -14005,7 +14013,10 @@ int run_transformer_lm_training_json(
                     "lm_head.hidden_full.to_bf16_bits");
             });
         }
-        for (std::int64_t row_start = 0; row_start < active_rows && error.empty(); row_start += lm_head_chunk_rows) {
+        for (std::int64_t chunk_index = 0; chunk_index < lm_head_chunk_count && error.empty(); ++chunk_index) {
+            const std::int64_t logical_chunk_index =
+                lm_head_reverse_chunk_order_enabled ? (lm_head_chunk_count - 1 - chunk_index) : chunk_index;
+            const std::int64_t row_start = logical_chunk_index * lm_head_chunk_rows;
             const std::int64_t row_count =
                 (row_start + lm_head_chunk_rows < active_rows) ? lm_head_chunk_rows : (active_rows - row_start);
             const float* hidden_chunk = lnf_out + row_start * kDim;
@@ -14016,7 +14027,7 @@ int run_transformer_lm_training_json(
             const std::uint16_t* target_chunk_u16 = active_targets_u16 + row_start;
             float* grad_hidden_chunk = grad_lnf + row_start * kDim;
             const bool first_lm_head_dweight_chunk =
-                row_start == 0 && dweight_first_microbatch_beta_zero_enabled && !dweight_accumulate;
+                chunk_index == 0 && dweight_first_microbatch_beta_zero_enabled && !dweight_accumulate;
             const float lm_head_dweight_beta = first_lm_head_dweight_chunk ? 0.0f : 1.0f;
             run_timed_stage("lm_head_backward.logits", [&]() {
                 if (lm_head_bf16_logits_enabled) {
@@ -17400,11 +17411,13 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"lm_head_dweight_beta_zero_scope\": \""
         << (dweight_first_microbatch_beta_zero_enabled
-                ? "first-gradient-accumulation-microbatch-first-row-chunk-only"
+                ? "first-gradient-accumulation-microbatch-first-processed-row-chunk-only"
                 : "disabled-all-lm-head-row-chunks-use-beta-one")
         << "\",\n"
         << "  \"lm_head_dweight_before_dhidden_enabled\": "
         << (lm_head_dweight_before_dhidden_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_reverse_chunk_order_enabled\": "
+        << (lm_head_reverse_chunk_order_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_backward_strategy\": \""
         << (lm_head_public_vocab_ce_enabled
                 ? (lm_head_bf16_logits_enabled

@@ -158,6 +158,12 @@ row chunk. Tied LM-head dWeight chunks accumulate directly into the optimizer-st
 `nfn_native_tile_linear_backward_weight_accumulate_float32` instead of using a
 full-vocab scratch gradient buffer per chunk or per microbatch. The JSON reports
 `lm_head_row_chunk_count` and `loss_partial_count`.
+`NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=1` /
+`NFN_NATIVE_GPT2_LM_HEAD_REVERSE_CHUNKS=1` reverses LM-head row-chunk traversal
+for cache-order bisection and reports `lm_head_reverse_chunk_order_enabled`;
+it is diagnostic-only because the CUDA 13.3 dedicated RTX 5090 same-script run
+measured `1.000499x` train-loop wall time and `0.999506x` tokens/sec versus the
+default forward chunk order.
 
 `NativeGptRunConfig.train_loss_every_steps` and
 `NativeGpt2RunConfig.train_loss_every_steps` default to `0` and forward
