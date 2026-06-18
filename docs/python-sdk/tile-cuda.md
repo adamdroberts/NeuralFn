@@ -302,14 +302,19 @@ the first gradient-accumulation microbatch launches the beta-capable raw ABI
 with GEMM `beta=0`, and subsequent microbatches use `beta=1`. That path covers
 the tied LM-head BF16/BF16 dWeight route plus QKV, attention projection, MLP FC,
 and MLP projection block dWeight+bias calls that use the trainer cuBLASLt
-routes. Set `NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO=0` (or the
-compatibility `NFN_NATIVE_GPT2_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO=0`) only for
-paired comparisons against the previous always-accumulate path. Runtime JSON
-reports `dweight_first_microbatch_beta_zero_enabled`,
-`dweight_first_microbatch_beta_strategy`, and `first-write-then-accumulate`
-suffixes in `lm_head_dweight_strategy`, `block_backward_qkv_dweight_strategy`,
-and `block_backward_weight_linear_strategy`. For cuBLASLt BGRADB dWeight+bias
-routes, the default writes the epilogue bias gradient into Tile-owned scratch
+routes. The tied LM-head dWeight path is split into row chunks for memory; only
+the first chunk of the first gradient-accumulation microbatch uses `beta=0`, and
+the remaining chunks use `beta=1` so chunked token contributions accumulate
+instead of replacing each other. Set
+`NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO=0` (or the compatibility
+`NFN_NATIVE_GPT2_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO=0`) only for paired
+comparisons against the previous always-accumulate path. Runtime JSON reports
+`dweight_first_microbatch_beta_zero_enabled`,
+`dweight_first_microbatch_beta_strategy`, `lm_head_dweight_beta_zero_scope`, and
+`first-write-then-accumulate` suffixes in `lm_head_dweight_strategy`,
+`block_backward_qkv_dweight_strategy`, and `block_backward_weight_linear_strategy`.
+For cuBLASLt BGRADB dWeight+bias routes, the default writes the epilogue bias
+gradient into Tile-owned scratch
 and accumulates it into `grad_bias`. Runtime JSON reports
 `linear_bias_gradient_first_write_bgrad_direct_enabled` when the direct shortcut
 is active. Set `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1`,

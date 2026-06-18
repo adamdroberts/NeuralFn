@@ -2457,6 +2457,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         == "first-gradient-accumulation-microbatch-uses-gemm-beta-zero"
     )
     assert (
+        train_transformer_payload["lm_head_dweight_beta_zero_scope"]
+        == "first-gradient-accumulation-microbatch-first-row-chunk-only"
+    )
+    assert (
         train_transformer_payload["non_block_forward_backward_linear_strategy"]
         == "padded-lm-head-bf16-gemmex-fallback"
     )
@@ -4358,6 +4362,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "full-final-norm-bf16-prepack-bf16-dlogit-dweight-accumulate" in gpt2_source_text
     assert "full-final-norm-bf16-prepack-bf16-dlogit-dweight-first-write-then-accumulate" in gpt2_source_text
     assert "dweight_first_microbatch_beta_zero_enabled" in gpt2_source_text
+    assert "first_lm_head_dweight_chunk" in gpt2_source_text
+    assert "row_start == 0 && dweight_first_microbatch_beta_zero_enabled && !dweight_accumulate" in gpt2_source_text
+    assert "lm_head_dweight_beta_zero_scope" in gpt2_source_text
     assert "lm_head_backward.hidden_prepack" in gpt2_source_text
     assert "launch_linear_bf16_input_float_weight_bf16_output_float32" in source_text
     assert "linear_bf16_input_float_weight_bf16_output_float32_kernel" in kernels_text

@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed tied LM-head dWeight accumulation for chunked dense GPT native training.
+  The first-write-then-accumulate path still uses GEMM `beta=0` for the first
+  gradient-accumulation microbatch, but the row-chunked LM-head route now applies
+  that beta-zero write only to the first LM-head row chunk. Later chunks in the
+  same microbatch use `beta=1`, so all token chunks contribute to
+  `accum_grad_token_weight` instead of replacing earlier chunk contributions.
+  Runtime JSON now reports `lm_head_dweight_beta_zero_scope`. Verification:
+  rebuilt `build/nfn_gpt_native_train` and ran the focused native GPT tests after
+  updating source guards for the corrected LM-head chunk scope. A GPU-visible
+  one-step TinyStories native run also completed with
+  `steps_completed: 1`, `lm_head_row_chunk_count: 8`, and
+  `lm_head_dweight_beta_zero_scope` set to
+  `"first-gradient-accumulation-microbatch-first-row-chunk-only"`.
+
 - Dense GPT native training now has a default-off BF16 persistent block-output
   diagnostic behind `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUTS=1` /
   `NFN_NATIVE_GPT2_BF16_PERSISTENT_BLOCK_OUTPUTS=1`. The opt-in path stores

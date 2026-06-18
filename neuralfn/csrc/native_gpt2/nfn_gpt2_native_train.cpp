@@ -13733,8 +13733,6 @@ int run_transformer_lm_training_json(
 
     auto lm_head_backward = [&](float accumulation_scale, bool dweight_accumulate) {
         const std::int64_t stage_event = stage_begin("lm_head_backward");
-        const float dweight_beta =
-            dweight_first_microbatch_beta_zero_enabled && !dweight_accumulate ? 0.0f : 1.0f;
         if (lm_head_prepack_bf16_hidden_enabled) {
             run_timed_stage("lm_head_backward.hidden_prepack", [&]() {
                 run(float32_to_bf16_bits(
@@ -13754,6 +13752,9 @@ int run_transformer_lm_training_json(
             const std::int64_t* target_chunk = active_targets + row_start;
             const std::uint16_t* target_chunk_u16 = active_targets_u16 + row_start;
             float* grad_hidden_chunk = grad_lnf + row_start * kDim;
+            const bool first_lm_head_dweight_chunk =
+                row_start == 0 && dweight_first_microbatch_beta_zero_enabled && !dweight_accumulate;
+            const float lm_head_dweight_beta = first_lm_head_dweight_chunk ? 0.0f : 1.0f;
             run_timed_stage("lm_head_backward.logits", [&]() {
                 if (lm_head_bf16_logits_enabled) {
                     if (lm_head_prepack_bf16_hidden_enabled) {
@@ -13929,7 +13930,7 @@ int run_transformer_lm_training_json(
                                         row_count,
                                         kDim,
                                         kPaddedVocab,
-                                        dweight_beta,
+                                        lm_head_dweight_beta,
                                         nullptr),
                                     "lm_head.backward_weight.beta.prepacked_bf16_bits_bf16_bits");
                             } else {
@@ -13962,7 +13963,7 @@ int run_transformer_lm_training_json(
                                             row_count,
                                             kDim,
                                             kPaddedVocab,
-                                            dweight_beta,
+                                            lm_head_dweight_beta,
                                             nullptr),
                                         "lm_head.backward_weight.beta.bf16_bits_bf16_bits");
                                 } else {
@@ -16965,6 +16966,11 @@ int run_transformer_lm_training_json(
         << (dweight_first_microbatch_beta_zero_enabled
                 ? "first-gradient-accumulation-microbatch-uses-gemm-beta-zero"
                 : "all-gradient-accumulation-microbatches-use-gemm-beta-one")
+        << "\",\n"
+        << "  \"lm_head_dweight_beta_zero_scope\": \""
+        << (dweight_first_microbatch_beta_zero_enabled
+                ? "first-gradient-accumulation-microbatch-first-row-chunk-only"
+                : "disabled-all-lm-head-row-chunks-use-beta-one")
         << "\",\n"
         << "  \"lm_head_ce_backward_strategy\": \""
         << (lm_head_public_vocab_ce_enabled

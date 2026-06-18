@@ -116,12 +116,17 @@ Dense GPT dWeight GEMMs now also match the llm.kittens accumulation contract:
 the first gradient-accumulation microbatch writes dWeight with GEMM `beta=0`,
 and later microbatches accumulate with `beta=1`. This is enabled by default for
 LM-head, QKV, attention projection, and MLP block dWeights through the raw
-Tile-CUDA beta ABI. Set `NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO=0`
-only for paired benchmarks against the older always-accumulate path. Runtime
-JSON reports `dweight_first_microbatch_beta_zero_enabled`,
-`dweight_first_microbatch_beta_strategy`, and `first-write-then-accumulate`
-strategy suffixes for the active dWeight routes. For cuBLASLt BGRADB dWeight
-plus bias routes, the default writes the epilogue bias gradient into Tile-owned
+Tile-CUDA beta ABI. The tied LM-head is additionally row-chunked for memory, so
+only the first LM-head chunk of the first gradient-accumulation microbatch uses
+`beta=0`; later LM-head chunks in that same microbatch use `beta=1` so every
+token chunk contributes to `accum_grad_token_weight`. Set
+`NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO=0` only for paired
+benchmarks against the older always-accumulate path. Runtime JSON reports
+`dweight_first_microbatch_beta_zero_enabled`,
+`dweight_first_microbatch_beta_strategy`, `lm_head_dweight_beta_zero_scope`, and
+`first-write-then-accumulate` strategy suffixes for the active dWeight routes.
+For cuBLASLt BGRADB dWeight plus bias routes, the default writes the epilogue
+bias gradient into Tile-owned
 scratch and accumulates it into `grad_bias`. Set
 `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1`,
 `NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT=1`, or
