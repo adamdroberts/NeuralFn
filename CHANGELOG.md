@@ -97,6 +97,15 @@ Future updates should append new entries here rather than replacing older notes.
   smoke, and ran `tools/bench_native_gpt_sm120_candidate.sh` with selected-GPU
   idle checks.
 
+- Recorded that `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS=-DLLMK_SM120_ATOMIC_DQ` is not
+  yet a direct SM120 Tile ops benchmark candidate. The compile fails because
+  llm.kittens changes q-gradient storage to float and does not expose the
+  packed-gradient entrypoint NeuralFn's packed-QKV wrapper currently calls in
+  that mode. Benchmarking atomic-dQ therefore needs a new wrapper path with
+  float dQ scratch plus conversion/repack before packed QKV dWeight handoff.
+  Verification: attempted the candidate `tools/build_native_train_tile_ops.sh`
+  build against `/tmp/libnfn_native_train_tile_ops_atomic_dq_20260618.so`.
+
 - Replaced the no-cuBLAS large-row linear dWeight fallback with a shared-memory
   2D tiled CUDA kernel for float32-output dWeight accumulation across float32
   and BF16 activation/gradient combinations. The normal native GPT workstation
