@@ -97,14 +97,19 @@ Future updates should append new entries here rather than replacing older notes.
   smoke, and ran `tools/bench_native_gpt_sm120_candidate.sh` with selected-GPU
   idle checks.
 
-- Recorded that `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS=-DLLMK_SM120_ATOMIC_DQ` is not
-  yet a direct SM120 Tile ops benchmark candidate. The compile fails because
-  llm.kittens changes q-gradient storage to float and does not expose the
-  packed-gradient entrypoint NeuralFn's packed-QKV wrapper currently calls in
-  that mode. Benchmarking atomic-dQ therefore needs a new wrapper path with
-  float dQ scratch plus conversion/repack before packed QKV dWeight handoff.
-  Verification: attempted the candidate `tools/build_native_train_tile_ops.sh`
-  build against `/tmp/libnfn_native_train_tile_ops_atomic_dq_20260618.so`.
+- Added a compile-time SM120 atomic-dQ packed-QKV attention-backward candidate
+  behind `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS=-DLLMK_SM120_ATOMIC_DQ`. The candidate
+  wrapper allocates float dQ scratch, zeroes it per backward chunk, launches the
+  internal llm.kittens SM120 atomic-dQ backward, and converts/re-packs the Q
+  gradient slice into the BF16 packed `dQKV` buffer before QKV dWeight handoff;
+  split-Q/K/V attention wrappers return unsupported in that candidate build.
+  The route remains rejected/default-off: a one-step dedicated RTX 5090 profile
+  regressed TK backward timing to `597872 us`, and the same-script 5-step,
+  2-sample benchmark measured `1.134435x` train-loop wall time and `0.881527x`
+  tokens/sec versus default. Verification: rebuilt the default Tile ops library,
+  built `/tmp/libnfn_native_train_tile_ops_atomic_dq_20260618.so`, ran a
+  GPU-visible one-step smoke/profile, and ran
+  `tools/bench_native_gpt_sm120_candidate.sh` with selected-GPU idle checks.
 
 - Replaced the no-cuBLAS large-row linear dWeight fallback with a shared-memory
   2D tiled CUDA kernel for float32-output dWeight accumulation across float32

@@ -1242,7 +1242,13 @@ backward consumes those bits before writing BF16 `dQKV`. Runtime JSON reports
 `attention_backward_bf16_grad_out_scratch_bytes`, and the updated
 `attention_backward_qkv_bridge_strategy`. The path remains default-off because
 paired dedicated-RTX-5090 timing measured it slower than the current float
-grad-out default. The trainer ABI also exports
+grad-out default. A Tile ops library built with
+`NFN_TILE_CUDA_EXTRA_NVCC_FLAGS=-DLLMK_SM120_ATOMIC_DQ` now compiles through a
+dedicated packed-QKV candidate wrapper that uses float dQ scratch and re-packs
+the Q gradient into the BF16 packed `dQKV` buffer, but it remains
+default-off/rejected because the dedicated RTX 5090 same-script benchmark
+measured `1.134435x` train-loop wall time and `0.881527x` tokens/sec versus the
+current non-atomic packed-gradient default. The trainer ABI also exports
 `nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_to_bf16_bits_float32`,
 which accumulates BF16 activation and BF16 gradient dWeight into a BF16 staging
 buffer while still accumulating bias in float32. Dense GPT can opt into that

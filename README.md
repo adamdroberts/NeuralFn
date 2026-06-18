@@ -508,7 +508,12 @@ Keep compile-time kernel candidates isolated until a same-script paired run
 holds up. For example, a Tile ops library built with
 `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1"`
 remains an opt-in benchmark candidate because the dedicated RTX 5090 four-sample
-repeat was noise-equivalent to the default library.
+repeat was noise-equivalent to the default library. The atomic-dQ packed-QKV
+attention candidate,
+`NFN_TILE_CUDA_EXTRA_NVCC_FLAGS=-DLLMK_SM120_ATOMIC_DQ`, now compiles through a
+dedicated wrapper, but it remains rejected/default-off because the paired RTX
+5090 benchmark measured `1.134435x` train-loop wall time and `0.881527x`
+tokens/sec versus the current non-atomic packed-gradient default.
 
 For profiling only, `NFN_TILE_CUDA_LINEAR_TK_FLOAT_OUT=1` or `NFN_NATIVE_LINEAR_TK_FLOAT_OUT=1` routes eligible BF16 linear forward GEMMs through the TK BF16-output bridge and converts the result back to float32. This path reports `linear_tk_float_out_gemm_count` in native GPT-2 JSON and remains disabled by default because the current full-shape TinyStories probe regressed overall throughput. The dense GPT trainer now skips the TK forward path for the padded LM-head logits shape `50304,8192,768,T,N` by default because same-script RTX 5090 benchmarks measured the fallback faster; set `NFN_TILE_CUDA_LINEAR_TK_FORWARD_ENABLE_SHAPE=50304,8192,768,T,N` or `NFN_NATIVE_LINEAR_TK_FORWARD_ENABLE_SHAPE=50304,8192,768,T,N` to restore the old TK route for bisection. To bisection-test one additional forward TK shape against its fallback, set `NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` or `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB`, using the same `linear_shape_stats` tuple. The disable gate only applies to TK forward/fused-GELU launches with fallback paths; it deliberately does not affect bits-only backward dGELU kernels.
 

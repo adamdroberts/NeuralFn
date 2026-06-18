@@ -256,6 +256,9 @@ struct TkAttentionWorkspace {
   __nv_bfloat16* gk_bf = nullptr;
   __nv_bfloat16* gv_bf = nullptr;
   __nv_bfloat16* packed_grad_bf = nullptr;
+#if defined(LLMK_SM120_ATOMIC_DQ)
+  float* qg_float = nullptr;
+#endif
   float* lse = nullptr;
   float* d = nullptr;
   std::int64_t element_capacity = 0;
@@ -447,6 +450,9 @@ void release_tk_attention_workspace(TkAttentionWorkspace& workspace) {
   if (workspace.gk_bf != nullptr) cudaFree(workspace.gk_bf);
   if (workspace.gv_bf != nullptr) cudaFree(workspace.gv_bf);
   if (workspace.packed_grad_bf != nullptr) cudaFree(workspace.packed_grad_bf);
+#if defined(LLMK_SM120_ATOMIC_DQ)
+  if (workspace.qg_float != nullptr) cudaFree(workspace.qg_float);
+#endif
   if (workspace.lse != nullptr) cudaFree(workspace.lse);
   if (workspace.d != nullptr) cudaFree(workspace.d);
   workspace = {};
@@ -495,6 +501,12 @@ TkAttentionWorkspace* ensure_tk_attention_workspace(
     release_tk_attention_workspace(next);
     return nullptr;
   }
+#if defined(LLMK_SM120_ATOMIC_DQ)
+  if (require_packed_grad && !cuda_malloc_float(&next.qg_float, elements)) {
+    release_tk_attention_workspace(next);
+    return nullptr;
+  }
+#endif
   next.element_capacity = elements;
   next.row_capacity = row_elements;
   g_tk_attention_workspace = next;
@@ -536,6 +548,77 @@ __device__ __forceinline__ std::uint16_t f32_to_bf16_bits_device(float value) {
 __device__ __forceinline__ float bf16_bits_to_f32_device(std::uint16_t value) {
   return __uint_as_float(static_cast<unsigned int>(value) << 16);
 }
+
+#if defined(LLMK_SM120_ATOMIC_DQ)
+__global__ void pack_attention_atomic_dq_to_packed_grad_bf16_kernel(
+    const float* qg,
+    std::uint16_t* packed_grad_bits,
+    std::int64_t batch,
+    std::int64_t heads,
+    std::int64_t seq_len,
+    std::int64_t head_dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t elements = batch * heads * seq_len * head_dim;
+  if (idx >= elements) {
+    return;
+  }
+  const std::int64_t d = idx % head_dim;
+  const std::int64_t t = (idx / head_dim) % seq_len;
+  const std::int64_t h = (idx / (head_dim * seq_len)) % heads;
+  const std::int64_t b = idx / (head_dim * seq_len * heads);
+  const std::int64_t packed_cols = 3 * heads * head_dim;
+  const std::int64_t packed_idx = (b * seq_len + t) * packed_cols + h * head_dim + d;
+  packed_grad_bits[packed_idx] = f32_to_bf16_bits_device(qg[idx]);
+}
+
+template <int D>
+void launch_tk_attention_packed_qkv_backward_atomic_dq(
+    __nv_bfloat16* qkv,
+    __nv_bfloat16* out,
+    float* lse,
+    __nv_bfloat16* grad_out,
+    float* d,
+    float* qg,
+    __nv_bfloat16* packed_grad,
+    int batch,
+    int heads,
+    int seq_len,
+    cudaStream_t stream) {
+  using globals = llmk::attention::sm120_detail::bwd_globals<D>;
+  const unsigned int Bu = static_cast<unsigned int>(batch);
+  const unsigned int NHu = static_cast<unsigned int>(heads);
+  const unsigned int Tu = static_cast<unsigned int>(seq_len);
+  const unsigned int Du = static_cast<unsigned int>(D);
+  const unsigned int packed_cols = static_cast<unsigned int>(3 * heads * D);
+
+  typename globals::q_gl q_arg{qkv, Bu, 1U, Tu, packed_cols};
+  typename globals::k_gl k_arg{qkv, Bu, 1U, Tu, packed_cols};
+  typename globals::v_gl v_arg{qkv, Bu, 1U, Tu, packed_cols};
+  typename globals::o_gl o_arg{out, Bu, NHu, Tu, Du};
+  typename globals::og_gl og_arg{grad_out, Bu, NHu, Tu, Du};
+  typename globals::l_gl l_arg{lse, Bu, NHu, 1U, Tu};
+  typename globals::d_gl d_arg{d, Bu, NHu, 1U, Tu};
+  typename globals::qg_gl qg_arg{qg, Bu, NHu, Tu, Du};
+  typename globals::grad_gl kg_arg{packed_grad, Bu, 1U, Tu, packed_cols};
+  typename globals::grad_gl vg_arg{packed_grad, Bu, 1U, Tu, packed_cols};
+  globals g{q_arg, k_arg, v_arg, o_arg, og_arg, l_arg, d_arg, qg_arg, kg_arg, vg_arg, seq_len};
+
+  dim3 grid(seq_len / llmk::attention::sm120_detail::Q_BLOCK, heads, batch);
+  llmk::attention::sm120_detail::bwd_main_kernel<D, true, true>
+      <<<grid, ::kittens::WARP_THREADS, 0, stream>>>(g);
+  constexpr int threads = 256;
+  const std::int64_t q_elements =
+      static_cast<std::int64_t>(batch) * heads * seq_len * D;
+  const int blocks = static_cast<int>((q_elements + threads - 1) / threads);
+  pack_attention_atomic_dq_to_packed_grad_bf16_kernel<<<blocks, threads, 0, stream>>>(
+      qg,
+      reinterpret_cast<std::uint16_t*>(packed_grad),
+      batch,
+      heads,
+      seq_len,
+      D);
+}
+#endif
 
 __global__ void store_mlp_activations_bf16_float32_kernel(
     const float* __restrict__ ln2_out,
@@ -1006,6 +1089,9 @@ int launch_tk_attention_backward_float32(
     std::int64_t head_dim,
     bool grad_out_merged,
     cudaStream_t stream) {
+#if defined(LLMK_SM120_ATOMIC_DQ)
+  return 2;
+#else
   const std::int64_t elements = batch * heads * seq_len * head_dim;
   const std::int64_t row_elements = batch * heads * seq_len;
   TkAttentionWorkspace* workspace = ensure_tk_attention_workspace(elements, row_elements, stream);
@@ -1051,6 +1137,7 @@ int launch_tk_attention_backward_float32(
   bf16_to_f32_kernel<<<blocks, threads, 0, stream>>>(workspace->gv_bf, grad_v, elements);
   g_attention_backward_tk_launch_count.fetch_add(1, std::memory_order_relaxed);
   return static_cast<int>(cudaPeekAtLastError());
+#endif
 }
 
 int launch_tk_attention_backward_to_qkv_float32(
@@ -1065,6 +1152,9 @@ int launch_tk_attention_backward_to_qkv_float32(
     std::int64_t head_dim,
     bool grad_out_merged,
     cudaStream_t stream) {
+#if defined(LLMK_SM120_ATOMIC_DQ)
+  return 2;
+#else
   const std::int64_t elements = batch * heads * seq_len * head_dim;
   const std::int64_t row_elements = batch * heads * seq_len;
   TkAttentionWorkspace* workspace = ensure_tk_attention_workspace(elements, row_elements, stream);
@@ -1116,6 +1206,7 @@ int launch_tk_attention_backward_to_qkv_float32(
       head_dim);
   g_attention_backward_tk_launch_count.fetch_add(1, std::memory_order_relaxed);
   return static_cast<int>(cudaPeekAtLastError());
+#endif
 }
 
 int launch_tk_attention_backward_to_qkv_reuse_forward_float32(
@@ -1127,6 +1218,9 @@ int launch_tk_attention_backward_to_qkv_reuse_forward_float32(
     std::int64_t head_dim,
     bool grad_out_merged,
     cudaStream_t stream) {
+#if defined(LLMK_SM120_ATOMIC_DQ)
+  return 2;
+#else
   const std::int64_t elements = batch * heads * seq_len * head_dim;
   const std::int64_t row_elements = batch * heads * seq_len;
   TkAttentionWorkspace* workspace = ensure_tk_attention_workspace(elements, row_elements, stream);
@@ -1170,6 +1264,7 @@ int launch_tk_attention_backward_to_qkv_reuse_forward_float32(
       head_dim);
   g_attention_backward_tk_launch_count.fetch_add(1, std::memory_order_relaxed);
   return static_cast<int>(cudaPeekAtLastError());
+#endif
 }
 
 int launch_tk_attention_packed_qkv_forward_bf16_float32(
@@ -1275,6 +1370,9 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
       workspace->o_bf == nullptr ||
       workspace->go_bf == nullptr ||
       workspace->packed_grad_bf == nullptr ||
+#if defined(LLMK_SM120_ATOMIC_DQ)
+      workspace->qg_float == nullptr ||
+#endif
       workspace->lse == nullptr ||
       workspace->d == nullptr) {
     return 2;
@@ -1383,6 +1481,41 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
           stream,
           g_attention_backward_tk_timing_us,
           g_attention_backward_tk_timing_count);
+#if defined(LLMK_SM120_ATOMIC_DQ)
+      float* qg_float = workspace->qg_float + batch_begin * head_elements_per_batch;
+      cudaMemsetAsync(
+          qg_float,
+          0,
+          sizeof(float) * static_cast<std::size_t>(chunk_batch * head_elements_per_batch),
+          stream);
+      if (head_dim == 64) {
+        launch_tk_attention_packed_qkv_backward_atomic_dq<64>(
+            qkv,
+            workspace->o_bf + batch_begin * head_elements_per_batch,
+            lse,
+            workspace->go_bf + batch_begin * head_elements_per_batch,
+            workspace->d + batch_begin * row_elements_per_batch,
+            qg_float,
+            packed_grad_target,
+            static_cast<int>(chunk_batch),
+            static_cast<int>(heads),
+            static_cast<int>(seq_len),
+            stream);
+      } else {
+        launch_tk_attention_packed_qkv_backward_atomic_dq<128>(
+            qkv,
+            workspace->o_bf + batch_begin * head_elements_per_batch,
+            lse,
+            workspace->go_bf + batch_begin * head_elements_per_batch,
+            workspace->d + batch_begin * row_elements_per_batch,
+            qg_float,
+            packed_grad_target,
+            static_cast<int>(chunk_batch),
+            static_cast<int>(heads),
+            static_cast<int>(seq_len),
+            stream);
+      }
+#else
       if (head_dim == 64) {
         llmk::attention::launch_backward_causal_packed_qkv_packed_grads<64>(
             llmk::to_bf16(qkv),
@@ -1410,6 +1543,7 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
             stream,
             true);
       }
+#endif
     }
     tk_backward_chunk_launches += 1;
   }
@@ -1635,6 +1769,9 @@ int launch_tk_attention_backward_to_qkv_from_saved_bf16_float32(
     std::int64_t head_dim,
     bool grad_out_merged,
     cudaStream_t stream) {
+#if defined(LLMK_SM120_ATOMIC_DQ)
+  return 2;
+#else
   if (saved_q_bf16_bits == nullptr ||
       saved_k_bf16_bits == nullptr ||
       saved_v_bf16_bits == nullptr ||
@@ -1696,6 +1833,7 @@ int launch_tk_attention_backward_to_qkv_from_saved_bf16_float32(
       head_dim);
   g_attention_backward_tk_launch_count.fetch_add(1, std::memory_order_relaxed);
   return static_cast<int>(cudaPeekAtLastError());
+#endif
 }
 #endif
 
