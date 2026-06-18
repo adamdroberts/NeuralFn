@@ -251,6 +251,8 @@ def python_entrypoint_report(repo_root: Path) -> list[dict[str, object]]:
         env["NFN_NATIVE_GPT2_CLI"] = str(native_cli)
         env["NFN_NATIVE_GPT2_EVO_CLI"] = str(native_cli)
         env["NFN_NATIVE_NANOGPT_CLI"] = str(native_cli)
+        env["NFN_NATIVE_LLAMA_CLI"] = str(native_cli)
+        env["NFN_NATIVE_SEMANTIC_ROUTER_MOE_CLI"] = str(native_cli)
         env["PYTHONPATH"] = os.pathsep.join(
             part for part in (str(temp_root), str(repo_root), env.get("PYTHONPATH", "")) if part
         )
@@ -274,6 +276,39 @@ def python_entrypoint_report(repo_root: Path) -> list[dict[str, object]]:
                 (
                     sys.executable,
                     "cli/scripts/train_nanogpt.py",
+                    "--tinystories",
+                    "--native-cuda-dry-run",
+                    "--native-cuda-print-command",
+                    "--native-cuda-no-checkpoint",
+                ),
+            ),
+            (
+                "train_llama_megakernel_fast_command",
+                (
+                    sys.executable,
+                    "cli/scripts/train_llama_megakernel.py",
+                    "--tinystories",
+                    "--native-cuda-dry-run",
+                    "--native-cuda-print-command",
+                    "--native-cuda-no-checkpoint",
+                ),
+            ),
+            (
+                "train_semantic_router_moe_fast_command",
+                (
+                    sys.executable,
+                    "cli/scripts/train_semantic_router_moe.py",
+                    "--tinystories",
+                    "--native-cuda-dry-run",
+                    "--native-cuda-print-command",
+                    "--native-cuda-no-checkpoint",
+                ),
+            ),
+            (
+                "train_semantic_router_moe_overnight_fast_command",
+                (
+                    sys.executable,
+                    "cli/scripts/train_semantic_router_moe-overnight.py",
                     "--tinystories",
                     "--native-cuda-dry-run",
                     "--native-cuda-print-command",

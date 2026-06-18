@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the native no-Torch dependency verifier to cover more direct
+  training entrypoints. `tools/check_native_no_torch_deps.py` now stubs
+  family-specific native binaries for `NFN_NATIVE_LLAMA_CLI` and
+  `NFN_NATIVE_SEMANTIC_ROUTER_MOE_CLI`, then verifies
+  `train_llama_megakernel.py`, `train_semantic_router_moe.py`, and
+  `train_semantic_router_moe-overnight.py` under the same import blocker used
+  for GPT, GPT-2-evo, NanoGPT, native inference, and SDK handoff checks. This
+  keeps those direct CLI training paths on the compiled native C++ boundary
+  before Torch/NumPy/dataset-manager imports. Verification:
+  `python tools/check_native_no_torch_deps.py --json`.
+
 - Revisited the CUDA 13.3 WSL failure surfaces with GPU-visible execution. A
   sandboxed native benchmark still failed because `nvidia-smi`/NVML and
   `cudaDriverGetVersion` were blocked by the operating system, but the same
