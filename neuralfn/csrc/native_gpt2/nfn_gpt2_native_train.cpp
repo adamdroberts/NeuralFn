@@ -187,6 +187,15 @@ class ScopedStdoutRedirect {
     std::streambuf* previous_ = nullptr;
 };
 
+void mirror_json_profile_failure_to_stderr(
+    const Config& cfg,
+    const std::string& status,
+    const std::string& error) {
+    if (!cfg.json_out_path.empty() && !error.empty()) {
+        std::cerr << status << ": " << error << "\n";
+    }
+}
+
 std::string env_or_empty_any(std::initializer_list<const char*> names) {
     for (const char* name : names) {
         std::string value = env_or_empty(name);
@@ -3852,6 +3861,9 @@ bool print_tile_plan(
         std::cout << "  }";
     }
     std::cout << "\n}\n";
+    if (include_symbol_check && (!loaded || !all_symbols)) {
+        mirror_json_profile_failure_to_stderr(cfg, "native-tile-ops-check-failed", error);
+    }
     return include_symbol_check ? (loaded && all_symbols) : false;
 }
 
@@ -18422,6 +18434,9 @@ int run_transformer_lm_training_json(
         std::cout << "\n";
     }
     std::cout << "}\n";
+    if (!passed) {
+        mirror_json_profile_failure_to_stderr(cfg, "native-transformer-lm-failed", error);
+    }
     return passed ? 0 : 2;
 }
 

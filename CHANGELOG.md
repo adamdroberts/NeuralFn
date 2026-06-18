@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Improved direct native GPT profile failure diagnostics. When
+  `nfn_gpt_native_train --check-tile-ops` or `--train-transformer-lm` writes
+  redirected output through `--json-out`, `--profile-json`, or
+  `--stage-profile-json` and exits nonzero, the C++ CLI now mirrors a concise
+  status/error summary to stderr while leaving the JSON sidecar intact. Direct
+  benchmark and shell runs now surface missing Tile symbols and CUDA
+  driver/runtime preflight failures without opening the sidecar manually.
+  Verification: focused native GPT CLI tests and C++ rebuild.
+
 - Extended `tools/paired_kernel_speed.py` native metric extraction and summary
   output with packed-attention backward section counters:
   `attention_backward_dprep_timing_us/count` and

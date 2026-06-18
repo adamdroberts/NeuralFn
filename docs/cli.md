@@ -803,7 +803,11 @@ wall time, selected linear/attention kernel counters, emitted
 when both commands expose the same metric. If a child command uses
 `--json-out`, `--profile-json`, or `--stage-profile-json`, the helper reads
 that sidecar JSON when stdout has no native payload, so profiled native runs can
-keep stdout small without dropping metric summaries. The helper also parses llm.kittens
+keep stdout small without dropping metric summaries. Direct native C++ runs that
+redirect to those JSON/profile files also mirror failed `--check-tile-ops` and
+`--train-transformer-lm` summaries to stderr, so missing Tile symbols and
+CUDA-driver/runtime preflight errors are visible without manually opening the
+sidecar. The helper also parses llm.kittens
 `step ... ms ... tok/s` output into the same metric keys, plus BF16 MFU and
 device-memory fields, so direct `train_gpt2cu` baselines can be compared
 against NeuralFn native JSON without relying on outer subprocess wall time.

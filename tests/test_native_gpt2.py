@@ -2099,6 +2099,31 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert missing_payload["train_shard"] == ""
     assert missing_payload["val_shard"] == ""
 
+    missing_ops_profile_json = tmp_path / "missing-tile-ops-profile.json"
+    missing_ops_profile = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(dataset_path),
+            "--check-tile-ops",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-tile-ops.so"),
+            "--profile-json",
+            str(missing_ops_profile_json),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert missing_ops_profile.returncode == 2
+    assert missing_ops_profile.stdout == ""
+    assert "native-tile-ops-check-failed:" in missing_ops_profile.stderr
+    assert "missing-tile-ops.so" in missing_ops_profile.stderr
+    missing_ops_profile_payload = json.loads(missing_ops_profile_json.read_text(encoding="utf-8"))
+    assert missing_ops_profile_payload["tile_ops_check"]["loaded"] is False
+    assert missing_ops_profile_payload["tile_ops_check"]["all_required_symbols_found"] is False
+
     missing_dataset_check = subprocess.run(
         [
             str(cli),
@@ -2475,6 +2500,45 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["status"] == "native-transformer-lm-failed"
     assert train_transformer_payload["loaded"] is False
     assert train_transformer_payload["cuda_runtime_loaded"] is False
+
+    missing_train_transformer_profile_json = tmp_path / "missing-transformer-lm-profile.json"
+    missing_train_transformer_profile = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(dataset_path),
+            "--train-transformer-lm",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-tile-ops.so"),
+            "--batch-size",
+            "1",
+            "--train-seq-len",
+            "2",
+            "--max-steps",
+            "2",
+            "--eval-every-steps",
+            "1",
+            "--eval-batches",
+            "1",
+            "--profile-json",
+            str(missing_train_transformer_profile_json),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert missing_train_transformer_profile.returncode == 2
+    assert missing_train_transformer_profile.stdout == ""
+    assert "native-transformer-lm-failed:" in missing_train_transformer_profile.stderr
+    assert "missing-tile-ops.so" in missing_train_transformer_profile.stderr
+    train_transformer_profile_payload = json.loads(
+        missing_train_transformer_profile_json.read_text(encoding="utf-8")
+    )
+    assert train_transformer_profile_payload["status"] == "native-transformer-lm-failed"
+    assert train_transformer_profile_payload["loaded"] is False
+    assert train_transformer_profile_payload["cuda_runtime_loaded"] is False
+
     assert train_transformer_payload["native_geometry_contract"]["name"] == "gpt2-compatible-fixed-dense-transformer"
     assert train_transformer_payload["native_geometry_contract"]["shape_source"] == "compiled_dense_gpt_defaults"
     assert train_transformer_payload["native_geometry_contract"]["selector_native_runnable"] is True
