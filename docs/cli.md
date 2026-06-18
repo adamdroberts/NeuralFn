@@ -177,7 +177,10 @@ name, elements, bytes, and arena offset, so startup work can pair
 arena `cudaMalloc` calls. The same objects also include `family_count`,
 `top_families`, `top_family_elements`, and `top_family_bytes`; repeated
 per-block names are normalized as `block.*...` so layer-wide allocation
-families can be selected from the JSON without manual grouping.
+families can be selected from the JSON without manual grouping. Main
+transformer-LM global float buffers are named individually, for example
+`mlp.fc.grad_out`, `attention.grad_out`, and `lm_head.float_logits`, instead of
+being collapsed under a generic buffer label.
 Validation uses a separate C++ validation sampler and active forward batch size
 from `--eval-batch-size`; that value must be at least 1 and no larger than the
 training `--batch-size` because the fixed activation arena is allocated for the

@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native arena diagnostics now name the main transformer-LM global
+  float-buffer requests individually instead of grouping them all under
+  `transformer_lm_buffer`. The total arena shape is unchanged, but
+  `float_arena_request_stats.top_families` now exposes concrete targets such as
+  `block.*.persistent_output`, `mlp.fc.grad_out`, `attention.grad_out`, and
+  `lm_head.float_logits`. Verification: rebuilt `build/nfn_gpt_native_train`
+  and ran a startup-only TinyStories profile; the old opaque
+  `transformer_lm_buffer` group disappeared, with the largest float families
+  now reported as `block.*.persistent_output` (`2.21 GB`) and
+  `mlp.fc.grad_out` (`805 MB`).
+
 - Dense GPT native profile JSON now aggregates arena allocation requests by
   normalized family in addition to the existing largest individual requests.
   `float_arena_request_stats` and `uint16_arena_request_stats` now include
