@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native plan/runtime JSON now includes
+  `native_geometry_contract.selected_template_geometry` and
+  `geometry_matches_compiled_loop`. This keeps the current fixed GPT-2-compatible
+  compiled loop explicit while surfacing selected-template requests such as
+  NanoGPT's 320-wide, 5-layer, dropout-0.1 geometry, so callers can distinguish
+  selector metadata from the still-fixed trainer dimensions. Verification:
+  focused native GPT selector tests and C++ rebuild.
+
 - Added deterministic inverted-dropout CUDA Tile forward/backward ABI for native
   training (`nfn_native_tile_dropout_forward_float32` and
   `nfn_native_tile_dropout_backward_float32`). NanoGPT `--print-plan

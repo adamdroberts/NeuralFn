@@ -1613,6 +1613,19 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "selector_native_runnable": True,
         "template_geometry_dynamic": False,
         "custom_graph_geometry_dynamic": False,
+        "selected_template_geometry": {
+            "source": "template",
+            "model_dim": 768,
+            "num_heads": 12,
+            "head_dim": 64,
+            "mlp_multiplier": 4,
+            "vocab_size": 50257,
+            "padded_vocab_size": 50304,
+            "num_layers": 12,
+            "seq_len": 1024,
+            "dropout_p": 0,
+        },
+        "geometry_matches_compiled_loop": True,
         "model_dim": 768,
         "num_heads": 12,
         "head_dim": 64,
@@ -2140,6 +2153,22 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             assert preset_payload["selected_graph_native_runnable"] is True
             assert preset_payload["native_geometry_contract"]["shape_source"] == "compiled_dense_gpt_defaults"
             assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is False
+            if preset == "nanogpt":
+                assert preset_payload["native_geometry_contract"]["selected_template_geometry"] == {
+                    "source": "template",
+                    "model_dim": 320,
+                    "num_heads": 5,
+                    "head_dim": 64,
+                    "mlp_multiplier": 4,
+                    "vocab_size": 50257,
+                    "padded_vocab_size": 50304,
+                    "num_layers": 5,
+                    "seq_len": 1024,
+                    "dropout_p": 0.1,
+                }
+                assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is False
+            else:
+                assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
         else:
             assert preset_payload["selected_graph_support_status"] == "template-native-trainer-missing"
             assert preset_payload["selected_graph_native_runnable"] is False

@@ -653,6 +653,73 @@ std::string model_family_context_policy(const Config& cfg) {
     return "dense-gpt-selectors-canonicalize-to-gpt-template-or-graph-selects-architecture";
 }
 
+struct DenseGptTemplateGeometry {
+    std::string source;
+    std::int64_t model_dim = 768;
+    std::int64_t num_heads = 12;
+    std::int64_t head_dim = 64;
+    std::int64_t mlp_multiplier = 4;
+    std::int64_t vocab_size = 50257;
+    std::int64_t padded_vocab_size = 50304;
+    std::int64_t num_layers = 12;
+    std::int64_t seq_len = 1024;
+    double dropout_p = 0.0;
+};
+
+DenseGptTemplateGeometry selected_template_geometry(const Config& cfg) {
+    DenseGptTemplateGeometry geometry;
+    const std::string selector = resolved_native_template_name(cfg.template_name);
+    geometry.source = selected_architecture_source(cfg);
+    if (selector == "nanogpt" || selector == "nanogpt_megakernel" || selector == "nanogpt_modern") {
+        geometry.model_dim = 320;
+        geometry.num_heads = 5;
+        geometry.head_dim = 64;
+        geometry.num_layers = 5;
+        geometry.dropout_p = 0.1;
+    } else if (selector == "gpt3") {
+        geometry.seq_len = 2048;
+    }
+    if (!cfg.graph_file.empty()) {
+        geometry.source = "custom_graph_metadata_unloaded";
+    }
+    return geometry;
+}
+
+std::string selected_template_geometry_json(const Config& cfg) {
+    const DenseGptTemplateGeometry geometry = selected_template_geometry(cfg);
+    std::ostringstream out;
+    out
+        << "{"
+        << "\"source\":\"" << json_escape(geometry.source) << "\","
+        << "\"model_dim\":" << geometry.model_dim << ","
+        << "\"num_heads\":" << geometry.num_heads << ","
+        << "\"head_dim\":" << geometry.head_dim << ","
+        << "\"mlp_multiplier\":" << geometry.mlp_multiplier << ","
+        << "\"vocab_size\":" << geometry.vocab_size << ","
+        << "\"padded_vocab_size\":" << geometry.padded_vocab_size << ","
+        << "\"num_layers\":" << geometry.num_layers << ","
+        << "\"seq_len\":" << geometry.seq_len << ","
+        << "\"dropout_p\":" << geometry.dropout_p
+        << "}";
+    return out.str();
+}
+
+bool selected_template_geometry_matches_compiled_loop(const Config& cfg) {
+    const DenseGptTemplateGeometry geometry = selected_template_geometry(cfg);
+    const std::int64_t compiled_num_layers = cfg.num_layers > 0 ? cfg.num_layers : 12;
+    const std::int64_t compiled_seq_len = cfg.seq_len > 0 ? cfg.seq_len : 1024;
+    return cfg.graph_file.empty() &&
+        geometry.model_dim == 768 &&
+        geometry.num_heads == 12 &&
+        geometry.head_dim == 64 &&
+        geometry.mlp_multiplier == 4 &&
+        geometry.vocab_size == 50257 &&
+        geometry.padded_vocab_size == 50304 &&
+        geometry.num_layers == compiled_num_layers &&
+        geometry.seq_len == compiled_seq_len &&
+        geometry.dropout_p == 0.0;
+}
+
 std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
     std::ostringstream out;
     out
@@ -667,6 +734,9 @@ std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
         << "\"selector_native_runnable\":" << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ","
         << "\"template_geometry_dynamic\":false,"
         << "\"custom_graph_geometry_dynamic\":false,"
+        << "\"selected_template_geometry\":" << selected_template_geometry_json(cfg) << ","
+        << "\"geometry_matches_compiled_loop\":"
+        << (selected_template_geometry_matches_compiled_loop(cfg) ? "true" : "false") << ","
         << "\"model_dim\":768,"
         << "\"num_heads\":12,"
         << "\"head_dim\":64,"
