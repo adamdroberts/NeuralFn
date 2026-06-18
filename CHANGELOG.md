@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rejected the older float32/TF32 tied LM-head route against the current dense
+  GPT default. Setting `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS=0` moved the
+  LM-head logits/dHidden/dWeight path to the float-logits strategy, but the
+  dedicated RTX 5090 5-step, 3-sample same-script benchmark measured
+  `1.229126x` train-loop wall time and `0.813607x` tokens/sec versus the
+  current BF16 logits/dlogits default, so BF16 LM-head logits remain the normal
+  training route. Verification: ran `tools/bench_native_gpt_sm120_candidate.sh`
+  with selected-GPU idle checks and no profiling sidecars.
+
 - Rejected `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,2304,65536,N,T,2`
   as a default dense GPT QKV dWeight route. The dedicated RTX 5090 5-step,
   3-sample same-script benchmark measured `1.001121x` train-loop wall time and
