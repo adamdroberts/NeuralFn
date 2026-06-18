@@ -158,6 +158,11 @@ before mutating the row-chunked logits into dLogits, keeping real token data
 inside the compiled CUDA Tile/C++ loop instead of routing it through
 graph-editor nodes. The default cadence is `0` for timing-only training and
 benchmarks; use `--eval-every-steps N` separately for validation loss.
+Dense GPT training now treats scalar attention fallback as invalid by default:
+runtime JSON reports `optimized_attention_required: true` and fails the run if
+`attention_forward_scalar_launch_count` is nonzero, before final checkpoint
+export. Use `--allow-scalar-attention-fallback` only for diagnostic bisections
+where a slow fallback is intentionally being measured.
 `python tools/check_native_no_torch_deps.py --skip-artifacts --json` verifies
 that the GPT, GPT-2-evo, NanoGPT, `nfn train`, native inference, and SDK native
 training handoff surfaces still run under an import blocker for Torch, NumPy,

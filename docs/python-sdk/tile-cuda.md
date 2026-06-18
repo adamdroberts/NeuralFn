@@ -1173,6 +1173,13 @@ verify the Python handoff layer stays Torch-free. The gate stubs the native
 CLIs and blocks imports of Torch, NumPy, `tiktoken`, dataset manager modules,
 and `nfn_impl` while checking GPT, GPT-2-evo, NanoGPT, `nfn train`, native
 inference, `neuralfn.native_train`, and the public SDK native training exports.
+Dense GPT training also requires optimized attention by default. If the Tile
+ABI drops into the scalar attention fallback, the native trainer marks the run
+failed before final checkpoint export and reports
+`optimized_attention_required: true`,
+`attention_forward_scalar_launch_allowed: false`, and the scalar launch count.
+Pass `--allow-scalar-attention-fallback` only for diagnostic benchmark
+bisections.
 
 Full GPT-2 `--train-transformer-lm` uses `nfn_native_tile_gelu_add_bias_bf16_act_float32` to write float preactivation, float GELU activation, and BF16 GELU activation bits from one CUDA Tile launch. The BF16 saved-activation backward route uses `nfn_native_tile_gelu_backward_inplace_bf16_bits_float32` as a CUDA Tile kernel too, so the BF16 GELU forward/backward path no longer falls back to scalar CUDA element kernels. The MLP projection then consumes those BF16 bits through `nfn_native_tile_linear_bf16_input_bits_float32`, avoiding another activation pack before GEMM. Training JSON reports `mlp_proj_forward_activation_strategy`, `mlp_forward_act_bf16_elements`, and `mlp_forward_act_bf16_bytes` for this scratch.
 

@@ -90,6 +90,7 @@ struct Config {
     bool startup_only = false;
     bool checkpoint_metadata_smoke = false;
     bool write_checkpoint = true;
+    bool require_optimized_attention = true;
     bool template_explicit = false;
     bool seq_len_explicit = false;
     std::string cuda_runtime_lib;
@@ -339,7 +340,8 @@ void print_usage(const char* program) {
         << "Dataset options:\n"
         << "  --dataset-alias NAME_OR_PATH      Dataset alias under ~/.cache/nfn/datasets or absolute path\n"
         << "  --tinystories                     Shortcut for roneneldan__TinyStories__TinyStoriesV2-GPT4\n"
-        << "  --allow-train-val-fallback        Reuse train shard when no validation shard exists\n\n"
+        << "  --allow-train-val-fallback        Reuse train shard when no validation shard exists\n"
+        << "  --allow-scalar-attention-fallback Allow the slow scalar attention fallback for diagnostics; default fails if it launches\n\n"
         << "Template/graph options:\n"
         << "  --model-family gpt|gpt2|gpt3    Dense GPT selector; all canonicalize to model_family=gpt, while gpt3 can default to 2048 context\n"
         << "  --template-name NAME              GPT template preset or alias to select; default gpt resolves to the dense GPT native implementation\n"
@@ -3636,6 +3638,10 @@ bool print_tile_plan(
         << "  \"attention_forward_scalar_cta_elision_factor\": " << kAttentionForwardValueReuse << ",\n"
         << "  \"attention_forward_value_chunk_size\": " << kAttentionForwardValueReuse << ",\n"
         << "  \"attention_forward_scalar_launch_fallback_enabled\": true,\n"
+        << "  \"attention_forward_scalar_launch_allowed\": "
+        << (cfg.require_optimized_attention ? "false" : "true") << ",\n"
+        << "  \"optimized_attention_required\": "
+        << (cfg.require_optimized_attention ? "true" : "false") << ",\n"
         << "  \"attention_forward_row_launch_auto_disable_enabled\": true,\n"
         << "  \"packed_qkv_attention_enabled\": " << (packed_qkv_attention_enabled ? "true" : "false") << ",\n"
         << "  \"packed_qkv_attention_bf16_elements\": " << packed_qkv_attention_bf16_elements << ",\n"
@@ -16722,12 +16728,6 @@ int run_transformer_lm_training_json(
 
     const bool final_checkpoint_export_enabled = cfg.write_checkpoint && !cfg.startup_only;
     const bool checkpoint_export_startup_only_elided = cfg.write_checkpoint && cfg.startup_only;
-    if (passed && final_checkpoint_export_enabled) {
-        const auto checkpoint_start_time = Clock::now();
-        write_trained_checkpoint();
-        checkpoint_wall_ms = elapsed_ms(checkpoint_start_time, Clock::now());
-        passed = error.empty() && checkpoint_written;
-    }
 
     if (attention_row_launch_count != nullptr) {
         attention_forward_row_launches = attention_row_launch_count();
@@ -16866,6 +16866,22 @@ int run_transformer_lm_training_json(
     }
     attention_forward_row_successes =
         std::max<std::int64_t>(0, attention_forward_row_launches - attention_forward_row_fallbacks);
+    if (passed && cfg.require_optimized_attention && attention_forward_scalar_launches > 0) {
+        std::ostringstream out;
+        out << "optimized attention required, but scalar attention fallback launched "
+            << attention_forward_scalar_launches << " time(s)";
+        if (attention_forward_row_last_error_code != 0) {
+            out << "; row attention last error code " << attention_forward_row_last_error_code;
+        }
+        error = out.str();
+        passed = false;
+    }
+    if (passed && final_checkpoint_export_enabled) {
+        const auto checkpoint_start_time = Clock::now();
+        write_trained_checkpoint();
+        checkpoint_wall_ms = elapsed_ms(checkpoint_start_time, Clock::now());
+        passed = error.empty() && checkpoint_written;
+    }
 
     const auto cleanup_start_time = Clock::now();
     for (void* ptr : descriptor_ptrs) {
@@ -17514,6 +17530,10 @@ int run_transformer_lm_training_json(
         << "  \"attention_forward_scalar_cta_elision_factor\": " << kAttentionForwardValueReuse << ",\n"
         << "  \"attention_forward_value_chunk_size\": " << kAttentionForwardValueReuse << ",\n"
         << "  \"attention_forward_scalar_launch_fallback_enabled\": true,\n"
+        << "  \"attention_forward_scalar_launch_allowed\": "
+        << (cfg.require_optimized_attention ? "false" : "true") << ",\n"
+        << "  \"optimized_attention_required\": "
+        << (cfg.require_optimized_attention ? "true" : "false") << ",\n"
         << "  \"attention_forward_row_launch_auto_disable_enabled\": true,\n"
         << "  \"attention_forward_row_launch_auto_disabled\": " << (attention_forward_row_fallbacks > 0 ? "true" : "false") << ",\n"
         << "  \"attention_forward_row_launch_count\": " << attention_forward_row_launches << ",\n"
@@ -19221,6 +19241,9 @@ int main(int argc, char** argv) {
             cfg.moa_interval = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--allow-train-val-fallback" || arg == "--native-cuda-allow-train-val-fallback") {
             cfg.allow_train_as_val = true;
+        } else if (arg == "--allow-scalar-attention-fallback" ||
+                   arg == "--native-cuda-allow-scalar-attention-fallback") {
+            cfg.require_optimized_attention = false;
         } else if (arg == "--dry-run" || arg == "--native-cuda-dry-run") {
             cfg.dry_run = true;
         } else if (arg == "--print-command" || arg == "--native-cuda-print-command") {

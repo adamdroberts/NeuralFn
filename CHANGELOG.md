@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Made dense GPT native training reject slow scalar attention fallback by
+  default. Runtime JSON now reports `optimized_attention_required` and
+  `attention_forward_scalar_launch_allowed`; if scalar attention launches, the
+  trainer marks the run failed before final checkpoint export unless
+  `--allow-scalar-attention-fallback` is explicitly passed for diagnostics.
+  This keeps benchmark and training artifacts on optimized TK/row attention
+  paths instead of silently accepting basic scalar kernels. Verification:
+  focused native GPT CLI/source tests and C++ rebuild.
+
 - Extended the native no-Torch dependency gate to cover the GPT-2-evo and
   NanoGPT legacy script handoffs plus the generic `neuralfn.native_train` SDK
   module and public native training exports. The checker stubs native CLIs and

@@ -1764,6 +1764,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["attention_forward_scalar_cta_elision_factor"] == 64
     assert tile_payload["attention_forward_value_chunk_size"] == 64
     assert tile_payload["attention_forward_scalar_launch_fallback_enabled"] is True
+    assert tile_payload["attention_forward_scalar_launch_allowed"] is False
+    assert tile_payload["optimized_attention_required"] is True
     assert tile_payload["attention_forward_row_launch_auto_disable_enabled"] is True
     assert tile_payload["attention_forward_row_count"] * 64 == tile_payload["attention_forward_scalar_output_count"]
     assert tile_payload["packed_qkv_attention_enabled"] is True
@@ -2766,6 +2768,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["attention_forward_scalar_cta_elision_factor"] == 64
     assert train_transformer_payload["attention_forward_value_chunk_size"] == 64
     assert train_transformer_payload["attention_forward_scalar_launch_fallback_enabled"] is True
+    assert train_transformer_payload["attention_forward_scalar_launch_allowed"] is False
+    assert train_transformer_payload["optimized_attention_required"] is True
     assert train_transformer_payload["attention_forward_row_launch_auto_disable_enabled"] is True
     assert train_transformer_payload["attention_forward_row_launch_auto_disabled"] is False
     assert train_transformer_payload["attention_forward_row_launch_count"] == 0
@@ -5246,6 +5250,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "checkpoint_export_startup_only_elided" in gpt2_source_text
     assert "const bool final_checkpoint_export_enabled = cfg.write_checkpoint && !cfg.startup_only" in gpt2_source_text
     assert "if (passed && final_checkpoint_export_enabled)" in gpt2_source_text
+    assert "require_optimized_attention = true" in gpt2_source_text
+    assert "--allow-scalar-attention-fallback" in gpt2_source_text
+    assert "optimized attention required, but scalar attention fallback launched" in gpt2_source_text
     assert '\\"enabled\\": ' in gpt2_source_text
     assert "train_tokens_per_second" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STAGE_TIMING" in gpt2_source_text
