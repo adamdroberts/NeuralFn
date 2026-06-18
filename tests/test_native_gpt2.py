@@ -142,10 +142,13 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     }
     entrypoints = {entry["name"]: entry for entry in payload["python_entrypoints"]}
     assert entrypoints["train_gpt_fast_command"]["passed"] is True
+    assert entrypoints["train_gpt2_evo_fast_command"]["passed"] is True
+    assert entrypoints["train_nanogpt_fast_command"]["passed"] is True
     assert entrypoints["nfn_train_fast_command"]["passed"] is True
     assert entrypoints["infer_gpt_native_info"]["passed"] is True
     assert entrypoints["nfn_infer_native_info"]["passed"] is True
     assert entrypoints["native_sdk_imports"]["passed"] is True
+    assert entrypoints["native_sdk_public_exports"]["passed"] is True
 
 
 def test_resolve_native_gpt2_token_shards_materializes_uint16_cache(tmp_path: Path) -> None:

@@ -158,6 +158,10 @@ before mutating the row-chunked logits into dLogits, keeping real token data
 inside the compiled CUDA Tile/C++ loop instead of routing it through
 graph-editor nodes. The default cadence is `0` for timing-only training and
 benchmarks; use `--eval-every-steps N` separately for validation loss.
+`python tools/check_native_no_torch_deps.py --skip-artifacts --json` verifies
+that the GPT, GPT-2-evo, NanoGPT, `nfn train`, native inference, and SDK native
+training handoff surfaces still run under an import blocker for Torch, NumPy,
+`tiktoken`, dataset manager imports, and `nfn_impl`.
 For cuBLASLt BGRADB dWeight plus bias routes, the default writes the epilogue
 bias gradient into Tile-owned
 scratch and accumulates it into `grad_bias`. Set

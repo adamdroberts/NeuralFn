@@ -39,6 +39,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 
 - [x] Build `libnfn_native_train_tile_ops.so` from CUDA Tile kernels without `torch/extension.h`.
 - [x] Expose AdamW, gradient accumulation, reductions, in-place scaling, and linear forward through `neuralfn/csrc/native_train/tile_ops.h`.
+- [x] Extend the no-Torch dependency verifier across GPT, GPT-2-evo, NanoGPT, `nfn train`, native inference, `neuralfn.native_train`, and public SDK native training exports so legacy handoff surfaces cannot import Torch/NumPy/tiktoken/dataset-manager code before delegating to compiled native CLIs.
 - [x] Expose gradient/device-buffer fill through the native ABI for trainer-loop zeroing.
 - [x] Expose global gradient norm clip scale finalization and device-scalar gradient scaling through the native ABI.
 - [x] Expose token embedding, absolute position embedding, RMSNorm, LayerNorm, softmax, scaled dot-product attention, token CE partials, and masked token CE partials through the native ABI.

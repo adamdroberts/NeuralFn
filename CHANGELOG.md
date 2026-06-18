@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the native no-Torch dependency gate to cover the GPT-2-evo and
+  NanoGPT legacy script handoffs plus the generic `neuralfn.native_train` SDK
+  module and public native training exports. The checker stubs native CLIs and
+  blocks Torch, NumPy, `tiktoken`, dataset-manager imports, and `nfn_impl`, so
+  these handoff surfaces now fail CI-style verification before they can regress
+  into Python/Torch startup paths. Verification: no-Torch checker and focused
+  native GPT test coverage.
+
 - Disabled final checkpoint export for dense GPT `--startup-only` runs at the
   native C++ gate, not only in wrapper conventions. Plan/runtime JSON now
   reports the effective checkpoint export state with

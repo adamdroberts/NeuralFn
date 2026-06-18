@@ -68,7 +68,7 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
         (
             sys.executable,
             "-c",
-            "import neuralfn; import neuralfn.native_gpt; import neuralfn.native_gpt2; print('native-sdk-ok')",
+            "import neuralfn; import neuralfn.native_gpt; import neuralfn.native_gpt2; import neuralfn.native_train; print('native-sdk-ok')",
         ),
     ),
     (
@@ -79,14 +79,22 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
             "\n".join(
                 [
                     "import neuralfn",
-                    "from neuralfn import NativeGptRunConfig, NativeGpt2RunConfig",
+                    "from neuralfn import NativeGptRunConfig, NativeGpt2RunConfig, NativeTrainRunConfig",
                     "from neuralfn import build_native_gpt_compiled_cli_run_config",
+                    "from neuralfn import build_native_train_run_config, run_native_train",
                     "from neuralfn import native_gpt_kernel_backend, native_gpt_parameter_count",
+                    "from neuralfn import native_train_model_registry, native_train_runner_status",
                     "assert NativeGptRunConfig.__name__ == 'NativeGptRunConfig'",
                     "assert NativeGpt2RunConfig.__name__ == 'NativeGpt2RunConfig'",
+                    "assert NativeTrainRunConfig.__name__ == 'NativeTrainRunConfig'",
                     "assert native_gpt_kernel_backend('tile-cuda') == 'tile-cuda'",
                     "assert native_gpt_parameter_count(max_seq_len=1024, padded_vocab_size=50304, num_layers=12, channels=768) > 0",
                     "assert callable(build_native_gpt_compiled_cli_run_config)",
+                    "assert callable(build_native_train_run_config)",
+                    "assert callable(run_native_train)",
+                    "registry = native_train_model_registry()",
+                    "assert isinstance(registry, dict) and registry",
+                    "assert native_train_runner_status('compiled-cli').available in (True, False)",
                     "print('native-sdk-public-exports-ok')",
                 ]
             ),
@@ -239,6 +247,8 @@ def python_entrypoint_report(repo_root: Path) -> list[dict[str, object]]:
         env = os.environ.copy()
         env["NFN_NATIVE_GPT_CLI"] = str(native_cli)
         env["NFN_NATIVE_GPT2_CLI"] = str(native_cli)
+        env["NFN_NATIVE_GPT2_EVO_CLI"] = str(native_cli)
+        env["NFN_NATIVE_NANOGPT_CLI"] = str(native_cli)
         env["PYTHONPATH"] = os.pathsep.join(
             part for part in (str(temp_root), str(repo_root), env.get("PYTHONPATH", "")) if part
         )
@@ -246,6 +256,28 @@ def python_entrypoint_report(repo_root: Path) -> list[dict[str, object]]:
         env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
         entrypoints = [
             *DEFAULT_PYTHON_ENTRYPOINTS,
+            (
+                "train_gpt2_evo_fast_command",
+                (
+                    sys.executable,
+                    "cli/scripts/train_gpt2_evo.py",
+                    "--tinystories",
+                    "--native-cuda-dry-run",
+                    "--native-cuda-print-command",
+                    "--native-cuda-no-checkpoint",
+                ),
+            ),
+            (
+                "train_nanogpt_fast_command",
+                (
+                    sys.executable,
+                    "cli/scripts/train_nanogpt.py",
+                    "--tinystories",
+                    "--native-cuda-dry-run",
+                    "--native-cuda-print-command",
+                    "--native-cuda-no-checkpoint",
+                ),
+            ),
             (
                 "infer_gpt_native_info",
                 (
