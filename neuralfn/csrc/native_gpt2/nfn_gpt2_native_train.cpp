@@ -10710,6 +10710,14 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_PROJECTION_RESIDUAL",
                               "NFN_NATIVE_GPT2_BF16_PROJECTION_RESIDUAL"}),
             true);
+    const bool elide_float_projection_outputs_enabled =
+        bf16_projection_residual_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_ELIDE_FLOAT_PROJECTION_OUTPUTS",
+                              "NFN_NATIVE_GPT2_ELIDE_FLOAT_PROJECTION_OUTPUTS"}),
+            false);
+    const std::int64_t float_projection_output_elements_elided =
+        elide_float_projection_outputs_enabled ? activation_elements * activation_tape_count * 2 : 0;
     const std::string startup_zero_init_strategy =
         startup_zero_adamw_state_only_enabled
             ? (startup_zero_adamw_state_ranges_enabled
@@ -12106,7 +12114,10 @@ int run_transformer_lm_training_json(
                 visit(&tape.attn_heads, activation_elements, prefix + ".attn.heads");
                 visit(&tape.attn_out, activation_elements, prefix + ".attn.out");
             }
-            visit(&tape.attn_proj, activation_elements, prefix + ".attn.proj");
+            visit(
+                &tape.attn_proj,
+                elide_float_projection_outputs_enabled ? 0 : activation_elements,
+                prefix + ".attn.proj");
             visit(&tape.residual1, activation_elements, prefix + ".residual1");
             visit(&tape.ln2_out, activation_elements, prefix + ".ln2.out");
             visit(&tape.ln2_mean, rows, prefix + ".ln2.mean");
@@ -12115,7 +12126,10 @@ int run_transformer_lm_training_json(
                 visit(&tape.fc_out, hidden_elements, prefix + ".mlp.fc");
                 visit(&tape.act, hidden_elements, prefix + ".mlp.act");
             }
-            visit(&tape.mlp_out, activation_elements, prefix + ".mlp.out");
+            visit(
+                &tape.mlp_out,
+                elide_float_projection_outputs_enabled ? 0 : activation_elements,
+                prefix + ".mlp.out");
             visit(&tape.residual2, activation_elements, prefix + ".residual2");
         }
     };
@@ -17069,6 +17083,10 @@ int run_transformer_lm_training_json(
         << "  \"attention_backward_qkv_bridge_launches_elided_per_block\": 3,\n"
         << "  \"bf16_projection_residual_enabled\": "
         << (bf16_projection_residual_enabled ? "true" : "false") << ",\n"
+        << "  \"float_projection_outputs_elided\": "
+        << (elide_float_projection_outputs_enabled ? "true" : "false") << ",\n"
+        << "  \"float_projection_output_elements_elided\": "
+        << float_projection_output_elements_elided << ",\n"
         << "  \"attention_projection_input_strategy\": \""
         << (bf16_projection_residual_enabled
                 ? (packed_qkv_attention_enabled
@@ -17537,6 +17555,12 @@ int run_transformer_lm_training_json(
         << "    \"activation_tape_count\": " << activation_tape_count << ",\n"
         << "    \"full_activation_tape_enabled\": "
         << (full_activation_tape_enabled ? "true" : "false") << ",\n"
+        << "    \"float_projection_output_buffers_allocated\": "
+        << (elide_float_projection_outputs_enabled ? 0 : activation_tape_count * 2) << ",\n"
+        << "    \"float_projection_output_buffers_elided\": "
+        << (elide_float_projection_outputs_enabled ? activation_tape_count * 2 : 0) << ",\n"
+        << "    \"float_projection_output_elements_elided\": "
+        << float_projection_output_elements_elided << ",\n"
         << "    \"packed_qkv_float_attention_tape_elided\": "
         << (packed_qkv_float_attention_tape_elided ? "true" : "false") << ",\n"
         << "    \"packed_qkv_float_attention_tape_elements_elided\": "

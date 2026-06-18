@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added diagnostic opt-in
+  `NFN_NATIVE_GPT_ELIDE_FLOAT_PROJECTION_OUTPUTS=1` for dense GPT native
+  training. When BF16 projection-residual is active, the switch skips the
+  otherwise-unused FP32 scratch-tape `tape.attn_proj` and `tape.mlp_out`
+  reservations, saving two activation-sized float buffers. It remains off by
+  default because the dedicated RTX 5090 same-script checks measured
+  train-loop neutral (`1.000250x` older-over-new train-loop time in the 3-step
+  run) and startup-wall neutral-to-slightly slower for the elided side
+  (`0.991309x` older-over-new setup wall time; lower is faster for the older
+  opt-out side). Runtime JSON reports `float_projection_outputs_elided`,
+  `float_projection_output_elements_elided`, and matching `block_state_layout`
+  counters. Updated `README.md`, `docs/cli.md`, and the CUDA Tile checklist.
+  Verification: rebuilt `build/nfn_gpt_native_train`, checked startup/profile
+  JSON, ran a 3-step same-script native benchmark, and ran a 3-sample
+  startup-only same-script benchmark on the dedicated RTX 5090.
+
 - Dense GPT native training JSON now reports ranked float and BF16/uint16 arena
   request details as `float_arena_request_stats` and
   `uint16_arena_request_stats`. Each profile includes total requested/allocated
