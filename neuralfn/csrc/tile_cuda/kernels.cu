@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
@@ -2613,6 +2614,22 @@ std::int64_t finish_linear_shape_timing(LinearShapeTiming* timing) {
   return 0;
 }
 
+std::int64_t finish_linear_shape_timing_with_host_fallback(
+    LinearShapeTiming* timing,
+    std::chrono::steady_clock::time_point host_start) {
+  std::int64_t elapsed_us = finish_linear_shape_timing(timing);
+  if (elapsed_us > 0 || !trainer_linear_shape_stats_enabled()) {
+    return elapsed_us;
+  }
+  if (cudaDeviceSynchronize() != cudaSuccess) {
+    return elapsed_us;
+  }
+  const auto host_stop = std::chrono::steady_clock::now();
+  const auto host_elapsed =
+      std::chrono::duration_cast<std::chrono::microseconds>(host_stop - host_start).count();
+  return host_elapsed > 0 ? static_cast<std::int64_t>(host_elapsed) : 1;
+}
+
 void discard_linear_shape_timing(LinearShapeTiming* timing) {
   if (timing == nullptr || !timing->active) {
     return;
@@ -4052,9 +4069,10 @@ bool tk_linear_gemm_bf16_forward_to_bf16_bits(
   const auto* weight = reinterpret_cast<const floatX*>(weight_bf16);
   const auto* bias = reinterpret_cast<const floatX*>(bias_bf16);
   ensure_llmk_sm120_cublaslt_initialized();
+  const auto host_start = std::chrono::steady_clock::now();
   LinearShapeTiming timing = begin_linear_shape_timing(stream);
   ::matmul_forward(out, inp, weight, bias, 1, rows, input_dim, output_dim, stream);
-  const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
+  const std::int64_t elapsed_us = finish_linear_shape_timing_with_host_fallback(&timing, host_start);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
   record_linear_shape_stat(2, output_dim, rows, input_dim, op_a, op_b, elapsed_us);
@@ -4099,9 +4117,11 @@ bool tk_linear_gemm_bf16_forward_to_float32(
   const std::int64_t elements = static_cast<std::int64_t>(rows) * output_dim;
   constexpr int threads = 256;
   const int blocks = static_cast<int>((elements + threads - 1) / threads);
+  LinearShapeTiming timing = begin_linear_shape_timing(stream);
   bf16_bits_to_f32_kernel<<<blocks, threads, 0, stream>>>(out_bf16_bits, out, elements);
+  const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
   g_linear_tk_float_out_gemm_count.fetch_add(1, std::memory_order_relaxed);
-  record_linear_shape_stat(3, output_dim, rows, input_dim, op_a, op_b);
+  record_linear_shape_stat(3, output_dim, rows, input_dim, op_a, op_b, elapsed_us);
   return true;
 #else
   (void)weight_bf16;
@@ -4237,6 +4257,8 @@ bool tk_linear_gemm_bf16_forward_gelu_to_bf16_bits(
   auto* out = reinterpret_cast<floatX*>(gelu_bf16_bits);
   auto* pre_gelu = reinterpret_cast<floatX*>(pre_gelu_bf16_bits);
   ensure_llmk_sm120_cublaslt_initialized();
+  const auto host_start = std::chrono::steady_clock::now();
+  LinearShapeTiming timing = begin_linear_shape_timing(stream);
   ::matmul_forward_gelu(
       out,
       pre_gelu,
@@ -4248,9 +4270,10 @@ bool tk_linear_gemm_bf16_forward_gelu_to_bf16_bits(
       input_dim,
       output_dim,
       stream);
+  const std::int64_t elapsed_us = finish_linear_shape_timing_with_host_fallback(&timing, host_start);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
-  record_linear_shape_stat(2, output_dim, rows, input_dim, CUBLAS_OP_T, CUBLAS_OP_N);
+  record_linear_shape_stat(2, output_dim, rows, input_dim, CUBLAS_OP_T, CUBLAS_OP_N, elapsed_us);
   return true;
 #else
   (void)x;
@@ -4322,6 +4345,8 @@ bool tk_linear_gemm_bf16_forward_gelu_weight_bf16_to_bf16_bits(
   auto* out = reinterpret_cast<floatX*>(gelu_bf16_bits);
   auto* pre_gelu = reinterpret_cast<floatX*>(pre_gelu_bf16_bits);
   ensure_llmk_sm120_cublaslt_initialized();
+  const auto host_start = std::chrono::steady_clock::now();
+  LinearShapeTiming timing = begin_linear_shape_timing(stream);
   ::matmul_forward_gelu(
       out,
       pre_gelu,
@@ -4333,9 +4358,10 @@ bool tk_linear_gemm_bf16_forward_gelu_weight_bf16_to_bf16_bits(
       input_dim,
       output_dim,
       stream);
+  const std::int64_t elapsed_us = finish_linear_shape_timing_with_host_fallback(&timing, host_start);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
-  record_linear_shape_stat(2, output_dim, rows, input_dim, CUBLAS_OP_T, CUBLAS_OP_N);
+  record_linear_shape_stat(2, output_dim, rows, input_dim, CUBLAS_OP_T, CUBLAS_OP_N, elapsed_us);
   return true;
 #else
   (void)x;
@@ -4392,6 +4418,7 @@ bool tk_linear_backward_input_dgelu_bf16_bits_float32(
     return false;
   }
   ensure_llmk_sm120_cublaslt_initialized();
+  LinearShapeTiming timing = begin_linear_shape_timing(stream);
   ::matmul_dispatch_tk_ab(
       reinterpret_cast<floatX*>(grad_x_bf16_bits),
       reinterpret_cast<const floatX*>(grad_out_bf16),
@@ -4406,9 +4433,10 @@ bool tk_linear_backward_input_dgelu_bf16_bits_float32(
   constexpr int threads = 256;
   const int blocks = static_cast<int>((elements + threads - 1) / threads);
   bf16_bits_to_f32_kernel<<<blocks, threads, 0, stream>>>(grad_x_bf16_bits, grad_x, elements);
+  const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
-  record_linear_shape_stat(2, input_dim, rows, output_dim, CUBLAS_OP_N, CUBLAS_OP_N);
+  record_linear_shape_stat(2, input_dim, rows, output_dim, CUBLAS_OP_N, CUBLAS_OP_N, elapsed_us);
   return true;
 #else
   (void)grad_out;
@@ -4461,6 +4489,7 @@ bool tk_linear_backward_input_dgelu_weight_bf16_bits_float32(
     return false;
   }
   ensure_llmk_sm120_cublaslt_initialized();
+  LinearShapeTiming timing = begin_linear_shape_timing(stream);
   ::matmul_dispatch_tk_ab(
       reinterpret_cast<floatX*>(grad_x_bf16_bits),
       reinterpret_cast<const floatX*>(grad_out_bf16),
@@ -4477,9 +4506,10 @@ bool tk_linear_backward_input_dgelu_weight_bf16_bits_float32(
     const int blocks = static_cast<int>((elements + threads - 1) / threads);
     bf16_bits_to_f32_kernel<<<blocks, threads, 0, stream>>>(grad_x_bf16_bits, grad_x, elements);
   }
+  const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
-  record_linear_shape_stat(2, input_dim, rows, output_dim, CUBLAS_OP_N, CUBLAS_OP_N);
+  record_linear_shape_stat(2, input_dim, rows, output_dim, CUBLAS_OP_N, CUBLAS_OP_N, elapsed_us);
   return true;
 #else
   (void)grad_out;
@@ -4518,6 +4548,7 @@ bool tk_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_float32(
     return false;
   }
   ensure_llmk_sm120_cublaslt_initialized();
+  LinearShapeTiming timing = begin_linear_shape_timing(stream);
   ::matmul_dispatch_tk_ab(
       reinterpret_cast<floatX*>(grad_x_bf16_bits),
       reinterpret_cast<const floatX*>(grad_out_bf16_bits),
@@ -4528,9 +4559,10 @@ bool tk_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_float32(
       stream,
       reinterpret_cast<const floatX*>(pre_gelu_bf16_bits),
       true);
+  const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
-  record_linear_shape_stat(2, input_dim, rows, output_dim, CUBLAS_OP_N, CUBLAS_OP_N);
+  record_linear_shape_stat(2, input_dim, rows, output_dim, CUBLAS_OP_N, CUBLAS_OP_N, elapsed_us);
   return true;
 #else
   (void)grad_out_bf16_bits;
@@ -14139,6 +14171,8 @@ void launch_linear_bf16_input_weight_bf16_gelu_bf16_float32(
         g_linear_bf16_a_pack_count.fetch_add(1, std::memory_order_relaxed);
       }
       ensure_llmk_sm120_cublaslt_initialized();
+      const auto host_start = std::chrono::steady_clock::now();
+      LinearShapeTiming timing = begin_linear_shape_timing(stream);
       ::matmul_forward_gelu(
           reinterpret_cast<floatX*>(gelu_bf16_bits),
           reinterpret_cast<floatX*>(pre_gelu_bf16_bits),
@@ -14150,6 +14184,7 @@ void launch_linear_bf16_input_weight_bf16_gelu_bf16_float32(
           static_cast<int>(input_dim),
           static_cast<int>(output_dim),
           stream);
+      const std::int64_t elapsed_us = finish_linear_shape_timing_with_host_fallback(&timing, host_start);
       g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
       g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
       record_linear_shape_stat(
@@ -14158,7 +14193,8 @@ void launch_linear_bf16_input_weight_bf16_gelu_bf16_float32(
           static_cast<int>(rows),
           static_cast<int>(input_dim),
           CUBLAS_OP_T,
-          CUBLAS_OP_N);
+          CUBLAS_OP_N,
+          elapsed_us);
       return;
     }
   }

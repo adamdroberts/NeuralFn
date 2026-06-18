@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Completed CUDA-event timing coverage for native Tile linear shape stats on
+  the active TK paths. TK BF16 fused MLP FC+GELU, fused MLP projection
+  dInput+dGELU, and TK BF16-to-float output conversion records now pass
+  measured elapsed time into `linear_shape_stats`, with a host-synchronized
+  fallback for fused TK GELU rows when CUDA stream events do not capture the
+  helper dispatch. CUDA 13.3 profiles can now rank those buckets instead of
+  emitting zero-time rows. The profiler remains opt-in through
+  `NFN_NATIVE_LINEAR_SHAPE_STATS=1`,
+  `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1`, `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1`,
+  or `NFN_NATIVE_GPT2_LINEAR_SHAPE_STATS=1`. Verification: focused source
+  coverage in `tests/test_native_gpt2.py`, rebuilt the native Tile ops library,
+  and ran a GPU-visible one-step shape-stat profile on the RTX 5090 that
+  reported `tk_zero_time_rows: 0` across five TK BF16 buckets.
+
 - Extended the native no-Torch dependency verifier to cover the remaining
   guarded direct training scripts. `tools/check_native_no_torch_deps.py` now
   stubs the `NFN_NATIVE_MIXLLAMA_CLI`, `NFN_NATIVE_JEPA_CLI`, and

@@ -5102,8 +5102,19 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "ensure_llmk_sm120_cublaslt_initialized" in kernels_text
     assert "llmk::cublaslt_sm120::init()" in kernels_text
     assert "record_linear_shape_stat(4, m, n, k, op_a, op_b, elapsed_us)" in kernels_text
+    assert "record_linear_shape_stat(3, output_dim, rows, input_dim, op_a, op_b, elapsed_us)" in kernels_text
+    assert (
+        "record_linear_shape_stat(2, output_dim, rows, input_dim, CUBLAS_OP_T, CUBLAS_OP_N, elapsed_us)"
+        in kernels_text
+    )
+    assert (
+        "record_linear_shape_stat(2, input_dim, rows, output_dim, CUBLAS_OP_N, CUBLAS_OP_N, elapsed_us)"
+        in kernels_text
+    )
     assert "begin_linear_shape_timing(stream)" in kernels_text
     assert "finish_linear_shape_timing(&timing)" in kernels_text
+    assert "finish_linear_shape_timing_with_host_fallback(&timing, host_start)" in kernels_text
+    assert "cudaDeviceSynchronize() != cudaSuccess" in kernels_text
     assert 'return "cublas_gemmex_bf16"' in gpt2_source_text
     assert "trainer_linear_shape_stats_entry" in kernels_text
     assert "total_us" in kernels_text
