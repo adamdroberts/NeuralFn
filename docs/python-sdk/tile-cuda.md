@@ -55,6 +55,12 @@ and `native_gpt_parameter_count()` while blocking `torch`, NumPy, tiktoken,
 `server.dataset_manager`, and `nfn_impl`, so lazy public exports stay on the
 no-Torch path.
 
+Set `NFN_NATIVE_GPT_STAGE_TIMING=1` only for CUDA event attribution runs; the
+same-script throughput wrappers leave it off by default. The dense GPT timing
+JSON includes `block_backward.mlp_proj.grad_out_bf16`, which isolates the
+projection-gradient float32-to-BF16 pack from the surrounding MLP projection
+dWeight and dInput kernels.
+
 On the SM120 workstation this defaults to `NFN_TILE_CUDA_USE_TK_ATTENTION=1`,
 `NFN_TILE_CUDA_ARCH=sm_120a`, and links the local llm.kittens /
 ThunderKittens headers via `LLM_KITTENS_ROOT` and `TK_ROOT`. Set

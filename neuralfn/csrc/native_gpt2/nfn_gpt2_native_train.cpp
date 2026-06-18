@@ -14931,12 +14931,14 @@ int run_transformer_lm_training_json(
             }
             if (!mlp_proj_grad_out_bf16_ready) {
                 mlp_proj_grad_out_bf16 = tape.proj_out_bf16;
-                run(float32_to_bf16_bits(
-                        incoming_grad,
-                        mlp_proj_grad_out_bf16,
-                        active_activation_elements,
-                        nullptr),
-                    label + ".mlp.proj.grad_out.to_bf16_bits");
+                run_timed_stage("block_backward.mlp_proj.grad_out_bf16", [&]() {
+                    run(float32_to_bf16_bits(
+                            incoming_grad,
+                            mlp_proj_grad_out_bf16,
+                            active_activation_elements,
+                            nullptr),
+                        label + ".mlp.proj.grad_out.to_bf16_bits");
+                });
                 mlp_proj_grad_out_bf16_ready = error.empty();
             }
             return mlp_proj_grad_out_bf16_ready ? mlp_proj_grad_out_bf16 : nullptr;

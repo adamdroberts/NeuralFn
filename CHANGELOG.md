@@ -70,6 +70,18 @@ Future updates should append new entries here rather than replacing older notes.
   `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` on the dedicated RTX
   5090.
 
+- Added dense GPT stage attribution for the MLP projection grad-out BF16 pack.
+  `NFN_NATIVE_GPT_STAGE_TIMING=1` profiles now include
+  `block_backward.mlp_proj.grad_out_bf16`, separating the conversion used by
+  the reused BF16 projection-gradient path from the surrounding MLP projection
+  dWeight and dInput buckets. A GPU-visible one-step profile at
+  `/tmp/nfn_mlp_grad_out_timing_20260618.json` measured the pack at
+  `22.774 ms` total across 96 calls, compared with `174.294 ms` for
+  `block_backward.mlp_proj.dweight_bias` and `172.114 ms` for
+  `block_backward.mlp_proj.dinput`, so the next MLP work should still target
+  GEMM/TK kernels first. Verification: rebuilt `nfn_gpt_native_train` and ran
+  a CUDA-visible one-step stage profile on the dedicated RTX 5090.
+
 - Replaced the no-cuBLAS large-row linear dWeight fallback with a shared-memory
   2D tiled CUDA kernel for float32-output dWeight accumulation across float32
   and BF16 activation/gradient combinations. The normal native GPT workstation
