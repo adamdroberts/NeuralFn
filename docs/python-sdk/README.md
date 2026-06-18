@@ -72,9 +72,10 @@ when callers access Torch-backed exports such as `TorchTrainer`,
 contract: it checks `pyproject.toml` so Torch remains optional-only, checks the
 compiled native GPT artifacts with `ldd` for Torch, c10, or Python runtime
 libraries, then runs the default native GPT, GPT-2-evo, NanoGPT, LLaMA
-megakernel, semantic-router MoE, and native inference entrypoints under an
-import blocker for `torch`, NumPy, tiktoken, `server.dataset_manager`, and
-`nfn_impl`. Use `--skip-artifacts` when only the
+fast/megakernel, MixLLaMA, JEPA semantic, semantic-router MoE, DeepSeek-V4, and
+native inference entrypoints under an import blocker for `torch`, NumPy,
+tiktoken, `server.dataset_manager`, and `nfn_impl`. Use `--skip-artifacts` when
+only the
 Python no-import contract should be checked without local build outputs.
 
 For the native GPT path, `bash tools/build_native_gpt_binding.sh` builds the

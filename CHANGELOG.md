@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the native no-Torch dependency verifier to cover the remaining
+  guarded direct training scripts. `tools/check_native_no_torch_deps.py` now
+  stubs the `NFN_NATIVE_MIXLLAMA_CLI`, `NFN_NATIVE_JEPA_CLI`, and
+  `NFN_NATIVE_DEEPSEEK_V4_CLI` family binaries and verifies
+  `train_llama_fast.py`, `train_mixllama_fast.py`, `train_jepa_semantic.py`,
+  and `train_deepseek_v4.py` alongside the existing GPT, GPT-2-evo, NanoGPT,
+  LLaMA megakernel, semantic-router MoE, `nfn train`, native inference, and SDK
+  handoff checks. This keeps every guarded direct legacy training script on
+  the compiled native C++ boundary before Torch/NumPy/tokenizer/dataset-manager
+  imports can occur. Verification:
+  `python tools/check_native_no_torch_deps.py --json`.
+
 - Extended the native no-Torch dependency verifier to cover more direct
   training entrypoints. `tools/check_native_no_torch_deps.py` now stubs
   family-specific native binaries for `NFN_NATIVE_LLAMA_CLI` and
