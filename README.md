@@ -81,6 +81,10 @@ command runtime. Compiled native GPT commands can write that JSON directly with
 `--json-out PATH`; `--profile-json PATH` and `--stage-profile-json PATH` are
 aliases for profiling runs such as
 `NFN_NATIVE_GPT_STAGE_TIMING=1 build/nfn_gpt_native_train ... --profile-json /tmp/nfn_profile.json`.
+Those profile files also include `float_arena_request_stats` and
+`uint16_arena_request_stats`, ranked by suballocation name, elements, bytes,
+and arena offset, so startup optimization can target the buffers that dominate
+the large native `cudaMalloc` arenas.
 The paired helper also detects those native JSON-output flags in child commands
 and reads the sidecar file when stdout is empty, so stage-timed native runs can
 keep stdout small without losing metric summaries or paired ratios.

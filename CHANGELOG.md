@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native training JSON now reports ranked float and BF16/uint16 arena
+  request details as `float_arena_request_stats` and
+  `uint16_arena_request_stats`. Each profile includes total requested/allocated
+  elements/bytes plus the largest named suballocations with byte size and arena
+  offset, making startup `cudaMalloc` optimization evidence-driven instead of
+  relying on source inspection. Updated `README.md` and `docs/cli.md`.
+  Verification: rebuilt `build/nfn_gpt_native_train`, ran a startup/profile
+  native GPT pass, and parsed the new top-request fields from the emitted JSON.
+
 - **Breaking changes: native-only CLI training.** `nfn train` and direct
   `cli/scripts/train_*.py` execution no longer honor
   `NFN_ALLOW_TORCH_TRAINING=1` as a graph-backed TorchTrainer bypass. Before,

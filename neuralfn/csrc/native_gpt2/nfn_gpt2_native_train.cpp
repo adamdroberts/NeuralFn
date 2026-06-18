@@ -16600,6 +16600,74 @@ int run_transformer_lm_training_json(
     }
     linear_shape_stats_json << "  ],\n";
 
+    auto append_arena_request_stats_json = [](
+                                                 std::ostringstream& out,
+                                                 const auto& requests,
+                                                 const char* json_name,
+                                                 std::int64_t element_bytes,
+                                                 std::int64_t requested_elements,
+                                                 std::int64_t allocated_elements,
+                                                 std::int64_t top_count) {
+        std::vector<std::size_t> order(requests.size());
+        for (std::size_t i = 0; i < order.size(); ++i) {
+            order[i] = i;
+        }
+        std::sort(order.begin(), order.end(), [&](std::size_t lhs, std::size_t rhs) {
+            const auto& left = requests[lhs];
+            const auto& right = requests[rhs];
+            if (left.elements != right.elements) {
+                return left.elements > right.elements;
+            }
+            return left.name < right.name;
+        });
+        const std::size_t capped_count = std::min<std::size_t>(
+            order.size(),
+            static_cast<std::size_t>(std::max<std::int64_t>(0, top_count)));
+        std::int64_t top_elements = 0;
+        out << "  \"" << json_name << "\": {\n"
+            << "    \"request_count\": " << requests.size() << ",\n"
+            << "    \"requested_elements\": " << requested_elements << ",\n"
+            << "    \"allocated_elements\": " << allocated_elements << ",\n"
+            << "    \"requested_bytes\": " << (requested_elements * element_bytes) << ",\n"
+            << "    \"allocated_bytes\": " << (allocated_elements * element_bytes) << ",\n"
+            << "    \"element_bytes\": " << element_bytes << ",\n"
+            << "    \"top_count\": " << capped_count << ",\n"
+            << "    \"top_requests\": [\n";
+        for (std::size_t i = 0; i < capped_count; ++i) {
+            const auto& request = requests[order[i]];
+            top_elements += request.elements;
+            out << "      {\"name\": \"" << json_escape(request.name) << "\", "
+                << "\"elements\": " << request.elements << ", "
+                << "\"bytes\": " << (request.elements * element_bytes) << ", "
+                << "\"offset\": " << request.offset << "}";
+            if (i + 1 != capped_count) {
+                out << ",";
+            }
+            out << "\n";
+        }
+        out << "    ],\n"
+            << "    \"top_elements\": " << top_elements << ",\n"
+            << "    \"top_bytes\": " << (top_elements * element_bytes) << "\n"
+            << "  },\n";
+    };
+    std::ostringstream arena_request_stats_json;
+    append_arena_request_stats_json(
+        arena_request_stats_json,
+        float_arena_requests,
+        "float_arena_request_stats",
+        static_cast<std::int64_t>(sizeof(float)),
+        float_arena_requested_elements,
+        float_arena_allocated_elements,
+        24);
+    append_arena_request_stats_json(
+        arena_request_stats_json,
+        uint16_arena_requests,
+        "uint16_arena_request_stats",
+        static_cast<std::int64_t>(sizeof(std::uint16_t)),
+        uint16_arena_requested_elements,
+        uint16_arena_allocated_elements,
+        24);
+
     std::cout
         << "{\n"
         << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
@@ -16839,6 +16907,7 @@ int run_transformer_lm_training_json(
         << (!linear_shape_stats.empty() ? "true" : "false") << ",\n"
         << "  \"linear_shape_stats_count\": " << linear_shape_stats.size() << ",\n"
         << linear_shape_stats_json.str()
+        << arena_request_stats_json.str()
         << "  \"block_weight_bf16_shadow_strategy\": \""
         << (bf16_block_weight_param_update_enabled
                 ? "persistent-bf16-primary-block-weight-adamw"
