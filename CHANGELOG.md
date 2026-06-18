@@ -20,6 +20,18 @@ Future updates should append new entries here rather than replacing older notes.
   `python -m py_compile tools/check_native_no_torch_deps.py` and
   `python tools/check_native_no_torch_deps.py --skip-artifacts --json`.
 
+- Rechecked the disabled TK BF16-output LM-head logits route after the latest
+  dense GPT parity baseline. Setting
+  `NFN_NATIVE_LINEAR_TK_FORWARD_ENABLE_SHAPE=50304,8192,768,T,N` did not change
+  the reported `lm_head_logits_linear_strategy`, which stayed
+  `bf16-gemmex-fallback`, and the same-script 3-step, 2-sample dedicated RTX
+  5090 benchmark measured only noise-level movement (`0.998849x` train-loop
+  wall time and `1.001153x` tokens/sec). No default changed; the next parity
+  work should target a route that visibly changes the hot LM-head or block GEMM
+  bucket. Verification: ran
+  `tools/bench_native_gpt_sm120_candidate.sh` with the candidate env above and
+  selected-GPU idle checks enabled.
+
 - `tools/paired_kernel_speed.py` now preserves categorical native strategy
   summaries in paired benchmark output. Native JSON fields such as
   `lm_head_logits_linear_strategy`, `lm_head_dhidden_linear_strategy`,
