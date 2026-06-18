@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rejected the BF16 GEMMEx `FAST_16BF` compute-type candidate for the remaining
+  LM-head fallback shapes. With `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF=1`
+  and `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_FAST_16BF=1`, the dedicated RTX 5090
+  paired benchmark measured `1.001097x` train-loop wall time and `0.998921x`
+  tokens/sec versus the current BF16 GEMMEx default, so the fallback compute
+  type remains unchanged. Verification: `tools/bench_native_gpt_sm120_candidate.sh`
+  with selected-GPU idle checks.
+
 - Exposed the native dense GPT geometry contract in compiled C++ plan/runtime
   JSON. `nfn_gpt_native_train --print-plan` and `--train-transformer-lm` now
   emit `native_geometry_contract`, explicitly naming the current
