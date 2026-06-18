@@ -475,7 +475,7 @@ def _has_native_train_action(args: list[str]) -> bool:
 
 
 def _native_template_name(argv: list[str]) -> str:
-    return (_arg_value(argv, "--template-name", "--template", "--preset") or "gpt2").strip().lower().replace("-", "_")
+    return (_arg_value(argv, "--template-name", "--template", "--preset") or "gpt").strip().lower().replace("-", "_")
 
 
 def _has_native_activation(argv: list[str]) -> bool:

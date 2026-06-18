@@ -677,6 +677,61 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
         self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
 
+    def test_nfn_train_dense_gpt_default_template_is_generic_gpt(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import runpy
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root / "cli"))
+            import nfn
+
+            print("DEFAULT_TEMPLATE", nfn._native_template_name([]))
+            sys.argv = [
+                str(root / "cli" / "nfn.py"),
+                "train",
+                "--base-model",
+                "gpt",
+                "--dataset-alias=/tmp/native-cache",
+                "--native-cuda-dry-run",
+                "--native-cuda-print-command",
+            ]
+            try:
+                runpy.run_path(str(root / "cli" / "nfn.py"), run_name="__main__")
+            except SystemExit as exc:
+                exit_code = int(exc.code or 0)
+            else:
+                exit_code = 0
+            print("TORCH_LOADED", "torch" in sys.modules)
+            print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
+            print("TRAIN_GPT_NATIVE_LOADED", "train_gpt_native" in sys.modules)
+            raise SystemExit(exit_code)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env["NFN_NATIVE_TRAIN_CLI"] = "/bin/echo"
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("DEFAULT_TEMPLATE gpt", proc.stdout)
+        self.assertIn("--model-family gpt", proc.stdout)
+        self.assertIn("--train-transformer-lm", proc.stdout)
+        self.assertNotIn("gpt2", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
+        self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
+
     def test_nfn_train_gpt2_direct_compiled_cli_accepts_every_template_selector(self) -> None:
         for preset in SHIPPED_GPT_TEMPLATE_PRESETS:
             with self.subTest(preset=preset):

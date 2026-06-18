@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- The master `nfn train` native dense-GPT dispatcher now uses the generic
+  `gpt` template selector as its implicit default, matching
+  `cli/scripts/train_gpt.py`, the SDK native GPT config, and the compiled C++
+  preflight contract. Explicit `--template-name`, `--template`, `--preset`, and
+  `--graph-file` selectors continue to define the architecture, and `gpt2` /
+  `gpt3` remain model-family aliases for the same native dense GPT trainer.
+  Verification: added a no-Torch dry-run regression for `nfn train
+  --base-model gpt` and checked the internal default selector reports `gpt`.
+
 - Dense GPT native layer-evo now performs real forward-only candidate scoring
   instead of placeholder device-zero loss selection. After AdamW, the
   `--layer-evo` loop mutates the selected block's float32 `ln1.weight`, resets
