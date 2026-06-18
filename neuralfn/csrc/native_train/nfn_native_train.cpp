@@ -91,6 +91,8 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
 };
 
+constexpr std::string_view DEFAULT_TINYSTORIES_ALIAS = "roneneldan__TinyStories__TinyStoriesV2-GPT4";
+
 std::string env_or_empty(const char* name) {
     const char* value = std::getenv(name);
     return value == nullptr ? std::string() : std::string(value);
@@ -175,6 +177,91 @@ bool has_template_or_graph_selector(const std::vector<std::string>& args) {
            has_forwarded_value_flag(args, "--graph");
 }
 
+bool has_any_forwarded_value_flag(const std::vector<std::string>& args, const std::vector<std::string_view>& flags) {
+    for (std::string_view flag : flags) {
+        if (has_forwarded_value_flag(args, flag)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool has_native_train_action(const std::vector<std::string>& args) {
+    static constexpr std::string_view ACTION_FLAGS[] = {
+        "--check-tile-ops",
+        "--print-plan",
+        "--sample-token-batch",
+        "--smoke-attention-step",
+        "--smoke-embedding-lm-step",
+        "--smoke-embedding-norm-step",
+        "--smoke-fused-qkv-attention-step",
+        "--smoke-lm-step",
+        "--smoke-mlp-step",
+        "--smoke-norm-residual-step",
+        "--smoke-optimizer-step",
+        "--smoke-qkv-layout-step",
+        "--smoke-tile-ops",
+        "--smoke-token-train-step",
+        "--smoke-training-loop-step",
+        "--smoke-transformer-block-step",
+        "--smoke-transformer-lm-step",
+        "--train-embedding-lm",
+        "--train-token-lm",
+        "--train-transformer-lm",
+    };
+    for (std::string_view flag : ACTION_FLAGS) {
+        if (has_forwarded_flag(args, flag)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void append_value_arg(std::vector<std::string>& args, std::string flag, std::string value) {
+    args.push_back(std::move(flag));
+    args.push_back(std::move(value));
+}
+
+std::string output_dir_from_output(const std::string& value) {
+    fs::path path(value);
+    if (path.has_extension()) {
+        path.replace_extension();
+    }
+    return path.string();
+}
+
+bool arg_is_any(const std::string& arg, const std::vector<std::string_view>& flags) {
+    for (std::string_view flag : flags) {
+        if (arg == flag) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string matched_equals_flag(const std::string& arg, const std::vector<std::string_view>& flags) {
+    for (std::string_view flag : flags) {
+        const std::string prefix(flag);
+        if (arg.rfind(prefix + "=", 0) == 0) {
+            return prefix;
+        }
+    }
+    return std::string();
+}
+
+void append_dataset_alias(std::vector<std::string>& args, const std::string& raw_dataset) {
+    const std::string dataset = lower_model(raw_dataset);
+    if (dataset == "tinystories") {
+        args.push_back("--tinystories");
+    } else if (dataset == "golf1") {
+        append_value_arg(args, "--dataset-alias", "willdepueoai__parameter-golf__sp1024__train1");
+    } else if (dataset == "golf10") {
+        append_value_arg(args, "--dataset-alias", "willdepueoai__parameter-golf__sp1024__train10");
+    } else {
+        append_value_arg(args, "--dataset-alias", raw_dataset);
+    }
+}
+
 void print_model_table() {
     std::cout << "Native NeuralFn training coverage:\n";
     for (const ModelEntry& entry : MODEL_REGISTRY) {
@@ -214,6 +301,9 @@ void print_usage(const char* program) {
         << "  --list-models                   Print native training coverage\n"
         << "  --json                          Use JSON with --list-models\n"
         << "  --help                          Show this help\n\n"
+        << "Python wrapper aliases such as --tinystories, --dataset tinystories, --output,\n"
+        << "--kernel-backend, --native-cuda-*, --template, --preset, and --graph are\n"
+        << "normalized here so dense GPT training can start without Python argument shims.\n"
         << "All other options are forwarded to the selected native model trainer.\n";
 }
 
@@ -357,6 +447,50 @@ int main(int argc, char** argv) {
             json_output = true;
             continue;
         }
+        if (!saw_separator && arg_is_any(arg, {
+                "--runtime",
+                "--device",
+                "--dataset-hf-path",
+                "--dataset-variant",
+                "--dataset-train-shards",
+                "--dataset-train-file",
+                "--dataset-val-file",
+                "--tokenizer",
+                "--native-cuda-runner",
+                "--run-id",
+                "--seed",
+                "--min-lr",
+            })) {
+            require_value(argc, argv, &i, arg);
+            continue;
+        }
+        if (!saw_separator && !matched_equals_flag(arg, {
+                "--runtime",
+                "--device",
+                "--dataset-hf-path",
+                "--dataset-variant",
+                "--dataset-train-shards",
+                "--dataset-train-file",
+                "--dataset-val-file",
+                "--tokenizer",
+                "--native-cuda-runner",
+                "--run-id",
+                "--seed",
+                "--min-lr",
+            }).empty()) {
+            continue;
+        }
+        if (!saw_separator && arg_is_any(arg, {
+                "--download-if-missing",
+                "--no-download-if-missing",
+                "--tokgpt2",
+                "--cl100k",
+                "--o200k",
+                "--tile-cuda-strict",
+                "--no-tile-cuda-strict",
+            })) {
+            continue;
+        }
         if (!saw_separator && (arg == "--base-model" || arg == "--model")) {
             model = lower_model(require_value(argc, argv, &i, arg));
             continue;
@@ -381,12 +515,141 @@ int main(int argc, char** argv) {
             gpt_cli = after_equals("--native-gpt2-cli=");
             continue;
         }
+        if (!saw_separator && arg == "--dataset") {
+            append_dataset_alias(forwarded, require_value(argc, argv, &i, arg));
+            continue;
+        }
+        if (!saw_separator && arg.rfind("--dataset=", 0) == 0) {
+            append_dataset_alias(forwarded, after_equals("--dataset="));
+            continue;
+        }
+        if (!saw_separator && arg == "--output") {
+            append_value_arg(forwarded, "--output-dir", output_dir_from_output(require_value(argc, argv, &i, arg)));
+            continue;
+        }
+        if (!saw_separator && arg.rfind("--output=", 0) == 0) {
+            append_value_arg(forwarded, "--output-dir", output_dir_from_output(after_equals("--output=")));
+            continue;
+        }
+        if (!saw_separator && arg_is_any(arg, {
+                "--kernel-backend",
+                "--native-cuda-kernel-backend",
+                "--native-cuda-executable",
+                "--native-cuda-output-dir",
+                "--native-cuda-tile-ops-lib",
+                "--native-cuda-cuda-runtime-lib",
+                "--native-cuda-lm-head-row-chunk-size",
+                "--template",
+                "--preset",
+                "--graph",
+            })) {
+            const std::string value = require_value(argc, argv, &i, arg);
+            if (arg == "--kernel-backend" || arg == "--native-cuda-kernel-backend") {
+                append_value_arg(forwarded, "--backend", value);
+            } else if (arg == "--native-cuda-executable") {
+                append_value_arg(forwarded, "--target", value);
+            } else if (arg == "--native-cuda-output-dir") {
+                append_value_arg(forwarded, "--output-dir", value);
+            } else if (arg == "--native-cuda-tile-ops-lib") {
+                append_value_arg(forwarded, "--tile-ops-lib", value);
+            } else if (arg == "--native-cuda-cuda-runtime-lib") {
+                append_value_arg(forwarded, "--cuda-runtime-lib", value);
+            } else if (arg == "--native-cuda-lm-head-row-chunk-size") {
+                append_value_arg(forwarded, "--lm-head-row-chunk-size", value);
+            } else if (arg == "--template" || arg == "--preset") {
+                append_value_arg(forwarded, "--template-name", value);
+            } else if (arg == "--graph") {
+                append_value_arg(forwarded, "--graph-file", value);
+            }
+            continue;
+        }
+        const std::string value_alias = matched_equals_flag(arg, {
+            "--kernel-backend",
+            "--native-cuda-kernel-backend",
+            "--native-cuda-executable",
+            "--native-cuda-output-dir",
+            "--native-cuda-tile-ops-lib",
+            "--native-cuda-cuda-runtime-lib",
+            "--native-cuda-lm-head-row-chunk-size",
+            "--template",
+            "--preset",
+            "--graph",
+        });
+        if (!saw_separator && !value_alias.empty()) {
+            const std::string value = arg.substr(value_alias.size() + 1);
+            if (value_alias == "--kernel-backend" || value_alias == "--native-cuda-kernel-backend") {
+                append_value_arg(forwarded, "--backend", value);
+            } else if (value_alias == "--native-cuda-executable") {
+                append_value_arg(forwarded, "--target", value);
+            } else if (value_alias == "--native-cuda-output-dir") {
+                append_value_arg(forwarded, "--output-dir", value);
+            } else if (value_alias == "--native-cuda-tile-ops-lib") {
+                append_value_arg(forwarded, "--tile-ops-lib", value);
+            } else if (value_alias == "--native-cuda-cuda-runtime-lib") {
+                append_value_arg(forwarded, "--cuda-runtime-lib", value);
+            } else if (value_alias == "--native-cuda-lm-head-row-chunk-size") {
+                append_value_arg(forwarded, "--lm-head-row-chunk-size", value);
+            } else if (value_alias == "--template" || value_alias == "--preset") {
+                append_value_arg(forwarded, "--template-name", value);
+            } else if (value_alias == "--graph") {
+                append_value_arg(forwarded, "--graph-file", value);
+            }
+            continue;
+        }
+        if (!saw_separator && arg_is_any(arg, {
+                "--native-cuda-print-plan",
+                "--native-cuda-check-tile-ops",
+                "--native-cuda-smoke-tile-ops",
+                "--native-cuda-smoke-optimizer-step",
+                "--native-cuda-smoke-lm-step",
+                "--native-cuda-smoke-attention-step",
+                "--native-cuda-smoke-mlp-step",
+                "--native-cuda-smoke-norm-residual-step",
+                "--native-cuda-smoke-transformer-block-step",
+                "--native-cuda-smoke-transformer-lm-step",
+                "--native-cuda-smoke-embedding-lm-step",
+                "--native-cuda-allow-train-val-fallback",
+                "--native-cuda-no-checkpoint",
+                "--native-cuda-write-checkpoint",
+            })) {
+            if (arg == "--native-cuda-print-plan") {
+                forwarded.push_back("--print-plan");
+            } else if (arg == "--native-cuda-check-tile-ops") {
+                forwarded.push_back("--check-tile-ops");
+            } else if (arg == "--native-cuda-smoke-tile-ops") {
+                forwarded.push_back("--smoke-tile-ops");
+            } else if (arg == "--native-cuda-smoke-optimizer-step") {
+                forwarded.push_back("--smoke-optimizer-step");
+            } else if (arg == "--native-cuda-smoke-lm-step") {
+                forwarded.push_back("--smoke-lm-step");
+            } else if (arg == "--native-cuda-smoke-attention-step") {
+                forwarded.push_back("--smoke-attention-step");
+            } else if (arg == "--native-cuda-smoke-mlp-step") {
+                forwarded.push_back("--smoke-mlp-step");
+            } else if (arg == "--native-cuda-smoke-norm-residual-step") {
+                forwarded.push_back("--smoke-norm-residual-step");
+            } else if (arg == "--native-cuda-smoke-transformer-block-step") {
+                forwarded.push_back("--smoke-transformer-block-step");
+            } else if (arg == "--native-cuda-smoke-transformer-lm-step") {
+                forwarded.push_back("--smoke-transformer-lm-step");
+            } else if (arg == "--native-cuda-smoke-embedding-lm-step") {
+                forwarded.push_back("--smoke-embedding-lm-step");
+            } else if (arg == "--native-cuda-allow-train-val-fallback") {
+                forwarded.push_back("--allow-train-val-fallback");
+            } else if (arg == "--native-cuda-no-checkpoint") {
+                forwarded.push_back("--no-checkpoint");
+            } else if (arg == "--native-cuda-write-checkpoint") {
+                forwarded.push_back("--write-checkpoint");
+            }
+            continue;
+        }
         if (arg == "--dry-run" || arg == "--native-cuda-dry-run") {
-            forwarded.push_back(arg);
+            forwarded.push_back("--dry-run");
             continue;
         }
         if (arg == "--print-command" || arg == "--native-cuda-print-command") {
             print_command_requested = true;
+            continue;
         }
         forwarded.push_back(arg);
     }
@@ -412,17 +675,43 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    const bool dense_gpt =
+        model_entry->name == std::string_view("gpt") ||
+        model_entry->name == std::string_view("gpt2") ||
+        model_entry->name == std::string_view("gpt3") ||
+        model_entry->name == std::string_view("nanogpt");
+
     const bool nanogpt_token_lm =
         model_entry->name == std::string_view("nanogpt") &&
         has_forwarded_flag(forwarded, "--train-token-lm");
 
+    if (dense_gpt && !has_native_train_action(forwarded)) {
+        forwarded.push_back("--train-transformer-lm");
+    }
+    if (dense_gpt && !has_forwarded_value_flag(forwarded, "--backend")) {
+        append_value_arg(forwarded, "--backend", "tile-cuda");
+    }
+    if (
+        dense_gpt &&
+        !has_any_forwarded_value_flag(forwarded, {"--dataset-alias", "--dataset-path"}) &&
+        !has_forwarded_flag(forwarded, "--tinystories")
+    ) {
+        const std::string dataset_alias = env_or_empty("DATASET_ALIAS");
+        append_value_arg(
+            forwarded,
+            "--dataset-alias",
+            dataset_alias.empty() ? std::string(DEFAULT_TINYSTORIES_ALIAS) : dataset_alias);
+    }
+    if (
+        model_entry->name == std::string_view("gpt3") &&
+        !has_forwarded_value_flag(forwarded, "--train-seq-len") &&
+        !has_template_or_graph_selector(forwarded)
+    ) {
+        append_value_arg(forwarded, "--train-seq-len", "2048");
+    }
+
     if (model_entry->status != std::string_view("implemented") &&
         model_entry->status != std::string_view("external-fast-path")) {
-        const bool dense_gpt =
-            model_entry->name == std::string_view("gpt") ||
-            model_entry->name == std::string_view("gpt2") ||
-            model_entry->name == std::string_view("gpt3") ||
-            model_entry->name == std::string_view("nanogpt");
         const std::string target_cli =
             dense_gpt && !gpt_cli.empty()
                 ? gpt_cli

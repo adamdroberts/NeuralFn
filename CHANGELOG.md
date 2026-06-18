@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- The compiled `nfn_native_train` frontend now accepts the high-level GPT
+  training flags that previously required the Python `nfn train` or
+  `train_gpt.py` argument shim: `--dataset tinystories`, `--output`,
+  `--kernel-backend`, `--template` / `--preset`, `--graph`,
+  `--native-cuda-*` aliases, dense GPT default `--train-transformer-lm`,
+  default `--backend tile-cuda`, default TinyStories alias fallback, and GPT-3's
+  implicit 2048-token context when no template/graph/sequence length is passed.
+  This makes `nfn_native_train train ...` a closer compiled C++ replacement for
+  the Python startup path while still dispatching to `nfn_gpt_native_train`.
+  Verification: focused unified native train CLI dispatch tests and C++ rebuild.
+
 - Dense GPT native selection now fails fast when a shipped template's requested
   geometry does not match the compiled transformer-LM loop. The visible case is
   `--template-name nanogpt`: it now reports

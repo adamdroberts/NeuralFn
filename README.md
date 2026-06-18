@@ -100,6 +100,18 @@ as `lm_head_logits_linear_strategy`, `lm_head_dhidden_linear_strategy`,
 under `baseline_native_metric_values` and `candidate_native_metric_values`, so
 kernel-candidate results show whether a route actually changed.
 
+The compiled `nfn_native_train` frontend can now be used directly as the
+startup-fast dense GPT training command instead of relying on the Python
+argument shim. It accepts the same common wrapper flags as `nfn train` and
+`cli/scripts/train_gpt.py`, including `--dataset tinystories`, `--output`,
+`--kernel-backend`, `--template` / `--preset`, `--graph`, and
+`--native-cuda-*` aliases, then injects the dense GPT defaults
+`--train-transformer-lm`, `--backend tile-cuda`, the TinyStories alias fallback,
+and GPT-3's implicit `--train-seq-len 2048` when applicable before execing
+`nfn_gpt_native_train`. This removes Python startup from the direct compiled
+frontend path; it does not by itself close the remaining SM120 in-loop
+throughput gap tracked by the parity benchmark.
+
 Native dense-GPT plan and runtime JSON now include
 `lm_head_classifier_strategy_contract`, which makes the remaining SM120 parity
 tradeoff explicit. The llm.kittens reference keeps full resident BF16 logits for

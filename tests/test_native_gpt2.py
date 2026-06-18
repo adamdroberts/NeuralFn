@@ -3841,6 +3841,8 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
         assert f"--model-family\n{model}" in dense_gpt.stdout
         assert "--dataset-alias\n/tmp/native-cache" in dense_gpt.stdout
         assert "--eval-every-steps\n1000" in dense_gpt.stdout
+        assert "--train-transformer-lm" in dense_gpt.stdout
+        assert "--backend\ntile-cuda" in dense_gpt.stdout
         assert "--base-model" not in dense_gpt.stdout
 
     nanogpt_dense = subprocess.run(
@@ -3867,7 +3869,43 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert "--template-name\nnanogpt" in nanogpt_dense.stdout
     assert "--dataset-alias\n/tmp/native-cache" in nanogpt_dense.stdout
     assert "--eval-every-steps\n1000" in nanogpt_dense.stdout
+    assert "--train-transformer-lm" in nanogpt_dense.stdout
+    assert "--backend\ntile-cuda" in nanogpt_dense.stdout
     assert "--base-model" not in nanogpt_dense.stdout
+
+    high_level_aliases = subprocess.run(
+        [
+            str(unified),
+            "train",
+            "--base-model",
+            "gpt3",
+            "--native-gpt-cli",
+            str(fake_gpt),
+            "--dataset",
+            "tinystories",
+            "--native-cuda-print-command",
+            "--native-cuda-no-checkpoint",
+            "--kernel-backend",
+            "tile-cuda",
+            "--output",
+            "/tmp/native-model.pt",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert high_level_aliases.returncode == 0, high_level_aliases.stderr
+    assert "--model-family gpt3" in high_level_aliases.stdout
+    assert "--tinystories" in high_level_aliases.stdout
+    assert "--no-checkpoint" in high_level_aliases.stdout
+    assert "--backend tile-cuda" in high_level_aliases.stdout
+    assert "--output-dir /tmp/native-model" in high_level_aliases.stdout
+    assert "--train-transformer-lm" in high_level_aliases.stdout
+    assert "--train-seq-len 2048" in high_level_aliases.stdout
+    assert "--native-cuda-print-command" not in high_level_aliases.stdout
+    assert "--kernel-backend" not in high_level_aliases.stdout
+    assert "--output " not in high_level_aliases.stdout
 
     coverage = subprocess.run(
         [str(unified), "--list-models", "--json"],
