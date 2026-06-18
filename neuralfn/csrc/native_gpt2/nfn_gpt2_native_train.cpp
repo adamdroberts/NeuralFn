@@ -10824,6 +10824,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT",
                               "NFN_NATIVE_GPT2_FUSE_TOKEN_WEIGHT_BF16_INIT"}),
             true);
+    const bool fuse_token_weight_bf16_adamw_refresh_enabled =
+        token_weight_bf16_shadow_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_ADAMW_REFRESH",
+                              "NFN_NATIVE_GPT2_FUSE_TOKEN_WEIGHT_BF16_ADAMW_REFRESH"}),
+            true);
     const bool legacy_mod17_token_weight_init_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_INIT_LEGACY_MOD17",
@@ -11143,6 +11149,7 @@ int run_transformer_lm_training_json(
     float** adamw_float_update_avg_sq_ptrs = nullptr;
     std::int64_t* adamw_float_update_elements = nullptr;
     std::int64_t* adamw_float_update_partial_offsets = nullptr;
+    std::int64_t* adamw_float_update_bf16_shadow_offsets = nullptr;
     float* adamw_float_update_weight_decays = nullptr;
     std::uint16_t** adamw_bf16_param_ptrs = nullptr;
     float** adamw_bf16_param_grad_ptrs = nullptr;
@@ -11182,6 +11189,7 @@ int run_transformer_lm_training_json(
     std::int64_t adamw_float_update_kernel_launches = 0;
     std::int64_t adamw_bf16_param_kernel_launches = 0;
     std::int64_t adamw_bf16_param_bf16_grad_kernel_launches = 0;
+    std::int64_t token_weight_bf16_fused_adamw_refresh_count = 0;
     std::int64_t gradient_sumsq_kernel_launches = 0;
     std::int64_t accumulation_zero_kernel_launches = 0;
     std::int64_t float_arena_requested_elements = 0;
@@ -12873,6 +12881,7 @@ int run_transformer_lm_training_json(
                 adamw_float_update_host.avg_sqs.push_back(avg_sq);
                 adamw_float_update_host.elements.push_back(elements);
                 adamw_float_update_host.partial_offsets.push_back(partial_offset);
+                adamw_float_update_host.bf16_shadow_offsets.push_back(bf16_shadow_offset);
                 adamw_float_update_host.decays.push_back(decay);
                 adamw_float_update_max_elements =
                     std::max<std::int64_t>(adamw_float_update_max_elements, elements);
@@ -12880,7 +12889,21 @@ int run_transformer_lm_training_json(
             partial_offset += partial_count_for(elements);
         };
 
-        add(token_weight, accum_grad_token_weight, token_avg, token_avg_sq, kTokenWeightElements, kWeightDecay);
+        const std::int64_t token_bf16_shadow_offset =
+            bf16_block_weight_param_update_enabled &&
+                    fuse_token_weight_bf16_adamw_refresh_enabled &&
+                    token_weight_bf16_shadow_enabled &&
+                    token_weight_bf16 != nullptr
+                ? 0
+                : -1;
+        add(
+            token_weight,
+            accum_grad_token_weight,
+            token_avg,
+            token_avg_sq,
+            kTokenWeightElements,
+            kWeightDecay,
+            token_bf16_shadow_offset);
         add(position_weight, accum_grad_position_weight, position_avg, position_avg_sq, position_weight_elements, kWeightDecay);
         for (std::size_t i = 0; i < blocks.size(); ++i) {
             TransformerBlockParams& block = blocks[i];
@@ -13288,6 +13311,7 @@ int run_transformer_lm_training_json(
             add_region(reinterpret_cast<void**>(&adamw_float_update_avg_sq_ptrs), adamw_float_update_host.avg_sqs.data(), adamw_float_update_pointer_bytes, "adamw_float_update_avg_sq_ptrs");
             add_region(reinterpret_cast<void**>(&adamw_float_update_elements), adamw_float_update_host.elements.data(), adamw_float_update_element_bytes, "adamw_float_update_elements");
             add_region(reinterpret_cast<void**>(&adamw_float_update_partial_offsets), adamw_float_update_host.partial_offsets.data(), adamw_float_update_partial_offset_bytes, "adamw_float_update_partial_offsets");
+            add_region(reinterpret_cast<void**>(&adamw_float_update_bf16_shadow_offsets), adamw_float_update_host.bf16_shadow_offsets.data(), adamw_float_update_partial_offset_bytes, "adamw_float_update_bf16_shadow_offsets");
             add_region(reinterpret_cast<void**>(&adamw_float_update_weight_decays), adamw_float_update_host.decays.data(), adamw_float_update_decay_bytes, "adamw_float_update_weight_decays");
             add_region(reinterpret_cast<void**>(&adamw_bf16_param_ptrs), adamw_bf16_param_host.params.data(), adamw_bf16_param_pointer_bytes, "adamw_bf16_param_ptrs");
             add_region(reinterpret_cast<void**>(&adamw_bf16_param_grad_ptrs), adamw_bf16_param_host.grads.data(), adamw_bf16_param_float_pointer_bytes, "adamw_bf16_param_grad_ptrs");
@@ -16340,26 +16364,59 @@ int run_transformer_lm_training_json(
         const float sqrt_bias_correction2 = std::sqrt(1.0f - std::pow(kBeta2, static_cast<float>(step)));
         if (error.empty()) {
             const std::int64_t stage_event = stage_begin("adamw_update");
+            bool token_weight_shadow_refreshed_by_adamw = false;
             if (bf16_block_weight_param_update_enabled) {
                 if (adamw_float_update_descriptor_count > 0) {
-                    run(adamw_many_with_device_scale(
-                            adamw_float_update_param_ptrs,
-                            reinterpret_cast<const float* const*>(adamw_float_update_grad_ptrs),
-                            grad_clip_scale,
-                            adamw_float_update_avg_ptrs,
-                            adamw_float_update_avg_sq_ptrs,
-                            adamw_float_update_elements,
-                            adamw_float_update_weight_decays,
-                            adamw_float_update_descriptor_count,
-                            adamw_float_update_max_elements,
-                            static_cast<float>(cfg.learning_rate),
-                            kBeta1,
-                            kBeta2,
-                            kEps,
-                            bias_correction1,
-                            sqrt_bias_correction2,
-                            nullptr),
-                        "adamw_many_with_device_scale.float_params");
+                    if (fuse_token_weight_bf16_adamw_refresh_enabled &&
+                        token_weight_bf16_shadow_enabled &&
+                        token_weight_bf16 != nullptr &&
+                        adamw_float_update_bf16_shadow_offsets != nullptr &&
+                        adamw_many_with_device_scale_bf16_shadow != nullptr) {
+                        run(adamw_many_with_device_scale_bf16_shadow(
+                                adamw_float_update_param_ptrs,
+                                reinterpret_cast<const float* const*>(adamw_float_update_grad_ptrs),
+                                grad_clip_scale,
+                                adamw_float_update_avg_ptrs,
+                                adamw_float_update_avg_sq_ptrs,
+                                adamw_float_update_elements,
+                                adamw_float_update_weight_decays,
+                                adamw_float_update_bf16_shadow_offsets,
+                                token_weight_bf16,
+                                adamw_float_update_descriptor_count,
+                                adamw_float_update_max_elements,
+                                static_cast<float>(cfg.learning_rate),
+                                kBeta1,
+                                kBeta2,
+                                kEps,
+                                bias_correction1,
+                                sqrt_bias_correction2,
+                                nullptr),
+                            "adamw_many_with_device_scale_bf16_shadow.float_params_token_shadow");
+                        if (error.empty()) {
+                            token_weight_shadow_refreshed_by_adamw = true;
+                            token_weight_bf16_fused_adamw_refresh_count += 1;
+                            token_weight_bf16_refresh_count += 1;
+                        }
+                    } else {
+                        run(adamw_many_with_device_scale(
+                                adamw_float_update_param_ptrs,
+                                reinterpret_cast<const float* const*>(adamw_float_update_grad_ptrs),
+                                grad_clip_scale,
+                                adamw_float_update_avg_ptrs,
+                                adamw_float_update_avg_sq_ptrs,
+                                adamw_float_update_elements,
+                                adamw_float_update_weight_decays,
+                                adamw_float_update_descriptor_count,
+                                adamw_float_update_max_elements,
+                                static_cast<float>(cfg.learning_rate),
+                                kBeta1,
+                                kBeta2,
+                                kEps,
+                                bias_correction1,
+                                sqrt_bias_correction2,
+                                nullptr),
+                            "adamw_many_with_device_scale.float_params");
+                    }
                     if (error.empty()) {
                         adamw_kernel_launches += 1;
                         adamw_float_update_kernel_launches += 1;
@@ -16468,7 +16525,9 @@ int run_transformer_lm_training_json(
                 } else {
                     refresh_block_weight_bf16("block_weight_bf16.post_adamw_refresh");
                 }
-                refresh_token_weight_bf16("token_weight_bf16.post_adamw_refresh");
+                if (!token_weight_shadow_refreshed_by_adamw) {
+                    refresh_token_weight_bf16("token_weight_bf16.post_adamw_refresh");
+                }
             }
             stage_end(stage_event, "adamw_update");
         }
@@ -17663,6 +17722,8 @@ int run_transformer_lm_training_json(
         << "  \"token_weight_bf16_shadow_enabled\": " << (token_weight_bf16_shadow_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_bf16_initial_refresh_fusion_enabled\": "
         << (fuse_token_weight_bf16_initial_refresh_enabled ? "true" : "false") << ",\n"
+        << "  \"token_weight_bf16_adamw_refresh_fusion_enabled\": "
+        << (fuse_token_weight_bf16_adamw_refresh_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_bf16_refresh_count\": " << token_weight_bf16_refresh_count << ",\n"
         << "  \"block_weight_bf16_primary_param_update_count\": " << adamw_bf16_param_kernel_launches << ",\n"
         << "  \"block_weight_bf16_primary_param_bf16_grad_update_count\": "
@@ -18223,12 +18284,16 @@ int run_transformer_lm_training_json(
         << "  \"weight_update_count\": " << (kGlobalParameterBuffers + kPerBlockParameterBuffers * trained_layers) << ",\n"
         << "  \"adamw_update_strategy\": \""
         << (bf16_block_weight_param_update_enabled
-                ? "split-float32-and-bf16-param-multi-buffer-device-scale"
+                ? (token_weight_bf16_fused_adamw_refresh_count > 0
+                       ? "split-float32-token-shadow-and-bf16-param-multi-buffer-device-scale"
+                       : "split-float32-and-bf16-param-multi-buffer-device-scale")
                 : "fused-multi-buffer-device-scale")
         << "\",\n"
         << "  \"adamw_bf16_shadow_refresh_strategy\": \""
         << (bf16_block_weight_param_update_enabled
-                ? "elided-bf16-primary-params"
+                ? (token_weight_bf16_fused_adamw_refresh_count > 0
+                       ? "elided-block-bf16-primary-token-shadow-fused-adamw"
+                       : "elided-bf16-primary-params")
                 : (fuse_adamw_bf16_shadow_refresh_enabled ? "fused-adamw-shadow-write" : "separate-many-pack-after-adamw"))
         << "\",\n"
         << "  \"adamw_descriptor_count\": " << adamw_descriptor_count << ",\n"
@@ -18243,6 +18308,8 @@ int run_transformer_lm_training_json(
         << adamw_bf16_param_bf16_grad_max_elements << ",\n"
         << "  \"adamw_kernel_launches\": " << adamw_kernel_launches << ",\n"
         << "  \"adamw_float_update_kernel_launches\": " << adamw_float_update_kernel_launches << ",\n"
+        << "  \"token_weight_bf16_fused_adamw_refresh_count\": "
+        << token_weight_bf16_fused_adamw_refresh_count << ",\n"
         << "  \"adamw_bf16_param_kernel_launches\": " << adamw_bf16_param_kernel_launches << ",\n"
         << "  \"adamw_bf16_param_bf16_grad_kernel_launches\": "
         << adamw_bf16_param_bf16_grad_kernel_launches << ",\n"
@@ -18521,12 +18588,16 @@ int run_transformer_lm_training_json(
         << "    \"adamw_update_loop_elided\": true,\n"
         << "    \"adamw_update_strategy\": \""
         << (bf16_block_weight_param_update_enabled
-                ? "split-float32-and-bf16-param-multi-buffer-device-scale"
+                ? (token_weight_bf16_fused_adamw_refresh_count > 0
+                       ? "split-float32-token-shadow-and-bf16-param-multi-buffer-device-scale"
+                       : "split-float32-and-bf16-param-multi-buffer-device-scale")
                 : "fused-multi-buffer-device-scale")
         << "\",\n"
         << "    \"adamw_bf16_shadow_refresh_strategy\": \""
         << (bf16_block_weight_param_update_enabled
-                ? "elided-bf16-primary-params"
+                ? (token_weight_bf16_fused_adamw_refresh_count > 0
+                       ? "elided-block-bf16-primary-token-shadow-fused-adamw"
+                       : "elided-bf16-primary-params")
                 : (fuse_adamw_bf16_shadow_refresh_enabled ? "fused-adamw-shadow-write" : "separate-many-pack-after-adamw"))
         << "\",\n"
         << "    \"block_weight_bf16_initialization_strategy\": \""
@@ -18539,6 +18610,8 @@ int run_transformer_lm_training_json(
         << "    \"token_weight_bf16_refresh_count\": " << token_weight_bf16_refresh_count << ",\n"
         << "    \"token_weight_bf16_initial_refresh_fusion_enabled\": "
         << (fuse_token_weight_bf16_initial_refresh_enabled ? "true" : "false") << ",\n"
+        << "    \"token_weight_bf16_adamw_refresh_fusion_enabled\": "
+        << (fuse_token_weight_bf16_adamw_refresh_enabled ? "true" : "false") << ",\n"
         << "    \"token_weight_bf16_initial_refresh_elided\": "
         << (token_weight_bf16_initial_refresh_elided ? "true" : "false") << ",\n"
         << "    \"block_weight_bf16_primary_param_update_enabled\": "

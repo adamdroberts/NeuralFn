@@ -3160,6 +3160,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["adamw_update_strategy"] in {
         "fused-multi-buffer-device-scale",
         "split-float32-and-bf16-param-multi-buffer-device-scale",
+        "split-float32-token-shadow-and-bf16-param-multi-buffer-device-scale",
     }
     assert train_transformer_payload["adamw_descriptor_count"] == 0
     assert train_transformer_payload["adamw_float_update_descriptor_count"] == 0
@@ -3340,6 +3341,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "token_weight_bf16_shadow_enabled": True,
         "token_weight_bf16_refresh_count": 0,
         "token_weight_bf16_initial_refresh_fusion_enabled": True,
+        "token_weight_bf16_adamw_refresh_fusion_enabled": True,
         "token_weight_bf16_initial_refresh_elided": False,
         "block_weight_bf16_primary_param_update_enabled": True,
         "direct_bf16_block_weight_initialization_enabled": True,
@@ -4832,10 +4834,17 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block_weight_bf16_gradient_storage_strategy" in gpt2_source_text
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW" in gpt2_source_text
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_ADAMW_REFRESH" in gpt2_source_text
     assert "token_weight_bf16_shadow_enabled" in gpt2_source_text
     assert "token_weight_bf16_refresh_count" in gpt2_source_text
+    assert "token_weight_bf16_fused_adamw_refresh_count" in gpt2_source_text
+    assert "token_weight_bf16_adamw_refresh_fusion_enabled" in gpt2_source_text
     assert "token_weight_bf16_initial_refresh_elided" in gpt2_source_text
     assert "token_weight_bf16.initial_refresh" in gpt2_source_text
+    assert "adamw_float_update_bf16_shadow_offsets" in gpt2_source_text
+    assert "adamw_many_with_device_scale_bf16_shadow.float_params_token_shadow" in gpt2_source_text
+    assert "split-float32-token-shadow-and-bf16-param-multi-buffer-device-scale" in gpt2_source_text
+    assert "elided-block-bf16-primary-token-shadow-fused-adamw" in gpt2_source_text
     assert "nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_float32" in header_text
     assert "launch_adamw_step_many_with_device_scale_float32" in source_text
     assert "launch_adamw_step_many_with_device_scale_bf16_shadow_float32" in source_text

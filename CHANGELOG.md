@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fused the default dense GPT tied token-weight BF16 LM-head shadow refresh into
+  the float32 descriptor AdamW update. In the BF16-primary block-weight path,
+  token/position/norm/bias tensors still use the float32 multi-buffer AdamW
+  descriptor launch, but the token descriptor now carries a BF16-shadow offset
+  so `nfn_native_tile_adamw_step_many_with_device_scale_bf16_shadow_float32`
+  updates the FP32 master token table and its BF16 LM-head shadow in the same
+  kernel. This removes the separate post-AdamW
+  `token_weight_bf16.post_adamw_refresh` pack from the default path while
+  preserving `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_ADAMW_REFRESH=0` for
+  same-binary paired bisection against the old behavior. Runtime JSON now
+  reports `token_weight_bf16_adamw_refresh_fusion_enabled`,
+  `token_weight_bf16_fused_adamw_refresh_count`, and the active strategy names
+  `split-float32-token-shadow-and-bf16-param-multi-buffer-device-scale` /
+  `elided-block-bf16-primary-token-shadow-fused-adamw`. Verification after the
+  WSL CUDA toolkit reinstall: `nvcc --version` reported CUDA 13.3.33; rebuilt
+  `build/nfn_gpt_native_train` and `build/libnfn_native_train_tile_ops.so`; ran
+  a one-step RTX 5090 smoke that reported CUDA runtime/driver 13.3,
+  `token_weight_bf16_fused_adamw_refresh_count: 1`, and the fused strategy
+  names; ran the same-script paired benchmark with baseline
+  `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_ADAMW_REFRESH=0`, which measured
+  candidate/default at `0.998488x` train-loop wall time and `1.001519x`
+  tokens/sec; ran `python -m pytest tests/test_native_gpt2.py -q`
+  (`51 passed, 1 skipped`); ran `python tools/check_native_no_torch_deps.py`.
+
 - Hardened `tools/paired_kernel_speed.py` timeout cleanup for SM120 parity and
   candidate benchmarks. Timed-out commands now kill and wait on the actual
   process group before the timeout sample is recorded, preventing oversized CUDA
