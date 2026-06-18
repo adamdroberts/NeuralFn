@@ -69,6 +69,10 @@ For native-vs-native dense GPT kernel bisections, `tools/bench_native_gpt_sm120_
 accepts the canonical `NFN_SM120_NATIVE_*` environment variables and the shorter
 `NFN_SM120_CANDIDATE_*` aliases for steps, samples, warmup, profile directory,
 CUDA device selection, candidate env, template/graph selection, and JSON output.
+Use `NFN_SM120_COMMON_EXTRA_ARGS` only for args that must be appended to both
+commands, and use `NFN_SM120_CANDIDATE_EXTRA_ARGS` for candidate-only CLI flags
+such as `--lm-head-row-chunk-size 32768`; the dry-run plan prints both resolved
+commands so command separation can be audited before launching a long GPU job.
 This keeps quick candidate runs from silently falling back to the wrapper's
 default 10-step, 3-sample profile when using the shorter alias names.
 The helper decodes
@@ -259,7 +263,11 @@ candidate Tile ops build against `build/libnfn_native_train_tile_ops.so`. Common
 controls include `NFN_SM120_NATIVE_STEPS`, `NFN_SM120_NATIVE_SAMPLES`,
 `NFN_SM120_NATIVE_WARMUP`, `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_NATIVE_TEMPLATE_NAME`, `NFN_SM120_NATIVE_GRAPH_FILE`, and
-`NFN_SM120_NATIVE_STAGE_TIMING=1` for attribution sidecars. Set
+`NFN_SM120_NATIVE_STAGE_TIMING=1` for attribution sidecars. Set candidate-only
+CLI flags with `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` or the short
+`NFN_SM120_CANDIDATE_EXTRA_ARGS`; use `NFN_SM120_NATIVE_EXTRA_ARGS` or
+`NFN_SM120_COMMON_EXTRA_ARGS` only when both commands must receive the same
+argument. Set
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` to emit the resolved paired commands, selected
 CUDA device policy, and alternating sample order without launching the GPU jobs.
 Set

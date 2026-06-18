@@ -189,6 +189,13 @@ candidate bisections, set
 `tools/bench_native_gpt_sm120_candidate.sh`; the helper appends
 `--startup-only` to both baseline and candidate while preserving the same
 selected-GPU idle/load checks and command shape.
+For candidate-only native CLI flags, use
+`NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` or the short
+`NFN_SM120_CANDIDATE_EXTRA_ARGS`; use `NFN_SM120_NATIVE_EXTRA_ARGS` or
+`NFN_SM120_COMMON_EXTRA_ARGS` only for flags that intentionally apply to both
+baseline and candidate. Run with `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` or
+`NFN_SM120_CANDIDATE_DRY_RUN_PLAN=1` first when testing shape flags so the
+printed commands prove the candidate flag did not leak into the baseline.
 For one-shape TK forward bisection from the SDK, pass
 `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` or
 `NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` in the same

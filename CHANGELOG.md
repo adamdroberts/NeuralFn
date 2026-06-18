@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/bench_native_gpt_sm120_candidate.sh` now uses
+  `NFN_SM120_CANDIDATE_EXTRA_ARGS` as the short alias for candidate-only CLI
+  flags, matching the canonical `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`.
+  Shared baseline-and-candidate flags now use the distinct
+  `NFN_SM120_COMMON_EXTRA_ARGS` alias for `NFN_SM120_NATIVE_EXTRA_ARGS`. This
+  prevents row-chunk, graph, or shape bisection flags from accidentally being
+  applied to both sides of a paired run. Verification: dry-run wrapper test
+  confirms `--lm-head-row-chunk-size 32768` appears only in the candidate
+  command; `bash -n tools/bench_native_gpt_sm120_candidate.sh`.
+
+- Rechecked CUDA 13.3 SM120 parity and two startup/LM-head retunes. A fresh
+  no-sidecar 10-step parity sample measured NeuralFn at `1.031573x` train-loop
+  wall time and `0.967350x` tokens/sec versus llm.kittens. Rechecking
+  `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` for startup measured `1.180688x` setup
+  wall time and `1.180297x` total startup wall time versus default. Rechecking
+  candidate-only `--lm-head-row-chunk-size 32768` measured `1.559818x`
+  train-loop wall time and `0.643975x` tokens/sec versus the 8192-row default.
+  No kernel default changed.
+
 - `tools/bench_native_gpt_sm120_candidate.sh` now accepts short
   `NFN_SM120_CANDIDATE_*` aliases alongside the canonical
   `NFN_SM120_NATIVE_*` benchmark controls. This covers candidate steps, samples,
