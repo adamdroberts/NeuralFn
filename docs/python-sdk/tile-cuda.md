@@ -996,7 +996,10 @@ tokens/sec.
 The default trainer-facing token-weight initializer uses a 4096-element CUDA
 Tile shape. For paired startup bisection only, build alternate libraries with
 `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DNFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE=1024"`
-or `2048`; the accepted values are `1024`, `2048`, and `4096`.
+or `2048`; `8192` is also accepted for local candidate builds but remains
+non-default after the dedicated RTX 5090 9-sample startup-only comparison
+measured `1.005585x` token-init time versus the 4096 default. The accepted
+values are `1024`, `2048`, `4096`, and `8192`.
 
 Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is metadata-only on the default `compiled-cli` runner: Python builds the compiled C++ argv from the dataset alias/path and leaves shard validation or raw-text rejection to the compiled frontend. It must not import `server.dataset_manager`, NumPy, tiktoken, or Torch, must not write `fineweb_train_*.bin` shards, and must not add the external `--target train_gpt2cu` bridge argument for the default Tile-CUDA backend. The compiled Tile-CUDA frontend also treats `--print-command` as a no-data/no-CUDA action, printing the exact `nfn_gpt_native_train ...` invocation before token-shard resolution, CUDA runtime loading, or driver preflight.
 

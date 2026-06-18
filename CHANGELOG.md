@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- The dense GPT token-weight CUDA Tile initializer now accepts
+  `NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE=8192` for local candidate library
+  builds, while keeping the measured 4096-element default. The 8192 candidate
+  compiled successfully but was not promoted after a dedicated RTX 5090
+  startup-only 9-sample paired benchmark measured `1.005585x` token-init time
+  versus the 4096 default, with total startup `0.990436x` inside broader arena
+  materialization noise. Verification: built
+  `/tmp/libnfn_tile_token8192.so` with
+  `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS=-DNFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE=8192`,
+  ran the same-script startup-only comparison through
+  `tools/bench_native_gpt_sm120_candidate.sh` with idle selected-GPU checks,
+  and updated the native source guard test.
+
 - The top-level `nfn train` native dispatcher now normalizes
   `--native-cuda-no-checkpoint` / `--no-checkpoint` and
   `--native-cuda-write-checkpoint` / `--write-checkpoint` before launching the

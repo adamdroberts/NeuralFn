@@ -4209,6 +4209,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_init_gpt2_token_weight_fast_float32" in gpt2_source_text
     assert "#define NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE 4096" in kernels_text
     assert "NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE 4096_ic" in kernels_text
+    assert "NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE 8192_ic" in kernels_text
     assert "ct::shape{NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE}" in kernels_text
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT" in kernels_text
     assert "NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT" in kernels_text
