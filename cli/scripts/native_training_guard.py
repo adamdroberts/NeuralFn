@@ -45,6 +45,7 @@ _NATIVE_ACTION_FLAGS = {
     "--smoke-transformer-block-step",
     "--smoke-transformer-lm-step",
     "--smoke-evo-kernels",
+    "--train-transformer-lm",
     "--train-token-lm",
 }
 _NATIVE_BOOL_ALIASES = {

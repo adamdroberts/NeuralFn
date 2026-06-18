@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cerrno>
 #include <cctype>
 #include <cstdlib>
@@ -54,9 +55,9 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
     {
         "nanogpt",
-        "partial-native-trainer",
-        "nfn_nanogpt_native_train",
-        "NanoGPT has a native --train-token-lm loop over cached shards; full transformer training still needs model-wide trainer integration.",
+        "implemented",
+        "nfn_gpt_native_train",
+        "NanoGPT defaults to the shared dense GPT transformer-LM trainer with --template-name nanogpt; pass --train-token-lm for the older token-only native preflight.",
     },
     {
         "llama",
@@ -152,6 +153,28 @@ const ModelEntry* find_model(std::string_view name) {
     return nullptr;
 }
 
+bool has_forwarded_flag(const std::vector<std::string>& args, const std::string_view flag) {
+    return std::find(args.begin(), args.end(), flag) != args.end();
+}
+
+bool has_forwarded_value_flag(const std::vector<std::string>& args, const std::string_view flag) {
+    const std::string prefix(flag);
+    for (const std::string& arg : args) {
+        if (arg == prefix || arg.rfind(prefix + "=", 0) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool has_template_or_graph_selector(const std::vector<std::string>& args) {
+    return has_forwarded_value_flag(args, "--template-name") ||
+           has_forwarded_value_flag(args, "--template") ||
+           has_forwarded_value_flag(args, "--preset") ||
+           has_forwarded_value_flag(args, "--graph-file") ||
+           has_forwarded_value_flag(args, "--graph");
+}
+
 void print_model_table() {
     std::cout << "Native NeuralFn training coverage:\n";
     for (const ModelEntry& entry : MODEL_REGISTRY) {
@@ -181,10 +204,10 @@ void print_usage(const char* program) {
     std::cout
         << "Usage: " << program << " [train] --base-model MODEL [native options]\n\n"
         << "Unified no-Python NeuralFn native training frontend.\n"
-        << "Dispatches dense GPT/GPT-2/GPT-3 aliases to nfn_gpt_native_train and partial/missing\n"
+        << "Dispatches dense GPT/GPT-2/GPT-3/NanoGPT aliases to nfn_gpt_native_train and missing\n"
         << "families to compiled per-family targets before any Python/Torch runtime can start.\n"
         << "Options:\n"
-        << "  --base-model, --model NAME      Model family. Dense GPT aliases: gpt, gpt2, gpt3; partial: nanogpt --train-token-lm\n"
+        << "  --base-model, --model NAME      Model family. Dense GPT aliases: gpt, gpt2, gpt3, nanogpt\n"
         << "  --native-gpt-cli PATH           Override the dense GPT native cached-shard CLI\n"
         << "  --native-gpt2-cli PATH          Compatibility override for the dense GPT native cached-shard CLI\n"
         << "  NFN_NATIVE_<MODEL>_CLI=PATH     Override a per-family native trainer, for example NFN_NATIVE_NANOGPT_CLI\n"
@@ -389,12 +412,17 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    const bool nanogpt_token_lm =
+        model_entry->name == std::string_view("nanogpt") &&
+        has_forwarded_flag(forwarded, "--train-token-lm");
+
     if (model_entry->status != std::string_view("implemented") &&
         model_entry->status != std::string_view("external-fast-path")) {
         const bool dense_gpt =
             model_entry->name == std::string_view("gpt") ||
             model_entry->name == std::string_view("gpt2") ||
-            model_entry->name == std::string_view("gpt3");
+            model_entry->name == std::string_view("gpt3") ||
+            model_entry->name == std::string_view("nanogpt");
         const std::string target_cli =
             dense_gpt && !gpt_cli.empty()
                 ? gpt_cli
@@ -432,6 +460,29 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    if (nanogpt_token_lm) {
+        const std::string target_cli = resolve_native_target_cli(
+            argv[0],
+            ModelEntry{
+                "nanogpt",
+                "implemented",
+                "nfn_nanogpt_native_train",
+                "Explicit NanoGPT token-only native trainer.",
+            });
+        if (target_cli.empty()) {
+            std::cerr << "No NanoGPT token-LM native CLI configured.\n";
+            return 2;
+        }
+        std::vector<std::string> command;
+        command.push_back(target_cli);
+        command.insert(command.end(), forwarded.begin(), forwarded.end());
+        if (print_command_requested) {
+            print_command(command);
+            return 0;
+        }
+        return exec_command(command);
+    }
+
     if (gpt_cli.empty()) {
         std::cerr << "No GPT native CLI configured.\n";
         return 2;
@@ -454,6 +505,13 @@ int main(int argc, char** argv) {
         model_entry->name == std::string_view("gpt3")) {
         command.push_back("--model-family");
         command.push_back(std::string(model_entry->name));
+    } else if (model_entry->name == std::string_view("nanogpt")) {
+        command.push_back("--model-family");
+        command.push_back("gpt");
+        if (!has_template_or_graph_selector(forwarded)) {
+            command.push_back("--template-name");
+            command.push_back("nanogpt");
+        }
     }
     command.insert(command.end(), forwarded.begin(), forwarded.end());
     if (print_command_requested) {

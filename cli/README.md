@@ -227,14 +227,15 @@ launcher with `bash tools/build_native_gpt2_launcher.sh`, and the no-Python
 cached-shard CLI with `bash tools/build_native_gpt_cli.sh`; that CLI links the
 shared no-Torch `token_shards.cpp` resolver. Build the unified
 native frontend with `bash tools/build_native_train_cli.sh`; it dispatches dense GPT aliases
-to the cached-shard CLI and dispatches per-family native targets, including the
-partial NanoGPT token-LM trainer, in C++ before Python/Torch can start. Use
+to the cached-shard CLI and sends NanoGPT defaults to that same transformer-LM
+trainer with `--template-name nanogpt`, while explicit `--train-token-lm`
+still reaches the NanoGPT token-only native target. Use
 `nfn-native-train --base-model gpt ...` when you
 want the compiled top-level training command, and `nfn-native-train
 --list-models --json` to inspect native coverage. Default `nfn train` commands
 hand off to this compiled frontend before graph-backed Python can start; dense
-GPT is implemented through the dense GPT target, NanoGPT reports `partial-native-trainer` for
-`--train-token-lm`, and LLaMA, GPT-2 evo, JEPA, semantic/MoE, and DeepSeek
+GPT and NanoGPT are implemented through the dense GPT target, and LLaMA,
+GPT-2 evo, JEPA, semantic/MoE, and DeepSeek
 variants intentionally report missing or preflight-only native trainers. Use `auto` to
 try the Python SDK binding, compiled CLI, then launcher in order and to allow
 Python raw-text materialization; use `binding` to require the C++ binding,
@@ -250,12 +251,14 @@ before they import Torch, because their internal implementation still uses the
 graph-backed `TorchTrainer` path. The old `NFN_ALLOW_TORCH_TRAINING` bypass is
 ignored by CLI training entrypoints; call the Python SDK trainer APIs directly
 for one-off graph-backed experiments while native C++ trainers are added for
-those model families. NanoGPT normal training invocations
-are routed to the implemented partial path: `nfn train --base-model nanogpt ...`
-and `python cli/scripts/train_nanogpt.py ...` add `--train-token-lm`
-automatically. `--dry-run` and `--print-command` inspect that same default route
-without starting the loop; explicit native actions such as `--print-plan`,
-`--check-tile-ops`, or a smoke command still run exactly as requested.
+those model families. NanoGPT normal training invocations now use the shared
+dense GPT transformer-LM route: `nfn train --base-model nanogpt ...` and
+`python cli/scripts/train_nanogpt.py ...` add `--template-name nanogpt` and
+`--train-transformer-lm` automatically. Pass `--train-token-lm` when you want
+the older tied-token-LM NanoGPT native loop. `--dry-run` and `--print-command`
+inspect the selected native route without starting the loop; explicit native
+actions such as `--print-plan`, `--check-tile-ops`, or a smoke command still run
+exactly as requested.
 
 SDK callers can build the unified native binding with
 `bash tools/build_native_train_binding.sh` and use `neuralfn.native_train`
@@ -325,8 +328,9 @@ Use `--train-token-lm --tile-ops-lib PATH --dataset-alias PATH_OR_ALIAS --max-st
 to run that tied token-embedding LM path as a real multi-step native loop over
 cached shards; it streams batches with the C++ sampler, zeros gradients on
 device, runs token CE backward, applies AdamW each step, and emits JSON metrics
-without Python or Torch. Full NanoGPT transformer training still requires the
-model-wide trainer loop over the ready transformer stages.
+without Python or Torch. Normal NanoGPT training now uses the shared dense GPT
+transformer-LM trainer with `--template-name nanogpt`; keep `--train-token-lm`
+only when you specifically want this older tied token-embedding loop.
 Set `--eval-every-steps N`, `--eval-batches N`, and `--eval-batch-size N` to
 emit periodic validation losses from the resolved validation token shards inside
 that compiled loop; those validation batches do not pass through graph-editor

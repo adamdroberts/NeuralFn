@@ -78,7 +78,7 @@ def _native_model_family(argv: list[str]) -> str:
 
 
 def _canonical_dense_gpt_model_family(model: str) -> str:
-    return "gpt" if model in {"gpt", "gpt2", "gpt3"} else model
+    return "gpt" if model in {"gpt", "gpt2", "gpt3", "nanogpt"} else model
 
 
 def _set_split_value(out: list[str], flag: str, value: str) -> None:
@@ -306,6 +306,12 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         and not _explicit_arg(out, "--graph-file", "--graph")
     ):
         _append_value(out, "--train-seq-len", "2048")
+    if (
+        model_selector == "nanogpt"
+        and not _explicit_arg(out, "--template-name", "--template", "--preset")
+        and not _explicit_arg(out, "--graph-file", "--graph")
+    ):
+        _append_value(out, "--template-name", "nanogpt")
     if "--dataset-alias" not in out and "--dataset-path" not in out and "--tinystories" not in out:
         _append_value(out, "--dataset-alias", os.environ.get("DATASET_ALIAS", _TINYSTORIES_ALIAS))
     if _native_backend_name(out) != "tile-cuda":

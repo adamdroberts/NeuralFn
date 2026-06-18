@@ -388,7 +388,7 @@ def _native_gpt_requested_runtime(argv: list[str]) -> str:
 
 
 def _is_dense_gpt_native_model(model: str) -> bool:
-    return model.strip().lower().replace("_", "-") in {"gpt", "gpt2", "gpt3"}
+    return model.strip().lower().replace("_", "-") in {"gpt", "gpt2", "gpt3", "nanogpt"}
 
 
 def _is_direct_native_train_cli_train(argv: list[str]) -> bool:
@@ -488,16 +488,17 @@ def _has_native_activation(argv: list[str]) -> bool:
 
 def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
     model = _native_train_model(argv)
-    native_cli = _resolve_direct_native_train_cli(model)
+    token_lm_requested = any(arg == "--train-token-lm" for arg in argv)
+    dense_gpt = _is_dense_gpt_native_model(model) and not (model == "nanogpt" and token_lm_requested)
+    native_cli = _resolve_direct_native_train_cli("gpt" if dense_gpt else model)
     out = [native_cli]
-    dense_gpt = _is_dense_gpt_native_model(model)
     include_model = not dense_gpt
     if include_model:
         out.extend(["--base-model", model])
     elif dense_gpt:
         out.extend(["--model-family", _canonical_dense_gpt_model_family(model)])
-    if model == "nanogpt" and not _has_native_train_action(argv):
-        out.append("--train-token-lm")
+        if model == "nanogpt" and not _explicit_arg(argv, "--template-name", "--template", "--preset", "--graph-file", "--graph"):
+            out.extend(["--template-name", "nanogpt"])
     if dense_gpt and not _has_native_train_action(argv):
         out.append("--train-transformer-lm")
     idx = 1

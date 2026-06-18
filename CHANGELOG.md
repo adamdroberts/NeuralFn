@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed NanoGPT’s default native training route to the shared dense GPT
+  transformer-LM trainer. `nfn train --base-model nanogpt ...` and direct
+  `python cli/scripts/train_nanogpt.py ...` now dispatch before Torch imports
+  to `nfn_gpt_native_train --model-family gpt --template-name nanogpt
+  --train-transformer-lm`; pass `--train-token-lm` explicitly to use the older
+  tied token-embedding NanoGPT native loop. The unified C++ registry now reports
+  NanoGPT as implemented via `nfn_gpt_native_train`, while preserving explicit
+  token-LM dispatch to `nfn_nanogpt_native_train`.
+  Verification: focused native dispatch tests, CLI startup tests, and native
+  no-Torch dependency checks.
+
 - Replaced the no-cuBLAS large-row linear dWeight fallback with a shared-memory
   2D tiled CUDA kernel for float32-output dWeight accumulation across float32
   and BF16 activation/gradient combinations. The normal native GPT workstation

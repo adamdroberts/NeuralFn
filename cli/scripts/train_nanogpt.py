@@ -12,11 +12,32 @@ import uuid
 from native_training_guard import reject_torch_training_by_default
 
 if __name__ == "__main__":
+    native_args = set(sys.argv[1:])
+    token_lm_native = bool(
+        native_args
+        & {
+            "--train-token-lm",
+            "--native-cuda-smoke-token-train-step",
+            "--smoke-token-train-step",
+            "--native-cuda-smoke-embedding-norm-step",
+            "--smoke-embedding-norm-step",
+            "--native-cuda-smoke-qkv-layout-step",
+            "--smoke-qkv-layout-step",
+            "--native-cuda-smoke-fused-qkv-attention-step",
+            "--smoke-fused-qkv-attention-step",
+        }
+    )
     reject_torch_training_by_default(
         "train_nanogpt.py",
-        native_target="nfn train --base-model nanogpt",
-        model_family="nanogpt",
-        native_default_args=["--train-token-lm"],
+        native_target=(
+            "nfn train --base-model nanogpt --train-token-lm"
+            if token_lm_native
+            else "nfn train --base-model nanogpt --train-transformer-lm"
+        ),
+        model_family="nanogpt" if token_lm_native else "gpt",
+        native_default_args=[] if token_lm_native else ["--template-name", "nanogpt", "--train-transformer-lm"],
+        family_native_cli_env="NFN_NATIVE_NANOGPT_CLI" if token_lm_native else "NFN_NATIVE_GPT_CLI",
+        family_native_cli_name="nfn_nanogpt_native_train" if token_lm_native else "nfn_gpt_native_train",
     )
 
 import numpy as np

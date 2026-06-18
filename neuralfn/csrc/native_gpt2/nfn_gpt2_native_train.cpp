@@ -486,15 +486,15 @@ std::string normalize_model_family(const std::string& value) {
     if (normalized.empty()) {
         return "gpt";
     }
-    if (normalized == "gpt" || normalized == "gpt2" || normalized == "gpt3") {
+    if (normalized == "gpt" || normalized == "gpt2" || normalized == "gpt3" || normalized == "nanogpt") {
         return normalized;
     }
-    throw std::runtime_error("model family must be one of: gpt, gpt2, gpt3");
+    throw std::runtime_error("model family must be one of: gpt, gpt2, gpt3, nanogpt");
 }
 
 std::string canonical_dense_gpt_model_family(const std::string& model_selector) {
     const std::string normalized = normalize_model_family(model_selector);
-    if (normalized == "gpt" || normalized == "gpt2" || normalized == "gpt3") {
+    if (normalized == "gpt" || normalized == "gpt2" || normalized == "gpt3" || normalized == "nanogpt") {
         return "gpt";
     }
     return normalized;
@@ -582,7 +582,7 @@ bool selected_template_is_shipped(const Config& cfg) {
 
 bool selected_template_is_native_dense_gpt_compatible(const Config& cfg) {
     const std::string name = resolved_native_template_name(cfg.template_name);
-    return name == "gpt2" || name == "gpt2_megakernel" || name == "gpt2_moa";
+    return name == "gpt2" || name == "gpt2_megakernel" || name == "gpt2_moa" || name == "nanogpt";
 }
 
 bool selected_graph_is_native_runnable(const Config& cfg) {

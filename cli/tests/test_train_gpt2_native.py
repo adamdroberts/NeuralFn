@@ -1097,8 +1097,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 "#!/usr/bin/env bash\\n"
                 "printf %s\\\\n \\\"No native C++ trainer is registered for model family 'llama'.\\\" >&2\\n"
                 "printf 'Current native training coverage:\\\\n' >&2\\n"
-                "printf '  gpt2: partial-native-trainer -> nfn_gpt_native_train\\\\n' >&2\\n"
-                "printf '  nanogpt: partial-native-trainer -> nfn_nanogpt_native_train\\\\n' >&2\\n"
+                "printf '  gpt2: implemented -> nfn_gpt_native_train\\\\n' >&2\\n"
+                "printf '  nanogpt: implemented -> nfn_gpt_native_train\\\\n' >&2\\n"
                 "exit 2\\n",
                 encoding="utf-8",
             )
@@ -1140,8 +1140,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
         self.assertEqual(2, proc.returncode)
         self.assertIn("No native C++ trainer is registered for model family 'llama'", proc.stderr)
-        self.assertIn("gpt2: partial-native-trainer -> nfn_gpt_native_train", proc.stderr)
-        self.assertIn("nanogpt: partial-native-trainer -> nfn_nanogpt_native_train", proc.stderr)
+        self.assertIn("gpt2: implemented -> nfn_gpt_native_train", proc.stderr)
+        self.assertIn("nanogpt: implemented -> nfn_gpt_native_train", proc.stderr)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
         self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
@@ -1432,7 +1432,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("gpt2-moa", proc.stdout)
         self.assertNotIn("--base-model", proc.stdout)
 
-    def test_train_nanogpt_direct_script_defaults_to_native_token_lm(self) -> None:
+    def test_train_nanogpt_direct_script_defaults_to_native_transformer_lm(self) -> None:
         code = textwrap.dedent(
             f"""
             from pathlib import Path
@@ -1443,16 +1443,16 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
             root = Path({str(NEURALFN_ROOT)!r})
             script = root / "cli" / "scripts" / "train_nanogpt.py"
-            native_nanogpt = Path(tempfile.mkdtemp()) / "nfn_nanogpt_native_train"
-            native_nanogpt.write_text(
+            native_gpt = Path(tempfile.mkdtemp()) / "nfn_gpt_native_train"
+            native_gpt.write_text(
                 "#!/usr/bin/env bash\\n"
-                "printf 'NANOGPT_NATIVE_DIRECT\\\\n'\\n"
+                "printf 'NANOGPT_GPT_NATIVE_DIRECT\\\\n'\\n"
                 "printf '%s\\\\n' \\"$@\\"\\n"
                 "exit 23\\n",
                 encoding="utf-8",
             )
-            native_nanogpt.chmod(0o755)
-            os.environ["NFN_NATIVE_NANOGPT_CLI"] = str(native_nanogpt)
+            native_gpt.chmod(0o755)
+            os.environ["NFN_NATIVE_GPT_CLI"] = str(native_gpt)
             sys.path.insert(0, str(root / "cli" / "scripts"))
             sys.argv = [str(script), "--tinystories", "--max-steps", "2", "--native-cuda-dry-run"]
             runpy.run_path(str(script), run_name="__main__")
@@ -1472,14 +1472,17 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(23, proc.returncode)
-        self.assertIn("NANOGPT_NATIVE_DIRECT", proc.stdout)
+        self.assertIn("NANOGPT_GPT_NATIVE_DIRECT", proc.stdout)
         self.assertNotIn("--base-model", proc.stdout)
-        self.assertIn("--train-token-lm", proc.stdout)
+        self.assertIn("--template-name", proc.stdout)
+        self.assertIn("nanogpt", proc.stdout)
+        self.assertIn("--train-transformer-lm", proc.stdout)
+        self.assertNotIn("--train-token-lm", proc.stdout)
         self.assertIn("--tinystories", proc.stdout)
         self.assertIn("--max-steps", proc.stdout)
         self.assertIn("--native-cuda-dry-run", proc.stdout)
 
-    def test_nfn_nanogpt_train_defaults_to_native_token_lm(self) -> None:
+    def test_nfn_nanogpt_train_defaults_to_native_transformer_lm(self) -> None:
         code = textwrap.dedent(
             f"""
             from pathlib import Path
@@ -1525,9 +1528,13 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(23, proc.returncode)
-        self.assertIn("--base-model", proc.stdout)
+        self.assertNotIn("--base-model", proc.stdout)
+        self.assertIn("--model-family", proc.stdout)
+        self.assertIn("gpt", proc.stdout)
+        self.assertIn("--template-name", proc.stdout)
         self.assertIn("nanogpt", proc.stdout)
-        self.assertIn("--train-token-lm", proc.stdout)
+        self.assertIn("--train-transformer-lm", proc.stdout)
+        self.assertNotIn("--train-token-lm", proc.stdout)
         self.assertIn("--tinystories", proc.stdout)
         self.assertIn("--max-steps", proc.stdout)
         self.assertIn("--dry-run", proc.stdout)

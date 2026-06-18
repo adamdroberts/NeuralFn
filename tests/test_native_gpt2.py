@@ -3443,6 +3443,32 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
         assert "--eval-every-steps\n1000" in dense_gpt.stdout
         assert "--base-model" not in dense_gpt.stdout
 
+    nanogpt_dense = subprocess.run(
+        [
+            str(unified),
+            "train",
+            "--base-model",
+            "nanogpt",
+            "--native-gpt-cli",
+            str(fake_gpt),
+            "--dataset-alias",
+            "/tmp/native-cache",
+            "--dry-run",
+            "--eval-every-steps",
+            "1000",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert nanogpt_dense.returncode == 0, nanogpt_dense.stderr
+    assert "--model-family\ngpt" in nanogpt_dense.stdout
+    assert "--template-name\nnanogpt" in nanogpt_dense.stdout
+    assert "--dataset-alias\n/tmp/native-cache" in nanogpt_dense.stdout
+    assert "--eval-every-steps\n1000" in nanogpt_dense.stdout
+    assert "--base-model" not in nanogpt_dense.stdout
+
     coverage = subprocess.run(
         [str(unified), "--list-models", "--json"],
         text=True,
@@ -3457,10 +3483,11 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert statuses["gpt"] == "implemented"
     assert statuses["gpt2"] == "implemented"
     assert statuses["gpt3"] == "implemented"
-    assert statuses["nanogpt"] == "partial-native-trainer"
+    assert statuses["nanogpt"] == "implemented"
     assert native_targets["gpt"] == "nfn_gpt_native_train"
     assert native_targets["gpt2"] == "nfn_gpt_native_train"
     assert native_targets["gpt3"] == "nfn_gpt_native_train"
+    assert native_targets["nanogpt"] == "nfn_gpt_native_train"
     sdk_payload = native_train_model_registry(native_train_cli=str(unified))
     sdk_statuses = {item["name"]: item["status"] for item in sdk_payload["models"]}
     assert sdk_statuses == statuses
@@ -3506,6 +3533,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert gpt2_evo.exists()
     nanogpt = tmp_path / "nfn_nanogpt_native_train"
     assert nanogpt.exists()
+    fake_gpt = tmp_path / "nfn_gpt_native_train"
+    fake_gpt.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
+    fake_gpt.chmod(0o755)
 
     evo_help = subprocess.run(
         [str(gpt2_evo), "--help"],
@@ -3580,12 +3610,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         in evo_plan["available_native_kernels"]
     )
     assert (
-        "forward-only candidate evaluation for current plus mutated evo-layer weights using the native evo Tile ABI"
-        in evo_plan["required_native_kernels"]
+        "native CUDA forward-only candidate evaluation for current plus mutated evo-layer weights"
+        in evo_plan["available_native_kernels"]
     )
     assert (
         "wire the native evo Tile ABI into the layer-evolution loop without host graph-editor tensor flow"
-        in evo_plan["required_native_kernels"]
+        not in evo_plan["required_native_kernels"]
     )
     assert "copy/adopt best evo block candidate without host graph-editor tensor flow" not in evo_plan["required_native_kernels"]
 
@@ -4018,6 +4048,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
             str(unified),
             "--base-model",
             "nanogpt",
+            "--native-gpt-cli",
+            str(fake_gpt),
             "--dataset-alias",
             "/tmp/native-cache",
             "--dry-run",
@@ -4029,12 +4061,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert dry_run.returncode == 2
-    assert "nfn_nanogpt_native_train: native CUDA Tile trainer for nanogpt is not implemented yet" in dry_run.stderr
-    dry_run_json_start = dry_run.stdout.find("{")
-    assert dry_run_json_start >= 0
-    dry_run_plan = json.loads(dry_run.stdout[dry_run_json_start:])
-    assert dry_run_plan["schedule"]["eval_every_steps"] == 1000
+    assert dry_run.returncode == 0, dry_run.stderr
+    assert "--model-family\ngpt" in dry_run.stdout
+    assert "--template-name\nnanogpt" in dry_run.stdout
+    assert "--dataset-alias\n/tmp/native-cache" in dry_run.stdout
+    assert "--eval-every-steps\n1000" in dry_run.stdout
+    assert "--base-model" not in dry_run.stdout
 
     evo_dry_run = subprocess.run(
         [
@@ -6091,25 +6123,25 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
             "--dataset-alias",
             "/tmp/native-cache",
             "--dry-run",
+            "--print-command",
         ],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert installed_dispatch.returncode == 2
-    installed_dispatch_json_start = installed_dispatch.stdout.find("{")
-    assert installed_dispatch_json_start >= 0
-    installed_dispatch_plan = json.loads(installed_dispatch.stdout[installed_dispatch_json_start:])
-    assert installed_dispatch_plan["model_family"] == "nanogpt"
-    assert installed_dispatch_plan["dataset_alias"] == "/tmp/native-cache"
-    assert "nfn_nanogpt_native_train: native CUDA Tile trainer for nanogpt is not implemented yet" in installed_dispatch.stderr
+    assert installed_dispatch.returncode == 0, installed_dispatch.stderr
+    assert "nfn_gpt_native_train" in installed_dispatch.stdout
+    assert "--model-family gpt" in installed_dispatch.stdout
+    assert "--template-name nanogpt" in installed_dispatch.stdout
+    assert "--dataset-alias /tmp/native-cache" in installed_dispatch.stdout
 
     installed_print_command = subprocess.run(
         [
             str(linked_unified),
             "--base-model",
             "nanogpt",
+            "--train-token-lm",
             "--dataset-alias",
             "/tmp/native-cache",
             "--dry-run",
@@ -6122,5 +6154,6 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     )
     assert installed_print_command.returncode == 0, installed_print_command.stderr
     assert str(linked_nanogpt_underscore) in installed_print_command.stdout
+    assert "--train-token-lm" in installed_print_command.stdout
     assert "--dry-run" in installed_print_command.stdout
     assert "--print-command" in installed_print_command.stdout

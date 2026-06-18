@@ -243,7 +243,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Add NanoGPT `--train-token-lm` compiled C++ path that runs a real multi-step tied token-embedding LM training loop over cached native token shards without Python/Torch.
 - [x] Add periodic native validation loss to NanoGPT `--train-token-lm` over resolved validation token shards without Torch, Python dataset payloads, or graph-editor node data flow.
 - [x] Route NanoGPT `--train-token-lm` through `nfn-native-train` and `neuralfn.native_train.run_native_train()` so CLI and SDK dispatch stay on compiled native artifacts.
-- [x] Make normal NanoGPT training entrypoints (`nfn train --base-model nanogpt ...` and `python cli/scripts/train_nanogpt.py ...`) select the partial native `--train-token-lm` mode before Torch imports, with `--dry-run` / `--print-command` inspecting that same route without starting the loop.
+- [x] Make normal NanoGPT training entrypoints (`nfn train --base-model nanogpt ...` and `python cli/scripts/train_nanogpt.py ...`) select the shared dense GPT native `--train-transformer-lm --template-name nanogpt` route before Torch imports, while explicit `--train-token-lm` still reaches the older tied token-embedding native loop for diagnostics.
 - [x] Add NanoGPT `--smoke-embedding-norm-step` compiled C++ path that samples native tokens and runs token/position embeddings, residual add, LayerNorm forward/backward, tied logits, CE backward, embedding/position/norm gradients, and AdamW updates through raw native kernels without Python/Torch.
 - [x] Add NanoGPT `--smoke-mlp-step` compiled C++ path that runs MLP fc projection, GELU, output projection, backward, and AdamW updates through raw native kernels without Python/Torch.
 - [x] Add NanoGPT `--smoke-attention-step` compiled C++ path that runs Q/K/V projections, SDPA forward/backward, output projection, Q/K/V projection backward, and AdamW updates through raw native kernels without Python/Torch.
@@ -282,7 +282,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Keep the older GPT-2-compatible row-vector SDPA kernel out of the hot trainer path when packed SM120 TK attention is active, so the scalar fallback remains unused on the live dedicated-RTX-5090 probe.
 - [x] Cover every shipped GPT template name in the native GPT-2 training selector via `--template-name` / `--preset`, and cover custom graph selection via `--graph-file`, returning explicit native-trainer-missing JSON for unsupported templates instead of falling back to Torch or graph-editor tensor flow.
 - [x] Update dense GPT-2 native dry-run/plan JSON to report `native-transformer-lm-ready` and `training_step_plan.status: "ready"` for the implemented compiled Tile-CUDA loop; `remaining_validation` now tracks closing the measured SM120 throughput gap via `tools/bench_native_gpt_sm120_parity.sh` instead of saying live validation has not happened.
-- [ ] Wire full NanoGPT transformer training loop to the token-shard sampler and the ready native forward/backward/optimizer stages without importing Torch.
+- [ ] Generalize the shared dense GPT transformer-LM loop so NanoGPT-specific dimensions/dropout can be driven entirely from the selected template or graph instead of the current dense GPT trainer shape defaults.
 
 ## Backend scaffolding
 
