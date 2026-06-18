@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned the generic `neuralfn._native_train` SDK binding with the native GPT
+  bindings by replacing `fork()` plus `execvp()` with `posix_spawnp()` while
+  preserving the existing `CUDA_VISIBLE_DEVICES`, `CUDA_DEVICE_MAX_CONNECTIONS`,
+  and unset-only `CUDA_MODULE_LOADING=LAZY` defaults. `run_native_train(...,
+  runner="auto")` keeps the same public API and command selection contract, but
+  avoids copying the Python process when handing off to compiled C++ native
+  trainers. Verification: focused native binding tests and C++ binding rebuild.
+
 - Added `lm_head_classifier_strategy_contract` to native dense GPT
   `--print-plan` and `--train-transformer-lm` JSON. The contract records the
   llm.kittens-style full resident BF16 classifier-logit footprint next to

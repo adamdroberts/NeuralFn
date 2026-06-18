@@ -187,8 +187,11 @@ dWeight on BF16 Tile/CUDA ABI calls, reporting
 Backend names are strict: use `"tile-cuda"`. For the unified native training frontend, `bash
 tools/build_native_train_binding.sh` builds `neuralfn._native_train`, which is
 used by `run_native_train(..., runner="auto")` to hand off to `nfn_native_train`
-without importing Torch. Use `native_train_model_registry()` to inspect the
-compiled model coverage exposed by `nfn-native-train --list-models --json`.
+without importing Torch. The generic native-train binding also uses
+`posix_spawnp()` and preserves caller-supplied CUDA module-loading policy,
+defaulting to `CUDA_MODULE_LOADING=LAZY` only when unset. Use
+`native_train_model_registry()` to inspect the compiled model coverage exposed
+by `nfn-native-train --list-models --json`.
 
 ## Modules
 

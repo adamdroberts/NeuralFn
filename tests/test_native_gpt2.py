@@ -1192,6 +1192,16 @@ def test_native_gpt_cpp_binding_uses_spawn_and_lazy_cuda_module_loading() -> Non
     assert "fork()" not in source
 
 
+def test_native_train_cpp_binding_uses_spawn_and_lazy_cuda_module_loading() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "neuralfn" / "csrc" / "native_train" / "binding.cpp").read_text(encoding="utf-8")
+
+    assert "#include <spawn.h>" in source
+    assert "posix_spawnp(&pid" in source
+    assert 'setenv("CUDA_MODULE_LOADING", "LAZY", 0)' in source
+    assert "fork()" not in source
+
+
 def test_native_gpt2_cpp_binding_uses_compiled_cli_for_alias_only_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
