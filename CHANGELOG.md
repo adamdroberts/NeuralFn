@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Recorded the post-LM-head-beta-fix native GPT kernel bisection results without
+  changing the default runtime route. `NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO=0`
+  remained slower at `1.009049x` train-loop wall time and `0.991044x` tokens/sec,
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` remained too noisy while worsening
+  token initialization to `1.044352x`, and a short-lived pattern16 token-weight
+  initializer prototype worsened token initialization to `1.033752x` mean /
+  `1.058094x` median before being removed. Verification: dedicated RTX 5090
+  same-script paired benchmarks and startup-only paired benchmarks; no runtime
+  default changed.
+
 - Fixed tied LM-head dWeight accumulation for chunked dense GPT native training.
   The first-write-then-accumulate path still uses GEMM `beta=0` for the first
   gradient-accumulation microbatch, but the row-chunked LM-head route now applies
