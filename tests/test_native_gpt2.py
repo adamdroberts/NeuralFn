@@ -2468,6 +2468,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         == "padded-lm-head-bf16-gemmex-fallback"
     )
     assert train_transformer_payload["lm_head_logits_linear_strategy"] == "bf16-gemmex-fallback"
+    assert train_transformer_payload["lm_head_dhidden_linear_strategy"] == "bf16-gemmex-dinput-dhidden-default"
     assert train_transformer_payload["linear_bf16_gemm_count"] == 0
     assert train_transformer_payload["linear_tk_gemm_count"] == 0
     assert train_transformer_payload["linear_cublaslt_gemm_count"] == 0
@@ -4539,6 +4540,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "tf32-sgemm-optimized" in gpt2_source_text
     assert "lm_head_logits_linear_strategy" in gpt2_source_text
     assert "lm_head_logits_tk_shape_used" in gpt2_source_text
+    assert "lm_head_dhidden_linear_strategy" in gpt2_source_text
+    assert "lm_head_dhidden_gemmex_shape_used" in gpt2_source_text
     assert "NFN_NATIVE_LINEAR_TK_DINPUT" in kernels_text
     assert "tk_linear_backward_input_bf16_bits_weight_bf16_bits_float32" in kernels_text
     assert "linear_tk_gemm_count" in gpt2_source_text

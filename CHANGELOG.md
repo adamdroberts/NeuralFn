@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native runtime JSON now emits `lm_head_dhidden_linear_strategy`.
+  The field is derived from linear shape stats for the LM-head dHidden bucket
+  (`768,8192,50304,N,N`) when profiling is enabled and otherwise reports the
+  current default BF16 GEMMEx dInput route, so paired benchmark output can show
+  whether a dHidden candidate changed routing alongside logits and dWeight
+  strategies. Verification: rebuilt the native GPT CLI, ran
+  `python -m pytest tests/test_native_gpt2.py::test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults -q`,
+  verified the field in a GPU-visible `--startup-only` runtime profile, and
+  ran `python tools/check_native_no_torch_deps.py`.
+
 - Strengthened `tools/check_native_no_torch_deps.py` to verify the public
   top-level native GPT SDK exports under the same blocked-import guard as the
   direct module imports. The gate now proves `NativeGptRunConfig`,

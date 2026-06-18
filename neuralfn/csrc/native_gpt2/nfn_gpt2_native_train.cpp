@@ -16763,6 +16763,12 @@ int run_transformer_lm_training_json(
         has_linear_shape_stat(2, kPaddedVocab, lm_head_chunk_rows, kDim, 1, 0);
     const bool lm_head_logits_cublaslt_shape_used =
         has_linear_shape_stat(1, kPaddedVocab, lm_head_chunk_rows, kDim, 1, 0);
+    const bool lm_head_dhidden_tk_shape_used =
+        has_linear_shape_stat(2, kDim, lm_head_chunk_rows, kPaddedVocab, 0, 0);
+    const bool lm_head_dhidden_cublaslt_shape_used =
+        has_linear_shape_stat(1, kDim, lm_head_chunk_rows, kPaddedVocab, 0, 0);
+    const bool lm_head_dhidden_gemmex_shape_used =
+        has_linear_shape_stat(4, kDim, lm_head_chunk_rows, kPaddedVocab, 0, 0);
     std::ostringstream linear_shape_stats_json;
     linear_shape_stats_json << "  \"linear_shape_stats\": [\n";
     for (std::size_t i = 0; i < linear_shape_stats.size(); ++i) {
@@ -17155,6 +17161,17 @@ int run_transformer_lm_training_json(
                               ? "bf16-cublaslt-fallback"
                               : "bf16-gemmex-fallback")
                        : "tf32-sgemm-or-cublaslt"))
+        << "\",\n"
+        << "  \"lm_head_dhidden_linear_strategy\": \""
+        << (lm_head_bf16_logits_enabled
+                ? (lm_head_dhidden_tk_shape_used
+                       ? "tk-sm120-bf16-dinput-dhidden"
+                       : (lm_head_dhidden_cublaslt_shape_used
+                              ? "bf16-cublaslt-dinput-dhidden"
+                              : (lm_head_dhidden_gemmex_shape_used
+                                     ? "bf16-gemmex-dinput-dhidden"
+                                     : "bf16-gemmex-dinput-dhidden-default")))
+                : "tf32-sgemm-or-cublaslt-dhidden")
         << "\",\n"
         << "  \"linear_bf16_gemm_count\": " << linear_bf16_gemm_count << ",\n"
         << "  \"linear_tk_gemm_count\": " << linear_tk_gemm_count << ",\n"
