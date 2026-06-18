@@ -26,6 +26,24 @@ The generic Python extension source build path is intentionally opt-in:
 NFN_TILE_CUDA_BUILD=1 NFN_TILE_CUDA_ARCH=sm_120 nfn kernels doctor
 ```
 
+On CUDA Toolkit 13.3+, the generic Python extension and the trainer-facing raw C
+ABI share the same `neuralfn/csrc/tile_cuda/kernels.cu` source. Generic BF16
+conversion, BF16 activation storage, BF16 bias-add, and row-chunked bias
+reduction helpers are available even when the Python extension is compiled
+without the trainer-only TK attention/cuBLAS macros. After reinstalling CUDA,
+use:
+
+```bash
+NFN_TILE_CUDA_TEST=1 python -m pytest \
+  tests/test_tile_cuda_gpu.py \
+  tests/test_tile_cuda_ops.py \
+  tests/test_tile_cuda_optimizer.py \
+  -q -rs
+```
+
+Those tests should execute GPU coverage; "CUDA Tile extension could not be built
+or loaded" means the extension build path still needs diagnosis.
+
 CUDA Tile native builds require CUDA Toolkit 13.3 or newer, `cuda_tile.h`, C++20, `nvcc --enable-tile`, and `ninja`. Torch is not a default SDK dependency, and the CUDA Tile extra no longer installs it. Install the native build extra with:
 
 ```bash

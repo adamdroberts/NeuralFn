@@ -4,6 +4,12 @@ NeuralFn is a graph-native neural network framework where each neuron can be a b
 
 NeuralFn supports both a scalar graph runtime and optional PyTorch-backed graph runtimes for trainable module nodes. The default install no longer depends on Torch; native GPT training uses cached token shards and the compiled CUDA trainer path without importing `torch`.
 
+CUDA Tile development targets CUDA Toolkit 13.3+ on the SM120 workstation. The
+generic Python Tile extension and the trainer-facing raw C ABI both build from
+`neuralfn/csrc/tile_cuda/kernels.cu`; after toolkit changes, run
+`NFN_TILE_CUDA_TEST=1 python -m pytest tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py tests/test_tile_cuda_optimizer.py -q -rs`
+to confirm the extension executes GPU tests instead of skipping.
+
 > **Pre-alpha notice:** NeuralFn is in active pre-alpha development. The SDK, REST API, MCP tools, and graph format are all subject to rapid, breaking changes without prior deprecation. Do not depend on API stability at this stage. See the [CHANGELOG](CHANGELOG.md) for a running list of what has changed.
 
 ## Documentation

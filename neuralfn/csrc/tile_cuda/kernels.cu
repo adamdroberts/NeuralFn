@@ -242,7 +242,6 @@ __tile_global__ void fill_float32_kernel(
     std::int64_t n,
     float value);
 
-#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) || defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
 __global__ void f32_to_bf16_kernel(
     const float* __restrict__ src,
     __nv_bfloat16* __restrict__ dst,
@@ -252,7 +251,169 @@ __global__ void f32_to_bf16_kernel(
     dst[idx] = __float2bfloat16(src[idx]);
   }
 }
-#endif
+
+__global__ void f32_to_bf16_bits_kernel(
+    const float* __restrict__ src,
+    std::uint16_t* __restrict__ dst,
+    std::int64_t n) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx < n) {
+    const unsigned int bits = __float_as_uint(src[idx]);
+    const unsigned int rounding_bias = ((bits >> 16) & 1u) + 0x7fffu;
+    dst[idx] = static_cast<std::uint16_t>((bits + rounding_bias) >> 16);
+  }
+}
+
+__global__ void bf16_bits_to_f32_kernel(
+    const std::uint16_t* __restrict__ src,
+    float* __restrict__ dst,
+    std::int64_t n) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx < n) {
+    const unsigned int bits = static_cast<unsigned int>(src[idx]) << 16;
+    dst[idx] = __uint_as_float(bits);
+  }
+}
+
+__device__ __forceinline__ std::uint16_t f32_to_bf16_bits_device(float value) {
+  const unsigned int bits = __float_as_uint(value);
+  const unsigned int rounding_bias = ((bits >> 16) & 1u) + 0x7fffu;
+  return static_cast<std::uint16_t>((bits + rounding_bias) >> 16);
+}
+
+__device__ __forceinline__ float bf16_bits_to_f32_device(std::uint16_t value) {
+  return __uint_as_float(static_cast<unsigned int>(value) << 16);
+}
+
+__global__ void bf16_bits_add_bias_inplace_kernel(
+    std::uint16_t* __restrict__ values,
+    const float* __restrict__ bias,
+    std::int64_t n,
+    std::int64_t output_dim) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const std::int64_t col = idx % output_dim;
+  values[idx] = f32_to_bf16_bits_device(bf16_bits_to_f32_device(values[idx]) + bias[col]);
+}
+
+__tile_global__ void bf16_bits_add_bias_inplace_tile_float32_kernel(
+    std::uint16_t* __restrict__ values_bf16_bits,
+    const float* __restrict__ bias,
+    std::int64_t n,
+    std::int64_t output_dim) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  auto* values = ct::assume_aligned(reinterpret_cast<__nv_bfloat16*>(values_bf16_bits), 16_ic);
+  bias = ct::assume_aligned(bias, 16_ic);
+
+  const int bx = ct::bid().x;
+  using Shape = decltype(ct::shape{1024_ic});
+  using IndexTile = ct::tile<std::int64_t, Shape>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto col = idx % ct::full<IndexTile>(output_dim);
+  auto value = ct::element_cast<float>(ct::load_masked(values + idx, mask));
+  auto bias_value = ct::load_masked(bias + col, mask);
+  ct::store_masked(values + idx, ct::element_cast<__nv_bfloat16>(value + bias_value), mask);
+}
+
+bool bf16_bits_add_bias_tile_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_BF16_BIAS_INPLACE_TILE");
+    }
+    if (value == nullptr) {
+      return true;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
+constexpr std::int64_t kLinearBackwardBiasRowChunkSize = 512;
+
+__global__ void store_mlp_activations_bf16_float32_kernel(
+    const float* __restrict__ ln2_out,
+    const float* __restrict__ fc_out,
+    const float* __restrict__ act,
+    std::uint16_t* __restrict__ dest,
+    std::int64_t activation_elements,
+    std::int64_t hidden_elements) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t total = activation_elements + hidden_elements * 2;
+  if (idx >= total) {
+    return;
+  }
+  float value = 0.0f;
+  if (idx < activation_elements) {
+    value = ln2_out[idx];
+  } else if (idx < activation_elements + hidden_elements) {
+    value = fc_out[idx - activation_elements];
+  } else {
+    value = act[idx - activation_elements - hidden_elements];
+  }
+  dest[idx] = f32_to_bf16_bits_device(value);
+}
+
+__global__ void restore_mlp_activations_bf16_float32_kernel(
+    const std::uint16_t* __restrict__ source,
+    float* __restrict__ ln2_out,
+    float* __restrict__ fc_out,
+    float* __restrict__ act,
+    std::int64_t activation_elements,
+    std::int64_t hidden_elements) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t total = activation_elements + hidden_elements * 2;
+  if (idx >= total) {
+    return;
+  }
+  const float value = bf16_bits_to_f32_device(source[idx]);
+  if (idx < activation_elements) {
+    ln2_out[idx] = value;
+  } else if (idx < activation_elements + hidden_elements) {
+    fc_out[idx - activation_elements] = value;
+  } else {
+    act[idx - activation_elements - hidden_elements] = value;
+  }
+}
+
+__global__ void f32_to_bf16_bits_many_kernel(
+    const float* const* __restrict__ sources,
+    const std::int64_t* __restrict__ elements,
+    const std::int64_t* __restrict__ offsets,
+    std::uint16_t* __restrict__ dst,
+    std::int64_t buffer_count,
+    std::int64_t max_elements) {
+  const std::int64_t buffer = static_cast<std::int64_t>(blockIdx.y);
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (buffer >= buffer_count || idx >= max_elements) {
+    return;
+  }
+  const std::int64_t n = elements[buffer];
+  if (idx >= n) {
+    return;
+  }
+  const float* src = sources[buffer];
+  dst[offsets[buffer] + idx] = f32_to_bf16_bits_device(src[idx]);
+}
 
 void release_token_cross_entropy_workspace(TokenCrossEntropyWorkspace& workspace) {
   if (workspace.row_max != nullptr) cudaFree(workspace.row_max);
@@ -559,39 +720,6 @@ TkAttentionWorkspace* ensure_tk_attention_workspace(
   return &g_tk_attention_workspace;
 }
 
-__global__ void f32_to_bf16_bits_kernel(
-    const float* __restrict__ src,
-    std::uint16_t* __restrict__ dst,
-    std::int64_t n) {
-  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (idx < n) {
-    const unsigned int bits = __float_as_uint(src[idx]);
-    const unsigned int rounding_bias = ((bits >> 16) & 1u) + 0x7fffu;
-    dst[idx] = static_cast<std::uint16_t>((bits + rounding_bias) >> 16);
-  }
-}
-
-__global__ void bf16_bits_to_f32_kernel(
-    const std::uint16_t* __restrict__ src,
-    float* __restrict__ dst,
-    std::int64_t n) {
-  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (idx < n) {
-    const unsigned int bits = static_cast<unsigned int>(src[idx]) << 16;
-    dst[idx] = __uint_as_float(bits);
-  }
-}
-
-__device__ __forceinline__ std::uint16_t f32_to_bf16_bits_device(float value) {
-  const unsigned int bits = __float_as_uint(value);
-  const unsigned int rounding_bias = ((bits >> 16) & 1u) + 0x7fffu;
-  return static_cast<std::uint16_t>((bits + rounding_bias) >> 16);
-}
-
-__device__ __forceinline__ float bf16_bits_to_f32_device(std::uint16_t value) {
-  return __uint_as_float(static_cast<unsigned int>(value) << 16);
-}
-
 #if defined(LLMK_SM120_ATOMIC_DQ)
 __global__ void pack_attention_atomic_dq_to_packed_grad_bf16_kernel(
     const float* qg,
@@ -662,76 +790,6 @@ void launch_tk_attention_packed_qkv_backward_atomic_dq(
       D);
 }
 #endif
-
-__global__ void store_mlp_activations_bf16_float32_kernel(
-    const float* __restrict__ ln2_out,
-    const float* __restrict__ fc_out,
-    const float* __restrict__ act,
-    std::uint16_t* __restrict__ dest,
-    std::int64_t activation_elements,
-    std::int64_t hidden_elements) {
-  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  const std::int64_t total = activation_elements + hidden_elements * 2;
-  if (idx >= total) {
-    return;
-  }
-  float value = 0.0f;
-  if (idx < activation_elements) {
-    value = ln2_out[idx];
-  } else if (idx < activation_elements + hidden_elements) {
-    value = fc_out[idx - activation_elements];
-  } else {
-    value = act[idx - activation_elements - hidden_elements];
-  }
-  const unsigned int bits = __float_as_uint(value);
-  const unsigned int rounding_bias = ((bits >> 16) & 1u) + 0x7fffu;
-  dest[idx] = static_cast<std::uint16_t>((bits + rounding_bias) >> 16);
-}
-
-__global__ void restore_mlp_activations_bf16_float32_kernel(
-    const std::uint16_t* __restrict__ source,
-    float* __restrict__ ln2_out,
-    float* __restrict__ fc_out,
-    float* __restrict__ act,
-    std::int64_t activation_elements,
-    std::int64_t hidden_elements) {
-  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  const std::int64_t total = activation_elements + hidden_elements * 2;
-  if (idx >= total) {
-    return;
-  }
-  const unsigned int bits = static_cast<unsigned int>(source[idx]) << 16;
-  const float value = __uint_as_float(bits);
-  if (idx < activation_elements) {
-    ln2_out[idx] = value;
-  } else if (idx < activation_elements + hidden_elements) {
-    fc_out[idx - activation_elements] = value;
-  } else {
-    act[idx - activation_elements - hidden_elements] = value;
-  }
-}
-
-__global__ void f32_to_bf16_bits_many_kernel(
-    const float* const* __restrict__ sources,
-    const std::int64_t* __restrict__ elements,
-    const std::int64_t* __restrict__ offsets,
-    std::uint16_t* __restrict__ dst,
-    std::int64_t buffer_count,
-    std::int64_t max_elements) {
-  const std::int64_t buffer = static_cast<std::int64_t>(blockIdx.y);
-  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (buffer >= buffer_count || idx >= max_elements) {
-    return;
-  }
-  const std::int64_t n = elements[buffer];
-  if (idx >= n) {
-    return;
-  }
-  const float* src = sources[buffer];
-  const unsigned int bits = __float_as_uint(src[idx]);
-  const unsigned int rounding_bias = ((bits >> 16) & 1u) + 0x7fffu;
-  dst[offsets[buffer] + idx] = static_cast<std::uint16_t>((bits + rounding_bias) >> 16);
-}
 
 __global__ void f32_to_bf16_attention_grad_kernel(
     const float* __restrict__ src,
@@ -985,69 +1043,6 @@ __global__ void bf16_heads_to_qkv_float32_kernel(
   qkv[qkv_base] = __bfloat162float(q_heads[src]);
   qkv[qkv_base + dim] = __bfloat162float(k_heads[src]);
   qkv[qkv_base + 2 * dim] = __bfloat162float(v_heads[src]);
-}
-
-__global__ void bf16_bits_add_bias_inplace_kernel(
-    std::uint16_t* __restrict__ values,
-    const float* __restrict__ bias,
-    std::int64_t n,
-    std::int64_t output_dim) {
-  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (idx >= n) {
-    return;
-  }
-  const std::int64_t col = idx % output_dim;
-  values[idx] = f32_to_bf16_bits_device(bf16_bits_to_f32_device(values[idx]) + bias[col]);
-}
-
-__tile_global__ void bf16_bits_add_bias_inplace_tile_float32_kernel(
-    std::uint16_t* __restrict__ values_bf16_bits,
-    const float* __restrict__ bias,
-    std::int64_t n,
-    std::int64_t output_dim) {
-  namespace ct = cuda::tiles;
-  using namespace ct::literals;
-
-  auto* values = ct::assume_aligned(reinterpret_cast<__nv_bfloat16*>(values_bf16_bits), 16_ic);
-  bias = ct::assume_aligned(bias, 16_ic);
-
-  const int bx = ct::bid().x;
-  using Shape = decltype(ct::shape{1024_ic});
-  using IndexTile = ct::tile<std::int64_t, Shape>;
-  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
-  auto mask = idx < ct::full<IndexTile>(n);
-  auto col = idx % ct::full<IndexTile>(output_dim);
-  auto value = ct::element_cast<float>(ct::load_masked(values + idx, mask));
-  auto bias_value = ct::load_masked(bias + col, mask);
-  ct::store_masked(values + idx, ct::element_cast<__nv_bfloat16>(value + bias_value), mask);
-}
-
-bool bf16_bits_add_bias_tile_enabled() {
-  static const bool enabled = []() {
-    const char* value = std::getenv("NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE");
-    if (value == nullptr) {
-      value = std::getenv("NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE");
-    }
-    if (value == nullptr) {
-      value = std::getenv("NFN_NATIVE_GPT2_BF16_BIAS_INPLACE_TILE");
-    }
-    if (value == nullptr) {
-      return true;
-    }
-    if (std::strcmp(value, "0") == 0 ||
-        std::strcmp(value, "false") == 0 ||
-        std::strcmp(value, "FALSE") == 0 ||
-        std::strcmp(value, "off") == 0 ||
-        std::strcmp(value, "OFF") == 0) {
-      return false;
-    }
-    return std::strcmp(value, "1") == 0 ||
-        std::strcmp(value, "true") == 0 ||
-        std::strcmp(value, "TRUE") == 0 ||
-        std::strcmp(value, "on") == 0 ||
-        std::strcmp(value, "ON") == 0;
-  }();
-  return enabled;
 }
 
 bool use_tk_sm120_attention(
@@ -3136,7 +3131,6 @@ struct TrainerLinearBf16Workspace {
 
 TrainerLinearBf16Workspace g_trainer_linear_bf16_workspace;
 std::mutex g_trainer_linear_bf16_workspace_mutex;
-constexpr std::int64_t kLinearBackwardBiasRowChunkSize = 512;
 constexpr std::size_t kTrainerLinearBf16CacheEntryLimit = 128;
 
 std::int64_t trainer_linear_bf16_cached_a_total_capacity(const TrainerLinearBf16Workspace& workspace) {

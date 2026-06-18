@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the CUDA 13.3 Python Tile extension build by moving generic BF16
+  conversion, BF16 activation storage, BF16 bias-add, and linear bias-reduction
+  helpers out of TK-attention/cuBLAS-only conditional blocks in
+  `neuralfn/csrc/tile_cuda/kernels.cu`. The optional extension now builds on the
+  RTX 5090 even when the generic PyTorch extension path is compiled without the
+  trainer-facing TK attention flags, so `NFN_TILE_CUDA_TEST=1` GPU tests execute
+  instead of skipping with "CUDA Tile extension could not be built or loaded".
+  Verification: loaded the extension with CUDA Toolkit 13.3.33 and
+  `NFN_TILE_CUDA_BUILD_DIR=/tmp/neuralfn_tile_cuda_extension_cuda133_fix2`,
+  ran `NFN_TILE_CUDA_TEST=1 NFN_TILE_CUDA_BUILD_DIR=/tmp/neuralfn_tile_cuda_extension_cuda133_pytest python -m pytest tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py tests/test_tile_cuda_optimizer.py -q -rs`
+  (`154 passed`), and reran the native C ABI gate with GPU access:
+  `python -m pytest tests/test_native_gpt2.py::test_native_train_tile_ops_builds_torch_free_c_abi -q -rs`.
+
 - Relaxed CUDA 13.3 NanoGPT native smoke tolerances that were stricter than the
   rebuilt RTX 5090 kernels' stable fp32 drift. `--smoke-lm-step` now accepts
   tied-embedding gradient error up to `1e-5`, matching its loss and weight-update
