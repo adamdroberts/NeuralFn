@@ -633,8 +633,11 @@ transformer-LM loop; `gpt2_moa` resolves to
 `--native-cuda-activation moa` automatically. Structurally different shipped
 template names and custom graph files are selected and reported in JSON, but
 return `selected-graph-native-trainer-missing` for real training until their
-native C++ Tile trainer plans are implemented. Unknown template names return
-`unknown-template`.
+native C++ Tile trainer plans are implemented. Missing custom graph paths return
+`custom-graph-file-missing` with `graph_file_exists: false` and
+`graph_file_size_bytes: -1`; existing custom graph files report their byte size
+so callers can distinguish path typos from the still-missing native graph
+compiler. Unknown template names return `unknown-template`.
 
 GPT-2 evo's family-specific C++ binary exposes the same selector fields and
 catalog for SDK/subprocess callers. Dense GPT-2-compatible templates now report

@@ -289,8 +289,34 @@ bool selected_template_is_dense_gpt2_compatible(const Gpt2EvoPlan& plan) {
     return name == "gpt2" || name == "gpt2_megakernel" || name == "gpt2_moa";
 }
 
+bool custom_graph_file_exists(const Gpt2EvoPlan& plan) {
+    if (plan.graph_file.empty()) {
+        return false;
+    }
+    std::error_code ec;
+    return std::filesystem::exists(plan.graph_file, ec) && !ec;
+}
+
+long long custom_graph_file_size_bytes(const Gpt2EvoPlan& plan) {
+    if (plan.graph_file.empty()) {
+        return -1;
+    }
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(plan.graph_file, ec) || ec) {
+        return -1;
+    }
+    const auto size = std::filesystem::file_size(plan.graph_file, ec);
+    if (ec) {
+        return -1;
+    }
+    return static_cast<long long>(size);
+}
+
 std::string selected_graph_support_status(const Gpt2EvoPlan& plan) {
     if (!plan.graph_file.empty()) {
+        if (!custom_graph_file_exists(plan)) {
+            return "custom-graph-file-missing";
+        }
         return "custom-graph-native-trainer-missing";
     }
     if (!selected_template_is_shipped(plan)) {
@@ -393,21 +419,24 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
         2 * plan.model_dim +
         (4 * plan.model_dim * plan.model_dim) +
         (plan.model_dim * 4 * plan.model_dim);
+    const std::string support_status = selected_graph_support_status(plan);
+    const bool native_runnable = plan.graph_file.empty() && selected_template_is_dense_gpt2_compatible(plan);
+    const std::string status =
+        support_status == "custom-graph-file-missing"
+            ? support_status
+            : (native_runnable ? "native-preflight-dense-gpt-layer-evo-delegate"
+                               : "native-preflight-missing-evo-trainer");
     std::cout
         << "{\n"
         << "  \"model_family\": \"gpt2-evo\",\n"
-        << "  \"status\": \""
-        << (selected_template_is_dense_gpt2_compatible(plan)
-                ? "native-preflight-dense-gpt-layer-evo-delegate"
-                : "native-preflight-missing-evo-trainer")
-        << "\",\n"
+        << "  \"status\": \"" << json_escape(status) << "\",\n"
         << "  \"template_name\": \"" << json_escape(normalize_template_name(plan.template_name)) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(plan.graph_file) << "\",\n"
+        << "  \"graph_file_exists\": " << (custom_graph_file_exists(plan) ? "true" : "false") << ",\n"
+        << "  \"graph_file_size_bytes\": " << custom_graph_file_size_bytes(plan) << ",\n"
         << "  \"template_known\": " << (selected_template_is_shipped(plan) ? "true" : "false") << ",\n"
-        << "  \"selected_graph_support_status\": \"" << json_escape(selected_graph_support_status(plan)) << "\",\n"
-        << "  \"selected_graph_native_runnable\": "
-        << ((!plan.graph_file.empty() || !selected_template_is_dense_gpt2_compatible(plan)) ? "false" : "true")
-        << ",\n"
+        << "  \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
+        << "  \"selected_graph_native_runnable\": " << (native_runnable ? "true" : "false") << ",\n"
         << "  \"shipped_template_catalog_count\": " << shipped_gpt_template_presets().size() << ",\n"
         << "  \"shipped_template_catalog\": [";
     const std::vector<std::string>& presets = shipped_gpt_template_presets();

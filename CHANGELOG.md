@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native dense GPT C++ plan/runtime JSON now validates custom graph selector
+  paths before reporting graph support. Existing custom graph files still report
+  `custom-graph-native-trainer-missing` until the native graph compiler lands,
+  but missing paths now report `custom-graph-file-missing` and expose
+  `graph_file_exists` / `graph_file_size_bytes` at the top level and inside
+  `native_geometry_contract`. GPT-2-evo preflight JSON reports the same fields.
+  Verification: focused native GPT selector tests and C++ rebuild.
+
 - Added `--dry-run-plan` to `tools/paired_kernel_speed.py` and exposed it
   through `NFN_SM120_PARITY_DRY_RUN_PLAN=1` /
   `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` in the SM120 parity and native-candidate

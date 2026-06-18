@@ -1594,6 +1594,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["template_name"] == "gpt"
     assert default_payload["resolved_native_template_name"] == "gpt2"
     assert default_payload["graph_file"] == ""
+    assert default_payload["graph_file_exists"] is False
+    assert default_payload["graph_file_size_bytes"] == -1
     assert default_payload["architecture_source"] == "template"
     assert default_payload["architecture_contract"] == "gpt-template-preset"
     assert (
@@ -1606,6 +1608,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "template_selector": "gpt",
         "resolved_template_selector": "gpt2",
         "graph_file": "",
+        "graph_file_exists": False,
+        "graph_file_size_bytes": -1,
         "selector_native_runnable": True,
         "template_geometry_dynamic": False,
         "custom_graph_geometry_dynamic": False,
@@ -2190,6 +2194,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert unknown_payload["selected_graph_native_runnable"] is False
     assert unknown_payload["status"] == "unknown-template"
 
+    custom_graph_path = tmp_path / "custom-graph.json"
+    custom_graph_path.write_text('{"nodes": {}, "edges": {}}\n', encoding="utf-8")
     custom_graph = subprocess.run(
         [
             str(cli),
@@ -2198,7 +2204,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "--backend",
             "tile-cuda",
             "--graph-file",
-            str(tmp_path / "custom-graph.json"),
+            str(custom_graph_path),
             "--print-plan",
         ],
         text=True,
@@ -2209,13 +2215,44 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert custom_graph.returncode == 0, custom_graph.stderr
     custom_payload = json.loads(custom_graph.stdout)
     assert custom_payload["graph_file"].endswith("custom-graph.json")
+    assert custom_payload["graph_file_exists"] is True
+    assert custom_payload["graph_file_size_bytes"] == custom_graph_path.stat().st_size
     assert custom_payload["template_known"] is True
     assert custom_payload["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert custom_payload["selected_graph_support_status"] == "custom-graph-native-trainer-missing"
     assert custom_payload["selected_graph_native_runnable"] is False
     assert custom_payload["native_geometry_contract"]["graph_file"].endswith("custom-graph.json")
+    assert custom_payload["native_geometry_contract"]["graph_file_exists"] is True
+    assert custom_payload["native_geometry_contract"]["graph_file_size_bytes"] == custom_graph_path.stat().st_size
     assert custom_payload["native_geometry_contract"]["selector_native_runnable"] is False
     assert custom_payload["native_geometry_contract"]["custom_graph_geometry_dynamic"] is False
+
+    missing_custom_graph = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(dataset_path),
+            "--backend",
+            "tile-cuda",
+            "--graph-file",
+            str(tmp_path / "missing-custom-graph.json"),
+            "--print-plan",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert missing_custom_graph.returncode == 0, missing_custom_graph.stderr
+    missing_custom_payload = json.loads(missing_custom_graph.stdout)
+    assert missing_custom_payload["graph_file"].endswith("missing-custom-graph.json")
+    assert missing_custom_payload["graph_file_exists"] is False
+    assert missing_custom_payload["graph_file_size_bytes"] == -1
+    assert missing_custom_payload["selected_graph_support_status"] == "custom-graph-file-missing"
+    assert missing_custom_payload["status"] == "custom-graph-file-missing"
+    assert missing_custom_payload["selected_graph_native_runnable"] is False
+    assert missing_custom_payload["native_geometry_contract"]["graph_file_exists"] is False
+    assert missing_custom_payload["native_geometry_contract"]["graph_file_size_bytes"] == -1
 
     missing_ops = subprocess.run(
         [
@@ -3952,6 +3989,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     )
     assert "copy/adopt best evo block candidate without host graph-editor tensor flow" not in evo_plan["required_native_kernels"]
 
+    evo_custom_graph_path = tmp_path / "gpt2-evo-custom.json"
+    evo_custom_graph_path.write_text('{"nodes": {}, "edges": {}}\n', encoding="utf-8")
     evo_custom_graph = subprocess.run(
         [
             str(gpt2_evo),
@@ -3959,7 +3998,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
             "--dataset-alias",
             "/tmp/native-cache",
             "--graph-file",
-            str(tmp_path / "gpt2-evo-custom.json"),
+            str(evo_custom_graph_path),
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -3969,10 +4008,35 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert evo_custom_graph.returncode == 0, evo_custom_graph.stderr
     evo_custom_graph_plan = json.loads(evo_custom_graph.stdout)
     assert evo_custom_graph_plan["graph_file"].endswith("gpt2-evo-custom.json")
+    assert evo_custom_graph_plan["graph_file_exists"] is True
+    assert evo_custom_graph_plan["graph_file_size_bytes"] == evo_custom_graph_path.stat().st_size
     assert evo_custom_graph_plan["template_name"] == "gpt2"
     assert evo_custom_graph_plan["template_known"] is True
     assert evo_custom_graph_plan["selected_graph_support_status"] == "custom-graph-native-trainer-missing"
     assert evo_custom_graph_plan["selected_graph_native_runnable"] is False
+
+    evo_missing_custom_graph = subprocess.run(
+        [
+            str(gpt2_evo),
+            "--print-plan",
+            "--dataset-alias",
+            "/tmp/native-cache",
+            "--graph-file",
+            str(tmp_path / "missing-gpt2-evo-custom.json"),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert evo_missing_custom_graph.returncode == 0, evo_missing_custom_graph.stderr
+    evo_missing_custom_graph_plan = json.loads(evo_missing_custom_graph.stdout)
+    assert evo_missing_custom_graph_plan["graph_file"].endswith("missing-gpt2-evo-custom.json")
+    assert evo_missing_custom_graph_plan["graph_file_exists"] is False
+    assert evo_missing_custom_graph_plan["graph_file_size_bytes"] == -1
+    assert evo_missing_custom_graph_plan["selected_graph_support_status"] == "custom-graph-file-missing"
+    assert evo_missing_custom_graph_plan["status"] == "custom-graph-file-missing"
+    assert evo_missing_custom_graph_plan["selected_graph_native_runnable"] is False
 
     evo_unknown_template = subprocess.run(
         [

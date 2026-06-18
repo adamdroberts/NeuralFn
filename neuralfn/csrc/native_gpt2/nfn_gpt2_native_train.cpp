@@ -600,8 +600,34 @@ bool selected_graph_is_native_runnable(const Config& cfg) {
     return cfg.graph_file.empty() && selected_template_is_native_dense_gpt_compatible(cfg);
 }
 
+bool custom_graph_file_exists(const Config& cfg) {
+    if (cfg.graph_file.empty()) {
+        return false;
+    }
+    std::error_code ec;
+    return std::filesystem::exists(cfg.graph_file, ec) && !ec;
+}
+
+long long custom_graph_file_size_bytes(const Config& cfg) {
+    if (cfg.graph_file.empty()) {
+        return -1;
+    }
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(cfg.graph_file, ec) || ec) {
+        return -1;
+    }
+    const auto size = std::filesystem::file_size(cfg.graph_file, ec);
+    if (ec) {
+        return -1;
+    }
+    return static_cast<long long>(size);
+}
+
 std::string selected_graph_support_status(const Config& cfg) {
     if (!cfg.graph_file.empty()) {
+        if (!custom_graph_file_exists(cfg)) {
+            return "custom-graph-file-missing";
+        }
         return "custom-graph-native-trainer-missing";
     }
     if (!selected_template_is_shipped(cfg)) {
@@ -636,6 +662,8 @@ std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
         << "\"template_selector\":\"" << json_escape(normalize_template_name(cfg.template_name)) << "\","
         << "\"resolved_template_selector\":\"" << json_escape(resolved_native_template_name(cfg.template_name)) << "\","
         << "\"graph_file\":\"" << json_escape(cfg.graph_file) << "\","
+        << "\"graph_file_exists\":" << (custom_graph_file_exists(cfg) ? "true" : "false") << ","
+        << "\"graph_file_size_bytes\":" << custom_graph_file_size_bytes(cfg) << ","
         << "\"selector_native_runnable\":" << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ","
         << "\"template_geometry_dynamic\":false,"
         << "\"custom_graph_geometry_dynamic\":false,"
@@ -3578,6 +3606,8 @@ bool print_tile_plan(
         << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
         << "  \"resolved_native_template_name\": \"" << json_escape(resolved_native_template_name(cfg.template_name)) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
+        << "  \"graph_file_exists\": " << (custom_graph_file_exists(cfg) ? "true" : "false") << ",\n"
+        << "  \"graph_file_size_bytes\": " << custom_graph_file_size_bytes(cfg) << ",\n"
         << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
         << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
         << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
@@ -3883,8 +3913,10 @@ bool print_tile_plan(
 int print_selected_graph_unsupported_json(const Config& cfg, const neuralfn::native_train::TokenShardDataset& dataset) {
     const bool shipped_template = selected_template_is_shipped(cfg);
     const std::string support_status = selected_graph_support_status(cfg);
-    const std::string status = support_status == "unknown-template" ? "unknown-template"
-                                                                     : "selected-graph-native-trainer-missing";
+    const std::string status =
+        (support_status == "unknown-template" || support_status == "custom-graph-file-missing")
+            ? support_status
+            : "selected-graph-native-trainer-missing";
     std::cout
         << "{\n"
         << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
@@ -3892,6 +3924,8 @@ int print_selected_graph_unsupported_json(const Config& cfg, const neuralfn::nat
         << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
         << "  \"resolved_native_template_name\": \"" << json_escape(resolved_native_template_name(cfg.template_name)) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
+        << "  \"graph_file_exists\": " << (custom_graph_file_exists(cfg) ? "true" : "false") << ",\n"
+        << "  \"graph_file_size_bytes\": " << custom_graph_file_size_bytes(cfg) << ",\n"
         << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
         << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
         << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
@@ -17164,6 +17198,8 @@ int run_transformer_lm_training_json(
         << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
         << "  \"resolved_native_template_name\": \"" << json_escape(resolved_native_template_name(cfg.template_name)) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
+        << "  \"graph_file_exists\": " << (custom_graph_file_exists(cfg) ? "true" : "false") << ",\n"
+        << "  \"graph_file_size_bytes\": " << custom_graph_file_size_bytes(cfg) << ",\n"
         << "  \"architecture_source\": \"" << json_escape(selected_architecture_source(cfg)) << "\",\n"
         << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
         << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
