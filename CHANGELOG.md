@@ -24,6 +24,14 @@ Future updates should append new entries here rather than replacing older notes.
   llm.kittens reference, so the throughput-gap checklist item remains open.
   Verification JSON: `/tmp/nfn_sm120_parity_after_nanogpt_route_20260618.json`.
 
+- Rejected a refreshed LM-head row-chunk candidate after the latest native GPT
+  routing/fallback changes. `NFN_NATIVE_GPT_LM_HEAD_ROW_CHUNK_SIZE=16384`
+  measured `1.000599x` train-loop wall time and `0.999416x` tokens/sec versus
+  the current 8192-row default in the dedicated RTX 5090 same-script 10-step,
+  3-sample benchmark, so the remaining LM-head work stays focused on the GEMM
+  route instead of row-chunk tuning. Verification: ran
+  `tools/bench_native_gpt_sm120_candidate.sh` with selected-GPU idle checks.
+
 - Replaced the no-cuBLAS large-row linear dWeight fallback with a shared-memory
   2D tiled CUDA kernel for float32-output dWeight accumulation across float32
   and BF16 activation/gradient combinations. The normal native GPT workstation
