@@ -2883,7 +2883,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert (
         train_transformer_payload["lm_head_dweight_beta_zero_scope"]
-        == "first-gradient-accumulation-microbatch-first-row-chunk-only"
+        == "first-gradient-accumulation-microbatch-first-processed-row-chunk-only"
     )
     assert (
         train_transformer_payload["non_block_forward_backward_linear_strategy"]
@@ -4556,6 +4556,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert str(nanogpt) in unified_print_command.stdout
     assert "--train-token-lm" in unified_print_command.stdout
     assert "--dry-run" in unified_print_command.stdout
+    assert "--print-command" in unified_print_command.stdout
 
     dry_run = subprocess.run(
         [

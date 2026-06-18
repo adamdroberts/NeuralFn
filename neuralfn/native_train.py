@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shlex
 import subprocess
+import sys
 from typing import Any, Sequence
 
 
@@ -92,6 +93,7 @@ def _load_native_train_binding():
     if binding_enabled in {"0", "false", "no", "off"}:
         raise ImportError("native train binding disabled by NFN_NATIVE_TRAIN_BINDING=0")
     errors: list[str] = []
+    importlib.invalidate_caches()
     for module_name in NATIVE_TRAIN_BINDING_MODULES:
         try:
             module = importlib.import_module(module_name)
@@ -102,11 +104,54 @@ def _load_native_train_binding():
         resolver = getattr(module, "resolve_command", None) or getattr(module, "resolve_native_train_command", None)
         if callable(runner) and callable(resolver):
             return module_name, runner, resolver
+        if module_name == "neuralfn._native_train":
+            fallback = _load_complete_native_train_package_binding(module)
+            if fallback is not None:
+                return fallback
         errors.append(
             f"{module_name}: missing run_train(config_dict)/run_native_train(config_dict) "
             "or resolve_command(config_dict)/resolve_native_train_command(config_dict)"
         )
     raise ImportError("; ".join(errors) if errors else "no native train binding modules configured")
+
+
+def _load_complete_native_train_package_binding(incomplete_module: Any) -> tuple[str, Any, Any] | None:
+    """Find a complete neuralfn._native_train extension if a stale one shadows it."""
+
+    try:
+        package = importlib.import_module("neuralfn")
+    except ImportError:
+        return None
+    package_paths = [str(path) for path in getattr(package, "__path__", [])]
+    if not package_paths:
+        return None
+    current_file = str(getattr(incomplete_module, "__file__", "") or "")
+    original_path = list(getattr(package, "__path__", []))
+    original_module = incomplete_module
+    module_name = "neuralfn._native_train"
+    suffixes = tuple(importlib.machinery.EXTENSION_SUFFIXES)
+    for package_path in reversed(package_paths):
+        try:
+            candidates = list(Path(package_path).glob("_native_train*.so"))
+        except OSError:
+            continue
+        if not any(str(candidate).endswith(suffixes) and str(candidate) != current_file for candidate in candidates):
+            continue
+        try:
+            package.__path__ = [package_path, *[path for path in original_path if str(path) != package_path]]
+            importlib.invalidate_caches()
+            sys.modules.pop(module_name, None)
+            module = importlib.import_module(module_name)
+            runner = getattr(module, "run_train", None) or getattr(module, "run_native_train", None)
+            resolver = getattr(module, "resolve_command", None) or getattr(module, "resolve_native_train_command", None)
+            if callable(runner) and callable(resolver):
+                return module_name, runner, resolver
+        except ImportError:
+            continue
+        finally:
+            package.__path__ = original_path
+    sys.modules[module_name] = original_module
+    return None
 
 
 def native_train_runner_status(requested: str = "auto") -> NativeTrainRunnerStatus:

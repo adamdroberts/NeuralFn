@@ -70,7 +70,10 @@ the active Python scripts directory.
 The generic SDK binding, `neuralfn._native_train`, accepts normal `argv`
 configs as well as GPT compiled-CLI configs. Alias-only GPT configs use the
 compiled frontend command so dataset aliases are resolved in C++ without
-falling back to Python, Torch, or raw external trainer paths.
+falling back to Python, Torch, or raw external trainer paths. Rebuild stale
+local bindings with `bash tools/build_native_train_binding.sh`; SDK discovery
+requires both `run_train` and `resolve_command` and will skip an older extension
+that lacks the resolver before falling back to the compiled CLI.
 
 ## Install the editor
 

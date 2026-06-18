@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed native training retest failures after the CUDA 13.3 WSL reinstall. The
+  SDK native-train binding loader now invalidates import caches and skips stale
+  in-tree `neuralfn._native_train` extensions that expose `run_train` without
+  the required command resolver, then searches the package path for a complete
+  rebuilt extension before falling back to `compiled-cli`. The GPT binding
+  loader also invalidates import caches before discovery. The compiled
+  `nfn_native_train` frontend now preserves `--print-command` in the printed
+  NanoGPT token-LM delegate command, while dense GPT print-command behavior
+  remains normalized to the second-stage compiled GPT command. Verification:
+  `nvidia-smi` on CUDA UMD 13.3, explicit Tile CUDA GPU pytest smoke, broad
+  Tile CUDA GPU pytest suite, focused native failure selectors, and full native
+  pytest rerun.
+
 - Fixed the CUDA 13.3 Python Tile extension build by moving generic BF16
   conversion, BF16 activation storage, BF16 bias-add, and linear bias-reduction
   helpers out of TK-attention/cuBLAS-only conditional blocks in

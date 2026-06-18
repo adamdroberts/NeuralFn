@@ -766,6 +766,7 @@ int main(int argc, char** argv) {
         command.push_back(target_cli);
         command.insert(command.end(), forwarded.begin(), forwarded.end());
         if (print_command_requested) {
+            command.push_back("--print-command");
             print_command(command);
             return 0;
         }

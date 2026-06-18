@@ -297,6 +297,10 @@ Canonical docs:
   `neuralfn.native_train.native_train_model_registry()` to inspect native
   coverage; use `run_native_train(build_native_train_run_config(...),
   runner="auto")` for SDK-level C++ binding handoff to the compiled frontend.
+  Binding discovery skips stale local `_native_train` extensions that do not
+  expose `resolve_command` / `resolve_native_train_command`; rebuild with
+  `bash tools/build_native_train_binding.sh` before expecting `runner="auto"`
+  to prefer the in-process binding.
   Generic native subprocess fallback defaults `CUDA_VISIBLE_DEVICES=0`,
   `CUDA_DEVICE_MAX_CONNECTIONS=1`, and `CUDA_MODULE_LOADING=LAZY` only when
   unset; user-pinned environment values still win.

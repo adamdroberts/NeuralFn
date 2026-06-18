@@ -852,6 +852,7 @@ def _load_native_gpt2_binding():
     if binding_enabled in {"0", "false", "no", "off"}:
         raise ImportError(f"native GPT binding disabled by {binding_env_name}=0")
     errors: list[str] = []
+    importlib.invalidate_caches()
     for module_name in NATIVE_GPT2_BINDING_MODULES:
         try:
             module = importlib.import_module(module_name)

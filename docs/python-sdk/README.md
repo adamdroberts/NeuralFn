@@ -193,6 +193,10 @@ defaulting to `CUDA_MODULE_LOADING=LAZY` only when unset. Use
 `resolve_native_train_binding_command(config)` to inspect the exact argv the
 compiled binding will spawn, and use `native_train_model_registry()` to inspect
 the compiled model coverage exposed by `nfn-native-train --list-models --json`.
+If an older local `neuralfn._native_train` extension shadows the rebuilt one,
+binding discovery skips it unless it exposes both `run_train` and
+`resolve_command`, then probes the remaining package search path before falling
+back to the compiled CLI.
 The CLI subprocess fallback also defaults `CUDA_VISIBLE_DEVICES=0` and
 `CUDA_DEVICE_MAX_CONNECTIONS=1` only when the caller has not supplied those
 environment variables; set `NativeTrainRunConfig.cuda_visible_devices` or the
