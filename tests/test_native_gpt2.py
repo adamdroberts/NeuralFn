@@ -4210,6 +4210,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "scaled residual add forward" in plan["available_native_kernels"]
     assert "GELU activation forward" in plan["available_native_kernels"]
     assert "GELU activation backward" in plan["available_native_kernels"]
+    assert "dropout forward/backward native Tile ABI for nonzero dropout_p" in plan["available_native_kernels"]
     assert "MLP projection/GELU forward/backward/update smoke over raw native kernels" in plan["available_native_kernels"]
     assert "scaled dot-product attention backward" in plan["available_native_kernels"]
     assert "fused QKV attention forward/backward/update smoke over raw native kernels" in plan["available_native_kernels"]
@@ -4231,6 +4232,25 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         "required_native_kernels"
     ]
     assert "dropout forward/backward native Tile ABI for nonzero dropout_p" not in plan["required_native_kernels"]
+
+    dropout_plan_proc = subprocess.run(
+        [str(nanogpt), "--print-plan", "--dropout-p", "0.1"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert dropout_plan_proc.returncode == 0, dropout_plan_proc.stderr
+    dropout_plan = json.loads(dropout_plan_proc.stdout)
+    dropout_step_plan = dropout_plan["training_step_plan"]
+    assert dropout_plan["shape"]["dropout_p"] == 0.1
+    assert dropout_step_plan["stage_count"] == 124
+    assert dropout_step_plan["ready_stage_count"] == 124
+    assert dropout_step_plan["missing_abi_stage_count"] == 0
+    dropout_stages = {stage["name"]: stage for stage in dropout_step_plan["stages"]}
+    assert dropout_stages["blocks.0.dropout.forward"]["kernel_abi"] == "nfn_native_tile_dropout_forward_float32"
+    assert dropout_stages["blocks.0.dropout.backward"]["kernel_abi"] == "nfn_native_tile_dropout_backward_float32"
+    assert "dropout forward/backward native Tile ABI for nonzero dropout_p" in dropout_plan["available_native_kernels"]
+    assert "dropout forward/backward native Tile ABI for nonzero dropout_p" not in dropout_plan["required_native_kernels"]
 
     shard_dir = tmp_path / "token_shards"
     shard_dir.mkdir()
@@ -4792,6 +4812,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_linear_weight_bf16_gelu_bf16_float32" in header_text
     assert "nfn_native_tile_linear_bf16_input_weight_bf16_gelu_bf16_float32" in header_text
     assert "nfn_native_tile_gelu_add_bias_bf16_act_float32" in header_text
+    assert "nfn_native_tile_dropout_forward_float32" in header_text
+    assert "nfn_native_tile_dropout_backward_float32" in header_text
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_float32" in header_text
     assert "nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_float32" in header_text
     assert "nfn_native_tile_linear_backward_weight_bias_accumulate_bf16_bits_float32" in header_text
@@ -4822,6 +4844,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "linear_bf16_input_float_weight_bf16_output_float32_kernel" in kernels_text
     assert "cublas_linear_gemm_ex_float32_a_bf16_bits_b_to_bf16_bits" in kernels_text
     assert "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32" in header_text
+    assert "dropout_forward_float32_kernel" in kernels_text
+    assert "dropout_backward_float32_kernel" in kernels_text
     assert "nfn_native_tile_float32_to_bf16_bits_many" in header_text
     assert "nfn_native_tile_trainer_linear_stats_reset" in header_text
     assert "nfn_native_tile_trainer_linear_bf16_cache_reset" in header_text
@@ -5124,6 +5148,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_gelu_add_bias_float32" in header_text
     assert "nfn_native_tile_gelu_backward_float32" in header_text
     assert "nfn_native_tile_gelu_backward_inplace_float32" in header_text
+    assert "launch_dropout_forward_float32" in source_text
+    assert "launch_dropout_backward_float32" in source_text
     assert "launch_gelu_backward_inplace_float32" in source_text
     assert "nfn_native_tile_token_embedding_float32" in header_text
     assert "nfn_native_tile_token_embedding_backward_weight_float32" in header_text
@@ -6250,6 +6276,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_linear_backward_input_dgelu_weight_bf16_bits_only_float32" in exported
         assert "nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32" in exported
         assert "nfn_native_tile_gelu_add_bias_bf16_act_float32" in exported
+        assert "nfn_native_tile_dropout_forward_float32" in exported
+        assert "nfn_native_tile_dropout_backward_float32" in exported
         assert "nfn_native_tile_trainer_linear_stats_reset" in exported
         assert "nfn_native_tile_trainer_linear_bf16_cache_reset" in exported
         assert "nfn_native_tile_trainer_linear_bf16_gemm_count" in exported
@@ -6300,6 +6328,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_gelu_float32" in exported
         assert "nfn_native_tile_gelu_backward_float32" in exported
         assert "nfn_native_tile_gelu_backward_inplace_bf16_bits_float32" in exported
+        assert "nfn_native_tile_dropout_forward_float32" in exported
+        assert "nfn_native_tile_dropout_backward_float32" in exported
         assert "nfn_native_tile_token_embedding_float32" in exported
         assert "nfn_native_tile_token_embedding_backward_weight_float32" in exported
         assert "nfn_native_tile_absolute_position_embedding_float32" in exported

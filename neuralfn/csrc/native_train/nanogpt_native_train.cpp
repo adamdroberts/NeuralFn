@@ -329,6 +329,8 @@ std::vector<std::string> required_tile_ops_symbols() {
         "nfn_native_tile_linear_backward_bias_float32",
         "nfn_native_tile_gelu_float32",
         "nfn_native_tile_gelu_backward_float32",
+        "nfn_native_tile_dropout_forward_float32",
+        "nfn_native_tile_dropout_backward_float32",
         "nfn_native_tile_absolute_position_embedding_float32",
         "nfn_native_tile_absolute_position_embedding_backward_float32",
         "nfn_native_tile_token_embedding_float32",
@@ -5910,7 +5912,8 @@ std::vector<TrainingStage> build_training_stages(const NanoGptPlan& plan) {
         add(prefix + "mlp.proj.forward", "forward", "ready", "nfn_native_tile_linear_float32", hidden);
         add(prefix + "mlp.residual_add.forward", "forward", "ready", "nfn_native_tile_scaled_residual_add_float32", hidden);
         if (plan.dropout_p > 0.0) {
-            add(prefix + "dropout.forward_backward", "forward_backward", "missing_abi", "none", hidden);
+            add(prefix + "dropout.forward", "forward", "ready", "nfn_native_tile_dropout_forward_float32", hidden);
+            add(prefix + "dropout.backward", "backward", "ready", "nfn_native_tile_dropout_backward_float32", hidden);
         }
     }
     add("ln_f.forward", "forward", "ready", "nfn_native_tile_layer_norm_float32", hidden);
@@ -6147,6 +6150,7 @@ void print_plan_json(
         << "    \"scaled residual add forward\",\n"
         << "    \"GELU activation forward\",\n"
         << "    \"GELU activation backward\",\n"
+        << "    \"dropout forward/backward native Tile ABI for nonzero dropout_p\",\n"
         << "    \"MLP projection/GELU forward/backward/update smoke over raw native kernels\",\n"
         << "    \"softmax forward\",\n"
         << "    \"scaled dot-product attention forward\",\n"
@@ -6162,12 +6166,7 @@ void print_plan_json(
         << "    \"registered-buffer AdamW iteration over decay and no-decay parameter groups\"\n"
         << "  ],\n"
         << "  \"required_native_kernels\": [\n"
-        << "    \"full trainer loop integration over ready forward, backward, and optimizer stages\"";
-    if (plan.dropout_p > 0.0) {
-        std::cout << ",\n"
-                  << "    \"dropout forward/backward native Tile ABI for nonzero dropout_p\"";
-    }
-    std::cout << "\n"
+        << "    \"full trainer loop integration over ready forward, backward, and optimizer stages\"\n"
         << "  ],\n"
         << "  \"unparsed_args\": [";
     for (std::size_t i = 0; i < plan.unparsed_args.size(); ++i) {

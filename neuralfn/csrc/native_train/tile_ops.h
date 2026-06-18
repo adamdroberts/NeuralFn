@@ -1005,6 +1005,22 @@ int nfn_native_tile_gelu_backward_inplace_bf16_bits_float32(
     std::int64_t n,
     void* cuda_stream);
 
+int nfn_native_tile_dropout_forward_float32(
+    const float* x,
+    float* out,
+    std::int64_t n,
+    float dropout_p,
+    std::int64_t seed,
+    void* cuda_stream);
+
+int nfn_native_tile_dropout_backward_float32(
+    const float* grad_out,
+    float* grad_x,
+    std::int64_t n,
+    float dropout_p,
+    std::int64_t seed,
+    void* cuda_stream);
+
 int nfn_native_tile_absolute_position_embedding_float32(
     const float* weight,
     float* out,

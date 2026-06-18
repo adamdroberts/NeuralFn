@@ -864,6 +864,20 @@ void launch_gelu_backward_inplace_bf16_bits_float32(
     float* grad,
     std::int64_t n,
     cudaStream_t stream);
+void launch_dropout_forward_float32(
+    const float* x,
+    float* out,
+    std::int64_t n,
+    float dropout_p,
+    std::int64_t seed,
+    cudaStream_t stream);
+void launch_dropout_backward_float32(
+    const float* grad_out,
+    float* grad_x,
+    std::int64_t n,
+    float dropout_p,
+    std::int64_t seed,
+    cudaStream_t stream);
 void launch_absolute_position_embedding_float32(
     const float* weight,
     float* out,
@@ -3448,6 +3462,36 @@ int nfn_native_tile_gelu_backward_inplace_bf16_bits_float32(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_gelu_backward_inplace_bf16_bits_float32(
         x_bf16_bits, grad, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_dropout_forward_float32(
+    const float* x,
+    float* out,
+    std::int64_t n,
+    float dropout_p,
+    std::int64_t seed,
+    void* cuda_stream) {
+    if (dropout_p < 0.0f || dropout_p >= 1.0f) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_dropout_forward_float32(
+        x, out, n, dropout_p, seed, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_dropout_backward_float32(
+    const float* grad_out,
+    float* grad_x,
+    std::int64_t n,
+    float dropout_p,
+    std::int64_t seed,
+    void* cuda_stream) {
+    if (dropout_p < 0.0f || dropout_p >= 1.0f) {
+        return 1;
+    }
+    neuralfn::tile_cuda::launch_dropout_backward_float32(
+        grad_out, grad_x, n, dropout_p, seed, as_stream(cuda_stream));
     return launch_status();
 }
 

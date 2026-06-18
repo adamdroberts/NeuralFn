@@ -9560,6 +9560,58 @@ __tile_global__ void gelu_backward_inplace_bf16_bits_float32_kernel(
   ct::store_masked(grad + idx, grad_tile * grad_local, mask);
 }
 
+__tile_global__ void dropout_forward_float32_kernel(
+    const float* __restrict__ x,
+    float* __restrict__ out,
+    std::int64_t n,
+    float dropout_p,
+    std::int64_t seed) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  x = ct::assume_aligned(x, 16_ic);
+  out = ct::assume_aligned(out, 16_ic);
+
+  const int bx = ct::bid().x;
+  using Shape = decltype(ct::shape{1024_ic});
+  using IndexTile = ct::tile<std::int64_t, Shape>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto bucket = (idx * ct::full<IndexTile>(1103515245) + ct::full<IndexTile>(seed + 12345)) %
+      ct::full<IndexTile>(10000);
+  auto keep = bucket >= ct::full<IndexTile>(static_cast<std::int64_t>(dropout_p * 10000.0f));
+  auto values = ct::load_masked(x + idx, mask);
+  auto scaled = values * ct::full<decltype(values)>(1.0f / (1.0f - dropout_p));
+  auto zero = ct::full<decltype(values)>(0.0f);
+  ct::store_masked(out + idx, ct::select(keep, scaled, zero), mask);
+}
+
+__tile_global__ void dropout_backward_float32_kernel(
+    const float* __restrict__ grad_out,
+    float* __restrict__ grad_x,
+    std::int64_t n,
+    float dropout_p,
+    std::int64_t seed) {
+  namespace ct = cuda::tiles;
+  using namespace ct::literals;
+
+  grad_out = ct::assume_aligned(grad_out, 16_ic);
+  grad_x = ct::assume_aligned(grad_x, 16_ic);
+
+  const int bx = ct::bid().x;
+  using Shape = decltype(ct::shape{1024_ic});
+  using IndexTile = ct::tile<std::int64_t, Shape>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  auto mask = idx < ct::full<IndexTile>(n);
+  auto bucket = (idx * ct::full<IndexTile>(1103515245) + ct::full<IndexTile>(seed + 12345)) %
+      ct::full<IndexTile>(10000);
+  auto keep = bucket >= ct::full<IndexTile>(static_cast<std::int64_t>(dropout_p * 10000.0f));
+  auto values = ct::load_masked(grad_out + idx, mask);
+  auto scaled = values * ct::full<decltype(values)>(1.0f / (1.0f - dropout_p));
+  auto zero = ct::full<decltype(values)>(0.0f);
+  ct::store_masked(grad_x + idx, ct::select(keep, scaled, zero), mask);
+}
+
 __tile_global__ void act_weighted_sum_float32_kernel(
     const float* __restrict__ states,
     const float* __restrict__ weights,
@@ -15337,6 +15389,29 @@ void launch_gelu_backward_inplace_bf16_bits_float32(
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   gelu_backward_inplace_bf16_bits_float32_kernel<<<blocks, 1, 0, stream>>>(
       x_bf16_bits, grad, n);
+}
+
+void launch_dropout_forward_float32(
+    const float* x,
+    float* out,
+    std::int64_t n,
+    float dropout_p,
+    std::int64_t seed,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  dropout_forward_float32_kernel<<<blocks, 1, 0, stream>>>(x, out, n, dropout_p, seed);
+}
+
+void launch_dropout_backward_float32(
+    const float* grad_out,
+    float* grad_x,
+    std::int64_t n,
+    float dropout_p,
+    std::int64_t seed,
+    cudaStream_t stream) {
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  dropout_backward_float32_kernel<<<blocks, 1, 0, stream>>>(
+      grad_out, grad_x, n, dropout_p, seed);
 }
 
 void launch_act_weighted_sum_float32(

@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added deterministic inverted-dropout CUDA Tile forward/backward ABI for native
+  training (`nfn_native_tile_dropout_forward_float32` and
+  `nfn_native_tile_dropout_backward_float32`). NanoGPT `--print-plan
+  --dropout-p` now reports ready dropout forward/backward stages instead of a
+  missing ABI requirement, and `--check-tile-ops` includes those raw symbols in
+  its required-symbol set. Verification: focused NanoGPT plan/source tests and
+  native Tile ops rebuild/export checks.
+
 - Replaced per-call `cudaMalloc` / `cudaFree` row-stat allocation in the
   trainer Tile ABI's non-workspace full-vocab token CE backward launchers with a
   process-cached row-stat workspace. Workspace-aware CE backward entrypoints are
