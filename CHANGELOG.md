@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added GPT-prefixed aliases for the native Tile-CUDA linear shape-stat profiler.
+  `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1` and
+  `NFN_NATIVE_GPT2_LINEAR_SHAPE_STATS=1` now behave like the existing
+  `NFN_NATIVE_LINEAR_SHAPE_STATS=1` and `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1`
+  switches, so GPT-stage profiling can enable exact GEMM shape buckets with
+  GPT-named environment variables. This is diagnostic-only and remains off by
+  default.
+
 ### 2026-06-18 Suballocate native GPT float stats sidecars
 
 #### Changed

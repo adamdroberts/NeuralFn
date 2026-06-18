@@ -130,7 +130,8 @@ full-vocab scratch gradient buffer per chunk or per microbatch. The JSON reports
 `lm_head_row_chunk_count` and `loss_partial_count`.
 
 For SDK-launched native GPT profiling, include
-`NFN_NATIVE_LINEAR_SHAPE_STATS=1` or `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1` in the
+`NFN_NATIVE_LINEAR_SHAPE_STATS=1`, `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1`,
+`NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1`, or `NFN_NATIVE_GPT2_LINEAR_SHAPE_STATS=1` in the
 subprocess environment. The compiled trainer then reports `linear_shape_stats`
 JSON buckets that identify the successful TK BF16, cuBLASLt, cuBLAS GEMMEx BF16,
 and SGEMM linear dispatch shapes and call counts. This is intended for kernel

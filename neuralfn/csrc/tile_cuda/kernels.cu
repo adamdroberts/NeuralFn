@@ -2269,6 +2269,12 @@ bool trainer_linear_shape_stats_enabled() {
       value = std::getenv("NFN_TILE_CUDA_LINEAR_SHAPE_STATS");
     }
     if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_LINEAR_SHAPE_STATS");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_LINEAR_SHAPE_STATS");
+    }
+    if (value == nullptr) {
       return false;
     }
     if (std::strcmp(value, "0") == 0 ||
