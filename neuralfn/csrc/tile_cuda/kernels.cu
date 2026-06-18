@@ -2416,6 +2416,53 @@ bool parse_cublas_op_token(const char* token, cublasOperation_t* op) {
   return false;
 }
 
+bool parse_linear_shape_token(const char* value, LinearShapeStat* shape) {
+  if (value == nullptr || value[0] == '\0' || shape == nullptr) {
+    return false;
+  }
+  int parsed_m = 0;
+  int parsed_n = 0;
+  int parsed_k = 0;
+  char parsed_op_a[8] = {};
+  char parsed_op_b[8] = {};
+  if (std::sscanf(
+          value,
+          "%d,%d,%d,%7[^,],%7s",
+          &parsed_m,
+          &parsed_n,
+          &parsed_k,
+          parsed_op_a,
+          parsed_op_b) != 5) {
+    return false;
+  }
+  cublasOperation_t parsed_a = CUBLAS_OP_N;
+  cublasOperation_t parsed_b = CUBLAS_OP_N;
+  if (parsed_m <= 0 || parsed_n <= 0 || parsed_k <= 0 ||
+      !parse_cublas_op_token(parsed_op_a, &parsed_a) ||
+      !parse_cublas_op_token(parsed_op_b, &parsed_b)) {
+    return false;
+  }
+  shape->path = 2;
+  shape->m = parsed_m;
+  shape->n = parsed_n;
+  shape->k = parsed_k;
+  shape->op_a = static_cast<int>(parsed_a);
+  shape->op_b = static_cast<int>(parsed_b);
+  return true;
+}
+
+bool linear_shape_matches(
+    const LinearShapeStat& shape,
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  return shape.path == 2 && shape.m == m && shape.n == n && shape.k == k &&
+      shape.op_a == static_cast<int>(op_a) &&
+      shape.op_b == static_cast<int>(op_b);
+}
+
 bool trainer_linear_bf16_cublaslt_shape_disabled(
     int m,
     int n,
@@ -2532,48 +2579,39 @@ bool trainer_linear_tk_forward_shape_disabled(
     int k,
     cublasOperation_t op_a,
     cublasOperation_t op_b) {
+  static const LinearShapeStat default_disabled_lm_head_logits_shape = []() {
+    LinearShapeStat shape{};
+    shape.path = 2;
+    shape.m = 50304;
+    shape.n = 8192;
+    shape.k = 768;
+    shape.op_a = static_cast<int>(CUBLAS_OP_T);
+    shape.op_b = static_cast<int>(CUBLAS_OP_N);
+    return shape;
+  }();
+  static const LinearShapeStat enabled_shape = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_TK_FORWARD_ENABLE_SHAPE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_TK_FORWARD_ENABLE_SHAPE");
+    }
+    LinearShapeStat shape{};
+    parse_linear_shape_token(value, &shape);
+    return shape;
+  }();
   static const LinearShapeStat disabled_shape = []() {
     const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE");
     if (value == nullptr) {
       value = std::getenv("NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE");
     }
     LinearShapeStat shape{};
-    if (value == nullptr || value[0] == '\0') {
-      return shape;
-    }
-    int parsed_m = 0;
-    int parsed_n = 0;
-    int parsed_k = 0;
-    char parsed_op_a[8] = {};
-    char parsed_op_b[8] = {};
-    if (std::sscanf(
-            value,
-            "%d,%d,%d,%7[^,],%7s",
-            &parsed_m,
-            &parsed_n,
-            &parsed_k,
-            parsed_op_a,
-            parsed_op_b) != 5) {
-      return shape;
-    }
-    cublasOperation_t parsed_a = CUBLAS_OP_N;
-    cublasOperation_t parsed_b = CUBLAS_OP_N;
-    if (parsed_m <= 0 || parsed_n <= 0 || parsed_k <= 0 ||
-        !parse_cublas_op_token(parsed_op_a, &parsed_a) ||
-        !parse_cublas_op_token(parsed_op_b, &parsed_b)) {
-      return shape;
-    }
-    shape.path = 2;
-    shape.m = parsed_m;
-    shape.n = parsed_n;
-    shape.k = parsed_k;
-    shape.op_a = static_cast<int>(parsed_a);
-    shape.op_b = static_cast<int>(parsed_b);
+    parse_linear_shape_token(value, &shape);
     return shape;
   }();
-  return disabled_shape.path == 2 && disabled_shape.m == m && disabled_shape.n == n &&
-      disabled_shape.k == k && disabled_shape.op_a == static_cast<int>(op_a) &&
-      disabled_shape.op_b == static_cast<int>(op_b);
+  if (linear_shape_matches(enabled_shape, m, n, k, op_a, op_b)) {
+    return false;
+  }
+  return linear_shape_matches(default_disabled_lm_head_logits_shape, m, n, k, op_a, op_b) ||
+      linear_shape_matches(disabled_shape, m, n, k, op_a, op_b);
 }
 
 bool trainer_linear_float32_bf16_bgrad_enabled() {

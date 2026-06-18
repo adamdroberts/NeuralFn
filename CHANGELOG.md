@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native training now skips the TK forward path for the padded
+  LM-head logits shape `50304,8192,768,T,N` by default and falls through to the
+  existing BF16 fallback path. Set
+  `NFN_NATIVE_LINEAR_TK_FORWARD_ENABLE_SHAPE=50304,8192,768,T,N` or
+  `NFN_TILE_CUDA_LINEAR_TK_FORWARD_ENABLE_SHAPE=50304,8192,768,T,N` to restore
+  the old TK route for bisection; `...DISABLE_SHAPE=m,n,k,opA,opB` still works
+  for one additional forward/fused-GELU TK shape. Verification: a dedicated
+  RTX 5090 same-script 10-step, 3-sample comparison measured `0.990336x`
+  train-loop wall time and `1.009770x` tokens/sec versus the old TK route.
+
 - **Breaking changes:** `nfn_native_tile_trainer_linear_shape_stats_entry` now
   takes one additional `std::int64_t* total_us` output argument. Native GPT
   callers built with this workspace should pass the new pointer and read

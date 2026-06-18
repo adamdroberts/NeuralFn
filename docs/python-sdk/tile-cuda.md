@@ -151,7 +151,12 @@ For one-shape TK forward bisection from the SDK, pass
 `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` or
 `NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` in the same
 environment. The tuple matches the `linear_shape_stats` convention and only
-gates forward/fused-GELU TK calls with fallback paths.
+gates forward/fused-GELU TK calls with fallback paths. The padded LM-head logits
+shape `50304,8192,768,T,N` is disabled by default after same-script RTX 5090
+benchmarks showed the fallback path was faster; pass
+`NFN_NATIVE_LINEAR_TK_FORWARD_ENABLE_SHAPE=50304,8192,768,T,N` or
+`NFN_TILE_CUDA_LINEAR_TK_FORWARD_ENABLE_SHAPE=50304,8192,768,T,N` to restore the
+old TK route for paired comparisons.
 
 Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers
