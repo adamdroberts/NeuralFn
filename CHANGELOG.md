@@ -14,6 +14,13 @@ Future updates should append new entries here rather than replacing older notes.
   directly when native JSON sidecars include those fields. Verification:
   paired-kernel helper tests.
 
+- Improved paired benchmark failure diagnostics for native JSON sidecars. When
+  a native command exits nonzero and has written `--json-out`/`--profile-json`,
+  the immediate failure now includes the sidecar `status` and `error` fields
+  before stderr, so CUDA-driver access or missing-symbol failures are visible
+  without manually opening the sidecar. Verification: paired-kernel helper
+  tests.
+
 - Aligned the generic `neuralfn._native_train` SDK binding with the native GPT
   bindings by replacing `fork()` plus `execvp()` with `posix_spawnp()` while
   preserving the existing `CUDA_VISIBLE_DEVICES`, `CUDA_DEVICE_MAX_CONNECTIONS`,

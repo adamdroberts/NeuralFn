@@ -720,7 +720,10 @@ default `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS=80000` unless you override it.
 If attention backward section timing is enabled, paired summaries include the
 native `attention_backward_dprep_timing_*` and
 `attention_backward_tk_timing_*` counters next to the `stage.*` buckets and
-candidate-over-baseline ratios.
+candidate-over-baseline ratios. When a native command fails after writing a
+profile sidecar, the immediate failure message includes the sidecar `status`
+and `error` values, which is the fastest way to distinguish CUDA-driver access,
+missing-symbol, and dataset-resolution failures during benchmark work.
 For compile-time kernel experiments, `tools/build_native_train_tile_ops.sh`
 accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and
 `NFN_TILE_CUDA_EXTRA_LDLIBS` and appends them after the default SM120 flags.

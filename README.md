@@ -241,7 +241,10 @@ command. Add `--native-stage-timing` only for attribution runs that should set
 `stage.block_backward.total_ms` beside total step time. When native profile
 JSON includes packed-attention backward section counters, the same summary also
 prints dprep/TK timing fields such as `attention_backward_tk_timing_us` and
-their candidate-over-baseline ratios. Use
+their candidate-over-baseline ratios. If a native command exits nonzero after
+writing its profile JSON, the harness failure message includes the native
+`status` and `error` fields so CUDA-driver, symbol, or dataset failures are not
+hidden behind an empty stderr. Use
 `tools/bench_native_gpt_sm120_parity.sh` for the canonical RTX 5090
 SM120 parity check against `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`;
 it runs the llm.kittens `train_gpt2cu` reference and

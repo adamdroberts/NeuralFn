@@ -347,6 +347,50 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     }
 
 
+def test_paired_kernel_speed_failure_reports_native_json_sidecar_error(tmp_path: Path) -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    failing = tmp_path / "native_fail.py"
+    output_path = tmp_path / "paired.json"
+    failing.write_text(
+        "import json\n"
+        "import sys\n"
+        "path = sys.argv[sys.argv.index('--profile-json') + 1]\n"
+        "open(path, 'w', encoding='utf-8').write(json.dumps({\n"
+        "    'status': 'native-transformer-lm-failed',\n"
+        "    'error': 'CUDA driver is unavailable to the native trainer',\n"
+        "}))\n"
+        "raise SystemExit(7)\n",
+        encoding="utf-8",
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('baseline-ok')\"",
+            "--candidate",
+            f"{sys.executable} {failing} --profile-json {tmp_path / 'candidate.json'}",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 1
+    assert "candidate failed with exit 7" in proc.stderr
+    assert "native JSON summary:" in proc.stderr
+    assert "status: native-transformer-lm-failed" in proc.stderr
+    assert "error: CUDA driver is unavailable to the native trainer" in proc.stderr
+
+
 def test_paired_kernel_speed_tool_stage_timing_is_explicit() -> None:
     script = Path("tools/paired_kernel_speed.py")
     spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)

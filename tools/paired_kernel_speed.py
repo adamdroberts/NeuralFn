@@ -69,6 +69,7 @@ NATIVE_METRIC_PATHS = (
 )
 NATIVE_STRATEGY_METRIC_KEYS = (
     "status",
+    "error",
     "selected_graph_support_status",
     "lm_head_training_logits_dtype",
     "lm_head_logits_linear_strategy",
@@ -353,6 +354,15 @@ def native_metrics_from_command_output(argv: Sequence[str], stdout: str) -> dict
     return llm_kittens_metrics_from_stdout(stdout)
 
 
+def native_failure_summary(metrics: dict[str, float | int | str | bool]) -> str:
+    fields: list[str] = []
+    for key in ("status", "error"):
+        value = metrics.get(key)
+        if isinstance(value, (str, int, float, bool)):
+            fields.append(f"{key}: {value}")
+    return "\n".join(fields)
+
+
 def native_metrics_from_stdout(stdout: str) -> dict[str, float | int | str | bool]:
     payload = extract_json_object(stdout)
     if payload is None:
@@ -467,10 +477,14 @@ def run_once(
         return result
     seconds = time.perf_counter() - start
     returncode = proc.returncode if proc.returncode is not None else -1
+    native_metrics = native_metrics_from_command_output(run_argv, stdout)
     if returncode != 0 and not continue_on_error:
+        native_summary = native_failure_summary(native_metrics)
+        native_section = f"\nnative JSON summary:\n{native_summary}\n" if native_summary else ""
         raise SystemExit(
             f"{command.name} failed with exit {returncode}\n"
             f"command: {shlex.join(run_argv)}\n"
+            f"{native_section}"
             f"stderr:\n{stderr}"
         )
     result = {
@@ -479,7 +493,7 @@ def run_once(
         "seconds": seconds,
         "returncode": returncode,
         "timed_out": False,
-        "native_metrics": native_metrics_from_command_output(run_argv, stdout),
+        "native_metrics": native_metrics,
         "stdout_tail": stdout[-2000:],
         "stderr_tail": stderr[-2000:],
     }
