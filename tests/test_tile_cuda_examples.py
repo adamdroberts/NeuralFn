@@ -124,6 +124,49 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["train_tokens_per_second"]["mean"] == 42.0
 
 
+def test_paired_kernel_speed_tool_dry_run_plan_does_not_launch_commands() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-plan.json"
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            "definitely_missing_baseline_command --old",
+            "--candidate",
+            "definitely_missing_candidate_command --new",
+            "--samples",
+            "2",
+            "--warmup",
+            "1",
+            "--cuda-visible-devices",
+            "0",
+            "--require-idle-selected-gpu",
+            "--dry-run-plan",
+            "--json-out",
+            str(output_path),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "dry_run_plan: true" in proc.stdout
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["dry_run_plan"] is True
+    assert payload["baseline_command"] == ["definitely_missing_baseline_command", "--old"]
+    assert payload["candidate_command"] == ["definitely_missing_candidate_command", "--new"]
+    assert payload["sample_order_plan"] == [
+        {"sample": 1, "order": ["baseline", "candidate"]},
+        {"sample": 2, "order": ["candidate", "baseline"]},
+    ]
+    assert payload["run_env_overrides"]["CUDA_VISIBLE_DEVICES"] == "0"
+    assert "paired_samples" not in payload
+
+
 def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     script = Path("tools/bench_native_gpt_sm120_parity.sh")
 
@@ -153,7 +196,9 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "NFN_SM120_PARITY_CHECKPOINT_EVERY" in text
     assert "NFN_SM120_PARITY_GENERATE_TOKENS" in text
     assert "NFN_SM120_PARITY_PROFILE_DIR" in text
+    assert "NFN_SM120_PARITY_DRY_RUN_PLAN" in text
     assert "NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS" in text
+    assert "paired_args=()" in text
     assert "profile_args=()" in text
     assert '\"none\"|\"off\"' in text
     assert "-s \"$SAMPLE_EVERY\"" in text
@@ -170,6 +215,39 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "--no-checkpoint" in text
     assert "--tile-ops-lib \"$NFN_NATIVE_TILE_OPS_LIB\"" in text
     assert '"${profile_args[@]}"' in text
+    assert '"${paired_args[@]}"' in text
+
+
+def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> None:
+    script = Path("tools/bench_native_gpt_sm120_candidate.sh")
+
+    proc = subprocess.run(
+        ["bash", "-n", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    text = script.read_text(encoding="utf-8")
+    assert "tools/paired_kernel_speed.py" in text
+    assert "--require-idle-selected-gpu" in text
+    assert "--max-selected-gpu-utilization-pct" in text
+    assert 'CUDA_VISIBLE_DEVICES_VALUE="${NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES:-auto}"' in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_ENV" in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB" in text
+    assert "NFN_SM120_NATIVE_TEMPLATE_NAME" in text
+    assert "NFN_SM120_NATIVE_GRAPH_FILE" in text
+    assert "NFN_SM120_NATIVE_DRY_RUN_PLAN" in text
+    assert "--template-name \"$TEMPLATE_NAME\"" in text
+    assert "--graph-file \"$GRAPH_FILE\"" in text
+    assert "--train-batch-tokens \"$TRAIN_BATCH_TOKENS\"" in text
+    assert "--eval-every-steps 0" in text
+    assert "--no-checkpoint" in text
+    assert "--dry-run-plan" in text
+    assert '"${profile_args[@]}"' in text
+    assert '"${paired_args[@]}"' in text
 
 
 def test_paired_kernel_speed_tool_applies_command_specific_env() -> None:

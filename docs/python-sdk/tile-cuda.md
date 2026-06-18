@@ -1091,6 +1091,10 @@ throughput gap; `tools/bench_native_gpt_sm120_parity.sh` is the same-script RTX
 5090 comparison gate against `llm.kittens/train-sm120.sh`. The parity wrapper
 passes the NeuralFn candidate `--train-batch-tokens 524288` explicitly to match
 the reference `-d 524288` batch-token contract instead of relying on a default.
+Set `NFN_SM120_PARITY_DRY_RUN_PLAN=1` or
+`NFN_SM120_NATIVE_DRY_RUN_PLAN=1` to write the resolved paired command plan,
+CUDA selection, profile settings, and alternating sample order without
+launching either command.
 `tools/paired_kernel_speed.py` also summarizes categorical native strategy
 fields under `baseline_native_metric_values` and
 `candidate_native_metric_values`, including LM-head logits/dHidden/dWeight

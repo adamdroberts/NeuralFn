@@ -28,6 +28,7 @@ BASELINE_EXTRA_ARGS_RAW="${NFN_SM120_NATIVE_BASELINE_EXTRA_ARGS:-}"
 CANDIDATE_EXTRA_ARGS_RAW="${NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS:-}"
 TEMPLATE_NAME="${NFN_SM120_NATIVE_TEMPLATE_NAME:-}"
 GRAPH_FILE="${NFN_SM120_NATIVE_GRAPH_FILE:-}"
+DRY_RUN_PLAN="${NFN_SM120_NATIVE_DRY_RUN_PLAN:-0}"
 
 if [[ ! -x "$NFN_NATIVE_GPT_TRAIN_BIN" ]]; then
   echo "NeuralFn native GPT trainer is not executable: $NFN_NATIVE_GPT_TRAIN_BIN" >&2
@@ -116,6 +117,11 @@ done
 for item in $CANDIDATE_ENV_RAW; do
   paired_args+=(--candidate-env "$item")
 done
+case "${DRY_RUN_PLAN,,}" in
+  "1"|"true"|"yes"|"on")
+    paired_args+=(--dry-run-plan)
+    ;;
+esac
 
 cd "$ROOT_DIR"
 python tools/paired_kernel_speed.py \

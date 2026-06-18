@@ -23,6 +23,7 @@ JSON_OUT="${NFN_SM120_PARITY_JSON_OUT:-/tmp/nfn_sm120_parity_${STEPS}step.json}"
 PROFILE_DIR_RAW="${NFN_SM120_PARITY_PROFILE_DIR:-/tmp/nfn_sm120_parity_profiles_${STEPS}step}"
 STAGE_TIMING="${NFN_SM120_PARITY_STAGE_TIMING:-0}"
 REFERENCE_OUTPUT_DIR="${NFN_SM120_PARITY_REFERENCE_OUTPUT_DIR:-/tmp/nfn_llmk_sm120_parity}"
+DRY_RUN_PLAN="${NFN_SM120_PARITY_DRY_RUN_PLAN:-0}"
 
 profile_args=()
 case "${PROFILE_DIR_RAW,,}" in
@@ -36,6 +37,13 @@ case "${PROFILE_DIR_RAW,,}" in
         export NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS="${NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS:-80000}"
         ;;
     esac
+    ;;
+esac
+
+paired_args=()
+case "${DRY_RUN_PLAN,,}" in
+  "1"|"true"|"yes"|"on")
+    paired_args+=(--dry-run-plan)
     ;;
 esac
 
@@ -115,4 +123,5 @@ python tools/paired_kernel_speed.py \
   --max-selected-gpu-utilization-pct "$MAX_GPU_UTILIZATION" \
   --command-timeout-seconds "$COMMAND_TIMEOUT_SECONDS" \
   "${profile_args[@]}" \
+  "${paired_args[@]}" \
   --json-out "$JSON_OUT"

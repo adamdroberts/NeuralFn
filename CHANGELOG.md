@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `--dry-run-plan` to `tools/paired_kernel_speed.py` and exposed it
+  through `NFN_SM120_PARITY_DRY_RUN_PLAN=1` /
+  `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` in the SM120 parity and native-candidate
+  wrappers. The plan mode resolves the baseline/candidate argv, command-specific
+  environment, CUDA device selection, profile settings, and alternating sample
+  order without launching GPU jobs, making same-script benchmark setup
+  auditable before long RTX 5090 runs. Verification: focused Tile-CUDA example
+  tests and shell syntax checks.
+
 - Added a command resolver to the generic `neuralfn._native_train` C++ binding
   and exported `resolve_native_train_binding_command(config)` from the Python
   SDK. SDK callers can now inspect the exact compiled argv that the binding

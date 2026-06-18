@@ -155,6 +155,14 @@ def parse_args() -> argparse.Namespace:
         help="Record failed commands instead of stopping at the first nonzero exit.",
     )
     parser.add_argument(
+        "--dry-run-plan",
+        action="store_true",
+        help=(
+            "Resolve commands, environment, profile settings, and CUDA device selection "
+            "without launching warmup or measured commands."
+        ),
+    )
+    parser.add_argument(
         "--command-timeout-seconds",
         type=float,
         default=0.0,
@@ -967,13 +975,6 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     cuda_visible_devices = str(cuda_device_selection.get("resolved", "") or "").strip()
     cuda_device_max_connections = str(args.cuda_device_max_connections or "").strip()
     max_selected_gpu_utilization_pct = float(args.max_selected_gpu_utilization_pct)
-    enforce_selected_gpu_guards(
-        gpu_before,
-        cuda_visible_devices,
-        require_idle=bool(args.require_idle_selected_gpu),
-        max_utilization_pct=max_selected_gpu_utilization_pct,
-        phase="initial snapshot",
-    )
     run_env = None
     if cuda_visible_devices or cuda_device_max_connections:
         run_env = dict(os.environ)
@@ -981,6 +982,52 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             run_env["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
         if cuda_device_max_connections:
             run_env["CUDA_DEVICE_MAX_CONNECTIONS"] = cuda_device_max_connections
+
+    if bool(args.dry_run_plan):
+        order_plan = [
+            {
+                "sample": sample_index + 1,
+                "order": [command.name for command in ordered_pair(sample_index, baseline, candidate)],
+            }
+            for sample_index in range(samples)
+        ]
+        return {
+            "measurement": "paired_interleaved_commands",
+            "dry_run_plan": True,
+            "samples": samples,
+            "warmup": warmup,
+            "cuda_visible_devices_requested": cuda_device_selection.get("requested", ""),
+            "cuda_visible_devices": cuda_visible_devices,
+            "cuda_device_selection": cuda_device_selection,
+            "cuda_device_max_connections": cuda_device_max_connections,
+            "require_idle_selected_gpu": bool(args.require_idle_selected_gpu),
+            "max_selected_gpu_utilization_pct": max_selected_gpu_utilization_pct,
+            "command_timeout_seconds": timeout_seconds,
+            "gpu_before": gpu_before,
+            "baseline_command": baseline.argv,
+            "candidate_command": candidate.argv,
+            "baseline_env": baseline.env_overrides,
+            "candidate_env": candidate.env_overrides,
+            "append_native_profile_json_dir": str(profile_json_dir) if profile_json_dir is not None else "",
+            "native_stage_timing": bool(args.native_stage_timing),
+            "sample_order_plan": order_plan,
+            "run_env_overrides": {
+                key: value
+                for key, value in (
+                    ("CUDA_VISIBLE_DEVICES", cuda_visible_devices),
+                    ("CUDA_DEVICE_MAX_CONNECTIONS", cuda_device_max_connections),
+                )
+                if value
+            },
+        }
+
+    enforce_selected_gpu_guards(
+        gpu_before,
+        cuda_visible_devices,
+        require_idle=bool(args.require_idle_selected_gpu),
+        max_utilization_pct=max_selected_gpu_utilization_pct,
+        phase="initial snapshot",
+    )
 
     for warmup_index in range(warmup):
         enforce_selected_gpu_guards(
@@ -1111,6 +1158,26 @@ def print_text(payload: dict[str, object]) -> None:
             f"resolved={cuda_device_selection.get('resolved', '')} "
             f"mode={cuda_device_selection.get('mode', '')}"
         )
+    if payload.get("dry_run_plan") is True:
+        print("  dry_run_plan: true")
+        print(
+            "  baseline: "
+            f"{shlex.join([str(item) for item in payload.get('baseline_command', [])])}"
+        )
+        print(
+            "  candidate: "
+            f"{shlex.join([str(item) for item in payload.get('candidate_command', [])])}"
+        )
+        order_plan = payload.get("sample_order_plan")
+        if isinstance(order_plan, list):
+            rendered = [
+                "/".join(str(item) for item in row.get("order", []))
+                for row in order_plan
+                if isinstance(row, dict)
+            ]
+            if rendered:
+                print(f"  sample_order_plan: {', '.join(rendered)}")
+        return
     print(f"  require_idle_selected_gpu: {payload.get('require_idle_selected_gpu', False)}")
     print(
         "  max_selected_gpu_utilization_pct: "
