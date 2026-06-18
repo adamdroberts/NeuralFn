@@ -125,6 +125,13 @@ benchmarks against the older always-accumulate path. Runtime JSON reports
 `dweight_first_microbatch_beta_zero_enabled`,
 `dweight_first_microbatch_beta_strategy`, `lm_head_dweight_beta_zero_scope`, and
 `first-write-then-accumulate` strategy suffixes for the active dWeight routes.
+Dense GPT native training also folds train-loss collection into the LM-head
+backward recompute pass. Validation, evo candidate scoring, and other
+forward-only checks still use the normal forward LM-head loss path, but training
+microbatches no longer run a separate LM-head logits pass just to print train
+loss. The backward path accumulates the same CE partials before mutating the
+row-chunked logits into dLogits, keeping real token data inside the compiled
+CUDA Tile/C++ loop instead of routing it through graph-editor nodes.
 For cuBLASLt BGRADB dWeight plus bias routes, the default writes the epilogue
 bias gradient into Tile-owned
 scratch and accumulates it into `grad_bias`. Set

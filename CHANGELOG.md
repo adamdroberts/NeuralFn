@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native training now folds train-loss collection into the LM-head
+  backward recompute pass. Training microbatches call the transformer forward
+  path without a separate LM-head loss pass, then accumulate CE loss from the
+  row-chunked logits already recomputed for CE backward before those logits are
+  overwritten with dLogits. Validation and evo candidate scoring still use the
+  forward-only LM-head loss path. This removes duplicate train-only LM-head
+  logits work without sending real token data through graph-editor nodes or
+  reintroducing Torch. Verification: rebuilt `build/nfn_gpt_native_train` and
+  ran the focused native GPT test slice
+  `python -m pytest tests/test_native_gpt2.py -q -k 'native_gpt2_cpp_cli_builds_and_uses_sm120_defaults or tied_lm_head_bf16 or transformer_lm or native_train_tile_ops_builds_torch_free_c_abi'`
+  (`3 passed, 1 skipped`). A sandboxed TinyStories GPU smoke produced the
+  expected native preflight failure because `cudaDriverGetVersion` returned
+  `0`. The GPU-visible SM120 parity harness, which keeps train-loss recording
+  disabled for timing-only parity, measured NeuralFn at `2557.370 ms/step`
+  versus llm.kittens at `2466.293 ms/step` (`1.036929x` train-loop wall time),
+  so the canonical throughput gap remains open.
+
 - Added a default-off TK dInput diagnostic for BF16-gradient/BF16-weight Linear
   shapes. Set `NFN_NATIVE_LINEAR_TK_DINPUT=1` or
   `NFN_TILE_CUDA_LINEAR_TK_DINPUT=1` to route eligible dInput shapes through

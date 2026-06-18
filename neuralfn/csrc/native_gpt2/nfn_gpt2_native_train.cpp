@@ -13609,6 +13609,76 @@ int run_transformer_lm_training_json(
         stage_end(stage_event, "token_upload");
     };
 
+    auto accumulate_lm_head_loss_from_current_logits = [&](
+        const std::string& label,
+        std::int64_t row_count,
+        const std::int64_t* target_chunk,
+        const std::uint16_t* target_chunk_u16,
+        bool use_bf16_logits) {
+        if (use_bf16_logits) {
+            if (lm_head_public_vocab_ce_enabled) {
+                if (direct_u16_token_ids_enabled) {
+                    run(ce_partials_strided_bf16_bits_u16_targets(
+                            lm_head_bf16_logits,
+                            target_chunk_u16,
+                            loss_partials,
+                            row_count,
+                            kVocab,
+                            kPaddedVocab,
+                            nullptr),
+                        label + ".ce.forward.public_vocab_strided_bf16_bits_u16_targets");
+                } else {
+                    run(ce_partials_strided_bf16_bits(
+                            lm_head_bf16_logits,
+                            target_chunk,
+                            loss_partials,
+                            row_count,
+                            kVocab,
+                            kPaddedVocab,
+                            nullptr),
+                        label + ".ce.forward.public_vocab_strided_bf16_bits");
+                }
+            } else {
+                run(ce_partials_bf16_bits(
+                        lm_head_bf16_logits,
+                        target_chunk,
+                        loss_partials,
+                        row_count,
+                        kPaddedVocab,
+                        nullptr),
+                    label + ".ce.forward.padded_vocab_bf16_bits");
+            }
+        } else if (lm_head_public_vocab_ce_enabled) {
+            run(ce_partials_strided(
+                    logits,
+                    target_chunk,
+                    loss_partials,
+                    row_count,
+                    kVocab,
+                    kPaddedVocab,
+                    nullptr),
+                label + ".ce.forward.public_vocab_strided");
+        } else {
+            run(ce_partials(logits, target_chunk, loss_partials, row_count, kPaddedVocab, nullptr),
+                label + ".ce.forward.padded_vocab");
+        }
+        if (error.empty()) {
+            const std::int64_t chunk_loss_partials = partial_count_for(row_count);
+            const float* current = loss_partials;
+            std::int64_t current_count = chunk_loss_partials;
+            float* next = loss_reduce_a;
+            while (current_count > 1 && error.empty()) {
+                run(sum_partials(current, next, current_count, nullptr), label + ".loss.sum_partials");
+                current = next;
+                current_count = partial_count_for(current_count);
+                next = (next == loss_reduce_a) ? loss_reduce_b : loss_reduce_a;
+            }
+            if (error.empty()) {
+                run(gradient_accumulate(loss_total, current, 1, 1.0f, nullptr), label + ".loss.accumulate");
+            }
+        }
+    };
+
     auto lm_head_forward_loss = [&](const std::string& label) -> double {
         const std::int64_t stage_event = stage_begin(label + ".lm_head_loss");
         fill_buffer(loss_total, 1, 0.0f, label + ".loss_total.zero");
@@ -13649,70 +13719,12 @@ int run_transformer_lm_training_json(
                     label + ".lm_head.forward");
             }
             if (error.empty()) {
-                if (lm_head_bf16_loss_enabled) {
-                    if (lm_head_public_vocab_ce_enabled) {
-                        if (direct_u16_token_ids_enabled) {
-                            run(ce_partials_strided_bf16_bits_u16_targets(
-                                    lm_head_bf16_logits,
-                                    target_chunk_u16,
-                                    loss_partials,
-                                    row_count,
-                                    kVocab,
-                                    kPaddedVocab,
-                                    nullptr),
-                                label + ".ce.forward.public_vocab_strided_bf16_bits_u16_targets");
-                        } else {
-                            run(ce_partials_strided_bf16_bits(
-                                    lm_head_bf16_logits,
-                                    target_chunk,
-                                    loss_partials,
-                                    row_count,
-                                    kVocab,
-                                    kPaddedVocab,
-                                    nullptr),
-                                label + ".ce.forward.public_vocab_strided_bf16_bits");
-                        }
-                    } else {
-                        run(ce_partials_bf16_bits(
-                                lm_head_bf16_logits,
-                                target_chunk,
-                                loss_partials,
-                                row_count,
-                                kPaddedVocab,
-                                nullptr),
-                            label + ".ce.forward.padded_vocab_bf16_bits");
-                    }
-                } else {
-                    if (lm_head_public_vocab_ce_enabled) {
-                        run(ce_partials_strided(
-                                logits,
-                                target_chunk,
-                                loss_partials,
-                                row_count,
-                                kVocab,
-                                kPaddedVocab,
-                                nullptr),
-                            label + ".ce.forward.public_vocab_strided");
-                    } else {
-                        run(ce_partials(logits, target_chunk, loss_partials, row_count, kPaddedVocab, nullptr),
-                            label + ".ce.forward.padded_vocab");
-                    }
-                }
-            }
-            if (error.empty()) {
-                const std::int64_t chunk_loss_partials = partial_count_for(row_count);
-                const float* current = loss_partials;
-                std::int64_t current_count = chunk_loss_partials;
-                float* next = loss_reduce_a;
-                while (current_count > 1 && error.empty()) {
-                    run(sum_partials(current, next, current_count, nullptr), label + ".loss.sum_partials");
-                    current = next;
-                    current_count = partial_count_for(current_count);
-                    next = (next == loss_reduce_a) ? loss_reduce_b : loss_reduce_a;
-                }
-                if (error.empty()) {
-                    run(gradient_accumulate(loss_total, current, 1, 1.0f, nullptr), label + ".loss.accumulate");
-                }
+                accumulate_lm_head_loss_from_current_logits(
+                    label,
+                    row_count,
+                    target_chunk,
+                    target_chunk_u16,
+                    lm_head_bf16_loss_enabled);
             }
         }
         if (error.empty()) {
@@ -13726,8 +13738,11 @@ int run_transformer_lm_training_json(
         return error.empty() ? static_cast<double>(host_loss[0]) : 0.0;
     };
 
-    auto lm_head_backward = [&](float accumulation_scale, bool dweight_accumulate) {
+    auto lm_head_backward = [&](float accumulation_scale, bool dweight_accumulate, bool record_loss) -> double {
         const std::int64_t stage_event = stage_begin("lm_head_backward");
+        if (record_loss) {
+            fill_buffer(loss_total, 1, 0.0f, "lm_head_backward.loss_total.zero");
+        }
         if (lm_head_prepack_bf16_hidden_enabled) {
             run_timed_stage("lm_head_backward.hidden_prepack", [&]() {
                 run(float32_to_bf16_bits(
@@ -13810,6 +13825,18 @@ int run_transformer_lm_training_json(
                         "lm_head.forward.recompute");
                 }
             });
+            if (record_loss) {
+                run_timed_stage("lm_head_backward.loss_accumulate", [&]() {
+                    if (error.empty()) {
+                        accumulate_lm_head_loss_from_current_logits(
+                            "lm_head_backward",
+                            row_count,
+                            target_chunk,
+                            target_chunk_u16,
+                            lm_head_bf16_logits_enabled);
+                    }
+                });
+            }
             run_timed_stage("lm_head_backward.ce", [&]() {
                 if (error.empty()) {
                     if (lm_head_bf16_logits_enabled) {
@@ -13998,7 +14025,19 @@ int run_transformer_lm_training_json(
                 }
             });
         }
+        if (record_loss) {
+            run_timed_stage("lm_head_backward.loss_copy", [&]() {
+                if (error.empty()) {
+                    run(cuda_device_synchronize(), "lm_head_backward.loss.cudaDeviceSynchronize");
+                }
+                if (error.empty()) {
+                    run(cuda_memcpy(host_loss.data(), loss_total, sizeof(float), kCudaMemcpyDeviceToHost),
+                        "lm_head_backward.loss.copy");
+                }
+            });
+        }
         stage_end(stage_event, "lm_head_backward");
+        return error.empty() && record_loss ? static_cast<double>(host_loss[0]) : 0.0;
     };
 
     auto block_input_for = [&](std::size_t block_index) -> const float* {
@@ -15810,8 +15849,9 @@ int run_transformer_lm_training_json(
 
     auto run_backward_microbatch = [&](bool record_train_loss, float accumulation_scale, bool dweight_accumulate) -> double {
         zero_gradients();
-        const double train_loss_sum = forward_loss("train", record_train_loss, true);
-        if (error.empty()) lm_head_backward(accumulation_scale, dweight_accumulate);
+        forward_loss("train", false, true);
+        const double train_loss_sum =
+            error.empty() ? lm_head_backward(accumulation_scale, dweight_accumulate, record_train_loss) : 0.0;
         const std::int64_t final_norm_event = stage_begin("final_norm_backward");
         run_layer_norm_backward_affine_accumulate(lnf_input, grad_lnf, lnf_mean, lnf_rstd, accum_grad_lnf_weight, accum_grad_lnf_bias, "ln_f.backward_affine.accumulate");
         run_layer_norm_backward_input(lnf_input, grad_lnf, lnf_weight, lnf_mean, lnf_rstd, grad_residual2, "ln_f.backward_input");
