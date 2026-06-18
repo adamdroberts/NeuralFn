@@ -37,6 +37,16 @@ Future updates should append new entries here rather than replacing older notes.
   `tools/bench_native_gpt_sm120_candidate.sh` path with idle selected-GPU
   checks and recorded the result in `todo-tile-cuda.md`.
 
+- Added diagnostic coverage for swapping the LM-head row-chunk consumer order
+  with `NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1`, while keeping the
+  default CE -> dHidden -> dWeight order. The candidate runs dWeight before
+  dHidden after CE writes BF16 dlogits, but the dedicated RTX 5090 5-step,
+  3-sample paired benchmark measured `1.001048x` train-loop wall time and
+  `0.998959x` tokens/sec, so it stayed non-default. Runtime JSON now reports
+  `lm_head_dweight_before_dhidden_enabled`. Verification: rebuilt
+  `build/nfn_gpt_native_train`, ran the paired benchmark with selected-GPU idle
+  checks, and updated the native GPT source guard.
+
 - The top-level `nfn train` native dispatcher now normalizes
   `--native-cuda-no-checkpoint` / `--no-checkpoint` and
   `--native-cuda-write-checkpoint` / `--write-checkpoint` before launching the

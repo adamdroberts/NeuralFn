@@ -4370,6 +4370,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "first_lm_head_dweight_chunk" in gpt2_source_text
     assert "row_start == 0 && dweight_first_microbatch_beta_zero_enabled && !dweight_accumulate" in gpt2_source_text
     assert "lm_head_dweight_beta_zero_scope" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN" in gpt2_source_text
+    assert "lm_head_dweight_before_dhidden_enabled" in gpt2_source_text
     assert "lm_head_backward.hidden_prepack" in gpt2_source_text
     assert "launch_linear_bf16_input_float_weight_bf16_output_float32" in source_text
     assert "linear_bf16_input_float_weight_bf16_output_float32_kernel" in kernels_text

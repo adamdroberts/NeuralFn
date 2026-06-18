@@ -103,6 +103,11 @@ kernel-candidate results show whether a route actually changed.
 The native dense-GPT BF16 LM-head CE backward path keeps the forward
 row-chunk order because paired dedicated-RTX-5090 timing showed reverse chunk
 traversal was neutral-to-slower for the current tied LM-head workspace.
+`NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1` is a diagnostic-only
+row-chunk order probe that runs LM-head dWeight before dHidden after CE writes
+dlogits; the dedicated RTX 5090 5-step, 3-sample check measured `1.001048x`
+train-loop wall time and `0.998959x` tokens/sec, so the default remains
+CE -> dHidden -> dWeight.
 The BF16 linear operand cache is limited to stable operands such as weights;
 LM-head dWeight repacks the mutable hidden activation chunks each microbatch so
 gradient accumulation does not reuse stale packed activations.

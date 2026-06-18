@@ -335,6 +335,12 @@ comparisons against the previous always-accumulate path. Runtime JSON reports
 `dweight_first_microbatch_beta_strategy`, `lm_head_dweight_beta_zero_scope`, and
 `first-write-then-accumulate` suffixes in `lm_head_dweight_strategy`,
 `block_backward_qkv_dweight_strategy`, and `block_backward_weight_linear_strategy`.
+Set `NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1` only for paired LM-head
+row-chunk order bisection. It runs LM-head dWeight before dHidden after CE
+writes dlogits, but stayed non-default after the dedicated RTX 5090 5-step,
+3-sample check measured `1.001048x` train-loop wall time and `0.998959x`
+tokens/sec versus the default CE -> dHidden -> dWeight order. Runtime JSON
+reports `lm_head_dweight_before_dhidden_enabled`.
 For cuBLASLt BGRADB dWeight+bias routes, the default writes the epilogue bias
 gradient into Tile-owned scratch
 and accumulates it into `grad_bias`. Runtime JSON reports

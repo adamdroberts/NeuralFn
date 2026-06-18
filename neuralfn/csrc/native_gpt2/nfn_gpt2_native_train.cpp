@@ -10595,6 +10595,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO",
                               "NFN_NATIVE_GPT2_DWEIGHT_FIRST_MICROBATCH_BETA_ZERO"}),
             true);
+    const bool lm_head_dweight_before_dhidden_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN",
+                              "NFN_NATIVE_GPT2_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN"}),
+            false);
     const bool bgrad_first_write_direct_enabled =
         dweight_first_microbatch_beta_zero_enabled &&
         env_flag_enabled_or_default(
@@ -13908,80 +13913,50 @@ int run_transformer_lm_training_json(
                     }
                 }
             });
-            run_timed_stage("lm_head_backward.dhidden", [&]() {
-                if (error.empty()) {
-                    if (lm_head_bf16_logits_enabled) {
-                        if (token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
-                            run(linear_backward_input_bf16_bits_weight_bf16(
-                                    lm_head_bf16_logits,
-                                    token_weight_bf16,
-                                    grad_hidden_chunk,
-                                    row_count,
-                                    kDim,
-                                    kPaddedVocab,
-                                    nullptr),
-                                "lm_head.backward_input.bf16_bits_weight_bf16_shadow");
-                        } else {
-                            run(linear_backward_input_bf16_bits(
-                                    lm_head_bf16_logits,
-                                    token_weight,
-                                    grad_hidden_chunk,
-                                    row_count,
-                                    kDim,
-                                    kPaddedVocab,
-                                    nullptr),
-                                "lm_head.backward_input.bf16_bits");
-                        }
-                    } else {
-                        run(linear_backward_input(
-                                logits, token_weight, grad_hidden_chunk, row_count, kDim, kPaddedVocab, nullptr),
-                            "lm_head.backward_input");
-                    }
-                }
-            });
-            run_timed_stage("lm_head_backward.dweight", [&]() {
-                if (error.empty()) {
-                    if (lm_head_bf16_logits_enabled) {
-                        if (lm_head_prepack_bf16_hidden_enabled) {
-                            auto* dweight_fn = dweight_first_microbatch_beta_zero_enabled
-                                ? linear_backward_weight_accumulate_bf16_bits_bf16_bits_beta
-                                : nullptr;
-                            if (dweight_fn != nullptr) {
-                                run(dweight_fn(
-                                        hidden_bf16_chunk,
+            auto run_lm_head_dhidden = [&]() {
+                run_timed_stage("lm_head_backward.dhidden", [&]() {
+                    if (error.empty()) {
+                        if (lm_head_bf16_logits_enabled) {
+                            if (token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
+                                run(linear_backward_input_bf16_bits_weight_bf16(
                                         lm_head_bf16_logits,
-                                        accum_grad_token_weight,
+                                        token_weight_bf16,
+                                        grad_hidden_chunk,
                                         row_count,
                                         kDim,
                                         kPaddedVocab,
-                                        lm_head_dweight_beta,
                                         nullptr),
-                                    "lm_head.backward_weight.beta.prepacked_bf16_bits_bf16_bits");
+                                    "lm_head.backward_input.bf16_bits_weight_bf16_shadow");
                             } else {
-                                run(linear_backward_weight_accumulate_bf16_bits_bf16_bits(
-                                    hidden_bf16_chunk,
-                                    lm_head_bf16_logits,
-                                    accum_grad_token_weight,
-                                    row_count,
-                                    kDim,
-                                    kPaddedVocab,
-                                    nullptr),
-                                    "lm_head.backward_weight.accumulate.prepacked_bf16_bits_bf16_bits");
+                                run(linear_backward_input_bf16_bits(
+                                        lm_head_bf16_logits,
+                                        token_weight,
+                                        grad_hidden_chunk,
+                                        row_count,
+                                        kDim,
+                                        kPaddedVocab,
+                                        nullptr),
+                                    "lm_head.backward_input.bf16_bits");
                             }
-                        } else if (lm_head_bf16_dweight_enabled) {
-                            run(float32_to_bf16_bits(
-                                    hidden_chunk,
-                                    lm_head_bf16_hidden,
-                                    row_count * kDim,
-                                    nullptr),
-                                "lm_head.hidden.to_bf16_bits");
-                            if (error.empty()) {
+                        } else {
+                            run(linear_backward_input(
+                                    logits, token_weight, grad_hidden_chunk, row_count, kDim, kPaddedVocab, nullptr),
+                                "lm_head.backward_input");
+                        }
+                    }
+                });
+            };
+            auto run_lm_head_dweight = [&]() {
+                run_timed_stage("lm_head_backward.dweight", [&]() {
+                    if (error.empty()) {
+                        if (lm_head_bf16_logits_enabled) {
+                            if (lm_head_prepack_bf16_hidden_enabled) {
                                 auto* dweight_fn = dweight_first_microbatch_beta_zero_enabled
                                     ? linear_backward_weight_accumulate_bf16_bits_bf16_bits_beta
                                     : nullptr;
                                 if (dweight_fn != nullptr) {
                                     run(dweight_fn(
-                                            lm_head_bf16_hidden,
+                                            hidden_bf16_chunk,
                                             lm_head_bf16_logits,
                                             accum_grad_token_weight,
                                             row_count,
@@ -13989,43 +13964,84 @@ int run_transformer_lm_training_json(
                                             kPaddedVocab,
                                             lm_head_dweight_beta,
                                             nullptr),
-                                        "lm_head.backward_weight.beta.bf16_bits_bf16_bits");
+                                        "lm_head.backward_weight.beta.prepacked_bf16_bits_bf16_bits");
                                 } else {
                                     run(linear_backward_weight_accumulate_bf16_bits_bf16_bits(
-                                            lm_head_bf16_hidden,
-                                            lm_head_bf16_logits,
-                                            accum_grad_token_weight,
-                                            row_count,
-                                            kDim,
-                                            kPaddedVocab,
-                                            nullptr),
-                                        "lm_head.backward_weight.accumulate.bf16_bits_bf16_bits");
+                                        hidden_bf16_chunk,
+                                        lm_head_bf16_logits,
+                                        accum_grad_token_weight,
+                                        row_count,
+                                        kDim,
+                                        kPaddedVocab,
+                                        nullptr),
+                                        "lm_head.backward_weight.accumulate.prepacked_bf16_bits_bf16_bits");
                                 }
+                            } else if (lm_head_bf16_dweight_enabled) {
+                                run(float32_to_bf16_bits(
+                                        hidden_chunk,
+                                        lm_head_bf16_hidden,
+                                        row_count * kDim,
+                                        nullptr),
+                                    "lm_head.hidden.to_bf16_bits");
+                                if (error.empty()) {
+                                    auto* dweight_fn = dweight_first_microbatch_beta_zero_enabled
+                                        ? linear_backward_weight_accumulate_bf16_bits_bf16_bits_beta
+                                        : nullptr;
+                                    if (dweight_fn != nullptr) {
+                                        run(dweight_fn(
+                                                lm_head_bf16_hidden,
+                                                lm_head_bf16_logits,
+                                                accum_grad_token_weight,
+                                                row_count,
+                                                kDim,
+                                                kPaddedVocab,
+                                                lm_head_dweight_beta,
+                                                nullptr),
+                                            "lm_head.backward_weight.beta.bf16_bits_bf16_bits");
+                                    } else {
+                                        run(linear_backward_weight_accumulate_bf16_bits_bf16_bits(
+                                                lm_head_bf16_hidden,
+                                                lm_head_bf16_logits,
+                                                accum_grad_token_weight,
+                                                row_count,
+                                                kDim,
+                                                kPaddedVocab,
+                                                nullptr),
+                                            "lm_head.backward_weight.accumulate.bf16_bits_bf16_bits");
+                                    }
+                                }
+                            } else {
+                                run(linear_backward_weight_accumulate_float32_bf16_bits(
+                                        hidden_chunk,
+                                        lm_head_bf16_logits,
+                                        accum_grad_token_weight,
+                                        row_count,
+                                        kDim,
+                                        kPaddedVocab,
+                                        nullptr),
+                                    "lm_head.backward_weight.accumulate.bf16_bits");
                             }
                         } else {
-                            run(linear_backward_weight_accumulate_float32_bf16_bits(
+                            run(linear_backward_weight_accumulate(
                                     hidden_chunk,
-                                    lm_head_bf16_logits,
+                                    logits,
                                     accum_grad_token_weight,
                                     row_count,
                                     kDim,
                                     kPaddedVocab,
                                     nullptr),
-                                "lm_head.backward_weight.accumulate.bf16_bits");
+                                "lm_head.backward_weight.accumulate");
                         }
-                    } else {
-                        run(linear_backward_weight_accumulate(
-                                hidden_chunk,
-                                logits,
-                                accum_grad_token_weight,
-                                row_count,
-                                kDim,
-                                kPaddedVocab,
-                                nullptr),
-                            "lm_head.backward_weight.accumulate");
                     }
-                }
-            });
+                });
+            };
+            if (lm_head_dweight_before_dhidden_enabled) {
+                run_lm_head_dweight();
+                run_lm_head_dhidden();
+            } else {
+                run_lm_head_dhidden();
+                run_lm_head_dweight();
+            }
         }
         if (record_loss) {
             run_timed_stage("lm_head_backward.loss_copy", [&]() {
@@ -17033,6 +17049,8 @@ int run_transformer_lm_training_json(
                 ? "first-gradient-accumulation-microbatch-first-row-chunk-only"
                 : "disabled-all-lm-head-row-chunks-use-beta-one")
         << "\",\n"
+        << "  \"lm_head_dweight_before_dhidden_enabled\": "
+        << (lm_head_dweight_before_dhidden_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_backward_strategy\": \""
         << (lm_head_public_vocab_ce_enabled
                 ? (lm_head_bf16_logits_enabled
