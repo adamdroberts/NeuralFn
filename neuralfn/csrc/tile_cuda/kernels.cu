@@ -8339,124 +8339,97 @@ __tile_global__ void linear_backward_weight_float32_kernel(
   ct::store_masked(grad_weight + idx, acc, mask);
 }
 
-__tile_global__ void linear_backward_weight_chunked_atomic_float32_kernel(
+template <bool X_BF16, bool GRAD_BF16>
+__global__ void linear_backward_weight_tiled_float32_kernel(
     const float* __restrict__ x,
-    const float* __restrict__ grad_out,
-    float* __restrict__ grad_weight,
-    std::int64_t n,
-    std::int64_t rows,
-    std::int64_t input_dim,
-    std::int64_t output_dim,
-    std::int64_t row_chunk_size,
-    std::int64_t row_chunks) {
-  namespace ct = cuda::tiles;
-  using namespace ct::literals;
-
-  x = ct::assume_aligned(x, 16_ic);
-  grad_out = ct::assume_aligned(grad_out, 16_ic);
-  grad_weight = ct::assume_aligned(grad_weight, 16_ic);
-
-  const std::int64_t weight_block = static_cast<std::int64_t>(ct::bid().x);
-  const std::int64_t row_chunk = static_cast<std::int64_t>(ct::bid().y);
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
-  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(weight_block * kTileSize);
-  auto mask = idx < ct::full<IndexTile>(n);
-  auto input_dim_tile = ct::full<IndexTile>(input_dim);
-  auto output_dim_tile = ct::full<IndexTile>(output_dim);
-  auto out_col = idx / input_dim_tile;
-  auto in_col = idx % input_dim_tile;
-  const std::int64_t row_start = row_chunk * row_chunk_size;
-  const std::int64_t row_end = (row_start + row_chunk_size < rows) ? row_start + row_chunk_size : rows;
-  auto acc = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
-  for (std::int64_t row_idx = row_start; row_idx < row_end; ++row_idx) {
-    auto x_value = ct::load_masked(x + ct::full<IndexTile>(row_idx) * input_dim_tile + in_col, mask);
-    auto grad_value = ct::load_masked(grad_out + ct::full<IndexTile>(row_idx) * output_dim_tile + out_col, mask);
-    acc = acc + grad_value * x_value;
-  }
-  auto active = row_chunk < row_chunks ? mask : ct::full<decltype(mask)>(false);
-  ct::atomic_add_masked<ct::memory_order::relaxed>(grad_weight + idx, acc, active);
-}
-
-__global__ void linear_backward_weight_chunked_atomic_bf16_bits_float32_kernel(
     const std::uint16_t* __restrict__ x_bf16_bits,
     const float* __restrict__ grad_out,
-    float* __restrict__ grad_weight,
-    std::int64_t n,
-    std::int64_t rows,
-    std::int64_t input_dim,
-    std::int64_t output_dim,
-    std::int64_t row_chunk_size) {
-  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (idx >= n) {
-    return;
-  }
-  const std::int64_t row_chunk = static_cast<std::int64_t>(blockIdx.y);
-  const std::int64_t row_start = row_chunk * row_chunk_size;
-  const std::int64_t row_end = (row_start + row_chunk_size < rows) ? row_start + row_chunk_size : rows;
-  const std::int64_t out_col = idx / input_dim;
-  const std::int64_t in_col = idx % input_dim;
-  float acc = 0.0f;
-  for (std::int64_t row_idx = row_start; row_idx < row_end; ++row_idx) {
-    const std::int64_t x_idx = row_idx * input_dim + in_col;
-    const unsigned int bits = static_cast<unsigned int>(x_bf16_bits[x_idx]) << 16;
-    const float x_value = __uint_as_float(bits);
-    const float grad_value = grad_out[row_idx * output_dim + out_col];
-    acc += grad_value * x_value;
-  }
-  atomicAdd(grad_weight + idx, acc);
-}
-
-__global__ void linear_backward_weight_chunked_atomic_float32_bf16_bits_kernel(
-    const float* __restrict__ x,
     const std::uint16_t* __restrict__ grad_out_bf16_bits,
     float* __restrict__ grad_weight,
-    std::int64_t n,
     std::int64_t rows,
     std::int64_t input_dim,
     std::int64_t output_dim,
-    std::int64_t row_chunk_size) {
-  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (idx >= n) {
-    return;
-  }
-  const std::int64_t row_chunk = static_cast<std::int64_t>(blockIdx.y);
-  const std::int64_t row_start = row_chunk * row_chunk_size;
-  const std::int64_t row_end = (row_start + row_chunk_size < rows) ? row_start + row_chunk_size : rows;
-  const std::int64_t out_col = idx / input_dim;
-  const std::int64_t in_col = idx % input_dim;
+    bool accumulate) {
+  constexpr int kTile = 16;
+  __shared__ float x_tile[kTile][kTile];
+  __shared__ float grad_tile[kTile][kTile];
+
+  const int in_col = static_cast<int>(blockIdx.x) * kTile + threadIdx.x;
+  const int out_col = static_cast<int>(blockIdx.y) * kTile + threadIdx.y;
   float acc = 0.0f;
-  for (std::int64_t row_idx = row_start; row_idx < row_end; ++row_idx) {
-    const float grad_value = bf16_bits_to_f32_device(grad_out_bf16_bits[row_idx * output_dim + out_col]);
-    acc += x[row_idx * input_dim + in_col] * grad_value;
+
+  for (std::int64_t row_base = 0; row_base < rows; row_base += kTile) {
+    const std::int64_t row = row_base + threadIdx.y;
+    if (row < rows && in_col < input_dim) {
+      const std::int64_t x_idx = row * input_dim + in_col;
+      if constexpr (X_BF16) {
+        x_tile[threadIdx.y][threadIdx.x] = bf16_bits_to_f32_device(x_bf16_bits[x_idx]);
+      } else {
+        x_tile[threadIdx.y][threadIdx.x] = x[x_idx];
+      }
+    } else {
+      x_tile[threadIdx.y][threadIdx.x] = 0.0f;
+    }
+
+    const int grad_out_col = static_cast<int>(blockIdx.y) * kTile + threadIdx.x;
+    if (row < rows && grad_out_col < output_dim) {
+      const std::int64_t grad_idx = row * output_dim + grad_out_col;
+      if constexpr (GRAD_BF16) {
+        grad_tile[threadIdx.y][threadIdx.x] = bf16_bits_to_f32_device(grad_out_bf16_bits[grad_idx]);
+      } else {
+        grad_tile[threadIdx.y][threadIdx.x] = grad_out[grad_idx];
+      }
+    } else {
+      grad_tile[threadIdx.y][threadIdx.x] = 0.0f;
+    }
+
+    __syncthreads();
+    if (in_col < input_dim && out_col < output_dim) {
+      for (int k = 0; k < kTile; ++k) {
+        acc += x_tile[k][threadIdx.x] * grad_tile[k][threadIdx.y];
+      }
+    }
+    __syncthreads();
   }
-  atomicAdd(grad_weight + idx, acc);
+
+  if (in_col < input_dim && out_col < output_dim) {
+    const std::int64_t weight_idx = static_cast<std::int64_t>(out_col) * input_dim + in_col;
+    grad_weight[weight_idx] = accumulate ? grad_weight[weight_idx] + acc : acc;
+  }
 }
 
-__global__ void linear_backward_weight_chunked_atomic_bf16_bits_bf16_bits_float32_kernel(
-    const std::uint16_t* __restrict__ x_bf16_bits,
-    const std::uint16_t* __restrict__ grad_out_bf16_bits,
-    float* __restrict__ grad_weight,
-    std::int64_t n,
+void launch_linear_backward_weight_tiled_float32_fallback(
+    const float* x,
+    const std::uint16_t* x_bf16_bits,
+    const float* grad_out,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
     std::int64_t rows,
     std::int64_t input_dim,
     std::int64_t output_dim,
-    std::int64_t row_chunk_size) {
-  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (idx >= n) {
-    return;
+    bool x_bf16,
+    bool grad_bf16,
+    bool accumulate,
+    cudaStream_t stream) {
+  constexpr int kTile = 16;
+  const dim3 block(kTile, kTile, 1);
+  const dim3 grid(
+      static_cast<unsigned int>((input_dim + kTile - 1) / kTile),
+      static_cast<unsigned int>((output_dim + kTile - 1) / kTile),
+      1);
+  if (x_bf16 && grad_bf16) {
+    linear_backward_weight_tiled_float32_kernel<true, true><<<grid, block, 0, stream>>>(
+        nullptr, x_bf16_bits, nullptr, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, accumulate);
+  } else if (x_bf16) {
+    linear_backward_weight_tiled_float32_kernel<true, false><<<grid, block, 0, stream>>>(
+        nullptr, x_bf16_bits, grad_out, nullptr, grad_weight, rows, input_dim, output_dim, accumulate);
+  } else if (grad_bf16) {
+    linear_backward_weight_tiled_float32_kernel<false, true><<<grid, block, 0, stream>>>(
+        x, nullptr, nullptr, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, accumulate);
+  } else {
+    linear_backward_weight_tiled_float32_kernel<false, false><<<grid, block, 0, stream>>>(
+        x, nullptr, grad_out, nullptr, grad_weight, rows, input_dim, output_dim, accumulate);
   }
-  const std::int64_t row_chunk = static_cast<std::int64_t>(blockIdx.y);
-  const std::int64_t row_start = row_chunk * row_chunk_size;
-  const std::int64_t row_end = (row_start + row_chunk_size < rows) ? row_start + row_chunk_size : rows;
-  const std::int64_t out_col = idx / input_dim;
-  const std::int64_t in_col = idx % input_dim;
-  float acc = 0.0f;
-  for (std::int64_t row_idx = row_start; row_idx < row_end; ++row_idx) {
-    const float x_value = bf16_bits_to_f32_device(x_bf16_bits[row_idx * input_dim + in_col]);
-    const float grad_value = bf16_bits_to_f32_device(grad_out_bf16_bits[row_idx * output_dim + out_col]);
-    acc += x_value * grad_value;
-  }
-  atomicAdd(grad_weight + idx, acc);
 }
 
 __global__ void linear_backward_weight_accumulate_bf16_bits_bf16_bits_bf16_bits_kernel(
@@ -14180,12 +14153,8 @@ void launch_linear_backward_weight_float32(
         x, grad_out, grad_weight, n, rows, input_dim, output_dim);
     return;
   }
-  constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
-  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
-  fill_float32_kernel<<<blocks, 1, 0, stream>>>(grad_weight, n, 0.0f);
-  dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
-  linear_backward_weight_chunked_atomic_float32_kernel<<<grid, 1, 0, stream>>>(
-      x, grad_out, grad_weight, n, rows, input_dim, output_dim, kRowChunkSize, row_chunks);
+  launch_linear_backward_weight_tiled_float32_fallback(
+      x, nullptr, grad_out, nullptr, grad_weight, rows, input_dim, output_dim, false, false, false, stream);
 }
 
 void launch_linear_backward_weight_accumulate_float32(
@@ -14202,12 +14171,9 @@ void launch_linear_backward_weight_accumulate_float32(
     return;
   }
 #endif
-  constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
-  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
-  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
-  dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
-  linear_backward_weight_chunked_atomic_float32_kernel<<<grid, 1, 0, stream>>>(
-      x, grad_out, grad_weight, n, rows, input_dim, output_dim, kRowChunkSize, row_chunks);
+  (void)n;
+  launch_linear_backward_weight_tiled_float32_fallback(
+      x, nullptr, grad_out, nullptr, grad_weight, rows, input_dim, output_dim, false, false, true, stream);
 }
 
 void launch_linear_backward_weight_accumulate_bf16_float32(
@@ -14275,14 +14241,8 @@ void launch_linear_backward_weight_accumulate_bf16_bits_float32(
     return;
   }
 #endif
-  constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
-  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
-  const std::int64_t n = output_dim * input_dim;
-  constexpr int threads = 256;
-  const int blocks = static_cast<int>((n + threads - 1) / threads);
-  dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
-  linear_backward_weight_chunked_atomic_bf16_bits_float32_kernel<<<grid, threads, 0, stream>>>(
-      x_bf16_bits, grad_out, grad_weight, n, rows, input_dim, output_dim, kRowChunkSize);
+  launch_linear_backward_weight_tiled_float32_fallback(
+      nullptr, x_bf16_bits, grad_out, nullptr, grad_weight, rows, input_dim, output_dim, true, false, true, stream);
 }
 
 void
@@ -14487,14 +14447,11 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_b
     }
   }
 #endif
+  launch_linear_backward_weight_tiled_float32_fallback(
+      nullptr, x_bf16_bits, nullptr, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, true, true, beta != 0.0f, stream);
   constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
   const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
-  const std::int64_t n = output_dim * input_dim;
   constexpr int threads = 256;
-  const int weight_blocks = static_cast<int>((n + threads - 1) / threads);
-  dim3 weight_grid(static_cast<unsigned int>(weight_blocks), static_cast<unsigned int>(row_chunks), 1);
-  linear_backward_weight_chunked_atomic_bf16_bits_bf16_bits_float32_kernel<<<weight_grid, threads, 0, stream>>>(
-      x_bf16_bits, grad_out_bf16_bits, grad_weight, n, rows, input_dim, output_dim, kRowChunkSize);
   const int bias_blocks = static_cast<int>((output_dim + threads - 1) / threads);
   dim3 bias_grid(static_cast<unsigned int>(bias_blocks), static_cast<unsigned int>(row_chunks), 1);
   linear_backward_bias_chunked_atomic_bf16_bits_float32_kernel<<<bias_grid, threads, 0, stream>>>(
@@ -14586,14 +14543,8 @@ void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
     return;
   }
 #endif
-  constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
-  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
-  const std::int64_t n = output_dim * input_dim;
-  constexpr int threads = 256;
-  const int blocks = static_cast<int>((n + threads - 1) / threads);
-  dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
-  linear_backward_weight_chunked_atomic_bf16_bits_bf16_bits_float32_kernel<<<grid, threads, 0, stream>>>(
-      x_bf16_bits, grad_out_bf16_bits, grad_weight, n, rows, input_dim, output_dim, kRowChunkSize);
+  launch_linear_backward_weight_tiled_float32_fallback(
+      nullptr, x_bf16_bits, nullptr, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, true, true, beta != 0.0f, stream);
 }
 
 void launch_linear_backward_weight_accumulate_float32_bf16_bits(
@@ -14628,14 +14579,8 @@ void launch_linear_backward_weight_accumulate_float32_bf16_bits(
     return;
   }
 #endif
-  constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
-  const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
-  const std::int64_t n = output_dim * input_dim;
-  constexpr int threads = 256;
-  const int blocks = static_cast<int>((n + threads - 1) / threads);
-  dim3 grid(static_cast<unsigned int>(blocks), static_cast<unsigned int>(row_chunks), 1);
-  linear_backward_weight_chunked_atomic_float32_bf16_bits_kernel<<<grid, threads, 0, stream>>>(
-      x, grad_out_bf16_bits, grad_weight, n, rows, input_dim, output_dim, kRowChunkSize);
+  launch_linear_backward_weight_tiled_float32_fallback(
+      x, nullptr, nullptr, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, false, true, true, stream);
 }
 
 void launch_linear_backward_weight_bias_accumulate_float32_bf16_bits(
@@ -14696,8 +14641,8 @@ void launch_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta(
     }
   }
 #endif
-  launch_linear_backward_weight_accumulate_float32_bf16_bits(
-      x, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, stream);
+  launch_linear_backward_weight_tiled_float32_fallback(
+      x, nullptr, nullptr, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, false, true, beta != 0.0f, stream);
   constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
   const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
   constexpr int threads = 256;

@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Replaced the no-cuBLAS large-row linear dWeight fallback with a shared-memory
+  2D tiled CUDA kernel for float32-output dWeight accumulation across float32
+  and BF16 activation/gradient combinations. The normal native GPT workstation
+  build still routes through cuBLAS/cuBLASLt first; this closes the fallback
+  path that previously used row-chunked atomic dWeight reductions when the
+  trainer cuBLAS path was unavailable. The fallback beta overload now honors
+  `beta=0` for first-write dWeight semantics before bias accumulation.
+  Verification: rebuilt the native Tile ops library, ran the focused source
+  guard for native GPT fallback wiring, ran the no-Torch native dependency
+  check, and ran `git diff --check`.
+
 - Added `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_POLICY` /
   `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY` as a default-off native GPT
   cuBLASLt profiling control. `min_waves` selects the returned cuBLASLt

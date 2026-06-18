@@ -270,7 +270,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Remove GPT-2 full-trainer per-microbatch LayerNorm affine / Linear bias scratch buffers and copy loops by writing directly into accumulation buffers.
 - [x] Add trainer-build GPU GEMM fast path for native linear forward, dInput, and dWeight behind `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1` without importing Torch or the PyTorch Tile extension.
 - [x] Add trainer-build GPU GEMV fast path for native linear bias backward and accumulate-bias backward behind `NFN_TILE_CUDA_USE_CUBLAS_LINEAR=1`, using a cached device ones vector initialized by a Tile fill kernel instead of the row-chunked atomic bias fallback.
-- [ ] Replace fallback linear weight backward reduction kernels with GEMM-grade tiled kernels for large row counts when the trainer cuBLAS path is unavailable.
+- [x] Replace fallback linear weight backward reduction kernels with GEMM-grade tiled kernels for large row counts when the trainer cuBLAS path is unavailable. The fallback float32-output dWeight paths now use a shared-memory 2D tiled CUDA kernel for float32/BF16 activation and gradient combinations, while the normal trainer build still tries cuBLAS/cuBLASLt first and bias-only fallbacks keep the shared row-chunk reduction path.
 - [x] Expose GELU activation forward/backward through the native ABI.
 - [ ] Add dropout forward/backward native Tile ABI if nonzero dropout training is re-enabled.
 - [x] Wire MLP-stage activation and projection backward through the native NanoGPT preflight/smoke path, including fc/proj input and weight backward, GELU backward, and AdamW updates.

@@ -4102,7 +4102,7 @@ def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> N
     assert (Path(env["NFN_NATIVE_MISSING_TRAINERS_OUT_DIR"]) / "nfn_llama_native_train").exists()
 
 
-def test_large_row_reduction_fallbacks_use_shared_row_chunks() -> None:
+def test_large_row_reduction_fallbacks_use_tiled_dweight_and_shared_bias_chunks() -> None:
     root = Path(__file__).resolve().parents[1]
     kernels_text = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text()
 
@@ -4122,8 +4122,13 @@ def test_large_row_reduction_fallbacks_use_shared_row_chunks() -> None:
         "launch_linear_backward_weight_accumulate_bf16_bits_float32",
         "launch_linear_backward_weight_accumulate_float32_bf16_bits",
         "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta",
-        "launch_linear_backward_weight_bias_accumulate_float32_bf16_bits",
         "launch_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta",
+    ):
+        function_body = kernels_text.rsplit(f"void {function_name}(", 1)[1].split("\nvoid ", 1)[0]
+        assert "launch_linear_backward_weight_tiled_float32_fallback" in function_body
+        assert "linear_backward_weight_chunked_atomic_" not in function_body
+        assert "kRowChunkSize = 256" not in function_body
+    for function_name in (
         "launch_linear_backward_bias_float32",
         "launch_linear_backward_bias_accumulate_float32",
     ):
@@ -4462,7 +4467,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "adamw_many_with_device_scale_bf16_param" in gpt2_source_text
     assert "sync_bf16_param_to_fp32_checkpoint" in gpt2_source_text
     assert "launch_linear_backward_weight_accumulate_bf16_float32" in kernels_text
-    assert "linear_backward_weight_chunked_atomic_float32_bf16_bits_kernel" in kernels_text
+    assert "linear_backward_weight_tiled_float32_kernel" in kernels_text
+    assert "launch_linear_backward_weight_tiled_float32_fallback" in kernels_text
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32" in header_text
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_float32" in source_text
     assert "cublas_linear_gemm_ex_bf16_float32" in kernels_text
@@ -4613,7 +4619,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta",
     ):
         function_body = kernels_text.rsplit(f"void {function_name}(", 1)[1].split("\nvoid ", 1)[0]
-        assert "kRowChunkSize = kLinearBackwardBiasRowChunkSize" in function_body
+        assert "launch_linear_backward_weight_tiled_float32_fallback" in function_body
+        assert "linear_backward_weight_chunked_atomic_" not in function_body
         assert "kRowChunkSize = 256" not in function_body
     assert "cached-first-gemm-operand-with-optimizer-reset" in gpt2_source_text
     assert "nfn_native_tile_trainer_linear_bf16_cache_reset" in gpt2_source_text
@@ -4813,7 +4820,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert ".attn.out.backward_weight_bias.accumulate.packed_o_bf16_bits" in gpt2_source_text
     assert ".attn.unpack_packed_out_bf16" not in gpt2_source_text
     assert "tk-sm120-packed-qkv-bf16-backward-bridge" in gpt2_source_text
-    assert "linear_backward_weight_chunked_atomic_float32_kernel" in kernels_text
+    assert "linear_backward_weight_tiled_float32_kernel" in kernels_text
+    assert "launch_linear_backward_weight_tiled_float32_fallback" in kernels_text
     assert "linear_backward_bias_chunked_atomic_float32_kernel" in kernels_text
     assert "cublas_linear_forward_float32" in kernels_text
     assert "cublas_linear_backward_input_float32" in kernels_text
