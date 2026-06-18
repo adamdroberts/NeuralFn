@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked the MLP projection dWeight cuBLASLt heuristic override
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=3072,768,65536,N,T,0` on the
+  dedicated RTX 5090 and kept it diagnostic-only. The same-script 3-step,
+  2-sample benchmark measured `0.998915x` train-loop wall time and `1.001091x`
+  tokens/sec versus the current default, with unchanged native route summaries.
+  That delta is within run-to-run noise, so no kernel default changed.
+  Verification: ran `tools/bench_native_gpt_sm120_candidate.sh` with selected
+  GPU idle/utilization checks and recorded the result in `todo-tile-cuda.md`.
+
 - Dense GPT native runtime JSON now emits `lm_head_dhidden_linear_strategy`.
   The field is derived from linear shape stats for the LM-head dHidden bucket
   (`768,8192,50304,N,N`) when profiling is enabled and otherwise reports the
