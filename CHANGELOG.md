@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed a dense GPT native startup allocation regression in the stored-MLP
+  activation path. When float stats sidecars are enabled, the
+  `stored_mlp_norm_stats_arena` request now keeps the pointer assigned by the
+  combined float arena instead of overwriting it with a second standalone
+  `cudaMalloc`. Runtime JSON now reports
+  `stored_mlp_layer_norm_stats_standalone_cuda_malloc_count` so startup
+  profiles can prove whether this sidecar escaped the arena. Verification:
+  rebuilt `build/nfn_gpt_native_train`; ran a one-step RTX 5090 native smoke
+  that reported `stored_mlp_layer_norm_stats_elements: 1572864`,
+  `stored_mlp_layer_norm_stats_bytes: 6291456`, and standalone malloc count
+  `0`; ran `python -m pytest tests/test_native_gpt2.py -q`; ran
+  `python tools/check_native_no_torch_deps.py`; ran a short 5-step SM120
+  parity sample, which still showed the remaining llm.kittens gap at
+  `1.042290x` train-loop wall time and `0.958942x` tokens/sec.
+
 - Completed CUDA-event timing coverage for native Tile linear shape stats on
   the active TK paths. TK BF16 fused MLP FC+GELU, fused MLP projection
   dInput+dGELU, and TK BF16-to-float output conversion records now pass

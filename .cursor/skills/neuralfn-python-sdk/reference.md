@@ -476,7 +476,7 @@ Full GPT-2 `--train-transformer-lm` accumulates token, position, block Linear we
 
 Full GPT-2 `--train-transformer-lm` startup keeps per-block parameter/gradient allocation, scratch-tape activation allocation, parameter initialization, and AdamW-state zeroing under the block-vector visitors. Do not reintroduce block-0 aliases into the global startup lists. Keep `block_state_layout.block0_duplicate_allocation_elided`, `block0_duplicate_activation_allocation_elided`, `block0_duplicate_parameter_initialization_elided`, and `block0_duplicate_adamw_state_zero_elided` true.
 
-Full GPT-2 `--train-transformer-lm` suballocates float buffers from one aligned CUDA device arena. Do not reintroduce one `cudaMalloc` per float tensor in the real trainer. Keep `float_allocation_strategy: "single-arena"` plus the arena count/element JSON fields.
+Full GPT-2 `--train-transformer-lm` suballocates float buffers from one aligned CUDA device arena. Do not reintroduce one `cudaMalloc` per float tensor in the real trainer. Keep `float_allocation_strategy: "single-arena"` plus the arena count/element JSON fields. Stored-MLP LayerNorm stats must keep the combined-arena pointer when `NFN_NATIVE_GPT_FLOAT_STATS_ARENA` is enabled; keep `stored_mlp_layer_norm_stats_standalone_cuda_malloc_count: 0` on the default path.
 
 Full GPT-2 `--train-transformer-lm` startup zeroes that float arena once and
 leaves zero biases and AdamW state at their arena-zero values. Do not re-add

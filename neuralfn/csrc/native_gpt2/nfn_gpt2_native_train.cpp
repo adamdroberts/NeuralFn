@@ -11546,6 +11546,7 @@ int run_transformer_lm_training_json(
     std::int64_t stored_mlp_activation_arena_bytes = 0;
     std::int64_t stored_mlp_norm_stats_elements = 0;
     std::int64_t stored_mlp_norm_stats_bytes = 0;
+    std::int64_t stored_mlp_norm_stats_standalone_cuda_malloc_count = 0;
     std::int64_t stored_mlp_activation_store_kernel_launches = 0;
     std::int64_t stored_mlp_ln2_bf16_fused_store_kernel_launches = 0;
     std::int64_t stored_mlp_ln2_bf16_float_store_elided_count = 0;
@@ -11817,15 +11818,18 @@ int run_transformer_lm_training_json(
             error = "stored MLP LayerNorm stats arena byte size overflow";
             return;
         }
-        void* raw_stats = nullptr;
         const std::size_t stats_bytes = sizeof(float) * static_cast<std::size_t>(norm_stats_elements);
-        const int stats_status = device_malloc(&raw_stats, stats_bytes);
-        if (stats_status != 0) {
-            error = cuda_error(stats_status, "cudaMalloc stored_mlp_norm_stats_arena");
-            return;
+        if (stored_mlp_norm_stats_arena == nullptr) {
+            void* raw_stats = nullptr;
+            const int stats_status = device_malloc(&raw_stats, stats_bytes);
+            if (stats_status != 0) {
+                error = cuda_error(stats_status, "cudaMalloc stored_mlp_norm_stats_arena");
+                return;
+            }
+            stored_mlp_norm_stats_arena = static_cast<float*>(raw_stats);
+            float_ptrs.push_back(stored_mlp_norm_stats_arena);
+            stored_mlp_norm_stats_standalone_cuda_malloc_count += 1;
         }
-        stored_mlp_norm_stats_arena = static_cast<float*>(raw_stats);
-        float_ptrs.push_back(stored_mlp_norm_stats_arena);
         stored_mlp_norm_stats_elements = norm_stats_elements;
         stored_mlp_norm_stats_bytes = static_cast<std::int64_t>(stats_bytes);
         for (std::int64_t i = 0; i < stored_mlp_activation_block_count; ++i) {
@@ -17948,6 +17952,8 @@ int run_transformer_lm_training_json(
         << "  \"stored_mlp_activation_bytes\": " << stored_mlp_activation_arena_bytes << ",\n"
         << "  \"stored_mlp_layer_norm_stats_elements\": " << stored_mlp_norm_stats_elements << ",\n"
         << "  \"stored_mlp_layer_norm_stats_bytes\": " << stored_mlp_norm_stats_bytes << ",\n"
+        << "  \"stored_mlp_layer_norm_stats_standalone_cuda_malloc_count\": "
+        << stored_mlp_norm_stats_standalone_cuda_malloc_count << ",\n"
         << "  \"stored_mlp_ln2_bf16_fused_store_kernel_launches\": "
         << stored_mlp_ln2_bf16_fused_store_kernel_launches << ",\n"
         << "  \"stored_mlp_activation_store_kernel_launches\": " << stored_mlp_activation_store_kernel_launches << ",\n"
