@@ -409,6 +409,29 @@ def timeout_output_to_text(value: str | bytes | None) -> str:
     return ""
 
 
+def kill_timed_out_process(proc: subprocess.Popen[str]) -> int:
+    """Kill a timed-out command and its process group, returning its final code."""
+    try:
+        process_group_id = os.getpgid(proc.pid)
+    except ProcessLookupError:
+        process_group_id = proc.pid
+    try:
+        os.killpg(process_group_id, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        proc.kill()
+    try:
+        proc.wait(timeout=5.0)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.wait(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            return -1
+    return proc.returncode if proc.returncode is not None else -1
+
+
 def run_once(
     command: TimedCommand,
     *,
@@ -447,19 +470,13 @@ def run_once(
         stderr = timeout_output_to_text(exc.stderr)
         process_returncode = -1
         if "proc" in locals():
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            except PermissionError:
-                proc.kill()
+            process_returncode = kill_timed_out_process(proc)
             try:
                 killed_stdout, killed_stderr = proc.communicate(timeout=5.0)
                 stdout += timeout_output_to_text(killed_stdout)
                 stderr += timeout_output_to_text(killed_stderr)
             except subprocess.TimeoutExpired:
                 proc.kill()
-            process_returncode = proc.returncode if proc.returncode is not None else -1
         if not continue_on_error:
             raise SystemExit(
                 f"{command.name} timed out after {timeout_seconds:.3f}s\n"

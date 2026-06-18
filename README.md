@@ -323,7 +323,10 @@ defaulting to
 `/tmp/nfn_sm120_parity_profiles_${NFN_SM120_PARITY_STEPS:-10}step`; set
 `NFN_SM120_PARITY_PROFILE_DIR` to keep those profiles somewhere else, or set it
 to `none`, `off`, or `0` when you need an actual throughput comparison without
-JSON sidecars. Set `NFN_SM120_PARITY_STAGE_TIMING=1` when you need CUDA-event
+JSON sidecars. Candidate timeouts kill the command process group before the
+result is recorded, so oversized CUDA experiments do not leave a native trainer
+running on the selected GPU after the paired harness moves on. Set
+`NFN_SM120_PARITY_STAGE_TIMING=1` when you need CUDA-event
 stage attribution; stage-timed parity runs default
 `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS=80000` unless already set, so 10-step
 SM120 sidecars should not silently truncate stage totals. Set the

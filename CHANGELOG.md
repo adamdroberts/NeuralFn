@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Hardened `tools/paired_kernel_speed.py` timeout cleanup for SM120 parity and
+  candidate benchmarks. Timed-out commands now kill and wait on the actual
+  process group before the timeout sample is recorded, preventing oversized CUDA
+  candidates from leaving native trainer processes on the selected GPU after
+  the harness continues. During CUDA 13.3 retuning, a full-resident LM-head
+  candidate (`--lm-head-row-chunk-size 65536`) was rejected after exceeding the
+  benchmark timeout, while rechecked `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX=0`
+  and `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` candidates measured slower
+  than the current defaults. Verification:
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k paired_kernel_speed_tool_records_command_timeout`;
+  `python -m py_compile tools/paired_kernel_speed.py`.
+
 - Promoted the dense GPT token-weight fast int32 Tile-index initializer to the
   default when the token table fits in int32. The previous int64 Tile-index
   route remains available with `NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT=0`,
