@@ -62,6 +62,9 @@ other compute work was present for a specific command. Text and JSON output also
 `gpu_sample_summary`, which summarizes selected-GPU utilization, memory, and
 compute-process counts before and after measured samples; use this summary when
 checking that candidate-vs-baseline timing was not skewed by other GPU load.
+When a command exits nonzero and `--continue-on-error` is not set, the helper now
+prints both stdout and stderr tails so CUDA driver/runtime messages from
+external baselines are not hidden behind an empty stderr block.
 The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
 emit non-UTF-8 bytes can still be compared in the same paired run. For

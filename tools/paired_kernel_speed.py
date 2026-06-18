@@ -493,7 +493,8 @@ def run_once(
             f"{command.name} failed with exit {returncode}\n"
             f"command: {shlex.join(run_argv)}\n"
             f"{native_section}"
-            f"stderr:\n{stderr}"
+            f"stdout tail:\n{stdout[-2000:]}\n"
+            f"stderr tail:\n{stderr[-2000:]}"
         )
     result = {
         "name": command.name,

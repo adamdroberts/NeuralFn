@@ -794,7 +794,10 @@ snapshots and command-level `paired_samples[].baseline.gpu_before` /
 snapshots containing GPU identity, display-active state, utilization, memory,
 and active compute-process rows. This makes dedicated-GPU runs and accidental
 external GPU load visible for the whole benchmark, each old/new measurement
-pair, and each individual command. When a command emits NeuralFn native JSON, the helper extracts
+pair, and each individual command. When a child command exits nonzero without
+`--continue-on-error`, the helper prints both stdout and stderr tails so CUDA
+driver/runtime messages from external baselines remain visible even when stderr
+is empty. When a command emits NeuralFn native JSON, the helper extracts
 native-loop counters into `baseline_native_metrics` or
 `candidate_native_metrics`, including `timing.train_loop_wall_ms`,
 `timing.train_tokens_per_second`, setup time, checkpoint time, total native

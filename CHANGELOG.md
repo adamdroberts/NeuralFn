@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/paired_kernel_speed.py` now includes both stdout and stderr tails when a
+  measured command exits nonzero without `--continue-on-error`. This makes CUDA
+  driver/runtime failures from external baselines such as llm.kittens visible in
+  failed SM120 parity runs instead of showing only an empty stderr block.
+  Verification: `python -m py_compile tools/paired_kernel_speed.py`;
+  `python -m pytest tests/test_tile_cuda_examples.py -q`; `python
+  tools/check_native_no_torch_deps.py --json`; and a CUDA 13.3 same-script
+  SM120 parity smoke with `tools/bench_native_gpt_sm120_parity.sh` at 3 steps,
+  1 sample, no warmup.
+
 - The compiled `nfn_native_train` frontend now accepts the high-level GPT
   training flags that previously required the Python `nfn train` or
   `train_gpt.py` argument shim: `--dataset tinystories`, `--output`,

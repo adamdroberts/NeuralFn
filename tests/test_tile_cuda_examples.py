@@ -469,6 +469,42 @@ def test_paired_kernel_speed_failure_reports_native_json_sidecar_error(tmp_path:
     assert "error: CUDA driver is unavailable to the native trainer" in proc.stderr
 
 
+def test_paired_kernel_speed_failure_reports_stdout_tail(tmp_path: Path) -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = tmp_path / "paired.json"
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            (
+                f"{sys.executable} -c "
+                "\"print('CUDA driver version is insufficient for CUDA runtime version'); "
+                "raise SystemExit(7)\""
+            ),
+            "--candidate",
+            f"{sys.executable} -c \"print('candidate-ok')\"",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 1
+    assert "baseline failed with exit 7" in proc.stderr
+    assert "stdout tail:" in proc.stderr
+    assert "CUDA driver version is insufficient for CUDA runtime version" in proc.stderr
+    assert "stderr tail:" in proc.stderr
+
+
 def test_paired_kernel_speed_tool_stage_timing_is_explicit() -> None:
     script = Path("tools/paired_kernel_speed.py")
     spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
