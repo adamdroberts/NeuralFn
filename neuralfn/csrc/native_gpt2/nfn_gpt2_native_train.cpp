@@ -3605,6 +3605,9 @@ bool print_tile_plan(
         << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
         << ", \"train_loss_every_steps\": " << cfg.train_loss_every_steps
         << ", \"eval_every_steps\": " << cfg.eval_every_steps
+        << ", \"sample_every_steps\": " << cfg.sample_every_steps
+        << ", \"generate_tokens\": " << cfg.generate_tokens
+        << ", \"checkpoint_every_steps\": " << cfg.checkpoint_every_steps
         << ", \"warmup_steps\": " << cfg.warmup_steps << "},\n"
         << "  \"layer_evo\": {\"enabled\": " << (cfg.layer_evo_enabled ? "true" : "false")
         << ", \"graph_editor_tensor_flow\": false"
@@ -17159,6 +17162,12 @@ int run_transformer_lm_training_json(
         << "  \"seq_len\": " << seq_len << ",\n"
         << "  \"rows\": " << rows << ",\n"
         << "  \"train_loss_every_steps\": " << cfg.train_loss_every_steps << ",\n"
+        << "  \"sample_every_steps\": " << cfg.sample_every_steps << ",\n"
+        << "  \"generate_tokens\": " << cfg.generate_tokens << ",\n"
+        << "  \"checkpoint_every_steps\": " << cfg.checkpoint_every_steps << ",\n"
+        << "  \"train_time_sampling_enabled\": false,\n"
+        << "  \"periodic_checkpoint_enabled\": false,\n"
+        << "  \"final_checkpoint_export_enabled\": " << (cfg.write_checkpoint ? "true" : "false") << ",\n"
         << "  \"trained_layers\": " << trained_layers << ",\n"
         << "  \"target_layers\": " << target_layers << ",\n"
         << "  \"vocab\": " << kVocab << ",\n"

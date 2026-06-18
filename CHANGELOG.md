@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added native dense GPT sample/checkpoint cadence fields to C++ plan/runtime
+  JSON. `--print-plan` now reports `schedule.sample_every_steps`,
+  `schedule.generate_tokens`, and `schedule.checkpoint_every_steps`; runtime
+  JSON mirrors those values and adds `train_time_sampling_enabled`,
+  `periodic_checkpoint_enabled`, and `final_checkpoint_export_enabled`.
+  Same-script timing runs can now verify that sample/checkpoint/export work is
+  disabled when cadence flags or `--no-checkpoint` are used. Verification:
+  focused native GPT CLI tests and C++ rebuild.
+
 - Improved direct native GPT profile failure diagnostics. When
   `nfn_gpt_native_train --check-tile-ops` or `--train-transformer-lm` writes
   redirected output through `--json-out`, `--profile-json`, or
