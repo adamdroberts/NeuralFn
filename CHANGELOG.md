@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended `tools/paired_kernel_speed.py` reporting for native CUDA Tile
+  bisections. The JSON extractor already read several backend counters, but the
+  terminal report now also prints and ratios `linear_tk_gemm_count`,
+  `linear_cublaslt_gemm_count`, `linear_bf16_gemm_count`, linear BF16 pack/cache
+  counters, and attention TK launch counts. This makes active backend-route
+  candidates visible in same-script RTX 5090 comparisons even when a coarse
+  strategy string is unchanged. Verification: ran the paired-kernel smoke tests
+  covering sidecar extraction and stdout output; ran fresh CUDA 13.3 native
+  bisections that rejected the LM-head TK logits shape override
+  (`1.005595x` train-loop wall time), broad TK dInput route (`1.053838x`), and
+  LM-head dWeight cuBLASLt heuristic-0 override (`1.003965x`).
+
 - Corrected the compiled Tile-CUDA packed-attention dprep helper so the GPT
   `heads=12, head_dim=64` BF16-gradient specialization is actually default-on
   when `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED` is unset,

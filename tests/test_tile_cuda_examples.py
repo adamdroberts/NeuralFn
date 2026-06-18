@@ -67,6 +67,7 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"stage_timing\\\": [{\\\"name\\\": \\\"lm_head_backward\\\", "
                 "\\\"total_ms\\\": 7.0, \\\"avg_ms\\\": 3.5, \\\"count\\\": 2}]}, "
                 "\\\"steps_completed\\\": 5, \\\"linear_tk_gemm_count\\\": 3, "
+                "\\\"linear_cublaslt_gemm_count\\\": 4, \\\"linear_bf16_gemm_count\\\": 7, "
                 "\\\"status\\\": \\\"native-test\\\"}')\""
             ),
             "--samples",
@@ -123,6 +124,12 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["train_loop_wall_ms_per_step"]["mean"] == 2.5
     assert payload["candidate_native_metrics"]["steps_completed"]["mean"] == 5.0
     assert payload["candidate_native_metrics"]["train_tokens_per_second"]["mean"] == 42.0
+    assert payload["candidate_native_metrics"]["linear_tk_gemm_count"]["mean"] == 3.0
+    assert payload["candidate_native_metrics"]["linear_cublaslt_gemm_count"]["mean"] == 4.0
+    assert payload["candidate_native_metrics"]["linear_bf16_gemm_count"]["mean"] == 7.0
+    assert "linear_tk_gemm_count: mean=3.000000" in proc.stdout
+    assert "linear_cublaslt_gemm_count: mean=4.000000" in proc.stdout
+    assert "linear_bf16_gemm_count: mean=7.000000" in proc.stdout
 
 
 def test_paired_kernel_speed_tool_dry_run_plan_does_not_launch_commands() -> None:
@@ -428,6 +435,8 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                     ],
                 },
                 "linear_tk_gemm_count": 8,
+                "linear_cublaslt_gemm_count": 11,
+                "linear_bf16_gemm_count": 13,
                 "attention_backward_dprep_timing_us": 30000,
                 "attention_backward_dprep_timing_count": 12,
                 "attention_backward_tk_timing_us": 240000,
@@ -458,6 +467,8 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["train_loop_wall_ms_per_step"] == 5.0
     assert metrics["train_tokens_per_second"] == 123.0
     assert metrics["linear_tk_gemm_count"] == 8
+    assert metrics["linear_cublaslt_gemm_count"] == 11
+    assert metrics["linear_bf16_gemm_count"] == 13
     assert metrics["stage.block_backward.total_ms"] == 9.0
     assert metrics["attention_backward_dprep_timing_us"] == 30000
     assert metrics["attention_backward_dprep_timing_count"] == 12
