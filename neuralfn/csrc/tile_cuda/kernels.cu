@@ -2452,6 +2452,56 @@ bool trainer_linear_bf16_cublaslt_shape_supported(
       (k <= 32768 || (extra_large_k_enabled && k <= 65536));
 }
 
+bool trainer_linear_tk_forward_shape_disabled(
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  static const LinearShapeStat disabled_shape = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE");
+    }
+    LinearShapeStat shape{};
+    if (value == nullptr || value[0] == '\0') {
+      return shape;
+    }
+    int parsed_m = 0;
+    int parsed_n = 0;
+    int parsed_k = 0;
+    char parsed_op_a[8] = {};
+    char parsed_op_b[8] = {};
+    if (std::sscanf(
+            value,
+            "%d,%d,%d,%7[^,],%7s",
+            &parsed_m,
+            &parsed_n,
+            &parsed_k,
+            parsed_op_a,
+            parsed_op_b) != 5) {
+      return shape;
+    }
+    cublasOperation_t parsed_a = CUBLAS_OP_N;
+    cublasOperation_t parsed_b = CUBLAS_OP_N;
+    if (parsed_m <= 0 || parsed_n <= 0 || parsed_k <= 0 ||
+        !parse_cublas_op_token(parsed_op_a, &parsed_a) ||
+        !parse_cublas_op_token(parsed_op_b, &parsed_b)) {
+      return shape;
+    }
+    shape.path = 2;
+    shape.m = parsed_m;
+    shape.n = parsed_n;
+    shape.k = parsed_k;
+    shape.op_a = static_cast<int>(parsed_a);
+    shape.op_b = static_cast<int>(parsed_b);
+    return shape;
+  }();
+  return disabled_shape.path == 2 && disabled_shape.m == m && disabled_shape.n == n &&
+      disabled_shape.k == k && disabled_shape.op_a == static_cast<int>(op_a) &&
+      disabled_shape.op_b == static_cast<int>(op_b);
+}
+
 bool trainer_linear_float32_bf16_bgrad_enabled() {
   static const bool enabled = []() {
     const char* value = std::getenv("NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD");
@@ -3538,6 +3588,10 @@ bool tk_linear_gemm_bf16_forward_to_bf16_bits(
   if (!trainer_linear_tk_gemm_enabled()) {
     return false;
   }
+  if (trainer_linear_tk_forward_shape_disabled(
+          output_dim, rows, input_dim, op_a, op_b)) {
+    return false;
+  }
   if (op_a != CUBLAS_OP_T || op_b != CUBLAS_OP_N) {
     return false;
   }
@@ -3630,6 +3684,10 @@ bool tk_linear_gemm_bf16_forward_gelu_to_bf16_bits(
   if (!trainer_linear_tk_gemm_enabled()) {
     return false;
   }
+  if (trainer_linear_tk_forward_shape_disabled(
+          output_dim, rows, input_dim, CUBLAS_OP_T, CUBLAS_OP_N)) {
+    return false;
+  }
   if (x == nullptr || weight == nullptr || bias == nullptr ||
       pre_gelu_bf16_bits == nullptr || gelu_bf16_bits == nullptr) {
     return false;
@@ -3714,6 +3772,10 @@ bool tk_linear_gemm_bf16_forward_gelu_weight_bf16_to_bf16_bits(
     cudaStream_t stream) {
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   if (!trainer_linear_tk_gemm_enabled()) {
+    return false;
+  }
+  if (trainer_linear_tk_forward_shape_disabled(
+          output_dim, rows, input_dim, CUBLAS_OP_T, CUBLAS_OP_N)) {
     return false;
   }
   if (x == nullptr || weight_bf16_bits == nullptr || bias == nullptr ||
@@ -13357,6 +13419,12 @@ void launch_linear_bf16_input_weight_bf16_gelu_bf16_float32(
       rows % 128 == 0 &&
       input_dim % 64 == 0 &&
       output_dim % 128 == 0 &&
+      !trainer_linear_tk_forward_shape_disabled(
+          static_cast<int>(output_dim),
+          static_cast<int>(rows),
+          static_cast<int>(input_dim),
+          CUBLAS_OP_T,
+          CUBLAS_OP_N) &&
       matmul_forward_gelu_supported(
           1,
           static_cast<int>(rows),

@@ -136,6 +136,11 @@ subprocess environment. The compiled trainer then reports `linear_shape_stats`
 JSON buckets that identify the successful TK BF16, cuBLASLt, cuBLAS GEMMEx BF16,
 and SGEMM linear dispatch shapes and call counts. This is intended for kernel
 candidate comparisons and should stay disabled in normal training runs.
+For one-shape TK forward bisection from the SDK, pass
+`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` or
+`NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` in the same
+environment. The tuple matches the `linear_shape_stats` convention and only
+gates forward/fused-GELU TK calls with fallback paths.
 
 Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

@@ -14,6 +14,18 @@ Future updates should append new entries here rather than replacing older notes.
   GPT-named environment variables. This is diagnostic-only and remains off by
   default.
 
+- Added `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` and
+  `NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` as
+  diagnostic-only one-shape bisection gates for TK BF16 forward/fused-GELU
+  launches. The gate is intentionally limited to forward paths with existing
+  fallback implementations and does not disable bits-only backward dGELU paths.
+  Verification included a smoke with
+  `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=3072,65536,768,T,N` that removed
+  that TK `T,N` bucket while leaving the `N,N` backward bucket active, followed
+  by a same-script dedicated RTX 5090 5-step, 3-sample benchmark that rejected
+  the fallback as a default route (`13.608951x` train-loop wall time and
+  `0.073530x` tokens/sec versus baseline).
+
 ### 2026-06-18 Suballocate native GPT float stats sidecars
 
 #### Changed

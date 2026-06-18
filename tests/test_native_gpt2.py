@@ -4468,6 +4468,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_LINEAR_SHAPE_STATS" in kernels_text
     assert "NFN_NATIVE_GPT_LINEAR_SHAPE_STATS" in kernels_text
     assert "NFN_NATIVE_GPT2_LINEAR_SHAPE_STATS" in kernels_text
+    assert "NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE" in kernels_text
+    assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE" in kernels_text
     assert "NFN_TILE_CUDA_CE_BF16_THREADS" in kernels_text
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS" in kernels_text
     assert "NFN_NATIVE_GPT2_CE_BF16_THREADS" in kernels_text
