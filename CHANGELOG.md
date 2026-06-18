@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rejected `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,2304,65536,N,T,2`
+  as a default dense GPT QKV dWeight route. The dedicated RTX 5090 5-step,
+  3-sample same-script benchmark measured `1.001121x` train-loop wall time and
+  `0.998895x` tokens/sec versus the current cuBLASLt heuristic selection, so
+  the QKV dWeight shape remains on the default heuristic. Verification: ran
+  `tools/bench_native_gpt_sm120_candidate.sh` with selected-GPU idle checks and
+  no profiling sidecars.
+
 - Added a default-off dense GPT MLP projection backward ordering diagnostic,
   `NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT=1`. The switch runs fused MLP
   projection dInput+dGELU before dWeight+bias to compare against the
