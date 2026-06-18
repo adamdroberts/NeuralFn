@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native CLI cleanup now defaults to skipping explicit exit-time
+  `cudaFree` calls for the large device arenas. The process exits immediately
+  after JSON/checkpoint output, so CUDA context teardown reclaims those
+  allocations without the previous synchronous multi-GB free/runtime teardown
+  loop. Set
+  `NFN_NATIVE_GPT_SKIP_EXIT_CUDA_FREE=0` or
+  `NFN_NATIVE_GPT2_SKIP_EXIT_CUDA_FREE=0` to restore explicit device frees and
+  runtime-library `dlclose()` for diagnostics. Runtime JSON reports
+  `device_exit_cuda_free_elision_enabled`,
+  `device_exit_cuda_free_skipped_count`, `runtime_library_dlclose_skipped_count`, and the resulting
+  `timing.cleanup_wall_ms`. Updated `README.md`, `docs/cli.md`, and the CUDA
+  Tile checklist. Verification: rebuilt the native GPT CLI, checked default
+  startup JSON (`device_exit_cuda_free_skipped_count: 5`,
+  `runtime_library_dlclose_skipped_count: 2`, `cleanup_wall_ms: 1.00296`),
+  checked the explicit-free opt-out (`cleanup_wall_ms: 250.605`), and compared
+  the old explicit-free cleanup path against the new default on the dedicated
+  RTX 5090. The startup-only same-script benchmark measured `0.695283x` mean
+  total wall time, and the one-step training benchmark measured neutral
+  train-loop time (`0.999895x`) with `0.946923x` mean total wall time.
+
 - Added diagnostic opt-in
   `NFN_NATIVE_GPT_ELIDE_FLOAT_PROJECTION_OUTPUTS=1` for dense GPT native
   training. When BF16 projection-residual is active, the switch skips the

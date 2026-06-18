@@ -10963,10 +10963,17 @@ int run_transformer_lm_training_json(
             false);
     const bool async_device_allocator_enabled =
         async_device_allocator_requested && cuda_malloc_async != nullptr && cuda_free_async != nullptr;
+    const bool skip_exit_device_free_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_SKIP_EXIT_CUDA_FREE",
+                              "NFN_NATIVE_GPT2_SKIP_EXIT_CUDA_FREE"}),
+            true);
     std::vector<void*> async_device_ptrs;
     std::int64_t device_cuda_malloc_async_count = 0;
     std::int64_t device_cuda_free_async_count = 0;
     std::int64_t device_cuda_malloc_async_fallback_count = 0;
+    std::int64_t device_exit_cuda_free_skipped_count = 0;
+    std::int64_t runtime_library_dlclose_skipped_count = 0;
     auto device_malloc = [&](void** ptr, std::size_t bytes) -> int {
         if (async_device_allocator_enabled) {
             const int status = cuda_malloc_async(ptr, bytes, nullptr);
@@ -10984,6 +10991,10 @@ int run_transformer_lm_training_json(
     };
     auto device_free = [&](void* ptr, const std::string& name) {
         if (ptr == nullptr) {
+            return;
+        }
+        if (skip_exit_device_free_enabled) {
+            device_exit_cuda_free_skipped_count += 1;
             return;
         }
         int status = 0;
@@ -16516,11 +16527,15 @@ int run_transformer_lm_training_json(
             error = cuda_error(status, "cudaDeviceSynchronize after cudaFreeAsync");
         }
     }
-    if (cuda_handle != nullptr) {
+    if (cuda_handle != nullptr && !skip_exit_device_free_enabled) {
         dlclose(cuda_handle);
+    } else if (cuda_handle != nullptr) {
+        runtime_library_dlclose_skipped_count += 1;
     }
-    if (tile_handle != nullptr) {
+    if (tile_handle != nullptr && !skip_exit_device_free_enabled) {
         dlclose(tile_handle);
+    } else if (tile_handle != nullptr) {
+        runtime_library_dlclose_skipped_count += 1;
     }
     cleanup_wall_ms = elapsed_ms(cleanup_start_time, Clock::now());
     total_wall_ms = elapsed_ms(total_start_time, Clock::now());
@@ -17383,6 +17398,12 @@ int run_transformer_lm_training_json(
         << "  \"device_cuda_free_async_count\": " << device_cuda_free_async_count << ",\n"
         << "  \"device_cuda_malloc_async_fallback_count\": "
         << device_cuda_malloc_async_fallback_count << ",\n"
+        << "  \"device_exit_cuda_free_elision_enabled\": "
+        << (skip_exit_device_free_enabled ? "true" : "false") << ",\n"
+        << "  \"device_exit_cuda_free_skipped_count\": "
+        << device_exit_cuda_free_skipped_count << ",\n"
+        << "  \"runtime_library_dlclose_skipped_count\": "
+        << runtime_library_dlclose_skipped_count << ",\n"
         << "  \"token_device_arena_cuda_malloc_count\": " << token_device_arena_cuda_malloc_count << ",\n"
         << "  \"token_device_arena_requested_bytes\": " << token_device_arena_requested_bytes << ",\n"
         << "  \"token_device_arena_bytes\": " << token_device_arena_bytes << ",\n"

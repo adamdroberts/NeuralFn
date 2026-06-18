@@ -275,6 +275,13 @@ faster default. GPT-2 training JSON reports `linear_backend_strategy:
 `linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
 `linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
 `linear_bf16_cache_entry_count`.
+Native GPT CLI runs also report `device_exit_cuda_free_elision_enabled` and
+`device_exit_cuda_free_skipped_count`. The default skips explicit exit-time
+`cudaFree` calls for large device arenas, skips runtime-library `dlclose()`,
+and relies on process teardown to reclaim them after JSON/checkpoint output is complete; set
+`NFN_NATIVE_GPT_SKIP_EXIT_CUDA_FREE=0` to restore explicit device frees for
+cleanup diagnostics. `runtime_library_dlclose_skipped_count` and
+`timing.cleanup_wall_ms` reflect the selected cleanup path.
 The cuBLASLt descriptor cache is enabled by default, so cached plans retain
 matmul descriptors and matrix layouts instead of recreating them for every
 GEMM; set `NFN_TILE_CUDA_CUBLASLT_DESCRIPTOR_CACHE=0` or
