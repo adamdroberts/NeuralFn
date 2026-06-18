@@ -28,6 +28,17 @@ Future updates should append new entries here rather than replacing older notes.
   `build/nfn_gpt_native_train`, ran the paired benchmark with selected-GPU idle
   checks, and updated the CUDA Tile docs/checklist.
 
+- Added a default-off dense GPT attention projection backward ordering
+  diagnostic, `NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1`. The switch
+  runs attention projection dInput before dWeight+bias to compare against the
+  reference consumer order, and runtime JSON reports
+  `block_backward_attn_proj_dinput_before_dweight_enabled`. It is not promoted:
+  the dedicated RTX 5090 5-step, 3-sample paired benchmark measured
+  `1.001009x` train-loop wall time and `0.999002x` tokens/sec versus the
+  current dWeight+bias-first default. Verification: rebuilt
+  `build/nfn_gpt_native_train`, ran the paired benchmark with selected-GPU idle
+  checks, and updated the CUDA Tile docs/checklist.
+
 - Rejected a BF16-output cuBLASLt probe for the dense GPT LM-head logits route.
   A candidate Tile ops library attempted to route the no-bias BF16/BF16
   `50304,8192,768,T,N` logits GEMM through cuBLASLt with BF16 output, but the
