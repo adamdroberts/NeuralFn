@@ -60,6 +60,19 @@ bool nfn_native_tile_trainer_linear_shape_stats_entry(
     int* op_b,
     std::int64_t* calls,
     std::int64_t* total_us);
+bool nfn_native_tile_trainer_linear_shape_stats_entry_v2(
+    std::int64_t index,
+    int* path,
+    int* m,
+    int* n,
+    int* k,
+    int* op_a,
+    int* op_b,
+    std::int64_t* calls,
+    std::int64_t* total_us,
+    int* cublaslt_selected_heuristic,
+    int* cublaslt_returned_heuristics,
+    std::int64_t* cublaslt_workspace_bytes);
 
 int nfn_native_tile_gradient_accumulate_float32(
     float* buffer,

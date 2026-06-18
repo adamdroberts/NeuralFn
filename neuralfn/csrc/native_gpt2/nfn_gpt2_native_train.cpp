@@ -9413,6 +9413,9 @@ int run_transformer_lm_training_json(
         int k = 0;
         int op_a = 0;
         int op_b = 0;
+        int cublaslt_selected_heuristic = -1;
+        int cublaslt_returned_heuristics = 0;
+        std::int64_t cublaslt_workspace_bytes = 0;
         std::int64_t calls = 0;
         std::int64_t total_us = 0;
     };
@@ -9805,6 +9808,9 @@ int run_transformer_lm_training_json(
     using TrainerLinearStatsCountFn = std::int64_t (*)();
     using TrainerLinearShapeStatsEntryFn = bool (*)(
         std::int64_t, int*, int*, int*, int*, int*, int*, std::int64_t*, std::int64_t*);
+    using TrainerLinearShapeStatsEntryV2Fn = bool (*)(
+        std::int64_t, int*, int*, int*, int*, int*, int*, std::int64_t*, std::int64_t*,
+        int*, int*, std::int64_t*);
     using AttentionBackwardToQkvReuseForwardFn = int (*)(
         const float*, float*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t,
@@ -10077,6 +10083,7 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_bf16_cache_entry_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_shape_stats_count_fn = nullptr;
     TrainerLinearShapeStatsEntryFn trainer_linear_shape_stats_entry_fn = nullptr;
+    TrainerLinearShapeStatsEntryV2Fn trainer_linear_shape_stats_entry_v2_fn = nullptr;
     AttentionBackwardToQkvReuseForwardFn attention_backward_to_qkv_reuse_forward = nullptr;
     PackedAttentionForwardFn packed_attention_forward = nullptr;
     PackedAttentionForwardStoreLseFn packed_attention_forward_store_lse = nullptr;
@@ -10469,6 +10476,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_trainer_linear_shape_stats_count");
                 trainer_linear_shape_stats_entry_fn = load_symbol<TrainerLinearShapeStatsEntryFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_shape_stats_entry");
+                trainer_linear_shape_stats_entry_v2_fn = load_symbol<TrainerLinearShapeStatsEntryV2Fn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_shape_stats_entry_v2");
                 attention_stats_reset();
                 trainer_linear_stats_reset();
                 attention_backward_to_qkv_reuse_forward = load_symbol<AttentionBackwardToQkvReuseForwardFn>(
@@ -16967,16 +16976,32 @@ int run_transformer_lm_training_json(
         linear_shape_stats.reserve(static_cast<std::size_t>(capped_shape_stat_count));
         for (std::int64_t index = 0; index < capped_shape_stat_count; ++index) {
             LinearShapeStat stat;
-            if (trainer_linear_shape_stats_entry_fn(
-                    index,
-                    &stat.path,
-                    &stat.m,
-                    &stat.n,
-                    &stat.k,
-                    &stat.op_a,
-                    &stat.op_b,
-                    &stat.calls,
-                    &stat.total_us)) {
+            const bool loaded =
+                trainer_linear_shape_stats_entry_v2_fn != nullptr
+                ? trainer_linear_shape_stats_entry_v2_fn(
+                      index,
+                      &stat.path,
+                      &stat.m,
+                      &stat.n,
+                      &stat.k,
+                      &stat.op_a,
+                      &stat.op_b,
+                      &stat.calls,
+                      &stat.total_us,
+                      &stat.cublaslt_selected_heuristic,
+                      &stat.cublaslt_returned_heuristics,
+                      &stat.cublaslt_workspace_bytes)
+                : trainer_linear_shape_stats_entry_fn(
+                      index,
+                      &stat.path,
+                      &stat.m,
+                      &stat.n,
+                      &stat.k,
+                      &stat.op_a,
+                      &stat.op_b,
+                      &stat.calls,
+                      &stat.total_us);
+            if (loaded) {
                 linear_shape_stats.push_back(stat);
             }
         }
@@ -17145,6 +17170,9 @@ int run_transformer_lm_training_json(
             << ", \"calls\": " << stat.calls
             << ", \"total_us\": " << stat.total_us
             << ", \"avg_us\": " << (stat.calls > 0 ? stat.total_us / stat.calls : 0)
+            << ", \"cublaslt_selected_heuristic\": " << stat.cublaslt_selected_heuristic
+            << ", \"cublaslt_returned_heuristics\": " << stat.cublaslt_returned_heuristics
+            << ", \"cublaslt_workspace_bytes\": " << stat.cublaslt_workspace_bytes
             << "}";
         if (i + 1 != linear_shape_stats.size()) {
             linear_shape_stats_json << ",";

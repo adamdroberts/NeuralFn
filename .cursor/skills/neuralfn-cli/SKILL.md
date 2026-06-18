@@ -167,6 +167,11 @@ Canonical docs:
   `attention_backward_strategy: "tk-sm120-bf16-recompute-forward-bridge"`,
   `attention_forward_tk_launch_count`, and
   `attention_backward_tk_launch_count` when the optimized path runs.
+- For native GPT linear profiling, enable `NFN_NATIVE_LINEAR_SHAPE_STATS=1`.
+  With the v2 Tile stats ABI, cuBLASLt rows include
+  `cublaslt_selected_heuristic`, `cublaslt_returned_heuristics`, and
+  `cublaslt_workspace_bytes`; use those fields to prove a shape heuristic
+  override actually selected a different returned candidate before promoting it.
 - The trainer-facing linear ABI should expose and preserve the linear backend
   telemetry: `linear_backend_strategy`,
   `linear_bf16_gemm_count`, `linear_tk_gemm_count`, `linear_sgemm_count`,

@@ -113,6 +113,9 @@ struct LinearShapeStat {
   int k = 0;
   int op_a = 0;
   int op_b = 0;
+  int cublaslt_selected_heuristic = -1;
+  int cublaslt_returned_heuristics = 0;
+  std::int64_t cublaslt_workspace_bytes = 0;
   std::int64_t calls = 0;
   std::int64_t total_us = 0;
 };
@@ -126,7 +129,10 @@ void record_linear_shape_stat(
     int k,
     cublasOperation_t op_a,
     cublasOperation_t op_b,
-    std::int64_t elapsed_us = 0);
+    std::int64_t elapsed_us = 0,
+    int cublaslt_selected_heuristic = -1,
+    int cublaslt_returned_heuristics = 0,
+    std::int64_t cublaslt_workspace_bytes = 0);
 struct LinearShapeTiming {
   cudaEvent_t start = nullptr;
   cudaEvent_t stop = nullptr;
@@ -1934,6 +1940,8 @@ struct TrainerLinearCublasLtPlan {
   cublasLtMatrixLayout_t c_desc = nullptr;
   cublasLtMatmulAlgo_t algo{};
   std::size_t workspace_size = 0;
+  int selected_heuristic = -1;
+  int returned_heuristics = 0;
   bool valid = false;
 };
 
@@ -2203,6 +2211,8 @@ TrainerLinearCublasLtPlan* trainer_linear_cublaslt_plan_for(
   }
   plan.algo = results[selected].algo;
   plan.workspace_size = results[selected].workspaceSize;
+  plan.selected_heuristic = selected;
+  plan.returned_heuristics = returned;
   plan.valid = true;
   g_trainer_linear_cublaslt_workspace.plans.push_back(plan);
   return &g_trainer_linear_cublaslt_workspace.plans.back();
@@ -2359,7 +2369,17 @@ bool cublaslt_linear_matmul(
   if (status == CUBLAS_STATUS_SUCCESS) {
     const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
     g_linear_cublaslt_gemm_count.fetch_add(1, std::memory_order_relaxed);
-    record_linear_shape_stat(1, m, n, k, op_a, op_b, elapsed_us);
+    record_linear_shape_stat(
+        1,
+        m,
+        n,
+        k,
+        op_a,
+        op_b,
+        elapsed_us,
+        plan_copy.selected_heuristic,
+        plan_copy.returned_heuristics,
+        static_cast<std::int64_t>(plan_copy.workspace_size));
     return true;
   }
   discard_linear_shape_timing(&timing);
@@ -2506,7 +2526,10 @@ void record_linear_shape_stat(
     int k,
     cublasOperation_t op_a,
     cublasOperation_t op_b,
-    std::int64_t elapsed_us) {
+    std::int64_t elapsed_us,
+    int cublaslt_selected_heuristic,
+    int cublaslt_returned_heuristics,
+    std::int64_t cublaslt_workspace_bytes) {
   if (!trainer_linear_shape_stats_enabled()) {
     return;
   }
@@ -2516,6 +2539,11 @@ void record_linear_shape_stat(
         stat.op_a == static_cast<int>(op_a) && stat.op_b == static_cast<int>(op_b)) {
       stat.calls += 1;
       stat.total_us += elapsed_us;
+      if (path == 1 && cublaslt_selected_heuristic >= 0) {
+        stat.cublaslt_selected_heuristic = cublaslt_selected_heuristic;
+        stat.cublaslt_returned_heuristics = cublaslt_returned_heuristics;
+        stat.cublaslt_workspace_bytes = cublaslt_workspace_bytes;
+      }
       return;
     }
   }
@@ -2530,6 +2558,9 @@ void record_linear_shape_stat(
           k,
           static_cast<int>(op_a),
           static_cast<int>(op_b),
+          path == 1 ? cublaslt_selected_heuristic : -1,
+          path == 1 ? cublaslt_returned_heuristics : 0,
+          path == 1 ? cublaslt_workspace_bytes : 0,
           1,
           elapsed_us});
 }
@@ -3079,10 +3110,6 @@ int trainer_linear_cublaslt_shape_heuristic_index_override(
   }();
   if (!override.valid || override.m != m || override.n != n || override.k != k ||
       override.op_a != static_cast<int>(op_a) || override.op_b != static_cast<int>(op_b)) {
-    if (m == 3072 && n == 768 && k == 65536 &&
-        op_a == CUBLAS_OP_N && op_b == CUBLAS_OP_T) {
-      return 1;
-    }
     return -1;
   }
   return override.index;
@@ -16217,6 +16244,76 @@ bool trainer_linear_shape_stats_entry(
   (void)op_b;
   (void)calls;
   (void)total_us;
+  return false;
+#endif
+}
+
+bool trainer_linear_shape_stats_entry_v2(
+    std::int64_t index,
+    int* path,
+    int* m,
+    int* n,
+    int* k,
+    int* op_a,
+    int* op_b,
+    std::int64_t* calls,
+    std::int64_t* total_us,
+    int* cublaslt_selected_heuristic,
+    int* cublaslt_returned_heuristics,
+    std::int64_t* cublaslt_workspace_bytes) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  std::lock_guard<std::mutex> lock(g_linear_shape_stats_mutex);
+  if (index < 0 || index >= static_cast<std::int64_t>(g_linear_shape_stats.size())) {
+    return false;
+  }
+  const LinearShapeStat& stat = g_linear_shape_stats[static_cast<std::size_t>(index)];
+  if (path != nullptr) {
+    *path = stat.path;
+  }
+  if (m != nullptr) {
+    *m = stat.m;
+  }
+  if (n != nullptr) {
+    *n = stat.n;
+  }
+  if (k != nullptr) {
+    *k = stat.k;
+  }
+  if (op_a != nullptr) {
+    *op_a = stat.op_a;
+  }
+  if (op_b != nullptr) {
+    *op_b = stat.op_b;
+  }
+  if (calls != nullptr) {
+    *calls = stat.calls;
+  }
+  if (total_us != nullptr) {
+    *total_us = stat.total_us;
+  }
+  if (cublaslt_selected_heuristic != nullptr) {
+    *cublaslt_selected_heuristic = stat.cublaslt_selected_heuristic;
+  }
+  if (cublaslt_returned_heuristics != nullptr) {
+    *cublaslt_returned_heuristics = stat.cublaslt_returned_heuristics;
+  }
+  if (cublaslt_workspace_bytes != nullptr) {
+    *cublaslt_workspace_bytes = stat.cublaslt_workspace_bytes;
+  }
+  return true;
+#else
+  (void)index;
+  (void)path;
+  (void)m;
+  (void)n;
+  (void)k;
+  (void)op_a;
+  (void)op_b;
+  (void)calls;
+  (void)total_us;
+  (void)cublaslt_selected_heuristic;
+  (void)cublaslt_returned_heuristics;
+  (void)cublaslt_workspace_bytes;
   return false;
 #endif
 }

@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added v2 native Tile linear shape stats for cuBLASLt plan selection. When
+  `NFN_NATIVE_LINEAR_SHAPE_STATS=1` or the GPT-specific aliases are enabled,
+  cuBLASLt `linear_shape_stats` rows now report
+  `cublaslt_selected_heuristic`, `cublaslt_returned_heuristics`, and
+  `cublaslt_workspace_bytes` through the optional
+  `nfn_native_tile_trainer_linear_shape_stats_entry_v2` ABI, while the old
+  shape-stat accessor remains available for compatibility. The CUDA 13.3 RTX
+  5090 profile showed the previously pinned MLP projection dWeight shape
+  `3072,768,65536,N,T` returns only one cuBLASLt heuristic, so the hardcoded
+  shape-specific index-1 fallback was removed as a no-op. The same retest kept
+  both existing LM-head alternatives rejected:
+  `NFN_NATIVE_LINEAR_BF16_OUTPUT_CUBLASLT=1` measured `1.003620x` train-loop
+  wall time and `0.996405x` tokens/sec, and
+  `NFN_NATIVE_LINEAR_TK_FORWARD_ENABLE_SHAPE=50304,8192,768,T,N` measured
+  `1.007997x` train-loop wall time and `0.992076x` tokens/sec. Verification:
+  rebuilt `libnfn_native_train_tile_ops.so`, ran a shape-stat profile that
+  emitted populated cuBLASLt heuristic metadata, and ran paired native-vs-native
+  RTX 5090 benchmarks for both rejected LM-head candidates.
+
 - Fixed native training retest failures after the CUDA 13.3 WSL reinstall. The
   SDK native-train binding loader now invalidates import caches and skips stale
   in-tree `neuralfn._native_train` extensions that expose `run_train` without

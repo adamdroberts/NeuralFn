@@ -58,6 +58,19 @@ bool trainer_linear_shape_stats_entry(
     int* op_b,
     std::int64_t* calls,
     std::int64_t* total_us);
+bool trainer_linear_shape_stats_entry_v2(
+    std::int64_t index,
+    int* path,
+    int* m,
+    int* n,
+    int* k,
+    int* op_a,
+    int* op_b,
+    std::int64_t* calls,
+    std::int64_t* total_us,
+    int* cublaslt_selected_heuristic,
+    int* cublaslt_returned_heuristics,
+    std::int64_t* cublaslt_workspace_bytes);
 void launch_gradient_accumulate_float32(float* buffer, const float* grad, std::int64_t n, float scale, cudaStream_t stream);
 void launch_copy_float32(const float* source, float* dest, std::int64_t n, cudaStream_t stream);
 void launch_evo_mutate_candidates_float32(
@@ -1787,6 +1800,34 @@ bool nfn_native_tile_trainer_linear_shape_stats_entry(
     std::int64_t* total_us) {
     return neuralfn::tile_cuda::trainer_linear_shape_stats_entry(
         index, path, m, n, k, op_a, op_b, calls, total_us);
+}
+
+bool nfn_native_tile_trainer_linear_shape_stats_entry_v2(
+    std::int64_t index,
+    int* path,
+    int* m,
+    int* n,
+    int* k,
+    int* op_a,
+    int* op_b,
+    std::int64_t* calls,
+    std::int64_t* total_us,
+    int* cublaslt_selected_heuristic,
+    int* cublaslt_returned_heuristics,
+    std::int64_t* cublaslt_workspace_bytes) {
+    return neuralfn::tile_cuda::trainer_linear_shape_stats_entry_v2(
+        index,
+        path,
+        m,
+        n,
+        k,
+        op_a,
+        op_b,
+        calls,
+        total_us,
+        cublaslt_selected_heuristic,
+        cublaslt_returned_heuristics,
+        cublaslt_workspace_bytes);
 }
 
 int nfn_native_tile_gradient_accumulate_float32(

@@ -198,7 +198,11 @@ For SDK-launched native GPT profiling, include
 `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1`, or `NFN_NATIVE_GPT2_LINEAR_SHAPE_STATS=1` in the
 subprocess environment. The compiled trainer then reports `linear_shape_stats`
 JSON buckets that identify the successful TK BF16, cuBLASLt, cuBLAS GEMMEx BF16,
-and SGEMM linear dispatch shapes, call counts, `total_us`, and `avg_us`. The
+and SGEMM linear dispatch shapes, call counts, `total_us`, and `avg_us`. With
+the v2 Tile stats ABI, cuBLASLt rows also include
+`cublaslt_selected_heuristic`, `cublaslt_returned_heuristics`, and
+`cublaslt_workspace_bytes`, so candidate runs can distinguish real heuristic
+changes from overrides that request an unavailable index. The
 timing path uses CUDA events and synchronizes measured GEMMs, so it is intended
 for kernel candidate comparisons and should stay disabled in normal training
 runs.
@@ -416,7 +420,7 @@ cached cuBLASLt TF32 path; the current 5090 GPT-2 shape keeps SGEMM as the
 faster default. Shape-supported transformer-block BF16 GEMMs use cached
 cuBLASLt with `CUBLAS_COMPUTE_32F_FAST_16BF` by default and select cuBLASLt
 heuristic index 1 when that candidate is available on the workstation RTX 5090
-shape. Set `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX=N` or
+shape when cuBLASLt actually returns multiple candidates. Set `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX=N` or
 `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX=N` only for paired kernel profiling.
 Set `NFN_TILE_CUDA_LINEAR_BF16_OUTPUT_CUBLASLT=1` or
 `NFN_NATIVE_LINEAR_BF16_OUTPUT_CUBLASLT=1` only for BF16-output LM-head logits
@@ -441,9 +445,13 @@ Set `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_SHAPE=m,n,k,opA,opB,index` or
 `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=m,n,k,opA,opB,index` for a
 single-shape bisection; it only changes the matching cuBLASLt plan and leaves
 the default/global heuristic route in place for every other GEMM.
-The default dispatcher pins heuristic index 1 for the hot dense GPT MLP
-projection dWeight shape `3072,768,65536,N,T`; pass the same shape override with
-another index only for paired rollback or candidate bisection.
+Shape-stat JSON includes `cublaslt_selected_heuristic`,
+`cublaslt_returned_heuristics`, and `cublaslt_workspace_bytes` for cuBLASLt
+rows when the v2 native Tile stats ABI is available. The CUDA 13.3 RTX 5090
+path reports only one returned heuristic for the hot dense GPT MLP projection
+dWeight shape `3072,768,65536,N,T`, so the dispatcher does not hardcode a
+shape-specific default pin there; pass a shape override only for explicit paired
+candidate bisection.
 Set `NFN_TILE_CUDA_LINEAR_CUBLASLT_WORKSPACE_MB=N` or
 `NFN_NATIVE_LINEAR_CUBLASLT_WORKSPACE_MB=N` only for paired diagnostics that
 change the cuBLASLt heuristic workspace cap. The default remains 128 MiB because
