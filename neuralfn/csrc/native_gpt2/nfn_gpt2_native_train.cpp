@@ -16726,8 +16726,6 @@ int run_transformer_lm_training_json(
         has_linear_shape_stat(2, kPaddedVocab, lm_head_chunk_rows, kDim, 1, 0);
     const bool lm_head_logits_cublaslt_shape_used =
         has_linear_shape_stat(1, kPaddedVocab, lm_head_chunk_rows, kDim, 1, 0);
-    const bool lm_head_logits_gemmex_shape_used =
-        has_linear_shape_stat(4, kPaddedVocab, lm_head_chunk_rows, kDim, 1, 0);
     std::ostringstream linear_shape_stats_json;
     linear_shape_stats_json << "  \"linear_shape_stats\": [\n";
     for (std::size_t i = 0; i < linear_shape_stats.size(); ++i) {

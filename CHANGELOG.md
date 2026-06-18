@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off TK dInput diagnostic for BF16-gradient/BF16-weight Linear
+  shapes. Set `NFN_NATIVE_LINEAR_TK_DINPUT=1` or
+  `NFN_TILE_CUDA_LINEAR_TK_DINPUT=1` to route eligible dInput shapes through
+  the TK BF16 matmul bridge and convert the BF16 result back to FP32. The
+  diagnostic successfully moved dense GPT LM-head dHidden
+  `768,8192,50304,N,N` from GEMMEx to TK in shape stats, but it is not promoted:
+  the dedicated RTX 5090 same-script 5-step, 3-sample paired benchmark measured
+  `1.049216x` train-loop wall time and `0.953102x` tokens/sec versus the
+  default route. Verification: rebuilt `build/libnfn_native_train_tile_ops.so`,
+  ran a GPU-visible one-step shape-stat smoke, and ran
+  `tools/bench_native_gpt_sm120_candidate.sh` with
+  `NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_LINEAR_TK_DINPUT=1'`.
+
 - Dense GPT native training now skips the TK forward path for the padded
   LM-head logits shape `50304,8192,768,T,N` by default and falls through to the
   existing BF16 fallback path. Set
