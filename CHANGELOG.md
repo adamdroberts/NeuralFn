@@ -19,6 +19,15 @@ Future updates should append new entries here rather than replacing older notes.
   `tools/bench_native_gpt_sm120_candidate.sh` with idle selected-GPU checks,
   and updated the native source guard test.
 
+- Rejected disabling TK for the hot dense GPT MLP projection forward shape
+  `768,65536,3072,T,N`. Setting
+  `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=768,65536,3072,T,N` moved the
+  candidate away from the current TK route but regressed the dedicated RTX 5090
+  3-step paired benchmark to `1.010042x` train-loop wall time and `0.990063x`
+  tokens/sec, so the TK route remains the default. Verification: ran
+  `tools/bench_native_gpt_sm120_candidate.sh` with selected-GPU idle checks and
+  recorded the result in `todo-tile-cuda.md`.
+
 - The top-level `nfn train` native dispatcher now normalizes
   `--native-cuda-no-checkpoint` / `--no-checkpoint` and
   `--native-cuda-write-checkpoint` / `--write-checkpoint` before launching the
