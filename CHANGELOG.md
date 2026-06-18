@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Strengthened `tools/check_native_no_torch_deps.py` to verify the public
+  top-level native GPT SDK exports under the same blocked-import guard as the
+  direct module imports. The gate now proves `NativeGptRunConfig`,
+  `NativeGpt2RunConfig`, `build_native_gpt_compiled_cli_run_config()`,
+  `native_gpt_kernel_backend()`, and `native_gpt_parameter_count()` can be
+  imported from `neuralfn` without importing Torch, NumPy, tiktoken,
+  `server.dataset_manager`, or `nfn_impl`. A refreshed dedicated RTX 5090
+  recheck also kept `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUTS=1` rejected
+  as a default: startup-only setup improved to `0.965877x` and total startup
+  to `0.966002x`, but the normal 3-step, 2-sample train loop regressed to
+  `1.016063x` with total wall at `1.012855x`. Verification: ran
+  `python -m py_compile tools/check_native_no_torch_deps.py` and
+  `python tools/check_native_no_torch_deps.py --skip-artifacts --json`.
+
 - `tools/paired_kernel_speed.py` now preserves categorical native strategy
   summaries in paired benchmark output. Native JSON fields such as
   `lm_head_logits_linear_strategy`, `lm_head_dhidden_linear_strategy`,

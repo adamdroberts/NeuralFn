@@ -48,7 +48,12 @@ python tools/check_native_no_torch_deps.py
 ```
 
 Pass explicit artifact paths to check candidate builds, or add `--json` for a
-machine-readable CI report.
+machine-readable CI report. The gate also imports the top-level native SDK
+exports such as `NativeGptRunConfig`,
+`build_native_gpt_compiled_cli_run_config()`, `native_gpt_kernel_backend()`,
+and `native_gpt_parameter_count()` while blocking `torch`, NumPy, tiktoken,
+`server.dataset_manager`, and `nfn_impl`, so lazy public exports stay on the
+no-Torch path.
 
 On the SM120 workstation this defaults to `NFN_TILE_CUDA_USE_TK_ATTENTION=1`,
 `NFN_TILE_CUDA_ARCH=sm_120a`, and links the local llm.kittens /

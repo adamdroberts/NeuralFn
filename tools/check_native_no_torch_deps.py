@@ -71,6 +71,27 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
             "import neuralfn; import neuralfn.native_gpt; import neuralfn.native_gpt2; print('native-sdk-ok')",
         ),
     ),
+    (
+        "native_sdk_public_exports",
+        (
+            sys.executable,
+            "-c",
+            "\n".join(
+                [
+                    "import neuralfn",
+                    "from neuralfn import NativeGptRunConfig, NativeGpt2RunConfig",
+                    "from neuralfn import build_native_gpt_compiled_cli_run_config",
+                    "from neuralfn import native_gpt_kernel_backend, native_gpt_parameter_count",
+                    "assert NativeGptRunConfig.__name__ == 'NativeGptRunConfig'",
+                    "assert NativeGpt2RunConfig.__name__ == 'NativeGpt2RunConfig'",
+                    "assert native_gpt_kernel_backend('tile-cuda') == 'tile-cuda'",
+                    "assert native_gpt_parameter_count(max_seq_len=1024, padded_vocab_size=50304, num_layers=12, channels=768) > 0",
+                    "assert callable(build_native_gpt_compiled_cli_run_config)",
+                    "print('native-sdk-public-exports-ok')",
+                ]
+            ),
+        ),
+    ),
 )
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256
