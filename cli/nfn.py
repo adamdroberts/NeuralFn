@@ -99,6 +99,7 @@ _LIGHTWEIGHT_COMMAND_HELP: dict[str, str] = {
           --tile-cuda-strict, --no-tile-cuda-strict
           --eval-every-steps N
           --native-cuda-lm-head-row-chunk-size N
+          --native-cuda-no-checkpoint, --no-checkpoint
           --native-cuda-runner {auto,binding,compiled-cli,launcher}
           --native-cuda-dry-run
 
@@ -555,6 +556,10 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         "--native-cuda-smoke-transformer-lm-step": "--smoke-transformer-lm-step",
         "--native-cuda-smoke-embedding-lm-step": "--smoke-embedding-lm-step",
         "--native-cuda-allow-train-val-fallback": "--allow-train-val-fallback",
+        "--native-cuda-no-checkpoint": "--no-checkpoint",
+        "--no-checkpoint": "--no-checkpoint",
+        "--native-cuda-write-checkpoint": "--write-checkpoint",
+        "--write-checkpoint": "--write-checkpoint",
     }
     split_value_flags = {
         "--dataset-alias",

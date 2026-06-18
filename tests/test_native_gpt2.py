@@ -5920,6 +5920,7 @@ def test_top_level_nfn_train_defaults_to_native_gpt_without_base_model(tmp_path:
             "train",
             "--tinystories",
             "--native-cuda-print-command",
+            "--native-cuda-no-checkpoint",
         ],
         cwd=root,
         env=env,
@@ -5933,6 +5934,8 @@ def test_top_level_nfn_train_defaults_to_native_gpt_without_base_model(tmp_path:
     assert "--model-family\ngpt" in proc.stdout
     assert "--train-transformer-lm" in proc.stdout
     assert "--tinystories" in proc.stdout
+    assert "--no-checkpoint" in proc.stdout
+    assert "--native-cuda-no-checkpoint" not in proc.stdout
     assert "TorchTrainer path" not in proc.stderr
 
 

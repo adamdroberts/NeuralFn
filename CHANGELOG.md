@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- The top-level `nfn train` native dispatcher now normalizes
+  `--native-cuda-no-checkpoint` / `--no-checkpoint` and
+  `--native-cuda-write-checkpoint` / `--write-checkpoint` before launching the
+  compiled dense GPT trainer. This keeps `nfn train --native-cuda-print-command`
+  and benchmark invocations consistent with `cli/scripts/train_gpt.py`, so
+  timing-only runs can skip final checkpoint export through either wrapper or
+  compiled C++ flag spelling. Verification: updated the focused top-level
+  native GPT CLI regression and documented the workflow in `README.md` and
+  `docs/cli.md`.
+
 - Rechecked the MLP projection dWeight cuBLASLt heuristic override
   `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=3072,768,65536,N,T,0` on the
   dedicated RTX 5090 and kept it diagnostic-only. The same-script 3-step,

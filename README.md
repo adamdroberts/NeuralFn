@@ -278,6 +278,8 @@ Compiled CUDA Tile graphs can opt into runtime NVFP4 activation packing with `gr
 
 Native compiled entrypoints and SDK bindings set `CUDA_MODULE_LOADING=LAZY` when unset before executing native trainers or loading Tile CUDA libraries, matching the dense GPT C++ trainer. Existing user-provided `CUDA_MODULE_LOADING` values still take precedence.
 
+For same-script native GPT benchmarks through `nfn train`, pass `--native-cuda-no-checkpoint` or `--no-checkpoint` to skip final checkpoint export, in addition to setting validation, sample, and checkpoint cadences to `0` when you want timing-only runs.
+
 Dense GPT native training now accepts `--layer-evo` /
 `--native-cuda-layer-evo` plus `--evo-layer-index`,
 `--evo-layer-interval`, `--evo-layer-population`, and

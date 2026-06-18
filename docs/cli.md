@@ -726,7 +726,9 @@ For timing-only native GPT probes, pass wrapper
 `--native-cuda-no-checkpoint` or compiled C++ `--no-checkpoint` to skip final
 trained-checkpoint export. Runtime JSON then reports `checkpoint.enabled:
 false`, `checkpoint.checkpoint_written: false`, and zero checkpoint wall time;
-normal training leaves checkpoint export enabled.
+normal training leaves checkpoint export enabled. The top-level `nfn train`
+dispatcher normalizes `--native-cuda-no-checkpoint` to the compiled
+`--no-checkpoint` flag before execing the native C++ trainer.
 
 Native GPT startup initializes the tied token FP32 master weight and persistent
 BF16 LM-head shadow in a single CUDA Tile ABI call,
