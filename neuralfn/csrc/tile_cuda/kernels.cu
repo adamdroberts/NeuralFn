@@ -2061,7 +2061,7 @@ bool set_trainer_linear_cublaslt_runtime_pointers(
 bool cublaslt_linear_matmul(
     const void* a,
     const void* b,
-    float* c,
+    void* c,
     cudaDataType_t a_type,
     cudaDataType_t b_type,
     cudaDataType_t c_type,
@@ -2193,7 +2193,7 @@ bool cublaslt_linear_matmul(
 bool cublaslt_linear_matmul(
     const void* a,
     const void* b,
-    float* c,
+    void* c,
     cudaDataType_t a_type,
     cudaDataType_t b_type,
     cudaDataType_t c_type,
@@ -2587,6 +2587,31 @@ bool trainer_linear_bf16_cublaslt_shape_supported(
       m <= 50304 &&
       n <= 50304 &&
       (k <= 32768 || (extra_large_k_enabled && k <= 65536));
+}
+
+bool trainer_linear_bf16_output_cublaslt_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16_OUTPUT_CUBLASLT");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_BF16_OUTPUT_CUBLASLT");
+    }
+    if (value == nullptr) {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
 }
 
 bool trainer_linear_tk_forward_shape_disabled(
@@ -4525,6 +4550,30 @@ bool cublas_linear_gemm_ex_float32_a_bf16_bits_b_to_bf16_bits(
   const float alpha = 1.0f;
   const float beta = 0.0f;
   auto* c_bf16 = reinterpret_cast<__nv_bfloat16*>(c_bf16_bits);
+  if (!has_bias &&
+      trainer_linear_bf16_output_cublaslt_enabled() &&
+      trainer_linear_bf16_cublaslt_enabled() &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k, op_a, op_b) &&
+      cublaslt_linear_matmul(
+          a_bf16,
+          b_bf16,
+          c_bf16,
+          CUDA_R_16BF,
+          CUDA_R_16BF,
+          CUDA_R_16BF,
+          CUBLAS_COMPUTE_32F_FAST_16BF,
+          m,
+          n,
+          k,
+          op_a,
+          op_b,
+          lda,
+          ldb,
+          ldc,
+          0.0f,
+          stream)) {
+    return true;
+  }
   LinearShapeTiming timing = begin_linear_shape_timing(stream);
   const cublasStatus_t status = cublasGemmEx(
       handle,
@@ -4549,7 +4598,7 @@ bool cublas_linear_gemm_ex_float32_a_bf16_bits_b_to_bf16_bits(
   if (status == CUBLAS_STATUS_SUCCESS) {
     const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
-    record_linear_shape_stat(5, m, n, k, op_a, op_b, elapsed_us);
+    record_linear_shape_stat(4, m, n, k, op_a, op_b, elapsed_us);
     if (has_bias && bias != nullptr) {
       const std::int64_t elements = static_cast<std::int64_t>(n) * m;
       if (bf16_bits_add_bias_tile_enabled()) {
@@ -4616,6 +4665,30 @@ bool cublas_linear_gemm_ex_bf16_bits_ab_to_bf16_bits(
   const float alpha = 1.0f;
   const float beta = 0.0f;
   auto* c_bf16 = reinterpret_cast<__nv_bfloat16*>(c_bf16_bits);
+  if (!has_bias &&
+      trainer_linear_bf16_output_cublaslt_enabled() &&
+      trainer_linear_bf16_cublaslt_enabled() &&
+      trainer_linear_bf16_cublaslt_shape_supported(m, n, k, op_a, op_b) &&
+      cublaslt_linear_matmul(
+          a_bf16,
+          b_bf16,
+          c_bf16,
+          CUDA_R_16BF,
+          CUDA_R_16BF,
+          CUDA_R_16BF,
+          CUBLAS_COMPUTE_32F_FAST_16BF,
+          m,
+          n,
+          k,
+          op_a,
+          op_b,
+          lda,
+          ldb,
+          ldc,
+          0.0f,
+          stream)) {
+    return true;
+  }
   LinearShapeTiming timing = begin_linear_shape_timing(stream);
   const cublasStatus_t status = cublasGemmEx(
       handle,

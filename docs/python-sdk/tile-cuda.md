@@ -360,6 +360,11 @@ cuBLASLt with `CUBLAS_COMPUTE_32F_FAST_16BF` by default and select cuBLASLt
 heuristic index 1 when that candidate is available on the workstation RTX 5090
 shape. Set `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX=N` or
 `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX=N` only for paired kernel profiling.
+Set `NFN_TILE_CUDA_LINEAR_BF16_OUTPUT_CUBLASLT=1` or
+`NFN_NATIVE_LINEAR_BF16_OUTPUT_CUBLASLT=1` only for BF16-output LM-head logits
+profiling. The opt-in route moves eligible BF16-output logits GEMMs to
+cuBLASLt in shape stats, but the dedicated RTX 5090 paired check measured it
+neutral/slightly slower than the GEMMEx fallback, so it is not a default.
 If the trainer Tile ops library is built without the cuBLAS linear fast path or
 the GEMM route is otherwise unavailable, large-row float32-output dWeight
 fallbacks use a shared-memory 2D tiled CUDA kernel for float32/BF16 activation

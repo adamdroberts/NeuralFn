@@ -32,6 +32,19 @@ Future updates should append new entries here rather than replacing older notes.
   route instead of row-chunk tuning. Verification: ran
   `tools/bench_native_gpt_sm120_candidate.sh` with selected-GPU idle checks.
 
+- Added a default-off BF16-output cuBLASLt LM-head logits diagnostic behind
+  `NFN_NATIVE_LINEAR_BF16_OUTPUT_CUBLASLT=1` /
+  `NFN_TILE_CUDA_LINEAR_BF16_OUTPUT_CUBLASLT=1`, covering both all-BF16 and
+  BF16-input/float-weight logits wrappers. The one-step shape-stat smoke moved
+  the `50304,8192,768,T,N` logits bucket to cuBLASLt, but the dedicated RTX
+  5090 10-step, 3-sample paired benchmark measured `1.000629x` train-loop wall
+  time and `0.999382x` tokens/sec versus the current GEMMEx fallback, so the
+  diagnostic remains off by default. The same change fixes BF16-output
+  float-weight GEMMEx telemetry to report `cublas_gemmex_bf16` instead of
+  `cublas_sgemm`. Verification: rebuilt `libnfn_native_train_tile_ops.so`, ran
+  a GPU-visible one-step shape-stat smoke, and ran
+  `tools/bench_native_gpt_sm120_candidate.sh` with selected-GPU idle checks.
+
 - Replaced the no-cuBLAS large-row linear dWeight fallback with a shared-memory
   2D tiled CUDA kernel for float32-output dWeight accumulation across float32
   and BF16 activation/gradient combinations. The normal native GPT workstation
