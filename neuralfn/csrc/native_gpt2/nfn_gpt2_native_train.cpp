@@ -423,12 +423,6 @@ int parse_int(const std::string& value, const std::string& flag) {
     }
 }
 
-std::string number_string(double value) {
-    std::ostringstream out;
-    out << value;
-    return out.str();
-}
-
 std::int64_t shape_count(const std::vector<std::int64_t>& shape) {
     std::int64_t total = 1;
     for (const std::int64_t dim : shape) {
