@@ -1173,6 +1173,10 @@ verify the Python handoff layer stays Torch-free. The gate stubs the native
 CLIs and blocks imports of Torch, NumPy, `tiktoken`, dataset manager modules,
 and `nfn_impl` while checking GPT, GPT-2-evo, NanoGPT, `nfn train`, native
 inference, `neuralfn.native_train`, and the public SDK native training exports.
+The generic compiled binding must expose both a runner symbol and a command
+resolver symbol; `resolve_native_train_binding_command(config)` returns the
+argv that `neuralfn._native_train` will spawn so SDK callers can assert the
+compiled handoff path before training.
 Dense GPT training also requires optimized attention by default. If the Tile
 ABI drops into the scalar attention fallback, the native trainer marks the run
 failed before final checkpoint export and reports

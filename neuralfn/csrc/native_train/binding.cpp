@@ -202,9 +202,43 @@ PyObject* run_train(PyObject*, PyObject* args) {
     return PyLong_FromLong(return_code);
 }
 
+PyObject* resolve_command(PyObject*, PyObject* args) {
+    PyObject* config = nullptr;
+    if (!PyArg_ParseTuple(args, "O!:resolve_command", &PyDict_Type, &config)) {
+        return nullptr;
+    }
+
+    std::vector<std::string> command;
+    std::string command_error;
+    if (!command_from_config(config, &command, &command_error)) {
+        return nullptr;
+    }
+    if (command.empty()) {
+        PyErr_SetString(PyExc_ValueError, command_error.c_str());
+        return nullptr;
+    }
+
+    PyObject* list = PyList_New(static_cast<Py_ssize_t>(command.size()));
+    if (list == nullptr) {
+        return nullptr;
+    }
+    for (Py_ssize_t i = 0; i < static_cast<Py_ssize_t>(command.size()); ++i) {
+        PyObject* item = PyUnicode_FromStringAndSize(command[static_cast<std::size_t>(i)].data(),
+                                                     static_cast<Py_ssize_t>(command[static_cast<std::size_t>(i)].size()));
+        if (item == nullptr) {
+            Py_DECREF(list);
+            return nullptr;
+        }
+        PyList_SET_ITEM(list, i, item);
+    }
+    return list;
+}
+
 PyMethodDef methods[] = {
     {"run_train", run_train, METH_VARARGS, "Run the unified native NeuralFn trainer from a config dict."},
     {"run_native_train", run_train, METH_VARARGS, "Alias for run_train."},
+    {"resolve_command", resolve_command, METH_VARARGS, "Resolve the native train command argv from a config dict."},
+    {"resolve_native_train_command", resolve_command, METH_VARARGS, "Alias for resolve_command."},
     {nullptr, nullptr, 0, nullptr},
 };
 

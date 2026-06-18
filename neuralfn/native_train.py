@@ -21,6 +21,7 @@ class NativeTrainRunnerStatus:
     binding_module: str | None = None
     available: bool = True
     reason: str = ""
+    command_resolver_available: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -98,9 +99,13 @@ def _load_native_train_binding():
             errors.append(f"{module_name}: {exc}")
             continue
         runner = getattr(module, "run_train", None) or getattr(module, "run_native_train", None)
-        if callable(runner):
-            return module_name, runner
-        errors.append(f"{module_name}: missing run_train(config_dict) or run_native_train(config_dict)")
+        resolver = getattr(module, "resolve_command", None) or getattr(module, "resolve_native_train_command", None)
+        if callable(runner) and callable(resolver):
+            return module_name, runner, resolver
+        errors.append(
+            f"{module_name}: missing run_train(config_dict)/run_native_train(config_dict) "
+            "or resolve_command(config_dict)/resolve_native_train_command(config_dict)"
+        )
     raise ImportError("; ".join(errors) if errors else "no native train binding modules configured")
 
 
@@ -119,7 +124,7 @@ def native_train_runner_status(requested: str = "auto") -> NativeTrainRunnerStat
             reason="" if cli.exists() else f"compiled native train CLI not found: {cli}",
         )
     try:
-        module_name, _runner = _load_native_train_binding()
+        module_name, _runner, _resolver = _load_native_train_binding()
     except ImportError as exc:
         if normalized == "binding":
             return NativeTrainRunnerStatus(
@@ -139,7 +144,15 @@ def native_train_runner_status(requested: str = "auto") -> NativeTrainRunnerStat
         requested=normalized,
         resolved="binding",
         binding_module=module_name,
+        command_resolver_available=True,
     )
+
+
+def resolve_native_train_binding_command(config: NativeTrainRunConfig) -> list[str]:
+    """Return the argv that the compiled native-train binding will spawn."""
+
+    _module_name, _runner, resolver = _load_native_train_binding()
+    return [str(item) for item in resolver(config.to_dict())]
 
 
 def run_native_train(config: NativeTrainRunConfig, *, runner: str = "auto") -> int:
@@ -147,7 +160,7 @@ def run_native_train(config: NativeTrainRunConfig, *, runner: str = "auto") -> i
     if status.resolved == "binding":
         if not status.available:
             raise RuntimeError(f"Native train binding requested but unavailable: {status.reason}")
-        _module_name, binding_runner = _load_native_train_binding()
+        _module_name, binding_runner, _resolver = _load_native_train_binding()
         return int(binding_runner(config.to_dict()))
     if not status.available:
         raise RuntimeError(f"Native train CLI requested but unavailable: {status.reason}")

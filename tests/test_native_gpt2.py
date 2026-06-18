@@ -45,9 +45,11 @@ from neuralfn.native_gpt2 import (
     write_native_gpt2_run_config,
 )
 from neuralfn.native_train import (
+    NativeTrainRunnerStatus,
     build_native_train_run_config,
     native_train_model_registry,
     native_train_runner_status,
+    resolve_native_train_binding_command,
     resolve_native_train_cli,
     run_native_train,
 )
@@ -1252,6 +1254,61 @@ def test_native_train_cpp_binding_uses_spawn_and_lazy_cuda_module_loading() -> N
     assert "posix_spawnp(&pid" in source
     assert 'setenv("CUDA_MODULE_LOADING", "LAZY", 0)' in source
     assert "fork()" not in source
+
+
+def test_native_train_cpp_binding_resolves_and_runs_compiled_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if shutil.which("c++") is None:
+        pytest.skip("c++ compiler not available")
+    root = Path(__file__).resolve().parents[1]
+    ext_suffix = sysconfig.get_config_var("EXT_SUFFIX") or ".so"
+    package_dir = tmp_path / "neuralfn"
+    binding = package_dir / f"_native_train{ext_suffix}"
+
+    build = subprocess.run(
+        ["bash", str(root / "tools" / "build_native_train_binding.sh"), str(binding)],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert build.returncode == 0, build.stderr
+    assert binding.exists()
+
+    monkeypatch.setattr(neuralfn, "__path__", [str(package_dir), *list(neuralfn.__path__)])
+    monkeypatch.delitem(sys.modules, "neuralfn_native_train", raising=False)
+    monkeypatch.delitem(sys.modules, "neuralfn._native_train", raising=False)
+
+    cfg = build_native_train_run_config(
+        "gpt",
+        args=("--dry-run", "--print-command", "--no-checkpoint"),
+        native_train_cli="/bin/true",
+    )
+    status = native_train_runner_status("auto")
+
+    assert isinstance(status, NativeTrainRunnerStatus)
+    assert status.resolved == "binding"
+    assert status.binding_module == "neuralfn._native_train"
+    assert status.command_resolver_available is True
+    assert resolve_native_train_binding_command(cfg) == cfg.argv()
+    assert run_native_train(cfg, runner="auto") == 0
+
+
+def test_native_train_cpp_binding_requires_command_resolver_symbol() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "neuralfn" / "csrc" / "native_train" / "binding.cpp").read_text(encoding="utf-8")
+    python_source = (root / "neuralfn" / "native_train.py").read_text(encoding="utf-8")
+
+    assert "resolve_command" in source
+    assert "resolve_native_train_command" in source
+    assert "command_from_config(config, &command, &command_error)" in source
+    assert "command_resolver_available" in python_source
+    assert "resolve_native_train_binding_command" in python_source
+    assert "missing run_train(config_dict)/run_native_train(config_dict)" in python_source
+    assert "resolve_command(config_dict)/resolve_native_train_command(config_dict)" in python_source
 
 
 def test_native_gpt2_cpp_binding_uses_compiled_cli_for_alias_only_config(

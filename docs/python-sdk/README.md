@@ -190,8 +190,9 @@ used by `run_native_train(..., runner="auto")` to hand off to `nfn_native_train`
 without importing Torch. The generic native-train binding also uses
 `posix_spawnp()` and preserves caller-supplied CUDA module-loading policy,
 defaulting to `CUDA_MODULE_LOADING=LAZY` only when unset. Use
-`native_train_model_registry()` to inspect the compiled model coverage exposed
-by `nfn-native-train --list-models --json`.
+`resolve_native_train_binding_command(config)` to inspect the exact argv the
+compiled binding will spawn, and use `native_train_model_registry()` to inspect
+the compiled model coverage exposed by `nfn-native-train --list-models --json`.
 The CLI subprocess fallback also defaults `CUDA_VISIBLE_DEVICES=0` and
 `CUDA_DEVICE_MAX_CONNECTIONS=1` only when the caller has not supplied those
 environment variables; set `NativeTrainRunConfig.cuda_visible_devices` or the
