@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native profile JSON now aggregates arena allocation requests by
+  normalized family in addition to the existing largest individual requests.
+  `float_arena_request_stats` and `uint16_arena_request_stats` now include
+  `family_count`, `top_families`, `top_family_elements`, and
+  `top_family_bytes`; per-block names are normalized as `block.*...` so
+  repeated layer buffers are visible as one startup/memory target. This is a
+  diagnostic surface only and does not change the training path. Verification:
+  rebuilt `build/nfn_gpt_native_train`, ran a startup-only TinyStories profile,
+  parsed the new family fields, and re-ran the current
+  `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=0` candidate in the paired
+  RTX 5090 harness; it measured `1.001432x` train-loop wall time and
+  `0.998574x` tokens/sec versus default, so no kernel default was promoted.
+
 - Dense GPT native CLI cleanup now defaults to skipping explicit exit-time
   `cudaFree` calls for the large device arenas. The process exits immediately
   after JSON/checkpoint output, so CUDA context teardown reclaims those

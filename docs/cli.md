@@ -174,7 +174,10 @@ Profile JSON includes ranked arena request details in
 `uint16_arena_request_stats.top_requests`. Each entry reports the suballocation
 name, elements, bytes, and arena offset, so startup work can pair
 `timing.setup_timing` with the actual buffers behind the large float and BF16
-arena `cudaMalloc` calls.
+arena `cudaMalloc` calls. The same objects also include `family_count`,
+`top_families`, `top_family_elements`, and `top_family_bytes`; repeated
+per-block names are normalized as `block.*...` so layer-wide allocation
+families can be selected from the JSON without manual grouping.
 Validation uses a separate C++ validation sampler and active forward batch size
 from `--eval-batch-size`; that value must be at least 1 and no larger than the
 training `--batch-size` because the fixed activation arena is allocated for the
@@ -380,7 +383,8 @@ activation, and workspace buffer. JSON reports
 `float_allocation_strategy: "single-arena"`,
 `float_allocation_cuda_malloc_count`, `float_allocation_request_count`,
 `float_arena_requested_elements`, `float_arena_allocated_elements`, and
-`float_arena_request_stats` with the largest named suballocations.
+`float_arena_request_stats` with the largest named suballocations and grouped
+allocation families.
 BF16 activation and scratch buffers are suballocated from one uint16 CUDA device
 arena by default, covering stored MLP activations, residual1 caches, packed
 attention stores, LM-head BF16 logits, MLP BF16 scratch, packed-QKV BF16
@@ -392,7 +396,7 @@ BF16 `cudaMalloc` path during paired benchmarks. JSON reports
 `uint16_allocation_request_count`, `uint16_arena_requested_elements`,
 `uint16_arena_allocated_elements`, `uint16_arena_cuda_malloc_count`, and
 `uint16_arena_suballocation_count`, plus `uint16_arena_request_stats` with the
-largest named BF16/uint16 suballocations.
+largest named BF16/uint16 suballocations and grouped allocation families.
 Set `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` only for allocator profiling. It routes
 the same large native GPT device arenas through CUDA runtime `cudaMallocAsync`
 and frees them with `cudaFreeAsync` when those symbols are available, falling

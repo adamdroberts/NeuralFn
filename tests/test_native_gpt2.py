@@ -1602,8 +1602,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "interval": 10,
         "population": 8,
         "mutation_scale": 0.02,
-        "forward_candidate_eval_enabled": False,
-        "candidate_loss_source": "placeholder-device-zero-loss-selects-current-candidate",
+        "forward_candidate_eval_enabled": True,
+        "candidate_loss_source": "native-forward-loss-current-batch",
     }
     assert tile_payload["attention_forward_strategy"] == "tk-sm120-packed-qkv-bf16-flashattention"
     assert tile_payload["attention_forward_score_reuse_value_dim"] == 64
@@ -2414,9 +2414,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "mutate_kernel_launches": 0,
         "select_kernel_launches": 0,
         "adopt_kernel_launches": 0,
+        "forward_candidate_evals": 0,
         "forward_candidate_eval_enabled": False,
-        "candidate_loss_source": "placeholder-device-zero-loss-selects-current-candidate",
-        "required_next_step": "forward-only candidate loss evaluation for mutated evo-layer weights",
+        "candidate_loss_source": "native-forward-loss-current-batch",
+        "required_next_step": "expand candidate targets beyond block ln1.weight when broader evo mutations are enabled",
     }
     assert train_transformer_payload["vocab"] == 50257
     assert train_transformer_payload["padded_vocab"] == 50304
@@ -2781,6 +2782,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "backward_recompute_final_residual_elided": True,
         "mlp_proj_backward_gelu_inplace": True,
         "mlp_proj_backward_grad_act_scratch_allocated": False,
+        "mlp_residual_next_ln1_fusion_enabled": True,
+        "mlp_residual_next_ln1_fusion_count": 0,
+        "mlp_residual_next_ln1_strategy": "fused-mlp-bias-residual-next-ln1-when-packed-ln1-storage-is-available",
+        "float_projection_output_buffers_allocated": 2,
+        "float_projection_output_buffers_elided": 0,
+        "float_projection_output_elements_elided": 0,
         "activation_tape_strategy": "scratch-recompute-bf16-stored-packed-attention-and-mlp-direct-backward",
         "forward_row_qkv_scratch_allocated": False,
         "forward_row_qkv_scratch_buffers_elided": 3,

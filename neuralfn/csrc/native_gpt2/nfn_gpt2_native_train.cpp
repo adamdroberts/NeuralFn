@@ -14,6 +14,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <sstream>
 #include <string>
 #include <stdexcept>
@@ -16637,9 +16638,29 @@ int run_transformer_lm_training_json(
                                                  std::int64_t requested_elements,
                                                  std::int64_t allocated_elements,
                                                  std::int64_t top_count) {
+        struct ArenaFamilyStat {
+            std::int64_t request_count = 0;
+            std::int64_t elements = 0;
+        };
+        auto arena_family_name = [](const std::string& name) {
+            if (name.rfind("block", 0) == 0) {
+                std::size_t pos = 5;
+                while (pos < name.size() && std::isdigit(static_cast<unsigned char>(name[pos]))) {
+                    ++pos;
+                }
+                if (pos < name.size() && name[pos] == '.') {
+                    return std::string("block.*") + name.substr(pos);
+                }
+            }
+            return name;
+        };
         std::vector<std::size_t> order(requests.size());
+        std::map<std::string, ArenaFamilyStat> family_stats;
         for (std::size_t i = 0; i < order.size(); ++i) {
             order[i] = i;
+            ArenaFamilyStat& family = family_stats[arena_family_name(requests[i].name)];
+            family.request_count += 1;
+            family.elements += requests[i].elements;
         }
         std::sort(order.begin(), order.end(), [&](std::size_t lhs, std::size_t rhs) {
             const auto& left = requests[lhs];
@@ -16652,7 +16673,23 @@ int run_transformer_lm_training_json(
         const std::size_t capped_count = std::min<std::size_t>(
             order.size(),
             static_cast<std::size_t>(std::max<std::int64_t>(0, top_count)));
+        std::vector<std::pair<std::string, ArenaFamilyStat>> family_order(
+            family_stats.begin(),
+            family_stats.end());
+        std::sort(
+            family_order.begin(),
+            family_order.end(),
+            [](const auto& lhs, const auto& rhs) {
+                if (lhs.second.elements != rhs.second.elements) {
+                    return lhs.second.elements > rhs.second.elements;
+                }
+                return lhs.first < rhs.first;
+            });
+        const std::size_t capped_family_count = std::min<std::size_t>(
+            family_order.size(),
+            static_cast<std::size_t>(std::max<std::int64_t>(0, top_count)));
         std::int64_t top_elements = 0;
+        std::int64_t top_family_elements = 0;
         out << "  \"" << json_name << "\": {\n"
             << "    \"request_count\": " << requests.size() << ",\n"
             << "    \"requested_elements\": " << requested_elements << ",\n"
@@ -16660,6 +16697,7 @@ int run_transformer_lm_training_json(
             << "    \"requested_bytes\": " << (requested_elements * element_bytes) << ",\n"
             << "    \"allocated_bytes\": " << (allocated_elements * element_bytes) << ",\n"
             << "    \"element_bytes\": " << element_bytes << ",\n"
+            << "    \"family_count\": " << family_order.size() << ",\n"
             << "    \"top_count\": " << capped_count << ",\n"
             << "    \"top_requests\": [\n";
         for (std::size_t i = 0; i < capped_count; ++i) {
@@ -16676,7 +16714,23 @@ int run_transformer_lm_training_json(
         }
         out << "    ],\n"
             << "    \"top_elements\": " << top_elements << ",\n"
-            << "    \"top_bytes\": " << (top_elements * element_bytes) << "\n"
+            << "    \"top_bytes\": " << (top_elements * element_bytes) << ",\n"
+            << "    \"top_families\": [\n";
+        for (std::size_t i = 0; i < capped_family_count; ++i) {
+            const auto& family = family_order[i];
+            top_family_elements += family.second.elements;
+            out << "      {\"family\": \"" << json_escape(family.first) << "\", "
+                << "\"request_count\": " << family.second.request_count << ", "
+                << "\"elements\": " << family.second.elements << ", "
+                << "\"bytes\": " << (family.second.elements * element_bytes) << "}";
+            if (i + 1 != capped_family_count) {
+                out << ",";
+            }
+            out << "\n";
+        }
+        out << "    ],\n"
+            << "    \"top_family_elements\": " << top_family_elements << ",\n"
+            << "    \"top_family_bytes\": " << (top_family_elements * element_bytes) << "\n"
             << "  },\n";
     };
     std::ostringstream arena_request_stats_json;
