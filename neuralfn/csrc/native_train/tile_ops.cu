@@ -15,6 +15,8 @@ std::int64_t attention_backward_tk_timing_count();
 std::int64_t attention_tk_workspace_allocation_count();
 std::int64_t attention_tk_workspace_element_capacity();
 std::int64_t attention_tk_workspace_row_capacity();
+std::int64_t token_cross_entropy_workspace_allocation_count();
+std::int64_t token_cross_entropy_workspace_row_capacity();
 std::int64_t attention_forward_row_fallback_count();
 std::int64_t attention_forward_scalar_launch_count();
 int attention_forward_row_last_error();
@@ -1625,6 +1627,14 @@ std::int64_t nfn_native_tile_attention_tk_workspace_element_capacity() {
 
 std::int64_t nfn_native_tile_attention_tk_workspace_row_capacity() {
     return neuralfn::tile_cuda::attention_tk_workspace_row_capacity();
+}
+
+std::int64_t nfn_native_tile_token_cross_entropy_workspace_allocation_count() {
+    return neuralfn::tile_cuda::token_cross_entropy_workspace_allocation_count();
+}
+
+std::int64_t nfn_native_tile_token_cross_entropy_workspace_row_capacity() {
+    return neuralfn::tile_cuda::token_cross_entropy_workspace_row_capacity();
 }
 
 std::int64_t nfn_native_tile_attention_forward_row_fallback_count() {

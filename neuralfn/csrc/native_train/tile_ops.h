@@ -17,6 +17,8 @@ std::int64_t nfn_native_tile_attention_backward_tk_timing_count();
 std::int64_t nfn_native_tile_attention_tk_workspace_allocation_count();
 std::int64_t nfn_native_tile_attention_tk_workspace_element_capacity();
 std::int64_t nfn_native_tile_attention_tk_workspace_row_capacity();
+std::int64_t nfn_native_tile_token_cross_entropy_workspace_allocation_count();
+std::int64_t nfn_native_tile_token_cross_entropy_workspace_row_capacity();
 std::int64_t nfn_native_tile_attention_forward_row_fallback_count();
 std::int64_t nfn_native_tile_attention_forward_scalar_launch_count();
 int nfn_native_tile_attention_forward_row_last_error();

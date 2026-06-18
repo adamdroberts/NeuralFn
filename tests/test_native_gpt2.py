@@ -5165,6 +5165,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_masked_token_cross_entropy_partials_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_backward_float32" in header_text
     assert "nfn_native_tile_masked_token_cross_entropy_backward_float32" in header_text
+    assert "nfn_native_tile_token_cross_entropy_workspace_allocation_count" in header_text
+    assert "nfn_native_tile_token_cross_entropy_workspace_row_capacity" in header_text
+    assert "nfn_native_tile_token_cross_entropy_workspace_allocation_count" in source_text
+    assert "nfn_native_tile_token_cross_entropy_workspace_row_capacity" in source_text
     assert "nfn_native_tile_token_cross_entropy_backward_with_workspace_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32" in header_text
     assert "nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace" in header_text
@@ -5307,6 +5311,20 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "token_cross_entropy_bf16_bits_row_stats_kernel" in kernels_text
     assert "token_cross_entropy_backward_chunked_float32_kernel" in kernels_text
     assert "token_cross_entropy_backward_chunked_inplace_float32_kernel" in kernels_text
+    assert "ensure_token_cross_entropy_workspace(rows)" in kernels_text
+    assert "g_token_cross_entropy_workspace_allocation_count.fetch_add" in kernels_text
+    ce_backward_body = kernels_text.split("void launch_token_cross_entropy_backward_float32(", 1)[1].split(
+        "\nvoid launch_token_cross_entropy_backward_with_workspace_float32(",
+        1,
+    )[0]
+    masked_ce_backward_body = kernels_text.split(
+        "void launch_masked_token_cross_entropy_backward_float32(",
+        1,
+    )[1].split("\nvoid launch_masked_token_cross_entropy_backward_with_workspace_float32(", 1)[0]
+    assert "cudaMalloc" not in ce_backward_body
+    assert "cudaFree" not in ce_backward_body
+    assert "cudaMalloc" not in masked_ce_backward_body
+    assert "cudaFree" not in masked_ce_backward_body
     assert "token_cross_entropy_backward_inplace_bf16_bits_kernel" in kernels_text
     assert "token_cross_entropy_backward_inplace_bf16_bits_fused_kernel" in kernels_text
     assert "block_reduce_max_f32" in kernels_text
@@ -6306,6 +6324,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_masked_token_cross_entropy_partials_float32" in exported
         assert "nfn_native_tile_token_cross_entropy_backward_float32" in exported
         assert "nfn_native_tile_masked_token_cross_entropy_backward_float32" in exported
+        assert "nfn_native_tile_token_cross_entropy_workspace_allocation_count" in exported
+        assert "nfn_native_tile_token_cross_entropy_workspace_row_capacity" in exported
         assert "nfn_native_tile_token_cross_entropy_backward_with_workspace_float32" in exported
         assert "nfn_native_tile_token_cross_entropy_backward_inplace_with_workspace_float32" in exported
         assert "nfn_native_tile_token_cross_entropy_backward_inplace_bf16_bits_with_workspace" in exported

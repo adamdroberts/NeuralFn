@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Replaced per-call `cudaMalloc` / `cudaFree` row-stat allocation in the
+  trainer Tile ABI's non-workspace full-vocab token CE backward launchers with a
+  process-cached row-stat workspace. Workspace-aware CE backward entrypoints are
+  unchanged, and the legacy `nfn_native_tile_token_cross_entropy_backward_float32`
+  / `nfn_native_tile_masked_token_cross_entropy_backward_float32` paths now
+  expose `nfn_native_tile_token_cross_entropy_workspace_allocation_count()` and
+  `nfn_native_tile_token_cross_entropy_workspace_row_capacity()` for native smoke
+  tests and profiling. Verification: focused native Tile ABI source/export tests
+  and native Tile ops rebuild.
+
 - Native dense GPT C++ plan/runtime JSON now validates custom graph selector
   paths before reporting graph support. Existing custom graph files still report
   `custom-graph-native-trainer-missing` until the native graph compiler lands,

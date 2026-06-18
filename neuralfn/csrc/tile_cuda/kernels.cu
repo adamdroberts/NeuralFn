@@ -83,6 +83,15 @@ std::atomic<int> g_attention_forward_row_attr_num_regs{0};
 std::atomic<std::int64_t> g_attention_forward_row_attr_shared_size_bytes{0};
 std::atomic<std::int64_t> g_attention_forward_row_attr_const_size_bytes{0};
 std::atomic<std::int64_t> g_attention_forward_row_attr_local_size_bytes{0};
+std::atomic<std::int64_t> g_token_cross_entropy_workspace_allocation_count{0};
+std::atomic<std::int64_t> g_token_cross_entropy_workspace_row_capacity{0};
+struct TokenCrossEntropyWorkspace {
+  float* row_max = nullptr;
+  float* row_denom = nullptr;
+  std::int64_t row_capacity = 0;
+};
+TokenCrossEntropyWorkspace g_token_cross_entropy_workspace;
+std::mutex g_token_cross_entropy_workspace_mutex;
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
 std::atomic<std::int64_t> g_linear_bf16_gemm_count{0};
 std::atomic<std::int64_t> g_linear_tk_gemm_count{0};
@@ -244,6 +253,40 @@ __global__ void f32_to_bf16_kernel(
   }
 }
 #endif
+
+void release_token_cross_entropy_workspace(TokenCrossEntropyWorkspace& workspace) {
+  if (workspace.row_max != nullptr) cudaFree(workspace.row_max);
+  if (workspace.row_denom != nullptr) cudaFree(workspace.row_denom);
+  workspace = {};
+}
+
+TokenCrossEntropyWorkspace* ensure_token_cross_entropy_workspace(std::int64_t rows) {
+  if (rows <= 0) {
+    return nullptr;
+  }
+  std::lock_guard<std::mutex> lock(g_token_cross_entropy_workspace_mutex);
+  if (g_token_cross_entropy_workspace.row_capacity >= rows &&
+      g_token_cross_entropy_workspace.row_max != nullptr &&
+      g_token_cross_entropy_workspace.row_denom != nullptr) {
+    return &g_token_cross_entropy_workspace;
+  }
+
+  TokenCrossEntropyWorkspace next;
+  next.row_capacity = rows;
+  const std::size_t bytes = sizeof(float) * static_cast<std::size_t>(rows);
+  if (cudaMalloc(&next.row_max, bytes) != cudaSuccess) {
+    return nullptr;
+  }
+  if (cudaMalloc(&next.row_denom, bytes) != cudaSuccess) {
+    release_token_cross_entropy_workspace(next);
+    return nullptr;
+  }
+  release_token_cross_entropy_workspace(g_token_cross_entropy_workspace);
+  g_token_cross_entropy_workspace = next;
+  g_token_cross_entropy_workspace_allocation_count.fetch_add(1, std::memory_order_relaxed);
+  g_token_cross_entropy_workspace_row_capacity.store(rows, std::memory_order_relaxed);
+  return &g_token_cross_entropy_workspace;
+}
 
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
 struct TkAttentionWorkspace {
@@ -15419,22 +15462,23 @@ void launch_token_cross_entropy_backward_float32(
     token_cross_entropy_backward_rowwise_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
         logits, targets, grad_logits, rows, vocab, loss_scale);
   } else {
-    float* row_max = nullptr;
-    float* row_denom = nullptr;
-    if (cudaMalloc(&row_max, sizeof(float) * static_cast<std::size_t>(rows)) != cudaSuccess) {
-      return;
-    }
-    if (cudaMalloc(&row_denom, sizeof(float) * static_cast<std::size_t>(rows)) != cudaSuccess) {
-      cudaFree(row_max);
+    TokenCrossEntropyWorkspace* workspace = ensure_token_cross_entropy_workspace(rows);
+    if (workspace == nullptr) {
       return;
     }
     const std::int64_t chunks_per_row = (vocab + kTileSize - 1) / kTileSize;
     token_cross_entropy_row_stats_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
-        logits, row_max, row_denom, rows, vocab);
+        logits, workspace->row_max, workspace->row_denom, rows, vocab);
     token_cross_entropy_backward_chunked_float32_kernel<<<static_cast<int>(rows * chunks_per_row), 1, 0, stream>>>(
-        logits, targets, row_max, row_denom, grad_logits, rows, vocab, chunks_per_row, loss_scale);
-    cudaFree(row_max);
-    cudaFree(row_denom);
+        logits,
+        targets,
+        workspace->row_max,
+        workspace->row_denom,
+        grad_logits,
+        rows,
+        vocab,
+        chunks_per_row,
+        loss_scale);
   }
 }
 
@@ -15578,22 +15622,25 @@ void launch_masked_token_cross_entropy_backward_float32(
     masked_token_cross_entropy_backward_rowwise_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
         logits, targets, loss_mask, grad_logits, rows, vocab, ignore_index, loss_scale);
   } else {
-    float* row_max = nullptr;
-    float* row_denom = nullptr;
-    if (cudaMalloc(&row_max, sizeof(float) * static_cast<std::size_t>(rows)) != cudaSuccess) {
-      return;
-    }
-    if (cudaMalloc(&row_denom, sizeof(float) * static_cast<std::size_t>(rows)) != cudaSuccess) {
-      cudaFree(row_max);
+    TokenCrossEntropyWorkspace* workspace = ensure_token_cross_entropy_workspace(rows);
+    if (workspace == nullptr) {
       return;
     }
     const std::int64_t chunks_per_row = (vocab + kTileSize - 1) / kTileSize;
     masked_token_cross_entropy_row_stats_float32_kernel<<<static_cast<int>(rows), 1, 0, stream>>>(
-        logits, targets, row_max, row_denom, rows, vocab, ignore_index);
+        logits, targets, workspace->row_max, workspace->row_denom, rows, vocab, ignore_index);
     masked_token_cross_entropy_backward_chunked_float32_kernel<<<static_cast<int>(rows * chunks_per_row), 1, 0, stream>>>(
-        logits, targets, loss_mask, row_max, row_denom, grad_logits, rows, vocab, ignore_index, chunks_per_row, loss_scale);
-    cudaFree(row_max);
-    cudaFree(row_denom);
+        logits,
+        targets,
+        loss_mask,
+        workspace->row_max,
+        workspace->row_denom,
+        grad_logits,
+        rows,
+        vocab,
+        ignore_index,
+        chunks_per_row,
+        loss_scale);
   }
 }
 
@@ -16175,6 +16222,14 @@ std::int64_t attention_tk_workspace_row_capacity() {
 #else
   return 0;
 #endif
+}
+
+std::int64_t token_cross_entropy_workspace_allocation_count() {
+  return g_token_cross_entropy_workspace_allocation_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t token_cross_entropy_workspace_row_capacity() {
+  return g_token_cross_entropy_workspace_row_capacity.load(std::memory_order_relaxed);
 }
 
 std::int64_t attention_forward_row_fallback_count() {
