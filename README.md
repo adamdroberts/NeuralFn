@@ -167,6 +167,11 @@ The native float32-input/BF16-gradient dWeight+bias path now uses the optimized
 cuBLASLt bias-gradient epilogue by default for supported shapes; set
 `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=0` to reproduce the previous
 split dWeight plus Tile bias-reduction path in paired benchmarks.
+The cuBLASLt planner also pins heuristic index 1 for the dense GPT MLP
+projection dWeight shape `3072,768,65536,N,T`, which was the fastest confirmed
+route on the dedicated RTX 5090. Set
+`NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=3072,768,65536,N,T,INDEX` only for
+paired rollback or candidate bisection.
 Dense GPT dWeight GEMMs now also match the llm.kittens accumulation contract:
 the first gradient-accumulation microbatch writes dWeight with GEMM `beta=0`,
 and later microbatches accumulate with `beta=1`. This is enabled by default for

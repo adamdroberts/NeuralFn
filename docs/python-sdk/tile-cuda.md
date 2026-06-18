@@ -441,6 +441,9 @@ Set `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_SHAPE=m,n,k,opA,opB,index` or
 `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=m,n,k,opA,opB,index` for a
 single-shape bisection; it only changes the matching cuBLASLt plan and leaves
 the default/global heuristic route in place for every other GEMM.
+The default dispatcher pins heuristic index 1 for the hot dense GPT MLP
+projection dWeight shape `3072,768,65536,N,T`; pass the same shape override with
+another index only for paired rollback or candidate bisection.
 Set `NFN_TILE_CUDA_LINEAR_CUBLASLT_WORKSPACE_MB=N` or
 `NFN_NATIVE_LINEAR_CUBLASLT_WORKSPACE_MB=N` only for paired diagnostics that
 change the cuBLASLt heuristic workspace cap. The default remains 128 MiB because

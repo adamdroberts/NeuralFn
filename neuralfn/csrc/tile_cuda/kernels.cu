@@ -3079,6 +3079,10 @@ int trainer_linear_cublaslt_shape_heuristic_index_override(
   }();
   if (!override.valid || override.m != m || override.n != n || override.k != k ||
       override.op_a != static_cast<int>(op_a) || override.op_b != static_cast<int>(op_b)) {
+    if (m == 3072 && n == 768 && k == 65536 &&
+        op_a == CUBLAS_OP_N && op_b == CUBLAS_OP_T) {
+      return 1;
+    }
     return -1;
   }
   return override.index;

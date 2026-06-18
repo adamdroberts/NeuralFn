@@ -112,6 +112,17 @@ Future updates should append new entries here rather than replacing older notes.
   Verification: focused native GPT template pytest, compiled C++ plan smoke for
   `--template-name gpt3`, and diff whitespace check.
 
+- Promoted cuBLASLt heuristic index 1 for the dense GPT MLP projection dWeight
+  shape `3072,768,65536,N,T` in the trainer-facing Tile CUDA linear dispatcher.
+  The dedicated RTX 5090 native-vs-native 5-step, 3-sample confirmation measured
+  `0.998595x` train-loop wall time, `1.001407x` tokens/sec, and `0.998190x`
+  total wall time versus the previous default, with zero compute processes
+  before/after each paired sample. The existing
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE` /
+  `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_SHAPE` override remains available for
+  rollback and paired bisection. Verification: focused native source tests,
+  trainer Tile ops rebuild, and direct GPU smoke.
+
 - The compiled `nfn_native_train` frontend now accepts the high-level GPT
   training flags that previously required the Python `nfn train` or
   `train_gpt.py` argument shim: `--dataset tinystories`, `--output`,
