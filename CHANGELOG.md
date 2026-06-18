@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a diagnostic-only BF16 cuBLASLt allow-list for one-shape paired
+  bisection. `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=m,n,k,opA,opB`
+  and `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=m,n,k,opA,opB` force one
+  otherwise-gated BF16 shape through cuBLASLt while leaving other shapes on the
+  default route. The CUDA 13.3 RTX 5090 smoke confirmed the dense GPT LM-head
+  dHidden bucket `768,8192,50304,N,N` moved to
+  `bf16-cublaslt-dinput-dhidden`, but the paired 5-step, 3-sample benchmark
+  measured `1.024865x` train-loop wall time and `0.975739x` tokens/sec versus
+  the default BF16 `cublasGemmEx` fallback, so it remains rejected as a default.
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so`; ran the
+  one-step shape-stat smoke; ran the same-script candidate benchmark on the
+  dedicated RTX 5090; ran
+  `NFN_TILE_CUDA_TEST=1 NFN_TILE_CUDA_BUILD=1 NFN_TILE_CUDA_ARCH=sm_120 python -m pytest tests/test_tile_cuda_ops.py tests/test_tile_cuda_modules.py tests/test_tile_cuda_optimizer.py tests/test_tile_cuda_gpu.py -q -rs`
+  (`537 passed`); ran `python tools/check_native_no_torch_deps.py`.
+
 - Fixed a dense GPT native startup allocation regression in the stored-MLP
   activation path. When float stats sidecars are enabled, the
   `stored_mlp_norm_stats_arena` request now keeps the pointer assigned by the

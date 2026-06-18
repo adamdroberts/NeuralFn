@@ -493,7 +493,12 @@ For paired BF16 cuBLASLt shape bisection, set
 `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE=m,n,k,opA,opB` or
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_DISABLE_SHAPE=m,n,k,opA,opB` to route one
 shape bucket, such as `768,65536,3072,N,N`, back through BF16 `cublasGemmEx`
-while every other supported BF16 shape stays on the default cuBLASLt path.
+while every other supported BF16 shape stays on the default cuBLASLt path. Set
+`NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=m,n,k,opA,opB` or
+`NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=m,n,k,opA,opB` to force one
+otherwise-gated BF16 shape through cuBLASLt for paired diagnostics. The
+dedicated RTX 5090 check for LM-head dHidden shape `768,8192,50304,N,N`
+measured this allow-list route slower than GEMMEx, so it remains diagnostic-only.
 
 The compiled trainer, SDK, Python wrappers, and root CLI all share that 8192-row LM-head chunk default. Use the explicit LM-head row-chunk flags only when reproducing an older smaller-workspace profile or profiling a new candidate.
 

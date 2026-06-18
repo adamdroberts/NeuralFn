@@ -2753,6 +2753,26 @@ bool trainer_linear_bf16_cublaslt_shape_disabled(
       disabled_shape.op_b == static_cast<int>(op_b);
 }
 
+bool trainer_linear_bf16_cublaslt_shape_enabled(
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  static const LinearShapeStat enabled_shape = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE");
+    }
+    LinearShapeStat shape{};
+    if (!parse_linear_shape_token(value, &shape)) {
+      return LinearShapeStat{};
+    }
+    return shape;
+  }();
+  return linear_shape_matches(enabled_shape, m, n, k, op_a, op_b);
+}
+
 bool trainer_linear_bf16_cublaslt_shape_supported(
     int m,
     int n,
@@ -2761,6 +2781,9 @@ bool trainer_linear_bf16_cublaslt_shape_supported(
     cublasOperation_t op_b) {
   if (trainer_linear_bf16_cublaslt_shape_disabled(m, n, k, op_a, op_b)) {
     return false;
+  }
+  if (trainer_linear_bf16_cublaslt_shape_enabled(m, n, k, op_a, op_b)) {
+    return true;
   }
   if (m <= 3072 && (n <= 3072 || k <= 3072)) {
     return true;
