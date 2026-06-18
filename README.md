@@ -65,6 +65,12 @@ checking that candidate-vs-baseline timing was not skewed by other GPU load.
 When a command exits nonzero and `--continue-on-error` is not set, the helper now
 prints both stdout and stderr tails so CUDA driver/runtime messages from
 external baselines are not hidden behind an empty stderr block.
+For native-vs-native dense GPT kernel bisections, `tools/bench_native_gpt_sm120_candidate.sh`
+accepts the canonical `NFN_SM120_NATIVE_*` environment variables and the shorter
+`NFN_SM120_CANDIDATE_*` aliases for steps, samples, warmup, profile directory,
+CUDA device selection, candidate env, template/graph selection, and JSON output.
+This keeps quick candidate runs from silently falling back to the wrapper's
+default 10-step, 3-sample profile when using the shorter alias names.
 The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
 emit non-UTF-8 bytes can still be compared in the same paired run. For

@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/bench_native_gpt_sm120_candidate.sh` now accepts short
+  `NFN_SM120_CANDIDATE_*` aliases alongside the canonical
+  `NFN_SM120_NATIVE_*` benchmark controls. This covers candidate steps, samples,
+  warmup, train-batch tokens, CUDA device selection, profile directory, stage
+  timing, candidate env, template/graph selection, dry-run, and JSON output;
+  canonical native names take precedence when both are set. Verification:
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`; `python -m pytest
+  tests/test_tile_cuda_examples.py -q`; `python
+  tools/check_native_no_torch_deps.py --json`; and `git diff --check`.
+
 - `tools/paired_kernel_speed.py` now includes both stdout and stderr tails when a
   measured command exits nonzero without `--continue-on-error`. This makes CUDA
   driver/runtime failures from external baselines such as llm.kittens visible in

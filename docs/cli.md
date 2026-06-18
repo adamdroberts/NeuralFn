@@ -826,6 +826,16 @@ stage. Pass `--command-timeout-seconds N` to cap each child command. With
 when a bad kernel candidate saturates a dedicated GPU or allocates nearly all
 VRAM.
 
+For the dense GPT native-vs-native wrapper, use the canonical
+`NFN_SM120_NATIVE_*` controls (`NFN_SM120_NATIVE_STEPS`,
+`NFN_SM120_NATIVE_SAMPLES`, `NFN_SM120_NATIVE_CANDIDATE_ENV`,
+`NFN_SM120_NATIVE_PROFILE_DIR`, and so on). The wrapper also accepts the shorter
+`NFN_SM120_CANDIDATE_*` aliases for the same controls, including steps,
+samples, warmup, train-batch tokens, CUDA device selection, profile directory,
+stage timing, candidate env, template/graph selection, dry-run, and JSON output.
+If both names are set for one control, the canonical `NFN_SM120_NATIVE_*` value
+wins.
+
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers
 `NFN_NATIVE_GPT_STAGE_TIMING`, `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION`,

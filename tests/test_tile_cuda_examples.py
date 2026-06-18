@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import importlib.util
+import os
 import py_compile
 import subprocess
 import sys
@@ -234,12 +235,21 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "tools/paired_kernel_speed.py" in text
     assert "--require-idle-selected-gpu" in text
     assert "--max-selected-gpu-utilization-pct" in text
-    assert 'CUDA_VISIBLE_DEVICES_VALUE="${NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES:-auto}"' in text
+    assert "env_or_alias()" in text
+    assert "NFN_SM120_CANDIDATE_CUDA_VISIBLE_DEVICES" in text
+    assert "NFN_SM120_CANDIDATE_STEPS" in text
+    assert "NFN_SM120_CANDIDATE_SAMPLES" in text
+    assert "NFN_SM120_CANDIDATE_STAGE_TIMING" in text
+    assert "NFN_SM120_CANDIDATE_JSON_OUT" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_ENV" in text
+    assert "NFN_SM120_CANDIDATE_ENV" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB" in text
     assert "NFN_SM120_NATIVE_TEMPLATE_NAME" in text
+    assert "NFN_SM120_CANDIDATE_TEMPLATE_NAME" in text
     assert "NFN_SM120_NATIVE_GRAPH_FILE" in text
+    assert "NFN_SM120_CANDIDATE_GRAPH_FILE" in text
     assert "NFN_SM120_NATIVE_DRY_RUN_PLAN" in text
+    assert "NFN_SM120_CANDIDATE_DRY_RUN_PLAN" in text
     assert "--template-name \"$TEMPLATE_NAME\"" in text
     assert "--graph-file \"$GRAPH_FILE\"" in text
     assert "--train-batch-tokens \"$TRAIN_BATCH_TOKENS\"" in text
@@ -248,6 +258,40 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "--dry-run-plan" in text
     assert '"${profile_args[@]}"' in text
     assert '"${paired_args[@]}"' in text
+
+
+def test_native_gpt_sm120_candidate_wrapper_accepts_short_aliases(tmp_path: Path) -> None:
+    script = Path("tools/bench_native_gpt_sm120_candidate.sh")
+    output_path = tmp_path / "candidate-alias.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_CANDIDATE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_CANDIDATE_STEPS": "2",
+            "NFN_SM120_CANDIDATE_SAMPLES": "1",
+            "NFN_SM120_CANDIDATE_WARMUP": "0",
+            "NFN_SM120_CANDIDATE_PROFILE_DIR": "none",
+            "NFN_SM120_CANDIDATE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_CANDIDATE_ENV": "NFN_ALIAS_PROBE=1",
+            "NFN_SM120_CANDIDATE_JSON_OUT": str(output_path),
+        }
+    )
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "samples: 1" in proc.stdout
+    assert "warmup: 0" in proc.stdout
+    assert "cuda_visible_devices: requested=7 resolved=7 mode=explicit" in proc.stdout
+    assert "--max-steps 2" in proc.stdout
 
 
 def test_paired_kernel_speed_tool_applies_command_specific_env() -> None:
