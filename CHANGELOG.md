@@ -17,6 +17,12 @@ Future updates should append new entries here rather than replacing older notes.
   tradeoff visible in both successful and failed runtime JSON. Verification:
   focused native GPT tests and C++ rebuild.
 
+- Updated `tools/paired_kernel_speed.py` to extract and print the classifier
+  contract's full/chunk BF16 byte counts, chunk rows/count, and resident-logit
+  reduction ratio from native JSON sidecars. Candidate-vs-baseline benchmark
+  summaries now show whether an LM-head classifier experiment changes the
+  memory contract as well as timing. Verification: paired-kernel helper tests.
+
 - Rejected the BF16 GEMMEx `FAST_16BF` compute-type candidate for the remaining
   LM-head fallback shapes. With `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF=1`
   and `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_FAST_16BF=1`, the dedicated RTX 5090

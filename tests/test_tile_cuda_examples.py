@@ -298,6 +298,13 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "linear_tk_gemm_count": 8,
                 "lm_head_logits_linear_strategy": "padded-lm-head-bf16-cublaslt-fallback",
                 "lm_head_dhidden_linear_strategy": "bf16-cublas-gemmex",
+                "lm_head_classifier_strategy_contract": {
+                    "reference_full_bf16_logit_bytes": 6593445888,
+                    "native_chunk_bf16_logit_bytes": 825819136,
+                    "resident_logit_reduction_ratio": 8.0,
+                    "native_logit_chunk_rows": 8192,
+                    "native_logit_chunk_count": 8,
+                },
             }
         ),
         encoding="utf-8",
@@ -318,6 +325,11 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["stage.block_backward.total_ms"] == 9.0
     assert metrics["lm_head_logits_linear_strategy"] == "padded-lm-head-bf16-cublaslt-fallback"
     assert metrics["lm_head_dhidden_linear_strategy"] == "bf16-cublas-gemmex"
+    assert metrics["lm_head_classifier.reference_full_bf16_logit_bytes"] == 6593445888
+    assert metrics["lm_head_classifier.native_chunk_bf16_logit_bytes"] == 825819136
+    assert metrics["lm_head_classifier.resident_logit_reduction_ratio"] == 8.0
+    assert metrics["lm_head_classifier.native_logit_chunk_rows"] == 8192
+    assert metrics["lm_head_classifier.native_logit_chunk_count"] == 8
 
     rows = [{"baseline": {"native_metrics": metrics}, "candidate": {"native_metrics": metrics}}]
     assert module.summarize_categorical_metric_rows(rows, "baseline") == {

@@ -690,7 +690,10 @@ resident-logit reduction ratio, in-place dlogit storage, and the benchmark
 target (`tools/paired_kernel_speed.py` stage `lm_head_backward.total_ms` plus
 overall train-loop wall time). At the default `64 x 1024` shape, this reports
 65,536 reference rows versus an 8,192-row NeuralFn chunk and an 8x resident
-logit reduction.
+logit reduction. `tools/paired_kernel_speed.py` extracts the contract's
+full/chunk BF16 byte counts, chunk rows/count, and reduction ratio into native
+metric summaries so candidate-vs-baseline reports show whether a classifier
+kernel experiment changed memory contract or only changed timing.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 

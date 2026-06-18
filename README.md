@@ -110,7 +110,9 @@ logit rows versus the 8,192-row NeuralFn chunk, 6.59GB of reference-style BF16
 logits versus 825.8MB resident NeuralFn BF16 logits, and an 8x resident-logit
 reduction. Use this object with `tools/paired_kernel_speed.py` stage metrics
 when evaluating a fused classifier/LM-head-backward kernel or a memory-gated
-full-logit candidate.
+full-logit candidate. The paired benchmark helper extracts and prints the
+contract's full/chunk BF16 byte counts, chunk rows/count, and resident-logit
+reduction ratio alongside LM-head stage timing.
 
 The native dense-GPT BF16 LM-head CE backward path keeps the forward
 row-chunk order because paired dedicated-RTX-5090 timing showed reverse chunk

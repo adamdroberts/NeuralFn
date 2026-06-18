@@ -42,6 +42,26 @@ NATIVE_METRIC_PATHS = (
     ("linear_bf16_a_cache_hit_count", ("linear_bf16_a_cache_hit_count",)),
     ("attention_forward_tk_launch_count", ("attention_forward_tk_launch_count",)),
     ("attention_backward_tk_launch_count", ("attention_backward_tk_launch_count",)),
+    (
+        "lm_head_classifier.reference_full_bf16_logit_bytes",
+        ("lm_head_classifier_strategy_contract", "reference_full_bf16_logit_bytes"),
+    ),
+    (
+        "lm_head_classifier.native_chunk_bf16_logit_bytes",
+        ("lm_head_classifier_strategy_contract", "native_chunk_bf16_logit_bytes"),
+    ),
+    (
+        "lm_head_classifier.resident_logit_reduction_ratio",
+        ("lm_head_classifier_strategy_contract", "resident_logit_reduction_ratio"),
+    ),
+    (
+        "lm_head_classifier.native_logit_chunk_rows",
+        ("lm_head_classifier_strategy_contract", "native_logit_chunk_rows"),
+    ),
+    (
+        "lm_head_classifier.native_logit_chunk_count",
+        ("lm_head_classifier_strategy_contract", "native_logit_chunk_count"),
+    ),
 )
 NATIVE_STRATEGY_METRIC_KEYS = (
     "status",
@@ -1177,6 +1197,11 @@ def print_text(payload: dict[str, object]) -> None:
             "llm_kittens_last_step_tokens_per_second",
             "llm_kittens_last_step_bf16_mfu_pct",
             "llm_kittens_device_memory_used_mib",
+            "lm_head_classifier.reference_full_bf16_logit_bytes",
+            "lm_head_classifier.native_chunk_bf16_logit_bytes",
+            "lm_head_classifier.resident_logit_reduction_ratio",
+            "lm_head_classifier.native_logit_chunk_rows",
+            "lm_head_classifier.native_logit_chunk_count",
             "setup_wall_ms",
             "setup.float_arena_materialize.total_ms",
             "setup.uint16_arena_materialize.total_ms",
@@ -1215,6 +1240,11 @@ def print_text(payload: dict[str, object]) -> None:
             "train_loop_wall_ms",
             "train_tokens_per_second",
             "llm_kittens_bf16_mfu_pct",
+            "lm_head_classifier.reference_full_bf16_logit_bytes",
+            "lm_head_classifier.native_chunk_bf16_logit_bytes",
+            "lm_head_classifier.resident_logit_reduction_ratio",
+            "lm_head_classifier.native_logit_chunk_rows",
+            "lm_head_classifier.native_logit_chunk_count",
             "setup_wall_ms",
             "setup.float_arena_materialize.total_ms",
             "setup.uint16_arena_materialize.total_ms",
