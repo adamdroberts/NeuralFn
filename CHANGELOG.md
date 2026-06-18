@@ -22,15 +22,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 - Rechecked the disabled TK BF16-output LM-head logits route after the latest
   dense GPT parity baseline. Setting
-  `NFN_NATIVE_LINEAR_TK_FORWARD_ENABLE_SHAPE=50304,8192,768,T,N` did not change
-  the reported `lm_head_logits_linear_strategy`, which stayed
-  `bf16-gemmex-fallback`, and the same-script 3-step, 2-sample dedicated RTX
-  5090 benchmark measured only noise-level movement (`0.998849x` train-loop
-  wall time and `1.001153x` tokens/sec). No default changed; the next parity
-  work should target a route that visibly changes the hot LM-head or block GEMM
-  bucket. Verification: ran
-  `tools/bench_native_gpt_sm120_candidate.sh` with the candidate env above and
-  selected-GPU idle checks enabled.
+  `NFN_NATIVE_LINEAR_TK_FORWARD_ENABLE_SHAPE=50304,8192,768,T,N` does switch
+  the LM-head logits bucket to `tk_bf16` when shape stats are enabled
+  (`220209 us` over 64 logits calls in the one-step smoke), but the stronger
+  same-script 5-step, 3-sample dedicated RTX 5090 benchmark rejected it as a
+  default at `1.007525x` train-loop wall time and `0.992536x` tokens/sec. No
+  default changed; the next parity work should target a route that improves
+  the hot LM-head or block GEMM buckets under paired timing. Verification: ran
+  a one-step shape-stat smoke plus `tools/bench_native_gpt_sm120_candidate.sh`
+  with the candidate env above and selected-GPU idle checks enabled.
 
 - `tools/paired_kernel_speed.py` now preserves categorical native strategy
   summaries in paired benchmark output. Native JSON fields such as
