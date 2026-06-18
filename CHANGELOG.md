@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native layer-evo now performs real forward-only candidate scoring
+  instead of placeholder device-zero loss selection. After AdamW, the
+  `--layer-evo` loop mutates the selected block's float32 `ln1.weight`, resets
+  the active training batch, allocates the same lazy float MLP scratch used by
+  validation-only forwards, evaluates every candidate with the native CUDA
+  forward loss on the current batch, writes candidate losses back to device
+  memory, then selects/adopts through the raw evo ABI. Runtime JSON now reports
+  `layer_evo.forward_candidate_evals` and
+  `layer_evo.candidate_loss_source:
+  "native-forward-loss-current-batch"` while keeping
+  `graph_editor_tensor_flow: false`. Verification: rebuilt
+  `build/nfn_gpt_native_train` with `bash tools/build_native_gpt_cli.sh`, ran a
+  one-step no-evo validation smoke, then ran one-step TinyStories CUDA smokes
+  with `--layer-evo --evo-layer-interval 1 --evo-layer-population 1
+  --evo-layer-mutation-scale 0` and with `--evo-layer-population 2`; the latter
+  reported `status: "native-transformer-lm-trained"`,
+  `steps_completed: 1`, `runs: 1`, `mutate/select/adopt` launch counts of `1`,
+  and `forward_candidate_evals: 2`.
+
 - `tools/bench_native_gpt_sm120_candidate.sh` now supports
   `NFN_SM120_NATIVE_STARTUP_ONLY=1` for startup-only native GPT bisections. The
   wrapper appends `--startup-only` to both baseline and candidate commands while

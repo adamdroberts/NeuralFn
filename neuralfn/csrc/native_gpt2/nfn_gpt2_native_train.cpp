@@ -3532,8 +3532,8 @@ bool print_tile_plan(
         << ", \"interval\": " << cfg.evo_layer_interval
         << ", \"population\": " << cfg.evo_layer_population
         << ", \"mutation_scale\": " << cfg.evo_layer_mutation_scale
-        << ", \"forward_candidate_eval_enabled\": false"
-        << ", \"candidate_loss_source\": \"placeholder-device-zero-loss-selects-current-candidate\"},\n"
+        << ", \"forward_candidate_eval_enabled\": true"
+        << ", \"candidate_loss_source\": \"native-forward-loss-current-batch\"},\n"
         << "  \"checkpoint_export_enabled\": " << (cfg.write_checkpoint ? "true" : "false") << ",\n"
         << "  \"estimated_stage_elements\": {\"hidden\": " << hidden
         << ", \"logits\": " << logits
@@ -9024,6 +9024,7 @@ int run_transformer_lm_training_json(
     constexpr std::int64_t kTileSize = 1024;
     constexpr int kCudaMemcpyHostToDevice = 1;
     constexpr int kCudaMemcpyDeviceToHost = 2;
+    constexpr int kCudaMemcpyDeviceToDevice = 3;
     using Clock = std::chrono::steady_clock;
     const auto total_start_time = Clock::now();
     auto elapsed_ms = [](Clock::time_point start, Clock::time_point end) -> double {
@@ -9226,6 +9227,7 @@ int run_transformer_lm_training_json(
     std::int64_t layer_evo_mutate_kernel_launches = 0;
     std::int64_t layer_evo_select_kernel_launches = 0;
     std::int64_t layer_evo_adopt_kernel_launches = 0;
+    std::int64_t layer_evo_forward_candidate_evals = 0;
     std::int64_t layer_evo_parameter_elements = 0;
     std::int64_t layer_evo_candidate_elements = 0;
     std::int64_t layer_evo_seed = 1337;
@@ -13499,67 +13501,6 @@ int run_transformer_lm_training_json(
         stage_end(stage_event, "gradient_clip");
     };
 
-    auto run_layer_evo_step = [&](std::int64_t step) {
-        if (!layer_evo_runtime_enabled || !cfg.layer_evo_enabled || !error.empty()) {
-            return;
-        }
-        if (step <= 0 || cfg.evo_layer_interval <= 0 || (step % cfg.evo_layer_interval) != 0) {
-            return;
-        }
-        if (evo_mutate_candidates == nullptr || evo_select_best_loss == nullptr ||
-            evo_adopt_candidate == nullptr || layer_evo_candidates == nullptr ||
-            layer_evo_candidate_losses == nullptr || layer_evo_best_index == nullptr ||
-            layer_evo_best_loss == nullptr) {
-            error = "native layer-evo requested but evo Tile workspace or symbols are unavailable";
-            return;
-        }
-        TransformerBlockParams& block = blocks[static_cast<std::size_t>(cfg.evo_layer_index)];
-        const std::int64_t stage_event = stage_begin("layer_evo");
-        run(evo_mutate_candidates(
-                block.ln1_weight,
-                layer_evo_candidates,
-                layer_evo_parameter_elements,
-                cfg.evo_layer_population,
-                static_cast<float>(cfg.evo_layer_mutation_scale),
-                layer_evo_seed + step,
-                nullptr),
-            "layer_evo.mutate_candidates.ln1_weight");
-        if (error.empty()) {
-            layer_evo_mutate_kernel_launches += 1;
-            run(fill(
-                    layer_evo_candidate_losses,
-                    cfg.evo_layer_population,
-                    0.0f,
-                    nullptr),
-                "layer_evo.placeholder_candidate_losses.fill_zero");
-        }
-        if (error.empty()) {
-            run(evo_select_best_loss(
-                    layer_evo_candidate_losses,
-                    cfg.evo_layer_population,
-                    layer_evo_best_index,
-                    layer_evo_best_loss,
-                    nullptr),
-                "layer_evo.select_best_loss");
-        }
-        if (error.empty()) {
-            layer_evo_select_kernel_launches += 1;
-            run(evo_adopt_candidate(
-                    layer_evo_candidates,
-                    layer_evo_best_index,
-                    block.ln1_weight,
-                    layer_evo_parameter_elements,
-                    cfg.evo_layer_population,
-                    nullptr),
-                "layer_evo.adopt_candidate.ln1_weight");
-        }
-        if (error.empty()) {
-            layer_evo_adopt_kernel_launches += 1;
-            layer_evo_runs += 1;
-        }
-        stage_end(stage_event, "layer_evo");
-    };
-
     auto upload_pinned_batch = [&]() {
         if (!error.empty()) {
             return;
@@ -15639,6 +15580,91 @@ int run_transformer_lm_training_json(
         run_layer_norm(lnf_input, lnf_weight, lnf_bias, lnf_out, lnf_mean, lnf_rstd, label + ".ln_f.forward");
         stage_end(stage_event, label + ".model_forward");
         return (error.empty() && compute_loss) ? lm_head_forward_loss(label) : 0.0;
+    };
+
+    auto run_layer_evo_step = [&](std::int64_t step) {
+        if (!layer_evo_runtime_enabled || !cfg.layer_evo_enabled || !error.empty()) {
+            return;
+        }
+        if (step <= 0 || cfg.evo_layer_interval <= 0 || (step % cfg.evo_layer_interval) != 0) {
+            return;
+        }
+        if (evo_mutate_candidates == nullptr || evo_select_best_loss == nullptr ||
+            evo_adopt_candidate == nullptr || layer_evo_candidates == nullptr ||
+            layer_evo_candidate_losses == nullptr || layer_evo_best_index == nullptr ||
+            layer_evo_best_loss == nullptr) {
+            error = "native layer-evo requested but evo Tile workspace or symbols are unavailable";
+            return;
+        }
+        TransformerBlockParams& block = blocks[static_cast<std::size_t>(cfg.evo_layer_index)];
+        const std::int64_t stage_event = stage_begin("layer_evo");
+        run(evo_mutate_candidates(
+                block.ln1_weight,
+                layer_evo_candidates,
+                layer_evo_parameter_elements,
+                cfg.evo_layer_population,
+                static_cast<float>(cfg.evo_layer_mutation_scale),
+                layer_evo_seed + step,
+                nullptr),
+            "layer_evo.mutate_candidates.ln1_weight");
+        if (error.empty()) {
+            layer_evo_mutate_kernel_launches += 1;
+            layer_evo_forward_candidate_eval_enabled = true;
+            set_active_batch_size(batch_size);
+            upload_pinned_batch();
+            allocate_validation_mlp_float_scratch();
+        }
+        for (std::int64_t candidate_index = 0;
+             candidate_index < static_cast<std::int64_t>(cfg.evo_layer_population) && error.empty();
+             ++candidate_index) {
+            const float* candidate =
+                layer_evo_candidates + candidate_index * layer_evo_parameter_elements;
+            run(cuda_memcpy(
+                    block.ln1_weight,
+                    candidate,
+                    sizeof(float) * static_cast<std::size_t>(layer_evo_parameter_elements),
+                    kCudaMemcpyDeviceToDevice),
+                "layer_evo.candidate.copy_to_ln1_weight");
+            const double candidate_loss =
+                error.empty() ? forward_loss("layer_evo.candidate" + std::to_string(candidate_index), true, false) : 0.0;
+            if (error.empty()) {
+                const float loss_value = static_cast<float>(candidate_loss);
+                run(cuda_memcpy(
+                        layer_evo_candidate_losses + candidate_index,
+                        &loss_value,
+                        sizeof(float),
+                        kCudaMemcpyHostToDevice),
+                    "layer_evo.candidate_loss.copy_host_to_device");
+                if (error.empty()) {
+                    layer_evo_forward_candidate_evals += 1;
+                }
+            }
+        }
+        if (error.empty()) {
+            run(evo_select_best_loss(
+                    layer_evo_candidate_losses,
+                    cfg.evo_layer_population,
+                    layer_evo_best_index,
+                    layer_evo_best_loss,
+                    nullptr),
+                "layer_evo.select_best_loss");
+        }
+        if (error.empty()) {
+            layer_evo_select_kernel_launches += 1;
+            run(evo_adopt_candidate(
+                    layer_evo_candidates,
+                    layer_evo_best_index,
+                    block.ln1_weight,
+                    layer_evo_parameter_elements,
+                    cfg.evo_layer_population,
+                    nullptr),
+                "layer_evo.adopt_candidate.ln1_weight");
+        }
+        if (error.empty()) {
+            layer_evo_adopt_kernel_launches += 1;
+            layer_evo_runs += 1;
+        }
+        stage_end(stage_event, "layer_evo");
     };
 
     auto next_train_batch = [&]() -> bool {
@@ -17743,9 +17769,10 @@ int run_transformer_lm_training_json(
         << "    \"mutate_kernel_launches\": " << layer_evo_mutate_kernel_launches << ",\n"
         << "    \"select_kernel_launches\": " << layer_evo_select_kernel_launches << ",\n"
         << "    \"adopt_kernel_launches\": " << layer_evo_adopt_kernel_launches << ",\n"
+        << "    \"forward_candidate_evals\": " << layer_evo_forward_candidate_evals << ",\n"
         << "    \"forward_candidate_eval_enabled\": " << (layer_evo_forward_candidate_eval_enabled ? "true" : "false") << ",\n"
-        << "    \"candidate_loss_source\": \"placeholder-device-zero-loss-selects-current-candidate\",\n"
-        << "    \"required_next_step\": \"forward-only candidate loss evaluation for mutated evo-layer weights\"\n"
+        << "    \"candidate_loss_source\": \"native-forward-loss-current-batch\",\n"
+        << "    \"required_next_step\": \"expand candidate targets beyond block ln1.weight when broader evo mutations are enabled\"\n"
         << "  },\n"
         << "  \"validation\": {\n"
         << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
