@@ -10717,6 +10717,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_ELIDE_FLOAT_PROJECTION_OUTPUTS",
                               "NFN_NATIVE_GPT2_ELIDE_FLOAT_PROJECTION_OUTPUTS"}),
             false);
+    const bool bf16_persistent_block_outputs_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUTS",
+                              "NFN_NATIVE_GPT2_BF16_PERSISTENT_BLOCK_OUTPUTS"}),
+            false);
     const std::int64_t float_projection_output_elements_elided =
         elide_float_projection_outputs_enabled ? activation_elements * activation_tape_count * 2 : 0;
     const std::string startup_zero_init_strategy =
@@ -11241,6 +11246,10 @@ int run_transformer_lm_training_json(
     std::vector<TransformerBlockParams> blocks(static_cast<std::size_t>(trained_layers));
     std::vector<TransformerBlockActivations> block_tapes(static_cast<std::size_t>(activation_tape_count));
     std::vector<float*> block_outputs(static_cast<std::size_t>(persistent_block_output_count), nullptr);
+    std::vector<std::uint16_t*> block_outputs_bf16(
+        static_cast<std::size_t>(persistent_block_output_count),
+        nullptr);
+    float* block_output_restore = nullptr;
     constexpr std::int64_t kBlockWeightBf16ElementsPerBlock =
         kQkvWeightElements + kAttnProjWeightElements + kFcWeightElements + kMlpProjWeightElements;
     constexpr std::int64_t kBlockDweightBf16StagingElementsPerBlock =
@@ -11390,10 +11399,12 @@ int run_transformer_lm_training_json(
     std::int64_t stored_packed_attention_lse_arena_elements = 0;
     std::int64_t stored_packed_attention_lse_arena_bytes = 0;
     std::int64_t stored_packed_attention_store_blocks = 0;
-	    std::int64_t stored_packed_attention_restore_blocks = 0;
-	    std::int64_t stored_packed_attention_backward_kernel_launches = 0;
-	    std::int64_t direct_block_output_write_count = 0;
-	    std::int64_t mlp_residual_next_ln1_fusion_count = 0;
+    std::int64_t stored_packed_attention_restore_blocks = 0;
+    std::int64_t stored_packed_attention_backward_kernel_launches = 0;
+    std::int64_t direct_block_output_write_count = 0;
+    std::int64_t bf16_persistent_block_output_store_count = 0;
+    std::int64_t bf16_persistent_block_output_restore_count = 0;
+    std::int64_t mlp_residual_next_ln1_fusion_count = 0;
     std::uint16_t* token_weight_bf16 = nullptr;
     std::uint16_t* lm_head_bf16_logits = nullptr;
     std::int64_t lm_head_bf16_logit_elements = 0;
@@ -12172,7 +12183,10 @@ int run_transformer_lm_training_json(
         allocate(ptr, elements, name);
     });
     for (std::size_t i = 0; i < block_outputs.size(); ++i) {
-        allocate(&block_outputs[i], activation_elements, "block" + std::to_string(i) + ".persistent_output");
+        allocate(
+            &block_outputs[i],
+            bf16_persistent_block_outputs_enabled ? 0 : activation_elements,
+            "block" + std::to_string(i) + ".persistent_output");
     }
 
     struct NamedFloatArenaRequest {
@@ -12228,6 +12242,9 @@ int run_transformer_lm_training_json(
               fuse_ln_backward_residual_enabled ? 0 : activation_elements,
               "embedding_residual.grad_from_attention"},
              {&grad_x, activation_elements, "embedding_residual.grad"},
+             {&block_output_restore,
+              bf16_persistent_block_outputs_enabled ? activation_elements : 0,
+              "block_output_restore"},
              {&stored_mlp_norm_stats_arena,
               float_stats_sidecars_in_arena_enabled ? stored_mlp_activation_block_count * rows * 2 : 0,
               "stored_mlp_norm_stats_arena"},
@@ -12254,6 +12271,12 @@ int run_transformer_lm_training_json(
             &stored_residual1_activation_arena,
             stored_residual1_activation_elements,
             "stored_residual1_bf16_arena");
+        for (std::size_t i = 0; i < block_outputs_bf16.size(); ++i) {
+            allocate_uint16(
+                &block_outputs_bf16[i],
+                bf16_persistent_block_outputs_enabled ? activation_elements : 0,
+                "block" + std::to_string(i) + ".persistent_output_bf16");
+        }
         allocate_uint16(
             &token_weight_bf16,
             token_weight_bf16_shadow_enabled ? kTokenWeightElements : 0,
@@ -13985,6 +14008,26 @@ int run_transformer_lm_training_json(
     auto block_input_for = [&](std::size_t block_index) -> const float* {
         return block_index == 0 ? x : block_outputs[block_index - 1];
     };
+    auto restore_bf16_block_input_for_backward = [&](std::size_t block_index) -> const float* {
+        if (!bf16_persistent_block_outputs_enabled || block_index == 0) {
+            return block_input_for(block_index);
+        }
+        const std::size_t stored_index = block_index - 1;
+        if (stored_index >= block_outputs_bf16.size() || block_outputs_bf16[stored_index] == nullptr) {
+            error = "BF16 persistent block output is missing for backward";
+            return block_output_restore;
+        }
+        run(bf16_bits_to_float32(
+                block_outputs_bf16[stored_index],
+                block_output_restore,
+                active_activation_elements,
+                nullptr),
+            "block" + std::to_string(stored_index) + ".persistent_output.restore_bf16");
+        if (error.empty()) {
+            bf16_persistent_block_output_restore_count += 1;
+        }
+        return block_output_restore;
+    };
     auto store_mlp_activations = [&](std::size_t block_index, TransformerBlockActivations& tape) {
         if (block_index >= stored_mlp_activations.size()) {
             return;
@@ -15590,34 +15633,51 @@ int run_transformer_lm_training_json(
 	                preserve_block_outputs && fuse_residual1_store_enabled && i < stored_residual1_activations.size()
 	                    ? stored_residual1_activations[i]
 	                    : nullptr;
-	            TransformerBlockActivations* next_tape =
-	                i + 1 < blocks.size()
-	                    ? &block_tapes[full_activation_tape_enabled ? i + 1 : 0]
-	                    : nullptr;
-	            StoredPackedAttentionActivations* next_packed_attention_store =
-	                preserve_block_outputs && i + 1 < stored_packed_attention_activations.size()
-	                    ? &stored_packed_attention_activations[i + 1]
-	                    : nullptr;
-	            forward_block(
-	                blocks[i],
-	                tape,
+            TransformerBlockActivations* next_tape =
+                i + 1 < blocks.size()
+                    ? &block_tapes[full_activation_tape_enabled ? i + 1 : 0]
+                    : nullptr;
+            StoredPackedAttentionActivations* next_packed_attention_store =
+                preserve_block_outputs && i + 1 < stored_packed_attention_activations.size()
+                    ? &stored_packed_attention_activations[i + 1]
+                    : nullptr;
+            forward_block(
+                blocks[i],
+                tape,
                 block_input,
                 label + ".block" + std::to_string(i),
                 true,
                 true,
                 fused_attention_store,
-	                fused_packed_attention_store,
-	                fused_mlp_store,
-	                fused_residual1_store,
-	                preserve_block_outputs && i + 1 < blocks.size() ? block_outputs[i] : nullptr,
-	                ln1_precomputed[i] != 0,
-	                preserve_block_outputs && i + 1 < blocks.size() ? &blocks[i + 1] : nullptr,
-	                next_tape,
-	                next_packed_attention_store,
-	                preserve_block_outputs && i + 1 < blocks.size() ? &ln1_precomputed[i + 1] : nullptr);
+                fused_packed_attention_store,
+                fused_mlp_store,
+                fused_residual1_store,
+                preserve_block_outputs && i + 1 < blocks.size() && !bf16_persistent_block_outputs_enabled
+                    ? block_outputs[i]
+                    : nullptr,
+                ln1_precomputed[i] != 0,
+                preserve_block_outputs && i + 1 < blocks.size() ? &blocks[i + 1] : nullptr,
+                next_tape,
+                next_packed_attention_store,
+                preserve_block_outputs && i + 1 < blocks.size() ? &ln1_precomputed[i + 1] : nullptr);
             if (preserve_block_outputs && i + 1 < blocks.size()) {
-                final_block_output = block_outputs[i];
-                direct_block_output_write_count += 1;
+                if (bf16_persistent_block_outputs_enabled) {
+                    if (error.empty()) {
+                        run(float32_to_bf16_bits(
+                                tape.residual2,
+                                block_outputs_bf16[i],
+                                active_activation_elements,
+                                nullptr),
+                            label + ".block" + std::to_string(i) + ".persistent_output.store_bf16");
+                        if (error.empty()) {
+                            bf16_persistent_block_output_store_count += 1;
+                        }
+                    }
+                    final_block_output = tape.residual2;
+                } else {
+                    final_block_output = block_outputs[i];
+                    direct_block_output_write_count += 1;
+                }
             } else {
                 final_block_output = tape.residual2;
             }
@@ -15640,7 +15700,7 @@ int run_transformer_lm_training_json(
                 if (fused_mlp_store == nullptr) {
                     store_mlp_activations(i, tape);
                 }
-                block_input = block_outputs[i];
+                block_input = bf16_persistent_block_outputs_enabled ? tape.residual2 : block_outputs[i];
             } else {
                 block_input = tape.residual2;
             }
@@ -15766,7 +15826,7 @@ int run_transformer_lm_training_json(
             const std::size_t i = reverse_index - 1;
             TransformerBlockActivations& tape =
                 block_tapes[full_activation_tape_enabled ? i : 0];
-            const float* block_input = block_input_for(i);
+            const float* block_input = restore_bf16_block_input_for_backward(i);
             const std::uint16_t* stored_residual1_bf16 =
                 i < stored_residual1_activations.size() ? stored_residual1_activations[i] : nullptr;
             if (!full_activation_tape_enabled && reverse_index != blocks.size()) {
@@ -16953,6 +17013,23 @@ int run_transformer_lm_training_json(
         << mlp_fc_grad_out_float_elements << ",\n"
         << "  \"block_backward_mlp_fc_grad_out_float_bytes_elided\": "
         << mlp_fc_grad_out_float_bytes_elided << ",\n"
+        << "  \"bf16_persistent_block_outputs_enabled\": "
+        << (bf16_persistent_block_outputs_enabled ? "true" : "false") << ",\n"
+        << "  \"bf16_persistent_block_output_store_count\": "
+        << bf16_persistent_block_output_store_count << ",\n"
+        << "  \"bf16_persistent_block_output_restore_count\": "
+        << bf16_persistent_block_output_restore_count << ",\n"
+        << "  \"fp32_persistent_block_output_elements_elided\": "
+        << (bf16_persistent_block_outputs_enabled
+                ? persistent_block_output_count * activation_elements
+                : 0)
+        << ",\n"
+        << "  \"fp32_persistent_block_output_bytes_elided\": "
+        << (bf16_persistent_block_outputs_enabled
+                ? persistent_block_output_count * activation_elements *
+                      static_cast<std::int64_t>(sizeof(float))
+                : 0)
+        << ",\n"
         << "  \"block_backward_mlp_proj_bf16_grad_out_reuse_enabled\": "
         << (reuse_mlp_proj_bf16_grad_out_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_mlp_proj_dgelu_strategy\": \""
@@ -17697,18 +17774,33 @@ int run_transformer_lm_training_json(
         << packed_qkv_float_attention_tape_elements_elided << ",\n"
         << "    \"forward_row_qkv_scratch_allocated\": false,\n"
         << "    \"forward_row_qkv_scratch_buffers_elided\": 3,\n"
-	        << "    \"persistent_block_outputs\": " << persistent_block_output_count << ",\n"
-	        << "    \"persistent_block_output_write_strategy\": \"direct-residual2-output\",\n"
-	        << "    \"persistent_block_output_copy_elided_count\": " << direct_block_output_write_count << ",\n"
-	        << "    \"mlp_residual_next_ln1_fusion_enabled\": "
-	        << (fuse_mlp_residual_next_ln1_enabled ? "true" : "false") << ",\n"
-	        << "    \"mlp_residual_next_ln1_fusion_count\": " << mlp_residual_next_ln1_fusion_count << ",\n"
-	        << "    \"mlp_residual_next_ln1_strategy\": \""
-	        << (fuse_mlp_residual_next_ln1_enabled
-	                ? "fused-mlp-bias-residual-next-ln1-when-packed-ln1-storage-is-available"
-	                : "separate-mlp-residual-and-next-ln1")
-	        << "\",\n"
-	        << "    \"final_block_output_copy_elided\": true,\n"
+        << "    \"persistent_block_outputs\": " << persistent_block_output_count << ",\n"
+        << "    \"persistent_block_output_write_strategy\": \""
+        << (bf16_persistent_block_outputs_enabled
+                ? "scratch-residual2-output-plus-bf16-persistent-store"
+                : "direct-residual2-output")
+        << "\",\n"
+        << "    \"persistent_block_output_copy_elided_count\": " << direct_block_output_write_count << ",\n"
+        << "    \"bf16_persistent_block_outputs_enabled\": "
+        << (bf16_persistent_block_outputs_enabled ? "true" : "false") << ",\n"
+        << "    \"bf16_persistent_block_output_store_count\": "
+        << bf16_persistent_block_output_store_count << ",\n"
+        << "    \"bf16_persistent_block_output_restore_count\": "
+        << bf16_persistent_block_output_restore_count << ",\n"
+        << "    \"fp32_persistent_block_output_elements_elided\": "
+        << (bf16_persistent_block_outputs_enabled
+                ? persistent_block_output_count * activation_elements
+                : 0)
+        << ",\n"
+        << "    \"mlp_residual_next_ln1_fusion_enabled\": "
+        << (fuse_mlp_residual_next_ln1_enabled ? "true" : "false") << ",\n"
+        << "    \"mlp_residual_next_ln1_fusion_count\": " << mlp_residual_next_ln1_fusion_count << ",\n"
+        << "    \"mlp_residual_next_ln1_strategy\": \""
+        << (fuse_mlp_residual_next_ln1_enabled
+                ? "fused-mlp-bias-residual-next-ln1-when-packed-ln1-storage-is-available"
+                : "separate-mlp-residual-and-next-ln1")
+        << "\",\n"
+        << "    \"final_block_output_copy_elided\": true,\n"
         << "    \"validation_persistent_block_outputs\": 0,\n"
         << "    \"validation_block_output_copies_elided\": true,\n"
         << "    \"backward_recompute_blocks\": " << backward_recompute_block_count << ",\n"

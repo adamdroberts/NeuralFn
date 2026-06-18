@@ -181,6 +181,19 @@ families can be selected from the JSON without manual grouping. Main
 transformer-LM global float buffers are named individually, for example
 `mlp.fc.grad_out`, `attention.grad_out`, and `lm_head.float_logits`, instead of
 being collapsed under a generic buffer label.
+`NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUTS=1` is a diagnostic-only
+startup/memory switch for the dense GPT scratch-recompute trainer. It stores
+the earlier inter-block persistent outputs as BF16, restores them through one
+FP32 scratch buffer during backward, and reports
+`bf16_persistent_block_outputs_enabled`,
+`bf16_persistent_block_output_store_count`,
+`bf16_persistent_block_output_restore_count`,
+`fp32_persistent_block_output_elements_elided`, and
+`fp32_persistent_block_output_bytes_elided` in runtime JSON. At the default
+12-layer `64 x 1024 x 768` shape it elides `2,214,592,512` FP32 bytes, but it
+remains off by default because the dedicated RTX 5090 paired benchmark measured
+`1.021212x` train-loop wall time and `0.979238x` tokens/sec versus the current
+default.
 Validation uses a separate C++ validation sampler and active forward batch size
 from `--eval-batch-size`; that value must be at least 1 and no larger than the
 training `--batch-size` because the fixed activation arena is allocated for the

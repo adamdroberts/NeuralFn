@@ -2763,6 +2763,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["block_backward_mlp_fc_grad_out_float_buffer_elided"] is True
     assert train_transformer_payload["block_backward_mlp_fc_grad_out_float_elements"] == 0
     assert train_transformer_payload["block_backward_mlp_fc_grad_out_float_bytes_elided"] == 2 * 1 * 3072 * 4
+    assert train_transformer_payload["bf16_persistent_block_outputs_enabled"] is False
+    assert train_transformer_payload["bf16_persistent_block_output_store_count"] == 0
+    assert train_transformer_payload["bf16_persistent_block_output_restore_count"] == 0
+    assert train_transformer_payload["fp32_persistent_block_output_elements_elided"] == 0
+    assert train_transformer_payload["fp32_persistent_block_output_bytes_elided"] == 0
     assert train_transformer_payload["block_state_layout"] == {
         "allocated_block_count": 12,
         "target_block_count": 12,
@@ -2773,6 +2778,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "persistent_block_outputs": 11,
         "persistent_block_output_write_strategy": "direct-residual2-output",
         "persistent_block_output_copy_elided_count": 0,
+        "bf16_persistent_block_outputs_enabled": False,
+        "bf16_persistent_block_output_store_count": 0,
+        "bf16_persistent_block_output_restore_count": 0,
+        "fp32_persistent_block_output_elements_elided": 0,
         "final_block_output_copy_elided": True,
         "validation_persistent_block_outputs": 0,
         "validation_block_output_copies_elided": True,
@@ -4528,6 +4537,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert 'NFN_NATIVE_GPT2_BF16_MLP_GRAD_HANDOFF"}),\n            true)' in gpt2_source_text
     assert "NFN_NATIVE_GPT_ELIDE_MLP_DGELU_FLOAT_GRAD" in gpt2_source_text
     assert "block_backward_mlp_dgelu_float_grad_elided" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUTS" in gpt2_source_text
+    assert "fp32_persistent_block_output_bytes_elided" in gpt2_source_text
     assert "NFN_NATIVE_GPT_REUSE_MLP_PROJ_BF16_GRAD_OUT" in gpt2_source_text
     assert "block_backward_mlp_proj_bf16_grad_out_reuse_enabled" in gpt2_source_text
     assert "tk-sm120-fused-dinput-dgelu-reused-bf16-grad-out-bf16-store-bf16-shadow-weight" in gpt2_source_text
@@ -4916,8 +4927,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "layer_norm_backward_residual_scratch_buffers_allocated" in gpt2_source_text
     assert "layer_norm_backward_residual_scratch_buffers_elided" in gpt2_source_text
     assert "layer_norm_backward_residual_scratch_elements_elided" in gpt2_source_text
-    assert "{&grad_residual1_from_mlp, fuse_ln_backward_residual_enabled ? 0 : activation_elements}" in gpt2_source_text
-    assert "{&grad_x_from_attn, fuse_ln_backward_residual_enabled ? 0 : activation_elements}" in gpt2_source_text
+    assert "{&grad_residual1_from_mlp,\n              fuse_ln_backward_residual_enabled ? 0 : activation_elements,\n              \"residual1.grad_from_mlp\"}" in gpt2_source_text
+    assert "{&grad_x_from_attn,\n              fuse_ln_backward_residual_enabled ? 0 : activation_elements,\n              \"embedding_residual.grad_from_attention\"}" in gpt2_source_text
     assert "compute_final_output" in gpt2_source_text
     assert "stored_mlp_activation_store_kernel_launches" in gpt2_source_text
     assert "stored_mlp_layer_norm_stats_elements" in gpt2_source_text

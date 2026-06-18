@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native training now has a default-off BF16 persistent block-output
+  diagnostic behind `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUTS=1` /
+  `NFN_NATIVE_GPT2_BF16_PERSISTENT_BLOCK_OUTPUTS=1`. The opt-in path stores
+  earlier inter-block persistent outputs as BF16, restores each prior block
+  input through one FP32 scratch buffer during backward, and reports
+  `bf16_persistent_block_outputs_enabled`,
+  `bf16_persistent_block_output_store_count`,
+  `bf16_persistent_block_output_restore_count`,
+  `fp32_persistent_block_output_elements_elided`, and
+  `fp32_persistent_block_output_bytes_elided` in runtime JSON, with matching
+  `block_state_layout` fields. It is not promoted as a default: a dedicated
+  RTX 5090 paired benchmark measured `1.021212x` train-loop wall time and
+  `0.979238x` tokens/sec versus default, despite improving setup wall time to
+  `0.974595x` and float-arena materialization to `0.896011x`. Verification:
+  rebuilt `build/nfn_gpt_native_train`, ran a GPU-visible one-step TinyStories
+  probe that reported 88 BF16 stores, 88 restores, and `2,214,592,512` elided
+  FP32 persistent-output bytes, then ran the same-script 5-step, 3-sample
+  native candidate benchmark and kept the switch off by default.
+
 - Dense GPT native training now elides the FP32 `mlp.fc.grad_out` arena buffer
   when the default BF16-only MLP dGELU handoff covers every trained block. The
   MLP projection dInput+dGELU Tile kernel writes BF16 bits directly into the
