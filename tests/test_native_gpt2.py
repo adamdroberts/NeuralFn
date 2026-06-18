@@ -1512,6 +1512,28 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         ],
         "unsupported_geometry_next_step": "generalize-native-loop-dimensions-dropout-and-graph-shape-loading",
     }
+    assert default_payload["lm_head_classifier_strategy_contract"] == {
+        "reference_strategy": "llm.kittens-full-resident-logits-fused-classifier",
+        "native_strategy": "row-chunked-bf16-logits-inplace-public-vocab-ce",
+        "reference_full_logit_rows": 64 * 1024,
+        "native_logit_chunk_rows": 8192,
+        "native_logit_chunk_count": 8,
+        "padded_vocab_size": 50304,
+        "reference_full_bf16_logit_elements": 64 * 1024 * 50304,
+        "reference_full_bf16_logit_bytes": 64 * 1024 * 50304 * 2,
+        "reference_full_float32_logit_bytes": 64 * 1024 * 50304 * 4,
+        "native_chunk_bf16_logit_elements": 8192 * 50304,
+        "native_chunk_bf16_logit_bytes": 8192 * 50304 * 2,
+        "native_chunk_float32_logit_bytes": 8192 * 50304 * 4,
+        "resident_logit_reduction_ratio": 8,
+        "dlogits_storage": "in-place-over-bf16-logits",
+        "graph_editor_tensor_flow": False,
+        "torch_required": False,
+        "same_script_benchmark_target": (
+            "tools/paired_kernel_speed.py stage.lm_head_backward.total_ms and train_loop_wall_ms"
+        ),
+        "required_kernel_next_step": "fuse-classifier-and-lm-head-backward-or-memory-gated-full-logit-path",
+    }
     assert default_payload["selected_graph_native_runnable"] is True
     assert default_payload["train_shard"].endswith("fineweb_train_000000.bin")
     assert default_payload["val_shard"].endswith("fineweb_val_000000.bin")
@@ -2481,6 +2503,28 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["lm_head_softmax_vocab"] == 50257
     assert train_transformer_payload["lm_head_logit_row_stride"] == 50304
     assert train_transformer_payload["lm_head_padded_dlogits_zeroed"] is True
+    assert train_transformer_payload["lm_head_classifier_strategy_contract"] == {
+        "reference_strategy": "llm.kittens-full-resident-logits-fused-classifier",
+        "native_strategy": "row-chunked-bf16-logits-inplace-public-vocab-ce",
+        "reference_full_logit_rows": 2,
+        "native_logit_chunk_rows": 2,
+        "native_logit_chunk_count": 1,
+        "padded_vocab_size": 50304,
+        "reference_full_bf16_logit_elements": 2 * 50304,
+        "reference_full_bf16_logit_bytes": 2 * 50304 * 2,
+        "reference_full_float32_logit_bytes": 2 * 50304 * 4,
+        "native_chunk_bf16_logit_elements": 2 * 50304,
+        "native_chunk_bf16_logit_bytes": 2 * 50304 * 2,
+        "native_chunk_float32_logit_bytes": 2 * 50304 * 4,
+        "resident_logit_reduction_ratio": 1,
+        "dlogits_storage": "in-place-over-bf16-logits",
+        "graph_editor_tensor_flow": False,
+        "torch_required": False,
+        "same_script_benchmark_target": (
+            "tools/paired_kernel_speed.py stage.lm_head_backward.total_ms and train_loop_wall_ms"
+        ),
+        "required_kernel_next_step": "fuse-classifier-and-lm-head-backward-or-memory-gated-full-logit-path",
+    }
     assert train_transformer_payload["model_dim"] == 768
     assert train_transformer_payload["hidden_dim"] == 3072
     assert train_transformer_payload["lm_head_row_chunk_size"] == 2

@@ -682,6 +682,16 @@ The RTX 5090 dense GPT harness at `cli/scripts/train_gpt.py` is native-only; `tr
 
 Plan and runtime JSON also include `native_geometry_contract`. The current compiled dense GPT loop reports `name: "gpt2-compatible-fixed-dense-transformer"` and `shape_source: "compiled_dense_gpt_defaults"` with model dim 768, 12 heads, head dim 64, GELU 4x MLP, absolute positions, LayerNorm, dropout 0, public vocab 50,257, padded vocab 50,304, the selected sequence length, and the selected layer count. `template_geometry_dynamic` and `custom_graph_geometry_dynamic` are both `false` until the native loop is generalized to load dimensions/dropout from the chosen preset or graph.
 
+Plan and runtime JSON also include `lm_head_classifier_strategy_contract` for
+SM120 parity work. It compares the llm.kittens-style full resident BF16
+classifier logits buffer with NeuralFn's row-chunked BF16 logits/dlogits
+contract, including full/chunk rows, BF16 and FP32-equivalent byte counts,
+resident-logit reduction ratio, in-place dlogit storage, and the benchmark
+target (`tools/paired_kernel_speed.py` stage `lm_head_backward.total_ms` plus
+overall train-loop wall time). At the default `64 x 1024` shape, this reports
+65,536 reference rows versus an 8,192-row NeuralFn chunk and an 8x resident
+logit reduction.
+
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
 The compiled GPT-2 `--train-transformer-lm` JSON includes `cuda_runtime_preflight` before any allocation. Driver version `0` or a loaded CUDA runtime newer than the driver exits early with an actionable GPU-access/runtime error, which is the expected gate before live SM120 throughput comparison.

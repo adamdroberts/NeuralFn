@@ -649,6 +649,46 @@ std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
     return out.str();
 }
 
+std::string lm_head_classifier_strategy_contract_json(
+    std::int64_t rows,
+    std::int64_t lm_head_chunk_rows,
+    std::int64_t padded_vocab_size) {
+    const std::int64_t chunk_rows = std::max<std::int64_t>(1, std::min(rows, lm_head_chunk_rows));
+    const std::int64_t chunk_count = (rows + chunk_rows - 1) / chunk_rows;
+    const std::int64_t full_logit_elements = rows * padded_vocab_size;
+    const std::int64_t chunk_logit_elements = chunk_rows * padded_vocab_size;
+    const std::int64_t full_bf16_bytes = full_logit_elements * static_cast<std::int64_t>(sizeof(std::uint16_t));
+    const std::int64_t chunk_bf16_bytes = chunk_logit_elements * static_cast<std::int64_t>(sizeof(std::uint16_t));
+    const std::int64_t full_float32_bytes = full_logit_elements * static_cast<std::int64_t>(sizeof(float));
+    const std::int64_t chunk_float32_bytes = chunk_logit_elements * static_cast<std::int64_t>(sizeof(float));
+    const double resident_reduction =
+        chunk_logit_elements > 0
+            ? static_cast<double>(full_logit_elements) / static_cast<double>(chunk_logit_elements)
+            : 0.0;
+    std::ostringstream out;
+    out << "{"
+        << "\"reference_strategy\":\"llm.kittens-full-resident-logits-fused-classifier\","
+        << "\"native_strategy\":\"row-chunked-bf16-logits-inplace-public-vocab-ce\","
+        << "\"reference_full_logit_rows\":" << rows << ","
+        << "\"native_logit_chunk_rows\":" << chunk_rows << ","
+        << "\"native_logit_chunk_count\":" << chunk_count << ","
+        << "\"padded_vocab_size\":" << padded_vocab_size << ","
+        << "\"reference_full_bf16_logit_elements\":" << full_logit_elements << ","
+        << "\"reference_full_bf16_logit_bytes\":" << full_bf16_bytes << ","
+        << "\"reference_full_float32_logit_bytes\":" << full_float32_bytes << ","
+        << "\"native_chunk_bf16_logit_elements\":" << chunk_logit_elements << ","
+        << "\"native_chunk_bf16_logit_bytes\":" << chunk_bf16_bytes << ","
+        << "\"native_chunk_float32_logit_bytes\":" << chunk_float32_bytes << ","
+        << "\"resident_logit_reduction_ratio\":" << resident_reduction << ","
+        << "\"dlogits_storage\":\"in-place-over-bf16-logits\","
+        << "\"graph_editor_tensor_flow\":false,"
+        << "\"torch_required\":false,"
+        << "\"same_script_benchmark_target\":\"tools/paired_kernel_speed.py stage.lm_head_backward.total_ms and train_loop_wall_ms\","
+        << "\"required_kernel_next_step\":\"fuse-classifier-and-lm-head-backward-or-memory-gated-full-logit-path\""
+        << "}";
+    return out.str();
+}
+
 std::int64_t native_gpt2_parameter_count(
     std::int64_t max_seq_len,
     std::int64_t padded_vocab_size,
@@ -3550,6 +3590,8 @@ bool print_tile_plan(
         << ", \"model_dim\": 768, \"num_heads\": 12, \"vocab_size\": " << public_vocab
         << ", \"padded_vocab_size\": " << padded_vocab << ", \"seq_len\": "
         << cfg.seq_len << ", \"batch_size\": " << cfg.batch_size << "},\n"
+        << "  \"lm_head_classifier_strategy_contract\": "
+        << lm_head_classifier_strategy_contract_json(tokens, lm_head_chunk_rows, padded_vocab) << ",\n"
         << "  \"schedule\": {\"max_steps\": " << cfg.max_steps
         << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
         << ", \"train_loss_every_steps\": " << cfg.train_loss_every_steps
@@ -17116,6 +17158,8 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_logit_row_stride\": " << kPaddedVocab << ",\n"
         << "  \"lm_head_padded_dlogits_zeroed\": "
         << (lm_head_public_vocab_ce_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_classifier_strategy_contract\": "
+        << lm_head_classifier_strategy_contract_json(rows, lm_head_chunk_rows, kPaddedVocab) << ",\n"
         << "  \"model_dim\": " << kDim << ",\n"
         << "  \"hidden_dim\": " << kHidden << ",\n"
         << "  \"lm_head_row_chunk_size\": " << lm_head_chunk_rows << ",\n"

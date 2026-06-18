@@ -100,6 +100,18 @@ as `lm_head_logits_linear_strategy`, `lm_head_dhidden_linear_strategy`,
 under `baseline_native_metric_values` and `candidate_native_metric_values`, so
 kernel-candidate results show whether a route actually changed.
 
+Native dense-GPT plan and runtime JSON now include
+`lm_head_classifier_strategy_contract`, which makes the remaining SM120 parity
+tradeoff explicit. The llm.kittens reference keeps full resident BF16 logits for
+all microbatch rows before `fused_classifier`, while NeuralFn keeps only the
+row-chunked BF16 logits/dlogits buffer and overwrites logits in-place during CE
+backward. At the default `64 x 1024` shape the contract reports 65,536 full
+logit rows versus the 8,192-row NeuralFn chunk, 6.59GB of reference-style BF16
+logits versus 825.8MB resident NeuralFn BF16 logits, and an 8x resident-logit
+reduction. Use this object with `tools/paired_kernel_speed.py` stage metrics
+when evaluating a fused classifier/LM-head-backward kernel or a memory-gated
+full-logit candidate.
+
 The native dense-GPT BF16 LM-head CE backward path keeps the forward
 row-chunk order because paired dedicated-RTX-5090 timing showed reverse chunk
 traversal was neutral-to-slower for the current tied LM-head workspace.

@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `lm_head_classifier_strategy_contract` to native dense GPT
+  `--print-plan` and `--train-transformer-lm` JSON. The contract records the
+  llm.kittens-style full resident BF16 classifier-logit footprint next to
+  NeuralFn's row-chunked BF16 in-place CE path, including BF16/FP32-equivalent
+  byte counts, chunk count, resident-logit reduction ratio, graph-editor tensor
+  flow status, and the same-script benchmark target for the next fused
+  classifier/LM-head-backward candidate. At the default `64 x 1024` shape this
+  reports an 8x resident-logit reduction, making the remaining SM120 parity
+  tradeoff visible in both successful and failed runtime JSON. Verification:
+  focused native GPT tests and C++ rebuild.
+
 - Rejected the BF16 GEMMEx `FAST_16BF` compute-type candidate for the remaining
   LM-head fallback shapes. With `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF=1`
   and `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_FAST_16BF=1`, the dedicated RTX 5090
