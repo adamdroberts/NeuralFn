@@ -130,6 +130,16 @@ row chunk. Tied LM-head dWeight chunks accumulate directly into the optimizer-st
 full-vocab scratch gradient buffer per chunk or per microbatch. The JSON reports
 `lm_head_row_chunk_count` and `loss_partial_count`.
 
+`NativeGptRunConfig.train_loss_every_steps` and
+`NativeGpt2RunConfig.train_loss_every_steps` default to `0` and forward
+`--train-loss-every-steps` through `compiled_cli_argv()`. Set it to `1000` to
+record sampled native training loss every 1000 optimizer steps while keeping
+validation loss on `eval_every_steps`. The compiled transformer-LM loop collects
+that train loss from the folded LM-head backward recompute path before logits
+are overwritten as dLogits, so no real token batch passes through graph-editor
+nodes and no duplicate forward LM-head loss pass is needed for train-loss
+logging.
+
 For SDK-launched native GPT profiling, include
 `NFN_NATIVE_LINEAR_SHAPE_STATS=1`, `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1`,
 `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1`, or `NFN_NATIVE_GPT2_LINEAR_SHAPE_STATS=1` in the

@@ -344,6 +344,7 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
         executable="/opt/nfn/train_gpt2cu",
         output_dir=tmp_path / "log124M" / "5090_S",
         eval_every_steps=250,
+        train_loss_every_steps=1000,
         lm_head_row_chunk_size=8192,
         sample_every_steps=20000,
         generate_tokens=144,
@@ -407,6 +408,8 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
     assert "--checkpoint-metadata-smoke" in argv
     assert argv[argv.index("--eval-batches") + 1] == "1"
     assert argv[argv.index("--eval-batch-size") + 1] == "0"
+    assert cfg.train_loss_every_steps == 1000
+    assert argv[argv.index("--train-loss-every-steps") + 1] == "1000"
     assert argv[argv.index("--lm-head-row-chunk-size") + 1] == "8192"
     assert argv[argv.index("--cuda-runtime-lib") + 1] == "/usr/local/cuda/lib64/libcudart.so"
     assert cfg.template_name == "gpt"

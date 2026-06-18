@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added native dense GPT train-loss cadence controls:
+  `--train-loss-every-steps N`, `--train-log-every N`, and
+  `--train-log-every-steps N`. The default remains `0` so timing-only SM120
+  runs do not evaluate train loss. When enabled, the compiled C++ loop records
+  train loss from the folded LM-head backward recompute path rather than running
+  a separate forward LM-head loss pass; validation loss remains controlled by
+  `--eval-every-steps`. The Python native GPT SDK config now exposes
+  `train_loss_every_steps` and forwards it to the compiled CLI. Verification:
+  rebuilt `build/nfn_gpt_native_train`; passed the focused native GPT test
+  slice, `python tools/check_native_no_torch_deps.py`, `python -m py_compile`
+  for the touched Python entrypoints, and `git diff --check`; ran a one-step
+  dedicated-GPU smoke with `--train-loss-every-steps 1` that reported
+  `train_loss_eval_count: 1` and `train_loss_last_step: 1`.
+
 - Dense GPT native training now folds train-loss collection into the LM-head
   backward recompute pass. Training microbatches call the transformer forward
   path without a separate LM-head loss pass, then accumulate CE loss from the

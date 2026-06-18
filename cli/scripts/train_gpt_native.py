@@ -50,6 +50,7 @@ NATIVE_GPT_DEFAULTS = {
     "learning_rate": 6e-4,
     "weight_decay": 0.1,
     "eval_every_steps": 250,
+    "train_loss_every_steps": 0,
     "lm_head_row_chunk_size": 8_192,
     "num_layers": 12,
     "native_cuda_checkpoint_every": 200,
@@ -224,6 +225,7 @@ def _build_compiled_cli_config(args: argparse.Namespace, dataset_arg: str | Path
         eval_every_steps=int(args.eval_every_steps),
         eval_batches=int(args.eval_batches),
         eval_batch_size=int(args.eval_batch_size),
+        train_loss_every_steps=int(args.train_loss_every_steps),
         lm_head_row_chunk_size=int(args.lm_head_row_chunk_size),
         sample_every_steps=int(args.native_cuda_sample_every),
         generate_tokens=int(args.native_cuda_generate_tokens),
@@ -329,6 +331,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--eval-every-steps", type=int, default=env_int("EVAL_EVERY_STEPS", NATIVE_GPT_DEFAULTS["eval_every_steps"]))
     parser.add_argument("--eval-batches", type=int, default=env_int("EVAL_BATCHES", 1))
     parser.add_argument("--eval-batch-size", type=int, default=env_int("EVAL_BATCH_SIZE", 0))
+    parser.add_argument(
+        "--train-loss-every-steps",
+        "--train-log-every",
+        "--train-log-every-steps",
+        type=int,
+        default=env_int("TRAIN_LOSS_EVERY_STEPS", NATIVE_GPT_DEFAULTS["train_loss_every_steps"]),
+        help="Record native training loss every N optimizer steps; 0 disables train-loss evaluation for timing runs.",
+    )
     parser.add_argument(
         "--lm-head-row-chunk-size",
         "--native-cuda-lm-head-row-chunk-size",

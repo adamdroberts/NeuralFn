@@ -57,6 +57,7 @@ struct Config {
     int batch_size = 64;
     int seq_len = 1024;
     int train_batch_tokens = 524288;
+    int train_loss_every_steps = 0;
     int warmup_steps = 60;
     int max_steps = 20000;
     int num_layers = 12;
@@ -386,7 +387,7 @@ void print_usage(const char* program) {
         << "  --output-dir PATH                 Native output directory\n"
         << "  --dry-run                         Print/resolve without exec\n"
         << "  --print-command                   Print the backend command without training; tile-cuda exits before CUDA/shard setup\n\n"
-        << "Training options mirror train_gpt.py names, including --eval-every-steps, --eval-batches, --eval-batch-size, --batch-size, --train-seq-len,\n"
+        << "Training options mirror train_gpt.py names, including --eval-every-steps, --eval-batches, --eval-batch-size, --train-loss-every-steps, --batch-size, --train-seq-len,\n"
         << "  --train-batch-tokens, --learning-rate, --final-lr-fraction, --weight-decay, --warmup-steps, and --max-steps.\n"
         << "  --lm-head-row-chunk-size N        Tied LM-head full-vocab row chunk size for the Tile-CUDA transformer loop; default "
         << kDefaultLmHeadRowChunkSize << ".\n"
@@ -3517,6 +3518,7 @@ bool print_tile_plan(
         << cfg.seq_len << ", \"batch_size\": " << cfg.batch_size << "},\n"
         << "  \"schedule\": {\"max_steps\": " << cfg.max_steps
         << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
+        << ", \"train_loss_every_steps\": " << cfg.train_loss_every_steps
         << ", \"eval_every_steps\": " << cfg.eval_every_steps
         << ", \"warmup_steps\": " << cfg.warmup_steps << "},\n"
         << "  \"layer_evo\": {\"enabled\": " << (cfg.layer_evo_enabled ? "true" : "false")
@@ -16156,7 +16158,8 @@ int run_transformer_lm_training_json(
         for (std::int64_t step = 1; step <= cfg.max_steps && error.empty(); ++step) {
             const bool should_run_validation =
                 cfg.eval_every_steps > 0 && (step % cfg.eval_every_steps) == 0;
-            const bool should_record_train_loss = false;
+            const bool should_record_train_loss =
+                cfg.train_loss_every_steps > 0 && (step % cfg.train_loss_every_steps) == 0;
             const double train_loss_sum = forward_backward_update(step, should_record_train_loss);
             if (error.empty()) {
                 steps_completed = step;
@@ -16956,6 +16959,7 @@ int run_transformer_lm_training_json(
         << "  \"batch_size\": " << batch_size << ",\n"
         << "  \"seq_len\": " << seq_len << ",\n"
         << "  \"rows\": " << rows << ",\n"
+        << "  \"train_loss_every_steps\": " << cfg.train_loss_every_steps << ",\n"
         << "  \"trained_layers\": " << trained_layers << ",\n"
         << "  \"target_layers\": " << target_layers << ",\n"
         << "  \"vocab\": " << kVocab << ",\n"
@@ -18837,6 +18841,18 @@ int main(int argc, char** argv) {
             cfg.eval_batches = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--eval-batch-size") {
             cfg.eval_batch_size = parse_int(require_value(argc, argv, &i, arg), arg);
+        } else if (arg == "--train-loss-every-steps" ||
+                   arg == "--train-log-every" ||
+                   arg == "--train-log-every-steps") {
+            cfg.train_loss_every_steps = parse_int(require_value(argc, argv, &i, arg), arg);
+        } else if (arg.rfind("--train-loss-every-steps=", 0) == 0) {
+            cfg.train_loss_every_steps =
+                parse_int(value_after_equals("--train-loss-every-steps="), "--train-loss-every-steps");
+        } else if (arg.rfind("--train-log-every=", 0) == 0) {
+            cfg.train_loss_every_steps = parse_int(value_after_equals("--train-log-every="), "--train-log-every");
+        } else if (arg.rfind("--train-log-every-steps=", 0) == 0) {
+            cfg.train_loss_every_steps =
+                parse_int(value_after_equals("--train-log-every-steps="), "--train-log-every-steps");
         } else if (arg == "--lm-head-row-chunk-size" || arg == "--native-cuda-lm-head-row-chunk-size") {
             cfg.lm_head_row_chunk_size = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg.rfind("--lm-head-row-chunk-size=", 0) == 0) {

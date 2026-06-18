@@ -128,10 +128,13 @@ benchmarks against the older always-accumulate path. Runtime JSON reports
 Dense GPT native training also folds train-loss collection into the LM-head
 backward recompute pass. Validation, evo candidate scoring, and other
 forward-only checks still use the normal forward LM-head loss path, but training
-microbatches no longer run a separate LM-head logits pass just to print train
-loss. The backward path accumulates the same CE partials before mutating the
-row-chunked logits into dLogits, keeping real token data inside the compiled
-CUDA Tile/C++ loop instead of routing it through graph-editor nodes.
+microbatches no longer run a separate LM-head logits pass when train-loss
+recording is enabled with `--train-loss-every-steps N` or
+`--train-log-every N`. The backward path accumulates the same CE partials
+before mutating the row-chunked logits into dLogits, keeping real token data
+inside the compiled CUDA Tile/C++ loop instead of routing it through
+graph-editor nodes. The default cadence is `0` for timing-only training and
+benchmarks; use `--eval-every-steps N` separately for validation loss.
 For cuBLASLt BGRADB dWeight plus bias routes, the default writes the epilogue
 bias gradient into Tile-owned
 scratch and accumulates it into `grad_bias`. Set

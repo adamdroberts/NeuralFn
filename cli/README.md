@@ -207,7 +207,12 @@ That compiled CLI exposes `--backend tile-cuda`, the default and only NeuralFn-o
 12-layer transformer/LM loop over the raw trainer ABI. Use `--backend tile-cuda
 --print-plan` or `--check-tile-ops --tile-ops-lib PATH` to inspect it, and use
 `--eval-every-steps 1000` when you want validation loss every 1000 optimizer
-steps. The compiled loop honors `train_batch_tokens` by deriving
+steps. Use `--train-loss-every-steps 1000`, `--train-log-every 1000`, or
+`--train-log-every-steps 1000` when you also want sampled native training loss;
+the default is `0` so timing-only runs do not evaluate train loss. When enabled,
+the compiled loop records train loss inside the folded LM-head backward
+recompute, not through graph-editor nodes or a duplicate forward LM-head loss
+pass. The compiled loop honors `train_batch_tokens` by deriving
 `grad_accum_steps`, running that many cached-shard CUDA Tile microbatches,
 averaging gradients on device, and applying clip plus AdamW once per optimizer
 step. Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is

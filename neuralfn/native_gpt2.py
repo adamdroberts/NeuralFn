@@ -87,6 +87,7 @@ class NativeGpt2RunConfig:
     max_steps: int
     eval_batches: int = 1
     eval_batch_size: int = 0
+    train_loss_every_steps: int = 0
     lm_head_row_chunk_size: int = 8192
     activation: str = "gelu"
     moa_interval: int = 50
@@ -203,6 +204,8 @@ class NativeGpt2RunConfig:
             str(int(self.eval_batches)),
             "--eval-batch-size",
             str(int(self.eval_batch_size)),
+            "--train-loss-every-steps",
+            str(int(self.train_loss_every_steps)),
             "--lm-head-row-chunk-size",
             str(int(self.lm_head_row_chunk_size)),
             "--native-cuda-sample-every",
@@ -643,6 +646,7 @@ def build_native_gpt2_run_config(
     activation: str,
     eval_batches: int = 1,
     eval_batch_size: int = 0,
+    train_loss_every_steps: int = 0,
     moa_interval: int = 50,
     kernel_backend: str = "tile-cuda",
     tile_ops_lib: str = "",
@@ -684,6 +688,7 @@ def build_native_gpt2_run_config(
         model_family=_canonical_native_gpt2_model_family(model_family),
         model_descriptor=f"d{int(num_layers)}",
         eval_every_steps=max(0, int(eval_every_steps)),
+        train_loss_every_steps=max(0, int(train_loss_every_steps)),
         eval_batches=max(0, int(eval_batches)),
         eval_batch_size=max(0, int(eval_batch_size)),
         lm_head_row_chunk_size=max(1, int(lm_head_row_chunk_size)),
@@ -745,6 +750,7 @@ def build_native_gpt2_compiled_cli_run_config(
     activation: str,
     eval_batches: int = 1,
     eval_batch_size: int = 0,
+    train_loss_every_steps: int = 0,
     moa_interval: int = 50,
     kernel_backend: str = "tile-cuda",
     tile_ops_lib: str = "",
@@ -781,6 +787,7 @@ def build_native_gpt2_compiled_cli_run_config(
         model_family=_canonical_native_gpt2_model_family(model_family),
         model_descriptor=f"d{int(num_layers)}",
         eval_every_steps=max(0, int(eval_every_steps)),
+        train_loss_every_steps=max(0, int(train_loss_every_steps)),
         eval_batches=max(0, int(eval_batches)),
         eval_batch_size=max(0, int(eval_batch_size)),
         lm_head_row_chunk_size=max(1, int(lm_head_row_chunk_size)),
