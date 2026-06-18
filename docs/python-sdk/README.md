@@ -192,6 +192,10 @@ without importing Torch. The generic native-train binding also uses
 defaulting to `CUDA_MODULE_LOADING=LAZY` only when unset. Use
 `native_train_model_registry()` to inspect the compiled model coverage exposed
 by `nfn-native-train --list-models --json`.
+The CLI subprocess fallback also defaults `CUDA_VISIBLE_DEVICES=0` and
+`CUDA_DEVICE_MAX_CONNECTIONS=1` only when the caller has not supplied those
+environment variables; set `NativeTrainRunConfig.cuda_visible_devices` or the
+environment to target another CUDA GPU.
 
 ## Modules
 

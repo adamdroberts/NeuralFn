@@ -33,6 +33,7 @@ class NativeTrainRunConfig:
     model_family: str = "gpt"
     args: tuple[str, ...] = ()
     native_train_cli: str | None = None
+    cuda_visible_devices: str = "0"
     cuda_device_max_connections: str = "1"
 
     def argv(self) -> list[str]:
@@ -151,6 +152,7 @@ def run_native_train(config: NativeTrainRunConfig, *, runner: str = "auto") -> i
     if not status.available:
         raise RuntimeError(f"Native train CLI requested but unavailable: {status.reason}")
     env = os.environ.copy()
+    env.setdefault("CUDA_VISIBLE_DEVICES", config.cuda_visible_devices)
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", config.cuda_device_max_connections)
     env.setdefault("CUDA_MODULE_LOADING", "LAZY")
     proc = subprocess.run(config.argv(), env=env, check=False)

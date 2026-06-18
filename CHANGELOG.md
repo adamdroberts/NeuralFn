@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned generic native-train subprocess dispatch with the GPT-specific
+  native launchers. `NativeTrainRunConfig` now exposes
+  `cuda_visible_devices` (default `"0"`), `run_native_train(...,
+  runner="auto")` sets `CUDA_VISIBLE_DEVICES=0` when the caller has not
+  already supplied a device, and the pre-import legacy training guard applies
+  the same unset-only default before execing a family native binary. This keeps
+  direct legacy script handoff and generic SDK handoff on the dedicated CUDA
+  compute device by default while preserving explicit user overrides.
+  Verification: focused native SDK/guard tests.
+
 - Kept native dense GPT layer-evo candidate losses device-resident during
   forward-only scoring. The `--layer-evo` loop now runs candidate forward loss
   without forcing a host loss copy, then copies the resulting scalar directly

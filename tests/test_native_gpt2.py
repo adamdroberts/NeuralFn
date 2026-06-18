@@ -257,6 +257,18 @@ def test_native_gpt_layer_evo_candidate_loss_stays_device_resident() -> None:
     assert "layer_evo_candidate_loss_host_roundtrips_elided" in source
 
 
+def test_native_training_guard_sets_dedicated_cuda_device_default() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "cli"
+        / "scripts"
+        / "native_training_guard.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'env.setdefault("CUDA_VISIBLE_DEVICES", "0")' in source
+    assert 'env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
+
+
 def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     source = (
         Path(__file__).resolve().parents[1]
@@ -1321,8 +1333,8 @@ def test_native_train_run_config_and_subprocess_runner(
     cli.write_text(
         "#!/usr/bin/env bash\n"
         "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_TRAIN_ARGS\"\n"
-        "printf 'CUDA_DEVICE_MAX_CONNECTIONS=%s\\nCUDA_MODULE_LOADING=%s\\n' "
-        "\"$CUDA_DEVICE_MAX_CONNECTIONS\" \"$CUDA_MODULE_LOADING\" > \"$NFN_TEST_NATIVE_TRAIN_ENV\"\n"
+        "printf 'CUDA_VISIBLE_DEVICES=%s\\nCUDA_DEVICE_MAX_CONNECTIONS=%s\\nCUDA_MODULE_LOADING=%s\\n' "
+        "\"$CUDA_VISIBLE_DEVICES\" \"$CUDA_DEVICE_MAX_CONNECTIONS\" \"$CUDA_MODULE_LOADING\" > \"$NFN_TEST_NATIVE_TRAIN_ENV\"\n"
         "exit 29\n",
         encoding="utf-8",
     )
@@ -1345,6 +1357,7 @@ def test_native_train_run_config_and_subprocess_runner(
     args = output.read_text(encoding="utf-8").splitlines()
     assert args[:4] == ["--base-model", "nano-gpt", "--tinystories", "--dry-run"]
     env_lines = env_output.read_text(encoding="utf-8").splitlines()
+    assert "CUDA_VISIBLE_DEVICES=0" in env_lines
     assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in env_lines
     assert "CUDA_MODULE_LOADING=LAZY" in env_lines
 

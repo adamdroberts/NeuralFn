@@ -297,6 +297,9 @@ Canonical docs:
   `neuralfn.native_train.native_train_model_registry()` to inspect native
   coverage; use `run_native_train(build_native_train_run_config(...),
   runner="auto")` for SDK-level C++ binding handoff to the compiled frontend.
+  Generic native subprocess fallback defaults `CUDA_VISIBLE_DEVICES=0`,
+  `CUDA_DEVICE_MAX_CONNECTIONS=1`, and `CUDA_MODULE_LOADING=LAZY` only when
+  unset; user-pinned environment values still win.
 - The default runner is `compiled-cli`. Use `--eval-every-steps 1000` for
   per-1000-step validation loss, native command/config inspection flags for
   debugging, and `NFN_NATIVE_*_CLI` environment overrides for installed native

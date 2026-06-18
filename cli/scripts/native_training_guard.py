@@ -180,6 +180,7 @@ def reject_torch_training_by_default(
     default_args = list(native_default_args or ())
     command = _family_forwarded_args(family_command, default_args) if family_command else _forwarded_args(family, default_args)
     env = os.environ.copy()
+    env.setdefault("CUDA_VISIBLE_DEVICES", "0")
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
     if any(flag in sys.argv[1:] for flag in ("--dry-run", "--native-cuda-dry-run", "--print-command", "--native-cuda-print-command")):
         raise SystemExit(subprocess.run(command, env=env, check=False).returncode)
