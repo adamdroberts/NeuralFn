@@ -82,6 +82,21 @@ Future updates should append new entries here rather than replacing older notes.
   GEMM/TK kernels first. Verification: rebuilt `nfn_gpt_native_train` and ran
   a CUDA-visible one-step stage profile on the dedicated RTX 5090.
 
+- Added and rejected a default-off attention-backward BF16 dprep grad-out
+  candidate behind `NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1` /
+  `NFN_NATIVE_GPT2_BF16_ATTENTION_DPREP_GRAD_OUT=1`. The path keeps attention
+  projection dInput on the default float output route, packs dO to BF16 just
+  before packed-attention dprep/backward, and reports
+  `attention_backward_bf16_dprep_grad_out_enabled` plus
+  `attention_backward_grad_out_dtype: "bf16-dprep-pack"`. A one-step profile
+  showed dprep timing dropping to `24.807 ms` but added a `22.473 ms` pack, and
+  the dedicated RTX 5090 same-script 10-step, 3-sample benchmark measured
+  `1.007803x` train-loop wall time and `0.992260x` tokens/sec versus default,
+  so it remains diagnostic-only. Verification: rebuilt `nfn_gpt_native_train`
+  and `libnfn_native_train_tile_ops.so`, ran a GPU-visible one-step branch
+  smoke, and ran `tools/bench_native_gpt_sm120_candidate.sh` with selected-GPU
+  idle checks.
+
 - Replaced the no-cuBLAS large-row linear dWeight fallback with a shared-memory
   2D tiled CUDA kernel for float32-output dWeight accumulation across float32
   and BF16 activation/gradient combinations. The normal native GPT workstation

@@ -61,6 +61,13 @@ JSON includes `block_backward.mlp_proj.grad_out_bf16`, which isolates the
 projection-gradient float32-to-BF16 pack from the surrounding MLP projection
 dWeight and dInput kernels.
 
+`NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1` is a default-off SM120
+attention-backward diagnostic. It packs the float attention dO tensor to BF16
+only for the packed-attention dprep/backward wrapper, without switching the
+attention projection dInput kernel to a BF16 output. Runtime JSON reports
+`attention_backward_bf16_dprep_grad_out_enabled` and
+`attention_backward_grad_out_dtype: "bf16-dprep-pack"` when this path is active.
+
 On the SM120 workstation this defaults to `NFN_TILE_CUDA_USE_TK_ATTENTION=1`,
 `NFN_TILE_CUDA_ARCH=sm_120a`, and links the local llm.kittens /
 ThunderKittens headers via `LLM_KITTENS_ROOT` and `TK_ROOT`. Set

@@ -3587,6 +3587,7 @@ bool print_tile_plan(
         << (bf16_qkv_grad_handoff_enabled ? "true" : "false") << ",\n"
         << "  \"attention_backward_bf16_grad_out_handoff_enabled\": "
         << (bf16_attention_grad_out_handoff_enabled ? "true" : "false") << ",\n"
+        << "  \"attention_backward_bf16_dprep_grad_out_enabled\": false,\n"
         << "  \"attention_backward_grad_out_dtype\": \""
         << (bf16_attention_grad_out_handoff_enabled ? "bf16" : "float32") << "\",\n"
         << "  \"attention_backward_bf16_grad_out_scratch_elements\": "
@@ -10511,6 +10512,14 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT",
                               "NFN_NATIVE_GPT2_BF16_ATTENTION_GRAD_OUT"}),
             false);
+    const bool bf16_attention_dprep_grad_out_enabled =
+        packed_qkv_attention_enabled &&
+        bf16_qkv_grad_handoff_enabled &&
+        !bf16_attention_grad_out_handoff_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT",
+                              "NFN_NATIVE_GPT2_BF16_ATTENTION_DPREP_GRAD_OUT"}),
+            false);
     const bool ln1_bf16_qkv_forward_enabled =
         packed_qkv_attention_enabled &&
         env_flag_enabled_or_default(
@@ -11922,7 +11931,9 @@ int run_transformer_lm_training_json(
         }
     };
     auto allocate_attention_grad_out_bf16 = [&]() {
-        if (!error.empty() || !bf16_attention_grad_out_handoff_enabled) {
+        if (!error.empty() ||
+            (!bf16_attention_grad_out_handoff_enabled &&
+             !bf16_attention_dprep_grad_out_enabled)) {
             return;
         }
         if (activation_elements <= 0 ||
@@ -12338,7 +12349,9 @@ int run_transformer_lm_training_json(
         }
         allocate_uint16(
             &attention_grad_out_bf16,
-            bf16_attention_grad_out_handoff_enabled ? activation_elements : 0,
+            (bf16_attention_grad_out_handoff_enabled || bf16_attention_dprep_grad_out_enabled)
+                ? activation_elements
+                : 0,
             "attention_grad_out_bf16");
         if (trained_layers > 0 &&
             kBlockWeightBf16ElementsPerBlock > 0 &&
@@ -14917,7 +14930,30 @@ int run_transformer_lm_training_json(
                 ? mlp_forward_act_bf16
                 : active_qkv_bf16;
         std::uint16_t* active_attention_grad_out_bf16 =
-            bf16_attention_grad_out_handoff_enabled ? attention_grad_out_bf16 : nullptr;
+            (bf16_attention_grad_out_handoff_enabled || bf16_attention_dprep_grad_out_enabled)
+                ? attention_grad_out_bf16
+                : nullptr;
+        bool attention_dprep_grad_out_bf16_ready = bf16_attention_grad_out_handoff_enabled;
+        auto ensure_attention_dprep_grad_out_bf16 = [&]() -> const std::uint16_t* {
+            if (!bf16_attention_dprep_grad_out_enabled ||
+                active_attention_grad_out_bf16 == nullptr ||
+                grad_attn_out == nullptr ||
+                !error.empty()) {
+                return bf16_attention_grad_out_handoff_enabled ? active_attention_grad_out_bf16 : nullptr;
+            }
+            if (!attention_dprep_grad_out_bf16_ready) {
+                run_timed_stage("block_backward.attn_sdpa.grad_out_bf16", [&]() {
+                    run(float32_to_bf16_bits(
+                            grad_attn_out,
+                            active_attention_grad_out_bf16,
+                            active_activation_elements,
+                            nullptr),
+                        label + ".attn.sdpa.grad_out.to_bf16_bits");
+                });
+                attention_dprep_grad_out_bf16_ready = error.empty();
+            }
+            return attention_dprep_grad_out_bf16_ready ? active_attention_grad_out_bf16 : nullptr;
+        };
         const std::uint16_t* active_packed_attn_out_bf16 =
             stored_packed_attention != nullptr ? stored_packed_attention->o : tape.packed_attn_out_bf16;
         std::uint16_t* mlp_proj_grad_out_bf16 = nullptr;
@@ -15355,12 +15391,13 @@ int run_transformer_lm_training_json(
                     if (error.empty()) {
                         if (stored_packed_attention != nullptr &&
                             stored_packed_attention->lse != nullptr) {
-                            if (bf16_attention_grad_out_handoff_enabled) {
+                            const std::uint16_t* dprep_grad_out_bf16 = ensure_attention_dprep_grad_out_bf16();
+                            if (dprep_grad_out_bf16 != nullptr) {
                                 run(packed_attention_backward_to_qkv_bf16_bits_saved_lse_from_bf16_grad(
                                         active_qkv_bf16,
                                         active_packed_attn_out_bf16,
                                         stored_packed_attention->lse,
-                                        active_attention_grad_out_bf16,
+                                        dprep_grad_out_bf16,
                                         active_qkv_grad_bf16,
                                         active_batch_size,
                                         kHeads,
@@ -15429,11 +15466,12 @@ int run_transformer_lm_training_json(
                                     label + ".attn.sdpa.backward_packed_qkv_to_qkv_saved_lse");
                             }
                         } else {
-                            if (bf16_attention_grad_out_handoff_enabled) {
+                            const std::uint16_t* dprep_grad_out_bf16 = ensure_attention_dprep_grad_out_bf16();
+                            if (dprep_grad_out_bf16 != nullptr) {
                                 run(packed_attention_backward_to_qkv_bf16_bits_from_bf16_grad(
                                         active_qkv_bf16,
                                         active_packed_attn_out_bf16,
-                                        active_attention_grad_out_bf16,
+                                        dprep_grad_out_bf16,
                                         active_qkv_grad_bf16,
                                         active_batch_size,
                                         kHeads,
@@ -17397,8 +17435,13 @@ int run_transformer_lm_training_json(
         << (bf16_qkv_grad_handoff_enabled ? "true" : "false") << ",\n"
         << "  \"attention_backward_bf16_grad_out_handoff_enabled\": "
         << (bf16_attention_grad_out_handoff_enabled ? "true" : "false") << ",\n"
+        << "  \"attention_backward_bf16_dprep_grad_out_enabled\": "
+        << (bf16_attention_dprep_grad_out_enabled ? "true" : "false") << ",\n"
         << "  \"attention_backward_grad_out_dtype\": \""
-        << (bf16_attention_grad_out_handoff_enabled ? "bf16" : "float32") << "\",\n"
+        << (bf16_attention_grad_out_handoff_enabled
+                ? "bf16"
+                : (bf16_attention_dprep_grad_out_enabled ? "bf16-dprep-pack" : "float32"))
+        << "\",\n"
         << "  \"attention_backward_bf16_grad_out_scratch_elements\": "
         << attention_grad_out_bf16_elements << ",\n"
         << "  \"attention_backward_bf16_grad_out_scratch_bytes\": "
@@ -17498,6 +17541,8 @@ int run_transformer_lm_training_json(
                 ? (stored_packed_attention_backward_kernel_launches > 0
                        ? (bf16_attention_grad_out_handoff_enabled
                               ? "tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-grad-out-handoff"
+                          : bf16_attention_dprep_grad_out_enabled
+                              ? "tk-sm120-packed-qkv-bf16-saved-activation-backward-bf16-dprep-grad-out"
                           : bf16_qkv_grad_handoff_enabled
                               ? (direct_bf16_qkv_grad_scratch_enabled
                                      ? "tk-sm120-packed-qkv-bf16-saved-activation-backward-direct-bf16-grad-scratch-handoff"
@@ -17505,6 +17550,8 @@ int run_transformer_lm_training_json(
                               : "tk-sm120-packed-qkv-bf16-saved-activation-backward-bridge")
                        : (bf16_attention_grad_out_handoff_enabled
                               ? "tk-sm120-packed-qkv-bf16-backward-bf16-grad-out-handoff"
+                          : bf16_attention_dprep_grad_out_enabled
+                              ? "tk-sm120-packed-qkv-bf16-backward-bf16-dprep-grad-out"
                           : bf16_qkv_grad_handoff_enabled
                               ? (direct_bf16_qkv_grad_scratch_enabled
                                      ? "tk-sm120-packed-qkv-bf16-backward-direct-bf16-grad-scratch-handoff"
