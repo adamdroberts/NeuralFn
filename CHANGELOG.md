@@ -103,6 +103,15 @@ Future updates should append new entries here rather than replacing older notes.
   train-loop wall time and `0.993932x` tokens/sec versus the current default,
   confirming the route remains diagnostic-only and should not be promoted.
 
+- Fixed native dense GPT template selection so `--template-name gpt3` is a
+  shipped native-compatible alias instead of reporting `unknown-template`. The
+  compiled planner now applies the same GPT3 2048-token context default through
+  either `--base-model gpt3` or `--template-name gpt3`, defaults the implicit
+  batch size to 32 to keep the 65,536-token microbatch, and still lets explicit
+  `--train-seq-len`, `--batch-size`, or custom graph selection win.
+  Verification: focused native GPT template pytest, compiled C++ plan smoke for
+  `--template-name gpt3`, and diff whitespace check.
+
 - The compiled `nfn_native_train` frontend now accepts the high-level GPT
   training flags that previously required the Python `nfn train` or
   `train_gpt.py` argument shim: `--dataset tinystories`, `--output`,

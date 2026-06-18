@@ -108,9 +108,11 @@ selectors. `train_gpt.py`, `nfn train --base-model gpt`, and the native GPT SDK
 handoff accept `--template-name` / `--preset` for every shipped GPT template
 name, plus the public `gpt` dense-template alias and `--graph-file` for a custom
 graph JSON. `gpt2` and `gpt3` are model
-family aliases for the same trainer; `gpt3` only defaults the context window to
-2048 when no explicit template, graph, or sequence length is provided. Dense
-GPT-compatible selections (`gpt`, `gpt2`, `gpt2_megakernel`, and `gpt2_moa`) map
+family aliases for the same trainer; GPT3 defaults the context window to 2048
+when selected by `--base-model gpt3` or `--template-name gpt3`, unless a custom
+graph or explicit sequence length is provided. Its implicit batch size is 32 so
+the default token microbatch stays fixed. Dense GPT-compatible selections
+(`gpt`, `gpt2`, `gpt3`, `gpt2_megakernel`, and `gpt2_moa`) map
 to the implemented compiled CUDA Tile trainer today; `gpt` reports
 `resolved_native_template_name: "gpt2"` while the implementation template keeps
 its legacy name, and `gpt2_moa` resolves to the native MoA activation mode

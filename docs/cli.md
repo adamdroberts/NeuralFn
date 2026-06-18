@@ -94,9 +94,11 @@ The native GPT compiled CLI has its own backend selector:
 `--backend tile-cuda` (or Python wrapper `--kernel-backend tile-cuda`). `tile-cuda` is the default and only NeuralFn-owned compiled trainer for dense GPT. Use the parity benchmark script, not a training backend, for llm.kittens reference timing.
 Use `--base-model gpt` as the canonical native trainer surface. `gpt2` and
 `gpt3` are dense GPT selector aliases that canonicalize to
-`--model-family gpt` before the compiled C++ frontend runs; `gpt3` defaults to
-a 2048-token context only when no explicit template, graph, or
-`--train-seq-len` is supplied.
+`--model-family gpt` before the compiled C++ frontend runs; GPT3 defaults to
+a 2048-token context when selected through `--base-model gpt3` or
+`--template-name gpt3`, unless a custom graph or explicit `--train-seq-len` is
+supplied. The implicit GPT3 batch size is 32, preserving the default
+65,536-token microbatch unless `--batch-size` is explicit.
 `nfn-native-train --list-models --json` reports all three dense GPT aliases as
 `implemented` because they share the same native trainer; template or graph
 selection determines whether the selected architecture can run on that trainer.
@@ -464,11 +466,12 @@ Top-level `nfn train --base-model gpt` direct compiled-CLI handoff adds
 `--train-transformer-lm` for normal training commands, including selector-bearing
 commands, unless the command already requested a plan/check/smoke/train action.
 `--base-model gpt2` and `--base-model gpt3` are aliases for this same trainer;
-`gpt3` only defaults to a 2048-token context when no explicit template, graph,
-or `--train-seq-len` is present.
-For all other cases, including custom graphs and explicit templates, `gpt3`
-does not alter the architecture; the selected graph/template and sequence
-arguments are authoritative.
+GPT3 defaults to a 2048-token context when selected through `--base-model gpt3`
+or `--template-name gpt3`, unless a custom graph or explicit
+`--train-seq-len` is present. The native planner also defaults the implicit GPT3
+batch size to 32 so the token microbatch remains unchanged.
+For custom graphs, the selected graph and explicit sequence arguments are
+authoritative.
 The selector accepts `gpt` as the default public dense GPT template alias plus
 every name in
 `neuralfn.config.SHIPPED_GPT_TEMPLATE_PRESETS`, and the compiled C++ plan JSON

@@ -93,6 +93,7 @@ struct Config {
     bool require_optimized_attention = true;
     bool template_explicit = false;
     bool seq_len_explicit = false;
+    bool batch_size_explicit = false;
     std::string cuda_runtime_lib;
     bool native_info = false;
     std::string native_checkpoint;
@@ -511,10 +512,6 @@ std::string canonical_dense_gpt_model_family(const std::string& model_selector) 
     return normalized;
 }
 
-bool is_default_gpt_template(const Config& cfg) {
-    return resolved_native_template_name(cfg.template_name) == "gpt2";
-}
-
 const std::vector<std::string>& shipped_gpt_template_presets() {
     static const std::vector<std::string> presets = {
         "nanogpt",
@@ -584,7 +581,7 @@ const std::vector<std::string>& shipped_gpt_template_presets() {
 
 bool selected_template_is_shipped(const Config& cfg) {
     const std::string name = normalize_template_name(cfg.template_name);
-    if (name == "gpt") {
+    if (name == "gpt" || name == "gpt3") {
         return true;
     }
     const std::vector<std::string>& presets = shipped_gpt_template_presets();
@@ -593,7 +590,8 @@ bool selected_template_is_shipped(const Config& cfg) {
 
 bool selected_template_is_native_dense_gpt_compatible(const Config& cfg) {
     const std::string name = resolved_native_template_name(cfg.template_name);
-    return name == "gpt2" || name == "gpt2_megakernel" || name == "gpt2_moa" || name == "nanogpt";
+    return name == "gpt2" || name == "gpt3" || name == "gpt2_megakernel" || name == "gpt2_moa" ||
+        name == "nanogpt";
 }
 
 bool selected_template_geometry_matches_compiled_loop(const Config& cfg);
@@ -19330,6 +19328,7 @@ int main(int argc, char** argv) {
                 parse_double(value_after_equals("--evo-layer-mutation-scale="), "--evo-layer-mutation-scale");
         } else if (arg == "--batch-size") {
             cfg.batch_size = parse_int(require_value(argc, argv, &i, arg), arg);
+            cfg.batch_size_explicit = true;
         } else if (arg == "--train-seq-len") {
             cfg.seq_len = parse_int(require_value(argc, argv, &i, arg), arg);
             cfg.seq_len_explicit = true;
@@ -19379,14 +19378,16 @@ int main(int argc, char** argv) {
     }
 
     const std::string model_selector = normalize_model_family(cfg.model_family);
-    if (
-        model_selector == "gpt3" &&
+    const std::string resolved_template_selector = resolved_native_template_name(cfg.template_name);
+    const bool gpt3_default_context =
         !cfg.seq_len_explicit &&
-        !cfg.template_explicit &&
         cfg.graph_file.empty() &&
-        is_default_gpt_template(cfg)
-    ) {
+        (model_selector == "gpt3" || resolved_template_selector == "gpt3");
+    if (gpt3_default_context) {
         cfg.seq_len = 2048;
+        if (!cfg.batch_size_explicit) {
+            cfg.batch_size = 32;
+        }
     }
     cfg.model_family = canonical_dense_gpt_model_family(model_selector);
     cfg.activation = lower_activation(cfg.activation);

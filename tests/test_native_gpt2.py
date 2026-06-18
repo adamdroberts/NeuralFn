@@ -2174,6 +2174,35 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             assert preset_payload["selected_graph_support_status"] == "template-native-trainer-missing"
             assert preset_payload["selected_graph_native_runnable"] is False
 
+    gpt3_template_plan = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(dataset_path),
+            "--backend",
+            "tile-cuda",
+            "--template-name",
+            "gpt3",
+            "--print-plan",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert gpt3_template_plan.returncode == 0, gpt3_template_plan.stderr
+    gpt3_template_payload = json.loads(gpt3_template_plan.stdout)
+    assert gpt3_template_payload["template_name"] == "gpt3"
+    assert gpt3_template_payload["resolved_native_template_name"] == "gpt3"
+    assert gpt3_template_payload["template_known"] is True
+    assert gpt3_template_payload["selected_graph_support_status"] == "native-transformer-lm"
+    assert gpt3_template_payload["selected_graph_native_runnable"] is True
+    assert gpt3_template_payload["native_geometry_contract"]["selected_template_geometry"]["seq_len"] == 2048
+    assert gpt3_template_payload["native_geometry_contract"]["seq_len"] == 2048
+    assert gpt3_template_payload["shape"]["seq_len"] == 2048
+    assert gpt3_template_payload["shape"]["batch_size"] == 32
+    assert gpt3_template_payload["schedule"]["train_batch_tokens"] == 524288
+
     unsupported_template = subprocess.run(
         [
             str(cli),
