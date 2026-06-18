@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Corrected the compiled Tile-CUDA packed-attention dprep helper so the GPT
+  `heads=12, head_dim=64` BF16-gradient specialization is actually default-on
+  when `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED` is unset,
+  matching the existing README and benchmark checklist. Setting
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED=0` still reproduces
+  the older generic row dprep route for same-binary bisection. Verification
+  after reinstalling CUDA for WSL: `nvcc --version` reported CUDA 13.3.33;
+  rebuilt `build/libnfn_native_train_tile_ops.so`; ran one-step RTX 5090
+  native CUDA profiles for the fixed default and explicit opt-out paths, both
+  passing with `attention_backward_dprep_timing_count: 96`; ran
+  `python -m pytest tests/test_native_gpt2.py -q` (`51 passed, 1 skipped`);
+  ran `python tools/check_native_no_torch_deps.py`.
+
 - Removed benchmark-mode post-train diagnostic D2H samples from the dense GPT
   native trainer. Runs with `--native-cuda-sample-every 0` now skip the final
   token-weight and clip-scale host copies, report

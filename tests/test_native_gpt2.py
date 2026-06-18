@@ -4716,6 +4716,12 @@ def test_packed_attention_ln1_recompute_uses_stats_only_tile_abi() -> None:
     assert "nfn_native_tile_layer_norm_apply_stats_bf16_out_float32" in header_text
     assert "launch_layer_norm_apply_stats_bf16_out_float32" in source_text
     assert "layer_norm_apply_stats_bf16_out_float32_kernel" in kernels_text
+    assert "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED" in kernels_text
+    assert (
+        "if (value == nullptr || value[0] == '\\0') {\n"
+        "      return true;\n"
+        "    }"
+    ) in kernels_text
 
 
 def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
@@ -5723,6 +5729,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING" in kernels_text
     assert "packed_attention_dprep_bf16_grad_hd64_h12_kernel" in kernels_text
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED" in kernels_text
+    assert (
+        "if (value == nullptr || value[0] == '\\0') {\n"
+        "      return true;\n"
+        "    }"
+    ) in kernels_text
     assert "NFN_TILE_CUDA_USE_TK_ATTENTION:-1" in script_text
     assert "LLM_KITTENS_ROOT" in script_text
     assert "TK_ROOT" in script_text

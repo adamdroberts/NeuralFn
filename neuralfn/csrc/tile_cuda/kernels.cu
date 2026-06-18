@@ -549,7 +549,7 @@ bool tk_packed_attention_dprep_hd64_specialized_enabled() {
       value = std::getenv("NFN_NATIVE_GPT2_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED");
     }
     if (value == nullptr || value[0] == '\0') {
-      return false;
+      return true;
     }
     if (std::strcmp(value, "0") == 0 ||
         std::strcmp(value, "false") == 0 ||
