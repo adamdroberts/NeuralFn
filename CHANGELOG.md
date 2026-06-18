@@ -45,6 +45,18 @@ Future updates should append new entries here rather than replacing older notes.
   a GPU-visible one-step shape-stat smoke, and ran
   `tools/bench_native_gpt_sm120_candidate.sh` with selected-GPU idle checks.
 
+- Added a default-off BF16-input/BF16-gradient split dWeight+bias diagnostic
+  behind `NFN_NATIVE_GPT_FUSE_BF16_BF16_DWEIGHT_BGRAD=0` /
+  `NFN_TILE_CUDA_LINEAR_BF16_BF16_BGRAD=0`. This keeps block dWeight on the
+  GEMM route and only splits bias reduction, instead of using the old tiled
+  dWeight fallback when comparing against the fused cuBLASLt BGRADB default.
+  The dedicated RTX 5090 10-step, 3-sample paired benchmark measured
+  `1.033067x` train-loop wall time and `0.968003x` tokens/sec versus BGRADB, so
+  the fused route remains the default. Verification: rebuilt
+  `libnfn_native_train_tile_ops.so`, ran a GPU-visible one-step shape-stat
+  smoke, and ran `tools/bench_native_gpt_sm120_candidate.sh` with selected-GPU
+  idle checks.
+
 - Replaced the no-cuBLAS large-row linear dWeight fallback with a shared-memory
   2D tiled CUDA kernel for float32-output dWeight accumulation across float32
   and BF16 activation/gradient combinations. The normal native GPT workstation

@@ -2683,6 +2683,34 @@ bool trainer_linear_float32_bf16_bgrad_enabled() {
   return enabled;
 }
 
+bool trainer_linear_bf16_bf16_bgrad_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_NATIVE_GPT_FUSE_BF16_BF16_DWEIGHT_BGRAD");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_FUSE_BF16_BF16_DWEIGHT_BGRAD");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16_BF16_BGRAD");
+    }
+    if (value == nullptr) {
+      return true;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
 bool trainer_linear_bf16_bridge_enabled() {
   static const bool enabled = []() {
     const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16");
@@ -14494,6 +14522,31 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_b
     cudaStream_t stream) {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim)) {
+    if (!trainer_linear_bf16_bf16_bgrad_enabled() &&
+        cublas_linear_gemm_ex_bf16_bits_ab_float32(
+            x_bf16_bits,
+            grad_out_bf16_bits,
+            grad_weight,
+            static_cast<int>(input_dim),
+            static_cast<int>(output_dim),
+            static_cast<int>(rows),
+            CUBLAS_OP_N,
+            CUBLAS_OP_T,
+            static_cast<int>(input_dim),
+            static_cast<int>(output_dim),
+            static_cast<int>(input_dim),
+            beta,
+            true,
+            stream)) {
+      constexpr std::int64_t kRowChunkSize = kLinearBackwardBiasRowChunkSize;
+      const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
+      constexpr int threads = 256;
+      const int bias_blocks = static_cast<int>((output_dim + threads - 1) / threads);
+      dim3 bias_grid(static_cast<unsigned int>(bias_blocks), static_cast<unsigned int>(row_chunks), 1);
+      linear_backward_bias_chunked_atomic_bf16_bits_float32_kernel<<<bias_grid, threads, 0, stream>>>(
+          grad_out_bf16_bits, grad_bias, output_dim, rows, kRowChunkSize);
+      return;
+    }
     const bool first_write_bias = beta == 0.0f && trainer_linear_bgrad_first_write_direct_enabled();
     float* bias_gradient = first_write_bias ? grad_bias : ensure_trainer_linear_bgrad_workspace(output_dim);
     if (bias_gradient != nullptr &&

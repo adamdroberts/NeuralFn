@@ -365,6 +365,11 @@ Set `NFN_TILE_CUDA_LINEAR_BF16_OUTPUT_CUBLASLT=1` or
 profiling. The opt-in route moves eligible BF16-output logits GEMMs to
 cuBLASLt in shape stats, but the dedicated RTX 5090 paired check measured it
 neutral/slightly slower than the GEMMEx fallback, so it is not a default.
+Set `NFN_TILE_CUDA_LINEAR_BF16_BF16_BGRAD=0` or
+`NFN_NATIVE_GPT_FUSE_BF16_BF16_DWEIGHT_BGRAD=0` only for BF16-input/BF16-grad
+block dWeight plus bias profiling. The split route keeps dWeight on the GEMM
+path and runs bias reduction separately, but the dedicated RTX 5090 paired
+check measured it slower than the fused BGRADB default.
 If the trainer Tile ops library is built without the cuBLAS linear fast path or
 the GEMM route is otherwise unavailable, large-row float32-output dWeight
 fallbacks use a shared-memory 2D tiled CUDA kernel for float32/BF16 activation
