@@ -10488,6 +10488,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT",
                               "NFN_NATIVE_GPT2_MLP_PROJ_DINPUT_BEFORE_DWEIGHT"}),
             false);
+    const bool mlp_fc_dinput_before_dweight_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT",
+                              "NFN_NATIVE_GPT2_MLP_FC_DINPUT_BEFORE_DWEIGHT"}),
+            false);
     const bool bf16_qkv_grad_handoff_enabled =
         packed_qkv_attention_enabled &&
         env_flag_enabled_or_default(
@@ -15081,7 +15086,8 @@ int run_transformer_lm_training_json(
             });
         });
         run_timed_stage("block_backward.mlp_fc", [&]() {
-            run_timed_stage("block_backward.mlp_fc.dweight_bias", [&]() {
+            auto run_mlp_fc_dweight_bias = [&]() {
+                run_timed_stage("block_backward.mlp_fc.dweight_bias", [&]() {
                 if (stored_mlp != nullptr && bf16_mlp_grad_handoff_enabled) {
                     if (error.empty()) {
                         if (bf16_block_dweight_staging_enabled &&
@@ -15131,8 +15137,10 @@ int run_transformer_lm_training_json(
                 } else {
                     if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16(tape.ln2_out, grad_fc_out, block.accum_grad_fc_weight, block.accum_grad_fc_bias, active_rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight_bias.accumulate.bf16");
                 }
-            });
-            run_timed_stage("block_backward.mlp_fc.dinput", [&]() {
+                });
+            };
+            auto run_mlp_fc_dinput = [&]() {
+                run_timed_stage("block_backward.mlp_fc.dinput", [&]() {
                 if (stored_mlp != nullptr && bf16_mlp_grad_handoff_enabled) {
                     if (error.empty()) {
                         run(linear_backward_input_bf16_bits_weight_bf16(
@@ -15148,7 +15156,15 @@ int run_transformer_lm_training_json(
                 } else {
                     if (error.empty()) run(linear_backward_input_weight_bf16(grad_fc_out, block.fc_weight_bf16, grad_ln2, active_rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_input.weight_bf16");
                 }
-            });
+                });
+            };
+            if (mlp_fc_dinput_before_dweight_enabled) {
+                run_mlp_fc_dinput();
+                run_mlp_fc_dweight_bias();
+            } else {
+                run_mlp_fc_dweight_bias();
+                run_mlp_fc_dinput();
+            }
         });
         run_timed_stage("block_backward.ln2_residual", [&]() {
             const float* ln2_mean = stored_mlp != nullptr ? stored_mlp->ln2_mean : tape.ln2_mean;
@@ -17135,6 +17151,8 @@ int run_transformer_lm_training_json(
         << (reuse_mlp_proj_bf16_grad_out_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_mlp_proj_dinput_before_dweight_enabled\": "
         << (mlp_proj_dinput_before_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_mlp_fc_dinput_before_dweight_enabled\": "
+        << (mlp_fc_dinput_before_dweight_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_mlp_proj_dgelu_strategy\": \""
         << (reuse_mlp_proj_bf16_grad_out_enabled
                 ? "tk-sm120-fused-dinput-dgelu-reused-bf16-grad-out-bf16-store-bf16-shadow-weight"

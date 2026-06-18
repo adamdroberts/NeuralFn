@@ -409,6 +409,7 @@ block cuBLASLt plus TK LM-head path runs,
 `block_backward_mlp_proj_dgelu_strategy`,
 `block_backward_mlp_proj_bf16_grad_out_reuse_enabled`,
 `block_backward_mlp_proj_dinput_before_dweight_enabled`,
+`block_backward_mlp_fc_dinput_before_dweight_enabled`,
 `block_backward_weight_linear_strategy`,
 `non_block_forward_backward_linear_strategy`, `lm_head_logits_linear_strategy`,
 `lm_head_dhidden_linear_strategy`,
@@ -441,6 +442,12 @@ the llm.kittens `matmul_backward` order, and runtime JSON reports
 default because the dedicated RTX 5090 5-step, 3-sample paired benchmark
 measured `1.000405x` train-loop wall time and `0.999602x` tokens/sec versus the
 current dWeight+bias-first order.
+`NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1` is the matching diagnostic
+ordering switch for MLP FC backward. It runs dInput before dWeight+bias and
+reports `block_backward_mlp_fc_dinput_before_dweight_enabled`, but remains
+disabled by default because the dedicated RTX 5090 5-step, 3-sample paired
+benchmark measured `1.000858x` train-loop wall time and `0.999153x` tokens/sec
+versus the current dWeight+bias-first order.
 The default path still uses
 `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32`,
 packs the incoming projection gradient to BF16 once, reuses that scratch for MLP
