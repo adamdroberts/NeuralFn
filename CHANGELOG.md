@@ -57,6 +57,19 @@ Future updates should append new entries here rather than replacing older notes.
   smoke, and ran `tools/bench_native_gpt_sm120_candidate.sh` with selected-GPU
   idle checks.
 
+- Refreshed current default attention/backward attribution after the latest
+  rejected GEMM diagnostics. The GPU-visible one-step stage profile at
+  `/tmp/nfn_attention_section_current_20260618.json` reported
+  `attention_backward_tk_timing_us: 237105` versus
+  `attention_backward_dprep_timing_us: 31238`, with the largest remaining
+  buckets in block backward, LM-head backward, MLP projection/FC, packed
+  attention backward TK, and LM-head logits/dHidden. This keeps the remaining
+  throughput-gap work focused on those kernels rather than the rejected LM-head
+  cuBLASLt or split-BGRADB routes. Verification: ran
+  `nfn_gpt_native_train` with `NFN_NATIVE_GPT_STAGE_TIMING=1` and
+  `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` on the dedicated RTX
+  5090.
+
 - Replaced the no-cuBLAS large-row linear dWeight fallback with a shared-memory
   2D tiled CUDA kernel for float32-output dWeight accumulation across float32
   and BF16 activation/gradient combinations. The normal native GPT workstation
