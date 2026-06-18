@@ -16,6 +16,16 @@ Future updates should append new entries here rather than replacing older notes.
   tests/test_tile_cuda_examples.py -q`; `python
   tools/check_native_no_torch_deps.py --json`; and `git diff --check`.
 
+- Rejected two additional TK-forward disable probes after the CUDA 13.3 shape
+  profile. Disabling the MLP projection forward shape with
+  `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=768,65536,3072,T,N` measured
+  `1.003165x` train-loop wall time and `0.996849x` tokens/sec versus default.
+  Disabling the MLP FC+GELU forward shape with
+  `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=3072,65536,768,T,N` fell back to
+  an unusably slow path and measured `13.695228x` train-loop wall time and
+  `0.073019x` tokens/sec. No default changed; the current TK forward routes
+  remain required for dense GPT SM120 parity.
+
 - `tools/paired_kernel_speed.py` now includes both stdout and stderr tails when a
   measured command exits nonzero without `--continue-on-error`. This makes CUDA
   driver/runtime failures from external baselines such as llm.kittens visible in
