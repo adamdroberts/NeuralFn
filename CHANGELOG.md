@@ -132,8 +132,10 @@ Future updates should append new entries here rather than replacing older notes.
   5-step, 3-sample candidate benchmarks rejected both policies: `min_waves`
   measured `1.001205x` train-loop wall time and `0.998809x` tokens/sec, while
   `max_waves` measured `1.001045x` train-loop wall time and `0.998964x`
-  tokens/sec versus the current default. Verification: rebuilt the Tile-CUDA
-  native trainer, ran no-Torch/focused source guards, and ran
+  tokens/sec versus the current default. A 2026-06-18 post-atomic-route current
+  build check reconfirmed `min_waves` as slower at `1.009572x` train-loop wall
+  time and `0.990522x` tokens/sec. Verification: rebuilt the Tile-CUDA native
+  trainer, ran no-Torch/focused source guards, and ran
   `tools/bench_native_gpt_sm120_candidate.sh` for both policies with selected
   GPU idle checks.
 
