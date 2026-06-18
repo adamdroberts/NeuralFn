@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `nfn_gpt2_evo_native_train` now delegates dense GPT-2-compatible training
+  runs to `nfn_gpt_native_train --train-transformer-lm --layer-evo` instead of
+  exiting after the C++ preflight. The family binary still owns
+  `--print-plan`, `--dry-run`, and `--smoke-evo-kernels`; incompatible custom
+  graphs and non-dense templates remain non-runnable until native trainer
+  coverage exists. Plan JSON now reports
+  `native-preflight-dense-gpt-layer-evo-delegate`,
+  `selected_graph_support_status: "native-dense-gpt-layer-evo-delegate"`, and
+  `selected_graph_native_runnable: true` for the delegated templates. Runtime
+  JSON from the delegated trainer remains explicit that forward-only evo
+  candidate loss evaluation is not implemented yet
+  (`candidate_loss_source:
+  "placeholder-device-zero-loss-selects-current-candidate"`). Verification:
+  rebuilt `build/nfn_gpt2_evo_native_train`, checked print-plan/dry-run JSON,
+  and ran a delegated startup-only TinyStories command through the evo wrapper;
+  it reported `passed: true`, `status: "native-transformer-lm-startup-ready"`,
+  `layer_evo.runtime_enabled: true`, and
+  `layer_evo.graph_editor_tensor_flow: false`.
+
 - Dense GPT native runtime JSON now reports `timing.post_train_sample_wall_ms`
   and `timing.cleanup_wall_ms` separately. Startup-only and short benchmark
   runs can now distinguish time-to-ready/setup from post-loop diagnostic sample

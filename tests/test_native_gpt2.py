@@ -3517,12 +3517,12 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert evo_plan_proc.returncode == 0, evo_plan_proc.stderr
     evo_plan = json.loads(evo_plan_proc.stdout)
     assert evo_plan["model_family"] == "gpt2-evo"
-    assert evo_plan["status"] == "native-preflight-missing-evo-trainer"
+    assert evo_plan["status"] == "native-preflight-dense-gpt-layer-evo-delegate"
     assert evo_plan["template_name"] == "gpt2_moa"
     assert evo_plan["graph_file"] == ""
     assert evo_plan["template_known"] is True
-    assert evo_plan["selected_graph_support_status"] == "native-gpt2-evo-trainer-missing"
-    assert evo_plan["selected_graph_native_runnable"] is False
+    assert evo_plan["selected_graph_support_status"] == "native-dense-gpt-layer-evo-delegate"
+    assert evo_plan["selected_graph_native_runnable"] is True
     assert evo_plan["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert evo_plan["shipped_template_catalog"] == list(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert evo_plan["shape"]["num_layers"] == 12
@@ -3543,6 +3543,10 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "template/custom graph selector parsed before graph-backed runtime import" in evo_plan["available_native_kernels"]
     assert (
         "device-side evo candidate mutation, best-loss selection, and best-candidate adoption Tile ABI"
+        in evo_plan["available_native_kernels"]
+    )
+    assert (
+        "dense GPT native transformer trainer delegate with --layer-evo for GPT-2-compatible templates"
         in evo_plan["available_native_kernels"]
     )
     assert (
@@ -4018,13 +4022,13 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert evo_dry_run.returncode == 2
-    assert "nfn_gpt2_evo_native_train: native CUDA Tile trainer for gpt2-evo is not implemented yet" in evo_dry_run.stderr
+    assert evo_dry_run.returncode == 0
     evo_dry_run_json_start = evo_dry_run.stdout.find("{")
     assert evo_dry_run_json_start >= 0
     evo_dry_run_plan = json.loads(evo_dry_run.stdout[evo_dry_run_json_start:])
     assert evo_dry_run_plan["schedule"]["eval_every_steps"] == 1000
     assert evo_dry_run_plan["layer_evo"]["enabled"] is True
+    assert evo_dry_run_plan["selected_graph_support_status"] == "native-dense-gpt-layer-evo-delegate"
 
 
 def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> None:

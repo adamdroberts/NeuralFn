@@ -11,6 +11,9 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <cerrno>
+#include <cstring>
+#include <unistd.h>
 
 namespace {
 
@@ -139,6 +142,36 @@ std::string resolve_tile_ops_lib(const Gpt2EvoPlan& plan, const char* program) {
     return "libnfn_native_train_tile_ops.so";
 }
 
+std::string resolve_dense_gpt_cli(const char* program) {
+    const char* env = std::getenv("NFN_NATIVE_GPT_CLI");
+    if (env != nullptr && std::string_view(env).size() > 0) {
+        return std::string(env);
+    }
+    std::filesystem::path exe_path(program);
+    if (exe_path.has_parent_path()) {
+        std::filesystem::path sibling = exe_path.parent_path() / "nfn_gpt_native_train";
+        if (std::filesystem::exists(sibling)) {
+            return sibling.string();
+        }
+    }
+    std::filesystem::path build_path = std::filesystem::current_path() / "build" / "nfn_gpt_native_train";
+    if (std::filesystem::exists(build_path)) {
+        return build_path.string();
+    }
+    return "nfn_gpt_native_train";
+}
+
+std::string output_dir_for_dense_delegate(const Gpt2EvoPlan& plan) {
+    if (plan.output.empty()) {
+        return "artifacts";
+    }
+    std::filesystem::path output_path(plan.output);
+    if (output_path.has_parent_path()) {
+        return output_path.parent_path().string();
+    }
+    return "artifacts";
+}
+
 std::vector<std::string> cuda_runtime_candidates(const Gpt2EvoPlan& plan) {
     if (!plan.cuda_runtime_lib.empty()) {
         return {plan.cuda_runtime_lib};
@@ -263,7 +296,7 @@ std::string selected_graph_support_status(const Gpt2EvoPlan& plan) {
     if (!selected_template_is_shipped(plan)) {
         return "unknown-template";
     }
-    return selected_template_is_dense_gpt2_compatible(plan) ? "native-gpt2-evo-trainer-missing"
+    return selected_template_is_dense_gpt2_compatible(plan) ? "native-dense-gpt-layer-evo-delegate"
                                                            : "template-native-trainer-missing";
 }
 
@@ -363,12 +396,18 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
     std::cout
         << "{\n"
         << "  \"model_family\": \"gpt2-evo\",\n"
-        << "  \"status\": \"native-preflight-missing-evo-trainer\",\n"
+        << "  \"status\": \""
+        << (selected_template_is_dense_gpt2_compatible(plan)
+                ? "native-preflight-dense-gpt-layer-evo-delegate"
+                : "native-preflight-missing-evo-trainer")
+        << "\",\n"
         << "  \"template_name\": \"" << json_escape(normalize_template_name(plan.template_name)) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(plan.graph_file) << "\",\n"
         << "  \"template_known\": " << (selected_template_is_shipped(plan) ? "true" : "false") << ",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(selected_graph_support_status(plan)) << "\",\n"
-        << "  \"selected_graph_native_runnable\": false,\n"
+        << "  \"selected_graph_native_runnable\": "
+        << ((!plan.graph_file.empty() || !selected_template_is_dense_gpt2_compatible(plan)) ? "false" : "true")
+        << ",\n"
         << "  \"shipped_template_catalog_count\": " << shipped_gpt_template_presets().size() << ",\n"
         << "  \"shipped_template_catalog\": [";
     const std::vector<std::string>& presets = shipped_gpt_template_presets();
@@ -429,10 +468,10 @@ void print_plan_json(const Gpt2EvoPlan& plan) {
         << "    \"AdamW optimizer profile and validation cadence parsed before Python/Torch import\",\n"
         << "    \"NVFP4 activation intent preserved in the compiled native plan\",\n"
         << "    \"template/custom graph selector parsed before graph-backed runtime import\",\n"
-        << "    \"device-side evo candidate mutation, best-loss selection, and best-candidate adoption Tile ABI\"\n"
+        << "    \"device-side evo candidate mutation, best-loss selection, and best-candidate adoption Tile ABI\",\n"
+        << "    \"dense GPT native transformer trainer delegate with --layer-evo for GPT-2-compatible templates\"\n"
         << "  ],\n"
         << "  \"required_native_kernels\": [\n"
-        << "    \"native dense GPT-2 forward/backward trainer loop that can expose evo block state\",\n"
         << "    \"forward-only candidate evaluation for current plus mutated evo-layer weights using the native evo Tile ABI\",\n"
         << "    \"wire the native evo Tile ABI into the layer-evolution loop without host graph-editor tensor flow\",\n"
         << "    \"NVFP4 activation packing over projection and attention inputs in the native trainer\"\n"
@@ -905,6 +944,80 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run) {
     return plan;
 }
 
+int exec_dense_gpt_delegate(const Gpt2EvoPlan& plan, const char* program) {
+    if (!plan.graph_file.empty() || !selected_template_is_dense_gpt2_compatible(plan)) {
+        std::cerr
+            << "nfn_gpt2_evo_native_train: selected template or graph is not runnable by the dense GPT layer-evo delegate.\n"
+            << "Use --print-plan to inspect the native support status.\n";
+        return 2;
+    }
+
+    std::vector<std::string> args;
+    args.push_back(resolve_dense_gpt_cli(program));
+    args.push_back("--backend");
+    args.push_back("tile-cuda");
+    args.push_back("--train-transformer-lm");
+    args.push_back("--template-name");
+    args.push_back(plan.template_name);
+    args.push_back("--dataset-alias");
+    args.push_back(plan.dataset_alias);
+    args.push_back("--output-dir");
+    args.push_back(output_dir_for_dense_delegate(plan));
+    args.push_back("--max-steps");
+    args.push_back(std::to_string(plan.max_steps));
+    args.push_back("--train-seq-len");
+    args.push_back(std::to_string(plan.train_seq_len));
+    args.push_back("--batch-size");
+    args.push_back(std::to_string(plan.batch_size));
+    args.push_back("--train-batch-tokens");
+    args.push_back(std::to_string(plan.train_batch_tokens));
+    args.push_back("--eval-batches");
+    args.push_back(std::to_string(plan.eval_batches));
+    args.push_back("--eval-batch-size");
+    args.push_back(std::to_string(plan.eval_batch_size));
+    args.push_back("--eval-every-steps");
+    args.push_back(std::to_string(plan.eval_every_steps));
+    args.push_back("--warmup-steps");
+    args.push_back(std::to_string(plan.warmup_steps));
+    args.push_back("--learning-rate");
+    args.push_back(std::to_string(plan.learning_rate));
+    args.push_back("--weight-decay");
+    args.push_back(std::to_string(plan.weight_decay));
+    if (!plan.tile_ops_lib.empty()) {
+        args.push_back("--tile-ops-lib");
+        args.push_back(plan.tile_ops_lib);
+    }
+    if (!plan.cuda_runtime_lib.empty()) {
+        args.push_back("--cuda-runtime-lib");
+        args.push_back(plan.cuda_runtime_lib);
+    }
+    if (plan.layer_evo_enabled) {
+        args.push_back("--layer-evo");
+        args.push_back("--evo-layer-index");
+        args.push_back(std::to_string(plan.evo_layer_index));
+        args.push_back("--evo-layer-interval");
+        args.push_back(std::to_string(plan.evo_layer_interval));
+        args.push_back("--evo-layer-population");
+        args.push_back(std::to_string(plan.evo_layer_population));
+        args.push_back("--evo-layer-mutation-scale");
+        args.push_back(std::to_string(plan.evo_layer_mutation_scale));
+    } else {
+        args.push_back("--no-layer-evo");
+    }
+    args.insert(args.end(), plan.unparsed_args.begin(), plan.unparsed_args.end());
+
+    std::vector<char*> delegate_argv;
+    delegate_argv.reserve(args.size() + 1);
+    for (std::string& arg : args) {
+        delegate_argv.push_back(arg.data());
+    }
+    delegate_argv.push_back(nullptr);
+    execvp(args.front().c_str(), delegate_argv.data());
+    std::cerr << "nfn_gpt2_evo_native_train: failed to exec dense GPT delegate '"
+              << args.front() << "': " << std::strerror(errno) << "\n";
+    return 127;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -924,9 +1037,8 @@ int main(int argc, char** argv) {
     if (print_plan && !dry_run) {
         return 0;
     }
-    std::cerr
-        << "nfn_gpt2_evo_native_train: native CUDA Tile trainer for gpt2-evo is not implemented yet.\n"
-        << "The C++ preflight parsed the GPT-2 evo plan; implement the required evo-layer kernels printed by "
-        << "--print-plan before production training.\n";
-    return 2;
+    if (dry_run) {
+        return 0;
+    }
+    return exec_dense_gpt_delegate(plan, argv[0]);
 }
