@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Disabled final checkpoint export for dense GPT `--startup-only` runs at the
+  native C++ gate, not only in wrapper conventions. Plan/runtime JSON now
+  reports the effective checkpoint export state with
+  `checkpoint_export_enabled` / `final_checkpoint_export_enabled` set to
+  `false` and `checkpoint_export_startup_only_elided` set to `true` when
+  startup-only suppresses a requested export. The checkpoint JSON block also
+  distinguishes `requested` from effective `enabled`, so startup benchmarks
+  cannot accidentally include BF16 checkpoint packing, device-to-host payload
+  copy, or file I/O. Verification: focused native GPT CLI tests and C++
+  rebuild.
+
 - Elided dense GPT startup-only post-train diagnostic D2H sample copies.
   `--startup-only` still runs the end-of-setup CUDA synchronization so readiness
   timing reflects completed CUDA work, but it skips the token-weight and

@@ -1595,6 +1595,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "required_kernel_next_step": "fuse-classifier-and-lm-head-backward-or-memory-gated-full-logit-path",
     }
     assert default_payload["selected_graph_native_runnable"] is True
+    assert default_payload["checkpoint_export_enabled"] is True
+    assert default_payload["checkpoint_export_startup_only_elided"] is False
     assert default_payload["train_shard"].endswith("fineweb_train_000000.bin")
     assert default_payload["val_shard"].endswith("fineweb_val_000000.bin")
     assert default_payload["training_step_plan"]["status"] == "ready"
@@ -1703,6 +1705,28 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert tile_payload["native_geometry_contract"]["vocab_size"] == 50257
     assert tile_payload["native_geometry_contract"]["padded_vocab_size"] == 50304
     assert tile_payload["template_known"] is True
+    assert tile_payload["checkpoint_export_enabled"] is True
+    assert tile_payload["checkpoint_export_startup_only_elided"] is False
+
+    startup_tile_plan = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(dataset_path),
+            "--backend",
+            "tile-cuda",
+            "--startup-only",
+            "--print-plan",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert startup_tile_plan.returncode == 0, startup_tile_plan.stderr
+    startup_tile_payload = json.loads(startup_tile_plan.stdout)
+    assert startup_tile_payload["checkpoint_export_enabled"] is False
+    assert startup_tile_payload["checkpoint_export_startup_only_elided"] is True
     assert tile_payload["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert tile_payload["shipped_template_catalog"] == list(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert tile_payload["selected_graph_support_status"] == "native-transformer-lm"
@@ -3182,6 +3206,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "sample_gradient_clip_scale" in train_transformer_payload
     assert train_transformer_payload["checkpoint"] == {
         "enabled": True,
+        "requested": True,
+        "startup_only_elided": False,
         "checkpoint_written": False,
         "checkpoint_path": "",
         "done_marker": "",
@@ -5214,6 +5240,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "--native-cuda-no-checkpoint" in gpt2_source_text
     assert "cfg.write_checkpoint = false" in gpt2_source_text
     assert "checkpoint_export_enabled" in gpt2_source_text
+    assert "checkpoint_export_startup_only_elided" in gpt2_source_text
+    assert "const bool final_checkpoint_export_enabled = cfg.write_checkpoint && !cfg.startup_only" in gpt2_source_text
+    assert "if (passed && final_checkpoint_export_enabled)" in gpt2_source_text
     assert '\\"enabled\\": ' in gpt2_source_text
     assert "train_tokens_per_second" in gpt2_source_text
     assert "NFN_NATIVE_GPT_STAGE_TIMING" in gpt2_source_text

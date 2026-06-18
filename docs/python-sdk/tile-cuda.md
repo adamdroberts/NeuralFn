@@ -1145,7 +1145,10 @@ parameters, and emit normal setup timing, but exit before optimizer steps or
 checkpoint export with `status: "native-transformer-lm-startup-ready"`. Native
 GPT SDK subprocess launchers set `CUDA_MODULE_LOADING=LAZY` by default when the
 caller has not already set that environment variable, and runtime JSON reports
-the resolved value as `cuda_module_loading`.
+the resolved value as `cuda_module_loading`. Startup-only suppresses final
+checkpoint export even when export was requested; plan/runtime JSON reports
+`checkpoint_export_enabled: false` and
+`checkpoint_export_startup_only_elided: true` for that case.
 
 Set `NativeGptRunConfig.write_checkpoint=False` or
 `NativeGpt2RunConfig.write_checkpoint=False` for benchmark/preflight runs that

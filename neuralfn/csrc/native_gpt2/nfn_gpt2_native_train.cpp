@@ -3620,7 +3620,10 @@ bool print_tile_plan(
         << ", \"forward_candidate_eval_enabled\": true"
         << ", \"candidate_loss_source\": \"native-forward-loss-device-resident-current-batch\""
         << ", \"candidate_loss_transport\": \"device-to-device\"},\n"
-        << "  \"checkpoint_export_enabled\": " << (cfg.write_checkpoint ? "true" : "false") << ",\n"
+        << "  \"checkpoint_export_enabled\": "
+        << ((cfg.write_checkpoint && !cfg.startup_only) ? "true" : "false") << ",\n"
+        << "  \"checkpoint_export_startup_only_elided\": "
+        << ((cfg.write_checkpoint && cfg.startup_only) ? "true" : "false") << ",\n"
         << "  \"estimated_stage_elements\": {\"hidden\": " << hidden
         << ", \"logits\": " << logits
         << ", \"lm_head_row_chunk_size\": " << lm_head_chunk_rows << "},\n"
@@ -16717,7 +16720,9 @@ int run_transformer_lm_training_json(
         checkpoint_written = true;
     };
 
-    if (passed && cfg.write_checkpoint) {
+    const bool final_checkpoint_export_enabled = cfg.write_checkpoint && !cfg.startup_only;
+    const bool checkpoint_export_startup_only_elided = cfg.write_checkpoint && cfg.startup_only;
+    if (passed && final_checkpoint_export_enabled) {
         const auto checkpoint_start_time = Clock::now();
         write_trained_checkpoint();
         checkpoint_wall_ms = elapsed_ms(checkpoint_start_time, Clock::now());
@@ -17199,7 +17204,10 @@ int run_transformer_lm_training_json(
         << "  \"checkpoint_every_steps\": " << cfg.checkpoint_every_steps << ",\n"
         << "  \"train_time_sampling_enabled\": false,\n"
         << "  \"periodic_checkpoint_enabled\": false,\n"
-        << "  \"final_checkpoint_export_enabled\": " << (cfg.write_checkpoint ? "true" : "false") << ",\n"
+        << "  \"final_checkpoint_export_enabled\": "
+        << (final_checkpoint_export_enabled ? "true" : "false") << ",\n"
+        << "  \"checkpoint_export_startup_only_elided\": "
+        << (checkpoint_export_startup_only_elided ? "true" : "false") << ",\n"
         << "  \"trained_layers\": " << trained_layers << ",\n"
         << "  \"target_layers\": " << target_layers << ",\n"
         << "  \"vocab\": " << kVocab << ",\n"
@@ -18372,7 +18380,8 @@ int run_transformer_lm_training_json(
         << ",\n"
         << "    \"adamw_per_buffer_step_launches_elided\": "
         << std::max<std::int64_t>(0, (kGlobalParameterBuffers + kPerBlockParameterBuffers * trained_layers) - 1) << ",\n"
-        << "    \"checkpoint_export_loop\": " << (cfg.write_checkpoint ? "true" : "false") << ",\n"
+        << "    \"checkpoint_export_loop\": "
+        << (final_checkpoint_export_enabled ? "true" : "false") << ",\n"
         << "    \"activation_tape_loop\": true,\n"
         << "    \"forward_block_loop\": true,\n"
         << "    \"backward_block_loop\": true,\n"
@@ -18384,7 +18393,10 @@ int run_transformer_lm_training_json(
         << "  \"final_loss_sum\": " << final_loss_sum << ",\n"
         << "  \"final_loss_mean\": " << final_loss_mean << ",\n"
         << "  \"checkpoint\": {\n"
-        << "    \"enabled\": " << (cfg.write_checkpoint ? "true" : "false") << ",\n"
+        << "    \"enabled\": " << (final_checkpoint_export_enabled ? "true" : "false") << ",\n"
+        << "    \"requested\": " << (cfg.write_checkpoint ? "true" : "false") << ",\n"
+        << "    \"startup_only_elided\": "
+        << (checkpoint_export_startup_only_elided ? "true" : "false") << ",\n"
         << "    \"checkpoint_written\": " << (checkpoint_written ? "true" : "false") << ",\n"
         << "    \"checkpoint_path\": \"" << json_escape(checkpoint_path_json) << "\",\n"
         << "    \"done_marker\": \"" << json_escape(done_marker_json) << "\",\n"
@@ -19011,7 +19023,6 @@ int main(int argc, char** argv) {
             cfg.backend = "tile-cuda";
             cfg.startup_only = true;
             cfg.train_transformer_lm = true;
-            cfg.write_checkpoint = false;
         } else if (arg == "--no-train-transformer-lm") {
             cfg.train_transformer_lm = false;
         } else if (arg == "--no-checkpoint" || arg == "--native-cuda-no-checkpoint") {
