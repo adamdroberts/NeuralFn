@@ -238,7 +238,10 @@ when comparing native NeuralFn commands that do not already write JSON; the
 harness appends unique `--profile-json` files without changing the timed native
 command. Add `--native-stage-timing` only for attribution runs that should set
 `NFN_NATIVE_GPT_STAGE_TIMING=1` and report paired `stage.*` metrics such as
-`stage.block_backward.total_ms` beside total step time. Use
+`stage.block_backward.total_ms` beside total step time. When native profile
+JSON includes packed-attention backward section counters, the same summary also
+prints dprep/TK timing fields such as `attention_backward_tk_timing_us` and
+their candidate-over-baseline ratios. Use
 `tools/bench_native_gpt_sm120_parity.sh` for the canonical RTX 5090
 SM120 parity check against `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`;
 it runs the llm.kittens `train_gpt2cu` reference and

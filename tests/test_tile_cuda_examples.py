@@ -296,6 +296,10 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                     ],
                 },
                 "linear_tk_gemm_count": 8,
+                "attention_backward_dprep_timing_us": 30000,
+                "attention_backward_dprep_timing_count": 12,
+                "attention_backward_tk_timing_us": 240000,
+                "attention_backward_tk_timing_count": 96,
                 "lm_head_logits_linear_strategy": "padded-lm-head-bf16-cublaslt-fallback",
                 "lm_head_dhidden_linear_strategy": "bf16-cublas-gemmex",
                 "lm_head_classifier_strategy_contract": {
@@ -323,6 +327,10 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["train_tokens_per_second"] == 123.0
     assert metrics["linear_tk_gemm_count"] == 8
     assert metrics["stage.block_backward.total_ms"] == 9.0
+    assert metrics["attention_backward_dprep_timing_us"] == 30000
+    assert metrics["attention_backward_dprep_timing_count"] == 12
+    assert metrics["attention_backward_tk_timing_us"] == 240000
+    assert metrics["attention_backward_tk_timing_count"] == 96
     assert metrics["lm_head_logits_linear_strategy"] == "padded-lm-head-bf16-cublaslt-fallback"
     assert metrics["lm_head_dhidden_linear_strategy"] == "bf16-cublas-gemmex"
     assert metrics["lm_head_classifier.reference_full_bf16_logit_bytes"] == 6593445888

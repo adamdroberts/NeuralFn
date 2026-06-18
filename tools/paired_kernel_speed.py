@@ -42,6 +42,10 @@ NATIVE_METRIC_PATHS = (
     ("linear_bf16_a_cache_hit_count", ("linear_bf16_a_cache_hit_count",)),
     ("attention_forward_tk_launch_count", ("attention_forward_tk_launch_count",)),
     ("attention_backward_tk_launch_count", ("attention_backward_tk_launch_count",)),
+    ("attention_backward_dprep_timing_us", ("attention_backward_dprep_timing_us",)),
+    ("attention_backward_dprep_timing_count", ("attention_backward_dprep_timing_count",)),
+    ("attention_backward_tk_timing_us", ("attention_backward_tk_timing_us",)),
+    ("attention_backward_tk_timing_count", ("attention_backward_tk_timing_count",)),
     (
         "lm_head_classifier.reference_full_bf16_logit_bytes",
         ("lm_head_classifier_strategy_contract", "reference_full_bf16_logit_bytes"),
@@ -1214,6 +1218,10 @@ def print_text(payload: dict[str, object]) -> None:
             "stage.block_backward.total_ms",
             "stage.block_backward.mlp_fc.total_ms",
             "stage.block_backward.attn_sdpa.total_ms",
+            "attention_backward_dprep_timing_us",
+            "attention_backward_dprep_timing_count",
+            "attention_backward_tk_timing_us",
+            "attention_backward_tk_timing_count",
             "stage.block_backward.qkv.total_ms",
             "stage.adamw_update.total_ms",
         ):
@@ -1256,6 +1264,10 @@ def print_text(payload: dict[str, object]) -> None:
             "stage.block_backward.total_ms",
             "stage.block_backward.mlp_fc.total_ms",
             "stage.block_backward.attn_sdpa.total_ms",
+            "attention_backward_dprep_timing_us",
+            "attention_backward_dprep_timing_count",
+            "attention_backward_tk_timing_us",
+            "attention_backward_tk_timing_count",
             "stage.block_backward.qkv.total_ms",
             "stage.adamw_update.total_ms",
         ):

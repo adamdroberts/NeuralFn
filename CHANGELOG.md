@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended `tools/paired_kernel_speed.py` native metric extraction and summary
+  output with packed-attention backward section counters:
+  `attention_backward_dprep_timing_us/count` and
+  `attention_backward_tk_timing_us/count`. Same-script kernel bisections now
+  show attention dprep/TK attribution and candidate-over-baseline ratios
+  directly when native JSON sidecars include those fields. Verification:
+  paired-kernel helper tests.
+
 - Aligned the generic `neuralfn._native_train` SDK binding with the native GPT
   bindings by replacing `fork()` plus `execvp()` with `posix_spawnp()` while
   preserving the existing `CUDA_VISIBLE_DEVICES`, `CUDA_DEVICE_MAX_CONNECTIONS`,

@@ -717,6 +717,10 @@ The wrapper writes NeuralFn native profile sidecars by default. Set
 directory to keep them. Sidecars do not enable CUDA-event stage timing by
 default; set `NFN_SM120_PARITY_STAGE_TIMING=1` for attribution runs, which
 default `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS=80000` unless you override it.
+If attention backward section timing is enabled, paired summaries include the
+native `attention_backward_dprep_timing_*` and
+`attention_backward_tk_timing_*` counters next to the `stage.*` buckets and
+candidate-over-baseline ratios.
 For compile-time kernel experiments, `tools/build_native_train_tile_ops.sh`
 accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and
 `NFN_TILE_CUDA_EXTRA_LDLIBS` and appends them after the default SM120 flags.
