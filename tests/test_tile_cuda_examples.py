@@ -95,6 +95,10 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["max_selected_gpu_utilization_pct"] == -1.0
     assert "require_idle_selected_gpu: False" in proc.stdout
     assert "max_selected_gpu_utilization_pct: -1.0" in proc.stdout
+    assert payload["gpu_benchmark_lock_enabled"] is True
+    assert payload["gpu_benchmark_lock_acquired"] is True
+    assert payload["gpu_benchmark_lock_path"].endswith("nfn_paired_kernel_speed_gpu_test-device.lock")
+    assert "gpu_benchmark_lock: enabled=True acquired=True" in proc.stdout
     assert "gpu_before" in payload
     assert "gpu_after" in payload
     assert "gpu_sample_summary" in payload
@@ -172,6 +176,9 @@ def test_paired_kernel_speed_tool_dry_run_plan_does_not_launch_commands() -> Non
         {"sample": 2, "order": ["candidate", "baseline"]},
     ]
     assert payload["run_env_overrides"]["CUDA_VISIBLE_DEVICES"] == "0"
+    assert payload["gpu_benchmark_lock_enabled"] is True
+    assert payload["gpu_benchmark_lock_acquired"] is False
+    assert payload["gpu_benchmark_lock_path"].endswith("nfn_paired_kernel_speed_gpu_0.lock")
     assert "paired_samples" not in payload
 
 
@@ -692,6 +699,27 @@ def test_paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu() -> No
     explicit = module.resolve_cuda_visible_devices("", snapshot)
     assert explicit["resolved"] == ""
     assert explicit["mode"] == "unchanged"
+
+
+def test_paired_kernel_speed_tool_gpu_lock_rejects_overlap() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    lock_path = module.gpu_benchmark_lock_path("unit-lock-test")
+    assert lock_path is not None
+    with module.GpuBenchmarkLock(lock_path, enabled=True, timeout_seconds=0.0) as first_lock:
+        assert first_lock.acquired is True
+        with pytest.raises(SystemExit, match="GPU lock is already held"):
+            with module.GpuBenchmarkLock(lock_path, enabled=True, timeout_seconds=0.0):
+                pass
 
 
 def test_paired_kernel_speed_tool_require_idle_selected_gpu_checks_selected_uuid() -> None:

@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default per-selected-GPU lock to `tools/paired_kernel_speed.py`.
+  GPU-visible paired benchmark runs now lock
+  `/tmp/nfn_paired_kernel_speed_gpu_<device>.lock` before warmup or measured
+  commands, preventing accidental concurrent baseline/candidate runs on the
+  same RTX 5090 before the `nvidia-smi` idle-process guard can observe them.
+  Use `--gpu-benchmark-lock-timeout-seconds N` to wait for the lock, or
+  `--no-gpu-benchmark-lock` only for intentionally unmanaged measurements.
+  JSON/text output reports the lock path, timeout, and acquisition state.
+  During the same CUDA 13.3 revisit, the fresh llm.kittens parity run measured
+  NeuralFn native dense GPT at `1.043386x` train-loop wall time over 3 steps.
+  BF16 CE vector stores were not promoted after a 5-step, 2-sample confirmation
+  measured `0.999654x` mean train-loop wall time with a range crossing slower;
+  `NFN_TILE_CUDA_CE_BF16_THREADS=512` was rejected at `1.002489x`.
+  Verification: `python -m py_compile tools/paired_kernel_speed.py`;
+  focused paired-kernel tests covering smoke, dry-run, and lock rejection;
+  CUDA 13.3 RTX 5090 same-script parity/candidate benchmark runs with selected
+  GPU idle checks.
+
 - Added `NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1` /
   `NFN_NATIVE_GPT2_REUSE_FORWARD_LM_HEAD_LOGITS=1` as a diagnostic dense GPT
   classifier path. The native C++ trainer can now allocate full BF16 LM-head

@@ -9,6 +9,7 @@ reports paired ratios instead of timing each variant in separate manual runs.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -193,6 +194,24 @@ def parse_args() -> argparse.Namespace:
             "Abort before warmup or measured samples when the selected CUDA GPU's "
             "nvidia-smi utilization exceeds this percentage. Negative values disable "
             "the utilization guard."
+        ),
+    )
+    parser.add_argument(
+        "--no-gpu-benchmark-lock",
+        action="store_true",
+        help=(
+            "Disable the per-selected-GPU benchmark lock. By default, GPU-visible "
+            "runs lock /tmp/nfn_paired_kernel_speed_gpu_<device>.lock so overlapping "
+            "paired benchmarks fail fast instead of contaminating candidate timings."
+        ),
+    )
+    parser.add_argument(
+        "--gpu-benchmark-lock-timeout-seconds",
+        type=float,
+        default=0.0,
+        help=(
+            "Seconds to wait for the per-selected-GPU benchmark lock. The default 0 "
+            "fails immediately when another paired benchmark already owns the lock."
         ),
     )
     return parser.parse_args()
@@ -827,6 +846,67 @@ def enforce_selected_gpu_guards(
     )
 
 
+def gpu_benchmark_lock_path(cuda_visible_devices: str) -> Path | None:
+    selected = _first_cuda_device_index(cuda_visible_devices)
+    if not selected:
+        return None
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", selected)
+    return Path("/tmp") / f"nfn_paired_kernel_speed_gpu_{safe}.lock"
+
+
+class GpuBenchmarkLock:
+    def __init__(self, path: Path | None, *, enabled: bool, timeout_seconds: float) -> None:
+        self.path = path
+        self.enabled = bool(enabled and path is not None)
+        self.timeout_seconds = max(0.0, float(timeout_seconds))
+        self._fd: int | None = None
+        self.acquired = False
+
+    def __enter__(self) -> "GpuBenchmarkLock":
+        if not self.enabled or self.path is None:
+            return self
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o666)
+        deadline = time.monotonic() + self.timeout_seconds
+        while True:
+            try:
+                fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.acquired = True
+                os.ftruncate(self._fd, 0)
+                os.write(
+                    self._fd,
+                    f"pid={os.getpid()} started_ns={time.time_ns()}\n".encode("utf-8"),
+                )
+                return self
+            except BlockingIOError as exc:
+                if self.timeout_seconds <= 0.0 or time.monotonic() >= deadline:
+                    owner = ""
+                    try:
+                        os.lseek(self._fd, 0, os.SEEK_SET)
+                        owner = os.read(self._fd, 512).decode("utf-8", errors="replace").strip()
+                    except OSError:
+                        owner = ""
+                    detail = f" Current owner: {owner}" if owner else ""
+                    raise SystemExit(
+                        f"paired benchmark GPU lock is already held: {self.path}.{detail} "
+                        "Rerun after the other benchmark exits, pass "
+                        "--gpu-benchmark-lock-timeout-seconds N to wait, or pass "
+                        "--no-gpu-benchmark-lock only for intentionally unmanaged runs."
+                    ) from exc
+                time.sleep(min(0.25, max(0.01, deadline - time.monotonic())))
+
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+        if self._fd is None:
+            return
+        try:
+            if self.acquired:
+                fcntl.flock(self._fd, fcntl.LOCK_UN)
+        finally:
+            os.close(self._fd)
+            self._fd = None
+            self.acquired = False
+
+
 def snapshot_and_enforce_selected_gpu_guards(
     cuda_visible_devices: str,
     *,
@@ -998,6 +1078,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     cuda_visible_devices = str(cuda_device_selection.get("resolved", "") or "").strip()
     cuda_device_max_connections = str(args.cuda_device_max_connections or "").strip()
     max_selected_gpu_utilization_pct = float(args.max_selected_gpu_utilization_pct)
+    gpu_lock_path = gpu_benchmark_lock_path(cuda_visible_devices)
+    gpu_lock_enabled = bool(cuda_visible_devices and not args.no_gpu_benchmark_lock)
+    gpu_lock_timeout_seconds = max(0.0, float(args.gpu_benchmark_lock_timeout_seconds or 0.0))
     run_env = None
     if cuda_visible_devices or cuda_device_max_connections:
         run_env = dict(os.environ)
@@ -1025,6 +1108,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             "cuda_device_max_connections": cuda_device_max_connections,
             "require_idle_selected_gpu": bool(args.require_idle_selected_gpu),
             "max_selected_gpu_utilization_pct": max_selected_gpu_utilization_pct,
+            "gpu_benchmark_lock_enabled": gpu_lock_enabled,
+            "gpu_benchmark_lock_path": str(gpu_lock_path) if gpu_lock_path is not None else "",
+            "gpu_benchmark_lock_timeout_seconds": gpu_lock_timeout_seconds,
+            "gpu_benchmark_lock_acquired": False,
             "command_timeout_seconds": timeout_seconds,
             "gpu_before": gpu_before,
             "baseline_command": baseline.argv,
@@ -1044,93 +1131,100 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             },
         }
 
-    enforce_selected_gpu_guards(
-        gpu_before,
-        cuda_visible_devices,
-        require_idle=bool(args.require_idle_selected_gpu),
-        max_utilization_pct=max_selected_gpu_utilization_pct,
-        phase="initial snapshot",
-    )
-
-    for warmup_index in range(warmup):
+    gpu_lock_acquired = False
+    with GpuBenchmarkLock(
+        gpu_lock_path,
+        enabled=gpu_lock_enabled,
+        timeout_seconds=gpu_lock_timeout_seconds,
+    ) as gpu_lock:
+        gpu_lock_acquired = bool(gpu_lock.acquired)
         enforce_selected_gpu_guards(
-            gpu_snapshot(),
+            gpu_before,
             cuda_visible_devices,
             require_idle=bool(args.require_idle_selected_gpu),
             max_utilization_pct=max_selected_gpu_utilization_pct,
-            phase=f"warmup pair {warmup_index + 1}",
+            phase="initial snapshot",
         )
-        for command in ordered_pair(warmup_index, baseline, candidate):
-            command_gpu_before = snapshot_and_enforce_selected_gpu_guards(
-                cuda_visible_devices,
-                require_idle=bool(args.require_idle_selected_gpu),
-                max_utilization_pct=max_selected_gpu_utilization_pct,
-                phase=f"warmup pair {warmup_index + 1} {command.name}",
-            )
-            run_once(
-                command,
-                continue_on_error=args.continue_on_error,
-                env=run_env,
-                timeout_seconds=command_timeout,
-                profile_json_dir=profile_json_dir,
-                native_stage_timing=bool(args.native_stage_timing),
-                gpu_before=command_gpu_before,
-            )
 
-    sample_rows: list[dict[str, object]] = []
-    baseline_seconds: list[float] = []
-    candidate_seconds: list[float] = []
-    ratios: list[float] = []
-    for sample_index in range(samples):
-        sample_gpu_before = gpu_snapshot()
-        enforce_selected_gpu_guards(
-            sample_gpu_before,
-            cuda_visible_devices,
-            require_idle=bool(args.require_idle_selected_gpu),
-            max_utilization_pct=max_selected_gpu_utilization_pct,
-            phase=f"measured sample {sample_index + 1}",
-        )
-        order_names: list[str] = []
-        row: dict[str, object] = {
-            "sample": sample_index + 1,
-            "order": order_names,
-            "gpu_before": sample_gpu_before,
-        }
-        by_name: dict[str, dict[str, object]] = {}
-        for command in ordered_pair(sample_index, baseline, candidate):
-            order_names.append(command.name)
-            command_gpu_before = snapshot_and_enforce_selected_gpu_guards(
+        for warmup_index in range(warmup):
+            enforce_selected_gpu_guards(
+                gpu_snapshot(),
                 cuda_visible_devices,
                 require_idle=bool(args.require_idle_selected_gpu),
                 max_utilization_pct=max_selected_gpu_utilization_pct,
-                phase=f"measured sample {sample_index + 1} {command.name}",
+                phase=f"warmup pair {warmup_index + 1}",
             )
-            result = run_once(
-                command,
-                continue_on_error=args.continue_on_error,
-                env=run_env,
-                timeout_seconds=command_timeout,
-                profile_json_dir=profile_json_dir,
-                native_stage_timing=bool(args.native_stage_timing),
-                gpu_before=command_gpu_before,
+            for command in ordered_pair(warmup_index, baseline, candidate):
+                command_gpu_before = snapshot_and_enforce_selected_gpu_guards(
+                    cuda_visible_devices,
+                    require_idle=bool(args.require_idle_selected_gpu),
+                    max_utilization_pct=max_selected_gpu_utilization_pct,
+                    phase=f"warmup pair {warmup_index + 1} {command.name}",
+                )
+                run_once(
+                    command,
+                    continue_on_error=args.continue_on_error,
+                    env=run_env,
+                    timeout_seconds=command_timeout,
+                    profile_json_dir=profile_json_dir,
+                    native_stage_timing=bool(args.native_stage_timing),
+                    gpu_before=command_gpu_before,
+                )
+
+        sample_rows: list[dict[str, object]] = []
+        baseline_seconds: list[float] = []
+        candidate_seconds: list[float] = []
+        ratios: list[float] = []
+        for sample_index in range(samples):
+            sample_gpu_before = gpu_snapshot()
+            enforce_selected_gpu_guards(
+                sample_gpu_before,
+                cuda_visible_devices,
+                require_idle=bool(args.require_idle_selected_gpu),
+                max_utilization_pct=max_selected_gpu_utilization_pct,
+                phase=f"measured sample {sample_index + 1}",
             )
-            by_name[command.name] = result
-        baseline_time = float(by_name["baseline"]["seconds"])
-        candidate_time = float(by_name["candidate"]["seconds"])
-        baseline_seconds.append(baseline_time)
-        candidate_seconds.append(candidate_time)
-        ratios.append(candidate_time / baseline_time if baseline_time else float("inf"))
-        row["baseline"] = by_name["baseline"]
-        row["candidate"] = by_name["candidate"]
-        row["candidate_over_baseline"] = ratios[-1]
-        row["gpu_after"] = gpu_snapshot()
-        sample_rows.append(row)
-    gpu_after = gpu_snapshot()
-    baseline_native_metrics = summarize_metric_rows(sample_rows, "baseline")
-    candidate_native_metrics = summarize_metric_rows(sample_rows, "candidate")
-    baseline_native_metric_values = summarize_categorical_metric_rows(sample_rows, "baseline")
-    candidate_native_metric_values = summarize_categorical_metric_rows(sample_rows, "candidate")
-    gpu_sample_summary = summarize_gpu_sample_load(sample_rows, cuda_visible_devices)
+            order_names: list[str] = []
+            row: dict[str, object] = {
+                "sample": sample_index + 1,
+                "order": order_names,
+                "gpu_before": sample_gpu_before,
+            }
+            by_name: dict[str, dict[str, object]] = {}
+            for command in ordered_pair(sample_index, baseline, candidate):
+                order_names.append(command.name)
+                command_gpu_before = snapshot_and_enforce_selected_gpu_guards(
+                    cuda_visible_devices,
+                    require_idle=bool(args.require_idle_selected_gpu),
+                    max_utilization_pct=max_selected_gpu_utilization_pct,
+                    phase=f"measured sample {sample_index + 1} {command.name}",
+                )
+                result = run_once(
+                    command,
+                    continue_on_error=args.continue_on_error,
+                    env=run_env,
+                    timeout_seconds=command_timeout,
+                    profile_json_dir=profile_json_dir,
+                    native_stage_timing=bool(args.native_stage_timing),
+                    gpu_before=command_gpu_before,
+                )
+                by_name[command.name] = result
+            baseline_time = float(by_name["baseline"]["seconds"])
+            candidate_time = float(by_name["candidate"]["seconds"])
+            baseline_seconds.append(baseline_time)
+            candidate_seconds.append(candidate_time)
+            ratios.append(candidate_time / baseline_time if baseline_time else float("inf"))
+            row["baseline"] = by_name["baseline"]
+            row["candidate"] = by_name["candidate"]
+            row["candidate_over_baseline"] = ratios[-1]
+            row["gpu_after"] = gpu_snapshot()
+            sample_rows.append(row)
+        gpu_after = gpu_snapshot()
+        baseline_native_metrics = summarize_metric_rows(sample_rows, "baseline")
+        candidate_native_metrics = summarize_metric_rows(sample_rows, "candidate")
+        baseline_native_metric_values = summarize_categorical_metric_rows(sample_rows, "baseline")
+        candidate_native_metric_values = summarize_categorical_metric_rows(sample_rows, "candidate")
+        gpu_sample_summary = summarize_gpu_sample_load(sample_rows, cuda_visible_devices)
 
     return {
         "measurement": "paired_interleaved_commands",
@@ -1142,6 +1236,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "cuda_device_max_connections": cuda_device_max_connections,
         "require_idle_selected_gpu": bool(args.require_idle_selected_gpu),
         "max_selected_gpu_utilization_pct": max_selected_gpu_utilization_pct,
+        "gpu_benchmark_lock_enabled": gpu_lock_enabled,
+        "gpu_benchmark_lock_path": str(gpu_lock_path) if gpu_lock_path is not None else "",
+        "gpu_benchmark_lock_timeout_seconds": gpu_lock_timeout_seconds,
+        "gpu_benchmark_lock_acquired": gpu_lock_acquired,
         "command_timeout_seconds": timeout_seconds,
         "gpu_before": gpu_before,
         "gpu_after": gpu_after,
@@ -1206,6 +1304,14 @@ def print_text(payload: dict[str, object]) -> None:
         "  max_selected_gpu_utilization_pct: "
         f"{payload.get('max_selected_gpu_utilization_pct', -1.0)}"
     )
+    if payload.get("gpu_benchmark_lock_enabled") is not None:
+        print(
+            "  gpu_benchmark_lock: "
+            f"enabled={payload.get('gpu_benchmark_lock_enabled', False)} "
+            f"acquired={payload.get('gpu_benchmark_lock_acquired', False)} "
+            f"path={payload.get('gpu_benchmark_lock_path', '')} "
+            f"timeout={payload.get('gpu_benchmark_lock_timeout_seconds', 0.0)}"
+        )
     baseline_env = payload.get("baseline_env")
     candidate_env = payload.get("candidate_env")
     if isinstance(baseline_env, dict) and baseline_env:

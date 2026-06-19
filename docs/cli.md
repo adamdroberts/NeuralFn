@@ -531,6 +531,15 @@ measuring train loss. The JSON fields `train_loss_sparse: false`,
 `train_loss_sampling: "disabled"`, `train_loss_on_validation_steps: false`,
 `train_loss_eval_count`, and `train_loss_last_step` report that contract.
 
+Paired CUDA benchmark runs use `tools/paired_kernel_speed.py` to alternate
+baseline and candidate commands under the same selected GPU. For GPU-visible
+runs the tool now takes a per-selected-GPU lock at
+`/tmp/nfn_paired_kernel_speed_gpu_<device>.lock` before warmup or measured
+commands, preventing two local same-GPU paired benchmarks from overlapping
+before the idle-process guard can see them. The default is fail-fast; use
+`--gpu-benchmark-lock-timeout-seconds N` to wait for the lock, or
+`--no-gpu-benchmark-lock` only for intentionally unmanaged measurements.
+
 Persistent block-output preservation in the compiled GPT trainer writes the MLP
 residual-add output directly into each non-final block's persistent
 backward-recompute buffer. This removes the previous post-block copy launch
