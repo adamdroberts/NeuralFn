@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the dense GPT native `--smoke-lm-step` verifier after revisiting CUDA
+  tests on the CUDA 13.3 WSL install. The synthetic GPT smoke now expects the
+  summed two-row CE partial loss instead of a one-row average and keeps
+  post-AdamW weight assertions on target rows, while still checking sampled
+  non-target gradients. This avoids failing the smoke on near-zero non-target
+  tied-embedding gradients whose sign can be flipped by tiny CUDA 13.3 numeric
+  drift and then amplified by AdamW's first normalized step; the standalone
+  optimizer smoke continues to verify full AdamW update math. Verification:
+  rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train` with CUDA Toolkit 13.3, confirmed sandboxed CUDA
+  access still skips GPU pytest because NVML is blocked, reran the GPU-visible
+  Tile CUDA pytest smoke (`1 passed`), and reran native CUDA ABI, fill,
+  optimizer, NanoGPT LM, and dense GPT LM smokes on the RTX 5090.
+
 - Added default-off BF16 `cublasGemmEx` algorithm bisection controls for native
   Tile-CUDA training. `NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO` /
   `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO` select a global BF16 GEMMEx

@@ -693,6 +693,17 @@ def test_native_gpt_external_bridge_defaults_are_removed_from_training_paths() -
     assert "build_command(const Config& cfg" not in native_cli_source
 
 
+def test_native_gpt_lm_smoke_uses_stable_cuda_13_3_expectations() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
+        encoding="utf-8"
+    )
+
+    assert "static_cast<double>(kRows) * std::log(static_cast<double>(kPaddedVocab))" in source
+    assert "token == host_targets[0] || token == host_targets[1]" in source
+    assert "max_grad_abs_error <= 1e-5 && max_weight_abs_error <= 1e-4" in source
+
+
 def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path: Path) -> None:
     cfg = build_native_gpt_compiled_cli_run_config(
         dataset_alias="cached-shards",

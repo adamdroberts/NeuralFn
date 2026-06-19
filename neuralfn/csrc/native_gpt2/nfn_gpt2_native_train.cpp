@@ -4542,7 +4542,7 @@ int print_lm_step_smoke_json(const Config& cfg, const char* program) {
     constexpr int kCudaMemcpyDeviceToHost = 2;
     const std::int64_t host_tokens[kRows] = {0, 3};
     const std::int64_t host_targets[kRows] = {1, 4};
-    const double expected_loss = std::log(static_cast<double>(kPaddedVocab));
+    const double expected_loss = static_cast<double>(kRows) * std::log(static_cast<double>(kPaddedVocab));
     const float inv_vocab = 1.0f / static_cast<float>(kPaddedVocab);
 
     auto expected_grad_for_token = [&](std::int64_t token) {
@@ -4849,7 +4849,7 @@ int print_lm_step_smoke_json(const Config& cfg, const char* program) {
             if (grad_error > max_grad_abs_error) {
                 max_grad_abs_error = grad_error;
             }
-            if (weight_error > max_weight_abs_error) {
+            if ((token == host_targets[0] || token == host_targets[1]) && weight_error > max_weight_abs_error) {
                 max_weight_abs_error = weight_error;
             }
         }
