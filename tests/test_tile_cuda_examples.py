@@ -251,6 +251,7 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "NFN_SM120_NATIVE_CANDIDATE_ENV" in text
     assert "NFN_SM120_CANDIDATE_ENV" in text
     assert "NFN_SM120_COMMON_EXTRA_ARGS" in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_ARGS" in text
     assert "NFN_SM120_CANDIDATE_EXTRA_ARGS" in text
     assert "NFN_SM120_CANDIDATE_CANDIDATE_EXTRA_ARGS" not in text
     assert "NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB" in text
@@ -309,6 +310,42 @@ def test_native_gpt_sm120_candidate_wrapper_accepts_short_aliases(tmp_path: Path
     candidate_command = proc.stdout.split("  candidate:", 1)[1]
     assert "--lm-head-row-chunk-size 32768" not in baseline_command
     assert "--lm-head-row-chunk-size 32768" in candidate_command
+
+
+def test_native_gpt_sm120_candidate_wrapper_accepts_legacy_candidate_args_alias(tmp_path: Path) -> None:
+    script = Path("tools/bench_native_gpt_sm120_candidate.sh")
+    output_path = tmp_path / "candidate-args-alias.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_STEPS": "2",
+            "NFN_SM120_NATIVE_SAMPLES": "1",
+            "NFN_SM120_NATIVE_WARMUP": "0",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_ARGS": "--lm-head-row-chunk-size 4096",
+            "NFN_SM120_NATIVE_JSON_OUT": str(output_path),
+        }
+    )
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "  baseline:" in proc.stdout
+    assert "  candidate:" in proc.stdout
+    baseline_command = proc.stdout.split("  baseline:", 1)[1].split("  candidate:", 1)[0]
+    candidate_command = proc.stdout.split("  candidate:", 1)[1]
+    assert "--lm-head-row-chunk-size 4096" not in baseline_command
+    assert "--lm-head-row-chunk-size 4096" in candidate_command
 
 
 def test_paired_kernel_speed_tool_applies_command_specific_env() -> None:

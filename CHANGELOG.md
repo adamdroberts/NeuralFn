@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Hardened the native-vs-native SM120 benchmark wrapper so candidate-only CLI
+  flags cannot silently drop out of a bisection. `tools/bench_native_gpt_sm120_candidate.sh`
+  now accepts `NFN_SM120_NATIVE_CANDIDATE_ARGS` as an alias for candidate-only
+  arguments, alongside the documented `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`
+  and `NFN_SM120_CANDIDATE_EXTRA_ARGS`; dry-run output still prints both
+  resolved commands so reviewers can confirm the flag did not leak into the
+  baseline. This was found while revisiting CUDA 13.3 RTX 5090 parity: the
+  current default measured `1.042317x` train-loop wall time versus
+  `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh` over a 3-step
+  timing run. Same-script candidate checks rejected reverse LM-head chunks
+  (`1.002565x`), LM-head dWeight-before-dHidden (`1.003312x`), 4096-row
+  LM-head chunks (`1.002915x`), disabling stored MLP activations
+  (`1.366368x`), CUDA malloc async startup (`1.087418x` setup wall time), and
+  threaded token-weight init (`1.057832x` token init), so none of those tuning
+  switches were promoted. Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`;
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k
+  'native_gpt_sm120_candidate_wrapper_forwards_bisection_controls or
+  native_gpt_sm120_candidate_wrapper_accepts_short_aliases or
+  native_gpt_sm120_candidate_wrapper_accepts_legacy_candidate_args_alias'`;
+  the RTX 5090 CUDA Tile suite (`537 passed`), GPU layer-evo tests
+  (`3 passed`), `tests/test_native_gpt2.py` (`52 passed`), template presets
+  (`26 passed`), Tile metadata/static/example/dependency checks (`37 passed`),
+  and `python tools/check_native_no_torch_deps.py`.
+
 - Revisited the failed CUDA 13.3/WSL test set and made the local test/runtime
   paths deterministic. No-Redis persistence now processes the local fallback
   synchronously instead of spawning daemon threads, which prevents SQLite
