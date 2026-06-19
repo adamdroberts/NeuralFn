@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned the master `nfn train` direct native dispatcher with the other
+  native launchers by setting `CUDA_MODULE_LOADING=LAZY` when the caller has
+  not supplied a value. This keeps the default dense GPT CLI route on the
+  compiled CUDA Tile C++ path with lazy CUDA module loading before any
+  graph-backed runtime can import. The native no-Torch verifier now checks both
+  explicit `nfn train --tinystories` and default `nfn train` dry-run/print
+  command paths under the Torch/NumPy/tiktoken/dataset-manager/`nfn_impl`
+  import blocker. Migration notes: user-provided `CUDA_MODULE_LOADING` still
+  takes precedence, and the default CLI route remains dense GPT
+  `--train-transformer-lm`. Verification:
+  `python -m pytest tests/test_native_gpt2.py -q -k
+  'native_no_torch_dependency_verifier or nfn_direct_native_train_sets_lazy_cuda_module_loading'`,
+  `python tools/check_native_no_torch_deps.py --skip-artifacts --json`, and
+  `git diff --check`.
+
 - Expanded paired native-kernel benchmark attribution for the remaining RTX
   5090 parity gap. `tools/paired_kernel_speed.py` now uses one shared text
   metric allowlist for per-side metrics and candidate-over-baseline ratios, and

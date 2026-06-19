@@ -147,6 +147,7 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert entrypoints["train_gpt2_evo_fast_command"]["passed"] is True
     assert entrypoints["train_nanogpt_fast_command"]["passed"] is True
     assert entrypoints["nfn_train_fast_command"]["passed"] is True
+    assert entrypoints["nfn_train_default_fast_command"]["passed"] is True
     assert entrypoints["infer_gpt_native_info"]["passed"] is True
     assert entrypoints["nfn_infer_native_info"]["passed"] is True
     assert entrypoints["native_sdk_imports"]["passed"] is True
@@ -286,6 +287,18 @@ def test_native_training_guard_sets_dedicated_cuda_device_default() -> None:
         / "cli"
         / "scripts"
         / "native_training_guard.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'env.setdefault("CUDA_VISIBLE_DEVICES", "0")' in source
+    assert 'env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
+    assert 'env.setdefault("CUDA_MODULE_LOADING", "LAZY")' in source
+
+
+def test_nfn_direct_native_train_sets_lazy_cuda_module_loading() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "cli"
+        / "nfn.py"
     ).read_text(encoding="utf-8")
 
     assert 'env.setdefault("CUDA_VISIBLE_DEVICES", "0")' in source

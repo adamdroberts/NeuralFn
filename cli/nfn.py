@@ -692,6 +692,7 @@ def _direct_native_train_cli_main(argv: list[str] | None = None) -> int:
     env = os.environ.copy()
     env.setdefault("CUDA_VISIBLE_DEVICES", "0")
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
+    env.setdefault("CUDA_MODULE_LOADING", "LAZY")
     if "--dry-run" in command or "--print-command" in command:
         proc = subprocess.run(command, env=env, check=False)
         return int(proc.returncode)
