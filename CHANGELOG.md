@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Defaulted the direct dense GPT Python compatibility fast path to lazy CUDA
+  module loading. `cli/scripts/train_gpt.py` now sets
+  `CUDA_MODULE_LOADING=LAZY` when unset before execing the compiled
+  `nfn_gpt_native_train` binary, matching the SDK native runner, native
+  launcher, and C++ trainer startup policy while preserving caller-provided
+  `CUDA_MODULE_LOADING` values. Migration notes: no command-line arguments
+  change; direct `python cli/scripts/train_gpt.py ...` and
+  `python cli/scripts/train_gpt2.py ...` runs avoid eager CUDA module loading
+  without importing the legacy Torch trainer. Verification: added a direct
+  compiled-CLI dry-run regression that stubs the native binary and asserts
+  `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and
+  `CUDA_MODULE_LOADING=LAZY` are forwarded before any Torch/dataset-manager
+  imports.
+
 - Extended the dense GPT native-vs-native SM120 candidate benchmark wrapper to
   accept the parity wrapper's `NFN_SM120_PARITY_*` common controls as a third
   alias family. `tools/bench_native_gpt_sm120_candidate.sh` now resolves common

@@ -260,6 +260,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         code = textwrap.dedent(
             f"""
             import json
+            import os
             from pathlib import Path
             import runpy
             import struct
@@ -273,6 +274,16 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmpdir:
                 dataset = Path(tmpdir) / "tiny"
                 dataset.mkdir()
+                native_cli = Path(tmpdir) / "nfn_gpt_native_train"
+                native_cli.write_text(
+                    "#!/usr/bin/env bash\\n"
+                    "printf 'NATIVE_CLI_ENV CUDA_VISIBLE_DEVICES=%s CUDA_DEVICE_MAX_CONNECTIONS=%s CUDA_MODULE_LOADING=%s\\n' "
+                    "\\"$CUDA_VISIBLE_DEVICES\\" \\"$CUDA_DEVICE_MAX_CONNECTIONS\\" \\"$CUDA_MODULE_LOADING\\"\\n"
+                    "printf '%s\\n' \\"$@\\"\\n",
+                    encoding="utf-8",
+                )
+                native_cli.chmod(0o755)
+                os.environ["NFN_NATIVE_GPT2_CLI"] = str(native_cli)
                 token_bytes = struct.pack("<" + "H" * 256, *range(256))
                 (dataset / "fineweb_train_000000.bin").write_bytes(token_bytes)
                 (dataset / "fineweb_val_000000.bin").write_bytes(token_bytes)
@@ -301,7 +312,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
         env = os.environ.copy()
         env["PYTHONPATH"] = f"{NEURALFN_ROOT / 'cli' / 'scripts'}:{NEURALFN_ROOT}"
-        env["NFN_NATIVE_GPT2_CLI"] = "/bin/echo"
+        env.pop("NFN_NATIVE_GPT2_CLI", None)
+        env.pop("CUDA_MODULE_LOADING", None)
         proc = subprocess.run(
             [sys.executable, "-c", code],
             cwd=NEURALFN_ROOT,
@@ -313,8 +325,12 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn(
+            "NATIVE_CLI_ENV CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 CUDA_MODULE_LOADING=LAZY",
+            proc.stdout,
+        )
         self.assertIn("--dataset-alias", proc.stdout)
-        self.assertRegex(proc.stdout, r"--dataset-alias /tmp/.*/tiny")
+        self.assertRegex(proc.stdout, r"--dataset-alias\n/tmp/.*/tiny")
         self.assertNotIn("--target ", proc.stdout)
         self.assertNotIn("train_gpt2cu", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)

@@ -49,6 +49,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Add GPT-2 compiled-CLI SDK handoff config that passes cached dataset alias/path directly to the C++ shard resolver without Python `meta.json` or token-shard validation.
 - [x] Add GPT-2 native `--backend tile-cuda` / SDK `kernel_backend="tile-cuda"` preflight that reports required raw Tile ABI symbols and `--check-tile-ops` validation without Python/Torch.
 - [x] Default all native Tile-CUDA entrypoints and SDK bindings to `CUDA_MODULE_LOADING=LAZY` when unset, matching the dense GPT trainer before command execution or Tile library/runtime loading.
+  - 2026-06-19 extended this to the direct `cli/scripts/train_gpt.py` / `train_gpt2.py` compiled-CLI fast path so compatibility script execution also forwards lazy CUDA module loading before the compiled native trainer starts, without importing Torch.
 - [x] Run GPT-2 no-data Tile-CUDA preflights before token-shard resolution so `--check-tile-ops`, synthetic smoke steps, and ABI checks work without cached datasets and report `token_shards_resolved: false`.
 - [x] Add GPT-2 native Tile parameter layout and forward/backward/optimizer stage plan to the compiled `--backend tile-cuda --print-plan` JSON.
 - [x] Add GPT-2 `--smoke-optimizer-step` compiled C++ path that allocates GPT-2-sized param/grad/AdamW buffers, runs one raw Tile AdamW call per registered parameter buffer, and samples copyback values without Python/Torch.

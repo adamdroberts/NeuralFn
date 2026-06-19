@@ -345,6 +345,7 @@ def _fast_compiled_cli_main(argv: list[str]) -> int | None:
     env = os.environ.copy()
     env.setdefault("CUDA_VISIBLE_DEVICES", "0")
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
+    env.setdefault("CUDA_MODULE_LOADING", "LAZY")
     if "--dry-run" in command or "--print-command" in command or "--print-plan" in command or "--check-tile-ops" in command:
         return int(subprocess.run(command, env=env, check=False).returncode)
     os.execvpe(command[0], command, env)
