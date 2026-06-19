@@ -5056,6 +5056,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_REUSE_FORWARD_LM_HEAD_LOGITS" in gpt2_source_text
     assert "lm_head_reuse_forward_logits_enabled" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_FULL_BATCH_LM_HEAD_REUSE" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_FULL_BATCH_LM_HEAD_REUSE" in gpt2_source_text
+    assert "lm_head_full_batch_reuse_schedule_enabled" in gpt2_source_text
+    assert "resident-full-logit-single-row-batch-gemms" in gpt2_source_text
     assert "lm_head_forward_logits_for_backward" in gpt2_source_text
     assert "lm_head_full_logit_elements" in gpt2_source_text
     assert "lm_head_dweight_strategy" in gpt2_source_text

@@ -11068,6 +11068,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS",
                               "NFN_NATIVE_GPT2_REUSE_FORWARD_LM_HEAD_LOGITS"}),
             false);
+    const bool lm_head_full_batch_reuse_schedule_enabled =
+        lm_head_reuse_forward_logits_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_FULL_BATCH_LM_HEAD_REUSE",
+                              "NFN_NATIVE_GPT2_FULL_BATCH_LM_HEAD_REUSE"}),
+            false);
     const bool lm_head_public_vocab_ce_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_PUBLIC_VOCAB_CE",
@@ -14200,12 +14206,19 @@ int run_transformer_lm_training_json(
                     nullptr),
                 label + ".lm_head.hidden_full.to_bf16_bits");
         }
-        for (std::int64_t chunk_index = 0; chunk_index < lm_head_chunk_count && error.empty(); ++chunk_index) {
+        const std::int64_t logits_chunk_count =
+            lm_head_full_batch_reuse_schedule_enabled ? 1 : lm_head_chunk_count;
+        for (std::int64_t chunk_index = 0; chunk_index < logits_chunk_count && error.empty(); ++chunk_index) {
             const std::int64_t logical_chunk_index =
-                lm_head_reverse_chunk_order_enabled ? (lm_head_chunk_count - 1 - chunk_index) : chunk_index;
-            const std::int64_t row_start = logical_chunk_index * lm_head_chunk_rows;
+                lm_head_full_batch_reuse_schedule_enabled
+                    ? 0
+                    : (lm_head_reverse_chunk_order_enabled ? (lm_head_chunk_count - 1 - chunk_index) : chunk_index);
+            const std::int64_t row_start =
+                lm_head_full_batch_reuse_schedule_enabled ? 0 : logical_chunk_index * lm_head_chunk_rows;
             const std::int64_t row_count =
-                (row_start + lm_head_chunk_rows < active_rows) ? lm_head_chunk_rows : (active_rows - row_start);
+                lm_head_full_batch_reuse_schedule_enabled
+                    ? active_rows
+                    : ((row_start + lm_head_chunk_rows < active_rows) ? lm_head_chunk_rows : (active_rows - row_start));
             const float* hidden_chunk = lnf_out + row_start * kDim;
             std::uint16_t* bf16_logit_chunk = lm_head_bf16_logits + row_start * kPaddedVocab;
             if (lm_head_prepack_bf16_hidden_enabled) {
@@ -14279,12 +14292,19 @@ int run_transformer_lm_training_json(
                     "lm_head.hidden_full.to_bf16_bits");
             });
         }
-        for (std::int64_t chunk_index = 0; chunk_index < lm_head_chunk_count && error.empty(); ++chunk_index) {
+        const std::int64_t backward_chunk_count =
+            lm_head_full_batch_reuse_schedule_enabled ? 1 : lm_head_chunk_count;
+        for (std::int64_t chunk_index = 0; chunk_index < backward_chunk_count && error.empty(); ++chunk_index) {
             const std::int64_t logical_chunk_index =
-                lm_head_reverse_chunk_order_enabled ? (lm_head_chunk_count - 1 - chunk_index) : chunk_index;
-            const std::int64_t row_start = logical_chunk_index * lm_head_chunk_rows;
+                lm_head_full_batch_reuse_schedule_enabled
+                    ? 0
+                    : (lm_head_reverse_chunk_order_enabled ? (lm_head_chunk_count - 1 - chunk_index) : chunk_index);
+            const std::int64_t row_start =
+                lm_head_full_batch_reuse_schedule_enabled ? 0 : logical_chunk_index * lm_head_chunk_rows;
             const std::int64_t row_count =
-                (row_start + lm_head_chunk_rows < active_rows) ? lm_head_chunk_rows : (active_rows - row_start);
+                lm_head_full_batch_reuse_schedule_enabled
+                    ? active_rows
+                    : ((row_start + lm_head_chunk_rows < active_rows) ? lm_head_chunk_rows : (active_rows - row_start));
             const float* hidden_chunk = lnf_out + row_start * kDim;
             const std::uint16_t* hidden_bf16_chunk =
                 lm_head_prepack_bf16_hidden_enabled ? (lm_head_bf16_hidden + row_start * kDim) : lm_head_bf16_hidden;
@@ -17829,6 +17849,8 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_row_chunk_count\": " << lm_head_chunk_count << ",\n"
         << "  \"lm_head_reuse_forward_logits_enabled\": "
         << (lm_head_reuse_forward_logits_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_full_batch_reuse_schedule_enabled\": "
+        << (lm_head_full_batch_reuse_schedule_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_full_logit_elements\": " << full_logit_elements << ",\n"
         << "  \"loss_partial_count\": " << loss_partial_count << ",\n"
         << "  \"logit_workspace_elements\": " << logit_workspace_elements << ",\n"
@@ -17891,10 +17913,12 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_concurrent_dhidden_dweight_enabled\": "
         << (lm_head_concurrent_dhidden_dweight_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_dhidden_dweight_schedule_strategy\": \""
-        << (lm_head_concurrent_dhidden_dweight_enabled
+        << (lm_head_full_batch_reuse_schedule_enabled
+                ? "resident-full-logit-single-row-batch-gemms"
+                : (lm_head_concurrent_dhidden_dweight_enabled
                 ? "two-nonblocking-cuda-streams-after-ce-event"
                 : (lm_head_dweight_before_dhidden_enabled ? "serial-dweight-before-dhidden"
-                                                          : "serial-dhidden-before-dweight"))
+                                                          : "serial-dhidden-before-dweight")))
         << "\",\n"
         << "  \"lm_head_reverse_chunk_order_enabled\": "
         << (lm_head_reverse_chunk_order_enabled ? "true" : "false") << ",\n"

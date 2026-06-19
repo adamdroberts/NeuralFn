@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a diagnostic full-batch resident LM-head reuse schedule for the native
+  dense GPT trainer. When
+  `NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1` is already enabled,
+  `NFN_NATIVE_GPT_FULL_BATCH_LM_HEAD_REUSE=1` makes the resident BF16 logit path
+  run LM-head logits, CE/dlogits, dHidden, and dWeight across the full
+  `batch x sequence` row range instead of still slicing that full arena into
+  8192-row chunks. The switch remains off by default because the CUDA 13.3.33
+  RTX 5090 one-step smoke reduced `stage.lm_head_backward.total_ms` to
+  `0.652349x` but regressed train-loop wall time to `32.086572x`; the saved
+  LM-head work was overwhelmed by downstream `block_backward.attn_sdpa` memory
+  pressure from the full resident logits. Migration notes: keep default native
+  training on the row-chunked recompute path; use the new flag only for paired
+  profiling while designing a fused/cooperative LM-head backward kernel.
+  Verification: rebuilt `build/nfn_gpt_native_train`, ran the focused native
+  source regression (`1 passed, 52 deselected`), and ran the one-step
+  native-vs-native GPU smoke with
+  `NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1`.
+
 - Hardened paired CUDA benchmark cleanup after interrupted native candidates.
   `tools/paired_kernel_speed.py` now terminates the active command process group
   on `KeyboardInterrupt` or other unexpected interruption, matching the existing
