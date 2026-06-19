@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added candidate-over-baseline metric-ratio gates to the paired CUDA benchmark
+  tooling. `tools/paired_kernel_speed.py` now accepts repeatable
+  `--max-candidate-ratio METRIC=RATIO` checks, records
+  `metric_ratio_gates` in JSON/text output, and exits nonzero after writing the
+  report when a candidate regresses a required native metric or when the metric
+  is missing. `tools/bench_native_gpt_sm120_candidate.sh` forwards
+  whitespace-separated gates from `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` or
+  `NFN_SM120_CANDIDATE_MAX_CANDIDATE_RATIO`, so SM120 native candidates can
+  require hot buckets such as `stage.lm_head_backward.total_ms` and
+  `train_loop_wall_ms_per_step` to stay under explicit thresholds. This is a
+  benchmark workflow change for future CUDA kernel work; it does not alter the
+  trainer runtime. Verification:
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k
+  'paired_kernel_speed_tool_fails_metric_ratio_gate or
+  paired_kernel_speed_tool_metric_ratio_gate_fails_missing_metric or
+  paired_kernel_speed_tool_compiles_and_smokes'`, `python -m py_compile
+  tools/paired_kernel_speed.py`,
+  `NFN_SM120_NATIVE_DRY_RUN_PLAN=1
+  NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO='stage.lm_head_backward.total_ms=1.000
+  train_loop_wall_ms_per_step=1.005' bash
+  tools/bench_native_gpt_sm120_candidate.sh`, and `git diff --check`.
+
 - Split the root Python package install into a lean native/core SDK surface plus
   explicit workflow extras. `pip install -e .` no longer hard-installs Torch,
   NumPy, tokenizer, dataset, graph-analysis, FastAPI/server, MCP, or database

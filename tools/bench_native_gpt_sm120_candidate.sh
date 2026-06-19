@@ -62,6 +62,7 @@ fi
 TEMPLATE_NAME="$(env_or_alias3 NFN_SM120_NATIVE_TEMPLATE_NAME NFN_SM120_CANDIDATE_TEMPLATE_NAME NFN_SM120_PARITY_TEMPLATE_NAME "")"
 GRAPH_FILE="$(env_or_alias3 NFN_SM120_NATIVE_GRAPH_FILE NFN_SM120_CANDIDATE_GRAPH_FILE NFN_SM120_PARITY_GRAPH_FILE "")"
 DRY_RUN_PLAN="$(env_or_alias3 NFN_SM120_NATIVE_DRY_RUN_PLAN NFN_SM120_CANDIDATE_DRY_RUN_PLAN NFN_SM120_PARITY_DRY_RUN_PLAN 0)"
+MAX_CANDIDATE_RATIO_RAW="$(env_or_alias NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO NFN_SM120_CANDIDATE_MAX_CANDIDATE_RATIO "")"
 
 if [[ ! -x "$NFN_NATIVE_GPT_TRAIN_BIN" ]]; then
   echo "NeuralFn native GPT trainer is not executable: $NFN_NATIVE_GPT_TRAIN_BIN" >&2
@@ -153,6 +154,9 @@ for item in $BASELINE_ENV_RAW; do
 done
 for item in $CANDIDATE_ENV_RAW; do
   paired_args+=(--candidate-env "$item")
+done
+for item in $MAX_CANDIDATE_RATIO_RAW; do
+  paired_args+=(--max-candidate-ratio "$item")
 done
 case "${DRY_RUN_PLAN,,}" in
   "1"|"true"|"yes"|"on")

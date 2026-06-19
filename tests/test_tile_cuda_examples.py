@@ -574,6 +574,105 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
     assert "tracked route counters did not change" in proc.stdout
 
 
+def test_paired_kernel_speed_tool_fails_metric_ratio_gate() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-ratio-gate.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {"
+        "\\\"train_loop_wall_ms\\\": 10.0, "
+        "\\\"stage_timing\\\": [{\\\"name\\\": \\\"lm_head_backward\\\", \\\"total_ms\\\": 5.0}]"
+        "}"
+        "}"
+    )
+    candidate_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {"
+        "\\\"train_loop_wall_ms\\\": 12.0, "
+        "\\\"stage_timing\\\": [{\\\"name\\\": \\\"lm_head_backward\\\", \\\"total_ms\\\": 6.5}]"
+        "}"
+        "}"
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+            "--max-candidate-ratio",
+            "stage.lm_head_backward.total_ms=1.1",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 1
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    gates = payload["metric_ratio_gates"]
+    assert gates["enabled"] is True
+    assert gates["passed"] is False
+    assert gates["results"] == [
+        {
+            "metric": "stage.lm_head_backward.total_ms",
+            "max_ratio": 1.1,
+            "actual_mean_ratio": 1.3,
+            "missing": False,
+            "passed": False,
+        }
+    ]
+    assert "metric_ratio_gates: passed=false" in proc.stdout
+    assert "metric ratio gate failed: stage.lm_head_backward.total_ms" in proc.stderr
+
+
+def test_paired_kernel_speed_tool_metric_ratio_gate_fails_missing_metric() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    gates = module.evaluate_metric_ratio_limits(
+        {"candidate_over_baseline_native_metrics": {}},
+        [module.MetricRatioLimit(metric="stage.lm_head_backward.total_ms", max_ratio=1.01)],
+    )
+
+    assert gates == {
+        "enabled": True,
+        "passed": False,
+        "results": [
+            {
+                "metric": "stage.lm_head_backward.total_ms",
+                "max_ratio": 1.01,
+                "actual_mean_ratio": None,
+                "missing": True,
+                "passed": False,
+            }
+        ],
+    }
+
+
 def test_paired_kernel_speed_tool_extracts_llm_kittens_step_metrics() -> None:
     script = Path("tools/paired_kernel_speed.py")
     spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)

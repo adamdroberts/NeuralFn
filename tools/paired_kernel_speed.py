@@ -17,6 +17,7 @@ import re
 import shlex
 import signal
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from statistics import mean, median
@@ -28,6 +29,12 @@ class TimedCommand:
     name: str
     argv: list[str]
     env_overrides: dict[str, str]
+
+
+@dataclass(frozen=True)
+class MetricRatioLimit:
+    metric: str
+    max_ratio: float
 
 
 NATIVE_METRIC_PATHS = (
@@ -300,6 +307,17 @@ def parse_args() -> argparse.Namespace:
             "fails immediately when another paired benchmark already owns the lock."
         ),
     )
+    parser.add_argument(
+        "--max-candidate-ratio",
+        action="append",
+        default=[],
+        metavar="METRIC=RATIO",
+        help=(
+            "Fail after measurement if the candidate-over-baseline mean ratio for METRIC exceeds RATIO. "
+            "Use native metric names such as stage.lm_head_backward.total_ms or "
+            "train_loop_wall_ms_per_step. Repeat for multiple hot-bucket gates."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -313,6 +331,27 @@ def parse_env_overrides(values: Sequence[str], *, option_name: str) -> dict[str,
             raise SystemExit(f"{option_name} expects a non-empty environment variable name")
         overrides[key] = value
     return overrides
+
+
+def parse_metric_ratio_limits(values: Sequence[str]) -> list[MetricRatioLimit]:
+    limits: list[MetricRatioLimit] = []
+    for raw in values:
+        if "=" not in raw:
+            raise SystemExit(f"--max-candidate-ratio expects METRIC=RATIO, got {raw!r}")
+        metric, ratio_text = raw.split("=", 1)
+        metric = metric.strip()
+        if not metric:
+            raise SystemExit("--max-candidate-ratio expects a non-empty metric name")
+        try:
+            max_ratio = float(ratio_text)
+        except ValueError as exc:
+            raise SystemExit(
+                f"--max-candidate-ratio expects a numeric ratio for {metric!r}, got {ratio_text!r}"
+            ) from exc
+        if max_ratio <= 0.0:
+            raise SystemExit(f"--max-candidate-ratio for {metric!r} must be positive")
+        limits.append(MetricRatioLimit(metric=metric, max_ratio=max_ratio))
+    return limits
 
 
 def extract_json_object(text: str) -> dict[str, Any] | None:
@@ -790,6 +829,42 @@ def summarize_native_route_counter_changes(
     }
 
 
+def evaluate_metric_ratio_limits(
+    payload: dict[str, object],
+    limits: Sequence[MetricRatioLimit],
+) -> dict[str, object]:
+    results: list[dict[str, object]] = []
+    ratios = payload.get("candidate_over_baseline_native_metrics")
+    ratio_metrics = ratios if isinstance(ratios, dict) else {}
+    all_passed = True
+    for limit in limits:
+        stats = ratio_metrics.get(limit.metric)
+        actual_ratio: float | None = None
+        missing = True
+        if isinstance(stats, dict):
+            value = stats.get("mean")
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                actual_ratio = float(value)
+                missing = False
+        passed = not missing and actual_ratio is not None and actual_ratio <= limit.max_ratio
+        if not passed:
+            all_passed = False
+        results.append(
+            {
+                "metric": limit.metric,
+                "max_ratio": limit.max_ratio,
+                "actual_mean_ratio": actual_ratio,
+                "missing": missing,
+                "passed": passed,
+            }
+        )
+    return {
+        "enabled": bool(limits),
+        "passed": all_passed,
+        "results": results,
+    }
+
+
 def run_nvidia_smi(args: Sequence[str]) -> dict[str, object]:
     try:
         proc = subprocess.run(
@@ -1215,6 +1290,7 @@ def resolve_cuda_visible_devices(
 def build_payload(args: argparse.Namespace) -> dict[str, object]:
     baseline_env = parse_env_overrides(args.baseline_env, option_name="--baseline-env")
     candidate_env = parse_env_overrides(args.candidate_env, option_name="--candidate-env")
+    metric_ratio_limits = parse_metric_ratio_limits(args.max_candidate_ratio)
     baseline = TimedCommand("baseline", shlex.split(args.baseline), baseline_env)
     candidate = TimedCommand("candidate", shlex.split(args.candidate), candidate_env)
     samples = max(1, args.samples)
@@ -1273,6 +1349,20 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             "candidate_env": candidate.env_overrides,
             "append_native_profile_json_dir": str(profile_json_dir) if profile_json_dir is not None else "",
             "native_stage_timing": bool(args.native_stage_timing),
+            "metric_ratio_gates": {
+                "enabled": bool(metric_ratio_limits),
+                "passed": True,
+                "results": [
+                    {
+                        "metric": limit.metric,
+                        "max_ratio": limit.max_ratio,
+                        "actual_mean_ratio": None,
+                        "missing": True,
+                        "passed": True,
+                    }
+                    for limit in metric_ratio_limits
+                ],
+            },
             "sample_order_plan": order_plan,
             "run_env_overrides": {
                 key: value
@@ -1383,7 +1473,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         )
         gpu_sample_summary = summarize_gpu_sample_load(sample_rows, cuda_visible_devices)
 
-    return {
+    payload = {
         "measurement": "paired_interleaved_commands",
         "samples": samples,
         "warmup": warmup,
@@ -1422,6 +1512,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         ),
         "paired_samples": sample_rows,
     }
+    payload["metric_ratio_gates"] = evaluate_metric_ratio_limits(payload, metric_ratio_limits)
+    return payload
 
 
 def print_text(payload: dict[str, object]) -> None:
@@ -1616,6 +1708,21 @@ def print_text(payload: dict[str, object]) -> None:
                     f"    {key}: mean={stats['mean']:.6f} median={stats['median']:.6f} "
                     f"min={stats['min']:.6f} max={stats['max']:.6f}"
                 )
+    gates = payload.get("metric_ratio_gates")
+    if isinstance(gates, dict) and gates.get("enabled") is True:
+        print(f"  metric_ratio_gates: passed={str(gates.get('passed', False)).lower()}")
+        results = gates.get("results")
+        if isinstance(results, list):
+            for result in results:
+                if not isinstance(result, dict):
+                    continue
+                actual = result.get("actual_mean_ratio")
+                actual_text = "missing" if actual is None else f"{float(actual):.6f}"
+                print(
+                    f"    {result.get('metric', '')}: actual_mean_ratio={actual_text} "
+                    f"max_ratio={float(result.get('max_ratio', 0.0)):.6f} "
+                    f"passed={str(result.get('passed', False)).lower()}"
+                )
 
 
 def main() -> int:
@@ -1629,6 +1736,19 @@ def main() -> int:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
         print_text(payload)
+    gates = payload.get("metric_ratio_gates")
+    if isinstance(gates, dict) and gates.get("enabled") is True and gates.get("passed") is False:
+        failed = [
+            str(result.get("metric", ""))
+            for result in gates.get("results", [])
+            if isinstance(result, dict) and result.get("passed") is False
+        ]
+        print(
+            "metric ratio gate failed"
+            + (": " + ", ".join(metric for metric in failed if metric) if failed else ""),
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 

@@ -97,7 +97,12 @@ both commands by default; pass `--cuda-device-max-connections ""` to leave that
 environment unchanged. Pass repeatable `--baseline-env KEY=VALUE` or
 `--candidate-env KEY=VALUE` flags for environment-gated kernel candidates; these
 overrides apply only to that side of the pair and are recorded in the JSON/text
-output. `--command-timeout-seconds N` terminates the timed-out command's process
+output. Pass repeatable `--max-candidate-ratio METRIC=RATIO` gates when a
+candidate must not regress a hot native metric such as
+`stage.lm_head_backward.total_ms`, `stage.block_backward.total_ms`, or
+`train_loop_wall_ms_per_step`; missing metrics fail the gate so a stage-timing
+or JSON-output mistake cannot be accepted as a passing kernel result.
+`--command-timeout-seconds N` terminates the timed-out command's process
 group so a slow native candidate does not leave child GPU work running after the
 sample is recorded. Interrupting the helper also terminates the active command
 process group before re-raising, so aborted memory-heavy candidates do not keep
@@ -143,6 +148,12 @@ candidate-only CLI flags such as `--lm-head-row-chunk-size 32768`; the dry-run p
 commands so command separation can be audited before launching a long GPU job.
 This keeps quick candidate runs from silently falling back to the wrapper's
 default 10-step, 3-sample profile when using the shorter alias names.
+Set `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` or
+`NFN_SM120_CANDIDATE_MAX_CANDIDATE_RATIO` to a whitespace-separated list of
+`METRIC=RATIO` gates, for example
+`stage.lm_head_backward.total_ms=1.000 train_loop_wall_ms_per_step=1.005`, so
+native candidate runs fail nonzero when they worsen the LM-head/block hot
+buckets even if total command timing looks flat.
 The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
 emit non-UTF-8 bytes can still be compared in the same paired run. For
