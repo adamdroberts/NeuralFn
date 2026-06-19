@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked the remaining dense GPT SM120 parity switches after the CUDA
+  13.3.33 Tile extension-load fix and kept them rejected as defaults. A
+  stage-timed dedicated RTX 5090 parity run measured llm.kittens at
+  `2507.726 ms/step` and NeuralFn at `2602.880 ms/step`
+  (`1.037944x` train-loop wall time, `0.963012x` tokens/sec), with hot buckets
+  still in `block_backward` and `lm_head_backward`. Current shape stats show
+  LM-head logits `50304,8192,768,T,N` and dHidden `768,8192,50304,N,N` on the
+  GEMMEx/SGEMM-family fallback route and LM-head dWeight
+  `768,50304,8192,N,T` on cuBLASLt. Same-script native-vs-native checks
+  rejected `NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1`
+  (`1.001614x`), `NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=1`
+  (`1.001020x`), compile-time
+  `NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE=8192` (`1.002704x` startup total
+  wall, `1.028856x` token init), the MLP/all-projection dInput-before-dWeight
+  scheduling probes (noise-equivalent), TK dInput for
+  `768,8192,50304,N,N` (`1.023513x`), cuBLASLt heuristic 0 for
+  `768,50304,8192,N,T` (`1.001584x`), and
+  `NFN_NATIVE_GPT_LM_HEAD_ROW_CHUNK_SIZE=16384` (`1.002609x`). The next parity
+  work remains a new fused/cooperative row-chunked LM-head backward kernel or a
+  materially different GEMM route, not more switch promotion.
+
 - Fixed the CUDA Toolkit 13.3 Tile extension build after the dense GPT
   residual-add specialization. The
   `dim768_bf16_residual_add_enabled()` helper now lives in the shared
