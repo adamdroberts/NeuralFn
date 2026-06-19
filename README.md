@@ -12,13 +12,16 @@ to confirm the extension executes GPU tests instead of skipping. After the
 CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 path is correctness
 green (`NFN_TILE_CUDA_TEST=1 python -m pytest --lf -q -rs` passed with
 `1167 passed`, the native CUDA binaries rebuild cleanly, and native no-Torch
-checks are green), but dense GPT throughput is still about `1.03x` slower than
-`/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`; the next parity work
-is a fused row-chunked LM-head backward kernel, not another setup or Torch
-fallback fix.
-The CUDA 13.3.33 follow-up probes kept LM-head cuBLASLt expansion and threaded
-token-weight initialization rejected as defaults, so those remain diagnostic
-switches rather than workflow guidance.
+checks are green). Dense GPT native training now routes the no-bias BF16
+LM-head logits GEMM through the TK BF16 forward bridge by default for the
+default `50304,8192,768,T,N` row-chunk shape; the CUDA 13.3.33 follow-up
+measured the staged LM-head backward bucket at `0.642874x` of the previous
+fallback route and a same-script 5-step parity sample at `0.881966x` train-loop
+wall time versus `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`.
+Because those parity samples can move with reference-run noise, keep using
+`tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
+build. LM-head cuBLASLt expansion and threaded token-weight initialization
+remain rejected diagnostic switches rather than workflow guidance.
 Dense GPT native BF16 classifier/CE now uses vectorized BF16 row loads by
 default to match the llm.kittens fused-classifier memory access pattern; set
 `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=0` or
@@ -683,7 +686,7 @@ dedicated wrapper, but it remains rejected/default-off because the paired RTX
 5090 benchmark measured `1.134435x` train-loop wall time and `0.881527x`
 tokens/sec versus the current non-atomic packed-gradient default.
 
-For profiling only, `NFN_TILE_CUDA_LINEAR_TK_FLOAT_OUT=1` or `NFN_NATIVE_LINEAR_TK_FLOAT_OUT=1` routes eligible BF16 linear forward GEMMs through the TK BF16-output bridge and converts the result back to float32. This path reports `linear_tk_float_out_gemm_count` in native GPT-2 JSON and remains disabled by default because the current full-shape TinyStories probe regressed overall throughput. The dense GPT trainer now skips the TK forward path for the padded LM-head logits shape `50304,8192,768,T,N` by default because same-script RTX 5090 benchmarks measured the fallback faster; set `NFN_TILE_CUDA_LINEAR_TK_FORWARD_ENABLE_SHAPE=50304,8192,768,T,N` or `NFN_NATIVE_LINEAR_TK_FORWARD_ENABLE_SHAPE=50304,8192,768,T,N` to restore the old TK route for bisection. To bisection-test one additional forward TK shape against its fallback, set `NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` or `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB`, using the same `linear_shape_stats` tuple. The disable gate only applies to TK forward/fused-GELU launches with fallback paths; it deliberately does not affect bits-only backward dGELU kernels.
+For profiling only, `NFN_TILE_CUDA_LINEAR_TK_FLOAT_OUT=1` or `NFN_NATIVE_LINEAR_TK_FLOAT_OUT=1` routes eligible BF16 linear forward GEMMs through the TK BF16-output bridge and converts the result back to float32. This path reports `linear_tk_float_out_gemm_count` in native GPT-2 JSON and remains disabled by default because the current full-shape TinyStories probe regressed overall throughput. The dense GPT trainer now tries the TK BF16 forward bridge before cuBLAS GEMMEx for no-bias BF16-input/BF16-weight/BF16-output GEMMs, including the default padded LM-head logits shape `50304,8192,768,T,N`. Set `NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,8192,768,T,N` or `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,8192,768,T,N` to reproduce the older LM-head GEMMEx fallback for paired bisection. To bisection-test one additional forward TK shape against its fallback, set `NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` or `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB`, using the same `linear_shape_stats` tuple. The disable gate only applies to TK forward/fused-GELU launches with fallback paths; it deliberately does not affect bits-only backward dGELU kernels.
 
 `NFN_NATIVE_LINEAR_TK_DINPUT=1` or `NFN_TILE_CUDA_LINEAR_TK_DINPUT=1` is a diagnostic-only route for BF16-gradient/BF16-weight Linear dInput shapes such as the dense GPT LM-head dHidden bucket `768,8192,50304,N,N`. It runs the existing TK BF16 matmul bridge and converts the BF16 result back to FP32 for downstream LayerNorm backward. Keep it disabled for normal training: the dedicated RTX 5090 paired benchmark measured the opt-in route at `1.049216x` train-loop wall time and `0.953102x` tokens/sec versus the default GEMMEx route.
 

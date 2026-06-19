@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Defaulted dense GPT native LM-head logits recompute to the TK BF16 forward
+  bridge on CUDA 13.3/SM120. The trainer-facing
+  `launch_linear_bf16_input_weight_bf16_output_float32` wrapper now attempts
+  the existing TK BF16-input/BF16-weight/BF16-output GEMM path before cuBLAS
+  GEMMEx for no-bias shapes, and the old hardcoded disable for the default
+  LM-head logits row chunk `50304,8192,768,T,N` has been removed. Set
+  `NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,8192,768,T,N` or
+  `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,8192,768,T,N` to reproduce
+  the prior GEMMEx fallback for paired diagnostics. Migration notes: no caller
+  change is required, but benchmark tooling that expected the LM-head logits
+  fallback should update expectations and use the explicit disable env when it
+  needs the old route. Verification: rebuilt
+  `build/libnfn_native_train_tile_ops.so` and `build/nfn_gpt_native_train`;
+  `NFN_TILE_CUDA_TEST=1 /home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_gpu.py -x -q` passed (`1 passed`); native dependency
+  tests passed (`3 passed`); `tools/check_native_no_torch_deps.py` passed; a
+  prior focused native GPT run after wiring the TK attempt passed (`52 passed`).
+  Same-script RTX 5090 timing with the newly wired route measured
+  `0.923926x` mean train-loop wall and `1.086108x` tokens/sec versus the
+  fallback over 5-step, 3-sample native-vs-native timing; stage timing measured
+  `lm_head_backward.total_ms` at `0.642874x` of fallback. The default
+  llm.kittens parity sample after promotion measured NeuralFn at
+  `2834.720 ms/step` and `184952 tok/s` versus llm.kittens at
+  `3214.092 ms/step` and `164306.8 tok/s` (`0.881966x` train-loop wall,
+  `1.125650x` tokens/sec), though parity should still be rechecked over fresh
+  multi-sample runs because the reference sample was slower than earlier CUDA
+  13.3 measurements.
+
 - Rechecked the next dense GPT native SM120 tuning candidates after the vector4
   startup diagnostic and kept defaults unchanged. A fresh same-script parity
   sample still measured NeuralFn slower than `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`

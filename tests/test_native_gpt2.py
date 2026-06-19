@@ -5148,8 +5148,16 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "embedding_residual_fusion_enabled" in gpt2_source_text
     assert "embedding_residual_intermediate_float_buffers_elided" in gpt2_source_text
     assert "fuse_embedding_residual_enabled ? 0 : activation_elements" in gpt2_source_text
-    assert "shape.m = 50304" in kernels_text
-    assert "shape.n = 8192" in kernels_text
+    assert "default_disabled_lm_head_logits_shape" not in kernels_text
+    bf16_output_forward = kernels_text[
+        kernels_text.index("void launch_linear_bf16_input_weight_bf16_output_float32") :
+        kernels_text.index("void launch_linear_backward_input_bf16_bits_float32")
+    ]
+    assert "tk_linear_gemm_bf16_forward_to_bf16_bits" in bf16_output_forward
+    assert "cublas_linear_gemm_ex_bf16_bits_ab_to_bf16_bits" in bf16_output_forward
+    assert bf16_output_forward.index("tk_linear_gemm_bf16_forward_to_bf16_bits") < bf16_output_forward.index(
+        "cublas_linear_gemm_ex_bf16_bits_ab_to_bf16_bits"
+    )
     assert "NFN_TILE_CUDA_CE_BF16_THREADS" in kernels_text
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS" in kernels_text
     assert "NFN_NATIVE_GPT2_CE_BF16_THREADS" in kernels_text

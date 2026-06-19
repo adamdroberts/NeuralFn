@@ -2919,16 +2919,6 @@ bool trainer_linear_tk_forward_shape_disabled(
     int k,
     cublasOperation_t op_a,
     cublasOperation_t op_b) {
-  static const LinearShapeStat default_disabled_lm_head_logits_shape = []() {
-    LinearShapeStat shape{};
-    shape.path = 2;
-    shape.m = 50304;
-    shape.n = 8192;
-    shape.k = 768;
-    shape.op_a = static_cast<int>(CUBLAS_OP_T);
-    shape.op_b = static_cast<int>(CUBLAS_OP_N);
-    return shape;
-  }();
   static const LinearShapeStat enabled_shape = []() {
     const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_TK_FORWARD_ENABLE_SHAPE");
     if (value == nullptr) {
@@ -2950,8 +2940,7 @@ bool trainer_linear_tk_forward_shape_disabled(
   if (linear_shape_matches(enabled_shape, m, n, k, op_a, op_b)) {
     return false;
   }
-  return linear_shape_matches(default_disabled_lm_head_logits_shape, m, n, k, op_a, op_b) ||
-      linear_shape_matches(disabled_shape, m, n, k, op_a, op_b);
+  return linear_shape_matches(disabled_shape, m, n, k, op_a, op_b);
 }
 
 bool trainer_linear_float32_bf16_bgrad_enabled() {
@@ -14366,6 +14355,20 @@ void launch_linear_bf16_input_weight_bf16_output_float32(
     cudaStream_t stream) {
   const std::int64_t n = rows * output_dim;
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (!has_bias && fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
+      tk_linear_gemm_bf16_forward_to_bf16_bits(
+          reinterpret_cast<const __nv_bfloat16*>(weight_bf16_bits),
+          reinterpret_cast<const __nv_bfloat16*>(x_bf16_bits),
+          nullptr,
+          out_bf16_bits,
+          static_cast<int>(rows),
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          CUBLAS_OP_T,
+          CUBLAS_OP_N,
+          stream)) {
+    return;
+  }
   if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
       cublas_linear_gemm_ex_bf16_bits_ab_to_bf16_bits(
           weight_bf16_bits,
