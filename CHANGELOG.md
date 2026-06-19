@@ -21,6 +21,17 @@ Future updates should append new entries here rather than replacing older notes.
   still native kernel throughput in `block_backward` and `lm_head_backward`,
   not a broken CUDA install, Torch leakage, or graph-editor tensor flow.
 
+- Rejected two more CUDA 13.3.33 activation-tape memory candidates as dense GPT
+  defaults because both improved setup but slowed the actual training loop.
+  `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUTS=1` reduced setup wall time to
+  `0.944457x` but regressed train-loop wall time to `1.014826x` and tokens/sec
+  to `0.985409x`. `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_BF16=0` reduced
+  setup wall time to `0.960234x` but regressed train-loop wall time to
+  `1.004923x` and tokens/sec to `0.995113x`. Keep both as diagnostic-only
+  memory/startup bisection paths; neither moves NeuralFn toward llm.kittens
+  training throughput. Verification: dedicated RTX 5090 same-script
+  native-vs-native benchmarks with stage timing and GPU idle/lock checks.
+
 - Fixed the CUDA 13.3 retest failure set instead of carrying stale pytest
   failures forward. The GPT-2 compatibility wrapper now exposes the legacy
   parser/helper surface expected by CLI tests (`--pretraining-file`, dataset
