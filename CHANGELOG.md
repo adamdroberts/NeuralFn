@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed CUDA 13.3 RTX 5090 parity attribution after the dense GPT LM-smoke
+  fix and rejected two more existing-route probes instead of promoting noisy
+  switches. A one-step stage/shape profile still shows the remaining gap in
+  native GPU work: about `1349 ms` block backward, `732 ms` LM-head backward,
+  and `638 ms` model forward per optimizer step, with LM-head backward split
+  across logits (`221 ms`), CE (`67 ms`), dHidden (`265 ms`), and dWeight
+  (`176 ms`). `NFN_NATIVE_LINEAR_TK_DINPUT_DISABLE_SHAPE=3072,65536,768,N,N`
+  measured a short-run `0.991338x` train-loop wall result but did not change
+  route counters, so it is not a promotable result. Disabling the TK forward
+  route for `768,65536,3072,T,N` did reduce TK calls but regressed train-loop
+  wall to `1.023601x` and tokens/sec to `0.976942x`. No runtime defaults were
+  changed; the next useful parity work remains a fused/cooperative LM-head
+  classifier/backward kernel rather than route-switch retuning.
+
 - Fixed the dense GPT native `--smoke-lm-step` verifier after revisiting CUDA
   tests on the CUDA 13.3 WSL install. The synthetic GPT smoke now expects the
   summed two-row CE partial loss instead of a one-row average and keeps
