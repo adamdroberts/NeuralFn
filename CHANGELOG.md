@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- After reinstalling CUDA Toolkit 13.3 for WSL, reran the failed-test and
+  native-performance gates on the dedicated RTX 5090. The CUDA Tile GPU suite
+  passed with `537 passed, 6 warnings`, native GPT contract tests passed with
+  `51 passed, 1 skipped`, Tile registry/example tests passed with `28 passed`,
+  `tools/check_native_no_torch_deps.py` reported all checks `ok`, and both
+  native CUDA binaries rebuilt cleanly. The refreshed same-script parity run
+  still measured NeuralFn dense GPT at `1.032833x` train-loop wall time versus
+  `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`, so the remaining
+  issue is native kernel throughput, not correctness, Torch leakage,
+  graph-editor tensor flow, or stale CUDA state. CUDA 13.3 bisections rejected
+  forward-logit reuse with stored MLP disabled (`1.364953x` train loop),
+  forward-logit reuse with packed-attention storage disabled (`1.103069x`),
+  re-enabling TK BF16 forward for the default LM-head logits shape
+  (`1.008700x`), and BF16-output cuBLASLt for LM-head logits (`1.002706x`).
+  `todo-tile-cuda.md` now records those rejections and narrows the next
+  implementation target to a fused row-chunked LM-head backward kernel that
+  preserves the current 8192-row BF16 resident-logit cap. Verification:
+  `NFN_TILE_CUDA_TEST=1 python -m pytest tests/test_tile_cuda_gpu.py
+  tests/test_tile_cuda_ops.py tests/test_tile_cuda_optimizer.py
+  tests/test_tile_cuda_modules.py -q -rs`; `python -m pytest
+  tests/test_native_gpt2.py -q`; `python -m pytest tests/test_tile_cuda_registry.py
+  tests/test_tile_cuda_examples.py -q`; `python tools/check_native_no_torch_deps.py`;
+  `bash tools/build_native_gpt_cli.sh`; `bash tools/build_native_train_tile_ops.sh`;
+  CUDA 13.3 RTX 5090 same-script parity and native-vs-native bisections.
+
 - Revisited CUDA-visible Tile-CUDA tests and SM120 parity after installing CUDA
   Toolkit 13.3 for WSL on the dedicated RTX 5090. The combined CUDA test slice
   passed with `537 passed, 6 warnings`, and the canonical same-script parity
