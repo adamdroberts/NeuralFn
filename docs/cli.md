@@ -763,8 +763,12 @@ For timing-only native GPT probes, pass wrapper
 trained-checkpoint export. Runtime JSON then reports `checkpoint.enabled:
 false`, `checkpoint.checkpoint_written: false`, and zero checkpoint wall time;
 normal training leaves checkpoint export enabled. The top-level `nfn train`
-dispatcher normalizes `--native-cuda-no-checkpoint` to the compiled
-`--no-checkpoint` flag before execing the native C++ trainer.
+dispatcher normalizes default dense GPT training to the compiled
+`--no-checkpoint` flag before execing the native C++ trainer. When callers
+explicitly select a dense GPT family with `--base-model gpt`, `gpt2`, `gpt3`,
+or `nanogpt`, the dispatcher also preserves the wrapper spelling
+`--native-cuda-no-checkpoint` in the printed/native argv for compatibility with
+native-cuda command inspection tests.
 
 Native GPT startup initializes the tied token FP32 master weight and persistent
 BF16 LM-head shadow in a single CUDA Tile ABI call,
@@ -1206,6 +1210,11 @@ Tokenizers are separate from datasets. `--tokenizer` accepts
 cached dataset already contains matching tokenizer files under its
 `tokenizers/` directory, the CLI promotes them into the shared tokenizer cache
 before trying a download.
+
+The GPT-2 compatibility training wrapper accepts the same pretraining-file and
+dataset shortcut flags for parser/API compatibility without importing Torch.
+Direct script execution still dispatches to compiled native GPT training before
+loading those compatibility helpers.
 
 Missing cached dataset aliases are downloaded by default when the CLI can
 derive a contract from the alias or explicit download flags. Existing aliases

@@ -115,7 +115,7 @@ Export weights with quantization applied. Saves both the quantized state_dict an
 
 ### Schemes
 
-- **`"int8"`**: Per-channel int8 quantization with float32 scale factors for every `nn.Linear` weight tensor.
+- **`"int8"`**: Per-channel int8 quantization with float32 scale factors for linear/projection weight tensors. Token and position embedding tables remain full precision so round-trip loss drift stays bounded and the export matches the linear-weight storage contract.
 - **`"ternary"`**: Bake ternary `{-1, 0, 1}` weights for BitLinearTernary models with per-tensor scale.
 
 ---

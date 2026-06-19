@@ -490,6 +490,7 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
     model = _native_train_model(argv)
     token_lm_requested = any(arg == "--train-token-lm" for arg in argv)
     dense_gpt = _is_dense_gpt_native_model(model) and not (model == "nanogpt" and token_lm_requested)
+    explicit_dense_model = dense_gpt and _explicit_arg(argv, "--base-model", "--model")
     native_cli = _resolve_direct_native_train_cli("gpt" if dense_gpt else model)
     out = [native_cli]
     include_model = not dense_gpt
@@ -659,6 +660,8 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
             continue
         if arg in bool_aliases:
             out.append(bool_aliases[arg])
+            if arg == "--native-cuda-no-checkpoint" and explicit_dense_model:
+                out.append("--native-cuda-no-checkpoint")
             idx += 1
             continue
         matched_split_flag = next((flag for flag in split_value_flags if arg.startswith(flag + "=")), None)

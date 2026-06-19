@@ -84,7 +84,7 @@ TINYSTORIES_ALIAS = "roneneldan__TinyStories__TinyStoriesV2-GPT4"
 TINYSTORIES_TRAIN_FILE = "TinyStoriesV2-GPT4-train.txt"
 TINYSTORIES_VAL_FILE = "TinyStoriesV2-GPT4-valid.txt"
 CACHED_TOKEN_DATASETS = frozenset({"golf1", "golf10"})
-VAL_HOLDOUT_FRACTION = 0.2
+VAL_HOLDOUT_FRACTION = 0.1
 PRETRAINING_FILE_CONFLICT_FLAGS = (
     "--tinystories",
     "--dataset",
@@ -890,10 +890,7 @@ def resolve_effective_training_schedule(
     if bool(getattr(args, "all_train_rows", False)):
         requested_for_rounding = max(requested_max_steps, 1)
         if not getattr(args, "_max_steps_explicit", False) and "ITERATIONS" not in os.environ:
-            requested_for_rounding = max(
-                requested_for_rounding,
-                steps_per_epoch * ALL_TRAIN_ROWS_DEFAULT_EPOCHS,
-            )
+            requested_for_rounding = steps_per_epoch * ALL_TRAIN_ROWS_DEFAULT_EPOCHS
         resolved_max_steps = max(
             steps_per_epoch,
             math.ceil(requested_for_rounding / steps_per_epoch) * steps_per_epoch,
@@ -2233,13 +2230,13 @@ def load_val_token_dataset(
         text = raw_text_file.read_text(encoding="utf-8")
         tokens = np.asarray(encode_raw_text(text, encoding_name=encoding_name), dtype=np.int64)
         _require_validation_window(tokens, seq_len=seq_len, source_label=f"Training file {raw_text_file}")
-        holdout_tokens = max(seq_len + 1, int(math.ceil(tokens.size * VAL_HOLDOUT_FRACTION)))
+        holdout_tokens = max(seq_len + 1, int(tokens.size * VAL_HOLDOUT_FRACTION))
         val_tokens = tokens[-holdout_tokens:]
         return MemmapTokenDataset([val_tokens], seq_len)
     dataset_name = dataset_path.name if dataset_path.is_dir() else dataset_path.stem
     tokens = np.asarray(_load_tokens_for(dataset_name, None, encoding_name=encoding_name), dtype=np.int64)
     _require_validation_window(tokens, seq_len=seq_len, source_label=f"Dataset {dataset_name!r}")
-    holdout_tokens = max(seq_len + 1, int(math.ceil(tokens.size * VAL_HOLDOUT_FRACTION)))
+    holdout_tokens = max(seq_len + 1, int(tokens.size * VAL_HOLDOUT_FRACTION))
     val_tokens = tokens[-holdout_tokens:]
     return MemmapTokenDataset([val_tokens], seq_len)
 

@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime
 import logging
 import math
+import os
 from pathlib import Path
 import signal
 import sys
@@ -27,6 +28,7 @@ if __name__ == "__main__":
             "--smoke-fused-qkv-attention-step",
         }
     )
+    nanogpt_family_native = token_lm_native or bool(os.environ.get("NFN_NATIVE_NANOGPT_CLI", "").strip())
     reject_torch_training_by_default(
         "train_nanogpt.py",
         native_target=(
@@ -34,10 +36,10 @@ if __name__ == "__main__":
             if token_lm_native
             else "nfn train --base-model nanogpt --train-transformer-lm"
         ),
-        model_family="nanogpt" if token_lm_native else "gpt",
+        model_family="nanogpt" if nanogpt_family_native else "gpt",
         native_default_args=[] if token_lm_native else ["--template-name", "nanogpt", "--train-transformer-lm"],
-        family_native_cli_env="NFN_NATIVE_NANOGPT_CLI" if token_lm_native else "NFN_NATIVE_GPT_CLI",
-        family_native_cli_name="nfn_nanogpt_native_train" if token_lm_native else "nfn_gpt_native_train",
+        family_native_cli_env="NFN_NATIVE_NANOGPT_CLI" if nanogpt_family_native else "NFN_NATIVE_GPT_CLI",
+        family_native_cli_name="nfn_nanogpt_native_train" if nanogpt_family_native else "nfn_gpt_native_train",
     )
 
 import numpy as np

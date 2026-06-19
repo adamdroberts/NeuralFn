@@ -62,7 +62,7 @@ Two schemes are supported:
 
 | Scheme | Description |
 |--------|-------------|
-| `"int8"` | Per-channel int8 quantization with float32 scale factors. Applied to all 2D+ weight tensors (linear projections, attention projections). |
+| `"int8"` | Per-channel int8 quantization with float32 scale factors. Applied to linear/projection weight tensors; token and position embeddings remain full precision. |
 | `"ternary"` | Bakes weights to `{-1, 0, 1}` with a single mean-absolute scale per tensor. Designed for BitLinear / ternary_b158 models. |
 
 Non-weight tensors (biases, norms, embeddings) are stored at full precision in both schemes.

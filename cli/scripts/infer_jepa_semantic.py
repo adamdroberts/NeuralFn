@@ -478,6 +478,8 @@ def load_tokenizer_from_graph_manifest(
     if not encoding_name:
         return None, None, None
     encoding_path = local_tiktoken_encoding_path(encoding_name)
+    if encoding_path is None:
+        encoding_path = Path(f"{encoding_name}.tiktoken")
     try:
         return resolve_tiktoken_encoding(encoding_name), encoding_path, encoding_name
     except Exception:

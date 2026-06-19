@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the CUDA 13.3 retest failure set instead of carrying stale pytest
+  failures forward. The GPT-2 compatibility wrapper now exposes the legacy
+  parser/helper surface expected by CLI tests (`--pretraining-file`, dataset
+  shortcut resolution, tokenizer/vocab policy, evolutionary and scheduler
+  fields, `mode_name`/`graph_name`, and summary printing) while preserving the
+  direct native compiled GPT execution path and no-Torch import contract.
+  `--all-train-rows` now ignores parser default `max_steps` unless max steps
+  were explicitly supplied, so the default all-rows schedule uses the documented
+  two-epoch floor. Raw-text validation fallback now uses a deterministic 10%
+  tail holdout, and GPT wrapper pretraining-file adapters create a local
+  raw-text dataset view without importing Torch. The unified native CLI keeps
+  `--native-cuda-no-checkpoint` visible only when an explicit dense GPT model
+  selector needs that wrapper spelling, while default `nfn train` still
+  normalizes to compiled `--no-checkpoint`. NanoGPT direct execution uses the
+  GPT native trainer by default for transformer-LM mode but honors
+  `NFN_NATIVE_NANOGPT_CLI` when explicitly configured. Quantized int8 export
+  now leaves embedding tables at full precision and applies int8 storage only
+  to linear/projection weight tensors, matching the documented contract and
+  removing flaky loss drift in round-trip tests. Verification:
+  `NFN_TILE_CUDA_TEST=1 python -m pytest --lf -q -rs` passed with
+  `1167 passed, 20 warnings, 468 subtests`; CUDA Tile GPU slice passed with
+  `537 passed, 6 warnings`; native GPT tests passed with `51 passed, 1 skipped`;
+  affected CLI/no-Torch tests passed with `81 passed, 282 subtests`; template
+  preset tests passed with `26 passed`; `python tools/check_native_no_torch_deps.py`
+  reported all checks `ok`.
+
 - Rechecked the current dense GPT native LM-head bisection space after the
   CUDA Toolkit 13.3 reinstall and kept the defaults unchanged. On the dedicated
   RTX 5090, the no-stage-timing 5-step, 2-sample parity run still measured

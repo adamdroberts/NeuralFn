@@ -195,7 +195,15 @@ def export_quantized_pt(
     scales: dict[str, torch.Tensor] = {}
 
     for key, param in state_dict.items():
-        if param.ndim < 2 or not any(key.endswith(s) for s in (".weight", ".proj.weight", ".k_proj.weight", ".v_proj.weight", ".q_proj.weight", ".out_proj.weight")):
+        is_embedding_weight = any(part in key for part in ("token_embedding", "position_embedding", "pos_embedding"))
+        if (
+            param.ndim < 2
+            or is_embedding_weight
+            or not any(
+                key.endswith(s)
+                for s in (".weight", ".proj.weight", ".k_proj.weight", ".v_proj.weight", ".q_proj.weight", ".out_proj.weight")
+            )
+        ):
             quant_sd[key] = param
             continue
         if scheme == "ternary":
