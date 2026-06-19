@@ -271,6 +271,9 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "NFN_SM120_CANDIDATE_JSON_OUT" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_ENV" in text
     assert "NFN_SM120_CANDIDATE_ENV" in text
+    assert "NFN_SM120_NATIVE_ENV" in text
+    assert "NFN_SM120_COMMON_ENV" in text
+    assert "NFN_SM120_PARITY_ENV" in text
     assert "NFN_SM120_COMMON_EXTRA_ARGS" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_ARGS" in text
     assert "NFN_SM120_CANDIDATE_EXTRA_ARGS" in text
@@ -331,6 +334,45 @@ def test_native_gpt_sm120_candidate_wrapper_accepts_short_aliases(tmp_path: Path
     candidate_command = proc.stdout.split("  candidate:", 1)[1]
     assert "--lm-head-row-chunk-size 32768" not in baseline_command
     assert "--lm-head-row-chunk-size 32768" in candidate_command
+
+
+def test_native_gpt_sm120_candidate_wrapper_applies_common_env_to_both_commands(tmp_path: Path) -> None:
+    script = Path("tools/bench_native_gpt_sm120_candidate.sh")
+    output_path = tmp_path / "candidate-common-env.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_CANDIDATE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_CANDIDATE_STEPS": "2",
+            "NFN_SM120_CANDIDATE_SAMPLES": "1",
+            "NFN_SM120_CANDIDATE_WARMUP": "0",
+            "NFN_SM120_CANDIDATE_PROFILE_DIR": "none",
+            "NFN_SM120_CANDIDATE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_COMMON_ENV": "NFN_SHARED_PROFILING=1",
+            "NFN_SM120_CANDIDATE_ENV": "NFN_CANDIDATE_ONLY=1",
+            "NFN_SM120_CANDIDATE_JSON_OUT": str(output_path),
+        }
+    )
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "  baseline:" in proc.stdout
+    assert "  candidate:" in proc.stdout
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["baseline_env"] == {"NFN_SHARED_PROFILING": "1"}
+    assert payload["candidate_env"] == {
+        "NFN_SHARED_PROFILING": "1",
+        "NFN_CANDIDATE_ONLY": "1",
+    }
 
 
 def test_native_gpt_sm120_candidate_wrapper_accepts_legacy_candidate_args_alias(tmp_path: Path) -> None:

@@ -114,6 +114,11 @@ For native-vs-native dense GPT kernel bisections, `tools/bench_native_gpt_sm120_
 accepts the canonical `NFN_SM120_NATIVE_*` environment variables and the shorter
 `NFN_SM120_CANDIDATE_*` aliases for steps, samples, warmup, profile directory,
 CUDA device selection, candidate env, template/graph selection, and JSON output.
+Use `NFN_SM120_NATIVE_ENV`, `NFN_SM120_COMMON_ENV`, or `NFN_SM120_PARITY_ENV`
+for shared environment variables that must be applied to both commands, such as
+`NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1` during route attribution. Use
+`NFN_SM120_NATIVE_CANDIDATE_ENV` or `NFN_SM120_CANDIDATE_ENV` only for
+candidate-only switches.
 Use `NFN_SM120_COMMON_EXTRA_ARGS` only for args that must be appended to both
 commands, and use `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`,
 `NFN_SM120_NATIVE_CANDIDATE_ARGS`, or `NFN_SM120_CANDIDATE_EXTRA_ARGS` for
@@ -706,6 +711,9 @@ For native GEMM profiling, set `NFN_NATIVE_LINEAR_SHAPE_STATS=1`, `NFN_TILE_CUDA
 Run SM120 parity and candidate benchmarks only from a shell with real WSL GPU driver access. If `nvidia-smi` reports "GPU access blocked by the operating system" or the native JSON reports `cudaDriverGetVersion` as `0`, the result is an execution-environment failure rather than a kernel result; rerun the same command with GPU-visible execution before accepting or rejecting a candidate. `tools/paired_kernel_speed.py` now also takes a per-selected-GPU lock at `/tmp/nfn_paired_kernel_speed_gpu_<device>.lock` for measured runs, so two same-GPU paired benchmarks cannot overlap and contaminate each other before `nvidia-smi` observes a compute process. The default lock fails fast; pass `--gpu-benchmark-lock-timeout-seconds N` to wait, or `--no-gpu-benchmark-lock` only for intentionally unmanaged measurements.
 
 `tools/bench_native_gpt_sm120_candidate.sh` accepts the native-specific `NFN_SM120_NATIVE_*` controls, the shorter `NFN_SM120_CANDIDATE_*` controls, and the shared parity-wrapper `NFN_SM120_PARITY_*` controls for common benchmark shape fields such as steps, samples, warmup, profile directory, stage timing, GPU selection, JSON output, and dry-run plan. Native-specific names win over candidate names, which win over parity names. Candidate-only env and candidate-only extra args stay separate, so `NFN_SM120_NATIVE_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` and `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` / `NFN_SM120_CANDIDATE_EXTRA_ARGS` still affect only the candidate command. This keeps quick parity-to-native bisections from silently falling back to the candidate wrapper defaults of 10 steps, 3 samples, and 1 warmup.
+For shared profiling env, prefer `NFN_SM120_COMMON_ENV` or its native/parity
+aliases; the wrapper expands each key-value pair into both `--baseline-env` and
+`--candidate-env` before invoking `tools/paired_kernel_speed.py`.
 
 The default dense GPT MLP projection backward now uses the BF16-only dGELU handoff path when BF16 MLP grad handoff is active, so the Tile kernel writes the BF16 gradient consumed by the following MLP FC backward stage without also converting it to an unused FP32 gradient buffer. When every trained block has stored MLP activations, the compiled trainer also skips the old FP32 `mlp.fc.grad_out` arena reservation, saving 805 MB at the default `64 x 1024 x 3072` hidden-gradient shape. The remaining one-buffer FP32-to-BF16 conversion path defaults to a guarded vec4 kernel for aligned buffers; set `NFN_NATIVE_GPT_F32_TO_BF16_VEC4=0` or `NFN_TILE_CUDA_F32_TO_BF16_VEC4=0` to compare against the scalar converter. Training JSON reports `block_backward_mlp_dgelu_float_grad_elided`, `block_backward_mlp_fc_grad_out_float_buffer_elided`, `block_backward_mlp_fc_grad_out_float_bytes_elided`, and the `...-no-float-grad` strategy suffix. Set `NFN_NATIVE_GPT_ELIDE_MLP_DGELU_FLOAT_GRAD=0` to restore the prior conversion/allocation path for paired kernel benchmarks.
 

@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added shared environment injection to the dense GPT native-vs-native SM120
+  candidate benchmark wrapper. `tools/bench_native_gpt_sm120_candidate.sh` now
+  accepts `NFN_SM120_NATIVE_ENV`, `NFN_SM120_COMMON_ENV`, and
+  `NFN_SM120_PARITY_ENV` for variables that should apply to both baseline and
+  candidate commands, while keeping `NFN_SM120_NATIVE_CANDIDATE_ENV` /
+  `NFN_SM120_CANDIDATE_ENV` candidate-only. This avoids failed or asymmetric
+  profiling attempts when enabling common attribution flags such as
+  `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1`. Verification: added a dry-run wrapper
+  regression that asserts shared env is emitted in both `baseline_env` and
+  `candidate_env`, candidate-only env remains isolated, and the generated JSON
+  records both maps; ran `bash -n tools/bench_native_gpt_sm120_candidate.sh` and
+  `python -m pytest tests/test_tile_cuda_examples.py -q`.
+
 - Matched dense GPT native token padding behavior to llm.kittens and added
   no-pad-zero CE entry points. The native GPT trainer now initializes only the
   real 50,257 tokenizer rows of the tied token embedding/LM-head tensor, keeps
