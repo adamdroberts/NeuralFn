@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked the current dense GPT native LM-head bisection space after the
+  CUDA Toolkit 13.3 reinstall and kept the defaults unchanged. On the dedicated
+  RTX 5090, the no-stage-timing 5-step, 2-sample parity run still measured
+  NeuralFn at `1.027170x` train-loop wall time versus llm.kittens, confirming
+  the remaining gap is real kernel throughput rather than instrumentation.
+  Native-vs-native candidates were rejected as defaults: BF16 CE `exp2`
+  measured `1.001188x` train-loop wall time, `--lm-head-row-chunk-size 16384`
+  measured `1.017714x`, `--lm-head-row-chunk-size 4096` measured `1.008782x`,
+  LM-head dWeight heuristic override
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,50304,8192,N,T,0` measured
+  `1.000315x`, and `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF=1` measured
+  `1.001155x`. A shape-stats probe reconfirmed the hot LM-head buckets:
+  logits GEMMEx `50304,8192,768,T,N`, dHidden GEMMEx
+  `768,8192,50304,N,N`, and dWeight cuBLASLt `768,50304,8192,N,T`. The next
+  useful implementation remains a fused/cooperative LM-head classifier/backward
+  kernel or materially different GEMM route, not more chunk-size or heuristic
+  switches. Verification: paired native-vs-native RTX 5090 benchmarks with the
+  same dedicated-GPU harness; no code changes were promoted from these probes.
+
 - Rejected an LM-head dHidden/dWeight side-stream overlap prototype for dense
   GPT native training. The tested implementation recorded CE completion on the
   default stream, launched LM-head dHidden on a non-blocking side stream, ran
