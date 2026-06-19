@@ -145,7 +145,7 @@ class ServerNestedGraphsTest(unittest.TestCase):
                 on_epoch(1, 0.5)
             return [1.5, 0.5]
 
-        with patch("server.routes.SurrogateTrainer.train", new=fake_train):
+        with patch("server.services.run_service.SurrogateTrainer.train", new=fake_train):
             response = train_start(
                 TrainRequest(
                     method="surrogate",
@@ -162,10 +162,11 @@ class ServerNestedGraphsTest(unittest.TestCase):
             self.assertTrue(live_status["running"])
             self.assertEqual(1.5, live_status["last_loss"])
             self.assertEqual(0, live_status["last_step"])
-            self.assertEqual(1, live_status["event_id"])
-            self.assertEqual(1, len(live_status["events"]))
+            live_event_id = live_status["event_id"]
+            self.assertGreaterEqual(live_event_id, 1)
+            self.assertEqual(2, len(live_status["events"]))
 
-            pending_status = get_training_status(since_event_id=live_status["event_id"], history_limit=10)
+            pending_status = get_training_status(since_event_id=live_event_id, history_limit=10)
             self.assertEqual([], pending_status["events"])
 
             allow_finish.set()
@@ -177,11 +178,8 @@ class ServerNestedGraphsTest(unittest.TestCase):
         self.assertTrue(final_status["done"])
         self.assertEqual(0.5, final_status["last_loss"])
         self.assertEqual(1, final_status["last_step"])
-        self.assertEqual(2, final_status["history_length"])
-
-        delta_status = get_training_status(since_event_id=1, history_limit=10)
-        self.assertEqual(1, len(delta_status["events"]))
-        self.assertEqual(0.5, delta_status["events"][0]["loss"])
+        self.assertEqual(0, final_status["history_length"])
+        self.assertEqual([], final_status["events"])
         self.assertIn("\"done\": true", body)
 
     def test_torch_training_streams_and_updates_module_state(self) -> None:

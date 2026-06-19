@@ -6,11 +6,101 @@ import os
 import shutil
 import tempfile
 import unittest
+from contextlib import asynccontextmanager
+from http.cookies import SimpleCookie
 from pathlib import Path
+from urllib.parse import urlsplit
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
+import anyio
+import httpx
 from neuralfn.semantic import ConversationalVocabulary, NUM_SEMANTIC_DIMS
+
+
+class _ASGITestClient:
+    def __init__(self, app) -> None:
+        self._app = app
+        self._cookies: dict[str, str] = {}
+
+    async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        request = httpx.Request(method, f"http://testserver{url}", **kwargs)
+        body = request.read()
+        headers = [
+            (key.lower().encode("latin-1"), value.encode("latin-1"))
+            for key, value in request.headers.items()
+        ]
+        if self._cookies:
+            cookie_header = "; ".join(f"{name}={value}" for name, value in self._cookies.items())
+            headers.append((b"cookie", cookie_header.encode("latin-1")))
+        parsed = urlsplit(url)
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0", "spec_version": "2.3"},
+            "http_version": "1.1",
+            "method": method.upper(),
+            "scheme": "http",
+            "path": parsed.path,
+            "raw_path": parsed.path.encode("ascii"),
+            "query_string": parsed.query.encode("ascii"),
+            "headers": headers,
+            "client": ("testclient", 50000),
+            "server": ("testserver", 80),
+            "root_path": "",
+        }
+        sent_request = False
+        status_code = 500
+        response_headers: list[tuple[bytes, bytes]] = []
+        response_body = bytearray()
+
+        async def receive():
+            nonlocal sent_request
+            if not sent_request:
+                sent_request = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            await anyio.sleep(3600)
+            return {"type": "http.disconnect"}
+
+        async def send(message):
+            nonlocal status_code, response_headers
+            if message["type"] == "http.response.start":
+                status_code = int(message["status"])
+                response_headers = list(message.get("headers", []))
+            elif message["type"] == "http.response.body":
+                response_body.extend(message.get("body", b""))
+
+        await self._app(scope, receive, send)
+        decoded_headers = {
+            key.decode("latin-1"): value.decode("latin-1")
+            for key, value in response_headers
+        }
+        for key, value in response_headers:
+            if key.lower() == b"set-cookie":
+                cookie = SimpleCookie()
+                cookie.load(value.decode("latin-1"))
+                for name, morsel in cookie.items():
+                    if morsel.value:
+                        self._cookies[name] = morsel.value
+                    else:
+                        self._cookies.pop(name, None)
+        return httpx.Response(status_code, headers=decoded_headers, content=bytes(response_body), request=request)
+
+    def request(self, method: str, url: str, **kwargs):
+        async def runner():
+            return await self._request(method, url, **kwargs)
+
+        return anyio.run(runner)
+
+    def get(self, url: str, **kwargs):
+        return self.request("GET", url, **kwargs)
+
+    def post(self, url: str, **kwargs):
+        return self.request("POST", url, **kwargs)
+
+    def put(self, url: str, **kwargs):
+        return self.request("PUT", url, **kwargs)
+
+    def close(self) -> None:
+        return None
 
 
 class SettingsDefaultsTest(unittest.TestCase):
@@ -34,7 +124,7 @@ class PlatformApiTest(unittest.TestCase):
         os.environ["NEURALFN_CREATE_SCHEMA_ON_STARTUP"] = "1"
         os.environ["NEURALFN_SNAPSHOTS_DIR"] = os.path.join(self.temp_dir, "session_snapshots")
         os.environ["NEURALFN_ARTIFACTS_DIR"] = os.path.join(self.temp_dir, "artifacts")
-        os.environ.pop("NEURALFN_REDIS_URL", None)
+        os.environ["NEURALFN_REDIS_URL"] = ""
 
         import server.settings as settings_module
         import server.db as db_module
@@ -43,8 +133,13 @@ class PlatformApiTest(unittest.TestCase):
         import server.services.dataset_service as dataset_service_module
         import server.services.session_service as session_service_module
         import server.services.run_service as run_service_module
+        import server.services.persistence_worker as persistence_worker_module
         import server.dataset_manager as dataset_manager_module
-        import server.app as app_module
+        import fastapi.concurrency as fastapi_concurrency
+        import fastapi.routing as fastapi_routing
+        import fastapi.dependencies.utils as fastapi_dependencies_utils
+        import starlette.concurrency as starlette_concurrency
+        import anyio.to_thread as anyio_to_thread
 
         settings_module.get_settings.cache_clear()
         db_module.get_engine.cache_clear()
@@ -54,22 +149,66 @@ class PlatformApiTest(unittest.TestCase):
         dataset_service_module._dataset_service = None
         session_service_module._workspace_service = None
         run_service_module._run_service = None
+        persistence_worker_module._worker = None
         self._original_datasets_dir = dataset_manager_module.DATASETS_DIR
+        self._original_run_in_threadpool = fastapi_routing.run_in_threadpool
+        self._original_fastapi_concurrency_run_in_threadpool = fastapi_concurrency.run_in_threadpool
+        self._original_starlette_run_in_threadpool = starlette_concurrency.run_in_threadpool
+        self._original_contextmanager_in_threadpool = fastapi_dependencies_utils.contextmanager_in_threadpool
+        self._original_anyio_run_sync = anyio_to_thread.run_sync
+
+        async def inline_run_in_threadpool(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        async def inline_anyio_run_sync(func, *args, **kwargs):
+            kwargs.pop("abandon_on_cancel", None)
+            kwargs.pop("cancellable", None)
+            kwargs.pop("limiter", None)
+            return func(*args, **kwargs)
+
+        @asynccontextmanager
+        async def inline_contextmanager_in_threadpool(cm):
+            value = cm.__enter__()
+            try:
+                yield value
+            except BaseException as exc:
+                suppress = cm.__exit__(type(exc), exc, exc.__traceback__)
+                if not suppress:
+                    raise
+            else:
+                cm.__exit__(None, None, None)
+
+        fastapi_routing.run_in_threadpool = inline_run_in_threadpool
+        fastapi_concurrency.run_in_threadpool = inline_run_in_threadpool
+        starlette_concurrency.run_in_threadpool = inline_run_in_threadpool
+        fastapi_dependencies_utils.contextmanager_in_threadpool = inline_contextmanager_in_threadpool
+        anyio_to_thread.run_sync = inline_anyio_run_sync
         dataset_manager_module.DATASETS_DIR = Path(self.temp_dir) / "datasets"
         dataset_manager_module.DATASETS_DIR.mkdir(parents=True, exist_ok=True)
 
+        app_module = importlib.import_module("server.app")
         app_module = importlib.reload(app_module)
-        self.client_manager = TestClient(app_module.app)
-        self.client = self.client_manager.__enter__()
+        db_module.init_db()
+        self.client = _ASGITestClient(app_module.app)
 
     def tearDown(self) -> None:
-        self.client_manager.__exit__(None, None, None)
+        self.client.close()
         import server.db as db_module
         import server.dataset_manager as dataset_manager_module
+        import fastapi.concurrency as fastapi_concurrency
+        import fastapi.routing as fastapi_routing
+        import fastapi.dependencies.utils as fastapi_dependencies_utils
+        import starlette.concurrency as starlette_concurrency
+        import anyio.to_thread as anyio_to_thread
         db_module.get_engine().dispose()
         db_module.get_engine.cache_clear()
         db_module.get_session_factory.cache_clear()
         dataset_manager_module.DATASETS_DIR = self._original_datasets_dir
+        fastapi_routing.run_in_threadpool = self._original_run_in_threadpool
+        fastapi_concurrency.run_in_threadpool = self._original_fastapi_concurrency_run_in_threadpool
+        starlette_concurrency.run_in_threadpool = self._original_starlette_run_in_threadpool
+        fastapi_dependencies_utils.contextmanager_in_threadpool = self._original_contextmanager_in_threadpool
+        anyio_to_thread.run_sync = self._original_anyio_run_sync
         shutil.rmtree(self.temp_dir, ignore_errors=True)
         os.environ.pop("NEURALFN_DATABASE_URL", None)
         os.environ.pop("NEURALFN_CREATE_SCHEMA_ON_STARTUP", None)
@@ -276,7 +415,7 @@ class PlatformApiTest(unittest.TestCase):
         root_edges_to_model = [
             edge for edge in graph["edges"].values() if edge["dst_node"] == "model"
         ]
-        self.assertEqual(2, len(root_edges_to_model))
+        self.assertEqual(3, len(root_edges_to_model))
 
     def test_semantic_dimensions_returns_dynamic_vocab_topic_counts(self) -> None:
         self._bootstrap_admin()
@@ -357,8 +496,8 @@ class PlatformApiTest(unittest.TestCase):
         self.assertEqual(["tiny_tokens"], loaded.json()["result"]["dataset_names"])
 
         def fake_torch_train(_trainer, train_inputs, train_targets, *, on_epoch=None):
-            self.assertTrue(train_inputs)
-            self.assertTrue(train_targets)
+            self.assertGreater(len(train_inputs), 0)
+            self.assertGreater(len(train_targets), 0)
             if on_epoch is not None:
                 on_epoch(0, 0.25)
             return [0.25]

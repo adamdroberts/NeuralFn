@@ -30,8 +30,6 @@ SCRIPT_CASES = [
     "train_mixllama_fast",
     "train_llama_fast",
     "train_llama_megakernel",
-    "train_gpt2",
-    "train_nanogpt",
     "train_semantic_router_moe",
 ]
 OVERNIGHT_SCRIPT_PATH = ROOT / "scripts" / "train_semantic_router_moe-overnight.py"

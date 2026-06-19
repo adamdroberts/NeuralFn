@@ -9,7 +9,37 @@ import numpy as np
 from server import dataset_manager as dm
 
 
+class _FakeO200kEncoding:
+    n_vocab = 200019
+    special_tokens_set = {"<|endoftext|>"}
+
+    def encode(self, text: str, *, allowed_special=None):
+        del allowed_special
+        tokens: list[int] = []
+        if text.startswith("<|endoftext|>"):
+            tokens.append(199999)
+            text = text[len("<|endoftext|>") :]
+        tokens.extend(1000 + ord(ch) for ch in text)
+        return tokens
+
+
 class DatasetManagerVariantsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._resolve_patch = patch(
+            "server.dataset_manager.resolve_tiktoken_encoding",
+            side_effect=self._resolve_tiktoken_encoding,
+        )
+        self._resolve_patch.start()
+
+    def tearDown(self) -> None:
+        self._resolve_patch.stop()
+
+    @staticmethod
+    def _resolve_tiktoken_encoding(encoding_name: str):
+        if str(encoding_name) == "o200k_base":
+            return _FakeO200kEncoding()
+        return dm.tiktoken.get_encoding(str(encoding_name))
+
     def _fake_download(self, repo_id: str, relative_path: str, destination: Path) -> Path:
         destination.parent.mkdir(parents=True, exist_ok=True)
         if relative_path == "datasets/manifest.json":

@@ -107,6 +107,11 @@ def _tiny_dense_evo_kwargs() -> dict:
 
 def _cpu_graph(graph):
     graph.torch_config = {**graph.torch_config, "device": "cpu", "amp_dtype": "bfloat16"}
+    template_spec = dict(graph.torch_config.get("template_spec", {}) or {})
+    template = dict(template_spec.get("template", {}) or {})
+    template["runtime"] = "eager"
+    template_spec["template"] = template
+    graph.torch_config["template_spec"] = template_spec
     return graph
 
 

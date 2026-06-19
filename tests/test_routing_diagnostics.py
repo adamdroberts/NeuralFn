@@ -12,7 +12,7 @@ from neuralfn.semantic import EXPERT_TO_DIMENSION, NUM_SEMANTIC_DIMS, NUM_VOCAB_
 from neuralfn.torch_backend import SemanticHashRouterStage, TopKRouteStage
 from neuralfn.torch_templates import build_model_spec_from_config
 
-HARNESS_SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "neuralfn-sdk-harness" / "scripts"
+HARNESS_SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "cli" / "scripts"
 
 
 def _load_harness_module(module_name: str, file_name: str):
@@ -44,7 +44,16 @@ def _load_train_semantic_router_module():
 
 
 def _cpu_graph(graph):
-    graph.torch_config = {**graph.torch_config, "device": "cpu", "amp_dtype": "bfloat16"}
+    template_spec = dict(graph.torch_config.get("template_spec", {}))
+    template = dict(template_spec.get("template", {}))
+    template["runtime"] = "eager"
+    template_spec["template"] = template
+    graph.torch_config = {
+        **graph.torch_config,
+        "device": "cpu",
+        "amp_dtype": "bfloat16",
+        "template_spec": template_spec,
+    }
     return graph
 
 
@@ -60,9 +69,8 @@ def _toy_text_inputs() -> tuple[list[list[int]], list[list[int]]]:
     return inputs, targets
 
 
-def _toy_semantic_targets() -> torch.utils.data.TensorDataset:
-    sem_targets = torch.full((2, 9), SEMANTIC_IGNORE_INDEX, dtype=torch.long)
-    return torch.utils.data.TensorDataset(sem_targets)
+def _toy_semantic_targets() -> torch.Tensor:
+    return torch.full((2, 9), SEMANTIC_IGNORE_INDEX, dtype=torch.long)
 
 
 def _make_graph(preset: str):
@@ -75,8 +83,11 @@ def _make_graph(preset: str):
         "num_kv_heads": 4,
         "multiple_of": 16,
     }
-    if preset in {"mixllama_fast", "semantic_router_moe"}:
+    if preset == "mixllama_fast":
         config["experts"] = 8
+        config["top_k"] = 2
+    elif preset == "semantic_router_moe":
+        config["experts"] = NUM_VOCAB_DIMS
         config["top_k"] = 2
     spec = build_model_spec_from_config(config, preview_defaults=True)
     return _cpu_graph(build_gpt_root_graph(name=f"{preset}_routing_diag", model_spec=spec))

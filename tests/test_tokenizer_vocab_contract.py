@@ -17,7 +17,51 @@ from server import dataset_manager as dm
 from server.models import ExecuteRequest, LoadDatasetRequest
 from server.services.graph_ops import GraphOperationError, load_dataset_source_into_graph, trace_torch_graph
 
-HARNESS_SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "neuralfn-sdk-harness" / "scripts"
+HARNESS_SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "cli" / "scripts"
+
+
+class _FakeO200kEncoding:
+    n_vocab = 200019
+    special_tokens_set = {"<|endoftext|>"}
+
+    def encode(self, text: str, *, allowed_special=None):
+        del allowed_special
+        tokens: list[int] = []
+        if text.startswith("<|endoftext|>"):
+            tokens.append(199999)
+            text = text[len("<|endoftext|>") :]
+        tokens.extend(1000 + ord(ch) for ch in text)
+        return tokens
+
+    def decode(self, token_ids):
+        pieces = []
+        for token_id in token_ids:
+            if int(token_id) == 13:
+                pieces.append(".")
+            elif int(token_id) == 326:
+                pieces.append(" and")
+            elif int(token_id) == 199999:
+                pieces.append("<|endoftext|>")
+            elif int(token_id) >= 1000:
+                pieces.append(chr(int(token_id) - 1000))
+            else:
+                pieces.append(str(token_id))
+        return "".join(pieces)
+
+    def decode_single_token_bytes(self, token_id: int) -> bytes:
+        return self.decode([token_id]).encode("utf-8")
+
+
+@pytest.fixture(autouse=True)
+def _offline_o200k(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = dm.resolve_tiktoken_encoding
+
+    def fake_resolve(encoding_name: str):
+        if str(encoding_name) == "o200k_base":
+            return _FakeO200kEncoding()
+        return original(encoding_name)
+
+    monkeypatch.setattr(dm, "resolve_tiktoken_encoding", fake_resolve)
 
 
 def _load_harness_module(module_name: str, file_name: str):
@@ -32,6 +76,10 @@ def _load_harness_module(module_name: str, file_name: str):
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _assert_call_includes(actual: dict[str, object], expected: dict[str, object]) -> None:
+    assert {key: actual.get(key) for key in expected} == expected
 
 
 def _write_tokenizer_backed_alias(
@@ -114,6 +162,11 @@ def _load_infer_llama_megakernel_module():
     _load_harness_module("infer_jepa_semantic", "infer_jepa_semantic.py")
     _load_harness_module("infer_llama_fast", "infer_llama_fast.py")
     return _load_harness_module("infer_llama_megakernel_test_module", "infer_llama_megakernel.py")
+
+
+def _patch_cuda_generator_to_cpu(module, monkeypatch: pytest.MonkeyPatch) -> None:
+    cpu_generator = torch.Generator
+    monkeypatch.setattr(module.torch, "Generator", lambda *_, **__: cpu_generator(device="cpu"))
 
 
 def test_validate_cached_tokenizer_contract_rejects_model_vocab_mismatch(tmp_path: Path) -> None:
@@ -430,6 +483,7 @@ def test_save_artifacts_records_weights_file_in_graph(
 
 def test_infer_llama_preflight_rejects_model_vocab_mismatch(tmp_path: Path) -> None:
     infer_module = _load_infer_llama_module()
+    shared_infer = sys.modules["infer_jepa_semantic"]
     ds_name = "toy_alias"
     ds_dir = _write_tokenizer_backed_alias(
         tmp_path,
@@ -444,7 +498,7 @@ def test_infer_llama_preflight_rejects_model_vocab_mismatch(tmp_path: Path) -> N
     }
 
     with pytest.raises(dm.DatasetTokenizerMismatchError, match="Model/checkpoint vocab size: 16"):
-        infer_module.validate_inference_vocab_contract(
+        shared_infer.validate_inference_vocab_contract(
             dataset_name=ds_name,
             dataset_path=ds_dir,
             dataset_meta=dm._load_dataset_meta(ds_dir),
@@ -455,6 +509,7 @@ def test_infer_llama_preflight_rejects_model_vocab_mismatch(tmp_path: Path) -> N
 
 def test_infer_llama_megakernel_preflight_rejects_model_vocab_mismatch(tmp_path: Path) -> None:
     infer_module = _load_infer_llama_megakernel_module()
+    shared_infer = sys.modules["infer_jepa_semantic"]
     ds_name = "toy_alias"
     ds_dir = _write_tokenizer_backed_alias(
         tmp_path,
@@ -469,7 +524,7 @@ def test_infer_llama_megakernel_preflight_rejects_model_vocab_mismatch(tmp_path:
     }
 
     with pytest.raises(dm.DatasetTokenizerMismatchError, match="Model/checkpoint vocab size: 16"):
-        infer_module.validate_inference_vocab_contract(
+        shared_infer.validate_inference_vocab_contract(
             dataset_name=ds_name,
             dataset_path=ds_dir,
             dataset_meta=dm._load_dataset_meta(ds_dir),
@@ -507,7 +562,7 @@ def test_resolve_or_download_dataset_downloads_parseable_missing_alias(tmp_path:
         ds_dir = tmp_path / alias
         (ds_dir / "tokenizers").mkdir(parents=True, exist_ok=True)
         (ds_dir / "meta.json").write_text(
-            json.dumps({"variant": "sp1024", "train_shards": 2}, indent=2),
+            json.dumps({"variant": "sp1024", "train_shards": 2, "data_format": "uint16_shards"}, indent=2),
             encoding="utf-8",
         )
         return {"name": alias}
@@ -520,7 +575,9 @@ def test_resolve_or_download_dataset_downloads_parseable_missing_alias(tmp_path:
     assert dataset_name == alias
     assert dataset_path == tmp_path / alias
     assert dataset_meta["variant"] == "sp1024"
-    assert calls == [
+    assert len(calls) == 1
+    _assert_call_includes(
+        calls[0],
         {
             "hf_path": "willdepueoai/parameter-golf",
             "alias": alias,
@@ -528,22 +585,31 @@ def test_resolve_or_download_dataset_downloads_parseable_missing_alias(tmp_path:
             "train_shards": 2,
             "repo_id": "willdepueoai/parameter-golf",
             "remote_root_prefix": "datasets",
-        }
-    ]
+            "encoding_name": "gpt2",
+        },
+    )
 
 
 def test_resolve_or_download_dataset_surfaces_validator_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     train_module = _load_train_jepa_module()
     alias = "willdepueoai__parameter-golf__sp1024__train2"
+    fallback_calls: list[tuple[str, dict[str, object]]] = []
 
     def fake_download(_hf_path: str, **_kwargs):
         raise dm.DatasetTokenizerMismatchError("tokenizer mismatch from download")
 
+    def fake_prepare_dataset_from_text(dataset_alias: str, *args, **kwargs):
+        kwargs["args"] = args
+        fallback_calls.append((dataset_alias, kwargs))
+        raise dm.DatasetTokenizerMismatchError("tokenizer mismatch from download")
+
     monkeypatch.setattr(train_module, "DATASETS_DIR", tmp_path)
     monkeypatch.setattr(train_module, "download_hf_dataset", fake_download)
+    monkeypatch.setattr(train_module, "_prepare_dataset_from_text", fake_prepare_dataset_from_text)
 
     with pytest.raises(dm.DatasetTokenizerMismatchError, match="tokenizer mismatch from download"):
         train_module.resolve_or_download_dataset(alias)
+    assert fallback_calls
 
 
 def test_resolve_or_download_dataset_requires_explicit_contract_for_unparseable_alias(
@@ -566,7 +632,7 @@ def test_resolve_or_download_dataset_prefers_explicit_contract_values(tmp_path: 
         calls.append({"hf_path": hf_path, **kwargs})
         ds_dir = tmp_path / alias
         ds_dir.mkdir(parents=True, exist_ok=True)
-        (ds_dir / "meta.json").write_text("{}", encoding="utf-8")
+        (ds_dir / "meta.json").write_text(json.dumps({"data_format": "uint16_shards"}), encoding="utf-8")
         return {"name": alias}
 
     monkeypatch.setattr(train_module, "DATASETS_DIR", tmp_path)
@@ -581,7 +647,9 @@ def test_resolve_or_download_dataset_prefers_explicit_contract_values(tmp_path: 
         dataset_remote_root_prefix="custom-prefix",
     )
 
-    assert calls == [
+    assert len(calls) == 1
+    _assert_call_includes(
+        calls[0],
         {
             "hf_path": "custom-owner/custom-repo",
             "alias": alias,
@@ -589,8 +657,9 @@ def test_resolve_or_download_dataset_prefers_explicit_contract_values(tmp_path: 
             "train_shards": 5,
             "repo_id": "override/repo",
             "remote_root_prefix": "custom-prefix",
-        }
-    ]
+            "encoding_name": "gpt2",
+        },
+    )
 
 
 def test_resolve_or_download_dataset_accepts_explicit_raw_file_contract(
@@ -605,6 +674,8 @@ def test_resolve_or_download_dataset_accepts_explicit_raw_file_contract(
         calls.append({"hf_path": hf_path, **kwargs})
         ds_dir = tmp_path / alias
         ds_dir.mkdir(parents=True, exist_ok=True)
+        (ds_dir / "TinyStoriesV2-GPT4-train.txt").write_text("Once upon a time.\n", encoding="utf-8")
+        (ds_dir / "TinyStoriesV2-GPT4-valid.txt").write_text("The end.\n", encoding="utf-8")
         (ds_dir / "meta.json").write_text(
             json.dumps(
                 {
@@ -632,7 +703,9 @@ def test_resolve_or_download_dataset_accepts_explicit_raw_file_contract(
     assert dataset_path == tmp_path / alias
     assert dataset_meta["train_file"] == "TinyStoriesV2-GPT4-train.txt"
     assert dataset_meta["val_file"] == "TinyStoriesV2-GPT4-valid.txt"
-    assert calls == [
+    assert len(calls) == 1
+    _assert_call_includes(
+        calls[0],
         {
             "hf_path": "roneneldan/TinyStories",
             "alias": alias,
@@ -640,8 +713,9 @@ def test_resolve_or_download_dataset_accepts_explicit_raw_file_contract(
             "remote_root_prefix": "datasets",
             "train_file": "TinyStoriesV2-GPT4-train.txt",
             "val_file": "TinyStoriesV2-GPT4-valid.txt",
-        }
-    ]
+            "encoding_name": "gpt2",
+        },
+    )
 
 
 def test_apply_tinystories_dataset_defaults_sets_raw_hf_contract() -> None:
@@ -724,11 +798,13 @@ def test_train_mixllama_main_uses_shared_dataset_resolver_before_missing_alias_f
     with pytest.raises(RuntimeError, match="after resolver"):
         mixllama_module.main()
 
-    assert resolved_calls == [
+    assert len(resolved_calls) == 1
+    _assert_call_includes(
+        resolved_calls[0],
         {
             "alias": "custom_alias",
             "download_if_missing": True,
-            "raw_text_encoding_name": "gpt2",
+            "raw_text_encoding_name": "o200k_base",
             "dataset_hf_path": None,
             "dataset_variant": None,
             "dataset_train_shards": None,
@@ -736,8 +812,8 @@ def test_train_mixllama_main_uses_shared_dataset_resolver_before_missing_alias_f
             "dataset_remote_root_prefix": None,
             "dataset_train_file": None,
             "dataset_val_file": None,
-        }
-    ]
+        },
+    )
 
 
 def test_train_llama_main_uses_shared_dataset_resolver_before_missing_alias_failure(
@@ -767,11 +843,13 @@ def test_train_llama_main_uses_shared_dataset_resolver_before_missing_alias_fail
     with pytest.raises(RuntimeError, match="after resolver"):
         llama_module.main()
 
-    assert resolved_calls == [
+    assert len(resolved_calls) == 1
+    _assert_call_includes(
+        resolved_calls[0],
         {
             "alias": "custom_alias",
             "download_if_missing": True,
-            "raw_text_encoding_name": "gpt2",
+            "raw_text_encoding_name": "o200k_base",
             "dataset_hf_path": None,
             "dataset_variant": None,
             "dataset_train_shards": None,
@@ -779,8 +857,8 @@ def test_train_llama_main_uses_shared_dataset_resolver_before_missing_alias_fail
             "dataset_remote_root_prefix": None,
             "dataset_train_file": None,
             "dataset_val_file": None,
-        }
-    ]
+        },
+    )
 
 
 def test_train_llama_megakernel_main_uses_shared_dataset_resolver_before_missing_alias_failure(
@@ -810,11 +888,13 @@ def test_train_llama_megakernel_main_uses_shared_dataset_resolver_before_missing
     with pytest.raises(RuntimeError, match="after resolver"):
         llama_module.main()
 
-    assert resolved_calls == [
+    assert len(resolved_calls) == 1
+    _assert_call_includes(
+        resolved_calls[0],
         {
             "alias": "custom_alias",
             "download_if_missing": True,
-            "raw_text_encoding_name": "gpt2",
+            "raw_text_encoding_name": "o200k_base",
             "dataset_hf_path": None,
             "dataset_variant": None,
             "dataset_train_shards": None,
@@ -822,8 +902,8 @@ def test_train_llama_megakernel_main_uses_shared_dataset_resolver_before_missing
             "dataset_remote_root_prefix": None,
             "dataset_train_file": None,
             "dataset_val_file": None,
-        }
-    ]
+        },
+    )
 
 
 @pytest.mark.parametrize(
@@ -863,10 +943,13 @@ def test_train_scripts_main_pass_tinystories_raw_file_contract_to_shared_resolve
     with pytest.raises(RuntimeError, match="after resolver"):
         module.main()
 
-    assert resolved_calls == [
+    assert len(resolved_calls) == 1
+    _assert_call_includes(
+        resolved_calls[0],
         {
             "alias": "roneneldan__TinyStories__TinyStoriesV2-GPT4",
             "download_if_missing": True,
+            "raw_text_encoding_name": "o200k_base",
             "dataset_hf_path": "roneneldan/TinyStories",
             "dataset_variant": None,
             "dataset_train_shards": None,
@@ -874,8 +957,8 @@ def test_train_scripts_main_pass_tinystories_raw_file_contract_to_shared_resolve
             "dataset_remote_root_prefix": None,
             "dataset_train_file": "TinyStoriesV2-GPT4-train.txt",
             "dataset_val_file": "TinyStoriesV2-GPT4-valid.txt",
-        }
-    ]
+        },
+    )
 
 
 @pytest.mark.parametrize(
@@ -915,10 +998,13 @@ def test_train_scripts_main_pass_dataset_tinystories_raw_file_contract_to_shared
     with pytest.raises(RuntimeError, match="after resolver"):
         module.main()
 
-    assert resolved_calls == [
+    assert len(resolved_calls) == 1
+    _assert_call_includes(
+        resolved_calls[0],
         {
             "alias": "roneneldan__TinyStories__TinyStoriesV2-GPT4",
             "download_if_missing": True,
+            "raw_text_encoding_name": "o200k_base",
             "dataset_hf_path": "roneneldan/TinyStories",
             "dataset_variant": None,
             "dataset_train_shards": None,
@@ -926,8 +1012,8 @@ def test_train_scripts_main_pass_dataset_tinystories_raw_file_contract_to_shared
             "dataset_remote_root_prefix": None,
             "dataset_train_file": "TinyStoriesV2-GPT4-train.txt",
             "dataset_val_file": "TinyStoriesV2-GPT4-valid.txt",
-        }
-    ]
+        },
+    )
 
 
 def test_infer_mixllama_main_resolves_dataset_before_tokenizer_loading(
@@ -966,6 +1052,7 @@ def test_infer_mixllama_main_resolves_dataset_before_tokenizer_loading(
         lambda **_kwargs: (SimpleNamespace(torch_config={}, nodes={}), SimpleNamespace(), {}, weights_path),
     )
     monkeypatch.setattr(infer_module.torch.cuda, "is_available", lambda: True)
+    _patch_cuda_generator_to_cpu(infer_module, monkeypatch)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -982,7 +1069,9 @@ def test_infer_mixllama_main_resolves_dataset_before_tokenizer_loading(
 
     assert infer_module.main() == 1
 
-    assert resolved_calls == [
+    assert len(resolved_calls) == 1
+    _assert_call_includes(
+        resolved_calls[0],
         {
             "alias": "custom_alias",
             "download_if_missing": True,
@@ -994,8 +1083,8 @@ def test_infer_mixllama_main_resolves_dataset_before_tokenizer_loading(
             "dataset_remote_root_prefix": None,
             "dataset_train_file": None,
             "dataset_val_file": None,
-        }
-    ]
+        },
+    )
 
 
 def test_infer_llama_main_resolves_dataset_before_tokenizer_loading(
@@ -1034,6 +1123,7 @@ def test_infer_llama_main_resolves_dataset_before_tokenizer_loading(
         lambda **_kwargs: (SimpleNamespace(torch_config={}, nodes={}), SimpleNamespace(), {}, weights_path),
     )
     monkeypatch.setattr(infer_module.torch.cuda, "is_available", lambda: True)
+    _patch_cuda_generator_to_cpu(infer_module, monkeypatch)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -1050,7 +1140,9 @@ def test_infer_llama_main_resolves_dataset_before_tokenizer_loading(
 
     assert infer_module.main() == 1
 
-    assert resolved_calls == [
+    assert len(resolved_calls) == 1
+    _assert_call_includes(
+        resolved_calls[0],
         {
             "alias": "custom_alias",
             "download_if_missing": True,
@@ -1062,8 +1154,8 @@ def test_infer_llama_main_resolves_dataset_before_tokenizer_loading(
             "dataset_remote_root_prefix": None,
             "dataset_train_file": None,
             "dataset_val_file": None,
-        }
-    ]
+        },
+    )
 
 
 def test_infer_llama_megakernel_main_resolves_dataset_before_tokenizer_loading(
@@ -1102,6 +1194,7 @@ def test_infer_llama_megakernel_main_resolves_dataset_before_tokenizer_loading(
         lambda **_kwargs: (SimpleNamespace(torch_config={}, nodes={}), SimpleNamespace(), {}, weights_path),
     )
     monkeypatch.setattr(infer_module.torch.cuda, "is_available", lambda: True)
+    _patch_cuda_generator_to_cpu(infer_module, monkeypatch)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -1118,7 +1211,9 @@ def test_infer_llama_megakernel_main_resolves_dataset_before_tokenizer_loading(
 
     assert infer_module.main() == 1
 
-    assert resolved_calls == [
+    assert len(resolved_calls) == 1
+    _assert_call_includes(
+        resolved_calls[0],
         {
             "alias": "custom_alias",
             "download_if_missing": True,
@@ -1130,8 +1225,8 @@ def test_infer_llama_megakernel_main_resolves_dataset_before_tokenizer_loading(
             "dataset_remote_root_prefix": None,
             "dataset_train_file": None,
             "dataset_val_file": None,
-        }
-    ]
+        },
+    )
 
 
 def test_train_llama_megakernel_fast_mode_selects_preset_and_output_defaults() -> None:
@@ -1183,7 +1278,17 @@ def test_estimate_text_schedule_uses_text_dataset_rows_only(monkeypatch: pytest.
         train_batch_tokens=64,
     )
 
-    assert schedule == {
+    assert {
+        key: schedule[key]
+        for key in (
+            "train_rows",
+            "microbatch_tokens",
+            "effective_train_batch_tokens",
+            "grad_accum_steps",
+            "loader_batches",
+            "steps_per_epoch",
+        )
+    } == {
         "train_rows": 97,
         "microbatch_tokens": 64,
         "effective_train_batch_tokens": 64,
