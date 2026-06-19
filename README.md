@@ -9,12 +9,13 @@ generic Python Tile extension and the trainer-facing raw C ABI both build from
 `neuralfn/csrc/tile_cuda/kernels.cu`; after toolkit changes, run
 `NFN_TILE_CUDA_TEST=1 python -m pytest tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py tests/test_tile_cuda_optimizer.py -q -rs`
 to confirm the extension executes GPU tests instead of skipping. After the
-CUDA Toolkit 13.3 WSL reinstall, the dedicated RTX 5090 path is correctness
-green (`537 passed` for the CUDA Tile GPU slice, native GPT tests green, and
-native no-Torch checks green), but dense GPT throughput is still about `1.03x`
-slower than `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`; the next
-parity work is a fused row-chunked LM-head backward kernel, not another setup
-or Torch fallback fix.
+CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 path is correctness
+green (`NFN_TILE_CUDA_TEST=1 python -m pytest --lf -q -rs` passed with
+`1167 passed`, the native CUDA binaries rebuild cleanly, and native no-Torch
+checks are green), but dense GPT throughput is still about `1.03x` slower than
+`/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`; the next parity work
+is a fused row-chunked LM-head backward kernel, not another setup or Torch
+fallback fix.
 
 For local server/editor development, leaving `NEURALFN_REDIS_URL` empty keeps
 live state and persistence in-process. Redis-backed deployments still enqueue

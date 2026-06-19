@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revisited the CUDA-visible failure set after installing CUDA Toolkit 13.3.33
+  for WSL on the dedicated RTX 5090. `nvcc --version` now reports
+  `V13.3.33`, `nvidia-smi` reports CUDA UMD `13.3` with no active GPU compute
+  processes before the run, and `NFN_TILE_CUDA_TEST=1 python -m pytest --lf -q -rs`
+  passed with `1167 passed, 20 warnings, 468 subtests passed`. Rebuilt both
+  native CUDA artifacts with `bash tools/build_native_gpt_cli.sh` and
+  `bash tools/build_native_train_tile_ops.sh`; `python tools/check_native_no_torch_deps.py`
+  reported every native training/inference entrypoint `ok`. The fresh
+  same-script 5-step, 2-sample stage-timed parity run measured llm.kittens at
+  `2481.764 ms/step` and NeuralFn at `2568.290 ms/step`, or `1.034910x`
+  NeuralFn train-loop wall time and `0.965859x` NeuralFn tokens/sec versus the
+  reference. This retest closes the stale failure concern: the remaining work is
+  still native kernel throughput in `block_backward` and `lm_head_backward`,
+  not a broken CUDA install, Torch leakage, or graph-editor tensor flow.
+
 - Fixed the CUDA 13.3 retest failure set instead of carrying stale pytest
   failures forward. The GPT-2 compatibility wrapper now exposes the legacy
   parser/helper surface expected by CLI tests (`--pretraining-file`, dataset
