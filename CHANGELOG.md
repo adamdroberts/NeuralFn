@@ -20,7 +20,10 @@ Future updates should append new entries here rather than replacing older notes.
   2-sample LM-head dHidden algorithm-0 probe measured `0.993367x` train-loop
   wall, but the 5-sample confirmation was effectively flat at `0.999739x`
   mean train-loop wall and `1.000326x` tokens/sec, so no default algorithm was
-  changed.
+  changed. A follow-up sweep kept LM-head dHidden algorithms 1-4 rejected:
+  algorithm 1 was one-sample noise (`0.998467x` wall), algorithms 2 and 3 were
+  slower (`1.023701x` and `1.010416x` wall), and algorithm 4 regressed in the
+  5-sample confirmation (`1.002073x` wall, `0.997933x` tokens/sec).
 
 - Fixed GPT-2 evo native dry-run command inspection. The legacy Python guard now
   normalizes `--native-cuda-dry-run` and `--native-cuda-print-command` before
