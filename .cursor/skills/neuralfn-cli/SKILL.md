@@ -182,7 +182,12 @@ Canonical docs:
   `nfn_native_tile_linear_weight_bf16_float32`,
   `nfn_native_tile_linear_weight_bf16_output_float32`, and
   `nfn_native_tile_linear_bf16_input_weight_bf16_float32`; block dInput GEMMs
-  should use `nfn_native_tile_linear_backward_input_weight_bf16_float32`. The
+  should use `nfn_native_tile_linear_backward_input_weight_bf16_float32`. Dense
+  GPT embedding forward should use
+  `nfn_native_tile_token_position_embedding_residual_u16_float32` on the
+  direct-u16 token path, report `embedding_residual_fusion_enabled: true`, and
+  keep `token_out` / `position_out` out of the startup float arena unless
+  `NFN_NATIVE_GPT_FUSE_EMBEDDING_RESIDUAL=0` is explicitly set. The
   default packed-QKV forward should run LN1 through
   `nfn_native_tile_layer_norm_with_stats_bf16_out_float32` and QKV through
   `nfn_native_tile_linear_bf16_input_weight_bf16_output_float32`, reporting

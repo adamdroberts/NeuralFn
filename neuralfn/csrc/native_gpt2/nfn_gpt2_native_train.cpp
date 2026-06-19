@@ -9491,6 +9491,8 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_scale_inplace_by_device_float32",
         "nfn_native_tile_token_embedding_float32",
         "nfn_native_tile_token_embedding_u16_float32",
+        "nfn_native_tile_token_position_embedding_residual_float32",
+        "nfn_native_tile_token_position_embedding_residual_u16_float32",
         "nfn_native_tile_token_embedding_backward_weight_float32",
         "nfn_native_tile_token_embedding_backward_weight_u16_float32",
         "nfn_native_tile_absolute_position_embedding_float32",
@@ -9645,6 +9647,26 @@ int run_transformer_lm_training_json(
     using TokenEmbeddingFn = int (*)(const float*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
     using TokenEmbeddingU16Fn =
         int (*)(const float*, const std::uint16_t*, float*, std::int64_t, std::int64_t, void*);
+    using TokenPositionEmbeddingResidualFn = int (*)(
+        const float*,
+        const std::int64_t*,
+        const float*,
+        const float*,
+        float*,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        void*);
+    using TokenPositionEmbeddingResidualU16Fn = int (*)(
+        const float*,
+        const std::uint16_t*,
+        const float*,
+        const float*,
+        float*,
+        std::int64_t,
+        std::int64_t,
+        std::int64_t,
+        void*);
     using TokenEmbeddingBackwardWeightFn = int (*)(
         const std::int64_t*, const float*, float*, std::int64_t, std::int64_t, void*);
     using TokenEmbeddingBackwardWeightU16Fn = int (*)(
@@ -9966,6 +9988,8 @@ int run_transformer_lm_training_json(
     ClipScaleFn clip_scale = nullptr;
     TokenEmbeddingFn token_embedding = nullptr;
     TokenEmbeddingU16Fn token_embedding_u16 = nullptr;
+    TokenPositionEmbeddingResidualFn token_position_embedding_residual = nullptr;
+    TokenPositionEmbeddingResidualU16Fn token_position_embedding_residual_u16 = nullptr;
     TokenEmbeddingBackwardWeightFn token_embedding_backward_weight = nullptr;
     TokenEmbeddingBackwardWeightU16Fn token_embedding_backward_weight_u16 = nullptr;
     PositionEmbeddingFn position_embedding = nullptr;
@@ -10227,6 +10251,12 @@ int run_transformer_lm_training_json(
                 token_embedding = load_symbol<TokenEmbeddingFn>(tile_handle, "nfn_native_tile_token_embedding_float32");
                 token_embedding_u16 =
                     load_symbol<TokenEmbeddingU16Fn>(tile_handle, "nfn_native_tile_token_embedding_u16_float32");
+                token_position_embedding_residual =
+                    load_symbol<TokenPositionEmbeddingResidualFn>(
+                        tile_handle, "nfn_native_tile_token_position_embedding_residual_float32");
+                token_position_embedding_residual_u16 =
+                    load_symbol<TokenPositionEmbeddingResidualU16Fn>(
+                        tile_handle, "nfn_native_tile_token_position_embedding_residual_u16_float32");
                 token_embedding_backward_weight = load_symbol<TokenEmbeddingBackwardWeightFn>(
                     tile_handle, "nfn_native_tile_token_embedding_backward_weight_float32");
                 token_embedding_backward_weight_u16 = load_symbol<TokenEmbeddingBackwardWeightU16Fn>(
@@ -10969,6 +10999,12 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_DIRECT_U16_TOKENS",
                               "NFN_NATIVE_GPT2_DIRECT_U16_TOKENS"}),
+            true);
+    const bool fuse_embedding_residual_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_FUSE_EMBEDDING_RESIDUAL",
+                              "NFN_NATIVE_GPT2_FUSE_EMBEDDING_RESIDUAL",
+                              "NFN_TILE_CUDA_FUSE_EMBEDDING_RESIDUAL"}),
             true);
     const bool startup_zero_adamw_state_only_enabled =
         env_flag_enabled_or_default(
@@ -12509,8 +12545,8 @@ int run_transformer_lm_training_json(
              {&lnf_weight_avg_sq, kDim, "lnf.weight.avg_sq"},
              {&lnf_bias_avg, kDim, "lnf.bias.avg"},
              {&lnf_bias_avg_sq, kDim, "lnf.bias.avg_sq"},
-             {&token_out, activation_elements, "token_out"},
-             {&position_out, activation_elements, "position_out"},
+             {&token_out, fuse_embedding_residual_enabled ? 0 : activation_elements, "token_out"},
+             {&position_out, fuse_embedding_residual_enabled ? 0 : activation_elements, "position_out"},
              {&x, activation_elements, "embedding_residual"},
              {&lnf_mean, rows, "lnf.mean"},
              {&lnf_rstd, rows, "lnf.rstd"},
@@ -16157,7 +16193,33 @@ int run_transformer_lm_training_json(
         bool copy_loss_to_host) -> double {
         const std::int64_t stage_event = stage_begin(label + ".model_forward");
         if (error.empty()) {
-            if (direct_u16_token_ids_enabled) {
+            if (fuse_embedding_residual_enabled) {
+                if (direct_u16_token_ids_enabled) {
+                    run(token_position_embedding_residual_u16(
+                            token_weight,
+                            token_ids_u16,
+                            position_weight,
+                            residual_scale,
+                            x,
+                            active_batch_size,
+                            seq_len,
+                            kDim,
+                            nullptr),
+                        label + ".embedding.residual_fused.u16");
+                } else {
+                    run(token_position_embedding_residual(
+                            token_weight,
+                            token_ids,
+                            position_weight,
+                            residual_scale,
+                            x,
+                            active_batch_size,
+                            seq_len,
+                            kDim,
+                            nullptr),
+                        label + ".embedding.residual_fused");
+                }
+            } else if (direct_u16_token_ids_enabled) {
                 run(token_embedding_u16(token_weight, token_ids_u16, token_out, active_rows, kDim, nullptr),
                     label + ".wte.forward.u16");
             } else {
@@ -16165,8 +16227,16 @@ int run_transformer_lm_training_json(
                     label + ".wte.forward");
             }
         }
-	        if (error.empty()) run(position_embedding(position_weight, position_out, active_batch_size, seq_len, kDim, nullptr), label + ".wpe.forward");
-	        if (error.empty()) run(residual_add(token_out, position_out, residual_scale, x, active_activation_elements, nullptr), label + ".embedding.residual");
+        if (!fuse_embedding_residual_enabled) {
+            if (error.empty()) {
+                run(position_embedding(position_weight, position_out, active_batch_size, seq_len, kDim, nullptr),
+                    label + ".wpe.forward");
+            }
+            if (error.empty()) {
+                run(residual_add(token_out, position_out, residual_scale, x, active_activation_elements, nullptr),
+                    label + ".embedding.residual");
+            }
+        }
 	        const float* block_input = x;
 	        float* final_block_output = x;
 	        std::fill(ln1_precomputed.begin(), ln1_precomputed.end(), 0);
@@ -18276,6 +18346,22 @@ int run_transformer_lm_training_json(
         << "  \"train_loss_sampling\": \"disabled\",\n"
         << "  \"train_loss_on_validation_steps\": false,\n"
         << "  \"token_id_direct_u16_enabled\": " << (direct_u16_token_ids_enabled ? "true" : "false") << ",\n"
+        << "  \"embedding_residual_fusion_enabled\": "
+        << (fuse_embedding_residual_enabled ? "true" : "false") << ",\n"
+        << "  \"embedding_residual_strategy\": \""
+        << (fuse_embedding_residual_enabled
+                ? (direct_u16_token_ids_enabled
+                       ? "fused-token-u16-position-residual"
+                       : "fused-token-i64-position-residual")
+                : "separate-token-position-residual-add")
+        << "\",\n"
+        << "  \"embedding_residual_intermediate_float_buffers_elided\": "
+        << (fuse_embedding_residual_enabled ? 2 : 0) << ",\n"
+        << "  \"embedding_residual_intermediate_float_bytes_elided\": "
+        << (fuse_embedding_residual_enabled
+                ? active_activation_elements * 2 * static_cast<std::int64_t>(sizeof(float))
+                : 0)
+        << ",\n"
         << "  \"token_id_upload_strategy\": \""
         << (direct_u16_token_ids_enabled
                 ? "uint16-pinned-async-h2d-direct-kernel-consumption"

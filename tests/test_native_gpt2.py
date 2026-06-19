@@ -5123,6 +5123,16 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_TK_FORWARD_ENABLE_SHAPE" in kernels_text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_ENABLE_SHAPE" in kernels_text
+    assert "token_position_embedding_residual_float32_kernel" in kernels_text
+    assert "token_position_embedding_residual_u16_float32_kernel" in kernels_text
+    assert "nfn_native_tile_token_position_embedding_residual_float32" in gpt2_source_text
+    assert "nfn_native_tile_token_position_embedding_residual_u16_float32" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_FUSE_EMBEDDING_RESIDUAL" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_FUSE_EMBEDDING_RESIDUAL" in gpt2_source_text
+    assert "NFN_TILE_CUDA_FUSE_EMBEDDING_RESIDUAL" in gpt2_source_text
+    assert "embedding_residual_fusion_enabled" in gpt2_source_text
+    assert "embedding_residual_intermediate_float_buffers_elided" in gpt2_source_text
+    assert "fuse_embedding_residual_enabled ? 0 : activation_elements" in gpt2_source_text
     assert "shape.m = 50304" in kernels_text
     assert "shape.n = 8192" in kernels_text
     assert "NFN_TILE_CUDA_CE_BF16_THREADS" in kernels_text

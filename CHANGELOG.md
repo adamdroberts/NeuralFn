@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Defaulted dense GPT native embedding forward to a fused Tile-CUDA token
+  embedding + absolute position embedding + scaled residual kernel. The new raw
+  ABI exports `nfn_native_tile_token_position_embedding_residual_float32` and
+  `nfn_native_tile_token_position_embedding_residual_u16_float32`; the dense
+  transformer trainer uses the u16 variant on the default direct-token path,
+  eliding the `token_out` and `position_out` FP32 activation buffers
+  (`402653184` bytes at the default `64 x 1024 x 768` shape). Set
+  `NFN_NATIVE_GPT_FUSE_EMBEDDING_RESIDUAL=0`,
+  `NFN_NATIVE_GPT2_FUSE_EMBEDDING_RESIDUAL=0`, or
+  `NFN_TILE_CUDA_FUSE_EMBEDDING_RESIDUAL=0` to restore the older three-launch
+  embedding path for paired diagnostics. Dedicated RTX 5090 same-script timing
+  measured the old opt-out path at `1.001318x` train-loop wall time and
+  `0.998685x` tokens/sec versus the fused default over five samples.
+  Verification: `bash tools/build_native_train_tile_ops.sh`;
+  `bash tools/build_native_gpt_cli.sh`; focused native GPT pytest C ABI/source
+  slice; `python tools/check_native_no_torch_deps.py`; `git diff --check`;
+  dedicated RTX 5090 native-vs-native benchmark with selected-GPU idle checks.
+
 - Revisited the BF16 classifier dlogit vector-store candidate after the BF16 CE
   vector-load default and the CUDA Toolkit 13.3.33 WSL reinstall. The dedicated
   RTX 5090 same-script 5-step, 5-sample benchmark with selected-GPU idle checks

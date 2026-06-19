@@ -926,6 +926,26 @@ void launch_token_embedding_u16_float32(
     std::int64_t tokens,
     std::int64_t model_dim,
     cudaStream_t stream);
+void launch_token_position_embedding_residual_float32(
+    const float* token_weight,
+    const std::int64_t* token_ids,
+    const float* position_weight,
+    const float* scale,
+    float* out,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    cudaStream_t stream);
+void launch_token_position_embedding_residual_u16_float32(
+    const float* token_weight,
+    const std::uint16_t* token_ids,
+    const float* position_weight,
+    const float* scale,
+    float* out,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    cudaStream_t stream);
 void launch_token_embedding_backward_weight_float32(
     const std::int64_t* token_ids,
     const float* grad_out,
@@ -3601,6 +3621,52 @@ int nfn_native_tile_token_embedding_u16_float32(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_token_embedding_u16_float32(
         weight, token_ids, out, tokens, model_dim, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_token_position_embedding_residual_float32(
+    const float* token_weight,
+    const std::int64_t* token_ids,
+    const float* position_weight,
+    const float* scale,
+    float* out,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_token_position_embedding_residual_float32(
+        token_weight,
+        token_ids,
+        position_weight,
+        scale,
+        out,
+        batch,
+        seq_len,
+        model_dim,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_token_position_embedding_residual_u16_float32(
+    const float* token_weight,
+    const std::uint16_t* token_ids,
+    const float* position_weight,
+    const float* scale,
+    float* out,
+    std::int64_t batch,
+    std::int64_t seq_len,
+    std::int64_t model_dim,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_token_position_embedding_residual_u16_float32(
+        token_weight,
+        token_ids,
+        position_weight,
+        scale,
+        out,
+        batch,
+        seq_len,
+        model_dim,
+        as_stream(cuda_stream));
     return launch_status();
 }
 

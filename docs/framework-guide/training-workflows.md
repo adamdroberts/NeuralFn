@@ -30,6 +30,15 @@ native MoA activation, use the implemented compiled CUDA Tile trainer; unsupport
 templates and graph files fail fast with native missing-trainer JSON instead of
 falling back to Torch.
 
+Dense GPT native transformer training now fuses token embedding, absolute
+position embedding, and the scaled embedding residual add in the raw Tile-CUDA
+ABI. The default direct-u16 token path uses
+`nfn_native_tile_token_position_embedding_residual_u16_float32`, reports
+`embedding_residual_fusion_enabled: true`, and elides the separate `token_out`
+and `position_out` FP32 activation buffers from the startup arena. Set
+`NFN_NATIVE_GPT_FUSE_EMBEDDING_RESIDUAL=0` only for paired diagnostics against
+the older three-launch embedding path.
+
 ---
 
 ## 1. Surrogate training
