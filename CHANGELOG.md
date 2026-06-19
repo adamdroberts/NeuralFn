@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended paired CUDA benchmark metric gates with statistic-qualified checks.
+  Existing `--max-candidate-ratio METRIC=RATIO` entries still gate the mean
+  candidate-over-baseline ratio, while `median:METRIC=RATIO`,
+  `min:METRIC=RATIO`, and `max:METRIC=RATIO` gate the corresponding statistic.
+  This lets noisy RTX 5090 kernel candidates require both mean and median hot
+  metrics such as `median:train_loop_wall_ms_per_step=1.000` before a default
+  route is promoted. `tools/bench_native_gpt_sm120_candidate.sh` forwards the
+  same syntax through `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` and
+  `NFN_SM120_CANDIDATE_MAX_CANDIDATE_RATIO`. Verification:
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k
+  metric_ratio_gate`, `python -m py_compile tools/paired_kernel_speed.py`, and
+  `git diff --check`.
+
 - Changed `neuralfn.native_train` dense GPT SDK dispatch to skip the generic
   `nfn_native_train` frontend when a direct GPT family binary is configured or
   built. `build_native_train_run_config("gpt"|"gpt2"|"gpt3"|"nanogpt", ...)`
@@ -24,7 +37,7 @@ Future updates should append new entries here rather than replacing older notes.
 
 - Added candidate-over-baseline metric-ratio gates to the paired CUDA benchmark
   tooling. `tools/paired_kernel_speed.py` now accepts repeatable
-  `--max-candidate-ratio METRIC=RATIO` checks, records
+  `--max-candidate-ratio [STAT:]METRIC=RATIO` checks, records
   `metric_ratio_gates` in JSON/text output, and exits nonzero after writing the
   report when a candidate regresses a required native metric or when the metric
   is missing. `tools/bench_native_gpt_sm120_candidate.sh` forwards

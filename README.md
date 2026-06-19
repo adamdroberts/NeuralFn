@@ -97,11 +97,14 @@ both commands by default; pass `--cuda-device-max-connections ""` to leave that
 environment unchanged. Pass repeatable `--baseline-env KEY=VALUE` or
 `--candidate-env KEY=VALUE` flags for environment-gated kernel candidates; these
 overrides apply only to that side of the pair and are recorded in the JSON/text
-output. Pass repeatable `--max-candidate-ratio METRIC=RATIO` gates when a
+output. Pass repeatable `--max-candidate-ratio [STAT:]METRIC=RATIO` gates when a
 candidate must not regress a hot native metric such as
 `stage.lm_head_backward.total_ms`, `stage.block_backward.total_ms`, or
-`train_loop_wall_ms_per_step`; missing metrics fail the gate so a stage-timing
-or JSON-output mistake cannot be accepted as a passing kernel result.
+`train_loop_wall_ms_per_step`; `STAT` defaults to `mean` and can be `median`,
+`min`, or `max`, so use gates such as
+`median:train_loop_wall_ms_per_step=1.000` for noisy GPU timing. Missing metrics
+fail the gate so a stage-timing or JSON-output mistake cannot be accepted as a
+passing kernel result.
 `--command-timeout-seconds N` terminates the timed-out command's process
 group so a slow native candidate does not leave child GPU work running after the
 sample is recorded. Interrupting the helper also terminates the active command

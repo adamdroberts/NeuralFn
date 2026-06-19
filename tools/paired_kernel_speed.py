@@ -35,6 +35,7 @@ class TimedCommand:
 class MetricRatioLimit:
     metric: str
     max_ratio: float
+    stat: str = "mean"
 
 
 NATIVE_METRIC_PATHS = (
@@ -311,9 +312,11 @@ def parse_args() -> argparse.Namespace:
         "--max-candidate-ratio",
         action="append",
         default=[],
-        metavar="METRIC=RATIO",
+        metavar="[STAT:]METRIC=RATIO",
         help=(
-            "Fail after measurement if the candidate-over-baseline mean ratio for METRIC exceeds RATIO. "
+            "Fail after measurement if the candidate-over-baseline ratio statistic for METRIC exceeds RATIO. "
+            "STAT defaults to mean and may be mean, median, min, or max, e.g. "
+            "median:train_loop_wall_ms_per_step=1.000. "
             "Use native metric names such as stage.lm_head_backward.total_ms or "
             "train_loop_wall_ms_per_step. Repeat for multiple hot-bucket gates."
         ),
@@ -337,8 +340,16 @@ def parse_metric_ratio_limits(values: Sequence[str]) -> list[MetricRatioLimit]:
     limits: list[MetricRatioLimit] = []
     for raw in values:
         if "=" not in raw:
-            raise SystemExit(f"--max-candidate-ratio expects METRIC=RATIO, got {raw!r}")
-        metric, ratio_text = raw.split("=", 1)
+            raise SystemExit(f"--max-candidate-ratio expects [STAT:]METRIC=RATIO, got {raw!r}")
+        metric_text, ratio_text = raw.split("=", 1)
+        stat = "mean"
+        metric = metric_text.strip()
+        if ":" in metric:
+            maybe_stat, maybe_metric = metric.split(":", 1)
+            maybe_stat = maybe_stat.strip().lower()
+            if maybe_stat in {"mean", "median", "min", "max"}:
+                stat = maybe_stat
+                metric = maybe_metric.strip()
         metric = metric.strip()
         if not metric:
             raise SystemExit("--max-candidate-ratio expects a non-empty metric name")
@@ -350,7 +361,7 @@ def parse_metric_ratio_limits(values: Sequence[str]) -> list[MetricRatioLimit]:
             ) from exc
         if max_ratio <= 0.0:
             raise SystemExit(f"--max-candidate-ratio for {metric!r} must be positive")
-        limits.append(MetricRatioLimit(metric=metric, max_ratio=max_ratio))
+        limits.append(MetricRatioLimit(metric=metric, max_ratio=max_ratio, stat=stat))
     return limits
 
 
@@ -842,7 +853,7 @@ def evaluate_metric_ratio_limits(
         actual_ratio: float | None = None
         missing = True
         if isinstance(stats, dict):
-            value = stats.get("mean")
+            value = stats.get(limit.stat)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 actual_ratio = float(value)
                 missing = False
@@ -852,7 +863,9 @@ def evaluate_metric_ratio_limits(
         results.append(
             {
                 "metric": limit.metric,
+                "stat": limit.stat,
                 "max_ratio": limit.max_ratio,
+                "actual_ratio": actual_ratio,
                 "actual_mean_ratio": actual_ratio,
                 "missing": missing,
                 "passed": passed,
@@ -1716,10 +1729,13 @@ def print_text(payload: dict[str, object]) -> None:
             for result in results:
                 if not isinstance(result, dict):
                     continue
-                actual = result.get("actual_mean_ratio")
+                actual = result.get("actual_ratio")
+                if actual is None:
+                    actual = result.get("actual_mean_ratio")
                 actual_text = "missing" if actual is None else f"{float(actual):.6f}"
+                stat = str(result.get("stat", "mean"))
                 print(
-                    f"    {result.get('metric', '')}: actual_mean_ratio={actual_text} "
+                    f"    {stat}:{result.get('metric', '')}: actual_ratio={actual_text} "
                     f"max_ratio={float(result.get('max_ratio', 0.0)):.6f} "
                     f"passed={str(result.get('passed', False)).lower()}"
                 )

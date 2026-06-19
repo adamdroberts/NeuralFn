@@ -631,14 +631,77 @@ def test_paired_kernel_speed_tool_fails_metric_ratio_gate() -> None:
     assert gates["results"] == [
         {
             "metric": "stage.lm_head_backward.total_ms",
+            "stat": "mean",
             "max_ratio": 1.1,
+            "actual_ratio": 1.3,
             "actual_mean_ratio": 1.3,
             "missing": False,
             "passed": False,
         }
     ]
     assert "metric_ratio_gates: passed=false" in proc.stdout
+    assert "mean:stage.lm_head_backward.total_ms: actual_ratio=1.300000" in proc.stdout
     assert "metric ratio gate failed: stage.lm_head_backward.total_ms" in proc.stderr
+
+
+def test_paired_kernel_speed_tool_fails_metric_ratio_gate_by_median() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    tmp = Path(tempfile.mkdtemp())
+    output_path = tmp / "paired-ratio-gate-median.json"
+    counter_path = tmp / "candidate-counter.txt"
+    candidate_script = tmp / "candidate.py"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 100.0}"
+        "}"
+    )
+    candidate_script.write_text(
+        "from pathlib import Path\n"
+        f"counter = Path({str(counter_path)!r})\n"
+        "idx = int(counter.read_text() if counter.exists() else '0')\n"
+        "values = [90.0, 102.0, 103.0]\n"
+        "counter.write_text(str(idx + 1))\n"
+        "value = values[min(idx, len(values) - 1)]\n"
+        "print('{\"steps_completed\": 1, \"timing\": {\"train_loop_wall_ms\": %s}}' % value)\n",
+        encoding="utf-8",
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} {candidate_script}",
+            "--samples",
+            "3",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+            "--max-candidate-ratio",
+            "median:train_loop_wall_ms_per_step=1.0",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 1
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    result = payload["metric_ratio_gates"]["results"][0]
+    assert result["metric"] == "train_loop_wall_ms_per_step"
+    assert result["stat"] == "median"
+    assert result["actual_ratio"] == 1.02
+    assert result["passed"] is False
+    assert "median:train_loop_wall_ms_per_step: actual_ratio=1.020000" in proc.stdout
 
 
 def test_paired_kernel_speed_tool_metric_ratio_gate_fails_missing_metric() -> None:
@@ -664,7 +727,9 @@ def test_paired_kernel_speed_tool_metric_ratio_gate_fails_missing_metric() -> No
         "results": [
             {
                 "metric": "stage.lm_head_backward.total_ms",
+                "stat": "mean",
                 "max_ratio": 1.01,
+                "actual_ratio": None,
                 "actual_mean_ratio": None,
                 "missing": True,
                 "passed": False,

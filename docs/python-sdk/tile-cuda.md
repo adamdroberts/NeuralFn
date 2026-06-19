@@ -1263,14 +1263,16 @@ LM-head backward substages (`logits`, `ce`, `dhidden`, `dweight`, and optional
 ratios for CUDA 13.3 RTX 5090 parity work before promoting any candidate that
 only changes a coarse `lm_head_backward` or `block_backward` total.
 For automated candidate rejection, pass repeatable
-`--max-candidate-ratio METRIC=RATIO` arguments to
+`--max-candidate-ratio [STAT:]METRIC=RATIO` arguments to
 `tools/paired_kernel_speed.py`, or set
 `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` /
 `NFN_SM120_CANDIDATE_MAX_CANDIDATE_RATIO` for
 `tools/bench_native_gpt_sm120_candidate.sh`. Example gates are
-`stage.lm_head_backward.total_ms=1.000` and
-`train_loop_wall_ms_per_step=1.005`; missing metrics fail the gate so a run
-cannot pass without the stage attribution it was supposed to measure.
+`stage.lm_head_backward.total_ms=1.000`,
+`median:train_loop_wall_ms_per_step=1.000`, and
+`max:stage.block_backward.total_ms=1.010`; the statistic defaults to `mean`.
+Missing metrics fail the gate so a run cannot pass without the stage
+attribution it was supposed to measure.
 Unsupported template names and custom graph files still report
 `selected-graph-native-trainer-missing` instead of falling back to Torch.
 
