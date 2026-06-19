@@ -12,6 +12,8 @@ from typing import Any, Sequence
 
 
 DEFAULT_NATIVE_TRAIN_CLI = "build/nfn_native_train"
+DEFAULT_NATIVE_GPT_TRAIN_CLI = "build/nfn_gpt_native_train"
+DENSE_GPT_MODEL_FAMILIES = frozenset({"gpt", "gpt2", "gpt3", "nanogpt", "nano-gpt"})
 NATIVE_TRAIN_BINDING_MODULES = ("neuralfn_native_train", "neuralfn._native_train")
 
 
@@ -39,10 +41,19 @@ class NativeTrainRunConfig:
     cuda_device_max_connections: str = "1"
 
     def argv(self) -> list[str]:
+        normalized_family = normalize_native_model_family(self.model_family)
+        family_cli = resolve_native_train_family_cli(normalized_family, self.native_train_cli)
+        if family_cli is not None:
+            return [
+                family_cli,
+                "--model-family",
+                normalized_family,
+                *self.args,
+            ]
         return [
             resolve_native_train_cli(self.native_train_cli),
             "--base-model",
-            normalize_native_model_family(self.model_family),
+            normalized_family,
             *self.args,
         ]
 
@@ -73,6 +84,34 @@ def resolve_native_train_cli(value: str | None = None) -> str:
         return env_value
     repo_root = Path(__file__).resolve().parents[1]
     return str(repo_root / DEFAULT_NATIVE_TRAIN_CLI)
+
+
+def resolve_native_train_family_cli(model_family: str | None, native_train_cli: str | None = None) -> str | None:
+    """Return a direct model-family trainer CLI when the SDK can skip the generic dispatcher."""
+
+    if str(native_train_cli or "").strip() or str(os.environ.get("NFN_NATIVE_TRAIN_CLI", "")).strip():
+        return None
+    normalized = normalize_native_model_family(model_family)
+    if normalized not in DENSE_GPT_MODEL_FAMILIES:
+        return None
+    env_value = str(os.environ.get("NFN_NATIVE_GPT_CLI", "")).strip()
+    if env_value:
+        return env_value
+    repo_root = Path(__file__).resolve().parents[1]
+    family_cli = repo_root / DEFAULT_NATIVE_GPT_TRAIN_CLI
+    if family_cli.exists():
+        return str(family_cli)
+    return None
+
+
+def resolve_available_native_train_cli_for_status() -> Path:
+    cli = Path(resolve_native_train_cli())
+    if cli.exists():
+        return cli
+    family_cli = resolve_native_train_family_cli("gpt")
+    if family_cli:
+        return Path(family_cli)
+    return cli
 
 
 def build_native_train_run_config(
@@ -161,7 +200,7 @@ def native_train_runner_status(requested: str = "auto") -> NativeTrainRunnerStat
     if normalized not in {"auto", "binding", "compiled-cli", "subprocess"}:
         raise ValueError("native train runner must be one of: auto, binding, compiled-cli, subprocess")
     if normalized in {"compiled-cli", "subprocess"}:
-        cli = Path(resolve_native_train_cli())
+        cli = resolve_available_native_train_cli_for_status()
         return NativeTrainRunnerStatus(
             requested=normalized,
             resolved=normalized,
@@ -178,7 +217,7 @@ def native_train_runner_status(requested: str = "auto") -> NativeTrainRunnerStat
                 available=False,
                 reason=str(exc),
             )
-        cli = Path(resolve_native_train_cli())
+        cli = resolve_available_native_train_cli_for_status()
         return NativeTrainRunnerStatus(
             requested=normalized,
             resolved="compiled-cli",

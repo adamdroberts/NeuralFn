@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed `neuralfn.native_train` dense GPT SDK dispatch to skip the generic
+  `nfn_native_train` frontend when a direct GPT family binary is configured or
+  built. `build_native_train_run_config("gpt"|"gpt2"|"gpt3"|"nanogpt", ...)`
+  now resolves to `nfn_gpt_native_train --model-family ...` when
+  `NFN_NATIVE_GPT_CLI` is set or `build/nfn_gpt_native_train` exists, removing
+  one compiled dispatcher process from the normal SDK startup path. Explicit
+  `NFN_NATIVE_TRAIN_CLI` and `native_train_cli=` still force the unified
+  frontend for registry/debug workflows. Migration notes: callers that asserted
+  the exact generic `--base-model` argv for dense GPT SDK configs should either
+  set `NFN_NATIVE_TRAIN_CLI` or update expectations to the direct
+  `--model-family` command. Verification:
+  `python -m pytest tests/test_native_gpt2.py -q -k
+  'native_train_run_config_uses_direct_dense_gpt_cli or
+  native_train_explicit_unified_cli_overrides_direct_dense_gpt_cli'`,
+  `python -m py_compile neuralfn/native_train.py`, and `git diff --check`.
+
 - Added candidate-over-baseline metric-ratio gates to the paired CUDA benchmark
   tooling. `tools/paired_kernel_speed.py` now accepts repeatable
   `--max-candidate-ratio METRIC=RATIO` checks, records

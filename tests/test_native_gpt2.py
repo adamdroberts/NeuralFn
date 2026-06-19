@@ -1485,6 +1485,57 @@ def test_native_train_run_config_and_subprocess_runner(
     assert "--max-steps" in token_lm_args
 
 
+def test_native_train_run_config_uses_direct_dense_gpt_cli(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    family_cli = tmp_path / "nfn_gpt_native_train"
+    family_cli.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_TRAIN_ARGS\"\n"
+        "printf 'CUDA_MODULE_LOADING=%s\\n' \"$CUDA_MODULE_LOADING\" > \"$NFN_TEST_NATIVE_TRAIN_ENV\"\n"
+        "exit 43\n",
+        encoding="utf-8",
+    )
+    family_cli.chmod(0o755)
+    output = tmp_path / "native-train-direct-args.txt"
+    env_output = tmp_path / "native-train-direct-env.txt"
+    monkeypatch.delenv("NFN_NATIVE_TRAIN_CLI", raising=False)
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", str(family_cli))
+    monkeypatch.setenv("NFN_NATIVE_TRAIN_BINDING", "0")
+    monkeypatch.setenv("NFN_TEST_NATIVE_TRAIN_ARGS", str(output))
+    monkeypatch.setenv("NFN_TEST_NATIVE_TRAIN_ENV", str(env_output))
+
+    cfg = build_native_train_run_config("gpt2", ["--tinystories", "--dry-run"])
+
+    assert cfg.argv()[:5] == [str(family_cli), "--model-family", "gpt2", "--tinystories", "--dry-run"]
+    status = native_train_runner_status("compiled-cli")
+    assert status.available is True
+    assert run_native_train(cfg, runner="compiled-cli") == 43
+    args = output.read_text(encoding="utf-8").splitlines()
+    assert args[:4] == ["--model-family", "gpt2", "--tinystories", "--dry-run"]
+    assert "--base-model" not in args
+    assert "CUDA_MODULE_LOADING=LAZY" in env_output.read_text(encoding="utf-8").splitlines()
+
+
+def test_native_train_explicit_unified_cli_overrides_direct_dense_gpt_cli(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    family_cli = tmp_path / "nfn_gpt_native_train"
+    family_cli.write_text("#!/usr/bin/env bash\nexit 44\n", encoding="utf-8")
+    family_cli.chmod(0o755)
+    unified_cli = tmp_path / "nfn_native_train"
+    unified_cli.write_text("#!/usr/bin/env bash\nexit 45\n", encoding="utf-8")
+    unified_cli.chmod(0o755)
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", str(family_cli))
+    monkeypatch.setenv("NFN_NATIVE_TRAIN_CLI", str(unified_cli))
+
+    cfg = build_native_train_run_config("gpt", ["--dry-run"])
+
+    assert cfg.argv()[:4] == [str(unified_cli), "--base-model", "gpt", "--dry-run"]
+
+
 def test_native_train_cpp_binding_builds_and_runs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
