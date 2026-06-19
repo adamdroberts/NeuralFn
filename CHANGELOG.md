@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revisited the BF16 classifier dlogit vector-store candidate after the BF16 CE
+  vector-load default and the CUDA Toolkit 13.3.33 WSL reinstall. The dedicated
+  RTX 5090 same-script 5-step, 5-sample benchmark with selected-GPU idle checks
+  measured `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1` at `0.999390x` mean
+  train-loop wall time and `1.000618x` mean tokens/sec versus scalar stores,
+  but median train-loop wall regressed to `1.000326x` and paired command wall
+  was effectively flat/slower. Keep the 128-bit streaming-store path
+  diagnostic-only; the promoted default remains vectorized BF16 row loads with
+  scalar dlogit stores. Verification:
+  `NFN_SM120_NATIVE_STEPS=5 NFN_SM120_NATIVE_SAMPLES=5
+  NFN_SM120_NATIVE_WARMUP=1 NFN_SM120_NATIVE_PROFILE_DIR=none
+  NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1'
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Rechecked two tempting LM-head routes after the BF16 CE vector-load default
   and kept both rejected. `NFN_NATIVE_LINEAR_BF16_OUTPUT_CUBLASLT=1
   NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=50304,8192,768,T,N,0` moved the
