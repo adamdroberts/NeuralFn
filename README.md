@@ -16,6 +16,9 @@ checks are green), but dense GPT throughput is still about `1.03x` slower than
 `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`; the next parity work
 is a fused row-chunked LM-head backward kernel, not another setup or Torch
 fallback fix.
+The CUDA 13.3.33 follow-up probes kept LM-head cuBLASLt expansion and threaded
+token-weight initialization rejected as defaults, so those remain diagnostic
+switches rather than workflow guidance.
 
 For local server/editor development, leaving `NEURALFN_REDIS_URL` empty keeps
 live state and persistence in-process. Redis-backed deployments still enqueue

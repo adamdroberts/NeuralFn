@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked the remaining dense GPT native LM-head and startup candidate paths
+  after the CUDA Toolkit 13.3.33 WSL reinstall and kept the current defaults.
+  A one-step stage/shape profile on the dedicated RTX 5090 measured
+  `train_loop_wall_ms: 2865.24`, `setup_wall_ms: 546.399`, and
+  `setup.token_weight_init.total_ms: 133.577`; the hottest buckets remained
+  `block_backward` (`1337.510 ms`), `lm_head_backward` (`824.768 ms`), and
+  `train.model_forward` (`674.512 ms`). The hot LM-head shapes still route
+  logits and dHidden through BF16 GEMMEx while dWeight uses cuBLASLt. Expanding
+  cuBLASLt to the LM-head logits path with
+  `NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1
+  NFN_NATIVE_LINEAR_BF16_OUTPUT_CUBLASLT=1` increased train-loop wall time to
+  `1.027700x` and reduced tokens/sec to `0.973050x` versus the current default.
+  The startup-only threaded token initializer
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` also regressed total startup to
+  `1.044736x`, setup wall time to `1.044749x`, and token-weight init time to
+  `1.133043x`. Verification: dedicated RTX 5090 native-vs-native
+  same-script benchmarks with selected-GPU idle checks and no promoted code
+  changes.
+
 - Added shape-selective TK dInput routing for the trainer-facing Tile-CUDA
   linear ABI. `NFN_NATIVE_LINEAR_TK_DINPUT=1` remains the broad diagnostic
   switch, while `NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=m,n,k,opA,opB` /
