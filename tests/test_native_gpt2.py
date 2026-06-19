@@ -290,6 +290,7 @@ def test_native_training_guard_sets_dedicated_cuda_device_default() -> None:
 
     assert 'env.setdefault("CUDA_VISIBLE_DEVICES", "0")' in source
     assert 'env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")' in source
+    assert 'env.setdefault("CUDA_MODULE_LOADING", "LAZY")' in source
 
 
 def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:

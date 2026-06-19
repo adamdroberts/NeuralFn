@@ -182,6 +182,7 @@ def reject_torch_training_by_default(
     env = os.environ.copy()
     env.setdefault("CUDA_VISIBLE_DEVICES", "0")
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
+    env.setdefault("CUDA_MODULE_LOADING", "LAZY")
     if any(flag in sys.argv[1:] for flag in ("--dry-run", "--native-cuda-dry-run", "--print-command", "--native-cuda-print-command")):
         raise SystemExit(subprocess.run(command, env=env, check=False).returncode)
     try:

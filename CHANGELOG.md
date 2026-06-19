@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended lazy CUDA module loading to legacy training-script native guards.
+  Scripts such as `train_gpt2_evo.py` that exit before importing Torch and
+  hand off to a family-specific or generic compiled native trainer now set
+  `CUDA_MODULE_LOADING=LAZY` when the caller has not supplied a value, matching
+  the direct dense GPT fast path and SDK/native launcher behavior. Migration
+  notes: user-provided `CUDA_MODULE_LOADING` values still win, and command-line
+  arguments are unchanged. Verification: added source coverage for
+  `native_training_guard.py` and a GPT-2 evo direct-script regression that
+  stubs the native binary and asserts the CUDA device, connection, and lazy
+  module-loading environment before any Torch imports.
+
 - Defaulted the direct dense GPT Python compatibility fast path to lazy CUDA
   module loading. `cli/scripts/train_gpt.py` now sets
   `CUDA_MODULE_LOADING=LAZY` when unset before execing the compiled

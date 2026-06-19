@@ -1357,6 +1357,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
             native_evo.write_text(
                 "#!/usr/bin/env bash\\n"
                 "printf 'EVO_NATIVE_DIRECT\\\\n'\\n"
+                "printf 'EVO_NATIVE_ENV CUDA_VISIBLE_DEVICES=%s CUDA_DEVICE_MAX_CONNECTIONS=%s CUDA_MODULE_LOADING=%s\\\\n' "
+                "\\"$CUDA_VISIBLE_DEVICES\\" \\"$CUDA_DEVICE_MAX_CONNECTIONS\\" \\"$CUDA_MODULE_LOADING\\"\\n"
                 "printf '%s\\\\n' \\"$@\\"\\n"
                 "exit 23\\n",
                 encoding="utf-8",
@@ -1391,6 +1393,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
         self.assertEqual(23, proc.returncode)
         self.assertIn("EVO_NATIVE_DIRECT", proc.stdout)
+        self.assertIn(
+            "EVO_NATIVE_ENV CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 CUDA_MODULE_LOADING=LAZY",
+            proc.stdout,
+        )
         self.assertNotIn("--base-model", proc.stdout)
         self.assertIn("--tinystories", proc.stdout)
         self.assertIn("--native-cuda-dry-run", proc.stdout)
