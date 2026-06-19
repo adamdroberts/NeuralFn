@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revisited CUDA-visible Tile-CUDA tests and SM120 parity after installing CUDA
+  Toolkit 13.3 for WSL on the dedicated RTX 5090. The combined CUDA test slice
+  passed with `537 passed, 6 warnings`, and the canonical same-script parity
+  run measured NeuralFn dense GPT at `1.032743x` train-loop wall time versus
+  `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`. The current stage
+  profile still points at native GPU hot paths, primarily `block_backward` and
+  `lm_head_backward`; CUDA 13.3 rechecks rejected forward-logit reuse, LM-head
+  ordering changes, cuBLASLt heuristic/large-shape toggles, and packed-attention
+  storage toggles as defaults. `todo-tile-cuda.md` now records the current
+  evidence and keeps the remaining parity work focused on a new fused or
+  co-scheduled LM-head classifier/backward kernel rather than more switch
+  promotion. Verification: `NFN_TILE_CUDA_TEST=1 python -m pytest
+  tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py
+  tests/test_tile_cuda_optimizer.py tests/test_tile_cuda_modules.py -q -rs`;
+  `bash tools/bench_native_gpt_sm120_parity.sh` with
+  `NFN_SM120_PARITY_STEPS=5`, `NFN_SM120_PARITY_SAMPLES=2`, and stage timing;
+  focused native-vs-native candidate probes.
+
 - Dense GPT native training now defaults to eliding the unused FP32
   attention-projection and MLP-projection scratch-tape buffers whenever BF16
   projection-residual is active. The previous diagnostic switch
