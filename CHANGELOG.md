@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native training now defaults to eliding the unused FP32
+  attention-projection and MLP-projection scratch-tape buffers whenever BF16
+  projection-residual is active. The previous diagnostic switch
+  `NFN_NATIVE_GPT_ELIDE_FLOAT_PROJECTION_OUTPUTS=1` is now the default; set
+  `NFN_NATIVE_GPT_ELIDE_FLOAT_PROJECTION_OUTPUTS=0` or the GPT-2-prefixed
+  fallback only to reproduce the older allocation for paired bisection. Runtime
+  JSON continues to report `float_projection_outputs_elided`,
+  `float_projection_output_elements_elided`, and matching
+  `block_state_layout.float_projection_output_*` counters. On the dedicated RTX
+  5090 with CUDA 13.3, the post-change same-script paired check compared the new
+  default against `NFN_NATIVE_GPT_ELIDE_FLOAT_PROJECTION_OUTPUTS=0` and measured
+  the old allocation at `1.001273x` train-loop wall and `1.000402x` total wall
+  versus the default, with selected-GPU locking and idle checks. Verification:
+  `bash tools/build_native_gpt_cli.sh`;
+  `python -m pytest tests/test_native_gpt2.py -q`;
+  `python tools/check_native_no_torch_deps.py`; `git diff --check`; CUDA 13.3
+  paired benchmark with `NFN_SM120_NATIVE_STEPS=5`,
+  `NFN_SM120_NATIVE_SAMPLES=2`, and candidate env
+  `NFN_NATIVE_GPT_ELIDE_FLOAT_PROJECTION_OUTPUTS=0`.
+
 - Fused dense GPT sampled train-loss CE and dlogit generation on the default
   BF16/u16-token Tile CUDA path. The native raw C ABI now exports
   `nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets`,

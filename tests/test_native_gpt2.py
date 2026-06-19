@@ -2979,6 +2979,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["mlp_forward_act_bf16_bytes"] == 0
     assert train_transformer_payload["projection_bf16_scratch_elements"] == 0
     assert train_transformer_payload["projection_bf16_scratch_bytes"] == 0
+    assert train_transformer_payload["float_projection_outputs_elided"] is True
+    assert train_transformer_payload["float_projection_output_elements_elided"] == 2 * 1 * 2 * 768
     assert train_transformer_payload["projection_bias_residual_strategy"] == "fused-bf16-linear-bias-residual-add"
     assert train_transformer_payload["projection_bias_residual_kernel_launches_per_block"] == 2
     assert train_transformer_payload["projection_bias_residual_legacy_launches_per_block"] == 4
@@ -3242,9 +3244,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "mlp_residual_next_ln1_fusion_enabled": True,
         "mlp_residual_next_ln1_fusion_count": 0,
         "mlp_residual_next_ln1_strategy": "fused-mlp-bias-residual-next-ln1-when-packed-ln1-storage-is-available",
-        "float_projection_output_buffers_allocated": 2,
-        "float_projection_output_buffers_elided": 0,
-        "float_projection_output_elements_elided": 0,
+        "float_projection_output_buffers_allocated": 0,
+        "float_projection_output_buffers_elided": 2,
+        "float_projection_output_elements_elided": 2 * 1 * 2 * 768,
         "mlp_fc_grad_out_float_buffer_elided": True,
         "mlp_fc_grad_out_float_elements": 0,
         "mlp_fc_grad_out_float_bytes_elided": 2 * 1 * 3072 * 4,

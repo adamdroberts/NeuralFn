@@ -11001,7 +11001,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_ELIDE_FLOAT_PROJECTION_OUTPUTS",
                               "NFN_NATIVE_GPT2_ELIDE_FLOAT_PROJECTION_OUTPUTS"}),
-            false);
+            true);
     const bool bf16_persistent_block_outputs_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUTS",

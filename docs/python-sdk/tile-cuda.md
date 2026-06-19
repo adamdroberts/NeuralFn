@@ -1306,6 +1306,15 @@ saved path; the current `64 x 1024` TinyStories probe still regresses to about
 6.0k tokens/s because saved-attention backward dominates the step, so the
 default remains the faster recompute plus process-workspace reuse path.
 
+Dense GPT defaults to eliding unused FP32 attention-projection and
+MLP-projection scratch-tape buffers when BF16 projection-residual is active.
+Runtime JSON reports `float_projection_outputs_elided: true`,
+`float_projection_output_elements_elided`, and matching
+`block_state_layout.float_projection_output_*` counters. Set
+`NFN_NATIVE_GPT_ELIDE_FLOAT_PROJECTION_OUTPUTS=0` or
+`NFN_NATIVE_GPT2_ELIDE_FLOAT_PROJECTION_OUTPUTS=0` only for paired bisection
+against the older reservation.
+
 Full GPT `--train-transformer-lm` now defaults to the packed-QKV attention
 layout. It writes LN1 output to BF16 with
 `nfn_native_tile_layer_norm_with_stats_bf16_out_float32`, writes the QKV

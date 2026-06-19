@@ -569,14 +569,12 @@ recompute, which reports `activation_tape_strategy: "scratch-recompute"` and
 stops before the MLP projection output and final residual output because
 backward does not consume them; JSON reports
 `backward_recompute_mlp_projection_elided: true` and
-`backward_recompute_final_residual_elided: true`. For memory diagnostics, set
-`NFN_NATIVE_GPT_ELIDE_FLOAT_PROJECTION_OUTPUTS=1` or
-`NFN_NATIVE_GPT2_ELIDE_FLOAT_PROJECTION_OUTPUTS=1` to skip the unused FP32
-attention-projection and MLP-projection output buffers when BF16
-projection-residual is active. This remains off by default because the
-dedicated RTX 5090 paired benchmark measured train-loop neutral and
-startup-wall neutral-to-slightly slower than the previous reservation. Runtime
-JSON reports
+`backward_recompute_final_residual_elided: true`. Dense GPT now skips the unused
+FP32 attention-projection and MLP-projection output buffers by default when
+BF16 projection-residual is active. Set
+`NFN_NATIVE_GPT_ELIDE_FLOAT_PROJECTION_OUTPUTS=0` or
+`NFN_NATIVE_GPT2_ELIDE_FLOAT_PROJECTION_OUTPUTS=0` only to reproduce the older
+reservation for paired bisection. Runtime JSON reports
 `float_projection_outputs_elided`, `float_projection_output_elements_elided`,
 and matching `block_state_layout.float_projection_output_*` counters. Rebuild
 `libnfn_native_train_tile_ops.so` with `bash tools/build_native_train_tile_ops.sh`
