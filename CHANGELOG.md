@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rejected an LM-head dHidden/dWeight side-stream overlap prototype for dense
+  GPT native training. The tested implementation recorded CE completion on the
+  default stream, launched LM-head dHidden on a non-blocking side stream, ran
+  LM-head dWeight on the default stream, and synchronized before reusing the
+  row-chunk BF16 logit buffer. On the dedicated RTX 5090, the 5-step,
+  2-sample native-vs-native run measured `1.003463x` train-loop wall time and
+  `0.996573x` tokens/sec versus the serial default, so the prototype was
+  removed instead of kept as another diagnostic switch. The remaining useful
+  LM-head work is still a fused/cooperative row-chunked classifier-backward
+  kernel, not stream-level overlap of two large GEMMs. Verification:
+  `bash tools/build_native_gpt_cli.sh`; focused native GPT source-contract
+  pytest; `python tools/check_native_no_torch_deps.py`; `git diff --check`;
+  CUDA 13.3 RTX 5090 native-vs-native benchmark with candidate env
+  `NFN_NATIVE_GPT_LM_HEAD_OVERLAP_DHIDDEN_DWEIGHT=1`.
+
 - After reinstalling CUDA Toolkit 13.3 for WSL, reran the failed-test and
   native-performance gates on the dedicated RTX 5090. The CUDA Tile GPU suite
   passed with `537 passed, 6 warnings`, native GPT contract tests passed with
