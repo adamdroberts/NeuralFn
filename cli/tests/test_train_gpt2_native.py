@@ -1399,7 +1399,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
         self.assertNotIn("--base-model", proc.stdout)
         self.assertIn("--tinystories", proc.stdout)
-        self.assertIn("--native-cuda-dry-run", proc.stdout)
+        self.assertIn("--dry-run", proc.stdout)
+        self.assertNotIn("--native-cuda-dry-run", proc.stdout)
         self.assertIn("--eval-every-steps", proc.stdout)
         self.assertIn("1000", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
@@ -1424,6 +1425,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                 [
                     sys.executable,
                     str(NEURALFN_ROOT / "cli" / "scripts" / "train_gpt2_evo.py"),
+                    "--native-cuda-dry-run",
+                    "--native-cuda-print-command",
                     "--native-cuda-print-plan",
                     "--native-cuda-smoke-evo-kernels",
                     "--native-cuda-tile-ops-lib",
@@ -1442,6 +1445,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
 
         self.assertEqual(23, proc.returncode)
         self.assertIn("EVO_NATIVE_DIRECT", proc.stdout)
+        self.assertIn("--dry-run", proc.stdout)
+        self.assertNotIn("--native-cuda-dry-run", proc.stdout)
+        self.assertIn("--print-command", proc.stdout)
+        self.assertNotIn("--native-cuda-print-command", proc.stdout)
         self.assertIn("--print-plan", proc.stdout)
         self.assertNotIn("--native-cuda-print-plan", proc.stdout)
         self.assertIn("--smoke-evo-kernels", proc.stdout)
@@ -1502,7 +1509,8 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertNotIn("--train-token-lm", proc.stdout)
         self.assertIn("--tinystories", proc.stdout)
         self.assertIn("--max-steps", proc.stdout)
-        self.assertIn("--native-cuda-dry-run", proc.stdout)
+        self.assertIn("--dry-run", proc.stdout)
+        self.assertNotIn("--native-cuda-dry-run", proc.stdout)
 
     def test_nfn_nanogpt_train_defaults_to_native_transformer_lm(self) -> None:
         code = textwrap.dedent(

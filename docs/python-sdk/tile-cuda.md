@@ -762,7 +762,13 @@ report non-runnable support statuses without importing the graph-backed runtime.
 Use `nfn_gpt2_evo_native_train --smoke-evo-kernels --tile-ops-lib PATH` to
 exercise the raw evo mutate/select/adopt ABI on CUDA device buffers and verify
 best-candidate copyback without SDK tensor payloads, Torch, datasets, or
-graph-editor nodes.
+graph-editor nodes. `--native-cuda-dry-run --native-cuda-print-command` is also
+handled by the family binary itself: it prints the final dense GPT delegate
+command with `--train-transformer-lm --layer-evo`, preserving validation
+cadence flags such as `--eval-every-steps`, before token-shard resolution or
+graph-backed imports. The unified frontend preserves `--print-command` when it
+prints the GPT-2 evo family command, so the two-stage no-Torch command
+inspection path is reproducible from SDK and CLI subprocess wrappers.
 
 The compiled transformer-LM loop treats `train_batch_tokens` as the effective
 optimizer-step token batch, not just metadata. It computes

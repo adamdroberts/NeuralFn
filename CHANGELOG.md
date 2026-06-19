@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed GPT-2 evo native dry-run command inspection. The legacy Python guard now
+  normalizes `--native-cuda-dry-run` and `--native-cuda-print-command` before
+  forwarding to family-specific native binaries, the unified native frontend
+  preserves `--print-command` when printing GPT-2 evo family delegates, and
+  `nfn_gpt2_evo_native_train --native-cuda-dry-run
+  --native-cuda-print-command` now prints the final dense GPT CUDA Tile command
+  with `--train-transformer-lm --layer-evo` instead of falling back to plan JSON.
+  This keeps GPT-2 evo startup inspection on compiled C++ paths without dataset
+  scanning, Torch imports, or graph-editor tensor flow. Verification: rebuilt
+  `build/nfn_gpt2_evo_native_train` and `build/nfn_native_train`; ran focused
+  CLI guard tests, the native unified frontend dispatch test, and manual
+  two-stage print-command checks.
+
 - Added shared environment injection to the dense GPT native-vs-native SM120
   candidate benchmark wrapper. `tools/bench_native_gpt_sm120_candidate.sh` now
   accepts `NFN_SM120_NATIVE_ENV`, `NFN_SM120_COMMON_ENV`, and

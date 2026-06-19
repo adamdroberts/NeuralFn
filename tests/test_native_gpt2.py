@@ -4711,6 +4711,52 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert evo_dry_run_plan["layer_evo"]["enabled"] is True
     assert evo_dry_run_plan["selected_graph_support_status"] == "native-dense-gpt-layer-evo-delegate"
 
+    evo_print_command = subprocess.run(
+        [
+            str(unified),
+            "--base-model",
+            "gpt2-evo",
+            "--dataset-alias",
+            "/tmp/native-cache",
+            "--dry-run",
+            "--print-command",
+            "--eval-every-steps",
+            "1000",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert evo_print_command.returncode == 0
+    assert str(gpt2_evo) in evo_print_command.stdout
+    assert "--dry-run" in evo_print_command.stdout
+    assert "--print-command" in evo_print_command.stdout
+    assert "--native-cuda-print-command" not in evo_print_command.stdout
+
+    evo_delegate_print_command = subprocess.run(
+        [
+            str(gpt2_evo),
+            "--native-cuda-dry-run",
+            "--native-cuda-print-command",
+            "--dataset-alias",
+            "/tmp/native-cache",
+            "--eval-every-steps",
+            "1000",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert evo_delegate_print_command.returncode == 0
+    assert str(fake_gpt) in evo_delegate_print_command.stdout
+    assert "--train-transformer-lm" in evo_delegate_print_command.stdout
+    assert "--layer-evo" in evo_delegate_print_command.stdout
+    assert "--dataset-alias /tmp/native-cache" in evo_delegate_print_command.stdout
+    assert "--eval-every-steps 1000" in evo_delegate_print_command.stdout
+    assert "--native-cuda-print-command" not in evo_delegate_print_command.stdout
+
 
 def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> None:
     if shutil.which("c++") is None:

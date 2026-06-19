@@ -79,6 +79,44 @@ std::string json_escape(std::string_view value) {
     return out.str();
 }
 
+std::string shell_quote(const std::string& value) {
+    if (value.empty()) {
+        return "''";
+    }
+    bool simple = true;
+    for (char ch : value) {
+        if (!(std::isalnum(static_cast<unsigned char>(ch)) || ch == '_' || ch == '-' || ch == '.' || ch == '/' || ch == ':' || ch == '=')) {
+            simple = false;
+            break;
+        }
+    }
+    if (simple) {
+        return value;
+    }
+    std::ostringstream out;
+    out << '\'';
+    for (char ch : value) {
+        if (ch == '\'') {
+            out << "'\\''";
+        } else {
+            out << ch;
+        }
+    }
+    out << '\'';
+    return out.str();
+}
+
+void print_command(const std::vector<std::string>& command) {
+    for (std::size_t i = 0; i < command.size(); ++i) {
+        if (i != 0) {
+            std::cout << ' ';
+        }
+        std::cout << shell_quote(command[i]);
+    }
+    std::cout << '\n';
+    std::cout.flush();
+}
+
 std::string require_value(int argc, char** argv, int* index, const std::string& flag) {
     if (*index + 1 >= argc) {
         std::cerr << flag << " requires a value\n";
@@ -772,7 +810,7 @@ int print_evo_kernel_smoke_json(const Gpt2EvoPlan& plan, const char* program) {
     return passed ? 0 : 2;
 }
 
-Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run) {
+Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run, bool* print_delegate_command) {
     Gpt2EvoPlan plan;
     for (int i = 1; i < argc; ++i) {
         std::string arg(argv[i]);
@@ -792,6 +830,10 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run) {
         }
         if (arg == "--dry-run" || arg == "--native-cuda-dry-run") {
             *dry_run = true;
+            continue;
+        }
+        if (arg == "--print-command" || arg == "--native-cuda-print-command") {
+            *print_delegate_command = true;
             continue;
         }
         if (arg == "--smoke-evo-kernels" || arg == "--native-cuda-smoke-evo-kernels") {
@@ -975,14 +1017,7 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run) {
     return plan;
 }
 
-int exec_dense_gpt_delegate(const Gpt2EvoPlan& plan, const char* program) {
-    if (!plan.graph_file.empty() || !selected_template_is_dense_gpt2_compatible(plan)) {
-        std::cerr
-            << "nfn_gpt2_evo_native_train: selected template or graph is not runnable by the dense GPT layer-evo delegate.\n"
-            << "Use --print-plan to inspect the native support status.\n";
-        return 2;
-    }
-
+std::vector<std::string> dense_gpt_delegate_args(const Gpt2EvoPlan& plan, const char* program) {
     std::vector<std::string> args;
     args.push_back(resolve_dense_gpt_cli(program));
     args.push_back("--backend");
@@ -1036,6 +1071,29 @@ int exec_dense_gpt_delegate(const Gpt2EvoPlan& plan, const char* program) {
         args.push_back("--no-layer-evo");
     }
     args.insert(args.end(), plan.unparsed_args.begin(), plan.unparsed_args.end());
+    return args;
+}
+
+int print_dense_gpt_delegate_command(const Gpt2EvoPlan& plan, const char* program) {
+    if (!plan.graph_file.empty() || !selected_template_is_dense_gpt2_compatible(plan)) {
+        std::cerr
+            << "nfn_gpt2_evo_native_train: selected template or graph is not runnable by the dense GPT layer-evo delegate.\n"
+            << "Use --print-plan to inspect the native support status.\n";
+        return 2;
+    }
+    print_command(dense_gpt_delegate_args(plan, program));
+    return 0;
+}
+
+int exec_dense_gpt_delegate(const Gpt2EvoPlan& plan, const char* program) {
+    if (!plan.graph_file.empty() || !selected_template_is_dense_gpt2_compatible(plan)) {
+        std::cerr
+            << "nfn_gpt2_evo_native_train: selected template or graph is not runnable by the dense GPT layer-evo delegate.\n"
+            << "Use --print-plan to inspect the native support status.\n";
+        return 2;
+    }
+
+    std::vector<std::string> args = dense_gpt_delegate_args(plan, program);
 
     std::vector<char*> delegate_argv;
     delegate_argv.reserve(args.size() + 1);
@@ -1057,10 +1115,14 @@ int main(int argc, char** argv) {
     }
     bool print_plan = false;
     bool dry_run = false;
-    Gpt2EvoPlan plan = parse_args(argc, argv, &print_plan, &dry_run);
+    bool print_delegate_command = false;
+    Gpt2EvoPlan plan = parse_args(argc, argv, &print_plan, &dry_run, &print_delegate_command);
     validate_plan(plan);
     if (plan.smoke_evo_kernels) {
         return print_evo_kernel_smoke_json(plan, argv[0]);
+    }
+    if (print_delegate_command) {
+        return print_dense_gpt_delegate_command(plan, argv[0]);
     }
     if (print_plan || dry_run) {
         print_plan_json(plan);
