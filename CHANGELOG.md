@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the CUDA Toolkit 13.3 Tile extension build after the dense GPT
+  residual-add specialization. The
+  `dim768_bf16_residual_add_enabled()` helper now lives in the shared
+  `kernels.cu` utility section instead of the native-only cublas-linear block,
+  so the PyTorch Tile CUDA extension and the standalone native trainer C ABI
+  compile the same residual-add launcher source. This turns the extension-backed
+  GPU pytest cases from skip-by-build-error into real CUDA execution on the
+  RTX 5090. Verification: direct extension load reported
+  `extension_loaded=True` with CUDA Toolkit `13.3` and compute capability
+  `12.0`; `NFN_TILE_CUDA_TEST=1 python -m pytest --lf -q -rs` passed with
+  `1167 passed` and no skipped tests; `bash tools/build_native_train_tile_ops.sh`
+  rebuilt `build/libnfn_native_train_tile_ops.so`.
+
 - Defaulted the dense GPT native BF16 projection residual-add helper to a
   768-wide CUDA specialization for GPT-shaped residual vectors. The new
   `linear_bias_residual_add_bf16_linear_dim768_float32_kernel` avoids the

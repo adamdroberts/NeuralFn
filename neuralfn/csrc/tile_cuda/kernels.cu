@@ -239,6 +239,34 @@ bool cross_entropy_bf16_vec_loads_enabled() {
   return value;
 }
 
+bool dim768_bf16_residual_add_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_DIM768_BF16_RESIDUAL_ADD");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_DIM768_BF16_RESIDUAL_ADD");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_DIM768_BF16_RESIDUAL_ADD");
+    }
+    if (value == nullptr) {
+      return true;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
 bool cross_entropy_bf16_exp2_enabled() {
   static const bool value = []() {
     const char* raw = std::getenv("NFN_TILE_CUDA_CE_BF16_EXP2");
@@ -2868,34 +2896,6 @@ bool trainer_linear_bf16_output_cublaslt_enabled() {
     }
     if (value == nullptr) {
       return false;
-    }
-    if (std::strcmp(value, "0") == 0 ||
-        std::strcmp(value, "false") == 0 ||
-        std::strcmp(value, "FALSE") == 0 ||
-        std::strcmp(value, "off") == 0 ||
-        std::strcmp(value, "OFF") == 0) {
-      return false;
-    }
-    return std::strcmp(value, "1") == 0 ||
-        std::strcmp(value, "true") == 0 ||
-        std::strcmp(value, "TRUE") == 0 ||
-        std::strcmp(value, "on") == 0 ||
-        std::strcmp(value, "ON") == 0;
-  }();
-  return enabled;
-}
-
-bool dim768_bf16_residual_add_enabled() {
-  static const bool enabled = []() {
-    const char* value = std::getenv("NFN_TILE_CUDA_DIM768_BF16_RESIDUAL_ADD");
-    if (value == nullptr) {
-      value = std::getenv("NFN_NATIVE_GPT_DIM768_BF16_RESIDUAL_ADD");
-    }
-    if (value == nullptr) {
-      value = std::getenv("NFN_NATIVE_GPT2_DIM768_BF16_RESIDUAL_ADD");
-    }
-    if (value == nullptr) {
-      return true;
     }
     if (std::strcmp(value, "0") == 0 ||
         std::strcmp(value, "false") == 0 ||
