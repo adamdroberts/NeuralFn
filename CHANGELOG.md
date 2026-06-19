@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an opt-in dense GPT token-weight startup initializer candidate behind
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=1` /
+  `NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_INIT=1` /
+  `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=1`. The Tile CUDA trainer library
+  now has a vectorized float4 path that writes the deterministic power-of-two
+  FP32 token table and persistent BF16 LM-head shadow together, while the
+  default remains the measured int32 CUDA Tile initializer until paired timing
+  proves the vector4 route faster. Runtime JSON reports
+  `token_weight_vector4_init_enabled`, and `token_weight_init_strategy` labels
+  active vector4 runs as `device-vector4-power2-deterministic` or the fused
+  BF16-shadow variant. The default was not changed because dedicated RTX 5090
+  startup-only paired timing measured the vector4 candidate slower (`1.078363x`
+  token-weight init time and `1.033082x` total wall). Migration notes: no
+  caller change is required unless diagnostic tooling opts into the candidate
+  or asserts the startup JSON shape. Verification: `bash
+  tools/build_native_train_tile_ops.sh`; `bash tools/build_native_gpt_cli.sh`;
+  focused native GPT source/compile tests; a startup-only CUDA smoke with the
+  candidate enabled; and `NFN_SM120_NATIVE_STARTUP_ONLY=1
+  NFN_SM120_NATIVE_CANDIDATE_ENV=NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=1
+  bash tools/bench_native_gpt_sm120_candidate.sh`. The CUDA reinstall
+  last-failed sweep was re-run after this change with `NFN_TILE_CUDA_TEST=1
+  python -m pytest --lf -q -rs` and passed with `1167 passed`, `20 warnings`,
+  and `468 subtests passed`.
+
 - Added an opt-in dense GPT native LM-head backward scheduling candidate behind
   `NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` /
   `NFN_NATIVE_GPT2_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1`. After BF16 CE

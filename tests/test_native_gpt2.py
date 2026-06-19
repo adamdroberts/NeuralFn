@@ -3120,6 +3120,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["token_u16_pinned_arena_elements"] == 0
     assert train_transformer_payload["token_weight_init_strategy"] == "device-tile-power2-deterministic"
     assert train_transformer_payload["token_weight_threaded_init_enabled"] is False
+    assert train_transformer_payload["token_weight_vector4_init_enabled"] is False
     assert train_transformer_payload["token_weight_fast_int32_init_enabled"] is True
     assert train_transformer_payload["token_weight_init_legacy_mod17_enabled"] is False
     assert train_transformer_payload["token_weight_bf16_initial_refresh_fusion_enabled"] is True
@@ -4791,14 +4792,22 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "ct::shape{NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE}" in kernels_text
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT" in kernels_text
     assert "NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT" in kernels_text
+    assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT" in kernels_text
+    assert "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT" in kernels_text
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT" in kernels_text
     assert "NFN_TILE_CUDA_TOKEN_WEIGHT_FAST_INT32_INIT" in kernels_text
     assert "init_gpt2_token_weight_fast_int32_with_bf16_shadow_float32_kernel" in kernels_text
+    assert "init_gpt2_token_weight_vector4_with_bf16_shadow_float32_kernel" in kernels_text
     token_threaded_init_helper = kernels_text[
         kernels_text.index("bool token_weight_threaded_init_enabled()") :
         kernels_text.index("void launch_init_gpt2_token_weight_threaded_float32")
     ]
     assert "return false;" in token_threaded_init_helper
+    token_vector4_init_helper = kernels_text[
+        kernels_text.index("bool token_weight_vector4_init_enabled()") :
+        kernels_text.index("void launch_init_gpt2_token_weight_threaded_float32")
+    ]
+    assert "return false;" in token_vector4_init_helper
     token_fast_int32_init_helper = kernels_text[
         kernels_text.index("bool token_weight_fast_int32_tile_init_enabled()") :
         kernels_text.index("void launch_init_gpt2_token_weight_threaded_float32")

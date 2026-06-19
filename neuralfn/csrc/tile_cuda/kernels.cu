@@ -6074,6 +6074,57 @@ __global__ void init_gpt2_token_weight_threaded_with_bf16_shadow_float32_kernel(
   }
 }
 
+__device__ __forceinline__ std::uint16_t bf16_bits_from_float(float value) {
+  const __nv_bfloat16 bf16_value = __float2bfloat16(value);
+  return *reinterpret_cast<const std::uint16_t*>(&bf16_value);
+}
+
+__global__ void init_gpt2_token_weight_vector4_float32_kernel(
+    float* __restrict__ values,
+    std::int64_t n) {
+  const std::int64_t idx = (static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x) * 4;
+  if (idx + 3 < n) {
+    const int bucket = static_cast<int>(idx) & 15;
+    reinterpret_cast<float4*>(values)[idx / 4] = make_float4(
+        static_cast<float>(bucket - 8) * 0.01f,
+        static_cast<float>(((bucket + 1) & 15) - 8) * 0.01f,
+        static_cast<float>(((bucket + 2) & 15) - 8) * 0.01f,
+        static_cast<float>(((bucket + 3) & 15) - 8) * 0.01f);
+    return;
+  }
+  for (std::int64_t tail = idx; tail < n; ++tail) {
+    const int bucket = static_cast<int>(tail) & 15;
+    values[tail] = static_cast<float>(bucket - 8) * 0.01f;
+  }
+}
+
+__global__ void init_gpt2_token_weight_vector4_with_bf16_shadow_float32_kernel(
+    float* __restrict__ values,
+    std::uint16_t* __restrict__ shadow_bf16_bits,
+    std::int64_t n) {
+  const std::int64_t idx = (static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x) * 4;
+  if (idx + 3 < n) {
+    const int bucket = static_cast<int>(idx) & 15;
+    const float value0 = static_cast<float>(bucket - 8) * 0.01f;
+    const float value1 = static_cast<float>(((bucket + 1) & 15) - 8) * 0.01f;
+    const float value2 = static_cast<float>(((bucket + 2) & 15) - 8) * 0.01f;
+    const float value3 = static_cast<float>(((bucket + 3) & 15) - 8) * 0.01f;
+    reinterpret_cast<float4*>(values)[idx / 4] = make_float4(value0, value1, value2, value3);
+    reinterpret_cast<ushort4*>(shadow_bf16_bits)[idx / 4] = make_ushort4(
+        bf16_bits_from_float(value0),
+        bf16_bits_from_float(value1),
+        bf16_bits_from_float(value2),
+        bf16_bits_from_float(value3));
+    return;
+  }
+  for (std::int64_t tail = idx; tail < n; ++tail) {
+    const int bucket = static_cast<int>(tail) & 15;
+    const float value = static_cast<float>(bucket - 8) * 0.01f;
+    values[tail] = value;
+    shadow_bf16_bits[tail] = bf16_bits_from_float(value);
+  }
+}
+
 __tile_global__ void sumsq_partials_float32_kernel(
     const float* __restrict__ values,
     float* __restrict__ partials,
@@ -12798,6 +12849,34 @@ bool token_weight_fast_int32_tile_init_enabled() {
   return enabled;
 }
 
+bool token_weight_vector4_init_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_INIT");
+    }
+    if (value == nullptr || value[0] == '\0') {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
 void launch_init_gpt2_token_weight_threaded_float32(
     float* values,
     std::uint16_t* shadow_bf16_bits,
@@ -12844,6 +12923,12 @@ void launch_init_gpt2_token_weight_fast_float32(
     launch_init_gpt2_token_weight_threaded_float32(values, nullptr, n, true, stream);
     return;
   }
+  if (token_weight_vector4_init_enabled()) {
+    constexpr int kThreads = 256;
+    const int blocks = static_cast<int>((n + (kThreads * 4 - 1)) / (kThreads * 4));
+    init_gpt2_token_weight_vector4_float32_kernel<<<blocks, kThreads, 0, stream>>>(values, n);
+    return;
+  }
   constexpr int kTokenInitTileSize = NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE;
   const int blocks = static_cast<int>((n + kTokenInitTileSize - 1) / kTokenInitTileSize);
   if (token_weight_fast_int32_tile_init_enabled() &&
@@ -12885,6 +12970,13 @@ void launch_init_gpt2_token_weight_fast_with_bf16_shadow_float32(
   }
   if (token_weight_threaded_init_enabled()) {
     launch_init_gpt2_token_weight_threaded_float32(values, shadow_bf16_bits, n, true, stream);
+    return;
+  }
+  if (token_weight_vector4_init_enabled()) {
+    constexpr int kThreads = 256;
+    const int blocks = static_cast<int>((n + (kThreads * 4 - 1)) / (kThreads * 4));
+    init_gpt2_token_weight_vector4_with_bf16_shadow_float32_kernel<<<blocks, kThreads, 0, stream>>>(
+        values, shadow_bf16_bits, n);
     return;
   }
   constexpr int kTokenInitTileSize = NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE;

@@ -10896,8 +10896,17 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT2_TOKEN_WEIGHT_THREADED_INIT",
                               "NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT"}),
             false);
+    const bool token_weight_vector4_init_enabled =
+        !token_weight_threaded_init_enabled &&
+        !legacy_mod17_token_weight_init_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT",
+                              "NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_INIT",
+                              "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT"}),
+            false);
     const bool token_weight_fast_int32_init_enabled =
         !token_weight_threaded_init_enabled &&
+        !token_weight_vector4_init_enabled &&
         !legacy_mod17_token_weight_init_enabled &&
         kTokenWeightElements <= static_cast<std::int64_t>(std::numeric_limits<int>::max()) &&
         env_flag_enabled_or_default(
@@ -18571,13 +18580,19 @@ int run_transformer_lm_training_json(
                 : (token_weight_bf16_initial_refresh_elided
                        ? (token_weight_threaded_init_enabled
                               ? "device-threaded-power2-deterministic-fused-bf16-shadow"
-                              : "device-tile-power2-deterministic-fused-bf16-shadow")
+                              : (token_weight_vector4_init_enabled
+                                     ? "device-vector4-power2-deterministic-fused-bf16-shadow"
+                                     : "device-tile-power2-deterministic-fused-bf16-shadow"))
                        : (token_weight_threaded_init_enabled
                               ? "device-threaded-power2-deterministic"
-                              : "device-tile-power2-deterministic")))
+                              : (token_weight_vector4_init_enabled
+                                     ? "device-vector4-power2-deterministic"
+                                     : "device-tile-power2-deterministic"))))
         << "\",\n"
         << "  \"token_weight_threaded_init_enabled\": "
         << (token_weight_threaded_init_enabled ? "true" : "false") << ",\n"
+        << "  \"token_weight_vector4_init_enabled\": "
+        << (token_weight_vector4_init_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_fast_int32_init_enabled\": "
         << (token_weight_fast_int32_init_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_init_legacy_mod17_enabled\": "
