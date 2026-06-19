@@ -133,16 +133,20 @@ class SessionGraphState:
 
 `server/services/persistence_worker.py`
 
-Decouples hot-path operations from database writes using an async queue.
+Decouples hot-path operations from database writes using Redis when
+`NEURALFN_REDIS_URL` is configured. When Redis is disabled or a Redis enqueue
+fails, the worker falls back to local synchronous persistence so single-process
+development, tests, and workstation runs do not lose the latest graph or run
+state to a background-thread teardown race.
 
 ### Methods
 
 | Method | Description |
 |--------|-------------|
-| `enqueue_update(session_id, graph, revision)` | Queues a session graph update for DB persistence. |
-| `enqueue_run_update(run_id, updates)` | Queues a training run status update for DB persistence. |
-| `start()` | Starts the background consumer thread. |
-| `stop()` | Signals the worker to drain the queue and shut down. |
+| `enqueue_update(session_id, graph, revision)` | Persists a session graph update locally or enqueues it to Redis when Redis is active. |
+| `enqueue_run_update(run_id, updates)` | Persists a training run status update locally or enqueues it to Redis when Redis is active. |
+| `start()` | Starts the Redis background consumer thread when Redis is active. |
+| `stop()` | Signals the Redis worker to drain the queue and shut down. |
 
 ---
 

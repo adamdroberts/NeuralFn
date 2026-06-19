@@ -245,7 +245,7 @@ This mirrors `examples/gpt_graph.py`. Template fields (`ModelSpec`, `BlockSpec`,
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `NEURALFN_DATABASE_URL` | SQLAlchemy URL for users, projects, sessions, datasets, runs | `sqlite:///…/neuralfn.db` under the repo root |
-| `NEURALFN_REDIS_URL` | Redis URL for shared live state (session graph cache, run events). If Redis is unreachable, the server falls back to in-memory live state | `redis://localhost:6379/1` |
+| `NEURALFN_REDIS_URL` | Redis URL for shared live state and persistence queues. Set to an empty value (`NEURALFN_REDIS_URL=`) for in-process live state and synchronous local persistence | `redis://localhost:6379/1` |
 | `NEURALFN_CREATE_SCHEMA_ON_STARTUP` | When not `0`, create DB tables on startup | `1` |
 | `NEURALFN_SNAPSHOTS_DIR` | Directory for persisted session snapshots | `server/session_snapshots` |
 | `NEURALFN_ARTIFACTS_DIR` | Directory for saved artifacts | `~/NeuralFn/artifacts` |

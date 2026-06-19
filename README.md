@@ -10,6 +10,14 @@ generic Python Tile extension and the trainer-facing raw C ABI both build from
 `NFN_TILE_CUDA_TEST=1 python -m pytest tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py tests/test_tile_cuda_optimizer.py -q -rs`
 to confirm the extension executes GPU tests instead of skipping.
 
+For local server/editor development, leaving `NEURALFN_REDIS_URL` empty keeps
+live state and persistence in-process. Redis-backed deployments still enqueue
+through Redis, but the no-Redis fallback now persists synchronously so tests and
+single-workstation runs do not race teardown or lose the latest session/run
+state. Raw-text dataset metadata can also resolve the known `gpt2`,
+`cl100k_base`, and `o200k_base` vocabulary sizes offline; actual tokenization
+still requires the tokenizer assets or the `tiktoken` cache.
+
 > **Pre-alpha notice:** NeuralFn is in active pre-alpha development. The SDK, REST API, MCP tools, and graph format are all subject to rapid, breaking changes without prior deprecation. Do not depend on API stability at this stage. See the [CHANGELOG](CHANGELOG.md) for a running list of what has changed.
 
 ## Documentation

@@ -45,6 +45,11 @@ _LOCAL_TIKTOKEN_FILES = {
     "cl100k_base": "cl100k_base.tiktoken",
     "o200k_base": "o200k_base.tiktoken",
 }
+_KNOWN_TIKTOKEN_VOCAB_SIZES = {
+    "gpt2": 50257,
+    "cl100k_base": 100277,
+    "o200k_base": 200019,
+}
 _SHARED_SENTENCEPIECE_MODEL_FILENAMES = {
     "sp1024": ("sp1024.model", "fineweb_1024_bpe.model"),
     "sp2048": ("sp2048.model", "fineweb_2048_bpe.model"),
@@ -276,7 +281,9 @@ def local_tiktoken_encoding_path(encoding_name: str) -> Path | None:
     if not filename:
         return None
     path = TIKTOKEN_ENCODINGS_DIR / filename
-    return path if path.exists() else None
+    if path.exists():
+        return path
+    return None
 
 
 @lru_cache(maxsize=None)
@@ -297,6 +304,8 @@ def raw_text_encoding_vocab_size(encoding_name: str) -> int:
         raise ValueError("encoding_name must be non-empty")
     if is_sentencepiece_tokenizer_name(normalized):
         return _sentencepiece_vocab_size(normalized)
+    if local_tiktoken_encoding_path(normalized) is None and normalized in _KNOWN_TIKTOKEN_VOCAB_SIZES:
+        return _KNOWN_TIKTOKEN_VOCAB_SIZES[normalized]
     return int(resolve_tiktoken_encoding(normalized).n_vocab)
 
 

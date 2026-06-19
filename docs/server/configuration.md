@@ -9,7 +9,7 @@ All server configuration is managed through the `Settings` dataclass in `server/
 | Field | Env Var | Default | Description |
 |-------|---------|---------|-------------|
 | `database_url` | `NEURALFN_DATABASE_URL` | `sqlite:///...neuralfn.db` | SQLAlchemy database connection URL. The default path is resolved relative to the repository root. |
-| `redis_url` | `NEURALFN_REDIS_URL` | `None` | Optional Redis URL for the `RedisLiveStateStore`. When unset, ephemeral state is held in memory. |
+| `redis_url` | `NEURALFN_REDIS_URL` | `redis://localhost:6379/1` | Optional Redis URL for shared live state and Redis-backed persistence queues. Set `NEURALFN_REDIS_URL=` to disable Redis and use in-process live state plus synchronous local persistence. |
 | `session_cookie_name` | `NEURALFN_SESSION_COOKIE_NAME` | `neuralfn_session` | Name of the HTTP-only cookie used for session authentication. |
 | `session_ttl_seconds` | `NEURALFN_SESSION_TTL_SECONDS` | `1209600` (14 days) | Lifetime of an authentication session in seconds. |
 | `snapshots_dir` | `NEURALFN_SNAPSHOTS_DIR` | `server/session_snapshots` | Directory where session snapshot JSON files are stored. |
@@ -43,3 +43,7 @@ NEURALFN_ALLOW_ORIGINS=https://app.example.com
 NEURALFN_MCP_EMAIL=agent@example.com
 NEURALFN_MCP_PASSWORD=secret
 ```
+
+For single-process local development or tests, set `NEURALFN_REDIS_URL=` to
+avoid connecting to the default local Redis URL. In that mode, live state is
+held in memory and persistence updates are written synchronously in-process.

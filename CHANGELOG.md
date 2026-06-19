@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revisited the failed CUDA 13.3/WSL test set and made the local test/runtime
+  paths deterministic. No-Redis persistence now processes the local fallback
+  synchronously instead of spawning daemon threads, which prevents SQLite
+  teardown races and guarantees latest session/run state is written before a
+  local request returns. Raw-text vocab-size resolution now returns known sizes
+  for `gpt2`, `cl100k_base`, and `o200k_base` without requiring a local
+  `.tiktoken` file; full tokenization still requires tokenizer assets. The
+  platform API test harness now bypasses the Python 3.13/AnyIO sync-threadpool
+  hang with a direct ASGI caller and inline threadpool shims, and stale tests
+  were updated for current JEPA semantic graph inputs, native GPT script
+  boundaries, resolver keyword contracts, and eager CPU JEPA training. Verified
+  CUDA Toolkit 13.3 by rebuilding `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; ran `tests/test_platform_api.py`
+  (`8 passed`), `tests/test_jepa_semantic.py` (`62 passed`),
+  `cli/tests/test_train_drop_last.py` plus
+  `tests/test_tokenizer_vocab_contract.py` (`60 passed, 10 subtests passed`),
+  backend/server/routing/dataset focused tests (`58 passed`),
+  `tests/test_tile_cuda_examples.py` (`18 passed`),
+  `tests/test_native_gpt2.py` (`51 passed, 1 skipped`; the skip is the
+  sandbox-only CUDA driver check), `python tools/check_native_no_torch_deps.py`,
+  the GPU-visible CUDA Tile suite (`537 passed`), and a real RTX 5090 one-step
+  native Tile-CUDA smoke reporting CUDA runtime/driver `13.3` and
+  `passed: true`.
+
 - Extended `tools/paired_kernel_speed.py` reporting for native CUDA Tile
   bisections. The JSON extractor already read several backend counters, but the
   terminal report now also prints and ratios `linear_tk_gemm_count`,

@@ -69,9 +69,16 @@ class PersistenceWorker:
 
     def _enqueue(self, payload: dict[str, Any]) -> None:
         if self._redis:
-            self._redis.rpush(self._queue_key, json.dumps(payload))
-        else:
-            threading.Thread(target=self._process_task, args=(payload,), daemon=True).start()
+            try:
+                self._redis.rpush(self._queue_key, json.dumps(payload))
+                return
+            except redis.RedisError as exc:
+                logger.warning(
+                    "Redis persistence enqueue failed; falling back to synchronous local persistence: %s",
+                    exc,
+                )
+                self._redis = None
+        self._process_task(payload)
 
     def start(self) -> None:
         if self._redis and (self._thread is None or not self._thread.is_alive()):
