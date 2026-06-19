@@ -2,7 +2,19 @@
 
 NeuralFn is a graph-native neural network framework where each neuron can be a built-in primitive or a user-defined Python function with typed I/O ports, connected in arbitrary directed graphs. This repository now combines that core library with an authenticated web platform for multi-project, multi-session editing, training, analytics, and MCP-driven automation.
 
-NeuralFn supports both a scalar graph runtime and optional PyTorch-backed graph runtimes for trainable module nodes. The default install no longer depends on Torch; native GPT training uses cached token shards and the compiled CUDA trainer path without importing `torch`.
+NeuralFn supports both a scalar graph runtime and optional PyTorch-backed graph runtimes for trainable module nodes. The default install is now the lean native/core SDK surface: it does not install Torch, NumPy, tokenizer, dataset, graph-analysis, or server packages. Native GPT training uses cached token shards and the compiled CUDA trainer path without importing `torch`.
+
+Install extras only for the workflows you need:
+
+```bash
+pip install -e .                 # native/core SDK and CLI metadata
+pip install -e ".[tile-cuda]"     # local CUDA Tile builds
+pip install -e ".[datasets]"      # raw-text tokenization and HF dataset cache setup
+pip install -e ".[graph]"         # Python graph analysis/runtime helpers
+pip install -e ".[server]"        # FastAPI editor/backend and MCP server
+pip install -e ".[torch]"         # legacy graph-backed Torch trainers
+pip install -e ".[all]"           # full development workstation
+```
 
 CUDA Tile development targets CUDA Toolkit 13.3+ on the SM120 workstation. The
 generic Python Tile extension and the trainer-facing raw C ABI both build from

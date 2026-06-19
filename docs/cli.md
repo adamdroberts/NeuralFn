@@ -22,10 +22,16 @@ The first editable install exposes the `neuralfn` and `server` packages from
 the repo root. The second installs the CLI entrypoint declared by
 `cli/pyproject.toml`.
 
-The default SDK install does not pull in Torch. Root `nfn --help` / no-argument
-startup, `nfn train|infer|eval --help`, `nfn kernels ... --help`, `nfn kernels list [--json]`, CUDA Tile registry metadata, and native GPT training work without importing Torch; install
-`pip install -e ".[torch]"` for graph-backed training or
-`pip install -e ".[tile-cuda]"` for Torch-free native CUDA Tile build tooling.
+The default SDK install is the lean native/core surface. Root `nfn --help` /
+no-argument startup, `nfn train|infer|eval --help`, `nfn kernels ... --help`,
+`nfn kernels list [--json]`, CUDA Tile registry metadata, and native GPT
+training work without installing or importing Torch, NumPy, tokenizers,
+HuggingFace datasets, graph-analysis packages, or server dependencies. Install
+`pip install -e ".[tile-cuda]"` for Torch-free native CUDA Tile build tooling,
+`pip install -e ".[datasets]"` for raw-text tokenization and HF dataset cache
+materialization, `pip install -e ".[graph]"` for Python graph helpers,
+`pip install -e ".[server]"` for the FastAPI/editor/MCP backend, and
+`pip install -e ".[torch]"` only for graph-backed Torch training.
 
 ## Commands
 

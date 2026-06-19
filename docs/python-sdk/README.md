@@ -8,11 +8,17 @@ API reference for the `neuralfn` Python package.
 pip install -e .
 ```
 
-The default SDK install does not require Torch. Install graph-backed training
-extras explicitly when needed:
+The default SDK install is the lean native/core surface. It does not install
+Torch, NumPy, `tiktoken`, HuggingFace `datasets`, graph-analysis packages, or
+server/MCP dependencies. Install workflow extras explicitly when needed:
 
 ```bash
+pip install -e ".[tile-cuda]"   # local CUDA Tile builds
+pip install -e ".[datasets]"    # raw-text tokenization and HF dataset caches
+pip install -e ".[graph]"       # Python graph runtime/analysis helpers
+pip install -e ".[server]"      # FastAPI editor backend and MCP server
 pip install -e ".[torch]"
+pip install -e ".[all]"         # full development workstation
 ```
 
 From a sibling project checked out next to the repo:
@@ -69,14 +75,15 @@ when callers access Torch-backed exports such as `TorchTrainer`,
 `TorchTrainConfig`, or template graph builders.
 
 `python tools/check_native_no_torch_deps.py` verifies both sides of that
-contract: it checks `pyproject.toml` so Torch remains optional-only, checks the
-compiled native GPT artifacts with `ldd` for Torch, c10, or Python runtime
-libraries, then runs the default native GPT, GPT-2-evo, NanoGPT, LLaMA
-fast/megakernel, MixLLaMA, JEPA semantic, semantic-router MoE, DeepSeek-V4,
-explicit `nfn train --tinystories`, default `nfn train`, and native inference
-entrypoints under an import blocker for `torch`, NumPy, tiktoken,
-`server.dataset_manager`, and `nfn_impl`. Use `--skip-artifacts` when only the
-Python no-import contract should be checked without local build outputs.
+contract: it checks `pyproject.toml` so Torch, NumPy, tokenizer, dataset, graph,
+and server packages remain optional-only, checks the compiled native GPT
+artifacts with `ldd` for Torch, c10, or Python runtime libraries, then runs the
+default native GPT, GPT-2-evo, NanoGPT, LLaMA fast/megakernel, MixLLaMA, JEPA
+semantic, semantic-router MoE, DeepSeek-V4, explicit `nfn train --tinystories`,
+default `nfn train`, and native inference entrypoints under an import blocker
+for `torch`, NumPy, tiktoken, `server.dataset_manager`, and `nfn_impl`. Use
+`--skip-artifacts` when only the Python no-import contract should be checked
+without local build outputs.
 
 For the native GPT path, `bash tools/build_native_gpt_binding.sh` builds the
 generic `neuralfn._native_gpt` C++ extension used by `run_native_gpt(...,

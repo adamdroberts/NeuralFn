@@ -35,9 +35,30 @@ FORBIDDEN_PYTHON_IMPORT_ROOTS = (
     "nfn_impl",
 )
 FORBIDDEN_PROJECT_DEPENDENCY_PREFIXES = (
+    "alembic",
+    "datasets",
+    "fastapi",
+    "mcp",
+    "networkx",
+    "numpy",
+    "pydantic",
+    "pymysql",
+    "python-multipart",
+    "redis",
+    "sqlalchemy",
+    "tiktoken",
     "torch",
     "torchvision",
     "torchaudio",
+    "uvicorn",
+)
+REQUIRED_OPTIONAL_DEPENDENCY_PREFIXES = (
+    "datasets",
+    "fastapi",
+    "networkx",
+    "numpy",
+    "tiktoken",
+    "torch",
 )
 DEFAULT_PYTHON_ENTRYPOINTS = (
     (
@@ -422,7 +443,7 @@ def project_dependency_report(repo_root: Path) -> dict[str, object]:
     pyproject = repo_root / "pyproject.toml"
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     dependencies = list(data.get("project", {}).get("dependencies", []))
-    optional_torch = list(data.get("project", {}).get("optional-dependencies", {}).get("torch", []))
+    optional_dependencies = dict(data.get("project", {}).get("optional-dependencies", {}))
     offenders: list[str] = []
     for dependency in dependencies:
         normalized = str(dependency).strip().lower().replace("_", "-")
@@ -435,12 +456,29 @@ def project_dependency_report(repo_root: Path) -> dict[str, object]:
             ):
                 offenders.append(str(dependency))
                 break
+    optional_hits: dict[str, list[str]] = {prefix: [] for prefix in REQUIRED_OPTIONAL_DEPENDENCY_PREFIXES}
+    for extra_name, extra_dependencies in optional_dependencies.items():
+        for dependency in extra_dependencies:
+            normalized = str(dependency).strip().lower().replace("_", "-")
+            for prefix in REQUIRED_OPTIONAL_DEPENDENCY_PREFIXES:
+                if (
+                    normalized == prefix
+                    or normalized.startswith(prefix + ">")
+                    or normalized.startswith(prefix + "=")
+                    or normalized.startswith(prefix + "[")
+                ):
+                    optional_hits[prefix].append(str(extra_name))
+    missing_optional = [
+        prefix for prefix, extra_names in optional_hits.items() if not extra_names
+    ]
     return {
         "name": "pyproject_default_dependencies",
         "path": str(pyproject),
-        "passed": not offenders and any(str(item).lower().startswith("torch") for item in optional_torch),
+        "passed": not offenders and not missing_optional,
         "offenders": offenders,
-        "optional_torch": optional_torch,
+        "forbidden_default_dependency_prefixes": list(FORBIDDEN_PROJECT_DEPENDENCY_PREFIXES),
+        "optional_dependency_hits": optional_hits,
+        "missing_optional_dependency_prefixes": missing_optional,
     }
 
 
@@ -509,6 +547,8 @@ def main() -> int:
                 print(f"{dependency_report['name']}: failed", file=sys.stderr)
                 for dependency in dependency_report["offenders"]:
                     print(f"  hard dependency: {dependency}", file=sys.stderr)
+                for prefix in dependency_report["missing_optional_dependency_prefixes"]:
+                    print(f"  missing optional dependency coverage: {prefix}", file=sys.stderr)
         for entry in python_report:
             if entry["passed"]:
                 print(f"{entry['name']}: ok")

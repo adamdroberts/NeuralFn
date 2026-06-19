@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Split the root Python package install into a lean native/core SDK surface plus
+  explicit workflow extras. `pip install -e .` no longer hard-installs Torch,
+  NumPy, tokenizer, dataset, graph-analysis, FastAPI/server, MCP, or database
+  packages; use `.[tile-cuda]`, `.[datasets]`, `.[graph]`, `.[server]`,
+  `.[torch]`, or `.[all]` for those workflows. This keeps default native CLI
+  and SDK startup aligned with the no-Torch/no-Python-ML-stack training path.
+  The native dependency verifier now fails if those packages drift back into
+  root `project.dependencies`, while still requiring optional-extra coverage
+  for the major workflows. Migration notes: development environments that use
+  the editor/backend, raw-text tokenization, Python graph helpers, or legacy
+  graph-backed Torch trainers should reinstall with the matching extra instead
+  of relying on the root install to pull everything in. Verification:
+  `python tools/check_native_no_torch_deps.py --skip-artifacts --json`,
+  `python -m pytest tests/test_native_gpt2.py -q -k
+  native_no_torch_dependency_verifier`, `python -m py_compile
+  tools/check_native_no_torch_deps.py`, and `git diff --check`.
+
 - Aligned the master `nfn train` direct native dispatcher with the other
   native launchers by setting `CUDA_MODULE_LOADING=LAZY` when the caller has
   not supplied a value. This keeps the default dense GPT CLI route on the

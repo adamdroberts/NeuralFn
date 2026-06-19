@@ -40,6 +40,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Build `libnfn_native_train_tile_ops.so` from CUDA Tile kernels without `torch/extension.h`.
 - [x] Expose AdamW, gradient accumulation, reductions, in-place scaling, and linear forward through `neuralfn/csrc/native_train/tile_ops.h`.
 - [x] Extend the no-Torch dependency verifier across GPT, GPT-2-evo, NanoGPT, `nfn train`, native inference, `neuralfn.native_train`, and public SDK native training exports so legacy handoff surfaces cannot import Torch/NumPy/tiktoken/dataset-manager code before delegating to compiled native CLIs.
+  - 2026-06-19 also made the pyproject contract enforce the same boundary: the default package install has no hard dependency on Torch, NumPy, tokenizer, dataset, graph-analysis, or server packages. Those workflows are now explicit extras (`tile-cuda`, `datasets`, `graph`, `server`, `torch`, or `all`), and the no-Torch verifier fails if those packages move back into default dependencies.
 - [x] Add a generic native-train binding command resolver so SDK tests and callers can inspect the compiled argv that `neuralfn._native_train` will spawn without importing Torch, dataset managers, or graph payload paths.
 - [x] Expose gradient/device-buffer fill through the native ABI for trainer-loop zeroing.
 - [x] Expose global gradient norm clip scale finalization and device-scalar gradient scaling through the native ABI.

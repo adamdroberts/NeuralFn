@@ -44,13 +44,13 @@ NFN_TILE_CUDA_TEST=1 python -m pytest \
 Those tests should execute GPU coverage; "CUDA Tile extension could not be built
 or loaded" means the extension build path still needs diagnosis.
 
-CUDA Tile native builds require CUDA Toolkit 13.3 or newer, `cuda_tile.h`, C++20, `nvcc --enable-tile`, and `ninja`. Torch is not a default SDK dependency, and the CUDA Tile extra no longer installs it. Install the native build extra with:
+CUDA Tile native builds require CUDA Toolkit 13.3 or newer, `cuda_tile.h`, C++20, `nvcc --enable-tile`, and `ninja`. The default SDK install is the lean native/core surface; it does not install Torch, NumPy, tokenizer, dataset, graph-analysis, or server packages. Install the native build extra with:
 
 ```bash
 pip install -e ".[tile-cuda]"
 ```
 
-Install `pip install -e ".[torch]"` separately only for graph-backed PyTorch execution or the legacy PyTorch Tile extension loader.
+Install `pip install -e ".[datasets]"` separately for raw-text tokenization and HF dataset cache materialization, `pip install -e ".[server]"` for the FastAPI/editor/MCP backend, and `pip install -e ".[torch]"` only for graph-backed PyTorch execution or the legacy PyTorch Tile extension loader.
 
 The trainer-facing raw C ABI build is separate:
 
@@ -66,7 +66,9 @@ python tools/check_native_no_torch_deps.py
 ```
 
 Pass explicit artifact paths to check candidate builds, or add `--json` for a
-machine-readable CI report. The gate also imports the top-level native SDK
+machine-readable CI report. The gate also rejects hard pyproject dependencies
+on Torch, NumPy, tokenizers, datasets, graph-analysis packages, and server
+runtime packages so native installs stay lean. It imports the top-level native SDK
 exports such as `NativeGptRunConfig`,
 `build_native_gpt_compiled_cli_run_config()`, `native_gpt_kernel_backend()`,
 and `native_gpt_parameter_count()` while blocking `torch`, NumPy, tiktoken,
