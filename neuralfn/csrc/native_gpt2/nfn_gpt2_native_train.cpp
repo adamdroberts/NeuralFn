@@ -9350,9 +9350,13 @@ int run_transformer_lm_training_json(
         error = exc.what();
     }
     if (error.empty() && (
-            batch_size <= 0 || seq_len <= 0 || cfg.max_steps <= 0 ||
+            batch_size <= 0 || seq_len <= 0 ||
+            (!cfg.startup_only && cfg.max_steps <= 0) ||
+            cfg.max_steps < 0 ||
             target_layers <= 0 || cfg.lm_head_row_chunk_size <= 0)) {
-        error = "batch size, seq_len, num_layers, max_steps, and lm_head_row_chunk_size must be positive";
+        error = cfg.startup_only
+            ? "batch size, seq_len, num_layers, max_steps >= 0, and lm_head_row_chunk_size must be valid"
+            : "batch size, seq_len, num_layers, max_steps, and lm_head_row_chunk_size must be positive";
     }
     if (error.empty() && cfg.layer_evo_enabled &&
         (cfg.evo_layer_index < 0 || cfg.evo_layer_index >= target_layers ||

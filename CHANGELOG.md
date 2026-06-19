@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Allowed dense GPT native `--startup-only` probes to use `--max-steps 0`.
+  Startup-only setup checks now keep the full Tile-CUDA transformer allocation
+  path but exit before optimizer work without tripping the normal positive-step
+  training validator; real training still rejects non-positive `max_steps`.
+  Migration notes: benchmark scripts can use zero-step startup probes for setup
+  timing, while train-loop runs should keep positive `--max-steps` values.
+  Verification: added a native CLI regression that reaches the missing Tile ops
+  library gate with `--startup-only --max-steps 0` instead of failing
+  validation; after the CUDA 13.3 reinstall, the latest 5-step same-script
+  parity check measured NeuralFn at `2536.100 ms/step` versus llm.kittens at
+  `2429.056 ms/step` (`1.044068x` train-loop wall, `0.957209x` tokens/sec).
+  Rechecked and rejected the LM-head concurrent dHidden/dWeight candidate
+  (`1.002028x` wall), the combined dInput-before-dWeight scheduling candidate
+  (`1.000696x` wall), the cudaMallocAsync startup candidate (`1.142263x` total
+  startup), and explicit exit-time CUDA frees (`1.378794x` total startup), so
+  no slower kernel or allocator default was promoted.
+
 - Reordered the compiled native GPT selected-graph gate ahead of token-shard
   resolution for real `--train-transformer-lm` runs. Unsupported shipped
   templates, unknown templates, missing custom graph files, and custom graphs

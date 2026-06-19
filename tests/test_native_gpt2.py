@@ -2787,6 +2787,39 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["loaded"] is False
     assert train_transformer_payload["cuda_runtime_loaded"] is False
 
+    startup_zero_steps_missing_ops = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(dataset_path),
+            "--train-transformer-lm",
+            "--startup-only",
+            "--tile-ops-lib",
+            str(tmp_path / "missing-tile-ops.so"),
+            "--batch-size",
+            "1",
+            "--train-seq-len",
+            "2",
+            "--max-steps",
+            "0",
+            "--eval-every-steps",
+            "0",
+            "--eval-batches",
+            "1",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert startup_zero_steps_missing_ops.returncode == 2
+    startup_zero_steps_payload = json.loads(startup_zero_steps_missing_ops.stdout)
+    assert startup_zero_steps_payload["status"] == "native-transformer-lm-failed"
+    assert startup_zero_steps_payload["startup_only"] is True
+    assert startup_zero_steps_payload["max_steps"] == 0
+    assert "max_steps" not in startup_zero_steps_payload["error"]
+    assert "missing-tile-ops.so" in startup_zero_steps_payload["error"]
+
     missing_train_transformer_profile_json = tmp_path / "missing-transformer-lm-profile.json"
     missing_train_transformer_profile = subprocess.run(
         [
