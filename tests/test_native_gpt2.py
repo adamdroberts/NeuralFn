@@ -2910,7 +2910,11 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["lm_head_public_vocab_ce_enabled"] is True
     assert train_transformer_payload["lm_head_softmax_vocab"] == 50257
     assert train_transformer_payload["lm_head_logit_row_stride"] == 50304
-    assert train_transformer_payload["lm_head_padded_dlogits_zeroed"] is True
+    assert train_transformer_payload["lm_head_padded_dlogits_zeroed"] is False
+    assert train_transformer_payload["lm_head_ce_pad_zero_skipped"] is True
+    assert train_transformer_payload["token_weight_padding_zero_enabled"] is True
+    assert train_transformer_payload["token_weight_init_elements"] == 50257 * 768
+    assert train_transformer_payload["token_weight_padding_elements"] == (50304 - 50257) * 768
     assert train_transformer_payload["lm_head_classifier_strategy_contract"] == {
         "reference_strategy": "llm.kittens-full-resident-logits-fused-classifier",
         "native_strategy": "row-chunked-bf16-logits-inplace-public-vocab-ce-loss-dlogits",
@@ -2949,12 +2953,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["lm_head_bf16_logit_bytes"] == 0
     assert (
         train_transformer_payload["lm_head_ce_backward_strategy"]
-        == "public-vocab-strided-fused-row-bf16-logits-dlogits"
+        == "public-vocab-strided-no-pad-zero-fused-row-bf16-logits-dlogits"
     )
     assert "lm_head_ce_loss_backward_fused_available" in train_transformer_payload
     assert (
         train_transformer_payload["lm_head_ce_loss_backward_strategy"]
         in {
+            "fused-loss-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets",
             "fused-loss-accumulate-and-dlogits-public-vocab-bf16-u16-targets",
             "separate-loss-partials-reduction-then-dlogits",
         }
@@ -5685,6 +5690,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert ".wte.forward.u16" in gpt2_source_text
     assert ".ce.forward.public_vocab_strided_bf16_bits_u16_targets" in gpt2_source_text
     assert "ce.backward.inplace.public_vocab_strided_bf16_bits_u16_targets" in gpt2_source_text
+    assert "ce_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_workspace" in gpt2_source_text
+    assert "nfn_native_tile_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace" in header_text
+    assert "nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets" in source_text
+    assert "zero_token_padding_enabled" in gpt2_source_text
     assert "wte.backward_weight.u16" in gpt2_source_text
     assert "elided-direct-u16-kernels" in gpt2_source_text
     assert "token_u16_arena.copy_async" in gpt2_source_text

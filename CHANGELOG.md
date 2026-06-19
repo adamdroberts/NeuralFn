@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Matched dense GPT native token padding behavior to llm.kittens and added
+  no-pad-zero CE entry points. The native GPT trainer now initializes only the
+  real 50,257 tokenizer rows of the tied token embedding/LM-head tensor, keeps
+  the 47 padded rows zero in FP32 master and BF16 shadow storage, and uses new
+  `nfn_native_tile_token_cross_entropy_backward_*_no_pad_zero*` Tile ABI
+  symbols for public-vocab CE/dlogits so the CE kernel no longer scrubs padded
+  dlogit columns every row. Runtime JSON reports `lm_head_ce_pad_zero_skipped`,
+  `token_weight_padding_zero_enabled`, `token_weight_init_elements`, and
+  `token_weight_padding_elements`; set `NFN_NATIVE_GPT_ZERO_TOKEN_PADDING=0` or
+  `NFN_NATIVE_GPT_SKIP_CE_PAD_ZERO=0` only for paired diagnostics against the
+  previous behavior. Verification after the CUDA Toolkit 13.3.33 WSL reinstall:
+  rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; ran `python -m pytest tests/test_native_gpt2.py
+  -q` (`52 passed, 1 skipped`), `python -m pytest
+  tests/test_tile_cuda_examples.py -q` (`23 passed`),
+  `NFN_TILE_CUDA_TEST=1 python -m pytest tests/test_tile_cuda_gpu.py -q -rs`
+  (`1 passed`), and `python tools/check_native_no_torch_deps.py`. The
+  native-vs-native paired benchmark measured the new default at
+  `2514.110 ms/step` versus the prior full-padded-token-init/CE-scrub route at
+  `2517.970 ms/step`; the canonical llm.kittens parity run measured NeuralFn at
+  `2533.160 ms/step` versus llm.kittens at `2460.950 ms/step`
+  (`1.029377x` train-loop wall, `0.971123x` tokens/sec).
+
 - Added a diagnostic full-batch resident LM-head reuse schedule for the native
   dense GPT trainer. When
   `NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1` is already enabled,

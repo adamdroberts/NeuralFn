@@ -1226,7 +1226,27 @@ void launch_token_cross_entropy_backward_inplace_strided_with_workspace_float32(
     std::int64_t row_stride,
     float loss_scale,
     cudaStream_t stream);
+void launch_token_cross_entropy_backward_inplace_strided_no_pad_zero_with_workspace_float32(
+    float* logits,
+    const std::int64_t* targets,
+    float* row_max,
+    float* row_denom,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    cudaStream_t stream);
 void launch_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace(
+    std::uint16_t* logits,
+    const std::int64_t* targets,
+    float* row_max,
+    float* row_denom,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    cudaStream_t stream);
+void launch_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_with_workspace(
     std::uint16_t* logits,
     const std::int64_t* targets,
     float* row_max,
@@ -1246,7 +1266,26 @@ void launch_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_w
     std::int64_t row_stride,
     float loss_scale,
     cudaStream_t stream);
+void launch_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* row_max,
+    float* row_denom,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    cudaStream_t stream);
 void launch_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* loss_total,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    cudaStream_t stream);
+void launch_token_cross_entropy_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
     std::uint16_t* logits,
     const std::uint16_t* targets,
     float* loss_total,
@@ -4139,6 +4178,29 @@ int nfn_native_tile_token_cross_entropy_backward_inplace_strided_with_workspace_
     return launch_status();
 }
 
+int nfn_native_tile_token_cross_entropy_backward_inplace_strided_no_pad_zero_with_workspace_float32(
+    float* logits,
+    const std::int64_t* targets,
+    float* row_max_workspace,
+    float* row_denom_workspace,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_token_cross_entropy_backward_inplace_strided_no_pad_zero_with_workspace_float32(
+        logits,
+        targets,
+        row_max_workspace,
+        row_denom_workspace,
+        rows,
+        vocab,
+        row_stride,
+        loss_scale,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace(
     std::uint16_t* logits,
     const std::int64_t* targets,
@@ -4150,6 +4212,29 @@ int nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_
     float loss_scale,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace(
+        logits,
+        targets,
+        row_max_workspace,
+        row_denom_workspace,
+        rows,
+        vocab,
+        row_stride,
+        loss_scale,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_with_workspace(
+    std::uint16_t* logits,
+    const std::int64_t* targets,
+    float* row_max_workspace,
+    float* row_denom_workspace,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_with_workspace(
         logits,
         targets,
         row_max_workspace,
@@ -4185,6 +4270,29 @@ int nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_t
     return launch_status();
 }
 
+int nfn_native_tile_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* row_max_workspace,
+    float* row_denom_workspace,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
+        logits,
+        targets,
+        row_max_workspace,
+        row_denom_workspace,
+        rows,
+        vocab,
+        row_stride,
+        loss_scale,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets(
     std::uint16_t* logits,
     const std::uint16_t* targets,
@@ -4195,6 +4303,27 @@ int nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_
     float loss_scale,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets(
+        logits,
+        targets,
+        loss_total,
+        rows,
+        vocab,
+        row_stride,
+        loss_scale,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* loss_total,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_token_cross_entropy_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
         logits,
         targets,
         loss_total,

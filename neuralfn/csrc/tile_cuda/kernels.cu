@@ -10603,7 +10603,8 @@ __global__ void token_cross_entropy_backward_inplace_strided_float32_fused_kerne
     std::int64_t rows,
     std::int64_t vocab,
     std::int64_t row_stride,
-    float loss_scale) {
+    float loss_scale,
+    bool zero_padding) {
   const std::int64_t row = rows - static_cast<std::int64_t>(blockIdx.x) - 1;
   if (row >= rows) {
     return;
@@ -10631,8 +10632,10 @@ __global__ void token_cross_entropy_backward_inplace_strided_float32_fused_kerne
     const float onehot = col == target ? 1.0f : 0.0f;
     row_logits[col] = (prob - onehot) * loss_scale;
   }
-  for (std::int64_t col = vocab + threadIdx.x; col < row_stride; col += blockDim.x) {
-    row_logits[col] = 0.0f;
+  if (zero_padding) {
+    for (std::int64_t col = vocab + threadIdx.x; col < row_stride; col += blockDim.x) {
+      row_logits[col] = 0.0f;
+    }
   }
 }
 
@@ -10645,7 +10648,8 @@ __global__ void token_cross_entropy_backward_inplace_strided_bf16_bits_fused_ker
     float loss_scale,
     bool vec_stores,
     bool vec_loads,
-    bool use_exp2) {
+    bool use_exp2,
+    bool zero_padding) {
   const std::int64_t row = rows - static_cast<std::int64_t>(blockIdx.x) - 1;
   if (row >= rows) {
     return;
@@ -10701,8 +10705,10 @@ __global__ void token_cross_entropy_backward_inplace_strided_bf16_bits_fused_ker
       row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
     }
   }
-  for (std::int64_t col = vocab + threadIdx.x; col < row_stride; col += blockDim.x) {
-    row_logits[col] = f32_to_bf16_bits_device(0.0f);
+  if (zero_padding) {
+    for (std::int64_t col = vocab + threadIdx.x; col < row_stride; col += blockDim.x) {
+      row_logits[col] = f32_to_bf16_bits_device(0.0f);
+    }
   }
 }
 
@@ -10715,7 +10721,8 @@ __global__ void token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targe
     float loss_scale,
     bool vec_stores,
     bool vec_loads,
-    bool use_exp2) {
+    bool use_exp2,
+    bool zero_padding) {
   const std::int64_t row = rows - static_cast<std::int64_t>(blockIdx.x) - 1;
   if (row >= rows) {
     return;
@@ -10771,8 +10778,10 @@ __global__ void token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targe
       row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
     }
   }
-  for (std::int64_t col = vocab + threadIdx.x; col < row_stride; col += blockDim.x) {
-    row_logits[col] = f32_to_bf16_bits_device(0.0f);
+  if (zero_padding) {
+    for (std::int64_t col = vocab + threadIdx.x; col < row_stride; col += blockDim.x) {
+      row_logits[col] = f32_to_bf16_bits_device(0.0f);
+    }
   }
 }
 
@@ -10786,7 +10795,8 @@ __global__ void token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_
     float loss_scale,
     bool vec_stores,
     bool vec_loads,
-    bool use_exp2) {
+    bool use_exp2,
+    bool zero_padding) {
   const std::int64_t row = rows - static_cast<std::int64_t>(blockIdx.x) - 1;
   if (row >= rows) {
     return;
@@ -10848,8 +10858,10 @@ __global__ void token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_
       row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
     }
   }
-  for (std::int64_t col = vocab + threadIdx.x; col < row_stride; col += blockDim.x) {
-    row_logits[col] = f32_to_bf16_bits_device(0.0f);
+  if (zero_padding) {
+    for (std::int64_t col = vocab + threadIdx.x; col < row_stride; col += blockDim.x) {
+      row_logits[col] = f32_to_bf16_bits_device(0.0f);
+    }
   }
 }
 
@@ -16242,7 +16254,29 @@ void launch_token_cross_entropy_backward_inplace_strided_with_workspace_float32(
   (void)row_denom;
   constexpr int threads = 1024;
   token_cross_entropy_backward_inplace_strided_float32_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
-      logits, targets, rows, vocab, row_stride, loss_scale);
+      logits, targets, rows, vocab, row_stride, loss_scale, true);
+}
+
+void launch_token_cross_entropy_backward_inplace_strided_no_pad_zero_with_workspace_float32(
+    float* logits,
+    const std::int64_t* targets,
+    float* row_max,
+    float* row_denom,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    cudaStream_t stream) {
+  if (row_stride == vocab) {
+    launch_token_cross_entropy_backward_inplace_with_workspace_float32(
+        logits, targets, row_max, row_denom, rows, vocab, loss_scale, stream);
+    return;
+  }
+  (void)row_max;
+  (void)row_denom;
+  constexpr int threads = 1024;
+  token_cross_entropy_backward_inplace_strided_float32_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
+      logits, targets, rows, vocab, row_stride, loss_scale, false);
 }
 
 void launch_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace(
@@ -16267,7 +16301,32 @@ void launch_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspac
   const bool vec_loads = cross_entropy_bf16_vec_loads_enabled();
   const bool use_exp2 = cross_entropy_bf16_exp2_enabled();
   token_cross_entropy_backward_inplace_strided_bf16_bits_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
-      logits, targets, rows, vocab, row_stride, loss_scale, vec_stores, vec_loads, use_exp2);
+      logits, targets, rows, vocab, row_stride, loss_scale, vec_stores, vec_loads, use_exp2, true);
+}
+
+void launch_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_with_workspace(
+    std::uint16_t* logits,
+    const std::int64_t* targets,
+    float* row_max,
+    float* row_denom,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    cudaStream_t stream) {
+  if (row_stride == vocab) {
+    launch_token_cross_entropy_backward_inplace_bf16_bits_with_workspace(
+        logits, targets, row_max, row_denom, rows, vocab, loss_scale, stream);
+    return;
+  }
+  (void)row_max;
+  (void)row_denom;
+  const int threads = cross_entropy_bf16_threads_per_row();
+  const bool vec_stores = cross_entropy_bf16_vec_stores_enabled();
+  const bool vec_loads = cross_entropy_bf16_vec_loads_enabled();
+  const bool use_exp2 = cross_entropy_bf16_exp2_enabled();
+  token_cross_entropy_backward_inplace_strided_bf16_bits_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
+      logits, targets, rows, vocab, row_stride, loss_scale, vec_stores, vec_loads, use_exp2, false);
 }
 
 void launch_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_with_workspace(
@@ -16287,7 +16346,27 @@ void launch_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_w
   const bool vec_loads = cross_entropy_bf16_vec_loads_enabled();
   const bool use_exp2 = cross_entropy_bf16_exp2_enabled();
   token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
-      logits, targets, rows, vocab, row_stride, loss_scale, vec_stores, vec_loads, use_exp2);
+      logits, targets, rows, vocab, row_stride, loss_scale, vec_stores, vec_loads, use_exp2, true);
+}
+
+void launch_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* row_max,
+    float* row_denom,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    cudaStream_t stream) {
+  (void)row_max;
+  (void)row_denom;
+  const int threads = cross_entropy_bf16_threads_per_row();
+  const bool vec_stores = cross_entropy_bf16_vec_stores_enabled();
+  const bool vec_loads = cross_entropy_bf16_vec_loads_enabled();
+  const bool use_exp2 = cross_entropy_bf16_exp2_enabled();
+  token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
+      logits, targets, rows, vocab, row_stride, loss_scale, vec_stores, vec_loads, use_exp2, false);
 }
 
 void launch_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets(
@@ -16304,7 +16383,24 @@ void launch_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targ
   const bool vec_loads = cross_entropy_bf16_vec_loads_enabled();
   const bool use_exp2 = cross_entropy_bf16_exp2_enabled();
   token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
-      logits, targets, loss_total, rows, vocab, row_stride, loss_scale, vec_stores, vec_loads, use_exp2);
+      logits, targets, loss_total, rows, vocab, row_stride, loss_scale, vec_stores, vec_loads, use_exp2, true);
+}
+
+void launch_token_cross_entropy_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* loss_total,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    cudaStream_t stream) {
+  const int threads = cross_entropy_bf16_threads_per_row();
+  const bool vec_stores = cross_entropy_bf16_vec_stores_enabled();
+  const bool vec_loads = cross_entropy_bf16_vec_loads_enabled();
+  const bool use_exp2 = cross_entropy_bf16_exp2_enabled();
+  token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
+      logits, targets, loss_total, rows, vocab, row_stride, loss_scale, vec_stores, vec_loads, use_exp2, false);
 }
 
 void launch_masked_token_cross_entropy_backward_float32(
