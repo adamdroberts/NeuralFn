@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an opt-in dense GPT native LM-head backward scheduling candidate behind
+  `NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` /
+  `NFN_NATIVE_GPT2_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1`. After BF16 CE
+  produces dlogits for a row chunk, the trainer records a CUDA event, launches
+  LM-head dHidden and dWeight on two non-blocking CUDA streams, synchronizes
+  both streams, and then proceeds to the next row chunk. The default remains
+  the serial dHidden-then-dWeight route because same-script RTX 5090 timing
+  measured the candidate slower (`1.004893x` train-loop wall time,
+  `0.995133x` tokens/sec). Runtime JSON now reports
+  `lm_head_concurrent_dhidden_dweight_requested`,
+  `lm_head_concurrent_dhidden_dweight_available`,
+  `lm_head_concurrent_dhidden_dweight_enabled`, and
+  `lm_head_dhidden_dweight_schedule_strategy`; stage timing reports
+  `lm_head_backward.dhidden_dweight_concurrent` when the candidate path runs.
+  Migration notes: no caller change is required unless diagnostic tooling wants
+  to opt into the candidate or assert the new JSON fields. Verification:
+  focused native GPT source/compile tests; `bash tools/build_native_gpt_cli.sh`;
+  a one-step CUDA smoke with the candidate enabled; and
+  `NFN_SM120_NATIVE_STEPS=5 NFN_SM120_NATIVE_SAMPLES=3
+  NFN_SM120_NATIVE_WARMUP=1
+  NFN_SM120_NATIVE_CANDIDATE_ENV=NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Removed the redundant full-device sync before dense GPT native LM-head
   train-loss scalar copy. The default path now relies on the blocking
   device-to-host `cudaMemcpy` for the required ordering, while

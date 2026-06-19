@@ -4975,6 +4975,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_dweight_beta_zero_scope" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN" in gpt2_source_text
     assert "lm_head_dweight_before_dhidden_enabled" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT" in gpt2_source_text
+    assert "lm_head_concurrent_dhidden_dweight_enabled" in gpt2_source_text
+    assert "two-nonblocking-cuda-streams-after-ce-event" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS" in gpt2_source_text
     assert "lm_head_reverse_chunk_order_enabled" in gpt2_source_text
     assert "lm_head_backward.hidden_prepack" in gpt2_source_text
@@ -5624,6 +5628,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_STAGE_TIMING_MAX_EVENTS" in gpt2_source_text
     assert "cudaEventCreateWithFlags" in gpt2_source_text
     assert "cudaEventElapsedTime" in gpt2_source_text
+    assert "cudaStreamCreateWithFlags" in gpt2_source_text
+    assert "cudaStreamWaitEvent" in gpt2_source_text
+    assert "cudaStreamSynchronize" in gpt2_source_text
+    assert "cudaStreamDestroy" in gpt2_source_text
     assert "stage_timing_enabled" in gpt2_source_text
     assert "stage_timing_max_events" in gpt2_source_text
     assert "stage_timing_event_count" in gpt2_source_text
@@ -5634,6 +5642,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_backward" in gpt2_source_text
     assert "lm_head_backward.dhidden" in gpt2_source_text
     assert "lm_head_backward.dweight" in gpt2_source_text
+    assert "lm_head_backward.dhidden_dweight_concurrent" in gpt2_source_text
     assert 'stage_name + ".attention"' in gpt2_source_text
     assert 'stage_name + ".attention.qkv"' in gpt2_source_text
     assert 'stage_name + ".attention.sdpa"' in gpt2_source_text

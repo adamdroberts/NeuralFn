@@ -1240,6 +1240,8 @@ Dense GPT has a compiled Tile CUDA preflight in `nfn_gpt_native_train`. Use `--b
 
 The native GPT-2 transformer-LM trainer pads only the tensor row count: tokenizer-visible `vocab` stays 50,257, while `padded_vocab` is 50,304 for the tied token embedding/LM-head parameter, logits workspace sizing, and native checkpoint payload accounting. CE loss/backward uses `vocab` as the softmax domain and `padded_vocab` as the row stride, then zeroes padded dlogit columns before LM-head dWeight accumulation.
 
+`NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` and the GPT-2-prefixed fallback env name enable a diagnostic two-stream LM-head backward schedule in the compiled dense GPT trainer. After the BF16 CE+dlogits row-chunk kernel completes, the trainer records a CUDA event, waits on it from two non-blocking streams, launches LM-head dHidden and dWeight on those streams, and synchronizes both streams before the next row chunk reuses the dlogit workspace. The default remains the serial schedule because paired RTX 5090 timing measured the two-stream candidate slower (`1.004893x` train-loop wall time, `0.995133x` tokens/sec). Runtime JSON reports `lm_head_concurrent_dhidden_dweight_requested`, `lm_head_concurrent_dhidden_dweight_available`, `lm_head_concurrent_dhidden_dweight_enabled`, and `lm_head_dhidden_dweight_schedule_strategy`; stage timing reports `lm_head_backward.dhidden_dweight_concurrent` for active candidate runs.
+
 For trainer linear-kernel bisection, `NFN_NATIVE_LINEAR_TK_DINPUT=1` still
 routes every supported BF16/BF16 dInput shape through the SM120 TK bridge.
 Prefer the shape-selective
