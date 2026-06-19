@@ -4,6 +4,7 @@ import json
 import importlib.util
 import os
 import py_compile
+import signal
 import subprocess
 import sys
 import tempfile
@@ -934,4 +935,55 @@ def test_paired_kernel_speed_tool_records_command_timeout() -> None:
     assert sample["candidate"]["timeout_seconds"] == 0.1
     assert payload["command_timeout_seconds"] == 0.1
     time.sleep(1.5)
+    assert not marker_path.exists()
+
+
+def test_paired_kernel_speed_tool_terminates_process_group() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    temp_dir = Path(tempfile.mkdtemp())
+    marker_path = temp_dir / "child-survived.txt"
+    child_script = temp_dir / "interrupt_child.py"
+    spawner_script = temp_dir / "interrupt_spawner.py"
+    child_script.write_text(
+        "import time\n"
+        "from pathlib import Path\n"
+        "time.sleep(1.0)\n"
+        f"Path({str(marker_path)!r}).write_text('alive')\n",
+        encoding="utf-8",
+    )
+    spawner_script.write_text(
+        "import subprocess\n"
+        "import sys\n"
+        "import time\n"
+        f"subprocess.Popen([sys.executable, {str(child_script)!r}])\n"
+        "time.sleep(5)\n",
+        encoding="utf-8",
+    )
+
+    proc = subprocess.Popen(
+        [sys.executable, str(spawner_script)],
+        start_new_session=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        time.sleep(0.2)
+        returncode = module.terminate_process_group(
+            proc,
+            first_signal=signal.SIGTERM,
+            wait_seconds=1.0,
+        )
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+    assert returncode != 0
+    time.sleep(1.2)
     assert not marker_path.exists()

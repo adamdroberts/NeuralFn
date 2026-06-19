@@ -436,27 +436,46 @@ def timeout_output_to_text(value: str | bytes | None) -> str:
     return ""
 
 
-def kill_timed_out_process(proc: subprocess.Popen[str]) -> int:
-    """Kill a timed-out command and its process group, returning its final code."""
+def terminate_process_group(
+    proc: subprocess.Popen[str],
+    *,
+    first_signal: int,
+    final_signal: int = signal.SIGKILL,
+    wait_seconds: float = 5.0,
+) -> int:
+    """Terminate a command and its process group, returning its final code."""
     try:
         process_group_id = os.getpgid(proc.pid)
     except ProcessLookupError:
         process_group_id = proc.pid
     try:
-        os.killpg(process_group_id, signal.SIGKILL)
+        os.killpg(process_group_id, first_signal)
     except ProcessLookupError:
         pass
     except PermissionError:
-        proc.kill()
+        if first_signal == signal.SIGKILL:
+            proc.kill()
+        else:
+            proc.terminate()
     try:
-        proc.wait(timeout=5.0)
+        proc.wait(timeout=wait_seconds)
     except subprocess.TimeoutExpired:
-        proc.kill()
         try:
-            proc.wait(timeout=5.0)
+            os.killpg(process_group_id, final_signal)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            proc.kill()
+        try:
+            proc.wait(timeout=wait_seconds)
         except subprocess.TimeoutExpired:
             return -1
     return proc.returncode if proc.returncode is not None else -1
+
+
+def kill_timed_out_process(proc: subprocess.Popen[str]) -> int:
+    """Kill a timed-out command and its process group, returning its final code."""
+    return terminate_process_group(proc, first_signal=signal.SIGKILL)
 
 
 def run_once(
@@ -527,6 +546,14 @@ def run_once(
             result["gpu_before"] = gpu_before
             result["gpu_after"] = gpu_snapshot()
         return result
+    except KeyboardInterrupt:
+        if "proc" in locals():
+            terminate_process_group(proc, first_signal=signal.SIGTERM, wait_seconds=2.0)
+        raise
+    except BaseException:
+        if "proc" in locals():
+            terminate_process_group(proc, first_signal=signal.SIGTERM, wait_seconds=2.0)
+        raise
     seconds = time.perf_counter() - start
     returncode = proc.returncode if proc.returncode is not None else -1
     native_metrics = native_metrics_from_command_output(run_argv, stdout)

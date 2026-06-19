@@ -85,7 +85,9 @@ environment unchanged. Pass repeatable `--baseline-env KEY=VALUE` or
 overrides apply only to that side of the pair and are recorded in the JSON/text
 output. `--command-timeout-seconds N` terminates the timed-out command's process
 group so a slow native candidate does not leave child GPU work running after the
-sample is recorded. Pass `--require-idle-selected-gpu` for dedicated
+sample is recorded. Interrupting the helper also terminates the active command
+process group before re-raising, so aborted memory-heavy candidates do not keep
+running on the selected GPU. Pass `--require-idle-selected-gpu` for dedicated
 benchmark runs that must abort if `nvidia-smi` reports any compute process on
 the selected CUDA GPU before each warmup or measured command. The idle check is scoped
 to the selected GPU UUID, so a separate display GPU can still be active. Pass

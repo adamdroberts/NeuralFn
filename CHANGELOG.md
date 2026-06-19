@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Hardened paired CUDA benchmark cleanup after interrupted native candidates.
+  `tools/paired_kernel_speed.py` now terminates the active command process group
+  on `KeyboardInterrupt` or other unexpected interruption, matching the existing
+  timeout cleanup behavior and preventing memory-heavy native probes from
+  continuing to use the selected GPU after the benchmark parent exits.
+  Migration notes: command-line flags are unchanged; interrupted benchmark runs
+  still re-raise the interruption after cleanup. Verification: added a
+  process-group termination regression test; after the CUDA 13.3 reinstall,
+  rebuilt the native Tile ops and GPT CLI, ran the native GPT suite
+  (`52 passed, 1 skipped`), the no-Torch guard, the focused Tile CUDA tests, and
+  the opt-in `NFN_TILE_CUDA_TEST=1` GPU smoke. A no-stage 5-step RTX 5090 parity
+  run measured llm.kittens at `2471.224 ms/step` and NeuralFn at
+  `2541.080 ms/step` (`1.028292x` train-loop wall, `0.972465x` tokens/sec).
+  Rechecked and rejected `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1`
+  (`1.019016x` train-loop wall), and the full-logit LM-head reuse probe remained
+  non-viable for default training because a three-step native-vs-native probe did
+  not finish in the useful benchmark window.
+
 - Allowed dense GPT native `--startup-only` probes to use `--max-steps 0`.
   Startup-only setup checks now keep the full Tile-CUDA transformer allocation
   path but exit before optimizer work without tripping the normal positive-step
