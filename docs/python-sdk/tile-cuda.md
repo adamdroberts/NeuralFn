@@ -631,7 +631,14 @@ so the main trainer reports `logit_workspace_elements: 0`,
 `lm_head_grad_logits_workspace_allocated: false` instead of allocating separate
 float logits or full-vocab `grad_logits` chunks. It also reports
 `lm_head_bf16_logits_enabled: true`, `lm_head_bf16_logit_elements`, and
-`lm_head_bf16_logit_bytes`. With `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS=0`, training
+`lm_head_bf16_logit_bytes`. Train-loss sampling copies the scalar loss back
+with a blocking device-to-host `cudaMemcpy` by default and reports
+`lm_head_loss_copy_device_synchronize_enabled: false` plus
+`lm_head_loss_copy_ordering: "blocking-cudaMemcpy-d2h"`; set
+`NFN_NATIVE_GPT_LM_HEAD_LOSS_COPY_SYNC=1` or
+`NFN_NATIVE_GPT2_LM_HEAD_LOSS_COPY_SYNC=1` only to reproduce the previous
+sync-before-copy path for paired diagnostics. With
+`NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS=0`, training
 still uses BF16 logits/dlogits but validation/test loss allocates and reports
 the older float logits workspace for paired benchmarking. With
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS=0`, the same fields report the older

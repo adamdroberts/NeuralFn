@@ -10907,6 +10907,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS",
                               "NFN_NATIVE_GPT2_LM_HEAD_REVERSE_CHUNKS"}),
             false);
+    const bool lm_head_loss_copy_device_sync_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_LOSS_COPY_SYNC",
+                              "NFN_NATIVE_GPT2_LM_HEAD_LOSS_COPY_SYNC"}),
+            false);
     const bool bgrad_first_write_direct_enabled =
         dweight_first_microbatch_beta_zero_enabled &&
         env_flag_enabled_or_default(
@@ -14513,7 +14518,7 @@ int run_transformer_lm_training_json(
         }
         if (record_loss) {
             run_timed_stage("lm_head_backward.loss_copy", [&]() {
-                if (error.empty()) {
+                if (lm_head_loss_copy_device_sync_enabled && error.empty()) {
                     run(cuda_device_synchronize(), "lm_head_backward.loss.cudaDeviceSynchronize");
                 }
                 if (error.empty()) {
@@ -17725,6 +17730,13 @@ int run_transformer_lm_training_json(
         << (lm_head_dweight_before_dhidden_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_reverse_chunk_order_enabled\": "
         << (lm_head_reverse_chunk_order_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_loss_copy_device_synchronize_enabled\": "
+        << (lm_head_loss_copy_device_sync_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_loss_copy_ordering\": \""
+        << (lm_head_loss_copy_device_sync_enabled
+                ? "explicit-cudaDeviceSynchronize-then-blocking-cudaMemcpy-d2h"
+                : "blocking-cudaMemcpy-d2h")
+        << "\",\n"
         << "  \"lm_head_ce_backward_strategy\": \""
         << (lm_head_public_vocab_ce_enabled
                 ? (lm_head_bf16_logits_enabled

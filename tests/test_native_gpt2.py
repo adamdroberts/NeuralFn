@@ -2899,6 +2899,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert train_transformer_payload["lm_head_logits_linear_strategy"] == "bf16-gemmex-fallback"
     assert train_transformer_payload["lm_head_dhidden_linear_strategy"] == "bf16-gemmex-dinput-dhidden-default"
+    assert train_transformer_payload["lm_head_loss_copy_device_synchronize_enabled"] is False
+    assert train_transformer_payload["lm_head_loss_copy_ordering"] == "blocking-cudaMemcpy-d2h"
     assert train_transformer_payload["linear_bf16_gemm_count"] == 0
     assert train_transformer_payload["linear_tk_gemm_count"] == 0
     assert train_transformer_payload["linear_cublaslt_gemm_count"] == 0

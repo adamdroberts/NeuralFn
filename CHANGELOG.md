@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Removed the redundant full-device sync before dense GPT native LM-head
+  train-loss scalar copy. The default path now relies on the blocking
+  device-to-host `cudaMemcpy` for the required ordering, while
+  `NFN_NATIVE_GPT_LM_HEAD_LOSS_COPY_SYNC=1` /
+  `NFN_NATIVE_GPT2_LM_HEAD_LOSS_COPY_SYNC=1` reproduces the old
+  sync-before-copy behavior for same-binary diagnostics. Runtime JSON now
+  reports `lm_head_loss_copy_device_synchronize_enabled` and
+  `lm_head_loss_copy_ordering`. Migration notes: no caller change is required;
+  only diagnostic consumers that assert the old explicit sync should update
+  their expectations. Verification: `python -m pytest tests/test_native_gpt2.py
+  -q -k "native_gpt2_cpp_cli_builds_and_uses_sm120_defaults"`; `bash
+  tools/build_native_gpt_cli.sh`; `python tools/check_native_no_torch_deps.py`;
+  a one-step CUDA train-loss smoke with `--train-loss-every-steps 1`; and
+  `NFN_TILE_CUDA_TEST=1 python -m pytest --lf -q -rs`, which passed with
+  `1167 passed`, `20 warnings`, and `468 subtests passed` under CUDA 13.3.
+  Dedicated RTX 5090 same-script timing compared the previous sync path
+  (`NFN_NATIVE_GPT_LM_HEAD_LOSS_COPY_SYNC=1`) against the default with
+  train-loss sampling enabled and measured the default as neutral/noise-level
+  (`1.000906x` train-loop wall, `0.999097x` tokens/sec), so this is an ordering
+  cleanup rather than a material parity improvement.
+
 - Rechecked the remaining dense GPT SM120 parity switches after the CUDA
   13.3.33 Tile extension-load fix and kept them rejected as defaults. A
   stage-timed dedicated RTX 5090 parity run measured llm.kittens at
