@@ -17,6 +17,7 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
@@ -4056,7 +4057,7 @@ int print_tile_ops_smoke_json(const Config& cfg, const char* program) {
     CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
     CudaGetErrorStringFn cuda_get_error_string = nullptr;
 
-    auto cuda_error = [&](int code, const std::string& context) {
+    auto cuda_error = [&](int code, std::string_view context) {
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
@@ -4270,7 +4271,7 @@ int print_optimizer_smoke_json(const Config& cfg, const char* program) {
     CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
     CudaGetErrorStringFn cuda_get_error_string = nullptr;
 
-    auto cuda_error = [&](int code, const std::string& context) {
+    auto cuda_error = [&](int code, std::string_view context) {
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
@@ -4618,7 +4619,7 @@ int print_lm_step_smoke_json(const Config& cfg, const char* program) {
     CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
     CudaGetErrorStringFn cuda_get_error_string = nullptr;
 
-    auto cuda_error = [&](int code, const std::string& context) {
+    auto cuda_error = [&](int code, std::string_view context) {
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
@@ -4749,7 +4750,7 @@ int print_lm_step_smoke_json(const Config& cfg, const char* program) {
     copy_to_device(token_ids, host_tokens, sizeof(host_tokens), "token_ids");
     copy_to_device(targets, host_targets, sizeof(host_targets), "targets");
 
-    auto run = [&](int status, const std::string& name) {
+    auto run = [&](int status, std::string_view name) {
         if (status != 0 && error.empty()) {
             error = cuda_error(status, name);
         }
@@ -5075,7 +5076,7 @@ int print_embedding_lm_step_smoke_json(
     CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
     CudaGetErrorStringFn cuda_get_error_string = nullptr;
 
-    auto cuda_error = [&](int code, const std::string& context) {
+    auto cuda_error = [&](int code, std::string_view context) {
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
@@ -5264,7 +5265,7 @@ int print_embedding_lm_step_smoke_json(
     copy_to_device(token_ids, host_tokens, sizeof(host_tokens), "token_ids");
     copy_to_device(targets, host_targets, sizeof(host_targets), "targets");
 
-    auto run = [&](int status, const std::string& name) {
+    auto run = [&](int status, std::string_view name) {
         if (status != 0 && error.empty()) {
             error = cuda_error(status, name);
         }
@@ -5648,7 +5649,7 @@ int run_embedding_lm_training_json(
     CudaDeviceSynchronizeFn cuda_device_synchronize = nullptr;
     CudaGetErrorStringFn cuda_get_error_string = nullptr;
 
-    auto cuda_error = [&](int code, const std::string& context) {
+    auto cuda_error = [&](int code, std::string_view context) {
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
@@ -5798,7 +5799,7 @@ int run_embedding_lm_training_json(
     allocate(&token_ids, sizeof(std::int64_t) * static_cast<std::size_t>(max_rows), "token_ids");
     allocate(&targets, sizeof(std::int64_t) * static_cast<std::size_t>(max_rows), "targets");
 
-    auto run = [&](int status, const std::string& name) {
+    auto run = [&](int status, std::string_view name) {
         if (status != 0 && error.empty()) {
             error = cuda_error(status, name);
         }
@@ -10138,7 +10139,7 @@ int run_transformer_lm_training_json(
     int cuda_runtime_version_status = -1;
     int cuda_driver_version_status = -1;
 
-    auto cuda_error = [&](int code, const std::string& context) {
+    auto cuda_error = [&](int code, std::string_view context) {
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
@@ -12700,7 +12701,7 @@ int run_transformer_lm_training_json(
     const std::int64_t nonzero_bf16_parameter_fill_buffer_count =
         direct_bf16_block_weight_init_enabled ? trained_layers * 4 : 0;
 
-    auto run = [&](int status, const std::string& name) {
+    auto run = [&](int status, std::string_view name) {
         if (status != 0 && error.empty()) {
             error = cuda_error(status, name);
         }
@@ -16117,6 +16118,9 @@ int run_transformer_lm_training_json(
         stage_end(stage_event, "block_backward");
     };
 
+    std::vector<unsigned char> ln1_precomputed;
+    ln1_precomputed.resize(blocks.size());
+
     auto forward_loss = [&](
         const std::string& label,
         bool compute_loss,
@@ -16136,7 +16140,7 @@ int run_transformer_lm_training_json(
 	        if (error.empty()) run(residual_add(token_out, position_out, residual_scale, x, active_activation_elements, nullptr), label + ".embedding.residual");
 	        const float* block_input = x;
 	        float* final_block_output = x;
-	        std::vector<unsigned char> ln1_precomputed(blocks.size(), 0);
+	        std::fill(ln1_precomputed.begin(), ln1_precomputed.end(), 0);
 	        for (std::size_t i = 0; i < blocks.size(); ++i) {
 	            TransformerBlockActivations& tape =
 	                block_tapes[full_activation_tape_enabled ? i : 0];
