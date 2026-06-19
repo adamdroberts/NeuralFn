@@ -1235,7 +1235,13 @@ fields under `baseline_native_metric_values` and
 `candidate_native_metric_values`, including LM-head logits/dHidden/dWeight
 routes, block linear routes, and attention routes. Use those summaries with the
 numeric ratios to verify that a candidate benchmark actually exercised the
-intended kernel path.
+intended kernel path. The same payload now includes
+`native_route_counter_changes`, which compares tracked route counters such as
+TK, cuBLASLt, BF16 GEMM, LM-head logits, BF16 packing/cache, and attention
+launch counts between baseline and candidate. When candidate-only environment
+knobs are present but those tracked counters are unchanged, the text output
+warns that timing-only improvements should be treated as noise until a route
+change or separate kernel-level attribution confirms the candidate.
 Unsupported template names and custom graph files still report
 `selected-graph-native-trainer-missing` instead of falling back to Torch.
 

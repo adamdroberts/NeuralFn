@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a native route-counter-change summary to `tools/paired_kernel_speed.py`
+  so native-vs-native kernel candidates are not promoted from timing noise
+  alone. The paired JSON now includes `native_route_counter_changes`, comparing
+  tracked TK, cuBLASLt, BF16 GEMM, LM-head logits, BF16 packing/cache, and
+  attention launch counters between baseline and candidate. Text output prints
+  the changed counters and warns when candidate-specific environment knobs are
+  set but tracked counters remain unchanged. Verification:
+  `python -m pytest tests/test_tile_cuda_examples.py -q`.
+
 - Refreshed CUDA 13.3 RTX 5090 parity attribution after the dense GPT LM-smoke
   fix and rejected two more existing-route probes instead of promoting noisy
   switches. A one-step stage/shape profile still shows the remaining gap in

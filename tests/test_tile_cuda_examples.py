@@ -488,6 +488,61 @@ def test_paired_kernel_speed_tool_applies_command_specific_env() -> None:
     assert "new\n" in payload["paired_samples"][0]["candidate"]["stdout_tail"]
 
 
+def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route_counters() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-route.json"
+    native_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
+        "\\\"linear_tk_gemm_count\\\": 1632, "
+        "\\\"linear_cublaslt_gemm_count\\\": 2208, "
+        "\\\"linear_bf16_gemm_count\\\": 1824"
+        "}"
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{native_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{native_json}')\"",
+            "--candidate-env",
+            "NFN_NATIVE_LINEAR_TK_DINPUT_DISABLE_SHAPE=3072,65536,768,N,N",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    route_changes = payload["native_route_counter_changes"]
+    assert route_changes["has_route_counter_change"] is False
+    assert route_changes["changed_count"] == 0
+    assert route_changes["tracked_count"] == 3
+    assert route_changes["unchanged"] == [
+        "linear_tk_gemm_count",
+        "linear_cublaslt_gemm_count",
+        "linear_bf16_gemm_count",
+    ]
+    assert "native_route_counter_changes: has_route_counter_change=false changed_count=0" in proc.stdout
+    assert "tracked route counters did not change" in proc.stdout
+
+
 def test_paired_kernel_speed_tool_extracts_llm_kittens_step_metrics() -> None:
     script = Path("tools/paired_kernel_speed.py")
     spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
@@ -541,6 +596,42 @@ step    2/2 | loss 10.0 (+nanz)| norm 20.0 (+nanz)| lr 2.00e-05 | 2600.00 ms | 4
     assert metrics["llm_kittens_last_step_wall_ms"] == 2600.0
     assert metrics["llm_kittens_last_step_tokens_per_second"] == 220000.0
     assert metrics["llm_kittens_step_log_count"] == 2
+
+
+def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    baseline = {
+        "linear_tk_gemm_count": {"mean": 1632.0, "median": 1632.0, "min": 1632.0, "max": 1632.0},
+        "linear_cublaslt_gemm_count": {"mean": 2208.0, "median": 2208.0, "min": 2208.0, "max": 2208.0},
+    }
+    candidate = {
+        "linear_tk_gemm_count": {"mean": 1344.0, "median": 1344.0, "min": 1344.0, "max": 1344.0},
+        "linear_cublaslt_gemm_count": {"mean": 2208.0, "median": 2208.0, "min": 2208.0, "max": 2208.0},
+    }
+
+    changes = module.summarize_native_route_counter_changes(baseline, candidate)
+
+    assert changes["has_route_counter_change"] is True
+    assert changes["changed_count"] == 1
+    assert changes["tracked_count"] == 2
+    assert changes["changed"]["linear_tk_gemm_count"] == {
+        "baseline_mean": 1632.0,
+        "candidate_mean": 1344.0,
+        "delta": -288.0,
+        "ratio": 1344.0 / 1632.0,
+    }
+    assert changes["unchanged"] == ["linear_cublaslt_gemm_count"]
+    assert "linear_bf16_gemm_count" in changes["missing"]
 
 
 def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) -> None:

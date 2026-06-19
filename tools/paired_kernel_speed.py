@@ -76,6 +76,18 @@ NATIVE_METRIC_PATHS = (
         ("lm_head_classifier_strategy_contract", "native_logit_chunk_count"),
     ),
 )
+NATIVE_ROUTE_COUNTER_KEYS = (
+    "linear_tk_gemm_count",
+    "linear_cublaslt_gemm_count",
+    "linear_bf16_gemm_count",
+    "lm_head_logits_tk_gemm_count",
+    "lm_head_logits_cublaslt_gemm_count",
+    "lm_head_logits_bf16_gemm_count",
+    "linear_bf16_a_pack_count",
+    "linear_bf16_a_cache_hit_count",
+    "attention_forward_tk_launch_count",
+    "attention_backward_tk_launch_count",
+)
 NATIVE_STRATEGY_METRIC_KEYS = (
     "status",
     "error",
@@ -667,6 +679,46 @@ def summarize_metric_ratios(
     return {key: summarize(values) for key, values in ratios_by_metric.items() if values}
 
 
+def summarize_native_route_counter_changes(
+    baseline_summary: dict[str, dict[str, float]],
+    candidate_summary: dict[str, dict[str, float]],
+) -> dict[str, object]:
+    changed: dict[str, dict[str, float | None]] = {}
+    unchanged: list[str] = []
+    missing: list[str] = []
+    for key in NATIVE_ROUTE_COUNTER_KEYS:
+        baseline_stats = baseline_summary.get(key)
+        candidate_stats = candidate_summary.get(key)
+        if not isinstance(baseline_stats, dict) or not isinstance(candidate_stats, dict):
+            missing.append(key)
+            continue
+        baseline_mean = baseline_stats.get("mean")
+        candidate_mean = candidate_stats.get("mean")
+        if not isinstance(baseline_mean, (int, float)) or not isinstance(candidate_mean, (int, float)):
+            missing.append(key)
+            continue
+        delta = float(candidate_mean) - float(baseline_mean)
+        if abs(delta) <= 1e-9:
+            unchanged.append(key)
+            continue
+        changed[key] = {
+            "baseline_mean": float(baseline_mean),
+            "candidate_mean": float(candidate_mean),
+            "delta": delta,
+            "ratio": float(candidate_mean) / float(baseline_mean)
+            if float(baseline_mean) != 0.0
+            else None,
+        }
+    return {
+        "has_route_counter_change": bool(changed),
+        "changed_count": len(changed),
+        "tracked_count": len(changed) + len(unchanged),
+        "changed": changed,
+        "unchanged": unchanged,
+        "missing": missing,
+    }
+
+
 def run_nvidia_smi(args: Sequence[str]) -> dict[str, object]:
     try:
         proc = subprocess.run(
@@ -1254,6 +1306,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         candidate_native_metrics = summarize_metric_rows(sample_rows, "candidate")
         baseline_native_metric_values = summarize_categorical_metric_rows(sample_rows, "baseline")
         candidate_native_metric_values = summarize_categorical_metric_rows(sample_rows, "candidate")
+        native_route_counter_changes = summarize_native_route_counter_changes(
+            baseline_native_metrics,
+            candidate_native_metrics,
+        )
         gpu_sample_summary = summarize_gpu_sample_load(sample_rows, cuda_visible_devices)
 
     return {
@@ -1287,6 +1343,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "candidate_native_metrics": candidate_native_metrics,
         "baseline_native_metric_values": baseline_native_metric_values,
         "candidate_native_metric_values": candidate_native_metric_values,
+        "native_route_counter_changes": native_route_counter_changes,
         "candidate_over_baseline_native_metrics": summarize_metric_ratios(
             sample_rows,
             baseline_native_metrics,
@@ -1502,6 +1559,37 @@ def print_text(payload: dict[str, object]) -> None:
             observed = values.get(key)
             if isinstance(observed, list) and observed:
                 print(f"    {key}: {', '.join(str(item) for item in observed)}")
+    route_changes = payload.get("native_route_counter_changes")
+    if isinstance(route_changes, dict) and int(route_changes.get("tracked_count", 0) or 0) > 0:
+        changed = route_changes.get("changed")
+        changed_count = route_changes.get("changed_count", 0)
+        print(
+            "  native_route_counter_changes: "
+            f"has_route_counter_change={str(route_changes.get('has_route_counter_change', False)).lower()} "
+            f"changed_count={changed_count}"
+        )
+        if isinstance(changed, dict):
+            for key in NATIVE_ROUTE_COUNTER_KEYS:
+                stats = changed.get(key)
+                if not isinstance(stats, dict):
+                    continue
+                ratio = stats.get("ratio")
+                ratio_text = "none" if ratio is None else f"{float(ratio):.6f}"
+                print(
+                    f"    {key}: baseline_mean={float(stats['baseline_mean']):.6f} "
+                    f"candidate_mean={float(stats['candidate_mean']):.6f} "
+                    f"delta={float(stats['delta']):.6f} ratio={ratio_text}"
+                )
+        if (
+            route_changes.get("has_route_counter_change") is False
+            and isinstance(candidate_env, dict)
+            and bool(candidate_env)
+        ):
+            print(
+                "    note: tracked route counters did not change; treat timing-only "
+                "candidate improvements as noise until a route change or separate "
+                "kernel-level attribution confirms the candidate."
+            )
     ratios = payload.get("candidate_over_baseline_native_metrics")
     if isinstance(ratios, dict) and ratios:
         print("  candidate_over_baseline_native_metrics:")

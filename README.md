@@ -162,7 +162,13 @@ same paired JSON. Paired native JSON also summarizes route/strategy strings such
 as `lm_head_logits_linear_strategy`, `lm_head_dhidden_linear_strategy`,
 `lm_head_dweight_strategy`, block linear strategies, and attention strategies
 under `baseline_native_metric_values` and `candidate_native_metric_values`, so
-kernel-candidate results show whether a route actually changed.
+kernel-candidate results show whether a route actually changed. It also emits
+`native_route_counter_changes`, comparing tracked route counters such as TK,
+cuBLASLt, BF16 GEMM, LM-head logits, BF16 packing/cache, and attention launch
+counts between baseline and candidate. If candidate-specific environment knobs
+are set but those counters do not change, the text report warns that timing-only
+improvements should be treated as noise until a route change or separate
+kernel-level attribution confirms the candidate.
 
 The compiled `nfn_native_train` frontend can now be used directly as the
 startup-fast dense GPT training command instead of relying on the Python
