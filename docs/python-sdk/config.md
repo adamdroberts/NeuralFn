@@ -87,7 +87,7 @@ SHIPPED_GPT_TEMPLATE_PRESETS: tuple[str, ...]
 
 `SHIPPED_GPT_TEMPLATE_BASE_PRESETS` is the canonical SDK catalog for exact names accepted by `build_model_spec_from_config(config={"preset": ...})`, including aliases and megakernel variants such as `mixllama`, `nanogpt_megakernel`, and `gpt2_megakernel`.
 
-`SHIPPED_GPT_TEMPLATE_PRESETS` extends the base catalog with every generated `<preset>_modern` overlay from `MODERN_BASE_PRESETS`. Native GPT training selectors (`--template-name`, `--template`, `--preset`) and SDK compiled-CLI configs accept every name in this tuple; only dense GPT-compatible shapes currently have a completed CUDA Tile trainer.
+`SHIPPED_GPT_TEMPLATE_PRESETS` extends the base catalog with every generated `<preset>_modern` overlay from `MODERN_BASE_PRESETS`. Native GPT training selectors (`--template-name`, `--template`, `--preset`) and SDK compiled-CLI configs accept every name in this tuple. The compiled dense GPT loop currently runs GPT-2 geometry aliases such as `gpt`, `gpt2`, `gpt2_modern`, `gpt2_megakernel`, `gpt2_moa`, and `gpt3`; NanoGPT aliases are recognized as dense GPT templates but still report a geometry-mismatch native work item until the loop is made shape-dynamic. Non-dense and custom-graph selections return explicit native-trainer-missing JSON instead of falling back to Torch or graph-editor tensor flow.
 
 ---
 

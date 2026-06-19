@@ -591,8 +591,14 @@ bool selected_template_is_shipped(const Config& cfg) {
 
 bool selected_template_is_native_dense_gpt_compatible(const Config& cfg) {
     const std::string name = resolved_native_template_name(cfg.template_name);
-    return name == "gpt2" || name == "gpt3" || name == "gpt2_megakernel" || name == "gpt2_moa" ||
-        name == "nanogpt";
+    return name == "gpt2" ||
+        name == "gpt2_modern" ||
+        name == "gpt3" ||
+        name == "gpt2_megakernel" ||
+        name == "gpt2_moa" ||
+        name == "nanogpt" ||
+        name == "nanogpt_modern" ||
+        name == "nanogpt_megakernel";
 }
 
 bool selected_template_geometry_matches_compiled_loop(const Config& cfg);
@@ -754,7 +760,8 @@ std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
         << "\"mlp\":\"gelu-4x\","
         << "\"dropout_p\":0,"
         << "\"supported_template_selectors\":["
-        << "\"gpt\",\"gpt2\",\"gpt3\",\"gpt2_megakernel\",\"gpt2_moa\",\"nanogpt\""
+        << "\"gpt\",\"gpt2\",\"gpt2_modern\",\"gpt3\",\"gpt2_megakernel\",\"gpt2_moa\","
+        << "\"nanogpt\",\"nanogpt_modern\",\"nanogpt_megakernel\""
         << "],"
         << "\"unsupported_geometry_next_step\":\"generalize-native-loop-dimensions-dropout-and-graph-shape-loading\""
         << "}";

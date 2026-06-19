@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Classified dense GPT modern template aliases in the native C++ selector. The
+  dense GPT trainer now treats `gpt2_modern` as the same compiled-loop geometry
+  as `gpt2`, and recognizes `nanogpt_modern` / `nanogpt_megakernel` as known
+  dense GPT template selectors that should report geometry-mismatch native work
+  instead of generic template-missing status. Migration notes: no CLI arguments
+  change; this only tightens native plan/status reporting and keeps unsupported
+  shapes on explicit no-Torch native-missing JSON. Verification: rebuilt
+  `build/nfn_gpt_native_train`, ran focused native GPT selector tests, and
+  confirmed `--template-name gpt2_modern --print-plan` reports
+  `selected_graph_support_status: "native-transformer-lm"` while NanoGPT
+  modern aliases report `template-geometry-native-trainer-missing`.
+
 - Defaulted single-buffer FP32-to-BF16 bits conversion to a guarded vec4 CUDA
   path. `nfn_native_tile_float32_to_bf16_bits` now packs four aligned FP32
   values into four BF16 bits per thread when the source is 16-byte aligned, the

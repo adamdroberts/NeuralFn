@@ -167,6 +167,12 @@ through `--base-model gpt3` or `--template-name gpt3` before execing
 `nfn_gpt_native_train`. This removes Python startup from the direct compiled
 frontend path; it does not by itself close the remaining SM120 in-loop
 throughput gap tracked by the parity benchmark.
+The native dense GPT selector recognizes the shipped GPT-2 geometry aliases
+`gpt`, `gpt2`, `gpt2_modern`, `gpt2_megakernel`, `gpt2_moa`, and `gpt3` as
+compiled-loop runnable. NanoGPT aliases are recognized as dense GPT templates
+but still report a geometry-mismatch native work item until the shared loop is
+made shape-dynamic; custom graph files report explicit native planner work
+instead of routing tensors through Torch or editor graph nodes.
 
 Native dense-GPT plan and runtime JSON now include
 `lm_head_classifier_strategy_contract`, which makes the remaining SM120 parity

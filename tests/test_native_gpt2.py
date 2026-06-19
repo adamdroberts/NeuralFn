@@ -243,6 +243,24 @@ def test_native_gpt_direct_u16_path_elides_int64_token_arena() -> None:
     assert "token_i64_device_arena_bytes_elided" in source
 
 
+def test_native_gpt_dense_modern_template_aliases_are_classified_explicitly() -> None:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "neuralfn"
+        / "csrc"
+        / "native_gpt2"
+        / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert 'name == "gpt2_modern"' in source
+    assert 'name == "nanogpt_modern"' in source
+    assert 'name == "nanogpt_megakernel"' in source
+    assert '\\"gpt2_modern\\"' in source
+    assert '\\"nanogpt_modern\\"' in source
+    assert '\\"nanogpt_megakernel\\"' in source
+    assert 'selector == "nanogpt" || selector == "nanogpt_megakernel" || selector == "nanogpt_modern"' in source
+
+
 def test_native_gpt_layer_evo_candidate_loss_stays_device_resident() -> None:
     source = (
         Path(__file__).resolve().parents[1]
@@ -1642,10 +1660,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "supported_template_selectors": [
             "gpt",
             "gpt2",
+            "gpt2_modern",
             "gpt3",
             "gpt2_megakernel",
             "gpt2_moa",
             "nanogpt",
+            "nanogpt_modern",
+            "nanogpt_megakernel",
         ],
         "unsupported_geometry_next_step": "generalize-native-loop-dimensions-dropout-and-graph-shape-loading",
     }
@@ -2148,13 +2169,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         assert preset_payload["template_name"] == preset
         assert preset_payload["template_known"] is True
         assert preset_payload["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
-        if preset in {"gpt2", "gpt2_megakernel", "gpt2_moa"}:
+        if preset in {"gpt2", "gpt2_modern", "gpt2_megakernel", "gpt2_moa"}:
             assert preset_payload["selected_graph_support_status"] == "native-transformer-lm"
             assert preset_payload["selected_graph_native_runnable"] is True
             assert preset_payload["native_geometry_contract"]["shape_source"] == "compiled_dense_gpt_defaults"
             assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is False
             assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
-        elif preset == "nanogpt":
+        elif preset in {"nanogpt", "nanogpt_modern", "nanogpt_megakernel"}:
             assert preset_payload["selected_graph_support_status"] == "template-geometry-native-trainer-missing"
             assert preset_payload["selected_graph_native_runnable"] is False
             assert preset_payload["native_geometry_contract"]["selected_template_geometry"] == {
