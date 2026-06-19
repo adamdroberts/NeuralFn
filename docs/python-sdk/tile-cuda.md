@@ -191,7 +191,12 @@ validation loss on `eval_every_steps`. The compiled transformer-LM loop collects
 that train loss from the folded LM-head backward recompute path before logits
 are overwritten as dLogits, so no real token batch passes through graph-editor
 nodes and no duplicate forward LM-head loss pass is needed for train-loss
-logging.
+logging. On the default BF16 logits plus direct-u16 target path, loss sampling
+uses the fused raw C ABI
+`nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets`
+so the CE scalar accumulation and in-place BF16 dlogit write share one Tile CUDA
+kernel. Runtime JSON reports `lm_head_ce_loss_backward_fused_available` and
+`lm_head_ce_loss_backward_strategy`.
 
 For SDK-launched native GPT profiling, include
 `NFN_NATIVE_LINEAR_SHAPE_STATS=1`, `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1`,
@@ -367,7 +372,11 @@ validation/test CE partials over the public vocab while walking the padded
 logit row stride,
 `nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace`
 overwrites public-vocab logits with BF16 dlogits and zeroes padded dlogit
-columns, and the BF16 dlogits feed
+columns. When sampled train-loss recording is active on the direct-u16 target
+path,
+`nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets`
+also accumulates the CE scalar while writing those dlogits, replacing the older
+separate training-loss partials pass. The BF16 dlogits feed
 `nfn_native_tile_linear_backward_input_bf16_bits_float32` plus the prepacked
 BF16-hidden/BF16-dlogit
 `nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32`

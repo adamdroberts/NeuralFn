@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fused dense GPT sampled train-loss CE and dlogit generation on the default
+  BF16/u16-token Tile CUDA path. The native raw C ABI now exports
+  `nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets`,
+  which accumulates public-vocab CE loss and overwrites BF16 logits with
+  dlogits in one kernel when `--train-loss-every-steps` is enabled. Runtime JSON
+  reports `lm_head_ce_loss_backward_fused_available` and
+  `lm_head_ce_loss_backward_strategy`; validation loss remains controlled by
+  `--eval-every-steps` and stays separate from train-loss sampling. Same-script
+  paired RTX 5090 timing with `--train-loss-every-steps 1` measured the
+  candidate at `0.454182x` train-loop wall time and `2.201755x` tokens/sec
+  versus the previous separate-loss pass. The normal no-train-loss route was
+  neutral at `0.999433x` train-loop wall time. Verification: rebuilt
+  `build/libnfn_native_train_tile_ops.so` and `build/nfn_gpt_native_train`;
+  one-step native GPT smoke with the fused ABI; paired native-vs-native CUDA
+  benchmark with selected-GPU locking/idle checks; `python -m pytest
+  tests/test_tile_cuda_examples.py -q`; `python -m pytest
+  tests/test_native_gpt2.py -q`; `python tools/check_native_no_torch_deps.py`;
+  `git diff --check`.
+
 - Added a default per-selected-GPU lock to `tools/paired_kernel_speed.py`.
   GPU-visible paired benchmark runs now lock
   `/tmp/nfn_paired_kernel_speed_gpu_<device>.lock` before warmup or measured

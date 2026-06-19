@@ -1226,6 +1226,15 @@ void launch_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_w
     std::int64_t row_stride,
     float loss_scale,
     cudaStream_t stream);
+void launch_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* loss_total,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    cudaStream_t stream);
 void launch_masked_token_cross_entropy_backward_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -4102,6 +4111,27 @@ int nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_t
         targets,
         row_max_workspace,
         row_denom_workspace,
+        rows,
+        vocab,
+        row_stride,
+        loss_scale,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* loss_total,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets(
+        logits,
+        targets,
+        loss_total,
         rows,
         vocab,
         row_stride,

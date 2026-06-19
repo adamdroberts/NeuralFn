@@ -778,6 +778,17 @@ reports `token_weight_bf16_initial_refresh_fusion_enabled` and
 `token_weight_bf16_initial_refresh_elided`; use `--startup-only` when comparing
 this setup-only path.
 
+When `--train-loss-every-steps` is enabled on the default BF16/u16-token dense
+GPT path, the compiled trainer uses
+`nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets`
+to combine public-vocab CE loss accumulation and in-place BF16 dlogit writes in
+one Tile CUDA kernel. Runtime JSON reports
+`lm_head_ce_loss_backward_fused_available` and
+`lm_head_ce_loss_backward_strategy`; the expected default strategy is
+`fused-loss-accumulate-and-dlogits-public-vocab-bf16-u16-targets`. Validation
+loss is still controlled by `--eval-every-steps` and does not use graph-editor
+nodes or the Torch trainer.
+
 For native kernel candidate comparisons, use
 `python tools/paired_kernel_speed.py --baseline "OLD_COMMAND" --candidate
 "NEW_COMMAND" --samples N --json-out /tmp/result.json`. The helper defaults

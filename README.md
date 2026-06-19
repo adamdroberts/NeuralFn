@@ -42,6 +42,11 @@ Native GPT benchmark and preflight runs can pass
 `--native-cuda-no-checkpoint` from the Python wrappers or `--no-checkpoint`
 to the compiled C++ trainer to skip final trained-checkpoint export. Default
 training still writes the final native checkpoint.
+When sampled training loss is enabled with `--train-loss-every-steps`, the
+default BF16/u16-token native GPT path now fuses public-vocab CE loss
+accumulation with the in-place BF16 dlogits kernel, avoiding the older separate
+loss-partials pass. Validation loss still uses `--eval-every-steps` and remains
+separate from sampled train loss.
 
 Use `python tools/paired_kernel_speed.py --baseline "OLD_COMMAND"
 --candidate "NEW_COMMAND" --samples N --json-out /tmp/result.json` for

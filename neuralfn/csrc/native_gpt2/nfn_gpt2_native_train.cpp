@@ -780,7 +780,7 @@ std::string lm_head_classifier_strategy_contract_json(
     std::ostringstream out;
     out << "{"
         << "\"reference_strategy\":\"llm.kittens-full-resident-logits-fused-classifier\","
-        << "\"native_strategy\":\"row-chunked-bf16-logits-inplace-public-vocab-ce\","
+        << "\"native_strategy\":\"row-chunked-bf16-logits-inplace-public-vocab-ce-loss-dlogits\","
         << "\"reference_full_logit_rows\":" << rows << ","
         << "\"native_logit_chunk_rows\":" << chunk_rows << ","
         << "\"native_logit_chunk_count\":" << chunk_count << ","
@@ -796,7 +796,7 @@ std::string lm_head_classifier_strategy_contract_json(
         << "\"graph_editor_tensor_flow\":false,"
         << "\"torch_required\":false,"
         << "\"same_script_benchmark_target\":\"tools/paired_kernel_speed.py stage.lm_head_backward.total_ms and train_loop_wall_ms\","
-        << "\"required_kernel_next_step\":\"fuse-classifier-and-lm-head-backward-or-memory-gated-full-logit-path\""
+        << "\"required_kernel_next_step\":\"fuse-lm-head-dhidden-dweight-with-classifier-or-memory-gated-full-logit-path\""
         << "}";
     return out.str();
 }
@@ -9614,6 +9614,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_token_cross_entropy_backward_inplace_strided_with_workspace_float32",
         "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_with_workspace",
         "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_with_workspace",
+        "nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets",
         "nfn_native_tile_adamw_step_float32",
         "nfn_native_tile_adamw_step_with_device_scale_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_float32",
@@ -9898,6 +9899,9 @@ int run_transformer_lm_training_json(
     using TokenCrossEntropyBackwardInplaceStridedBf16BitsU16TargetsWorkspaceFn = int (*)(
         std::uint16_t*, const std::uint16_t*, float*, float*,
         std::int64_t, std::int64_t, std::int64_t, float, void*);
+    using TokenCrossEntropyBackwardLossInplaceStridedBf16BitsU16TargetsFn = int (*)(
+        std::uint16_t*, const std::uint16_t*, float*,
+        std::int64_t, std::int64_t, std::int64_t, float, void*);
     using AdamWManyWithDeviceScaleFn = int (*)(
         float* const*, const float* const*, const float*, float* const*, float* const*,
         const std::int64_t*, const float*, std::int64_t, std::int64_t,
@@ -10112,6 +10116,8 @@ int run_transformer_lm_training_json(
     TokenCrossEntropyBackwardInplaceStridedBf16BitsWorkspaceFn ce_backward_inplace_strided_bf16_bits_workspace = nullptr;
     TokenCrossEntropyBackwardInplaceStridedBf16BitsU16TargetsWorkspaceFn
         ce_backward_inplace_strided_bf16_bits_u16_targets_workspace = nullptr;
+    TokenCrossEntropyBackwardLossInplaceStridedBf16BitsU16TargetsFn
+        ce_backward_loss_inplace_strided_bf16_bits_u16_targets = nullptr;
     FillManyFn fill_many = nullptr;
     AdamWManyWithDeviceScaleFn adamw_many_with_device_scale = nullptr;
     AdamWManyWithDeviceScaleBf16ShadowFn adamw_many_with_device_scale_bf16_shadow = nullptr;
@@ -10546,6 +10552,10 @@ int run_transformer_lm_training_json(
                     load_symbol<TokenCrossEntropyBackwardInplaceStridedBf16BitsU16TargetsWorkspaceFn>(
                         tile_handle,
                         "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_with_workspace");
+                ce_backward_loss_inplace_strided_bf16_bits_u16_targets =
+                    load_symbol<TokenCrossEntropyBackwardLossInplaceStridedBf16BitsU16TargetsFn>(
+                        tile_handle,
+                        "nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets");
                 adamw_many_with_device_scale = load_symbol<AdamWManyWithDeviceScaleFn>(
                     tile_handle, "nfn_native_tile_adamw_step_many_with_device_scale_float32");
                 adamw_many_with_device_scale_bf16_shadow =
@@ -14170,6 +14180,12 @@ int run_transformer_lm_training_json(
             const bool first_lm_head_dweight_chunk =
                 chunk_index == 0 && dweight_first_microbatch_beta_zero_enabled && !dweight_accumulate;
             const float lm_head_dweight_beta = first_lm_head_dweight_chunk ? 0.0f : 1.0f;
+            const bool use_fused_ce_loss_backward =
+                record_loss &&
+                lm_head_bf16_logits_enabled &&
+                lm_head_public_vocab_ce_enabled &&
+                direct_u16_token_ids_enabled &&
+                ce_backward_loss_inplace_strided_bf16_bits_u16_targets != nullptr;
             run_timed_stage("lm_head_backward.logits", [&]() {
                 if (lm_head_reuse_forward_logits_enabled) {
                     return;
@@ -14233,7 +14249,7 @@ int run_transformer_lm_training_json(
                         "lm_head.forward.recompute");
                 }
             });
-            if (record_loss) {
+            if (record_loss && !use_fused_ce_loss_backward) {
                 run_timed_stage("lm_head_backward.loss_accumulate", [&]() {
                     if (error.empty()) {
                         accumulate_lm_head_loss_from_current_logits(
@@ -14252,17 +14268,30 @@ int run_transformer_lm_training_json(
                     if (lm_head_bf16_logits_enabled) {
                         if (lm_head_public_vocab_ce_enabled) {
                             if (direct_u16_token_ids_enabled) {
-                                run(ce_backward_inplace_strided_bf16_bits_u16_targets_workspace(
-                                        bf16_logit_chunk,
-                                        target_chunk_u16,
-                                        row_max,
-                                        row_denom,
-                                        row_count,
-                                        kVocab,
-                                        kPaddedVocab,
-                                        accumulation_scale / static_cast<float>(active_rows),
-                                        nullptr),
-                                    "ce.backward.inplace.public_vocab_strided_bf16_bits_u16_targets");
+                                if (use_fused_ce_loss_backward) {
+                                    run(ce_backward_loss_inplace_strided_bf16_bits_u16_targets(
+                                            bf16_logit_chunk,
+                                            target_chunk_u16,
+                                            loss_total,
+                                            row_count,
+                                            kVocab,
+                                            kPaddedVocab,
+                                            accumulation_scale / static_cast<float>(active_rows),
+                                            nullptr),
+                                        "ce.backward_loss.inplace.public_vocab_strided_bf16_bits_u16_targets");
+                                } else {
+                                    run(ce_backward_inplace_strided_bf16_bits_u16_targets_workspace(
+                                            bf16_logit_chunk,
+                                            target_chunk_u16,
+                                            row_max,
+                                            row_denom,
+                                            row_count,
+                                            kVocab,
+                                            kPaddedVocab,
+                                            accumulation_scale / static_cast<float>(active_rows),
+                                            nullptr),
+                                        "ce.backward.inplace.public_vocab_strided_bf16_bits_u16_targets");
+                                }
                             } else {
                                 run(ce_backward_inplace_strided_bf16_bits_workspace(
                                         bf16_logit_chunk,
@@ -17634,6 +17663,13 @@ int run_transformer_lm_training_json(
                 : (lm_head_bf16_logits_enabled
                        ? "padded-vocab-fused-row-bf16-logits-dlogits"
                        : "padded-vocab-inplace-logits-dlogits-workspace"))
+        << "\",\n"
+        << "  \"lm_head_ce_loss_backward_fused_available\": "
+        << (ce_backward_loss_inplace_strided_bf16_bits_u16_targets != nullptr ? "true" : "false") << ",\n"
+        << "  \"lm_head_ce_loss_backward_strategy\": \""
+        << (ce_backward_loss_inplace_strided_bf16_bits_u16_targets != nullptr
+                ? "fused-loss-accumulate-and-dlogits-public-vocab-bf16-u16-targets"
+                : "separate-loss-partials-reduction-then-dlogits")
         << "\",\n"
         << "  \"lm_head_grad_logits_workspace_allocated\": false,\n"
         << "  \"linear_backend_strategy\": \""

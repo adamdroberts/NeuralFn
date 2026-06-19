@@ -1651,7 +1651,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     }
     assert default_payload["lm_head_classifier_strategy_contract"] == {
         "reference_strategy": "llm.kittens-full-resident-logits-fused-classifier",
-        "native_strategy": "row-chunked-bf16-logits-inplace-public-vocab-ce",
+        "native_strategy": "row-chunked-bf16-logits-inplace-public-vocab-ce-loss-dlogits",
         "reference_full_logit_rows": 64 * 1024,
         "native_logit_chunk_rows": 8192,
         "native_logit_chunk_count": 8,
@@ -1669,7 +1669,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "same_script_benchmark_target": (
             "tools/paired_kernel_speed.py stage.lm_head_backward.total_ms and train_loop_wall_ms"
         ),
-        "required_kernel_next_step": "fuse-classifier-and-lm-head-backward-or-memory-gated-full-logit-path",
+        "required_kernel_next_step": "fuse-lm-head-dhidden-dweight-with-classifier-or-memory-gated-full-logit-path",
     }
     assert default_payload["selected_graph_native_runnable"] is True
     assert default_payload["checkpoint_export_enabled"] is True
@@ -2830,7 +2830,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["lm_head_padded_dlogits_zeroed"] is True
     assert train_transformer_payload["lm_head_classifier_strategy_contract"] == {
         "reference_strategy": "llm.kittens-full-resident-logits-fused-classifier",
-        "native_strategy": "row-chunked-bf16-logits-inplace-public-vocab-ce",
+        "native_strategy": "row-chunked-bf16-logits-inplace-public-vocab-ce-loss-dlogits",
         "reference_full_logit_rows": 2,
         "native_logit_chunk_rows": 2,
         "native_logit_chunk_count": 1,
@@ -2848,7 +2848,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "same_script_benchmark_target": (
             "tools/paired_kernel_speed.py stage.lm_head_backward.total_ms and train_loop_wall_ms"
         ),
-        "required_kernel_next_step": "fuse-classifier-and-lm-head-backward-or-memory-gated-full-logit-path",
+        "required_kernel_next_step": "fuse-lm-head-dhidden-dweight-with-classifier-or-memory-gated-full-logit-path",
     }
     assert train_transformer_payload["model_dim"] == 768
     assert train_transformer_payload["hidden_dim"] == 3072
@@ -2867,6 +2867,14 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert (
         train_transformer_payload["lm_head_ce_backward_strategy"]
         == "public-vocab-strided-fused-row-bf16-logits-dlogits"
+    )
+    assert "lm_head_ce_loss_backward_fused_available" in train_transformer_payload
+    assert (
+        train_transformer_payload["lm_head_ce_loss_backward_strategy"]
+        in {
+            "fused-loss-accumulate-and-dlogits-public-vocab-bf16-u16-targets",
+            "separate-loss-partials-reduction-then-dlogits",
+        }
     )
     assert train_transformer_payload["lm_head_grad_logits_workspace_allocated"] is False
     assert train_transformer_payload["linear_backend_strategy"] == "not-run"
@@ -5349,12 +5357,24 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         "nfn_native_tile_token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_with_workspace"
         in source_text
     )
+    assert (
+        "nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets"
+        in header_text
+    )
+    assert (
+        "nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets"
+        in source_text
+    )
     assert "token_cross_entropy_partials_strided_float32_kernel" in kernels_text
     assert "token_cross_entropy_partials_strided_bf16_bits_kernel" in kernels_text
     assert "token_cross_entropy_partials_strided_bf16_bits_u16_targets_kernel" in kernels_text
     assert "token_cross_entropy_backward_inplace_strided_float32_fused_kernel" in kernels_text
     assert "token_cross_entropy_backward_inplace_strided_bf16_bits_fused_kernel" in kernels_text
     assert "token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_fused_kernel" in kernels_text
+    assert (
+        "token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets_fused_kernel"
+        in kernels_text
+    )
     assert "nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32" in header_text
@@ -6402,6 +6422,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_float32_to_bf16_bits" in exported
         assert "nfn_native_tile_bf16_bits_to_float32" in exported
         assert "nfn_native_tile_bf16_bits_add_bias_inplace_float32" in exported
+        assert (
+            "nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets"
+            in exported
+        )
         assert "nfn_native_tile_store_mlp_activations_bf16_float32" in exported
         assert "nfn_native_tile_restore_mlp_activations_bf16_float32" in exported
         assert "nfn_native_tile_float32_to_bf16_bits_many" in exported
