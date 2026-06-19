@@ -1254,6 +1254,12 @@ launch counts between baseline and candidate. When candidate-only environment
 knobs are present but those tracked counters are unchanged, the text output
 warns that timing-only improvements should be treated as noise until a route
 change or separate kernel-level attribution confirms the candidate.
+When native stage timing is present, the text report also prints the high-value
+LM-head backward substages (`logits`, `ce`, `dhidden`, `dweight`, and optional
+`dhidden_dweight_concurrent`) and block-backward substages such as
+`mlp_proj.*`, `attn_sdpa.to_qkv`, and `qkv.dweight_bias`. Use those printed
+ratios for CUDA 13.3 RTX 5090 parity work before promoting any candidate that
+only changes a coarse `lm_head_backward` or `block_backward` total.
 Unsupported template names and custom graph files still report
 `selected-graph-native-trainer-missing` instead of falling back to Torch.
 

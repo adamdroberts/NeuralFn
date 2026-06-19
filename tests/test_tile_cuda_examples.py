@@ -66,7 +66,21 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"total_ms\\\": 0.7, \\\"avg_ms\\\": 0.7, \\\"count\\\": 1}], "
                 "\\\"checkpoint_wall_ms\\\": 0.0, \\\"total_wall_ms\\\": 15.0, "
                 "\\\"stage_timing\\\": [{\\\"name\\\": \\\"lm_head_backward\\\", "
-                "\\\"total_ms\\\": 7.0, \\\"avg_ms\\\": 3.5, \\\"count\\\": 2}]}, "
+                "\\\"total_ms\\\": 7.0, \\\"avg_ms\\\": 3.5, \\\"count\\\": 2}, "
+                "{\\\"name\\\": \\\"lm_head_backward.logits\\\", "
+                "\\\"total_ms\\\": 3.0, \\\"avg_ms\\\": 1.5, \\\"count\\\": 2}, "
+                "{\\\"name\\\": \\\"lm_head_backward.ce\\\", "
+                "\\\"total_ms\\\": 1.0, \\\"avg_ms\\\": 0.5, \\\"count\\\": 2}, "
+                "{\\\"name\\\": \\\"lm_head_backward.dhidden\\\", "
+                "\\\"total_ms\\\": 2.0, \\\"avg_ms\\\": 1.0, \\\"count\\\": 2}, "
+                "{\\\"name\\\": \\\"lm_head_backward.dweight\\\", "
+                "\\\"total_ms\\\": 1.5, \\\"avg_ms\\\": 0.75, \\\"count\\\": 2}, "
+                "{\\\"name\\\": \\\"block_backward.mlp_proj\\\", "
+                "\\\"total_ms\\\": 5.0, \\\"avg_ms\\\": 2.5, \\\"count\\\": 2}, "
+                "{\\\"name\\\": \\\"block_backward.mlp_proj.dweight_bias\\\", "
+                "\\\"total_ms\\\": 4.0, \\\"avg_ms\\\": 2.0, \\\"count\\\": 2}, "
+                "{\\\"name\\\": \\\"block_backward.attn_sdpa.to_qkv\\\", "
+                "\\\"total_ms\\\": 6.0, \\\"avg_ms\\\": 3.0, \\\"count\\\": 2}]}, "
                 "\\\"steps_completed\\\": 5, \\\"linear_tk_gemm_count\\\": 3, "
                 "\\\"linear_cublaslt_gemm_count\\\": 4, \\\"linear_bf16_gemm_count\\\": 7, "
                 "\\\"lm_head_logits_tk_gemm_count\\\": 2, "
@@ -114,6 +128,16 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["stage.lm_head_backward.total_ms"]["mean"] == 7.0
     assert payload["candidate_native_metrics"]["stage.lm_head_backward.avg_ms"]["mean"] == 3.5
     assert payload["candidate_native_metrics"]["stage.lm_head_backward.count"]["mean"] == 2.0
+    assert payload["candidate_native_metrics"]["stage.lm_head_backward.logits.total_ms"]["mean"] == 3.0
+    assert payload["candidate_native_metrics"]["stage.lm_head_backward.ce.total_ms"]["mean"] == 1.0
+    assert payload["candidate_native_metrics"]["stage.lm_head_backward.dhidden.total_ms"]["mean"] == 2.0
+    assert payload["candidate_native_metrics"]["stage.lm_head_backward.dweight.total_ms"]["mean"] == 1.5
+    assert payload["candidate_native_metrics"]["stage.block_backward.mlp_proj.total_ms"]["mean"] == 5.0
+    assert (
+        payload["candidate_native_metrics"]["stage.block_backward.mlp_proj.dweight_bias.total_ms"]["mean"]
+        == 4.0
+    )
+    assert payload["candidate_native_metrics"]["stage.block_backward.attn_sdpa.to_qkv.total_ms"]["mean"] == 6.0
     assert "gpus" in payload["gpu_before"]
     assert "compute_processes" in payload["gpu_before"]
     assert "gpu_before" in payload["paired_samples"][0]
@@ -144,6 +168,13 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "lm_head_logits_tk_gemm_count: mean=2.000000" in proc.stdout
     assert "lm_head_logits_cublaslt_gemm_count: mean=0.000000" in proc.stdout
     assert "lm_head_logits_bf16_gemm_count: mean=2.000000" in proc.stdout
+    assert "stage.lm_head_backward.logits.total_ms: mean=3.000000" in proc.stdout
+    assert "stage.lm_head_backward.ce.total_ms: mean=1.000000" in proc.stdout
+    assert "stage.lm_head_backward.dhidden.total_ms: mean=2.000000" in proc.stdout
+    assert "stage.lm_head_backward.dweight.total_ms: mean=1.500000" in proc.stdout
+    assert "stage.block_backward.mlp_proj.total_ms: mean=5.000000" in proc.stdout
+    assert "stage.block_backward.mlp_proj.dweight_bias.total_ms: mean=4.000000" in proc.stdout
+    assert "stage.block_backward.attn_sdpa.to_qkv.total_ms: mean=6.000000" in proc.stdout
 
 
 def test_paired_kernel_speed_tool_dry_run_plan_does_not_launch_commands() -> None:

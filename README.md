@@ -107,6 +107,11 @@ other compute work was present for a specific command. Text and JSON output also
 `gpu_sample_summary`, which summarizes selected-GPU utilization, memory, and
 compute-process counts before and after measured samples; use this summary when
 checking that candidate-vs-baseline timing was not skewed by other GPU load.
+Native stage-timed JSON already records every CUDA bucket, and the text summary
+prints the LM-head backward substages (`logits`, `ce`, `dhidden`, `dweight`,
+optional `dhidden_dweight_concurrent`) plus block-backward substages such as
+`mlp_proj.*`, `attn_sdpa.to_qkv`, and `qkv.dweight_bias` so parity runs can
+attribute the current RTX 5090 gap without opening sidecar JSON by hand.
 When a command exits nonzero and `--continue-on-error` is not set, the helper now
 prints both stdout and stderr tails so CUDA driver/runtime messages from
 external baselines are not hidden behind an empty stderr block.

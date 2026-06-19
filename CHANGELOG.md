@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Expanded paired native-kernel benchmark attribution for the remaining RTX
+  5090 parity gap. `tools/paired_kernel_speed.py` now uses one shared text
+  metric allowlist for per-side metrics and candidate-over-baseline ratios, and
+  that list includes LM-head backward substages (`logits`, `ce`, `dhidden`,
+  `dweight`, optional `dhidden_dweight_concurrent`) plus key block-backward
+  substages (`mlp_proj.*`, `attn_sdpa.to_qkv`, and `qkv.dweight_bias`). This
+  makes the stdout report sufficient for deciding whether a candidate moved the
+  real LM-head/block-backward bottlenecks before opening sidecar JSON. A fresh
+  CUDA 13.3 dedicated RTX 5090 native-vs-native retest kept
+  `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1` rejected at `1.006100x` train-loop wall
+  time, `0.993948x` tokens/sec, and `1.002658x` LM-head backward time.
+  Verification: `python -m pytest tests/test_tile_cuda_examples.py -q` and
+  `git diff --check`.
+
 - Added default-off vec4 CUDA diagnostics for the dense GPT multi-buffer
   float32-to-BF16 packer and stored-MLP activation pack/restore path. The new
   guarded kernels are enabled only by
