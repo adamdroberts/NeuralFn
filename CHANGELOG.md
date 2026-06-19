@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked two tempting LM-head routes after the BF16 CE vector-load default
+  and kept both rejected. `NFN_NATIVE_LINEAR_BF16_OUTPUT_CUBLASLT=1
+  NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=50304,8192,768,T,N,0` moved the
+  LM-head logits shape onto cuBLASLt but measured `1.000302x` train-loop wall
+  time and `0.999702x` tokens/sec versus the default BF16 GEMMEx route, so it
+  remains diagnostic-only. `NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1`
+  completed but measured `12.602812x` train-loop wall time and `0.079348x`
+  tokens/sec versus the row-chunked default; it does not reduce GEMM count and
+  instead adds a full resident BF16 logit tape. The next LM-head implementation
+  target remains a fused/cooperative row-chunked classifier-backward kernel,
+  not cuBLASLt heuristic tuning or full-logit reuse. Verification: dedicated
+  RTX 5090 same-script native-vs-native benchmarks with selected-GPU idle
+  checks.
+
 - Defaulted dense GPT native BF16 classifier/CE row scans to vectorized 8x
   BF16 loads, aligning the native Tile-CUDA classifier pass with the
   llm.kittens fused-classifier row-read pattern without changing the raw C ABI.
