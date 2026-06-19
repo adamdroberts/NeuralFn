@@ -5133,7 +5133,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_CE_BF16_VEC_STORES" in kernels_text
     assert "NFN_NATIVE_GPT2_CE_BF16_VEC_STORES" in kernels_text
     assert "cross_entropy_bf16_vec_stores_enabled" in kernels_text
+    assert "NFN_TILE_CUDA_CE_BF16_VEC_LOADS" in kernels_text
+    assert "NFN_NATIVE_GPT_CE_BF16_VEC_LOADS" in kernels_text
+    assert "NFN_NATIVE_GPT2_CE_BF16_VEC_LOADS" in kernels_text
+    assert "cross_entropy_bf16_vec_loads_enabled" in kernels_text
+    assert "bf16_row_max_vec8_or_scalar" in kernels_text
+    assert "bf16_row_exp_sum_vec8_or_scalar" in kernels_text
     assert "store_bf16_vec8_streaming" in kernels_text
+    assert "load_bf16_vec8" in kernels_text
     assert "__stcs(reinterpret_cast<int4*>(dst)" in kernels_text
     assert "ensure_llmk_sm120_cublaslt_initialized" in kernels_text
     assert "llmk::cublaslt_sm120::init()" in kernels_text

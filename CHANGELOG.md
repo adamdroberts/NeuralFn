@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Defaulted dense GPT native BF16 classifier/CE row scans to vectorized 8x
+  BF16 loads, aligning the native Tile-CUDA classifier pass with the
+  llm.kittens fused-classifier row-read pattern without changing the raw C ABI.
+  Set `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=0`,
+  `NFN_NATIVE_GPT2_CE_BF16_VEC_LOADS=0`, or
+  `NFN_TILE_CUDA_CE_BF16_VEC_LOADS=0` to restore the older scalar-load path for
+  bisection. Dedicated RTX 5090 same-script benchmarks measured the vector-load
+  candidate at `0.998750x` train-loop wall time and `1.001257x` tokens/sec
+  versus the scalar default over five samples; after promotion, the scalar
+  opt-out measured `1.002740x` train-loop wall time and `0.997270x` tokens/sec
+  versus the new default over three samples. Verification:
+  `bash tools/build_native_train_tile_ops.sh`; focused
+  `tests/test_native_gpt2.py` native C ABI/source-contract slice;
+  `python tools/check_native_no_torch_deps.py`; `git diff --check`; dedicated
+  RTX 5090 native-vs-native benchmarks with selected-GPU idle checks.
+
 - Rechecked the remaining dense GPT native LM-head and startup candidate paths
   after the CUDA Toolkit 13.3.33 WSL reinstall and kept the current defaults.
   A one-step stage/shape profile on the dedicated RTX 5090 measured

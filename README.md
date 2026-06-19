@@ -19,6 +19,10 @@ fallback fix.
 The CUDA 13.3.33 follow-up probes kept LM-head cuBLASLt expansion and threaded
 token-weight initialization rejected as defaults, so those remain diagnostic
 switches rather than workflow guidance.
+Dense GPT native BF16 classifier/CE now uses vectorized BF16 row loads by
+default to match the llm.kittens fused-classifier memory access pattern; set
+`NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=0` or
+`NFN_TILE_CUDA_CE_BF16_VEC_LOADS=0` only for paired scalar-load bisection.
 
 For local server/editor development, leaving `NEURALFN_REDIS_URL` empty keeps
 live state and persistence in-process. Redis-backed deployments still enqueue
