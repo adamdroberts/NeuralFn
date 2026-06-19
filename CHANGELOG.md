@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added low-overhead LM-head logits backend counters to dense GPT native runtime
+  JSON. Normal runs now report `lm_head_logits_tk_gemm_count`,
+  `lm_head_logits_cublaslt_gemm_count`, and
+  `lm_head_logits_bf16_gemm_count`, and `lm_head_logits_linear_strategy` uses
+  those per-stage counter deltas when expensive `linear_shape_stats` timing is
+  disabled. Migration notes: benchmark tooling no longer needs to enable shape
+  stats just to distinguish the default TK BF16 LM-head logits route from the
+  GEMMEx fallback; `tools/paired_kernel_speed.py` now collects and prints the
+  counters in paired benchmark summaries. Verification: rebuilt
+  `build/nfn_gpt_native_train`; `python -m pytest
+  tests/test_native_gpt2.py::test_native_train_tile_ops_builds_torch_free_c_abi
+  -q` passed; a one-step CUDA native smoke with shape stats disabled wrote
+  `lm_head_logits_linear_strategy: "tk-sm120-bf16-gemm-default"` and
+  `lm_head_logits_tk_gemm_count: 64`; a one-step paired native smoke printed
+  the new LM-head logits counters in both native metric sections and ratios;
+  `tools/check_native_no_torch_deps.py` passed.
+
 - Defaulted dense GPT native LM-head logits recompute to the TK BF16 forward
   bridge on CUDA 13.3/SM120. The trainer-facing
   `launch_linear_bf16_input_weight_bf16_output_float32` wrapper now attempts

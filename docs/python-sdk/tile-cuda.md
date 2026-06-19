@@ -241,6 +241,11 @@ BF16-output GEMMs, including the padded LM-head logits shape
 older GEMMEx route for paired comparisons, set
 `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,8192,768,T,N` or
 `NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,8192,768,T,N`.
+Native GPT runtime JSON also reports `lm_head_logits_tk_gemm_count`,
+`lm_head_logits_cublaslt_gemm_count`, and
+`lm_head_logits_bf16_gemm_count`, so `lm_head_logits_linear_strategy` identifies
+the active LM-head logits backend without enabling the heavier
+`linear_shape_stats` timing path.
 
 Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers
