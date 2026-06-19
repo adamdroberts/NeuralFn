@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the dense GPT native-vs-native SM120 candidate benchmark wrapper to
+  accept the parity wrapper's `NFN_SM120_PARITY_*` common controls as a third
+  alias family. `tools/bench_native_gpt_sm120_candidate.sh` now resolves common
+  settings such as steps, samples, warmup, profile directory, stage timing, GPU
+  selection, JSON output, and dry-run plan with precedence
+  `NFN_SM120_NATIVE_*` > `NFN_SM120_CANDIDATE_*` > `NFN_SM120_PARITY_*` >
+  default. Candidate-only env and candidate-only extra args remain isolated to
+  the candidate command. Migration notes: existing native/candidate env names
+  keep the same behavior, while quick handoffs from parity commands no longer
+  silently fall back to the candidate wrapper's larger 10-step, 3-sample,
+  1-warmup defaults. Verification: added a dry-run regression test that sets
+  `NFN_SM120_PARITY_STEPS=2`, `NFN_SM120_PARITY_SAMPLES=1`,
+  `NFN_SM120_PARITY_WARMUP=0`, and `NFN_SM120_PARITY_PROFILE_DIR=none` and
+  asserts the generated paired plan uses those values without launching a GPU
+  benchmark.
+
 - Classified dense GPT modern template aliases in the native C++ selector. The
   dense GPT trainer now treats `gpt2_modern` as the same compiled-loop geometry
   as `gpt2`, and recognizes `nanogpt_modern` / `nanogpt_megakernel` as known
