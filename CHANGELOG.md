@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Reordered the compiled native GPT selected-graph gate ahead of token-shard
+  resolution for real `--train-transformer-lm` runs. Unsupported shipped
+  templates, unknown templates, missing custom graph files, and custom graphs
+  that do not yet have a native trainer now return native graph/template status
+  JSON before touching cached dataset shards. The early-exit payload includes
+  `token_shards_resolved: false` and an empty `dataset_path` when no dataset was
+  resolved. Migration notes: `--print-plan`, `--dry-run`, smoke steps, and
+  runnable dense GPT/GPT3 training keep their existing resolution behavior;
+  unsupported selected-graph errors are no longer masked by missing dataset
+  aliases. Verification: added a missing-dataset unsupported-template
+  regression that returns `template-native-trainer-missing` without stderr or
+  shard resolution.
+
 - Extended lazy CUDA module loading to legacy training-script native guards.
   Scripts such as `train_gpt2_evo.py` that exit before importing Torch and
   hand off to a family-specific or generic compiled native trainer now set

@@ -3990,7 +3990,9 @@ bool print_tile_plan(
     return include_symbol_check ? (loaded && all_symbols) : false;
 }
 
-int print_selected_graph_unsupported_json(const Config& cfg, const neuralfn::native_train::TokenShardDataset& dataset) {
+int print_selected_graph_unsupported_json(
+    const Config& cfg,
+    const neuralfn::native_train::TokenShardDataset* dataset = nullptr) {
     const bool shipped_template = selected_template_is_shipped(cfg);
     const std::string support_status = selected_graph_support_status(cfg);
     const std::string status =
@@ -4016,7 +4018,8 @@ int print_selected_graph_unsupported_json(const Config& cfg, const neuralfn::nat
         << "  \"status\": \"" << json_escape(status) << "\",\n"
         << "  \"shipped_template_catalog_count\": " << shipped_gpt_template_presets().size() << ",\n"
         << "  \"dataset_alias\": \"" << json_escape(cfg.dataset_alias) << "\",\n"
-        << "  \"dataset_path\": \"" << json_escape(dataset.dataset_path.string()) << "\",\n"
+        << "  \"token_shards_resolved\": " << (dataset != nullptr && !dataset->train_shards.empty() ? "true" : "false") << ",\n"
+        << "  \"dataset_path\": \"" << json_escape(dataset == nullptr ? std::string() : dataset->dataset_path.string()) << "\",\n"
         << "  \"required_native_work\": [\n";
     if (support_status == "unknown-template") {
         std::cout
@@ -20063,6 +20066,15 @@ int main(int argc, char** argv) {
             const bool symbols_ok = print_tile_plan(cfg, empty_dataset, argv[0], true);
             return symbols_ok ? 0 : 2;
         }
+        if (!cfg.print_plan &&
+            !cfg.dry_run &&
+            !cfg.smoke_transformer_lm_step &&
+            !cfg.smoke_embedding_lm_step &&
+            !cfg.checkpoint_metadata_smoke &&
+            cfg.train_transformer_lm &&
+            !selected_graph_is_native_runnable(cfg)) {
+            return print_selected_graph_unsupported_json(cfg);
+        }
     }
 
     neuralfn::native_train::TokenShardDataset dataset;
@@ -20088,7 +20100,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (cfg.train_transformer_lm && !selected_graph_is_native_runnable(cfg)) {
-            return print_selected_graph_unsupported_json(cfg, dataset);
+            return print_selected_graph_unsupported_json(cfg, &dataset);
         }
         if (cfg.train_embedding_lm) {
             return run_embedding_lm_training_json(cfg, dataset, argv[0]);

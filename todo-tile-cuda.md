@@ -52,6 +52,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   - 2026-06-19 extended this to the direct `cli/scripts/train_gpt.py` / `train_gpt2.py` compiled-CLI fast path so compatibility script execution also forwards lazy CUDA module loading before the compiled native trainer starts, without importing Torch.
   - 2026-06-19 extended the same default to `native_training_guard.py`, covering GPT-2 evo and other legacy training-script native handoffs that exec compiled trainers before Torch imports.
 - [x] Run GPT-2 no-data Tile-CUDA preflights before token-shard resolution so `--check-tile-ops`, synthetic smoke steps, and ABI checks work without cached datasets and report `token_shards_resolved: false`.
+  - 2026-06-19 extended the same startup rule to unsupported selected-graph/template training exits: real `--train-transformer-lm` runs now reject unsupported templates or custom graphs before token-shard resolution and report `token_shards_resolved: false`.
 - [x] Add GPT-2 native Tile parameter layout and forward/backward/optimizer stage plan to the compiled `--backend tile-cuda --print-plan` JSON.
 - [x] Add GPT-2 `--smoke-optimizer-step` compiled C++ path that allocates GPT-2-sized param/grad/AdamW buffers, runs one raw Tile AdamW call per registered parameter buffer, and samples copyback values without Python/Torch.
 - [x] Add GPT-2 `--smoke-lm-step` compiled C++ path that runs tied token embedding, full-vocab LM logits, CE partials/backward, tied weight backward, and AdamW through raw Tile kernels without Python/Torch.

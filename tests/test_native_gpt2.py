@@ -2249,6 +2249,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert unsupported_payload["selected_graph_native_runnable"] is False
     assert unsupported_payload["status"] == "selected-graph-native-trainer-missing"
     assert unsupported_payload["template_known"] is True
+    assert unsupported_payload["token_shards_resolved"] is False
 
     unknown_template = subprocess.run(
         [
@@ -2274,6 +2275,33 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert unknown_payload["selected_graph_support_status"] == "unknown-template"
     assert unknown_payload["selected_graph_native_runnable"] is False
     assert unknown_payload["status"] == "unknown-template"
+    assert unknown_payload["token_shards_resolved"] is False
+
+    unsupported_missing_dataset = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(tmp_path / "missing-native-cache"),
+            "--backend",
+            "tile-cuda",
+            "--template-name",
+            "llama",
+            "--max-steps",
+            "1",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unsupported_missing_dataset.returncode == 2
+    assert unsupported_missing_dataset.stderr == ""
+    unsupported_missing_payload = json.loads(unsupported_missing_dataset.stdout)
+    assert unsupported_missing_payload["selected_graph_support_status"] == "template-native-trainer-missing"
+    assert unsupported_missing_payload["status"] == "selected-graph-native-trainer-missing"
+    assert unsupported_missing_payload["dataset_alias"].endswith("missing-native-cache")
+    assert unsupported_missing_payload["token_shards_resolved"] is False
+    assert unsupported_missing_payload["dataset_path"] == ""
 
     custom_graph_path = tmp_path / "custom-graph.json"
     custom_graph_path.write_text('{"nodes": {}, "edges": {}}\n', encoding="utf-8")
