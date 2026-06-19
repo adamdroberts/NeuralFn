@@ -11,6 +11,11 @@ Future updates should append new entries here rather than replacing older notes.
   on `KeyboardInterrupt` or other unexpected interruption, matching the existing
   timeout cleanup behavior and preventing memory-heavy native probes from
   continuing to use the selected GPU after the benchmark parent exits.
+  Stage-timed text summaries now also print the existing native forward
+  attribution buckets, including `stage.train.model_forward.total_ms`,
+  `stage.block_forward.total_ms`, and `stage.block_recompute.total_ms`, so the
+  remaining llm.kittens parity gap can be assigned without manually opening
+  profile sidecars.
   Migration notes: command-line flags are unchanged; interrupted benchmark runs
   still re-raise the interruption after cleanup. Verification: added a
   process-group termination regression test; after the CUDA 13.3 reinstall,
