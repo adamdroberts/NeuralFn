@@ -476,6 +476,106 @@ __global__ void restore_mlp_activations_bf16_float32_kernel(
   }
 }
 
+__device__ __forceinline__ unsigned long long f32x4_to_bf16x4_bits_device(float4 value) {
+  const std::uint16_t a = f32_bits_to_bf16_bits_device(__float_as_uint(value.x));
+  const std::uint16_t b = f32_bits_to_bf16_bits_device(__float_as_uint(value.y));
+  const std::uint16_t c = f32_bits_to_bf16_bits_device(__float_as_uint(value.z));
+  const std::uint16_t d = f32_bits_to_bf16_bits_device(__float_as_uint(value.w));
+  return static_cast<unsigned long long>(a) |
+      (static_cast<unsigned long long>(b) << 16) |
+      (static_cast<unsigned long long>(c) << 32) |
+      (static_cast<unsigned long long>(d) << 48);
+}
+
+__device__ __forceinline__ float4 bf16x4_bits_to_f32x4_device(unsigned long long packed) {
+  float4 value;
+  value.x = bf16_bits_to_f32_device(static_cast<std::uint16_t>(packed & 0xffffull));
+  value.y = bf16_bits_to_f32_device(static_cast<std::uint16_t>((packed >> 16) & 0xffffull));
+  value.z = bf16_bits_to_f32_device(static_cast<std::uint16_t>((packed >> 32) & 0xffffull));
+  value.w = bf16_bits_to_f32_device(static_cast<std::uint16_t>((packed >> 48) & 0xffffull));
+  return value;
+}
+
+__global__ void store_mlp_activations_bf16_float32_vec4_kernel(
+    const float* __restrict__ ln2_out,
+    const float* __restrict__ fc_out,
+    const float* __restrict__ act,
+    unsigned long long* __restrict__ dest,
+    std::int64_t activation_vec4,
+    std::int64_t hidden_vec4) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t total_vec4 = activation_vec4 + hidden_vec4 * 2;
+  if (idx >= total_vec4) {
+    return;
+  }
+  const float4* src = nullptr;
+  std::int64_t src_idx = idx;
+  if (idx < activation_vec4) {
+    src = reinterpret_cast<const float4*>(ln2_out);
+  } else if (idx < activation_vec4 + hidden_vec4) {
+    src = reinterpret_cast<const float4*>(fc_out);
+    src_idx = idx - activation_vec4;
+  } else {
+    src = reinterpret_cast<const float4*>(act);
+    src_idx = idx - activation_vec4 - hidden_vec4;
+  }
+  dest[idx] = f32x4_to_bf16x4_bits_device(src[src_idx]);
+}
+
+__global__ void restore_mlp_activations_bf16_float32_vec4_kernel(
+    const unsigned long long* __restrict__ source,
+    float* __restrict__ ln2_out,
+    float* __restrict__ fc_out,
+    float* __restrict__ act,
+    std::int64_t activation_vec4,
+    std::int64_t hidden_vec4) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  const std::int64_t total_vec4 = activation_vec4 + hidden_vec4 * 2;
+  if (idx >= total_vec4) {
+    return;
+  }
+  float4* dst = nullptr;
+  std::int64_t dst_idx = idx;
+  if (idx < activation_vec4) {
+    dst = reinterpret_cast<float4*>(ln2_out);
+  } else if (idx < activation_vec4 + hidden_vec4) {
+    dst = reinterpret_cast<float4*>(fc_out);
+    dst_idx = idx - activation_vec4;
+  } else {
+    dst = reinterpret_cast<float4*>(act);
+    dst_idx = idx - activation_vec4 - hidden_vec4;
+  }
+  dst[dst_idx] = bf16x4_bits_to_f32x4_device(source[idx]);
+}
+
+bool store_mlp_activations_vec4_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_STORE_MLP_ACTIVATIONS_VEC4");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS_VEC4");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS_VEC4");
+    }
+    if (value == nullptr) {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
 __global__ void f32_to_bf16_bits_many_kernel(
     const float* const* __restrict__ sources,
     const std::int64_t* __restrict__ elements,
@@ -494,6 +594,77 @@ __global__ void f32_to_bf16_bits_many_kernel(
   }
   const float* src = sources[buffer];
   dst[offsets[buffer] + idx] = f32_to_bf16_bits_device(src[idx]);
+}
+
+__global__ void f32_to_bf16_bits_many_vec4_kernel(
+    const float* const* __restrict__ sources,
+    const std::int64_t* __restrict__ elements,
+    const std::int64_t* __restrict__ offsets,
+    std::uint16_t* __restrict__ dst,
+    std::int64_t buffer_count,
+    std::int64_t max_vec4_elements) {
+  const std::int64_t buffer = static_cast<std::int64_t>(blockIdx.y);
+  const std::int64_t idx4 = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (buffer >= buffer_count || idx4 >= max_vec4_elements) {
+    return;
+  }
+  const std::int64_t n = elements[buffer];
+  const std::int64_t base = idx4 * 4;
+  if (base >= n) {
+    return;
+  }
+  const float* src = sources[buffer];
+  const std::int64_t dst_offset = offsets[buffer] + base;
+  const bool vector_aligned =
+      ((reinterpret_cast<std::uintptr_t>(src + base) & 0x0f) == 0) &&
+      ((reinterpret_cast<std::uintptr_t>(dst + dst_offset) & 0x07) == 0);
+  if (vector_aligned && base + 3 < n) {
+    const float4 value = *reinterpret_cast<const float4*>(src + base);
+    const std::uint16_t a = f32_bits_to_bf16_bits_device(__float_as_uint(value.x));
+    const std::uint16_t b = f32_bits_to_bf16_bits_device(__float_as_uint(value.y));
+    const std::uint16_t c = f32_bits_to_bf16_bits_device(__float_as_uint(value.z));
+    const std::uint16_t d = f32_bits_to_bf16_bits_device(__float_as_uint(value.w));
+    *reinterpret_cast<unsigned long long*>(dst + dst_offset) =
+        static_cast<unsigned long long>(a) |
+        (static_cast<unsigned long long>(b) << 16) |
+        (static_cast<unsigned long long>(c) << 32) |
+        (static_cast<unsigned long long>(d) << 48);
+    return;
+  }
+  for (int lane = 0; lane < 4; ++lane) {
+    const std::int64_t idx = base + lane;
+    if (idx < n) {
+      dst[offsets[buffer] + idx] = f32_to_bf16_bits_device(src[idx]);
+    }
+  }
+}
+
+bool f32_to_bf16_bits_many_vec4_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_F32_TO_BF16_MANY_VEC4");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_F32_TO_BF16_MANY_VEC4");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_F32_TO_BF16_MANY_VEC4");
+    }
+    if (value == nullptr) {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
 }
 
 void release_token_cross_entropy_workspace(TokenCrossEntropyWorkspace& workspace) {
@@ -12881,6 +13052,26 @@ void launch_store_mlp_activations_bf16_float32(
     std::int64_t hidden_elements,
     cudaStream_t stream) {
   const std::int64_t total = activation_elements + hidden_elements * 2;
+  const bool vec4_eligible =
+      store_mlp_activations_vec4_enabled() &&
+      activation_elements % 4 == 0 &&
+      hidden_elements % 4 == 0 &&
+      ((reinterpret_cast<std::uintptr_t>(ln2_out) & 0x0f) == 0) &&
+      ((reinterpret_cast<std::uintptr_t>(fc_out) & 0x0f) == 0) &&
+      ((reinterpret_cast<std::uintptr_t>(act) & 0x0f) == 0) &&
+      ((reinterpret_cast<std::uintptr_t>(dest) & 0x07) == 0);
+  if (vec4_eligible) {
+    const std::int64_t total_vec4 = total / 4;
+    const int blocks = static_cast<int>((total_vec4 + kTileSize - 1) / kTileSize);
+    store_mlp_activations_bf16_float32_vec4_kernel<<<blocks, kTileSize, 0, stream>>>(
+        ln2_out,
+        fc_out,
+        act,
+        reinterpret_cast<unsigned long long*>(dest),
+        activation_elements / 4,
+        hidden_elements / 4);
+    return;
+  }
   const int blocks = static_cast<int>((total + kTileSize - 1) / kTileSize);
   store_mlp_activations_bf16_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
       ln2_out, fc_out, act, dest, activation_elements, hidden_elements);
@@ -12895,6 +13086,26 @@ void launch_restore_mlp_activations_bf16_float32(
     std::int64_t hidden_elements,
     cudaStream_t stream) {
   const std::int64_t total = activation_elements + hidden_elements * 2;
+  const bool vec4_eligible =
+      store_mlp_activations_vec4_enabled() &&
+      activation_elements % 4 == 0 &&
+      hidden_elements % 4 == 0 &&
+      ((reinterpret_cast<std::uintptr_t>(source) & 0x07) == 0) &&
+      ((reinterpret_cast<std::uintptr_t>(ln2_out) & 0x0f) == 0) &&
+      ((reinterpret_cast<std::uintptr_t>(fc_out) & 0x0f) == 0) &&
+      ((reinterpret_cast<std::uintptr_t>(act) & 0x0f) == 0);
+  if (vec4_eligible) {
+    const std::int64_t total_vec4 = total / 4;
+    const int blocks = static_cast<int>((total_vec4 + kTileSize - 1) / kTileSize);
+    restore_mlp_activations_bf16_float32_vec4_kernel<<<blocks, kTileSize, 0, stream>>>(
+        reinterpret_cast<const unsigned long long*>(source),
+        ln2_out,
+        fc_out,
+        act,
+        activation_elements / 4,
+        hidden_elements / 4);
+    return;
+  }
   const int blocks = static_cast<int>((total + kTileSize - 1) / kTileSize);
   restore_mlp_activations_bf16_float32_kernel<<<blocks, kTileSize, 0, stream>>>(
       source, ln2_out, fc_out, act, activation_elements, hidden_elements);
@@ -12909,6 +13120,14 @@ void launch_float32_to_bf16_bits_many(
     std::int64_t max_elements,
     cudaStream_t stream) {
   if (buffer_count <= 0 || max_elements <= 0) {
+    return;
+  }
+  if (f32_to_bf16_bits_many_vec4_enabled()) {
+    const std::int64_t max_vec4_elements = (max_elements + 3) / 4;
+    const int chunks = static_cast<int>((max_vec4_elements + kTileSize - 1) / kTileSize);
+    dim3 grid(static_cast<unsigned int>(chunks), static_cast<unsigned int>(buffer_count), 1);
+    f32_to_bf16_bits_many_vec4_kernel<<<grid, kTileSize, 0, stream>>>(
+        sources, elements, offsets, dest, buffer_count, max_vec4_elements);
     return;
   }
   const int chunks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);

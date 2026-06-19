@@ -290,7 +290,9 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN`,
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW`,
 `NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE`, and
-`NFN_NATIVE_GPT_F32_TO_BF16_VEC4`, and
+`NFN_NATIVE_GPT_F32_TO_BF16_VEC4`,
+`NFN_NATIVE_GPT_F32_TO_BF16_MANY_VEC4`, and
+`NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS_VEC4`, and
 `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC`. The older `NFN_NATIVE_GPT2_*`
 variables remain compatibility fallbacks for existing GPT-2-named wrappers.
 The tokenizer-visible GPT-2 vocab remains 50,257, but native transformer-LM
@@ -629,6 +631,16 @@ JSON reports `block_backward_mlp_dgelu_float_grad_elided`. The one-buffer
 `nfn_native_tile_float32_to_bf16_bits` converter defaults to a guarded vec4
 path for aligned native GPT buffers; set `NFN_NATIVE_GPT_F32_TO_BF16_VEC4=0` or
 `NFN_TILE_CUDA_F32_TO_BF16_VEC4=0` to compare against the scalar converter.
+The multi-buffer `nfn_native_tile_float32_to_bf16_bits_many` path and stored
+MLP activation pack/restore path also expose guarded vec4 candidates, but they
+are default-off diagnostics after the CUDA 13.3 dedicated RTX 5090 paired run
+measured the scalar route faster (`0.994143x` candidate/default train-loop wall
+time and `1.005941x` tokens/sec). Set
+`NFN_NATIVE_GPT_F32_TO_BF16_MANY_VEC4=1` /
+`NFN_TILE_CUDA_F32_TO_BF16_MANY_VEC4=1` or
+`NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS_VEC4=1` /
+`NFN_TILE_CUDA_STORE_MLP_ACTIVATIONS_VEC4=1` only for same-script bisection;
+the launchers fall back to scalar kernels when alignment or shape guards fail.
 `NFN_TILE_CUDA_LINEAR_TK_FLOAT_OUT=1` or
 `NFN_NATIVE_LINEAR_TK_FLOAT_OUT=1` enables an opt-in diagnostic bridge that runs
 eligible BF16 linear forward GEMMs through the TK BF16-output path and converts

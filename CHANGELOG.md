@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added default-off vec4 CUDA diagnostics for the dense GPT multi-buffer
+  float32-to-BF16 packer and stored-MLP activation pack/restore path. The new
+  guarded kernels are enabled only by
+  `NFN_NATIVE_GPT_F32_TO_BF16_MANY_VEC4=1` /
+  `NFN_TILE_CUDA_F32_TO_BF16_MANY_VEC4=1` or
+  `NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS_VEC4=1` /
+  `NFN_TILE_CUDA_STORE_MLP_ACTIVATIONS_VEC4=1`, with GPT-2-prefixed variables
+  retained as compatibility fallbacks. They are not default training routes:
+  the CUDA 13.3 dedicated RTX 5090 paired benchmark measured the scalar
+  candidate faster than the vec4-default baseline (`0.994143x`
+  train-loop wall time, `1.005941x` tokens/sec, no tracked route-counter
+  change). Verification after the CUDA Toolkit 13.3 WSL reinstall:
+  rebuilt `build/libnfn_native_train_tile_ops.so`, ran
+  `tools/check_native_no_torch_deps.py`, reran GPU-visible
+  `tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py
+  tests/test_tile_cuda_optimizer.py` (`154 passed`), reran the native GPT C ABI
+  smoke (`1 passed`), reran `tests/test_layer_evo_gpu.py` (`3 passed`), and
+  reran `tests/test_native_gpt2.py` with real CUDA visibility (`54 passed`).
+
 - Added a native route-counter-change summary to `tools/paired_kernel_speed.py`
   so native-vs-native kernel candidates are not promoted from timing noise
   alone. The paired JSON now includes `native_route_counter_changes`, comparing
