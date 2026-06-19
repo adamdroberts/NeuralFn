@@ -79,6 +79,18 @@ JSON includes `block_backward.mlp_proj.grad_out_bf16`, which isolates the
 projection-gradient float32-to-BF16 pack from the surrounding MLP projection
 dWeight and dInput kernels.
 
+Native BF16 `cublasGemmEx` fallback paths expose default-off bisection controls
+for CUDA 13.3+ performance work. Set
+`NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO=N` or
+`NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO=N` to try
+`CUBLAS_GEMM_ALGO<N>_TENSOR_OP` globally, or use
+`NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO_SHAPE=m,n,k,opA,opB,N` /
+`NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO_SHAPE=...` to isolate a single GEMM
+shape while leaving all other BF16 GEMMEx calls on their existing defaults.
+The dense GPT LM-head dHidden shape is
+`768,8192,50304,N,N,N`. The tokens `default` and `default_tensor_op` force the
+plain and tensor-op cuBLAS defaults. Leave these unset for normal training.
+
 `NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1` is a default-off SM120
 attention-backward diagnostic. It packs the float attention dO tensor to BF16
 only for the packed-attention dprep/backward wrapper, without switching the

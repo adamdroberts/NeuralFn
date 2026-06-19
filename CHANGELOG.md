@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added default-off BF16 `cublasGemmEx` algorithm bisection controls for native
+  Tile-CUDA training. `NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO` /
+  `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO` select a global BF16 GEMMEx
+  algorithm, while `NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO_SHAPE` /
+  `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO_SHAPE` targets one exact
+  `m,n,k,opA,opB,algo` shape such as the LM-head dHidden
+  `768,8192,50304,N,N,0` probe. Defaults are unchanged when the variables are
+  unset; this is a same-script benchmarking aid for the remaining llm.kittens
+  parity gap, not a promoted faster route. Verification: rebuilt the native
+  Tile ops library with CUDA 13.3, ran the focused native GPT/Tile tests, and
+  ran dedicated RTX 5090 native-vs-native candidate benchmarks. The first
+  2-sample LM-head dHidden algorithm-0 probe measured `0.993367x` train-loop
+  wall, but the 5-sample confirmation was effectively flat at `0.999739x`
+  mean train-loop wall and `1.000326x` tokens/sec, so no default algorithm was
+  changed.
+
 - Fixed GPT-2 evo native dry-run command inspection. The legacy Python guard now
   normalizes `--native-cuda-dry-run` and `--native-cuda-print-command` before
   forwarding to family-specific native binaries, the unified native frontend

@@ -5237,6 +5237,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_FAST_16BF" in kernels_text
     assert "NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF" in kernels_text
     assert "trainer_linear_bf16_gemm_ex_compute_type" in kernels_text
+    assert "NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO" in kernels_text
+    assert "NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO" in kernels_text
+    assert "NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO_SHAPE" in kernels_text
+    assert "NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO_SHAPE" in kernels_text
+    assert "parse_bf16_gemm_ex_algo_token" in kernels_text
+    assert "trainer_linear_bf16_gemm_ex_algo" in kernels_text
+    assert '"%d,%d,%d,%7[^,],%7[^,],%31s"' in kernels_text
+    assert "CUBLAS_GEMM_ALGO0_TENSOR_OP + parsed" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_float32_with_bgrad" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_bits_a_float32_with_bgrad" in kernels_text
     assert "cublas_linear_gemm_ex_bf16_bits_b_float32_with_bgrad" in kernels_text

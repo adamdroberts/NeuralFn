@@ -3243,6 +3243,129 @@ cublasComputeType_t trainer_linear_bf16_gemm_ex_compute_type() {
   return fast_16bf ? CUBLAS_COMPUTE_32F_FAST_16BF : CUBLAS_COMPUTE_32F;
 }
 
+bool parse_bf16_gemm_ex_algo_token(const char* token, cublasGemmAlgo_t* algo) {
+  if (token == nullptr || token[0] == '\0' || algo == nullptr) {
+    return false;
+  }
+  if (std::strcmp(token, "default_tensor_op") == 0 ||
+      std::strcmp(token, "DEFAULT_TENSOR_OP") == 0 ||
+      std::strcmp(token, "tensor_op") == 0 ||
+      std::strcmp(token, "TENSOR_OP") == 0) {
+    *algo = CUBLAS_GEMM_DEFAULT_TENSOR_OP;
+    return true;
+  }
+  if (std::strcmp(token, "default") == 0 || std::strcmp(token, "DEFAULT") == 0) {
+    *algo = CUBLAS_GEMM_DEFAULT;
+    return true;
+  }
+  char* end = nullptr;
+  const long parsed = std::strtol(token, &end, 10);
+  if (end == token || (end != nullptr && *end != '\0')) {
+    return false;
+  }
+  if (parsed >= 0 && parsed <= 15) {
+    *algo = static_cast<cublasGemmAlgo_t>(CUBLAS_GEMM_ALGO0_TENSOR_OP + parsed);
+    return true;
+  }
+  if (parsed == static_cast<long>(CUBLAS_GEMM_DEFAULT) ||
+      parsed == static_cast<long>(CUBLAS_GEMM_DEFAULT_TENSOR_OP) ||
+      (parsed >= static_cast<long>(CUBLAS_GEMM_ALGO0_TENSOR_OP) &&
+       parsed <= static_cast<long>(CUBLAS_GEMM_ALGO15_TENSOR_OP))) {
+    *algo = static_cast<cublasGemmAlgo_t>(parsed);
+    return true;
+  }
+  return false;
+}
+
+cublasGemmAlgo_t trainer_linear_bf16_gemm_ex_algo(
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b,
+    cublasGemmAlgo_t default_algo) {
+  struct ShapeAlgoOverride {
+    int m = 0;
+    int n = 0;
+    int k = 0;
+    int op_a = CUBLAS_OP_N;
+    int op_b = CUBLAS_OP_N;
+    cublasGemmAlgo_t algo = CUBLAS_GEMM_DEFAULT_TENSOR_OP;
+    bool valid = false;
+  };
+  static const ShapeAlgoOverride shape_override = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO_SHAPE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO_SHAPE");
+    }
+    ShapeAlgoOverride shape{};
+    if (value == nullptr || value[0] == '\0') {
+      return shape;
+    }
+    int parsed_m = 0;
+    int parsed_n = 0;
+    int parsed_k = 0;
+    char parsed_op_a[8] = {};
+    char parsed_op_b[8] = {};
+    char parsed_algo[32] = {};
+    if (std::sscanf(
+            value,
+            "%d,%d,%d,%7[^,],%7[^,],%31s",
+            &parsed_m,
+            &parsed_n,
+            &parsed_k,
+            parsed_op_a,
+            parsed_op_b,
+            parsed_algo) != 6) {
+      return shape;
+    }
+    cublasOperation_t parsed_a = CUBLAS_OP_N;
+    cublasOperation_t parsed_b = CUBLAS_OP_N;
+    cublasGemmAlgo_t parsed_algo_value = CUBLAS_GEMM_DEFAULT_TENSOR_OP;
+    if (parsed_m <= 0 || parsed_n <= 0 || parsed_k <= 0 ||
+        !parse_cublas_op_token(parsed_op_a, &parsed_a) ||
+        !parse_cublas_op_token(parsed_op_b, &parsed_b) ||
+        !parse_bf16_gemm_ex_algo_token(parsed_algo, &parsed_algo_value)) {
+      return shape;
+    }
+    shape.m = parsed_m;
+    shape.n = parsed_n;
+    shape.k = parsed_k;
+    shape.op_a = static_cast<int>(parsed_a);
+    shape.op_b = static_cast<int>(parsed_b);
+    shape.algo = parsed_algo_value;
+    shape.valid = true;
+    return shape;
+  }();
+  if (shape_override.valid && shape_override.m == m && shape_override.n == n &&
+      shape_override.k == k && shape_override.op_a == static_cast<int>(op_a) &&
+      shape_override.op_b == static_cast<int>(op_b)) {
+    return shape_override.algo;
+  }
+  struct GlobalAlgoOverride {
+    cublasGemmAlgo_t algo = CUBLAS_GEMM_DEFAULT_TENSOR_OP;
+    bool valid = false;
+  };
+  static const GlobalAlgoOverride global_override = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO");
+    }
+    GlobalAlgoOverride override{};
+    cublasGemmAlgo_t parsed = CUBLAS_GEMM_DEFAULT_TENSOR_OP;
+    if (!parse_bf16_gemm_ex_algo_token(value, &parsed)) {
+      return override;
+    }
+    override.algo = parsed;
+    override.valid = true;
+    return override;
+  }();
+  if (global_override.valid) {
+    return global_override.algo;
+  }
+  return default_algo;
+}
+
 struct TrainerLinearBf16Workspace {
   struct CacheEntry {
     __nv_bfloat16* data = nullptr;
@@ -3574,7 +3697,8 @@ bool cublas_linear_gemm_ex_bf16_float32(
       CUDA_R_32F,
       ldc,
       trainer_linear_bf16_gemm_ex_compute_type(),
-      CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+      trainer_linear_bf16_gemm_ex_algo(
+          m, n, k, op_a, op_b, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
   if (status == CUBLAS_STATUS_SUCCESS) {
     const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -3660,7 +3784,8 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32(
       CUDA_R_32F,
       ldc,
       trainer_linear_bf16_gemm_ex_compute_type(),
-      CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+      trainer_linear_bf16_gemm_ex_algo(
+          m, n, k, op_a, op_b, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
   if (status == CUBLAS_STATUS_SUCCESS) {
     const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -3905,7 +4030,8 @@ bool cublas_linear_gemm_ex_bf16_bits_b_float32(
       CUDA_R_32F,
       ldc,
       trainer_linear_bf16_gemm_ex_compute_type(),
-      CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+      trainer_linear_bf16_gemm_ex_algo(
+          m, n, k, op_a, op_b, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
   if (status == CUBLAS_STATUS_SUCCESS) {
     const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -4038,7 +4164,8 @@ bool cublas_linear_gemm_ex_bf16_bits_ab_float32(
       CUDA_R_32F,
       ldc,
       trainer_linear_bf16_gemm_ex_compute_type(),
-      CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+      trainer_linear_bf16_gemm_ex_algo(
+          m, n, k, op_a, op_b, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
   if (status == CUBLAS_STATUS_SUCCESS) {
     const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -4778,7 +4905,8 @@ bool cublas_linear_gemm_ex_bf16_float32_to_bf16_bits(
       CUDA_R_16BF,
       ldc,
       trainer_linear_bf16_gemm_ex_compute_type(),
-      CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+      trainer_linear_bf16_gemm_ex_algo(
+          m, n, k, op_a, op_b, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
   if (status == CUBLAS_STATUS_SUCCESS) {
     const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -4864,7 +4992,8 @@ bool cublas_linear_gemm_ex_bf16_bits_a_float32_to_bf16_bits(
       CUDA_R_16BF,
       ldc,
       trainer_linear_bf16_gemm_ex_compute_type(),
-      CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+      trainer_linear_bf16_gemm_ex_algo(
+          m, n, k, op_a, op_b, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
   if (status == CUBLAS_STATUS_SUCCESS) {
     const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -4988,7 +5117,8 @@ bool cublas_linear_gemm_ex_float32_a_bf16_bits_b_to_bf16_bits(
       CUDA_R_16BF,
       ldc,
       trainer_linear_bf16_gemm_ex_compute_type(),
-      CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+      trainer_linear_bf16_gemm_ex_algo(
+          m, n, k, op_a, op_b, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
   if (status == CUBLAS_STATUS_SUCCESS) {
     const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -5103,7 +5233,8 @@ bool cublas_linear_gemm_ex_bf16_bits_ab_to_bf16_bits(
       CUDA_R_16BF,
       ldc,
       trainer_linear_bf16_gemm_ex_compute_type(),
-      CUBLAS_GEMM_DEFAULT_TENSOR_OP);
+      trainer_linear_bf16_gemm_ex_algo(
+          m, n, k, op_a, op_b, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
   if (status == CUBLAS_STATUS_SUCCESS) {
     const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -5167,7 +5298,8 @@ bool cublas_linear_gemm_ex_bf16_bits_ab_to_bf16_bits_accumulate(
       CUDA_R_16BF,
       ldc,
       trainer_linear_bf16_gemm_ex_compute_type(),
-      CUBLAS_GEMM_DEFAULT);
+      trainer_linear_bf16_gemm_ex_algo(
+          m, n, k, op_a, op_b, CUBLAS_GEMM_DEFAULT));
   if (status == CUBLAS_STATUS_SUCCESS) {
     const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
     g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
