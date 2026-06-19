@@ -278,6 +278,7 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN`,
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW`,
 `NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE`, and
+`NFN_NATIVE_GPT_F32_TO_BF16_VEC4`, and
 `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC`. The older `NFN_NATIVE_GPT2_*`
 variables remain compatibility fallbacks for existing GPT-2-named wrappers.
 The tokenizer-visible GPT-2 vocab remains 50,257, but native transformer-LM
@@ -612,7 +613,10 @@ previous BF16 handoff path that also writes the FP32 gradient buffer,
 `NFN_NATIVE_GPT_BF16_MLP_GRAD_HANDOFF=0` to compare against the older
 float-gradient handoff, or `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` to force the
 older separate dInput plus GELU-backward route for paired benchmarks. Runtime
-JSON reports `block_backward_mlp_dgelu_float_grad_elided`.
+JSON reports `block_backward_mlp_dgelu_float_grad_elided`. The one-buffer
+`nfn_native_tile_float32_to_bf16_bits` converter defaults to a guarded vec4
+path for aligned native GPT buffers; set `NFN_NATIVE_GPT_F32_TO_BF16_VEC4=0` or
+`NFN_TILE_CUDA_F32_TO_BF16_VEC4=0` to compare against the scalar converter.
 `NFN_TILE_CUDA_LINEAR_TK_FLOAT_OUT=1` or
 `NFN_NATIVE_LINEAR_TK_FLOAT_OUT=1` enables an opt-in diagnostic bridge that runs
 eligible BF16 linear forward GEMMs through the TK BF16-output path and converts

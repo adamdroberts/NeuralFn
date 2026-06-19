@@ -323,6 +323,30 @@ __global__ void f32_to_bf16_bits_kernel(
   }
 }
 
+__device__ __forceinline__ std::uint16_t f32_bits_to_bf16_bits_device(unsigned int bits) {
+  const unsigned int rounding_bias = ((bits >> 16) & 1u) + 0x7fffu;
+  return static_cast<std::uint16_t>((bits + rounding_bias) >> 16);
+}
+
+__global__ void f32_to_bf16_bits_vec4_kernel(
+    const float4* __restrict__ src,
+    unsigned long long* __restrict__ dst,
+    std::int64_t n4) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n4) {
+    return;
+  }
+  const float4 value = src[idx];
+  const std::uint16_t a = f32_bits_to_bf16_bits_device(__float_as_uint(value.x));
+  const std::uint16_t b = f32_bits_to_bf16_bits_device(__float_as_uint(value.y));
+  const std::uint16_t c = f32_bits_to_bf16_bits_device(__float_as_uint(value.z));
+  const std::uint16_t d = f32_bits_to_bf16_bits_device(__float_as_uint(value.w));
+  dst[idx] = static_cast<unsigned long long>(a) |
+      (static_cast<unsigned long long>(b) << 16) |
+      (static_cast<unsigned long long>(c) << 32) |
+      (static_cast<unsigned long long>(d) << 48);
+}
+
 __global__ void bf16_bits_to_f32_kernel(
     const std::uint16_t* __restrict__ src,
     float* __restrict__ dst,
@@ -335,9 +359,7 @@ __global__ void bf16_bits_to_f32_kernel(
 }
 
 __device__ __forceinline__ std::uint16_t f32_to_bf16_bits_device(float value) {
-  const unsigned int bits = __float_as_uint(value);
-  const unsigned int rounding_bias = ((bits >> 16) & 1u) + 0x7fffu;
-  return static_cast<std::uint16_t>((bits + rounding_bias) >> 16);
+  return f32_bits_to_bf16_bits_device(__float_as_uint(value));
 }
 
 __device__ __forceinline__ float bf16_bits_to_f32_device(std::uint16_t value) {
@@ -12658,6 +12680,41 @@ void launch_float32_to_bf16_bits(
     std::uint16_t* dest,
     std::int64_t n,
     cudaStream_t stream) {
+  static const bool vec4_enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_F32_TO_BF16_VEC4");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_F32_TO_BF16_VEC4");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_F32_TO_BF16_VEC4");
+    }
+    if (value == nullptr) {
+      return true;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  if (vec4_enabled && n > 0 && (n % 4) == 0 &&
+      (reinterpret_cast<std::uintptr_t>(source) % alignof(float4)) == 0 &&
+      (reinterpret_cast<std::uintptr_t>(dest) % alignof(unsigned long long)) == 0) {
+    const std::int64_t n4 = n / 4;
+    const int blocks = static_cast<int>((n4 + kTileSize - 1) / kTileSize);
+    f32_to_bf16_bits_vec4_kernel<<<blocks, kTileSize, 0, stream>>>(
+        reinterpret_cast<const float4*>(source),
+        reinterpret_cast<unsigned long long*>(dest),
+        n4);
+    return;
+  }
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   f32_to_bf16_bits_kernel<<<blocks, kTileSize, 0, stream>>>(source, dest, n);
 }

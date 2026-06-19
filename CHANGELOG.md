@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Defaulted single-buffer FP32-to-BF16 bits conversion to a guarded vec4 CUDA
+  path. `nfn_native_tile_float32_to_bf16_bits` now packs four aligned FP32
+  values into four BF16 bits per thread when the source is 16-byte aligned, the
+  destination is 8-byte aligned, and the element count is divisible by four,
+  falling back to the scalar kernel otherwise. Set
+  `NFN_TILE_CUDA_F32_TO_BF16_VEC4=0`, `NFN_NATIVE_GPT_F32_TO_BF16_VEC4=0`, or
+  `NFN_NATIVE_GPT2_F32_TO_BF16_VEC4=0` to restore the scalar route for
+  bisection. Migration notes: no caller changes are required; this affects
+  native trainer conversion hot paths such as `block_backward.mlp_proj.grad_out_bf16`.
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so`;
+  `NFN_TILE_CUDA_TEST=1 python -m pytest tests/test_tile_cuda_gpu.py -x -q`
+  passed; same-script RTX 5090 timing against
+  `NFN_NATIVE_GPT_F32_TO_BF16_VEC4=0` measured scalar opt-out at `1.003731x`
+  train-loop wall and `0.996281x` tokens/sec versus the vec4 default, with
+  `block_backward.mlp_proj.grad_out_bf16` improving from roughly `114-122 ms`
+  to `83-85 ms` over the 5-step stage-timed runs.
+
 - Added low-overhead LM-head logits backend counters to dense GPT native runtime
   JSON. Normal runs now report `lm_head_logits_tk_gemm_count`,
   `lm_head_logits_cublaslt_gemm_count`, and

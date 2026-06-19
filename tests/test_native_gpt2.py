@@ -5037,6 +5037,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_trainer_linear_bf16_cached_a_capacity" in source_text
     assert "nfn_native_tile_trainer_linear_bf16_cache_entry_count" in source_text
     assert "f32_to_bf16_bits_kernel" in kernels_text
+    assert "f32_to_bf16_bits_vec4_kernel" in kernels_text
+    assert "NFN_TILE_CUDA_F32_TO_BF16_VEC4" in kernels_text
+    assert "NFN_NATIVE_GPT_F32_TO_BF16_VEC4" in kernels_text
+    assert "NFN_NATIVE_GPT2_F32_TO_BF16_VEC4" in kernels_text
     assert "f32_to_bf16_bits_many_kernel" in kernels_text
     assert "bf16_bits_add_bias_inplace_kernel" in kernels_text
     assert "bf16_bits_add_bias_inplace_tile_float32_kernel" in kernels_text
