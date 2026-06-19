@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1` /
+  `NFN_NATIVE_GPT2_REUSE_FORWARD_LM_HEAD_LOGITS=1` as a diagnostic dense GPT
+  classifier path. The native C++ trainer can now allocate full BF16 LM-head
+  logits, fill them once after the transformer forward, and have LM-head
+  backward consume chunk offsets from that full buffer instead of recomputing
+  logits. Runtime JSON reports `lm_head_reuse_forward_logits_enabled`,
+  `lm_head_full_logit_elements`, and `lm_head_bf16_logit_bytes`, and
+  `tools/paired_kernel_speed.py` now extracts those fields plus the saved
+  packed-attention block count. This mirrors the llm.kittens full-logit
+  classifier layout for controlled RTX 5090 comparisons, but it remains off by
+  default: the full buffer costs about 6.14 GiB at the default
+  `64 x 1024 x 50304` padded-vocab shape. CUDA 13.3 paired checks measured the
+  full-logit reuse path with `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS=0`
+  at `1.099054x` train-loop wall time, with four saved packed-attention blocks
+  at `1.061321x`, and an eight-block smoke fit but degraded to an `83.5s`
+  one-step train loop near the memory cliff. Verification: rebuilt
+  `build/nfn_gpt_native_train`; ran one-step RTX 5090 smokes for the zero-block
+  and eight-block memory points; ran same-script paired benchmarks for the
+  zero-block and four-block candidates.
+
 - Hardened the native-vs-native SM120 benchmark wrapper so candidate-only CLI
   flags cannot silently drop out of a bisection. `tools/bench_native_gpt_sm120_candidate.sh`
   now accepts `NFN_SM120_NATIVE_CANDIDATE_ARGS` as an alias for candidate-only

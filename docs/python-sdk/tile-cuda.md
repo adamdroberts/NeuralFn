@@ -262,7 +262,8 @@ Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`,
 `NFN_NATIVE_GPT_BF16_LM_HEAD_LOSS`,
 `NFN_NATIVE_GPT_PUBLIC_VOCAB_CE`,
-`NFN_NATIVE_GPT_CE_BF16_EXP2`, and
+`NFN_NATIVE_GPT_CE_BF16_EXP2`,
+`NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS`, and
 `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN`,
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW`,
 `NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE`, and
@@ -273,7 +274,19 @@ parameter layout pads the tied token embedding/LM-head rows to 50,304 for the
 GEMM path. Compiled plan JSON reports `shape.vocab_size: 50257` and
 `shape.padded_vocab_size: 50304`; training and checkpoint JSON report
 `vocab: 50257` plus `padded_vocab: 50304`, and `logit_workspace_elements` is
-computed from the padded row count. Native LM-head CE now softmaxes over the
+computed from the padded row count.
+
+`NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1` allocates full BF16 LM-head
+logits and reuses chunk offsets during backward instead of recomputing the
+classifier logits. This is a diagnostic parity path for comparing against the
+llm.kittens full-logit classifier layout. It remains off by default: on CUDA
+13.3 with the dedicated RTX 5090, the mode needed a lower saved packed-attention
+cap to fit and measured slower than the default chunked-logit path
+(`1.099054x` train-loop wall with zero saved packed-attention blocks and
+`1.061321x` with four). Runtime JSON reports
+`lm_head_reuse_forward_logits_enabled`, `lm_head_full_logit_elements`, and
+`lm_head_bf16_logit_bytes`.
+Native LM-head CE now softmaxes over the
 public vocab and uses 50,304 only as the logits/dlogits row stride; runtime JSON
 reports `lm_head_public_vocab_ce_enabled`, `lm_head_softmax_vocab`,
 `lm_head_logit_row_stride`, and `lm_head_padded_dlogits_zeroed`.

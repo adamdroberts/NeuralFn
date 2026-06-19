@@ -9296,6 +9296,7 @@ int run_transformer_lm_training_json(
     const std::int64_t lm_head_chunk_count =
         (rows + lm_head_chunk_rows - 1) / lm_head_chunk_rows;
     const std::int64_t logit_elements = lm_head_chunk_rows * kPaddedVocab;
+    const std::int64_t full_logit_elements = rows * kPaddedVocab;
     const std::int64_t loss_partial_count = partial_count_for(lm_head_chunk_rows);
     constexpr std::int64_t kPerBlockParameterBuffers = 12;
     constexpr std::int64_t kPerBlockGradientBuffers = 0;
@@ -10937,6 +10938,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN",
                               "NFN_NATIVE_GPT2_LM_HEAD_PREPACK_BF16_HIDDEN"}),
             true);
+    const bool lm_head_reuse_forward_logits_enabled =
+        lm_head_bf16_logits_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS",
+                              "NFN_NATIVE_GPT2_REUSE_FORWARD_LM_HEAD_LOGITS"}),
+            false);
     const bool lm_head_public_vocab_ce_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_PUBLIC_VOCAB_CE",
@@ -12046,12 +12053,14 @@ int run_transformer_lm_training_json(
         if (!error.empty() || !lm_head_bf16_logits_enabled) {
             return;
         }
-        if (logit_elements <= 0 ||
-            logit_elements > static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
+        const std::int64_t elements =
+            lm_head_reuse_forward_logits_enabled ? full_logit_elements : logit_elements;
+        if (elements <= 0 ||
+            elements > static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
             error = "LM-head bf16 logit allocation byte size overflow";
             return;
         }
-        const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(logit_elements);
+        const std::size_t bytes = sizeof(std::uint16_t) * static_cast<std::size_t>(elements);
         if (lm_head_bf16_logits == nullptr) {
             void* raw = nullptr;
             const int status = device_malloc(&raw, bytes);
@@ -12062,7 +12071,7 @@ int run_transformer_lm_training_json(
             lm_head_bf16_logits = static_cast<std::uint16_t*>(raw);
             uint16_ptrs.push_back(lm_head_bf16_logits);
         }
-        lm_head_bf16_logit_elements = logit_elements;
+        lm_head_bf16_logit_elements = elements;
         lm_head_bf16_logit_bytes = static_cast<std::int64_t>(bytes);
     };
     auto allocate_lm_head_bf16_hidden = [&]() {
@@ -12572,7 +12581,9 @@ int run_transformer_lm_training_json(
             "stored_packed_attention_ln1_bf16_arena");
         allocate_uint16(
             &lm_head_bf16_logits,
-            lm_head_bf16_logits_enabled ? logit_elements : 0,
+            lm_head_bf16_logits_enabled
+                ? (lm_head_reuse_forward_logits_enabled ? full_logit_elements : logit_elements)
+                : 0,
             "lm_head_bf16_logits");
         allocate_uint16(
             &lm_head_bf16_hidden,
@@ -13911,6 +13922,8 @@ int run_transformer_lm_training_json(
 
     auto accumulate_lm_head_loss_from_current_logits = [&](
         const std::string& label,
+        const std::uint16_t* bf16_logit_chunk,
+        const float* float_logit_chunk,
         std::int64_t row_count,
         const std::int64_t* target_chunk,
         const std::uint16_t* target_chunk_u16,
@@ -13919,7 +13932,7 @@ int run_transformer_lm_training_json(
             if (lm_head_public_vocab_ce_enabled) {
                 if (direct_u16_token_ids_enabled) {
                     run(ce_partials_strided_bf16_bits_u16_targets(
-                            lm_head_bf16_logits,
+                            bf16_logit_chunk,
                             target_chunk_u16,
                             loss_partials,
                             row_count,
@@ -13929,7 +13942,7 @@ int run_transformer_lm_training_json(
                         label + ".ce.forward.public_vocab_strided_bf16_bits_u16_targets");
                 } else {
                     run(ce_partials_strided_bf16_bits(
-                            lm_head_bf16_logits,
+                            bf16_logit_chunk,
                             target_chunk,
                             loss_partials,
                             row_count,
@@ -13940,7 +13953,7 @@ int run_transformer_lm_training_json(
                 }
             } else {
                 run(ce_partials_bf16_bits(
-                        lm_head_bf16_logits,
+                        bf16_logit_chunk,
                         target_chunk,
                         loss_partials,
                         row_count,
@@ -13950,7 +13963,7 @@ int run_transformer_lm_training_json(
             }
         } else if (lm_head_public_vocab_ce_enabled) {
             run(ce_partials_strided(
-                    logits,
+                    float_logit_chunk,
                     target_chunk,
                     loss_partials,
                     row_count,
@@ -13959,7 +13972,7 @@ int run_transformer_lm_training_json(
                     nullptr),
                 label + ".ce.forward.public_vocab_strided");
         } else {
-            run(ce_partials(logits, target_chunk, loss_partials, row_count, kPaddedVocab, nullptr),
+            run(ce_partials(float_logit_chunk, target_chunk, loss_partials, row_count, kPaddedVocab, nullptr),
                 label + ".ce.forward.padded_vocab");
         }
         if (error.empty()) {
@@ -14025,6 +14038,8 @@ int run_transformer_lm_training_json(
             if (error.empty()) {
                 accumulate_lm_head_loss_from_current_logits(
                     label,
+                    lm_head_bf16_logits,
+                    logits,
                     row_count,
                     target_chunk,
                     target_chunk_u16,
@@ -14042,12 +14057,89 @@ int run_transformer_lm_training_json(
         return error.empty() && copy_loss_to_host ? static_cast<double>(host_loss[0]) : 0.0;
     };
 
+    auto lm_head_forward_logits_for_backward = [&](const std::string& label) {
+        if (!lm_head_reuse_forward_logits_enabled || !lm_head_bf16_logits_enabled || !error.empty()) {
+            return;
+        }
+        const std::int64_t stage_event = stage_begin(label + ".lm_head_logits");
+        if (lm_head_prepack_bf16_hidden_enabled) {
+            run(float32_to_bf16_bits(
+                    lnf_out,
+                    lm_head_bf16_hidden,
+                    active_rows * kDim,
+                    nullptr),
+                label + ".lm_head.hidden_full.to_bf16_bits");
+        }
+        for (std::int64_t chunk_index = 0; chunk_index < lm_head_chunk_count && error.empty(); ++chunk_index) {
+            const std::int64_t logical_chunk_index =
+                lm_head_reverse_chunk_order_enabled ? (lm_head_chunk_count - 1 - chunk_index) : chunk_index;
+            const std::int64_t row_start = logical_chunk_index * lm_head_chunk_rows;
+            const std::int64_t row_count =
+                (row_start + lm_head_chunk_rows < active_rows) ? lm_head_chunk_rows : (active_rows - row_start);
+            const float* hidden_chunk = lnf_out + row_start * kDim;
+            std::uint16_t* bf16_logit_chunk = lm_head_bf16_logits + row_start * kPaddedVocab;
+            if (lm_head_prepack_bf16_hidden_enabled) {
+                const std::uint16_t* hidden_bf16_chunk = lm_head_bf16_hidden + row_start * kDim;
+                if (token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
+                    run(linear_bf16_input_weight_bf16_output(
+                            hidden_bf16_chunk,
+                            token_weight_bf16,
+                            nullptr,
+                            bf16_logit_chunk,
+                            row_count,
+                            kDim,
+                            kPaddedVocab,
+                            false,
+                            nullptr),
+                        label + ".lm_head.forward_logits.prepacked_hidden_bf16_shadow");
+                } else {
+                    run(linear_bf16_input_float_weight_bf16_output(
+                            hidden_bf16_chunk,
+                            token_weight,
+                            nullptr,
+                            bf16_logit_chunk,
+                            row_count,
+                            kDim,
+                            kPaddedVocab,
+                            false,
+                            nullptr),
+                        label + ".lm_head.forward_logits.prepacked_hidden_bf16");
+                }
+            } else if (token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
+                run(linear_weight_bf16_output(
+                        hidden_chunk,
+                        token_weight_bf16,
+                        nullptr,
+                        bf16_logit_chunk,
+                        row_count,
+                        kDim,
+                        kPaddedVocab,
+                        false,
+                        nullptr),
+                    label + ".lm_head.forward_logits.bf16_shadow");
+            } else {
+                run(linear_bf16_output(
+                        hidden_chunk,
+                        token_weight,
+                        nullptr,
+                        bf16_logit_chunk,
+                        row_count,
+                        kDim,
+                        kPaddedVocab,
+                        false,
+                        nullptr),
+                    label + ".lm_head.forward_logits.bf16");
+            }
+        }
+        stage_end(stage_event, label + ".lm_head_logits");
+    };
+
     auto lm_head_backward = [&](float accumulation_scale, bool dweight_accumulate, bool record_loss) -> double {
         const std::int64_t stage_event = stage_begin("lm_head_backward");
         if (record_loss) {
             fill_buffer(loss_total, 1, 0.0f, "lm_head_backward.loss_total.zero");
         }
-        if (lm_head_prepack_bf16_hidden_enabled) {
+        if (lm_head_prepack_bf16_hidden_enabled && !lm_head_reuse_forward_logits_enabled) {
             run_timed_stage("lm_head_backward.hidden_prepack", [&]() {
                 run(float32_to_bf16_bits(
                         lnf_out,
@@ -14066,6 +14158,10 @@ int run_transformer_lm_training_json(
             const float* hidden_chunk = lnf_out + row_start * kDim;
             const std::uint16_t* hidden_bf16_chunk =
                 lm_head_prepack_bf16_hidden_enabled ? (lm_head_bf16_hidden + row_start * kDim) : lm_head_bf16_hidden;
+            std::uint16_t* bf16_logit_chunk =
+                lm_head_reuse_forward_logits_enabled ? (lm_head_bf16_logits + row_start * kPaddedVocab)
+                                                     : lm_head_bf16_logits;
+            float* float_logit_chunk = logits;
             const std::int64_t* target_chunk =
                 direct_u16_token_ids_enabled ? nullptr : (active_targets + row_start);
             const std::uint16_t* target_chunk_u16 = active_targets_u16 + row_start;
@@ -14074,6 +14170,9 @@ int run_transformer_lm_training_json(
                 chunk_index == 0 && dweight_first_microbatch_beta_zero_enabled && !dweight_accumulate;
             const float lm_head_dweight_beta = first_lm_head_dweight_chunk ? 0.0f : 1.0f;
             run_timed_stage("lm_head_backward.logits", [&]() {
+                if (lm_head_reuse_forward_logits_enabled) {
+                    return;
+                }
                 if (lm_head_bf16_logits_enabled) {
                     if (lm_head_prepack_bf16_hidden_enabled) {
                         if (token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
@@ -14081,7 +14180,7 @@ int run_transformer_lm_training_json(
                                     hidden_bf16_chunk,
                                     token_weight_bf16,
                                     nullptr,
-                                    lm_head_bf16_logits,
+                                    bf16_logit_chunk,
                                     row_count,
                                     kDim,
                                     kPaddedVocab,
@@ -14093,7 +14192,7 @@ int run_transformer_lm_training_json(
                                     hidden_bf16_chunk,
                                     token_weight,
                                     nullptr,
-                                    lm_head_bf16_logits,
+                                    bf16_logit_chunk,
                                     row_count,
                                     kDim,
                                     kPaddedVocab,
@@ -14107,7 +14206,7 @@ int run_transformer_lm_training_json(
                                     hidden_chunk,
                                     token_weight_bf16,
                                     nullptr,
-                                    lm_head_bf16_logits,
+                                    bf16_logit_chunk,
                                     row_count,
                                     kDim,
                                     kPaddedVocab,
@@ -14119,7 +14218,7 @@ int run_transformer_lm_training_json(
                                     hidden_chunk,
                                     token_weight,
                                     nullptr,
-                                    lm_head_bf16_logits,
+                                    bf16_logit_chunk,
                                     row_count,
                                     kDim,
                                     kPaddedVocab,
@@ -14129,7 +14228,7 @@ int run_transformer_lm_training_json(
                         }
                     }
                 } else {
-                    run(linear(hidden_chunk, token_weight, nullptr, logits, row_count, kDim, kPaddedVocab, false, nullptr),
+                    run(linear(hidden_chunk, token_weight, nullptr, float_logit_chunk, row_count, kDim, kPaddedVocab, false, nullptr),
                         "lm_head.forward.recompute");
                 }
             });
@@ -14138,6 +14237,8 @@ int run_transformer_lm_training_json(
                     if (error.empty()) {
                         accumulate_lm_head_loss_from_current_logits(
                             "lm_head_backward",
+                            bf16_logit_chunk,
+                            float_logit_chunk,
                             row_count,
                             target_chunk,
                             target_chunk_u16,
@@ -14151,7 +14252,7 @@ int run_transformer_lm_training_json(
                         if (lm_head_public_vocab_ce_enabled) {
                             if (direct_u16_token_ids_enabled) {
                                 run(ce_backward_inplace_strided_bf16_bits_u16_targets_workspace(
-                                        lm_head_bf16_logits,
+                                        bf16_logit_chunk,
                                         target_chunk_u16,
                                         row_max,
                                         row_denom,
@@ -14163,7 +14264,7 @@ int run_transformer_lm_training_json(
                                     "ce.backward.inplace.public_vocab_strided_bf16_bits_u16_targets");
                             } else {
                                 run(ce_backward_inplace_strided_bf16_bits_workspace(
-                                        lm_head_bf16_logits,
+                                        bf16_logit_chunk,
                                         target_chunk,
                                         row_max,
                                         row_denom,
@@ -14176,7 +14277,7 @@ int run_transformer_lm_training_json(
                             }
                         } else {
                             run(ce_backward_inplace_bf16_bits_workspace(
-                                    lm_head_bf16_logits,
+                                    bf16_logit_chunk,
                                     target_chunk,
                                     row_max,
                                     row_denom,
@@ -14189,7 +14290,7 @@ int run_transformer_lm_training_json(
                     } else {
                         if (lm_head_public_vocab_ce_enabled) {
                             run(ce_backward_inplace_strided_workspace(
-                                    logits,
+                                    float_logit_chunk,
                                     target_chunk,
                                     row_max,
                                     row_denom,
@@ -14201,7 +14302,7 @@ int run_transformer_lm_training_json(
                                 "ce.backward.inplace.public_vocab_strided");
                         } else {
                             run(ce_backward_inplace_workspace(
-                                    logits,
+                                    float_logit_chunk,
                                     target_chunk,
                                     row_max,
                                     row_denom,
@@ -14220,7 +14321,7 @@ int run_transformer_lm_training_json(
                         if (lm_head_bf16_logits_enabled) {
                             if (token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
                                 run(linear_backward_input_bf16_bits_weight_bf16(
-                                        lm_head_bf16_logits,
+                                        bf16_logit_chunk,
                                         token_weight_bf16,
                                         grad_hidden_chunk,
                                         row_count,
@@ -14230,7 +14331,7 @@ int run_transformer_lm_training_json(
                                     "lm_head.backward_input.bf16_bits_weight_bf16_shadow");
                             } else {
                                 run(linear_backward_input_bf16_bits(
-                                        lm_head_bf16_logits,
+                                        bf16_logit_chunk,
                                         token_weight,
                                         grad_hidden_chunk,
                                         row_count,
@@ -14241,7 +14342,7 @@ int run_transformer_lm_training_json(
                             }
                         } else {
                             run(linear_backward_input(
-                                    logits, token_weight, grad_hidden_chunk, row_count, kDim, kPaddedVocab, nullptr),
+                                    float_logit_chunk, token_weight, grad_hidden_chunk, row_count, kDim, kPaddedVocab, nullptr),
                                 "lm_head.backward_input");
                         }
                     }
@@ -14258,7 +14359,7 @@ int run_transformer_lm_training_json(
                                 if (dweight_fn != nullptr) {
                                     run(dweight_fn(
                                             hidden_bf16_chunk,
-                                            lm_head_bf16_logits,
+                                            bf16_logit_chunk,
                                             accum_grad_token_weight,
                                             row_count,
                                             kDim,
@@ -14269,7 +14370,7 @@ int run_transformer_lm_training_json(
                                 } else {
                                     run(linear_backward_weight_accumulate_bf16_bits_bf16_bits(
                                         hidden_bf16_chunk,
-                                        lm_head_bf16_logits,
+                                        bf16_logit_chunk,
                                         accum_grad_token_weight,
                                         row_count,
                                         kDim,
@@ -14291,7 +14392,7 @@ int run_transformer_lm_training_json(
                                     if (dweight_fn != nullptr) {
                                         run(dweight_fn(
                                                 lm_head_bf16_hidden,
-                                                lm_head_bf16_logits,
+                                                bf16_logit_chunk,
                                                 accum_grad_token_weight,
                                                 row_count,
                                                 kDim,
@@ -14302,7 +14403,7 @@ int run_transformer_lm_training_json(
                                     } else {
                                         run(linear_backward_weight_accumulate_bf16_bits_bf16_bits(
                                                 lm_head_bf16_hidden,
-                                                lm_head_bf16_logits,
+                                                bf16_logit_chunk,
                                                 accum_grad_token_weight,
                                                 row_count,
                                                 kDim,
@@ -14314,7 +14415,7 @@ int run_transformer_lm_training_json(
                             } else {
                                 run(linear_backward_weight_accumulate_float32_bf16_bits(
                                         hidden_chunk,
-                                        lm_head_bf16_logits,
+                                        bf16_logit_chunk,
                                         accum_grad_token_weight,
                                         row_count,
                                         kDim,
@@ -14325,7 +14426,7 @@ int run_transformer_lm_training_json(
                         } else {
                             run(linear_backward_weight_accumulate(
                                     hidden_chunk,
-                                    logits,
+                                    float_logit_chunk,
                                     accum_grad_token_weight,
                                     row_count,
                                     kDim,
@@ -16235,6 +16336,7 @@ int run_transformer_lm_training_json(
     auto run_backward_microbatch = [&](bool record_train_loss, float accumulation_scale, bool dweight_accumulate) -> double {
         zero_gradients();
         forward_loss("train", false, true, true);
+        lm_head_forward_logits_for_backward("train");
         const double train_loss_sum =
             error.empty() ? lm_head_backward(accumulation_scale, dweight_accumulate, record_train_loss) : 0.0;
         const std::int64_t final_norm_event = stage_begin("final_norm_backward");
@@ -17461,6 +17563,9 @@ int run_transformer_lm_training_json(
         << "  \"hidden_dim\": " << kHidden << ",\n"
         << "  \"lm_head_row_chunk_size\": " << lm_head_chunk_rows << ",\n"
         << "  \"lm_head_row_chunk_count\": " << lm_head_chunk_count << ",\n"
+        << "  \"lm_head_reuse_forward_logits_enabled\": "
+        << (lm_head_reuse_forward_logits_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_full_logit_elements\": " << full_logit_elements << ",\n"
         << "  \"loss_partial_count\": " << loss_partial_count << ",\n"
         << "  \"logit_workspace_elements\": " << logit_workspace_elements << ",\n"
         << "  \"grad_logit_workspace_elements\": 0,\n"

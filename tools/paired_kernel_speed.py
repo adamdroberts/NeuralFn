@@ -47,6 +47,10 @@ NATIVE_METRIC_PATHS = (
     ("attention_backward_dprep_timing_count", ("attention_backward_dprep_timing_count",)),
     ("attention_backward_tk_timing_us", ("attention_backward_tk_timing_us",)),
     ("attention_backward_tk_timing_count", ("attention_backward_tk_timing_count",)),
+    ("lm_head_reuse_forward_logits_enabled", ("lm_head_reuse_forward_logits_enabled",)),
+    ("lm_head_bf16_logit_bytes", ("lm_head_bf16_logit_bytes",)),
+    ("lm_head_full_logit_elements", ("lm_head_full_logit_elements",)),
+    ("stored_packed_attention_activation_blocks", ("stored_packed_attention_activation_blocks",)),
     (
         "lm_head_classifier.reference_full_bf16_logit_bytes",
         ("lm_head_classifier_strategy_contract", "reference_full_bf16_logit_bytes"),

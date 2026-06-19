@@ -862,7 +862,13 @@ Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT`,
 `NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH`,
 `NFN_NATIVE_GPT_BF16_QKV_DWEIGHT`, and
-`NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`. The older `NFN_NATIVE_GPT2_*`
+`NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS`. `NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1`
+is a classifier-memory diagnostic that allocates full BF16 LM-head logits and
+reuses them during backward; keep it paired with a lower
+`NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_BLOCKS` cap when testing on a 32 GiB
+RTX 5090, and leave it off for normal training because the CUDA 13.3 paired
+checks were slower than the default chunked-logit path. The older
+`NFN_NATIVE_GPT2_*`
 variables remain compatibility fallbacks for the GPT-2-named wrapper,
 launcher, and existing local scripts.
 
