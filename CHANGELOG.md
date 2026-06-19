@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked the next dense GPT native SM120 tuning candidates after the vector4
+  startup diagnostic and kept defaults unchanged. A fresh same-script parity
+  sample still measured NeuralFn slower than `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`
+  (`1.056634x` train-loop wall, `0.945115x` tokens/sec), with LM-head
+  logits/dHidden still on BF16 GEMMEx and dWeight on cuBLASLt.
+  `CUDA_DEVICE_MAX_CONNECTIONS=8` regressed train-loop wall to `1.004548x`
+  and setup wall to `1.121564x` versus the current `CUDA_DEVICE_MAX_CONNECTIONS=1`
+  launch default. `NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT=1` stayed
+  noise-level (`0.998206x` mean train-loop wall, `1.000733x` median).
+  `NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1` timed out at the 300-second
+  candidate limit for a 5-step run, confirming the full resident-logit memory
+  tradeoff is not viable for the default shape. `NFN_NATIVE_GPT_STORE_PACKED_ATTENTION_LN1_BF16=0`
+  improved setup wall (`0.938130x` in the train benchmark) but regressed
+  train-loop wall (`1.005951x`), so saved LN1 BF16 attention tape remains
+  default. Migration notes: no caller change is required; these are rejected
+  candidate measurements to keep future work focused on fused/cooperative
+  LM-head or materially different GEMM kernels rather than switch promotion.
+
 - Added an opt-in dense GPT token-weight startup initializer candidate behind
   `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=1` /
   `NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_INIT=1` /
