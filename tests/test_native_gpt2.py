@@ -5550,6 +5550,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "gelu_float32_kernel" in kernels_text
     assert "gelu_backward_float32_kernel" in kernels_text
     assert "gelu_backward_inplace_float32_kernel" in kernels_text
+    assert "linear_bias_residual_add_bf16_linear_dim768_float32_kernel" in kernels_text
+    assert "dim768_bf16_residual_add_enabled()" in kernels_text
+    assert "NFN_TILE_CUDA_DIM768_BF16_RESIDUAL_ADD" in kernels_text
+    assert "if (output_dim == 768 && dim768_bf16_residual_add_enabled())" in kernels_text
+    assert "constexpr int kRowsPerBlock = 2" in kernels_text
     assert "token_embedding_backward_weight_float32_kernel" in kernels_text
     assert "token_embedding_u16_float32_kernel" in kernels_text
     assert "token_embedding_backward_weight_u16_float32_kernel" in kernels_text

@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Defaulted the dense GPT native BF16 projection residual-add helper to a
+  768-wide CUDA specialization for GPT-shaped residual vectors. The new
+  `linear_bias_residual_add_bf16_linear_dim768_float32_kernel` avoids the
+  generic per-element output-column modulo in
+  `nfn_native_tile_linear_bias_residual_add_bf16_linear_float32`; set
+  `NFN_TILE_CUDA_DIM768_BF16_RESIDUAL_ADD=0`,
+  `NFN_NATIVE_GPT_DIM768_BF16_RESIDUAL_ADD=0`, or
+  `NFN_NATIVE_GPT2_DIM768_BF16_RESIDUAL_ADD=0` to reproduce the generic helper
+  for paired bisection. Dedicated RTX 5090 same-script timing measured the
+  specialized default at `0.998835x` mean train-loop wall time,
+  `1.001172x` mean tokens/sec, and `0.997518x` median total wall time versus
+  the generic path over five samples. Verification:
+  `bash tools/build_native_train_tile_ops.sh`;
+  `bash tools/build_native_gpt_cli.sh`;
+  `NFN_SM120_NATIVE_STEPS=5 NFN_SM120_NATIVE_SAMPLES=5
+  NFN_SM120_NATIVE_WARMUP=1
+  NFN_SM120_NATIVE_BASELINE_ENV='NFN_TILE_CUDA_DIM768_BF16_RESIDUAL_ADD=0'
+  bash tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Defaulted dense GPT native embedding forward to a fused Tile-CUDA token
   embedding + absolute position embedding + scaled residual kernel. The new raw
   ABI exports `nfn_native_tile_token_position_embedding_residual_float32` and

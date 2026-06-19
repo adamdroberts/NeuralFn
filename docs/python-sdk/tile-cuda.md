@@ -314,6 +314,15 @@ BF16-linear residual+LN2 ABI variants. Runtime and plan JSON report
 `projection_bias_residual_strategy: "fused-bf16-linear-bias-residual-add"`.
 Set `NFN_NATIVE_GPT_BF16_PROJECTION_RESIDUAL=0` only for paired benchmarks
 against the previous float projection-output residual path.
+For the GPT-native 768-wide residual-add shape, the BF16 projection residual
+helper now uses a dim-specialized CUDA kernel by default to avoid the generic
+per-element output-column modulo. Set
+`NFN_TILE_CUDA_DIM768_BF16_RESIDUAL_ADD=0`,
+`NFN_NATIVE_GPT_DIM768_BF16_RESIDUAL_ADD=0`, or
+`NFN_NATIVE_GPT2_DIM768_BF16_RESIDUAL_ADD=0` to reproduce the generic helper for
+paired bisection; the dedicated RTX 5090 same-script benchmark measured the
+specialized default at `0.998835x` mean train-loop wall time and `0.997518x`
+median total wall time versus the generic path.
 
 GPT-2-compatible causal SDPA now uses the SM120 ThunderKittens bf16
 FlashAttention-style bridge by default in `tools/build_native_train_tile_ops.sh`.

@@ -2885,6 +2885,34 @@ bool trainer_linear_bf16_output_cublaslt_enabled() {
   return enabled;
 }
 
+bool dim768_bf16_residual_add_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_DIM768_BF16_RESIDUAL_ADD");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_DIM768_BF16_RESIDUAL_ADD");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_DIM768_BF16_RESIDUAL_ADD");
+    }
+    if (value == nullptr) {
+      return true;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
 bool trainer_linear_tk_forward_shape_disabled(
     int m,
     int n,
@@ -9543,6 +9571,32 @@ __tile_global__ void linear_bias_residual_add_bf16_linear_float32_kernel(
   ct::store_masked(out + idx, result, mask);
 }
 
+__global__ void linear_bias_residual_add_bf16_linear_dim768_float32_kernel(
+    const float* __restrict__ residual,
+    const std::uint16_t* __restrict__ linear_out_bf16_bits,
+    const float* __restrict__ bias,
+    const float* __restrict__ residual_scale,
+    float* __restrict__ out,
+    std::int64_t rows) {
+  constexpr int kDim = 768;
+  constexpr int kRowsPerBlock = 2;
+  constexpr int kValuesPerBlock = kDim * kRowsPerBlock;
+  const std::int64_t row_base = static_cast<std::int64_t>(blockIdx.x) * kRowsPerBlock;
+  const float scale = *residual_scale;
+  const __nv_bfloat16* linear_out =
+      reinterpret_cast<const __nv_bfloat16*>(linear_out_bf16_bits);
+  for (int local = threadIdx.x; local < kValuesPerBlock; local += blockDim.x) {
+    const std::int64_t row = row_base + local / kDim;
+    if (row >= rows) {
+      continue;
+    }
+    const int col = local - (local / kDim) * kDim;
+    const std::int64_t idx = row * kDim + col;
+    const float projected = __bfloat162float(linear_out[idx]) + bias[col];
+    out[idx] = residual[idx] + projected * scale;
+  }
+}
+
 __tile_global__ void linear_bias_residual_layer_norm_float32_kernel(
     const float* __restrict__ residual,
     const float* __restrict__ linear_out,
@@ -15512,6 +15566,14 @@ void launch_linear_bias_residual_add_bf16_linear_float32(
     std::int64_t rows,
     std::int64_t output_dim,
     cudaStream_t stream) {
+  if (output_dim == 768 && dim768_bf16_residual_add_enabled()) {
+    constexpr int kRowsPerBlock = 2;
+    constexpr int kThreads = 256;
+    const int blocks = static_cast<int>((rows + kRowsPerBlock - 1) / kRowsPerBlock);
+    linear_bias_residual_add_bf16_linear_dim768_float32_kernel<<<blocks, kThreads, 0, stream>>>(
+        residual, linear_out_bf16_bits, bias, residual_scale, out, rows);
+    return;
+  }
   const std::int64_t n = rows * output_dim;
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   linear_bias_residual_add_bf16_linear_float32_kernel<<<blocks, 1, 0, stream>>>(
