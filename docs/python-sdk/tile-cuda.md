@@ -1224,6 +1224,16 @@ Dense GPT has a compiled Tile CUDA preflight in `nfn_gpt_native_train`. Use `--b
 
 The native GPT-2 transformer-LM trainer pads only the tensor row count: tokenizer-visible `vocab` stays 50,257, while `padded_vocab` is 50,304 for the tied token embedding/LM-head parameter, logits workspace sizing, and native checkpoint payload accounting. CE loss/backward uses `vocab` as the softmax domain and `padded_vocab` as the row stride, then zeroes padded dlogit columns before LM-head dWeight accumulation.
 
+For trainer linear-kernel bisection, `NFN_NATIVE_LINEAR_TK_DINPUT=1` still
+routes every supported BF16/BF16 dInput shape through the SM120 TK bridge.
+Prefer the shape-selective
+`NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=m,n,k,opA,opB` or
+`NFN_TILE_CUDA_LINEAR_TK_DINPUT_ENABLE_SHAPE=...` form for single GEMM probes;
+the matching `*_DISABLE_SHAPE` aliases can exclude one shape when the broad
+switch is enabled. The LM-head dHidden shape `768,8192,50304,N,N` remains
+diagnostic-only because the RTX 5090 paired benchmark measured it slower than
+the GEMMEx default.
+
 Full GPT-2 `--train-transformer-lm` runs report a `cuda_runtime_preflight` object before allocation. If `cudaDriverGetVersion` returns driver version `0`, or if the loaded CUDA runtime is newer than the reported driver, the trainer exits before `cudaMalloc` so benchmark failures point at GPU access/runtime compatibility instead of kernel execution.
 
 Set `NativeGptRunConfig.startup_only=True` or

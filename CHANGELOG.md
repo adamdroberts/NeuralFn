@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added shape-selective TK dInput routing for the trainer-facing Tile-CUDA
+  linear ABI. `NFN_NATIVE_LINEAR_TK_DINPUT=1` remains the broad diagnostic
+  switch, while `NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=m,n,k,opA,opB` /
+  `NFN_TILE_CUDA_LINEAR_TK_DINPUT_ENABLE_SHAPE=...` and matching
+  `*_DISABLE_SHAPE` aliases allow single-shape bisection without moving every
+  supported BF16/BF16 dInput GEMM onto TK. The intended LM-head dHidden probe
+  `768,8192,50304,N,N` was rejected as a default: it raised TK GEMM count from
+  `2400` to `2720`, but regressed `lm_head_backward` to `1.080834x`,
+  train-loop wall time to `1.019686x`, and tokens/sec to `0.980699x` versus
+  GEMMEx. Verification: `bash tools/build_native_train_tile_ops.sh`;
+  GPU-visible `python -m pytest
+  tests/test_native_gpt2.py::test_native_train_tile_ops_builds_torch_free_c_abi -q -rs`;
+  dedicated RTX 5090 same-script native-vs-native benchmark with
+  `NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=768,8192,50304,N,N`.
+
 - Revisited the CUDA-visible failure set after installing CUDA Toolkit 13.3.33
   for WSL on the dedicated RTX 5090. `nvcc --version` now reports
   `V13.3.33`, `nvidia-smi` reports CUDA UMD `13.3` with no active GPU compute

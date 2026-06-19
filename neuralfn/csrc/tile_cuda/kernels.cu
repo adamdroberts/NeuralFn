@@ -4061,6 +4061,42 @@ bool trainer_linear_tk_dinput_enabled() {
   return enabled;
 }
 
+bool trainer_linear_tk_dinput_shape_enabled(
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  static const LinearShapeStat enabled_shape = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_TK_DINPUT_ENABLE_SHAPE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE");
+    }
+    LinearShapeStat shape{};
+    parse_linear_shape_token(value, &shape);
+    return shape;
+  }();
+  return linear_shape_matches(enabled_shape, m, n, k, op_a, op_b);
+}
+
+bool trainer_linear_tk_dinput_shape_disabled(
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  static const LinearShapeStat disabled_shape = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_TK_DINPUT_DISABLE_SHAPE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_TK_DINPUT_DISABLE_SHAPE");
+    }
+    LinearShapeStat shape{};
+    parse_linear_shape_token(value, &shape);
+    return shape;
+  }();
+  return linear_shape_matches(disabled_shape, m, n, k, op_a, op_b);
+}
+
 bool tk_linear_gemm_bf16_forward_to_bf16_bits(
     const __nv_bfloat16* weight_bf16,
     const __nv_bfloat16* x_bf16,
@@ -4170,7 +4206,13 @@ bool tk_linear_backward_input_bf16_bits_weight_bf16_bits_float32(
     int output_dim,
     cudaStream_t stream) {
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
-  if (!trainer_linear_tk_gemm_enabled() || !trainer_linear_tk_dinput_enabled()) {
+  constexpr cublasOperation_t kOpA = CUBLAS_OP_N;
+  constexpr cublasOperation_t kOpB = CUBLAS_OP_N;
+  const bool shape_enabled = trainer_linear_tk_dinput_shape_enabled(
+      input_dim, rows, output_dim, kOpA, kOpB);
+  if (!trainer_linear_tk_gemm_enabled() ||
+      trainer_linear_tk_dinput_shape_disabled(input_dim, rows, output_dim, kOpA, kOpB) ||
+      (!trainer_linear_tk_dinput_enabled() && !shape_enabled)) {
     return false;
   }
   if (grad_out_bf16_bits == nullptr || weight_bf16_bits == nullptr || grad_x == nullptr) {
@@ -4206,7 +4248,7 @@ bool tk_linear_backward_input_bf16_bits_weight_bf16_bits_float32(
   const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
-  record_linear_shape_stat(2, input_dim, rows, output_dim, CUBLAS_OP_N, CUBLAS_OP_N, elapsed_us);
+  record_linear_shape_stat(2, input_dim, rows, output_dim, kOpA, kOpB, elapsed_us);
   return true;
 #else
   (void)grad_out_bf16_bits;
