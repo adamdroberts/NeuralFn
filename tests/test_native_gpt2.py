@@ -6122,6 +6122,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         "      return true;\n"
         "    }"
     ) in kernels_text
+    assert "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT" in kernels_text
+    assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT" in kernels_text
+    assert "init_gpt2_token_weight_vector4_strided_with_bf16_shadow_float32_kernel" in kernels_text
+    assert "launch_init_gpt2_token_weight_vector4_strided_float32" in kernels_text
     assert "NFN_TILE_CUDA_USE_TK_ATTENTION:-1" in script_text
     assert "LLM_KITTENS_ROOT" in script_text
     assert "TK_ROOT" in script_text

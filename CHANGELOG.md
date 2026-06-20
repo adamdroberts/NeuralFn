@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an opt-in dense GPT token-weight startup initializer behind
+  `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1` /
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1`. The candidate uses
+  vectorized FP32/BF16 shadow stores with a capped grid-stride CUDA kernel so
+  it can be compared against the default fast int32 CUDA Tile initializer
+  without launching one CTA per vector chunk. It is not promoted as a default:
+  the dedicated RTX 5090 startup-only paired gate measured token-weight init at
+  `0.985062x` mean but setup wall time at `1.000096x` mean and a slower
+  median, so the current fast int32 Tile initializer remains the default.
+  Verification: built `/tmp/libnfn_native_train_tile_ops_vector4_strided.so`
+  with CUDA Toolkit 13.3.33 and ran
+  `NFN_SM120_NATIVE_STARTUP_ONLY=1 ... bash tools/bench_native_gpt_sm120_candidate.sh`,
+  which rejected the candidate on the strict `setup_wall_ms=1.000` gate.
+
 - Fixed the trainer-facing Tile CUDA shared-library build on CUDA Toolkit
   13.3.33 by defaulting `tools/build_native_train_tile_ops.sh` to the same
   SM120 cuBLASLt GEMM compile route used by llm.kittens and by normalizing

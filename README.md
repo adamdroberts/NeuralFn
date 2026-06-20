@@ -42,6 +42,12 @@ reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
 build. LM-head cuBLASLt expansion and threaded token-weight initialization
 remain rejected diagnostic switches rather than workflow guidance.
+The opt-in vector4-strided token-weight initializer
+(`NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1` /
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1`) is also diagnostic-only:
+it improved the token-init substage in a startup-only RTX 5090 run but did not
+beat the strict setup-wall gate, so the fast int32 CUDA Tile initializer remains
+the default.
 Dense GPT native BF16 classifier/CE now uses vectorized BF16 row loads by
 default to match the llm.kittens fused-classifier memory access pattern; set
 `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=0` or
