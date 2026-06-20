@@ -218,6 +218,10 @@ row chunk. Tied LM-head dWeight chunks accumulate directly into the optimizer-st
 `nfn_native_tile_linear_backward_weight_accumulate_float32` instead of using a
 full-vocab scratch gradient buffer per chunk or per microbatch. The JSON reports
 `lm_head_row_chunk_count` and `loss_partial_count`.
+CUDA 13.3.33 post-reinstall paired checks kept 8192 as the default: 16384-row
+chunks regressed train-loop wall time to `1.016019x` and LM-head backward to
+`1.062838x`, while 4096-row chunks improved CE but regressed dWeight and total
+train-loop wall to `1.004875x`.
 `NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=1` /
 `NFN_NATIVE_GPT2_LM_HEAD_REVERSE_CHUNKS=1` reverses LM-head row-chunk traversal
 for cache-order bisection and reports `lm_head_reverse_chunk_order_enabled`;
@@ -1267,6 +1271,11 @@ or `2048`; `8192` is also accepted for local candidate builds but remains
 non-default after the dedicated RTX 5090 9-sample startup-only comparison
 measured `1.005585x` token-init time versus the 4096 default. The accepted
 values are `1024`, `2048`, `4096`, and `8192`.
+The CUDA 13.3.33 post-reinstall startup sweep kept the same conclusion:
+8192, 2048, and 1024 all regressed the direct token-init timer
+(`1.013697x`, `1.010289x`, and `1.016591x` respectively), so SDK callers should
+leave the default library build unchanged unless they are collecting fresh
+same-script startup evidence.
 
 Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is metadata-only on the default `compiled-cli` runner: Python builds the compiled C++ argv from the dataset alias/path and leaves shard validation or raw-text rejection to the compiled frontend. It must not import `server.dataset_manager`, NumPy, tiktoken, or Torch, must not write `fineweb_train_*.bin` shards, and must not add the external `--target train_gpt2cu` bridge argument for the default Tile-CUDA backend. The compiled Tile-CUDA frontend also treats `--print-command` as a no-data/no-CUDA action, printing the exact `nfn_gpt_native_train ...` invocation before token-shard resolution, CUDA runtime loading, or driver preflight.
 

@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked CUDA 13.3.33 startup and LM-head row-chunk bisections after the
+  toolkit reinstall and kept the current defaults. Temporary Tile ops libraries
+  built with `NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE=8192`, `2048`, and
+  `1024` all failed the targeted startup gate against the 4096-token default:
+  token init measured `1.013697x`, `1.010289x`, and `1.016591x` respectively.
+  A larger LM-head row chunk (`--lm-head-row-chunk-size 16384`) cut logit GEMM
+  launch counts in half but regressed train-loop wall time to `1.016019x` and
+  LM-head backward to `1.062838x` because dHidden worsened to `1.244198x`.
+  The smaller 4096-row chunk improved CE to `0.961277x` but doubled logit GEMM
+  launches, regressed dWeight to `1.039507x`, and measured `1.004875x`
+  train-loop wall time. No runtime default changed; the next useful LM-head
+  work remains a fused/cooperative row-chunked classifier-backward kernel or a
+  materially different GEMM route. Verification: built the three temporary Tile
+  ops libraries with CUDA Toolkit 13.3.33, ran startup-only paired benchmarks
+  with strict `setup_wall_ms`, `setup.token_weight_init.total_ms`, and
+  `total_wall_ms` gates, and ran stage-timed native-vs-native benchmarks for
+  16384 and 4096 LM-head row chunks on the dedicated RTX 5090.
+
 - Added native dense GPT custom-graph admission for graph JSON files that carry
   compatible GPT `template_spec` metadata. The compiled C++ trainer now reports
   those files as `selected_graph_support_status: "native-transformer-lm"`, sets
