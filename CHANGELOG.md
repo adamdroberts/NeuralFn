@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Expanded paired CUDA benchmark stdout attribution for block backward. The
+  native JSON parser already captured arbitrary `timing.stage_timing` entries;
+  the text report and candidate-ratio gate allowlist now also include MLP FC,
+  MLP projection, LN2 residual, attention projection, attention SDPA
+  grad-out/to-QKV, QKV dInput/dWeight, and LN1 residual child metrics. This
+  lets SM120 native kernel candidates gate concrete hot buckets such as
+  `stage.block_backward.qkv.dinput.total_ms` or
+  `stage.block_backward.attn_proj.dinput.total_ms` instead of treating
+  `stage.block_backward.total_ms` as an opaque aggregate. Verification:
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k
+  'paired_kernel_speed_tool_compiles_and_smokes or metric_ratio_gate'`,
+  `python -m py_compile tools/paired_kernel_speed.py`, and `git diff --check`.
+
 - Revalidated the native CUDA Tile training stack after installing CUDA Toolkit
   13.3.33 for WSL. Every native trainer binary and Python extension was rebuilt
   against the new toolkit, and the dedicated RTX 5090 pass now has no remaining

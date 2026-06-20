@@ -79,6 +79,10 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"total_ms\\\": 5.0, \\\"avg_ms\\\": 2.5, \\\"count\\\": 2}, "
                 "{\\\"name\\\": \\\"block_backward.mlp_proj.dweight_bias\\\", "
                 "\\\"total_ms\\\": 4.0, \\\"avg_ms\\\": 2.0, \\\"count\\\": 2}, "
+                "{\\\"name\\\": \\\"block_backward.mlp_fc.dinput\\\", "
+                "\\\"total_ms\\\": 8.0, \\\"avg_ms\\\": 4.0, \\\"count\\\": 2}, "
+                "{\\\"name\\\": \\\"block_backward.attn_proj.dinput\\\", "
+                "\\\"total_ms\\\": 9.0, \\\"avg_ms\\\": 4.5, \\\"count\\\": 2}, "
                 "{\\\"name\\\": \\\"block_backward.attn_sdpa.to_qkv\\\", "
                 "\\\"total_ms\\\": 6.0, \\\"avg_ms\\\": 3.0, \\\"count\\\": 2}]}, "
                 "\\\"steps_completed\\\": 5, \\\"linear_tk_gemm_count\\\": 3, "
@@ -137,6 +141,8 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
         payload["candidate_native_metrics"]["stage.block_backward.mlp_proj.dweight_bias.total_ms"]["mean"]
         == 4.0
     )
+    assert payload["candidate_native_metrics"]["stage.block_backward.mlp_fc.dinput.total_ms"]["mean"] == 8.0
+    assert payload["candidate_native_metrics"]["stage.block_backward.attn_proj.dinput.total_ms"]["mean"] == 9.0
     assert payload["candidate_native_metrics"]["stage.block_backward.attn_sdpa.to_qkv.total_ms"]["mean"] == 6.0
     assert "gpus" in payload["gpu_before"]
     assert "compute_processes" in payload["gpu_before"]
@@ -174,6 +180,8 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "stage.lm_head_backward.dweight.total_ms: mean=1.500000" in proc.stdout
     assert "stage.block_backward.mlp_proj.total_ms: mean=5.000000" in proc.stdout
     assert "stage.block_backward.mlp_proj.dweight_bias.total_ms: mean=4.000000" in proc.stdout
+    assert "stage.block_backward.mlp_fc.dinput.total_ms: mean=8.000000" in proc.stdout
+    assert "stage.block_backward.attn_proj.dinput.total_ms: mean=9.000000" in proc.stdout
     assert "stage.block_backward.attn_sdpa.to_qkv.total_ms: mean=6.000000" in proc.stdout
 
 

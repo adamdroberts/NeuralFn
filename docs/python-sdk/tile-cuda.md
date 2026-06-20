@@ -1262,8 +1262,9 @@ warns that timing-only improvements should be treated as noise until a route
 change or separate kernel-level attribution confirms the candidate.
 When native stage timing is present, the text report also prints the high-value
 LM-head backward substages (`logits`, `ce`, `dhidden`, `dweight`, and optional
-`dhidden_dweight_concurrent`) and block-backward substages such as
-`mlp_proj.*`, `attn_sdpa.to_qkv`, and `qkv.dweight_bias`. Use those printed
+`dhidden_dweight_concurrent`) and block-backward substages across MLP FC,
+MLP projection, LN2 residual, attention projection, attention SDPA
+grad-out/to-QKV, QKV dInput/dWeight, and LN1 residual work. Use those printed
 ratios for CUDA 13.3 RTX 5090 parity work before promoting any candidate that
 only changes a coarse `lm_head_backward` or `block_backward` total.
 For automated candidate rejection, pass repeatable
