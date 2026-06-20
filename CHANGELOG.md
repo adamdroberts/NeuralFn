@@ -8,7 +8,7 @@ Future updates should append new entries here rather than replacing older notes.
 
 - Revisited the CUDA-visible test set after reinstalling the WSL CUDA toolkit
   (`cuda-toolkit-13-3`). The last-failed pytest rerun now passes with
-  `1189 passed, 20 warnings, 468 subtests passed`, and the production-path
+  `1185 passed, 4 skipped, 20 warnings, 468 subtests passed`, and the production-path
   native-vs-llm.kittens parity benchmark without stage timing measures
   NeuralFn dense GPT native training at `2501.32 ms/step` versus llm.kittens at
   `2446.91 ms/step` on the dedicated RTX 5090. The remaining `1.022236x`
@@ -17,6 +17,23 @@ Future updates should append new entries here rather than replacing older notes.
   LM-head chunk default; the 8192-row setting is documented as a lower-memory
   reproduction knob after the same-script gate rejected it at `1.001841x`
   train-loop wall time.
+
+- Continued the CUDA 13.3 dense GPT parity audit on the current clean tree.
+  A native startup-only paired run showed `--tinystories` adds no measurable
+  setup overhead over the same compiled command without a dataset alias
+  (`1.000758x` setup wall), so startup remains dominated by CUDA arena
+  materialization and token-weight initialization rather than dataset resolution.
+  The Python GPT wrapper now returns the compiled C++ dry-run delegate in about
+  `0.03s`, confirming the old multi-minute Python schedule-estimation path is
+  not on the current native route. Rechecking
+  `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0` saved setup (`0.851303x`) but
+  regressed train-loop wall time (`1.002307x`) and LM-head backward
+  (`1.017995x`), so cuBLASLt plan prewarm stays enabled for normal training and
+  disabled only for startup-only probes. Disabling TK forward for the hot
+  QKV shape `2304,65536,768,T,N` also remains rejected after reducing TK GEMM
+  calls but slowing train-loop wall time to `1.012063x`. These checks leave the
+  remaining llm.kittens gap assigned to new fused/cooperative LM-head and
+  block-backward kernels, not route toggles.
 
 - Added a default-off dense GPT block-backward side-stream diagnostic for the
   MLP `fc` dInput/dWeight pair. `NFN_NATIVE_GPT_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT=1`
@@ -46,7 +63,7 @@ Future updates should append new entries here rather than replacing older notes.
   `--native-cuda-lm-head-row-chunk-size 8192`, or
   `NativeGpt2RunConfig(lm_head_row_chunk_size=8192, ...)` explicitly.
   Verification: CUDA-visible full pytest passed with
-  `1189 passed, 20 warnings, 468 subtests passed`; the 32768-row
+  `1185 passed, 4 skipped, 20 warnings, 468 subtests passed`; the 32768-row
   native-vs-native RTX 5090 paired benchmark reduced LM-head chunk launches
   from 320 to 80 over the 5-step run and measured `0.998625x` train-loop wall
   time versus the 8192-row default. The 16384-row candidate regressed at
@@ -165,7 +182,7 @@ Future updates should append new entries here rather than replacing older notes.
   5090 with no active compute processes before the run. The focused GPU-visible
   native/Tile sweep passed with `247 passed`, the required GPT template preset
   suite passed with `26 passed`, and the full CUDA-visible repository sweep
-  passed with `1188 passed, 20 warnings, 468 subtests passed` in 444.54s.
+  passed with `1185 passed, 4 skipped, 20 warnings, 468 subtests passed`.
   Verification: `NFN_TILE_CUDA_TEST=1 python -m pytest
   tests/test_native_gpt2.py tests/test_tile_cuda_examples.py
   tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py

@@ -28,7 +28,7 @@ to confirm the extension executes GPU tests instead of skipping. After the
 CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 path is correctness
 green for the revisited native and Tile CUDA gates. After reinstalling the WSL
 CUDA toolkit (`cuda-toolkit-13-3`), the GPU-visible full suite passed with
-`1189 passed, 20 warnings, 468 subtests passed`; the focused native/Tile CUDA
+`1185 passed, 4 skipped, 20 warnings, 468 subtests passed`; the focused native/Tile CUDA
 gates, GPT template preset suite, and native no-Torch guard all pass. Dense GPT
 native training now routes the no-bias BF16 LM-head logits GEMM through the TK
 BF16 forward bridge by default for the
@@ -54,11 +54,18 @@ instrumentation-free sample measured a smaller but still-open gap at
 Torch, Python, or graph-editor execution. Because parity samples can move with
 reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
-build. LM-head cuBLASLt expansion, BF16 arena removal, token-shadow removal,
-threaded token initialization, LM-head 4096-row chunks, and direct
-bias-gradient first-write probes remain rejected diagnostic switches rather than
-workflow guidance. Dense GPT startup defaults the tied token-weight initializer
-to the vector4 CUDA Tile route; set
+build. A post-reinstall wrapper timing check also confirms that
+`python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run --native-cuda-print-command`
+returns the compiled C++ delegate in about `0.03s`, so the old Python schedule
+estimation path is not on the current native GPT startup route. A native
+startup-only paired run with and without `--tinystories` measured `1.000758x`
+setup wall time, which assigns startup cost to CUDA arena materialization and
+weight initialization rather than dataset alias resolution. LM-head cuBLASLt
+expansion, BF16 arena removal, token-shadow removal, threaded token
+initialization, LM-head 4096-row chunks, disabling cuBLASLt plan prewarm, and
+direct bias-gradient first-write probes remain rejected diagnostic switches
+rather than workflow guidance. Dense GPT startup defaults the tied token-weight
+initializer to the vector4 CUDA Tile route; set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` only for paired bisection against
 the previous fast int32 path.
