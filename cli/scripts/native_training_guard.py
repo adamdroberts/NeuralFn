@@ -68,10 +68,22 @@ _NATIVE_BOOL_ALIASES = {
     "--native-cuda-smoke-training-loop-step": "--smoke-training-loop-step",
     "--native-cuda-smoke-transformer-block-step": "--smoke-transformer-block-step",
     "--native-cuda-smoke-transformer-lm-step": "--smoke-transformer-lm-step",
+    "--native-cuda-allow-train-val-fallback": "--allow-train-val-fallback",
+    "--native-cuda-no-checkpoint": "--no-checkpoint",
+    "--native-cuda-write-checkpoint": "--write-checkpoint",
 }
 _NATIVE_VALUE_ALIASES = {
     "--native-cuda-cuda-runtime-lib": "--cuda-runtime-lib",
     "--native-cuda-tile-ops-lib": "--tile-ops-lib",
+    "--native-cuda-kernel-backend": "--backend",
+    "--native-cuda-executable": "--target",
+    "--native-cuda-output-dir": "--output-dir",
+    "--native-cuda-lm-head-row-chunk-size": "--lm-head-row-chunk-size",
+    "--native-cuda-checkpoint-every": "--native-cuda-checkpoint-every",
+    "--native-cuda-sample-every": "--native-cuda-sample-every",
+    "--native-cuda-generate-tokens": "--native-cuda-generate-tokens",
+    "--native-cuda-activation": "--native-cuda-activation",
+    "--native-cuda-moa-interval": "--native-cuda-moa-interval",
 }
 
 

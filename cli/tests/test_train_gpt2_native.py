@@ -1433,6 +1433,20 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
                     "--native-cuda-tile-ops-lib",
                     "/tmp/libnfn_native_train_tile_ops.so",
                     "--native-cuda-cuda-runtime-lib=/tmp/libcudart.so",
+                    "--native-cuda-no-checkpoint",
+                    "--native-cuda-kernel-backend",
+                    "tile-cuda",
+                    "--native-cuda-output-dir=/tmp/nfn-out",
+                    "--native-cuda-lm-head-row-chunk-size",
+                    "32768",
+                    "--native-cuda-checkpoint-every",
+                    "0",
+                    "--native-cuda-sample-every=0",
+                    "--native-cuda-generate-tokens",
+                    "32",
+                    "--native-cuda-activation",
+                    "moa",
+                    "--native-cuda-moa-interval=25",
                     "--template",
                     "gpt2-moa",
                 ],
@@ -1458,6 +1472,23 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("/tmp/libnfn_native_train_tile_ops.so", proc.stdout)
         self.assertIn("--cuda-runtime-lib=/tmp/libcudart.so", proc.stdout)
         self.assertNotIn("--native-cuda-cuda-runtime-lib", proc.stdout)
+        self.assertIn("--no-checkpoint", proc.stdout)
+        self.assertNotIn("--native-cuda-no-checkpoint", proc.stdout)
+        self.assertIn("--backend", proc.stdout)
+        self.assertIn("tile-cuda", proc.stdout)
+        self.assertNotIn("--native-cuda-kernel-backend", proc.stdout)
+        self.assertIn("--output-dir=/tmp/nfn-out", proc.stdout)
+        self.assertNotIn("--native-cuda-output-dir", proc.stdout)
+        self.assertIn("--lm-head-row-chunk-size", proc.stdout)
+        self.assertIn("32768", proc.stdout)
+        self.assertNotIn("--native-cuda-lm-head-row-chunk-size", proc.stdout)
+        self.assertIn("--native-cuda-checkpoint-every", proc.stdout)
+        self.assertIn("--native-cuda-sample-every=0", proc.stdout)
+        self.assertIn("--native-cuda-generate-tokens", proc.stdout)
+        self.assertIn("32", proc.stdout)
+        self.assertIn("--native-cuda-activation", proc.stdout)
+        self.assertIn("moa", proc.stdout)
+        self.assertIn("--native-cuda-moa-interval=25", proc.stdout)
         self.assertIn("--template", proc.stdout)
         self.assertIn("gpt2-moa", proc.stdout)
         self.assertNotIn("--base-model", proc.stdout)

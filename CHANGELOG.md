@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Expanded the direct legacy training-script native guard so wrapper-level
+  `--native-cuda-*` aliases for checkpoint toggles, backend/output/row-chunk
+  selectors, and cadence/activation fields are normalized before the script
+  execs a family C++ binary. This keeps direct GPT-2 evo and NanoGPT script
+  execution on the no-Torch native path even when users pass Python-wrapper flag
+  names, instead of relying on each family binary to understand every wrapper
+  alias. Current CUDA 13.3 parity evidence still shows the dense GPT training
+  loop short of llm.kittens (`1.038309x` train-loop wall time and `0.963089x`
+  tokens/sec for the 3-step staged run). Route candidates tested this turn were
+  not promoted: disabling the largest QKV TK forward bucket regressed to
+  `1.012266x`, and disabling the MLP FC TK forward shape produced only a
+  no-route-change `0.998760x` noise-level result. Verification: focused direct
+  script dispatch tests, static guard test, and same-script RTX 5090 paired
+  parity/candidate benchmarks.
+
 - Fixed native dense-GPT candidate benchmark env-list parsing so comma-separated
   assignment lists such as `KEY=1,OTHER=2` expand into separate
   `--candidate-env` / `--baseline-env` entries while preserving comma-heavy
