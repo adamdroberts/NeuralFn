@@ -1345,7 +1345,8 @@ and stage-timed runs additionally gate `stage.lm_head_backward.total_ms`,
 `NFN_SM120_CANDIDATE_MAX_CANDIDATE_RATIO` list to override those defaults.
 After the CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 validation
 pass rebuilt every native trainer and passed the GPU-visible native/Tile pytest
-gate (`240` tests), the GPT template preset suite (`26` tests), and the
+gate (`247` tests), the GPT template preset suite (`26` tests), the full
+CUDA-visible repository suite (`1188` tests plus `468` subtests), and the
 no-Torch native dependency verifier. Performance candidate gates are still
 allowed to fail when they reject slower routes; rejected reruns include
 extra-large-K cuBLASLt LM-head dHidden, one-shape cuBLASLt heuristic overrides

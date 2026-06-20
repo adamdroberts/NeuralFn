@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revisited the CUDA 13.3 WSL validation surface after reinstalling the latest
+  `cuda-toolkit-13-3`. `nvidia-smi` reports CUDA UMD 13.3 on the dedicated RTX
+  5090 with no active compute processes before the run. The focused GPU-visible
+  native/Tile sweep passed with `247 passed`, the required GPT template preset
+  suite passed with `26 passed`, and the full CUDA-visible repository sweep
+  passed with `1188 passed, 20 warnings, 468 subtests passed` in 444.54s.
+  Verification: `NFN_TILE_CUDA_TEST=1 python -m pytest
+  tests/test_native_gpt2.py tests/test_tile_cuda_examples.py
+  tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py
+  tests/test_tile_cuda_optimizer.py -q -rs`, `python -m pytest
+  tests/test_template_presets.py -x -q`, and `NFN_TILE_CUDA_TEST=1
+  python -m pytest -q -rs`.
+
 - Added generic `NFN_SM120_*` fallback aliases to the SM120 parity and
   native-vs-native candidate benchmark wrappers. `NFN_SM120_STEPS`,
   `NFN_SM120_SAMPLES`, `NFN_SM120_WARMUP`, `NFN_SM120_CUDA_VISIBLE_DEVICES`,
@@ -23,7 +36,7 @@ Future updates should append new entries here rather than replacing older notes.
 
 - Revisited the CUDA 13.3 WSL failure set after reinstalling
   `cuda-toolkit-13-3`. The dedicated RTX 5090 is GPU-visible with CUDA UMD 13.3,
-  and the full CUDA-gated repository sweep now passes with `1186 passed`,
+  and the full CUDA-gated repository sweep now passes with `1188 passed`,
   `20 warnings`, and `468 subtests passed`. A fresh no-stage same-script parity
   run still shows native dense-GPT performance work remaining rather than a test
   failure: llm.kittens measured `2473.728889 ms/step` and NeuralFn measured
