@@ -305,7 +305,10 @@ Canonical docs:
   fail with the family-specific CUDA Tile trainer work still required. Use
   `nfn-native-train --list-models --json` or
   `neuralfn.native_train.native_train_model_registry()` to inspect native
-  coverage; use `run_native_train(build_native_train_run_config(...),
+  coverage. Registry JSON includes `transformer_lm_status`, `token_lm_status`,
+  and `geometry_status`; NanoGPT is `partial-native-trainer`, with
+  `--train-token-lm` implemented and full transformer training still blocked on
+  dynamic template geometry. Use `run_native_train(build_native_train_run_config(...),
   runner="auto")` for SDK-level C++ binding handoff to the compiled frontend.
   Binding discovery skips stale local `_native_train` extensions that do not
   expose `resolve_command` / `resolve_native_train_command`; rebuild with
@@ -396,7 +399,8 @@ Canonical docs:
   keep using `libnfn_native_train_tile_ops.so`. The plan includes the GPT-2 parameter
   layout and forward/backward/optimizer stage sequence. `nfn-native-train
   --list-models` should report `gpt`, `gpt2`, and `gpt3` as the same dense GPT
-  native trainer aliases.
+  native trainer aliases, with `nanogpt` reported as `partial-native-trainer`
+  until full transformer geometry is implemented.
 - `nfn_gpt_native_train --smoke-tile-ops --tile-ops-lib PATH` / wrapper
   `--native-cuda-smoke-tile-ops` launches `nfn_native_tile_fill_float32`
   through dynamically loaded CUDA runtime and verifies copyback without Python,

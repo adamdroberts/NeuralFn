@@ -25,6 +25,9 @@ struct ModelEntry {
     std::string_view name;
     std::string_view status;
     std::string_view native_target;
+    std::string_view transformer_lm_status;
+    std::string_view token_lm_status;
+    std::string_view geometry_status;
     std::string_view notes;
 };
 
@@ -33,60 +36,90 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
         "gpt",
         "implemented",
         "nfn_gpt_native_train",
+        "native-transformer-lm",
+        "not-applicable",
+        "gpt2-compatible-fixed-dense-transformer",
         "Dense GPT aliases to the NeuralFn Tile-CUDA transformer-LM loop; template/custom graph selection decides the GPT architecture.",
     },
     {
         "gpt2",
         "implemented",
         "nfn_gpt_native_train",
+        "native-transformer-lm",
+        "not-applicable",
+        "gpt2-compatible-fixed-dense-transformer",
         "GPT-2 is a dense GPT template/default shape on the NeuralFn Tile-CUDA transformer-LM loop.",
     },
     {
         "gpt3",
         "implemented",
         "nfn_gpt_native_train",
+        "native-transformer-lm",
+        "not-applicable",
+        "gpt2-compatible-fixed-dense-transformer-with-gpt3-context",
         "GPT-3-style dense decoder training uses the same GPT native target; context/window and width come from the selected template or custom graph.",
     },
     {
         "gpt2-evo",
         "missing-native-trainer",
         "nfn_gpt2_evo_native_train",
+        "missing-native-trainer",
+        "not-applicable",
+        "pending-native-layer-evo-loop",
         "Layer-evo mutation/evaluation still needs a native CUDA Tile C++ trainer.",
     },
     {
         "nanogpt",
-        "implemented",
+        "partial-native-trainer",
         "nfn_gpt_native_train",
-        "NanoGPT defaults to the shared dense GPT transformer-LM trainer with --template-name nanogpt; pass --train-token-lm for the older token-only native preflight.",
+        "template-geometry-native-trainer-missing",
+        "implemented",
+        "requires-dynamic-template-geometry",
+        "NanoGPT routes to the shared dense GPT target with --template-name nanogpt, but full transformer training fails fast until the native loop supports dynamic width/head/layer/dropout geometry; pass --train-token-lm for the token-only native preflight.",
     },
     {
         "llama",
         "missing-native-trainer",
         "nfn_llama_native_train",
+        "missing-native-trainer",
+        "not-applicable",
+        "requires-rope-swiglu-native-loop",
         "LLaMA/RoPE/SwiGLU training needs a dedicated native CUDA Tile C++ trainer.",
     },
     {
         "mixllama",
         "missing-native-trainer",
         "nfn_mixllama_native_train",
+        "missing-native-trainer",
+        "not-applicable",
+        "requires-moe-routing-native-loop",
         "MoE routing and expert kernels need a dedicated native CUDA Tile C++ trainer.",
     },
     {
         "jepa",
         "missing-native-trainer",
         "nfn_jepa_native_train",
+        "missing-native-trainer",
+        "not-applicable",
+        "requires-jepa-objective-native-loop",
         "Semantic/JEPA objectives need a dedicated native CUDA Tile C++ trainer.",
     },
     {
         "semantic-router-moe",
         "missing-native-trainer",
         "nfn_semantic_router_moe_native_train",
+        "missing-native-trainer",
+        "not-applicable",
+        "requires-semantic-router-moe-native-loop",
         "Semantic router MoE training needs a dedicated native CUDA Tile C++ trainer.",
     },
     {
         "deepseek-v4",
         "missing-native-trainer",
         "nfn_deepseek_v4_native_train",
+        "missing-native-trainer",
+        "not-applicable",
+        "requires-deepseek-sparse-moe-native-loop",
         "DeepSeek-style sparse/MoE variants need a dedicated native CUDA Tile C++ trainer.",
     },
 };
@@ -266,6 +299,9 @@ void print_model_table() {
     std::cout << "Native NeuralFn training coverage:\n";
     for (const ModelEntry& entry : MODEL_REGISTRY) {
         std::cout << "  " << entry.name << ": " << entry.status << " -> " << entry.native_target << '\n';
+        std::cout << "    transformer_lm=" << entry.transformer_lm_status
+                  << " token_lm=" << entry.token_lm_status
+                  << " geometry=" << entry.geometry_status << '\n';
         std::cout << "    " << entry.notes << '\n';
     }
 }
@@ -278,6 +314,9 @@ void print_model_json() {
             << "    {\"name\": \"" << entry.name
             << "\", \"status\": \"" << entry.status
             << "\", \"native_target\": \"" << entry.native_target
+            << "\", \"transformer_lm_status\": \"" << entry.transformer_lm_status
+            << "\", \"token_lm_status\": \"" << entry.token_lm_status
+            << "\", \"geometry_status\": \"" << entry.geometry_status
             << "\", \"notes\": \"" << entry.notes << "\"}";
         if (i + 1 != std::size(MODEL_REGISTRY)) {
             std::cout << ',';
@@ -710,8 +749,11 @@ int main(int argc, char** argv) {
         append_value_arg(forwarded, "--train-seq-len", "2048");
     }
 
-    if (model_entry->status != std::string_view("implemented") &&
-        model_entry->status != std::string_view("external-fast-path")) {
+    const bool dispatchable_native_target =
+        model_entry->status == std::string_view("implemented") ||
+        model_entry->status == std::string_view("partial-native-trainer") ||
+        model_entry->status == std::string_view("external-fast-path");
+    if (!dispatchable_native_target) {
         const std::string target_cli =
             dense_gpt && !gpt_cli.empty()
                 ? gpt_cli
@@ -757,6 +799,9 @@ int main(int argc, char** argv) {
                 "nanogpt",
                 "implemented",
                 "nfn_nanogpt_native_train",
+                "not-applicable",
+                "implemented",
+                "token-lm-only",
                 "Explicit NanoGPT token-only native trainer.",
             });
         if (target_cli.empty()) {

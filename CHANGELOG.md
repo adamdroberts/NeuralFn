@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Updated the unified native model registry schema. `nfn-native-train
+  --list-models --json` and `neuralfn.native_train.native_train_model_registry()`
+  now expose `transformer_lm_status`, `token_lm_status`, and `geometry_status`
+  for each model in addition to the legacy `status`. NanoGPT now reports
+  `status: "partial-native-trainer"`,
+  `transformer_lm_status: "template-geometry-native-trainer-missing"`, and
+  `token_lm_status: "implemented"`, so CLI/SDK callers no longer have to infer
+  the full-transformer geometry gap from a later plan failure. Dispatch behavior
+  is unchanged: `nfn train --base-model nanogpt` still routes to
+  `nfn_gpt_native_train --template-name nanogpt` and fails fast on the current
+  geometry mismatch, while explicit `--train-token-lm` routes to the NanoGPT
+  token-LM native path. During the CUDA 13.3 follow-up, a fresh guarded
+  RTX 5090 parity sample measured NeuralFn at `2517.826667 ms/step` versus
+  llm.kittens at `2498.660000 ms/step` (`1.007671x`). Two same-script route
+  probes were rejected as defaults: shape-specific LM-head dHidden cuBLASLt
+  (`NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`) regressed
+  train-loop wall time to `1.002251x`, and a QKV dInput heuristic-0 override
+  (`NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,65536,2304,N,N,0`) regressed
+  to `1.008303x`.
+
 - Added a default-off QKV block-backward side-stream diagnostic:
   `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` or the GPT-2-prefixed
   alias records a CUDA event after attention backward, waits from two

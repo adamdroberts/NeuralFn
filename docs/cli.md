@@ -107,9 +107,14 @@ a 2048-token context when selected through `--base-model gpt3` or
 `--template-name gpt3`, unless a custom graph or explicit `--train-seq-len` is
 supplied. The implicit GPT3 batch size is 32, preserving the default
 65,536-token microbatch unless `--batch-size` is explicit.
-`nfn-native-train --list-models --json` reports all three dense GPT aliases as
-`implemented` because they share the same native trainer; template or graph
-selection determines whether the selected architecture can run on that trainer.
+`nfn-native-train --list-models --json` reports dense GPT coverage with
+capability-specific fields: `transformer_lm_status`, `token_lm_status`, and
+`geometry_status`. `gpt`, `gpt2`, and `gpt3` are implemented aliases of the
+same native transformer trainer. `nanogpt` is listed as
+`partial-native-trainer`: explicit `--train-token-lm` is implemented, but full
+transformer training reports `template-geometry-native-trainer-missing` until
+the dense native loop supports NanoGPT's dynamic width/head/layer/dropout
+geometry.
 Plan and runtime JSON include `architecture_source`,
 `architecture_contract`, `model_family_context_policy`, and
 `resolved_native_template_name` so a run makes clear that the graph/template,

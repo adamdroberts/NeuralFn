@@ -4409,17 +4409,28 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     payload = json.loads(coverage.stdout)
     statuses = {item["name"]: item["status"] for item in payload["models"]}
     native_targets = {item["name"]: item["native_target"] for item in payload["models"]}
+    transformer_statuses = {item["name"]: item["transformer_lm_status"] for item in payload["models"]}
+    token_statuses = {item["name"]: item["token_lm_status"] for item in payload["models"]}
+    geometry_statuses = {item["name"]: item["geometry_status"] for item in payload["models"]}
     assert statuses["gpt"] == "implemented"
     assert statuses["gpt2"] == "implemented"
     assert statuses["gpt3"] == "implemented"
-    assert statuses["nanogpt"] == "implemented"
+    assert statuses["nanogpt"] == "partial-native-trainer"
     assert native_targets["gpt"] == "nfn_gpt_native_train"
     assert native_targets["gpt2"] == "nfn_gpt_native_train"
     assert native_targets["gpt3"] == "nfn_gpt_native_train"
     assert native_targets["nanogpt"] == "nfn_gpt_native_train"
+    assert transformer_statuses["gpt"] == "native-transformer-lm"
+    assert transformer_statuses["gpt2"] == "native-transformer-lm"
+    assert transformer_statuses["gpt3"] == "native-transformer-lm"
+    assert transformer_statuses["nanogpt"] == "template-geometry-native-trainer-missing"
+    assert token_statuses["nanogpt"] == "implemented"
+    assert geometry_statuses["nanogpt"] == "requires-dynamic-template-geometry"
     sdk_payload = native_train_model_registry(native_train_cli=str(unified))
     sdk_statuses = {item["name"]: item["status"] for item in sdk_payload["models"]}
+    sdk_transformer_statuses = {item["name"]: item["transformer_lm_status"] for item in sdk_payload["models"]}
     assert sdk_statuses == statuses
+    assert sdk_transformer_statuses == transformer_statuses
 
     llama = subprocess.run(
         [str(unified), "--base-model", "llama", "--tinystories"],

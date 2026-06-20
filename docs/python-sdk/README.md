@@ -209,6 +209,10 @@ defaulting to `CUDA_MODULE_LOADING=LAZY` only when unset. Use
 `resolve_native_train_binding_command(config)` to inspect the exact argv the
 compiled binding will spawn, and use `native_train_model_registry()` to inspect
 the compiled model coverage exposed by `nfn-native-train --list-models --json`.
+That registry includes `transformer_lm_status`, `token_lm_status`, and
+`geometry_status`; `nanogpt` is `partial-native-trainer` until the dense
+transformer loop supports NanoGPT geometry, while its explicit token-LM path is
+implemented.
 If an older local `neuralfn._native_train` extension shadows the rebuilt one,
 binding discovery skips it unless it exposes both `run_train` and
 `resolve_command`, then probes the remaining package search path before falling
