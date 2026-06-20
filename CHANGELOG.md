@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Hardened the paired CUDA benchmark selected-GPU utilization guard for CUDA
+  13.3 WSL runs. `tools/paired_kernel_speed.py` now accepts
+  `--selected-gpu-utilization-retries` and
+  `--selected-gpu-utilization-retry-interval-seconds`, records those values in
+  JSON/text output, and retries utilization-only rejections only when the
+  selected GPU has no compute processes. Compute-process detection remains a
+  strict immediate failure. This prevents transient idle `nvidia-smi`
+  utilization spikes from failing otherwise clean RTX 5090 parity runs.
+  Verification: rechecked `nvcc --version` (`13.3.33`), ran escalated
+  `nvidia-smi` against the dedicated RTX 5090, ran
+  `NFN_TILE_CUDA_TEST=1 CUDA_VISIBLE_DEVICES=0 python -m pytest tests/test_tile_cuda_gpu.py -q`,
+  ran `CUDA_VISIBLE_DEVICES=0 python -m pytest tests/test_native_gpt2.py -q`,
+  and reran a short SM120 parity smoke.
+
 - Decoupled SM120 wrapper stage timing from profile sidecar generation. Both
   `tools/bench_native_gpt_sm120_candidate.sh` and
   `tools/bench_native_gpt_sm120_parity.sh` now pass

@@ -394,6 +394,26 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--selected-gpu-utilization-retries",
+        type=int,
+        default=3,
+        help=(
+            "Number of nvidia-smi utilization snapshots to try before rejecting an "
+            "otherwise idle selected GPU. Retries only help when the selected GPU has "
+            "no compute processes; compute processes still fail immediately."
+        ),
+    )
+    parser.add_argument(
+        "--selected-gpu-utilization-retry-interval-seconds",
+        type=float,
+        default=0.25,
+        help=(
+            "Seconds to wait between selected-GPU utilization guard retries. The "
+            "default smooths transient WSL/NVML idle samples without hiding real "
+            "compute load."
+        ),
+    )
+    parser.add_argument(
         "--no-gpu-benchmark-lock",
         action="store_true",
         help=(
@@ -1352,18 +1372,36 @@ def require_selected_gpu_utilization_at_most(
     *,
     phase: str,
 ) -> None:
-    if max_utilization_pct < 0.0 or not cuda_visible_devices:
+    result = selected_gpu_utilization_guard_result(
+        snapshot,
+        cuda_visible_devices,
+        max_utilization_pct,
+        phase=phase,
+    )
+    if result is None:
         return
+    raise SystemExit(result)
+
+
+def selected_gpu_utilization_guard_result(
+    snapshot: dict[str, object],
+    cuda_visible_devices: str,
+    max_utilization_pct: float,
+    *,
+    phase: str,
+) -> str | None:
+    if max_utilization_pct < 0.0 or not cuda_visible_devices:
+        return None
     selected_gpu = _selected_gpu(snapshot, cuda_visible_devices)
     if not isinstance(selected_gpu, dict):
-        raise SystemExit(
+        return (
             f"--max-selected-gpu-utilization-pct could not identify CUDA device "
             f"{_first_cuda_device_index(cuda_visible_devices)!r} in nvidia-smi output during {phase}"
         )
     utilization_pct = float(_csv_int(selected_gpu.get("utilization.gpu_pct"), 100))
     if utilization_pct <= max_utilization_pct:
-        return
-    raise SystemExit(
+        return None
+    return (
         f"--max-selected-gpu-utilization-pct={max_utilization_pct:g} rejected CUDA device "
         f"{_first_cuda_device_index(cuda_visible_devices)} during {phase}: "
         f"nvidia-smi utilization is {utilization_pct:g}%"
@@ -1377,15 +1415,47 @@ def enforce_selected_gpu_guards(
     require_idle: bool,
     max_utilization_pct: float,
     phase: str,
-) -> None:
+    utilization_retries: int = 1,
+    utilization_retry_interval_seconds: float = 0.0,
+    snapshot_supplier: Any | None = None,
+) -> dict[str, object]:
     if require_idle:
         require_idle_selected_gpu(snapshot, cuda_visible_devices, phase=phase)
-    require_selected_gpu_utilization_at_most(
+    result = selected_gpu_utilization_guard_result(
         snapshot,
         cuda_visible_devices,
         max_utilization_pct,
         phase=phase,
     )
+    if result is None:
+        return snapshot
+    if (
+        max_utilization_pct >= 0.0
+        and snapshot_supplier is not None
+        and _compute_process_count(snapshot, _selected_gpu_uuid(snapshot, cuda_visible_devices)) == 0
+    ):
+        attempts = max(1, int(utilization_retries))
+        interval = max(0.0, float(utilization_retry_interval_seconds))
+        for _attempt in range(1, attempts):
+            if interval > 0.0:
+                time.sleep(interval)
+            retry_snapshot = snapshot_supplier()
+            if require_idle:
+                require_idle_selected_gpu(retry_snapshot, cuda_visible_devices, phase=phase)
+            result = selected_gpu_utilization_guard_result(
+                retry_snapshot,
+                cuda_visible_devices,
+                max_utilization_pct,
+                phase=phase,
+            )
+            if result is None:
+                return retry_snapshot
+            if _compute_process_count(
+                retry_snapshot,
+                _selected_gpu_uuid(retry_snapshot, cuda_visible_devices),
+            ) > 0:
+                break
+    raise SystemExit(result)
 
 
 def gpu_benchmark_lock_path(cuda_visible_devices: str) -> Path | None:
@@ -1454,17 +1524,21 @@ def snapshot_and_enforce_selected_gpu_guards(
     *,
     require_idle: bool,
     max_utilization_pct: float,
+    utilization_retries: int,
+    utilization_retry_interval_seconds: float,
     phase: str,
 ) -> dict[str, object]:
     snapshot = gpu_snapshot()
-    enforce_selected_gpu_guards(
+    return enforce_selected_gpu_guards(
         snapshot,
         cuda_visible_devices,
         require_idle=require_idle,
         max_utilization_pct=max_utilization_pct,
+        utilization_retries=utilization_retries,
+        utilization_retry_interval_seconds=utilization_retry_interval_seconds,
+        snapshot_supplier=gpu_snapshot,
         phase=phase,
     )
-    return snapshot
 
 
 def summarize_gpu_sample_load(
@@ -1621,6 +1695,11 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     cuda_visible_devices = str(cuda_device_selection.get("resolved", "") or "").strip()
     cuda_device_max_connections = str(args.cuda_device_max_connections or "").strip()
     max_selected_gpu_utilization_pct = float(args.max_selected_gpu_utilization_pct)
+    selected_gpu_utilization_retries = max(1, int(args.selected_gpu_utilization_retries))
+    selected_gpu_utilization_retry_interval_seconds = max(
+        0.0,
+        float(args.selected_gpu_utilization_retry_interval_seconds),
+    )
     gpu_lock_path = gpu_benchmark_lock_path(cuda_visible_devices)
     gpu_lock_enabled = bool(cuda_visible_devices and not args.no_gpu_benchmark_lock)
     gpu_lock_timeout_seconds = max(0.0, float(args.gpu_benchmark_lock_timeout_seconds or 0.0))
@@ -1651,6 +1730,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             "cuda_device_max_connections": cuda_device_max_connections,
             "require_idle_selected_gpu": bool(args.require_idle_selected_gpu),
             "max_selected_gpu_utilization_pct": max_selected_gpu_utilization_pct,
+            "selected_gpu_utilization_retries": selected_gpu_utilization_retries,
+            "selected_gpu_utilization_retry_interval_seconds": (
+                selected_gpu_utilization_retry_interval_seconds
+            ),
             "gpu_benchmark_lock_enabled": gpu_lock_enabled,
             "gpu_benchmark_lock_path": str(gpu_lock_path) if gpu_lock_path is not None else "",
             "gpu_benchmark_lock_timeout_seconds": gpu_lock_timeout_seconds,
@@ -1700,6 +1783,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             cuda_visible_devices,
             require_idle=bool(args.require_idle_selected_gpu),
             max_utilization_pct=max_selected_gpu_utilization_pct,
+            utilization_retries=selected_gpu_utilization_retries,
+            utilization_retry_interval_seconds=selected_gpu_utilization_retry_interval_seconds,
+            snapshot_supplier=gpu_snapshot,
             phase="initial snapshot",
         )
 
@@ -1709,6 +1795,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                 cuda_visible_devices,
                 require_idle=bool(args.require_idle_selected_gpu),
                 max_utilization_pct=max_selected_gpu_utilization_pct,
+                utilization_retries=selected_gpu_utilization_retries,
+                utilization_retry_interval_seconds=selected_gpu_utilization_retry_interval_seconds,
+                snapshot_supplier=gpu_snapshot,
                 phase=f"warmup pair {warmup_index + 1}",
             )
             for command in ordered_pair(warmup_index, baseline, candidate):
@@ -1716,6 +1805,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                     cuda_visible_devices,
                     require_idle=bool(args.require_idle_selected_gpu),
                     max_utilization_pct=max_selected_gpu_utilization_pct,
+                    utilization_retries=selected_gpu_utilization_retries,
+                    utilization_retry_interval_seconds=(
+                        selected_gpu_utilization_retry_interval_seconds
+                    ),
                     phase=f"warmup pair {warmup_index + 1} {command.name}",
                 )
                 run_once(
@@ -1734,11 +1827,14 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         ratios: list[float] = []
         for sample_index in range(samples):
             sample_gpu_before = gpu_snapshot()
-            enforce_selected_gpu_guards(
+            sample_gpu_before = enforce_selected_gpu_guards(
                 sample_gpu_before,
                 cuda_visible_devices,
                 require_idle=bool(args.require_idle_selected_gpu),
                 max_utilization_pct=max_selected_gpu_utilization_pct,
+                utilization_retries=selected_gpu_utilization_retries,
+                utilization_retry_interval_seconds=selected_gpu_utilization_retry_interval_seconds,
+                snapshot_supplier=gpu_snapshot,
                 phase=f"measured sample {sample_index + 1}",
             )
             order_names: list[str] = []
@@ -1754,6 +1850,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                     cuda_visible_devices,
                     require_idle=bool(args.require_idle_selected_gpu),
                     max_utilization_pct=max_selected_gpu_utilization_pct,
+                    utilization_retries=selected_gpu_utilization_retries,
+                    utilization_retry_interval_seconds=(
+                        selected_gpu_utilization_retry_interval_seconds
+                    ),
                     phase=f"measured sample {sample_index + 1} {command.name}",
                 )
                 result = run_once(
@@ -1798,6 +1898,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "cuda_device_max_connections": cuda_device_max_connections,
         "require_idle_selected_gpu": bool(args.require_idle_selected_gpu),
         "max_selected_gpu_utilization_pct": max_selected_gpu_utilization_pct,
+        "selected_gpu_utilization_retries": selected_gpu_utilization_retries,
+        "selected_gpu_utilization_retry_interval_seconds": (
+            selected_gpu_utilization_retry_interval_seconds
+        ),
         "gpu_benchmark_lock_enabled": gpu_lock_enabled,
         "gpu_benchmark_lock_path": str(gpu_lock_path) if gpu_lock_path is not None else "",
         "gpu_benchmark_lock_timeout_seconds": gpu_lock_timeout_seconds,
@@ -1869,6 +1973,12 @@ def print_text(payload: dict[str, object]) -> None:
     print(
         "  max_selected_gpu_utilization_pct: "
         f"{payload.get('max_selected_gpu_utilization_pct', -1.0)}"
+    )
+    print(
+        "  selected_gpu_utilization_retries: "
+        f"{payload.get('selected_gpu_utilization_retries', 1)} "
+        "interval_seconds="
+        f"{payload.get('selected_gpu_utilization_retry_interval_seconds', 0.0)}"
     )
     if payload.get("gpu_benchmark_lock_enabled") is not None:
         print(

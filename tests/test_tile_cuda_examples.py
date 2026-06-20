@@ -1685,6 +1685,98 @@ def test_paired_kernel_speed_tool_selected_gpu_utilization_guard() -> None:
         )
 
 
+def test_paired_kernel_speed_tool_selected_gpu_utilization_guard_retries_idle_gpu() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    high_snapshot = {
+        "gpus": [
+            {
+                "index": "0",
+                "uuid": "GPU-compute",
+                "display_active": "Disabled",
+                "utilization.gpu_pct": "21",
+                "memory.used_mib": "640",
+            },
+        ],
+        "compute_processes": [],
+    }
+    low_snapshot = {
+        **high_snapshot,
+        "gpus": [
+            {
+                **high_snapshot["gpus"][0],
+                "utilization.gpu_pct": "3",
+            }
+        ],
+    }
+    snapshots = iter([low_snapshot])
+
+    module.enforce_selected_gpu_guards(
+        high_snapshot,
+        "0",
+        require_idle=True,
+        max_utilization_pct=15.0,
+        utilization_retries=2,
+        utilization_retry_interval_seconds=0.0,
+        snapshot_supplier=lambda: next(snapshots),
+        phase="unit test",
+    )
+
+
+def test_paired_kernel_speed_tool_selected_gpu_utilization_guard_rejects_busy_gpu_without_retry() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    busy_snapshot = {
+        "gpus": [
+            {
+                "index": "0",
+                "uuid": "GPU-compute",
+                "display_active": "Disabled",
+                "utilization.gpu_pct": "21",
+                "memory.used_mib": "640",
+            },
+        ],
+        "compute_processes": [
+            {
+                "gpu_uuid": "GPU-compute",
+                "pid": "200",
+                "process_name": "trainer",
+                "used_memory_mib": "4096",
+            },
+        ],
+    }
+
+    with pytest.raises(SystemExit, match="trainer"):
+        module.enforce_selected_gpu_guards(
+            busy_snapshot,
+            "0",
+            require_idle=True,
+            max_utilization_pct=15.0,
+            utilization_retries=2,
+            utilization_retry_interval_seconds=0.0,
+            snapshot_supplier=lambda: pytest.fail("busy GPUs must not be retried"),
+            phase="unit test",
+        )
+
+
 def test_paired_kernel_speed_tool_records_command_timeout() -> None:
     script = Path("tools/paired_kernel_speed.py")
     temp_dir = Path(tempfile.mkdtemp())
