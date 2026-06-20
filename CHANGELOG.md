@@ -26,6 +26,23 @@ Future updates should append new entries here rather than replacing older notes.
   (`NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,65536,2304,N,N,0`) regressed
   to `1.008303x`.
 
+- Promoted dense GPT LM-head reverse row-chunk traversal to the default after
+  the CUDA 13.3 WSL reinstall. `NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS` and
+  `NFN_NATIVE_GPT2_LM_HEAD_REVERSE_CHUNKS` still control the route, but now
+  default to enabled and can be set to `0` for forward-order bisection. Runtime
+  JSON adds `lm_head_reverse_chunk_order_strategy` next to
+  `lm_head_reverse_chunk_order_enabled`. Verification on the dedicated RTX 5090
+  used the same-script candidate harness with three samples: reverse traversal
+  measured `0.997183x` mean train-loop wall time, `0.998586x` median, and
+  `1.002835x` mean tokens/sec versus the previous forward traversal. After
+  rebuilding with reverse traversal as the default, the explicit forward-order
+  opt-out (`NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=0`) failed the same
+  three-sample gate at `1.007952x` mean train-loop wall time. Other LM-head
+  candidates were rejected: `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1`
+  timed out after 300 seconds, and
+  `NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1` regressed train-loop wall
+  time to `1.000398x`.
+
 - Added a default-off QKV block-backward side-stream diagnostic:
   `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` or the GPT-2-prefixed
   alias records a CUDA event after attention backward, waits from two

@@ -242,12 +242,13 @@ Retesting `--lm-head-row-chunk-size 8192` against the current 32768-row route
 regressed train-loop wall time to `1.001841x` despite slightly improving the
 isolated LM-head stage. Use 8192 only as an explicit lower-memory reproduction
 knob, not as the workstation default.
-`NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=1` /
-`NFN_NATIVE_GPT2_LM_HEAD_REVERSE_CHUNKS=1` reverses LM-head row-chunk traversal
-for cache-order bisection and reports `lm_head_reverse_chunk_order_enabled`;
-it is diagnostic-only because the CUDA 13.3 dedicated RTX 5090 same-script run
-measured `1.000499x` train-loop wall time and `0.999506x` tokens/sec versus the
-default forward chunk order.
+`NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS` /
+`NFN_NATIVE_GPT2_LM_HEAD_REVERSE_CHUNKS` controls LM-head row-chunk traversal
+and reports `lm_head_reverse_chunk_order_enabled` plus
+`lm_head_reverse_chunk_order_strategy`. Reverse traversal is the CUDA 13.3 RTX
+5090 default after a guarded three-sample same-script gate measured `0.997183x`
+train-loop wall time versus the previous forward order; set the variable to `0`
+only for bisection.
 
 `NativeGptRunConfig.train_loss_every_steps` and
 `NativeGpt2RunConfig.train_loss_every_steps` default to `0` and forward

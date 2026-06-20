@@ -5497,6 +5497,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "two-nonblocking-cuda-streams-after-ce-event" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS" in gpt2_source_text
     assert "lm_head_reverse_chunk_order_enabled" in gpt2_source_text
+    assert "reverse-row-chunk-order-default-cuda-13-3-rtx-5090" in gpt2_source_text
     assert "lm_head_backward.hidden_prepack" in gpt2_source_text
     assert "launch_linear_bf16_input_float_weight_bf16_output_float32" in source_text
     assert "linear_bf16_input_float_weight_bf16_output_float32_kernel" in kernels_text

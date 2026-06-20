@@ -11297,7 +11297,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS",
                               "NFN_NATIVE_GPT2_LM_HEAD_REVERSE_CHUNKS"}),
-            false);
+            true);
     const bool lm_head_loss_copy_device_sync_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_LOSS_COPY_SYNC",
@@ -18740,6 +18740,11 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"lm_head_reverse_chunk_order_enabled\": "
         << (lm_head_reverse_chunk_order_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_reverse_chunk_order_strategy\": \""
+        << (lm_head_reverse_chunk_order_enabled
+                ? "reverse-row-chunk-order-default-cuda-13-3-rtx-5090"
+                : "forward-row-chunk-order-env-override")
+        << "\",\n"
         << "  \"lm_head_loss_copy_device_synchronize_enabled\": "
         << (lm_head_loss_copy_device_sync_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_loss_copy_ordering\": \""

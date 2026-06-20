@@ -362,9 +362,12 @@ Runtime JSON reports `lm_head_fused_loss_backward_enabled`,
 RTX 5090 confirmation run for the disabled route regressed train-loop wall time
 to `1.001484x` and failed the block-backward gates.
 
-The native dense-GPT BF16 LM-head CE backward path keeps the forward
-row-chunk order because paired dedicated-RTX-5090 timing showed reverse chunk
-traversal was neutral-to-slower for the current tied LM-head workspace.
+The native dense-GPT BF16 LM-head CE backward path now uses reverse
+row-chunk traversal by default because paired dedicated-RTX-5090 CUDA 13.3
+timing measured it slightly faster for the current tied LM-head workspace.
+Set `NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=0` or
+`NFN_NATIVE_GPT2_LM_HEAD_REVERSE_CHUNKS=0` to reproduce the previous forward
+chunk order during bisection.
 `NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1` is a diagnostic-only
 row-chunk order probe that runs LM-head dWeight before dHidden after CE writes
 dlogits; the dedicated RTX 5090 5-step, 3-sample check measured `1.001048x`
@@ -519,9 +522,11 @@ argument. Set
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` to emit the resolved paired commands, selected
 CUDA device policy, and alternating sample order without launching the GPU jobs.
 LM-head row-order bisections can use
-`NFN_SM120_CANDIDATE_ENV=NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=1`; the switch
-is diagnostic-only and remains off by default because the CUDA 13.3 RTX 5090
-same-script run measured neutral/slightly slower training throughput.
+`NFN_SM120_CANDIDATE_ENV=NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=0` to compare
+the previous forward chunk traversal against the current reverse-row-chunk
+default. After the CUDA 13.3 reinstall on the dedicated RTX 5090, a guarded
+three-sample same-script gate measured reverse traversal faster on average
+(`0.997183x` train-loop wall time), so it is now the workstation default.
 Set
 `NFN_SM120_NATIVE_STARTUP_ONLY=1` for startup bisections; the wrapper appends
 `--startup-only` to both baseline and candidate while preserving the same
