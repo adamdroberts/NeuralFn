@@ -42,11 +42,11 @@ Torch, Python, or graph-editor execution. Because parity samples can move with
 reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
 build. LM-head cuBLASLt expansion, BF16 arena removal, token-shadow removal,
-threaded/vector4 token initialization, LM-head 4096-row chunks, and direct
+threaded token initialization, LM-head 4096-row chunks, and direct
 bias-gradient first-write probes remain rejected diagnostic switches rather than
-workflow guidance. Dense GPT
-startup now defaults the tied token-weight initializer to the vector4 CUDA Tile
-route; set `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` or
+workflow guidance. Dense GPT startup defaults the tied token-weight initializer
+to the vector4 CUDA Tile route; set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` only for paired bisection against
 the previous fast int32 path.
 The opt-in vector4-strided token-weight initializer
@@ -755,17 +755,16 @@ only for paired diagnostics against the previous full-padded-token-init and
 CE-padding-scrub route. Runtime JSON reports `lm_head_ce_pad_zero_skipped`,
 `token_weight_padding_zero_enabled`, `token_weight_init_elements`, and
 `token_weight_padding_elements`.
-`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT` now defaults on for dense GPT startup,
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT` defaults on for dense GPT startup,
 using the vectorized token-weight initializer while preserving the deterministic
 power-of-two initialization contract and fused BF16 shadow write. Set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` to reproduce the previous fast int32
 Tile initializer in paired startup benchmarks. On the CUDA 13.3 dedicated RTX
-5090 startup-only check, the 7-sample post-reinstall confirmation measured
-`0.949673x` mean token-weight initialization time against
-`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0`; whole setup wall time remained
-noise-sensitive at `1.004619x`, so this is promoted for the token-init kernel
-substage rather than claimed as a full startup-wall win.
+5090 startup-only check after the toolkit reinstall, the 5-sample paired gate
+measured explicit vector4 against fast int32 at `0.949565x` mean token-weight
+initialization time, `0.970270x` setup wall time, and `0.970405x` total wall
+time, so vector4 remains the default.
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1` and
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` remain startup-only profiling
 switches for token-weight initialization experiments; vector4-strided and
@@ -807,7 +806,38 @@ For BF16 LM-head CE profiling, `NFN_NATIVE_GPT_CE_BF16_EXP2=1`, `NFN_NATIVE_GPT2
 
 Native GPT now defaults block projection weights to the BF16-primary update path. Token/position/norm/bias tensors still use the float32 multi-buffer AdamW ABI, while QKV, attention projection, MLP FC, and MLP projection weights update their BF16 parameter buffers directly through `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32`; checkpoint export syncs those BF16 block weights back into FP32 staging buffers before the existing version-5 BF16 checkpoint packer runs. The raw Tile ABI also exports `nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32` for BF16-primary parameter updates that consume BF16 gradient buffers with FP32 AdamW moments, which is the bridge for the next block-gradient-buffer migration. `nfn_native_tile_sumsq_partials_many_bf16_bits_float32` computes float32 global-norm partials from BF16 gradient buffers so that migration can preserve clipping semantics. The dense GPT trainer now binds and reports those BF16-gradient primitives, but current block gradients still accumulate in float32 buffers until the BF16 gradient arena and zeroing path lands. Set `NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS=0` to reproduce the older FP32-master plus BF16-shadow refresh path for bisection. Runtime JSON reports `block_weight_bf16_primary_param_update_enabled`, `block_weight_bf16_gradient_storage_strategy`, `block_weight_bf16_primary_param_update_count`, `block_weight_bf16_primary_param_bf16_grad_update_count`, `adamw_bf16_param_bf16_grad_kernel_loaded`, `gradient_clip_bf16_sumsq_kernel_loaded`, `adamw_float_update_descriptor_count`, `adamw_bf16_param_descriptor_count`, `adamw_bf16_param_bf16_grad_descriptor_count`, `adamw_float_update_kernel_launches`, `adamw_bf16_param_kernel_launches`, `adamw_bf16_param_bf16_grad_kernel_launches`, and `checkpoint.bf16_param_sync_kernel_launches`.
 
-Native GPT startup initializes the tied token FP32 master weight with the vector4 CUDA Tile deterministic initializer and writes its persistent BF16 LM-head shadow in the same ABI call, `nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32`, when `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW=1` (the default). The low-level Tile ABI now defaults to the vectorized float4/BF16-shadow variant for GPT-sized tables when no token-init environment variable is set, so direct ABI calls, the compiled trainer, and runtime JSON agree. The trainer-facing Tile build defaults token-weight initialization to a 4096-element CUDA Tile shape for the non-vector fallback; compile candidate libraries with `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DNFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE=1024"`, `2048`, or `8192` only for paired bisection. The 8192-tile candidate is accepted for local benchmark builds but is not the default: the dedicated RTX 5090 9-sample startup-only comparison measured `1.005585x` token-init time versus 4096, with total startup `0.990436x` inside broader arena-materialization noise. `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` or `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` reproduces the previous fast int32 CUDA Tile initializer, `NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT=0` restores the older int64 Tile-index initializer for paired startup bisection after vector4 is disabled, `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` or `NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT=1` is diagnostic-only for comparing the not-promoted threaded CUDA initializer, set `NFN_NATIVE_GPT_TOKEN_WEIGHT_INIT_LEGACY_MOD17=1` to reproduce the older modulo-17 deterministic values, or set `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=0` to reproduce the older two-pass startup path for paired benchmarks. Runtime JSON reports `token_weight_init_strategy`, `token_weight_threaded_init_enabled`, `token_weight_vector4_init_enabled`, `token_weight_fast_int32_init_enabled`, `token_weight_init_legacy_mod17_enabled`, `token_weight_bf16_initial_refresh_fusion_enabled`, and `token_weight_bf16_initial_refresh_elided`; `--startup-only` is the cleanest way to measure this setup-only change.
+Native GPT startup initializes the tied token FP32 master weight with the vector4
+CUDA Tile deterministic initializer and writes its persistent BF16 LM-head shadow
+in the same ABI call,
+`nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32`, when
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW=1` (the default). The low-level Tile ABI
+defaults to the vectorized float4/BF16-shadow variant for GPT-sized tables when
+no token-init environment variable is set, so direct ABI calls, the compiled
+trainer, and runtime JSON agree. The trainer-facing Tile build defaults
+token-weight initialization to a 4096-element CUDA Tile shape for the non-vector
+fallback; compile candidate libraries with
+`NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DNFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE=1024"`,
+`2048`, or `8192` only for paired bisection. The 8192-tile candidate is accepted
+for local benchmark builds but is not the default: the dedicated RTX 5090
+9-sample startup-only comparison measured `1.005585x` token-init time versus
+4096, with total startup `0.990436x` inside broader arena-materialization noise.
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` or
+`NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` reproduces the previous fast int32
+CUDA Tile initializer, `NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT=0` restores
+the older int64 Tile-index initializer for paired startup bisection after
+vector4 is disabled, `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` or
+`NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT=1` is diagnostic-only for comparing the
+not-promoted threaded CUDA initializer, set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_INIT_LEGACY_MOD17=1` to reproduce the older
+modulo-17 deterministic values, or set
+`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=0` to reproduce the older two-pass
+startup path for paired benchmarks. Runtime JSON reports
+`token_weight_init_strategy`, `token_weight_threaded_init_enabled`,
+`token_weight_vector4_init_enabled`, `token_weight_fast_int32_init_enabled`,
+`token_weight_init_legacy_mod17_enabled`,
+`token_weight_bf16_initial_refresh_fusion_enabled`, and
+`token_weight_bf16_initial_refresh_elided`; `--startup-only` is the cleanest way
+to measure this setup-only change.
 The CUDA 13.3.33 post-reinstall retile sweep also rejected the other supported
 compile-time token-init tile sizes against the 4096 default: 8192 measured
 `1.013697x` token-init time, 2048 measured `1.010289x`, and 1024 measured
@@ -878,7 +908,21 @@ Native dense GPT training handoff accepts `--template-name NAME` / `--preset NAM
 
 The compiled dense GPT transformer-LM trainer keeps cached token and target batches compact as uint16 during host-to-device upload, samples them directly from the C++ shard reader into one pinned host arena, enqueues one contiguous H2D `cudaMemcpyAsync` for tokens plus targets, then consumes the uint16 token ids directly in token embedding, BF16 public-vocab CE loss, CE backward, and token-embedding weight backward kernels. The default direct-u16 path no longer reserves the unused int64 token/target device subarena, cutting the token device arena to only the uint16 copy buffer; JSON reports `token_i64_device_arena_elided` and `token_i64_device_arena_bytes_elided`. Training JSON reports `token_id_direct_u16_enabled: true`, `token_id_upload_strategy: "uint16-pinned-async-h2d-direct-kernel-consumption"`, `token_id_host_staging: "pinned"`, `token_batch_staging_strategy: "direct-sampler-to-pinned-arena"`, `token_batch_vector_materialization: false`, `token_id_h2d_copy: "cudaMemcpyAsync-contiguous-arena"`, `token_id_h2d_copy_calls_per_microbatch: 1`, `token_id_widen_strategy: "elided-direct-u16-kernels"`, `token_id_widen_kernel_launches_per_microbatch: 0`, and `token_id_host_validation: false`; cached shards are trusted on this native path instead of being re-expanded or range-validated on CPU for every batch. Set `NFN_NATIVE_GPT_DIRECT_U16_TOKENS=0` or `NFN_NATIVE_GPT2_DIRECT_U16_TOKENS=0` only for paired benchmarks against the older single-kernel device-widening path.
 
-GPT transformer-LM startup also initializes the tied token embedding/LM-head weight on device through `nfn_native_tile_init_gpt2_token_weight_fast_float32` instead of constructing a 154 MB host float matrix and copying it to the GPU. The default vector4 Tile initializer writes the deterministic power-of-two value pattern over the full padded vocabulary table and the BF16 shadow in one startup route; set `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` only for paired comparison against the previous fast int32-index Tile path, set `NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT=0` after disabling vector4 only for paired comparison against the older int64-index Tile path, and set `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` only for paired comparison against the not-promoted threaded CUDA initializer. Training JSON reports `token_weight_init_strategy: "device-vector4-power2-deterministic"` or `"device-vector4-power2-deterministic-fused-bf16-shadow"`, `token_weight_threaded_init_enabled`, `token_weight_vector4_init_enabled`, `token_weight_fast_int32_init_enabled`, and `token_weight_host_materialization: false`.
+GPT transformer-LM startup also initializes the tied token embedding/LM-head
+weight on device through `nfn_native_tile_init_gpt2_token_weight_fast_float32`
+instead of constructing a 154 MB host float matrix and copying it to the GPU.
+The default vector4 Tile initializer writes the deterministic power-of-two value
+pattern over the full padded vocabulary table and the BF16 shadow in one startup
+route; set `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` only for paired
+comparison against the previous fast int32-index Tile path, set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT=0` after disabling vector4 only for
+paired comparison against the older int64-index Tile path, and set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` only for paired comparison against
+the not-promoted threaded CUDA initializer. Training JSON reports
+`token_weight_init_strategy: "device-vector4-power2-deterministic"` or the fused
+BF16-shadow variant, `token_weight_threaded_init_enabled`,
+`token_weight_vector4_init_enabled`, `token_weight_fast_int32_init_enabled`, and
+`token_weight_host_materialization: false`.
 
 GPT-2 transformer-LM startup has a single owner for per-block buffers. The block-vector visitors allocate parameters, gradients, AdamW state, and scratch-tape activations for every transformer block, including block 0; the global startup list now covers only token/position/final-norm/shared workspace buffers. Training JSON reports `block0_duplicate_allocation_elided`, `block0_duplicate_activation_allocation_elided`, `block0_duplicate_parameter_initialization_elided`, and `block0_duplicate_adamw_state_zero_elided` under `block_state_layout`.
 

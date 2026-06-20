@@ -886,26 +886,27 @@ validation pass, not in the per-step CPU hot path.
 
 The same native trainer initializes the tied token embedding/LM-head weight on
 device with `nfn_native_tile_init_gpt2_token_weight_fast_float32`. Native JSON
-reports `token_weight_init_strategy: "device-tile-power2-deterministic"` or the
-fused BF16-shadow variant, plus `token_weight_threaded_init_enabled`,
+reports `token_weight_init_strategy: "device-vector4-power2-deterministic"` or
+the fused BF16-shadow variant, plus `token_weight_threaded_init_enabled`,
 `token_weight_vector4_init_enabled`, `token_weight_fast_int32_init_enabled`,
 `token_weight_init_legacy_mod17_enabled`, and
 `token_weight_host_materialization: false`, so startup no longer constructs and
 copies the full token-weight matrix through host RAM. The default initializer
-uses CUDA Tile, int32 Tile indices when the table fits in int32, and a
-power-of-two deterministic value pattern for the full padded vocabulary table;
-direct low-level Tile ABI calls use that same non-threaded default when no
-token-init environment variable is set. Set
+uses CUDA Tile, vectorized float4 stores for GPT-sized tables, and a power-of-two
+deterministic value pattern for the full padded vocabulary table; direct
+low-level Tile ABI calls use that same vectorized default when no token-init
+environment variable is set. Set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0`,
+`NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_INIT=0`, or
+`NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` only when comparing against the
+previous fast int32 Tile initializer. Set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT=0`,
 `NFN_NATIVE_GPT2_TOKEN_WEIGHT_FAST_INT32_INIT=0`, or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_FAST_INT32_INIT=0` only when reproducing the older
-int64 Tile-index startup route in a paired benchmark. Set
-`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=1`,
-`NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_INIT=1`, or
-`NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=1` only when comparing the diagnostic
-vectorized float4/BF16-shadow candidate against the default Tile initializer;
-dedicated RTX 5090 startup-only paired timing rejected it as a default
-(`1.078363x` token-init time). Set
+int64 Tile-index startup route in a paired benchmark after vector4 is disabled.
+The CUDA 13.3 dedicated RTX 5090 startup-only gate after the toolkit reinstall
+measured vector4 against fast int32 at `0.949565x` token-weight init time,
+`0.970270x` setup wall time, and `0.970405x` total wall time. Set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` only when comparing against the
 not-promoted threaded CUDA initializer, and set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_INIT_LEGACY_MOD17=1` only when reproducing the older

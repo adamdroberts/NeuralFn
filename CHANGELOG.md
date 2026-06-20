@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked the dense GPT token-weight startup default after the CUDA 13.3 WSL
+  toolkit reinstall. The temporary fast-int32 rollback candidate was not
+  promoted: rebuilding the trainer-facing Tile ops library and native GPT CLI,
+  then comparing the default vector4 route against
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0`, measured vector4 faster at
+  `0.949565x` token-init time, `0.970270x` setup wall time, and `0.970405x`
+  total wall time on the dedicated RTX 5090. Migration notes:
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` /
+  `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` remain the paired-benchmark path
+  for the previous fast int32 initializer; default runtime JSON still reports
+  `token_weight_init_strategy` as
+  `"device-vector4-power2-deterministic-fused-bf16-shadow"`.
+
 - Revisited the CUDA 13.3 WSL validation surface after reinstalling the latest
   `cuda-toolkit-13-3`. `nvidia-smi` reports CUDA UMD 13.3 on the dedicated RTX
   5090 with no active compute processes before the run. The focused GPU-visible
