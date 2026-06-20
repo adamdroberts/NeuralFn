@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added LM-head classifier row-chunk route counters to the paired native
+  benchmark parser. `tools/paired_kernel_speed.py` now extracts and summarizes
+  `lm_head_classifier_chunk_launch_count`, the last rows/vocab/stride handled
+  by the route, and includes those values in `native_route_counter_changes` so
+  future same-script LM-head candidates can prove route changes explicitly.
+  Verification: ran the focused paired benchmark parser tests
+  (`3 passed, 28 deselected`) and the native GPT static probe
+  (`1 passed`).
+
 - Added a dedicated native Tile ABI surface for the dense-GPT LM-head
   classifier row-chunk path. The raw shared library now exports
   `nfn_native_tile_lm_head_classifier_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets`

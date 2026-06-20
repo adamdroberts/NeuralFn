@@ -442,6 +442,8 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "setup.cublaslt_plan_prewarm" in gpt_source
     assert "linear_cublaslt_grouped_layout_probe_status" in speed_tool
     assert "linear_cublaslt_grouped_layout_supported" in speed_tool
+    assert "lm_head_classifier_chunk_launch_count" in speed_tool
+    assert "lm_head_classifier_last_row_stride" in speed_tool
 
 
 def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) -> None:

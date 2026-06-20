@@ -280,9 +280,13 @@ variant and `nfn_native_tile_lm_head_classifier_*` counters. Native dense-GPT
 runs now report `lm_head_classifier_chunk_kernel_available`,
 `lm_head_classifier_chunk_kernel_enabled`,
 `lm_head_classifier_chunk_launch_count`, and the last rows/vocab/stride handled
-by that route. This keeps the LM-head classifier path auditable while the next
-kernel step replaces the ABI internals with a cooperative classifier plus
-dHidden/dWeight kernel.
+by that route. `tools/paired_kernel_speed.py` includes the chunk launch count
+and last rows/vocab/stride in native metric summaries and
+`native_route_counter_changes`, so same-script candidate runs can prove when an
+LM-head classifier route changes instead of relying only on coarse stage timing.
+This keeps the LM-head classifier path auditable while the next kernel step
+replaces the ABI internals with a cooperative classifier plus dHidden/dWeight
+kernel.
 
 The native dense-GPT BF16 LM-head CE backward path keeps the forward
 row-chunk order because paired dedicated-RTX-5090 timing showed reverse chunk

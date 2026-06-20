@@ -90,6 +90,12 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"lm_head_logits_tk_gemm_count\\\": 2, "
                 "\\\"lm_head_logits_cublaslt_gemm_count\\\": 0, "
                 "\\\"lm_head_logits_bf16_gemm_count\\\": 2, "
+                "\\\"lm_head_classifier_chunk_kernel_available\\\": true, "
+                "\\\"lm_head_classifier_chunk_kernel_enabled\\\": true, "
+                "\\\"lm_head_classifier_chunk_launch_count\\\": 64, "
+                "\\\"lm_head_classifier_last_rows\\\": 8192, "
+                "\\\"lm_head_classifier_last_vocab\\\": 50257, "
+                "\\\"lm_head_classifier_last_row_stride\\\": 50304, "
                 "\\\"status\\\": \\\"native-test\\\"}')\""
             ),
             "--samples",
@@ -168,12 +174,26 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["lm_head_logits_tk_gemm_count"]["mean"] == 2.0
     assert payload["candidate_native_metrics"]["lm_head_logits_cublaslt_gemm_count"]["mean"] == 0.0
     assert payload["candidate_native_metrics"]["lm_head_logits_bf16_gemm_count"]["mean"] == 2.0
+    assert payload["candidate_native_metrics"]["lm_head_classifier_chunk_launch_count"]["mean"] == 64.0
+    assert payload["candidate_native_metrics"]["lm_head_classifier_last_rows"]["mean"] == 8192.0
+    assert payload["candidate_native_metrics"]["lm_head_classifier_last_vocab"]["mean"] == 50257.0
+    assert payload["candidate_native_metrics"]["lm_head_classifier_last_row_stride"]["mean"] == 50304.0
     assert "linear_tk_gemm_count: mean=3.000000" in proc.stdout
     assert "linear_cublaslt_gemm_count: mean=4.000000" in proc.stdout
     assert "linear_bf16_gemm_count: mean=7.000000" in proc.stdout
     assert "lm_head_logits_tk_gemm_count: mean=2.000000" in proc.stdout
     assert "lm_head_logits_cublaslt_gemm_count: mean=0.000000" in proc.stdout
     assert "lm_head_logits_bf16_gemm_count: mean=2.000000" in proc.stdout
+    assert "lm_head_classifier_chunk_launch_count: mean=64.000000" in proc.stdout
+    assert "lm_head_classifier_last_rows: mean=8192.000000" in proc.stdout
+    assert (
+        payload["paired_samples"][0]["candidate"]["native_metrics"]["lm_head_classifier_chunk_kernel_available"]
+        is True
+    )
+    assert (
+        payload["paired_samples"][0]["candidate"]["native_metrics"]["lm_head_classifier_chunk_kernel_enabled"]
+        is True
+    )
     assert "stage.lm_head_backward.logits.total_ms: mean=3.000000" in proc.stdout
     assert "stage.lm_head_backward.ce.total_ms: mean=1.000000" in proc.stdout
     assert "stage.lm_head_backward.dhidden.total_ms: mean=2.000000" in proc.stdout
@@ -919,6 +939,12 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "lm_head_logits_tk_gemm_count": 4,
                 "lm_head_logits_cublaslt_gemm_count": 0,
                 "lm_head_logits_bf16_gemm_count": 4,
+                "lm_head_classifier_chunk_kernel_available": True,
+                "lm_head_classifier_chunk_kernel_enabled": True,
+                "lm_head_classifier_chunk_launch_count": 32,
+                "lm_head_classifier_last_rows": 4096,
+                "lm_head_classifier_last_vocab": 50257,
+                "lm_head_classifier_last_row_stride": 50304,
                 "attention_backward_dprep_timing_us": 30000,
                 "attention_backward_dprep_timing_count": 12,
                 "attention_backward_tk_timing_us": 240000,
@@ -970,6 +996,12 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["lm_head_logits_tk_gemm_count"] == 4
     assert metrics["lm_head_logits_cublaslt_gemm_count"] == 0
     assert metrics["lm_head_logits_bf16_gemm_count"] == 4
+    assert metrics["lm_head_classifier_chunk_kernel_available"] is True
+    assert metrics["lm_head_classifier_chunk_kernel_enabled"] is True
+    assert metrics["lm_head_classifier_chunk_launch_count"] == 32
+    assert metrics["lm_head_classifier_last_rows"] == 4096
+    assert metrics["lm_head_classifier_last_vocab"] == 50257
+    assert metrics["lm_head_classifier_last_row_stride"] == 50304
     assert metrics["stage.block_backward.total_ms"] == 9.0
     assert metrics["attention_backward_dprep_timing_us"] == 30000
     assert metrics["attention_backward_dprep_timing_count"] == 12
