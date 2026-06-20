@@ -3192,6 +3192,24 @@ bool trainer_linear_bf16_bf16_bgrad_enabled() {
   return enabled;
 }
 
+bool trainer_linear_bf16_bf16_bgrad_disabled_for_shape(
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  static const LinearShapeStat disabled_shape = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE");
+    }
+    LinearShapeStat shape{};
+    parse_linear_shape_token(value, &shape);
+    return shape;
+  }();
+  return linear_shape_matches(disabled_shape, m, n, k, op_a, op_b);
+}
+
 bool trainer_linear_bf16_bridge_enabled() {
   static const bool enabled = []() {
     const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16");
@@ -15834,19 +15852,25 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_b
     cudaStream_t stream) {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim)) {
-    if (!trainer_linear_bf16_bf16_bgrad_enabled() &&
+    const int m = static_cast<int>(input_dim);
+    const int n = static_cast<int>(output_dim);
+    const int k = static_cast<int>(rows);
+    const cublasOperation_t op_a = CUBLAS_OP_N;
+    const cublasOperation_t op_b = CUBLAS_OP_T;
+    if ((!trainer_linear_bf16_bf16_bgrad_enabled() ||
+         trainer_linear_bf16_bf16_bgrad_disabled_for_shape(m, n, k, op_a, op_b)) &&
         cublas_linear_gemm_ex_bf16_bits_ab_float32(
             x_bf16_bits,
             grad_out_bf16_bits,
             grad_weight,
-            static_cast<int>(input_dim),
-            static_cast<int>(output_dim),
-            static_cast<int>(rows),
-            CUBLAS_OP_N,
-            CUBLAS_OP_T,
-            static_cast<int>(input_dim),
-            static_cast<int>(output_dim),
-            static_cast<int>(input_dim),
+            m,
+            n,
+            k,
+            op_a,
+            op_b,
+            m,
+            n,
+            m,
             beta,
             true,
             stream)) {
@@ -15867,14 +15891,14 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_b
             grad_out_bf16_bits,
             grad_weight,
             bias_gradient,
-            static_cast<int>(input_dim),
-            static_cast<int>(output_dim),
-            static_cast<int>(rows),
-            CUBLAS_OP_N,
-            CUBLAS_OP_T,
-            static_cast<int>(input_dim),
-            static_cast<int>(output_dim),
-            static_cast<int>(input_dim),
+            m,
+            n,
+            k,
+            op_a,
+            op_b,
+            m,
+            n,
+            m,
             beta,
             true,
             stream)) {

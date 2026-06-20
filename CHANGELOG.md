@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a shape-selective BF16/BF16 BGRADB diagnostic for native dense GPT
+  dWeight+bias routing. `NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE` and
+  `NFN_TILE_CUDA_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE` accept the existing
+  `m,n,k,opA,opB` shape syntax and force only that BF16-input/BF16-gradient
+  dWeight+bias shape through the split dWeight plus separate bias-reducer path.
+  This keeps the broad BGRADB default intact while allowing isolated tests of
+  hot shapes such as MLP projection dWeight without also changing MLP FC, QKV,
+  or attention projection routes. Verified by rebuilding
+  `build/libnfn_native_train_tile_ops.so` with CUDA 13.3, rerunning the native
+  ABI source/build gate, and checking the isolated paired benchmark. The shape
+  gate is intentionally diagnostic-only because the isolated MLP projection
+  dWeight probe improved that substage but did not pass total-step timing.
+
 - Revisited the CUDA test surface after reinstalling the latest WSL CUDA
   toolkit (`cuda-toolkit-13-3`). The native GPT/Tile CUDA focused gate passed
   with `244 passed`, the required GPT template preset gate passed with
