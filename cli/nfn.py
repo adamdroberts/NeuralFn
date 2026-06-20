@@ -660,8 +660,6 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
             continue
         if arg in bool_aliases:
             out.append(bool_aliases[arg])
-            if arg == "--native-cuda-no-checkpoint" and explicit_dense_model:
-                out.append("--native-cuda-no-checkpoint")
             idx += 1
             continue
         matched_split_flag = next((flag for flag in split_value_flags if arg.startswith(flag + "=")), None)

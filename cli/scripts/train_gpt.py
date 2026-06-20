@@ -285,8 +285,6 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
             continue
         if arg in bool_aliases:
             out.append(bool_aliases[arg])
-            if arg == "--native-cuda-no-checkpoint":
-                out.append("--native-cuda-no-checkpoint")
             idx += 1
             continue
         if arg in pass_value_flags:

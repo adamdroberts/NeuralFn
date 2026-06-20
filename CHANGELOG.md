@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Normalized high-level native GPT checkpoint-disable aliases before the direct
+  compiled C++ trainer exec. `nfn train` and `cli/scripts/train_gpt.py` still
+  accept `--native-cuda-no-checkpoint`, but they now pass only the native
+  `--no-checkpoint` flag to `nfn_gpt_native_train`, matching the existing
+  compiled C++ argument contract and avoiding duplicate wrapper aliases on the
+  Torch-free fast path. During the same CUDA 13.3 revisit, a compile-time
+  `LLMK_SM120_CLASSIFIER_EXP2` plus `NFN_NATIVE_GPT_CE_BF16_EXP2=1` candidate
+  was rejected by the same-script RTX 5090 gate at `1.002746x` train-loop wall
+  time, so no classifier EXP2 default was promoted. Verification: focused
+  native dispatch tests and `git diff --check`.
+
 - Promoted CUDA 13.3 BF16 cuBLASLt plan prewarm to the default native dense-GPT
   training route while keeping it disabled for `--startup-only` diagnostics.
   The existing `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS`,

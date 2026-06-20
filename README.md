@@ -265,9 +265,11 @@ argument shim. It accepts the same common wrapper flags as `nfn train` and
 `--train-transformer-lm`, `--backend tile-cuda`, the TinyStories alias fallback,
 and GPT-3's implicit `--train-seq-len 2048` / `--batch-size 32` when selected
 through `--base-model gpt3` or `--template-name gpt3` before execing
-`nfn_gpt_native_train`. This removes Python startup from the direct compiled
-frontend path; it does not by itself close the remaining SM120 in-loop
-throughput gap tracked by the parity benchmark.
+`nfn_gpt_native_train`. High-level aliases are normalized before the exec; for
+example `--native-cuda-no-checkpoint` is passed to the compiled trainer as the
+single native `--no-checkpoint` flag. This removes Python startup from the
+direct compiled frontend path; it does not by itself close the remaining SM120
+in-loop throughput gap tracked by the parity benchmark.
 The native dense GPT selector recognizes the shipped GPT-2 geometry aliases
 `gpt`, `gpt2`, `gpt2_modern`, `gpt2_megakernel`, `gpt2_moa`, and `gpt3` as
 compiled-loop runnable. NanoGPT aliases are recognized as dense GPT templates
