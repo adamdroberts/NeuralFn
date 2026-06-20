@@ -189,6 +189,7 @@ void launch_sumsq_partials_many_bf16_bits_float32(
     std::int64_t max_elements,
     cudaStream_t stream);
 void launch_sum_partials_float32(const float* values, float* partials, std::int64_t n, cudaStream_t stream);
+void launch_sum_accumulate_float32(const float* values, float* total, std::int64_t n, cudaStream_t stream);
 void launch_scale_inplace_float32(float* values, std::int64_t n, float scale, cudaStream_t stream);
 void launch_global_norm_clip_scale_float32(
     const float* sumsq_partials,
@@ -2275,6 +2276,15 @@ int nfn_native_tile_sum_partials_float32(
     std::int64_t n,
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_sum_partials_float32(values, partials, n, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_sum_accumulate_float32(
+    const float* values,
+    float* total,
+    std::int64_t n,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_sum_accumulate_float32(values, total, n, as_stream(cuda_stream));
     return launch_status();
 }
 

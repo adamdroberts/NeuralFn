@@ -454,6 +454,8 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "lm_head_classifier_chunk_launch_count" in speed_tool
     assert "lm_head_classifier_last_row_stride" in speed_tool
     assert "lm_head_ce_row_loss_reduction_enabled" in speed_tool
+    assert "lm_head_ce_row_loss_sum_accumulate_requested" in speed_tool
+    assert "lm_head_ce_row_loss_sum_accumulate_enabled" in speed_tool
 
 
 def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) -> None:
@@ -3288,6 +3290,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["lm_head_ce_row_loss_reduction_requested"] is True
     assert train_transformer_payload["lm_head_ce_row_loss_reduction_available"] is False
     assert train_transformer_payload["lm_head_ce_row_loss_reduction_enabled"] is False
+    assert train_transformer_payload["lm_head_ce_row_loss_sum_accumulate_available"] is False
+    assert train_transformer_payload["lm_head_ce_row_loss_sum_accumulate_requested"] is False
+    assert train_transformer_payload["lm_head_ce_row_loss_sum_accumulate_enabled"] is False
     assert train_transformer_payload["linear_bf16_gemm_count"] == 0
     assert train_transformer_payload["linear_tk_gemm_count"] == 0
     assert train_transformer_payload["linear_cublaslt_gemm_count"] == 0
@@ -5905,6 +5910,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         "nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets"
         in source_text
     )
+    assert "nfn_native_tile_sum_accumulate_float32" in header_text
+    assert "nfn_native_tile_sum_accumulate_float32" in source_text
     assert (
         "nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace"
         in header_text
@@ -5918,6 +5925,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "launch_lm_head_classifier_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets" in kernels_text
     assert "launch_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets" in kernels_text
     assert "launch_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace" in kernels_text
+    assert "sum_accumulate_float32_kernel" in kernels_text
+    assert "launch_sum_accumulate_float32" in kernels_text
     assert "token_cross_entropy_partials_strided_float32_kernel" in kernels_text
     assert "token_cross_entropy_partials_strided_bf16_bits_kernel" in kernels_text
     assert "token_cross_entropy_partials_strided_bf16_bits_u16_targets_kernel" in kernels_text
@@ -6107,10 +6116,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_REDUCTION" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_ROW_LOSS_REDUCTION" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE" in gpt2_source_text
     assert "lm_head_fused_loss_backward_enabled" in gpt2_source_text
     assert "lm_head_ce_loss_backward_fused_enabled" in gpt2_source_text
     assert "lm_head_ce_row_loss_reduction_enabled" in gpt2_source_text
-    assert "fused-row-losses-reduce-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets" in gpt2_source_text
+    assert "lm_head_ce_row_loss_sum_accumulate_enabled" in gpt2_source_text
+    assert "fused-row-losses-sum-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets" in gpt2_source_text
     assert "row-chunked-public-vocab-bf16-u16-loss-dlogits-tile-abi" in gpt2_source_text
     assert "ce_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_workspace" in gpt2_source_text
     assert "nfn_native_tile_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace" in header_text
@@ -7031,6 +7043,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
             "nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets"
             in exported
         )
+        assert "nfn_native_tile_sum_accumulate_float32" in exported
         assert (
             "nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace"
             in exported

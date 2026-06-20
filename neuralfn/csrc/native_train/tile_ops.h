@@ -285,6 +285,12 @@ int nfn_native_tile_sum_partials_float32(
     std::int64_t n,
     void* cuda_stream);
 
+int nfn_native_tile_sum_accumulate_float32(
+    const float* values,
+    float* total,
+    std::int64_t n,
+    void* cuda_stream);
+
 int nfn_native_tile_scale_inplace_float32(
     float* values,
     std::int64_t n,

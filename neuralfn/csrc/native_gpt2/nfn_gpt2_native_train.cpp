@@ -3116,6 +3116,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_float32_to_bf16_bits_many",
         "nfn_native_tile_gradient_accumulate_float32",
         "nfn_native_tile_sum_partials_float32",
+        "nfn_native_tile_sum_accumulate_float32",
         "nfn_native_tile_sumsq_partials_float32",
         "nfn_native_tile_sumsq_partials_many_float32",
         "nfn_native_tile_sumsq_partials_many_bf16_bits_float32",
@@ -9884,6 +9885,7 @@ int run_transformer_lm_training_json(
                 std::int64_t, std::int64_t, void*);
     using GradientAccumulateFn = int (*)(float*, const float*, std::int64_t, float, void*);
     using SumPartialsFn = int (*)(const float*, float*, std::int64_t, void*);
+    using SumAccumulateFn = int (*)(const float*, float*, std::int64_t, void*);
     using SumsqPartialsManyFn =
         int (*)(const float* const*, const std::int64_t*, const std::int64_t*, float*, std::int64_t, std::int64_t, void*);
     using SumsqPartialsManyBf16BitsFn =
@@ -10241,6 +10243,7 @@ int run_transformer_lm_training_json(
     Float32ToBf16BitsManyFn float32_to_bf16_bits_many = nullptr;
     GradientAccumulateFn gradient_accumulate = nullptr;
     SumPartialsFn sum_partials = nullptr;
+    SumAccumulateFn sum_accumulate = nullptr;
     SumsqPartialsManyFn sumsq_partials_many = nullptr;
     SumsqPartialsManyBf16BitsFn sumsq_partials_many_bf16_bits = nullptr;
     ClipScaleFn clip_scale = nullptr;
@@ -10521,6 +10524,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_gradient_accumulate_float32");
                 sum_partials = load_symbol<SumPartialsFn>(
                     tile_handle, "nfn_native_tile_sum_partials_float32");
+                sum_accumulate = load_symbol<SumAccumulateFn>(
+                    tile_handle, "nfn_native_tile_sum_accumulate_float32");
                 sumsq_partials_many = load_symbol<SumsqPartialsManyFn>(
                     tile_handle, "nfn_native_tile_sumsq_partials_many_float32");
                 sumsq_partials_many_bf16_bits = load_symbol<SumsqPartialsManyBf16BitsFn>(
@@ -11257,6 +11262,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_REDUCTION",
                               "NFN_NATIVE_GPT2_LM_HEAD_ROW_LOSS_REDUCTION"}),
             true);
+    const bool lm_head_row_loss_sum_accumulate_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE",
+                              "NFN_NATIVE_GPT2_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE"}),
+            false);
     const bool bgrad_first_write_direct_enabled =
         dweight_first_microbatch_beta_zero_enabled &&
         env_flag_enabled_or_default(
@@ -14797,11 +14807,13 @@ int run_transformer_lm_training_json(
                 use_fused_ce_loss_backward &&
                 lm_head_row_loss_reduction_requested &&
                 lm_head_classifier_backward_row_losses_bf16_u16 != nullptr &&
-                sum_partials != nullptr &&
-                gradient_accumulate != nullptr &&
-                row_max != nullptr &&
-                loss_reduce_a != nullptr &&
-                loss_reduce_b != nullptr;
+                ((lm_head_row_loss_sum_accumulate_requested && sum_accumulate != nullptr) ||
+                 (sum_partials != nullptr && gradient_accumulate != nullptr)) &&
+                row_max != nullptr;
+            const bool use_row_loss_sum_accumulate =
+                use_row_loss_reduction &&
+                lm_head_row_loss_sum_accumulate_requested &&
+                sum_accumulate != nullptr;
             auto* ce_backward_bf16_u16 =
                 lm_head_skip_ce_pad_zero_enabled &&
                         lm_head_classifier_backward_bf16_u16_workspace != nullptr
@@ -14926,19 +14938,24 @@ int run_transformer_lm_training_json(
                                                 accumulation_scale / static_cast<float>(active_rows),
                                                 nullptr),
                                             "ce.backward_row_losses.inplace.public_vocab_strided_bf16_bits_u16_targets");
-                                        const float* current = row_max;
-                                        std::int64_t current_count = row_count;
-                                        float* next = loss_reduce_a;
-                                        while (current_count > 1 && error.empty()) {
-                                            run(sum_partials(current, next, current_count, nullptr),
-                                                "ce.backward_row_losses.sum_partials");
-                                            current = next;
-                                            current_count = partial_count_for(current_count);
-                                            next = (next == loss_reduce_a) ? loss_reduce_b : loss_reduce_a;
-                                        }
-                                        if (error.empty()) {
-                                            run(gradient_accumulate(loss_total, current, 1, 1.0f, nullptr),
-                                                "ce.backward_row_losses.loss.accumulate");
+                                        if (use_row_loss_sum_accumulate) {
+                                            run(sum_accumulate(row_max, loss_total, row_count, nullptr),
+                                                "ce.backward_row_losses.sum_accumulate");
+                                        } else {
+                                            const float* current = row_max;
+                                            std::int64_t current_count = row_count;
+                                            float* next = loss_reduce_a;
+                                            while (current_count > 1 && error.empty()) {
+                                                run(sum_partials(current, next, current_count, nullptr),
+                                                    "ce.backward_row_losses.sum_partials");
+                                                current = next;
+                                                current_count = partial_count_for(current_count);
+                                                next = (next == loss_reduce_a) ? loss_reduce_b : loss_reduce_a;
+                                            }
+                                            if (error.empty()) {
+                                                run(gradient_accumulate(loss_total, current, 1, 1.0f, nullptr),
+                                                    "ce.backward_row_losses.loss.accumulate");
+                                            }
                                         }
                                     } else {
                                         run(lm_head_classifier_backward_loss_bf16_u16(
@@ -18565,13 +18582,26 @@ int run_transformer_lm_training_json(
         << (lm_head_row_loss_reduction_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_row_loss_reduction_available\": "
         << (lm_head_classifier_backward_row_losses_bf16_u16 != nullptr &&
-                    sum_partials != nullptr && gradient_accumulate != nullptr
+                    ((lm_head_row_loss_sum_accumulate_requested && sum_accumulate != nullptr) ||
+                     (sum_partials != nullptr && gradient_accumulate != nullptr))
                 ? "true"
                 : "false") << ",\n"
         << "  \"lm_head_ce_row_loss_reduction_enabled\": "
         << (lm_head_row_loss_reduction_requested &&
                     lm_head_classifier_backward_row_losses_bf16_u16 != nullptr &&
-                    sum_partials != nullptr && gradient_accumulate != nullptr
+                    ((lm_head_row_loss_sum_accumulate_requested && sum_accumulate != nullptr) ||
+                     (sum_partials != nullptr && gradient_accumulate != nullptr))
+                ? "true"
+                : "false") << ",\n"
+        << "  \"lm_head_ce_row_loss_sum_accumulate_available\": "
+        << (sum_accumulate != nullptr ? "true" : "false") << ",\n"
+        << "  \"lm_head_ce_row_loss_sum_accumulate_requested\": "
+        << (lm_head_row_loss_sum_accumulate_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_ce_row_loss_sum_accumulate_enabled\": "
+        << (lm_head_row_loss_reduction_requested &&
+                    lm_head_classifier_backward_row_losses_bf16_u16 != nullptr &&
+                    lm_head_row_loss_sum_accumulate_requested &&
+                    sum_accumulate != nullptr
                 ? "true"
                 : "false") << ",\n"
         << "  \"lm_head_ce_loss_backward_fused_enabled\": "
@@ -18584,8 +18614,11 @@ int run_transformer_lm_training_json(
                     lm_head_classifier_backward_loss_bf16_u16 != nullptr
                 ? (lm_head_row_loss_reduction_requested &&
                            lm_head_classifier_backward_row_losses_bf16_u16 != nullptr &&
-                           sum_partials != nullptr && gradient_accumulate != nullptr
-                       ? "fused-row-losses-reduce-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"
+                           ((lm_head_row_loss_sum_accumulate_requested && sum_accumulate != nullptr) ||
+                            (sum_partials != nullptr && gradient_accumulate != nullptr))
+                       ? (lm_head_row_loss_sum_accumulate_requested && sum_accumulate != nullptr
+                              ? "fused-row-losses-sum-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"
+                              : "fused-row-losses-reduce-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets")
                        : (lm_head_skip_ce_pad_zero_enabled
                               ? "fused-loss-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"
                               : "fused-loss-accumulate-and-dlogits-public-vocab-bf16-u16-targets"))

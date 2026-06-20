@@ -7496,6 +7496,34 @@ __tile_global__ void sum_partials_float32_kernel(
   ct::store(partials + out_idx, ct::sum(ct::select(mask, value_tile, zero), 0_ic));
 }
 
+__global__ void sum_accumulate_float32_kernel(
+    const float* __restrict__ values,
+    float* __restrict__ total,
+    std::int64_t n) {
+  __shared__ float scratch[256];
+  const int tid = threadIdx.x;
+  const std::int64_t start = static_cast<std::int64_t>(blockIdx.x) * blockDim.x * 2 + tid;
+  float sum = 0.0f;
+  if (start < n) {
+    sum += values[start];
+  }
+  const std::int64_t second = start + blockDim.x;
+  if (second < n) {
+    sum += values[second];
+  }
+  scratch[tid] = sum;
+  __syncthreads();
+  for (int stride = blockDim.x / 2; stride > 0; stride >>= 1) {
+    if (tid < stride) {
+      scratch[tid] += scratch[tid + stride];
+    }
+    __syncthreads();
+  }
+  if (tid == 0) {
+    atomicAdd(total, scratch[0]);
+  }
+}
+
 __tile_global__ void kv_cache_read_float32_kernel(
     const float* __restrict__ k,
     const float* __restrict__ v,
@@ -14054,6 +14082,19 @@ void launch_sum_partials_float32(
     cudaStream_t stream) {
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   sum_partials_float32_kernel<<<blocks, 1, 0, stream>>>(values, partials, n);
+}
+
+void launch_sum_accumulate_float32(
+    const float* values,
+    float* total,
+    std::int64_t n,
+    cudaStream_t stream) {
+  if (n <= 0) {
+    return;
+  }
+  constexpr int kThreads = 256;
+  const int blocks = static_cast<int>((n + (kThreads * 2 - 1)) / (kThreads * 2));
+  sum_accumulate_float32_kernel<<<blocks, kThreads, 0, stream>>>(values, total, n);
 }
 
 void launch_scale_float32(const float* x, float* out, std::int64_t n, float value, cudaStream_t stream) {

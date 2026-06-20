@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off dense GPT LM-head row-loss sum-accumulate diagnostic ABI:
+  `nfn_native_tile_sum_accumulate_float32`. It lets the row-loss classifier
+  route replace its generic `sum_partials` plus scalar `gradient_accumulate`
+  tail with one CUDA reduction/atomic-accumulate launch per row chunk. The
+  switch is intentionally not promoted; enable it only with
+  `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` for paired bisection.
+  CUDA 13.3.33 RTX 5090 same-script gating rejected it as a default at
+  `1.008595x` train-loop wall time and `1.015517x` LM-head CE time versus the
+  current row-loss reduction default. Runtime JSON reports
+  `lm_head_ce_row_loss_sum_accumulate_available`,
+  `lm_head_ce_row_loss_sum_accumulate_requested`, and
+  `lm_head_ce_row_loss_sum_accumulate_enabled`. Verification: rebuilt
+  `libnfn_native_train_tile_ops.so` and `build/nfn_gpt_native_train`, ran
+  focused native source tests, ran one-step default/fallback CUDA route checks,
+  and ran the same-script native-vs-native RTX 5090 benchmark.
+
 - Added and promoted the dense GPT LM-head row-loss reduction route in the
   trainer-facing Tile CUDA ABI. The new exported symbol writes one CE loss per
   row while overwriting BF16 logits with dlogits, then the native GPT trainer

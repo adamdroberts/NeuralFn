@@ -62,6 +62,14 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     time per step and `0.993379x` LM-head backward time versus the prior default.
     Keep `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_REDUCTION=0` only as the rollback
     bisection path.
+  - 2026-06-20 added and rejected-as-default the narrower
+    `nfn_native_tile_sum_accumulate_float32` row-loss tail. It replaces the
+    generic `sum_partials` plus scalar `gradient_accumulate` launches with one
+    CUDA reduction/atomic-accumulate launch per LM-head row chunk, but the
+    3-step, 3-sample native-vs-native RTX 5090 gate measured `1.008595x`
+    train-loop wall time and `1.015517x` LM-head CE time versus the current
+    row-loss default. Keep
+    `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` diagnostic-only.
 - [x] Add GPT-2 evo `--print-plan` compiled C++ preflight that reports the AdamW/NVFP4/evo-layer schedule and required candidate-evaluation kernels without Python/Torch.
 - [x] Add GPT-2 compiled-CLI SDK handoff config that passes cached dataset alias/path directly to the C++ shard resolver without Python `meta.json` or token-shard validation.
 - [x] Add GPT-2 native `--backend tile-cuda` / SDK `kernel_backend="tile-cuda"` preflight that reports required raw Tile ABI symbols and `--check-tile-ops` validation without Python/Torch.

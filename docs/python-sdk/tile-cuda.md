@@ -232,6 +232,11 @@ to dlogits; the trainer then reduces the row losses on device with
 `lm_head_ce_loss_backward_strategy`. Set
 `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_REDUCTION=0` only when comparing against the
 older fused scalar-loss atomic route in a same-script paired benchmark.
+`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` is a narrower default-off
+diagnostic for replacing the generic row-loss partial-reduction tail with
+`nfn_native_tile_sum_accumulate_float32`. Leave it disabled for normal training;
+the CUDA 13.3 RTX 5090 paired gate measured it slower than the default row-loss
+tail.
 CUDA 13.3.33 post-reinstall paired checks kept 8192 as the default: 16384-row
 chunks regressed train-loop wall time to `1.016019x` and LM-head backward to
 `1.062838x`, while 4096-row chunks improved CE but regressed dWeight and total
