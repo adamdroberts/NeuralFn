@@ -160,7 +160,11 @@ Use `NFN_SM120_NATIVE_ENV`, `NFN_SM120_COMMON_ENV`, or `NFN_SM120_PARITY_ENV`
 for shared environment variables that must be applied to both commands, such as
 `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1` during route attribution. Use
 `NFN_SM120_NATIVE_CANDIDATE_ENV` or `NFN_SM120_CANDIDATE_ENV` only for
-candidate-only switches.
+candidate-only switches. Env lists can be separated with spaces or with commas
+between assignments, so both `KEY=1 OTHER=2` and `KEY=1,OTHER=2` are accepted;
+commas inside a value, such as
+`NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,3072,65536,N,T,0`, are kept as
+part of that value.
 Use `NFN_SM120_COMMON_EXTRA_ARGS` only for args that must be appended to both
 commands, and use `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`,
 `NFN_SM120_NATIVE_CANDIDATE_ARGS`, or `NFN_SM120_CANDIDATE_EXTRA_ARGS` for
@@ -453,7 +457,8 @@ kernels in the same alternating script. For dense GPT SM120 kernel bisection,
 `tools/bench_native_gpt_sm120_candidate.sh` wraps that helper with the same
 native command on both sides, selected-GPU idle guards, and
 `--train-batch-tokens 524288` by default. Set
-`NFN_SM120_NATIVE_CANDIDATE_ENV="KEY=VALUE OTHER=1"` to test an env-gated
+`NFN_SM120_NATIVE_CANDIDATE_ENV="KEY=VALUE OTHER=1"` or
+`NFN_SM120_NATIVE_CANDIDATE_ENV="KEY=VALUE,OTHER=1"` to test an env-gated
 candidate against the current default, or set
 `NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB=/tmp/libnfn_candidate.so` to compare a
 candidate Tile ops build against `build/libnfn_native_train_tile_ops.so`. Common
@@ -910,7 +915,11 @@ Run SM120 parity and candidate benchmarks only from a shell with real WSL GPU dr
 `tools/bench_native_gpt_sm120_candidate.sh` accepts the native-specific `NFN_SM120_NATIVE_*` controls, the shorter `NFN_SM120_CANDIDATE_*` controls, and the shared parity-wrapper `NFN_SM120_PARITY_*` controls for common benchmark shape fields such as steps, samples, warmup, profile directory, stage timing, GPU selection, JSON output, and dry-run plan. Native-specific names win over candidate names, which win over parity names. Candidate-only env and candidate-only extra args stay separate, so `NFN_SM120_NATIVE_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` and `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` / `NFN_SM120_CANDIDATE_EXTRA_ARGS` still affect only the candidate command. This keeps quick parity-to-native bisections from silently falling back to the candidate wrapper defaults of 10 steps, 3 samples, and 1 warmup.
 For shared profiling env, prefer `NFN_SM120_COMMON_ENV` or its native/parity
 aliases; the wrapper expands each key-value pair into both `--baseline-env` and
-`--candidate-env` before invoking `tools/paired_kernel_speed.py`.
+`--candidate-env` before invoking `tools/paired_kernel_speed.py`. Common,
+baseline-only, and candidate-only env lists accept either whitespace-separated
+assignments or comma-separated assignments; shape override values that contain
+commas remain intact because splitting only occurs before a following `KEY=`
+assignment.
 
 The default dense GPT MLP projection backward now uses the BF16-only dGELU handoff path when BF16 MLP grad handoff is active, so the Tile kernel writes the BF16 gradient consumed by the following MLP FC backward stage without also converting it to an unused FP32 gradient buffer. When every trained block has stored MLP activations, the compiled trainer also skips the old FP32 `mlp.fc.grad_out` arena reservation, saving 805 MB at the default `64 x 1024 x 3072` hidden-gradient shape. The remaining one-buffer FP32-to-BF16 conversion path defaults to a guarded vec4 kernel for aligned buffers; set `NFN_NATIVE_GPT_F32_TO_BF16_VEC4=0` or `NFN_TILE_CUDA_F32_TO_BF16_VEC4=0` to compare against the scalar converter. Training JSON reports `block_backward_mlp_dgelu_float_grad_elided`, `block_backward_mlp_fc_grad_out_float_buffer_elided`, `block_backward_mlp_fc_grad_out_float_bytes_elided`, and the `...-no-float-grad` strategy suffix. Set `NFN_NATIVE_GPT_ELIDE_MLP_DGELU_FLOAT_GRAD=0` to restore the prior conversion/allocation path for paired kernel benchmarks.
 

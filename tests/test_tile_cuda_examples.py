@@ -320,6 +320,8 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "--max-selected-gpu-utilization-pct" in text
     assert "env_or_alias()" in text
     assert "env_or_alias3()" in text
+    assert "append_env_overrides()" in text
+    assert "[A-Za-z_][A-Za-z0-9_]*=" in text
     assert "NFN_SM120_PARITY_STEPS" in text
     assert "NFN_SM120_PARITY_PROFILE_DIR" in text
     assert "NFN_SM120_PARITY_DRY_RUN_PLAN" in text
@@ -433,6 +435,50 @@ def test_native_gpt_sm120_candidate_wrapper_applies_common_env_to_both_commands(
     assert payload["candidate_env"] == {
         "NFN_SHARED_PROFILING": "1",
         "NFN_CANDIDATE_ONLY": "1",
+    }
+
+
+def test_native_gpt_sm120_candidate_wrapper_splits_comma_separated_env_assignments(
+    tmp_path: Path,
+) -> None:
+    script = Path("tools/bench_native_gpt_sm120_candidate.sh")
+    output_path = tmp_path / "candidate-comma-env.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_CANDIDATE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_CANDIDATE_STEPS": "2",
+            "NFN_SM120_CANDIDATE_SAMPLES": "1",
+            "NFN_SM120_CANDIDATE_WARMUP": "0",
+            "NFN_SM120_CANDIDATE_PROFILE_DIR": "none",
+            "NFN_SM120_CANDIDATE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_COMMON_ENV": "NFN_SHARED=1,NFN_SHARED_2=2",
+            "NFN_SM120_CANDIDATE_ENV": (
+                "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,3072,65536,N,T,0,"
+                "NFN_SECOND_TOGGLE=1"
+            ),
+            "NFN_SM120_CANDIDATE_JSON_OUT": str(output_path),
+        }
+    )
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["baseline_env"] == {"NFN_SHARED": "1", "NFN_SHARED_2": "2"}
+    assert payload["candidate_env"] == {
+        "NFN_SHARED": "1",
+        "NFN_SHARED_2": "2",
+        "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE": "768,3072,65536,N,T,0",
+        "NFN_SECOND_TOGGLE": "1",
     }
 
 

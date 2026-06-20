@@ -154,6 +154,27 @@ append_split_args() {
   done
 }
 
+append_env_overrides() {
+  local -n target_ref="$1"
+  local raw="$2"
+  local item
+  local part
+  local rest
+  local parts
+  for item in $raw; do
+    rest="$item"
+    parts=()
+    while [[ "$rest" =~ ^(.+),([A-Za-z_][A-Za-z0-9_]*=.*)$ ]]; do
+      parts=("${BASH_REMATCH[2]}" "${parts[@]}")
+      rest="${BASH_REMATCH[1]}"
+    done
+    target_ref+=("$rest")
+    for part in "${parts[@]}"; do
+      target_ref+=("$part")
+    done
+  done
+}
+
 common_args=(
   "$NFN_NATIVE_GPT_TRAIN_BIN"
   --backend tile-cuda
@@ -203,7 +224,13 @@ case "${PROFILE_DIR_RAW,,}" in
 esac
 
 paired_args=()
-for item in $COMMON_ENV_RAW; do
+common_env_items=()
+baseline_env_items=()
+candidate_env_items=()
+append_env_overrides common_env_items "$COMMON_ENV_RAW"
+append_env_overrides baseline_env_items "$BASELINE_ENV_RAW"
+append_env_overrides candidate_env_items "$CANDIDATE_ENV_RAW"
+for item in "${common_env_items[@]}"; do
   paired_args+=(--baseline-env "$item")
   paired_args+=(--candidate-env "$item")
 done
@@ -213,10 +240,10 @@ case "${LINEAR_SHAPE_STATS,,}" in
     paired_args+=(--candidate-env "NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1")
     ;;
 esac
-for item in $BASELINE_ENV_RAW; do
+for item in "${baseline_env_items[@]}"; do
   paired_args+=(--baseline-env "$item")
 done
-for item in $CANDIDATE_ENV_RAW; do
+for item in "${candidate_env_items[@]}"; do
   paired_args+=(--candidate-env "$item")
 done
 for item in $MAX_CANDIDATE_RATIO_RAW; do

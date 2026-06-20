@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed native dense-GPT candidate benchmark env-list parsing so comma-separated
+  assignment lists such as `KEY=1,OTHER=2` expand into separate
+  `--candidate-env` / `--baseline-env` entries while preserving comma-heavy
+  values such as
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,3072,65536,N,T,0`. This
+  closes a benchmark footgun where a multi-toggle candidate could silently run
+  with one malformed environment variable and produce invalid speed evidence.
+  During the CUDA 13.3 revisit, the previously skipped native Tile ops ABI smoke
+  passed when isolated with CUDA enabled, and the full CUDA pytest sweep passed
+  with `1185 passed, 20 warnings, 468 subtests passed` in 470.53s. Current
+  kernel candidates were not promoted: the MLP FC cuBLASLt heuristic-0 override
+  was too close to noise at `0.999931x` train-loop wall time with no route
+  counter change, disabling the TK dinput route regressed to `1.008840x`, and
+  the corrected vec4-off candidate regressed to `1.001423x`. Verification:
+  focused benchmark-wrapper tests, shell syntax check, isolated CUDA Tile ops
+  ABI test, full CUDA pytest sweep, and same-script RTX 5090 paired benchmarks.
+
 - Normalized high-level native GPT checkpoint-disable aliases before the direct
   compiled C++ trainer exec. `nfn train` and `cli/scripts/train_gpt.py` still
   accept `--native-cuda-no-checkpoint`, but they now pass only the native
