@@ -11129,6 +11129,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT",
                               "NFN_NATIVE_GPT2_MLP_FC_DINPUT_BEFORE_DWEIGHT"}),
             false);
+    const bool block_mlp_fc_concurrent_dinput_dweight_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT",
+                              "NFN_NATIVE_GPT2_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT"}),
+            false);
     const bool attn_proj_dinput_before_dweight_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT",
@@ -11457,6 +11462,20 @@ int run_transformer_lm_training_json(
     std::vector<void*> lm_head_pipeline_ce_events(2, nullptr);
     std::vector<void*> lm_head_pipeline_dhidden_done_events(2, nullptr);
     std::vector<void*> lm_head_pipeline_dweight_done_events(2, nullptr);
+    void* block_backward_dinput_stream = nullptr;
+    void* block_backward_dweight_stream = nullptr;
+    void* block_backward_pair_ready_event = nullptr;
+    const bool block_backward_pair_streams_available =
+        cuda_stream_create_with_flags != nullptr &&
+        cuda_stream_destroy != nullptr &&
+        cuda_stream_synchronize != nullptr &&
+        cuda_stream_wait_event != nullptr &&
+        cuda_event_create_with_flags != nullptr &&
+        cuda_event_record != nullptr &&
+        cuda_event_destroy != nullptr;
+    const bool block_mlp_fc_concurrent_dinput_dweight_enabled =
+        block_mlp_fc_concurrent_dinput_dweight_requested &&
+        block_backward_pair_streams_available;
     const bool lm_head_side_streams_enabled =
         lm_head_concurrent_dhidden_dweight_enabled || lm_head_pipeline_chunks_enabled;
     if (error.empty() && lm_head_side_streams_enabled) {
@@ -11497,6 +11516,24 @@ int run_transformer_lm_training_json(
                     error = cuda_error(status, "cudaEventCreateWithFlags lm_head_pipeline_dweight_done");
                     break;
                 }
+            }
+        }
+    }
+    if (error.empty() && block_mlp_fc_concurrent_dinput_dweight_enabled) {
+        int status = cuda_stream_create_with_flags(&block_backward_dinput_stream, kCudaStreamNonBlocking);
+        if (status != 0) {
+            error = cuda_error(status, "cudaStreamCreateWithFlags block_backward_dinput");
+        }
+        if (error.empty()) {
+            status = cuda_stream_create_with_flags(&block_backward_dweight_stream, kCudaStreamNonBlocking);
+            if (status != 0) {
+                error = cuda_error(status, "cudaStreamCreateWithFlags block_backward_dweight");
+            }
+        }
+        if (error.empty()) {
+            status = cuda_event_create_with_flags(&block_backward_pair_ready_event, kCudaEventDisableTiming);
+            if (status != 0) {
+                error = cuda_error(status, "cudaEventCreateWithFlags block_backward_pair_ready");
             }
         }
     }
@@ -16340,8 +16377,7 @@ int run_transformer_lm_training_json(
             });
         });
         run_timed_stage("block_backward.mlp_fc", [&]() {
-            auto run_mlp_fc_dweight_bias = [&]() {
-                run_timed_stage("block_backward.mlp_fc.dweight_bias", [&]() {
+            auto run_mlp_fc_dweight_bias_body = [&](void* stream) {
                 if (stored_mlp != nullptr && bf16_mlp_grad_handoff_enabled) {
                     if (error.empty()) {
                         if (bf16_block_dweight_staging_enabled &&
@@ -16354,7 +16390,7 @@ int run_transformer_lm_training_json(
                                     active_rows,
                                     kDim,
                                     kHidden,
-                                    nullptr),
+                                    stream),
                                 label + ".mlp.fc.backward_weight_bias.accumulate.bf16_bits_bf16_grad_to_bf16");
                         } else {
                             auto* dweight_fn = dweight_first_microbatch_beta_zero_enabled
@@ -16370,7 +16406,7 @@ int run_transformer_lm_training_json(
                                         kDim,
                                         kHidden,
                                         dweight_beta,
-                                        nullptr),
+                                        stream),
                                     label + ".mlp.fc.backward_weight_bias.beta.bf16_bits_bf16_grad");
                             } else {
                                 run(linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits(
@@ -16381,20 +16417,23 @@ int run_transformer_lm_training_json(
                                         active_rows,
                                         kDim,
                                         kHidden,
-                                        nullptr),
+                                        stream),
                                     label + ".mlp.fc.backward_weight_bias.accumulate.bf16_bits_bf16_grad");
                             }
                         }
                     }
                 } else if (stored_mlp != nullptr) {
-                    if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16_bits(stored_mlp->ln2_out, grad_fc_out, block.accum_grad_fc_weight, block.accum_grad_fc_bias, active_rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight_bias.accumulate.bf16_bits");
+                    if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16_bits(stored_mlp->ln2_out, grad_fc_out, block.accum_grad_fc_weight, block.accum_grad_fc_bias, active_rows, kDim, kHidden, stream), label + ".mlp.fc.backward_weight_bias.accumulate.bf16_bits");
                 } else {
-                    if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16(tape.ln2_out, grad_fc_out, block.accum_grad_fc_weight, block.accum_grad_fc_bias, active_rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_weight_bias.accumulate.bf16");
+                    if (error.empty()) run(linear_backward_weight_bias_accumulate_bf16(tape.ln2_out, grad_fc_out, block.accum_grad_fc_weight, block.accum_grad_fc_bias, active_rows, kDim, kHidden, stream), label + ".mlp.fc.backward_weight_bias.accumulate.bf16");
                 }
+            };
+            auto run_mlp_fc_dweight_bias = [&]() {
+                run_timed_stage("block_backward.mlp_fc.dweight_bias", [&]() {
+                    run_mlp_fc_dweight_bias_body(nullptr);
                 });
             };
-            auto run_mlp_fc_dinput = [&]() {
-                run_timed_stage("block_backward.mlp_fc.dinput", [&]() {
+            auto run_mlp_fc_dinput_body = [&](void* stream) {
                 if (stored_mlp != nullptr && bf16_mlp_grad_handoff_enabled) {
                     if (error.empty()) {
                         run(linear_backward_input_bf16_bits_weight_bf16(
@@ -16404,15 +16443,48 @@ int run_transformer_lm_training_json(
                                 active_rows,
                                 kDim,
                                 kHidden,
-                                nullptr),
+                                stream),
                             label + ".mlp.fc.backward_input.bf16_bits_weight_bf16");
                     }
                 } else {
-                    if (error.empty()) run(linear_backward_input_weight_bf16(grad_fc_out, block.fc_weight_bf16, grad_ln2, active_rows, kDim, kHidden, nullptr), label + ".mlp.fc.backward_input.weight_bf16");
+                    if (error.empty()) run(linear_backward_input_weight_bf16(grad_fc_out, block.fc_weight_bf16, grad_ln2, active_rows, kDim, kHidden, stream), label + ".mlp.fc.backward_input.weight_bf16");
                 }
+            };
+            auto run_mlp_fc_dinput = [&]() {
+                run_timed_stage("block_backward.mlp_fc.dinput", [&]() {
+                    run_mlp_fc_dinput_body(nullptr);
                 });
             };
-            if (mlp_fc_dinput_before_dweight_enabled) {
+            if (block_mlp_fc_concurrent_dinput_dweight_enabled) {
+                run_timed_stage("block_backward.mlp_fc.dinput_dweight_concurrent", [&]() {
+                    int status = cuda_event_record(block_backward_pair_ready_event, nullptr);
+                    if (status != 0) {
+                        error = cuda_error(status, "cudaEventRecord block_backward_pair_ready");
+                        return;
+                    }
+                    status = cuda_stream_wait_event(block_backward_dinput_stream, block_backward_pair_ready_event, 0);
+                    if (status != 0) {
+                        error = cuda_error(status, "cudaStreamWaitEvent block_backward_dinput");
+                        return;
+                    }
+                    status = cuda_stream_wait_event(block_backward_dweight_stream, block_backward_pair_ready_event, 0);
+                    if (status != 0) {
+                        error = cuda_error(status, "cudaStreamWaitEvent block_backward_dweight");
+                        return;
+                    }
+                    run_mlp_fc_dinput_body(block_backward_dinput_stream);
+                    run_mlp_fc_dweight_bias_body(block_backward_dweight_stream);
+                    status = cuda_stream_synchronize(block_backward_dinput_stream);
+                    if (status != 0) {
+                        error = cuda_error(status, "cudaStreamSynchronize block_backward_dinput");
+                        return;
+                    }
+                    status = cuda_stream_synchronize(block_backward_dweight_stream);
+                    if (status != 0) {
+                        error = cuda_error(status, "cudaStreamSynchronize block_backward_dweight");
+                    }
+                });
+            } else if (mlp_fc_dinput_before_dweight_enabled) {
                 run_mlp_fc_dinput();
                 run_mlp_fc_dweight_bias();
             } else {
@@ -18122,6 +18194,12 @@ int run_transformer_lm_training_json(
             error = cuda_error(status, "cudaEventDestroy lm_head_ce_done");
         }
     }
+    if (block_backward_pair_ready_event != nullptr && cuda_event_destroy != nullptr) {
+        const int status = cuda_event_destroy(block_backward_pair_ready_event);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaEventDestroy block_backward_pair_ready");
+        }
+    }
     if (cuda_event_destroy != nullptr) {
         for (void* event : lm_head_pipeline_ce_events) {
             if (event != nullptr) {
@@ -18158,6 +18236,18 @@ int run_transformer_lm_training_json(
         const int status = cuda_stream_destroy(lm_head_dweight_stream);
         if (status != 0 && error.empty()) {
             error = cuda_error(status, "cudaStreamDestroy lm_head_dweight");
+        }
+    }
+    if (block_backward_dinput_stream != nullptr && cuda_stream_destroy != nullptr) {
+        const int status = cuda_stream_destroy(block_backward_dinput_stream);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaStreamDestroy block_backward_dinput");
+        }
+    }
+    if (block_backward_dweight_stream != nullptr && cuda_stream_destroy != nullptr) {
+        const int status = cuda_stream_destroy(block_backward_dweight_stream);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaStreamDestroy block_backward_dweight");
         }
     }
     if (cuda_handle != nullptr && !skip_exit_device_free_enabled) {
@@ -18744,6 +18834,12 @@ int run_transformer_lm_training_json(
         << (mlp_proj_dinput_before_dweight_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_mlp_fc_dinput_before_dweight_enabled\": "
         << (mlp_fc_dinput_before_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_mlp_fc_concurrent_dinput_dweight_requested\": "
+        << (block_mlp_fc_concurrent_dinput_dweight_requested ? "true" : "false") << ",\n"
+        << "  \"block_backward_pair_streams_available\": "
+        << (block_backward_pair_streams_available ? "true" : "false") << ",\n"
+        << "  \"block_backward_mlp_fc_concurrent_dinput_dweight_enabled\": "
+        << (block_mlp_fc_concurrent_dinput_dweight_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_attn_proj_dinput_before_dweight_enabled\": "
         << (attn_proj_dinput_before_dweight_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_mlp_proj_dgelu_strategy\": \""

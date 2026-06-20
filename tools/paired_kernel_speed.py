@@ -165,6 +165,9 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "block_forward_linear_strategy",
     "block_backward_input_linear_strategy",
     "block_backward_weight_linear_strategy",
+    "block_backward_mlp_fc_concurrent_dinput_dweight_requested",
+    "block_backward_pair_streams_available",
+    "block_backward_mlp_fc_concurrent_dinput_dweight_enabled",
     "attention_backend_strategy",
     "attention_backward_strategy",
 )

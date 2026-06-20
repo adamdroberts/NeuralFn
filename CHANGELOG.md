@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off dense GPT block-backward side-stream diagnostic for the
+  MLP `fc` dInput/dWeight pair. `NFN_NATIVE_GPT_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT=1`
+  or the GPT-2-prefixed alias records a CUDA event on the default stream, waits
+  from two non-blocking side streams, launches the independent MLP `fc` dInput
+  and dWeight+bias work on those streams, and synchronizes before LayerNorm
+  backward consumes `grad_ln2`. Runtime JSON reports
+  `block_backward_mlp_fc_concurrent_dinput_dweight_requested`,
+  `block_backward_pair_streams_available`, and
+  `block_backward_mlp_fc_concurrent_dinput_dweight_enabled`; paired benchmark
+  summaries now print those route fields. This is intentionally not a default:
+  the CUDA 13.3 RTX 5090 same-script gate enabled the route but measured
+  `1.006693x` train-loop wall time and `1.012567x` block-backward time, with
+  `stage.block_backward.mlp_fc.total_ms=1.028021x` versus the serial default.
+  Verification: rebuilt `build/nfn_gpt_native_train`, ran
+  `python -m pytest tests/test_native_gpt2.py -q`, and ran the guarded
+  native-vs-native benchmark with
+  `NFN_SM120_NATIVE_CANDIDATE_ENV='NFN_NATIVE_GPT_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT=1'`.
+
 - **Breaking changes**: dense GPT native training now defaults the tied LM-head
   row chunk to 32768 rows instead of 8192 rows across the compiled C++ trainer,
   Python SDK config, and `train_gpt_native.py` defaults. This is a workstation
