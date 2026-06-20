@@ -237,10 +237,11 @@ diagnostic for replacing the generic row-loss partial-reduction tail with
 `nfn_native_tile_sum_accumulate_float32`. Leave it disabled for normal training;
 the CUDA 13.3 RTX 5090 paired gate measured it slower than the default row-loss
 tail.
-CUDA 13.3.33 post-reinstall paired checks kept 8192 as the default: 16384-row
-chunks regressed train-loop wall time to `1.016019x` and LM-head backward to
-`1.062838x`, while 4096-row chunks improved CE but regressed dWeight and total
-train-loop wall to `1.004875x`.
+CUDA 13.3.33 post-reinstall paired checks keep 32768 rows as the default.
+Retesting `--lm-head-row-chunk-size 8192` against the current 32768-row route
+regressed train-loop wall time to `1.001841x` despite slightly improving the
+isolated LM-head stage. Use 8192 only as an explicit lower-memory reproduction
+knob, not as the workstation default.
 `NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=1` /
 `NFN_NATIVE_GPT2_LM_HEAD_REVERSE_CHUNKS=1` reverses LM-head row-chunk traversal
 for cache-order bisection and reports `lm_head_reverse_chunk_order_enabled`;

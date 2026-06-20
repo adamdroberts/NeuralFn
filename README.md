@@ -28,7 +28,7 @@ to confirm the extension executes GPU tests instead of skipping. After the
 CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 path is correctness
 green for the revisited native and Tile CUDA gates. After reinstalling the WSL
 CUDA toolkit (`cuda-toolkit-13-3`), the GPU-visible full suite passed with
-`1185 passed, 4 skipped, 20 warnings, 468 subtests passed`; the focused native/Tile CUDA
+`1189 passed, 20 warnings, 468 subtests passed`; the focused native/Tile CUDA
 gates, GPT template preset suite, and native no-Torch guard all pass. Dense GPT
 native training now routes the no-bias BF16 LM-head logits GEMM through the TK
 BF16 forward bridge by default for the

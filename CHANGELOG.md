@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revisited the CUDA-visible test set after reinstalling the WSL CUDA toolkit
+  (`cuda-toolkit-13-3`). The last-failed pytest rerun now passes with
+  `1189 passed, 20 warnings, 468 subtests passed`, and the production-path
+  native-vs-llm.kittens parity benchmark without stage timing measures
+  NeuralFn dense GPT native training at `2501.32 ms/step` versus llm.kittens at
+  `2446.91 ms/step` on the dedicated RTX 5090. The remaining `1.022236x`
+  train-loop gap is therefore real kernel work, not stage-timing overhead.
+  The Tile CUDA SDK docs now match the current 32768-row LM-head chunk default;
+  the 8192-row setting is documented as a lower-memory reproduction knob after
+  the same-script gate rejected it at `1.001841x` train-loop wall time.
+
 - Added a default-off dense GPT block-backward side-stream diagnostic for the
   MLP `fc` dInput/dWeight pair. `NFN_NATIVE_GPT_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT=1`
   or the GPT-2-prefixed alias records a CUDA event on the default stream, waits
@@ -34,7 +45,7 @@ Future updates should append new entries here rather than replacing older notes.
   `--native-cuda-lm-head-row-chunk-size 8192`, or
   `NativeGpt2RunConfig(lm_head_row_chunk_size=8192, ...)` explicitly.
   Verification: CUDA-visible full pytest passed with
-  `1185 passed, 4 skipped, 20 warnings, 468 subtests passed`; the 32768-row
+  `1189 passed, 20 warnings, 468 subtests passed`; the 32768-row
   native-vs-native RTX 5090 paired benchmark reduced LM-head chunk launches
   from 320 to 80 over the 5-step run and measured `0.998625x` train-loop wall
   time versus the 8192-row default. The 16384-row candidate regressed at
