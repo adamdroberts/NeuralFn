@@ -70,7 +70,11 @@ weight initialization rather than dataset alias resolution. LM-head cuBLASLt
 expansion, BF16 arena removal, token-shadow removal, threaded token
 initialization, LM-head 4096-row chunks, disabling cuBLASLt plan prewarm, and
 direct bias-gradient first-write probes remain rejected diagnostic switches
-rather than workflow guidance. Dense GPT startup defaults the tied token-weight
+rather than workflow guidance. The QKV dInput/dWeight side-stream diagnostic is
+also rejected as a default: set
+`NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` only for paired
+bisection, since the CUDA 13.3 RTX 5090 same-script run enabled the route but
+slowed train-loop wall time to `1.008821x`. Dense GPT startup defaults the tied token-weight
 initializer to the vector4 CUDA Tile route; set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` only for paired bisection against

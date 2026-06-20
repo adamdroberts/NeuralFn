@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off QKV block-backward side-stream diagnostic:
+  `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` or the GPT-2-prefixed
+  alias records a CUDA event after attention backward, waits from two
+  non-blocking side streams, and launches QKV dInput and QKV dWeight+bias on
+  those streams before synchronizing ahead of LN1 residual backward. Runtime
+  JSON now reports `block_backward_qkv_concurrent_dinput_dweight_requested` and
+  `block_backward_qkv_concurrent_dinput_dweight_enabled`, and
+  `tools/paired_kernel_speed.py` prints both route fields. The route is
+  intentionally not a default: the guarded RTX 5090 same-script benchmark
+  enabled it but measured `1.008821x` train-loop wall time and `0.991322x`
+  tokens/sec against the serial default. Verification: rebuilt
+  `build/nfn_gpt_native_train` and ran the focused source guard
+  `python -m pytest tests/test_native_gpt2.py -q -k 'concurrent or stage_timing or transformer_lm_reports'`.
+
 - Fixed the `nfn` import surface so CLI startup and test imports satisfy both
   contracts: root help and native fast-path startup remain lightweight and do
   not import `nfn_impl` or `torch`, while public planner helpers such as
