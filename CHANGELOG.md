@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed a native BF16/u16-token GPT sampled-loss race in the fused CE
+  loss+backward CUDA Tile kernel. The kernel now synchronizes after reading the
+  target logit for the scalar loss and before overwriting the row logits
+  in-place with BF16 dlogits, matching the ordering required by fused
+  classifier implementations and keeping `--train-loss-every-steps` /
+  validation-loss reporting from racing the classifier backward write.
+  Verification: rebuilt the native Tile ops library, ran focused native GPT
+  source/contract tests, ran CUDA-visible Tile CE/native tests, ran a one-step
+  native GPT smoke with `--train-loss-every-steps 1`, and checked the no-Torch
+  native entrypoint guard.
+
 - Made SM120 native candidate speed checks reject slower measured candidates by
   default. `tools/bench_native_gpt_sm120_candidate.sh` now auto-adds
   `train_loop_wall_ms_per_step=1.000` when a measured candidate changes the Tile

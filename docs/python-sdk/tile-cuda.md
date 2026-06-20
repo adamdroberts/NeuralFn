@@ -408,7 +408,10 @@ columns. When sampled train-loss recording is active on the direct-u16 target
 path,
 `nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets`
 also accumulates the CE scalar while writing those dlogits, replacing the older
-separate training-loss partials pass. The BF16 dlogits feed
+separate training-loss partials pass. That fused loss+backward kernel
+synchronizes the block after the target-logit loss read and before the in-place
+dlogit stores, so sampled train-loss and validation/test loss reads cannot race
+against the BF16 logit overwrite. The BF16 dlogits feed
 `nfn_native_tile_linear_backward_input_bf16_bits_float32` plus the prepacked
 BF16-hidden/BF16-dlogit
 `nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32`

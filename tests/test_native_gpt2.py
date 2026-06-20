@@ -5662,6 +5662,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         "token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets_fused_kernel"
         in kernels_text
     )
+    loss_backward_body = kernels_text.split(
+        "token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets_fused_kernel",
+        1,
+    )[1].split("\n__tile_global__ void token_cross_entropy_backward_chunked_float32_kernel", 1)[0]
+    assert "atomicAdd(loss_total" in loss_backward_body
+    assert "__syncthreads();" in loss_backward_body
     assert "nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32" in header_text

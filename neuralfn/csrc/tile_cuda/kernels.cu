@@ -11120,6 +11120,7 @@ __global__ void token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_
         bf16_bits_to_f32_device(row_logits[static_cast<std::int64_t>(target)]);
     atomicAdd(loss_total, logf(row_denom) + row_max - target_logit);
   }
+  __syncthreads();
 
   if (vec_stores) {
     constexpr std::int64_t kVec = 8;

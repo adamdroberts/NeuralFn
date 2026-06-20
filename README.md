@@ -79,8 +79,10 @@ training still writes the final native checkpoint.
 When sampled training loss is enabled with `--train-loss-every-steps`, the
 default BF16/u16-token native GPT path now fuses public-vocab CE loss
 accumulation with the in-place BF16 dlogits kernel, avoiding the older separate
-loss-partials pass. Validation loss still uses `--eval-every-steps` and remains
-separate from sampled train loss.
+loss-partials pass. The fused kernel synchronizes after the target-logit loss
+read and before overwriting logits with dlogits, so sampled train loss does not
+race the in-place classifier backward write. Validation loss still uses
+`--eval-every-steps` and remains separate from sampled train loss.
 Dense GPT native training also now defaults to eliding the unused FP32
 attention-projection and MLP-projection scratch-tape buffers when BF16
 projection-residual is active. Set
