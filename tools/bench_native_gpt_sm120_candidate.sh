@@ -78,12 +78,19 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
     esac
   fi
   if [[ "$has_candidate_change" == "1" ]]; then
-    MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"
-    case "${STAGE_TIMING,,}" in
+    case "${STARTUP_ONLY,,}" in
       "1"|"true"|"yes"|"on")
-        MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.total_ms=1.000"
-        MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.total_ms=1.000"
-        MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.total_ms=1.000"
+        MAX_CANDIDATE_RATIO_RAW="setup_wall_ms=1.000"
+        ;;
+      *)
+        MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"
+        case "${STAGE_TIMING,,}" in
+          "1"|"true"|"yes"|"on")
+            MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.total_ms=1.000"
+            MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.total_ms=1.000"
+            MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.total_ms=1.000"
+            ;;
+        esac
         ;;
     esac
   fi

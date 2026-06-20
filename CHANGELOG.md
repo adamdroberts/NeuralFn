@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed `tools/bench_native_gpt_sm120_candidate.sh` so measured startup-only
+  bisections (`NFN_SM120_NATIVE_STARTUP_ONLY=1`) auto-gate `setup_wall_ms`
+  instead of `train_loop_wall_ms_per_step`. Startup-only native JSON does not
+  report completed train steps, so the previous default gate rejected startup
+  candidates for a missing train-loop metric before judging the setup timing the
+  run was meant to compare. Updated the README and CLI benchmarking notes.
+  Verification: ran the focused candidate-wrapper test and reran a GPU-visible
+  startup-only candidate benchmark on the dedicated RTX 5090.
+
 - Hardened `tools/check_native_no_torch_deps.py` so the standalone native
   dependency gate fails if the aggregate `.[all]` extra contains `torch`,
   `torchvision`, or `torchaudio`. The JSON report now includes

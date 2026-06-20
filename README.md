@@ -413,7 +413,12 @@ same-script run measured neutral/slightly slower training throughput.
 Set
 `NFN_SM120_NATIVE_STARTUP_ONLY=1` for startup bisections; the wrapper appends
 `--startup-only` to both baseline and candidate while preserving the same
-dataset, batch, checkpoint-disabled, selected-GPU, and idle-load controls. Add
+dataset, batch, checkpoint-disabled, selected-GPU, and idle-load controls. When
+a measured startup-only run has candidate-only changes and no explicit
+`NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` override, the wrapper gates
+`setup_wall_ms=1.000` instead of the absent `train_loop_wall_ms_per_step`
+metric, so startup candidates are judged on setup time rather than rejected for
+missing train-loop metrics. Add
 `--append-native-profile-json-dir /tmp/nfn-profiles`
 when comparing native NeuralFn commands that do not already write JSON; the
 harness appends unique `--profile-json` files without changing the timed native

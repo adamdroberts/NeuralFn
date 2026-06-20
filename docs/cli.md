@@ -823,7 +823,10 @@ GPU; the check uses the selected GPU UUID so a separate display GPU does not
 fail a dedicated compute-GPU run. Pass
 `--max-selected-gpu-utilization-pct N` to fail the run when the selected CUDA
 GPU's `nvidia-smi` utilization is already above `N` before each warmup or
-measured command. When
+measured command. For `tools/bench_native_gpt_sm120_candidate.sh` startup
+bisections, set `NFN_SM120_NATIVE_STARTUP_ONLY=1`; measured candidate runs then
+auto-gate `setup_wall_ms=1.000` unless an explicit max-ratio override is set,
+because startup-only JSON has no `train_loop_wall_ms_per_step` metric. When
 `nvidia-smi` is present, the result JSON includes the resolved
 `cuda_device_selection`, run-level `gpu_before` / `gpu_after` snapshots plus
 per-sample `paired_samples[].gpu_before` / `paired_samples[].gpu_after`

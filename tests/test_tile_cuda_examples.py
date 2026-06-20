@@ -498,6 +498,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
 
     assert proc.returncode == 0, proc.stderr
     text = script.read_text(encoding="utf-8")
+    assert 'MAX_CANDIDATE_RATIO_RAW="setup_wall_ms=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.total_ms=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.total_ms=1.000"' in text
