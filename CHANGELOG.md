@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revisited the CUDA test surface after reinstalling the latest WSL CUDA
+  toolkit (`cuda-toolkit-13-3`). The native GPT/Tile CUDA focused gate passed
+  with `244 passed`, the required GPT template preset gate passed with
+  `26 passed`, `tools/check_native_no_torch_deps.py --skip-artifacts --json`
+  reported `"passed": true`, and the full repository pytest suite passed with
+  `1181 passed, 4 skipped, 20 warnings, 468 subtests passed`. This confirms the
+  previous CUDA/toolkit failure surface is green on the current workstation
+  setup.
+
 - Added route-attribution shape-stat support to the same-script native GPT
   candidate benchmark wrapper. `NFN_SM120_NATIVE_LINEAR_SHAPE_STATS=1` and the
   matching candidate/parity aliases now enable `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1`
