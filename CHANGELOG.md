@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revisited the CUDA-visible test and benchmark surface after installing CUDA
+  Toolkit 13.3.33 for WSL. The focused native/Tile CUDA suite passed with
+  `155 passed`, the broader native GPT/Tile examples suite passed with
+  `243 passed`, and the full repository test suite passed with `781 passed,
+  403 skipped, 16 warnings, 468 subtests passed`. A fresh 5-step, 3-sample
+  llm.kittens parity run on the dedicated RTX 5090 measured NeuralFn at
+  `1.027407x` train-loop wall time and `0.973435x` tokens/sec versus
+  llm.kittens, so the remaining issue is native kernel throughput rather than
+  failing tests or stale CUDA state. Two token-weight startup candidates stayed
+  rejected: vector4-strided token init regressed the token-init substage to
+  `1.010306x`, while threaded token init improved token init to `0.930195x`
+  but regressed setup wall time to `1.039387x`. The native candidate benchmark
+  wrapper now automatically adds `setup.token_weight_init.total_ms=1.000` for
+  startup-only candidates whose candidate library path, env, or candidate args
+  mention token-weight initialization, so future token-init bisections cannot
+  pass only because unrelated setup work shifted. Verification: ran the CUDA
+  gated native/Tile pytest slices, the full pytest suite, the paired parity
+  benchmark, both token-init startup candidates, and the focused wrapper test.
+
 - Rechecked CUDA 13.3.33 startup and LM-head row-chunk bisections after the
   toolkit reinstall and kept the current defaults. Temporary Tile ops libraries
   built with `NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE=8192`, `2048`, and

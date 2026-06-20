@@ -81,6 +81,12 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
     case "${STARTUP_ONLY,,}" in
       "1"|"true"|"yes"|"on")
         MAX_CANDIDATE_RATIO_RAW="setup_wall_ms=1.000"
+        startup_candidate_text="$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB $CANDIDATE_ENV_RAW $CANDIDATE_EXTRA_ARGS_RAW"
+        case "$startup_candidate_text" in
+          *TOKEN_WEIGHT*|*token_weight*)
+            MAX_CANDIDATE_RATIO_RAW+=" setup.token_weight_init.total_ms=1.000"
+            ;;
+        esac
         ;;
       *)
         MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"
