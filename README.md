@@ -4,6 +4,12 @@ NeuralFn is a graph-native neural network framework where each neuron can be a b
 
 NeuralFn supports a scalar graph runtime plus native CUDA trainers. Legacy graph-backed Torch modules remain in the source tree for old experiments, but Torch is no longer an installable NeuralFn dependency extra. The default install is now the lean native/core SDK surface: it does not install Torch, NumPy, tokenizer, dataset, graph-analysis, or server packages. Native GPT training uses cached token shards and the compiled CUDA trainer path without importing `torch`.
 
+The top-level `nfn` module keeps that startup contract when imported as a CLI
+shim: `from nfn import main; main()` can serve root help and native fast-path
+inference without importing `nfn_impl` or `torch`. Planner helpers such as
+`maybe_plan`, `recipe_from_state`, and `render_help` are still available from
+`nfn`, but they load the graph-backed planner lazily when first accessed.
+
 Install extras only for the workflows you need:
 
 ```bash

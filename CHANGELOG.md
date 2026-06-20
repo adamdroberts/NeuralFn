@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the `nfn` import surface so CLI startup and test imports satisfy both
+  contracts: root help and native fast-path startup remain lightweight and do
+  not import `nfn_impl` or `torch`, while public planner helpers such as
+  `maybe_plan`, `recipe_from_state`, and `render_help` are exposed lazily from
+  the same module. The full CUDA 13.3 follow-up pytest run initially failed
+  because `cli/nfn.py` selected the lightweight root shim at import time; after
+  the lazy export fix, the focused CLI/native-startup slice passed
+  (`100 passed, 3 subtests passed`) and the full suite passed with
+  `786 passed, 403 skipped, 16 warnings`. Rebuilt
+  `build/libnfn_native_train_tile_ops.so` and `build/nfn_gpt_native_train`
+  against the installed CUDA toolkit, reran the native no-Torch guard, and
+  confirmed `from nfn import main; main()` for root help leaves both `torch`
+  and `nfn_impl` unloaded. A same-script RTX 5090 benchmark rejected the
+  one-shape LM-head dHidden TK route
+  `NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=768,32768,50304,N,N`: it changed
+  the route counter but regressed train-loop wall time to `1.012665x`, so the
+  default BF16 GEMMEx dHidden route remains in place.
+
 - Revisited the CUDA-visible test set after reinstalling the WSL CUDA toolkit
   (`cuda-toolkit-13-3`). The last-failed pytest rerun now passes with
   `1185 passed, 4 skipped, 20 warnings, 468 subtests passed`, and the production-path

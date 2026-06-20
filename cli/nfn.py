@@ -731,23 +731,65 @@ def _legacy_graph_train_main(_argv: list[str] | None = None) -> int:
     return 2
 
 
-if _is_direct_native_train_cli_train(sys.argv[1:]):
-    main = _direct_native_train_cli_main
-elif _is_explicit_native_gpt_train(sys.argv[1:]):
-    from train_gpt_native import main as main
-elif _is_lightweight_native_gpt_infer(sys.argv[1:]):
-    main = _lightweight_native_gpt_infer_main
-elif _is_lightweight_root_help(sys.argv[1:]):
-    main = _lightweight_root_main
-elif _is_lightweight_command_help(sys.argv[1:]):
-    main = _lightweight_command_help_main
-elif _is_lightweight_kernels_list(sys.argv[1:]):
-    main = _lightweight_kernels_list_main
-elif _is_legacy_graph_train(sys.argv[1:]):
-    main = _legacy_graph_train_main
-else:
-    from nfn_impl import *  # noqa: F401,F403
-    from nfn_impl import main
+def _load_full_impl():
+    import nfn_impl
+
+    return nfn_impl
+
+
+def __getattr__(name: str):
+    if name.startswith("__") and name.endswith("__"):
+        raise AttributeError(f"module 'nfn' has no attribute {name!r}")
+    impl = _load_full_impl()
+    try:
+        return getattr(impl, name)
+    except AttributeError as exc:
+        raise AttributeError(f"module 'nfn' has no attribute {name!r}") from exc
+
+
+def main(
+    argv: list[str] | None = None,
+    *,
+    stdin_isatty: bool | None = None,
+    stdout_isatty: bool | None = None,
+) -> int:
+    tokens = list(sys.argv[1:] if argv is None else argv)
+    if stdin_isatty is None and stdout_isatty is None:
+        if _is_lightweight_root_help(tokens):
+            return _lightweight_root_main(tokens)
+        if _is_lightweight_command_help(tokens):
+            return _lightweight_command_help_main(tokens)
+        if _is_lightweight_kernels_list(tokens):
+            return _lightweight_kernels_list_main(tokens)
+        if _is_lightweight_native_gpt_infer(tokens):
+            return _lightweight_native_gpt_infer_main(tokens)
+    impl = _load_full_impl()
+    kwargs: dict[str, bool] = {}
+    if stdin_isatty is not None:
+        kwargs["stdin_isatty"] = stdin_isatty
+    if stdout_isatty is not None:
+        kwargs["stdout_isatty"] = stdout_isatty
+    return int(impl.main(tokens, **kwargs))
+
+
+if __name__ == "__main__":
+    if _is_direct_native_train_cli_train(sys.argv[1:]):
+        main = _direct_native_train_cli_main
+    elif _is_explicit_native_gpt_train(sys.argv[1:]):
+        from train_gpt_native import main as main
+    elif _is_lightweight_native_gpt_infer(sys.argv[1:]):
+        main = _lightweight_native_gpt_infer_main
+    elif _is_lightweight_root_help(sys.argv[1:]):
+        main = _lightweight_root_main
+    elif _is_lightweight_command_help(sys.argv[1:]):
+        main = _lightweight_command_help_main
+    elif _is_lightweight_kernels_list(sys.argv[1:]):
+        main = _lightweight_kernels_list_main
+    elif _is_legacy_graph_train(sys.argv[1:]):
+        main = _legacy_graph_train_main
+    else:
+        from nfn_impl import *  # noqa: F401,F403
+        from nfn_impl import main
 
 
 if __name__ == "__main__":
