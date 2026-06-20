@@ -49,6 +49,7 @@ std::int64_t nfn_native_tile_trainer_linear_bf16_workspace_a_capacity();
 std::int64_t nfn_native_tile_trainer_linear_bf16_workspace_b_capacity();
 std::int64_t nfn_native_tile_trainer_linear_bf16_cached_a_capacity();
 std::int64_t nfn_native_tile_trainer_linear_bf16_cache_entry_count();
+int nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status();
 std::int64_t nfn_native_tile_trainer_linear_shape_stats_count();
 bool nfn_native_tile_trainer_linear_shape_stats_entry(
     std::int64_t index,

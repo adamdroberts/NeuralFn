@@ -211,6 +211,12 @@ counts between baseline and candidate. If candidate-specific environment knobs
 are set but those counters do not change, the text report warns that timing-only
 improvements should be treated as noise until a route change or separate
 kernel-level attribution confirms the candidate.
+CUDA 13.3 grouped cuBLASLt layout readiness is also reported as
+`linear_cublaslt_grouped_layout_probe_available`,
+`linear_cublaslt_grouped_layout_probe_status`, and
+`linear_cublaslt_grouped_layout_supported`; those fields are diagnostics for
+future grouped-GEMM candidates and do not mean the current default route uses
+grouped matmul.
 
 The compiled `nfn_native_train` frontend can now be used directly as the
 startup-fast dense GPT training command instead of relying on the Python

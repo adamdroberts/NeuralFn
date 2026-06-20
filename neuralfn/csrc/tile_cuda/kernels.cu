@@ -17231,6 +17231,70 @@ std::int64_t trainer_linear_bf16_cache_entry_count() {
 #endif
 }
 
+int trainer_linear_cublaslt_grouped_layout_probe_status() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  std::int64_t rows_host = 1;
+  std::int64_t cols_host = 1;
+  std::int64_t ld_host = 1;
+  std::int64_t* rows_device = nullptr;
+  std::int64_t* cols_device = nullptr;
+  std::int64_t* ld_device = nullptr;
+  cublasLtMatrixLayout_t layout = nullptr;
+  int status = static_cast<int>(cudaMalloc(&rows_device, sizeof(rows_host)));
+  if (status == 0) {
+    status = static_cast<int>(cudaMalloc(&cols_device, sizeof(cols_host)));
+  }
+  if (status == 0) {
+    status = static_cast<int>(cudaMalloc(&ld_device, sizeof(ld_host)));
+  }
+  if (status == 0) {
+    status = static_cast<int>(cudaMemcpy(rows_device, &rows_host, sizeof(rows_host), cudaMemcpyHostToDevice));
+  }
+  if (status == 0) {
+    status = static_cast<int>(cudaMemcpy(cols_device, &cols_host, sizeof(cols_host), cudaMemcpyHostToDevice));
+  }
+  if (status == 0) {
+    status = static_cast<int>(cudaMemcpy(ld_device, &ld_host, sizeof(ld_host), cudaMemcpyHostToDevice));
+  }
+  if (status == 0) {
+    status = static_cast<int>(cublasLtGroupedMatrixLayoutCreate(
+        &layout,
+        CUDA_R_32F,
+        1,
+        rows_device,
+        cols_device,
+        ld_device));
+  }
+  if (layout != nullptr) {
+    const int destroy_status = static_cast<int>(cublasLtMatrixLayoutDestroy(layout));
+    if (status == 0) {
+      status = destroy_status;
+    }
+  }
+  if (rows_device != nullptr) {
+    const int free_status = static_cast<int>(cudaFree(rows_device));
+    if (status == 0) {
+      status = free_status;
+    }
+  }
+  if (cols_device != nullptr) {
+    const int free_status = static_cast<int>(cudaFree(cols_device));
+    if (status == 0) {
+      status = free_status;
+    }
+  }
+  if (ld_device != nullptr) {
+    const int free_status = static_cast<int>(cudaFree(ld_device));
+    if (status == 0) {
+      status = free_status;
+    }
+  }
+  return status;
+#else
+  return -1;
+#endif
+}
+
 std::int64_t trainer_linear_shape_stats_count() {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   std::lock_guard<std::mutex> lock(g_linear_shape_stats_mutex);

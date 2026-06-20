@@ -400,6 +400,33 @@ def test_native_gpt_transformer_lm_exposes_opt_in_lm_head_chunk_pipeline() -> No
     assert "double-buffered-logits-ce-default-stream-side-stream-dhidden-ordered-dweight" in gpt_source
 
 
+def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
+    root = Path(__file__).resolve().parents[1]
+    gpt_source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
+        encoding="utf-8"
+    )
+    tile_header = (root / "neuralfn" / "csrc" / "native_train" / "tile_ops.h").read_text(
+        encoding="utf-8"
+    )
+    tile_source = (root / "neuralfn" / "csrc" / "native_train" / "tile_ops.cu").read_text(
+        encoding="utf-8"
+    )
+    kernels_source = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text(
+        encoding="utf-8"
+    )
+    speed_tool = (root / "tools" / "paired_kernel_speed.py").read_text(encoding="utf-8")
+
+    assert "nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status" in tile_header
+    assert "nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status" in tile_source
+    assert "trainer_linear_cublaslt_grouped_layout_probe_status" in kernels_source
+    assert "cublasLtGroupedMatrixLayoutCreate" in kernels_source
+    assert "linear_cublaslt_grouped_layout_probe_available" in gpt_source
+    assert "linear_cublaslt_grouped_layout_probe_status" in gpt_source
+    assert "linear_cublaslt_grouped_layout_supported" in gpt_source
+    assert "linear_cublaslt_grouped_layout_probe_status" in speed_tool
+    assert "linear_cublaslt_grouped_layout_supported" in speed_tool
+
+
 def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) -> None:
     dataset_path, meta = _write_raw_text_dataset(tmp_path)
 

@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a trainer-facing CUDA 13.3 cuBLASLt grouped-layout capability probe to
+  the raw Tile C ABI. `libnfn_native_train_tile_ops.so` now exports
+  `nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status`, the
+  native GPT runtime JSON reports
+  `linear_cublaslt_grouped_layout_probe_available`,
+  `linear_cublaslt_grouped_layout_probe_status`, and
+  `linear_cublaslt_grouped_layout_supported`, and
+  `tools/paired_kernel_speed.py` includes the probe status in paired native
+  metric output. This is diagnostic plumbing for future grouped-GEMM kernel
+  candidates and does not change the default training route. Verification:
+  rebuilt all native CUDA artifacts, ran `tests/test_native_gpt2.py` (`58
+  passed, 1 skipped`), ran the paired speed focused tests (`2 passed`), ran the
+  no-Torch native entrypoint guard, and ran a one-step TinyStories native GPT
+  smoke. The smoke reported `status: "native-transformer-lm-trained"`,
+  `backend: "tile-cuda"`, `linear_cublaslt_grouped_layout_probe_status: 0`,
+  `linear_cublaslt_grouped_layout_supported: true`, and `passed: true`.
+
 - Added an opt-in dense GPT LM-head row-chunk pipeline candidate behind
   `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` /
   `NFN_NATIVE_GPT2_LM_HEAD_PIPELINE_CHUNKS=1`. The candidate keeps the

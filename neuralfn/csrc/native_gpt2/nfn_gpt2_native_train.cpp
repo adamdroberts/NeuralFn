@@ -3019,6 +3019,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_trainer_linear_bf16_workspace_b_capacity",
         "nfn_native_tile_trainer_linear_bf16_cached_a_capacity",
         "nfn_native_tile_trainer_linear_bf16_cache_entry_count",
+        "nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status",
         "nfn_native_tile_trainer_linear_shape_stats_count",
         "nfn_native_tile_trainer_linear_shape_stats_entry",
         "nfn_native_tile_scaled_dot_product_attention_backward_float32",
@@ -9417,6 +9418,7 @@ int run_transformer_lm_training_json(
     std::int64_t linear_bf16_workspace_b_capacity = 0;
     std::int64_t linear_bf16_cached_a_capacity = 0;
     std::int64_t linear_bf16_cache_entry_count = 0;
+    int linear_cublaslt_grouped_layout_probe_status = -1;
     std::int64_t lm_head_logits_tk_gemm_count = 0;
     std::int64_t lm_head_logits_cublaslt_gemm_count = 0;
     std::int64_t lm_head_logits_bf16_gemm_count = 0;
@@ -9607,6 +9609,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_trainer_linear_bf16_workspace_b_capacity",
         "nfn_native_tile_trainer_linear_bf16_cached_a_capacity",
         "nfn_native_tile_trainer_linear_bf16_cache_entry_count",
+        "nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status",
         "nfn_native_tile_trainer_linear_shape_stats_count",
         "nfn_native_tile_trainer_linear_shape_stats_entry",
         "nfn_native_tile_scaled_dot_product_attention_backward_float32",
@@ -9852,6 +9855,7 @@ int run_transformer_lm_training_json(
     using AttentionStatsErrorFn = int (*)();
     using TrainerLinearStatsResetFn = void (*)();
     using TrainerLinearStatsCountFn = std::int64_t (*)();
+    using TrainerLinearCublasLtProbeFn = int (*)();
     using TrainerLinearShapeStatsEntryFn = bool (*)(
         std::int64_t, int*, int*, int*, int*, int*, int*, std::int64_t*, std::int64_t*);
     using TrainerLinearShapeStatsEntryV2Fn = bool (*)(
@@ -10136,6 +10140,7 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_bf16_workspace_b_capacity_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_cached_a_capacity_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_cache_entry_count_fn = nullptr;
+    TrainerLinearCublasLtProbeFn trainer_linear_cublaslt_grouped_layout_probe_status_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_shape_stats_count_fn = nullptr;
     TrainerLinearShapeStatsEntryFn trainer_linear_shape_stats_entry_fn = nullptr;
     TrainerLinearShapeStatsEntryV2Fn trainer_linear_shape_stats_entry_v2_fn = nullptr;
@@ -10545,6 +10550,10 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_trainer_linear_bf16_cached_a_capacity");
                 trainer_linear_bf16_cache_entry_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_bf16_cache_entry_count");
+                trainer_linear_cublaslt_grouped_layout_probe_status_fn =
+                    load_symbol<TrainerLinearCublasLtProbeFn>(
+                        tile_handle,
+                        "nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status");
                 trainer_linear_shape_stats_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_shape_stats_count");
                 trainer_linear_shape_stats_entry_fn = load_symbol<TrainerLinearShapeStatsEntryFn>(
@@ -10553,6 +10562,10 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_trainer_linear_shape_stats_entry_v2");
                 attention_stats_reset();
                 trainer_linear_stats_reset();
+                if (trainer_linear_cublaslt_grouped_layout_probe_status_fn != nullptr) {
+                    linear_cublaslt_grouped_layout_probe_status =
+                        trainer_linear_cublaslt_grouped_layout_probe_status_fn();
+                }
                 attention_backward_to_qkv_reuse_forward = load_symbol<AttentionBackwardToQkvReuseForwardFn>(
                     tile_handle, "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32");
                 packed_attention_forward = load_symbol<PackedAttentionForwardFn>(
@@ -18312,6 +18325,12 @@ int run_transformer_lm_training_json(
         << "  \"linear_cublaslt_gemm_count\": " << linear_cublaslt_gemm_count << ",\n"
         << "  \"linear_cublaslt_descriptor_cache_enabled\": "
         << (linear_cublaslt_descriptor_cache_enabled ? "true" : "false") << ",\n"
+        << "  \"linear_cublaslt_grouped_layout_probe_available\": "
+        << (trainer_linear_cublaslt_grouped_layout_probe_status_fn != nullptr ? "true" : "false") << ",\n"
+        << "  \"linear_cublaslt_grouped_layout_probe_status\": "
+        << linear_cublaslt_grouped_layout_probe_status << ",\n"
+        << "  \"linear_cublaslt_grouped_layout_supported\": "
+        << (linear_cublaslt_grouped_layout_probe_status == 0 ? "true" : "false") << ",\n"
         << "  \"linear_sgemm_count\": " << linear_sgemm_count << ",\n"
         << "  \"linear_bf16_a_pack_count\": " << linear_bf16_a_pack_count << ",\n"
         << "  \"linear_bf16_a_cache_hit_count\": " << linear_bf16_a_cache_hit_count << ",\n"

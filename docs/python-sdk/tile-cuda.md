@@ -75,6 +75,15 @@ and `native_gpt_parameter_count()` while blocking `torch`, NumPy, tiktoken,
 `server.dataset_manager`, and `nfn_impl`, so lazy public exports stay on the
 no-Torch path.
 
+Native GPT runtime JSON exposes the trainer-facing cuBLASLt grouped-layout
+probe as `linear_cublaslt_grouped_layout_probe_available`,
+`linear_cublaslt_grouped_layout_probe_status`, and
+`linear_cublaslt_grouped_layout_supported`. The probe creates and destroys a
+minimal grouped matrix-layout descriptor through the raw Tile C ABI so CUDA
+13.3 grouped-GEMM experiments can be gated by actual local support before a
+candidate route is benchmarked. It is diagnostic-only; a supported probe does
+not change the default dense GPT training schedule.
+
 Set `NFN_NATIVE_GPT_STAGE_TIMING=1` only for CUDA event attribution runs; the
 same-script throughput wrappers leave it off by default. The dense GPT timing
 JSON includes `block_backward.mlp_proj.grad_out_bf16`, which isolates the
