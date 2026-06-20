@@ -60,6 +60,13 @@ REQUIRED_OPTIONAL_DEPENDENCY_PREFIXES = (
     "tiktoken",
     "torch",
 )
+FORBIDDEN_OPTIONAL_EXTRA_DEPENDENCY_PREFIXES = {
+    "all": (
+        "torch",
+        "torchvision",
+        "torchaudio",
+    ),
+}
 DEFAULT_PYTHON_ENTRYPOINTS = (
     (
         "train_gpt_fast_command",
@@ -457,6 +464,9 @@ def project_dependency_report(repo_root: Path) -> dict[str, object]:
                 offenders.append(str(dependency))
                 break
     optional_hits: dict[str, list[str]] = {prefix: [] for prefix in REQUIRED_OPTIONAL_DEPENDENCY_PREFIXES}
+    forbidden_optional_hits: dict[str, list[str]] = {
+        extra_name: [] for extra_name in FORBIDDEN_OPTIONAL_EXTRA_DEPENDENCY_PREFIXES
+    }
     for extra_name, extra_dependencies in optional_dependencies.items():
         for dependency in extra_dependencies:
             normalized = str(dependency).strip().lower().replace("_", "-")
@@ -468,15 +478,31 @@ def project_dependency_report(repo_root: Path) -> dict[str, object]:
                     or normalized.startswith(prefix + "[")
                 ):
                     optional_hits[prefix].append(str(extra_name))
+            for prefix in FORBIDDEN_OPTIONAL_EXTRA_DEPENDENCY_PREFIXES.get(str(extra_name), ()):
+                if (
+                    normalized == prefix
+                    or normalized.startswith(prefix + ">")
+                    or normalized.startswith(prefix + "=")
+                    or normalized.startswith(prefix + "[")
+                ):
+                    forbidden_optional_hits.setdefault(str(extra_name), []).append(str(dependency))
     missing_optional = [
         prefix for prefix, extra_names in optional_hits.items() if not extra_names
     ]
+    forbidden_optional_hits = {
+        extra_name: hits for extra_name, hits in forbidden_optional_hits.items() if hits
+    }
     return {
         "name": "pyproject_default_dependencies",
         "path": str(pyproject),
-        "passed": not offenders and not missing_optional,
+        "passed": not offenders and not missing_optional and not forbidden_optional_hits,
         "offenders": offenders,
         "forbidden_default_dependency_prefixes": list(FORBIDDEN_PROJECT_DEPENDENCY_PREFIXES),
+        "forbidden_optional_extra_dependency_prefixes": {
+            extra_name: list(prefixes)
+            for extra_name, prefixes in FORBIDDEN_OPTIONAL_EXTRA_DEPENDENCY_PREFIXES.items()
+        },
+        "forbidden_optional_extra_hits": forbidden_optional_hits,
         "optional_dependency_hits": optional_hits,
         "missing_optional_dependency_prefixes": missing_optional,
     }

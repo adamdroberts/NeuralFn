@@ -931,10 +931,11 @@ native/server/dataset stack and graph-backed Torch workflows.
 
 After rebuilding native training artifacts, run the dependency gate to verify
 the default package metadata still keeps Torch out of hard dependencies, the
-compiled artifacts still avoid Torch, c10, and Python runtime libraries, and
-default native GPT Python training and inference entrypoints can construct
-their compiled-C++ commands or inspect native checkpoints while imports of
-`torch`, NumPy, tiktoken, `server.dataset_manager`, and `nfn_impl` are blocked.
+aggregate `.[all]` extra remains Torch-free, the compiled artifacts still avoid
+Torch, c10, and Python runtime libraries, and default native GPT Python
+training and inference entrypoints can construct their compiled-C++ commands or
+inspect native checkpoints while imports of `torch`, NumPy, tiktoken,
+`server.dataset_manager`, and `nfn_impl` are blocked.
 The gate also imports the top-level native SDK exports such as
 `NativeGptRunConfig`, `build_native_gpt_compiled_cli_run_config()`,
 `native_gpt_kernel_backend()`, and `native_gpt_parameter_count()` under the same

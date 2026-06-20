@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Hardened `tools/check_native_no_torch_deps.py` so the standalone native
+  dependency gate fails if the aggregate `.[all]` extra contains `torch`,
+  `torchvision`, or `torchaudio`. The JSON report now includes
+  `forbidden_optional_extra_dependency_prefixes` and
+  `forbidden_optional_extra_hits`, and the native GPT verifier test asserts the
+  new fields. Verification: ran the focused native dependency tests, the full
+  no-Torch entrypoint guard, and `git diff --check`.
+
 - **Breaking changes:** Removed Torch from the aggregate `.[all]` optional
   dependency set. The default install and native CUDA Tile extras were already
   Torch-free; now `pip install -e ".[all]"` also stays on the native/server/

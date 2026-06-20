@@ -142,6 +142,13 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
         "server.dataset_manager",
         "nfn_impl",
     }
+    project_dependencies = payload["project_dependencies"]
+    assert project_dependencies["forbidden_optional_extra_dependency_prefixes"]["all"] == [
+        "torch",
+        "torchvision",
+        "torchaudio",
+    ]
+    assert project_dependencies["forbidden_optional_extra_hits"] == {}
     entrypoints = {entry["name"]: entry for entry in payload["python_entrypoints"]}
     assert entrypoints["train_gpt_fast_command"]["passed"] is True
     assert entrypoints["train_gpt2_evo_fast_command"]["passed"] is True
