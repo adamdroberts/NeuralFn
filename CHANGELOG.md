@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revalidated the native CUDA Tile training stack after installing CUDA Toolkit
+  13.3.33 for WSL. Every native trainer binary and Python extension was rebuilt
+  against the new toolkit, and the dedicated RTX 5090 pass now has no remaining
+  CUDA correctness failures. Performance-only benchmark gates still reject
+  slower routes rather than becoming defaults: extra-large-K cuBLASLt LM-head
+  dHidden regressed train-loop wall time to `1.034147x`, the retested
+  cuBLASLt one-shape heuristic overrides for `768,65536,3072,N,N` and
+  `768,50304,8192,N,T` remained slower, token-weight vector4/threaded startup
+  initializers were not enough to promote, cudaMallocAsync worsened setup
+  wall time, and full-logit LM-head reuse again exceeded the useful paired
+  benchmark window. The staged 10-step llm.kittens parity sample still shows
+  remaining native GPU work (`1.047862x` train-loop wall time, `0.952442x`
+  tokens/sec), concentrated in block backward and LM-head backward, not a
+  Python/Torch/graph-editor fallback. Verification: `bash
+  tools/build_native_gpt2_all.sh`, `NFN_TILE_CUDA_TEST=1 python -m pytest
+  tests/test_native_gpt2.py tests/test_tile_cuda_examples.py
+  tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py
+  tests/test_tile_cuda_optimizer.py -q -rs` (`240 passed`), `python -m pytest
+  tests/test_template_presets.py -x -q` (`26 passed`), `python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`, and
+  `git diff --check`.
+
 - Extended paired CUDA benchmark metric gates with statistic-qualified checks.
   Existing `--max-candidate-ratio METRIC=RATIO` entries still gate the mean
   candidate-over-baseline ratio, while `median:METRIC=RATIO`,

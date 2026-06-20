@@ -534,7 +534,11 @@ Set `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1` or
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1` only for paired diagnostics
 that try LM-head-sized BF16 shapes with `k > 32768` through cuBLASLt. The
 dedicated RTX 5090 check routed LM-head dHidden to cuBLASLt but measured it
-slower than the default GEMMEx fallback, so this remains default-off. Set
+slower than the default GEMMEx fallback, so this remains default-off. The
+CUDA 13.3.33 WSL recheck after the toolkit reinstall still rejected it:
+the route moved LM-head dHidden calls to cuBLASLt but measured `1.034147x`
+train-loop wall time and `1.502430x` targeted dHidden time versus the default.
+Set
 `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT=0` or
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT=0` to force the older BF16 `cublasGemmEx`
 bridge. Tied LM-head BF16 logits use the SM120 ThunderKittens GEMM
@@ -1273,6 +1277,14 @@ For automated candidate rejection, pass repeatable
 `max:stage.block_backward.total_ms=1.010`; the statistic defaults to `mean`.
 Missing metrics fail the gate so a run cannot pass without the stage
 attribution it was supposed to measure.
+After the CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 validation
+pass rebuilt every native trainer and passed the GPU-visible native/Tile pytest
+gate (`240` tests), the GPT template preset suite (`26` tests), and the
+no-Torch native dependency verifier. Performance candidate gates are still
+allowed to fail when they reject slower routes; rejected reruns include
+extra-large-K cuBLASLt LM-head dHidden, one-shape cuBLASLt heuristic overrides
+for `768,65536,3072,N,N` and `768,50304,8192,N,T`, token-weight vector4/threaded
+startup initializers, cudaMallocAsync arenas, and full-logit LM-head reuse.
 Unsupported template names and custom graph files still report
 `selected-graph-native-trainer-missing` instead of falling back to Torch.
 

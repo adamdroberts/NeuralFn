@@ -23,16 +23,19 @@ generic Python Tile extension and the trainer-facing raw C ABI both build from
 to confirm the extension executes GPU tests instead of skipping. After the
 CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 path is correctness
 green for the revisited native and Tile CUDA gates (`tests/test_native_gpt2.py`,
-`tests/test_tile_cuda_examples.py`, the opt-in `tests/test_tile_cuda_gpu.py`
-smoke, and the native no-Torch guard all pass). Dense GPT native training now
-routes the no-bias BF16
-LM-head logits GEMM through the TK BF16 forward bridge by default for the
-default `50304,8192,768,T,N` row-chunk shape. The current CUDA 13.3.33
-same-script 5-step parity sample on the dedicated RTX 5090 measured NeuralFn at
-`2533.160 ms/step` versus llm.kittens at `2460.950 ms/step`
-(`1.029377x` train-loop wall time, `0.971123x` tokens/sec), so the remaining
-gap is still native GPU kernel work rather than Torch, Python, or graph-editor
-execution. Because parity samples can move with reference-run noise, keep using
+`tests/test_tile_cuda_examples.py`, `tests/test_tile_cuda_gpu.py`,
+`tests/test_tile_cuda_ops.py`, `tests/test_tile_cuda_optimizer.py`, the GPT
+template preset suite, and the native no-Torch guard all pass). Dense GPT
+native training now routes the no-bias BF16 LM-head logits GEMM through the TK
+BF16 forward bridge by default for the
+default `50304,8192,768,T,N` row-chunk shape. The current staged CUDA 13.3.33
+10-step parity sample on the dedicated RTX 5090 measured NeuralFn at
+`2564.590 ms/step` versus llm.kittens at `2447.451 ms/step`
+(`1.047862x` train-loop wall time, `0.952442x` tokens/sec); the latest
+instrumentation-free sample measured a smaller but still-open gap at
+`1.028292x`. The remaining gap is still native GPU kernel work rather than
+Torch, Python, or graph-editor execution. Because parity samples can move with
+reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
 build. LM-head cuBLASLt expansion and threaded token-weight initialization
 remain rejected diagnostic switches rather than workflow guidance.
