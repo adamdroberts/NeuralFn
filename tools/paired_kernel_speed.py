@@ -201,6 +201,7 @@ NATIVE_TEXT_METRIC_KEYS = (
     "stage.lm_head_backward.dweight.total_ms",
     "stage.lm_head_backward.dhidden_dweight_concurrent.total_ms",
     "stage.lm_head_backward.loss_copy.total_ms",
+    "stage.final_norm_backward.total_ms",
     "stage.block_backward.total_ms",
     "stage.block_backward.mlp_fc.total_ms",
     "stage.block_backward.mlp_proj.total_ms",
@@ -235,6 +236,9 @@ NATIVE_TEXT_METRIC_KEYS = (
     "stage.block_backward.ln1_residual.dinput_add.total_ms",
     "stage.block_backward.ln1_residual.dinput.total_ms",
     "stage.block_backward.ln1_residual.add.total_ms",
+    "stage.embedding_backward.total_ms",
+    "stage.gradient_zero.total_ms",
+    "stage.gradient_clip.total_ms",
     "stage.adamw_update.total_ms",
 )
 NATIVE_JSON_OUT_FLAGS = ("--json-out", "--profile-json", "--stage-profile-json")

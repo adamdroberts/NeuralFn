@@ -151,7 +151,11 @@ Native stage-timed JSON already records every CUDA bucket, and the text summary
 prints the LM-head backward substages (`logits`, `ce`, `dhidden`, `dweight`,
 optional `dhidden_dweight_concurrent`) plus block-backward substages such as
 `mlp_proj.*`, `attn_sdpa.to_qkv`, and `qkv.dweight_bias` so parity runs can
-attribute the current RTX 5090 gap without opening sidecar JSON by hand.
+attribute the current RTX 5090 gap without opening sidecar JSON by hand. The
+same text summary also surfaces optimizer-step support stages:
+`stage.final_norm_backward.total_ms`, `stage.embedding_backward.total_ms`,
+`stage.gradient_zero.total_ms`, `stage.gradient_clip.total_ms`, and
+`stage.adamw_update.total_ms`.
 When a command exits nonzero and `--continue-on-error` is not set, the helper now
 prints both stdout and stderr tails so CUDA driver/runtime messages from
 external baselines are not hidden behind an empty stderr block.
@@ -511,7 +515,9 @@ command. Add `--native-stage-timing` only for attribution runs that should set
 `stage.block_recompute.total_ms`, and `stage.block_backward.total_ms` beside
 total step time. The text report also includes block-backward child metrics for
 MLP projection/FC, attention projection, attention SDPA, QKV, and LayerNorm
-residual substages, so candidate gates can target metrics such as
+residual substages, plus final-norm, embedding-backward, gradient-zero,
+gradient-clip, and AdamW update support stages, so candidate gates can target
+metrics such as
 `stage.block_backward.qkv.dinput.total_ms` or
 `stage.block_backward.attn_proj.dinput.total_ms` directly. When native profile
 JSON includes packed-attention backward section counters, the same summary also

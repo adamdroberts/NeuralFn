@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Exposed native optimizer support-stage timing in the paired SM120 benchmark
+  text summaries. `tools/paired_kernel_speed.py` already preserved every
+  `timing.stage_timing` row in JSON; it now also prints and ratios
+  `stage.final_norm_backward.total_ms`, `stage.embedding_backward.total_ms`,
+  `stage.gradient_zero.total_ms`, `stage.gradient_clip.total_ms`, and
+  `stage.adamw_update.total_ms` beside the LM-head and block-backward hot
+  buckets. This makes CUDA Tile candidate gates cover end-to-end optimizer-step
+  support work without opening profile sidecars. Verification:
+  `python -m pytest tests/test_tile_cuda_examples.py -q`,
+  `python tools/check_native_no_torch_deps.py --skip-artifacts --json`,
+  `git diff --check`, and a CUDA-visible one-step native paired run on the
+  dedicated RTX 5090 with `NFN_SM120_NATIVE_STAGE_TIMING=1`.
+
 - Rechecked the dense GPT token-weight startup default after the CUDA 13.3 WSL
   toolkit reinstall. The temporary fast-int32 rollback candidate was not
   promoted: rebuilding the trainer-facing Tile ops library and native GPT CLI,

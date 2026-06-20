@@ -75,6 +75,8 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"total_ms\\\": 2.0, \\\"avg_ms\\\": 1.0, \\\"count\\\": 2}, "
                 "{\\\"name\\\": \\\"lm_head_backward.dweight\\\", "
                 "\\\"total_ms\\\": 1.5, \\\"avg_ms\\\": 0.75, \\\"count\\\": 2}, "
+                "{\\\"name\\\": \\\"final_norm_backward\\\", "
+                "\\\"total_ms\\\": 0.8, \\\"avg_ms\\\": 0.4, \\\"count\\\": 2}, "
                 "{\\\"name\\\": \\\"block_backward.mlp_proj\\\", "
                 "\\\"total_ms\\\": 5.0, \\\"avg_ms\\\": 2.5, \\\"count\\\": 2}, "
                 "{\\\"name\\\": \\\"block_backward.mlp_proj.dweight_bias\\\", "
@@ -84,7 +86,15 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "{\\\"name\\\": \\\"block_backward.attn_proj.dinput\\\", "
                 "\\\"total_ms\\\": 9.0, \\\"avg_ms\\\": 4.5, \\\"count\\\": 2}, "
                 "{\\\"name\\\": \\\"block_backward.attn_sdpa.to_qkv\\\", "
-                "\\\"total_ms\\\": 6.0, \\\"avg_ms\\\": 3.0, \\\"count\\\": 2}]}, "
+                "\\\"total_ms\\\": 6.0, \\\"avg_ms\\\": 3.0, \\\"count\\\": 2}, "
+                "{\\\"name\\\": \\\"embedding_backward\\\", "
+                "\\\"total_ms\\\": 0.9, \\\"avg_ms\\\": 0.45, \\\"count\\\": 2}, "
+                "{\\\"name\\\": \\\"gradient_zero\\\", "
+                "\\\"total_ms\\\": 0.6, \\\"avg_ms\\\": 0.6, \\\"count\\\": 1}, "
+                "{\\\"name\\\": \\\"gradient_clip\\\", "
+                "\\\"total_ms\\\": 1.1, \\\"avg_ms\\\": 1.1, \\\"count\\\": 1}, "
+                "{\\\"name\\\": \\\"adamw_update\\\", "
+                "\\\"total_ms\\\": 2.2, \\\"avg_ms\\\": 2.2, \\\"count\\\": 1}]}, "
                 "\\\"steps_completed\\\": 5, \\\"linear_tk_gemm_count\\\": 3, "
                 "\\\"linear_cublaslt_gemm_count\\\": 4, \\\"linear_bf16_gemm_count\\\": 7, "
                 "\\\"lm_head_logits_tk_gemm_count\\\": 2, "
@@ -142,6 +152,7 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["stage.lm_head_backward.ce.total_ms"]["mean"] == 1.0
     assert payload["candidate_native_metrics"]["stage.lm_head_backward.dhidden.total_ms"]["mean"] == 2.0
     assert payload["candidate_native_metrics"]["stage.lm_head_backward.dweight.total_ms"]["mean"] == 1.5
+    assert payload["candidate_native_metrics"]["stage.final_norm_backward.total_ms"]["mean"] == 0.8
     assert payload["candidate_native_metrics"]["stage.block_backward.mlp_proj.total_ms"]["mean"] == 5.0
     assert (
         payload["candidate_native_metrics"]["stage.block_backward.mlp_proj.dweight_bias.total_ms"]["mean"]
@@ -150,6 +161,10 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["stage.block_backward.mlp_fc.dinput.total_ms"]["mean"] == 8.0
     assert payload["candidate_native_metrics"]["stage.block_backward.attn_proj.dinput.total_ms"]["mean"] == 9.0
     assert payload["candidate_native_metrics"]["stage.block_backward.attn_sdpa.to_qkv.total_ms"]["mean"] == 6.0
+    assert payload["candidate_native_metrics"]["stage.embedding_backward.total_ms"]["mean"] == 0.9
+    assert payload["candidate_native_metrics"]["stage.gradient_zero.total_ms"]["mean"] == 0.6
+    assert payload["candidate_native_metrics"]["stage.gradient_clip.total_ms"]["mean"] == 1.1
+    assert payload["candidate_native_metrics"]["stage.adamw_update.total_ms"]["mean"] == 2.2
     assert "gpus" in payload["gpu_before"]
     assert "compute_processes" in payload["gpu_before"]
     assert "gpu_before" in payload["paired_samples"][0]
@@ -198,11 +213,16 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "stage.lm_head_backward.ce.total_ms: mean=1.000000" in proc.stdout
     assert "stage.lm_head_backward.dhidden.total_ms: mean=2.000000" in proc.stdout
     assert "stage.lm_head_backward.dweight.total_ms: mean=1.500000" in proc.stdout
+    assert "stage.final_norm_backward.total_ms: mean=0.800000" in proc.stdout
     assert "stage.block_backward.mlp_proj.total_ms: mean=5.000000" in proc.stdout
     assert "stage.block_backward.mlp_proj.dweight_bias.total_ms: mean=4.000000" in proc.stdout
     assert "stage.block_backward.mlp_fc.dinput.total_ms: mean=8.000000" in proc.stdout
     assert "stage.block_backward.attn_proj.dinput.total_ms: mean=9.000000" in proc.stdout
     assert "stage.block_backward.attn_sdpa.to_qkv.total_ms: mean=6.000000" in proc.stdout
+    assert "stage.embedding_backward.total_ms: mean=0.900000" in proc.stdout
+    assert "stage.gradient_zero.total_ms: mean=0.600000" in proc.stdout
+    assert "stage.gradient_clip.total_ms: mean=1.100000" in proc.stdout
+    assert "stage.adamw_update.total_ms: mean=2.200000" in proc.stdout
 
 
 def test_paired_kernel_speed_tool_dry_run_plan_does_not_launch_commands() -> None:
