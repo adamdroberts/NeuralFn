@@ -6001,6 +6001,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert ".ce.forward.public_vocab_strided_bf16_bits_u16_targets" in gpt2_source_text
     assert "ce.backward.inplace.public_vocab_strided_bf16_bits_u16_targets" in gpt2_source_text
     assert "lm_head_classifier_backward_loss_bf16_u16" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD" in gpt2_source_text
+    assert "lm_head_fused_loss_backward_enabled" in gpt2_source_text
+    assert "lm_head_ce_loss_backward_fused_enabled" in gpt2_source_text
     assert "row-chunked-public-vocab-bf16-u16-loss-dlogits-tile-abi" in gpt2_source_text
     assert "ce_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_workspace" in gpt2_source_text
     assert "nfn_native_tile_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace" in header_text

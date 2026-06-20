@@ -951,6 +951,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "attention_backward_tk_timing_count": 96,
                 "lm_head_logits_linear_strategy": "padded-lm-head-bf16-cublaslt-fallback",
                 "lm_head_dhidden_linear_strategy": "bf16-cublas-gemmex",
+                "lm_head_ce_loss_backward_strategy": "separate-loss-partials-reduction-then-dlogits",
                 "lm_head_classifier_strategy_contract": {
                     "reference_full_bf16_logit_bytes": 6593445888,
                     "native_chunk_bf16_logit_bytes": 825819136,
@@ -1009,6 +1010,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["attention_backward_tk_timing_count"] == 96
     assert metrics["lm_head_logits_linear_strategy"] == "padded-lm-head-bf16-cublaslt-fallback"
     assert metrics["lm_head_dhidden_linear_strategy"] == "bf16-cublas-gemmex"
+    assert metrics["lm_head_ce_loss_backward_strategy"] == "separate-loss-partials-reduction-then-dlogits"
     assert metrics["lm_head_classifier.reference_full_bf16_logit_bytes"] == 6593445888
     assert metrics["lm_head_classifier.native_chunk_bf16_logit_bytes"] == 825819136
     assert metrics["lm_head_classifier.resident_logit_reduction_ratio"] == 8.0
@@ -1040,6 +1042,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
         "status": ["native-sidecar-test"],
         "lm_head_logits_linear_strategy": ["padded-lm-head-bf16-cublaslt-fallback"],
         "lm_head_dhidden_linear_strategy": ["bf16-cublas-gemmex"],
+        "lm_head_ce_loss_backward_strategy": ["separate-loss-partials-reduction-then-dlogits"],
     }
 
 

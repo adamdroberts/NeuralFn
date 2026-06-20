@@ -11350,6 +11350,13 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_DIRECT_U16_TOKENS",
                               "NFN_NATIVE_GPT2_DIRECT_U16_TOKENS"}),
             true);
+    const bool lm_head_fused_loss_backward_enabled =
+        lm_head_bf16_logits_enabled &&
+        direct_u16_token_ids_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD",
+                              "NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD"}),
+            true);
     const bool lm_head_concurrent_dhidden_dweight_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT",
@@ -14763,6 +14770,7 @@ int run_transformer_lm_training_json(
             }
             const bool use_fused_ce_loss_backward =
                 record_loss &&
+                lm_head_fused_loss_backward_enabled &&
                 lm_head_bf16_logits_enabled &&
                 lm_head_public_vocab_ce_enabled &&
                 direct_u16_token_ids_enabled &&
@@ -18481,6 +18489,8 @@ int run_transformer_lm_training_json(
                 ? "explicit-cudaDeviceSynchronize-then-blocking-cudaMemcpy-d2h"
                 : "blocking-cudaMemcpy-d2h")
         << "\",\n"
+        << "  \"lm_head_fused_loss_backward_enabled\": "
+        << (lm_head_fused_loss_backward_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_backward_strategy\": \""
         << (lm_head_public_vocab_ce_enabled
                 ? (lm_head_bf16_logits_enabled
@@ -18494,8 +18504,14 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"lm_head_ce_loss_backward_fused_available\": "
         << (ce_backward_loss_inplace_strided_bf16_bits_u16_targets != nullptr ? "true" : "false") << ",\n"
+        << "  \"lm_head_ce_loss_backward_fused_enabled\": "
+        << (lm_head_fused_loss_backward_enabled &&
+                    lm_head_classifier_backward_loss_bf16_u16 != nullptr
+                ? "true"
+                : "false") << ",\n"
         << "  \"lm_head_ce_loss_backward_strategy\": \""
-        << (ce_backward_loss_inplace_strided_bf16_bits_u16_targets != nullptr
+        << (lm_head_fused_loss_backward_enabled &&
+                    lm_head_classifier_backward_loss_bf16_u16 != nullptr
                 ? (lm_head_skip_ce_pad_zero_enabled
                        ? "fused-loss-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"
                        : "fused-loss-accumulate-and-dlogits-public-vocab-bf16-u16-targets")

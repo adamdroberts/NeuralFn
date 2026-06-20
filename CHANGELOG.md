@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-on diagnostic gate for the native dense-GPT LM-head fused
+  loss+backward classifier route. Set
+  `NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0` or
+  `NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD=0` to force the older separate
+  loss-partials reduction before CE backward while keeping the same row-chunked
+  BF16 dlogits contract for dHidden/dWeight. Runtime JSON now reports the
+  fused-loss requested/enabled state and `tools/paired_kernel_speed.py`
+  summarizes `lm_head_ce_loss_backward_strategy`. The diagnostic was rejected
+  as a default change: a short 3-step, 2-sample probe looked slightly faster,
+  but the stronger 5-step, 3-sample warmup-confirmation run failed gates at
+  `1.001484x` train-loop wall time, `1.003244x` block backward, and
+  `1.000194x` MLP projection backward. Verification: rebuilt
+  `build/libnfn_native_train_tile_ops.so` and `build/nfn_gpt_native_train`,
+  ran a one-step CUDA smoke of the disabled route, and ran the paired native
+  benchmark confirmation on the dedicated RTX 5090.
+
 - Revisited the failed-test surface after the CUDA Toolkit 13.3.33 WSL
   reinstall. `nvcc --version` reports release `13.3, V13.3.33`, `nvidia-smi`
   reports CUDA UMD `13.3` with the RTX 5090 idle and no compute processes, and

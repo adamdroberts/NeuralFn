@@ -287,6 +287,15 @@ LM-head classifier route changes instead of relying only on coarse stage timing.
 This keeps the LM-head classifier path auditable while the next kernel step
 replaces the ABI internals with a cooperative classifier plus dHidden/dWeight
 kernel.
+`NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0` (or the GPT-2 alias
+`NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD=0`) disables the default fused
+loss-accumulate+dlogits classifier path for same-script bisection, making
+training loss use the separate loss-partials reduction before CE backward.
+Runtime JSON reports `lm_head_fused_loss_backward_enabled`,
+`lm_head_ce_loss_backward_fused_enabled`, and
+`lm_head_ce_loss_backward_strategy`. Keep the default enabled: the CUDA 13.3
+RTX 5090 confirmation run for the disabled route regressed train-loop wall time
+to `1.001484x` and failed the block-backward gates.
 
 The native dense-GPT BF16 LM-head CE backward path keeps the forward
 row-chunk order because paired dedicated-RTX-5090 timing showed reverse chunk
