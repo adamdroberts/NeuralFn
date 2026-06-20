@@ -239,18 +239,22 @@ CUDA 13.3 grouped cuBLASLt layout readiness is also reported as
 `linear_cublaslt_grouped_layout_supported`; those fields are diagnostics for
 future grouped-GEMM candidates and do not mean the current default route uses
 grouped matmul.
-Set `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1`,
-`NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS=1`, or
-`NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM=1` to run the CUDA 13.3 BF16 cuBLASLt
-plan prewarm diagnostic before the train loop. Native JSON reports
+The native trainer now prewarms CUDA 13.3 BF16 cuBLASLt plans by default for
+real training runs, but leaves prewarm off for `--startup-only` probes so
+startup diagnostics do not pay the extra setup cost. Set
+`NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=0`,
+`NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS=0`, or
+`NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM=0` to disable it for paired bisection, or
+set the same variables to `1` to force it during startup-only diagnostics.
+Native JSON reports
 `linear_cublaslt_plan_prewarm_available`,
 `linear_cublaslt_plan_prewarm_enabled`,
 `linear_cublaslt_plan_prewarm_attempted_count`,
 `linear_cublaslt_plan_prewarm_success_count`, and
 `linear_cublaslt_plan_prewarm_failure_count`, and setup timing includes
-`setup.cublaslt_plan_prewarm`. This remains opt-in: the dedicated RTX 5090
-same-script retest improved train-loop timing but added enough setup cost and
-tiny block-backward regressions that it is not promoted as a default route.
+`setup.cublaslt_plan_prewarm`. The dedicated RTX 5090 CUDA 13.3 retest measured
+the prewarmed route at `0.989405x` train-loop wall time and `0.964634x`
+LM-head backward time, while startup-only remains unprewarmed by default.
 
 The compiled `nfn_native_train` frontend can now be used directly as the
 startup-fast dense GPT training command instead of relying on the Python

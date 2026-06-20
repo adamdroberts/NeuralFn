@@ -9636,7 +9636,7 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS",
                               "NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS",
                               "NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM"}),
-            false);
+            !cfg.startup_only);
     struct LinearShapeStat {
         int path = 0;
         int m = 0;

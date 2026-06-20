@@ -433,6 +433,7 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS" in gpt_source
     assert "NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS" in gpt_source
     assert "NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM" in gpt_source
+    assert "!cfg.startup_only" in gpt_source
     assert "linear_cublaslt_grouped_layout_probe_available" in gpt_source
     assert "linear_cublaslt_grouped_layout_probe_status" in gpt_source
     assert "linear_cublaslt_grouped_layout_supported" in gpt_source

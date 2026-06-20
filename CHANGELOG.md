@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Promoted CUDA 13.3 BF16 cuBLASLt plan prewarm to the default native dense-GPT
+  training route while keeping it disabled for `--startup-only` diagnostics.
+  The existing `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS`,
+  `NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS`, and
+  `NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM` environment variables still override
+  the default for paired bisection. On the dedicated RTX 5090, the 3-step,
+  3-sample warmup-confirmed candidate measured `0.989405x` train-loop wall
+  time, `1.010710x` tokens/sec, `0.964634x` LM-head backward, and `0.888244x`
+  LM-head dHidden versus the previous prewarm-off default; total block backward
+  remained below baseline at `0.998072x`. The same run showed why the default
+  is guarded away from startup-only probes: setup wall time rose to `1.141699x`
+  when the plans were prewarmed. Verification: paired RTX 5090 benchmark through
+  `tools/bench_native_gpt_sm120_candidate.sh` with
+  `NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM=1`, focused native GPT static tests,
+  native GPT CLI rebuild, and `git diff --check`.
+
 - Tightened the native dense-GPT SM120 candidate wrapper for LM-head overlap
   experiments. Stage-timed candidates whose candidate env/args mention
   `LM_HEAD_PIPELINE_CHUNKS` now auto-gate the emitted
