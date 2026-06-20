@@ -468,14 +468,22 @@ script sample/checkpoint cadence. `tools/build_native_train_tile_ops.sh`
 defaults to the SM120 ThunderKittens-backed bf16 attention bridge when
 `LLM_KITTENS_ROOT` and `TK_ROOT` point at the local llm.kittens and
 ThunderKittens checkouts; that build now mirrors the llm.kittens SM120 NVCC
-threading, host-compiler, data-prep, memory, and LayerNorm tuning flags while
-leaving GEMM dispatch on NeuralFn's initialized cublasLt path. Set
-`NFN_TILE_CUDA_USE_TK_ATTENTION=0` for the older float32 row-scan diagnostic
-build, or override `NFN_TILE_CUDA_ARCH` explicitly.
+threading, host-compiler, data-prep, memory, LayerNorm, and cuBLASLt GEMM
+tuning flags while leaving runtime dispatch on NeuralFn's initialized cuBLASLt
+path. CUDA Toolkit 13.3 rejects several raw TK GEMM instantiations that exceed
+the default static shared-memory cap, so the trainer-facing shared-library build
+defines `LLMK_SM120_USE_CUBLASLT_GEMM` by default and normalizes inherited
+`NFN_TILE_CUDA_ARCH=sm_120` / `compute_120` settings to `sm_120a` /
+`compute_120a` when TK attention is enabled. Set `NFN_TILE_CUDA_USE_TK_ATTENTION=0`
+for the older float32 row-scan diagnostic build, or override
+`NFN_TILE_CUDA_ARCH` explicitly.
 
 For same-script kernel candidate builds, `tools/build_native_train_tile_ops.sh` accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and `NFN_TILE_CUDA_EXTRA_LDLIBS`, for example `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1" bash tools/build_native_train_tile_ops.sh /tmp/libnfn_candidate.so`; leave those variables unset for the default supported library.
 
-The SM120 bridge also supports candidate builds with `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_CUBLASLT_GEMM"`; NeuralFn initializes the llm.kittens cuBLASLt handles before dispatching through that compile-mode path. It remains a benchmark-only candidate because the RTX 5090 paired run measured it slower than the default NeuralFn dispatch.
+The SM120 bridge initializes the llm.kittens cuBLASLt handles before dispatching
+through the default compile-mode path. Raw TK GEMM bisections that intentionally
+avoid cuBLASLt should be built as local experiments only, because CUDA 13.3 may
+reject over-shared kernel instantiations at `ptxas` time.
 
 Native GPT BF16 cross-entropy kernels default to 1024 threads per row. For paired launch-configuration bisection, set `NFN_NATIVE_GPT_CE_BF16_THREADS`, `NFN_NATIVE_GPT2_CE_BF16_THREADS`, or `NFN_TILE_CUDA_CE_BF16_THREADS` to one of `128`, `256`, `512`, or `1024`; unsupported values fall back to 1024.
 

@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the trainer-facing Tile CUDA shared-library build on CUDA Toolkit
+  13.3.33 by defaulting `tools/build_native_train_tile_ops.sh` to the same
+  SM120 cuBLASLt GEMM compile route used by llm.kittens and by normalizing
+  inherited `NFN_TILE_CUDA_ARCH=sm_120` / `compute_120` settings to `sm_120a` /
+  `compute_120a` when TK attention is enabled. Without this, CUDA 13.3 `ptxas`
+  rejected several raw TK GEMM instantiations with static shared-memory usage
+  above the default `0xc000` cap, breaking `tests/test_native_gpt2.py` build
+  coverage after the WSL CUDA reinstall. Updated README and Python SDK Tile CUDA
+  docs to make the supported build route explicit. Verification: reran the
+  CUDA-gated Tile CUDA test suite on the dedicated RTX 5090 (`154 passed`),
+  reproduced the native build failure, rebuilt the raw Tile ops library with
+  CUDA 13.3.33, reran the exact failing tests (`2 passed`), and reran the
+  broader native GPT / Tile examples / dependency slice (`92 passed`).
+
 - Fixed `tools/bench_native_gpt_sm120_candidate.sh` so measured startup-only
   bisections (`NFN_SM120_NATIVE_STARTUP_ONLY=1`) auto-gate `setup_wall_ms`
   instead of `train_loop_wall_ms_per_step`. Startup-only native JSON does not

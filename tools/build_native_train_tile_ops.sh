@@ -11,6 +11,11 @@ EXTRA_LDLIBS=()
 USE_TK_ATTENTION="${NFN_TILE_CUDA_USE_TK_ATTENTION:-1}"
 CUDA_ARCH="${NFN_TILE_CUDA_ARCH:-$([[ "${USE_TK_ATTENTION}" == "1" ]] && printf 'sm_120a' || printf 'sm_120')}"
 if [[ "${USE_TK_ATTENTION}" == "1" ]]; then
+  if [[ "${CUDA_ARCH}" == "sm_120" ]]; then
+    CUDA_ARCH="sm_120a"
+  elif [[ "${CUDA_ARCH}" == "compute_120" ]]; then
+    CUDA_ARCH="compute_120a"
+  fi
   LLM_KITTENS_ROOT="${LLM_KITTENS_ROOT:-/mnt/disk2/dev/open-source/llm.kittens}"
   TK_ROOT="${TK_ROOT:-/mnt/disk2/dev/open-source/ThunderKittens}"
   EXTRA_NVCC_FLAGS+=(
@@ -28,6 +33,7 @@ if [[ "${USE_TK_ATTENTION}" == "1" ]]; then
     "-DLLMK_SM120_DPREP_WARPS=3"
     "-DLLMK_SM120_MEMORY_BLOCK_SIZE=1024"
     "-DLLMK_SM120_LAYERNORM_BWD_BLOCKS_PER_SM=1"
+    "-DLLMK_SM120_USE_CUBLASLT_GEMM"
     "-DNFN_TILE_CUDA_USE_TK_ATTENTION=1"
     "-I${LLM_KITTENS_ROOT}"
     "-I${TK_ROOT}/include"

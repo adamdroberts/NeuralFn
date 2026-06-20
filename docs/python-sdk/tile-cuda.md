@@ -58,6 +58,15 @@ The trainer-facing raw C ABI build is separate:
 bash tools/build_native_train_tile_ops.sh
 ```
 
+On SM120 with TK attention enabled, that script defines
+`LLMK_SM120_USE_CUBLASLT_GEMM` by default to match the supported llm.kittens
+CUDA 13.3 build path. It also normalizes inherited
+`NFN_TILE_CUDA_ARCH=sm_120` / `compute_120` settings to `sm_120a` /
+`compute_120a` for TK builds. CUDA Toolkit 13.3 rejects several raw TK GEMM
+instantiations that exceed the default static shared-memory cap under the
+generic target, so local raw-TK GEMM bisections should be treated as experiments
+rather than the supported trainer-facing library build.
+
 After rebuilding the native GPT CLI or trainer-facing Tile ops library, verify
 the compiled artifacts did not regain Torch, c10, or Python runtime links:
 
