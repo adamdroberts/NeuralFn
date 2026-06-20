@@ -17,6 +17,11 @@ std::int64_t attention_tk_workspace_element_capacity();
 std::int64_t attention_tk_workspace_row_capacity();
 std::int64_t token_cross_entropy_workspace_allocation_count();
 std::int64_t token_cross_entropy_workspace_row_capacity();
+void reset_lm_head_classifier_chunk_stats();
+std::int64_t lm_head_classifier_chunk_launch_count();
+std::int64_t lm_head_classifier_last_rows();
+std::int64_t lm_head_classifier_last_vocab();
+std::int64_t lm_head_classifier_last_row_stride();
 std::int64_t attention_forward_row_fallback_count();
 std::int64_t attention_forward_scalar_launch_count();
 int attention_forward_row_last_error();
@@ -1287,6 +1292,16 @@ void launch_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u
     std::int64_t row_stride,
     float loss_scale,
     cudaStream_t stream);
+void launch_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* row_max,
+    float* row_denom,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    cudaStream_t stream);
 void launch_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets(
     std::uint16_t* logits,
     const std::uint16_t* targets,
@@ -1297,6 +1312,15 @@ void launch_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targ
     float loss_scale,
     cudaStream_t stream);
 void launch_token_cross_entropy_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* loss_total,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    cudaStream_t stream);
+void launch_lm_head_classifier_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
     std::uint16_t* logits,
     const std::uint16_t* targets,
     float* loss_total,
@@ -1741,6 +1765,26 @@ std::int64_t nfn_native_tile_token_cross_entropy_workspace_allocation_count() {
 
 std::int64_t nfn_native_tile_token_cross_entropy_workspace_row_capacity() {
     return neuralfn::tile_cuda::token_cross_entropy_workspace_row_capacity();
+}
+
+void nfn_native_tile_lm_head_classifier_stats_reset() {
+    neuralfn::tile_cuda::reset_lm_head_classifier_chunk_stats();
+}
+
+std::int64_t nfn_native_tile_lm_head_classifier_chunk_launch_count() {
+    return neuralfn::tile_cuda::lm_head_classifier_chunk_launch_count();
+}
+
+std::int64_t nfn_native_tile_lm_head_classifier_last_rows() {
+    return neuralfn::tile_cuda::lm_head_classifier_last_rows();
+}
+
+std::int64_t nfn_native_tile_lm_head_classifier_last_vocab() {
+    return neuralfn::tile_cuda::lm_head_classifier_last_vocab();
+}
+
+std::int64_t nfn_native_tile_lm_head_classifier_last_row_stride() {
+    return neuralfn::tile_cuda::lm_head_classifier_last_row_stride();
 }
 
 std::int64_t nfn_native_tile_attention_forward_row_fallback_count() {
@@ -4366,6 +4410,50 @@ int nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_no_pad_zer
         logits,
         targets,
         loss_total,
+        rows,
+        vocab,
+        row_stride,
+        loss_scale,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_lm_head_classifier_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* loss_total,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_lm_head_classifier_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+        logits,
+        targets,
+        loss_total,
+        rows,
+        vocab,
+        row_stride,
+        loss_scale,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* row_max_workspace,
+    float* row_denom_workspace,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
+        logits,
+        targets,
+        row_max_workspace,
+        row_denom_workspace,
         rows,
         vocab,
         row_stride,

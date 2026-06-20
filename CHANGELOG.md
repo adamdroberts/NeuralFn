@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a dedicated native Tile ABI surface for the dense-GPT LM-head
+  classifier row-chunk path. The raw shared library now exports
+  `nfn_native_tile_lm_head_classifier_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets`
+  and
+  `nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace`
+  plus `nfn_native_tile_lm_head_classifier_*` reset/count/shape counters. The
+  native dense-GPT trainer requires and calls those symbols for the default
+  BF16/u16 public-vocab dlogits route, including the timing-oriented
+  no-train-loss path and the loss-recording path. Runtime JSON now reports
+  whether the LM-head classifier chunk kernel is available/enabled, how many
+  chunks launched, and the last rows/vocab/stride processed. This is an
+  auditable ABI step toward the remaining cooperative LM-head
+  classifier+dHidden+dWeight kernel; it does not claim to close the
+  llm.kittens parity gap by itself. Verification: rebuilt
+  `build/libnfn_native_train_tile_ops.so` and `build/nfn_gpt_native_train`,
+  reran the full native GPT pytest file with CUDA access (`59 passed`), reran
+  `tools/check_native_no_torch_deps.py --json`, and ran a one-step native
+  TinyStories training proof that reported
+  `lm_head_classifier_chunk_kernel_enabled: true`,
+  `lm_head_classifier_chunk_launch_count: 64`, and the expected
+  `8192 x 50257` public-vocab row chunk with row stride `50304`.
+
 - Added a shape-selective BF16/BF16 BGRADB diagnostic for native dense GPT
   dWeight+bias routing. `NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE` and
   `NFN_TILE_CUDA_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE` accept the existing

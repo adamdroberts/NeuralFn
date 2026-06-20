@@ -86,6 +86,10 @@ std::atomic<std::int64_t> g_attention_forward_row_attr_const_size_bytes{0};
 std::atomic<std::int64_t> g_attention_forward_row_attr_local_size_bytes{0};
 std::atomic<std::int64_t> g_token_cross_entropy_workspace_allocation_count{0};
 std::atomic<std::int64_t> g_token_cross_entropy_workspace_row_capacity{0};
+std::atomic<std::int64_t> g_lm_head_classifier_chunk_launch_count{0};
+std::atomic<std::int64_t> g_lm_head_classifier_last_rows{0};
+std::atomic<std::int64_t> g_lm_head_classifier_last_vocab{0};
+std::atomic<std::int64_t> g_lm_head_classifier_last_row_stride{0};
 struct TokenCrossEntropyWorkspace {
   float* row_max = nullptr;
   float* row_denom = nullptr;
@@ -16863,6 +16867,24 @@ void launch_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u
       logits, targets, rows, vocab, row_stride, loss_scale, vec_stores, vec_loads, use_exp2, false);
 }
 
+void launch_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* row_max,
+    float* row_denom,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    cudaStream_t stream) {
+  g_lm_head_classifier_chunk_launch_count.fetch_add(1, std::memory_order_relaxed);
+  g_lm_head_classifier_last_rows.store(rows, std::memory_order_relaxed);
+  g_lm_head_classifier_last_vocab.store(vocab, std::memory_order_relaxed);
+  g_lm_head_classifier_last_row_stride.store(row_stride, std::memory_order_relaxed);
+  launch_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
+      logits, targets, row_max, row_denom, rows, vocab, row_stride, loss_scale, stream);
+}
+
 void launch_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets(
     std::uint16_t* logits,
     const std::uint16_t* targets,
@@ -16895,6 +16917,23 @@ void launch_token_cross_entropy_backward_loss_inplace_strided_no_pad_zero_bf16_b
   const bool use_exp2 = cross_entropy_bf16_exp2_enabled();
   token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
       logits, targets, loss_total, rows, vocab, row_stride, loss_scale, vec_stores, vec_loads, use_exp2, false);
+}
+
+void launch_lm_head_classifier_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* loss_total,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    cudaStream_t stream) {
+  g_lm_head_classifier_chunk_launch_count.fetch_add(1, std::memory_order_relaxed);
+  g_lm_head_classifier_last_rows.store(rows, std::memory_order_relaxed);
+  g_lm_head_classifier_last_vocab.store(vocab, std::memory_order_relaxed);
+  g_lm_head_classifier_last_row_stride.store(row_stride, std::memory_order_relaxed);
+  launch_token_cross_entropy_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+      logits, targets, loss_total, rows, vocab, row_stride, loss_scale, stream);
 }
 
 void launch_masked_token_cross_entropy_backward_float32(
@@ -17742,6 +17781,29 @@ std::int64_t token_cross_entropy_workspace_allocation_count() {
 
 std::int64_t token_cross_entropy_workspace_row_capacity() {
   return g_token_cross_entropy_workspace_row_capacity.load(std::memory_order_relaxed);
+}
+
+void reset_lm_head_classifier_chunk_stats() {
+  g_lm_head_classifier_chunk_launch_count.store(0, std::memory_order_relaxed);
+  g_lm_head_classifier_last_rows.store(0, std::memory_order_relaxed);
+  g_lm_head_classifier_last_vocab.store(0, std::memory_order_relaxed);
+  g_lm_head_classifier_last_row_stride.store(0, std::memory_order_relaxed);
+}
+
+std::int64_t lm_head_classifier_chunk_launch_count() {
+  return g_lm_head_classifier_chunk_launch_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t lm_head_classifier_last_rows() {
+  return g_lm_head_classifier_last_rows.load(std::memory_order_relaxed);
+}
+
+std::int64_t lm_head_classifier_last_vocab() {
+  return g_lm_head_classifier_last_vocab.load(std::memory_order_relaxed);
+}
+
+std::int64_t lm_head_classifier_last_row_stride() {
+  return g_lm_head_classifier_last_row_stride.load(std::memory_order_relaxed);
 }
 
 std::int64_t attention_forward_row_fallback_count() {

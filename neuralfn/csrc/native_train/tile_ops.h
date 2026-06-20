@@ -19,6 +19,11 @@ std::int64_t nfn_native_tile_attention_tk_workspace_element_capacity();
 std::int64_t nfn_native_tile_attention_tk_workspace_row_capacity();
 std::int64_t nfn_native_tile_token_cross_entropy_workspace_allocation_count();
 std::int64_t nfn_native_tile_token_cross_entropy_workspace_row_capacity();
+void nfn_native_tile_lm_head_classifier_stats_reset();
+std::int64_t nfn_native_tile_lm_head_classifier_chunk_launch_count();
+std::int64_t nfn_native_tile_lm_head_classifier_last_rows();
+std::int64_t nfn_native_tile_lm_head_classifier_last_vocab();
+std::int64_t nfn_native_tile_lm_head_classifier_last_row_stride();
 std::int64_t nfn_native_tile_attention_forward_row_fallback_count();
 std::int64_t nfn_native_tile_attention_forward_scalar_launch_count();
 int nfn_native_tile_attention_forward_row_last_error();
@@ -161,6 +166,27 @@ int nfn_native_tile_evo_adopt_candidate_float32(
     float* target,
     std::int64_t elements,
     std::int64_t candidate_count,
+    void* cuda_stream);
+
+int nfn_native_tile_lm_head_classifier_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* loss_total,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    void* cuda_stream);
+
+int nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* row_max_workspace,
+    float* row_denom_workspace,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
     void* cuda_stream);
 
 int nfn_native_tile_uint16_to_int64(

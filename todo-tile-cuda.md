@@ -47,6 +47,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Expose global gradient norm clip scale finalization and device-scalar gradient scaling through the native ABI.
 - [x] Expose token embedding, absolute position embedding, RMSNorm, LayerNorm, softmax, scaled dot-product attention, token CE partials, and masked token CE partials through the native ABI.
 - [x] Expose token CE logits backward and masked token CE logits backward through the native ABI.
+- [x] Expose the dense-GPT LM-head classifier row-chunk path as a distinct
+  native Tile ABI route with launch/shape counters, separate from the generic
+  token CE symbols. The current symbol still performs BF16/u16 public-vocab
+  loss+dlogits over each row chunk; the remaining parity work is to replace its
+  internals with a cooperative classifier plus LM-head dHidden/dWeight kernel
+  without reintroducing full resident logits.
 - [x] Add GPT-2 evo `--print-plan` compiled C++ preflight that reports the AdamW/NVFP4/evo-layer schedule and required candidate-evaluation kernels without Python/Torch.
 - [x] Add GPT-2 compiled-CLI SDK handoff config that passes cached dataset alias/path directly to the C++ shard resolver without Python `meta.json` or token-shard validation.
 - [x] Add GPT-2 native `--backend tile-cuda` / SDK `kernel_backend="tile-cuda"` preflight that reports required raw Tile ABI symbols and `--check-tile-ops` validation without Python/Torch.

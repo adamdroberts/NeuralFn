@@ -271,6 +271,18 @@ when evaluating a fused classifier/LM-head-backward kernel or a memory-gated
 full-logit candidate. The paired benchmark helper extracts and prints the
 contract's full/chunk BF16 byte counts, chunk rows/count, and resident-logit
 reduction ratio alongside LM-head stage timing.
+The raw Tile ABI also exposes the LM-head classifier row-chunk route as a
+distinct symbol,
+`nfn_native_tile_lm_head_classifier_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets`,
+plus the no-loss
+`nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace`
+variant and `nfn_native_tile_lm_head_classifier_*` counters. Native dense-GPT
+runs now report `lm_head_classifier_chunk_kernel_available`,
+`lm_head_classifier_chunk_kernel_enabled`,
+`lm_head_classifier_chunk_launch_count`, and the last rows/vocab/stride handled
+by that route. This keeps the LM-head classifier path auditable while the next
+kernel step replaces the ABI internals with a cooperative classifier plus
+dHidden/dWeight kernel.
 
 The native dense-GPT BF16 LM-head CE backward path keeps the forward
 row-chunk order because paired dedicated-RTX-5090 timing showed reverse chunk
