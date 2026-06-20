@@ -13,9 +13,10 @@ Future updates should append new entries here rather than replacing older notes.
   NeuralFn dense GPT native training at `2501.32 ms/step` versus llm.kittens at
   `2446.91 ms/step` on the dedicated RTX 5090. The remaining `1.022236x`
   train-loop gap is therefore real kernel work, not stage-timing overhead.
-  The Tile CUDA SDK docs now match the current 32768-row LM-head chunk default;
-  the 8192-row setting is documented as a lower-memory reproduction knob after
-  the same-script gate rejected it at `1.001841x` train-loop wall time.
+  The README, CLI guide, and Tile CUDA SDK docs now match the current 32768-row
+  LM-head chunk default; the 8192-row setting is documented as a lower-memory
+  reproduction knob after the same-script gate rejected it at `1.001841x`
+  train-loop wall time.
 
 - Added a default-off dense GPT block-backward side-stream diagnostic for the
   MLP `fc` dInput/dWeight pair. `NFN_NATIVE_GPT_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT=1`
