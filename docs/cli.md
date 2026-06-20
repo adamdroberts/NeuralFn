@@ -31,7 +31,10 @@ HuggingFace datasets, graph-analysis packages, or server dependencies. Install
 `pip install -e ".[datasets]"` for raw-text tokenization and HF dataset cache
 materialization, `pip install -e ".[graph]"` for Python graph helpers,
 `pip install -e ".[server]"` for the FastAPI/editor/MCP backend, and
-`pip install -e ".[torch]"` only for graph-backed Torch training.
+`pip install -e ".[torch]"` only for graph-backed Torch training. The root
+`.[all]` extra is also Torch-free; use `pip install -e ".[all,torch]"` for a
+development install that includes both the native/server/dataset stack and the
+legacy Torch runtime.
 
 ## Commands
 

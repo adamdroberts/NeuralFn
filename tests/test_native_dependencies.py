@@ -16,6 +16,7 @@ def test_torch_is_optional_not_a_core_dependency() -> None:
     assert any(str(item).startswith("torch") for item in optional["torch"])
     assert any(str(item).startswith("ninja") for item in optional["tile-cuda"])
     assert not any(str(item).startswith("torch") for item in optional["tile-cuda"])
+    assert not any(str(item).startswith("torch") for item in optional["all"])
 
     egg_info_requires = Path("neuralfn.egg-info/requires.txt")
     if egg_info_requires.exists():
@@ -32,6 +33,7 @@ def test_torch_is_optional_not_a_core_dependency() -> None:
             requirements_by_group.setdefault(current_group, []).append(line)
         assert not any(item.startswith("torch") for item in requirements_by_group["core"])
         assert not any(item.startswith("torch") for item in requirements_by_group.get("tile-cuda", []))
+        assert not any(item.startswith("torch") for item in requirements_by_group.get("all", []))
         assert any(item.startswith("torch") for item in requirements_by_group.get("torch", []))
 
 

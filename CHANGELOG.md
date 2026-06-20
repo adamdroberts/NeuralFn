@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- **Breaking changes:** Removed Torch from the aggregate `.[all]` optional
+  dependency set. The default install and native CUDA Tile extras were already
+  Torch-free; now `pip install -e ".[all]"` also stays on the native/server/
+  dataset stack without installing PyTorch. Install `pip install -e
+  ".[all,torch]"` or `pip install -e ".[torch]"` for legacy graph-backed Torch
+  trainers and the PyTorch Tile extension loader. Verification: updated the
+  native dependency test so `optional-dependencies.all` and installed
+  `requires.txt` groups cannot reintroduce Torch, then ran the focused
+  dependency test and the no-Torch native entrypoint guard.
+
 - Added a trainer-facing CUDA 13.3 cuBLASLt grouped-layout capability probe to
   the raw Tile C ABI. `libnfn_native_train_tile_ops.so` now exports
   `nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status`, the

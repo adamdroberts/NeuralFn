@@ -56,7 +56,6 @@ all = [
   "redis>=5.0",
   "sqlalchemy>=2.0",
   "tiktoken>=0.5",
-  "torch>=2.0",
   "uvicorn>=0.23",
 ]
 

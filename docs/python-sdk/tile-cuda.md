@@ -50,7 +50,7 @@ CUDA Tile native builds require CUDA Toolkit 13.3 or newer, `cuda_tile.h`, C++20
 pip install -e ".[tile-cuda]"
 ```
 
-Install `pip install -e ".[datasets]"` separately for raw-text tokenization and HF dataset cache materialization, `pip install -e ".[server]"` for the FastAPI/editor/MCP backend, and `pip install -e ".[torch]"` only for graph-backed PyTorch execution or the legacy PyTorch Tile extension loader.
+Install `pip install -e ".[datasets]"` separately for raw-text tokenization and HF dataset cache materialization, `pip install -e ".[server]"` for the FastAPI/editor/MCP backend, and `pip install -e ".[torch]"` only for graph-backed PyTorch execution or the legacy PyTorch Tile extension loader. The aggregate `.[all]` extra intentionally remains Torch-free; use `pip install -e ".[all,torch]"` only when a workstation needs both the native/server/dataset stack and legacy graph-backed Torch workflows.
 
 The trainer-facing raw C ABI build is separate:
 

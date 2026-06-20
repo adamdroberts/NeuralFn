@@ -13,8 +13,11 @@ pip install -e ".[datasets]"      # raw-text tokenization and HF dataset cache s
 pip install -e ".[graph]"         # Python graph analysis/runtime helpers
 pip install -e ".[server]"        # FastAPI editor/backend and MCP server
 pip install -e ".[torch]"         # legacy graph-backed Torch trainers
-pip install -e ".[all]"           # full development workstation
+pip install -e ".[all]"           # full native/server/dataset workstation, without Torch
 ```
+
+`.[all]` intentionally excludes Torch. Combine extras when you need the legacy
+graph-backed Torch runtime, for example `pip install -e ".[all,torch]"`.
 
 CUDA Tile development targets CUDA Toolkit 13.3+ on the SM120 workstation. The
 generic Python Tile extension and the trainer-facing raw C ABI both build from
@@ -921,6 +924,10 @@ Torch workflows explicitly when needed:
 ```bash
 pip install -e ".[torch]"
 ```
+
+The aggregate `.[all]` extra is also Torch-free now; use
+`pip install -e ".[all,torch]"` when a development environment needs both the
+native/server/dataset stack and graph-backed Torch workflows.
 
 After rebuilding native training artifacts, run the dependency gate to verify
 the default package metadata still keeps Torch out of hard dependencies, the
