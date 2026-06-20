@@ -25,6 +25,16 @@ Future updates should append new entries here rather than replacing older notes.
   gated native/Tile pytest slices, the full pytest suite, the paired parity
   benchmark, both token-init startup candidates, and the focused wrapper test.
 
+- Rejected the remaining broad cuBLASLt heuristic-policy toggles for the native
+  dense GPT hot path under CUDA 13.3.33. `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY=min_waves`
+  failed the same-script stage-timed gate at `1.007645x` train-loop wall time,
+  `1.000305x` LM-head backward, and `1.013865x` block backward; `max_waves`
+  failed harder at `1.023965x` train-loop wall time, `1.032178x` LM-head
+  backward, and `1.030164x` block backward. Both runs had no tracked route
+  counter change, so the default per-shape heuristic selection stays in place.
+  Verification: ran 3-step, 2-sample paired native GPT candidate benchmarks with
+  stage timing and the default hot-metric gates on the dedicated RTX 5090.
+
 - Rechecked CUDA 13.3.33 startup and LM-head row-chunk bisections after the
   toolkit reinstall and kept the current defaults. Temporary Tile ops libraries
   built with `NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE=8192`, `2048`, and
