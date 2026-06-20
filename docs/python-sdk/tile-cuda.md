@@ -461,6 +461,18 @@ writes dlogits, but stayed non-default after the dedicated RTX 5090 5-step,
 3-sample check measured `1.001048x` train-loop wall time and `0.998959x`
 tokens/sec versus the default CE -> dHidden -> dWeight order. Runtime JSON
 reports `lm_head_dweight_before_dhidden_enabled`.
+Set `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` only for same-script LM-head
+schedule profiling. The opt-in candidate keeps the current bounded row-chunked
+classifier memory model but allocates two BF16 logit chunks instead of one,
+computes logits and public-vocab CE/dlogits on the default stream, and queues
+dHidden plus serialized dWeight accumulation on nonblocking side streams before
+the chunk buffer is reused. Runtime JSON reports
+`lm_head_pipeline_chunks_requested`, `lm_head_pipeline_chunks_enabled`,
+`lm_head_pipeline_logit_buffer_count`,
+`lm_head_pipeline_extra_bf16_logit_bytes`, and the schedule strategy
+`double-buffered-logits-ce-default-stream-side-stream-dhidden-ordered-dweight`.
+Keep it disabled for normal training until the paired RTX 5090 gate proves it
+beats the default serial chunk schedule.
 For cuBLASLt BGRADB dWeight+bias routes, the default writes the epilogue bias
 gradient into Tile-owned scratch
 and accumulates it into `grad_bias`. Runtime JSON reports

@@ -382,6 +382,24 @@ def test_native_gpt_transformer_lm_exposes_opt_in_bf16_attention_grad_out_handof
     assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_backward_to_qkv_bf16_bits_from_saved_lse_bf16_from_bf16_merged_grad_float32" in tile_source
 
 
+def test_native_gpt_transformer_lm_exposes_opt_in_lm_head_chunk_pipeline() -> None:
+    root = Path(__file__).resolve().parents[1]
+    gpt_source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
+        encoding="utf-8"
+    )
+
+    assert "NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS" in gpt_source
+    assert "NFN_NATIVE_GPT2_LM_HEAD_PIPELINE_CHUNKS" in gpt_source
+    assert "lm_head_pipeline_chunks_requested" in gpt_source
+    assert "lm_head_pipeline_chunks_enabled" in gpt_source
+    assert "lm_head_pipeline_logit_buffer_count" in gpt_source
+    assert "lm_head_pipeline_extra_bf16_logit_bytes" in gpt_source
+    assert "lm_head_backward.pipeline_buffer_wait" in gpt_source
+    assert "lm_head_backward.pipeline_queue" in gpt_source
+    assert "lm_head_backward.pipeline_final_wait" in gpt_source
+    assert "double-buffered-logits-ce-default-stream-side-stream-dhidden-ordered-dweight" in gpt_source
+
+
 def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) -> None:
     dataset_path, meta = _write_raw_text_dataset(tmp_path)
 

@@ -253,6 +253,15 @@ row-chunk order probe that runs LM-head dWeight before dHidden after CE writes
 dlogits; the dedicated RTX 5090 5-step, 3-sample check measured `1.001048x`
 train-loop wall time and `0.998959x` tokens/sec, so the default remains
 CE -> dHidden -> dWeight.
+`NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` is a new opt-in LM-head schedule
+candidate for same-script benchmarking. It doubles the bounded BF16 logit
+scratch from one 8,192-row chunk to two chunks, computes logits/CE on the
+default stream, and queues dHidden plus ordered dWeight on side streams while
+the next chunk starts. Runtime JSON reports
+`lm_head_pipeline_chunks_requested`, `lm_head_pipeline_chunks_enabled`,
+`lm_head_pipeline_logit_buffer_count`, `lm_head_pipeline_extra_bf16_logit_bytes`,
+and the active `lm_head_dhidden_dweight_schedule_strategy`. Leave it unset for
+normal training until paired RTX 5090 gates prove a durable win.
 The BF16 linear operand cache is limited to stable operands such as weights;
 LM-head dWeight repacks the mutable hidden activation chunks each microbatch so
 gradient accumulation does not reuse stale packed activations.

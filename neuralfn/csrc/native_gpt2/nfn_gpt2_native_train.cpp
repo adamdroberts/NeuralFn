@@ -10977,45 +10977,6 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_LOSS_COPY_SYNC",
                               "NFN_NATIVE_GPT2_LM_HEAD_LOSS_COPY_SYNC"}),
             false);
-    const bool lm_head_concurrent_dhidden_dweight_requested =
-        env_flag_enabled_or_default(
-            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT",
-                              "NFN_NATIVE_GPT2_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT"}),
-            false);
-    constexpr unsigned int kCudaStreamNonBlocking = 1;
-    constexpr unsigned int kCudaEventDisableTiming = 2;
-    const bool lm_head_concurrent_dhidden_dweight_available =
-        cuda_stream_create_with_flags != nullptr &&
-        cuda_stream_destroy != nullptr &&
-        cuda_stream_synchronize != nullptr &&
-        cuda_stream_wait_event != nullptr &&
-        cuda_event_create_with_flags != nullptr &&
-        cuda_event_record != nullptr &&
-        cuda_event_destroy != nullptr;
-    const bool lm_head_concurrent_dhidden_dweight_enabled =
-        lm_head_concurrent_dhidden_dweight_requested &&
-        lm_head_concurrent_dhidden_dweight_available;
-    void* lm_head_dhidden_stream = nullptr;
-    void* lm_head_dweight_stream = nullptr;
-    void* lm_head_ce_done_event = nullptr;
-    if (error.empty() && lm_head_concurrent_dhidden_dweight_enabled) {
-        int status = cuda_stream_create_with_flags(&lm_head_dhidden_stream, kCudaStreamNonBlocking);
-        if (status != 0) {
-            error = cuda_error(status, "cudaStreamCreateWithFlags lm_head_dhidden");
-        }
-        if (error.empty()) {
-            status = cuda_stream_create_with_flags(&lm_head_dweight_stream, kCudaStreamNonBlocking);
-            if (status != 0) {
-                error = cuda_error(status, "cudaStreamCreateWithFlags lm_head_dweight");
-            }
-        }
-        if (error.empty()) {
-            status = cuda_event_create_with_flags(&lm_head_ce_done_event, kCudaEventDisableTiming);
-            if (status != 0) {
-                error = cuda_error(status, "cudaEventCreateWithFlags lm_head_ce_done");
-            }
-        }
-    }
     const bool bgrad_first_write_direct_enabled =
         dweight_first_microbatch_beta_zero_enabled &&
         env_flag_enabled_or_default(
@@ -11127,6 +11088,85 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_DIRECT_U16_TOKENS",
                               "NFN_NATIVE_GPT2_DIRECT_U16_TOKENS"}),
             true);
+    const bool lm_head_concurrent_dhidden_dweight_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT",
+                              "NFN_NATIVE_GPT2_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT"}),
+            false);
+    const bool lm_head_pipeline_chunks_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS",
+                              "NFN_NATIVE_GPT2_LM_HEAD_PIPELINE_CHUNKS"}),
+            false);
+    constexpr unsigned int kCudaStreamNonBlocking = 1;
+    constexpr unsigned int kCudaEventDisableTiming = 2;
+    const bool lm_head_concurrent_dhidden_dweight_available =
+        cuda_stream_create_with_flags != nullptr &&
+        cuda_stream_destroy != nullptr &&
+        cuda_stream_synchronize != nullptr &&
+        cuda_stream_wait_event != nullptr &&
+        cuda_event_create_with_flags != nullptr &&
+        cuda_event_record != nullptr &&
+        cuda_event_destroy != nullptr;
+    const bool lm_head_concurrent_dhidden_dweight_enabled =
+        lm_head_concurrent_dhidden_dweight_requested &&
+        lm_head_concurrent_dhidden_dweight_available;
+    const bool lm_head_pipeline_chunks_enabled =
+        lm_head_pipeline_chunks_requested &&
+        lm_head_concurrent_dhidden_dweight_available &&
+        lm_head_bf16_logits_enabled &&
+        !lm_head_reuse_forward_logits_enabled &&
+        !lm_head_full_batch_reuse_schedule_enabled &&
+        lm_head_chunk_count > 1;
+    void* lm_head_dhidden_stream = nullptr;
+    void* lm_head_dweight_stream = nullptr;
+    void* lm_head_ce_done_event = nullptr;
+    std::vector<void*> lm_head_pipeline_ce_events(2, nullptr);
+    std::vector<void*> lm_head_pipeline_dhidden_done_events(2, nullptr);
+    std::vector<void*> lm_head_pipeline_dweight_done_events(2, nullptr);
+    const bool lm_head_side_streams_enabled =
+        lm_head_concurrent_dhidden_dweight_enabled || lm_head_pipeline_chunks_enabled;
+    if (error.empty() && lm_head_side_streams_enabled) {
+        int status = cuda_stream_create_with_flags(&lm_head_dhidden_stream, kCudaStreamNonBlocking);
+        if (status != 0) {
+            error = cuda_error(status, "cudaStreamCreateWithFlags lm_head_dhidden");
+        }
+        if (error.empty()) {
+            status = cuda_stream_create_with_flags(&lm_head_dweight_stream, kCudaStreamNonBlocking);
+            if (status != 0) {
+                error = cuda_error(status, "cudaStreamCreateWithFlags lm_head_dweight");
+            }
+        }
+        if (error.empty()) {
+            status = cuda_event_create_with_flags(&lm_head_ce_done_event, kCudaEventDisableTiming);
+            if (status != 0) {
+                error = cuda_error(status, "cudaEventCreateWithFlags lm_head_ce_done");
+            }
+        }
+        if (error.empty() && lm_head_pipeline_chunks_enabled) {
+            for (std::size_t i = 0; i < lm_head_pipeline_ce_events.size() && error.empty(); ++i) {
+                status = cuda_event_create_with_flags(&lm_head_pipeline_ce_events[i], kCudaEventDisableTiming);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaEventCreateWithFlags lm_head_pipeline_ce");
+                    break;
+                }
+                status = cuda_event_create_with_flags(
+                    &lm_head_pipeline_dhidden_done_events[i],
+                    kCudaEventDisableTiming);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaEventCreateWithFlags lm_head_pipeline_dhidden_done");
+                    break;
+                }
+                status = cuda_event_create_with_flags(
+                    &lm_head_pipeline_dweight_done_events[i],
+                    kCudaEventDisableTiming);
+                if (status != 0) {
+                    error = cuda_error(status, "cudaEventCreateWithFlags lm_head_pipeline_dweight_done");
+                    break;
+                }
+            }
+        }
+    }
     const std::int64_t public_token_weight_elements = kVocab * kDim;
     const std::int64_t token_weight_padding_elements =
         zero_token_padding_enabled ? (kTokenWeightElements - public_token_weight_elements) : 0;
@@ -12233,7 +12273,9 @@ int run_transformer_lm_training_json(
             return;
         }
         const std::int64_t elements =
-            lm_head_reuse_forward_logits_enabled ? full_logit_elements : logit_elements;
+            lm_head_reuse_forward_logits_enabled
+                ? full_logit_elements
+                : (lm_head_pipeline_chunks_enabled ? logit_elements * 2 : logit_elements);
         if (elements <= 0 ||
             elements > static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
             error = "LM-head bf16 logit allocation byte size overflow";
@@ -12761,7 +12803,9 @@ int run_transformer_lm_training_json(
         allocate_uint16(
             &lm_head_bf16_logits,
             lm_head_bf16_logits_enabled
-                ? (lm_head_reuse_forward_logits_enabled ? full_logit_elements : logit_elements)
+                ? (lm_head_reuse_forward_logits_enabled
+                       ? full_logit_elements
+                       : (lm_head_pipeline_chunks_enabled ? logit_elements * 2 : logit_elements))
                 : 0,
             "lm_head_bf16_logits");
         allocate_uint16(
@@ -14370,7 +14414,10 @@ int run_transformer_lm_training_json(
                 lm_head_prepack_bf16_hidden_enabled ? (lm_head_bf16_hidden + row_start * kDim) : lm_head_bf16_hidden;
             std::uint16_t* bf16_logit_chunk =
                 lm_head_reuse_forward_logits_enabled ? (lm_head_bf16_logits + row_start * kPaddedVocab)
-                                                     : lm_head_bf16_logits;
+                                                     : (lm_head_pipeline_chunks_enabled
+                                                            ? (lm_head_bf16_logits +
+                                                               (chunk_index % 2) * logit_elements)
+                                                            : lm_head_bf16_logits);
             float* float_logit_chunk = logits;
             const std::int64_t* target_chunk =
                 direct_u16_token_ids_enabled ? nullptr : (active_targets + row_start);
@@ -14379,6 +14426,16 @@ int run_transformer_lm_training_json(
             const bool first_lm_head_dweight_chunk =
                 chunk_index == 0 && dweight_first_microbatch_beta_zero_enabled && !dweight_accumulate;
             const float lm_head_dweight_beta = first_lm_head_dweight_chunk ? 0.0f : 1.0f;
+            if (lm_head_pipeline_chunks_enabled && chunk_index >= 2) {
+                run_timed_stage("lm_head_backward.pipeline_buffer_wait", [&]() {
+                    if (error.empty()) {
+                        run(cuda_stream_synchronize(lm_head_dhidden_stream), "lm_head.pipeline.wait_dhidden_buffer");
+                    }
+                    if (error.empty()) {
+                        run(cuda_stream_synchronize(lm_head_dweight_stream), "lm_head.pipeline.wait_dweight_buffer");
+                    }
+                });
+            }
             const bool use_fused_ce_loss_backward =
                 record_loss &&
                 lm_head_bf16_logits_enabled &&
@@ -14740,7 +14797,34 @@ int run_transformer_lm_training_json(
                     }
                 });
             };
-            if (lm_head_concurrent_dhidden_dweight_enabled) {
+            auto queue_lm_head_dhidden_dweight_pipeline = [&]() {
+                run_timed_stage("lm_head_backward.pipeline_queue", [&]() {
+                    if (!error.empty()) {
+                        return;
+                    }
+                    const std::size_t slot = static_cast<std::size_t>(chunk_index % 2);
+                    int status = cuda_event_record(lm_head_pipeline_ce_events[slot], nullptr);
+                    if (status != 0) {
+                        error = cuda_error(status, "cudaEventRecord lm_head_pipeline_ce");
+                        return;
+                    }
+                    status = cuda_stream_wait_event(lm_head_dhidden_stream, lm_head_pipeline_ce_events[slot], 0);
+                    if (status != 0) {
+                        error = cuda_error(status, "cudaStreamWaitEvent lm_head_pipeline_dhidden");
+                        return;
+                    }
+                    status = cuda_stream_wait_event(lm_head_dweight_stream, lm_head_pipeline_ce_events[slot], 0);
+                    if (status != 0) {
+                        error = cuda_error(status, "cudaStreamWaitEvent lm_head_pipeline_dweight");
+                        return;
+                    }
+                    run_lm_head_dhidden_kernel(lm_head_dhidden_stream);
+                    run_lm_head_dweight_kernel(lm_head_dweight_stream);
+                });
+            };
+            if (lm_head_pipeline_chunks_enabled) {
+                queue_lm_head_dhidden_dweight_pipeline();
+            } else if (lm_head_concurrent_dhidden_dweight_enabled) {
                 run_lm_head_dhidden_dweight_concurrent();
             } else if (lm_head_dweight_before_dhidden_enabled) {
                 run_lm_head_dweight();
@@ -14749,6 +14833,16 @@ int run_transformer_lm_training_json(
                 run_lm_head_dhidden();
                 run_lm_head_dweight();
             }
+        }
+        if (lm_head_pipeline_chunks_enabled) {
+            run_timed_stage("lm_head_backward.pipeline_final_wait", [&]() {
+                if (error.empty()) {
+                    run(cuda_stream_synchronize(lm_head_dhidden_stream), "lm_head.pipeline.final_wait_dhidden");
+                }
+                if (error.empty()) {
+                    run(cuda_stream_synchronize(lm_head_dweight_stream), "lm_head.pipeline.final_wait_dweight");
+                }
+            });
         }
         if (record_loss) {
             run_timed_stage("lm_head_backward.loss_copy", [&]() {
@@ -17578,6 +17672,32 @@ int run_transformer_lm_training_json(
             error = cuda_error(status, "cudaEventDestroy lm_head_ce_done");
         }
     }
+    if (cuda_event_destroy != nullptr) {
+        for (void* event : lm_head_pipeline_ce_events) {
+            if (event != nullptr) {
+                const int status = cuda_event_destroy(event);
+                if (status != 0 && error.empty()) {
+                    error = cuda_error(status, "cudaEventDestroy lm_head_pipeline_ce");
+                }
+            }
+        }
+        for (void* event : lm_head_pipeline_dhidden_done_events) {
+            if (event != nullptr) {
+                const int status = cuda_event_destroy(event);
+                if (status != 0 && error.empty()) {
+                    error = cuda_error(status, "cudaEventDestroy lm_head_pipeline_dhidden_done");
+                }
+            }
+        }
+        for (void* event : lm_head_pipeline_dweight_done_events) {
+            if (event != nullptr) {
+                const int status = cuda_event_destroy(event);
+                if (status != 0 && error.empty()) {
+                    error = cuda_error(status, "cudaEventDestroy lm_head_pipeline_dweight_done");
+                }
+            }
+        }
+    }
     if (lm_head_dhidden_stream != nullptr && cuda_stream_destroy != nullptr) {
         const int status = cuda_stream_destroy(lm_head_dhidden_stream);
         if (status != 0 && error.empty()) {
@@ -17998,13 +18118,24 @@ int run_transformer_lm_training_json(
         << (lm_head_concurrent_dhidden_dweight_available ? "true" : "false") << ",\n"
         << "  \"lm_head_concurrent_dhidden_dweight_enabled\": "
         << (lm_head_concurrent_dhidden_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_pipeline_chunks_requested\": "
+        << (lm_head_pipeline_chunks_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_pipeline_chunks_enabled\": "
+        << (lm_head_pipeline_chunks_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_pipeline_logit_buffer_count\": "
+        << (lm_head_pipeline_chunks_enabled ? 2 : 1) << ",\n"
+        << "  \"lm_head_pipeline_extra_bf16_logit_bytes\": "
+        << (lm_head_pipeline_chunks_enabled ? logit_elements * static_cast<std::int64_t>(sizeof(std::uint16_t)) : 0)
+        << ",\n"
         << "  \"lm_head_dhidden_dweight_schedule_strategy\": \""
         << (lm_head_full_batch_reuse_schedule_enabled
                 ? "resident-full-logit-single-row-batch-gemms"
+                : (lm_head_pipeline_chunks_enabled
+                ? "double-buffered-logits-ce-default-stream-side-stream-dhidden-ordered-dweight"
                 : (lm_head_concurrent_dhidden_dweight_enabled
                 ? "two-nonblocking-cuda-streams-after-ce-event"
                 : (lm_head_dweight_before_dhidden_enabled ? "serial-dweight-before-dhidden"
-                                                          : "serial-dhidden-before-dweight")))
+                                                          : "serial-dhidden-before-dweight"))))
         << "\",\n"
         << "  \"lm_head_reverse_chunk_order_enabled\": "
         << (lm_head_reverse_chunk_order_enabled ? "true" : "false") << ",\n"

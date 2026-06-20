@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an opt-in dense GPT LM-head row-chunk pipeline candidate behind
+  `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` /
+  `NFN_NATIVE_GPT2_LM_HEAD_PIPELINE_CHUNKS=1`. The candidate keeps the
+  bounded row-chunked BF16 classifier memory model, allocates two LM-head logit
+  chunks, computes logits plus CE/dlogits on the default stream, and queues
+  dHidden plus ordered dWeight accumulation on nonblocking side streams before
+  each chunk buffer is reused. Runtime JSON now reports
+  `lm_head_pipeline_chunks_requested`, `lm_head_pipeline_chunks_enabled`,
+  `lm_head_pipeline_logit_buffer_count`,
+  `lm_head_pipeline_extra_bf16_logit_bytes`, and a side-stream schedule
+  strategy string. This is a diagnostic candidate, not a default route: the
+  same-script RTX 5090 gate rejected it at `1.001057x` train-loop wall and
+  `1.009187x` `stage.lm_head_backward.total_ms`, so the default remains the
+  serial row-chunk schedule. Verification: rebuilt all native CUDA artifacts
+  with CUDA Toolkit 13.3.33, ran a one-step TinyStories native GPT smoke with
+  the flag enabled, ran `tests/test_native_gpt2.py` (`58 passed`), and ran the
+  paired native speed gate. The smoke reported
+  `status: "native-transformer-lm-trained"`, `backend: "tile-cuda"`, two logit
+  buffers, `824180736` extra BF16 logit bytes, and `passed: true`.
+
 - Fixed a native BF16/u16-token GPT sampled-loss race in the fused CE
   loss+backward CUDA Tile kernel. The kernel now synchronizes after reading the
   target logit for the scalar loss and before overwriting the row logits
