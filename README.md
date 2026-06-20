@@ -25,10 +25,10 @@ generic Python Tile extension and the trainer-facing raw C ABI both build from
 `NFN_TILE_CUDA_TEST=1 python -m pytest tests/test_tile_cuda_gpu.py tests/test_tile_cuda_ops.py tests/test_tile_cuda_optimizer.py -q -rs`
 to confirm the extension executes GPU tests instead of skipping. After the
 CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 path is correctness
-green for the revisited native and Tile CUDA gates (`tests/test_native_gpt2.py`,
-`tests/test_tile_cuda_examples.py`, `tests/test_tile_cuda_gpu.py`,
-`tests/test_tile_cuda_ops.py`, `tests/test_tile_cuda_optimizer.py`, the GPT
-template preset suite, and the native no-Torch guard all pass). Dense GPT
+green for the revisited native and Tile CUDA gates. After reinstalling the WSL
+CUDA toolkit (`cuda-toolkit-13-3`), the GPU-visible full suite passed with
+`1186 passed, 20 warnings, 468 subtests passed`; the focused native/Tile CUDA
+gates, GPT template preset suite, and native no-Torch guard all pass. Dense GPT
 native training now routes the no-bias BF16 LM-head logits GEMM through the TK
 BF16 forward bridge by default for the
 default `50304,8192,768,T,N` row-chunk shape. The current staged CUDA 13.3.33
@@ -36,12 +36,15 @@ default `50304,8192,768,T,N` row-chunk shape. The current staged CUDA 13.3.33
 `2564.590 ms/step` versus llm.kittens at `2447.451 ms/step`
 (`1.047862x` train-loop wall time, `0.952442x` tokens/sec); the latest
 instrumentation-free sample measured a smaller but still-open gap at
-`1.028292x`. The remaining gap is still native GPU kernel work rather than
+`1.032455x` with NeuralFn at `2553.906667 ms/step` versus llm.kittens at
+`2473.728889 ms/step`. The remaining gap is still native GPU kernel work rather than
 Torch, Python, or graph-editor execution. Because parity samples can move with
 reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
-build. LM-head cuBLASLt expansion and threaded token-weight initialization
-remain rejected diagnostic switches rather than workflow guidance. Dense GPT
+build. LM-head cuBLASLt expansion, BF16 arena removal, token-shadow removal,
+threaded/vector4 token initialization, LM-head 4096-row chunks, and direct
+bias-gradient first-write probes remain rejected diagnostic switches rather than
+workflow guidance. Dense GPT
 startup now defaults the tied token-weight initializer to the vector4 CUDA Tile
 route; set `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` only for paired bisection against
