@@ -11208,7 +11208,7 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT",
                               "NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_INIT",
                               "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT"}),
-            false);
+            true);
     const bool token_weight_fast_int32_init_enabled =
         !token_weight_threaded_init_enabled &&
         !token_weight_vector4_init_enabled &&

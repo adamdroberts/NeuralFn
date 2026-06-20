@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Promoted the dense GPT vector4 token-weight initializer to the default native
+  CUDA Tile startup route. `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` /
+  `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` now reproduce the previous fast
+  int32 Tile initializer for paired diagnostics. The CUDA 13.3 dedicated RTX
+  5090 startup-only 7-sample post-reinstall confirmation passed the
+  token-init kernel gate at `0.949673x` mean
+  `setup.token_weight_init.total_ms` against
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0`; whole setup wall time remained
+  noise-sensitive at `1.004619x`, so this is a token-initializer kernel
+  substage promotion rather than a full startup-wall claim. This does not close
+  the train-loop parity gap, which remains in the LM-head and block backward
+  hot paths.
+
 - Added a default-on diagnostic gate for the native dense-GPT LM-head fused
   loss+backward classifier route. Set
   `NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0` or

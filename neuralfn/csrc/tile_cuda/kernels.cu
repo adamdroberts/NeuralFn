@@ -13351,7 +13351,7 @@ bool token_weight_vector4_init_enabled() {
       value = std::getenv("NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_INIT");
     }
     if (value == nullptr || value[0] == '\0') {
-      return false;
+      return true;
     }
     if (std::strcmp(value, "0") == 0 ||
         std::strcmp(value, "false") == 0 ||

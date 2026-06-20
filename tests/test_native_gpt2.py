@@ -3420,10 +3420,13 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["token_i64_arena_elements"] == 0
     assert train_transformer_payload["token_u16_device_arena_elements"] == 0
     assert train_transformer_payload["token_u16_pinned_arena_elements"] == 0
-    assert train_transformer_payload["token_weight_init_strategy"] == "device-tile-power2-deterministic"
+    assert (
+        train_transformer_payload["token_weight_init_strategy"]
+        == "device-vector4-power2-deterministic"
+    )
     assert train_transformer_payload["token_weight_threaded_init_enabled"] is False
-    assert train_transformer_payload["token_weight_vector4_init_enabled"] is False
-    assert train_transformer_payload["token_weight_fast_int32_init_enabled"] is True
+    assert train_transformer_payload["token_weight_vector4_init_enabled"] is True
+    assert train_transformer_payload["token_weight_fast_int32_init_enabled"] is False
     assert train_transformer_payload["token_weight_init_legacy_mod17_enabled"] is False
     assert train_transformer_payload["token_weight_bf16_initial_refresh_fusion_enabled"] is True
     assert train_transformer_payload["token_weight_bf16_initial_refresh_elided"] is False
@@ -5155,7 +5158,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         kernels_text.index("bool token_weight_vector4_init_enabled()") :
         kernels_text.index("void launch_init_gpt2_token_weight_threaded_float32")
     ]
-    assert "return false;" in token_vector4_init_helper
+    assert "return true;" in token_vector4_init_helper
     token_fast_int32_init_helper = kernels_text[
         kernels_text.index("bool token_weight_fast_int32_tile_init_enabled()") :
         kernels_text.index("void launch_init_gpt2_token_weight_threaded_float32")
@@ -5403,6 +5406,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_TILE_CUDA_STORE_MLP_ACTIVATIONS_VEC4" in kernels_text
     assert "NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS_VEC4" in kernels_text
     assert "NFN_NATIVE_GPT2_STORE_MLP_ACTIVATIONS_VEC4" in kernels_text
+    assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT" in gpt2_source_text
+    assert "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT" in kernels_text
+    assert "return true;" in kernels_text[kernels_text.index("bool token_weight_vector4_init_enabled()") :]
     assert "bf16_bits_add_bias_inplace_kernel" in kernels_text
     assert "bf16_bits_add_bias_inplace_tile_float32_kernel" in kernels_text
     assert "launch_linear_bf16_float32" in kernels_text
