@@ -159,6 +159,11 @@ For native-vs-native dense GPT kernel bisections, `tools/bench_native_gpt_sm120_
 accepts the canonical `NFN_SM120_NATIVE_*` environment variables and the shorter
 `NFN_SM120_CANDIDATE_*` aliases for steps, samples, warmup, profile directory,
 CUDA device selection, candidate env, template/graph selection, and JSON output.
+The SM120 wrappers also accept generic `NFN_SM120_*` names such as
+`NFN_SM120_STEPS`, `NFN_SM120_SAMPLES`, `NFN_SM120_WARMUP`,
+`NFN_SM120_CUDA_VISIBLE_DEVICES`, `NFN_SM120_PROFILE_DIR`, and
+`NFN_SM120_JSON_OUT` as the lowest-priority fallback, so a copied parity or
+candidate command does not silently return to default step/sample counts.
 Use `NFN_SM120_NATIVE_ENV`, `NFN_SM120_COMMON_ENV`, or `NFN_SM120_PARITY_ENV`
 for shared environment variables that must be applied to both commands, such as
 `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1` during route attribution. Use
@@ -468,7 +473,10 @@ candidate Tile ops build against `build/libnfn_native_train_tile_ops.so`. Common
 controls include `NFN_SM120_NATIVE_STEPS`, `NFN_SM120_NATIVE_SAMPLES`,
 `NFN_SM120_NATIVE_WARMUP`, `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_NATIVE_TEMPLATE_NAME`, `NFN_SM120_NATIVE_GRAPH_FILE`, and
-`NFN_SM120_NATIVE_STAGE_TIMING=1` for attribution sidecars. Set candidate-only
+`NFN_SM120_NATIVE_STAGE_TIMING=1` for attribution sidecars. Generic
+`NFN_SM120_*` aliases are accepted as lowest-priority fallbacks for shared
+shape/output controls, while native-specific names still win over candidate and
+parity aliases. Set candidate-only
 CLI flags with `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`, the natural
 `NFN_SM120_NATIVE_CANDIDATE_ARGS` alias, or the short
 `NFN_SM120_CANDIDATE_EXTRA_ARGS`; use `NFN_SM120_NATIVE_EXTRA_ARGS` or
@@ -543,6 +551,9 @@ to `none`, `off`, or `0` when you need an actual throughput comparison without
 JSON sidecars. Candidate timeouts kill the command process group before the
 result is recorded, so oversized CUDA experiments do not leave a native trainer
 running on the selected GPU after the paired harness moves on. Set
+generic `NFN_SM120_*` aliases for common parity controls only when you want the
+same shell environment to be reusable across parity and native-candidate
+wrappers; explicit `NFN_SM120_PARITY_*` values override them. Set
 `NFN_SM120_PARITY_STAGE_TIMING=1` when you need CUDA-event
 stage attribution; stage-timed parity runs default
 `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS=80000` unless already set, so 10-step

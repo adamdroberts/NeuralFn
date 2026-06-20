@@ -736,6 +736,10 @@ output enabled. Set `NFN_SM120_PARITY_STEPS`, `NFN_SM120_PARITY_SAMPLES`,
 `NFN_SM120_PARITY_WARMUP`, `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT`, or
 `NFN_SM120_PARITY_JSON_OUT` to adjust the run without editing the command.
+The parity wrapper also accepts generic `NFN_SM120_*` fallbacks such as
+`NFN_SM120_STEPS`, `NFN_SM120_SAMPLES`, `NFN_SM120_WARMUP`,
+`NFN_SM120_CUDA_VISIBLE_DEVICES`, `NFN_SM120_PROFILE_DIR`, and
+`NFN_SM120_JSON_OUT`; parity-specific names win when both are set.
 `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES` defaults to `auto`, which selects an
 idle display-disabled NVIDIA GPU for mixed display/compute workstations; set it
 to `0` or another explicit CUDA device value when you want manual pinning.
@@ -878,6 +882,9 @@ For the dense GPT native-vs-native wrapper, use the canonical
 `NFN_SM120_CANDIDATE_*` aliases for the same controls, including steps,
 samples, warmup, train-batch tokens, CUDA device selection, profile directory,
 stage timing, candidate env, template/graph selection, dry-run, and JSON output.
+It also accepts generic `NFN_SM120_*` fallbacks for common shape/output controls
+so a short parity command can be reused for native bisection without falling
+back to the wrapper defaults.
 If both names are set for one control, the canonical `NFN_SM120_NATIVE_*` value
 wins.
 

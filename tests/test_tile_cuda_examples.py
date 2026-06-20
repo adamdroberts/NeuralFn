@@ -267,7 +267,7 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "tools/paired_kernel_speed.py" in text
     assert "--require-idle-selected-gpu" in text
     assert "--max-selected-gpu-utilization-pct" in text
-    assert 'CUDA_VISIBLE_DEVICES_VALUE="${NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES:-auto}"' in text
+    assert 'CUDA_VISIBLE_DEVICES_VALUE="${NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES:-${NFN_SM120_CUDA_VISIBLE_DEVICES:-auto}}"' in text
     assert "TinyStories_train.bin" in text
     assert "TinyStories_val.bin" in text
     assert "-b 64" in text
@@ -281,6 +281,8 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "NFN_SM120_PARITY_GENERATE_TOKENS" in text
     assert "NFN_SM120_PARITY_PROFILE_DIR" in text
     assert "NFN_SM120_PARITY_DRY_RUN_PLAN" in text
+    assert "NFN_SM120_STEPS" in text
+    assert "NFN_SM120_JSON_OUT" in text
     assert "NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS" in text
     assert "paired_args=()" in text
     assert "profile_args=()" in text
@@ -320,6 +322,7 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "--max-selected-gpu-utilization-pct" in text
     assert "env_or_alias()" in text
     assert "env_or_alias3()" in text
+    assert "env_or_alias4()" in text
     assert "append_env_overrides()" in text
     assert "[A-Za-z_][A-Za-z0-9_]*=" in text
     assert "NFN_SM120_PARITY_STEPS" in text
@@ -331,6 +334,11 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "NFN_SM120_CANDIDATE_STAGE_TIMING" in text
     assert "NFN_SM120_CANDIDATE_LINEAR_SHAPE_STATS" in text
     assert "NFN_SM120_CANDIDATE_JSON_OUT" in text
+    assert "NFN_SM120_STEPS" in text
+    assert "NFN_SM120_SAMPLES" in text
+    assert "NFN_SM120_JSON_OUT" in text
+    assert "NFN_SM120_MAX_GPU_UTILIZATION_PCT" in text
+    assert "NFN_SM120_DRY_RUN_PLAN" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_ENV" in text
     assert "NFN_SM120_CANDIDATE_ENV" in text
     assert "NFN_SM120_NATIVE_ENV" in text
@@ -532,6 +540,74 @@ def test_native_gpt_sm120_candidate_wrapper_accepts_parity_aliases(tmp_path: Pat
             "NFN_SM120_PARITY_PROFILE_DIR": "none",
             "NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES": "7",
             "NFN_SM120_PARITY_JSON_OUT": str(output_path),
+        }
+    )
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "samples: 1" in proc.stdout
+    assert "warmup: 0" in proc.stdout
+    assert "cuda_visible_devices: requested=7 resolved=7 mode=explicit" in proc.stdout
+    assert "--max-steps 2" in proc.stdout
+    assert "--append-native-profile-json-dir" not in proc.stdout
+
+
+def test_native_gpt_sm120_candidate_wrapper_accepts_generic_aliases(tmp_path: Path) -> None:
+    script = Path("tools/bench_native_gpt_sm120_candidate.sh")
+    output_path = tmp_path / "candidate-generic-alias.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_DRY_RUN_PLAN": "1",
+            "NFN_SM120_STEPS": "2",
+            "NFN_SM120_SAMPLES": "1",
+            "NFN_SM120_WARMUP": "0",
+            "NFN_SM120_PROFILE_DIR": "none",
+            "NFN_SM120_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_JSON_OUT": str(output_path),
+        }
+    )
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "samples: 1" in proc.stdout
+    assert "warmup: 0" in proc.stdout
+    assert "cuda_visible_devices: requested=7 resolved=7 mode=explicit" in proc.stdout
+    assert "--max-steps 2" in proc.stdout
+    assert "--append-native-profile-json-dir" not in proc.stdout
+
+
+def test_native_gpt_sm120_parity_wrapper_accepts_generic_aliases(tmp_path: Path) -> None:
+    script = Path("tools/bench_native_gpt_sm120_parity.sh")
+    output_path = tmp_path / "parity-generic-alias.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_DRY_RUN_PLAN": "1",
+            "NFN_SM120_STEPS": "2",
+            "NFN_SM120_SAMPLES": "1",
+            "NFN_SM120_WARMUP": "0",
+            "NFN_SM120_PROFILE_DIR": "none",
+            "NFN_SM120_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_JSON_OUT": str(output_path),
         }
     )
 

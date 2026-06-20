@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added generic `NFN_SM120_*` fallback aliases to the SM120 parity and
+  native-vs-native candidate benchmark wrappers. `NFN_SM120_STEPS`,
+  `NFN_SM120_SAMPLES`, `NFN_SM120_WARMUP`, `NFN_SM120_CUDA_VISIBLE_DEVICES`,
+  `NFN_SM120_PROFILE_DIR`, `NFN_SM120_JSON_OUT`, and related common aliases now
+  work as lowest-priority fallbacks behind `NFN_SM120_NATIVE_*`,
+  `NFN_SM120_CANDIDATE_*`, and `NFN_SM120_PARITY_*`, avoiding accidental
+  default 10-step/3-sample candidate runs when a generic shell environment is
+  reused. During this pass, the CUDA 13.3 RTX 5090 gate rejected the LM-head
+  dHidden BF16 GEMMEx ALGO0 override
+  `NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO_SHAPE=768,8192,50304,N,N,0` at
+  `1.002367x` train-loop wall time with no route-counter change. Verification:
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh
+  tools/bench_native_gpt_sm120_parity.sh`, focused SM120 wrapper tests, and
+  `git diff --check`.
+
 - Revisited the CUDA 13.3 WSL failure set after reinstalling
   `cuda-toolkit-13-3`. The dedicated RTX 5090 is GPU-visible with CUDA UMD 13.3,
   and the full CUDA-gated repository sweep now passes with `1186 passed`,
