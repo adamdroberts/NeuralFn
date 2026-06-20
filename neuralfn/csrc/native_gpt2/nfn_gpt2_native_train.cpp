@@ -3903,6 +3903,9 @@ bool print_tile_plan(
         << "  \"dataset_path\": \"" << json_escape(dataset.dataset_path.string()) << "\",\n"
         << "  \"train_shard\": \"" << json_escape(dataset.train_shards.empty() ? std::string() : dataset.train_shards[0].path.string()) << "\",\n"
         << "  \"val_shard\": \"" << json_escape(dataset.val_shards.empty() ? std::string() : dataset.val_shards[0].path.string()) << "\",\n"
+        << "  \"validation_shards_required\": "
+        << ((cfg.eval_every_steps > 0 && cfg.eval_batches > 0) ? "true" : "false") << ",\n"
+        << "  \"validation_shards_resolved\": " << (!dataset.val_shards.empty() ? "true" : "false") << ",\n"
         << "  \"tile_ops_library\": \"" << json_escape(tile_ops) << "\",\n"
         << "  \"shape\": {\"num_layers\": " << cfg.num_layers
         << ", \"model_dim\": 768, \"num_heads\": 12, \"vocab_size\": " << public_vocab
@@ -18360,6 +18363,9 @@ int run_transformer_lm_training_json(
         << "    \"driver_version_status\": " << cuda_driver_version_status << "\n"
         << "  },\n"
         << "  \"token_shards\": " << neuralfn::native_train::token_shard_dataset_json(dataset, &batch_plan) << ",\n"
+        << "  \"validation_shards_required\": "
+        << ((cfg.eval_every_steps > 0 && cfg.eval_batches > 0) ? "true" : "false") << ",\n"
+        << "  \"validation_shards_resolved\": " << (!dataset.val_shards.empty() ? "true" : "false") << ",\n"
         << "  \"batch_size\": " << batch_size << ",\n"
         << "  \"seq_len\": " << seq_len << ",\n"
         << "  \"rows\": " << rows << ",\n"
@@ -20735,7 +20741,12 @@ int main(int argc, char** argv) {
 
     neuralfn::native_train::TokenShardDataset dataset;
     try {
-        dataset = neuralfn::native_train::resolve_token_shards(cfg.dataset_alias, cfg.allow_train_as_val);
+        const bool require_validation_shards =
+            cfg.eval_every_steps > 0 && cfg.eval_batches > 0;
+        dataset = neuralfn::native_train::resolve_token_shards(
+            cfg.dataset_alias,
+            cfg.allow_train_as_val,
+            require_validation_shards);
     } catch (const std::exception& exc) {
         std::cerr << exc.what() << "\n";
         return 2;

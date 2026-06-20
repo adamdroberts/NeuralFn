@@ -1843,6 +1843,41 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     }
     assert default_payload["selected_graph_native_runnable"] is True
     assert default_payload["checkpoint_export_enabled"] is True
+    assert default_payload["validation_shards_required"] is True
+    assert default_payload["validation_shards_resolved"] is True
+
+    train_only_dataset = tmp_path / "train_only_uint16"
+    train_only_dataset.mkdir()
+    (train_only_dataset / "fineweb_train_000000.bin").write_bytes(struct.pack("<64H", *range(64)))
+    train_only_eval_required = subprocess.run(
+        [str(cli), "--dataset-alias", str(train_only_dataset), "--dry-run"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert train_only_eval_required.returncode == 2
+    assert "no native uint16 validation token bin found" in train_only_eval_required.stderr
+
+    train_only_no_eval = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(train_only_dataset),
+            "--dry-run",
+            "--eval-every-steps",
+            "0",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert train_only_no_eval.returncode == 0, train_only_no_eval.stderr
+    train_only_payload = json.loads(train_only_no_eval.stdout)
+    assert train_only_payload["validation_shards_required"] is False
+    assert train_only_payload["validation_shards_resolved"] is False
+    assert train_only_payload["val_shard"] == ""
     assert default_payload["checkpoint_export_startup_only_elided"] is False
     assert default_payload["train_shard"].endswith("fineweb_train_000000.bin")
     assert default_payload["val_shard"].endswith("fineweb_val_000000.bin")

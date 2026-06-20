@@ -60,7 +60,10 @@ private:
 
 std::filesystem::path native_datasets_dir();
 std::filesystem::path resolve_dataset_path(const std::string& alias_or_path);
-TokenShardDataset resolve_token_shards(const std::string& alias_or_path, bool allow_train_as_val);
+TokenShardDataset resolve_token_shards(
+    const std::string& alias_or_path,
+    bool allow_train_as_val,
+    bool require_validation = true);
 BatchPlan build_batch_plan(
     const TokenShardDataset& dataset,
     std::int64_t seq_len,

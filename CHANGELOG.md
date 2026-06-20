@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the native C++ token-shard resolver so compiled GPT runs with
+  validation disabled (`--eval-every-steps 0` or `--eval-batches 0`) no longer
+  require or stat validation shards. Plan/runtime JSON now reports
+  `validation_shards_required` and `validation_shards_resolved`, allowing
+  train-only cached shard directories for benchmark/no-validation runs while
+  preserving the previous validation-shard requirement when eval is enabled.
+  Verification: focused compiled CLI pytest, C++ rebuild of
+  `build/nfn_gpt_native_train`, and an old-vs-new RTX 5090 startup paired run.
+  The paired startup gate did not improve on TinyStories (`setup_wall_ms`
+  `1.004984x`) because CUDA arena allocation and token initialization still
+  dominate startup; this change removes avoidable validation-file work but does
+  not close the remaining llm.kittens parity gap.
+
 - Removed NeuralFn's advertised `.[torch]` optional dependency extra. Torch is
   no longer installable through NeuralFn package metadata; legacy graph-backed
   Torch code can still run only in environments where PyTorch is managed

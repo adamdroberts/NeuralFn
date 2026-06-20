@@ -393,22 +393,29 @@ fs::path resolve_dataset_path(const std::string& alias_or_path) {
     return cached_alias;
 }
 
-TokenShardDataset resolve_token_shards(const std::string& alias_or_path, bool allow_train_as_val) {
+TokenShardDataset resolve_token_shards(
+    const std::string& alias_or_path,
+    bool allow_train_as_val,
+    bool require_validation) {
     TokenShardDataset dataset;
     dataset.dataset_path = resolve_dataset_path(alias_or_path);
     if (fs::is_regular_file(dataset.dataset_path)) {
         dataset.train_shards = {read_shard_file(dataset.dataset_path)};
-        const fs::path val_path = inferred_validation_path(dataset.dataset_path);
-        if (!val_path.empty()) {
-            dataset.val_shards = {read_shard_file(val_path)};
+        if (require_validation) {
+            const fs::path val_path = inferred_validation_path(dataset.dataset_path);
+            if (!val_path.empty()) {
+                dataset.val_shards = {read_shard_file(val_path)};
+            }
         }
     } else if (fs::is_directory(dataset.dataset_path)) {
         dataset.train_shards = sorted_shards(dataset.dataset_path, "fineweb_train_");
-        dataset.val_shards = sorted_shards(dataset.dataset_path, "fineweb_val_");
+        if (require_validation) {
+            dataset.val_shards = sorted_shards(dataset.dataset_path, "fineweb_val_");
+        }
         if (dataset.train_shards.empty()) {
             dataset.train_shards = named_shards(dataset.dataset_path, {"TinyStories_train", "TinyStoriesV2-GPT4_train"});
         }
-        if (dataset.val_shards.empty()) {
+        if (require_validation && dataset.val_shards.empty()) {
             dataset.val_shards = named_shards(dataset.dataset_path, {"TinyStories_val", "TinyStories_valid", "TinyStoriesV2-GPT4_val", "TinyStoriesV2-GPT4_valid"});
         }
     } else {
@@ -419,7 +426,7 @@ TokenShardDataset resolve_token_shards(const std::string& alias_or_path, bool al
             "no native uint16 train token bin found under " + dataset.dataset_path.string() +
             " (expected fineweb_train_*.bin or TinyStories_train.bin)");
     }
-    if (dataset.val_shards.empty()) {
+    if (require_validation && dataset.val_shards.empty()) {
         if (!allow_train_as_val) {
             throw std::runtime_error(
                 "no native uint16 validation token bin found under " + dataset.dataset_path.string() +
