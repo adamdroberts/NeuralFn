@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tightened the native dense-GPT SM120 candidate wrapper for LM-head overlap
+  experiments. Stage-timed candidates whose candidate env/args mention
+  `LM_HEAD_PIPELINE_CHUNKS` now auto-gate the emitted
+  `stage.lm_head_backward.pipeline_queue.total_ms` and
+  `stage.lm_head_backward.pipeline_final_wait.total_ms` metrics instead of
+  relying only on serial `dhidden` / `dweight` substage names that the pipeline
+  route does not emit. After the CUDA Toolkit 13.3.33 WSL reinstall, the full
+  CUDA-enabled pytest sweep passed with `1185 passed, 20 warnings, 468 subtests
+  passed` in 440.66s. The paired RTX 5090 parity check still measures NeuralFn
+  at `1.043823x` llm.kittens train-loop wall time for the 3-step/2-sample
+  profile, and the CUDA 13.3 retest of
+  `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` remained rejected at `1.009492x`
+  train-loop wall time and `1.035450x` LM-head backward. Verification: reran
+  the full CUDA pytest sweep, reran `tools/bench_native_gpt_sm120_parity.sh`,
+  reran the rejected pipeline candidate through
+  `tools/bench_native_gpt_sm120_candidate.sh`, and ran the focused wrapper
+  tests.
+
 - Tightened the native dense-GPT SM120 candidate benchmark defaults for
   stage-timed LM-head experiments. When no explicit
   `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` /

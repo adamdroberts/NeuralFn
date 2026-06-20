@@ -109,6 +109,12 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
                 MAX_CANDIDATE_RATIO_RAW+=" setup.uint16_arena_materialize.total_ms=1.000"
                 ;;
             esac
+            case "$candidate_gate_text" in
+              *LM_HEAD_PIPELINE_CHUNKS*|*lm_head_pipeline_chunks*)
+                MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_queue.total_ms=1.000"
+                MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_final_wait.total_ms=1.000"
+                ;;
+            esac
             ;;
         esac
         ;;

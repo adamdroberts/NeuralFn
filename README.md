@@ -184,7 +184,11 @@ timing is enabled they also gate `stage.lm_head_backward.total_ms`,
 prepack candidates mentioning `LM_HEAD_PREPACK_BF16_HIDDEN` additionally gate
 `stage.lm_head_backward.dhidden.total_ms`,
 `stage.lm_head_backward.dweight.total_ms`, and
-`setup.uint16_arena_materialize.total_ms`. Dry-run planning and no-op
+`setup.uint16_arena_materialize.total_ms`. LM-head overlap candidates mentioning
+`LM_HEAD_PIPELINE_CHUNKS` additionally gate the emitted pipeline substages
+`stage.lm_head_backward.pipeline_queue.total_ms` and
+`stage.lm_head_backward.pipeline_final_wait.total_ms`, rather than expecting
+the serial `dhidden` / `dweight` substage names. Dry-run planning and no-op
 baseline-vs-baseline checks stay ungated.
 The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
