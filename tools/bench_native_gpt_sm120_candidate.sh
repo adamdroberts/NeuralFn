@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NFN_NATIVE_GPT_TRAIN_BIN="${NFN_NATIVE_GPT_TRAIN_BIN:-$ROOT_DIR/build/nfn_gpt_native_train}"
+NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN="${NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN:-${NFN_SM120_CANDIDATE_TRAIN_BIN:-$NFN_NATIVE_GPT_TRAIN_BIN}}"
 NFN_NATIVE_TILE_OPS_LIB="${NFN_NATIVE_TILE_OPS_LIB:-$ROOT_DIR/build/libnfn_native_train_tile_ops.so}"
 NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB="${NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB:-$NFN_NATIVE_TILE_OPS_LIB}"
 
@@ -85,7 +86,8 @@ DRY_RUN_PLAN="$(env_or_alias4 NFN_SM120_NATIVE_DRY_RUN_PLAN NFN_SM120_CANDIDATE_
 MAX_CANDIDATE_RATIO_RAW="$(env_or_alias NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO NFN_SM120_CANDIDATE_MAX_CANDIDATE_RATIO "")"
 if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
   has_candidate_change=0
-  if [[ "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB" != "$NFN_NATIVE_TILE_OPS_LIB" ||
+  if [[ "$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" != "$NFN_NATIVE_GPT_TRAIN_BIN" ||
+        "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB" != "$NFN_NATIVE_TILE_OPS_LIB" ||
         -n "$CANDIDATE_ENV_RAW" ||
         -n "$CANDIDATE_EXTRA_ARGS_RAW" ]]; then
     has_candidate_change=1
@@ -101,7 +103,7 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
     case "${STARTUP_ONLY,,}" in
       "1"|"true"|"yes"|"on")
         MAX_CANDIDATE_RATIO_RAW="setup_wall_ms=1.000"
-        startup_candidate_text="$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB $CANDIDATE_ENV_RAW $CANDIDATE_EXTRA_ARGS_RAW"
+        startup_candidate_text="$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN $NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB $CANDIDATE_ENV_RAW $CANDIDATE_EXTRA_ARGS_RAW"
         case "$startup_candidate_text" in
           *TOKEN_WEIGHT*|*token_weight*)
             MAX_CANDIDATE_RATIO_RAW+=" setup.token_weight_init.total_ms=1.000"
@@ -115,7 +117,7 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
             MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.total_ms=1.000"
             MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.total_ms=1.000"
             MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.total_ms=1.000"
-            candidate_gate_text="$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB $CANDIDATE_ENV_RAW $CANDIDATE_EXTRA_ARGS_RAW"
+            candidate_gate_text="$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN $NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB $CANDIDATE_ENV_RAW $CANDIDATE_EXTRA_ARGS_RAW"
             case "$candidate_gate_text" in
               *CE_BF16*|*ce_bf16*)
                 MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.ce.total_ms=1.000"
@@ -143,6 +145,10 @@ fi
 
 if [[ ! -x "$NFN_NATIVE_GPT_TRAIN_BIN" ]]; then
   echo "NeuralFn native GPT trainer is not executable: $NFN_NATIVE_GPT_TRAIN_BIN" >&2
+  exit 2
+fi
+if [[ ! -x "$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" ]]; then
+  echo "Candidate NeuralFn native GPT trainer is not executable: $NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" >&2
   exit 2
 fi
 if [[ ! -f "$NFN_NATIVE_TILE_OPS_LIB" ]]; then
@@ -195,7 +201,6 @@ append_env_overrides() {
 }
 
 common_args=(
-  "$NFN_NATIVE_GPT_TRAIN_BIN"
   --backend tile-cuda
   --tinystories
   --max-steps "$STEPS"
@@ -219,8 +224,8 @@ if [[ -n "$GRAPH_FILE" ]]; then
 fi
 append_split_args common_args "$COMMON_EXTRA_ARGS_RAW"
 
-baseline_args=("${common_args[@]}" --tile-ops-lib "$NFN_NATIVE_TILE_OPS_LIB")
-candidate_args=("${common_args[@]}" --tile-ops-lib "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB")
+baseline_args=("$NFN_NATIVE_GPT_TRAIN_BIN" "${common_args[@]}" --tile-ops-lib "$NFN_NATIVE_TILE_OPS_LIB")
+candidate_args=("$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" "${common_args[@]}" --tile-ops-lib "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB")
 append_split_args baseline_args "$BASELINE_EXTRA_ARGS_RAW"
 append_split_args candidate_args "$CANDIDATE_EXTRA_ARGS_RAW"
 

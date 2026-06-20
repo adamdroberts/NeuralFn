@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the SM120 native-vs-native candidate benchmark wrapper so compiled C++
+  trainer executable candidates can be measured directly. The wrapper now uses
+  `NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN` or the shorter
+  `NFN_SM120_CANDIDATE_TRAIN_BIN` for the candidate command while
+  `NFN_NATIVE_GPT_TRAIN_BIN` remains the baseline. This prevents saved-binary
+  trainer bisections from accidentally comparing the baseline executable
+  against itself when only the candidate trainer path was intended to change.
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh` and
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k sm120_candidate`.
+
 - Revalidated the CUDA-visible native training path after installing
   `cuda-toolkit-13-3` for WSL. `nvcc --version` now reports CUDA 13.3.33 and a
   GPU-visible `nvidia-smi` run reports CUDA UMD 13.3 on the dedicated RTX 5090

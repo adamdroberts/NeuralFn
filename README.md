@@ -213,6 +213,11 @@ commands, and use `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`,
 `NFN_SM120_NATIVE_CANDIDATE_ARGS`, or `NFN_SM120_CANDIDATE_EXTRA_ARGS` for
 candidate-only CLI flags such as `--lm-head-row-chunk-size 32768`; the dry-run plan prints both resolved
 commands so command separation can be audited before launching a long GPU job.
+When comparing a saved or freshly compiled native trainer executable, set
+`NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN=/tmp/nfn_gpt_native_train_candidate`
+or the shorter `NFN_SM120_CANDIDATE_TRAIN_BIN=...`; the baseline still comes
+from `NFN_NATIVE_GPT_TRAIN_BIN` and the candidate command no longer silently
+reuses the baseline trainer path.
 This keeps quick candidate runs from silently falling back to the wrapper's
 default 10-step, 3-sample profile when using the shorter alias names.
 Set `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` or
@@ -506,6 +511,9 @@ native command on both sides, selected-GPU idle guards, and
 `NFN_SM120_NATIVE_CANDIDATE_ENV="KEY=VALUE OTHER=1"` or
 `NFN_SM120_NATIVE_CANDIDATE_ENV="KEY=VALUE,OTHER=1"` to test an env-gated
 candidate against the current default, or set
+`NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN=/tmp/nfn_gpt_native_train_candidate` to
+compare a candidate compiled trainer executable against
+`build/nfn_gpt_native_train`. Set
 `NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB=/tmp/libnfn_candidate.so` to compare a
 candidate Tile ops build against `build/libnfn_native_train_tile_ops.so`. Common
 controls include `NFN_SM120_NATIVE_STEPS`, `NFN_SM120_NATIVE_SAMPLES`,
@@ -1061,6 +1069,11 @@ For native GEMM profiling, set `NFN_NATIVE_LINEAR_SHAPE_STATS=1`, `NFN_TILE_CUDA
 Run SM120 parity and candidate benchmarks only from a shell with real WSL GPU driver access. If `nvidia-smi` reports "GPU access blocked by the operating system" or the native JSON reports `cudaDriverGetVersion` as `0`, the result is an execution-environment failure rather than a kernel result; rerun the same command with GPU-visible execution before accepting or rejecting a candidate. `tools/paired_kernel_speed.py` now also takes a per-selected-GPU lock at `/tmp/nfn_paired_kernel_speed_gpu_<device>.lock` for measured runs, so two same-GPU paired benchmarks cannot overlap and contaminate each other before `nvidia-smi` observes a compute process. The default lock fails fast; pass `--gpu-benchmark-lock-timeout-seconds N` to wait, or `--no-gpu-benchmark-lock` only for intentionally unmanaged measurements.
 
 `tools/bench_native_gpt_sm120_candidate.sh` accepts the native-specific `NFN_SM120_NATIVE_*` controls, the shorter `NFN_SM120_CANDIDATE_*` controls, and the shared parity-wrapper `NFN_SM120_PARITY_*` controls for common benchmark shape fields such as steps, samples, warmup, profile directory, stage timing, GPU selection, JSON output, and dry-run plan. Native-specific names win over candidate names, which win over parity names. Candidate-only env and candidate-only extra args stay separate, so `NFN_SM120_NATIVE_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` and `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` / `NFN_SM120_CANDIDATE_EXTRA_ARGS` still affect only the candidate command. This keeps quick parity-to-native bisections from silently falling back to the candidate wrapper defaults of 10 steps, 3 samples, and 1 warmup.
+Candidate trainer executable selection is also separated: use
+`NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN` or `NFN_SM120_CANDIDATE_TRAIN_BIN` for a
+candidate compiled trainer while `NFN_NATIVE_GPT_TRAIN_BIN` remains the
+baseline. This is required when measuring C++ trainer changes rather than only
+Tile ops library or environment-switch changes.
 For shared profiling env, prefer `NFN_SM120_COMMON_ENV` or its native/parity
 aliases; the wrapper expands each key-value pair into both `--baseline-env` and
 `--candidate-env` before invoking `tools/paired_kernel_speed.py`. Common,

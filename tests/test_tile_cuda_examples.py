@@ -368,6 +368,8 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "NFN_SM120_NATIVE_CANDIDATE_ARGS" in text
     assert "NFN_SM120_CANDIDATE_EXTRA_ARGS" in text
     assert "NFN_SM120_CANDIDATE_CANDIDATE_EXTRA_ARGS" not in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" in text
+    assert "NFN_SM120_CANDIDATE_TRAIN_BIN" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB" in text
     assert "NFN_SM120_NATIVE_TEMPLATE_NAME" in text
     assert "NFN_SM120_CANDIDATE_TEMPLATE_NAME" in text
@@ -425,6 +427,60 @@ def test_native_gpt_sm120_candidate_wrapper_accepts_short_aliases(tmp_path: Path
     candidate_command = proc.stdout.split("  candidate:", 1)[1]
     assert "--lm-head-row-chunk-size 32768" not in baseline_command
     assert "--lm-head-row-chunk-size 32768" in candidate_command
+
+
+def test_native_gpt_sm120_candidate_wrapper_accepts_candidate_train_bin(tmp_path: Path) -> None:
+    script = Path("tools/bench_native_gpt_sm120_candidate.sh")
+    output_path = tmp_path / "candidate-train-bin.json"
+    baseline_train = tmp_path / "baseline_train"
+    candidate_train = tmp_path / "candidate_train"
+    baseline_tile_ops = tmp_path / "baseline_tile_ops.so"
+    candidate_tile_ops = tmp_path / "candidate_tile_ops.so"
+
+    for executable in (baseline_train, candidate_train):
+        executable.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        executable.chmod(0o755)
+    baseline_tile_ops.write_text("", encoding="utf-8")
+    candidate_tile_ops.write_text("", encoding="utf-8")
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_STEPS": "2",
+            "NFN_SM120_NATIVE_SAMPLES": "1",
+            "NFN_SM120_NATIVE_WARMUP": "0",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_NATIVE_GPT_TRAIN_BIN": str(baseline_train),
+            "NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN": str(candidate_train),
+            "NFN_NATIVE_TILE_OPS_LIB": str(baseline_tile_ops),
+            "NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB": str(candidate_tile_ops),
+            "NFN_SM120_NATIVE_JSON_OUT": str(output_path),
+        }
+    )
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "  baseline:" in proc.stdout
+    assert "  candidate:" in proc.stdout
+    baseline_command = proc.stdout.split("  baseline:", 1)[1].split("  candidate:", 1)[0]
+    candidate_command = proc.stdout.split("  candidate:", 1)[1]
+    assert str(baseline_train) in baseline_command
+    assert str(candidate_train) not in baseline_command
+    assert str(candidate_train) in candidate_command
+    assert str(baseline_train) not in candidate_command
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["baseline_command"][0] == str(baseline_train)
+    assert payload["candidate_command"][0] == str(candidate_train)
 
 
 def test_native_gpt_sm120_candidate_wrapper_applies_common_env_to_both_commands(tmp_path: Path) -> None:
