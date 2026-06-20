@@ -427,9 +427,19 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status" in tile_source
     assert "trainer_linear_cublaslt_grouped_layout_probe_status" in kernels_source
     assert "cublasLtGroupedMatrixLayoutCreate" in kernels_source
+    assert "nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan" in tile_header
+    assert "nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan" in tile_source
+    assert "trainer_linear_cublaslt_prewarm_bf16_plan" in kernels_source
+    assert "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS" in gpt_source
+    assert "NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS" in gpt_source
+    assert "NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM" in gpt_source
     assert "linear_cublaslt_grouped_layout_probe_available" in gpt_source
     assert "linear_cublaslt_grouped_layout_probe_status" in gpt_source
     assert "linear_cublaslt_grouped_layout_supported" in gpt_source
+    assert "linear_cublaslt_plan_prewarm_available" in gpt_source
+    assert "linear_cublaslt_plan_prewarm_attempted_count" in gpt_source
+    assert "linear_cublaslt_plan_prewarm_success_count" in gpt_source
+    assert "setup.cublaslt_plan_prewarm" in gpt_source
     assert "linear_cublaslt_grouped_layout_probe_status" in speed_tool
     assert "linear_cublaslt_grouped_layout_supported" in speed_tool
 

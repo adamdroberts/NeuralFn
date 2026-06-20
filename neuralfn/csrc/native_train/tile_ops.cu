@@ -48,6 +48,16 @@ std::int64_t trainer_linear_bf16_workspace_b_capacity();
 std::int64_t trainer_linear_bf16_cached_a_capacity();
 std::int64_t trainer_linear_bf16_cache_entry_count();
 int trainer_linear_cublaslt_grouped_layout_probe_status();
+bool trainer_linear_cublaslt_prewarm_bf16_plan(
+    int m,
+    int n,
+    int k,
+    int op_a,
+    int op_b,
+    int lda,
+    int ldb,
+    int ldc,
+    bool bgrad_epilogue);
 std::int64_t trainer_linear_shape_stats_count();
 bool trainer_linear_shape_stats_entry(
     std::int64_t index,
@@ -1855,6 +1865,30 @@ std::int64_t nfn_native_tile_trainer_linear_bf16_cache_entry_count() {
 
 int nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status() {
     return neuralfn::tile_cuda::trainer_linear_cublaslt_grouped_layout_probe_status();
+}
+
+int nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan(
+    int m,
+    int n,
+    int k,
+    int op_a,
+    int op_b,
+    int lda,
+    int ldb,
+    int ldc,
+    int bgrad_epilogue) {
+    return neuralfn::tile_cuda::trainer_linear_cublaslt_prewarm_bf16_plan(
+               m,
+               n,
+               k,
+               op_a,
+               op_b,
+               lda,
+               ldb,
+               ldc,
+               bgrad_epilogue != 0)
+        ? 1
+        : 0;
 }
 
 std::int64_t nfn_native_tile_trainer_linear_shape_stats_count() {

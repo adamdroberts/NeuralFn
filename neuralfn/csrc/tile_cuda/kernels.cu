@@ -17413,6 +17413,95 @@ int trainer_linear_cublaslt_grouped_layout_probe_status() {
 #endif
 }
 
+bool trainer_linear_cublaslt_prewarm_bf16_plan(
+    int m,
+    int n,
+    int k,
+    int op_a_value,
+    int op_b_value,
+    int lda,
+    int ldb,
+    int ldc,
+    bool bgrad_epilogue) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  cublasLtHandle_t handle = trainer_linear_cublaslt_handle();
+  if (handle == nullptr || m <= 0 || n <= 0 || k <= 0 || lda <= 0 || ldb <= 0 || ldc <= 0) {
+    return false;
+  }
+  const cublasOperation_t op_a = static_cast<cublasOperation_t>(op_a_value);
+  const cublasOperation_t op_b = static_cast<cublasOperation_t>(op_b_value);
+  const cublasLtEpilogue_t epilogue =
+      bgrad_epilogue ? CUBLASLT_EPILOGUE_BGRADB : CUBLASLT_EPILOGUE_DEFAULT;
+  TrainerLinearCublasLtPlanKey key{
+      m,
+      n,
+      k,
+      lda,
+      ldb,
+      ldc,
+      static_cast<int>(op_a),
+      static_cast<int>(op_b),
+      static_cast<int>(CUDA_R_16BF),
+      static_cast<int>(CUDA_R_16BF),
+      static_cast<int>(CUDA_R_32F),
+      static_cast<int>(CUBLAS_COMPUTE_32F_FAST_16BF),
+      static_cast<int>(epilogue)};
+  TrainerLinearCublasLtPlan cached_plan;
+  if (trainer_linear_cublaslt_descriptor_cache_enabled() &&
+      find_trainer_linear_cublaslt_plan(key, &cached_plan)) {
+    return true;
+  }
+  cublasLtMatmulDesc_t matmul_desc = nullptr;
+  cublasLtMatrixLayout_t a_desc = nullptr;
+  cublasLtMatrixLayout_t b_desc = nullptr;
+  cublasLtMatrixLayout_t c_desc = nullptr;
+  if (!create_trainer_linear_cublaslt_layouts(
+          op_a,
+          op_b,
+          CUDA_R_16BF,
+          CUDA_R_16BF,
+          CUDA_R_32F,
+          CUBLAS_COMPUTE_32F_FAST_16BF,
+          m,
+          n,
+          k,
+          lda,
+          ldb,
+          ldc,
+          epilogue,
+          nullptr,
+          &matmul_desc,
+          &a_desc,
+          &b_desc,
+          &c_desc)) {
+    destroy_trainer_linear_cublaslt_layouts(matmul_desc, a_desc, b_desc, c_desc);
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(g_trainer_linear_cublaslt_workspace_mutex);
+  TrainerLinearCublasLtPlan* plan =
+      trainer_linear_cublaslt_plan_for(handle, key, matmul_desc, a_desc, b_desc, c_desc);
+  const bool retained =
+      plan != nullptr &&
+      trainer_linear_cublaslt_descriptor_cache_enabled() &&
+      plan->matmul_desc == matmul_desc;
+  if (!retained) {
+    destroy_trainer_linear_cublaslt_layouts(matmul_desc, a_desc, b_desc, c_desc);
+  }
+  return plan != nullptr;
+#else
+  (void)m;
+  (void)n;
+  (void)k;
+  (void)op_a_value;
+  (void)op_b_value;
+  (void)lda;
+  (void)ldb;
+  (void)ldc;
+  (void)bgrad_epilogue;
+  return false;
+#endif
+}
+
 std::int64_t trainer_linear_shape_stats_count() {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   std::lock_guard<std::mutex> lock(g_linear_shape_stats_mutex);

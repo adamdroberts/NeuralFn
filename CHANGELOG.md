@@ -78,6 +78,29 @@ Future updates should append new entries here rather than replacing older notes.
   `backend: "tile-cuda"`, `linear_cublaslt_grouped_layout_probe_status: 0`,
   `linear_cublaslt_grouped_layout_supported: true`, and `passed: true`.
 
+- Added an opt-in CUDA 13.3 BF16 cuBLASLt plan prewarm diagnostic to the raw
+  Tile C ABI and native GPT runtime. `libnfn_native_train_tile_ops.so` now
+  exports `nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan`, and the
+  native GPT runtime can call it before the train loop with
+  `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS=1`,
+  `NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS=1`, or
+  `NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM=1`. Runtime JSON reports
+  `linear_cublaslt_plan_prewarm_available`,
+  `linear_cublaslt_plan_prewarm_enabled`,
+  `linear_cublaslt_plan_prewarm_attempted_count`,
+  `linear_cublaslt_plan_prewarm_success_count`, and
+  `linear_cublaslt_plan_prewarm_failure_count`; setup timing also includes
+  `setup.cublaslt_plan_prewarm`. The diagnostic remains default-off. The
+  dedicated RTX 5090 5-step, 3-sample same-script run successfully prewarmed
+  all 9 target plans and improved train-loop wall time to `0.994375x`, but
+  setup regressed to `1.158747x` and strict block-backward gates failed
+  (`stage.block_backward.total_ms=1.000084x`,
+  `stage.block_backward.mlp_proj.total_ms=1.000116x`), so it was rejected as a
+  default performance route. Verification: rebuilt the CUDA Tile ops library
+  and native GPT CLI with CUDA 13.3, confirmed the new exported symbols with
+  `nm -D`, ran the focused native GPT source test, and ran the paired RTX 5090
+  benchmark under idle-GPU gating.
+
 - Added an opt-in dense GPT LM-head row-chunk pipeline candidate behind
   `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` /
   `NFN_NATIVE_GPT2_LM_HEAD_PIPELINE_CHUNKS=1`. The candidate keeps the
