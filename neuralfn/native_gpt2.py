@@ -108,6 +108,9 @@ class NativeGpt2RunConfig:
     checkpoint_metadata_smoke: bool = False
     write_checkpoint: bool = True
     cuda_runtime_lib: str = ""
+    batch_size_explicit: bool = True
+    seq_len_explicit: bool = True
+    num_layers_explicit: bool = True
     hellaswag_eval: int = 0
     recompute: int = 0
     zero_stage: int = 1
@@ -214,10 +217,6 @@ class NativeGpt2RunConfig:
             str(int(self.generate_tokens)),
             "--native-cuda-checkpoint-every",
             str(int(self.checkpoint_every_steps)),
-            "--batch-size",
-            str(int(self.batch_size)),
-            "--train-seq-len",
-            str(int(self.seq_len)),
             "--train-batch-tokens",
             str(int(self.train_batch_tokens)),
             "--learning-rate",
@@ -230,11 +229,15 @@ class NativeGpt2RunConfig:
             str(int(self.warmup_steps)),
             "--max-steps",
             str(int(self.max_steps)),
-            "--num-layers",
-            str(int(str(self.model_descriptor).removeprefix("d") or "12")),
             "--native-cuda-activation",
             self.activation,
         ]
+        if self.batch_size_explicit:
+            args.extend(["--batch-size", str(int(self.batch_size))])
+        if self.seq_len_explicit:
+            args.extend(["--train-seq-len", str(int(self.seq_len))])
+        if self.num_layers_explicit:
+            args.extend(["--num-layers", str(int(str(self.model_descriptor).removeprefix("d") or "12"))])
         if str(self.tile_ops_lib or "").strip():
             args.extend(["--tile-ops-lib", self.tile_ops_lib])
         if self.smoke_tile_ops:
@@ -670,6 +673,9 @@ def build_native_gpt2_run_config(
     allow_train_as_val: bool = False,
     model_family: str = "gpt",
     write_checkpoint: bool = True,
+    batch_size_explicit: bool = True,
+    seq_len_explicit: bool = True,
+    num_layers_explicit: bool = True,
 ) -> tuple[NativeGpt2RunConfig, dict[str, Any]]:
     meta, train_data, val_data = resolve_native_gpt2_token_shards(
         dataset_name,
@@ -721,6 +727,9 @@ def build_native_gpt2_run_config(
         startup_only=bool(startup_only),
         checkpoint_metadata_smoke=bool(checkpoint_metadata_smoke),
         cuda_runtime_lib=str(cuda_runtime_lib or ""),
+        batch_size_explicit=bool(batch_size_explicit),
+        seq_len_explicit=bool(seq_len_explicit),
+        num_layers_explicit=bool(num_layers_explicit),
         dataset_alias=str(dataset_path),
         template_name=_normalize_native_gpt2_template_name(template_name),
         graph_file=str(graph_file or ""),
@@ -773,6 +782,9 @@ def build_native_gpt2_compiled_cli_run_config(
     graph_file: str = "",
     model_family: str = "gpt",
     write_checkpoint: bool = True,
+    batch_size_explicit: bool = True,
+    seq_len_explicit: bool = True,
+    num_layers_explicit: bool = True,
 ) -> NativeGpt2RunConfig:
     """Build a compiled-CLI handoff without Python-side token shard inspection."""
 
@@ -820,6 +832,9 @@ def build_native_gpt2_compiled_cli_run_config(
         startup_only=bool(startup_only),
         checkpoint_metadata_smoke=bool(checkpoint_metadata_smoke),
         cuda_runtime_lib=str(cuda_runtime_lib or ""),
+        batch_size_explicit=bool(batch_size_explicit),
+        seq_len_explicit=bool(seq_len_explicit),
+        num_layers_explicit=bool(num_layers_explicit),
         dataset_alias=str(dataset_alias),
         template_name=_normalize_native_gpt2_template_name(template_name),
         graph_file=str(graph_file or ""),

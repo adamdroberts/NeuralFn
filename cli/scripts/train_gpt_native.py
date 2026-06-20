@@ -259,6 +259,9 @@ def _build_compiled_cli_config(args: argparse.Namespace, dataset_arg: str | Path
         graph_file=str(args.graph_file or ""),
         model_family=str(args.model_family or DEFAULT_MODEL_FAMILY),
         write_checkpoint=not bool(args.native_cuda_no_checkpoint),
+        batch_size_explicit=bool(getattr(args, "_batch_size_explicit", True)),
+        seq_len_explicit=bool(getattr(args, "_seq_len_explicit", True)),
+        num_layers_explicit=bool(getattr(args, "_num_layers_explicit", True)),
     )
 
 
@@ -435,6 +438,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     explicit_tokens = list(argv if argv is not None else sys.argv[1:])
     explicit_seq_len = any(token == "--train-seq-len" or token.startswith("--train-seq-len=") for token in explicit_tokens)
+    explicit_batch_size = any(token == "--batch-size" or token.startswith("--batch-size=") for token in explicit_tokens)
+    explicit_num_layers = any(token == "--num-layers" or token.startswith("--num-layers=") for token in explicit_tokens)
     explicit_template = any(
         token in {"--template-name", "--template", "--preset"}
         or token.startswith("--template-name=")
@@ -451,6 +456,11 @@ def main(argv: list[str] | None = None) -> int:
     model_selector = str(args.model_family or DEFAULT_MODEL_FAMILY).strip().lower().replace("_", "-")
     if model_selector == "gpt3" and not explicit_seq_len and not explicit_template and not explicit_graph:
         args.train_seq_len = 2048
+        args._seq_len_explicit = True
+    else:
+        args._seq_len_explicit = explicit_seq_len
+    args._batch_size_explicit = explicit_batch_size
+    args._num_layers_explicit = explicit_num_layers
     args.model_family = "gpt" if model_selector in {"gpt", "gpt2", "gpt3"} else model_selector
     _apply_dataset_shortcuts(args)
     encoding_name = _resolve_tokenizer(args)

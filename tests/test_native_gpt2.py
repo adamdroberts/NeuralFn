@@ -576,6 +576,43 @@ def test_build_native_gpt2_compiled_cli_config_passes_dataset_alias_without_shar
     assert cfg.write_checkpoint is True
     assert "--no-checkpoint" not in argv
 
+
+def test_build_native_gpt2_compiled_cli_config_can_defer_shape_to_graph_metadata(tmp_path: Path) -> None:
+    cfg = build_native_gpt2_compiled_cli_run_config(
+        dataset_alias="roneneldan__TinyStories__TinyStoriesV2-GPT4",
+        executable="/opt/nfn/train_gpt2cu",
+        output_dir=tmp_path / "graph-shaped-gpt",
+        eval_every_steps=250,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=20000,
+        num_layers=12,
+        activation="gelu",
+        graph_file="/tmp/native-compatible-gpt-graph.json",
+        batch_size_explicit=False,
+        seq_len_explicit=False,
+        num_layers_explicit=False,
+    )
+
+    argv = cfg.compiled_cli_argv("/opt/nfn/nfn_gpt_native_train")
+
+    assert "--graph-file" in argv
+    assert argv[argv.index("--graph-file") + 1] == "/tmp/native-compatible-gpt-graph.json"
+    assert "--batch-size" not in argv
+    assert "--train-seq-len" not in argv
+    assert "--num-layers" not in argv
+    assert cfg.batch_size_explicit is False
+    assert cfg.seq_len_explicit is False
+    assert cfg.num_layers_explicit is False
+
     with pytest.raises(ValueError, match="kernel backend must be tile-cuda"):
         build_native_gpt2_compiled_cli_run_config(
             dataset_alias="roneneldan__TinyStories__TinyStoriesV2-GPT4",

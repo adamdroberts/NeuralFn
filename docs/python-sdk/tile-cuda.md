@@ -458,6 +458,18 @@ benchmark the older per-chunk final-hidden packing route. Set
 `NFN_TILE_CUDA_CE_BF16_EXP2=1` only for paired profiling of the BF16 CE+dlogits
 kernel's `exp2f(x * log2(e))` path; the default remains `expf`, and runtime
 JSON reports `lm_head_ce_bf16_exp2_enabled`.
+For SDK launches through `NativeGpt2RunConfig` or the generic
+`NativeGptRunConfig`, `batch_size_explicit`, `seq_len_explicit`, and
+`num_layers_explicit` control whether the compiled CLI receives those shape
+flags. Leave them at the default `True` when constructing a fully specified
+run. Set them to `False` when selecting a custom `graph_file` and you want the
+compiled C++ runner to read compatible dense GPT `template_spec` metadata
+directly from the graph. The high-level native GPT harness sets these booleans
+from the user's actual argv, so omitted shape flags no longer mask graph
+metadata. Unsupported geometry still reports
+`custom-graph-native-trainer-missing` or
+`template-geometry-native-trainer-missing`; arbitrary model widths/dropout are
+not native until the compiled loop is generalized.
 The mixed float32-hidden/BF16-grad dWeight+bias ABI now uses the cuBLASLt bgrad
 epilogue route by default for supported QKV profiling shapes; set
 `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=0` or

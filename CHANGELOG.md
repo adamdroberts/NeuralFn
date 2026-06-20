@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the native GPT Python/SDK compiled-CLI handoff so custom graph
+  geometry is no longer masked by wrapper defaults. `NativeGpt2RunConfig` and
+  the generic `NativeGptRunConfig` now expose `batch_size_explicit`,
+  `seq_len_explicit`, and `num_layers_explicit`; when these are false the
+  compiled argv omits `--batch-size`, `--train-seq-len`, and/or `--num-layers`
+  so the C++ runner can read compatible dense GPT `template_spec` metadata from
+  `--graph-file` directly. The high-level native GPT harness sets those flags
+  from the user's actual argv. Migration notes: existing SDK callers keep the
+  old fully explicit argv behavior because the new booleans default to true;
+  set them false only when graph metadata should drive the native shape.
+  Unsupported model widths/dropout still report the existing native-trainer
+  missing statuses. Verification: focused native GPT config tests, focused GPT
+  template handoff tests, the full `tests/test_template_presets.py` suite, and
+  `git diff --check`.
+
 - Changed the native C++ token-shard resolver so compiled GPT runs with
   validation disabled (`--eval-every-steps 0` or `--eval-batches 0`) no longer
   require or stat validation shards. Plan/runtime JSON now reports
