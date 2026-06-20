@@ -31,12 +31,12 @@ case "${PROFILE_DIR_RAW,,}" in
     ;;
   *)
     profile_args=(--append-native-profile-json-dir "$PROFILE_DIR_RAW")
-    case "${STAGE_TIMING,,}" in
-      "1"|"true"|"yes"|"on")
-        profile_args+=(--native-stage-timing)
-        export NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS="${NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS:-80000}"
-        ;;
-    esac
+    ;;
+esac
+case "${STAGE_TIMING,,}" in
+  "1"|"true"|"yes"|"on")
+    profile_args+=(--native-stage-timing)
+    export NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS="${NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS:-80000}"
     ;;
 esac
 

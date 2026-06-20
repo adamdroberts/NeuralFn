@@ -670,6 +670,40 @@ def test_native_gpt_sm120_candidate_wrapper_accepts_generic_aliases(tmp_path: Pa
     assert "--append-native-profile-json-dir" not in proc.stdout
 
 
+def test_native_gpt_sm120_candidate_wrapper_stage_timing_without_profile_dir(tmp_path: Path) -> None:
+    script = Path("tools/bench_native_gpt_sm120_candidate.sh")
+    output_path = tmp_path / "candidate-stage-no-profile.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_DRY_RUN_PLAN": "1",
+            "NFN_SM120_STEPS": "2",
+            "NFN_SM120_SAMPLES": "1",
+            "NFN_SM120_WARMUP": "0",
+            "NFN_SM120_PROFILE_DIR": "none",
+            "NFN_SM120_STAGE_TIMING": "1",
+            "NFN_SM120_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_JSON_OUT": str(output_path),
+        }
+    )
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "--append-native-profile-json-dir" not in proc.stdout
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["native_stage_timing"] is True
+    assert payload["append_native_profile_json_dir"] == ""
+
+
 def test_native_gpt_sm120_parity_wrapper_accepts_generic_aliases(tmp_path: Path) -> None:
     script = Path("tools/bench_native_gpt_sm120_parity.sh")
     output_path = tmp_path / "parity-generic-alias.json"
@@ -702,6 +736,40 @@ def test_native_gpt_sm120_parity_wrapper_accepts_generic_aliases(tmp_path: Path)
     assert "cuda_visible_devices: requested=7 resolved=7 mode=explicit" in proc.stdout
     assert "--max-steps 2" in proc.stdout
     assert "--append-native-profile-json-dir" not in proc.stdout
+
+
+def test_native_gpt_sm120_parity_wrapper_stage_timing_without_profile_dir(tmp_path: Path) -> None:
+    script = Path("tools/bench_native_gpt_sm120_parity.sh")
+    output_path = tmp_path / "parity-stage-no-profile.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_DRY_RUN_PLAN": "1",
+            "NFN_SM120_STEPS": "2",
+            "NFN_SM120_SAMPLES": "1",
+            "NFN_SM120_WARMUP": "0",
+            "NFN_SM120_PROFILE_DIR": "none",
+            "NFN_SM120_STAGE_TIMING": "1",
+            "NFN_SM120_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_JSON_OUT": str(output_path),
+        }
+    )
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "--append-native-profile-json-dir" not in proc.stdout
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["native_stage_timing"] is True
+    assert payload["append_native_profile_json_dir"] == ""
 
 
 def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tmp_path: Path) -> None:

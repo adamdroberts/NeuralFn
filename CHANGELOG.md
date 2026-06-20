@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Decoupled SM120 wrapper stage timing from profile sidecar generation. Both
+  `tools/bench_native_gpt_sm120_candidate.sh` and
+  `tools/bench_native_gpt_sm120_parity.sh` now pass
+  `--native-stage-timing` whenever the stage-timing aliases are enabled, even
+  when `NFN_SM120_PROFILE_DIR=none` disables `--append-native-profile-json-dir`.
+  This lets CUDA kernel bisections gate and report stage buckets without
+  writing per-sample native profile files. Verification:
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`,
+  `bash -n tools/bench_native_gpt_sm120_parity.sh`, and
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k "sm120_candidate or sm120_parity"`.
+
 - Fixed the SM120 native-vs-native candidate benchmark wrapper so compiled C++
   trainer executable candidates can be measured directly. The wrapper now uses
   `NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN` or the shorter
