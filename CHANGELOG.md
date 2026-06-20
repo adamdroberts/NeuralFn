@@ -160,12 +160,12 @@ Future updates should append new entries here rather than replacing older notes.
 
 - Revisited the CUDA 13.3 WSL failure set after reinstalling
   `cuda-toolkit-13-3`. The dedicated RTX 5090 is GPU-visible with CUDA UMD 13.3,
-  and the full CUDA-gated repository sweep now passes with `1188 passed`,
-  `20 warnings`, and `468 subtests passed`. A fresh no-stage same-script parity
+  and the full CUDA-gated repository sweep now passes with `1185 passed`,
+  `4 skipped`, `20 warnings`, and `468 subtests passed`. A fresh no-stage same-script parity
   run still shows native dense-GPT performance work remaining rather than a test
-  failure: llm.kittens measured `2473.728889 ms/step` and NeuralFn measured
-  `2553.906667 ms/step` (`1.032455x` train-loop wall,
-  `0.968663x` tokens/sec). No default switch was promoted during this revisit:
+  failure: after the 32768-row LM-head chunk default, llm.kittens measured
+  `2495.348667 ms/step` and NeuralFn measured `2522.440 ms/step`
+  (`1.010870x` train-loop wall, `0.988745x` tokens/sec). No default switch was promoted during this revisit:
   the BF16 arena-off startup win regressed training, broad BF16 cuBLASLt disable
   regressed badly, token-weight/vector4 and token-shadow probes failed gates,
   LM-head 4096-row chunks remained slower overall, and the direct bias-gradient
