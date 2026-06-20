@@ -26,7 +26,14 @@ Future updates should append new entries here rather than replacing older notes.
   reported `"passed": true`, and the full repository pytest suite passed with
   `1181 passed, 4 skipped, 20 warnings, 468 subtests passed`. This confirms the
   previous CUDA/toolkit failure surface is green on the current workstation
-  setup.
+  setup. A follow-up rebuild of `build/nfn_gpt_native_train`,
+  `build/nfn_native_train`, `build/libnfn_native_train_tile_ops.so`, and the
+  native GPT Python binding kept the no-Torch compiled path current with CUDA
+  13.3. The current 3-step, 2-sample llm.kittens parity line measures NeuralFn
+  at `1.041561x` train-loop wall time versus
+  `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`; the tracked
+  remaining gap is the LM-head classifier/backward structure, not Python or
+  graph-editor tensor flow.
 
 - Added route-attribution shape-stat support to the same-script native GPT
   candidate benchmark wrapper. `NFN_SM120_NATIVE_LINEAR_SHAPE_STATS=1` and the
