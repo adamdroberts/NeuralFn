@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Improved the dense GPT BF16 classifier/CE default path so scalar-store
+  dlogit writes still use vectorized BF16 row loads during the final pass. This
+  better matches the llm.kittens fused-classifier read pattern while keeping
+  `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1` / `NFN_TILE_CUDA_CE_BF16_VEC_STORES=1`
+  default-off after the earlier streaming-store rejection. The CUDA 13.3.33
+  dedicated RTX 5090 same-script candidate gate compared the rebuilt Tile ops
+  library against the saved prior library over five measured samples with stage
+  timing and passed: mean train-loop wall time `0.995665x`, LM-head backward
+  `0.997949x`, CE `0.994846x`, block backward `0.994074x`, and
+  `1.004513x` mean tokens/sec versus the previous scalar final-pass load path.
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so`, ran the native
+  GPT `--smoke-lm-step` command against that library, ran
+  `NFN_TILE_CUDA_TEST=1 CUDA_VISIBLE_DEVICES=0 python -m pytest tests/test_tile_cuda_gpu.py -q`,
+  and ran the same-script candidate benchmark with
+  `NFN_SM120_NATIVE_STAGE_TIMING=1`.
+
 - Updated the unified native model registry schema. `nfn-native-train
   --list-models --json` and `neuralfn.native_train.native_train_model_registry()`
   now expose `transformer_lm_status`, `token_lm_status`, and `geometry_status`

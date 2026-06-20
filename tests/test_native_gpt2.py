@@ -5711,6 +5711,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "cross_entropy_bf16_vec_loads_enabled" in kernels_text
     assert "bf16_row_max_vec8_or_scalar" in kernels_text
     assert "bf16_row_exp_sum_vec8_or_scalar" in kernels_text
+    assert "if (vec_loads) {" in kernels_text
+    assert "const int4 packed = load_bf16_vec8(row_logits + col);" in kernels_text
+    assert "bf16_bits_to_f32_device(int4_u16_at(packed, offset))" in kernels_text
     assert "store_bf16_vec8_streaming" in kernels_text
     assert "load_bf16_vec8" in kernels_text
     assert "__stcs(reinterpret_cast<int4*>(dst)" in kernels_text

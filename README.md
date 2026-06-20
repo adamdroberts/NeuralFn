@@ -85,7 +85,8 @@ The opt-in vector4-strided token-weight initializer
 it improved the token-init substage in a startup-only RTX 5090 run but did not
 beat the strict setup-wall gate.
 Dense GPT native BF16 classifier/CE now uses vectorized BF16 row loads by
-default to match the llm.kittens fused-classifier memory access pattern; set
+default to match the llm.kittens fused-classifier memory access pattern,
+including the final dlogit write pass when scalar stores are selected; set
 `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=0` or
 `NFN_TILE_CUDA_CE_BF16_VEC_LOADS=0` only for paired scalar-load bisection.
 
@@ -624,6 +625,14 @@ reject over-shared kernel instantiations at `ptxas` time.
 Native GPT BF16 cross-entropy kernels default to 1024 threads per row. For paired launch-configuration bisection, set `NFN_NATIVE_GPT_CE_BF16_THREADS`, `NFN_NATIVE_GPT2_CE_BF16_THREADS`, or `NFN_TILE_CUDA_CE_BF16_THREADS` to one of `128`, `256`, `512`, or `1024`; unsupported values fall back to 1024.
 
 For BF16 classifier dlogit store bisection, set `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1`, `NFN_NATIVE_GPT2_CE_BF16_VEC_STORES=1`, or `NFN_TILE_CUDA_CE_BF16_VEC_STORES=1` to test the opt-in 128-bit streaming-store path. It remains disabled by default because the CUDA 13.3.33 RTX 5090 paired benchmark after the BF16 vector-load default measured scalar stores as the steadier route.
+
+The default scalar-store BF16 classifier path still uses vectorized BF16 reads
+for the final dlogit pass when `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS` is enabled.
+This keeps the llm.kittens-style 128-bit read pattern without promoting the
+previously rejected streaming-store path. The CUDA 13.3.33 dedicated RTX 5090
+same-script gate measured the final-pass vector-load candidate at `0.995665x`
+mean train-loop wall time, `0.997949x` LM-head backward time, and `0.994846x`
+CE time versus the prior scalar final-pass load path.
 
 Native BF16 `cublasGemmEx` fallback paths default to `CUBLAS_COMPUTE_32F` for the non-cuBLASLt cases. For same-script fallback bisection, set `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF=1` or `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_FAST_16BF=1` to test `CUBLAS_COMPUTE_32F_FAST_16BF` without changing cuBLASLt dispatch. The fallback algorithm can also be bisected without rebuilding: set `NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO=N` / `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO=N` for a global `CUBLAS_GEMM_ALGO<N>_TENSOR_OP` probe, or set `NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO_SHAPE=m,n,k,opA,opB,N` / `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO_SHAPE=...` for one hot shape such as LM-head dHidden `768,8192,50304,N,N,0`. Use `default` or `default_tensor_op` to force the cuBLAS defaults. These switches are diagnostic-only; unset them for normal training so the existing per-call default remains unchanged.
 

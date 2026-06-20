@@ -11184,11 +11184,35 @@ __global__ void token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targe
       row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
     }
   } else {
-    for (std::int64_t col = threadIdx.x; col < vocab; col += blockDim.x) {
-      const float value = bf16_bits_to_f32_device(row_logits[col]);
-      const float prob = cross_entropy_exp_device(value - row_max, use_exp2) / row_denom;
-      const float onehot = col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
-      row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+    if (vec_loads) {
+      constexpr std::int64_t kVec = 8;
+      const std::int64_t aligned_vocab = vocab & ~(kVec - 1);
+      for (std::int64_t col = static_cast<std::int64_t>(threadIdx.x) * kVec;
+           col < aligned_vocab;
+           col += static_cast<std::int64_t>(blockDim.x) * kVec) {
+        const int4 packed = load_bf16_vec8(row_logits + col);
+#pragma unroll
+        for (int offset = 0; offset < 8; ++offset) {
+          const std::int64_t current_col = col + offset;
+          const float value = bf16_bits_to_f32_device(int4_u16_at(packed, offset));
+          const float prob = cross_entropy_exp_device(value - row_max, use_exp2) / row_denom;
+          const float onehot = current_col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
+          row_logits[current_col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+        }
+      }
+      for (std::int64_t col = aligned_vocab + threadIdx.x; col < vocab; col += blockDim.x) {
+        const float value = bf16_bits_to_f32_device(row_logits[col]);
+        const float prob = cross_entropy_exp_device(value - row_max, use_exp2) / row_denom;
+        const float onehot = col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
+        row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+      }
+    } else {
+      for (std::int64_t col = threadIdx.x; col < vocab; col += blockDim.x) {
+        const float value = bf16_bits_to_f32_device(row_logits[col]);
+        const float prob = cross_entropy_exp_device(value - row_max, use_exp2) / row_denom;
+        const float onehot = col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
+        row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+      }
     }
   }
   if (zero_padding) {
@@ -11271,11 +11295,35 @@ __global__ void token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_
       row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
     }
   } else {
-    for (std::int64_t col = threadIdx.x; col < vocab; col += blockDim.x) {
-      const float value = bf16_bits_to_f32_device(row_logits[col]);
-      const float prob = cross_entropy_exp_device(value - row_max, use_exp2) / row_denom;
-      const float onehot = col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
-      row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+    if (vec_loads) {
+      constexpr std::int64_t kVec = 8;
+      const std::int64_t aligned_vocab = vocab & ~(kVec - 1);
+      for (std::int64_t col = static_cast<std::int64_t>(threadIdx.x) * kVec;
+           col < aligned_vocab;
+           col += static_cast<std::int64_t>(blockDim.x) * kVec) {
+        const int4 packed = load_bf16_vec8(row_logits + col);
+#pragma unroll
+        for (int offset = 0; offset < 8; ++offset) {
+          const std::int64_t current_col = col + offset;
+          const float value = bf16_bits_to_f32_device(int4_u16_at(packed, offset));
+          const float prob = cross_entropy_exp_device(value - row_max, use_exp2) / row_denom;
+          const float onehot = current_col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
+          row_logits[current_col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+        }
+      }
+      for (std::int64_t col = aligned_vocab + threadIdx.x; col < vocab; col += blockDim.x) {
+        const float value = bf16_bits_to_f32_device(row_logits[col]);
+        const float prob = cross_entropy_exp_device(value - row_max, use_exp2) / row_denom;
+        const float onehot = col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
+        row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+      }
+    } else {
+      for (std::int64_t col = threadIdx.x; col < vocab; col += blockDim.x) {
+        const float value = bf16_bits_to_f32_device(row_logits[col]);
+        const float prob = cross_entropy_exp_device(value - row_max, use_exp2) / row_denom;
+        const float onehot = col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
+        row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+      }
     }
   }
   if (zero_padding) {
