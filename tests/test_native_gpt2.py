@@ -6009,7 +6009,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     )[1].split("\n__tile_global__ void token_cross_entropy_backward_chunked_float32_kernel", 1)[0]
     assert "loss_out[row] = loss" in loss_backward_body
     assert "atomicAdd(loss_out" in loss_backward_body
-    assert "__syncthreads();" in loss_backward_body
+    assert "const float target_logit = bf16_bits_to_f32_device" in loss_backward_body
+    assert loss_backward_body.index("const float target_logit") < loss_backward_body.index(
+        "loss_out[row] = loss"
+    )
+    assert loss_backward_body.index("const float target_logit") < loss_backward_body.index(
+        "if (vec_stores)"
+    )
+    assert "__syncthreads();" not in loss_backward_body
     assert "nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_float32" in header_text
     assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32" in header_text

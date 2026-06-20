@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revalidated the CUDA-visible native training path after installing
+  `cuda-toolkit-13-3` for WSL. `nvcc --version` now reports CUDA 13.3.33 and a
+  GPU-visible `nvidia-smi` run reports CUDA UMD 13.3 on the dedicated RTX 5090
+  with no compute processes. Rebuilt `build/nfn_gpt_native_train` and
+  `build/libnfn_native_train_tile_ops.so`, then reran the CUDA checks:
+  `build/nfn_gpt_native_train --backend tile-cuda --smoke-lm-step ...` passed,
+  `NFN_TILE_CUDA_TEST=1 CUDA_VISIBLE_DEVICES=0 python -m pytest tests/test_tile_cuda_gpu.py -q`
+  passed, and `python -m pytest tests/test_native_gpt2.py -q` passed with
+  `59 passed, 1 skipped`.
+
+- Improved the dense GPT BF16 row-loss classifier kernel by reading the target
+  logit before the in-place dlogit overwrite and removing the now-unneeded
+  post-loss CTA barrier. This keeps the same row-loss/dlogit contract while
+  trimming the LM-head CE hot path. Verification: rebuilt
+  `build/libnfn_native_train_tile_ops.so`, reran the native GPT
+  `--smoke-lm-step` command, reran
+  `NFN_TILE_CUDA_TEST=1 CUDA_VISIBLE_DEVICES=0 python -m pytest tests/test_tile_cuda_gpu.py -q`,
+  and ran the same-script RTX 5090 native-vs-native candidate gate against the
+  saved CUDA 13.3.33 baseline over five measured samples. The candidate passed:
+  mean train-loop wall `0.988618x`, LM-head backward `0.987088x`, LM-head CE
+  `0.987688x`, block backward `0.990160x`, and tokens/sec `1.011616x`.
+
 - Improved the dense GPT BF16 classifier/CE default path so scalar-store
   dlogit writes still use vectorized BF16 row loads during the final pass. This
   better matches the llm.kittens fused-classifier read pattern while keeping

@@ -70,6 +70,15 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     train-loop wall time and `1.015517x` LM-head CE time versus the current
     row-loss default. Keep
     `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` diagnostic-only.
+  - 2026-06-20 accepted the BF16/u16 row-loss target-logit prefetch barrier
+    removal after the CUDA 13.3.33 rebuild. The fused row-loss+dlogits kernel
+    now reads the target logit before in-place dlogit writes and no longer needs
+    the post-loss `__syncthreads()` before the gradient-store pass. Correctness
+    passed the native GPT `--smoke-lm-step` check and
+    `NFN_TILE_CUDA_TEST=1 CUDA_VISIBLE_DEVICES=0 python -m pytest tests/test_tile_cuda_gpu.py -q`.
+    The 3-step, 5-sample native-vs-native RTX 5090 gate passed against the saved
+    rebuilt baseline: train-loop wall `0.988618x`, LM-head backward `0.987088x`,
+    CE `0.987688x`, block backward `0.990160x`, and tokens/sec `1.011616x`.
 - [x] Add GPT-2 evo `--print-plan` compiled C++ preflight that reports the AdamW/NVFP4/evo-layer schedule and required candidate-evaluation kernels without Python/Torch.
 - [x] Add GPT-2 compiled-CLI SDK handoff config that passes cached dataset alias/path directly to the C++ shard resolver without Python `meta.json` or token-shard validation.
 - [x] Add GPT-2 native `--backend tile-cuda` / SDK `kernel_backend="tile-cuda"` preflight that reports required raw Tile ABI symbols and `--check-tile-ops` validation without Python/Torch.

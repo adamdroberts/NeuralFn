@@ -1044,7 +1044,10 @@ reports `lm_head_ce_row_loss_reduction_requested`,
 `lm_head_ce_loss_backward_strategy`. Set
 `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_REDUCTION=0` or
 `NFN_NATIVE_GPT2_LM_HEAD_ROW_LOSS_REDUCTION=0` only for paired bisection against
-the older fused-loss atomic route.
+the older fused-loss atomic route. The BF16/u16 row-loss kernel reads the target
+logit before it overwrites the row with dlogits, so the in-place loss path avoids
+an extra post-loss CTA barrier while preserving the same row-loss and dlogit
+outputs.
 There is also a default-off diagnostic tail,
 `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1`, that replaces the generic
 row-loss `sum_partials` plus scalar `gradient_accumulate` launches with one

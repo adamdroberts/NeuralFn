@@ -11249,10 +11249,9 @@ __global__ void token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_
   float thread_sum = bf16_row_exp_sum_vec8_or_scalar(row_logits, vocab, row_max, vec_loads, use_exp2);
   const float row_denom = block_reduce_sum_f32(thread_sum, reduce_sum_shared);
   const std::uint16_t target = targets[row];
+  const float target_logit = bf16_bits_to_f32_device(row_logits[static_cast<std::int64_t>(target)]);
 
   if (threadIdx.x == 0 && loss_out != nullptr) {
-    const float target_logit =
-        bf16_bits_to_f32_device(row_logits[static_cast<std::int64_t>(target)]);
     const float loss = logf(row_denom) + row_max - target_logit;
     if (write_row_losses) {
       loss_out[row] = loss;
@@ -11260,7 +11259,6 @@ __global__ void token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_
       atomicAdd(loss_out, loss);
     }
   }
-  __syncthreads();
 
   if (vec_stores) {
     constexpr std::int64_t kVec = 8;
