@@ -644,6 +644,12 @@ previously rejected streaming-store path. The CUDA 13.3.33 dedicated RTX 5090
 same-script gate measured the final-pass vector-load candidate at `0.995665x`
 mean train-loop wall time, `0.997949x` LM-head backward time, and `0.994846x`
 CE time versus the prior scalar final-pass load path.
+`NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1`,
+`NFN_NATIVE_GPT2_CE_BF16_VEC_NORMAL_STORES=1`, or
+`NFN_TILE_CUDA_CE_BF16_VEC_NORMAL_STORES=1` is a separate default-off
+diagnostic for normal cached `int4` packed dlogit stores. It is not promoted:
+the CUDA 13.3.33 RTX 5090 same-script stage gate measured CE at `1.002720x`
+against the scalar-store default, so scalar stores remain the normal route.
 
 Native BF16 `cublasGemmEx` fallback paths default to `CUBLAS_COMPUTE_32F` for the non-cuBLASLt cases. For same-script fallback bisection, set `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF=1` or `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_FAST_16BF=1` to test `CUBLAS_COMPUTE_32F_FAST_16BF` without changing cuBLASLt dispatch. The fallback algorithm can also be bisected without rebuilding: set `NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO=N` / `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO=N` for a global `CUBLAS_GEMM_ALGO<N>_TENSOR_OP` probe, or set `NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO_SHAPE=m,n,k,opA,opB,N` / `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_ALGO_SHAPE=...` for one hot shape such as LM-head dHidden `768,8192,50304,N,N,0`. Use `default` or `default_tensor_op` to force the cuBLAS defaults. These switches are diagnostic-only; unset them for normal training so the existing per-call default remains unchanged.
 

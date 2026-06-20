@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off BF16 classifier normal vector-store diagnostic for the
+  dense GPT LM-head CE/dlogit kernel:
+  `NFN_TILE_CUDA_CE_BF16_VEC_NORMAL_STORES=1`,
+  `NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1`, or
+  `NFN_NATIVE_GPT2_CE_BF16_VEC_NORMAL_STORES=1`. The path uses normal cached
+  `int4` stores for eight BF16 dlogits at a time while preserving the existing
+  default scalar-store route and the older streaming-store diagnostic. It is
+  intentionally not a default: a CUDA 13.3.33 RTX 5090 same-script
+  native-vs-native gate over three measured samples rejected it with
+  `stage.lm_head_backward.ce.total_ms=1.002720x`, even though total train-loop
+  timing was noisy. Verification: rebuilt a candidate
+  `libnfn_native_train_tile_ops` shared library, ran a CUDA smoke with the
+  diagnostic enabled, ran
+  `python -m pytest tests/test_native_gpt2.py::test_native_train_tile_ops_builds_torch_free_c_abi -q`,
+  and ran the stage-timed paired candidate benchmark.
+
 - Hardened the paired CUDA benchmark selected-GPU utilization guard for CUDA
   13.3 WSL runs. `tools/paired_kernel_speed.py` now accepts
   `--selected-gpu-utilization-retries` and

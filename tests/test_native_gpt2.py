@@ -5705,6 +5705,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_CE_BF16_VEC_STORES" in kernels_text
     assert "NFN_NATIVE_GPT2_CE_BF16_VEC_STORES" in kernels_text
     assert "cross_entropy_bf16_vec_stores_enabled" in kernels_text
+    assert "NFN_TILE_CUDA_CE_BF16_VEC_NORMAL_STORES" in kernels_text
+    assert "NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES" in kernels_text
+    assert "NFN_NATIVE_GPT2_CE_BF16_VEC_NORMAL_STORES" in kernels_text
+    assert "cross_entropy_bf16_vec_normal_stores_enabled" in kernels_text
     assert "NFN_TILE_CUDA_CE_BF16_VEC_LOADS" in kernels_text
     assert "NFN_NATIVE_GPT_CE_BF16_VEC_LOADS" in kernels_text
     assert "NFN_NATIVE_GPT2_CE_BF16_VEC_LOADS" in kernels_text
@@ -5715,6 +5719,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "const int4 packed = load_bf16_vec8(row_logits + col);" in kernels_text
     assert "bf16_bits_to_f32_device(int4_u16_at(packed, offset))" in kernels_text
     assert "store_bf16_vec8_streaming" in kernels_text
+    assert "store_bf16_vec8_normal" in kernels_text
+    assert "store_bf16_vec8(row_logits + col, grad, vec_stores)" in kernels_text
     assert "load_bf16_vec8" in kernels_text
     assert "__stcs(reinterpret_cast<int4*>(dst)" in kernels_text
     assert "ensure_llmk_sm120_cublaslt_initialized" in kernels_text
@@ -6014,7 +6020,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         "loss_out[row] = loss"
     )
     assert loss_backward_body.index("const float target_logit") < loss_backward_body.index(
-        "if (vec_stores)"
+        "if (vec_stores || vec_normal_stores)"
     )
     assert "__syncthreads();" not in loss_backward_body
     assert "nfn_native_tile_masked_token_cross_entropy_backward_with_workspace_float32" in header_text
