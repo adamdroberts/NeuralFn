@@ -340,6 +340,8 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "tools/paired_kernel_speed.py" in text
     assert "--require-idle-selected-gpu" in text
     assert "--max-selected-gpu-utilization-pct" in text
+    assert "--selected-gpu-utilization-retries" in text
+    assert "--selected-gpu-utilization-retry-interval-seconds" in text
     assert "env_or_alias()" in text
     assert "env_or_alias3()" in text
     assert "env_or_alias4()" in text
@@ -358,6 +360,14 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "NFN_SM120_SAMPLES" in text
     assert "NFN_SM120_JSON_OUT" in text
     assert "NFN_SM120_MAX_GPU_UTILIZATION_PCT" in text
+    assert "NFN_SM120_NATIVE_SELECTED_GPU_UTILIZATION_RETRIES" in text
+    assert "NFN_SM120_CANDIDATE_SELECTED_GPU_UTILIZATION_RETRIES" in text
+    assert "NFN_SM120_PARITY_SELECTED_GPU_UTILIZATION_RETRIES" in text
+    assert "NFN_SM120_SELECTED_GPU_UTILIZATION_RETRIES" in text
+    assert "NFN_SM120_NATIVE_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS" in text
+    assert "NFN_SM120_CANDIDATE_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS" in text
+    assert "NFN_SM120_PARITY_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS" in text
+    assert "NFN_SM120_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS" in text
     assert "NFN_SM120_DRY_RUN_PLAN" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_ENV" in text
     assert "NFN_SM120_CANDIDATE_ENV" in text

@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Forwarded selected-GPU utilization retry controls through
+  `tools/bench_native_gpt_sm120_candidate.sh`. The native-vs-native wrapper now
+  accepts the native, candidate, parity, and generic
+  `NFN_SM120_*_SELECTED_GPU_UTILIZATION_RETRIES` aliases plus the matching
+  `..._RETRY_INTERVAL_SECONDS` aliases, and passes them to
+  `tools/paired_kernel_speed.py`. This fixes RTX 5090 candidate/parity smokes
+  that should retry transient WSL/NVML idle-utilization spikes but previously
+  failed before launching the measured commands. Verification:
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`,
+  `python -m pytest tests/test_tile_cuda_examples.py -q -k sm120_candidate`,
+  and an escalated short CUDA 13.3 RTX 5090 native-vs-native parity smoke with
+  retry aliases enabled.
+
 - Added a default-off BF16 classifier normal vector-store diagnostic for the
   dense GPT LM-head CE/dlogit kernel:
   `NFN_TILE_CUDA_CE_BF16_VEC_NORMAL_STORES=1`,
