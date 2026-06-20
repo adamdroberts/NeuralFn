@@ -96,6 +96,19 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
             MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.total_ms=1.000"
             MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.total_ms=1.000"
             MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.total_ms=1.000"
+            candidate_gate_text="$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB $CANDIDATE_ENV_RAW $CANDIDATE_EXTRA_ARGS_RAW"
+            case "$candidate_gate_text" in
+              *CE_BF16*|*ce_bf16*)
+                MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.ce.total_ms=1.000"
+                ;;
+            esac
+            case "$candidate_gate_text" in
+              *LM_HEAD_PREPACK_BF16_HIDDEN*|*lm_head_prepack_bf16_hidden*)
+                MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.dhidden.total_ms=1.000"
+                MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.dweight.total_ms=1.000"
+                MAX_CANDIDATE_RATIO_RAW+=" setup.uint16_arena_materialize.total_ms=1.000"
+                ;;
+            esac
             ;;
         esac
         ;;

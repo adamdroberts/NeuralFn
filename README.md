@@ -179,7 +179,13 @@ change the candidate Tile ops library, candidate-only env, or candidate-only
 extra args now default to `train_loop_wall_ms_per_step=1.000`; if native stage
 timing is enabled they also gate `stage.lm_head_backward.total_ms`,
 `stage.block_backward.total_ms`, and `stage.block_backward.mlp_proj.total_ms` at
-`1.000`. Dry-run planning and no-op baseline-vs-baseline checks stay ungated.
+`1.000`. Stage-timed CE-kernel candidates whose candidate text mentions
+`CE_BF16` also gate `stage.lm_head_backward.ce.total_ms=1.000`; LM-head hidden
+prepack candidates mentioning `LM_HEAD_PREPACK_BF16_HIDDEN` additionally gate
+`stage.lm_head_backward.dhidden.total_ms`,
+`stage.lm_head_backward.dweight.total_ms`, and
+`setup.uint16_arena_materialize.total_ms`. Dry-run planning and no-op
+baseline-vs-baseline checks stay ungated.
 The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
 emit non-UTF-8 bytes can still be compared in the same paired run. For

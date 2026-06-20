@@ -527,6 +527,12 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.total_ms=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.total_ms=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.total_ms=1.000"' in text
+    assert "*CE_BF16*|*ce_bf16*" in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.ce.total_ms=1.000"' in text
+    assert "*LM_HEAD_PREPACK_BF16_HIDDEN*|*lm_head_prepack_bf16_hidden*" in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.dhidden.total_ms=1.000"' in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.dweight.total_ms=1.000"' in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" setup.uint16_arena_materialize.total_ms=1.000"' in text
     assert '"1"|"true"|"yes"|"on")' in text
     assert "has_candidate_change=0" in text
 

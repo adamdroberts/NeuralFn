@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tightened the native dense-GPT SM120 candidate benchmark defaults for
+  stage-timed LM-head experiments. When no explicit
+  `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` /
+  `NFN_SM120_CANDIDATE_MAX_CANDIDATE_RATIO` override is supplied, CE candidates
+  whose candidate library/env/args mention `CE_BF16` now automatically gate
+  `stage.lm_head_backward.ce.total_ms=1.000`, and LM-head hidden-prepack
+  candidates mentioning `LM_HEAD_PREPACK_BF16_HIDDEN` gate
+  `stage.lm_head_backward.dhidden.total_ms`,
+  `stage.lm_head_backward.dweight.total_ms`, and
+  `setup.uint16_arena_materialize.total_ms`. This keeps kernel bisections from
+  passing on broad train-loop noise while regressing the exact touched bucket.
+  The CUDA 13.3 RTX 5090 recheck rejected additional switch-only candidates:
+  global cuBLASLt `min_waves` slowed the train loop to `1.006384x`, explicit
+  cuBLASLt routing for LM-head dHidden slowed that substage to `1.388618x`,
+  `NFN_NATIVE_GPT_CE_BF16_THREADS=256` slowed CE to `1.451458x`, and
+  `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0` remained neutral/slightly
+  slower while failing its setup and LM-head gates. Verification: paired
+  native-vs-native benchmarks through `tools/bench_native_gpt_sm120_candidate.sh`
+  on the dedicated RTX 5090, `bash -n tools/bench_native_gpt_sm120_candidate.sh`,
+  and the focused wrapper test.
+
 - Promoted the dense GPT vector4 token-weight initializer to the default native
   CUDA Tile startup route. `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` /
   `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` now reproduce the previous fast
