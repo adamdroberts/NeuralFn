@@ -38,6 +38,7 @@ constexpr std::int64_t kAttentionBackwardDimReuse = 64;
 constexpr std::int64_t kDefaultStoredMlpBlocks = 12;
 constexpr std::int64_t kDefaultStoredPackedAttentionBlocks = 12;
 constexpr int kDefaultLmHeadRowChunkSize = 32768;
+constexpr int kDefaultSafeLmHeadRowChunkSize = 32768;
 
 struct Config {
     std::string model_family = "gpt";
@@ -3855,6 +3856,20 @@ bool print_tile_plan(
     const std::string support_status = selected_graph_support_status(cfg);
     const std::string plan_status = native_runnable ? "native-transformer-lm-ready" : support_status;
     const std::string stage_status = native_runnable ? "ready" : "requires-selected-graph-wiring";
+    const bool unsafe_lm_head_row_chunk_allowed =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK",
+                              "NFN_NATIVE_GPT2_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK"}),
+            false);
+    std::string plan_error;
+    if (!unsafe_lm_head_row_chunk_allowed &&
+        lm_head_chunk_rows > kDefaultSafeLmHeadRowChunkSize) {
+        std::ostringstream message;
+        message << "lm_head_row_chunk_size " << lm_head_chunk_rows
+                << " exceeds the safe default cap " << kDefaultSafeLmHeadRowChunkSize
+                << "; set NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1 only for paired diagnostics";
+        plan_error = message.str();
+    }
 
     bool loaded = false;
     bool all_symbols = false;
@@ -3880,7 +3895,10 @@ bool print_tile_plan(
         << "{\n"
         << "  \"model_family\": \"" << json_escape(cfg.model_family) << "\",\n"
         << "  \"backend\": \"tile-cuda\",\n"
-        << "  \"status\": \"" << json_escape(plan_status) << "\",\n"
+        << "  \"status\": \""
+        << json_escape(plan_error.empty() ? plan_status : "native-transformer-lm-failed") << "\",\n"
+        << "  \"passed\": " << ((native_runnable && plan_error.empty()) ? "true" : "false") << ",\n"
+        << "  \"error\": \"" << json_escape(plan_error) << "\",\n"
         << "  \"template_name\": \"" << json_escape(normalize_template_name(cfg.template_name)) << "\",\n"
         << "  \"resolved_native_template_name\": \"" << json_escape(resolved_native_template_name(cfg.template_name)) << "\",\n"
         << "  \"graph_file\": \"" << json_escape(cfg.graph_file) << "\",\n"
@@ -3914,6 +3932,10 @@ bool print_tile_plan(
         << cfg.seq_len << ", \"batch_size\": " << cfg.batch_size << "},\n"
         << "  \"lm_head_classifier_strategy_contract\": "
         << lm_head_classifier_strategy_contract_json(tokens, lm_head_chunk_rows, padded_vocab) << ",\n"
+        << "  \"lm_head_row_chunk_size\": " << lm_head_chunk_rows << ",\n"
+        << "  \"lm_head_row_chunk_safe_cap\": " << kDefaultSafeLmHeadRowChunkSize << ",\n"
+        << "  \"lm_head_row_chunk_unsafe_override_enabled\": "
+        << (unsafe_lm_head_row_chunk_allowed ? "true" : "false") << ",\n"
         << "  \"schedule\": {\"max_steps\": " << cfg.max_steps
         << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
         << ", \"train_loss_every_steps\": " << cfg.train_loss_every_steps
@@ -9507,6 +9529,11 @@ int run_transformer_lm_training_json(
         rows < requested_lm_head_chunk_rows ? rows : requested_lm_head_chunk_rows;
     const std::int64_t lm_head_chunk_count =
         (rows + lm_head_chunk_rows - 1) / lm_head_chunk_rows;
+    const bool unsafe_lm_head_row_chunk_allowed =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK",
+                              "NFN_NATIVE_GPT2_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK"}),
+            false);
     const std::int64_t logit_elements = lm_head_chunk_rows * kPaddedVocab;
     const std::int64_t full_logit_elements = rows * kPaddedVocab;
     const std::int64_t loss_partial_count = partial_count_for(lm_head_chunk_rows);
@@ -9558,6 +9585,15 @@ int run_transformer_lm_training_json(
         error = cfg.startup_only
             ? "batch size, seq_len, num_layers, max_steps >= 0, and lm_head_row_chunk_size must be valid"
             : "batch size, seq_len, num_layers, max_steps, and lm_head_row_chunk_size must be positive";
+    }
+    if (error.empty() &&
+        !unsafe_lm_head_row_chunk_allowed &&
+        lm_head_chunk_rows > kDefaultSafeLmHeadRowChunkSize) {
+        std::ostringstream message;
+        message << "lm_head_row_chunk_size " << lm_head_chunk_rows
+                << " exceeds the safe default cap " << kDefaultSafeLmHeadRowChunkSize
+                << "; set NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1 only for paired diagnostics";
+        error = message.str();
     }
     if (error.empty() && cfg.layer_evo_enabled &&
         (cfg.evo_layer_index < 0 || cfg.evo_layer_index >= target_layers ||
@@ -18469,6 +18505,9 @@ int run_transformer_lm_training_json(
         << "  \"model_dim\": " << kDim << ",\n"
         << "  \"hidden_dim\": " << kHidden << ",\n"
         << "  \"lm_head_row_chunk_size\": " << lm_head_chunk_rows << ",\n"
+        << "  \"lm_head_row_chunk_safe_cap\": " << kDefaultSafeLmHeadRowChunkSize << ",\n"
+        << "  \"lm_head_row_chunk_unsafe_override_enabled\": "
+        << (unsafe_lm_head_row_chunk_allowed ? "true" : "false") << ",\n"
         << "  \"lm_head_row_chunk_count\": " << lm_head_chunk_count << ",\n"
         << "  \"lm_head_reuse_forward_logits_enabled\": "
         << (lm_head_reuse_forward_logits_enabled ? "true" : "false") << ",\n"

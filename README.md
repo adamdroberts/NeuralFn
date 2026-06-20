@@ -41,6 +41,9 @@ BF16 logit workspace. Pass `--lm-head-row-chunk-size 8192`,
 lower-memory default. A full-batch 65536-row chunk is not a default candidate:
 the CUDA 13.3 RTX 5090 paired run timed out at the 300s sample limit after
 leaving the GPU utilization counter stuck until the WSL driver recovered. The
+native runner now rejects LM-head chunks above 32768 rows before launching CUDA
+unless `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` is set for explicit
+paired diagnostics. The
 current staged CUDA 13.3.33
 10-step parity sample on the dedicated RTX 5090 measured NeuralFn at
 `2564.590 ms/step` versus llm.kittens at `2447.451 ms/step`

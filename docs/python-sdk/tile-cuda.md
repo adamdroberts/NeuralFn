@@ -321,7 +321,10 @@ the local RTX 5090/CUDA 13.3 workstation profile. This reduces default LM-head
 chunk launches at the 64x1024 shape from 8 chunks to 2 and reserves about
 3.30GB of resident BF16 logit workspace. Set `lm_head_row_chunk_size=8192` or
 pass `--lm-head-row-chunk-size 8192` to reproduce the older lower-memory
-default.
+default. Effective LM-head chunks above 32768 rows are rejected before CUDA
+launch unless `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` is set for
+explicit diagnostics; runtime JSON reports `lm_head_row_chunk_safe_cap` and
+`lm_head_row_chunk_unsafe_override_enabled`.
 
 Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

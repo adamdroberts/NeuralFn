@@ -1885,6 +1885,57 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["checkpoint_export_enabled"] is True
     assert default_payload["validation_shards_required"] is True
     assert default_payload["validation_shards_resolved"] is True
+    assert default_payload["lm_head_row_chunk_size"] == 32768
+    assert default_payload["lm_head_row_chunk_safe_cap"] == 32768
+    assert default_payload["lm_head_row_chunk_unsafe_override_enabled"] is False
+
+    unsafe_lm_head_chunk = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(dataset_path),
+            "--dry-run",
+            "--eval-every-steps",
+            "0",
+            "--lm-head-row-chunk-size",
+            "65536",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert unsafe_lm_head_chunk.returncode == 0, unsafe_lm_head_chunk.stderr
+    unsafe_payload = json.loads(unsafe_lm_head_chunk.stdout)
+    assert unsafe_payload["passed"] is False
+    assert unsafe_payload["status"] == "native-transformer-lm-failed"
+    assert unsafe_payload["lm_head_row_chunk_size"] == 65536
+    assert unsafe_payload["lm_head_row_chunk_safe_cap"] == 32768
+    assert unsafe_payload["lm_head_row_chunk_unsafe_override_enabled"] is False
+    assert "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1" in unsafe_payload["error"]
+
+    unsafe_override = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(dataset_path),
+            "--dry-run",
+            "--eval-every-steps",
+            "0",
+            "--lm-head-row-chunk-size",
+            "65536",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env={**os.environ, "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK": "1"},
+    )
+    assert unsafe_override.returncode == 0, unsafe_override.stderr
+    unsafe_override_payload = json.loads(unsafe_override.stdout)
+    assert unsafe_override_payload["passed"] is True
+    assert unsafe_override_payload["lm_head_row_chunk_size"] == 65536
+    assert unsafe_override_payload["lm_head_row_chunk_unsafe_override_enabled"] is True
 
     train_only_dataset = tmp_path / "train_only_uint16"
     train_only_dataset.mkdir()
@@ -6264,6 +6315,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "bf16-layernorm-backward" in gpt2_source_text
     assert "restore-float32-layernorm-backward" in gpt2_source_text
     assert "kDefaultLmHeadRowChunkSize = 32768" in gpt2_source_text
+    assert "kDefaultSafeLmHeadRowChunkSize = 32768" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK" in gpt2_source_text
+    assert "lm_head_row_chunk_safe_cap" in gpt2_source_text
+    assert "lm_head_row_chunk_unsafe_override_enabled" in gpt2_source_text
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT2_PACKED_ATTENTION_BACKWARD_BATCH_CAP" in kernels_text
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_GRID3D" in kernels_text

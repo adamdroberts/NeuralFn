@@ -21,7 +21,13 @@ Future updates should append new entries here rather than replacing older notes.
   from 320 to 80 over the 5-step run and measured `0.998625x` train-loop wall
   time versus the 8192-row default. The 16384-row candidate regressed at
   `1.008471x`, and the 65536-row full-batch candidate timed out at the 300s
-  sample limit, so they remain rejected.
+  sample limit, so they remain rejected. To prevent that timeout path from
+  wedging subsequent WSL benchmark state, the native runner now rejects
+  effective LM-head row chunks above 32768 rows before CUDA launch unless
+  `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` or
+  `NFN_NATIVE_GPT2_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` is set for explicit
+  diagnostics. Runtime JSON reports `lm_head_row_chunk_safe_cap` and
+  `lm_head_row_chunk_unsafe_override_enabled`.
 
 - Added a default-off dense GPT LM-head row-loss sum-accumulate diagnostic ABI:
   `nfn_native_tile_sum_accumulate_float32`. It lets the row-loss classifier
