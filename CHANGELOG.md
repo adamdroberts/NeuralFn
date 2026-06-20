@@ -24,7 +24,7 @@ Future updates should append new entries here rather than replacing older notes.
   `build/nfn_gpt_native_train --backend tile-cuda --smoke-lm-step ...` passed,
   `NFN_TILE_CUDA_TEST=1 CUDA_VISIBLE_DEVICES=0 python -m pytest tests/test_tile_cuda_gpu.py -q`
   passed, and `python -m pytest tests/test_native_gpt2.py -q` passed with
-  `59 passed, 1 skipped`.
+  `60 passed`.
 
 - Improved the dense GPT BF16 row-loss classifier kernel by reading the target
   logit before the in-place dlogit overwrite and removing the now-unneeded
