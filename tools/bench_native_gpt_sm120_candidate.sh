@@ -63,6 +63,31 @@ TEMPLATE_NAME="$(env_or_alias3 NFN_SM120_NATIVE_TEMPLATE_NAME NFN_SM120_CANDIDAT
 GRAPH_FILE="$(env_or_alias3 NFN_SM120_NATIVE_GRAPH_FILE NFN_SM120_CANDIDATE_GRAPH_FILE NFN_SM120_PARITY_GRAPH_FILE "")"
 DRY_RUN_PLAN="$(env_or_alias3 NFN_SM120_NATIVE_DRY_RUN_PLAN NFN_SM120_CANDIDATE_DRY_RUN_PLAN NFN_SM120_PARITY_DRY_RUN_PLAN 0)"
 MAX_CANDIDATE_RATIO_RAW="$(env_or_alias NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO NFN_SM120_CANDIDATE_MAX_CANDIDATE_RATIO "")"
+if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
+  has_candidate_change=0
+  if [[ "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB" != "$NFN_NATIVE_TILE_OPS_LIB" ||
+        -n "$CANDIDATE_ENV_RAW" ||
+        -n "$CANDIDATE_EXTRA_ARGS_RAW" ]]; then
+    has_candidate_change=1
+  fi
+  if [[ "$has_candidate_change" == "1" ]]; then
+    case "${DRY_RUN_PLAN,,}" in
+      "1"|"true"|"yes"|"on")
+        has_candidate_change=0
+        ;;
+    esac
+  fi
+  if [[ "$has_candidate_change" == "1" ]]; then
+    MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"
+    case "${STAGE_TIMING,,}" in
+      "1"|"true"|"yes"|"on")
+        MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.total_ms=1.000"
+        MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.total_ms=1.000"
+        MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.total_ms=1.000"
+        ;;
+    esac
+  fi
+fi
 
 if [[ ! -x "$NFN_NATIVE_GPT_TRAIN_BIN" ]]; then
   echo "NeuralFn native GPT trainer is not executable: $NFN_NATIVE_GPT_TRAIN_BIN" >&2

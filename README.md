@@ -160,6 +160,12 @@ Set `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` or
 `stage.lm_head_backward.total_ms=1.000 train_loop_wall_ms_per_step=1.005`, so
 native candidate runs fail nonzero when they worsen the LM-head/block hot
 buckets even if total command timing looks flat.
+When no explicit ratio list is supplied, measured candidate runs that actually
+change the candidate Tile ops library, candidate-only env, or candidate-only
+extra args now default to `train_loop_wall_ms_per_step=1.000`; if native stage
+timing is enabled they also gate `stage.lm_head_backward.total_ms`,
+`stage.block_backward.total_ms`, and `stage.block_backward.mlp_proj.total_ms` at
+`1.000`. Dry-run planning and no-op baseline-vs-baseline checks stay ungated.
 The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
 emit non-UTF-8 bytes can still be compared in the same paired run. For

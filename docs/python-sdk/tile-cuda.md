@@ -1278,6 +1278,13 @@ For automated candidate rejection, pass repeatable
 `max:stage.block_backward.total_ms=1.010`; the statistic defaults to `mean`.
 Missing metrics fail the gate so a run cannot pass without the stage
 attribution it was supposed to measure.
+The SM120 candidate wrapper also installs default gates for measured runs that
+change the candidate Tile ops library, candidate-only environment, or
+candidate-only extra args: `train_loop_wall_ms_per_step=1.000` is always gated,
+and stage-timed runs additionally gate `stage.lm_head_backward.total_ms`,
+`stage.block_backward.total_ms`, and `stage.block_backward.mlp_proj.total_ms` at
+`1.000`. Set an explicit `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` /
+`NFN_SM120_CANDIDATE_MAX_CANDIDATE_RATIO` list to override those defaults.
 After the CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 validation
 pass rebuilt every native trainer and passed the GPU-visible native/Tile pytest
 gate (`240` tests), the GPT template preset suite (`26` tests), and the

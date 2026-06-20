@@ -484,6 +484,52 @@ def test_native_gpt_sm120_candidate_wrapper_accepts_parity_aliases(tmp_path: Pat
     assert "--append-native-profile-json-dir" not in proc.stdout
 
 
+def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tmp_path: Path) -> None:
+    script = Path("tools/bench_native_gpt_sm120_candidate.sh")
+    output_path = tmp_path / "candidate-default-gates.json"
+
+    proc = subprocess.run(
+        ["bash", "-n", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    text = script.read_text(encoding="utf-8")
+    assert 'MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"' in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.total_ms=1.000"' in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.total_ms=1.000"' in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.total_ms=1.000"' in text
+    assert '"1"|"true"|"yes"|"on")' in text
+    assert "has_candidate_change=0" in text
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_ENV": "NFN_CANDIDATE_ONLY=1",
+            "NFN_SM120_NATIVE_JSON_OUT": str(output_path),
+        }
+    )
+
+    dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert dry_run.returncode == 0, dry_run.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["metric_ratio_gates"]["enabled"] is False
+
+
 def test_paired_kernel_speed_tool_applies_command_specific_env() -> None:
     script = Path("tools/paired_kernel_speed.py")
     output_path = Path(tempfile.mkdtemp()) / "paired-env.json"

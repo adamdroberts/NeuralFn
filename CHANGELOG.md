@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Made SM120 native candidate speed checks reject slower measured candidates by
+  default. `tools/bench_native_gpt_sm120_candidate.sh` now auto-adds
+  `train_loop_wall_ms_per_step=1.000` when a measured candidate changes the Tile
+  ops library, candidate-only environment, or candidate-only extra args. When
+  `NFN_SM120_NATIVE_STAGE_TIMING=1` is enabled it also gates
+  `stage.lm_head_backward.total_ms`, `stage.block_backward.total_ms`, and
+  `stage.block_backward.mlp_proj.total_ms` at `1.000`. Dry-run planning and
+  no-op baseline-vs-baseline runs stay ungated, and explicit
+  `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` /
+  `NFN_SM120_CANDIDATE_MAX_CANDIDATE_RATIO` values override the defaults.
+  Verification: rebuilt native CUDA artifacts with CUDA Toolkit 13.3.33, ran
+  the GPU-visible native/Tile pytest suite (`240 passed`), ran
+  `tests/test_template_presets.py -x -q` (`26 passed`), ran
+  `tools/check_native_no_torch_deps.py --skip-artifacts --json`, reran paired
+  RTX 5090 native speed checks, and added focused wrapper tests for the default
+  gate policy.
+
 - Expanded paired CUDA benchmark stdout attribution for block backward. The
   native JSON parser already captured arbitrary `timing.stage_timing` entries;
   the text report and candidate-ratio gate allowlist now also include MLP FC,
