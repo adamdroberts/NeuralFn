@@ -207,9 +207,9 @@ when unset before executing native trainers or loading Tile CUDA libraries,
 matching the dense GPT C++ trainer. Existing user-provided
 `CUDA_MODULE_LOADING` values still take precedence.
 
-`NativeGpt2RunConfig.lm_head_row_chunk_size` defaults to 8192 and forwards
-`--lm-head-row-chunk-size` through `compiled_cli_argv()`; pass 6144 or 4096
-explicitly to reproduce older smaller-workspace profiles. The C++ transformer-LM
+`NativeGpt2RunConfig.lm_head_row_chunk_size` defaults to 32768 and forwards
+`--lm-head-row-chunk-size` through `compiled_cli_argv()`; pass 8192, 6144, or
+4096 explicitly to reproduce older smaller-workspace profiles. The C++ transformer-LM
 loop uses that bounded full-vocab tied LM-head workspace and reduces CE loss
 partials on device with `nfn_native_tile_sum_partials_float32`, so training and
 validation loss copy one device scalar to the host instead of copying once per
@@ -307,15 +307,21 @@ environment. The tuple matches the `linear_shape_stats` convention and only
 gates forward/fused-GELU TK calls with fallback paths. CUDA 13.3 builds now try
 the TK BF16 forward bridge by default for no-bias BF16-input/BF16-weight/
 BF16-output GEMMs, including the padded LM-head logits shape
-`50304,8192,768,T,N`, before falling back to cuBLAS GEMMEx. To reproduce the
+`50304,32768,768,T,N`, before falling back to cuBLAS GEMMEx. To reproduce the
 older GEMMEx route for paired comparisons, set
-`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,8192,768,T,N` or
-`NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,8192,768,T,N`.
+`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N` or
+`NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`.
 Native GPT runtime JSON also reports `lm_head_logits_tk_gemm_count`,
 `lm_head_logits_cublaslt_gemm_count`, and
 `lm_head_logits_bf16_gemm_count`, so `lm_head_logits_linear_strategy` identifies
 the active LM-head logits backend without enabling the heavier
 `linear_shape_stats` timing path.
+The SDK default `NativeGpt2RunConfig.lm_head_row_chunk_size` is 32768 rows for
+the local RTX 5090/CUDA 13.3 workstation profile. This reduces default LM-head
+chunk launches at the 64x1024 shape from 8 chunks to 2 and reserves about
+3.30GB of resident BF16 logit workspace. Set `lm_head_row_chunk_size=8192` or
+pass `--lm-head-row-chunk-size 8192` to reproduce the older lower-memory
+default.
 
 Prefer the generic dense GPT environment names for new SDK integrations:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers
@@ -1378,12 +1384,16 @@ and stage-timed runs additionally gate `stage.lm_head_backward.total_ms`,
 After the CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 validation
 pass rebuilt every native trainer and passed the GPU-visible native/Tile pytest
 gate (`247` tests), the GPT template preset suite (`26` tests), the full
-CUDA-visible repository suite (`1188` tests plus `468` subtests), and the
+CUDA-visible repository suite (`1185` tests, `4` skips, plus `468` subtests), and the
 no-Torch native dependency verifier. Performance candidate gates are still
 allowed to fail when they reject slower routes; rejected reruns include
 extra-large-K cuBLASLt LM-head dHidden, one-shape cuBLASLt heuristic overrides
 for `768,65536,3072,N,N` and `768,50304,8192,N,T`, token-weight vector4/threaded
-startup initializers, cudaMallocAsync arenas, and full-logit LM-head reuse.
+startup initializers, cudaMallocAsync arenas, full-logit LM-head reuse, and the
+65536-row full-batch LM-head chunk timeout. The promoted 32768-row LM-head
+chunk candidate reduced classifier chunk launches from `320` to `80` over the
+5-step paired run and measured `0.998625x` train-loop wall time versus the
+8192-row default; the 16384-row candidate regressed at `1.008471x`.
 Unsupported template names and custom graph files still report
 `selected-graph-native-trainer-missing` instead of falling back to Torch.
 

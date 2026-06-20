@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- **Breaking changes**: dense GPT native training now defaults the tied LM-head
+  row chunk to 32768 rows instead of 8192 rows across the compiled C++ trainer,
+  Python SDK config, and `train_gpt_native.py` defaults. This is a workstation
+  throughput retune for the dedicated RTX 5090/CUDA 13.3 path: the default
+  64x1024 LM-head chunk count drops from 8 to 2 and the resident BF16 logit
+  workspace rises from about 824MB to about 3.30GB. Callers that need the older
+  lower-memory behavior should pass `--lm-head-row-chunk-size 8192`,
+  `--native-cuda-lm-head-row-chunk-size 8192`, or
+  `NativeGpt2RunConfig(lm_head_row_chunk_size=8192, ...)` explicitly.
+  Verification: CUDA-visible full pytest passed with
+  `1185 passed, 4 skipped, 20 warnings, 468 subtests passed`; the 32768-row
+  native-vs-native RTX 5090 paired benchmark reduced LM-head chunk launches
+  from 320 to 80 over the 5-step run and measured `0.998625x` train-loop wall
+  time versus the 8192-row default. The 16384-row candidate regressed at
+  `1.008471x`, and the 65536-row full-batch candidate timed out at the 300s
+  sample limit, so they remain rejected.
+
 - Added a default-off dense GPT LM-head row-loss sum-accumulate diagnostic ABI:
   `nfn_native_tile_sum_accumulate_float32`. It lets the row-loss classifier
   route replace its generic `sum_partials` plus scalar `gradient_accumulate`

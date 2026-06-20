@@ -28,11 +28,20 @@ to confirm the extension executes GPU tests instead of skipping. After the
 CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 path is correctness
 green for the revisited native and Tile CUDA gates. After reinstalling the WSL
 CUDA toolkit (`cuda-toolkit-13-3`), the GPU-visible full suite passed with
-`1188 passed, 20 warnings, 468 subtests passed`; the focused native/Tile CUDA
+`1185 passed, 4 skipped, 20 warnings, 468 subtests passed`; the focused native/Tile CUDA
 gates, GPT template preset suite, and native no-Torch guard all pass. Dense GPT
 native training now routes the no-bias BF16 LM-head logits GEMM through the TK
 BF16 forward bridge by default for the
-default `50304,8192,768,T,N` row-chunk shape. The current staged CUDA 13.3.33
+default `50304,32768,768,T,N` row-chunk shape. The default tied LM-head row
+chunk is now 32768 rows for the workstation 5090 profile, reducing the default
+64x1024 LM-head chunk count from 8 to 2 while reserving about 3.30GB of resident
+BF16 logit workspace. Pass `--lm-head-row-chunk-size 8192`,
+`--native-cuda-lm-head-row-chunk-size 8192`, or
+`NativeGpt2RunConfig(lm_head_row_chunk_size=8192, ...)` to reproduce the older
+lower-memory default. A full-batch 65536-row chunk is not a default candidate:
+the CUDA 13.3 RTX 5090 paired run timed out at the 300s sample limit after
+leaving the GPU utilization counter stuck until the WSL driver recovered. The
+current staged CUDA 13.3.33
 10-step parity sample on the dedicated RTX 5090 measured NeuralFn at
 `2564.590 ms/step` versus llm.kittens at `2447.451 ms/step`
 (`1.047862x` train-loop wall time, `0.952442x` tokens/sec); the latest

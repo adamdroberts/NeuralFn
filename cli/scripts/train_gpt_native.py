@@ -51,7 +51,7 @@ NATIVE_GPT_DEFAULTS = {
     "weight_decay": 0.1,
     "eval_every_steps": 250,
     "train_loss_every_steps": 0,
-    "lm_head_row_chunk_size": 8_192,
+    "lm_head_row_chunk_size": 32_768,
     "num_layers": 12,
     "native_cuda_checkpoint_every": 200,
     "native_cuda_sample_every": 20_000,

@@ -1813,7 +1813,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("DATASET_HF_PATH roneneldan/TinyStories", proc.stdout)
         self.assertIn("DATASET_TRAIN_FILE TinyStoriesV2-GPT4-train.txt", proc.stdout)
         self.assertIn("DATASET_VAL_FILE TinyStoriesV2-GPT4-valid.txt", proc.stdout)
-        self.assertIn("LM_HEAD_ROW_CHUNK_SIZE 8192", proc.stdout)
+        self.assertIn("LM_HEAD_ROW_CHUNK_SIZE 32768", proc.stdout)
         self.assertNotIn("parameter-golf", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
 
