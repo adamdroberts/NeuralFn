@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Removed NeuralFn's advertised `.[torch]` optional dependency extra. Torch is
+  no longer installable through NeuralFn package metadata; legacy graph-backed
+  Torch code can still run only in environments where PyTorch is managed
+  separately. The native no-Torch dependency verifier now fails if a `torch`
+  extra is reintroduced or if any guarded extra pulls `torch`, `torchvision`,
+  or `torchaudio`. Migration notes: use `pip install -e ".[tile-cuda]"` for
+  native CUDA Tile build tooling and install PyTorch manually outside NeuralFn
+  only when running old graph-backed experiments. Verification:
+  `python tools/check_native_no_torch_deps.py --skip-artifacts --json`,
+  focused native no-Torch verifier tests, and `git diff --check`.
+
 - Exposed native optimizer support-stage timing in the paired SM120 benchmark
   text summaries. `tools/paired_kernel_speed.py` already preserved every
   `timing.stage_timing` row in JSON; it now also prints and ratios

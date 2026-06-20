@@ -17,12 +17,12 @@ pip install -e ".[tile-cuda]"   # local CUDA Tile builds
 pip install -e ".[datasets]"    # raw-text tokenization and HF dataset caches
 pip install -e ".[graph]"       # Python graph runtime/analysis helpers
 pip install -e ".[server]"      # FastAPI editor backend and MCP server
-pip install -e ".[torch]"       # legacy graph-backed Torch workflows
 pip install -e ".[all]"         # native/server/dataset workstation, without Torch
 ```
 
-`.[all]` intentionally excludes Torch. Use `pip install -e ".[all,torch]"`
-when you need the aggregate development stack plus graph-backed Torch trainers.
+`.[all]` intentionally excludes Torch, and NeuralFn no longer exposes a
+`.[torch]` extra. Legacy graph-backed Torch code requires a separately managed
+PyTorch install outside NeuralFn's package metadata.
 
 From a sibling project checked out next to the repo:
 

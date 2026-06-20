@@ -36,11 +36,11 @@ The editable package install includes the shipped semantic vocabulary JSON
 files under `neuralfn/data/semantic/`, so SDK consumers can use the semantic
 routing presets without copying those assets manually.
 
-This pulls in the core stack used by the library and platform, including **numpy**, **fastapi**, **uvicorn**, **networkx**, **pydantic**, **sqlalchemy**, **alembic**, **redis**, **datasets**, **tiktoken**, and **mcp** (plus helpers such as **python-multipart** and **PyMySQL**). Torch is optional so native GPT-2 CUDA training can start without it. Install graph-backed Torch workflows explicitly:
-
-```bash
-pip install -e ".[torch]"
-```
+The default editable install is intentionally lean and does not pull in NumPy,
+FastAPI, tokenizers, datasets, graph-analysis packages, MCP dependencies, or
+Torch. Add the extras you need for platform, dataset, graph, or native CUDA
+workflows; legacy graph-backed PyTorch workflows require a separately managed
+PyTorch install outside NeuralFn's package metadata.
 
 CUDA Tile native build tooling is separate from Torch and only adds the build
 helper dependency:
@@ -49,12 +49,9 @@ helper dependency:
 pip install -e ".[tile-cuda]"
 ```
 
-Install both extras only when you intentionally need the graph-backed PyTorch
-Tile extension path:
-
-```bash
-pip install -e ".[torch,tile-cuda]"
-```
+NeuralFn no longer exposes a `.[torch]` extra. Legacy graph-backed PyTorch
+workflows require a separately managed PyTorch install outside NeuralFn's
+package metadata.
 
 For the no-Torch native GPT training path, build the C++ SDK bindings, launcher,
 and no-Python cached-shard CLI once:
@@ -95,7 +92,7 @@ Scalar graph with surrogate and evolutionary training on a small XOR network.
 python examples/gpt_graph.py
 ```
 
-Builds a torch GPT-style graph via `build_gpt_root_graph` and trains with `TorchTrainer`. Requires `pip install -e ".[torch]"`.
+Builds a legacy Torch GPT-style graph via `build_gpt_root_graph` and trains with `TorchTrainer`. Requires PyTorch to be installed separately in the active environment.
 
 ```bash
 python examples/nested_hybrid_graph.py

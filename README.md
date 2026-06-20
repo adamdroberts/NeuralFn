@@ -2,7 +2,7 @@
 
 NeuralFn is a graph-native neural network framework where each neuron can be a built-in primitive or a user-defined Python function with typed I/O ports, connected in arbitrary directed graphs. This repository now combines that core library with an authenticated web platform for multi-project, multi-session editing, training, analytics, and MCP-driven automation.
 
-NeuralFn supports both a scalar graph runtime and optional PyTorch-backed graph runtimes for trainable module nodes. The default install is now the lean native/core SDK surface: it does not install Torch, NumPy, tokenizer, dataset, graph-analysis, or server packages. Native GPT training uses cached token shards and the compiled CUDA trainer path without importing `torch`.
+NeuralFn supports a scalar graph runtime plus native CUDA trainers. Legacy graph-backed Torch modules remain in the source tree for old experiments, but Torch is no longer an installable NeuralFn dependency extra. The default install is now the lean native/core SDK surface: it does not install Torch, NumPy, tokenizer, dataset, graph-analysis, or server packages. Native GPT training uses cached token shards and the compiled CUDA trainer path without importing `torch`.
 
 Install extras only for the workflows you need:
 
@@ -12,12 +12,13 @@ pip install -e ".[tile-cuda]"     # local CUDA Tile builds
 pip install -e ".[datasets]"      # raw-text tokenization and HF dataset cache setup
 pip install -e ".[graph]"         # Python graph analysis/runtime helpers
 pip install -e ".[server]"        # FastAPI editor/backend and MCP server
-pip install -e ".[torch]"         # legacy graph-backed Torch trainers
 pip install -e ".[all]"           # full native/server/dataset workstation, without Torch
 ```
 
-`.[all]` intentionally excludes Torch. Combine extras when you need the legacy
-graph-backed Torch runtime, for example `pip install -e ".[all,torch]"`.
+`.[all]` intentionally excludes Torch, and there is no `.[torch]` extra. If you
+need to run legacy graph-backed Torch code while it still exists in the tree,
+install PyTorch explicitly in that environment outside NeuralFn's package
+metadata.
 
 CUDA Tile development targets CUDA Toolkit 13.3+ on the SM120 workstation. The
 generic Python Tile extension and the trainer-facing raw C ABI both build from
@@ -449,10 +450,10 @@ Backend capabilities (`TemplateSpec.backend_capabilities`) now drive runtime beh
 
 CUDA Tile source builds require CUDA Toolkit 13.3+, `cuda_tile.h`, C++20,
 `nvcc --enable-tile`, and `ninja`. Install the optional native build extra with
-`pip install -e ".[tile-cuda]"`; it no longer installs Torch. Graph-backed Torch
-workflows, including the legacy PyTorch Tile extension loader, can be enabled
-separately with `pip install -e ".[torch]"` or with both extras when you
-intentionally need that path. Root `nfn --help` / no-argument startup,
+`pip install -e ".[tile-cuda]"`; it does not install Torch. Legacy graph-backed
+Torch workflows, including the PyTorch Tile extension loader, require a
+separately managed PyTorch install outside NeuralFn's package extras. Root
+`nfn --help` / no-argument startup,
 `nfn train|infer|eval --help`, `nfn kernels ... --help`,
 `nfn kernels list [--json]`, CUDA Tile registry imports, and the explicit native
 GPT training dispatcher avoid importing `nfn_impl` and Torch. Explicit CLI
@@ -1114,22 +1115,16 @@ pip install -r requirements.txt
 ```
 
 The default requirements intentionally do not install Torch. Native dense GPT
-training and dataset-cache preparation do not require it. Install graph-backed
-Torch workflows explicitly when needed:
-
-```bash
-pip install -e ".[torch]"
-```
-
-The aggregate `.[all]` extra is also Torch-free now; use
-`pip install -e ".[all,torch]"` when a development environment needs both the
-native/server/dataset stack and graph-backed Torch workflows.
+training and dataset-cache preparation do not require it. The aggregate `.[all]`
+extra is also Torch-free, and the package no longer exposes a `.[torch]` extra.
+Legacy graph-backed Torch workflows require a separately managed PyTorch install
+outside NeuralFn's package metadata.
 
 After rebuilding native training artifacts, run the dependency gate to verify
 the default package metadata still keeps Torch out of hard dependencies, the
-aggregate `.[all]` extra remains Torch-free, the compiled artifacts still avoid
-Torch, c10, and Python runtime libraries, and default native GPT Python
-training and inference entrypoints can construct their compiled-C++ commands or
+aggregate `.[all]` extra remains Torch-free, no `torch` extra is advertised, the
+compiled artifacts still avoid Torch, c10, and Python runtime libraries, and
+default native GPT Python training and inference entrypoints can construct their compiled-C++ commands or
 inspect native checkpoints while imports of `torch`, NumPy, tiktoken,
 `server.dataset_manager`, and `nfn_impl` are blocked.
 The gate also imports the top-level native SDK exports such as

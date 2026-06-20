@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "neuralfn"
 version = "0.0.0a0"
-description = "Graph-native neural network framework with optional Torch graph runtimes and native CUDA trainers."
+description = "Graph-native neural network framework with native CUDA trainers and Torch-free default packaging."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -34,10 +34,6 @@ server = [
   "sqlalchemy>=2.0",
   "tiktoken>=0.5",
   "uvicorn>=0.23",
-]
-torch = [
-  "numpy>=1.24",
-  "torch>=2.0",
 ]
 tile-cuda = [
   "ninja>=1.11",

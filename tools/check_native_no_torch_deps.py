@@ -58,10 +58,15 @@ REQUIRED_OPTIONAL_DEPENDENCY_PREFIXES = (
     "networkx",
     "numpy",
     "tiktoken",
-    "torch",
 )
+FORBIDDEN_OPTIONAL_EXTRA_NAMES = ("torch",)
 FORBIDDEN_OPTIONAL_EXTRA_DEPENDENCY_PREFIXES = {
     "all": (
+        "torch",
+        "torchvision",
+        "torchaudio",
+    ),
+    "torch": (
         "torch",
         "torchvision",
         "torchaudio",
@@ -451,6 +456,11 @@ def project_dependency_report(repo_root: Path) -> dict[str, object]:
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     dependencies = list(data.get("project", {}).get("dependencies", []))
     optional_dependencies = dict(data.get("project", {}).get("optional-dependencies", {}))
+    forbidden_extra_names = sorted(
+        extra_name
+        for extra_name in optional_dependencies
+        if str(extra_name).strip().lower().replace("_", "-") in FORBIDDEN_OPTIONAL_EXTRA_NAMES
+    )
     offenders: list[str] = []
     for dependency in dependencies:
         normalized = str(dependency).strip().lower().replace("_", "-")
@@ -495,9 +505,11 @@ def project_dependency_report(repo_root: Path) -> dict[str, object]:
     return {
         "name": "pyproject_default_dependencies",
         "path": str(pyproject),
-        "passed": not offenders and not missing_optional and not forbidden_optional_hits,
+        "passed": not offenders and not missing_optional and not forbidden_optional_hits and not forbidden_extra_names,
         "offenders": offenders,
         "forbidden_default_dependency_prefixes": list(FORBIDDEN_PROJECT_DEPENDENCY_PREFIXES),
+        "forbidden_optional_extra_names": list(FORBIDDEN_OPTIONAL_EXTRA_NAMES),
+        "forbidden_optional_extra_name_hits": forbidden_extra_names,
         "forbidden_optional_extra_dependency_prefixes": {
             extra_name: list(prefixes)
             for extra_name, prefixes in FORBIDDEN_OPTIONAL_EXTRA_DEPENDENCY_PREFIXES.items()
@@ -573,6 +585,8 @@ def main() -> int:
                 print(f"{dependency_report['name']}: failed", file=sys.stderr)
                 for dependency in dependency_report["offenders"]:
                     print(f"  hard dependency: {dependency}", file=sys.stderr)
+                for extra_name in dependency_report["forbidden_optional_extra_name_hits"]:
+                    print(f"  forbidden optional extra: {extra_name}", file=sys.stderr)
                 for prefix in dependency_report["missing_optional_dependency_prefixes"]:
                     print(f"  missing optional dependency coverage: {prefix}", file=sys.stderr)
         for entry in python_report:

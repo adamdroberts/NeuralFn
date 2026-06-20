@@ -104,7 +104,7 @@ Canonical docs:
 - `nfn kernels doctor [--json]` reports CUDA Tile toolchain diagnostics plus coverage.
 - `nfn kernels bench [--device auto|cpu|cuda] [--iterations N] [--json]` compares old graph-walk PyTorch, static compiled PyTorch, and Tile-requested compiled execution on a small scalar graph.
 - `nfn kernels examples [--write --output-dir examples/tile_cuda] [--json]` lists or regenerates checked-in examples plus one generated SDK snippet per registry entry.
-- `nfn train`, `nfn infer`, and `nfn eval` accept `--kernel-backend {auto,torch,tile-cuda}`, `--tile-cuda-strict` / `--no-tile-cuda-strict`, and `--tile-cuda-report PATH`. Explicit `tile-cuda` requests CUDA Tile build tooling and now defaults to strict kernel enforcement; use `--no-tile-cuda-strict` only when intentionally debugging fallback behavior. `auto` still needs `NFN_TILE_CUDA_BUILD=1` to build on demand. The `tile-cuda` packaging extra must stay Torch-free; install `.[torch]` separately for graph-backed PyTorch execution or the legacy PyTorch Tile extension loader.
+- `nfn train`, `nfn infer`, and `nfn eval` accept `--kernel-backend {auto,torch,tile-cuda}`, `--tile-cuda-strict` / `--no-tile-cuda-strict`, and `--tile-cuda-report PATH`. Explicit `tile-cuda` requests CUDA Tile build tooling and now defaults to strict kernel enforcement; use `--no-tile-cuda-strict` only when intentionally debugging fallback behavior. `auto` still needs `NFN_TILE_CUDA_BUILD=1` to build on demand. The `tile-cuda` packaging extra must stay Torch-free, and NeuralFn no longer exposes a `.[torch]` extra; graph-backed PyTorch execution requires a separately managed PyTorch install.
 - `cli/scripts/train_gpt.py` is the canonical native-only dense GPT script, with
   `cli/scripts/train_gpt2.py` kept as compatibility. Direct execution with the
   default `compiled-cli` runner translates GPT flags to the compiled C++ CLI before
@@ -322,7 +322,8 @@ Canonical docs:
   export; default training still writes checkpoints. The 5090 helper scripts
   should not add wallclock caps by default.
   The default root install no longer installs Torch; use `.[tile-cuda]` for
-  native CUDA Tile tooling and `.[torch]` for graph-backed Torch workflows.
+  native CUDA Tile tooling; graph-backed Torch workflows require a separately
+  managed PyTorch install outside NeuralFn's package metadata.
 - For the GPT-2 `compiled-cli` runner, only skip Python shard metadata validation when cached train plus validation shard files already exist. Raw-text dataset directories must still materialize token shards before C++ training. The exceptions are wrapper-level `--native-cuda-dry-run --native-cuda-print-command`, compiled Tile-CUDA `--print-command`, and no-data compiled preflights (`--check-tile-ops`, `--smoke-tile-ops`, `--smoke-optimizer-step`, `--smoke-lm-step`, `--smoke-attention-step`, `--smoke-mlp-step`, `--smoke-norm-residual-step`, and `--smoke-transformer-block-step`). Those paths build, print, or run synthetic/native ABI checks before token-shard resolution, must not import `server.dataset_manager`, NumPy, tiktoken, or Torch, must not write `fineweb_train_*.bin` shards, must not add the external `--target train_gpt2cu` bridge argument for the default Tile-CUDA backend, and should report `token_shards_resolved: false` when no dataset was opened. The explicit `llm-kittens` backend may still receive `--target` and resolve shards when printing its delegated `train_gpt2cu -i/-j` command.
 - GPT-2 native command paths must accept `--template-name` / `--template` /
   `--preset` and `--graph-file` / `--graph` without importing Torch. Cover
