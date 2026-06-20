@@ -53,6 +53,15 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   loss+dlogits over each row chunk; the remaining parity work is to replace its
   internals with a cooperative classifier plus LM-head dHidden/dWeight kernel
   without reintroducing full resident logits.
+  - 2026-06-20 promoted the row-loss reduction classifier variant to the dense
+    GPT default after CUDA 13.3.33 RTX 5090 same-script gating. The new
+    `nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets`
+    ABI writes one loss per classifier row, then the trainer reduces those rows
+    on device instead of atomic-adding the scalar loss from each row block. The
+    3-step, 3-sample native-vs-native run measured `0.994971x` train-loop wall
+    time per step and `0.993379x` LM-head backward time versus the prior default.
+    Keep `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_REDUCTION=0` only as the rollback
+    bisection path.
 - [x] Add GPT-2 evo `--print-plan` compiled C++ preflight that reports the AdamW/NVFP4/evo-layer schedule and required candidate-evaluation kernels without Python/Torch.
 - [x] Add GPT-2 compiled-CLI SDK handoff config that passes cached dataset alias/path directly to the C++ shard resolver without Python `meta.json` or token-shard validation.
 - [x] Add GPT-2 native `--backend tile-cuda` / SDK `kernel_backend="tile-cuda"` preflight that reports required raw Tile ABI symbols and `--check-tile-ops` validation without Python/Torch.

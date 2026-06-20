@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added and promoted the dense GPT LM-head row-loss reduction route in the
+  trainer-facing Tile CUDA ABI. The new exported symbol writes one CE loss per
+  row while overwriting BF16 logits with dlogits, then the native GPT trainer
+  reduces those row losses on device with the existing `sum_partials` and
+  `gradient_accumulate` kernels. Dense GPT training now requests this route by
+  default when the rebuilt Tile ops library exports it; set
+  `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_REDUCTION=0` for paired bisection against
+  the previous scalar-loss atomic path. Runtime JSON reports
+  `lm_head_ce_row_loss_reduction_requested`,
+  `lm_head_ce_row_loss_reduction_available`,
+  `lm_head_ce_row_loss_reduction_enabled`, and the selected
+  `lm_head_ce_loss_backward_strategy`. Verification: rebuilt
+  `libnfn_native_train_tile_ops.so` and `build/nfn_gpt_native_train` with CUDA
+  Toolkit 13.3.33, ran the focused native Tile ABI tests, ran a one-step RTX
+  5090 native train with the row-loss route enabled, and ran a same-script
+  native-vs-native RTX 5090 benchmark. The promoted route measured
+  `0.994971x` train-loop wall time per step, `0.993379x` LM-head backward
+  time, and passed all configured mean metric gates versus the previous
+  default.
+
 - Changed the native GPT Python/SDK compiled-CLI handoff so custom graph
   geometry is no longer masked by wrapper defaults. `NativeGpt2RunConfig` and
   the generic `NativeGptRunConfig` now expose `batch_size_explicit`,

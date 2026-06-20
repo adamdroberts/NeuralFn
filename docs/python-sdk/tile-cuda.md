@@ -218,6 +218,20 @@ row chunk. Tied LM-head dWeight chunks accumulate directly into the optimizer-st
 `nfn_native_tile_linear_backward_weight_accumulate_float32` instead of using a
 full-vocab scratch gradient buffer per chunk or per microbatch. The JSON reports
 `lm_head_row_chunk_count` and `loss_partial_count`.
+
+The dense GPT compiled trainer also defaults to the row-loss classifier
+backward route when the trainer-facing Tile ops library exports
+`nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets`.
+That ABI writes one loss per row while converting each BF16 logit chunk in-place
+to dlogits; the trainer then reduces the row losses on device with
+`nfn_native_tile_sum_partials_float32` and accumulates the scalar loss with
+`nfn_native_tile_gradient_accumulate_float32`. Runtime JSON exposes
+`lm_head_ce_row_loss_reduction_requested`,
+`lm_head_ce_row_loss_reduction_available`,
+`lm_head_ce_row_loss_reduction_enabled`, and
+`lm_head_ce_loss_backward_strategy`. Set
+`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_REDUCTION=0` only when comparing against the
+older fused scalar-loss atomic route in a same-script paired benchmark.
 CUDA 13.3.33 post-reinstall paired checks kept 8192 as the default: 16384-row
 chunks regressed train-loop wall time to `1.016019x` and LM-head backward to
 `1.062838x`, while 4096-row chunks improved CE but regressed dWeight and total
