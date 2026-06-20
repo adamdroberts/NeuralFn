@@ -6,6 +6,13 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revisited the failed-test surface after the CUDA Toolkit 13.3.33 WSL
+  reinstall. `nvcc --version` reports release `13.3, V13.3.33`, `nvidia-smi`
+  reports CUDA UMD `13.3` with the RTX 5090 idle and no compute processes, and
+  `NFN_TILE_CUDA_TEST=1 python -m pytest --lf -q -rs` now passes with
+  `1185 passed, 20 warnings, 468 subtests passed`. No previously failed pytest
+  surface remains red on the current CUDA-visible workstation setup.
+
 - Added LM-head classifier row-chunk route counters to the paired native
   benchmark parser. `tools/paired_kernel_speed.py` now extracts and summarizes
   `lm_head_classifier_chunk_launch_count`, the last rows/vocab/stride handled
