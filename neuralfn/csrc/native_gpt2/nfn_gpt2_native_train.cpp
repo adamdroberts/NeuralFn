@@ -95,6 +95,7 @@ struct Config {
     bool template_explicit = false;
     bool seq_len_explicit = false;
     bool batch_size_explicit = false;
+    bool num_layers_explicit = false;
     std::string cuda_runtime_lib;
     bool native_info = false;
     std::string native_checkpoint;
@@ -602,10 +603,14 @@ bool selected_template_is_native_dense_gpt_compatible(const Config& cfg) {
 }
 
 bool selected_template_geometry_matches_compiled_loop(const Config& cfg);
+bool custom_graph_template_metadata_found(const Config& cfg);
 
 bool selected_graph_is_native_runnable(const Config& cfg) {
-    return cfg.graph_file.empty() &&
-        selected_template_is_native_dense_gpt_compatible(cfg) &&
+    if (!cfg.graph_file.empty()) {
+        return custom_graph_template_metadata_found(cfg) &&
+            selected_template_geometry_matches_compiled_loop(cfg);
+    }
+    return selected_template_is_native_dense_gpt_compatible(cfg) &&
         selected_template_geometry_matches_compiled_loop(cfg);
 }
 
@@ -630,24 +635,6 @@ long long custom_graph_file_size_bytes(const Config& cfg) {
         return -1;
     }
     return static_cast<long long>(size);
-}
-
-std::string selected_graph_support_status(const Config& cfg) {
-    if (!cfg.graph_file.empty()) {
-        if (!custom_graph_file_exists(cfg)) {
-            return "custom-graph-file-missing";
-        }
-        return "custom-graph-native-trainer-missing";
-    }
-    if (!selected_template_is_shipped(cfg)) {
-        return "unknown-template";
-    }
-    if (selected_template_is_native_dense_gpt_compatible(cfg) &&
-        !selected_template_geometry_matches_compiled_loop(cfg)) {
-        return "template-geometry-native-trainer-missing";
-    }
-    return selected_template_is_native_dense_gpt_compatible(cfg) ? "native-transformer-lm"
-                                                                : "template-native-trainer-missing";
 }
 
 std::string selected_architecture_source(const Config& cfg) {
@@ -679,10 +666,197 @@ struct DenseGptTemplateGeometry {
     double dropout_p = 0.0;
 };
 
+struct CustomGraphTemplateMetadata {
+    bool found = false;
+    DenseGptTemplateGeometry geometry;
+};
+
+std::string read_custom_graph_prefix(const Config& cfg, std::size_t max_bytes = 16 * 1024 * 1024) {
+    if (cfg.graph_file.empty() || !custom_graph_file_exists(cfg)) {
+        return {};
+    }
+    std::ifstream in(cfg.graph_file, std::ios::binary);
+    if (!in) {
+        return {};
+    }
+    std::string data;
+    data.resize(max_bytes);
+    in.read(data.data(), static_cast<std::streamsize>(data.size()));
+    data.resize(static_cast<std::size_t>(std::max<std::streamsize>(0, in.gcount())));
+    return data;
+}
+
+std::string template_spec_slice(const std::string& data) {
+    const std::string key = "\"template_spec\"";
+    const std::size_t pos = data.rfind(key);
+    if (pos == std::string::npos) {
+        return {};
+    }
+    return data.substr(pos, std::min<std::size_t>(data.size() - pos, 256 * 1024));
+}
+
+bool parse_json_int_field(const std::string& data, const std::string& key, std::int64_t* out) {
+    const std::string needle = "\"" + key + "\"";
+    const std::size_t key_pos = data.find(needle);
+    if (key_pos == std::string::npos) {
+        return false;
+    }
+    const std::size_t colon = data.find(':', key_pos + needle.size());
+    if (colon == std::string::npos) {
+        return false;
+    }
+    std::size_t pos = colon + 1;
+    while (pos < data.size() && std::isspace(static_cast<unsigned char>(data[pos]))) {
+        ++pos;
+    }
+    bool negative = false;
+    if (pos < data.size() && data[pos] == '-') {
+        negative = true;
+        ++pos;
+    }
+    if (pos >= data.size() || !std::isdigit(static_cast<unsigned char>(data[pos]))) {
+        return false;
+    }
+    std::int64_t value = 0;
+    while (pos < data.size() && std::isdigit(static_cast<unsigned char>(data[pos]))) {
+        value = value * 10 + static_cast<std::int64_t>(data[pos] - '0');
+        ++pos;
+    }
+    *out = negative ? -value : value;
+    return true;
+}
+
+bool parse_json_double_field(const std::string& data, const std::string& key, double* out) {
+    const std::string needle = "\"" + key + "\"";
+    const std::size_t key_pos = data.find(needle);
+    if (key_pos == std::string::npos) {
+        return false;
+    }
+    const std::size_t colon = data.find(':', key_pos + needle.size());
+    if (colon == std::string::npos) {
+        return false;
+    }
+    std::size_t pos = colon + 1;
+    while (pos < data.size() && std::isspace(static_cast<unsigned char>(data[pos]))) {
+        ++pos;
+    }
+    const char* start = data.c_str() + pos;
+    char* end = nullptr;
+    const double value = std::strtod(start, &end);
+    if (end == start) {
+        return false;
+    }
+    *out = value;
+    return true;
+}
+
+bool parse_json_string_field(const std::string& data, const std::string& key, std::string* out) {
+    const std::string needle = "\"" + key + "\"";
+    const std::size_t key_pos = data.find(needle);
+    if (key_pos == std::string::npos) {
+        return false;
+    }
+    const std::size_t colon = data.find(':', key_pos + needle.size());
+    if (colon == std::string::npos) {
+        return false;
+    }
+    std::size_t pos = colon + 1;
+    while (pos < data.size() && std::isspace(static_cast<unsigned char>(data[pos]))) {
+        ++pos;
+    }
+    if (pos >= data.size() || data[pos] != '"') {
+        return false;
+    }
+    ++pos;
+    std::string value;
+    while (pos < data.size()) {
+        const char ch = data[pos++];
+        if (ch == '"') {
+            *out = value;
+            return true;
+        }
+        if (ch == '\\' && pos < data.size()) {
+            value.push_back(data[pos++]);
+        } else {
+            value.push_back(ch);
+        }
+    }
+    return false;
+}
+
+CustomGraphTemplateMetadata custom_graph_template_metadata(const Config& cfg) {
+    CustomGraphTemplateMetadata meta;
+    if (cfg.graph_file.empty()) {
+        return meta;
+    }
+    const std::string data = read_custom_graph_prefix(cfg);
+    const std::string section = template_spec_slice(data);
+    if (section.empty()) {
+        return meta;
+    }
+    DenseGptTemplateGeometry geometry;
+    geometry.source = "custom_graph_template_spec";
+    std::string backbone;
+    parse_json_string_field(section, "backbone", &backbone);
+    std::int64_t value = 0;
+    if (parse_json_int_field(section, "model_dim", &value)) {
+        geometry.model_dim = value;
+    }
+    if (parse_json_int_field(section, "num_layers", &value)) {
+        geometry.num_layers = value;
+    }
+    if (parse_json_int_field(section, "vocab_size", &value)) {
+        geometry.vocab_size = value;
+    }
+    if (parse_json_int_field(section, "padded_vocab_size", &value)) {
+        geometry.padded_vocab_size = value;
+    }
+    if (parse_json_int_field(section, "num_heads", &value)) {
+        geometry.num_heads = value;
+    }
+    if (parse_json_int_field(section, "seq_len", &value) ||
+        parse_json_int_field(section, "max_seq_len", &value) ||
+        parse_json_int_field(section, "context_window", &value)) {
+        geometry.seq_len = value;
+    }
+    double double_value = 0.0;
+    if (parse_json_double_field(section, "mlp_multiplier", &double_value)) {
+        geometry.mlp_multiplier = static_cast<std::int64_t>(std::llround(double_value));
+    }
+    if (parse_json_double_field(section, "dropout_p", &double_value)) {
+        geometry.dropout_p = double_value;
+    }
+    if (geometry.num_heads > 0) {
+        geometry.head_dim = geometry.model_dim / geometry.num_heads;
+    }
+    const std::string normalized_backbone = normalize_template_name(backbone);
+    const bool dense_gpt_backbone =
+        normalized_backbone.empty() ||
+        normalized_backbone == "gpt" ||
+        normalized_backbone == "gpt2" ||
+        normalized_backbone == "gpt3" ||
+        normalized_backbone == "nanogpt";
+    meta.found = dense_gpt_backbone;
+    meta.geometry = geometry;
+    return meta;
+}
+
+bool custom_graph_template_metadata_found(const Config& cfg) {
+    return custom_graph_template_metadata(cfg).found;
+}
+
 DenseGptTemplateGeometry selected_template_geometry(const Config& cfg) {
     DenseGptTemplateGeometry geometry;
     const std::string selector = resolved_native_template_name(cfg.template_name);
     geometry.source = selected_architecture_source(cfg);
+    if (!cfg.graph_file.empty()) {
+        CustomGraphTemplateMetadata meta = custom_graph_template_metadata(cfg);
+        if (meta.found) {
+            return meta.geometry;
+        }
+        geometry.source = "custom_graph_metadata_unloaded";
+        return geometry;
+    }
     if (selector == "nanogpt" || selector == "nanogpt_megakernel" || selector == "nanogpt_modern") {
         geometry.model_dim = 320;
         geometry.num_heads = 5;
@@ -691,9 +865,6 @@ DenseGptTemplateGeometry selected_template_geometry(const Config& cfg) {
         geometry.dropout_p = 0.1;
     } else if (selector == "gpt3") {
         geometry.seq_len = 2048;
-    }
-    if (!cfg.graph_file.empty()) {
-        geometry.source = "custom_graph_metadata_unloaded";
     }
     return geometry;
 }
@@ -718,9 +889,11 @@ std::string selected_template_geometry_json(const Config& cfg) {
 }
 
 bool selected_template_geometry_matches_compiled_loop(const Config& cfg) {
+    if (!cfg.graph_file.empty() && !custom_graph_template_metadata_found(cfg)) {
+        return false;
+    }
     const DenseGptTemplateGeometry geometry = selected_template_geometry(cfg);
-    return cfg.graph_file.empty() &&
-        geometry.model_dim == 768 &&
+    return geometry.model_dim == 768 &&
         geometry.num_heads == 12 &&
         geometry.head_dim == 64 &&
         geometry.mlp_multiplier == 4 &&
@@ -729,12 +902,34 @@ bool selected_template_geometry_matches_compiled_loop(const Config& cfg) {
         geometry.dropout_p == 0.0;
 }
 
+std::string selected_graph_support_status(const Config& cfg) {
+    if (!cfg.graph_file.empty()) {
+        if (!custom_graph_file_exists(cfg)) {
+            return "custom-graph-file-missing";
+        }
+        return selected_template_geometry_matches_compiled_loop(cfg) ? "native-transformer-lm"
+                                                                    : "custom-graph-native-trainer-missing";
+    }
+    if (!selected_template_is_shipped(cfg)) {
+        return "unknown-template";
+    }
+    if (selected_template_is_native_dense_gpt_compatible(cfg) &&
+        !selected_template_geometry_matches_compiled_loop(cfg)) {
+        return "template-geometry-native-trainer-missing";
+    }
+    return selected_template_is_native_dense_gpt_compatible(cfg) ? "native-transformer-lm"
+                                                                : "template-native-trainer-missing";
+}
+
 std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
+    const DenseGptTemplateGeometry geometry = selected_template_geometry(cfg);
+    const bool custom_graph_metadata_loaded = !cfg.graph_file.empty() && custom_graph_template_metadata(cfg).found;
     std::ostringstream out;
     out
         << "{"
         << "\"name\":\"gpt2-compatible-fixed-dense-transformer\","
-        << "\"shape_source\":\"compiled_dense_gpt_defaults\","
+        << "\"shape_source\":\""
+        << (custom_graph_metadata_loaded ? "custom_graph_template_spec" : "compiled_dense_gpt_defaults") << "\","
         << "\"template_selector\":\"" << json_escape(normalize_template_name(cfg.template_name)) << "\","
         << "\"resolved_template_selector\":\"" << json_escape(resolved_native_template_name(cfg.template_name)) << "\","
         << "\"graph_file\":\"" << json_escape(cfg.graph_file) << "\","
@@ -742,17 +937,17 @@ std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
         << "\"graph_file_size_bytes\":" << custom_graph_file_size_bytes(cfg) << ","
         << "\"selector_native_runnable\":" << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ","
         << "\"template_geometry_dynamic\":false,"
-        << "\"custom_graph_geometry_dynamic\":false,"
+        << "\"custom_graph_geometry_dynamic\":" << (custom_graph_metadata_loaded ? "true" : "false") << ","
         << "\"selected_template_geometry\":" << selected_template_geometry_json(cfg) << ","
         << "\"geometry_matches_compiled_loop\":"
         << (selected_template_geometry_matches_compiled_loop(cfg) ? "true" : "false") << ","
-        << "\"model_dim\":768,"
-        << "\"num_heads\":12,"
-        << "\"head_dim\":64,"
-        << "\"mlp_multiplier\":4,"
-        << "\"vocab_size\":50257,"
-        << "\"padded_vocab_size\":50304,"
-        << "\"num_layers\":" << (cfg.num_layers > 0 ? cfg.num_layers : 12) << ","
+        << "\"model_dim\":" << geometry.model_dim << ","
+        << "\"num_heads\":" << geometry.num_heads << ","
+        << "\"head_dim\":" << geometry.head_dim << ","
+        << "\"mlp_multiplier\":" << geometry.mlp_multiplier << ","
+        << "\"vocab_size\":" << geometry.vocab_size << ","
+        << "\"padded_vocab_size\":" << geometry.padded_vocab_size << ","
+        << "\"num_layers\":" << (cfg.num_layers > 0 ? cfg.num_layers : geometry.num_layers) << ","
         << "\"seq_len\":" << (cfg.seq_len > 0 ? cfg.seq_len : 1024) << ","
         << "\"position_encoding\":\"absolute\","
         << "\"norm\":\"layernorm\","
@@ -20245,6 +20440,10 @@ int main(int argc, char** argv) {
             cfg.max_steps = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--num-layers") {
             cfg.num_layers = parse_int(require_value(argc, argv, &i, arg), arg);
+            cfg.num_layers_explicit = true;
+        } else if (arg.rfind("--num-layers=", 0) == 0) {
+            cfg.num_layers = parse_int(value_after_equals("--num-layers="), "--num-layers");
+            cfg.num_layers_explicit = true;
         } else if (arg == "--native-cuda-checkpoint-every") {
             cfg.checkpoint_every_steps = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--native-cuda-sample-every") {
@@ -20283,6 +20482,20 @@ int main(int argc, char** argv) {
         cfg.seq_len = 2048;
         if (!cfg.batch_size_explicit) {
             cfg.batch_size = 32;
+        }
+    }
+    if (!cfg.graph_file.empty()) {
+        const CustomGraphTemplateMetadata meta = custom_graph_template_metadata(cfg);
+        if (meta.found) {
+            if (!cfg.seq_len_explicit && meta.geometry.seq_len > 0) {
+                cfg.seq_len = static_cast<int>(meta.geometry.seq_len);
+                if (!cfg.batch_size_explicit && cfg.seq_len > 0) {
+                    cfg.batch_size = std::max(1, 65536 / cfg.seq_len);
+                }
+            }
+            if (!cfg.num_layers_explicit && meta.geometry.num_layers > 0) {
+                cfg.num_layers = static_cast<int>(meta.geometry.num_layers);
+            }
         }
     }
     cfg.model_family = canonical_dense_gpt_model_family(model_selector);

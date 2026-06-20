@@ -2473,6 +2473,71 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert custom_payload["native_geometry_contract"]["selector_native_runnable"] is False
     assert custom_payload["native_geometry_contract"]["custom_graph_geometry_dynamic"] is False
 
+    native_custom_graph_path = tmp_path / "native-compatible-gpt-graph.json"
+    native_custom_graph_path.write_text(
+        json.dumps(
+            {
+                "graph_settings": {
+                    "torch_config": {
+                        "template_spec": {
+                            "model_dim": 768,
+                            "num_layers": 12,
+                            "vocab_size": 50257,
+                            "padded_vocab_size": 50304,
+                            "seq_len": 2048,
+                            "block_spec": {
+                                "family": "gpt2",
+                                "num_heads": 12,
+                                "dropout_p": 0.0,
+                                "mlp_multiplier": 4.0,
+                            },
+                            "template": {
+                                "objective": "ar",
+                                "backbone": "gpt2",
+                                "sparsity": "dense",
+                                "router_mode": "none",
+                            },
+                        }
+                    }
+                },
+                "nodes": {},
+                "edges": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    native_custom_graph = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(dataset_path),
+            "--backend",
+            "tile-cuda",
+            "--graph-file",
+            str(native_custom_graph_path),
+            "--print-plan",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert native_custom_graph.returncode == 0, native_custom_graph.stderr
+    native_custom_payload = json.loads(native_custom_graph.stdout)
+    assert native_custom_payload["graph_file"].endswith("native-compatible-gpt-graph.json")
+    assert native_custom_payload["architecture_source"] == "custom_graph"
+    assert native_custom_payload["selected_graph_support_status"] == "native-transformer-lm"
+    assert native_custom_payload["selected_graph_native_runnable"] is True
+    assert native_custom_payload["status"] == "native-transformer-lm-ready"
+    assert native_custom_payload["native_geometry_contract"]["shape_source"] == "custom_graph_template_spec"
+    assert native_custom_payload["native_geometry_contract"]["custom_graph_geometry_dynamic"] is True
+    assert native_custom_payload["native_geometry_contract"]["selected_template_geometry"]["source"] == "custom_graph_template_spec"
+    assert native_custom_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
+    assert native_custom_payload["native_geometry_contract"]["selector_native_runnable"] is True
+    assert native_custom_payload["shape"]["seq_len"] == 2048
+    assert native_custom_payload["shape"]["batch_size"] == 32
+    assert native_custom_payload["schedule"]["train_batch_tokens"] == 524288
+
     missing_custom_graph = subprocess.run(
         [
             str(cli),

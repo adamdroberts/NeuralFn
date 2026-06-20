@@ -191,6 +191,16 @@ Dense GPT plan/runtime JSON reports
 fixed GPT-2-compatible geometry until the native loop is generalized, but
 selectors such as `--template-name nanogpt` now expose their requested preset
 shape in the contract instead of hiding the mismatch.
+For SDK compiled-CLI dispatch, `NativeGptRunConfig.graph_file` can also point at
+an existing graph JSON that carries native-compatible GPT `template_spec`
+metadata under the graph torch config. Those files report
+`selected_graph_support_status: "native-transformer-lm"`, set
+`native_geometry_contract.shape_source: "custom_graph_template_spec"`, and can
+provide default sequence length and layer count before the fixed dense GPT C++
+Tile trainer runs. Arbitrary graph JSON, incompatible metadata, and missing
+graph paths still fail explicitly with `custom-graph-native-trainer-missing` or
+`custom-graph-file-missing` instead of routing batches through graph-editor
+nodes or Torch.
 
 Native compiled entrypoints and SDK bindings set `CUDA_MODULE_LOADING=LAZY`
 when unset before executing native trainers or loading Tile CUDA libraries,

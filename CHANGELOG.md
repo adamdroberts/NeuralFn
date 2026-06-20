@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added native dense GPT custom-graph admission for graph JSON files that carry
+  compatible GPT `template_spec` metadata. The compiled C++ trainer now reports
+  those files as `selected_graph_support_status: "native-transformer-lm"`, sets
+  `native_geometry_contract.shape_source: "custom_graph_template_spec"`, and
+  can derive default sequence length and layer count from metadata unless CLI
+  flags override them. Arbitrary custom graph JSON still reports
+  `custom-graph-native-trainer-missing`, missing paths still report
+  `custom-graph-file-missing`, and no real training batches are routed through
+  graph-editor nodes or Torch. Verification: rebuilt `build/nfn_gpt_native_train`
+  with CUDA Toolkit 13.3.33 and ran the focused native GPT CLI selector test
+  covering unsupported and compatible custom graph files.
+
 - Added an opt-in dense GPT token-weight startup initializer behind
   `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1` /
   `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1`. The candidate uses
