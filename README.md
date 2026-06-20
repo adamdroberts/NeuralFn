@@ -456,7 +456,16 @@ residual substages, so candidate gates can target metrics such as
 `stage.block_backward.attn_proj.dinput.total_ms` directly. When native profile
 JSON includes packed-attention backward section counters, the same summary also
 prints dprep/TK timing fields such as `attention_backward_tk_timing_us` and
-their candidate-over-baseline ratios. If a
+their candidate-over-baseline ratios. Set
+`NFN_SM120_NATIVE_LINEAR_SHAPE_STATS=1`,
+`NFN_SM120_CANDIDATE_LINEAR_SHAPE_STATS=1`, or
+`NFN_SM120_PARITY_LINEAR_SHAPE_STATS=1` for route-attribution runs that should
+enable `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1` on both native commands. The paired
+JSON and text output then include `native_linear_shape_stats`, sorted by
+baseline shape time, with per-shape average time ratios and cuBLASLt selected
+heuristic lists when the v2 stats ABI is available. Leave this disabled for
+normal throughput comparisons because shape stats synchronize measured GEMMs.
+If a
 native command exits nonzero after
 writing its profile JSON, the harness failure message includes the native
 `status` and `error` fields so CUDA-driver, symbol, or dataset failures are not

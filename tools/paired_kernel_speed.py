@@ -474,6 +474,52 @@ def native_metrics_from_payload(payload: dict[str, Any]) -> dict[str, float | in
     return metrics
 
 
+def native_linear_shape_stats_from_payload(payload: dict[str, Any]) -> list[dict[str, object]]:
+    rows = payload.get("linear_shape_stats")
+    if not isinstance(rows, list):
+        return []
+    stats: list[dict[str, object]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        path_name = row.get("path_name")
+        m = row.get("m")
+        n = row.get("n")
+        k = row.get("k")
+        op_a_name = row.get("op_a_name")
+        op_b_name = row.get("op_b_name")
+        if not (
+            isinstance(path_name, str)
+            and isinstance(m, int)
+            and isinstance(n, int)
+            and isinstance(k, int)
+            and isinstance(op_a_name, str)
+            and isinstance(op_b_name, str)
+        ):
+            continue
+        item: dict[str, object] = {
+            "path_name": path_name,
+            "m": m,
+            "n": n,
+            "k": k,
+            "op_a_name": op_a_name,
+            "op_b_name": op_b_name,
+            "calls": row.get("calls"),
+            "total_us": row.get("total_us"),
+            "avg_us": row.get("avg_us"),
+        }
+        for key in (
+            "cublaslt_selected_heuristic",
+            "cublaslt_returned_heuristics",
+            "cublaslt_workspace_bytes",
+        ):
+            value = row.get(key)
+            if isinstance(value, int):
+                item[key] = value
+        stats.append(item)
+    return stats
+
+
 def native_json_out_path_from_argv(argv: Sequence[str]) -> Path | None:
     for index, arg in enumerate(argv):
         if arg in NATIVE_JSON_OUT_FLAGS and index + 1 < len(argv):
@@ -516,6 +562,20 @@ def argv_with_auto_profile_json(
     return next_argv
 
 
+def native_payload_from_json_out(argv: Sequence[str]) -> dict[str, Any] | None:
+    path = native_json_out_path_from_argv(argv)
+    if path is None or not path.exists():
+        return None
+    return extract_json_object(path.read_text(encoding="utf-8", errors="replace"))
+
+
+def native_payload_from_command_output(argv: Sequence[str], stdout: str) -> dict[str, Any] | None:
+    payload = extract_json_object(stdout)
+    if payload is not None:
+        return payload
+    return native_payload_from_json_out(argv)
+
+
 def command_env_with_auto_stage_timing(
     command: TimedCommand,
     *,
@@ -533,10 +593,7 @@ def command_env_with_auto_stage_timing(
 
 
 def native_metrics_from_json_out(argv: Sequence[str]) -> dict[str, float | int | str | bool]:
-    path = native_json_out_path_from_argv(argv)
-    if path is None or not path.exists():
-        return {}
-    payload = extract_json_object(path.read_text(encoding="utf-8", errors="replace"))
+    payload = native_payload_from_json_out(argv)
     return native_metrics_from_payload(payload) if payload is not None else {}
 
 
@@ -544,11 +601,18 @@ def native_metrics_from_command_output(argv: Sequence[str], stdout: str) -> dict
     payload = extract_json_object(stdout)
     if payload is not None:
         return native_metrics_from_payload(payload)
-    sidecar_metrics = native_metrics_from_json_out(argv)
-    if sidecar_metrics:
-        sidecar_metrics["native_metrics_source"] = "json-out"
-        return sidecar_metrics
+    payload = native_payload_from_json_out(argv)
+    if payload is not None:
+        metrics = native_metrics_from_payload(payload)
+        if metrics:
+            metrics["native_metrics_source"] = "json-out"
+        return metrics
     return llm_kittens_metrics_from_stdout(stdout)
+
+
+def native_linear_shape_stats_from_command_output(argv: Sequence[str], stdout: str) -> list[dict[str, object]]:
+    payload = native_payload_from_command_output(argv, stdout)
+    return native_linear_shape_stats_from_payload(payload) if payload is not None else []
 
 
 def native_failure_summary(metrics: dict[str, float | int | str | bool]) -> str:
@@ -701,6 +765,7 @@ def run_once(
             "timed_out": True,
             "timeout_seconds": timeout_seconds,
             "native_metrics": native_metrics_from_command_output(run_argv, stdout),
+            "native_linear_shape_stats": native_linear_shape_stats_from_command_output(run_argv, stdout),
             "stdout_tail": stdout[-2000:],
             "stderr_tail": stderr[-2000:],
         }
@@ -719,6 +784,7 @@ def run_once(
     seconds = time.perf_counter() - start
     returncode = proc.returncode if proc.returncode is not None else -1
     native_metrics = native_metrics_from_command_output(run_argv, stdout)
+    native_linear_shape_stats = native_linear_shape_stats_from_command_output(run_argv, stdout)
     if returncode != 0 and not continue_on_error:
         native_summary = native_failure_summary(native_metrics)
         native_section = f"\nnative JSON summary:\n{native_summary}\n" if native_summary else ""
@@ -736,6 +802,7 @@ def run_once(
         "returncode": returncode,
         "timed_out": False,
         "native_metrics": native_metrics,
+        "native_linear_shape_stats": native_linear_shape_stats,
         "stdout_tail": stdout[-2000:],
         "stderr_tail": stderr[-2000:],
     }
@@ -866,6 +933,137 @@ def summarize_native_route_counter_changes(
         "changed": changed,
         "unchanged": unchanged,
         "missing": missing,
+    }
+
+
+def linear_shape_key(row: dict[str, object]) -> str | None:
+    path_name = row.get("path_name")
+    m = row.get("m")
+    n = row.get("n")
+    k = row.get("k")
+    op_a_name = row.get("op_a_name")
+    op_b_name = row.get("op_b_name")
+    if not (
+        isinstance(path_name, str)
+        and isinstance(m, int)
+        and isinstance(n, int)
+        and isinstance(k, int)
+        and isinstance(op_a_name, str)
+        and isinstance(op_b_name, str)
+    ):
+        return None
+    return f"{path_name}:{m}x{n}x{k}:{op_a_name},{op_b_name}"
+
+
+def linear_shape_numeric(row: dict[str, object], key: str) -> float | None:
+    value = row.get(key)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
+def summarize_linear_shape_stats(rows: Sequence[dict[str, object]]) -> dict[str, object]:
+    by_command: dict[str, dict[str, list[dict[str, object]]]] = {
+        "baseline": {},
+        "candidate": {},
+    }
+    for sample in rows:
+        if not isinstance(sample, dict):
+            continue
+        for command_name in by_command:
+            command = sample.get(command_name)
+            if not isinstance(command, dict):
+                continue
+            stats = command.get("native_linear_shape_stats")
+            if not isinstance(stats, list):
+                continue
+            for stat in stats:
+                if not isinstance(stat, dict):
+                    continue
+                key = linear_shape_key(stat)
+                if key is None:
+                    continue
+                by_command[command_name].setdefault(key, []).append(stat)
+
+    def summarize_side(items: list[dict[str, object]]) -> dict[str, object]:
+        avg_values = [
+            value for item in items if (value := linear_shape_numeric(item, "avg_us")) is not None
+        ]
+        total_values = [
+            value for item in items if (value := linear_shape_numeric(item, "total_us")) is not None
+        ]
+        calls_values = [
+            value for item in items if (value := linear_shape_numeric(item, "calls")) is not None
+        ]
+        selected = sorted(
+            {
+                int(value)
+                for item in items
+                if isinstance((value := item.get("cublaslt_selected_heuristic")), int)
+            }
+        )
+        returned = sorted(
+            {
+                int(value)
+                for item in items
+                if isinstance((value := item.get("cublaslt_returned_heuristics")), int)
+            }
+        )
+        workspace = sorted(
+            {
+                int(value)
+                for item in items
+                if isinstance((value := item.get("cublaslt_workspace_bytes")), int)
+            }
+        )
+        return {
+            "samples": len(items),
+            "avg_us": summarize(avg_values) if avg_values else None,
+            "total_us": summarize(total_values) if total_values else None,
+            "calls": summarize(calls_values) if calls_values else None,
+            "cublaslt_selected_heuristics": selected,
+            "cublaslt_returned_heuristics": returned,
+            "cublaslt_workspace_bytes": workspace,
+        }
+
+    shared_keys = sorted(set(by_command["baseline"]).intersection(by_command["candidate"]))
+    rows_out: list[dict[str, object]] = []
+    for key in shared_keys:
+        baseline = summarize_side(by_command["baseline"][key])
+        candidate = summarize_side(by_command["candidate"][key])
+        baseline_avg = baseline.get("avg_us")
+        candidate_avg = candidate.get("avg_us")
+        ratio = None
+        if isinstance(baseline_avg, dict) and isinstance(candidate_avg, dict):
+            base_mean = baseline_avg.get("mean")
+            cand_mean = candidate_avg.get("mean")
+            if isinstance(base_mean, (int, float)) and isinstance(cand_mean, (int, float)) and base_mean:
+                ratio = float(cand_mean) / float(base_mean)
+        rows_out.append(
+            {
+                "shape": key,
+                "baseline": baseline,
+                "candidate": candidate,
+                "candidate_avg_us_over_baseline": ratio,
+            }
+        )
+    def baseline_total_mean(item: dict[str, object]) -> float:
+        baseline = item.get("baseline")
+        if not isinstance(baseline, dict):
+            return 0.0
+        total_us = baseline.get("total_us")
+        if not isinstance(total_us, dict):
+            return 0.0
+        value = total_us.get("mean")
+        return float(value) if isinstance(value, (int, float)) else 0.0
+
+    rows_out.sort(key=baseline_total_mean, reverse=True)
+    return {
+        "enabled": bool(rows_out),
+        "shared_count": len(rows_out),
+        "baseline_only": sorted(set(by_command["baseline"]) - set(by_command["candidate"])),
+        "candidate_only": sorted(set(by_command["candidate"]) - set(by_command["baseline"])),
+        "shared": rows_out,
     }
 
 
@@ -1513,6 +1711,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             baseline_native_metrics,
             candidate_native_metrics,
         )
+        native_linear_shape_stats = summarize_linear_shape_stats(sample_rows)
         gpu_sample_summary = summarize_gpu_sample_load(sample_rows, cuda_visible_devices)
 
     payload = {
@@ -1547,6 +1746,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "baseline_native_metric_values": baseline_native_metric_values,
         "candidate_native_metric_values": candidate_native_metric_values,
         "native_route_counter_changes": native_route_counter_changes,
+        "native_linear_shape_stats": native_linear_shape_stats,
         "candidate_over_baseline_native_metrics": summarize_metric_ratios(
             sample_rows,
             baseline_native_metrics,
@@ -1740,6 +1940,52 @@ def print_text(payload: dict[str, object]) -> None:
                 "candidate improvements as noise until a route change or separate "
                 "kernel-level attribution confirms the candidate."
             )
+    shape_stats = payload.get("native_linear_shape_stats")
+    if isinstance(shape_stats, dict) and shape_stats.get("enabled") is True:
+        print("  native_linear_shape_stats:")
+        shared = shape_stats.get("shared")
+        if isinstance(shared, list):
+            for row in shared[:20]:
+                if not isinstance(row, dict):
+                    continue
+                shape = row.get("shape")
+                baseline = row.get("baseline")
+                candidate = row.get("candidate")
+                if not isinstance(shape, str) or not isinstance(baseline, dict) or not isinstance(candidate, dict):
+                    continue
+                baseline_avg = baseline.get("avg_us")
+                candidate_avg = candidate.get("avg_us")
+                baseline_total = baseline.get("total_us")
+                ratio = row.get("candidate_avg_us_over_baseline")
+                if not isinstance(baseline_avg, dict) or not isinstance(candidate_avg, dict):
+                    continue
+                base_mean = baseline_avg.get("mean")
+                cand_mean = candidate_avg.get("mean")
+                total_mean = baseline_total.get("mean") if isinstance(baseline_total, dict) else None
+                if not isinstance(base_mean, (int, float)) or not isinstance(cand_mean, (int, float)):
+                    continue
+                ratio_text = "none" if not isinstance(ratio, (int, float)) else f"{float(ratio):.6f}"
+                selected_base = baseline.get("cublaslt_selected_heuristics")
+                selected_candidate = candidate.get("cublaslt_selected_heuristics")
+                selected_text = ""
+                if isinstance(selected_base, list) or isinstance(selected_candidate, list):
+                    selected_text = (
+                        " cublaslt_selected="
+                        f"{selected_base if isinstance(selected_base, list) else []}->"
+                        f"{selected_candidate if isinstance(selected_candidate, list) else []}"
+                    )
+                total_text = "" if not isinstance(total_mean, (int, float)) else f" baseline_total_us={float(total_mean):.3f}"
+                print(
+                    f"    {shape}: baseline_avg_us={float(base_mean):.3f} "
+                    f"candidate_avg_us={float(cand_mean):.3f} ratio={ratio_text}"
+                    f"{total_text}{selected_text}"
+                )
+        baseline_only = shape_stats.get("baseline_only")
+        candidate_only = shape_stats.get("candidate_only")
+        if isinstance(baseline_only, list) and baseline_only:
+            print(f"    baseline_only: {', '.join(str(item) for item in baseline_only[:10])}")
+        if isinstance(candidate_only, list) and candidate_only:
+            print(f"    candidate_only: {', '.join(str(item) for item in candidate_only[:10])}")
     ratios = payload.get("candidate_over_baseline_native_metrics")
     if isinstance(ratios, dict) and ratios:
         print("  candidate_over_baseline_native_metrics:")

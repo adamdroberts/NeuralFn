@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added route-attribution shape-stat support to the same-script native GPT
+  candidate benchmark wrapper. `NFN_SM120_NATIVE_LINEAR_SHAPE_STATS=1` and the
+  matching candidate/parity aliases now enable `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1`
+  on both paired native commands. `tools/paired_kernel_speed.py` now preserves
+  `linear_shape_stats` from native profile JSON, emits a
+  `native_linear_shape_stats` comparison in the paired JSON/text report, and
+  shows per-shape average-time ratios plus cuBLASLt selected heuristic lists.
+  This makes future LM-head/block-backward route candidates auditable at the
+  actual hot GEMM shape level instead of relying only on coarse route counters.
+  Verification: ran the focused paired-kernel sidecar/parser tests, shell syntax
+  check for the native candidate wrapper, and Python bytecode compilation for
+  `tools/paired_kernel_speed.py`.
+
 - Revisited the CUDA-visible test and benchmark surface after installing CUDA
   Toolkit 13.3.33 for WSL. The focused native/Tile CUDA suite passed with
   `155 passed`, the broader native GPT/Tile examples suite passed with

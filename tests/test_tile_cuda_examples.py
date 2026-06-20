@@ -307,6 +307,7 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "NFN_SM120_CANDIDATE_STEPS" in text
     assert "NFN_SM120_CANDIDATE_SAMPLES" in text
     assert "NFN_SM120_CANDIDATE_STAGE_TIMING" in text
+    assert "NFN_SM120_CANDIDATE_LINEAR_SHAPE_STATS" in text
     assert "NFN_SM120_CANDIDATE_JSON_OUT" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_ENV" in text
     assert "NFN_SM120_CANDIDATE_ENV" in text
@@ -332,6 +333,7 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "--dry-run-plan" in text
     assert '"${profile_args[@]}"' in text
     assert '"${paired_args[@]}"' in text
+    assert "NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1" in text
 
 
 def test_native_gpt_sm120_candidate_wrapper_accepts_short_aliases(tmp_path: Path) -> None:
@@ -930,6 +932,22 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                     "native_logit_chunk_rows": 8192,
                     "native_logit_chunk_count": 8,
                 },
+                "linear_shape_stats": [
+                    {
+                        "path_name": "cublaslt",
+                        "m": 768,
+                        "n": 50304,
+                        "k": 8192,
+                        "op_a_name": "N",
+                        "op_b_name": "T",
+                        "calls": 8,
+                        "total_us": 4000,
+                        "avg_us": 500,
+                        "cublaslt_selected_heuristic": 1,
+                        "cublaslt_returned_heuristics": 8,
+                        "cublaslt_workspace_bytes": 134217728,
+                    }
+                ],
             }
         ),
         encoding="utf-8",
@@ -964,6 +982,26 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["lm_head_classifier.resident_logit_reduction_ratio"] == 8.0
     assert metrics["lm_head_classifier.native_logit_chunk_rows"] == 8192
     assert metrics["lm_head_classifier.native_logit_chunk_count"] == 8
+    shape_stats = module.native_linear_shape_stats_from_command_output(
+        ["nfn_gpt_native_train", "--profile-json", str(sidecar)],
+        "",
+    )
+    assert shape_stats == [
+        {
+            "path_name": "cublaslt",
+            "m": 768,
+            "n": 50304,
+            "k": 8192,
+            "op_a_name": "N",
+            "op_b_name": "T",
+            "calls": 8,
+            "total_us": 4000,
+            "avg_us": 500,
+            "cublaslt_selected_heuristic": 1,
+            "cublaslt_returned_heuristics": 8,
+            "cublaslt_workspace_bytes": 134217728,
+        }
+    ]
 
     rows = [{"baseline": {"native_metrics": metrics}, "candidate": {"native_metrics": metrics}}]
     assert module.summarize_categorical_metric_rows(rows, "baseline") == {
@@ -971,6 +1009,51 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
         "lm_head_logits_linear_strategy": ["padded-lm-head-bf16-cublaslt-fallback"],
         "lm_head_dhidden_linear_strategy": ["bf16-cublas-gemmex"],
     }
+
+
+def test_paired_kernel_speed_tool_summarizes_linear_shape_stats() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    baseline_stat = {
+        "path_name": "cublaslt",
+        "m": 768,
+        "n": 50304,
+        "k": 8192,
+        "op_a_name": "N",
+        "op_b_name": "T",
+        "calls": 8,
+        "total_us": 4000,
+        "avg_us": 500,
+        "cublaslt_selected_heuristic": 1,
+        "cublaslt_returned_heuristics": 8,
+        "cublaslt_workspace_bytes": 134217728,
+    }
+    candidate_stat = dict(baseline_stat, avg_us=450, total_us=3600, cublaslt_selected_heuristic=0)
+    rows = [
+        {
+            "baseline": {"native_linear_shape_stats": [baseline_stat]},
+            "candidate": {"native_linear_shape_stats": [candidate_stat]},
+        }
+    ]
+
+    summary = module.summarize_linear_shape_stats(rows)
+
+    assert summary["enabled"] is True
+    assert summary["shared_count"] == 1
+    row = summary["shared"][0]
+    assert row["shape"] == "cublaslt:768x50304x8192:N,T"
+    assert row["candidate_avg_us_over_baseline"] == 0.9
+    assert row["baseline"]["cublaslt_selected_heuristics"] == [1]
+    assert row["candidate"]["cublaslt_selected_heuristics"] == [0]
 
 
 def test_paired_kernel_speed_failure_reports_native_json_sidecar_error(tmp_path: Path) -> None:
