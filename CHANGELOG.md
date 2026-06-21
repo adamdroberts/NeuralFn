@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rejected a smaller packed-attention backward batch cap after the CUDA 13.3
+  WSL reinstall. `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=32`
+  doubled `attention_backward_tk_launch_count` from `288` to `576` on the
+  default 64x1024 workstation shape and regressed train-loop wall time to
+  `1.006515x`, block backward to `1.014077x`, attention backward to
+  `1.072186x`, attention `to_qkv` to `1.072565x`, and
+  `attention_backward_tk_timing_us` to `1.063855x`. Keep the default cap at
+  `64`. Verification: stage-timed same-script native gate on GPU 0 with
+  attention-backward section timing enabled.
+
 - Rechecked the packed-attention HD64 dprep specialization after the CUDA 13.3
   WSL reinstall. `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED=0`
   routes the `heads=12, head_dim=64` BF16-grad dprep case through the older

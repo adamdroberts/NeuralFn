@@ -1000,6 +1000,13 @@ Keep the HD64 specialized path enabled for normal training: the CUDA 13.3 RTX
 block-backward gates but failed the strict attention substage gates at
 `stage.block_backward.attn_sdpa.total_ms=1.000768x` and
 `stage.block_backward.attn_sdpa.to_qkv.total_ms=1.000766x`.
+Keep the packed-attention backward batch cap at the default 64 on the
+workstation shape. A CUDA 13.3 RTX 5090 3-step/3-sample
+`NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=32` probe doubled
+`attention_backward_tk_launch_count` from `288` to `576` and regressed
+train-loop wall time to `1.006515x`, block backward to `1.014077x`,
+attention backward to `1.072186x`, attention `to_qkv` to `1.072565x`, and
+`attention_backward_tk_timing_us` to `1.063855x`.
 
 The raw trainer ABI also includes `nfn_native_tile_layer_norm_with_stats_float32`, `nfn_native_tile_layer_norm_backward_input_with_stats_float32`, `nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32`, `nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_bf16_bits_float32`, `nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_float32`, and `nfn_native_tile_layer_norm_backward_affine_accumulate_with_stats_bf16_bits_float32` so native trainers can store per-row LayerNorm mean/rstd during forward and reuse those stats in backward instead of recomputing them. Dense GPT-2 uses that stats-reuse path by default, stores earlier-block LN2 stats beside the BF16 MLP activations, and fuses block LayerNorm dInput with the following residual gradient add through `nfn_native_tile_layer_norm_backward_input_residual_add_with_stats_float32`. Set `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_RESIDUAL=0` to compare against the older separate LayerNorm dInput plus residual-add route. Training JSON reports `layer_norm_stats_strategy`, `layer_norm_backward_reuses_forward_stats`, `layer_norm_backward_residual_fusion_enabled`, `layer_norm_backward_residual_strategy`, `stored_mlp_layer_norm_stats_elements`, and `stored_mlp_layer_norm_stats_bytes`. `nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32` fuses attention-projection bias, residual add, and LN2 while writing mean/rstd for the existing backward stats-reuse path, and `nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32` additionally writes the BF16 residual1 cache in the same launch. GPT-2 enables the fused stats path by default. Set `NFN_NATIVE_GPT2_FUSE_ATTENTION_RESIDUAL_LN2=0` only when comparing against the older separate residual add plus LN2 route. Training JSON reports `attention_residual_ln2_strategy` and launch-elision counters so profiling runs can prove whether the fused kernel was active.
 
