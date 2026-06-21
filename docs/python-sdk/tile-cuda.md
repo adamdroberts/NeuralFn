@@ -1532,6 +1532,11 @@ changes without hand-writing env strings:
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`. These
 profiles stay default-off and must pass the same-script candidate gates before
 any route promotion.
+`ce_bf16_threads_512` expands to `NFN_NATIVE_GPT_CE_BF16_THREADS=512` for
+repeatable BF16 CE row-block bisection. It stays diagnostic-only: the dedicated
+RTX 5090 stage-timed gate regressed CE time to `1.144675x`, total LM-head
+backward to `1.017380x`, block backward to `1.016928x`, and train-loop wall
+time to `1.002998x` versus the 1024-thread default.
 The same wrapper exposes `qkv_concurrent_dinput_dweight`, which expands to
 `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` for repeatable
 stage-timed QKV side-stream bisections. That profile remains default-off and is

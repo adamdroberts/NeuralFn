@@ -843,6 +843,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "lm_head_cublaslt_dhidden_32768" in text
     assert "lm_head_logits_bf16_fallback_32768" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N" in text
+    assert "ce_bf16_threads_512" in text
+    assert "NFN_NATIVE_GPT_CE_BF16_THREADS=512" in text
     assert "cublaslt_min_waves" in text
     assert "cublaslt_max_waves" in text
     assert "tk_dgelu_dinput" in text
@@ -1075,6 +1077,38 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "1"
     )
     assert max_connections_payload["metric_ratio_gates"]["enabled"] is False
+
+    ce_threads_output_path = tmp_path / "candidate-ce-threads-dry-run.json"
+    ce_threads_env = os.environ.copy()
+    ce_threads_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_STAGE_TIMING": "1",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "ce_bf16_threads_512",
+            "NFN_SM120_NATIVE_JSON_OUT": str(ce_threads_output_path),
+        }
+    )
+
+    ce_threads_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=ce_threads_env,
+    )
+
+    assert ce_threads_dry_run.returncode == 0, ce_threads_dry_run.stderr
+    ce_threads_payload = json.loads(
+        ce_threads_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        ce_threads_payload["candidate_env"]["NFN_NATIVE_GPT_CE_BF16_THREADS"]
+        == "512"
+    )
+    assert ce_threads_payload["metric_ratio_gates"]["enabled"] is False
 
     combined_arena_output_path = tmp_path / "candidate-combined-arena-dry-run.json"
     combined_arena_env = os.environ.copy()

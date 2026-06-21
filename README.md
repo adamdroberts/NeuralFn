@@ -250,7 +250,12 @@ timing is enabled they also gate `stage.lm_head_backward.total_ms`,
 prepack candidates mentioning `LM_HEAD_PREPACK_BF16_HIDDEN` additionally gate
 `stage.lm_head_backward.dhidden.total_ms`,
 `stage.lm_head_backward.dweight.total_ms`, and
-`setup.uint16_arena_materialize.total_ms`. LM-head pipeline overlap candidates
+`setup.uint16_arena_materialize.total_ms`. The named
+`ce_bf16_threads_512` profile expands to
+`NFN_NATIVE_GPT_CE_BF16_THREADS=512` for repeatable CE row-block bisection and
+stays diagnostic-only after the dedicated RTX 5090 gate regressed CE time to
+`1.144675x` and train-loop wall time to `1.002998x` versus the 1024-thread
+default. LM-head pipeline overlap candidates
 still use the comparable train-loop and total LM-head gates; their
 candidate-only `stage.lm_head_backward.pipeline_queue.total_ms` and
 `stage.lm_head_backward.pipeline_final_wait.total_ms` fields are reported for
