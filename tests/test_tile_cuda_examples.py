@@ -1859,6 +1859,12 @@ def test_paired_kernel_speed_tool_extracts_forward_stage_timing() -> None:
                     {"name": "train.model_forward", "total_ms": 12.5, "avg_ms": 2.5, "count": 5},
                     {"name": "block_forward.attention", "total_ms": 3.0, "avg_ms": 0.6, "count": 5},
                     {"name": "block_recompute.mlp_proj", "total_ms": 4.0, "avg_ms": 0.8, "count": 5},
+                    {
+                        "name": "block_backward.qkv.dinput_dweight_concurrent",
+                        "total_ms": 6.0,
+                        "avg_ms": 1.2,
+                        "count": 5,
+                    },
                 ]
             }
         }
@@ -1867,6 +1873,7 @@ def test_paired_kernel_speed_tool_extracts_forward_stage_timing() -> None:
     assert metrics["stage.train.model_forward.total_ms"] == 12.5
     assert metrics["stage.block_forward.attention.total_ms"] == 3.0
     assert metrics["stage.block_recompute.mlp_proj.count"] == 5
+    assert metrics["stage.block_backward.qkv.dinput_dweight_concurrent.total_ms"] == 6.0
 
 
 def test_paired_kernel_speed_tool_auto_selects_idle_display_disabled_gpu() -> None:

@@ -286,6 +286,7 @@ NATIVE_TEXT_METRIC_KEYS = (
     "stage.block_backward.qkv.total_ms",
     "stage.block_backward.qkv.dweight_bias.total_ms",
     "stage.block_backward.qkv.dinput.total_ms",
+    "stage.block_backward.qkv.dinput_dweight_concurrent.total_ms",
     "stage.block_backward.ln1_residual.total_ms",
     "stage.block_backward.ln1_residual.fused_affine_dinput_add.total_ms",
     "stage.block_backward.ln1_residual.affine.total_ms",
