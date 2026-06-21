@@ -32,6 +32,9 @@ OPTIONAL_DEFAULT_ARTIFACTS = (
     Path("build/nfn_deepseek_v4_native_train"),
     Path("build/libnfn_native_train_tile_ops_tk.so"),
 )
+OPTIONAL_DEFAULT_ARTIFACT_GLOBS = (
+    "neuralfn/_native*.so",
+)
 FORBIDDEN_LIBRARY_MARKERS = (
     "libtorch",
     "libtorch_cpu",
@@ -234,6 +237,8 @@ def parse_args() -> argparse.Namespace:
 def default_artifacts() -> list[Path]:
     artifacts = list(REQUIRED_DEFAULT_ARTIFACTS)
     artifacts.extend(path for path in OPTIONAL_DEFAULT_ARTIFACTS if path.exists())
+    for pattern in OPTIONAL_DEFAULT_ARTIFACT_GLOBS:
+        artifacts.extend(sorted(Path().glob(pattern)))
     return artifacts
 
 

@@ -1346,7 +1346,7 @@ path. In addition to checking `pyproject.toml` so Torch stays out of default
 dependencies and the aggregate `.[all]` extra, it runs `ldd` checks for
 Torch/c10/Python runtime libraries on the required compiled GPT trainer and Tile
 ops library plus optional compiled native frontends/per-family trainers already
-present in `build/`, then runs
+present in `build/` and built SDK binding modules matching `neuralfn/_native*.so`, then runs
 `cli/scripts/train_gpt.py`, `cli/nfn.py train`,
 `cli/scripts/infer_gpt.py --native-info`, `cli/nfn.py infer --native-checkpoint`,
 and `neuralfn.native_gpt*` imports under an import blocker for `torch`, NumPy,

@@ -1387,8 +1387,9 @@ inspect native checkpoints while imports of `torch`, NumPy, tiktoken,
 `server.dataset_manager`, and `nfn_impl` are blocked.
 By default the artifact scan checks the required native GPT trainer and raw Tile
 ops library, plus any optional compiled C++ native frontends and per-family
-trainer binaries that are already present in `build/`; explicitly supplied
-artifact paths remain strict and must exist.
+trainer binaries that are already present in `build/`, plus built SDK binding
+modules matching `neuralfn/_native*.so`; explicitly supplied artifact paths
+remain strict and must exist.
 The gate also imports the top-level native SDK exports such as
 `NativeGptRunConfig`, `build_native_gpt_compiled_cli_run_config()`,
 `native_gpt_kernel_backend()`, and `native_gpt_parameter_count()` under the same

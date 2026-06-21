@@ -188,10 +188,15 @@ def test_native_no_torch_dependency_verifier_includes_optional_built_artifacts()
     present_optional = [
         path for path in module.OPTIONAL_DEFAULT_ARTIFACTS if (root / path).exists()
     ]
+    present_optional_globs = [
+        path for pattern in module.OPTIONAL_DEFAULT_ARTIFACT_GLOBS for path in sorted(root.glob(pattern))
+    ]
     assert all(path in artifacts for path in present_optional)
+    assert all(path.relative_to(root) in artifacts for path in present_optional_globs)
     assert Path("build/nfn_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_gpt2_evo_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_nanogpt_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
+    assert "neuralfn/_native*.so" in module.OPTIONAL_DEFAULT_ARTIFACT_GLOBS
 
 
 def test_resolve_native_gpt2_token_shards_materializes_uint16_cache(tmp_path: Path) -> None:

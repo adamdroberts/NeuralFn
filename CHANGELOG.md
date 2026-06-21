@@ -21,10 +21,11 @@ Future updates should append new entries here rather than replacing older notes.
   artifacts and also runs `ldd` against compiled optional native frontends and
   per-family trainer binaries when they are present in `build/`, including the
   unified `nfn_native_train`, GPT-2 evo, NanoGPT, LLaMA, MixLLaMA, JEPA,
-  semantic-router MoE, DeepSeek-V4, and TK Tile ops artifacts. Explicit artifact
-  arguments remain strict and still fail when missing. Verification: compiled
-  the verifier, ran the JSON no-Torch gate, ran the focused native GPT tests,
-  and `git diff --check`.
+  semantic-router MoE, DeepSeek-V4, TK Tile ops artifacts, and built SDK binding
+  modules matching `neuralfn/_native*.so`. Explicit artifact arguments remain
+  strict and still fail when missing. Verification: compiled the verifier, ran
+  the JSON no-Torch gate, ran the focused native GPT tests, and
+  `git diff --check`.
 
 - Updated the unified native training registry so `gpt2-evo` reports the
   current compiled native state instead of a stale missing-trainer status.
