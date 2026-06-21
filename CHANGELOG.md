@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rejected the BF16 attention-dprep grad-out candidate after the CUDA 13.3 WSL
+  reinstall. `NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1` reduced the
+  packed-attention dprep subsection to `0.843274x`, but the added
+  `block_backward.attn_sdpa.grad_out_bf16` pack made the whole route slower:
+  train-loop wall time `1.005344x`, block backward `1.010632x`, attention
+  backward `1.044177x`, attention `to_qkv` `1.044330x`, and
+  `attention_backward_tk_timing_us` `1.000394x`. Keep the default float
+  attention-dO handoff. Verification: stage-timed same-script native gate on
+  GPU 0 with attention-backward section timing enabled.
+
 - Rejected a smaller packed-attention backward batch cap after the CUDA 13.3
   WSL reinstall. `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=32`
   doubled `attention_backward_tk_launch_count` from `288` to `576` on the
