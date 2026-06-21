@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rebuilt and reverified the SM120 native CUDA training artifacts against the
+  current CUDA 13.3 WSL install. `bash tools/rebuild_native_sm120.sh`
+  regenerated the Tile ops library, unified GPT/native frontends, GPT-2
+  compatibility launcher, and per-template native trainer binaries.
+  `tools/check_native_no_torch_deps.py` reported all native binaries, Python
+  bindings, no-Torch SDK entrypoints, and native inference info paths `ok`.
+  A GPU-visible one-step dense GPT smoke reported CUDA runtime and driver
+  `13.3`, `graph_editor_tensor_flow: false`, and the expected Tile-CUDA native
+  GPT route. The focused CUDA Tile pytest suite passed with `154 passed`.
+  The refreshed stage-timed smoke still points remaining throughput work at
+  native `lm_head_backward` and `block_backward` kernels rather than stale CUDA
+  artifacts, Torch dependency leakage, or graph-editor tensor flow.
+
 - Added a default-off dense GPT attention-projection side-stream diagnostic.
   `NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT=1` and the
   GPT-2-prefixed alias run the attention projection dInput and dWeight+bias
