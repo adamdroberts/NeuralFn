@@ -818,6 +818,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "tk_dgelu_dinput" in text
     assert "tk_dgelu_approx_tanh" in text
     assert "attention_atomic_dq" in text
+    assert "token_weight_vector4_strided" in text
+    assert "token_weight_threaded" in text
+    assert "token_weight_fast_int32" in text
+    assert "token_weight_two_pass_bf16" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_BUILD_FLAGS" in text
     assert "NFN_SM120_CANDIDATE_TILE_OPS_BUILD_FLAGS" in text
     assert "-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP" in text
@@ -954,6 +958,49 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "max_waves"
     )
     assert max_waves_payload["metric_ratio_gates"]["enabled"] is False
+
+    token_profiles = {
+        "token_weight_vector4_strided": {
+            "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT": "1"
+        },
+        "token_weight_threaded": {
+            "NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT": "1"
+        },
+        "token_weight_fast_int32": {
+            "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT": "0"
+        },
+        "token_weight_two_pass_bf16": {
+            "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT": "0"
+        },
+    }
+    for profile_name, expected_env in token_profiles.items():
+        token_output_path = tmp_path / f"candidate-{profile_name}-dry-run.json"
+        token_env = os.environ.copy()
+        token_env.update(
+            {
+                "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+                "NFN_SM120_NATIVE_STARTUP_ONLY": "1",
+                "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+                "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+                "NFN_SM120_NATIVE_CANDIDATE_PROFILE": profile_name,
+                "NFN_SM120_NATIVE_JSON_OUT": str(token_output_path),
+            }
+        )
+
+        token_dry_run = subprocess.run(
+            ["bash", str(script)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            env=token_env,
+        )
+
+        assert token_dry_run.returncode == 0, token_dry_run.stderr
+        token_payload = json.loads(token_output_path.read_text(encoding="utf-8"))
+        for env_name, env_value in expected_env.items():
+            assert token_payload["candidate_env"][env_name] == env_value
+        assert token_payload["metric_ratio_gates"]["enabled"] is False
 
 
 def test_paired_kernel_speed_tool_applies_command_specific_env() -> None:

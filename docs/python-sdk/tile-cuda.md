@@ -1460,6 +1460,13 @@ changes without hand-writing env strings:
 profiles stay default-off and must pass the same-script candidate gates before
 any route promotion.
 
+Startup-only token-weight initializer bisections can use the same profile
+mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,
+`token_weight_fast_int32`, and `token_weight_two_pass_bf16` expand to the
+matching native GPT token-initializer env flags and are intended for paired
+`NFN_SM120_NATIVE_STARTUP_ONLY=1` runs. They remain diagnostic-only; the default
+compiled trainer still uses the fused vector4 FP32/BF16-shadow initializer.
+
 Full GPT-2 `--train-transformer-lm` runs report a `cuda_runtime_preflight` object before allocation. If `cudaDriverGetVersion` returns driver version `0`, or if the loaded CUDA runtime is newer than the reported driver, the trainer exits before `cudaMalloc` so benchmark failures point at GPU access/runtime compatibility instead of kernel execution.
 
 Set `NativeGptRunConfig.startup_only=True` or

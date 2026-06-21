@@ -609,7 +609,13 @@ path, candidate env, or candidate-only CLI args mention token-weight
 initialization also get an automatic
 `setup.token_weight_init.total_ms=1.000` gate, so token initializer changes
 must improve their own measured setup stage and cannot pass only because other
-startup work moved in the opposite direction. Add
+startup work moved in the opposite direction. Common token-weight startup
+bisections can use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_vector4_strided`,
+`token_weight_threaded`, `token_weight_fast_int32`, or
+`token_weight_two_pass_bf16` instead of spelling out the individual env flags;
+these profiles are diagnostic-only and do not change the default vector4 fused
+BF16-shadow initializer. Add
 `--append-native-profile-json-dir /tmp/nfn-profiles`
 when comparing native NeuralFn commands that do not already write JSON; the
 harness appends unique `--profile-json` files without changing the timed native

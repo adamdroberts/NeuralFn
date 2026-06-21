@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added named SM120 startup candidate profiles for token-weight initializer
+  bisection. `NFN_SM120_NATIVE_CANDIDATE_PROFILE` and
+  `NFN_SM120_CANDIDATE_PROFILE` now accept `token_weight_vector4_strided`,
+  `token_weight_threaded`, `token_weight_fast_int32`, and
+  `token_weight_two_pass_bf16`, each expanding to the matching native GPT
+  startup env flag while preserving the automatic `setup_wall_ms` and
+  `setup.token_weight_init.total_ms` gates for measured startup-only runs.
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`, focused
+  `tests/test_tile_cuda_examples.py`, and `git diff --check`.
+
 - Added startup latency enforcement to `tools/check_native_no_torch_deps.py`.
   The verifier now records `elapsed_seconds`, `startup_budget_seconds`, and
   `startup_within_budget` for every native Python fast-path entrypoint and
