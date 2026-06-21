@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rejected `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS=4` as a default after
+  a longer CUDA 13.3 RTX 5090 gate. The candidate passed the short
+  3-step/3-sample stage gate, but the 10-step/3-sample gate regressed
+  train-loop wall time to `1.004580x`, block backward to `1.009456x`,
+  attention backward to `1.000428x`, attention `to_qkv` to `1.000395x`, and
+  `attention_backward_tk_timing_us` to `1.000828x`. Keep the row-dprep launch
+  at the default 3 warps. Verification: short and long stage-timed
+  same-script native gates on GPU 0 with attention-backward section timing
+  enabled.
+
 - Rejected the BF16 attention-dprep grad-out candidate after the CUDA 13.3 WSL
   reinstall. `NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1` reduced the
   packed-attention dprep subsection to `0.843274x`, but the added
