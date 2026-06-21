@@ -441,7 +441,12 @@ candidate bisections can prove which cuBLASLt plan actually ran. On the CUDA
 `3072,768,65536,N,T` reports one returned heuristic, so there is no hardcoded
 default pin for that shape. Set
 `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=3072,768,65536,N,T,INDEX` only for
-explicit paired candidate bisection.
+explicit paired candidate bisection. The SM120 native candidate wrapper also
+provides default-off `cublaslt_min_waves` and `cublaslt_max_waves` profiles for
+global cuBLASLt policy bisection. Leave both unset for normal training: the
+CUDA 13.3 RTX 5090 3-step/3-sample gates rejected `min_waves` at
+`1.002017x` train-loop wall time and rejected `max_waves` at `1.008622x`, with
+block-backward regressions in both cases.
 Dense GPT dWeight GEMMs now also match the llm.kittens accumulation contract:
 the first gradient-accumulation microbatch writes dWeight with GEMM `beta=0`,
 and later microbatches accumulate with `beta=1`. This is enabled by default for

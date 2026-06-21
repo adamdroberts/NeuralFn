@@ -813,6 +813,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_SM120_CANDIDATE_PROFILE" in text
     assert "lm_head_tk_dinput_32768" in text
     assert "lm_head_cublaslt_dhidden_32768" in text
+    assert "cublaslt_min_waves" in text
+    assert "cublaslt_max_waves" in text
     assert "tk_dgelu_dinput" in text
     assert "tk_dgelu_approx_tanh" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_BUILD_FLAGS" in text
@@ -882,6 +884,68 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "768,32768,50304,N,N"
     )
     assert profile_payload["metric_ratio_gates"]["enabled"] is False
+
+    min_waves_output_path = tmp_path / "candidate-cublaslt-min-waves-dry-run.json"
+    min_waves_env = os.environ.copy()
+    min_waves_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "cublaslt_min_waves",
+            "NFN_SM120_NATIVE_JSON_OUT": str(min_waves_output_path),
+        }
+    )
+
+    min_waves_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=min_waves_env,
+    )
+
+    assert min_waves_dry_run.returncode == 0, min_waves_dry_run.stderr
+    min_waves_payload = json.loads(min_waves_output_path.read_text(encoding="utf-8"))
+    assert (
+        min_waves_payload["candidate_env"][
+            "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY"
+        ]
+        == "min_waves"
+    )
+    assert min_waves_payload["metric_ratio_gates"]["enabled"] is False
+
+    max_waves_output_path = tmp_path / "candidate-cublaslt-max-waves-dry-run.json"
+    max_waves_env = os.environ.copy()
+    max_waves_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "cublaslt_max_waves",
+            "NFN_SM120_NATIVE_JSON_OUT": str(max_waves_output_path),
+        }
+    )
+
+    max_waves_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=max_waves_env,
+    )
+
+    assert max_waves_dry_run.returncode == 0, max_waves_dry_run.stderr
+    max_waves_payload = json.loads(max_waves_output_path.read_text(encoding="utf-8"))
+    assert (
+        max_waves_payload["candidate_env"][
+            "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY"
+        ]
+        == "max_waves"
+    )
+    assert max_waves_payload["metric_ratio_gates"]["enabled"] is False
 
 
 def test_paired_kernel_speed_tool_applies_command_specific_env() -> None:

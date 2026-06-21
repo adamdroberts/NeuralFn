@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added named SM120 native candidate profiles for global cuBLASLt heuristic
+  policy bisection. `NFN_SM120_NATIVE_CANDIDATE_PROFILE` and
+  `NFN_SM120_CANDIDATE_PROFILE` now accept `cublaslt_min_waves`, which expands
+  to `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY=min_waves`, and
+  `cublaslt_max_waves`, which expands to
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY=max_waves`. These profiles are
+  measurement shortcuts only. Same-script CUDA 13.3 RTX 5090 gates rejected
+  both as defaults: `min_waves` measured `1.002017x` train-loop wall time and
+  regressed `stage.block_backward.total_ms` to `1.003126x`, while `max_waves`
+  measured `1.008622x` train-loop wall time, regressed
+  `stage.lm_head_backward.total_ms` to `1.011457x`, and regressed
+  `stage.block_backward.total_ms` to `1.011437x`. Verification:
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`, focused
+  `tests/test_tile_cuda_examples.py` wrapper tests, and the two stage-timed
+  3-step/3-sample paired CUDA gates on GPU 0.
+
 - Extended `tools/bench_native_gpt_sm120_candidate.sh` so same-script SM120
   native-vs-native runs can build compile-time Tile ops candidates without
   replacing the baseline library. Set

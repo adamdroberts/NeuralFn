@@ -94,6 +94,12 @@ case "${CANDIDATE_PROFILE,,}" in
   "lm_head_cublaslt_dhidden_32768"|"lm-head-cublaslt-dhidden-32768")
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N"
     ;;
+  "cublaslt_min_waves"|"cublaslt-min-waves")
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY=min_waves"
+    ;;
+  "cublaslt_max_waves"|"cublaslt-max-waves")
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY=max_waves"
+    ;;
   "tk_dgelu_dinput"|"tk-dgelu-dinput")
     CANDIDATE_TILE_OPS_BUILD_FLAGS="${CANDIDATE_TILE_OPS_BUILD_FLAGS:+$CANDIDATE_TILE_OPS_BUILD_FLAGS }-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP"
     ;;
@@ -102,7 +108,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   *)
     echo "Unknown NFN_SM120_NATIVE_CANDIDATE_PROFILE: $CANDIDATE_PROFILE" >&2
-    echo "Known profiles: lm_head_tk_dinput_32768, lm_head_cublaslt_dhidden_32768, tk_dgelu_dinput, tk_dgelu_approx_tanh" >&2
+    echo "Known profiles: lm_head_tk_dinput_32768, lm_head_cublaslt_dhidden_32768, cublaslt_min_waves, cublaslt_max_waves, tk_dgelu_dinput, tk_dgelu_approx_tanh" >&2
     exit 2
     ;;
 esac
