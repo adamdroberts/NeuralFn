@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `tools/rebuild_native_sm120.sh` as the CUDA-reinstall refresh path for
+  the native SM120 workstation artifacts. The script rebuilds the Tile-CUDA raw
+  trainer ABI, the universal native trainer frontend, the generic dense GPT
+  trainer, the GPT-2 compatibility trainer, the launcher, and the
+  missing-template native stubs with `NFN_TILE_CUDA_ARCH=sm_120a` and TK
+  attention enabled by default. This keeps post-toolkit-upgrade validation from
+  accidentally using stale binaries. Verification: rebuilt
+  `build/libnfn_native_train_tile_ops.so`, `build/nfn_gpt_native_train`, and
+  `build/nfn_native_train`; ran `python -m pytest
+  tests/test_tile_cuda_examples.py -q -k sm120_candidate`; ran
+  `python tools/check_native_no_torch_deps.py --skip-artifacts --json`; and
+  ran a one-step CUDA 13.3 RTX 5090 native GPT smoke with stage timing enabled.
+
 - Added named SM120 native candidate benchmark profiles for the current
   32768-row LM-head dHidden route. `NFN_SM120_NATIVE_CANDIDATE_PROFILE` or the
   shorter `NFN_SM120_CANDIDATE_PROFILE` now accepts
