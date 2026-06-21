@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Improved `tools/paired_kernel_speed.py` attribution for shape-specific
+  cuBLASLt candidate runs. When native linear shape stats are enabled, the JSON
+  now includes `native_linear_shape_stats.has_cublaslt_plan_change`,
+  `cublaslt_plan_changed_count`, and `cublaslt_plan_changed` entries whenever a
+  shared cuBLASLt shape changes selected heuristic or workspace bytes between
+  baseline and candidate. The text report prints those plan changes before the
+  per-shape timing rows and no longer emits the generic "tracked route counters
+  did not change" warning when the candidate has a proven cuBLASLt plan change.
+  Verification: focused `tests/test_tile_cuda_examples.py` paired-speed tests
+  and `git diff --check`.
+
 - Added named SM120 native candidate profiles for global cuBLASLt heuristic
   policy bisection. `NFN_SM120_NATIVE_CANDIDATE_PROFILE` and
   `NFN_SM120_CANDIDATE_PROFILE` now accept `cublaslt_min_waves`, which expands

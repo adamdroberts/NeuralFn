@@ -1152,11 +1152,51 @@ def summarize_linear_shape_stats(rows: Sequence[dict[str, object]]) -> dict[str,
         return float(value) if isinstance(value, (int, float)) else 0.0
 
     rows_out.sort(key=baseline_total_mean, reverse=True)
+    cublaslt_plan_changes: list[dict[str, object]] = []
+    for row in rows_out:
+        shape = row.get("shape")
+        baseline = row.get("baseline")
+        candidate = row.get("candidate")
+        if not isinstance(shape, str) or not shape.startswith("cublaslt:"):
+            continue
+        if not isinstance(baseline, dict) or not isinstance(candidate, dict):
+            continue
+        baseline_selected = baseline.get("cublaslt_selected_heuristics")
+        candidate_selected = candidate.get("cublaslt_selected_heuristics")
+        baseline_workspace = baseline.get("cublaslt_workspace_bytes")
+        candidate_workspace = candidate.get("cublaslt_workspace_bytes")
+        if (
+            baseline_selected != candidate_selected
+            or baseline_workspace != candidate_workspace
+        ):
+            cublaslt_plan_changes.append(
+                {
+                    "shape": shape,
+                    "baseline_selected_heuristics": (
+                        baseline_selected if isinstance(baseline_selected, list) else []
+                    ),
+                    "candidate_selected_heuristics": (
+                        candidate_selected if isinstance(candidate_selected, list) else []
+                    ),
+                    "baseline_workspace_bytes": (
+                        baseline_workspace if isinstance(baseline_workspace, list) else []
+                    ),
+                    "candidate_workspace_bytes": (
+                        candidate_workspace if isinstance(candidate_workspace, list) else []
+                    ),
+                    "candidate_avg_us_over_baseline": row.get(
+                        "candidate_avg_us_over_baseline"
+                    ),
+                }
+            )
     return {
         "enabled": bool(rows_out),
         "shared_count": len(rows_out),
         "baseline_only": sorted(set(by_command["baseline"]) - set(by_command["candidate"])),
         "candidate_only": sorted(set(by_command["candidate"]) - set(by_command["baseline"])),
+        "has_cublaslt_plan_change": bool(cublaslt_plan_changes),
+        "cublaslt_plan_changed_count": len(cublaslt_plan_changes),
+        "cublaslt_plan_changed": cublaslt_plan_changes,
         "shared": rows_out,
     }
 
@@ -1994,6 +2034,11 @@ def print_text(payload: dict[str, object]) -> None:
         print(f"  baseline_env: {json.dumps(baseline_env, sort_keys=True)}")
     if isinstance(candidate_env, dict) and candidate_env:
         print(f"  candidate_env: {json.dumps(candidate_env, sort_keys=True)}")
+    shape_stats = payload.get("native_linear_shape_stats")
+    has_shape_plan_change = (
+        isinstance(shape_stats, dict)
+        and shape_stats.get("has_cublaslt_plan_change") is True
+    )
     profile_json_dir = payload.get("append_native_profile_json_dir")
     if isinstance(profile_json_dir, str) and profile_json_dir:
         print(f"  append_native_profile_json_dir: {profile_json_dir}")
@@ -2118,15 +2163,35 @@ def print_text(payload: dict[str, object]) -> None:
             route_changes.get("has_route_counter_change") is False
             and isinstance(candidate_env, dict)
             and bool(candidate_env)
+            and not has_shape_plan_change
         ):
             print(
                 "    note: tracked route counters did not change; treat timing-only "
                 "candidate improvements as noise until a route change or separate "
                 "kernel-level attribution confirms the candidate."
             )
-    shape_stats = payload.get("native_linear_shape_stats")
     if isinstance(shape_stats, dict) and shape_stats.get("enabled") is True:
         print("  native_linear_shape_stats:")
+        plan_changes = shape_stats.get("cublaslt_plan_changed")
+        if isinstance(plan_changes, list) and plan_changes:
+            print(
+                "    cublaslt_plan_changes: "
+                f"changed_count={shape_stats.get('cublaslt_plan_changed_count', len(plan_changes))}"
+            )
+            for change in plan_changes[:10]:
+                if not isinstance(change, dict):
+                    continue
+                shape = change.get("shape")
+                baseline_selected = change.get("baseline_selected_heuristics")
+                candidate_selected = change.get("candidate_selected_heuristics")
+                ratio = change.get("candidate_avg_us_over_baseline")
+                ratio_text = (
+                    "none" if not isinstance(ratio, (int, float)) else f"{float(ratio):.6f}"
+                )
+                print(
+                    f"      {shape}: selected={baseline_selected}->{candidate_selected} "
+                    f"candidate_avg_us_over_baseline={ratio_text}"
+                )
         shared = shape_stats.get("shared")
         if isinstance(shared, list):
             for row in shared[:20]:

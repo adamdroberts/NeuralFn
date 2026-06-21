@@ -1046,6 +1046,78 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
     assert "tracked route counters did not change" in proc.stdout
 
 
+def test_paired_kernel_speed_tool_reports_cublaslt_plan_change_without_route_counter_warning() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-plan-change.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
+        "\\\"linear_tk_gemm_count\\\": 1632, "
+        "\\\"linear_cublaslt_gemm_count\\\": 2208, "
+        "\\\"linear_bf16_gemm_count\\\": 1824, "
+        "\\\"linear_shape_stats\\\": [{"
+        "\\\"path_name\\\": \\\"cublaslt\\\", "
+        "\\\"m\\\": 768, \\\"n\\\": 50304, \\\"k\\\": 32768, "
+        "\\\"op_a_name\\\": \\\"N\\\", \\\"op_b_name\\\": \\\"T\\\", "
+        "\\\"calls\\\": 16, \\\"total_us\\\": 160000, \\\"avg_us\\\": 10000, "
+        "\\\"cublaslt_selected_heuristic\\\": 1, "
+        "\\\"cublaslt_returned_heuristics\\\": 9, "
+        "\\\"cublaslt_workspace_bytes\\\": 134217728"
+        "}]"
+        "}"
+    )
+    candidate_json = baseline_json.replace(
+        "\\\"cublaslt_selected_heuristic\\\": 1",
+        "\\\"cublaslt_selected_heuristic\\\": 0",
+    ).replace(
+        "\\\"total_us\\\": 160000, \\\"avg_us\\\": 10000",
+        "\\\"total_us\\\": 158400, \\\"avg_us\\\": 9900",
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--candidate-env",
+            "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,50304,32768,N,T,0",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    route_changes = payload["native_route_counter_changes"]
+    assert route_changes["has_route_counter_change"] is False
+    shape_stats = payload["native_linear_shape_stats"]
+    assert shape_stats["has_cublaslt_plan_change"] is True
+    assert shape_stats["cublaslt_plan_changed_count"] == 1
+    plan_change = shape_stats["cublaslt_plan_changed"][0]
+    assert plan_change["shape"] == "cublaslt:768x50304x32768:N,T"
+    assert plan_change["baseline_selected_heuristics"] == [1]
+    assert plan_change["candidate_selected_heuristics"] == [0]
+    assert plan_change["candidate_avg_us_over_baseline"] == 0.99
+    assert "cublaslt_plan_changes: changed_count=1" in proc.stdout
+    assert "tracked route counters did not change" not in proc.stdout
+
+
 def test_paired_kernel_speed_tool_fails_metric_ratio_gate() -> None:
     script = Path("tools/paired_kernel_speed.py")
     output_path = Path(tempfile.mkdtemp()) / "paired-ratio-gate.json"
@@ -1482,6 +1554,9 @@ def test_paired_kernel_speed_tool_summarizes_linear_shape_stats() -> None:
     assert row["candidate_avg_us_over_baseline"] == 0.9
     assert row["baseline"]["cublaslt_selected_heuristics"] == [1]
     assert row["candidate"]["cublaslt_selected_heuristics"] == [0]
+    assert summary["has_cublaslt_plan_change"] is True
+    assert summary["cublaslt_plan_changed_count"] == 1
+    assert summary["cublaslt_plan_changed"][0]["shape"] == "cublaslt:768x50304x8192:N,T"
 
 
 def test_paired_kernel_speed_failure_reports_native_json_sidecar_error(tmp_path: Path) -> None:

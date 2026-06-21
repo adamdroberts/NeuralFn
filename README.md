@@ -454,6 +454,11 @@ strict LM-head gates at `stage.lm_head_backward.total_ms=1.000373x` and
 that shape to `1.078836x`. Overriding QKV dInput
 `768,65536,2304,N,N` from heuristic `1` to `0` regressed the shape to
 `1.082474x` and `stage.block_backward.qkv.dinput.total_ms` to `1.077788x`.
+When `NFN_SM120_NATIVE_LINEAR_SHAPE_STATS=1` is enabled, the paired benchmark
+JSON now reports `native_linear_shape_stats.has_cublaslt_plan_change` and
+`cublaslt_plan_changed` entries, so a shape-specific plan override is treated
+as kernel-level attribution even when aggregate GEMM route counters do not
+change.
 Dense GPT dWeight GEMMs now also match the llm.kittens accumulation contract:
 the first gradient-accumulation microbatch writes dWeight with GEMM `beta=0`,
 and later microbatches accumulate with `beta=1`. This is enabled by default for
