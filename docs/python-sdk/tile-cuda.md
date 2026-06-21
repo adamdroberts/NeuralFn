@@ -1638,7 +1638,10 @@ BF16-gradient AdamW launch counts. Set
 `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` to profile dense GPT transformer-LM startup
 through CUDA runtime `cudaMallocAsync` / `cudaFreeAsync` for the large device
 arenas. The async allocator path is default-off because paired dedicated-RTX-5090
-timing measured it slower than the default `cudaMalloc` arena path; runtime JSON
+timing measured it slower than the default `cudaMalloc` arena path. The latest
+CUDA 13.3 explicit arena-gated retest measured `1.177290x` setup wall time,
+`2.243472x` float-arena materialization, `1.716820x` uint16-arena
+materialization, and `1.176781x` total startup wall time. Runtime JSON
 reports `device_allocator_strategy`, `device_cuda_malloc_async_requested`,
 `device_cuda_malloc_async_enabled`, async symbol availability, allocation/free
 counts, and `device_cuda_malloc_async_fallback_count`. Set

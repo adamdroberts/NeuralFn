@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended `tools/paired_kernel_speed.py` native categorical summaries to carry
+  startup route fields including `device_allocator_strategy`,
+  `device_cuda_malloc_async_*`, `skip_exit_device_free_enabled`, and
+  `token_weight_*` initializer strategy flags. Startup bisections now show
+  whether allocator and token-initializer candidates actually selected the
+  intended native route in both JSON and text output. The same CUDA 13.3 RTX
+  5090 arena-gated retest rejected `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1`
+  (`1.177290x` setup wall, `2.243472x` float arena, `1.716820x` uint16 arena,
+  `1.176781x` total startup), so `cudaMalloc` remains the default arena path.
+  Verification: focused `tests/test_tile_cuda_examples.py`, same-script GPU
+  startup gate, and `git diff --check`.
+
 - Added named SM120 startup candidate profiles for token-weight initializer
   bisection. `NFN_SM120_NATIVE_CANDIDATE_PROFILE` and
   `NFN_SM120_CANDIDATE_PROFILE` now accept `token_weight_vector4_strided`,

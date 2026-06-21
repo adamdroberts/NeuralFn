@@ -443,7 +443,10 @@ the same large native GPT device arenas through CUDA runtime `cudaMallocAsync`
 and frees them with `cudaFreeAsync` when those symbols are available, falling
 back to `cudaMalloc` if an async allocation fails. The path is default-off
 because paired dedicated-RTX-5090 timing measured it slower than the default
-arena `cudaMalloc` path. JSON reports `device_allocator_strategy`,
+arena `cudaMalloc` path; the latest CUDA 13.3 explicit arena-gated retest
+measured `1.177290x` setup wall time, `2.243472x` float-arena materialization,
+`1.716820x` uint16-arena materialization, and `1.176781x` total startup wall
+time. JSON reports `device_allocator_strategy`,
 `device_cuda_malloc_async_requested`, `device_cuda_malloc_async_enabled`, async
 symbol availability, async allocation/free counts, and
 `device_cuda_malloc_async_fallback_count`.

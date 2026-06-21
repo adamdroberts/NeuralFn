@@ -1173,6 +1173,84 @@ def test_paired_kernel_speed_tool_reports_cublaslt_plan_change_without_route_cou
     assert "tracked route counters did not change" not in proc.stdout
 
 
+def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-startup-strategy.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 0, "
+        "\\\"device_allocator_strategy\\\": \\\"cudaMalloc\\\", "
+        "\\\"device_cuda_malloc_async_requested\\\": false, "
+        "\\\"device_cuda_malloc_async_enabled\\\": false, "
+        "\\\"device_cuda_malloc_async_symbol_loaded\\\": true, "
+        "\\\"device_cuda_free_async_symbol_loaded\\\": true, "
+        "\\\"skip_exit_device_free_enabled\\\": true, "
+        "\\\"token_weight_init_strategy\\\": \\\"device-vector4-power2-deterministic-fused-bf16-shadow\\\", "
+        "\\\"token_weight_vector4_init_enabled\\\": true, "
+        "\\\"token_weight_fast_int32_init_enabled\\\": true, "
+        "\\\"token_weight_bf16_initial_refresh_fusion_enabled\\\": true"
+        "}"
+    )
+    candidate_json = baseline_json.replace(
+        "\\\"device_allocator_strategy\\\": \\\"cudaMalloc\\\"",
+        "\\\"device_allocator_strategy\\\": \\\"cudaMallocAsync-null-stream\\\"",
+    ).replace(
+        "\\\"device_cuda_malloc_async_requested\\\": false",
+        "\\\"device_cuda_malloc_async_requested\\\": true",
+    ).replace(
+        "\\\"device_cuda_malloc_async_enabled\\\": false",
+        "\\\"device_cuda_malloc_async_enabled\\\": true",
+    ).replace(
+        "\\\"device-vector4-power2-deterministic-fused-bf16-shadow\\\"",
+        "\\\"device-vector4-strided-power2-deterministic-fused-bf16-shadow\\\"",
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["baseline_native_metric_values"]["device_allocator_strategy"] == [
+        "cudaMalloc"
+    ]
+    assert payload["candidate_native_metric_values"]["device_allocator_strategy"] == [
+        "cudaMallocAsync-null-stream"
+    ]
+    assert payload["candidate_native_metric_values"]["device_cuda_malloc_async_enabled"] == [
+        "true"
+    ]
+    assert payload["candidate_native_metric_values"]["token_weight_init_strategy"] == [
+        "device-vector4-strided-power2-deterministic-fused-bf16-shadow"
+    ]
+    assert "device_allocator_strategy: cudaMallocAsync-null-stream" in proc.stdout
+    assert (
+        "token_weight_init_strategy: "
+        "device-vector4-strided-power2-deterministic-fused-bf16-shadow"
+    ) in proc.stdout
+
+
 def test_paired_kernel_speed_tool_fails_metric_ratio_gate() -> None:
     script = Path("tools/paired_kernel_speed.py")
     output_path = Path(tempfile.mkdtemp()) / "paired-ratio-gate.json"
