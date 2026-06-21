@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned the canonical llm.kittens parity wrapper with the native-vs-native
+  candidate wrapper's dedicated-GPU idle guard. `tools/bench_native_gpt_sm120_parity.sh`
+  now defaults selected-GPU utilization polling to three samples spaced 0.25
+  seconds apart before each measured command, with
+  `NFN_SM120_PARITY_SELECTED_GPU_UTILIZATION_RETRIES` /
+  `NFN_SM120_SELECTED_GPU_UTILIZATION_RETRIES` and matching
+  `..._RETRY_INTERVAL_SECONDS` aliases still available for local tuning. This
+  keeps final NeuralFn-vs-llm.kittens parity numbers from being decided by
+  transient external GPU load or WSL/NVML spikes. Verification: `bash -n
+  tools/bench_native_gpt_sm120_parity.sh`, focused
+  `tests/test_tile_cuda_examples.py`, `git diff --check`, and a short
+  CUDA 13.3 RTX 5090 parity smoke with `selected_gpu_utilization_retries: 3`
+  that measured NeuralFn at `0.986814x` the llm.kittens train-loop ms/step.
+
 - Added a named `mlp_fc_concurrent_dinput_dweight` SM120 native candidate
   profile for repeatable reruns of
   `NFN_NATIVE_GPT_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT=1`. Stage-timed

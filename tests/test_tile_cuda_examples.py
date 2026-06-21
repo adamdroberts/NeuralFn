@@ -298,6 +298,10 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "tools/paired_kernel_speed.py" in text
     assert "--require-idle-selected-gpu" in text
     assert "--max-selected-gpu-utilization-pct" in text
+    assert "--selected-gpu-utilization-retries" in text
+    assert "--selected-gpu-utilization-retry-interval-seconds" in text
+    assert 'NFN_SM120_SELECTED_GPU_UTILIZATION_RETRIES:-3' in text
+    assert 'NFN_SM120_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS:-0.25' in text
     assert 'CUDA_VISIBLE_DEVICES_VALUE="${NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES:-${NFN_SM120_CUDA_VISIBLE_DEVICES:-auto}}"' in text
     assert "TinyStories_train.bin" in text
     assert "TinyStories_val.bin" in text
@@ -759,6 +763,9 @@ def test_native_gpt_sm120_parity_wrapper_accepts_generic_aliases(tmp_path: Path)
     assert "cuda_visible_devices: requested=7 resolved=7 mode=explicit" in proc.stdout
     assert "--max-steps 2" in proc.stdout
     assert "--append-native-profile-json-dir" not in proc.stdout
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["selected_gpu_utilization_retries"] == 3
+    assert payload["selected_gpu_utilization_retry_interval_seconds"] == 0.25
 
 
 def test_native_gpt_sm120_parity_wrapper_stage_timing_without_profile_dir(tmp_path: Path) -> None:
