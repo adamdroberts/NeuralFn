@@ -283,7 +283,8 @@ native JSON reports `linear_backend_strategy:
 `block_forward_linear_strategy`, `block_backward_input_linear_strategy`,
 `block_backward_weight_linear_strategy`,
 `non_block_forward_backward_linear_strategy`,
-`linear_bf16_gemm_count`, `linear_sgemm_count`, `linear_bf16_a_pack_count`,
+`linear_bf16_gemm_count`, `linear_bf16_gemm_fast16bf_request_count`,
+`linear_sgemm_count`, `linear_bf16_a_pack_count`,
 `linear_bf16_a_cache_hit_count`, `linear_bf16_cache_reset_count`,
 `linear_bf16_cached_a_capacity`, and `linear_bf16_cache_entry_count`.
 The BF16 operand cache keeps up to 128 stable operands such as weights and biases;

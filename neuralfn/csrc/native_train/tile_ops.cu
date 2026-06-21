@@ -40,6 +40,7 @@ std::int64_t attention_forward_row_attr_local_size_bytes();
 void reset_trainer_linear_launch_stats();
 void reset_trainer_linear_bf16_cache();
 std::int64_t trainer_linear_bf16_gemm_count();
+std::int64_t trainer_linear_bf16_gemm_fast16bf_request_count();
 std::int64_t trainer_linear_tk_gemm_count();
 std::int64_t trainer_linear_tk_float_out_gemm_count();
 std::int64_t trainer_linear_cublaslt_gemm_count();
@@ -1868,6 +1869,10 @@ void nfn_native_tile_trainer_linear_bf16_cache_reset() {
 
 std::int64_t nfn_native_tile_trainer_linear_bf16_gemm_count() {
     return neuralfn::tile_cuda::trainer_linear_bf16_gemm_count();
+}
+
+std::int64_t nfn_native_tile_trainer_linear_bf16_gemm_fast16bf_request_count() {
+    return neuralfn::tile_cuda::trainer_linear_bf16_gemm_fast16bf_request_count();
 }
 
 std::int64_t nfn_native_tile_trainer_linear_tk_gemm_count() {

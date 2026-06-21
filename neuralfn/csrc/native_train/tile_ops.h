@@ -42,6 +42,7 @@ std::int64_t nfn_native_tile_attention_forward_row_attr_local_size_bytes();
 void nfn_native_tile_trainer_linear_stats_reset();
 void nfn_native_tile_trainer_linear_bf16_cache_reset();
 std::int64_t nfn_native_tile_trainer_linear_bf16_gemm_count();
+std::int64_t nfn_native_tile_trainer_linear_bf16_gemm_fast16bf_request_count();
 std::int64_t nfn_native_tile_trainer_linear_tk_gemm_count();
 std::int64_t nfn_native_tile_trainer_linear_tk_float_out_gemm_count();
 std::int64_t nfn_native_tile_trainer_linear_cublaslt_gemm_count();

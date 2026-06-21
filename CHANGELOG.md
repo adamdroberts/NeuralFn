@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added shape-scoped BF16 `cublasGemmEx` compute-type bisection for native
+  Tile-CUDA training. `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE` /
+  `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE` accept
+  `m,n,k,opA,opB` and select `CUBLAS_COMPUTE_32F_FAST_16BF` only for that
+  matching BF16 GEMMEx fallback shape, leaving the existing global
+  `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF` behavior unchanged. The SM120
+  candidate wrapper also adds
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_dhidden_fast16bf_32768`, which
+  expands to
+  `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE=768,32768,50304,N,N` for the
+  current 32768-row LM-head dHidden fallback route. Defaults are unchanged
+  unless the env variable or named candidate profile is set. Runtime JSON and
+  paired benchmark summaries now report
+  `linear_bf16_gemm_fast16bf_request_count` so the shape override is visible
+  even though it stays on the BF16 GEMMEx backend. The profile remains rejected
+  as a default: the dedicated RTX 5090 same-script gate showed the intended
+  counter change (`linear_bf16_gemm_fast16bf_request_count` from `0` to `32`)
+  and improved mean train-loop wall time to `0.996042x`, but failed the strict
+  stage gate because `stage.block_backward.total_ms` regressed to `1.001305x`.
+  Verification: focused wrapper/native pytest slices, `bash -n` for the
+  candidate wrapper, rebuilt CUDA Tile ops and native GPT binaries, and measured
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_dhidden_fast16bf_32768` through
+  `tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=ce_bf16_threads_512` for
   reproducible BF16 cross-entropy row-block bisection. It expands to
   `NFN_NATIVE_GPT_CE_BF16_THREADS=512` and receives the existing

@@ -841,6 +841,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_SM120_CANDIDATE_PROFILE" in text
     assert "lm_head_tk_dinput_32768" in text
     assert "lm_head_cublaslt_dhidden_32768" in text
+    assert "lm_head_dhidden_fast16bf_32768" in text
+    assert "NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE=768,32768,50304,N,N" in text
     assert "lm_head_logits_bf16_fallback_32768" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N" in text
     assert "ce_bf16_threads_512" in text
@@ -951,6 +953,37 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "768,32768,50304,N,N"
     )
     assert profile_payload["metric_ratio_gates"]["enabled"] is False
+
+    fast16bf_output_path = tmp_path / "candidate-fast16bf-dhidden-dry-run.json"
+    fast16bf_env = os.environ.copy()
+    fast16bf_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_dhidden_fast16bf_32768",
+            "NFN_SM120_NATIVE_JSON_OUT": str(fast16bf_output_path),
+        }
+    )
+
+    fast16bf_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=fast16bf_env,
+    )
+
+    assert fast16bf_dry_run.returncode == 0, fast16bf_dry_run.stderr
+    fast16bf_payload = json.loads(fast16bf_output_path.read_text(encoding="utf-8"))
+    assert (
+        fast16bf_payload["candidate_env"][
+            "NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE"
+        ]
+        == "768,32768,50304,N,N"
+    )
+    assert fast16bf_payload["metric_ratio_gates"]["enabled"] is False
 
     logits_fallback_output_path = tmp_path / "candidate-logits-fallback-dry-run.json"
     logits_fallback_env = os.environ.copy()

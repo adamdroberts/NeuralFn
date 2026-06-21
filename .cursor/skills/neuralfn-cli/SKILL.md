@@ -174,7 +174,8 @@ Canonical docs:
   override actually selected a different returned candidate before promoting it.
 - The trainer-facing linear ABI should expose and preserve the linear backend
   telemetry: `linear_backend_strategy`,
-  `linear_bf16_gemm_count`, `linear_tk_gemm_count`, `linear_sgemm_count`,
+  `linear_bf16_gemm_count`, `linear_bf16_gemm_fast16bf_request_count`,
+  `linear_tk_gemm_count`, `linear_sgemm_count`,
   `linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
   `linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
   `linear_bf16_cache_entry_count`. Dense GPT transformer block forward/recompute
