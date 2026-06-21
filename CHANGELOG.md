@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a raw Tile C ABI probe for classic cuBLAS grouped BF16 GEMM execution.
+  `nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status()`
+  allocates tiny BF16 device matrices, launches
+  `cublasGemmGroupedBatchedEx`, copies the BF16 outputs back, and returns a
+  nonzero status if CUDA/cuBLAS execution or result validation fails. Native GPT
+  runtime JSON now reports
+  `linear_cublas_grouped_bf16_gemm_probe_available`,
+  `linear_cublas_grouped_bf16_gemm_probe_requested`,
+  `linear_cublas_grouped_bf16_gemm_probe_status`, and
+  `linear_cublas_grouped_bf16_gemm_supported`, and
+  `tools/paired_kernel_speed.py` includes the probe in route/strategy summaries.
+  The execution probe is opt-in with
+  `NFN_NATIVE_GPT_PROBE_CUBLAS_GROUPED_BF16_GEMM=1` because rejected grouped
+  BF16 launches can poison the CUDA context before model arena allocation. This
+  is diagnostic groundwork for future grouped linear-backward candidates; it
+  does not change the default dense GPT training dispatch.
+
 - Changed the llm.kittens parity wrapper back to measurement-only by default.
   `tools/bench_native_gpt_sm120_parity.sh` still reports
   NeuralFn-vs-reference ratios from the same-script benchmark, but it no longer

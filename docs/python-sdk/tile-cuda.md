@@ -93,6 +93,19 @@ minimal grouped matrix-layout descriptor through the raw Tile C ABI so CUDA
 candidate route is benchmarked. It is diagnostic-only; a supported probe does
 not change the default dense GPT training schedule.
 
+Runtime JSON also exposes a classic cuBLAS grouped BF16 GEMM execution probe as
+`linear_cublas_grouped_bf16_gemm_probe_available`,
+`linear_cublas_grouped_bf16_gemm_probe_requested`,
+`linear_cublas_grouped_bf16_gemm_probe_status`, and
+`linear_cublas_grouped_bf16_gemm_supported`. This raw Tile ABI probe is
+opt-in with `NFN_NATIVE_GPT_PROBE_CUBLAS_GROUPED_BF16_GEMM=1` because rejected
+or unsupported grouped BF16 launches can poison the CUDA context before model
+arena allocation. When requested, it launches tiny aligned BF16 grouped GEMMs
+through `cublasGemmGroupedBatchedEx`, copies back the BF16 outputs, and
+verifies the expected sums. Use it to gate future grouped linear-backward
+candidates; it is diagnostic-only and does not change default training
+dispatch.
+
 Set `NFN_NATIVE_GPT_STAGE_TIMING=1` only for CUDA event attribution runs; the
 same-script throughput wrappers leave it off by default. The dense GPT timing
 JSON includes `block_backward.mlp_proj.grad_out_bf16`, which isolates the

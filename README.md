@@ -358,6 +358,17 @@ CUDA 13.3 grouped cuBLASLt layout readiness is also reported as
 `linear_cublaslt_grouped_layout_supported`; those fields are diagnostics for
 future grouped-GEMM candidates and do not mean the current default route uses
 grouped matmul.
+Classic cuBLAS grouped BF16 GEMM execution is probed separately as
+`linear_cublas_grouped_bf16_gemm_probe_available`,
+`linear_cublas_grouped_bf16_gemm_probe_requested`,
+`linear_cublas_grouped_bf16_gemm_probe_status`, and
+`linear_cublas_grouped_bf16_gemm_supported`. The execution probe is opt-in via
+`NFN_NATIVE_GPT_PROBE_CUBLAS_GROUPED_BF16_GEMM=1` because unsupported grouped
+BF16 launches can leave the CUDA context in an illegal-access state before
+training allocations. When requested, it launches tiny aligned BF16 grouped
+GEMMs through `cublasGemmGroupedBatchedEx` and checks the BF16 outputs, so
+candidate work can distinguish descriptor support from an actually working
+grouped-GEMM execution path on the selected CUDA install.
 The native trainer now prewarms CUDA 13.3 BF16 cuBLASLt plans by default for
 real training runs, but leaves prewarm off for `--startup-only` probes so
 startup diagnostics do not pay the extra setup cost. Set

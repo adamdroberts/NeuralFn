@@ -17639,6 +17639,140 @@ int trainer_linear_cublaslt_grouped_layout_probe_status() {
 #endif
 }
 
+int trainer_linear_cublas_grouped_bf16_gemm_probe_status() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  cublasHandle_t handle = trainer_linear_cublas_handle(nullptr);
+  if (handle == nullptr) {
+    return -2;
+  }
+
+  constexpr int group_count = 2;
+  constexpr int batch_count = 2;
+  const cublasOperation_t transa[group_count] = {CUBLAS_OP_N, CUBLAS_OP_N};
+  const cublasOperation_t transb[group_count] = {CUBLAS_OP_N, CUBLAS_OP_N};
+  const int m[group_count] = {16, 16};
+  const int n[group_count] = {2, 2};
+  const int k[group_count] = {16, 16};
+  const int lda[group_count] = {16, 16};
+  const int ldb[group_count] = {16, 16};
+  const int ldc[group_count] = {16, 16};
+  const int group_size[group_count] = {1, 1};
+  const float alpha[group_count] = {1.0f, 1.0f};
+  const float beta[group_count] = {0.0f, 0.0f};
+  const std::uint16_t bf16_one = 0x3f80;
+  const std::array<std::size_t, batch_count> a_elements = {256, 256};
+  const std::array<std::size_t, batch_count> b_elements = {32, 32};
+  const std::array<std::size_t, batch_count> c_elements = {32, 32};
+  const std::array<std::uint16_t, batch_count> expected_bf16 = {0x4180, 0x4180};
+  std::array<std::uint16_t*, batch_count> a_device = {nullptr, nullptr};
+  std::array<std::uint16_t*, batch_count> b_device = {nullptr, nullptr};
+  std::array<std::uint16_t*, batch_count> c_device = {nullptr, nullptr};
+  int status = 0;
+
+  for (int i = 0; i < batch_count && status == 0; ++i) {
+    status = static_cast<int>(cudaMalloc(&a_device[i], a_elements[i] * sizeof(std::uint16_t)));
+    if (status == 0) {
+      status = static_cast<int>(cudaMalloc(&b_device[i], b_elements[i] * sizeof(std::uint16_t)));
+    }
+    if (status == 0) {
+      status = static_cast<int>(cudaMalloc(&c_device[i], c_elements[i] * sizeof(std::uint16_t)));
+    }
+    if (status == 0) {
+      std::vector<std::uint16_t> a_host(a_elements[i], bf16_one);
+      status = static_cast<int>(cudaMemcpy(
+          a_device[i],
+          a_host.data(),
+          a_host.size() * sizeof(std::uint16_t),
+          cudaMemcpyHostToDevice));
+    }
+    if (status == 0) {
+      std::vector<std::uint16_t> b_host(b_elements[i], bf16_one);
+      status = static_cast<int>(cudaMemcpy(
+          b_device[i],
+          b_host.data(),
+          b_host.size() * sizeof(std::uint16_t),
+          cudaMemcpyHostToDevice));
+    }
+    if (status == 0) {
+      status = static_cast<int>(cudaMemset(c_device[i], 0, c_elements[i] * sizeof(std::uint16_t)));
+    }
+  }
+
+  if (status == 0) {
+    const void* a_ptrs[batch_count] = {
+        static_cast<const void*>(a_device[0]),
+        static_cast<const void*>(a_device[1])};
+    const void* b_ptrs[batch_count] = {
+        static_cast<const void*>(b_device[0]),
+        static_cast<const void*>(b_device[1])};
+    void* c_ptrs[batch_count] = {
+        static_cast<void*>(c_device[0]),
+        static_cast<void*>(c_device[1])};
+    status = static_cast<int>(cublasGemmGroupedBatchedEx(
+        handle,
+        transa,
+        transb,
+        m,
+        n,
+        k,
+        alpha,
+        a_ptrs,
+        CUDA_R_16BF,
+        lda,
+        b_ptrs,
+        CUDA_R_16BF,
+        ldb,
+        beta,
+        c_ptrs,
+        CUDA_R_16BF,
+        ldc,
+        group_count,
+        group_size,
+        CUBLAS_COMPUTE_32F));
+  }
+  if (status == 0) {
+    status = static_cast<int>(cudaDeviceSynchronize());
+  }
+  for (int i = 0; i < batch_count && status == 0; ++i) {
+    std::vector<std::uint16_t> c_host(c_elements[i], 0);
+    status = static_cast<int>(cudaMemcpy(
+        c_host.data(),
+        c_device[i],
+        c_host.size() * sizeof(std::uint16_t),
+        cudaMemcpyDeviceToHost));
+    for (std::uint16_t value : c_host) {
+      if (status == 0 && value != expected_bf16[i]) {
+        status = -3;
+      }
+    }
+  }
+
+  for (int i = 0; i < batch_count; ++i) {
+    if (a_device[i] != nullptr) {
+      const int free_status = static_cast<int>(cudaFree(a_device[i]));
+      if (status == 0) {
+        status = free_status;
+      }
+    }
+    if (b_device[i] != nullptr) {
+      const int free_status = static_cast<int>(cudaFree(b_device[i]));
+      if (status == 0) {
+        status = free_status;
+      }
+    }
+    if (c_device[i] != nullptr) {
+      const int free_status = static_cast<int>(cudaFree(c_device[i]));
+      if (status == 0) {
+        status = free_status;
+      }
+    }
+  }
+  return status;
+#else
+  return -1;
+#endif
+}
+
 bool trainer_linear_cublaslt_prewarm_bf16_plan(
     int m,
     int n,
