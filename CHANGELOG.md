@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Updated the unified native training registry so `gpt2-evo` reports the
+  current compiled native state instead of a stale missing-trainer status.
+  `nfn-native-train --list-models --json` and
+  `native_train_model_registry()` now mark `gpt2-evo` as `implemented`, target
+  `nfn_gpt2_evo_native_train`, and report
+  `transformer_lm_status: "native-dense-gpt-layer-evo-delegate"` plus
+  `geometry_status: "dense-gpt2-compatible-layer-evo-delegate"`. This matches
+  the family binary that validates evo metadata and delegates dense
+  GPT-2-compatible runs to the CUDA Tile transformer-LM trainer with
+  `--layer-evo`, keeping CLI/SDK coverage reporting off the graph-backed
+  TorchTrainer path. Verification: rebuilt the unified native frontend, ran the
+  focused native registry/dispatch tests, ran the native no-Torch dependency
+  verifier, and `git diff --check`.
+
 - Added a named `lm_head_row_chunk_65536` SM120 native candidate profile for
   reproducible full-resident LM-head chunk retests. The profile expands to
   `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` plus

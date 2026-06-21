@@ -61,12 +61,12 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
     {
         "gpt2-evo",
-        "missing-native-trainer",
+        "implemented",
         "nfn_gpt2_evo_native_train",
-        "missing-native-trainer",
+        "native-dense-gpt-layer-evo-delegate",
         "not-applicable",
-        "pending-native-layer-evo-loop",
-        "Layer-evo mutation/evaluation still needs a native CUDA Tile C++ trainer.",
+        "dense-gpt2-compatible-layer-evo-delegate",
+        "GPT-2 evo is a model-aware native C++ preflight/delegate that dispatches dense GPT-2-compatible runs to the CUDA Tile transformer-LM loop with --layer-evo.",
     },
     {
         "nanogpt",
@@ -806,6 +806,25 @@ int main(int argc, char** argv) {
             });
         if (target_cli.empty()) {
             std::cerr << "No NanoGPT token-LM native CLI configured.\n";
+            return 2;
+        }
+        std::vector<std::string> command;
+        command.push_back(target_cli);
+        command.insert(command.end(), forwarded.begin(), forwarded.end());
+        if (print_command_requested) {
+            command.push_back("--print-command");
+            print_command(command);
+            return 0;
+        }
+        return exec_command(command);
+    }
+
+    if (!dense_gpt) {
+        const std::string target_cli = resolve_native_target_cli(argv[0], *model_entry);
+        if (target_cli.empty()) {
+            std::cerr
+                << "No native C++ trainer is available for model family '" << model << "'.\n"
+                << "Expected target: " << model_entry->native_target << '\n';
             return 2;
         }
         std::vector<std::string> command;
