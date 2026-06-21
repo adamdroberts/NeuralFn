@@ -841,6 +841,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_SM120_CANDIDATE_PROFILE" in text
     assert "lm_head_tk_dinput_32768" in text
     assert "lm_head_cublaslt_dhidden_32768" in text
+    assert "lm_head_logits_bf16_fallback_32768" in text
+    assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N" in text
     assert "cublaslt_min_waves" in text
     assert "cublaslt_max_waves" in text
     assert "tk_dgelu_dinput" in text
@@ -945,6 +947,39 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "768,32768,50304,N,N"
     )
     assert profile_payload["metric_ratio_gates"]["enabled"] is False
+
+    logits_fallback_output_path = tmp_path / "candidate-logits-fallback-dry-run.json"
+    logits_fallback_env = os.environ.copy()
+    logits_fallback_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_logits_bf16_fallback_32768",
+            "NFN_SM120_NATIVE_JSON_OUT": str(logits_fallback_output_path),
+        }
+    )
+
+    logits_fallback_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=logits_fallback_env,
+    )
+
+    assert logits_fallback_dry_run.returncode == 0, logits_fallback_dry_run.stderr
+    logits_fallback_payload = json.loads(
+        logits_fallback_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        logits_fallback_payload["candidate_env"][
+            "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE"
+        ]
+        == "50304,32768,768,T,N"
+    )
+    assert logits_fallback_payload["metric_ratio_gates"]["enabled"] is False
 
     min_waves_output_path = tmp_path / "candidate-cublaslt-min-waves-dry-run.json"
     min_waves_env = os.environ.copy()

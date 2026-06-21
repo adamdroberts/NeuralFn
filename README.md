@@ -275,9 +275,12 @@ For repeatable CUDA/driver bisection of known LM-head dHidden routes, set
 `lm_head_cublaslt_dhidden_32768` to expand to
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`,
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1`, and
-`NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,32768,50304,N,N,0`. These
-profiles are measurement shortcuts only; both routes remain default-off until
-the same-script candidate gate beats the current route.
+`NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,32768,50304,N,N,0`. Use
+`lm_head_logits_bf16_fallback_32768` to disable the TK forward route for the
+current 32768-row LM-head logits shape with
+`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`. These
+profiles are measurement shortcuts only; the alternate LM-head routes remain
+default-off until the same-script candidate gate beats the current route.
 For compile-time Tile ops candidates, set
 `NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_BUILD_FLAGS` or
 `NFN_SM120_CANDIDATE_TILE_OPS_BUILD_FLAGS`; the wrapper builds a temporary

@@ -21,6 +21,19 @@ Future updates should append new entries here rather than replacing older notes.
   expansions, and the rejected candidates were measured through
   `tools/bench_native_gpt_sm120_candidate.sh`.
 
+- Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_logits_bf16_fallback_32768`
+  for reproducible bisection of the current 32768-row LM-head logits route. It
+  expands to
+  `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`, which moves
+  the logits GEMM off the TK route and onto the BF16 GEMMEx fallback. The route
+  remains rejected as a default: the dedicated RTX 5090 same-script gate showed
+  the intended counter change (`lm_head_logits_tk_gemm_count` from `48` to
+  `0` over three measured steps) but failed at `1.001931x` train-loop wall time,
+  `1.004681x` LM-head backward time, and `1.004700x` LM-head logits time.
+  Verification: updated the candidate-profile dry-run test to assert the exact
+  shape expansion and measured the route through
+  `tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Added a raw Tile C ABI probe for classic cuBLAS grouped BF16 GEMM execution.
   `nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status()`
   allocates tiny BF16 device matrices, launches
