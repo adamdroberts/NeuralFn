@@ -250,8 +250,14 @@ prepack candidates mentioning `LM_HEAD_PREPACK_BF16_HIDDEN` additionally gate
 `LM_HEAD_PIPELINE_CHUNKS` additionally gate the emitted pipeline substages
 `stage.lm_head_backward.pipeline_queue.total_ms` and
 `stage.lm_head_backward.pipeline_final_wait.total_ms`, rather than expecting
-the serial `dhidden` / `dweight` substage names. Dry-run planning and no-op
-baseline-vs-baseline checks stay ungated.
+the serial `dhidden` / `dweight` substage names. Attention candidates mentioning
+`PACKED_ATTENTION` or `BF16_ATTENTION` gate
+`stage.block_backward.attn_sdpa.total_ms`,
+`stage.block_backward.attn_sdpa.to_qkv.total_ms`,
+`attention_backward_tk_timing_us`, and
+`attention_backward_dprep_timing_us` so packed-attention bisections fail on the
+hot substage even when total command timing is noisy. Dry-run planning and
+no-op baseline-vs-baseline checks stay ungated.
 For repeatable CUDA/driver bisection of known LM-head dHidden routes, set
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dinput_32768` (or the shorter
 `NFN_SM120_CANDIDATE_PROFILE`) to expand the candidate env to

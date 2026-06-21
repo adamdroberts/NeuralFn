@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the default metric gates in `tools/bench_native_gpt_sm120_candidate.sh`
+  for packed-attention candidate bisections. Stage-timed candidate text that
+  mentions `PACKED_ATTENTION` or `BF16_ATTENTION` now automatically gates
+  `stage.block_backward.attn_sdpa.total_ms`,
+  `stage.block_backward.attn_sdpa.to_qkv.total_ms`,
+  `attention_backward_tk_timing_us`, and
+  `attention_backward_dprep_timing_us` when no explicit
+  `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` is supplied. Verification:
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`, focused
+  `tests/test_tile_cuda_examples.py`, and `git diff --check`.
+
 - Added the `attention_atomic_dq` SM120 native candidate profile to
   `tools/bench_native_gpt_sm120_candidate.sh`. The profile builds a candidate
   Tile ops library with `-DLLMK_SM120_ATOMIC_DQ` and automatically adds strict

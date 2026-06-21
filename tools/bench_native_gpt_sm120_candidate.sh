@@ -191,6 +191,14 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
                 ;;
             esac
             case "$candidate_gate_text" in
+              *PACKED_ATTENTION*|*packed_attention*|*BF16_ATTENTION*|*bf16_attention*)
+                MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.attn_sdpa.total_ms=1.000"
+                MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.attn_sdpa.to_qkv.total_ms=1.000"
+                MAX_CANDIDATE_RATIO_RAW+=" attention_backward_tk_timing_us=1.000"
+                MAX_CANDIDATE_RATIO_RAW+=" attention_backward_dprep_timing_us=1.000"
+                ;;
+            esac
+            case "$candidate_gate_text" in
               *LM_HEAD_PIPELINE_CHUNKS*|*lm_head_pipeline_chunks*)
                 MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_queue.total_ms=1.000"
                 MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_final_wait.total_ms=1.000"
