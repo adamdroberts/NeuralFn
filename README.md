@@ -259,9 +259,7 @@ the serial `dhidden` / `dweight` substage names. Attention candidates mentioning
 hot substage even when total command timing is noisy. Dry-run planning and
 no-op baseline-vs-baseline checks stay ungated.
 QKV side-stream candidates mentioning `BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT`
-also gate `stage.block_backward.qkv.total_ms`,
-`stage.block_backward.qkv.dinput.total_ms`,
-`stage.block_backward.qkv.dweight_bias.total_ms`, and
+also gate `stage.block_backward.qkv.total_ms` and
 `stage.block_backward.qkv.dinput_dweight_concurrent.total_ms`.
 For repeatable CUDA/driver bisection of known LM-head dHidden routes, set
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dinput_32768` (or the shorter

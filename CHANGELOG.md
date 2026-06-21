@@ -10,9 +10,7 @@ Future updates should append new entries here rather than replacing older notes.
   for repeatable reruns of
   `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1`. Stage-timed candidate
   runs whose text mentions `BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT` now
-  automatically gate `stage.block_backward.qkv.total_ms`,
-  `stage.block_backward.qkv.dinput.total_ms`,
-  `stage.block_backward.qkv.dweight_bias.total_ms`, and
+  automatically gate `stage.block_backward.qkv.total_ms` and
   `stage.block_backward.qkv.dinput_dweight_concurrent.total_ms` when no
   explicit `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` is supplied. Verification:
   `bash -n tools/bench_native_gpt_sm120_candidate.sh`, focused

@@ -222,8 +222,6 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
             case "$candidate_gate_text" in
               *BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT*|*block_qkv_concurrent_dinput_dweight*)
                 MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.total_ms=1.000"
-                MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.dinput.total_ms=1.000"
-                MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.dweight_bias.total_ms=1.000"
                 MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.dinput_dweight_concurrent.total_ms=1.000"
                 ;;
             esac

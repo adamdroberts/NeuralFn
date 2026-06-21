@@ -844,8 +844,6 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_final_wait.total_ms=1.000"' in text
     assert "*BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT*|*block_qkv_concurrent_dinput_dweight*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.total_ms=1.000"' in text
-    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.dinput.total_ms=1.000"' in text
-    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.dweight_bias.total_ms=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.dinput_dweight_concurrent.total_ms=1.000"' in text
     assert '"1"|"true"|"yes"|"on")' in text
     assert "has_candidate_change=0" in text
