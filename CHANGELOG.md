@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a named `lm_head_concurrent_dhidden_dweight` SM120 native candidate
+  profile for repeatable bisection of the existing LM-head side-stream schedule.
+  The profile expands to `NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1`
+  and, when stage timing is enabled, reports
+  `stage.lm_head_backward.dhidden_dweight_concurrent.total_ms` for
+  candidate-side inspection while the wrapper gates train-loop and total
+  LM-head timing. The candidate remains diagnostic-only: after the unmatched
+  candidate-only stage gate was removed, a same-script RTX 5090 stage-timed run
+  rejected it on comparable gates at `1.012827x` train-loop wall, `1.009974x`
+  total LM-head backward, and `1.021336x` block backward; the QKV side-stream
+  profile was also rejected at `1.005658x` train-loop wall and `1.041664x` QKV
+  stage time.
+  Verification: focused SM120 wrapper dry-run tests, syntax check, candidate
+  wrapper smoke measurement, and `git diff --check`.
+
 - Extended the GPT-2 evo native delegate's dense-template coverage to include
   `gpt2_modern`. The family-specific C++ preflight now reports
   `selected_graph_support_status: "native-dense-gpt-layer-evo-delegate"` and

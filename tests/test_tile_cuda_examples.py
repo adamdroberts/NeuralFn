@@ -845,6 +845,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "attention_atomic_dq" in text
     assert "qkv_concurrent_dinput_dweight" in text
     assert "mlp_fc_concurrent_dinput_dweight" in text
+    assert "lm_head_concurrent_dhidden_dweight" in text
     assert "lm_head_pipeline_chunks" in text
     assert "lm_head_row_chunk_65536" in text
     assert "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1" in text
@@ -876,6 +877,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.total_ms=1.000"' in text
     assert "*BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT*|*block_mlp_fc_concurrent_dinput_dweight*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_fc.total_ms=1.000"' in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.dhidden_dweight_concurrent.total_ms=1.000"' not in text
     assert '"1"|"true"|"yes"|"on")' in text
     assert "has_candidate_change=0" in text
 
@@ -1024,6 +1026,39 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "1"
     )
     assert qkv_payload["metric_ratio_gates"]["enabled"] is False
+
+    lm_head_concurrent_output_path = tmp_path / "candidate-lm-head-concurrent-dry-run.json"
+    lm_head_concurrent_env = os.environ.copy()
+    lm_head_concurrent_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_concurrent_dhidden_dweight",
+            "NFN_SM120_NATIVE_JSON_OUT": str(lm_head_concurrent_output_path),
+        }
+    )
+
+    lm_head_concurrent_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=lm_head_concurrent_env,
+    )
+
+    assert lm_head_concurrent_dry_run.returncode == 0, lm_head_concurrent_dry_run.stderr
+    lm_head_concurrent_payload = json.loads(
+        lm_head_concurrent_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        lm_head_concurrent_payload["candidate_env"][
+            "NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT"
+        ]
+        == "1"
+    )
+    assert lm_head_concurrent_payload["metric_ratio_gates"]["enabled"] is False
 
     full_row_output_path = tmp_path / "candidate-lm-head-row-chunk-65536-dry-run.json"
     full_row_env = os.environ.copy()

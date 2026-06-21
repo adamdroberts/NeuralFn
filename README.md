@@ -295,6 +295,12 @@ short-run wins but rejected stable defaults after longer gates.
 The named `qkv_concurrent_dinput_dweight` profile expands to
 `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` for repeatable
 stage-timed reruns of the default-off QKV side-stream diagnostic.
+The named `lm_head_concurrent_dhidden_dweight` profile expands to
+`NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` for repeatable LM-head
+dHidden/dWeight side-stream bisections. Stage-timed runs report the combined
+`stage.lm_head_backward.dhidden_dweight_concurrent.total_ms` bucket for
+candidate-side inspection; the wrapper gates train-loop and total LM-head
+timing because the serial baseline emits split dHidden and dWeight substages.
 The named `lm_head_row_chunk_65536` profile expands to
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` plus
 `--lm-head-row-chunk-size 65536` for repeatable full-resident LM-head chunk

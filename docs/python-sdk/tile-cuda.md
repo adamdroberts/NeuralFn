@@ -563,6 +563,13 @@ train-loop, total LM-head, block-backward, and MLP-projection gates. The
 pipeline queue and final-wait substages are extracted for candidate-side
 inspection, not ratio-gated by default, because the serial baseline does not
 emit those stage names.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_concurrent_dhidden_dweight` for
+the simpler side-stream schedule that launches LM-head dHidden and dWeight from
+separate nonblocking streams after CE writes dlogits. Stage-timed runs report
+the combined `stage.lm_head_backward.dhidden_dweight_concurrent.total_ms`
+bucket for candidate-side inspection; the wrapper gates train-loop and total
+LM-head timing because the serial baseline emits split dHidden and dWeight
+substages.
 Keep it disabled for normal training until the paired RTX 5090 gate proves it
 beats the default serial chunk schedule.
 For cuBLASLt BGRADB dWeight+bias routes, the default writes the epilogue bias
@@ -1500,6 +1507,12 @@ stage-timed QKV side-stream bisections. That profile remains default-off and is
 gated on total QKV block-backward time; the candidate-only combined concurrent
 substage is reported for inspection while the serial baseline continues to emit
 split dInput and dWeight substages.
+It also exposes `lm_head_concurrent_dhidden_dweight`, which expands to
+`NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` and reports the combined
+LM-head dHidden/dWeight concurrent bucket for candidate-side inspection when
+stage timing is enabled. Train-loop and total LM-head timing remain the
+enforceable gates for that profile because the serial baseline emits split
+dHidden and dWeight substages.
 
 Startup-only token-weight initializer bisections can use the same profile
 mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,
