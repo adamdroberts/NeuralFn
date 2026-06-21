@@ -273,7 +273,9 @@ For repeatable CUDA/driver bisection of known LM-head dHidden routes, set
 `NFN_SM120_CANDIDATE_PROFILE`) to expand the candidate env to
 `NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=768,32768,50304,N,N`, or use
 `lm_head_cublaslt_dhidden_32768` to expand to
-`NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`. These
+`NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`,
+`NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1`, and
+`NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,32768,50304,N,N,0`. These
 profiles are measurement shortcuts only; both routes remain default-off until
 the same-script candidate gate beats the current route.
 For compile-time Tile ops candidates, set

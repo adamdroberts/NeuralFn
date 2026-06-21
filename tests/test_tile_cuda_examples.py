@@ -866,6 +866,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "tools/build_native_train_tile_ops.sh" in text
     assert "NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=768,32768,50304,N,N" in text
     assert "NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N" in text
+    assert "NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1" in text
+    assert "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,32768,50304,N,N,0" in text
     assert "*TK_DINPUT*|*tk_dinput*|*CUBLASLT_ENABLE_SHAPE*|*cublaslt_enable_shape*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.dinput.total_ms=1.000"' in text
     assert "*ATOMIC_DQ*|*atomic_dq*|*attention_atomic_dq*|*attention-atomic-dq*" in text

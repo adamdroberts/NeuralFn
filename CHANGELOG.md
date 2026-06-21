@@ -16,6 +16,15 @@ Future updates should append new entries here rather than replacing older notes.
   `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` / `NFN_SM120_MAX_CANDIDATE_RATIO`.
   Native-vs-native candidate benchmarks keep their strict auto-gates.
 
+- Corrected the named `lm_head_cublaslt_dhidden_32768` SM120 candidate profile
+  to reproduce the route-changing 32768-row dHidden probe. It now expands to
+  `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`,
+  `NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1`, and
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,32768,50304,N,N,0` instead
+  of only setting the shape-enable flag. The route remains rejected as a
+  default, but future benchmark invocations can reproduce the measured
+  cuBLASLt dHidden path from the named profile.
+
 - Rebuilt and reverified the SM120 native CUDA training artifacts against the
   current CUDA 13.3 WSL install. `bash tools/rebuild_native_sm120.sh`
   regenerated the Tile ops library, unified GPT/native frontends, GPT-2
