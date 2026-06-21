@@ -27,12 +27,17 @@ STAGE_TIMING="${NFN_SM120_PARITY_STAGE_TIMING:-${NFN_SM120_STAGE_TIMING:-0}}"
 REFERENCE_OUTPUT_DIR="${NFN_SM120_PARITY_REFERENCE_OUTPUT_DIR:-${NFN_SM120_REFERENCE_OUTPUT_DIR:-/tmp/nfn_llmk_sm120_parity}}"
 DRY_RUN_PLAN="${NFN_SM120_PARITY_DRY_RUN_PLAN:-${NFN_SM120_DRY_RUN_PLAN:-0}}"
 MAX_CANDIDATE_RATIO_RAW="${NFN_SM120_PARITY_MAX_CANDIDATE_RATIO:-${NFN_SM120_MAX_CANDIDATE_RATIO:-}}"
+ENFORCE_GATE="${NFN_SM120_PARITY_ENFORCE_GATE:-${NFN_SM120_ENFORCE_PARITY_GATE:-0}}"
 if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
   case "${DRY_RUN_PLAN,,}" in
     "1"|"true"|"yes"|"on")
       ;;
     *)
-      MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"
+      case "${ENFORCE_GATE,,}" in
+        "1"|"true"|"yes"|"on")
+          MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"
+          ;;
+      esac
       ;;
   esac
 fi

@@ -695,12 +695,13 @@ apart before each measured command, configurable through
 `NFN_SM120_PARITY_SELECTED_GPU_UTILIZATION_RETRIES` /
 `NFN_SM120_SELECTED_GPU_UTILIZATION_RETRIES` and the matching
 `..._RETRY_INTERVAL_SECONDS` aliases.
-Measured parity runs also default to
-`train_loop_wall_ms_per_step=1.000` as a metric-ratio gate, so the wrapper exits
-nonzero when NeuralFn is slower than llm.kittens on the comparable in-loop
-training metric. Override with `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` or
-`NFN_SM120_MAX_CANDIDATE_RATIO` only for diagnostic sweeps; dry-run plans stay
-ungated.
+Measured parity runs are measurement-only by default: they report
+NeuralFn-vs-llm.kittens ratios without exiting nonzero just because the current
+throughput target is not closed yet. Set `NFN_SM120_PARITY_ENFORCE_GATE=1` (or
+the generic `NFN_SM120_ENFORCE_PARITY_GATE=1`) to add the default strict
+`train_loop_wall_ms_per_step=1.000` ratio gate, or provide explicit whitespace
+separated gates through `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` /
+`NFN_SM120_MAX_CANDIDATE_RATIO`. Dry-run plans stay ungated.
 The parity wrapper defaults short runs to
 timing-only sample/checkpoint cadence (`NFN_SM120_PARITY_SAMPLE_EVERY=0`,
 `NFN_SM120_PARITY_CHECKPOINT_EVERY=0`); compare

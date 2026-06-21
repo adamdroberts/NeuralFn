@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the llm.kittens parity wrapper back to measurement-only by default.
+  `tools/bench_native_gpt_sm120_parity.sh` still reports
+  NeuralFn-vs-reference ratios from the same-script benchmark, but it no longer
+  exits nonzero merely because the current NeuralFn run is slower than
+  llm.kittens. Set `NFN_SM120_PARITY_ENFORCE_GATE=1` or the generic
+  `NFN_SM120_ENFORCE_PARITY_GATE=1` to restore the default strict
+  `train_loop_wall_ms_per_step=1.000` gate, or pass explicit gates through
+  `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` / `NFN_SM120_MAX_CANDIDATE_RATIO`.
+  Native-vs-native candidate benchmarks keep their strict auto-gates.
+
 - Rebuilt and reverified the SM120 native CUDA training artifacts against the
   current CUDA 13.3 WSL install. `bash tools/rebuild_native_sm120.sh`
   regenerated the Tile ops library, unified GPT/native frontends, GPT-2
