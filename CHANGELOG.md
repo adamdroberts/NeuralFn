@@ -15,9 +15,13 @@ Future updates should append new entries here rather than replacing older notes.
   `tools/paired_kernel_speed.py` now extracts the combined concurrent QKV stage
   metric for inspection; that candidate-only metric is not ratio-gated by
   default because the serial baseline emits split dInput/dWeight substages.
-  Verification:
+  A short CUDA 13.3 RTX 5090 smoke of the named profile rejected the route with
+  `1.008168x` train-loop wall time and `1.044273x`
+  `stage.block_backward.qkv.total_ms`, confirming the gate fails on comparable
+  measured timings rather than missing metric names. Verification:
   `bash -n tools/bench_native_gpt_sm120_candidate.sh`, focused
-  `tests/test_tile_cuda_examples.py`, and `git diff --check`.
+  `tests/test_tile_cuda_examples.py`, same-script GPU smoke, and
+  `git diff --check`.
 
 - Extended `tools/paired_kernel_speed.py` native categorical summaries to carry
   startup route fields including `device_allocator_strategy`,
