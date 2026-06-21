@@ -289,6 +289,13 @@ candidate bisections, set
 `tools/bench_native_gpt_sm120_candidate.sh`; the helper appends
 `--startup-only` to both baseline and candidate while preserving the same
 selected-GPU idle/load checks and command shape.
+The native-vs-native SM120 candidate wrapper defaults those selected-GPU idle
+checks to three utilization samples spaced 0.25 seconds apart, which filters
+brief WSL/NVML spikes on the dedicated display-disabled RTX 5090 before a
+candidate is accepted or rejected. Override with
+`NFN_SM120_NATIVE_SELECTED_GPU_UTILIZATION_RETRIES` /
+`NFN_SM120_SELECTED_GPU_UTILIZATION_RETRIES` and the matching
+`..._RETRY_INTERVAL_SECONDS` aliases when a different polling policy is needed.
 For candidate-only native CLI flags, use
 `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`, the natural
 `NFN_SM120_NATIVE_CANDIDATE_ARGS` alias, or the short

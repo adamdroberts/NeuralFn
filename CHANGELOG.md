@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tightened the SM120 native candidate benchmark default idle guard for the
+  dedicated RTX 5090 workflow. `tools/bench_native_gpt_sm120_candidate.sh` now
+  defaults selected-GPU utilization polling to three idle samples spaced 0.25
+  seconds apart before each measured run, while preserving the existing
+  `NFN_SM120_*_SELECTED_GPU_UTILIZATION_RETRIES` and
+  `..._RETRY_INTERVAL_SECONDS` overrides. This keeps transient WSL/NVML spikes
+  or external GPU load from deciding candidate-vs-baseline gates by default.
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`, focused
+  `tests/test_tile_cuda_examples.py`, and `git diff --check`.
+
 - Added a named `qkv_concurrent_dinput_dweight` SM120 native candidate profile
   for repeatable reruns of
   `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1`. Stage-timed candidate

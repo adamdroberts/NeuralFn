@@ -342,6 +342,8 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "--max-selected-gpu-utilization-pct" in text
     assert "--selected-gpu-utilization-retries" in text
     assert "--selected-gpu-utilization-retry-interval-seconds" in text
+    assert "NFN_SM120_SELECTED_GPU_UTILIZATION_RETRIES 3" in text
+    assert "NFN_SM120_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS 0.25" in text
     assert "env_or_alias()" in text
     assert "env_or_alias3()" in text
     assert "env_or_alias4()" in text

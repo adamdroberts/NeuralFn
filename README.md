@@ -1195,9 +1195,10 @@ aliases to the paired benchmark tool: use
 `NFN_SM120_PARITY_SELECTED_GPU_UTILIZATION_RETRIES`, or
 `NFN_SM120_SELECTED_GPU_UTILIZATION_RETRIES` to retry idle-utilization samples,
 and the matching `..._RETRY_INTERVAL_SECONDS` aliases to control the pause
-between samples. This is useful on WSL systems where `nvidia-smi` can report a
-brief nonzero utilization spike on a display-disabled GPU with no compute
-processes.
+between samples. By default the wrapper now requires three idle samples spaced
+0.25 seconds apart before each measured run. This is useful on WSL systems where
+`nvidia-smi` can report a brief nonzero utilization spike on a display-disabled
+GPU with no compute processes.
 Stage timing is independent from profile sidecar generation: use
 `NFN_SM120_NATIVE_STAGE_TIMING=1`, `NFN_SM120_CANDIDATE_STAGE_TIMING=1`, or
 `NFN_SM120_STAGE_TIMING=1` with `NFN_SM120_PROFILE_DIR=none` when you need the
