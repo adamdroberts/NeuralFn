@@ -818,6 +818,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "tk_dgelu_dinput" in text
     assert "tk_dgelu_approx_tanh" in text
     assert "attention_atomic_dq" in text
+    assert "qkv_concurrent_dinput_dweight" in text
     assert "token_weight_vector4_strided" in text
     assert "token_weight_threaded" in text
     assert "token_weight_fast_int32" in text
@@ -841,6 +842,11 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "*LM_HEAD_PIPELINE_CHUNKS*|*lm_head_pipeline_chunks*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_queue.total_ms=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_final_wait.total_ms=1.000"' in text
+    assert "*BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT*|*block_qkv_concurrent_dinput_dweight*" in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.total_ms=1.000"' in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.dinput.total_ms=1.000"' in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.dweight_bias.total_ms=1.000"' in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.dinput_dweight_concurrent.total_ms=1.000"' in text
     assert '"1"|"true"|"yes"|"on")' in text
     assert "has_candidate_change=0" in text
 
@@ -958,6 +964,37 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "max_waves"
     )
     assert max_waves_payload["metric_ratio_gates"]["enabled"] is False
+
+    qkv_output_path = tmp_path / "candidate-qkv-concurrent-dry-run.json"
+    qkv_env = os.environ.copy()
+    qkv_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "qkv_concurrent_dinput_dweight",
+            "NFN_SM120_NATIVE_JSON_OUT": str(qkv_output_path),
+        }
+    )
+
+    qkv_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=qkv_env,
+    )
+
+    assert qkv_dry_run.returncode == 0, qkv_dry_run.stderr
+    qkv_payload = json.loads(qkv_output_path.read_text(encoding="utf-8"))
+    assert (
+        qkv_payload["candidate_env"][
+            "NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT"
+        ]
+        == "1"
+    )
+    assert qkv_payload["metric_ratio_gates"]["enabled"] is False
 
     token_profiles = {
         "token_weight_vector4_strided": {

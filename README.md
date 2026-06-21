@@ -258,6 +258,11 @@ the serial `dhidden` / `dweight` substage names. Attention candidates mentioning
 `attention_backward_dprep_timing_us` so packed-attention bisections fail on the
 hot substage even when total command timing is noisy. Dry-run planning and
 no-op baseline-vs-baseline checks stay ungated.
+QKV side-stream candidates mentioning `BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT`
+also gate `stage.block_backward.qkv.total_ms`,
+`stage.block_backward.qkv.dinput.total_ms`,
+`stage.block_backward.qkv.dweight_bias.total_ms`, and
+`stage.block_backward.qkv.dinput_dweight_concurrent.total_ms`.
 For repeatable CUDA/driver bisection of known LM-head dHidden routes, set
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dinput_32768` (or the shorter
 `NFN_SM120_CANDIDATE_PROFILE`) to expand the candidate env to
@@ -282,6 +287,9 @@ rejected promotion because `stage.block_backward.total_ms` measured `1.000689x`
 even while `stage.block_backward.mlp_proj.dinput.total_ms` stayed faster at
 `0.983891x`. The llm.kittens same-session notes show the same pattern of
 short-run wins but rejected stable defaults after longer gates.
+The named `qkv_concurrent_dinput_dweight` profile expands to
+`NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` for repeatable
+stage-timed reruns of the default-off QKV side-stream diagnostic.
 The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
 emit non-UTF-8 bytes can still be compared in the same paired run. For

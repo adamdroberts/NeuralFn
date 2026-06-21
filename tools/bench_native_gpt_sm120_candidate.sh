@@ -109,6 +109,9 @@ case "${CANDIDATE_PROFILE,,}" in
   "attention_atomic_dq"|"attention-atomic-dq")
     CANDIDATE_TILE_OPS_BUILD_FLAGS="${CANDIDATE_TILE_OPS_BUILD_FLAGS:+$CANDIDATE_TILE_OPS_BUILD_FLAGS }-DLLMK_SM120_ATOMIC_DQ"
     ;;
+  "qkv_concurrent_dinput_dweight"|"qkv-concurrent-dinput-dweight")
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1"
+    ;;
   "token_weight_vector4_strided"|"token-weight-vector4-strided")
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1"
     ;;
@@ -123,7 +126,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   *)
     echo "Unknown NFN_SM120_NATIVE_CANDIDATE_PROFILE: $CANDIDATE_PROFILE" >&2
-    echo "Known profiles: lm_head_tk_dinput_32768, lm_head_cublaslt_dhidden_32768, cublaslt_min_waves, cublaslt_max_waves, tk_dgelu_dinput, tk_dgelu_approx_tanh, attention_atomic_dq, token_weight_vector4_strided, token_weight_threaded, token_weight_fast_int32, token_weight_two_pass_bf16" >&2
+    echo "Known profiles: lm_head_tk_dinput_32768, lm_head_cublaslt_dhidden_32768, cublaslt_min_waves, cublaslt_max_waves, tk_dgelu_dinput, tk_dgelu_approx_tanh, attention_atomic_dq, qkv_concurrent_dinput_dweight, token_weight_vector4_strided, token_weight_threaded, token_weight_fast_int32, token_weight_two_pass_bf16" >&2
     exit 2
     ;;
 esac
@@ -214,6 +217,14 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
               *LM_HEAD_PIPELINE_CHUNKS*|*lm_head_pipeline_chunks*)
                 MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_queue.total_ms=1.000"
                 MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_final_wait.total_ms=1.000"
+                ;;
+            esac
+            case "$candidate_gate_text" in
+              *BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT*|*block_qkv_concurrent_dinput_dweight*)
+                MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.total_ms=1.000"
+                MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.dinput.total_ms=1.000"
+                MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.dweight_bias.total_ms=1.000"
+                MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.dinput_dweight_concurrent.total_ms=1.000"
                 ;;
             esac
             ;;

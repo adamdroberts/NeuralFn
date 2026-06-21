@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a named `qkv_concurrent_dinput_dweight` SM120 native candidate profile
+  for repeatable reruns of
+  `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1`. Stage-timed candidate
+  runs whose text mentions `BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT` now
+  automatically gate `stage.block_backward.qkv.total_ms`,
+  `stage.block_backward.qkv.dinput.total_ms`,
+  `stage.block_backward.qkv.dweight_bias.total_ms`, and
+  `stage.block_backward.qkv.dinput_dweight_concurrent.total_ms` when no
+  explicit `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` is supplied. Verification:
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`, focused
+  `tests/test_tile_cuda_examples.py`, and `git diff --check`.
+
 - Extended `tools/paired_kernel_speed.py` native categorical summaries to carry
   startup route fields including `device_allocator_strategy`,
   `device_cuda_malloc_async_*`, `skip_exit_device_free_enabled`, and

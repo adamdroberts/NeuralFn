@@ -1459,6 +1459,10 @@ changes without hand-writing env strings:
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`. These
 profiles stay default-off and must pass the same-script candidate gates before
 any route promotion.
+The same wrapper exposes `qkv_concurrent_dinput_dweight`, which expands to
+`NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` for repeatable
+stage-timed QKV side-stream bisections. That profile remains default-off and is
+gated on the QKV block-backward substages it touches.
 
 Startup-only token-weight initializer bisections can use the same profile
 mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,
