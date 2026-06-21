@@ -245,6 +245,14 @@ prepack candidates mentioning `LM_HEAD_PREPACK_BF16_HIDDEN` additionally gate
 `stage.lm_head_backward.pipeline_final_wait.total_ms`, rather than expecting
 the serial `dhidden` / `dweight` substage names. Dry-run planning and no-op
 baseline-vs-baseline checks stay ungated.
+For repeatable CUDA/driver bisection of known LM-head dHidden routes, set
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dinput_32768` (or the shorter
+`NFN_SM120_CANDIDATE_PROFILE`) to expand the candidate env to
+`NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=768,32768,50304,N,N`, or use
+`lm_head_cublaslt_dhidden_32768` to expand to
+`NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`. These
+profiles are measurement shortcuts only; both routes remain default-off until
+the same-script candidate gate beats the current route.
 The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
 emit non-UTF-8 bytes can still be compared in the same paired run. For

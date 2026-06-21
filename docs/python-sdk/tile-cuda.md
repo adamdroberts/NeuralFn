@@ -1450,6 +1450,15 @@ the matching `*_DISABLE_SHAPE` aliases can exclude one shape when the broad
 switch is enabled. The LM-head dHidden shape `768,8192,50304,N,N` remains
 diagnostic-only because the RTX 5090 paired benchmark measured it slower than
 the GEMMEx default.
+For the current 32768-row LM-head chunk route, the SM120 candidate wrapper has
+named profile shortcuts so the route can be retested after CUDA or driver
+changes without hand-writing env strings:
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dinput_32768` expands to
+`NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=768,32768,50304,N,N`, and
+`lm_head_cublaslt_dhidden_32768` expands to
+`NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`. These
+profiles stay default-off and must pass the same-script candidate gates before
+any route promotion.
 
 Full GPT-2 `--train-transformer-lm` runs report a `cuda_runtime_preflight` object before allocation. If `cudaDriverGetVersion` returns driver version `0`, or if the loaded CUDA runtime is newer than the reported driver, the trainer exits before `cudaMalloc` so benchmark failures point at GPU access/runtime compatibility instead of kernel execution.
 

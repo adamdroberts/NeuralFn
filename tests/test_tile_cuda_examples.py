@@ -809,6 +809,13 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.dhidden.total_ms=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.dweight.total_ms=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" setup.uint16_arena_materialize.total_ms=1.000"' in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_PROFILE" in text
+    assert "NFN_SM120_CANDIDATE_PROFILE" in text
+    assert "lm_head_tk_dinput_32768" in text
+    assert "lm_head_cublaslt_dhidden_32768" in text
+    assert "NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=768,32768,50304,N,N" in text
+    assert "NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N" in text
+    assert "*TK_DINPUT*|*tk_dinput*|*CUBLASLT_ENABLE_SHAPE*|*cublaslt_enable_shape*" in text
     assert "*LM_HEAD_PIPELINE_CHUNKS*|*lm_head_pipeline_chunks*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_queue.total_ms=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_final_wait.total_ms=1.000"' in text
@@ -838,6 +845,35 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert dry_run.returncode == 0, dry_run.stderr
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["metric_ratio_gates"]["enabled"] is False
+
+    profile_output_path = tmp_path / "candidate-profile-dry-run.json"
+    profile_env = os.environ.copy()
+    profile_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_tk_dinput_32768",
+            "NFN_SM120_NATIVE_JSON_OUT": str(profile_output_path),
+        }
+    )
+
+    profile_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=profile_env,
+    )
+
+    assert profile_dry_run.returncode == 0, profile_dry_run.stderr
+    profile_payload = json.loads(profile_output_path.read_text(encoding="utf-8"))
+    assert (
+        profile_payload["candidate_env"]["NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE"]
+        == "768,32768,50304,N,N"
+    )
+    assert profile_payload["metric_ratio_gates"]["enabled"] is False
 
 
 def test_paired_kernel_speed_tool_applies_command_specific_env() -> None:

@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added named SM120 native candidate benchmark profiles for the current
+  32768-row LM-head dHidden route. `NFN_SM120_NATIVE_CANDIDATE_PROFILE` or the
+  shorter `NFN_SM120_CANDIDATE_PROFILE` now accepts
+  `lm_head_tk_dinput_32768`, which expands the candidate env to
+  `NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=768,32768,50304,N,N`, and
+  `lm_head_cublaslt_dhidden_32768`, which expands to
+  `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`. The
+  wrapper also auto-gates `stage.lm_head_backward.dhidden.total_ms` when those
+  route flags appear in a measured candidate. These remain default-off
+  measurement shortcuts; the prior same-script gates rejected both routes as
+  defaults on CUDA 13.3. Verification: `bash -n
+  tools/bench_native_gpt_sm120_candidate.sh` and focused
+  `tests/test_tile_cuda_examples.py` wrapper tests.
+
 - Forwarded selected-GPU utilization retry controls through
   `tools/bench_native_gpt_sm120_candidate.sh`. The native-vs-native wrapper now
   accepts the native, candidate, parity, and generic
