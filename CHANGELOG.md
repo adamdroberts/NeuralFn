@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` as an opt-in dense GPT startup
+  allocator diagnostic plus the matching
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=combined_device_arena` benchmark profile.
+  The route packs the float arena and BF16/uint16 arena into one aligned
+  `cudaMalloc` after both layouts are known, and runtime JSON reports
+  `float_allocation_strategy`, `uint16_allocation_strategy`,
+  `transformer_device_arena_requested`, `transformer_device_arena_enabled`,
+  `transformer_device_arena_cuda_malloc_count`,
+  `transformer_device_arena_requested_bytes`,
+  `transformer_device_arena_allocated_bytes`, and
+  `transformer_device_arena_uint16_byte_offset`. It remains rejected as a
+  default: the dedicated RTX 5090 startup gate measured `1.036978x` setup wall
+  time, `1.036923x` total startup wall time, and `1.289723x` token-weight
+  initialization time versus the default split-arena allocation path.
+  Verification: focused native GPT pytest coverage, wrapper syntax checks,
+  SM120 native rebuild, one-step combined-arena CUDA smoke, and same-script
+  startup benchmark rejection.
+
 - Added two repeatable SM120 native candidate profiles for rejected routing and
   scheduling probes. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_forward_no_n96`
   builds a temporary trainer-facing Tile ops library with

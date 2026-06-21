@@ -111,6 +111,24 @@ NATIVE_METRIC_PATHS = (
     ("lm_head_bf16_logit_bytes", ("lm_head_bf16_logit_bytes",)),
     ("lm_head_full_logit_elements", ("lm_head_full_logit_elements",)),
     ("stored_packed_attention_activation_blocks", ("stored_packed_attention_activation_blocks",)),
+    ("transformer_device_arena_requested", ("transformer_device_arena_requested",)),
+    ("transformer_device_arena_enabled", ("transformer_device_arena_enabled",)),
+    (
+        "transformer_device_arena_cuda_malloc_count",
+        ("transformer_device_arena_cuda_malloc_count",),
+    ),
+    (
+        "transformer_device_arena_requested_bytes",
+        ("transformer_device_arena_requested_bytes",),
+    ),
+    (
+        "transformer_device_arena_allocated_bytes",
+        ("transformer_device_arena_allocated_bytes",),
+    ),
+    (
+        "transformer_device_arena_uint16_byte_offset",
+        ("transformer_device_arena_uint16_byte_offset",),
+    ),
     (
         "lm_head_classifier.reference_full_bf16_logit_bytes",
         ("lm_head_classifier_strategy_contract", "reference_full_bf16_logit_bytes"),
@@ -156,6 +174,9 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "linear_bf16_a_cache_hit_count",
     "attention_forward_tk_launch_count",
     "attention_backward_tk_launch_count",
+    "transformer_device_arena_requested",
+    "transformer_device_arena_enabled",
+    "transformer_device_arena_cuda_malloc_count",
 )
 NATIVE_STRATEGY_METRIC_KEYS = (
     "status",
@@ -191,6 +212,10 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "device_cuda_malloc_async_enabled",
     "device_cuda_malloc_async_symbol_loaded",
     "device_cuda_free_async_symbol_loaded",
+    "float_allocation_strategy",
+    "uint16_allocation_strategy",
+    "transformer_device_arena_requested",
+    "transformer_device_arena_enabled",
     "skip_exit_device_free_enabled",
     "token_weight_init_strategy",
     "token_weight_threaded_init_enabled",

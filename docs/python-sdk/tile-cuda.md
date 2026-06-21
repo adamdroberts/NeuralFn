@@ -1257,6 +1257,20 @@ scratch, saved packed-attention LN1 BF16 tape, and block BF16 weight shadows. Se
 `uint16_allocation_request_count`, `uint16_arena_requested_elements`,
 `uint16_arena_allocated_elements`, `uint16_arena_cuda_malloc_count`, and
 `uint16_arena_suballocation_count`.
+Set `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` only for startup allocator
+profiling. It packs the dense GPT float arena and BF16/uint16 arena into one
+aligned `cudaMalloc` after both layouts are known. JSON reports
+`float_allocation_strategy: "combined-transformer-device-arena"`,
+`uint16_allocation_strategy: "combined-transformer-device-arena"`,
+`transformer_device_arena_requested`, `transformer_device_arena_enabled`,
+`transformer_device_arena_cuda_malloc_count`,
+`transformer_device_arena_requested_bytes`,
+`transformer_device_arena_allocated_bytes`, and
+`transformer_device_arena_uint16_byte_offset`. Keep it disabled for normal
+training: the dedicated RTX 5090 startup gate rejected
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=combined_device_arena` at `1.036978x` setup
+wall time and `1.036923x` total startup wall time, with token-weight
+initialization regressing to `1.289723x`.
 When stored BF16 MLP activations cover every transformer block, the dense GPT
 trainer also defers the validation-only float MLP scratch buffers (`fc_out` and
 `act`) instead of reserving them in the startup float arena. The buffers are
@@ -1716,6 +1730,16 @@ materialization, and `1.176781x` total startup wall time. Runtime JSON
 reports `device_allocator_strategy`, `device_cuda_malloc_async_requested`,
 `device_cuda_malloc_async_enabled`, async symbol availability, allocation/free
 counts, and `device_cuda_malloc_async_fallback_count`. Set
+`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` only for startup allocator profiling of
+the same dense GPT transformer-LM arenas. It packs the float and BF16/uint16
+arenas into one aligned `cudaMalloc`; runtime JSON reports the combined
+allocation strategies plus `transformer_device_arena_requested`,
+`transformer_device_arena_enabled`, `transformer_device_arena_cuda_malloc_count`,
+`transformer_device_arena_requested_bytes`,
+`transformer_device_arena_allocated_bytes`, and
+`transformer_device_arena_uint16_byte_offset`. Keep it default-off because the
+dedicated RTX 5090 startup gate rejected the candidate at `1.036978x` setup wall
+time and `1.036923x` total startup wall time. Set
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF=0` to compare against the
 older packed path that expands `dQKV` to float32 before QKV dWeight/dInput. Set
 `NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE=0`,

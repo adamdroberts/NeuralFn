@@ -368,6 +368,11 @@ def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     assert "device_cuda_malloc_async_enabled" in source
     assert "device_cuda_malloc_async_fallback_count" in source
     assert "cudaDeviceSynchronize after cudaFreeAsync" in source
+    assert "NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA" in source
+    assert "transformer_device_arena_requested" in source
+    assert "transformer_device_arena_enabled" in source
+    assert "transformer_device_arena_cuda_malloc_count" in source
+    assert "cudaMalloc transformer_lm_combined_device_arena" in source
 
 
 def test_native_gpt_cli_supports_json_output_file_aliases() -> None:
@@ -5392,10 +5397,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "Uint16ArenaRequest" in gpt2_source_text
     assert "cudaMalloc transformer_lm_float_arena" in gpt2_source_text
     assert "cudaMalloc transformer_lm_uint16_arena" in gpt2_source_text
+    assert "cudaMalloc transformer_lm_combined_device_arena" in gpt2_source_text
     assert "float_allocation_strategy" in gpt2_source_text
     assert "float_allocation_cuda_malloc_count" in gpt2_source_text
     assert "uint16_allocation_strategy" in gpt2_source_text
     assert "uint16_arena_cuda_malloc_count" in gpt2_source_text
+    assert "transformer_device_arena_requested_bytes" in gpt2_source_text
+    assert "transformer_device_arena_allocated_bytes" in gpt2_source_text
     assert "DescriptorArenaRequest" in gpt2_source_text
     assert "host_descriptor_arena" in gpt2_source_text
     assert "cudaMalloc transformer_lm_descriptor_arena" in gpt2_source_text

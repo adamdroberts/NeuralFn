@@ -450,6 +450,20 @@ time. JSON reports `device_allocator_strategy`,
 `device_cuda_malloc_async_requested`, `device_cuda_malloc_async_enabled`, async
 symbol availability, async allocation/free counts, and
 `device_cuda_malloc_async_fallback_count`.
+Set `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` only for startup allocator
+profiling. It waits until both the float arena and the BF16/uint16 arena layouts
+are known, then packs them into one aligned `cudaMalloc`. JSON reports
+`float_allocation_strategy: "combined-transformer-device-arena"`,
+`uint16_allocation_strategy: "combined-transformer-device-arena"`,
+`transformer_device_arena_requested`, `transformer_device_arena_enabled`,
+`transformer_device_arena_cuda_malloc_count`,
+`transformer_device_arena_requested_bytes`,
+`transformer_device_arena_allocated_bytes`, and
+`transformer_device_arena_uint16_byte_offset`. Keep it disabled for normal
+training: the dedicated RTX 5090 startup gate rejected
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=combined_device_arena` at `1.036978x` setup
+wall time and `1.036923x` total startup wall time, with token-weight
+initialization regressing to `1.289723x`.
 Startup zeroes only AdamW first/second moment state as coalesced contiguous
 ranges with `cudaMemsetAsync` by default, then overwrites nonzero weights with
 device initializers and zeroes gradients per optimizer step. Set

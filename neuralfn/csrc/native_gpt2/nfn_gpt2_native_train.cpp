@@ -11765,6 +11765,7 @@ int run_transformer_lm_training_json(
     std::vector<void*> descriptor_ptrs;
     float* float_arena = nullptr;
     std::uint16_t* uint16_arena = nullptr;
+    void* transformer_device_arena = nullptr;
     void* descriptor_arena = nullptr;
     void* token_device_arena = nullptr;
     std::int64_t* token_i64_arena = nullptr;
@@ -11833,6 +11834,10 @@ int run_transformer_lm_training_json(
     std::int64_t uint16_arena_requested_elements = 0;
     std::int64_t uint16_arena_allocated_elements = 0;
     std::int64_t uint16_arena_cuda_malloc_count = 0;
+    std::size_t transformer_device_arena_requested_bytes = 0;
+    std::size_t transformer_device_arena_allocated_bytes = 0;
+    std::size_t transformer_device_arena_uint16_byte_offset = 0;
+    std::int64_t transformer_device_arena_cuda_malloc_count = 0;
     std::int64_t token_i64_arena_elements = 0;
     std::int64_t token_u16_device_arena_elements = 0;
     std::int64_t token_u16_pinned_arena_elements = 0;
@@ -11933,6 +11938,13 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_COMBINED_BF16_ARENA",
                               "NFN_NATIVE_GPT2_COMBINED_BF16_ARENA"}),
             true);
+    const bool combined_transformer_device_arena_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA",
+                              "NFN_NATIVE_GPT2_COMBINED_DEVICE_ARENA"}),
+            false);
+    const bool combined_transformer_device_arena_enabled =
+        combined_transformer_device_arena_requested && combined_uint16_arena_enabled;
     auto allocate = [&](float** ptr, std::int64_t elements, const std::string& name) {
         if (!error.empty()) {
             return;
@@ -11972,6 +11984,9 @@ int run_transformer_lm_training_json(
         if (float_arena_allocated_elements >
             static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(float))) {
             error = "float arena allocation byte size overflow";
+            return;
+        }
+        if (combined_transformer_device_arena_enabled) {
             return;
         }
         const int status = device_malloc(
@@ -12026,6 +12041,43 @@ int run_transformer_lm_training_json(
         if (uint16_arena_allocated_elements >
             static_cast<std::int64_t>(std::numeric_limits<std::size_t>::max() / sizeof(std::uint16_t))) {
             error = "uint16 arena allocation byte size overflow";
+            return;
+        }
+        if (combined_transformer_device_arena_enabled) {
+            const std::size_t float_bytes =
+                sizeof(float) * static_cast<std::size_t>(float_arena_allocated_elements);
+            const std::size_t uint16_bytes =
+                sizeof(std::uint16_t) * static_cast<std::size_t>(uint16_arena_allocated_elements);
+            constexpr std::size_t kCombinedArenaByteAlignment = 256;
+            const std::size_t uint16_offset =
+                ((float_bytes + kCombinedArenaByteAlignment - 1) / kCombinedArenaByteAlignment) *
+                kCombinedArenaByteAlignment;
+            if (uint16_offset > std::numeric_limits<std::size_t>::max() - uint16_bytes) {
+                error = "combined transformer device arena byte size overflow";
+                return;
+            }
+            const std::size_t total_bytes = uint16_offset + uint16_bytes;
+            const int status = device_malloc(&transformer_device_arena, total_bytes);
+            if (status != 0) {
+                error = cuda_error(status, "cudaMalloc transformer_lm_combined_device_arena");
+                return;
+            }
+            float_arena = static_cast<float*>(transformer_device_arena);
+            auto* arena_bytes = static_cast<std::uint8_t*>(transformer_device_arena);
+            uint16_arena = reinterpret_cast<std::uint16_t*>(arena_bytes + uint16_offset);
+            float_ptrs.push_back(float_arena);
+            transformer_device_arena_requested_bytes = float_bytes + uint16_bytes;
+            transformer_device_arena_allocated_bytes = total_bytes;
+            transformer_device_arena_uint16_byte_offset = uint16_offset;
+            transformer_device_arena_cuda_malloc_count = 1;
+            float_arena_cuda_malloc_count = 0;
+            uint16_arena_cuda_malloc_count = 0;
+            for (const FloatArenaRequest& request : float_arena_requests) {
+                *request.ptr = float_arena + request.offset;
+            }
+            for (const Uint16ArenaRequest& request : uint16_arena_requests) {
+                *request.ptr = uint16_arena + request.offset;
+            }
             return;
         }
         const int status = device_malloc(
@@ -19654,13 +19706,18 @@ int run_transformer_lm_training_json(
         << "  \"token_weight_bf16_initial_refresh_fusion_enabled\": "
         << (fuse_token_weight_bf16_initial_refresh_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_host_materialization\": false,\n"
-        << "  \"float_allocation_strategy\": \"single-arena\",\n"
+        << "  \"float_allocation_strategy\": \""
+        << (combined_transformer_device_arena_enabled
+                ? "combined-transformer-device-arena"
+                : "single-arena") << "\",\n"
         << "  \"float_allocation_cuda_malloc_count\": " << float_arena_cuda_malloc_count << ",\n"
         << "  \"float_allocation_request_count\": " << float_arena_requests.size() << ",\n"
         << "  \"float_arena_requested_elements\": " << float_arena_requested_elements << ",\n"
         << "  \"float_arena_allocated_elements\": " << float_arena_allocated_elements << ",\n"
         << "  \"uint16_allocation_strategy\": \""
-        << (combined_uint16_arena_enabled ? "single-arena" : "per-buffer-cudaMalloc") << "\",\n"
+        << (combined_transformer_device_arena_enabled
+                ? "combined-transformer-device-arena"
+                : (combined_uint16_arena_enabled ? "single-arena" : "per-buffer-cudaMalloc")) << "\",\n"
         << "  \"uint16_allocation_cuda_malloc_count\": "
         << (combined_uint16_arena_enabled ? uint16_arena_cuda_malloc_count
                                           : static_cast<std::int64_t>(uint16_ptrs.size())) << ",\n"
@@ -19669,6 +19726,18 @@ int run_transformer_lm_training_json(
         << "  \"uint16_arena_allocated_elements\": " << uint16_arena_allocated_elements << ",\n"
         << "  \"uint16_arena_cuda_malloc_count\": " << uint16_arena_cuda_malloc_count << ",\n"
         << "  \"uint16_arena_suballocation_count\": " << uint16_arena_requests.size() << ",\n"
+        << "  \"transformer_device_arena_requested\": "
+        << (combined_transformer_device_arena_requested ? "true" : "false") << ",\n"
+        << "  \"transformer_device_arena_enabled\": "
+        << (combined_transformer_device_arena_enabled ? "true" : "false") << ",\n"
+        << "  \"transformer_device_arena_cuda_malloc_count\": "
+        << transformer_device_arena_cuda_malloc_count << ",\n"
+        << "  \"transformer_device_arena_requested_bytes\": "
+        << transformer_device_arena_requested_bytes << ",\n"
+        << "  \"transformer_device_arena_allocated_bytes\": "
+        << transformer_device_arena_allocated_bytes << ",\n"
+        << "  \"transformer_device_arena_uint16_byte_offset\": "
+        << transformer_device_arena_uint16_byte_offset << ",\n"
         << "  \"float_arena_zero_init_strategy\": \"" << startup_zero_init_strategy << "\",\n"
         << "  \"startup_cuda_memset_zero_enabled\": " << (startup_cuda_memset_zero_enabled ? "true" : "false") << ",\n"
         << "  \"startup_cuda_memset_zero_available\": " << (cuda_memset_async != nullptr ? "true" : "false") << ",\n"
