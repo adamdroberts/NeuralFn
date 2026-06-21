@@ -172,6 +172,28 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert entrypoints["native_sdk_public_exports"]["passed"] is True
 
 
+def test_native_no_torch_dependency_verifier_includes_optional_built_artifacts() -> None:
+    root = Path(__file__).resolve().parents[1]
+    module_path = root / "tools" / "check_native_no_torch_deps.py"
+    spec = importlib.util.spec_from_file_location("check_native_no_torch_deps", module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    artifacts = module.default_artifacts()
+    required = {str(path) for path in module.REQUIRED_DEFAULT_ARTIFACTS}
+    assert {str(path) for path in artifacts} >= required
+
+    present_optional = [
+        path for path in module.OPTIONAL_DEFAULT_ARTIFACTS if (root / path).exists()
+    ]
+    assert all(path in artifacts for path in present_optional)
+    assert Path("build/nfn_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_gpt2_evo_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
+    assert Path("build/nfn_nanogpt_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
+
+
 def test_resolve_native_gpt2_token_shards_materializes_uint16_cache(tmp_path: Path) -> None:
     dataset_path, meta = _write_raw_text_dataset(tmp_path)
 

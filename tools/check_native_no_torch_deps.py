@@ -16,9 +16,21 @@ from textwrap import dedent
 import tomllib
 
 
-DEFAULT_ARTIFACTS = (
+REQUIRED_DEFAULT_ARTIFACTS = (
     Path("build/nfn_gpt_native_train"),
     Path("build/libnfn_native_train_tile_ops.so"),
+)
+OPTIONAL_DEFAULT_ARTIFACTS = (
+    Path("build/nfn_native_train"),
+    Path("build/nfn_gpt2_native_train"),
+    Path("build/nfn_gpt2_evo_native_train"),
+    Path("build/nfn_nanogpt_native_train"),
+    Path("build/nfn_llama_native_train"),
+    Path("build/nfn_mixllama_native_train"),
+    Path("build/nfn_jepa_native_train"),
+    Path("build/nfn_semantic_router_moe_native_train"),
+    Path("build/nfn_deepseek_v4_native_train"),
+    Path("build/libnfn_native_train_tile_ops_tk.so"),
 )
 FORBIDDEN_LIBRARY_MARKERS = (
     "libtorch",
@@ -188,8 +200,13 @@ def parse_args() -> argparse.Namespace:
         "artifacts",
         nargs="*",
         type=Path,
-        default=list(DEFAULT_ARTIFACTS),
-        help="Native executable/shared-library artifacts to inspect with ldd.",
+        default=(),
+        help=(
+            "Native executable/shared-library artifacts to inspect with ldd. "
+            "Explicit paths are required to exist; the default scan includes "
+            "required native artifacts plus optional compiled trainer artifacts "
+            "that are present in build/."
+        ),
     )
     parser.add_argument(
         "--skip-artifacts",
@@ -212,6 +229,12 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     return parser.parse_args()
+
+
+def default_artifacts() -> list[Path]:
+    artifacts = list(REQUIRED_DEFAULT_ARTIFACTS)
+    artifacts.extend(path for path in OPTIONAL_DEFAULT_ARTIFACTS if path.exists())
+    return artifacts
 
 
 def ldd_output(path: Path) -> str:
@@ -545,7 +568,8 @@ def main() -> int:
     artifact_report: list[dict[str, object]] = []
     failed = False
     if not args.skip_artifacts:
-        for artifact in args.artifacts:
+        artifacts = list(args.artifacts) if args.artifacts else default_artifacts()
+        for artifact in artifacts:
             path = artifact.expanduser()
             entry: dict[str, object] = {"artifact": str(path), "exists": path.exists(), "forbidden": []}
             if not path.exists():

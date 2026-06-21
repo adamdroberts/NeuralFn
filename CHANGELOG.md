@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Broadened the native no-Torch dependency gate so the default artifact scan no
+  longer stops at `nfn_gpt_native_train` and `libnfn_native_train_tile_ops.so`.
+  `tools/check_native_no_torch_deps.py` now always checks those required
+  artifacts and also runs `ldd` against compiled optional native frontends and
+  per-family trainer binaries when they are present in `build/`, including the
+  unified `nfn_native_train`, GPT-2 evo, NanoGPT, LLaMA, MixLLaMA, JEPA,
+  semantic-router MoE, DeepSeek-V4, and TK Tile ops artifacts. Explicit artifact
+  arguments remain strict and still fail when missing. Verification: compiled
+  the verifier, ran the JSON no-Torch gate, ran the focused native GPT tests,
+  and `git diff --check`.
+
 - Updated the unified native training registry so `gpt2-evo` reports the
   current compiled native state instead of a stale missing-trainer status.
   `nfn-native-train --list-models --json` and

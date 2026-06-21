@@ -1343,7 +1343,9 @@ Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is metadata-on
 `tools/check_native_no_torch_deps.py` is the native dependency gate for this
 path. In addition to checking `pyproject.toml` so Torch stays out of default
 dependencies and the aggregate `.[all]` extra, it runs `ldd` checks for
-Torch/c10/Python runtime libraries on the compiled artifacts, then runs
+Torch/c10/Python runtime libraries on the required compiled GPT trainer and Tile
+ops library plus optional compiled native frontends/per-family trainers already
+present in `build/`, then runs
 `cli/scripts/train_gpt.py`, `cli/nfn.py train`,
 `cli/scripts/infer_gpt.py --native-info`, `cli/nfn.py infer --native-checkpoint`,
 and `neuralfn.native_gpt*` imports under an import blocker for `torch`, NumPy,
