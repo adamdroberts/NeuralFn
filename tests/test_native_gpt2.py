@@ -4589,6 +4589,27 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     )
     assert "copy/adopt best evo block candidate without host graph-editor tensor flow" not in evo_plan["required_native_kernels"]
 
+    evo_modern_plan_proc = subprocess.run(
+        [
+            str(gpt2_evo),
+            "--print-plan",
+            "--dataset-alias",
+            "/tmp/native-cache",
+            "--template-name",
+            "gpt2_modern",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert evo_modern_plan_proc.returncode == 0, evo_modern_plan_proc.stderr
+    evo_modern_plan = json.loads(evo_modern_plan_proc.stdout)
+    assert evo_modern_plan["template_name"] == "gpt2_modern"
+    assert evo_modern_plan["template_known"] is True
+    assert evo_modern_plan["selected_graph_support_status"] == "native-dense-gpt-layer-evo-delegate"
+    assert evo_modern_plan["selected_graph_native_runnable"] is True
+
     evo_custom_graph_path = tmp_path / "gpt2-evo-custom.json"
     evo_custom_graph_path.write_text('{"nodes": {}, "edges": {}}\n', encoding="utf-8")
     evo_custom_graph = subprocess.run(

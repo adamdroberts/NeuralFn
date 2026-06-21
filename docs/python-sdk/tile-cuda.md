@@ -872,7 +872,7 @@ compiled C++ plan JSON reports
 `shipped_template_catalog`, `shipped_template_catalog_count`,
 `template_known`, and `resolved_native_template_name` so SDK callers can audit
 the no-Python selector catalog. The public `gpt` template alias plus
-`gpt2`, `gpt2_megakernel`, and `gpt2_moa` map to the implemented native
+`gpt2`, `gpt2_modern`, `gpt2_megakernel`, and `gpt2_moa` map to the implemented native
 transformer-LM loop; `gpt2_moa` resolves to
 `--native-cuda-activation moa` automatically. Structurally different shipped
 template names and custom graph files are selected and reported in JSON, but
@@ -884,7 +884,8 @@ so callers can distinguish path typos from the still-missing native graph
 compiler. Unknown template names return `unknown-template`.
 
 GPT-2 evo's family-specific C++ binary exposes the same selector fields and
-catalog for SDK/subprocess callers. Dense GPT-2-compatible templates now report
+catalog for SDK/subprocess callers. Dense GPT-2-compatible templates, including
+`gpt2_modern`, now report
 `native-preflight-dense-gpt-layer-evo-delegate`,
 `selected_graph_support_status: "native-dense-gpt-layer-evo-delegate"`, and
 `selected_graph_native_runnable: true` because real runs exec the dense GPT

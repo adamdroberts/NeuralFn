@@ -510,10 +510,10 @@ graph paths report `custom-graph-file-missing`. Unknown template names return
 
 The GPT-2 evo compiled preflight accepts the same selector aliases. It reports
 `template_name`, `graph_file`, `template_known`,
-`selected_graph_support_status`, `selected_graph_native_runnable: false`, and
-the synchronized shipped template catalog before any graph-backed runtime import.
-Dense GPT-2-compatible selectors currently report
-`native-gpt2-evo-trainer-missing`; structurally different templates report
+`selected_graph_support_status`, `selected_graph_native_runnable`, and the
+synchronized shipped template catalog before any graph-backed runtime import.
+Dense GPT-2-compatible selectors, including `gpt2_modern`, report
+`native-dense-gpt-layer-evo-delegate`; structurally different templates report
 `template-native-trainer-missing`; custom graph files report
 `custom-graph-native-trainer-missing`.
 Use `nfn_gpt2_evo_native_train --smoke-evo-kernels --tile-ops-lib PATH` to

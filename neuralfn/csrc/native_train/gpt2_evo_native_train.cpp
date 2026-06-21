@@ -324,7 +324,7 @@ bool selected_template_is_shipped(const Gpt2EvoPlan& plan) {
 
 bool selected_template_is_dense_gpt2_compatible(const Gpt2EvoPlan& plan) {
     const std::string name = normalize_template_name(plan.template_name);
-    return name == "gpt2" || name == "gpt2_megakernel" || name == "gpt2_moa";
+    return name == "gpt2" || name == "gpt2_modern" || name == "gpt2_megakernel" || name == "gpt2_moa";
 }
 
 bool custom_graph_file_exists(const Gpt2EvoPlan& plan) {

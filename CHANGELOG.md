@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the GPT-2 evo native delegate's dense-template coverage to include
+  `gpt2_modern`. The family-specific C++ preflight now reports
+  `selected_graph_support_status: "native-dense-gpt-layer-evo-delegate"` and
+  `selected_graph_native_runnable: true` for `--template-name gpt2_modern`,
+  matching the dense GPT native trainer's template geometry support instead of
+  treating the modern dense GPT-2 preset as missing native trainer work.
+  Verification: rebuilt the native train CLI artifacts, ran the focused GPT-2
+  evo native plan regression, and `git diff --check`.
+
 - Broadened the native no-Torch dependency gate so the default artifact scan no
   longer stops at `nfn_gpt_native_train` and `libnfn_native_train_tile_ops.so`.
   `tools/check_native_no_torch_deps.py` now always checks those required
