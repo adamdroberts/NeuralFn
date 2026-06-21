@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Made the canonical SM120 llm.kittens parity wrapper a strict performance gate
+  by default. Measured `tools/bench_native_gpt_sm120_parity.sh` runs now pass
+  `--max-candidate-ratio train_loop_wall_ms_per_step=1.000` to
+  `tools/paired_kernel_speed.py`, so NeuralFn-vs-llm.kittens parity exits
+  nonzero when NeuralFn is slower on the comparable train-loop ms/step metric.
+  `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` and `NFN_SM120_MAX_CANDIDATE_RATIO`
+  override the default for diagnostic sweeps, while dry-run plans remain
+  ungated. Verification: `bash -n tools/bench_native_gpt_sm120_parity.sh`,
+  focused `tests/test_tile_cuda_examples.py`, `git diff --check`, and a short
+  CUDA 13.3 RTX 5090 parity smoke that correctly failed the new gate with
+  NeuralFn at `1.024899x` the llm.kittens train-loop ms/step.
+
 - Aligned the canonical llm.kittens parity wrapper with the native-vs-native
   candidate wrapper's dedicated-GPU idle guard. `tools/bench_native_gpt_sm120_parity.sh`
   now defaults selected-GPU utilization polling to three samples spaced 0.25

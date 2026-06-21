@@ -1362,6 +1362,12 @@ It also defaults selected-GPU idle polling to three utilization samples spaced
 0.25 seconds apart before each measured command, matching the native-vs-native
 candidate wrapper and reducing noise from transient WSL/NVML utilization
 spikes on the dedicated RTX 5090.
+Measured runs default to a strict
+`train_loop_wall_ms_per_step=1.000` metric-ratio gate, so the parity wrapper
+exits nonzero when NeuralFn is slower than the llm.kittens reference on the
+comparable train-loop metric. Use `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` or
+`NFN_SM120_MAX_CANDIDATE_RATIO` only when intentionally running a diagnostic
+sweep with different pass criteria; dry-run plans remain ungated.
 Set `NFN_SM120_PARITY_DRY_RUN_PLAN=1` or
 `NFN_SM120_NATIVE_DRY_RUN_PLAN=1` to write the resolved paired command plan,
 CUDA selection, profile settings, and alternating sample order without

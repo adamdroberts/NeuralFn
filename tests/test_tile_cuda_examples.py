@@ -316,6 +316,10 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "NFN_SM120_PARITY_GENERATE_TOKENS" in text
     assert "NFN_SM120_PARITY_PROFILE_DIR" in text
     assert "NFN_SM120_PARITY_DRY_RUN_PLAN" in text
+    assert "NFN_SM120_PARITY_MAX_CANDIDATE_RATIO" in text
+    assert "NFN_SM120_MAX_CANDIDATE_RATIO" in text
+    assert 'MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"' in text
+    assert "--max-candidate-ratio" in text
     assert "NFN_SM120_STEPS" in text
     assert "NFN_SM120_JSON_OUT" in text
     assert "NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS" in text
@@ -766,6 +770,7 @@ def test_native_gpt_sm120_parity_wrapper_accepts_generic_aliases(tmp_path: Path)
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["selected_gpu_utilization_retries"] == 3
     assert payload["selected_gpu_utilization_retry_interval_seconds"] == 0.25
+    assert payload["metric_ratio_gates"]["enabled"] is False
 
 
 def test_native_gpt_sm120_parity_wrapper_stage_timing_without_profile_dir(tmp_path: Path) -> None:

@@ -26,6 +26,16 @@ PROFILE_DIR_RAW="${NFN_SM120_PARITY_PROFILE_DIR:-${NFN_SM120_PROFILE_DIR:-/tmp/n
 STAGE_TIMING="${NFN_SM120_PARITY_STAGE_TIMING:-${NFN_SM120_STAGE_TIMING:-0}}"
 REFERENCE_OUTPUT_DIR="${NFN_SM120_PARITY_REFERENCE_OUTPUT_DIR:-${NFN_SM120_REFERENCE_OUTPUT_DIR:-/tmp/nfn_llmk_sm120_parity}}"
 DRY_RUN_PLAN="${NFN_SM120_PARITY_DRY_RUN_PLAN:-${NFN_SM120_DRY_RUN_PLAN:-0}}"
+MAX_CANDIDATE_RATIO_RAW="${NFN_SM120_PARITY_MAX_CANDIDATE_RATIO:-${NFN_SM120_MAX_CANDIDATE_RATIO:-}}"
+if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
+  case "${DRY_RUN_PLAN,,}" in
+    "1"|"true"|"yes"|"on")
+      ;;
+    *)
+      MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"
+      ;;
+  esac
+fi
 
 profile_args=()
 case "${PROFILE_DIR_RAW,,}" in
@@ -48,6 +58,9 @@ case "${DRY_RUN_PLAN,,}" in
     paired_args+=(--dry-run-plan)
     ;;
 esac
+for item in $MAX_CANDIDATE_RATIO_RAW; do
+  paired_args+=(--max-candidate-ratio "$item")
+done
 
 if [[ ! -x "$LLM_KITTENS_TRAIN_BIN" ]]; then
   echo "llm.kittens train_gpt2cu is not executable: $LLM_KITTENS_TRAIN_BIN" >&2
