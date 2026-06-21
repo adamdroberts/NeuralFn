@@ -256,6 +256,8 @@ NATIVE_TEXT_METRIC_KEYS = (
     "stage.lm_head_backward.dhidden.total_ms",
     "stage.lm_head_backward.dweight.total_ms",
     "stage.lm_head_backward.dhidden_dweight_concurrent.total_ms",
+    "stage.lm_head_backward.pipeline_queue.total_ms",
+    "stage.lm_head_backward.pipeline_final_wait.total_ms",
     "stage.lm_head_backward.loss_copy.total_ms",
     "stage.final_norm_backward.total_ms",
     "stage.block_backward.total_ms",

@@ -246,12 +246,13 @@ timing is enabled they also gate `stage.lm_head_backward.total_ms`,
 prepack candidates mentioning `LM_HEAD_PREPACK_BF16_HIDDEN` additionally gate
 `stage.lm_head_backward.dhidden.total_ms`,
 `stage.lm_head_backward.dweight.total_ms`, and
-`setup.uint16_arena_materialize.total_ms`. LM-head overlap candidates mentioning
-`LM_HEAD_PIPELINE_CHUNKS` additionally gate the emitted pipeline substages
-`stage.lm_head_backward.pipeline_queue.total_ms` and
-`stage.lm_head_backward.pipeline_final_wait.total_ms`, rather than expecting
-the serial `dhidden` / `dweight` substage names. Attention candidates mentioning
-`PACKED_ATTENTION` or `BF16_ATTENTION` gate
+`setup.uint16_arena_materialize.total_ms`. LM-head pipeline overlap candidates
+still use the comparable train-loop and total LM-head gates; their
+candidate-only `stage.lm_head_backward.pipeline_queue.total_ms` and
+`stage.lm_head_backward.pipeline_final_wait.total_ms` fields are reported for
+inspection instead of ratio-gated against a serial baseline that never emits
+them. Attention candidates mentioning `PACKED_ATTENTION` or `BF16_ATTENTION`
+gate
 `stage.block_backward.attn_sdpa.total_ms`,
 `stage.block_backward.attn_sdpa.to_qkv.total_ms`,
 `attention_backward_tk_timing_us`, and
@@ -434,8 +435,11 @@ default stream, and queues dHidden plus ordered dWeight on side streams while
 the next chunk starts. Runtime JSON reports
 `lm_head_pipeline_chunks_requested`, `lm_head_pipeline_chunks_enabled`,
 `lm_head_pipeline_logit_buffer_count`, `lm_head_pipeline_extra_bf16_logit_bytes`,
-and the active `lm_head_dhidden_dweight_schedule_strategy`. Leave it unset for
-normal training until paired RTX 5090 gates prove a durable win.
+and the active `lm_head_dhidden_dweight_schedule_strategy`. Use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_pipeline_chunks` to route the
+candidate through the standard same-script SM120 wrapper and its default stage
+gates. Leave it unset for normal training until paired RTX 5090 gates prove a
+durable win.
 The BF16 linear operand cache is limited to stable operands such as weights;
 LM-head dWeight repacks the mutable hidden activation chunks each microbatch so
 gradient accumulation does not reuse stale packed activations.

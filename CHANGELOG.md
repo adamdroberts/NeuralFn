@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a named `lm_head_pipeline_chunks` SM120 native candidate profile for
+  repeatable testing of `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1`. The profile
+  uses the existing wrapper default train-loop, total LM-head, block-backward,
+  and MLP-projection gates, while `tools/paired_kernel_speed.py` extracts the
+  candidate-only pipeline queue/final-wait substages for inspection instead of
+  ratio-gating them against the serial baseline. A short CUDA 13.3 RTX 5090
+  smoke confirmed route selection
+  (`lm_head_pipeline_chunks_enabled: true`) and rejected the schedule at
+  `32.357831x` train-loop wall time and `63.977481x` block-backward time, with
+  the slowdown concentrated in attention projection and attention SDPA backward.
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`, focused
+  `tests/test_tile_cuda_examples.py`, same-script GPU smoke, and
+  `git diff --check`.
+
 - Tightened the SM120 native candidate benchmark default idle guard for the
   dedicated RTX 5090 workflow. `tools/bench_native_gpt_sm120_candidate.sh` now
   defaults selected-GPU utilization polling to three idle samples spaced 0.25

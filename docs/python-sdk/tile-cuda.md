@@ -557,6 +557,12 @@ the chunk buffer is reused. Runtime JSON reports
 `lm_head_pipeline_logit_buffer_count`,
 `lm_head_pipeline_extra_bf16_logit_bytes`, and the schedule strategy
 `double-buffered-logits-ce-default-stream-side-stream-dhidden-ordered-dweight`.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_pipeline_chunks` to run this
+candidate through the native SM120 wrapper's standard idle guard and default
+train-loop, total LM-head, block-backward, and MLP-projection gates. The
+pipeline queue and final-wait substages are extracted for candidate-side
+inspection, not ratio-gated by default, because the serial baseline does not
+emit those stage names.
 Keep it disabled for normal training until the paired RTX 5090 gate proves it
 beats the default serial chunk schedule.
 For cuBLASLt BGRADB dWeight+bias routes, the default writes the epilogue bias

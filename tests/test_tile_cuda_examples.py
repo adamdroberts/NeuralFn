@@ -75,6 +75,10 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"total_ms\\\": 2.0, \\\"avg_ms\\\": 1.0, \\\"count\\\": 2}, "
                 "{\\\"name\\\": \\\"lm_head_backward.dweight\\\", "
                 "\\\"total_ms\\\": 1.5, \\\"avg_ms\\\": 0.75, \\\"count\\\": 2}, "
+                "{\\\"name\\\": \\\"lm_head_backward.pipeline_queue\\\", "
+                "\\\"total_ms\\\": 0.4, \\\"avg_ms\\\": 0.2, \\\"count\\\": 2}, "
+                "{\\\"name\\\": \\\"lm_head_backward.pipeline_final_wait\\\", "
+                "\\\"total_ms\\\": 0.6, \\\"avg_ms\\\": 0.3, \\\"count\\\": 2}, "
                 "{\\\"name\\\": \\\"final_norm_backward\\\", "
                 "\\\"total_ms\\\": 0.8, \\\"avg_ms\\\": 0.4, \\\"count\\\": 2}, "
                 "{\\\"name\\\": \\\"block_backward.mlp_proj\\\", "
@@ -152,6 +156,11 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["stage.lm_head_backward.ce.total_ms"]["mean"] == 1.0
     assert payload["candidate_native_metrics"]["stage.lm_head_backward.dhidden.total_ms"]["mean"] == 2.0
     assert payload["candidate_native_metrics"]["stage.lm_head_backward.dweight.total_ms"]["mean"] == 1.5
+    assert payload["candidate_native_metrics"]["stage.lm_head_backward.pipeline_queue.total_ms"]["mean"] == 0.4
+    assert (
+        payload["candidate_native_metrics"]["stage.lm_head_backward.pipeline_final_wait.total_ms"]["mean"]
+        == 0.6
+    )
     assert payload["candidate_native_metrics"]["stage.final_norm_backward.total_ms"]["mean"] == 0.8
     assert payload["candidate_native_metrics"]["stage.block_backward.mlp_proj.total_ms"]["mean"] == 5.0
     assert (
@@ -213,6 +222,8 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "stage.lm_head_backward.ce.total_ms: mean=1.000000" in proc.stdout
     assert "stage.lm_head_backward.dhidden.total_ms: mean=2.000000" in proc.stdout
     assert "stage.lm_head_backward.dweight.total_ms: mean=1.500000" in proc.stdout
+    assert "stage.lm_head_backward.pipeline_queue.total_ms: mean=0.400000" in proc.stdout
+    assert "stage.lm_head_backward.pipeline_final_wait.total_ms: mean=0.600000" in proc.stdout
     assert "stage.final_norm_backward.total_ms: mean=0.800000" in proc.stdout
     assert "stage.block_backward.mlp_proj.total_ms: mean=5.000000" in proc.stdout
     assert "stage.block_backward.mlp_proj.dweight_bias.total_ms: mean=4.000000" in proc.stdout
@@ -821,6 +832,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "tk_dgelu_approx_tanh" in text
     assert "attention_atomic_dq" in text
     assert "qkv_concurrent_dinput_dweight" in text
+    assert "lm_head_pipeline_chunks" in text
     assert "token_weight_vector4_strided" in text
     assert "token_weight_threaded" in text
     assert "token_weight_fast_int32" in text
@@ -841,9 +853,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert 'MAX_CANDIDATE_RATIO_RAW+=" attention_backward_tk_timing_us=1.000"' in text
     assert "*PACKED_ATTENTION*|*packed_attention*|*BF16_ATTENTION*|*bf16_attention*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" attention_backward_dprep_timing_us=1.000"' in text
-    assert "*LM_HEAD_PIPELINE_CHUNKS*|*lm_head_pipeline_chunks*" in text
-    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_queue.total_ms=1.000"' in text
-    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_final_wait.total_ms=1.000"' in text
+    assert "NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1" in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_queue.total_ms=1.000"' not in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_final_wait.total_ms=1.000"' not in text
     assert "*BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT*|*block_qkv_concurrent_dinput_dweight*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.total_ms=1.000"' in text
     assert '"1"|"true"|"yes"|"on")' in text
