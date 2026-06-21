@@ -6323,6 +6323,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
     assert "NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
     assert "block_backward_mlp_fc_concurrent_dinput_dweight_requested" in gpt2_source_text
     assert "block_backward_pair_streams_available" in gpt2_source_text
     assert "block_backward_mlp_fc_concurrent_dinput_dweight_enabled" in gpt2_source_text
@@ -6330,6 +6332,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block_backward_qkv_concurrent_dinput_dweight_requested" in gpt2_source_text
     assert "block_backward_qkv_concurrent_dinput_dweight_enabled" in gpt2_source_text
     assert "block_backward.qkv.dinput_dweight_concurrent" in gpt2_source_text
+    assert "block_backward_attn_proj_concurrent_dinput_dweight_requested" in gpt2_source_text
+    assert "block_backward_attn_proj_concurrent_dinput_dweight_enabled" in gpt2_source_text
+    assert "block_backward.attn_proj.dinput_dweight_concurrent" in gpt2_source_text
     assert "cudaStreamCreateWithFlags block_backward_dinput" in gpt2_source_text
     assert "cudaStreamCreateWithFlags block_backward_dweight" in gpt2_source_text
     assert "cudaEventCreateWithFlags block_backward_pair_ready" in gpt2_source_text

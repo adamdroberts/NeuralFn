@@ -1483,6 +1483,10 @@ The native GPT-2 transformer-LM trainer pads only the tensor row count: tokenize
 
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_fc_concurrent_dinput_dweight` to rerun this route through the native SM120 wrapper. Stage-timed runs gate `stage.block_backward.mlp_fc.total_ms` alongside the default train-loop, total LM-head, block-backward, and MLP-projection totals.
 
+`NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT=1` and the GPT-2-prefixed fallback env name enable the matching diagnostic two-stream block-backward schedule for the attention projection dInput and dWeight+bias pair. Runtime JSON reports `block_backward_attn_proj_concurrent_dinput_dweight_requested`, `block_backward_pair_streams_available`, and `block_backward_attn_proj_concurrent_dinput_dweight_enabled`; stage timing reports `block_backward.attn_proj.dinput_dweight_concurrent` when the route runs.
+
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attn_proj_concurrent_dinput_dweight` to rerun this route through the native SM120 wrapper. Stage-timed runs gate `stage.block_backward.attn_proj.total_ms` alongside the default train-loop, total LM-head, block-backward, and MLP-projection totals. Keep the route default-off: the same-script RTX 5090 gate proved the route enabled but rejected it at `1.000183x` train-loop wall time, `1.004192x` block-backward time, and `1.089203x` attention-projection backward time.
+
 For trainer linear-kernel bisection, `NFN_NATIVE_LINEAR_TK_DINPUT=1` still
 routes every supported BF16/BF16 dInput shape through the SM120 TK bridge.
 Prefer the shape-selective

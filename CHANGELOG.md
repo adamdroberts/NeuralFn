@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off dense GPT attention-projection side-stream diagnostic.
+  `NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT=1` and the
+  GPT-2-prefixed alias run the attention projection dInput and dWeight+bias
+  kernels on separate non-blocking streams after a default-stream event.
+  Runtime JSON reports
+  `block_backward_attn_proj_concurrent_dinput_dweight_requested` and
+  `block_backward_attn_proj_concurrent_dinput_dweight_enabled`, paired
+  summaries print those route fields, and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attn_proj_concurrent_dinput_dweight`
+  expands to the env flag with a stage-timed gate on
+  `stage.block_backward.attn_proj.total_ms`. The route remains diagnostic-only:
+  the same-script RTX 5090 gate proved it enabled but rejected it at
+  `1.000183x` train-loop wall time, `1.004192x` block-backward time, and
+  `1.089203x` attention-projection backward time. Verification: rebuilt
+  `build/nfn_gpt_native_train`, ran focused native/wrapper tests, and ran the
+  guarded candidate benchmark.
+
 - Added a named `lm_head_concurrent_dhidden_dweight` SM120 native candidate
   profile for repeatable bisection of the existing LM-head side-stream schedule.
   The profile expands to `NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1`
