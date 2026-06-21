@@ -615,7 +615,11 @@ bisections can use
 `token_weight_threaded`, `token_weight_fast_int32`, or
 `token_weight_two_pass_bf16` instead of spelling out the individual env flags;
 these profiles are diagnostic-only and do not change the default vector4 fused
-BF16-shadow initializer. Add
+BF16-shadow initializer. After the CUDA 13.3 reinstall on the dedicated RTX
+5090, a 9-sample startup-only gate for `token_weight_vector4_strided` passed
+mean setup/token-init gates (`0.997653x` setup wall, `0.996379x` token init)
+but stayed too close to noise, with median setup slightly slower, so it remains
+default-off. Add
 `--append-native-profile-json-dir /tmp/nfn-profiles`
 when comparing native NeuralFn commands that do not already write JSON; the
 harness appends unique `--profile-json` files without changing the timed native

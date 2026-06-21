@@ -13,8 +13,13 @@ Future updates should append new entries here rather than replacing older notes.
   `token_weight_two_pass_bf16`, each expanding to the matching native GPT
   startup env flag while preserving the automatic `setup_wall_ms` and
   `setup.token_weight_init.total_ms` gates for measured startup-only runs.
+  The dedicated RTX 5090 CUDA 13.3 9-sample startup-only retest for
+  `token_weight_vector4_strided` passed mean gates (`0.997653x` setup wall,
+  `0.996379x` token init) but stayed within noise and had a slightly slower
+  median setup, so the profile remains default-off.
   Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`, focused
-  `tests/test_tile_cuda_examples.py`, and `git diff --check`.
+  `tests/test_tile_cuda_examples.py`, same-script GPU startup gate, and
+  `git diff --check`.
 
 - Added startup latency enforcement to `tools/check_native_no_torch_deps.py`.
   The verifier now records `elapsed_seconds`, `startup_budget_seconds`, and
