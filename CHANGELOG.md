@@ -22,6 +22,23 @@ Future updates should append new entries here rather than replacing older notes.
   `tests/test_tile_cuda_examples.py` wrapper tests, and the two stage-timed
   3-step/3-sample paired CUDA gates on GPU 0.
 
+- Recorded the CUDA 13.3 RTX 5090 shape-specific cuBLASLt heuristic bisection
+  results for hot dense-GPT backward GEMMs. A one-step shape-stat probe
+  identified LM-head dWeight `cublaslt:768x50304x32768:N,T` as the largest
+  cuBLASLt shape with multiple returned heuristics, selected heuristic `1` from
+  `9`. Forcing that shape to heuristic `0` changed only the intended shape
+  from `[1]` to `[0]` and passed total train-loop plus block-backward gates, but
+  failed strict LM-head gates at
+  `stage.lm_head_backward.total_ms=1.000373x` and
+  `stage.lm_head_backward.dweight.total_ms=1.000445x`; forcing heuristic `2`
+  regressed the same shape to `1.078836x` and LM-head dWeight to `1.078458x`.
+  The QKV dInput probe for `cublaslt:768x65536x2304:N,N` changed selected
+  heuristic `[1]` to `[0]` and regressed the shape to `1.082474x`,
+  `stage.block_backward.qkv.total_ms` to `1.055808x`, and
+  `stage.block_backward.qkv.dinput.total_ms` to `1.077788x`. No cuBLASLt
+  heuristic override was promoted. Verification: three GPU-visible stage-timed
+  3-step/3-sample paired native gates with `NFN_SM120_NATIVE_LINEAR_SHAPE_STATS=1`.
+
 - Extended `tools/bench_native_gpt_sm120_candidate.sh` so same-script SM120
   native-vs-native runs can build compile-time Tile ops candidates without
   replacing the baseline library. Set
