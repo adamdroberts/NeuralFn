@@ -813,9 +813,17 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_SM120_CANDIDATE_PROFILE" in text
     assert "lm_head_tk_dinput_32768" in text
     assert "lm_head_cublaslt_dhidden_32768" in text
+    assert "tk_dgelu_dinput" in text
+    assert "tk_dgelu_approx_tanh" in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_BUILD_FLAGS" in text
+    assert "NFN_SM120_CANDIDATE_TILE_OPS_BUILD_FLAGS" in text
+    assert "-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP" in text
+    assert "-DLLMK_SM120_APPROX_DGELU_TANH=1" in text
+    assert "tools/build_native_train_tile_ops.sh" in text
     assert "NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=768,32768,50304,N,N" in text
     assert "NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N" in text
     assert "*TK_DINPUT*|*tk_dinput*|*CUBLASLT_ENABLE_SHAPE*|*cublaslt_enable_shape*" in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.dinput.total_ms=1.000"' in text
     assert "*LM_HEAD_PIPELINE_CHUNKS*|*lm_head_pipeline_chunks*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_queue.total_ms=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_final_wait.total_ms=1.000"' in text

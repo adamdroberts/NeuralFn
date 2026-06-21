@@ -260,6 +260,18 @@ For repeatable CUDA/driver bisection of known LM-head dHidden routes, set
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`. These
 profiles are measurement shortcuts only; both routes remain default-off until
 the same-script candidate gate beats the current route.
+For compile-time Tile ops candidates, set
+`NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_BUILD_FLAGS` or
+`NFN_SM120_CANDIDATE_TILE_OPS_BUILD_FLAGS`; the wrapper builds a temporary
+candidate `libnfn_native_train_tile_ops.so` with those extra nvcc flags and
+compares it against the baseline library without overwriting `build/`. The
+named profiles `tk_dgelu_dinput` and `tk_dgelu_approx_tanh` build the
+llm.kittens SM120 fused dGELU dInput candidates with
+`-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP` and, for the latter,
+`-DLLMK_SM120_APPROX_DGELU_TANH=1`. Stage-timed dGELU candidates also gate
+`stage.block_backward.mlp_proj.dinput.total_ms=1.000`. These are still
+candidate-only routes: the llm.kittens same-session notes show short-run wins
+but rejected them as stable defaults after longer gates.
 The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
 emit non-UTF-8 bytes can still be compared in the same paired run. For

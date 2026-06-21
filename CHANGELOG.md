@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended `tools/bench_native_gpt_sm120_candidate.sh` so same-script SM120
+  native-vs-native runs can build compile-time Tile ops candidates without
+  replacing the baseline library. Set
+  `NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_BUILD_FLAGS` or
+  `NFN_SM120_CANDIDATE_TILE_OPS_BUILD_FLAGS` to pass extra nvcc flags into a
+  temporary candidate `libnfn_native_train_tile_ops.so`; the named profiles
+  `tk_dgelu_dinput` and `tk_dgelu_approx_tanh` build the llm.kittens fused
+  dGELU dInput candidate flags and add a stage gate for
+  `stage.block_backward.mlp_proj.dinput.total_ms`. These profiles are
+  candidate-only because upstream same-session notes show short-run wins but
+  longer gates rejected them as stable defaults. Verification: `bash -n
+  tools/bench_native_gpt_sm120_candidate.sh` and focused
+  `tests/test_tile_cuda_examples.py` wrapper tests.
+
 - Added `tools/rebuild_native_sm120.sh` as the CUDA-reinstall refresh path for
   the native SM120 workstation artifacts. The script rebuilds the Tile-CUDA raw
   trainer ABI, the universal native trainer frontend, the generic dense GPT
