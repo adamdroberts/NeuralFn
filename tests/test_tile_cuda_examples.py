@@ -846,6 +846,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "tk_dgelu_dinput" in text
     assert "tk_dgelu_approx_tanh" in text
     assert "attention_atomic_dq" in text
+    assert "tk_forward_no_n96" in text
+    assert "-DLLMK_SM120_FORWARD_N96=0" in text
+    assert "cuda_device_max_connections_1" in text
+    assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in text
     assert "qkv_concurrent_dinput_dweight" in text
     assert "mlp_fc_concurrent_dinput_dweight" in text
     assert "attn_proj_concurrent_dinput_dweight" in text
@@ -1003,6 +1007,37 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "max_waves"
     )
     assert max_waves_payload["metric_ratio_gates"]["enabled"] is False
+
+    max_connections_output_path = tmp_path / "candidate-max-connections-dry-run.json"
+    max_connections_env = os.environ.copy()
+    max_connections_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "cuda_device_max_connections_1",
+            "NFN_SM120_NATIVE_JSON_OUT": str(max_connections_output_path),
+        }
+    )
+
+    max_connections_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=max_connections_env,
+    )
+
+    assert max_connections_dry_run.returncode == 0, max_connections_dry_run.stderr
+    max_connections_payload = json.loads(
+        max_connections_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        max_connections_payload["candidate_env"]["CUDA_DEVICE_MAX_CONNECTIONS"]
+        == "1"
+    )
+    assert max_connections_payload["metric_ratio_gates"]["enabled"] is False
 
     qkv_output_path = tmp_path / "candidate-qkv-concurrent-dry-run.json"
     qkv_env = os.environ.copy()

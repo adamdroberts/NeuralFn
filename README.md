@@ -286,7 +286,10 @@ compares it against the baseline library without overwriting `build/`. The
 named profiles `tk_dgelu_dinput` and `tk_dgelu_approx_tanh` build the
 llm.kittens SM120 fused dGELU dInput candidates with
 `-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP` and, for the latter,
-`-DLLMK_SM120_APPROX_DGELU_TANH=1`. Stage-timed dGELU candidates also gate
+`-DLLMK_SM120_APPROX_DGELU_TANH=1`; `tk_forward_no_n96` builds a temporary
+candidate library with `-DLLMK_SM120_FORWARD_N96=0` to reroute eligible
+llm.kittens forward GEMM shapes away from the N96 path. Stage-timed dGELU
+candidates also gate
 `stage.block_backward.mlp_proj.dinput.total_ms=1.000`. These are still
 candidate-only routes: NeuralFn's CUDA 13.3 same-script `tk_dgelu_dinput`
 profile passed the 3-step, 3-sample gate, but the longer 10-step, 3-sample gate
@@ -294,6 +297,11 @@ rejected promotion because `stage.block_backward.total_ms` measured `1.000689x`
 even while `stage.block_backward.mlp_proj.dinput.total_ms` stayed faster at
 `0.983891x`. The llm.kittens same-session notes show the same pattern of
 short-run wins but rejected stable defaults after longer gates.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_device_max_connections_1` when
+you need to reproduce the workstation scheduling probe that sets only
+`CUDA_DEVICE_MAX_CONNECTIONS=1` on the candidate command. It is a benchmark
+profile, not a default-training recommendation; the dedicated RTX 5090
+same-script gate rejected it after it changed no tracked route counters.
 The named `qkv_concurrent_dinput_dweight` profile expands to
 `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` for repeatable
 stage-timed reruns of the default-off QKV side-stream diagnostic.

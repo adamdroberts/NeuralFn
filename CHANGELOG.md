@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added two repeatable SM120 native candidate profiles for rejected routing and
+  scheduling probes. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_forward_no_n96`
+  builds a temporary trainer-facing Tile ops library with
+  `-DLLMK_SM120_FORWARD_N96=0`, and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_device_max_connections_1` sets
+  `CUDA_DEVICE_MAX_CONNECTIONS=1` only for the candidate command. Both are
+  benchmark-tooling shortcuts, not default changes: the dedicated RTX 5090
+  same-script gates rejected `tk_forward_no_n96` at `1.001827x`
+  train-loop wall time and `1.004826x` block-backward time, and rejected
+  `cuda_device_max_connections_1` at `1.007508x` train-loop wall time,
+  `1.000579x` LM-head backward time, and `1.015155x` block-backward time.
+  Verification: dry-run wrapper tests were updated to assert the new profile
+  expansions, and the rejected candidates were measured through
+  `tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Added a raw Tile C ABI probe for classic cuBLAS grouped BF16 GEMM execution.
   `nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status()`
   allocates tiny BF16 device matrices, launches
