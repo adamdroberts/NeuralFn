@@ -270,8 +270,12 @@ llm.kittens SM120 fused dGELU dInput candidates with
 `-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP` and, for the latter,
 `-DLLMK_SM120_APPROX_DGELU_TANH=1`. Stage-timed dGELU candidates also gate
 `stage.block_backward.mlp_proj.dinput.total_ms=1.000`. These are still
-candidate-only routes: the llm.kittens same-session notes show short-run wins
-but rejected them as stable defaults after longer gates.
+candidate-only routes: NeuralFn's CUDA 13.3 same-script `tk_dgelu_dinput`
+profile passed the 3-step, 3-sample gate, but the longer 10-step, 3-sample gate
+rejected promotion because `stage.block_backward.total_ms` measured `1.000689x`
+even while `stage.block_backward.mlp_proj.dinput.total_ms` stayed faster at
+`0.983891x`. The llm.kittens same-session notes show the same pattern of
+short-run wins but rejected stable defaults after longer gates.
 The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
 emit non-UTF-8 bytes can still be compared in the same paired run. For

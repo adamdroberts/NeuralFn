@@ -14,11 +14,14 @@ Future updates should append new entries here rather than replacing older notes.
   temporary candidate `libnfn_native_train_tile_ops.so`; the named profiles
   `tk_dgelu_dinput` and `tk_dgelu_approx_tanh` build the llm.kittens fused
   dGELU dInput candidate flags and add a stage gate for
-  `stage.block_backward.mlp_proj.dinput.total_ms`. These profiles are
-  candidate-only because upstream same-session notes show short-run wins but
-  longer gates rejected them as stable defaults. Verification: `bash -n
-  tools/bench_native_gpt_sm120_candidate.sh` and focused
-  `tests/test_tile_cuda_examples.py` wrapper tests.
+  `stage.block_backward.mlp_proj.dinput.total_ms`. These profiles remain
+  candidate-only: the CUDA 13.3 RTX 5090 same-script `tk_dgelu_dinput`
+  3-step/3-sample run passed, but the longer 10-step/3-sample gate rejected
+  promotion at `stage.block_backward.total_ms=1.000689x` despite faster
+  `stage.block_backward.mlp_proj.dinput.total_ms=0.983891x`. Verification:
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`, focused
+  `tests/test_tile_cuda_examples.py` wrapper tests, one-step profile smoke, and
+  the 3-step plus 10-step same-script CUDA gates.
 
 - Added `tools/rebuild_native_sm120.sh` as the CUDA-reinstall refresh path for
   the native SM120 workstation artifacts. The script rebuilds the Tile-CUDA raw
