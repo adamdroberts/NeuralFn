@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked the packed-attention HD64 dprep specialization after the CUDA 13.3
+  WSL reinstall. `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED=0`
+  routes the `heads=12, head_dim=64` BF16-grad dprep case through the older
+  generic row kernel. The same-script CUDA 13.3 RTX 5090 3-step/3-sample probe
+  passed total train-loop and block-backward gates, but failed the strict
+  attention substage gates at
+  `stage.block_backward.attn_sdpa.total_ms=1.000768x` and
+  `stage.block_backward.attn_sdpa.to_qkv.total_ms=1.000766x`, so the HD64
+  specialized path remains the default. Verification: stage-timed paired
+  native gate on GPU 0.
+
 - Improved `tools/paired_kernel_speed.py` attribution for shape-specific
   cuBLASLt candidate runs. When native linear shape stats are enabled, the JSON
   now includes `native_linear_shape_stats.has_cublaslt_plan_change`,
