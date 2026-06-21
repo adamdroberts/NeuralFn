@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a named `mlp_fc_concurrent_dinput_dweight` SM120 native candidate
+  profile for repeatable reruns of
+  `NFN_NATIVE_GPT_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT=1`. Stage-timed
+  candidate runs using that profile now additionally gate the comparable
+  `stage.block_backward.mlp_fc.total_ms` bucket, while retaining the default
+  train-loop, total LM-head, block-backward, and MLP-projection gates. The route
+  remains default-off because the earlier CUDA 13.3 RTX 5090 same-script gate
+  rejected it. Verification: `bash -n
+  tools/bench_native_gpt_sm120_candidate.sh`, focused
+  `tests/test_tile_cuda_examples.py`, and `git diff --check`.
+
 - Added a named `lm_head_pipeline_chunks` SM120 native candidate profile for
   repeatable testing of `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1`. The profile
   uses the existing wrapper default train-loop, total LM-head, block-backward,

@@ -832,6 +832,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "tk_dgelu_approx_tanh" in text
     assert "attention_atomic_dq" in text
     assert "qkv_concurrent_dinput_dweight" in text
+    assert "mlp_fc_concurrent_dinput_dweight" in text
     assert "lm_head_pipeline_chunks" in text
     assert "token_weight_vector4_strided" in text
     assert "token_weight_threaded" in text
@@ -858,6 +859,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_final_wait.total_ms=1.000"' not in text
     assert "*BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT*|*block_qkv_concurrent_dinput_dweight*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.total_ms=1.000"' in text
+    assert "*BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT*|*block_mlp_fc_concurrent_dinput_dweight*" in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_fc.total_ms=1.000"' in text
     assert '"1"|"true"|"yes"|"on")' in text
     assert "has_candidate_change=0" in text
 
