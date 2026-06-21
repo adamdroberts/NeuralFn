@@ -1393,7 +1393,9 @@ remain strict and must exist.
 The gate also imports the top-level native SDK exports such as
 `NativeGptRunConfig`, `build_native_gpt_compiled_cli_run_config()`,
 `native_gpt_kernel_backend()`, and `native_gpt_parameter_count()` under the same
-blocked-import guard:
+blocked-import guard, and imports built `neuralfn._native_gpt`,
+`neuralfn._native_gpt2`, and `neuralfn._native_train` binding modules when they
+are present:
 
 ```bash
 python tools/check_native_no_torch_deps.py

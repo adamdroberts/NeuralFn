@@ -162,6 +162,25 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
             ),
         ),
     ),
+    (
+        "native_sdk_binding_imports",
+        (
+            sys.executable,
+            "-c",
+            "\n".join(
+                [
+                    "import importlib",
+                    "import importlib.util",
+                    "loaded = []",
+                    "for name in ('neuralfn._native_gpt', 'neuralfn._native_gpt2', 'neuralfn._native_train'):",
+                    "    if importlib.util.find_spec(name) is not None:",
+                    "        importlib.import_module(name)",
+                    "        loaded.append(name)",
+                    "print('native-sdk-binding-imports-ok:' + ','.join(loaded))",
+                ]
+            ),
+        ),
+    ),
 )
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256
