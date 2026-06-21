@@ -10,12 +10,12 @@ Future updates should append new entries here rather than replacing older notes.
   for repeatable reruns of
   `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1`. Stage-timed candidate
   runs whose text mentions `BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT` now
-  automatically gate `stage.block_backward.qkv.total_ms` and
-  `stage.block_backward.qkv.dinput_dweight_concurrent.total_ms` when no
-  explicit `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` is supplied.
+  automatically gate `stage.block_backward.qkv.total_ms` when no explicit
+  `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` is supplied.
   `tools/paired_kernel_speed.py` now extracts the combined concurrent QKV stage
-  metric so that gate evaluates the emitted native profile value instead of a
-  missing split dInput/dWeight substage. Verification:
+  metric for inspection; that candidate-only metric is not ratio-gated by
+  default because the serial baseline emits split dInput/dWeight substages.
+  Verification:
   `bash -n tools/bench_native_gpt_sm120_candidate.sh`, focused
   `tests/test_tile_cuda_examples.py`, and `git diff --check`.
 

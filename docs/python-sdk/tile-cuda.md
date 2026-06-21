@@ -1462,7 +1462,9 @@ any route promotion.
 The same wrapper exposes `qkv_concurrent_dinput_dweight`, which expands to
 `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` for repeatable
 stage-timed QKV side-stream bisections. That profile remains default-off and is
-gated on the QKV block-backward substages it touches.
+gated on total QKV block-backward time; the candidate-only combined concurrent
+substage is reported for inspection while the serial baseline continues to emit
+split dInput and dWeight substages.
 
 Startup-only token-weight initializer bisections can use the same profile
 mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,

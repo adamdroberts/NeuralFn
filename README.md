@@ -259,8 +259,10 @@ the serial `dhidden` / `dweight` substage names. Attention candidates mentioning
 hot substage even when total command timing is noisy. Dry-run planning and
 no-op baseline-vs-baseline checks stay ungated.
 QKV side-stream candidates mentioning `BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT`
-also gate `stage.block_backward.qkv.total_ms` and
-`stage.block_backward.qkv.dinput_dweight_concurrent.total_ms`.
+also gate `stage.block_backward.qkv.total_ms`; the candidate-only combined
+`stage.block_backward.qkv.dinput_dweight_concurrent.total_ms` substage is still
+reported for inspection, but it cannot be ratio-gated directly because the
+serial baseline emits split dInput and dWeight substages instead.
 For repeatable CUDA/driver bisection of known LM-head dHidden routes, set
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dinput_32768` (or the shorter
 `NFN_SM120_CANDIDATE_PROFILE`) to expand the candidate env to
