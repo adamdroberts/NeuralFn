@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the `attention_atomic_dq` SM120 native candidate profile to
+  `tools/bench_native_gpt_sm120_candidate.sh`. The profile builds a candidate
+  Tile ops library with `-DLLMK_SM120_ATOMIC_DQ` and automatically adds strict
+  attention-backward stage gates when stage timing is enabled. The CUDA 13.3
+  RTX 5090 3-step/3-sample gate rejected this route for dense GPT:
+  train-loop wall time `1.137273x`, block backward `1.273200x`, attention
+  backward `2.250757x`, attention `to_qkv` `2.253944x`, and
+  `attention_backward_tk_timing_us` `2.464325x`. Verification: candidate Tile
+  ops rebuild and stage-timed same-script native gate on GPU 0.
+
 - Rejected `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS=4` as a default after
   a longer CUDA 13.3 RTX 5090 gate. The candidate passed the short
   3-step/3-sample stage gate, but the 10-step/3-sample gate regressed

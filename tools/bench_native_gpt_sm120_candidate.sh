@@ -106,9 +106,12 @@ case "${CANDIDATE_PROFILE,,}" in
   "tk_dgelu_approx_tanh"|"tk-dgelu-approx-tanh")
     CANDIDATE_TILE_OPS_BUILD_FLAGS="${CANDIDATE_TILE_OPS_BUILD_FLAGS:+$CANDIDATE_TILE_OPS_BUILD_FLAGS }-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1"
     ;;
+  "attention_atomic_dq"|"attention-atomic-dq")
+    CANDIDATE_TILE_OPS_BUILD_FLAGS="${CANDIDATE_TILE_OPS_BUILD_FLAGS:+$CANDIDATE_TILE_OPS_BUILD_FLAGS }-DLLMK_SM120_ATOMIC_DQ"
+    ;;
   *)
     echo "Unknown NFN_SM120_NATIVE_CANDIDATE_PROFILE: $CANDIDATE_PROFILE" >&2
-    echo "Known profiles: lm_head_tk_dinput_32768, lm_head_cublaslt_dhidden_32768, cublaslt_min_waves, cublaslt_max_waves, tk_dgelu_dinput, tk_dgelu_approx_tanh" >&2
+    echo "Known profiles: lm_head_tk_dinput_32768, lm_head_cublaslt_dhidden_32768, cublaslt_min_waves, cublaslt_max_waves, tk_dgelu_dinput, tk_dgelu_approx_tanh, attention_atomic_dq" >&2
     exit 2
     ;;
 esac
@@ -178,6 +181,13 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
             case "$candidate_gate_text $CANDIDATE_TILE_OPS_BUILD_FLAGS" in
               *DGELU*|*dgelu*)
                 MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.dinput.total_ms=1.000"
+                ;;
+            esac
+            case "$candidate_gate_text $CANDIDATE_TILE_OPS_BUILD_FLAGS" in
+              *ATOMIC_DQ*|*atomic_dq*|*attention_atomic_dq*|*attention-atomic-dq*)
+                MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.attn_sdpa.total_ms=1.000"
+                MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.attn_sdpa.to_qkv.total_ms=1.000"
+                MAX_CANDIDATE_RATIO_RAW+=" attention_backward_tk_timing_us=1.000"
                 ;;
             esac
             case "$candidate_gate_text" in
