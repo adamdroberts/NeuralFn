@@ -498,7 +498,10 @@ that GPT, GPT-2-evo, NanoGPT, LLaMA fast/megakernel, MixLLaMA, JEPA semantic,
 semantic-router MoE, DeepSeek-V4, explicit `nfn train --tinystories`, default
 `nfn train`, native inference, and SDK native training handoff surfaces still
 run under an import blocker for Torch, NumPy, `tiktoken`, dataset manager
-imports, and `nfn_impl`.
+imports, and `nfn_impl`. The verifier also records `elapsed_seconds` for each
+native Python fast-path entrypoint and fails by default if any wrapper takes
+more than 2 seconds before handing off to the compiled path; pass
+`--max-entrypoint-seconds 0` only when collecting no-budget diagnostics.
 For cuBLASLt BGRADB dWeight plus bias routes, the default writes the epilogue
 bias gradient into Tile-owned
 scratch and accumulates it into `grad_bias`. Set

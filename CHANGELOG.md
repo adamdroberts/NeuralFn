@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added startup latency enforcement to `tools/check_native_no_torch_deps.py`.
+  The verifier now records `elapsed_seconds`, `startup_budget_seconds`, and
+  `startup_within_budget` for every native Python fast-path entrypoint and
+  fails by default when any wrapper takes more than 2 seconds before reaching
+  the compiled C++ handoff. Pass `--max-entrypoint-seconds 0` only for
+  no-budget diagnostics. Verification:
+  `python tools/check_native_no_torch_deps.py --skip-artifacts --json` and
+  focused `tests/test_native_gpt2.py`.
+
 - Extended the default metric gates in `tools/bench_native_gpt_sm120_candidate.sh`
   for packed-attention candidate bisections. Stage-timed candidate text that
   mentions `PACKED_ATTENTION` or `BF16_ATTENTION` now automatically gates

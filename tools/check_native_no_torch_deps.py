@@ -11,6 +11,7 @@ import subprocess
 import struct
 import sys
 import tempfile
+import time
 from textwrap import dedent
 import tomllib
 
@@ -149,6 +150,7 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
 )
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256
+DEFAULT_MAX_ENTRYPOINT_SECONDS = 2.0
 
 
 def _native_gpt_parameter_count(
@@ -200,6 +202,15 @@ def parse_args() -> argparse.Namespace:
         help="Skip import-blocked checks for native Python entrypoints.",
     )
     parser.add_argument("--json", action="store_true", help="Print a machine-readable report.")
+    parser.add_argument(
+        "--max-entrypoint-seconds",
+        type=float,
+        default=DEFAULT_MAX_ENTRYPOINT_SECONDS,
+        help=(
+            "Maximum wall-clock seconds allowed for each native Python fast-path entrypoint. "
+            "Use 0 to disable this startup budget."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -283,8 +294,9 @@ def _write_import_blocker(root: Path) -> None:
     )
 
 
-def python_entrypoint_report(repo_root: Path) -> list[dict[str, object]]:
+def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) -> list[dict[str, object]]:
     entries: list[dict[str, object]] = []
+    startup_budget_seconds = max(0.0, float(max_entrypoint_seconds))
     with tempfile.TemporaryDirectory(prefix="nfn-native-no-torch-") as tmp:
         temp_root = Path(tmp)
         _write_import_blocker(temp_root)
@@ -429,6 +441,7 @@ def python_entrypoint_report(repo_root: Path) -> list[dict[str, object]]:
             ),
         ]
         for name, command in entrypoints:
+            started = time.perf_counter()
             proc = subprocess.run(
                 list(command),
                 cwd=repo_root,
@@ -438,12 +451,19 @@ def python_entrypoint_report(repo_root: Path) -> list[dict[str, object]]:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
+            elapsed_seconds = time.perf_counter() - started
+            startup_within_budget = (
+                True if startup_budget_seconds <= 0.0 else elapsed_seconds <= startup_budget_seconds
+            )
             entries.append(
                 {
                     "name": name,
                     "command": list(command),
                     "returncode": proc.returncode,
-                    "passed": proc.returncode == 0,
+                    "passed": proc.returncode == 0 and startup_within_budget,
+                    "elapsed_seconds": elapsed_seconds,
+                    "startup_budget_seconds": startup_budget_seconds,
+                    "startup_within_budget": startup_within_budget,
                     "stdout": proc.stdout.strip(),
                     "stderr": proc.stderr.strip(),
                 }
@@ -550,7 +570,10 @@ def main() -> int:
         repo_root = Path(__file__).resolve().parents[1]
         dependency_report = project_dependency_report(repo_root)
         failed = failed or not bool(dependency_report["passed"])
-        python_report = python_entrypoint_report(repo_root)
+        python_report = python_entrypoint_report(
+            repo_root,
+            max_entrypoint_seconds=float(args.max_entrypoint_seconds),
+        )
         failed = failed or any(not bool(entry["passed"]) for entry in python_report)
 
     if args.json:
@@ -591,9 +614,16 @@ def main() -> int:
                     print(f"  missing optional dependency coverage: {prefix}", file=sys.stderr)
         for entry in python_report:
             if entry["passed"]:
-                print(f"{entry['name']}: ok")
+                print(f"{entry['name']}: ok ({float(entry['elapsed_seconds']):.3f}s)")
             else:
                 print(f"{entry['name']}: failed", file=sys.stderr)
+                if not entry.get("startup_within_budget", True):
+                    print(
+                        "startup budget exceeded: "
+                        f"{float(entry['elapsed_seconds']):.3f}s > "
+                        f"{float(entry['startup_budget_seconds']):.3f}s",
+                        file=sys.stderr,
+                    )
                 if entry["stderr"]:
                     print(str(entry["stderr"]), file=sys.stderr)
     return 1 if failed else 0
