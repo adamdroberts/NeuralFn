@@ -1418,7 +1418,12 @@ allowed to fail when they reject slower routes; rejected reruns include
 extra-large-K cuBLASLt LM-head dHidden, one-shape cuBLASLt heuristic overrides
 for `768,65536,3072,N,N` and `768,50304,8192,N,T`, token-weight vector4/threaded
 startup initializers, cudaMallocAsync arenas, full-logit LM-head reuse, and the
-65536-row full-batch LM-head chunk timeout. The promoted 32768-row LM-head
+65536-row full-batch LM-head chunk timeout. Use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_65536` only to reproduce
+that rejected full-resident LM-head diagnostic; it expands to
+`NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` plus
+`--lm-head-row-chunk-size 65536`, and the latest dedicated RTX 5090 rerun timed
+out at 360s while the safe 32768-row baseline completed. The promoted 32768-row LM-head
 chunk candidate reduced classifier chunk launches from `320` to `80` over the
 5-step paired run and measured `0.998625x` train-loop wall time versus the
 8192-row default; the 16384-row candidate regressed at `1.008471x`.

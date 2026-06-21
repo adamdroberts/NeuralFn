@@ -53,17 +53,21 @@ BF16 logit workspace. Pass `--lm-head-row-chunk-size 8192`,
 `NativeGpt2RunConfig(lm_head_row_chunk_size=8192, ...)` to reproduce the older
 lower-memory default. A full-batch 65536-row chunk is not a default candidate:
 the CUDA 13.3 RTX 5090 paired run timed out at the 300s sample limit after
-leaving the GPU utilization counter stuck until the WSL driver recovered. The
-native runner now rejects LM-head chunks above 32768 rows before launching CUDA
-unless `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` is set for explicit
-paired diagnostics. The
+leaving the GPU utilization counter stuck until the WSL driver recovered, and
+the latest named-profile rerun also timed out at 360s. Use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_65536` only to reproduce
+that rejected diagnostic; it expands to
+`NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1 --lm-head-row-chunk-size
+65536`. The native runner now rejects LM-head chunks above 32768 rows before
+launching CUDA unless `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` is set
+for explicit paired diagnostics. The
 current staged CUDA 13.3.33
 10-step parity sample on the dedicated RTX 5090 measured NeuralFn at
 `2564.590 ms/step` versus llm.kittens at `2447.451 ms/step`
 (`1.047862x` train-loop wall time, `0.952442x` tokens/sec); the latest
-instrumentation-free sample measured a smaller but still-open gap at
-`1.010870x` with NeuralFn at `2522.440 ms/step` versus llm.kittens at
-`2495.348667 ms/step`. The remaining gap is still native GPU kernel work rather than
+instrumentation-free strict-gate sample measured a smaller but still-open gap
+at `1.018294x` with NeuralFn at `2497.910 ms/step` versus llm.kittens at
+`2453.033 ms/step`. The remaining gap is still native GPU kernel work rather than
 Torch, Python, or graph-editor execution. Because parity samples can move with
 reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
@@ -291,6 +295,12 @@ short-run wins but rejected stable defaults after longer gates.
 The named `qkv_concurrent_dinput_dweight` profile expands to
 `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` for repeatable
 stage-timed reruns of the default-off QKV side-stream diagnostic.
+The named `lm_head_row_chunk_65536` profile expands to
+`NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` plus
+`--lm-head-row-chunk-size 65536` for repeatable full-resident LM-head chunk
+rechecks. Keep it diagnostic-only: the current CUDA 13.3 dedicated RTX 5090
+same-script run timed the candidate out at 360s while the safe 32768-row
+baseline completed the 10-step run.
 The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
 emit non-UTF-8 bytes can still be compared in the same paired run. For

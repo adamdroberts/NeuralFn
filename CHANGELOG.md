@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a named `lm_head_row_chunk_65536` SM120 native candidate profile for
+  reproducible full-resident LM-head chunk retests. The profile expands to
+  `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` plus
+  `--lm-head-row-chunk-size 65536`, while dry-run plans remain ungated. It is
+  intentionally diagnostic-only: the CUDA 13.3 dedicated RTX 5090 same-script
+  candidate run timed out at 360s after the default 32768-row baseline
+  completed, confirming that a full microbatch logits chunk is not the next
+  parity fix. The stricter llm.kittens parity wrapper also measured the current
+  NeuralFn native loop at `2497.910 ms/step` versus llm.kittens at
+  `2453.033 ms/step` (`1.018294x`), so the remaining gap stays focused on
+  native kernel work rather than Torch, Python, or graph-editor execution.
+  Verification: 10-step RTX 5090
+  `tools/bench_native_gpt_sm120_parity.sh` strict-gate smoke, timed-out
+  `lm_head_row_chunk_65536` candidate smoke, focused
+  `tests/test_tile_cuda_examples.py`, `bash -n
+  tools/bench_native_gpt_sm120_candidate.sh`, and `git diff --check`.
+
 - Made the canonical SM120 llm.kittens parity wrapper a strict performance gate
   by default. Measured `tools/bench_native_gpt_sm120_parity.sh` runs now pass
   `--max-candidate-ratio train_loop_wall_ms_per_step=1.000` to
