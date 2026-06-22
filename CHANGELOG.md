@@ -6,22 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
-- Added a default-off dense GPT no-loss LM-head CE specialization behind
-  `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` and the paired
-  profile `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`.
+- Dense GPT no-loss LM-head CE now defaults to a specialized Tile CUDA kernel,
+  with `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0` kept as the
+  opt-out for regression checks. The matching paired profile is
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`.
   The route targets timing-only optimizer steps with train-loss logging disabled
   and reports `lm_head_ce_no_loss_default_specialized_*` plus
   `lm_head_ce_kernel_strategy:
   "no-loss-default-specialized-dlogits-vec8-loads-scalar-stores"` when active.
-  It remains diagnostic-only for now.
 
   Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
-  `build/nfn_gpt_native_train`, ran a one-step CUDA-visible route smoke on the
-  dedicated RTX 5090, and ran the 3-step, 2-sample paired profile. The paired
-  check improved train-loop wall (`0.985217x`), LM-head backward (`0.912657x`),
-  and LM-head CE (`0.553346x`) but failed strict promotion because
-  `stage.block_backward.total_ms` regressed to `1.013891x`, so the candidate is
-  not a default.
+  `build/nfn_gpt_native_train`, ran one-step CUDA-visible route smokes on the
+  dedicated RTX 5090, then reran the paired profile at 3 steps and 5 samples.
+  The 5-sample gate passed: train-loop wall `0.975413x`, tokens/sec
+  `1.025216x`, LM-head backward `0.912765x`, LM-head CE `0.552364x`, and block
+  backward `0.990994x`.
 
 - Native dense GPT runtime JSON now reports the default no-loss LM-head
   CE+dlogits route separately from row-loss and loss-bin train-loss routes.

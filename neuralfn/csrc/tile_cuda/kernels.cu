@@ -352,10 +352,17 @@ bool lm_head_ce_no_loss_default_specialized_enabled() {
     if (raw == nullptr) {
       raw = std::getenv("NFN_NATIVE_GPT2_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED");
     }
-    return raw != nullptr &&
-           (std::strcmp(raw, "1") == 0 || std::strcmp(raw, "true") == 0 ||
-            std::strcmp(raw, "TRUE") == 0 || std::strcmp(raw, "on") == 0 ||
-            std::strcmp(raw, "ON") == 0);
+    if (raw == nullptr) {
+      return true;
+    }
+    if (std::strcmp(raw, "0") == 0 || std::strcmp(raw, "false") == 0 ||
+        std::strcmp(raw, "FALSE") == 0 || std::strcmp(raw, "off") == 0 ||
+        std::strcmp(raw, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(raw, "1") == 0 || std::strcmp(raw, "true") == 0 ||
+           std::strcmp(raw, "TRUE") == 0 || std::strcmp(raw, "on") == 0 ||
+           std::strcmp(raw, "ON") == 0;
   }();
   return value;
 }
