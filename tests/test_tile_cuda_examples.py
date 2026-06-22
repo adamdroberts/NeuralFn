@@ -1870,6 +1870,49 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "--train-loss-every-steps" in cooperative_loss_bins_payload["candidate_command"]
     assert cooperative_loss_bins_payload["metric_ratio_gates"]["enabled"] is False
 
+    lm_head_loss_bin_profiles = {
+        "lm_head_loss_bins": {
+            "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION": "1",
+        },
+        "lm_head_ce_loss_bins_llmk_style_specialized": {
+            "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION": "1",
+            "NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED": "1",
+        },
+        "lm_head_ce_loss_bins_default_specialized": {
+            "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION": "1",
+            "NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED": "1",
+        },
+    }
+    for profile_name, expected_env in lm_head_loss_bin_profiles.items():
+        loss_bins_output_path = tmp_path / f"candidate-{profile_name}-dry-run.json"
+        loss_bins_env = os.environ.copy()
+        loss_bins_env.update(
+            {
+                "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+                "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+                "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+                "NFN_SM120_NATIVE_CANDIDATE_PROFILE": profile_name,
+                "NFN_SM120_NATIVE_JSON_OUT": str(loss_bins_output_path),
+            }
+        )
+
+        loss_bins_dry_run = subprocess.run(
+            ["bash", str(script)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            env=loss_bins_env,
+        )
+
+        assert loss_bins_dry_run.returncode == 0, loss_bins_dry_run.stderr
+        loss_bins_payload = json.loads(loss_bins_output_path.read_text(encoding="utf-8"))
+        for env_name, env_value in expected_env.items():
+            assert loss_bins_payload["candidate_env"][env_name] == env_value
+        assert "--train-loss-every-steps" in loss_bins_payload["baseline_command"]
+        assert "--train-loss-every-steps" in loss_bins_payload["candidate_command"]
+        assert loss_bins_payload["metric_ratio_gates"]["enabled"] is False
+
     token_profiles = {
         "token_weight_vector4_strided": {
             "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT": "1"

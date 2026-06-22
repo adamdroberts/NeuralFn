@@ -1203,6 +1203,13 @@ Native GPT launchers also default `CUDA_MODULE_LOADING=LAZY` when the variable i
 
 Benchmark-mode native GPT runs with `--native-cuda-sample-every 0` also skip the two post-train diagnostic device-to-host samples for token weight and clip scale. Runtime JSON reports `post_train_diagnostic_samples_elided: true`, `post_train_diagnostic_sample_d2h_count: 0`, and `post_train_diagnostic_sample_d2h_count_elided: 2`; pass a positive sample cadence when you intentionally want those end-of-run diagnostics. Dense GPT startup loads the Tile ops library with lazy dynamic binding while still checking every required ABI symbol explicitly; runtime JSON reports `tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`, `tile_ops_dlopen_wall_ms`, `tile_ops_required_symbol_scan_wall_ms`, and `tile_ops_typed_symbol_load_wall_ms`. CUDA runtime setup similarly reports `cuda_runtime_symbol_load_wall_ms` and `cuda_runtime_version_preflight_wall_ms`. Startup JSON also reports `setup_timing_accounted_ms`, `setup_timing_unattributed_ms`, and `setup_timing_record_count` beside `setup_wall_ms`, so CUDA 13.3 startup bisections can separate explicitly timed arena/kernel phases from loader, symbol-resolution, and other pre-loop host overhead. The setup timing array includes pre-loop records for `setup.load_tile_ops`, `setup.load_cuda_runtime`, and `setup.cuda_runtime_symbols` before the arena materialization records.
 
+The native SM120 candidate wrapper forces `--train-loss-every-steps 1` for
+LM-head loss-bin profiles so the old and new commands both execute the logged
+loss-accumulation tail being compared. This keeps `lm_head_loss_bins`,
+`lm_head_ce_loss_bins_default_specialized`, and
+`lm_head_ce_loss_bins_llmk_style_specialized` from benchmarking a no-op when the
+default throughput run suppresses train-loss logging.
+
 If a native smoke or trainer run reports CUDA error 35, first verify whether
 the process can see the GPU outside the sandbox with `nvidia-smi` and confirm
 which libcudart is selected by `--cuda-runtime-lib` or `NFN_CUDA_RUNTIME_LIB`.

@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the SM120 native candidate wrapper for LM-head loss-bin profiles.
+  `lm_head_loss_bins`, `lm_head_ce_loss_bins_default_specialized`, and
+  `lm_head_ce_loss_bins_llmk_style_specialized` now add
+  `--train-loss-every-steps 1` to both old and new commands, matching the
+  cooperative-loss profile. Without that, no logged loss tail ran in the
+  default throughput benchmark, so `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`
+  produced no route-counter or strategy change and the timing result was not a
+  valid kernel comparison. Verified with the focused dry-run wrapper test and a
+  corrected dedicated RTX 5090 same-script recheck. The corrected
+  `lm_head_loss_bins` route changed strategy and improved the logged CE tail
+  (`stage.lm_head_backward.ce.total_ms` ratio `0.540795`) and overall
+  train-loop wall (`0.986539`), but still failed strict gates on block backward
+  (`1.019348`) and MLP projection (`1.000430`), so the route remains
+  diagnostic-only/default-off.
+
 - Native dense GPT runtime JSON now reports
   `block_backward_mlp_proj_tk_dweight_requested` and
   `block_backward_mlp_proj_tk_dweight_enabled`, and
