@@ -1121,6 +1121,9 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "stage.lm_head_backward.ce.total_ms=1.000",
     ]:
         assert gated_metric in bench_source
+    assert "AUTO_ATTENTION_SECTION_TIMING=1" in bench_source
+    assert '--baseline-env "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1"' in bench_source
+    assert '--candidate-env "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1"' in bench_source
     assert "block_state_layout.linear_backward_bias_row_chunk_size" in speed_source
     assert "attention_backward_float_hd64_dprep_launch_count" in speed_source
 

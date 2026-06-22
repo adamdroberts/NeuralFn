@@ -1595,6 +1595,10 @@ Stage timing is independent from profile sidecar generation: use
 `NFN_SM120_NATIVE_STAGE_TIMING=1`, `NFN_SM120_CANDIDATE_STAGE_TIMING=1`, or
 `NFN_SM120_STAGE_TIMING=1` with `NFN_SM120_PROFILE_DIR=none` when you need the
 paired text/JSON stage buckets without writing per-run native profile files.
+When an auto-gated attention candidate adds `attention_backward_tk_timing_us` or
+`attention_backward_dprep_timing_us` ratio checks, the native-vs-native wrapper
+also enables `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` for both
+baseline and candidate so those gates are populated in the same run.
 Candidate trainer executable selection is also separated: use
 `NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN` or `NFN_SM120_CANDIDATE_TRAIN_BIN` for a
 candidate compiled trainer while `NFN_NATIVE_GPT_TRAIN_BIN` remains the

@@ -105,6 +105,7 @@ CANDIDATE_TILE_OPS_BUILD_FLAGS="$(env_or_alias NFN_SM120_NATIVE_CANDIDATE_TILE_O
 COMMON_EXTRA_ARGS_RAW="$(env_or_alias3 NFN_SM120_NATIVE_EXTRA_ARGS NFN_SM120_COMMON_EXTRA_ARGS NFN_SM120_PARITY_EXTRA_ARGS "")"
 BASELINE_EXTRA_ARGS_RAW="$(env_or_alias NFN_SM120_NATIVE_BASELINE_EXTRA_ARGS NFN_SM120_CANDIDATE_BASELINE_EXTRA_ARGS "")"
 CANDIDATE_EXTRA_ARGS_RAW="$(env_or_alias NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS NFN_SM120_CANDIDATE_EXTRA_ARGS "")"
+AUTO_ATTENTION_SECTION_TIMING=0
 if [[ -z "$CANDIDATE_EXTRA_ARGS_RAW" && -n "${NFN_SM120_NATIVE_CANDIDATE_ARGS-}" ]]; then
   CANDIDATE_EXTRA_ARGS_RAW="$NFN_SM120_NATIVE_CANDIDATE_ARGS"
 fi
@@ -381,6 +382,7 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
             esac
             case "$candidate_gate_text $CANDIDATE_TILE_OPS_BUILD_FLAGS" in
               *ATOMIC_DQ*|*atomic_dq*|*attention_atomic_dq*|*attention-atomic-dq*)
+                AUTO_ATTENTION_SECTION_TIMING=1
                 MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.attn_sdpa.total_ms=1.000"
                 MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.attn_sdpa.to_qkv.total_ms=1.000"
                 MAX_CANDIDATE_RATIO_RAW+=" attention_backward_tk_timing_us=1.000"
@@ -388,6 +390,7 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
             esac
             case "$candidate_gate_text" in
               *PACKED_ATTENTION*|*packed_attention*|*BF16_ATTENTION*|*bf16_attention*)
+                AUTO_ATTENTION_SECTION_TIMING=1
                 MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.attn_sdpa.total_ms=1.000"
                 MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.attn_sdpa.to_qkv.total_ms=1.000"
                 MAX_CANDIDATE_RATIO_RAW+=" attention_backward_tk_timing_us=1.000"
@@ -547,6 +550,10 @@ for item in "${common_env_items[@]}"; do
   paired_args+=(--baseline-env "$item")
   paired_args+=(--candidate-env "$item")
 done
+if [[ "$AUTO_ATTENTION_SECTION_TIMING" == "1" ]]; then
+  paired_args+=(--baseline-env "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1")
+  paired_args+=(--candidate-env "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1")
+fi
 case "${LINEAR_SHAPE_STATS,,}" in
   "1"|"true"|"yes"|"on")
     paired_args+=(--baseline-env "NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1")

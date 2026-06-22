@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the native-vs-native SM120 candidate wrapper so stage-timed attention
+  candidates that auto-add `attention_backward_tk_timing_us` or
+  `attention_backward_dprep_timing_us` gates also pass
+  `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` to both baseline and
+  candidate commands. This keeps the normal stage profiler independent from
+  section timing, but prevents attention-profile gates from failing with missing
+  dprep/TK timing metrics.
+
 - Added a default-off float-gradient HD64/H12 packed-attention dprep Tile CUDA
   candidate for native dense GPT training. The new
   `packed_attention_dprep_float_grad_hd64_h12_kernel` keeps attention backward
