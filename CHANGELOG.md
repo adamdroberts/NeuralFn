@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the CUDA 13.3 dedicated-RTX-5090 native parity status. The
+  sandbox still blocks NVML/GPU allocation, but unsandboxed `nvidia-smi`
+  reports CUDA UMD 13.3 and an idle RTX 5090, the llm.kittens-vs-NeuralFn
+  parity harness now runs, and the remaining gap is measured native kernel
+  throughput rather than CUDA setup or graph/Torch startup.
+
+  Verification: unsandboxed `nvidia-smi`, one-step stage-timed
+  `tools/bench_native_gpt_sm120_parity.sh`, one-step candidate probes for
+  `lm_head_concurrent_dhidden_dweight` and `qkv_concurrent_dinput_dweight`,
+  and `python -m pytest tests/test_native_gpt2.py -q`.
+
 - Added top-level native-family dispatch coverage for `nfn train --base-model
   ...`. The master CLI is now guarded to prefer family-native C++ binaries
   before importing graph-backed code for GPT-2 evo, NanoGPT token-LM, LLaMA,
