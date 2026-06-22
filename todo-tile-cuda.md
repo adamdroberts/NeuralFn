@@ -219,6 +219,11 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     attention, ordering, or LM-head CE gates automatically.
   - 2026-06-18 added short `NFN_SM120_CANDIDATE_*` aliases for the native-vs-native wrapper controls so ad hoc candidate benchmarks do not silently fall back to default steps/samples/profile settings when the shorter names are used.
   - 2026-06-19 added `native_route_counter_changes` to the paired benchmark JSON/text report so candidate timings are checked against tracked TK/cuBLASLt/BF16/LM-head/attention route counters before being treated as kernel evidence.
+  - 2026-06-22 added `native_cublaslt_plan_cache` to the paired benchmark
+    JSON/text report. Normal no-shape-stats runs now show cached cuBLASLt
+    shape, selected heuristic, returned heuristic count, workspace, and epilogue
+    changes, and plan-cache changes suppress the timing-only warning even when
+    aggregate route counters are unchanged.
   - 2026-06-20 added the LM-head classifier row-chunk counters to paired native metric summaries and `native_route_counter_changes`, covering `lm_head_classifier_chunk_launch_count` plus the last rows/vocab/stride so classifier-route candidates are visible without opening sidecar JSON.
   - 2026-06-18 corrected the short extra-args aliases: `NFN_SM120_CANDIDATE_EXTRA_ARGS` now maps to candidate-only CLI flags, while `NFN_SM120_COMMON_EXTRA_ARGS` maps to shared baseline-and-candidate flags. The dry-run regression test verifies `--lm-head-row-chunk-size 32768` appears only in the candidate command.
   - 2026-06-19 added `NFN_SM120_PARITY_*` as a third alias family for shared native-vs-native candidate controls such as steps, samples, warmup, GPU selection, profile directory, stage timing, JSON output, and dry-run plan. Precedence is native-specific, then candidate-short, then parity, then defaults, so quick parity-to-candidate bisections do not silently expand to the candidate wrapper's default 10-step, 3-sample, 1-warmup run. Candidate-only env and candidate-only extra args remain isolated to the candidate command.

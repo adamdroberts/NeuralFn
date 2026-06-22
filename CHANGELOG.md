@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Updated `tools/paired_kernel_speed.py` to consume native GPT
+  `linear_cublaslt_plan_cache` JSON from stdout or sidecar files. The paired
+  result now includes `native_cublaslt_plan_cache`, reports cached-plan changes
+  by shape, selected heuristic, returned heuristic count, workspace, and
+  epilogue, and suppresses the timing-only candidate warning when a candidate
+  changes a cached cuBLASLt plan without changing aggregate route counters.
+
+  Verification: ran the focused benchmark-tool tests covering sidecar
+  extraction, plan-cache summarization, and end-to-end warning suppression;
+  ran a one-step, one-sample dedicated RTX 5090 paired benchmark for
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY=min_waves`, which printed
+  `native_cublaslt_plan_cache` with 5 selected-heuristic changes and no
+  timing-only warning.
+
 - Added low-overhead cuBLASLt plan-cache inspection to the raw CUDA Tile
   trainer ABI. `libnfn_native_train_tile_ops.so` now exports
   `nfn_native_tile_trainer_linear_cublaslt_plan_cache_count` and

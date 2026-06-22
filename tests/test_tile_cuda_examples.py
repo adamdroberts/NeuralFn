@@ -2139,6 +2139,75 @@ def test_paired_kernel_speed_tool_reports_cublaslt_plan_change_without_route_cou
     assert "tracked route counters did not change" not in proc.stdout
 
 
+def test_paired_kernel_speed_tool_reports_plan_cache_change_without_shape_timing() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-plan-cache-change.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
+        "\\\"linear_tk_gemm_count\\\": 1632, "
+        "\\\"linear_cublaslt_gemm_count\\\": 2208, "
+        "\\\"linear_bf16_gemm_count\\\": 1824, "
+        "\\\"linear_cublaslt_plan_cache\\\": [{"
+        "\\\"m\\\": 768, \\\"n\\\": 50304, \\\"k\\\": 32768, "
+        "\\\"op_a_name\\\": \\\"N\\\", \\\"op_b_name\\\": \\\"T\\\", "
+        "\\\"selected_heuristic\\\": 1, "
+        "\\\"returned_heuristics\\\": 9, "
+        "\\\"workspace_bytes\\\": 134217728, "
+        "\\\"epilogue\\\": 512"
+        "}]"
+        "}"
+    )
+    candidate_json = baseline_json.replace(
+        "\\\"selected_heuristic\\\": 1",
+        "\\\"selected_heuristic\\\": 0",
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--candidate-env",
+            "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,50304,32768,N,T,0",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    plan_cache = payload["native_cublaslt_plan_cache"]
+    assert plan_cache["has_plan_cache_change"] is True
+    assert plan_cache["plan_cache_changed_count"] == 1
+    plan_change = plan_cache["plan_cache_changed"][0]
+    assert plan_change["shape"] == "cublaslt:768x50304x32768:N,T"
+    assert plan_change["changed"]["selected_heuristics"] == {
+        "baseline": [1],
+        "candidate": [0],
+    }
+    assert payload["native_linear_shape_stats"]["enabled"] is False
+    assert "native_cublaslt_plan_cache:" in proc.stdout
+    assert "plan_cache_changes: changed_count=1" in proc.stdout
+    assert "tracked route counters did not change" not in proc.stdout
+
+
 def test_paired_kernel_speed_tool_reports_startup_strategy_values() -> None:
     script = Path("tools/paired_kernel_speed.py")
     output_path = Path(tempfile.mkdtemp()) / "paired-startup-strategy.json"
@@ -2614,6 +2683,19 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                         "cublaslt_workspace_bytes": 134217728,
                     }
                 ],
+                "linear_cublaslt_plan_cache": [
+                    {
+                        "m": 768,
+                        "n": 50304,
+                        "k": 8192,
+                        "op_a_name": "N",
+                        "op_b_name": "T",
+                        "selected_heuristic": 1,
+                        "returned_heuristics": 8,
+                        "workspace_bytes": 134217728,
+                        "epilogue": 512,
+                    }
+                ],
             }
         ),
         encoding="utf-8",
@@ -2682,6 +2764,23 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
             "cublaslt_workspace_bytes": 134217728,
         }
     ]
+    plan_cache = module.native_cublaslt_plan_cache_from_command_output(
+        ["nfn_gpt_native_train", "--profile-json", str(sidecar)],
+        "",
+    )
+    assert plan_cache == [
+        {
+            "m": 768,
+            "n": 50304,
+            "k": 8192,
+            "op_a_name": "N",
+            "op_b_name": "T",
+            "selected_heuristic": 1,
+            "returned_heuristics": 8,
+            "workspace_bytes": 134217728,
+            "epilogue": 512,
+        }
+    ]
 
     rows = [{"baseline": {"native_metrics": metrics}, "candidate": {"native_metrics": metrics}}]
     assert module.summarize_categorical_metric_rows(rows, "baseline") == {
@@ -2745,6 +2844,48 @@ def test_paired_kernel_speed_tool_summarizes_linear_shape_stats() -> None:
     assert summary["has_cublaslt_plan_change"] is True
     assert summary["cublaslt_plan_changed_count"] == 1
     assert summary["cublaslt_plan_changed"][0]["shape"] == "cublaslt:768x50304x8192:N,T"
+
+
+def test_paired_kernel_speed_tool_summarizes_cublaslt_plan_cache() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    baseline_plan = {
+        "m": 768,
+        "n": 50304,
+        "k": 8192,
+        "op_a_name": "N",
+        "op_b_name": "T",
+        "selected_heuristic": 1,
+        "returned_heuristics": 8,
+        "workspace_bytes": 134217728,
+        "epilogue": 512,
+    }
+    candidate_plan = dict(baseline_plan, selected_heuristic=0)
+    rows = [
+        {
+            "baseline": {"native_cublaslt_plan_cache": [baseline_plan]},
+            "candidate": {"native_cublaslt_plan_cache": [candidate_plan]},
+        }
+    ]
+
+    summary = module.summarize_cublaslt_plan_cache(rows)
+
+    assert summary["enabled"] is True
+    assert summary["shared_count"] == 1
+    assert summary["has_plan_cache_change"] is True
+    assert summary["plan_cache_changed_count"] == 1
+    assert summary["plan_cache_changed"][0]["shape"] == "cublaslt:768x50304x8192:N,T"
+    changed = summary["plan_cache_changed"][0]["changed"]
+    assert changed["selected_heuristics"] == {"baseline": [1], "candidate": [0]}
 
 
 def test_paired_kernel_speed_failure_reports_native_json_sidecar_error(tmp_path: Path) -> None:

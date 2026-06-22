@@ -832,6 +832,47 @@ def native_linear_shape_stats_from_payload(payload: dict[str, Any]) -> list[dict
     return stats
 
 
+def native_cublaslt_plan_cache_from_payload(payload: dict[str, Any]) -> list[dict[str, object]]:
+    rows = payload.get("linear_cublaslt_plan_cache")
+    if not isinstance(rows, list):
+        return []
+    plans: list[dict[str, object]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        m = row.get("m")
+        n = row.get("n")
+        k = row.get("k")
+        op_a_name = row.get("op_a_name")
+        op_b_name = row.get("op_b_name")
+        if not (
+            isinstance(m, int)
+            and isinstance(n, int)
+            and isinstance(k, int)
+            and isinstance(op_a_name, str)
+            and isinstance(op_b_name, str)
+        ):
+            continue
+        item: dict[str, object] = {
+            "m": m,
+            "n": n,
+            "k": k,
+            "op_a_name": op_a_name,
+            "op_b_name": op_b_name,
+        }
+        for key in (
+            "selected_heuristic",
+            "returned_heuristics",
+            "workspace_bytes",
+            "epilogue",
+        ):
+            value = row.get(key)
+            if isinstance(value, int):
+                item[key] = value
+        plans.append(item)
+    return plans
+
+
 def native_json_out_path_from_argv(argv: Sequence[str]) -> Path | None:
     for index, arg in enumerate(argv):
         if arg in NATIVE_JSON_OUT_FLAGS and index + 1 < len(argv):
@@ -925,6 +966,11 @@ def native_metrics_from_command_output(argv: Sequence[str], stdout: str) -> dict
 def native_linear_shape_stats_from_command_output(argv: Sequence[str], stdout: str) -> list[dict[str, object]]:
     payload = native_payload_from_command_output(argv, stdout)
     return native_linear_shape_stats_from_payload(payload) if payload is not None else []
+
+
+def native_cublaslt_plan_cache_from_command_output(argv: Sequence[str], stdout: str) -> list[dict[str, object]]:
+    payload = native_payload_from_command_output(argv, stdout)
+    return native_cublaslt_plan_cache_from_payload(payload) if payload is not None else []
 
 
 def native_failure_summary(metrics: dict[str, float | int | str | bool]) -> str:
@@ -1078,6 +1124,7 @@ def run_once(
             "timeout_seconds": timeout_seconds,
             "native_metrics": native_metrics_from_command_output(run_argv, stdout),
             "native_linear_shape_stats": native_linear_shape_stats_from_command_output(run_argv, stdout),
+            "native_cublaslt_plan_cache": native_cublaslt_plan_cache_from_command_output(run_argv, stdout),
             "stdout_tail": stdout[-2000:],
             "stderr_tail": stderr[-2000:],
         }
@@ -1097,6 +1144,7 @@ def run_once(
     returncode = proc.returncode if proc.returncode is not None else -1
     native_metrics = native_metrics_from_command_output(run_argv, stdout)
     native_linear_shape_stats = native_linear_shape_stats_from_command_output(run_argv, stdout)
+    native_cublaslt_plan_cache = native_cublaslt_plan_cache_from_command_output(run_argv, stdout)
     if returncode != 0 and not continue_on_error:
         native_summary = native_failure_summary(native_metrics)
         native_section = f"\nnative JSON summary:\n{native_summary}\n" if native_summary else ""
@@ -1115,6 +1163,7 @@ def run_once(
         "timed_out": False,
         "native_metrics": native_metrics,
         "native_linear_shape_stats": native_linear_shape_stats,
+        "native_cublaslt_plan_cache": native_cublaslt_plan_cache,
         "stdout_tail": stdout[-2000:],
         "stderr_tail": stderr[-2000:],
     }
@@ -1297,11 +1346,121 @@ def linear_shape_key(row: dict[str, object]) -> str | None:
     return f"{path_name}:{m}x{n}x{k}:{op_a_name},{op_b_name}"
 
 
+def cublaslt_plan_cache_key(row: dict[str, object]) -> str | None:
+    m = row.get("m")
+    n = row.get("n")
+    k = row.get("k")
+    op_a_name = row.get("op_a_name")
+    op_b_name = row.get("op_b_name")
+    if not (
+        isinstance(m, int)
+        and isinstance(n, int)
+        and isinstance(k, int)
+        and isinstance(op_a_name, str)
+        and isinstance(op_b_name, str)
+    ):
+        return None
+    return f"cublaslt:{m}x{n}x{k}:{op_a_name},{op_b_name}"
+
+
 def linear_shape_numeric(row: dict[str, object], key: str) -> float | None:
     value = row.get(key)
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
     return None
+
+
+def summarize_cublaslt_plan_cache(rows: Sequence[dict[str, object]]) -> dict[str, object]:
+    by_command: dict[str, dict[str, list[dict[str, object]]]] = {
+        "baseline": {},
+        "candidate": {},
+    }
+    for row in rows:
+        for command_name in ("baseline", "candidate"):
+            command = row.get(command_name)
+            if not isinstance(command, dict):
+                continue
+            plans = command.get("native_cublaslt_plan_cache")
+            if not isinstance(plans, list):
+                continue
+            for plan in plans:
+                if not isinstance(plan, dict):
+                    continue
+                key = cublaslt_plan_cache_key(plan)
+                if key is None:
+                    continue
+                by_command[command_name].setdefault(key, []).append(plan)
+
+    def summarize_side(items: list[dict[str, object]]) -> dict[str, object]:
+        selected = sorted(
+            {
+                int(value)
+                for item in items
+                if isinstance((value := item.get("selected_heuristic")), int)
+            }
+        )
+        returned = sorted(
+            {
+                int(value)
+                for item in items
+                if isinstance((value := item.get("returned_heuristics")), int)
+            }
+        )
+        workspace = sorted(
+            {
+                int(value)
+                for item in items
+                if isinstance((value := item.get("workspace_bytes")), int)
+            }
+        )
+        epilogues = sorted(
+            {
+                int(value)
+                for item in items
+                if isinstance((value := item.get("epilogue")), int)
+            }
+        )
+        return {
+            "samples": len(items),
+            "selected_heuristics": selected,
+            "returned_heuristics": returned,
+            "workspace_bytes": workspace,
+            "epilogues": epilogues,
+        }
+
+    shared_keys = sorted(set(by_command["baseline"]).intersection(by_command["candidate"]))
+    rows_out: list[dict[str, object]] = []
+    plan_changes: list[dict[str, object]] = []
+    for key in shared_keys:
+        baseline = summarize_side(by_command["baseline"][key])
+        candidate = summarize_side(by_command["candidate"][key])
+        row_out = {"shape": key, "baseline": baseline, "candidate": candidate}
+        rows_out.append(row_out)
+        changed_fields = {
+            field: {
+                "baseline": baseline.get(field),
+                "candidate": candidate.get(field),
+            }
+            for field in (
+                "selected_heuristics",
+                "returned_heuristics",
+                "workspace_bytes",
+                "epilogues",
+            )
+            if baseline.get(field) != candidate.get(field)
+        }
+        if changed_fields:
+            plan_changes.append({"shape": key, "changed": changed_fields})
+    return {
+        "enabled": bool(rows_out),
+        "shared_count": len(rows_out),
+        "baseline_only": sorted(set(by_command["baseline"]) - set(by_command["candidate"])),
+        "candidate_only": sorted(set(by_command["candidate"]) - set(by_command["baseline"])),
+        "has_plan_cache_change": bool(plan_changes),
+        "plan_cache_changed_count": len(plan_changes),
+        "plan_cache_changed": plan_changes,
+        "shared": rows_out,
+    }
 
 
 def summarize_linear_shape_stats(rows: Sequence[dict[str, object]]) -> dict[str, object]:
@@ -2229,6 +2388,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             candidate_native_metric_values,
         )
         native_linear_shape_stats = summarize_linear_shape_stats(sample_rows)
+        native_cublaslt_plan_cache = summarize_cublaslt_plan_cache(sample_rows)
         gpu_sample_summary = summarize_gpu_sample_load(sample_rows, cuda_visible_devices)
 
     payload = {
@@ -2272,6 +2432,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "native_route_counter_changes": native_route_counter_changes,
         "native_strategy_value_changes": native_strategy_value_changes,
         "native_linear_shape_stats": native_linear_shape_stats,
+        "native_cublaslt_plan_cache": native_cublaslt_plan_cache,
         "candidate_over_baseline_native_metrics": summarize_metric_ratios(
             sample_rows,
             baseline_native_metrics,
@@ -2349,6 +2510,11 @@ def print_text(payload: dict[str, object]) -> None:
     has_shape_plan_change = (
         isinstance(shape_stats, dict)
         and shape_stats.get("has_cublaslt_plan_change") is True
+    )
+    plan_cache = payload.get("native_cublaslt_plan_cache")
+    has_plan_cache_change = (
+        isinstance(plan_cache, dict)
+        and plan_cache.get("has_plan_cache_change") is True
     )
     profile_json_dir = payload.get("append_native_profile_json_dir")
     if isinstance(profile_json_dir, str) and profile_json_dir:
@@ -2501,12 +2667,35 @@ def print_text(payload: dict[str, object]) -> None:
             and bool(candidate_env)
             and not has_strategy_change
             and not has_shape_plan_change
+            and not has_plan_cache_change
         ):
             print(
                 "    note: tracked route counters did not change; treat timing-only "
                 "candidate improvements as noise until a route, strategy, or separate "
                 "kernel-level attribution confirms the candidate."
             )
+    if isinstance(plan_cache, dict) and plan_cache.get("enabled") is True:
+        print("  native_cublaslt_plan_cache:")
+        plan_changes = plan_cache.get("plan_cache_changed")
+        if isinstance(plan_changes, list) and plan_changes:
+            print(
+                "    plan_cache_changes: "
+                f"changed_count={plan_cache.get('plan_cache_changed_count', len(plan_changes))}"
+            )
+            for change in plan_changes[:10]:
+                if not isinstance(change, dict):
+                    continue
+                shape = change.get("shape")
+                changed = change.get("changed")
+                if not isinstance(changed, dict):
+                    continue
+                changed_fields = ", ".join(sorted(changed))
+                print(f"      {shape}: changed={changed_fields}")
+        print(
+            f"    shared_count={plan_cache.get('shared_count', 0)} "
+            f"baseline_only={len(plan_cache.get('baseline_only', []) or [])} "
+            f"candidate_only={len(plan_cache.get('candidate_only', []) or [])}"
+        )
     if isinstance(shape_stats, dict) and shape_stats.get("enabled") is True:
         print("  native_linear_shape_stats:")
         plan_changes = shape_stats.get("cublaslt_plan_changed")

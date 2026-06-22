@@ -1188,7 +1188,10 @@ The raw Tile ABI also exposes
 returned heuristic count, workspace, and epilogue metadata. This snapshot does
 not enable synchronized `linear_shape_stats` timing, so use it for ordinary
 same-script parity runs where timing perturbation would hide the candidate
-effect.
+effect. `tools/paired_kernel_speed.py` summarizes this data under
+`native_cublaslt_plan_cache`, prints plan-cache changes, and treats a cached
+plan change as kernel-level attribution when deciding whether to emit the
+timing-only candidate warning.
 
 The native GPT runtime `timing` block separates `setup_wall_ms`, `train_loop_wall_ms`, `post_train_sample_wall_ms`, `cleanup_wall_ms`, `checkpoint_wall_ms`, and `total_wall_ms`. Use `setup_wall_ms` for time-to-ready/training-start checks, `train_loop_wall_ms` for throughput comparisons, and `cleanup_wall_ms` to identify teardown from explicit CUDA frees and library close operations.
 

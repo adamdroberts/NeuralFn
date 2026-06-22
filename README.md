@@ -677,7 +677,10 @@ When `NFN_SM120_NATIVE_LINEAR_SHAPE_STATS=1` is enabled, the paired benchmark
 JSON now reports `native_linear_shape_stats.has_cublaslt_plan_change` and
 `cublaslt_plan_changed` entries, so a shape-specific plan override is treated
 as kernel-level attribution even when aggregate GEMM route counters do not
-change.
+change. Normal paired runs also summarize native JSON
+`linear_cublaslt_plan_cache` under `native_cublaslt_plan_cache`, including
+cached-plan shape, selected heuristic, returned heuristic count, workspace, and
+epilogue changes without enabling synchronized shape timing.
 Dense GPT dWeight GEMMs now also match the llm.kittens accumulation contract:
 the first gradient-accumulation microbatch writes dWeight with GEMM `beta=0`,
 and later microbatches accumulate with `beta=1`. This is enabled by default for
