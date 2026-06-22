@@ -1094,6 +1094,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     expected_profiles = {
         "bf16_attention_grad_out": "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1",
         "bf16_attention_dprep_grad_out": "NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1",
+        "attention_dprep_float_hd64_specialized": "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_FLOAT_HD64_SPECIALIZED=1",
         "mlp_proj_dinput_before_dweight": "NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT=1",
         "mlp_fc_dinput_before_dweight": "NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1",
         "attn_proj_dinput_before_dweight": "NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1",
@@ -1121,6 +1122,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     ]:
         assert gated_metric in bench_source
     assert "block_state_layout.linear_backward_bias_row_chunk_size" in speed_source
+    assert "attention_backward_float_hd64_dprep_launch_count" in speed_source
 
 
 def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path: Path) -> None:
@@ -7011,16 +7013,21 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "attention_forward_tk_launch_count" in gpt2_source_text
     assert "attention_backward_tk_launch_count" in gpt2_source_text
     assert "attention_backward_dprep_timing_us" in gpt2_source_text
+    assert "attention_backward_float_hd64_dprep_launch_count" in gpt2_source_text
     assert "attention_backward_tk_timing_us" in gpt2_source_text
     assert "nfn_native_tile_attention_forward_tk_launch_count" in header_text
     assert "nfn_native_tile_attention_backward_tk_launch_count" in header_text
+    assert "nfn_native_tile_attention_backward_float_hd64_dprep_launch_count" in header_text
     assert "nfn_native_tile_attention_backward_dprep_timing_us" in header_text
     assert "nfn_native_tile_attention_backward_tk_timing_us" in header_text
     assert "nfn_native_tile_attention_forward_tk_launch_count" in source_text
+    assert "nfn_native_tile_attention_backward_float_hd64_dprep_launch_count" in source_text
     assert "nfn_native_tile_attention_backward_dprep_timing_us" in source_text
     assert "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING" in kernels_text
     assert "packed_attention_dprep_bf16_grad_hd64_h12_kernel" in kernels_text
+    assert "packed_attention_dprep_float_grad_hd64_h12_kernel" in kernels_text
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_HD64_SPECIALIZED" in kernels_text
+    assert "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_FLOAT_HD64_SPECIALIZED" in kernels_text
     assert (
         "if (value == nullptr || value[0] == '\\0') {\n"
         "      return true;\n"

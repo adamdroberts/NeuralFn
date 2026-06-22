@@ -60,6 +60,7 @@ constexpr std::int64_t kLayerNormBackwardAffineDefaultRowChunkSize = 256;
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
 std::atomic<std::int64_t> g_attention_forward_tk_launch_count{0};
 std::atomic<std::int64_t> g_attention_backward_tk_launch_count{0};
+std::atomic<std::int64_t> g_attention_backward_float_hd64_dprep_launch_count{0};
 std::atomic<std::int64_t> g_attention_backward_dprep_timing_us{0};
 std::atomic<std::int64_t> g_attention_backward_dprep_timing_count{0};
 std::atomic<std::int64_t> g_attention_backward_tk_timing_us{0};
@@ -926,6 +927,31 @@ bool tk_packed_attention_dprep_hd64_specialized_enabled() {
   return enabled;
 }
 
+bool tk_packed_attention_dprep_float_hd64_specialized_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_FLOAT_HD64_SPECIALIZED");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_PACKED_ATTENTION_DPREP_FLOAT_HD64_SPECIALIZED");
+    }
+    if (value == nullptr || value[0] == '\0') {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
 bool tk_attention_backward_section_timing_enabled() {
   static const bool enabled = []() {
     const char* value = std::getenv("NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING");
@@ -1328,6 +1354,49 @@ __global__ void packed_attention_dprep_bf16_grad_hd64_h12_kernel(
   float acc =
       bf16_bits_to_f32_device(out0) * bf16_bits_to_f32_device(grad0) +
       bf16_bits_to_f32_device(out1) * bf16_bits_to_f32_device(grad1);
+  for (int offset = warpSize / 2; offset > 0; offset /= 2) {
+    acc += __shfl_down_sync(0xffffffff, acc, offset);
+  }
+  if (lane == 0) {
+    d[row] = acc;
+  }
+}
+
+__global__ void packed_attention_dprep_float_grad_hd64_h12_kernel(
+    const std::uint16_t* __restrict__ out_btc_bf16_bits,
+    const float* __restrict__ grad_out_btc,
+    __nv_bfloat16* __restrict__ out_heads_bf16,
+    __nv_bfloat16* __restrict__ grad_out_heads_bf16,
+    float* __restrict__ d,
+    std::int64_t batch,
+    std::int64_t seq_len) {
+  constexpr std::int64_t kHeads = 12;
+  constexpr std::int64_t kHeadDim = 64;
+  const std::int64_t row = static_cast<std::int64_t>(blockIdx.x) * blockDim.y + threadIdx.y;
+  const std::int64_t rows = batch * kHeads * seq_len;
+  if (row >= rows) {
+    return;
+  }
+  const std::int64_t t = row % seq_len;
+  const std::int64_t bh = row / seq_len;
+  const std::int64_t h = bh % kHeads;
+  const std::int64_t b = bh / kHeads;
+  const std::int64_t merged_base = ((b * seq_len + t) * kHeads + h) * kHeadDim;
+  const std::int64_t head_base = row * kHeadDim;
+  const int lane = threadIdx.x;
+  const int d0 = lane;
+  const int d1 = lane + 32;
+  const std::uint16_t out0 = out_btc_bf16_bits[merged_base + d0];
+  const std::uint16_t out1 = out_btc_bf16_bits[merged_base + d1];
+  const float grad0 = grad_out_btc[merged_base + d0];
+  const float grad1 = grad_out_btc[merged_base + d1];
+  out_heads_bf16[head_base + d0] = reinterpret_cast<const __nv_bfloat16&>(out0);
+  grad_out_heads_bf16[head_base + d0] = __float2bfloat16(grad0);
+  out_heads_bf16[head_base + d1] = reinterpret_cast<const __nv_bfloat16&>(out1);
+  grad_out_heads_bf16[head_base + d1] = __float2bfloat16(grad1);
+  float acc =
+      bf16_bits_to_f32_device(out0) * grad0 +
+      bf16_bits_to_f32_device(out1) * grad1;
   for (int offset = warpSize / 2; offset > 0; offset /= 2) {
     acc += __shfl_down_sync(0xffffffff, acc, offset);
   }
@@ -1852,6 +1921,18 @@ int launch_tk_attention_packed_qkv_backward_to_qkv_impl(
               heads,
               seq_len,
               head_dim);
+        } else if (head_dim == 64 &&
+            heads == kGpt2AttentionHeads &&
+            tk_packed_attention_dprep_float_hd64_specialized_enabled()) {
+          g_attention_backward_float_hd64_dprep_launch_count.fetch_add(1, std::memory_order_relaxed);
+          packed_attention_dprep_float_grad_hd64_h12_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
+              out_bf16_bits + batch_begin * merged_elements_per_batch,
+              grad_out + batch_begin * merged_elements_per_batch,
+              workspace->o_bf + batch_begin * head_elements_per_batch,
+              workspace->go_bf + batch_begin * head_elements_per_batch,
+              workspace->d + batch_begin * row_elements_per_batch,
+              chunk_batch,
+              seq_len);
         } else {
           packed_attention_dprep_kernel<<<dprep_grid, dprep_block, 0, stream>>>(
               out_bf16_bits + batch_begin * merged_elements_per_batch,
@@ -18350,6 +18431,7 @@ void reset_attention_forward_launch_stats() {
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   g_attention_forward_tk_launch_count.store(0, std::memory_order_relaxed);
   g_attention_backward_tk_launch_count.store(0, std::memory_order_relaxed);
+  g_attention_backward_float_hd64_dprep_launch_count.store(0, std::memory_order_relaxed);
   g_attention_backward_dprep_timing_us.store(0, std::memory_order_relaxed);
   g_attention_backward_dprep_timing_count.store(0, std::memory_order_relaxed);
   g_attention_backward_tk_timing_us.store(0, std::memory_order_relaxed);
@@ -19256,6 +19338,14 @@ std::int64_t attention_forward_tk_launch_count() {
 std::int64_t attention_backward_tk_launch_count() {
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_backward_tk_launch_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t attention_backward_float_hd64_dprep_launch_count() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return g_attention_backward_float_hd64_dprep_launch_count.load(std::memory_order_relaxed);
 #else
   return 0;
 #endif

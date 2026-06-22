@@ -151,6 +151,10 @@ NATIVE_METRIC_PATHS = (
     ("linear_bf16_a_cache_hit_count", ("linear_bf16_a_cache_hit_count",)),
     ("attention_forward_tk_launch_count", ("attention_forward_tk_launch_count",)),
     ("attention_backward_tk_launch_count", ("attention_backward_tk_launch_count",)),
+    (
+        "attention_backward_float_hd64_dprep_launch_count",
+        ("attention_backward_float_hd64_dprep_launch_count",),
+    ),
     ("attention_backward_dprep_timing_us", ("attention_backward_dprep_timing_us",)),
     ("attention_backward_dprep_timing_count", ("attention_backward_dprep_timing_count",)),
     ("attention_backward_tk_timing_us", ("attention_backward_tk_timing_us",)),
@@ -273,6 +277,7 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "linear_bf16_a_cache_hit_count",
     "attention_forward_tk_launch_count",
     "attention_backward_tk_launch_count",
+    "attention_backward_float_hd64_dprep_launch_count",
     "transformer_device_arena_requested",
     "transformer_device_arena_enabled",
     "transformer_device_arena_cuda_malloc_count",

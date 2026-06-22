@@ -3261,6 +3261,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_attention_forward_row_launch_count",
         "nfn_native_tile_attention_forward_tk_launch_count",
         "nfn_native_tile_attention_backward_tk_launch_count",
+        "nfn_native_tile_attention_backward_float_hd64_dprep_launch_count",
         "nfn_native_tile_attention_backward_dprep_timing_us",
         "nfn_native_tile_attention_backward_dprep_timing_count",
         "nfn_native_tile_attention_backward_tk_timing_us",
@@ -9771,6 +9772,7 @@ int run_transformer_lm_training_json(
     std::int64_t attention_forward_row_launches = 0;
     std::int64_t attention_forward_tk_launches = 0;
     std::int64_t attention_backward_tk_launches = 0;
+    std::int64_t attention_backward_float_hd64_dprep_launches = 0;
     std::int64_t attention_backward_dprep_timing_us = 0;
     std::int64_t attention_backward_dprep_timing_count = 0;
     std::int64_t attention_backward_tk_timing_us = 0;
@@ -10034,6 +10036,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_scaled_dot_product_attention_float32",
         "nfn_native_tile_attention_forward_tk_launch_count",
         "nfn_native_tile_attention_backward_tk_launch_count",
+        "nfn_native_tile_attention_backward_float_hd64_dprep_launch_count",
         "nfn_native_tile_attention_backward_dprep_timing_us",
         "nfn_native_tile_attention_backward_dprep_timing_count",
         "nfn_native_tile_attention_backward_tk_timing_us",
@@ -10609,6 +10612,7 @@ int run_transformer_lm_training_json(
     AttentionStatsCountFn attention_row_launch_count = nullptr;
     AttentionStatsCountFn attention_forward_tk_launch_count = nullptr;
     AttentionStatsCountFn attention_backward_tk_launch_count = nullptr;
+    AttentionStatsCountFn attention_backward_float_hd64_dprep_launch_count_fn = nullptr;
     AttentionStatsCountFn attention_backward_dprep_timing_us_fn = nullptr;
     AttentionStatsCountFn attention_backward_dprep_timing_count_fn = nullptr;
     AttentionStatsCountFn attention_backward_tk_timing_us_fn = nullptr;
@@ -11032,6 +11036,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_attention_forward_tk_launch_count");
                 attention_backward_tk_launch_count = load_symbol<AttentionStatsCountFn>(
                     tile_handle, "nfn_native_tile_attention_backward_tk_launch_count");
+                attention_backward_float_hd64_dprep_launch_count_fn = load_symbol<AttentionStatsCountFn>(
+                    tile_handle, "nfn_native_tile_attention_backward_float_hd64_dprep_launch_count");
                 attention_backward_dprep_timing_us_fn = load_symbol<AttentionStatsCountFn>(
                     tile_handle, "nfn_native_tile_attention_backward_dprep_timing_us");
                 attention_backward_dprep_timing_count_fn = load_symbol<AttentionStatsCountFn>(
@@ -18905,6 +18911,10 @@ int run_transformer_lm_training_json(
     if (attention_backward_tk_launch_count != nullptr) {
         attention_backward_tk_launches = attention_backward_tk_launch_count();
     }
+    if (attention_backward_float_hd64_dprep_launch_count_fn != nullptr) {
+        attention_backward_float_hd64_dprep_launches =
+            attention_backward_float_hd64_dprep_launch_count_fn();
+    }
     if (attention_backward_dprep_timing_us_fn != nullptr) {
         attention_backward_dprep_timing_us = attention_backward_dprep_timing_us_fn();
     }
@@ -20443,6 +20453,8 @@ int run_transformer_lm_training_json(
         << "  \"attention_backward_section_timing_enabled\": "
         << (attention_backward_dprep_timing_count > 0 || attention_backward_tk_timing_count > 0 ? "true" : "false")
         << ",\n"
+        << "  \"attention_backward_float_hd64_dprep_launch_count\": "
+        << attention_backward_float_hd64_dprep_launches << ",\n"
         << "  \"attention_backward_dprep_timing_us\": " << attention_backward_dprep_timing_us << ",\n"
         << "  \"attention_backward_dprep_timing_count\": " << attention_backward_dprep_timing_count << ",\n"
         << "  \"attention_backward_tk_timing_us\": " << attention_backward_tk_timing_us << ",\n"

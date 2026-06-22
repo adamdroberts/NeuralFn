@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off float-gradient HD64/H12 packed-attention dprep Tile CUDA
+  candidate for native dense GPT training. The new
+  `packed_attention_dprep_float_grad_hd64_h12_kernel` keeps attention backward
+  on the normal float dO path but specializes the layout/pack/dot dprep work for
+  GPT-style head_dim=64, 12-head packed attention. Enable it with
+  `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_FLOAT_HD64_SPECIALIZED=1` or the
+  GPT2-prefixed alias; native training JSON reports
+  `attention_backward_float_hd64_dprep_launch_count`, and the same-script SM120
+  wrapper exposes
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_dprep_float_hd64_specialized`
+  and attaches the attention dprep gates automatically. The CUDA 13.3 dedicated
+  RTX 5090 3-step, 3-sample gate proved the route
+  (`attention_backward_float_hd64_dprep_launch_count`: baseline `0`, candidate
+  `288`) and improved dprep section timing to `0.998396x`, but rejected
+  promotion because train-loop wall was only neutral (`0.999828x`) while hot
+  gates regressed: LM-head backward `1.000271x`, MLP projection `1.000360x`,
+  attention SDPA `1.000526x`, attention `to_qkv` `1.000468x`, and TK attention
+  section timing `1.000963x`. Keep this route diagnostic/default-off.
+
 - Added a default-off llm.kittens-style Tile CUDA CE+dlogits specialization for
   native dense GPT LM-head backward bisection. The Tile ops library now reads
   `NFN_TILE_CUDA_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED`,
