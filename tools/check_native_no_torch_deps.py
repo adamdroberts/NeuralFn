@@ -451,8 +451,16 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
         env["NFN_NATIVE_JEPA_CLI"] = str(native_cli)
         env["NFN_NATIVE_DEEPSEEK_V4_CLI"] = str(native_cli)
         env["NFN_NATIVE_SEMANTIC_ROUTER_MOE_CLI"] = str(native_cli)
+        cli_root = repo_root / "cli"
         env["PYTHONPATH"] = os.pathsep.join(
-            part for part in (str(temp_root), str(repo_root), env.get("PYTHONPATH", "")) if part
+            part
+            for part in (
+                str(temp_root),
+                str(cli_root),
+                str(repo_root),
+                env.get("PYTHONPATH", ""),
+            )
+            if part
         )
         env.setdefault("CUDA_VISIBLE_DEVICES", "0")
         env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")

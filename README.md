@@ -762,7 +762,10 @@ Torch, NumPy, `tiktoken`, dataset manager imports, `train_gpt_native`, and
 `infer_gpt`, and `nfn_impl`. The verifier also records `elapsed_seconds` for each
 native Python fast-path entrypoint and fails by default if any wrapper takes
 more than 2 seconds before handing off to the compiled path; pass
-`--max-entrypoint-seconds 0` only when collecting no-budget diagnostics.
+`--max-entrypoint-seconds 0` only when collecting no-budget diagnostics. The
+console-entry checks simulate the installed `nfn = nfn:main` module by putting
+both the temporary import blocker and `cli/` module root on `PYTHONPATH`, so the
+test covers the packaged console import rather than only `python cli/nfn.py`.
 For cuBLASLt BGRADB dWeight plus bias routes, the default writes the epilogue
 bias gradient into Tile-owned
 scratch and accumulates it into `grad_bias`. Set

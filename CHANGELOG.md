@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed `tools/check_native_no_torch_deps.py` so installed-style
+  `from nfn import main` console-entry checks add the `cli/` module root to
+  `PYTHONPATH` while preserving the temporary import blocker. This makes
+  `nfn_console_train_fast_command`, `nfn_console_infer_native_info`, and
+  `nfn_console_infer_native_sample_prompt_tokens` validate the packaged
+  `nfn = nfn:main` import path instead of failing with `ModuleNotFoundError`.
+- Re-ran the CUDA 13.3 dedicated RTX 5090
+  `lm_head_ce_loss_bins_default_specialized` 3-step/3-sample candidate gate.
+  The route and strategy changed correctly, but promotion still failed:
+  train-loop `1.000552x`, LM-head backward `1.000255x`, block backward
+  `1.000911x`, MLP projection `1.001609x`, and LM-head CE `1.000215x`.
+  The specialization remains diagnostic-only, not a default.
+
+  Verification: `python tools/check_native_no_torch_deps.py --skip-artifacts
+  --json`; `python tools/check_native_no_torch_deps.py`; focused pytest
+  coverage in `tests/test_native_gpt2.py`; `git diff --check`; the CUDA
+  candidate benchmark above.
+
 - Added a default-off Tile CUDA loss-bin CE specialization for native dense GPT
   LM-head backward bisection. The Tile ops library now reads
   `NFN_TILE_CUDA_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED`,
