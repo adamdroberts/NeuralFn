@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the named SM120 wrapper profile
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_dweight_before_dhidden` for the
+  existing default-off `NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1`
+  schedule probe. This does not promote the route; it makes the previously
+  rejected CE -> dWeight -> dHidden ordering reproducible through the standard
+  candidate harness and route-change gate.
+
+  Verification: ran the focused SM120 wrapper dry-run test.
+
 - Added LayerNorm affine row-chunk profiling for the native dense GPT Tile-CUDA
   path. Runtime JSON now reports
   `block_state_layout.layer_norm_backward_affine_row_chunk_size`, and the

@@ -658,7 +658,9 @@ row-chunk order bisection. It runs LM-head dWeight before dHidden after CE
 writes dlogits, but stayed non-default after the dedicated RTX 5090 5-step,
 3-sample check measured `1.001048x` train-loop wall time and `0.998959x`
 tokens/sec versus the default CE -> dHidden -> dWeight order. Runtime JSON
-reports `lm_head_dweight_before_dhidden_enabled`.
+reports `lm_head_dweight_before_dhidden_enabled`; the paired wrapper profile
+`lm_head_dweight_before_dhidden` expands to the same env switch for reproducible
+same-script gates.
 Set `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` only for same-script LM-head
 schedule profiling. The opt-in candidate keeps the current bounded row-chunked
 classifier memory model but allocates two BF16 logit chunks instead of one,
