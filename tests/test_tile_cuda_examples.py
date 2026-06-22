@@ -101,6 +101,9 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"total_ms\\\": 2.2, \\\"avg_ms\\\": 2.2, \\\"count\\\": 1}]}, "
                 "\\\"steps_completed\\\": 5, \\\"linear_tk_gemm_count\\\": 3, "
                 "\\\"linear_cublaslt_gemm_count\\\": 4, \\\"linear_bf16_gemm_count\\\": 7, "
+                "\\\"linear_cublaslt_bgrad_gemm_count\\\": 2, "
+                "\\\"linear_cublaslt_bgrad_direct_write_count\\\": 1, "
+                "\\\"linear_cublaslt_bgrad_accumulate_count\\\": 1, "
                 "\\\"lm_head_logits_tk_gemm_count\\\": 2, "
                 "\\\"lm_head_logits_cublaslt_gemm_count\\\": 0, "
                 "\\\"lm_head_logits_bf16_gemm_count\\\": 2, "
@@ -197,6 +200,12 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["train_tokens_per_second"]["mean"] == 42.0
     assert payload["candidate_native_metrics"]["linear_tk_gemm_count"]["mean"] == 3.0
     assert payload["candidate_native_metrics"]["linear_cublaslt_gemm_count"]["mean"] == 4.0
+    assert payload["candidate_native_metrics"]["linear_cublaslt_bgrad_gemm_count"]["mean"] == 2.0
+    assert (
+        payload["candidate_native_metrics"]["linear_cublaslt_bgrad_direct_write_count"]["mean"]
+        == 1.0
+    )
+    assert payload["candidate_native_metrics"]["linear_cublaslt_bgrad_accumulate_count"]["mean"] == 1.0
     assert payload["candidate_native_metrics"]["linear_bf16_gemm_count"]["mean"] == 7.0
     assert payload["candidate_native_metrics"]["lm_head_logits_tk_gemm_count"]["mean"] == 2.0
     assert payload["candidate_native_metrics"]["lm_head_logits_cublaslt_gemm_count"]["mean"] == 0.0
@@ -213,6 +222,9 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     )
     assert "linear_tk_gemm_count: mean=3.000000" in proc.stdout
     assert "linear_cublaslt_gemm_count: mean=4.000000" in proc.stdout
+    assert "linear_cublaslt_bgrad_gemm_count: mean=2.000000" in proc.stdout
+    assert "linear_cublaslt_bgrad_direct_write_count: mean=1.000000" in proc.stdout
+    assert "linear_cublaslt_bgrad_accumulate_count: mean=1.000000" in proc.stdout
     assert "linear_bf16_gemm_count: mean=7.000000" in proc.stdout
     assert "lm_head_logits_tk_gemm_count: mean=2.000000" in proc.stdout
     assert "lm_head_logits_cublaslt_gemm_count: mean=0.000000" in proc.stdout
@@ -2011,6 +2023,9 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
         "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
         "\\\"linear_tk_gemm_count\\\": 1632, "
         "\\\"linear_cublaslt_gemm_count\\\": 2208, "
+        "\\\"linear_cublaslt_bgrad_gemm_count\\\": 1152, "
+        "\\\"linear_cublaslt_bgrad_direct_write_count\\\": 0, "
+        "\\\"linear_cublaslt_bgrad_accumulate_count\\\": 1152, "
         "\\\"linear_bf16_gemm_count\\\": 1824"
         "}"
     )
@@ -2047,10 +2062,13 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
     route_changes = payload["native_route_counter_changes"]
     assert route_changes["has_route_counter_change"] is False
     assert route_changes["changed_count"] == 0
-    assert route_changes["tracked_count"] == 3
+    assert route_changes["tracked_count"] == 6
     assert route_changes["unchanged"] == [
         "linear_tk_gemm_count",
         "linear_cublaslt_gemm_count",
+        "linear_cublaslt_bgrad_gemm_count",
+        "linear_cublaslt_bgrad_direct_write_count",
+        "linear_cublaslt_bgrad_accumulate_count",
         "linear_bf16_gemm_count",
     ]
     assert payload["native_route_change_gate"] == {
@@ -2915,18 +2933,24 @@ def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> N
         "linear_tk_gemm_count": {"mean": 1632.0, "median": 1632.0, "min": 1632.0, "max": 1632.0},
         "linear_tk_dweight_gemm_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
         "linear_cublaslt_gemm_count": {"mean": 2208.0, "median": 2208.0, "min": 2208.0, "max": 2208.0},
+        "linear_cublaslt_bgrad_gemm_count": {"mean": 1152.0, "median": 1152.0, "min": 1152.0, "max": 1152.0},
+        "linear_cublaslt_bgrad_direct_write_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
+        "linear_cublaslt_bgrad_accumulate_count": {"mean": 1152.0, "median": 1152.0, "min": 1152.0, "max": 1152.0},
     }
     candidate = {
         "linear_tk_gemm_count": {"mean": 1344.0, "median": 1344.0, "min": 1344.0, "max": 1344.0},
         "linear_tk_dweight_gemm_count": {"mean": 16.0, "median": 16.0, "min": 16.0, "max": 16.0},
         "linear_cublaslt_gemm_count": {"mean": 2208.0, "median": 2208.0, "min": 2208.0, "max": 2208.0},
+        "linear_cublaslt_bgrad_gemm_count": {"mean": 1152.0, "median": 1152.0, "min": 1152.0, "max": 1152.0},
+        "linear_cublaslt_bgrad_direct_write_count": {"mean": 12.0, "median": 12.0, "min": 12.0, "max": 12.0},
+        "linear_cublaslt_bgrad_accumulate_count": {"mean": 1140.0, "median": 1140.0, "min": 1140.0, "max": 1140.0},
     }
 
     changes = module.summarize_native_route_counter_changes(baseline, candidate)
 
     assert changes["has_route_counter_change"] is True
-    assert changes["changed_count"] == 2
-    assert changes["tracked_count"] == 3
+    assert changes["changed_count"] == 4
+    assert changes["tracked_count"] == 6
     assert changes["changed"]["linear_tk_gemm_count"] == {
         "baseline_mean": 1632.0,
         "candidate_mean": 1344.0,
@@ -2939,7 +2963,22 @@ def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> N
         "delta": 16.0,
         "ratio": None,
     }
-    assert changes["unchanged"] == ["linear_cublaslt_gemm_count"]
+    assert changes["changed"]["linear_cublaslt_bgrad_direct_write_count"] == {
+        "baseline_mean": 0.0,
+        "candidate_mean": 12.0,
+        "delta": 12.0,
+        "ratio": None,
+    }
+    assert changes["changed"]["linear_cublaslt_bgrad_accumulate_count"] == {
+        "baseline_mean": 1152.0,
+        "candidate_mean": 1140.0,
+        "delta": -12.0,
+        "ratio": 1140.0 / 1152.0,
+    }
+    assert changes["unchanged"] == [
+        "linear_cublaslt_gemm_count",
+        "linear_cublaslt_bgrad_gemm_count",
+    ]
     assert "linear_bf16_gemm_count" in changes["missing"]
 
 

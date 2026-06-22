@@ -297,13 +297,21 @@ the candidate side. JSON reports
 `lm_head_classifier_ce_no_loss_requested` and
 `lm_head_classifier_ce_no_loss_enabled`. Default timing-only optimizer steps
 still use the generic no-loss CE+dlogits path when train-loss logging is
-disabled; runtime JSON now distinguishes it with
+disabled; runtime JSON distinguishes it with
 `lm_head_classifier_no_loss_chunk_count`,
 `lm_head_ce_kernel_strategy: "no-loss-dlogits-vec8-loads-scalar-stores"`, and
 `lm_head_ce_loss_backward_strategy:
 "no-loss-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"`. The paired speed
 tool reports the no-loss chunk counter as a route metric so no-loss benchmarks
 are not mistaken for row-loss or loss-bin train-loss paths.
+
+Native dense-GPT runs also expose cuBLASLt BGRADB route counters:
+`linear_cublaslt_bgrad_gemm_count`,
+`linear_cublaslt_bgrad_direct_write_count`, and
+`linear_cublaslt_bgrad_accumulate_count`. Use these with
+`tools/paired_kernel_speed.py` when testing block-backward dWeight+bias
+candidates, because ordinary `linear_cublaslt_gemm_count` does not distinguish a
+BGRADB epilogue from a plain cuBLASLt GEMM.
 `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` is the default
 specialization for the same timing-only path; the paired profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`

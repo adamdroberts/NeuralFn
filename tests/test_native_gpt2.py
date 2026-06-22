@@ -3029,6 +3029,15 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_trainer_linear_tk_float_out_gemm_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_tk_dweight_gemm_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_cublaslt_gemm_count" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count" in tile_payload["available_native_kernels"]
+    assert (
+        "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count"
+        in tile_payload["available_native_kernels"]
+    )
+    assert (
+        "nfn_native_tile_trainer_linear_cublaslt_bgrad_accumulate_count"
+        in tile_payload["available_native_kernels"]
+    )
     assert "nfn_native_tile_trainer_linear_sgemm_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_bf16_a_pack_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_bf16_a_cache_hit_count" in tile_payload["available_native_kernels"]
@@ -4044,6 +4053,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["linear_bf16_gemm_count"] == 0
     assert train_transformer_payload["linear_tk_gemm_count"] == 0
     assert train_transformer_payload["linear_cublaslt_gemm_count"] == 0
+    assert train_transformer_payload["linear_cublaslt_bgrad_gemm_count"] == 0
+    assert train_transformer_payload["linear_cublaslt_bgrad_direct_write_count"] == 0
+    assert train_transformer_payload["linear_cublaslt_bgrad_accumulate_count"] == 0
     assert train_transformer_payload["linear_cublaslt_descriptor_cache_enabled"] is True
     assert train_transformer_payload["linear_sgemm_count"] == 0
     assert train_transformer_payload["linear_bf16_a_pack_count"] == 0
@@ -6320,6 +6332,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_trainer_linear_tk_float_out_gemm_count" in header_text
     assert "nfn_native_tile_trainer_linear_tk_dweight_gemm_count" in header_text
     assert "nfn_native_tile_trainer_linear_cublaslt_gemm_count" in header_text
+    assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count" in header_text
+    assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count" in header_text
+    assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_accumulate_count" in header_text
     assert "nfn_native_tile_trainer_linear_sgemm_count" in header_text
     assert "nfn_native_tile_trainer_linear_bf16_a_pack_count" in header_text
     assert "nfn_native_tile_trainer_linear_bf16_a_cache_hit_count" in header_text
@@ -6656,6 +6671,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "trainer_linear_tk_gemm_count" in kernels_text
     assert "trainer_linear_tk_float_out_gemm_count" in kernels_text
     assert "trainer_linear_tk_dweight_gemm_count" in kernels_text
+    assert "trainer_linear_cublaslt_bgrad_gemm_count" in kernels_text
+    assert "trainer_linear_cublaslt_bgrad_direct_write_count" in kernels_text
+    assert "trainer_linear_cublaslt_bgrad_accumulate_count" in kernels_text
     assert "NFN_NATIVE_LINEAR_TK_DWEIGHT" in kernels_text
     assert "trainer_linear_bf16_b_operand" in kernels_text
     assert "trainer_linear_bf16_a_operand" in kernels_text
@@ -8088,6 +8106,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_trainer_linear_tk_float_out_gemm_count" in exported
         assert "nfn_native_tile_trainer_linear_tk_dweight_gemm_count" in exported
         assert "nfn_native_tile_trainer_linear_cublaslt_gemm_count" in exported
+        assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count" in exported
+        assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count" in exported
+        assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_accumulate_count" in exported
         assert "nfn_native_tile_trainer_linear_sgemm_count" in exported
         assert "nfn_native_tile_trainer_linear_bf16_a_pack_count" in exported
         assert "nfn_native_tile_trainer_linear_bf16_a_cache_hit_count" in exported

@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added native dense-GPT cuBLASLt BGRADB route counters. Tile ops now exposes
+  `nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count`,
+  `nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count`, and
+  `nfn_native_tile_trainer_linear_cublaslt_bgrad_accumulate_count`; the compiled
+  GPT trainer requires those symbols, reports the matching JSON fields, and the
+  paired speed tool treats them as route counters. This makes block-backward
+  dWeight+bias candidates distinguish BGRADB epilogue use, beta-zero direct
+  bias writes, and scratch-bias accumulation instead of relying on the broader
+  `linear_cublaslt_gemm_count`.
+
+  Verification: focused native GPT and paired-kernel pytest, native Tile ops
+  build, native GPT CLI build, native GPT dry-run JSON, and `git diff --check`.
+
 - Changed the direct compiled dense GPT trainer default
   `train_loss_every_steps` from `10` to `0`, matching the Python native
   wrappers and the documented timing-only default. Direct

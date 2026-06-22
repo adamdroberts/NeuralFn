@@ -1131,6 +1131,13 @@ older row-loss path. The candidate side expands to
 `--train-loss-every-steps 1` to both sides so the route counter is meaningful.
 Set `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` manually only for regression
 checks against the older row-loss tail.
+Native dense-GPT JSON also reports the cuBLASLt BGRADB epilogue counters
+`linear_cublaslt_bgrad_gemm_count`,
+`linear_cublaslt_bgrad_direct_write_count`, and
+`linear_cublaslt_bgrad_accumulate_count`. The paired speed tool treats these as
+route counters, so BGRADB first-write or split bias-accumulation candidates can
+prove whether they changed the active block dWeight+bias path before timing is
+accepted.
 `lm_head_classifier_ce_no_loss` expands to
 `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1`, forces the baseline side to
 `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=0`, and keeps train-loss logging

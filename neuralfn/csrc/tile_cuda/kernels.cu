@@ -106,6 +106,9 @@ std::atomic<std::int64_t> g_linear_tk_gemm_count{0};
 std::atomic<std::int64_t> g_linear_tk_float_out_gemm_count{0};
 std::atomic<std::int64_t> g_linear_tk_dweight_gemm_count{0};
 std::atomic<std::int64_t> g_linear_cublaslt_gemm_count{0};
+std::atomic<std::int64_t> g_linear_cublaslt_bgrad_gemm_count{0};
+std::atomic<std::int64_t> g_linear_cublaslt_bgrad_direct_write_count{0};
+std::atomic<std::int64_t> g_linear_cublaslt_bgrad_accumulate_count{0};
 std::atomic<std::int64_t> g_linear_sgemm_count{0};
 std::atomic<std::int64_t> g_linear_bf16_a_pack_count{0};
 std::atomic<std::int64_t> g_linear_bf16_a_cache_hit_count{0};
@@ -2857,6 +2860,9 @@ bool cublaslt_linear_matmul(
   if (status == CUBLAS_STATUS_SUCCESS) {
     const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
     g_linear_cublaslt_gemm_count.fetch_add(1, std::memory_order_relaxed);
+    if (epilogue == CUBLASLT_EPILOGUE_BGRADB) {
+      g_linear_cublaslt_bgrad_gemm_count.fetch_add(1, std::memory_order_relaxed);
+    }
     record_linear_shape_stat(
         1,
         m,
@@ -16820,6 +16826,7 @@ void launch_linear_backward_weight_bias_accumulate_bf16_float32(
             false,
             true,
             stream)) {
+      g_linear_cublaslt_bgrad_accumulate_count.fetch_add(1, std::memory_order_relaxed);
       launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
       return;
     }
@@ -16876,7 +16883,10 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_float32_beta(
             true,
             stream)) {
       if (!first_write_bias) {
+        g_linear_cublaslt_bgrad_accumulate_count.fetch_add(1, std::memory_order_relaxed);
         launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
+      } else {
+        g_linear_cublaslt_bgrad_direct_write_count.fetch_add(1, std::memory_order_relaxed);
       }
       return;
     }
@@ -16984,7 +16994,10 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_b
             true,
             stream)) {
       if (!first_write_bias) {
+        g_linear_cublaslt_bgrad_accumulate_count.fetch_add(1, std::memory_order_relaxed);
         launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
+      } else {
+        g_linear_cublaslt_bgrad_direct_write_count.fetch_add(1, std::memory_order_relaxed);
       }
       return;
     }
@@ -17256,7 +17269,10 @@ void launch_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta(
             true,
             stream)) {
       if (!first_write_bias) {
+        g_linear_cublaslt_bgrad_accumulate_count.fetch_add(1, std::memory_order_relaxed);
         launch_gradient_accumulate_float32(grad_bias, bias_gradient, output_dim, 1.0f, stream);
+      } else {
+        g_linear_cublaslt_bgrad_direct_write_count.fetch_add(1, std::memory_order_relaxed);
       }
       return;
     }
@@ -18570,6 +18586,9 @@ void reset_trainer_linear_launch_stats() {
   g_linear_tk_float_out_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_tk_dweight_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_cublaslt_gemm_count.store(0, std::memory_order_relaxed);
+  g_linear_cublaslt_bgrad_gemm_count.store(0, std::memory_order_relaxed);
+  g_linear_cublaslt_bgrad_direct_write_count.store(0, std::memory_order_relaxed);
+  g_linear_cublaslt_bgrad_accumulate_count.store(0, std::memory_order_relaxed);
   g_linear_sgemm_count.store(0, std::memory_order_relaxed);
   g_linear_bf16_a_pack_count.store(0, std::memory_order_relaxed);
   g_linear_bf16_a_cache_hit_count.store(0, std::memory_order_relaxed);
@@ -18645,6 +18664,30 @@ std::int64_t trainer_linear_sgemm_count() {
 std::int64_t trainer_linear_cublaslt_gemm_count() {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   return g_linear_cublaslt_gemm_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_cublaslt_bgrad_gemm_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_cublaslt_bgrad_gemm_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_cublaslt_bgrad_direct_write_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_cublaslt_bgrad_direct_write_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_cublaslt_bgrad_accumulate_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_cublaslt_bgrad_accumulate_count.load(std::memory_order_relaxed);
 #else
   return 0;
 #endif

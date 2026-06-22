@@ -3304,6 +3304,9 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_trainer_linear_tk_float_out_gemm_count",
         "nfn_native_tile_trainer_linear_tk_dweight_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_gemm_count",
+        "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count",
+        "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count",
+        "nfn_native_tile_trainer_linear_cublaslt_bgrad_accumulate_count",
         "nfn_native_tile_trainer_linear_sgemm_count",
         "nfn_native_tile_trainer_linear_bf16_a_pack_count",
         "nfn_native_tile_trainer_linear_bf16_a_cache_hit_count",
@@ -4323,6 +4326,13 @@ bool print_tile_plan(
         << "  \"stored_packed_attention_store_blocks\": 0,\n"
         << "  \"stored_packed_attention_restore_blocks\": 0,\n"
         << "  \"stored_packed_attention_backward_kernel_launches\": 0,\n"
+        << "  \"linear_bf16_gemm_count\": 0,\n"
+        << "  \"linear_tk_gemm_count\": 0,\n"
+        << "  \"linear_cublaslt_gemm_count\": 0,\n"
+        << "  \"linear_cublaslt_bgrad_gemm_count\": 0,\n"
+        << "  \"linear_cublaslt_bgrad_direct_write_count\": 0,\n"
+        << "  \"linear_cublaslt_bgrad_accumulate_count\": 0,\n"
+        << "  \"linear_sgemm_count\": 0,\n"
         << "  \"stored_packed_attention_backward_consumer_strategy\": \""
         << (stored_packed_attention_block_count > 0
                 ? (store_packed_attention_lse_enabled
@@ -9827,6 +9837,9 @@ int run_transformer_lm_training_json(
     std::int64_t linear_tk_float_out_gemm_count = 0;
     std::int64_t linear_tk_dweight_gemm_count = 0;
     std::int64_t linear_cublaslt_gemm_count = 0;
+    std::int64_t linear_cublaslt_bgrad_gemm_count = 0;
+    std::int64_t linear_cublaslt_bgrad_direct_write_count = 0;
+    std::int64_t linear_cublaslt_bgrad_accumulate_count = 0;
     std::int64_t linear_sgemm_count = 0;
     std::int64_t linear_bf16_a_pack_count = 0;
     std::int64_t linear_bf16_a_cache_hit_count = 0;
@@ -10085,6 +10098,9 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_trainer_linear_tk_float_out_gemm_count",
         "nfn_native_tile_trainer_linear_tk_dweight_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_gemm_count",
+        "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count",
+        "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count",
+        "nfn_native_tile_trainer_linear_cublaslt_bgrad_accumulate_count",
         "nfn_native_tile_trainer_linear_sgemm_count",
         "nfn_native_tile_trainer_linear_bf16_a_pack_count",
         "nfn_native_tile_trainer_linear_bf16_a_cache_hit_count",
@@ -10676,6 +10692,9 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_tk_float_out_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_tk_dweight_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_cublaslt_gemm_count_fn = nullptr;
+    TrainerLinearStatsCountFn trainer_linear_cublaslt_bgrad_gemm_count_fn = nullptr;
+    TrainerLinearStatsCountFn trainer_linear_cublaslt_bgrad_direct_write_count_fn = nullptr;
+    TrainerLinearStatsCountFn trainer_linear_cublaslt_bgrad_accumulate_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_sgemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_a_pack_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_a_cache_hit_count_fn = nullptr;
@@ -11155,6 +11174,12 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_trainer_linear_tk_dweight_gemm_count");
                 trainer_linear_cublaslt_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_cublaslt_gemm_count");
+                trainer_linear_cublaslt_bgrad_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count");
+                trainer_linear_cublaslt_bgrad_direct_write_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count");
+                trainer_linear_cublaslt_bgrad_accumulate_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_cublaslt_bgrad_accumulate_count");
                 trainer_linear_sgemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_sgemm_count");
                 trainer_linear_bf16_a_pack_count_fn = load_symbol<TrainerLinearStatsCountFn>(
@@ -19204,6 +19229,17 @@ int run_transformer_lm_training_json(
     if (trainer_linear_cublaslt_gemm_count_fn != nullptr) {
         linear_cublaslt_gemm_count = trainer_linear_cublaslt_gemm_count_fn();
     }
+    if (trainer_linear_cublaslt_bgrad_gemm_count_fn != nullptr) {
+        linear_cublaslt_bgrad_gemm_count = trainer_linear_cublaslt_bgrad_gemm_count_fn();
+    }
+    if (trainer_linear_cublaslt_bgrad_direct_write_count_fn != nullptr) {
+        linear_cublaslt_bgrad_direct_write_count =
+            trainer_linear_cublaslt_bgrad_direct_write_count_fn();
+    }
+    if (trainer_linear_cublaslt_bgrad_accumulate_count_fn != nullptr) {
+        linear_cublaslt_bgrad_accumulate_count =
+            trainer_linear_cublaslt_bgrad_accumulate_count_fn();
+    }
     if (trainer_linear_sgemm_count_fn != nullptr) {
         linear_sgemm_count = trainer_linear_sgemm_count_fn();
     }
@@ -20402,6 +20438,12 @@ int run_transformer_lm_training_json(
         << "  \"linear_tk_float_out_gemm_count\": " << linear_tk_float_out_gemm_count << ",\n"
         << "  \"linear_tk_dweight_gemm_count\": " << linear_tk_dweight_gemm_count << ",\n"
         << "  \"linear_cublaslt_gemm_count\": " << linear_cublaslt_gemm_count << ",\n"
+        << "  \"linear_cublaslt_bgrad_gemm_count\": "
+        << linear_cublaslt_bgrad_gemm_count << ",\n"
+        << "  \"linear_cublaslt_bgrad_direct_write_count\": "
+        << linear_cublaslt_bgrad_direct_write_count << ",\n"
+        << "  \"linear_cublaslt_bgrad_accumulate_count\": "
+        << linear_cublaslt_bgrad_accumulate_count << ",\n"
         << "  \"linear_cublaslt_descriptor_cache_enabled\": "
         << (linear_cublaslt_descriptor_cache_enabled ? "true" : "false") << ",\n"
         << "  \"linear_cublaslt_grouped_layout_probe_available\": "
