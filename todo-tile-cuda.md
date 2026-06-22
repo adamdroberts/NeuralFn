@@ -171,6 +171,14 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Preserve explicit zero cadences from SDK/native GPT compiled-CLI configs (`eval_every_steps=0`, `sample_every_steps=0`, and `checkpoint_every_steps=0`) so same-script kernel benchmarks can disable validation, sampling, and checkpoint cadence without the Python handoff clamping them back on.
 - [x] Pin the SM120 parity wrapper's NeuralFn candidate to `--train-batch-tokens 524288`, matching the `llm.kittens/train-sm120.sh` `-d 524288` contract in the same paired script instead of relying on native defaults.
 - [x] Add `tools/bench_native_gpt_sm120_candidate.sh` as the native-vs-native SM120 bisection wrapper: it keeps the dense GPT command shape fixed on both sides, compares the current Tile ops library/default env against `NFN_SM120_NATIVE_CANDIDATE_ENV` or `NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB`, preserves the `524288` token-batch contract, and reuses the selected-GPU idle/utilization guards from `tools/paired_kernel_speed.py`.
+  - 2026-06-22 added named profiles for remaining raw-env diagnostics so every
+    native scheduling/attention candidate can be measured through the same
+    guarded wrapper instead of ad hoc shell env strings:
+    `bf16_attention_grad_out`, `bf16_attention_dprep_grad_out`,
+    `mlp_proj_dinput_before_dweight`, `mlp_fc_dinput_before_dweight`,
+    `attn_proj_dinput_before_dweight`, and
+    `lm_head_fused_loss_backward_off`. Stage-timed runs now attach the matching
+    attention, ordering, or LM-head CE gates automatically.
   - 2026-06-18 added short `NFN_SM120_CANDIDATE_*` aliases for the native-vs-native wrapper controls so ad hoc candidate benchmarks do not silently fall back to default steps/samples/profile settings when the shorter names are used.
   - 2026-06-19 added `native_route_counter_changes` to the paired benchmark JSON/text report so candidate timings are checked against tracked TK/cuBLASLt/BF16/LM-head/attention route counters before being treated as kernel evidence.
   - 2026-06-20 added the LM-head classifier row-chunk counters to paired native metric summaries and `native_route_counter_changes`, covering `lm_head_classifier_chunk_launch_count` plus the last rows/vocab/stride so classifier-route candidates are visible without opening sidecar JSON.

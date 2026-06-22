@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added named SM120 native candidate-wrapper profiles for existing diagnostic
+  switches that previously needed raw candidate env overrides:
+  `bf16_attention_grad_out`, `bf16_attention_dprep_grad_out`,
+  `mlp_proj_dinput_before_dweight`, `mlp_fc_dinput_before_dweight`,
+  `attn_proj_dinput_before_dweight`, and
+  `lm_head_fused_loss_backward_off`. Stage-timed wrapper runs now attach the
+  matching attention, ordering, or LM-head CE gates automatically. This does not
+  change trainer defaults; it makes future same-script speed bisections more
+  reproducible and avoids comparing an un-gated raw env candidate against the
+  native baseline.
+
+  Verification: source-level regression coverage checks each profile expansion
+  and the added strict stage gates; `bash -n tools/bench_native_gpt_sm120_candidate.sh`,
+  the focused pytest for the new wrapper profiles, a dry-run
+  `bf16_attention_grad_out` profile expansion, and `git diff --check` passed.
+
 - Rechecked the remaining shape-specific 32768-row dense GPT LM-head backend
   substitutions after the CUDA 13.3 reinstall. The existing benchmark profiles
   all remain diagnostic-only: `lm_head_dhidden_fast16bf_32768` requested
