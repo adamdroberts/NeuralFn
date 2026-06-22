@@ -489,6 +489,8 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_cublas_grouped_bf16_gemm_probe_requested" in gpt_source
     assert "linear_cublas_grouped_bf16_gemm_probe_status" in gpt_source
     assert "linear_cublas_grouped_bf16_gemm_supported" in gpt_source
+    assert "requested cuBLAS grouped BF16 GEMM probe failed with status" in gpt_source
+    assert "requested cuBLAS grouped BF16 GEMM probe is unavailable in the Tile ops library" in gpt_source
     assert "linear_cublaslt_plan_prewarm_available" in gpt_source
     assert "linear_cublaslt_plan_prewarm_attempted_count" in gpt_source
     assert "linear_cublaslt_plan_prewarm_success_count" in gpt_source

@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the opt-in cuBLAS grouped BF16 GEMM execution probe to fail native
+  GPT preflight immediately when the requested probe returns a nonzero status.
+  This prevents `NFN_NATIVE_GPT_PROBE_CUBLAS_GROUPED_BF16_GEMM=1` from
+  continuing into model arena allocation after an unsupported grouped BF16
+  launch has already left the CUDA context in an illegal-access state. The
+  runtime JSON still reports
+  `linear_cublas_grouped_bf16_gemm_probe_requested`,
+  `linear_cublas_grouped_bf16_gemm_probe_status`, and
+  `linear_cublas_grouped_bf16_gemm_supported`; callers should treat nonzero
+  status as a diagnostic preflight failure and avoid grouped-GEMM benchmark
+  candidates on that CUDA install. Verification: focused native source pytest,
+  native GPT rebuild, and a live CUDA 13.3 opt-in probe rerun.
+
 - Added
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_forward_bf16_fallback_65536` for
   reproducible bisection of the packed-QKV forward route. It expands to

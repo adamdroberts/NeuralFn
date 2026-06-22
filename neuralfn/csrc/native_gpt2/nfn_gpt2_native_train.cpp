@@ -10887,6 +10887,12 @@ int run_transformer_lm_training_json(
                     trainer_linear_cublas_grouped_bf16_gemm_probe_status_fn != nullptr) {
                     linear_cublas_grouped_bf16_gemm_probe_status =
                         trainer_linear_cublas_grouped_bf16_gemm_probe_status_fn();
+                    if (linear_cublas_grouped_bf16_gemm_probe_status != 0) {
+                        error = "requested cuBLAS grouped BF16 GEMM probe failed with status " +
+                            std::to_string(linear_cublas_grouped_bf16_gemm_probe_status);
+                    }
+                } else if (linear_cublas_grouped_bf16_gemm_probe_requested) {
+                    error = "requested cuBLAS grouped BF16 GEMM probe is unavailable in the Tile ops library";
                 }
                 attention_backward_to_qkv_reuse_forward = load_symbol<AttentionBackwardToQkvReuseForwardFn>(
                     tile_handle, "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32");

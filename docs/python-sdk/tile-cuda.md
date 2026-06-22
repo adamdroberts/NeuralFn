@@ -100,10 +100,12 @@ Runtime JSON also exposes a classic cuBLAS grouped BF16 GEMM execution probe as
 `linear_cublas_grouped_bf16_gemm_supported`. This raw Tile ABI probe is
 opt-in with `NFN_NATIVE_GPT_PROBE_CUBLAS_GROUPED_BF16_GEMM=1` because rejected
 or unsupported grouped BF16 launches can poison the CUDA context before model
-arena allocation. When requested, it launches tiny aligned BF16 grouped GEMMs
-through `cublasGemmGroupedBatchedEx`, copies back the BF16 outputs, and
-verifies the expected sums. Use it to gate future grouped linear-backward
-candidates; it is diagnostic-only and does not change default training
+arena allocation. When requested, a nonzero probe status now fails native
+preflight immediately instead of continuing into model arena allocation. The
+probe launches tiny aligned BF16 grouped GEMMs through
+`cublasGemmGroupedBatchedEx`, copies back the BF16 outputs, and verifies the
+expected sums. Use it to gate future grouped linear-backward candidates; it is
+diagnostic-only and does not change default training
 dispatch.
 
 Set `NFN_NATIVE_GPT_STAGE_TIMING=1` only for CUDA event attribution runs; the
