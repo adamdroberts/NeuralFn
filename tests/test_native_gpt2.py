@@ -1031,8 +1031,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in source
     assert "lm_head_cooperative_backward_sequence_wrapper_available" in source
+    assert "lm_head_cooperative_backward_sequence_wrapper_enabled" in source
     assert "lm_head.backward.cooperative.bf16_u16" in source
     assert "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity" in source
+    assert "diagnostic-sequence-wrapper-ce-side-stream-dhidden-dweight-not-parity" in source
+    assert "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity" in source
     assert "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity" in source
     assert "strict-cooperative-abi-event-ordered-loss-bins-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity" in source
     assert "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight" in source
@@ -1052,6 +1055,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1" in bench_source
     speed_tool = (root / "tools" / "paired_kernel_speed.py").read_text(encoding="utf-8")
     assert "stage.lm_head_backward.cooperative.total_ms" in speed_tool
+    assert "lm_head_cooperative_backward_sequence_wrapper_enabled" in speed_tool
 
 
 def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles() -> None:

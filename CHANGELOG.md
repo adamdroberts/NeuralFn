@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Wired the non-required dense GPT cooperative LM-head candidate flag to the
+  existing event-ordered sequence wrapper route. `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`
+  and `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` can now
+  report `lm_head_cooperative_backward_sequence_wrapper_enabled: true` and a
+  diagnostic sequence-wrapper strategy when the wrapper actually runs. The
+  strict fused-parity fields remain separate:
+  `lm_head_cooperative_backward_kernel_available`,
+  `lm_head_cooperative_backward_fused_kernel_available`,
+  `lm_head_cooperative_backward_route_integrated`, and
+  `lm_head_cooperative_backward_kernel_enabled` still require the future
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` symbol.
+  `--require-cooperative-lm-head-backward` still fails on wrapper-only builds.
+
+  Verification: rebuilt `build/nfn_gpt_native_train`; ran focused cooperative
+  ABI and paired-metric parser tests plus the full Tile CUDA examples suite;
+  checked non-required and strict required `--print-plan` output; ran a
+  one-step dedicated RTX 5090
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` probe. The
+  probe now passes the route-change gate by changing the cooperative strategy
+  and `lm_head_cooperative_backward_sequence_wrapper_enabled`, but still fails
+  performance gates at `1.007071x` train-loop wall,
+  `1.000602x` LM-head backward, and `1.001183x` block backward, so the wrapper
+  remains diagnostic-only.
+
 - Hardened native-vs-native SM120 candidate benchmarks against timing-only
   false positives. `tools/paired_kernel_speed.py` now supports
   `--require-native-route-change`, which fails a run when candidate native JSON

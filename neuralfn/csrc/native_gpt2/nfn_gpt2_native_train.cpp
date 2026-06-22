@@ -3966,6 +3966,11 @@ bool print_tile_plan(
     const bool cooperative_lm_head_backward_enabled =
         cooperative_lm_head_backward_true_fused_kernel_found &&
         cooperative_lm_head_backward_route_integrated;
+    const bool cooperative_lm_head_backward_sequence_wrapper_enabled =
+        cooperative_lm_head_backward_requested &&
+        !cfg.require_cooperative_lm_head_backward &&
+        !cooperative_lm_head_backward_enabled &&
+        cooperative_lm_head_backward_sequence_wrapper_found;
     if (plan_error.empty() &&
         cfg.require_cooperative_lm_head_backward &&
         !cooperative_lm_head_backward_enabled) {
@@ -4040,14 +4045,20 @@ bool print_tile_plan(
         << (cooperative_lm_head_backward_route_integrated ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_enabled\": "
         << (cooperative_lm_head_backward_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_sequence_wrapper_enabled\": "
+        << (cooperative_lm_head_backward_sequence_wrapper_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (cooperative_lm_head_backward_enabled
                 ? (cooperative_lm_head_loss_bins_requested
                     ? "strict-cooperative-abi-event-ordered-loss-bins-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity"
                     : "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity")
+                : (cooperative_lm_head_backward_sequence_wrapper_enabled
+                    ? (cooperative_lm_head_loss_bins_requested
+                        ? "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity"
+                        : "diagnostic-sequence-wrapper-ce-side-stream-dhidden-dweight-not-parity")
                 : (cooperative_lm_head_backward_sequence_wrapper_found
                     ? "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity"
-                    : "missing-required-sm120-parity-kernel"))
+                    : "missing-required-sm120-parity-kernel")))
         << "\",\n"
         << "  \"schedule\": {\"max_steps\": " << cfg.max_steps
         << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
@@ -11876,6 +11887,19 @@ int run_transformer_lm_training_json(
     const bool lm_head_cooperative_backward_kernel_enabled =
         lm_head_cooperative_backward_fused_kernel_available &&
         lm_head_cooperative_backward_route_integrated;
+    const bool lm_head_cooperative_backward_sequence_wrapper_enabled =
+        lm_head_cooperative_backward_requested &&
+        !cfg.require_cooperative_lm_head_backward &&
+        !lm_head_cooperative_backward_kernel_enabled &&
+        lm_head_cooperative_backward_sequence_wrapper_available &&
+        lm_head_bf16_logits_enabled &&
+        lm_head_public_vocab_ce_enabled &&
+        direct_u16_token_ids_enabled &&
+        lm_head_fused_loss_backward_enabled &&
+        lm_head_prepack_bf16_hidden_enabled &&
+        token_weight_bf16_shadow_enabled &&
+        !lm_head_reuse_forward_logits_enabled &&
+        !lm_head_full_batch_reuse_schedule_enabled;
     void* lm_head_dhidden_stream = nullptr;
     void* lm_head_dweight_stream = nullptr;
     void* lm_head_ce_done_event = nullptr;
@@ -15595,7 +15619,8 @@ int run_transformer_lm_training_json(
             }
             bool lm_head_chunk_backward_done = false;
             const bool use_cooperative_lm_head_backward =
-                lm_head_cooperative_backward_kernel_enabled &&
+                (lm_head_cooperative_backward_kernel_enabled ||
+                 lm_head_cooperative_backward_sequence_wrapper_enabled) &&
                 (!record_loss ||
                  (use_loss_bin_reduction
                       ? lm_head_cooperative_loss_bins_requested
@@ -19650,6 +19675,10 @@ int run_transformer_lm_training_json(
                 ? (lm_head_cooperative_loss_bins_requested
                     ? "strict-cooperative-abi-event-ordered-loss-bins-ce-side-stream-dhidden-dweight"
                     : "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight")
+        : (lm_head_cooperative_backward_sequence_wrapper_enabled
+                ? (lm_head_cooperative_loss_bins_requested
+                    ? "diagnostic-cooperative-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight"
+                    : "diagnostic-cooperative-sequence-wrapper-ce-side-stream-dhidden-dweight")
         : (lm_head_full_batch_reuse_schedule_enabled
                 ? "resident-full-logit-single-row-batch-gemms"
                 : (lm_head_pipeline_chunks_enabled
@@ -19659,7 +19688,7 @@ int run_transformer_lm_training_json(
                 : (lm_head_overlap_last_dweight_enabled
                 ? "last-processed-row-chunk-dweight-side-stream-overlaps-final-norm-block-backward"
                 : (lm_head_dweight_before_dhidden_enabled ? "serial-dweight-before-dhidden"
-                                                          : "serial-dhidden-before-dweight"))))))
+                                                          : "serial-dhidden-before-dweight")))))))
         << "\",\n"
         << "  \"lm_head_cooperative_backward_required\": "
         << (cfg.require_cooperative_lm_head_backward ? "true" : "false") << ",\n"
@@ -19679,14 +19708,20 @@ int run_transformer_lm_training_json(
         << (lm_head_cooperative_backward_route_integrated ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_enabled\": "
         << (lm_head_cooperative_backward_kernel_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_sequence_wrapper_enabled\": "
+        << (lm_head_cooperative_backward_sequence_wrapper_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
                 ? (lm_head_cooperative_loss_bins_requested
                     ? "strict-cooperative-abi-event-ordered-loss-bins-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity"
                     : "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity")
+                : (lm_head_cooperative_backward_sequence_wrapper_enabled
+                    ? (lm_head_cooperative_loss_bins_requested
+                        ? "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity"
+                        : "diagnostic-sequence-wrapper-ce-side-stream-dhidden-dweight-not-parity")
                 : (lm_head_cooperative_backward_sequence_wrapper_available
                     ? "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity"
-                    : "missing-required-sm120-parity-kernel"))
+                    : "missing-required-sm120-parity-kernel")))
         << "\",\n"
         << "  \"lm_head_reverse_chunk_order_enabled\": "
         << (lm_head_reverse_chunk_order_enabled ? "true" : "false") << ",\n"

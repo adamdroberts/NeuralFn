@@ -1723,6 +1723,11 @@ when a parity/preflight run must require the strict cooperative LM-head backward
 Tile kernel. The current wrapper route still sequences the existing CE, dHidden,
 and dWeight launches, so wrapper-only builds fail the strict guard and runtime
 strategy strings mark them as not-yet-parity instead of a final fused kernel.
+The non-required candidate route now explicitly enables the event-ordered
+sequence wrapper and reports
+`lm_head_cooperative_backward_sequence_wrapper_enabled: true`, which lets the
+paired benchmark route-change gate reject no-op candidate runs while preserving
+the strict fused-kernel contract.
 Runtime JSON reports
 `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,
@@ -1731,7 +1736,8 @@ Runtime JSON reports
 `lm_head_cooperative_backward_kernel_available`,
 `lm_head_cooperative_backward_fused_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
-`lm_head_cooperative_backward_kernel_enabled`, and
+`lm_head_cooperative_backward_kernel_enabled`,
+`lm_head_cooperative_backward_sequence_wrapper_enabled`, and
 `lm_head_cooperative_backward_strategy`.
 Rebuilt Tile ops libraries export the probed symbol with a typed C ABI contract
 for the future cooperative route: BF16 logit/dlogit chunk, u16 targets,

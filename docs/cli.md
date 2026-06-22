@@ -813,13 +813,19 @@ parity/preflight run must require the strict cooperative LM-head backward ABI.
 The flag is default-off for normal training. The current strict ABI route still
 sequences the existing CE, dHidden, and dWeight launches, so runtime strategy
 strings mark it as not-yet-parity instead of a final fused kernel.
+The non-required candidate path can enable that event-ordered sequence wrapper
+and reports `lm_head_cooperative_backward_sequence_wrapper_enabled: true`; the
+strict `--require-cooperative-lm-head-backward` path still requires the future
+fused parity symbol and fails on wrapper-only builds.
 Runtime JSON reports `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,
 `lm_head_cooperative_backward_abi_wrapper_available`,
+`lm_head_cooperative_backward_sequence_wrapper_available`,
 `lm_head_cooperative_backward_kernel_available`,
 `lm_head_cooperative_backward_fused_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
-`lm_head_cooperative_backward_kernel_enabled`, and
+`lm_head_cooperative_backward_kernel_enabled`,
+`lm_head_cooperative_backward_sequence_wrapper_enabled`, and
 `lm_head_cooperative_backward_strategy`.
 The Tile symbol is no longer an untyped probe in rebuilt ops libraries: its C
 ABI receives the BF16 logit/dlogit chunk, u16 targets, row-loss buffer,

@@ -546,7 +546,11 @@ can only see the diagnostic ABI/sequence wrappers. Those wrappers use
 persistent non-blocking CUDA streams plus events to queue dHidden and dWeight
 after CE without a host-side stream synchronize, but still reuse the existing
 CE, dHidden, and dWeight kernels; they are not the final fused SM120 parity
-kernel.
+kernel. The non-required benchmark profile now enables that event-ordered
+sequence wrapper route and reports
+`lm_head_cooperative_backward_sequence_wrapper_enabled: true`, so paired
+candidate runs can prove the wrapper path executed instead of only proving that
+an environment variable was set.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when
@@ -578,12 +582,12 @@ Runtime JSON reports
 `lm_head_cooperative_backward_kernel_available`,
 `lm_head_cooperative_backward_fused_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
-`lm_head_cooperative_backward_kernel_enabled`, and
+`lm_head_cooperative_backward_kernel_enabled`,
+`lm_head_cooperative_backward_sequence_wrapper_enabled`, and
 `lm_head_cooperative_backward_strategy`. The strict cooperative ABI remains
-default-off and non-promoted because the CUDA 13.3 dedicated RTX 5090 1-step, 3-sample
-same-script gate proved it changed the route and kept train-loop wall time at
-`0.999224x`, but still failed the strict total LM-head gate at `1.000739x`
-while block backward passed at `0.997052x`.
+default-off and non-promoted; the wrapper route is only a measurable diagnostic
+candidate until the separate fused parity symbol is implemented and passes the
+same-script gates.
 The probed Tile symbol is now exported by the rebuilt ops library with a typed
 C ABI contract for this diagnostic wrapper: it accepts the BF16 logit/dlogit
 chunk, u16 targets, optional row-loss buffer, BF16/float hidden inputs,

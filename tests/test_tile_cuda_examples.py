@@ -2794,6 +2794,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "lm_head_cooperative_backward_fused_kernel_available": False,
                 "lm_head_cooperative_backward_route_integrated": False,
                 "lm_head_cooperative_backward_kernel_enabled": False,
+                "lm_head_cooperative_backward_sequence_wrapper_enabled": False,
                 "lm_head_cooperative_backward_strategy": "missing-required-sm120-parity-kernel",
                 "lm_head_classifier_strategy_contract": {
                     "reference_full_bf16_logit_bytes": 6593445888,
@@ -2875,6 +2876,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["lm_head_cooperative_backward_fused_kernel_available"] is False
     assert metrics["lm_head_cooperative_backward_route_integrated"] is False
     assert metrics["lm_head_cooperative_backward_kernel_enabled"] is False
+    assert metrics["lm_head_cooperative_backward_sequence_wrapper_enabled"] is False
     assert metrics["lm_head_cooperative_backward_strategy"] == "missing-required-sm120-parity-kernel"
     assert metrics["lm_head_classifier.reference_full_bf16_logit_bytes"] == 6593445888
     assert metrics["lm_head_classifier.native_chunk_bf16_logit_bytes"] == 825819136
@@ -2934,6 +2936,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
         "lm_head_cooperative_backward_fused_kernel_available": ["false"],
         "lm_head_cooperative_backward_route_integrated": ["false"],
         "lm_head_cooperative_backward_kernel_enabled": ["false"],
+        "lm_head_cooperative_backward_sequence_wrapper_enabled": ["false"],
     }
 
 

@@ -84,6 +84,21 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`; until
     that exists, `--require-cooperative-lm-head-backward` must fail instead of
     accepting wrapper-only CE/dHidden/dWeight sequencing.
+  - 2026-06-22 made the non-required
+    `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` /
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` path
+    actually execute the existing event-ordered sequence wrapper when the true
+    fused parity kernel is absent. Runtime JSON now reports
+    `lm_head_cooperative_backward_sequence_wrapper_enabled` separately from
+    `lm_head_cooperative_backward_kernel_enabled`, so the paired route-change
+    gate can detect a real wrapper-route change while the strict
+    `--require-cooperative-lm-head-backward` profile still fails on
+    wrapper-only builds. A one-step dedicated RTX 5090 probe confirmed the
+    route-change gate now passes through the strategy and
+    `lm_head_cooperative_backward_sequence_wrapper_enabled` changes, but still
+    rejected the wrapper at `1.007071x` train-loop wall, `1.000602x` LM-head
+    backward, and `1.001183x` block backward. This is a diagnostic route, not
+    the parity kernel.
   - [ ] Implement the actual cooperative LM-head backward Tile ABI that fuses or
     co-schedules classifier dlogit production with dHidden and dWeight work
     without materializing full resident logits or routing tensors through Torch.
