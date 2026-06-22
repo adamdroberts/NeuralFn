@@ -205,9 +205,13 @@ tools/build_native_train_binding.sh` builds `neuralfn._native_train`, which is
 used by `run_native_train(..., runner="auto")` to hand off without importing
 Torch. Dense GPT-family SDK configs (`gpt`, `gpt2`, `gpt3`, `nanogpt`) skip the
 generic `nfn_native_train` dispatcher and spawn `nfn_gpt_native_train` directly
-when `NFN_NATIVE_GPT_CLI` is set or `build/nfn_gpt_native_train` exists; set
-`NFN_NATIVE_TRAIN_CLI` or pass `native_train_cli=` when you intentionally want
-the unified frontend. The generic native-train binding also uses
+when `NFN_NATIVE_GPT_CLI` is set or `build/nfn_gpt_native_train` exists. Other
+compiled family targets also bypass the generic dispatcher when available:
+`gpt2-evo`, `llama`, `mixllama`, `jepa`, `semantic-router-moe`, and
+`deepseek-v4` resolve through their `build/nfn_<family>_native_train` binary or
+the matching `NFN_NATIVE_<FAMILY>_CLI` override. Set `NFN_NATIVE_TRAIN_CLI` or
+pass `native_train_cli=` when you intentionally want the unified frontend. The
+generic native-train binding also uses
 `posix_spawnp()` and preserves caller-supplied CUDA module-loading policy,
 defaulting to `CUDA_MODULE_LOADING=LAZY` only when unset. Use
 `resolve_native_gpt_binding_command(config)`,

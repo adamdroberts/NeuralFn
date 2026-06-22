@@ -5,6 +5,7 @@ import importlib
 import json
 import os
 from pathlib import Path
+import shutil
 import shlex
 import subprocess
 import sys
@@ -14,6 +15,19 @@ from typing import Any, Sequence
 DEFAULT_NATIVE_TRAIN_CLI = "build/nfn_native_train"
 DEFAULT_NATIVE_GPT_TRAIN_CLI = "build/nfn_gpt_native_train"
 DENSE_GPT_MODEL_FAMILIES = frozenset({"gpt", "gpt2", "gpt3", "nanogpt", "nano-gpt"})
+NATIVE_TRAIN_FAMILY_TARGETS = {
+    "gpt": "nfn_gpt_native_train",
+    "gpt2": "nfn_gpt_native_train",
+    "gpt3": "nfn_gpt_native_train",
+    "nanogpt": "nfn_gpt_native_train",
+    "nano-gpt": "nfn_gpt_native_train",
+    "gpt2-evo": "nfn_gpt2_evo_native_train",
+    "llama": "nfn_llama_native_train",
+    "mixllama": "nfn_mixllama_native_train",
+    "jepa": "nfn_jepa_native_train",
+    "semantic-router-moe": "nfn_semantic_router_moe_native_train",
+    "deepseek-v4": "nfn_deepseek_v4_native_train",
+}
 NATIVE_TRAIN_BINDING_MODULES = ("neuralfn_native_train", "neuralfn._native_train")
 
 
@@ -44,10 +58,15 @@ class NativeTrainRunConfig:
         normalized_family = normalize_native_model_family(self.model_family)
         family_cli = resolve_native_train_family_cli(normalized_family, self.native_train_cli)
         if family_cli is not None:
+            if native_train_family_uses_model_family_arg(normalized_family):
+                return [
+                    family_cli,
+                    "--model-family",
+                    normalized_family,
+                    *self.args,
+                ]
             return [
                 family_cli,
-                "--model-family",
-                normalized_family,
                 *self.args,
             ]
         return [
@@ -75,6 +94,15 @@ def normalize_native_model_family(value: str | None) -> str:
     return normalized or "gpt"
 
 
+def native_train_family_cli_env(model_family: str | None) -> str:
+    normalized = normalize_native_model_family(model_family).upper().replace("-", "_")
+    return f"NFN_NATIVE_{normalized}_CLI"
+
+
+def native_train_family_uses_model_family_arg(model_family: str | None) -> bool:
+    return normalize_native_model_family(model_family) in DENSE_GPT_MODEL_FAMILIES
+
+
 def resolve_native_train_cli(value: str | None = None) -> str:
     requested = str(value or "").strip()
     if requested:
@@ -92,15 +120,24 @@ def resolve_native_train_family_cli(model_family: str | None, native_train_cli: 
     if str(native_train_cli or "").strip() or str(os.environ.get("NFN_NATIVE_TRAIN_CLI", "")).strip():
         return None
     normalized = normalize_native_model_family(model_family)
-    if normalized not in DENSE_GPT_MODEL_FAMILIES:
+    target_name = NATIVE_TRAIN_FAMILY_TARGETS.get(normalized)
+    if target_name is None:
         return None
-    env_value = str(os.environ.get("NFN_NATIVE_GPT_CLI", "")).strip()
-    if env_value:
-        return env_value
+    env_names = [native_train_family_cli_env(normalized)]
+    if normalized in DENSE_GPT_MODEL_FAMILIES:
+        env_names.insert(0, "NFN_NATIVE_GPT_CLI")
+    for env_name in dict.fromkeys(env_names):
+        env_value = str(os.environ.get(env_name, "")).strip()
+        if env_value:
+            return env_value
     repo_root = Path(__file__).resolve().parents[1]
-    family_cli = repo_root / DEFAULT_NATIVE_GPT_TRAIN_CLI
+    default_path = DEFAULT_NATIVE_GPT_TRAIN_CLI if target_name == "nfn_gpt_native_train" else f"build/{target_name}"
+    family_cli = repo_root / default_path
     if family_cli.exists():
         return str(family_cli)
+    resolved = shutil.which(target_name)
+    if resolved:
+        return resolved
     return None
 
 
@@ -108,9 +145,10 @@ def resolve_available_native_train_cli_for_status() -> Path:
     cli = Path(resolve_native_train_cli())
     if cli.exists():
         return cli
-    family_cli = resolve_native_train_family_cli("gpt")
-    if family_cli:
-        return Path(family_cli)
+    for family in NATIVE_TRAIN_FAMILY_TARGETS:
+        family_cli = resolve_native_train_family_cli(family)
+        if family_cli:
+            return Path(family_cli)
     return cli
 
 

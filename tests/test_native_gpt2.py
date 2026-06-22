@@ -1730,6 +1730,45 @@ def test_native_train_run_config_uses_direct_dense_gpt_cli(
     assert "CUDA_MODULE_LOADING=LAZY" in env_output.read_text(encoding="utf-8").splitlines()
 
 
+def test_native_train_run_config_uses_direct_family_cli(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    family_cli = tmp_path / "nfn_gpt2_evo_native_train"
+    family_cli.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_TRAIN_ARGS\"\n"
+        "exit 46\n",
+        encoding="utf-8",
+    )
+    family_cli.chmod(0o755)
+    output = tmp_path / "native-train-family-args.txt"
+    monkeypatch.delenv("NFN_NATIVE_TRAIN_CLI", raising=False)
+    monkeypatch.setenv("NFN_NATIVE_GPT2_EVO_CLI", str(family_cli))
+    monkeypatch.setenv("NFN_NATIVE_TRAIN_BINDING", "0")
+    monkeypatch.setenv("NFN_TEST_NATIVE_TRAIN_ARGS", str(output))
+
+    cfg = build_native_train_run_config(
+        "gpt2_evo",
+        ["--tinystories", "--native-cuda-dry-run", "--native-cuda-print-command"],
+    )
+
+    assert cfg.to_dict()["model_family"] == "gpt2-evo"
+    assert cfg.argv() == [
+        str(family_cli),
+        "--tinystories",
+        "--native-cuda-dry-run",
+        "--native-cuda-print-command",
+    ]
+    status = native_train_runner_status("compiled-cli")
+    assert status.available is True
+    assert run_native_train(cfg, runner="compiled-cli") == 46
+    args = output.read_text(encoding="utf-8").splitlines()
+    assert args == ["--tinystories", "--native-cuda-dry-run", "--native-cuda-print-command"]
+    assert "--base-model" not in args
+    assert "--model-family" not in args
+
+
 def test_native_train_explicit_unified_cli_overrides_direct_dense_gpt_cli(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1746,6 +1785,10 @@ def test_native_train_explicit_unified_cli_overrides_direct_dense_gpt_cli(
     cfg = build_native_train_run_config("gpt", ["--dry-run"])
 
     assert cfg.argv()[:4] == [str(unified_cli), "--base-model", "gpt", "--dry-run"]
+
+    evo_cfg = build_native_train_run_config("gpt2-evo", ["--dry-run"])
+
+    assert evo_cfg.argv()[:4] == [str(unified_cli), "--base-model", "gpt2-evo", "--dry-run"]
 
 
 def test_native_train_cpp_binding_builds_and_runs(

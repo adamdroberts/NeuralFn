@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Removed an SDK startup dispatch hop for non-dense compiled native families.
+  `neuralfn.native_train.build_native_train_run_config()` now resolves
+  `gpt2-evo`, `llama`, `mixllama`, `jepa`, `semantic-router-moe`, and
+  `deepseek-v4` directly to their family C++ binary when it is available or
+  when the matching `NFN_NATIVE_<FAMILY>_CLI` override is set. Dense GPT aliases
+  keep using `nfn_gpt_native_train --model-family ...`; family-specific
+  binaries receive only their native arguments. Explicit `NFN_NATIVE_TRAIN_CLI`
+  or `native_train_cli=` still forces the unified frontend.
+
+  Verification: focused native SDK dispatch tests passed; `neuralfn/native_train.py`
+  compiled; native no-Torch dependency check and `git diff --check` passed.
+
 - Tightened the cooperative LM-head backward parity contract. Native dense-GPT
   JSON now distinguishes `lm_head_cooperative_backward_kernel_available`
   (future symbol probe) from `lm_head_cooperative_backward_route_integrated`
