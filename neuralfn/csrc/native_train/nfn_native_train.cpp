@@ -70,12 +70,12 @@ constexpr ModelEntry MODEL_REGISTRY[] = {
     },
     {
         "nanogpt",
-        "partial-native-trainer",
-        "nfn_gpt_native_train",
-        "template-geometry-native-trainer-missing",
         "implemented",
-        "requires-dynamic-template-geometry",
-        "NanoGPT routes to the shared dense GPT target with --template-name nanogpt, but full transformer training fails fast until the native loop supports dynamic width/head/layer/dropout geometry; pass --train-token-lm for the token-only native preflight.",
+        "nfn_gpt_native_train",
+        "native-transformer-lm",
+        "implemented",
+        "dense-gpt-template-geometry",
+        "NanoGPT routes to the shared dense GPT target with --template-name nanogpt; the native loop now uses the selected 320-wide/5-head/5-layer dense GPT geometry. Pass --train-token-lm for the token-only native preflight.",
     },
     {
         "llama",

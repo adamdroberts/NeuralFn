@@ -881,6 +881,20 @@ DenseGptTemplateGeometry selected_template_geometry(const Config& cfg) {
     return geometry;
 }
 
+DenseGptTemplateGeometry runtime_dense_gpt_geometry(const Config& cfg) {
+    DenseGptTemplateGeometry geometry = selected_template_geometry(cfg);
+    if (cfg.seq_len > 0) {
+        geometry.seq_len = cfg.seq_len;
+    }
+    if (cfg.num_layers > 0) {
+        geometry.num_layers = cfg.num_layers;
+    }
+    if (geometry.num_heads > 0) {
+        geometry.head_dim = geometry.model_dim / geometry.num_heads;
+    }
+    return geometry;
+}
+
 std::string selected_template_geometry_json(const Config& cfg) {
     const DenseGptTemplateGeometry geometry = selected_template_geometry(cfg);
     std::ostringstream out;
@@ -904,14 +918,16 @@ bool selected_template_geometry_matches_compiled_loop(const Config& cfg) {
     if (!cfg.graph_file.empty() && !custom_graph_template_metadata_found(cfg)) {
         return false;
     }
-    const DenseGptTemplateGeometry geometry = selected_template_geometry(cfg);
-    return geometry.model_dim == 768 &&
-        geometry.num_heads == 12 &&
-        geometry.head_dim == 64 &&
+    const DenseGptTemplateGeometry geometry = runtime_dense_gpt_geometry(cfg);
+    return geometry.model_dim > 0 &&
+        geometry.num_heads > 0 &&
+        geometry.head_dim > 0 &&
+        geometry.model_dim == geometry.num_heads * geometry.head_dim &&
         geometry.mlp_multiplier == 4 &&
         geometry.vocab_size == 50257 &&
         geometry.padded_vocab_size == 50304 &&
-        geometry.dropout_p == 0.0;
+        geometry.num_layers > 0 &&
+        geometry.seq_len > 0;
 }
 
 std::string selected_graph_support_status(const Config& cfg) {
@@ -934,21 +950,25 @@ std::string selected_graph_support_status(const Config& cfg) {
 }
 
 std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
-    const DenseGptTemplateGeometry geometry = selected_template_geometry(cfg);
+    const DenseGptTemplateGeometry geometry = runtime_dense_gpt_geometry(cfg);
     const bool custom_graph_metadata_loaded = !cfg.graph_file.empty() && custom_graph_template_metadata(cfg).found;
+    const bool template_geometry_dynamic = geometry.model_dim != 768 ||
+        geometry.num_heads != 12 ||
+        geometry.num_layers != 12 ||
+        geometry.seq_len != 1024;
     std::ostringstream out;
     out
         << "{"
-        << "\"name\":\"gpt2-compatible-fixed-dense-transformer\","
+        << "\"name\":\"native-dense-gpt-transformer\","
         << "\"shape_source\":\""
-        << (custom_graph_metadata_loaded ? "custom_graph_template_spec" : "compiled_dense_gpt_defaults") << "\","
+        << (custom_graph_metadata_loaded ? "custom_graph_template_spec" : "selected_dense_gpt_geometry") << "\","
         << "\"template_selector\":\"" << json_escape(normalize_template_name(cfg.template_name)) << "\","
         << "\"resolved_template_selector\":\"" << json_escape(resolved_native_template_name(cfg.template_name)) << "\","
         << "\"graph_file\":\"" << json_escape(cfg.graph_file) << "\","
         << "\"graph_file_exists\":" << (custom_graph_file_exists(cfg) ? "true" : "false") << ","
         << "\"graph_file_size_bytes\":" << custom_graph_file_size_bytes(cfg) << ","
         << "\"selector_native_runnable\":" << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ","
-        << "\"template_geometry_dynamic\":false,"
+        << "\"template_geometry_dynamic\":" << (template_geometry_dynamic ? "true" : "false") << ","
         << "\"custom_graph_geometry_dynamic\":" << (custom_graph_metadata_loaded ? "true" : "false") << ","
         << "\"selected_template_geometry\":" << selected_template_geometry_json(cfg) << ","
         << "\"geometry_matches_compiled_loop\":"
@@ -959,18 +979,18 @@ std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
         << "\"mlp_multiplier\":" << geometry.mlp_multiplier << ","
         << "\"vocab_size\":" << geometry.vocab_size << ","
         << "\"padded_vocab_size\":" << geometry.padded_vocab_size << ","
-        << "\"num_layers\":" << (cfg.num_layers > 0 ? cfg.num_layers : geometry.num_layers) << ","
-        << "\"seq_len\":" << (cfg.seq_len > 0 ? cfg.seq_len : 1024) << ","
+        << "\"num_layers\":" << geometry.num_layers << ","
+        << "\"seq_len\":" << geometry.seq_len << ","
         << "\"position_encoding\":\"absolute\","
         << "\"norm\":\"layernorm\","
         << "\"attention\":\"causal-packed-qkv-sm120-bf16\","
         << "\"mlp\":\"gelu-4x\","
-        << "\"dropout_p\":0,"
+        << "\"dropout_p\":" << geometry.dropout_p << ","
         << "\"supported_template_selectors\":["
         << "\"gpt\",\"gpt2\",\"gpt2_modern\",\"gpt3\",\"gpt2_megakernel\",\"gpt2_moa\","
         << "\"nanogpt\",\"nanogpt_modern\",\"nanogpt_megakernel\""
         << "],"
-        << "\"unsupported_geometry_next_step\":\"generalize-native-loop-dimensions-dropout-and-graph-shape-loading\""
+        << "\"unsupported_geometry_next_step\":\"add-native-non-dense-variant-and-non-gpt-vocab-training-plans\""
         << "}";
     return out.str();
 }
@@ -3274,9 +3294,11 @@ std::vector<std::string> required_tile_symbols() {
 std::vector<BufferPlan> build_gpt2_parameter_layout(const Config& cfg) {
     std::vector<BufferPlan> layout;
     std::int64_t offset = 0;
-    constexpr std::int64_t dim = 768;
-    constexpr std::int64_t padded_vocab = 50304;
-    const std::int64_t mlp_dim = dim * 4;
+    const DenseGptTemplateGeometry geometry = runtime_dense_gpt_geometry(cfg);
+    const std::int64_t dim = geometry.model_dim;
+    const std::int64_t padded_vocab = geometry.padded_vocab_size;
+    const std::int64_t mlp_dim = dim * geometry.mlp_multiplier;
+    const std::int64_t layers = cfg.num_layers > 0 ? cfg.num_layers : geometry.num_layers;
 
     auto add = [&](std::string name, std::vector<std::int64_t> shape, bool weight_decay) {
         BufferPlan buffer;
@@ -3291,7 +3313,7 @@ std::vector<BufferPlan> build_gpt2_parameter_layout(const Config& cfg) {
 
     add("wte.weight", {padded_vocab, dim}, true);
     add("wpe.weight", {cfg.seq_len, dim}, true);
-    for (int layer = 0; layer < cfg.num_layers; ++layer) {
+    for (std::int64_t layer = 0; layer < layers; ++layer) {
         const std::string prefix = "h." + std::to_string(layer) + ".";
         add(prefix + "ln_1.weight", {dim}, false);
         add(prefix + "ln_1.bias", {dim}, false);
@@ -3590,11 +3612,12 @@ int print_native_checkpoint_layout_json(const Config& cfg) {
 std::vector<StagePlan> build_gpt2_stage_plan(const Config& cfg) {
     std::vector<StagePlan> stages;
     const std::int64_t tokens = static_cast<std::int64_t>(cfg.batch_size) * cfg.seq_len;
-    constexpr std::int64_t dim = 768;
-    constexpr std::int64_t padded_vocab = 50304;
+    const DenseGptTemplateGeometry geometry = runtime_dense_gpt_geometry(cfg);
+    const std::int64_t dim = geometry.model_dim;
+    const std::int64_t padded_vocab = geometry.padded_vocab_size;
     const std::int64_t hidden = tokens * dim;
     const std::int64_t qkv = tokens * dim * 3;
-    const std::int64_t mlp_hidden = tokens * dim * 4;
+    const std::int64_t mlp_hidden = tokens * dim * geometry.mlp_multiplier;
     const std::int64_t logits = tokens * padded_vocab;
     const std::int64_t parameters = layout_count(build_gpt2_parameter_layout(cfg));
 
@@ -3729,16 +3752,17 @@ bool print_tile_plan(
     const neuralfn::native_train::TokenShardDataset& dataset,
     const char* program,
     bool include_symbol_check) {
+    const DenseGptTemplateGeometry geometry = runtime_dense_gpt_geometry(cfg);
     const std::int64_t tokens = static_cast<std::int64_t>(cfg.batch_size) * cfg.seq_len;
-    const std::int64_t hidden = tokens * 768;
+    const std::int64_t hidden = tokens * geometry.model_dim;
     const std::int64_t requested_lm_head_chunk_rows =
         cfg.lm_head_row_chunk_size > 0 ? cfg.lm_head_row_chunk_size : 1;
     const std::int64_t lm_head_chunk_rows =
         tokens < requested_lm_head_chunk_rows ? tokens : requested_lm_head_chunk_rows;
-    constexpr std::int64_t public_vocab = 50257;
-    constexpr std::int64_t padded_vocab = 50304;
+    const std::int64_t public_vocab = geometry.vocab_size;
+    const std::int64_t padded_vocab = geometry.padded_vocab_size;
     const std::int64_t logits = lm_head_chunk_rows * padded_vocab;
-    const std::int64_t attention_row_count = tokens * 12;
+    const std::int64_t attention_row_count = tokens * geometry.num_heads;
     const std::int64_t attention_scalar_output_count = hidden;
     const bool packed_qkv_attention_enabled = packed_qkv_attention_default_enabled();
     const bool bf16_qkv_grad_handoff_enabled =
@@ -3815,7 +3839,7 @@ bool print_tile_plan(
             true);
     constexpr std::int64_t activation_tape_count = 1;
     const std::int64_t packed_qkv_attention_bf16_elements =
-        packed_qkv_attention_enabled ? (tokens * 768 * 4 * activation_tape_count) : 0;
+        packed_qkv_attention_enabled ? (tokens * geometry.model_dim * 4 * activation_tape_count) : 0;
     const std::int64_t packed_qkv_attention_bf16_bytes =
         packed_qkv_attention_bf16_elements * static_cast<std::int64_t>(sizeof(std::uint16_t));
     const std::int64_t attention_grad_out_bf16_elements =
@@ -3828,7 +3852,7 @@ bool print_tile_plan(
         projection_bf16_scratch_elements * static_cast<std::int64_t>(sizeof(std::uint16_t));
     const bool packed_qkv_float_attention_tape_elided = packed_qkv_attention_enabled;
     const std::int64_t packed_qkv_float_attention_tape_elements_elided =
-        packed_qkv_float_attention_tape_elided ? (tokens * 768 * 8) : 0;
+        packed_qkv_float_attention_tape_elided ? (tokens * geometry.model_dim * 8) : 0;
     const std::int64_t stored_packed_attention_block_count =
         store_packed_attention_activations_enabled && cfg.num_layers > 0
             ? std::min<std::int64_t>(
@@ -3838,7 +3862,7 @@ bool print_tile_plan(
                                          kDefaultStoredPackedAttentionBlocks))
             : 0;
     const std::int64_t stored_packed_attention_bf16_elements =
-        stored_packed_attention_block_count * tokens * 768 * 4;
+        stored_packed_attention_block_count * tokens * geometry.model_dim * 4;
     const std::int64_t stored_packed_attention_bf16_bytes =
         stored_packed_attention_bf16_elements * static_cast<std::int64_t>(sizeof(std::uint16_t));
     const std::int64_t stored_packed_attention_ln1_stats_block_count =
@@ -3858,7 +3882,7 @@ bool print_tile_plan(
                   std::max<std::int64_t>(cfg.num_layers - 1, 0))
             : 0;
     const std::int64_t stored_packed_attention_ln1_bf16_elements =
-        stored_packed_attention_ln1_bf16_block_count * tokens * 768;
+        stored_packed_attention_ln1_bf16_block_count * tokens * geometry.model_dim;
     const std::int64_t stored_packed_attention_lse_elements =
         store_packed_attention_lse_enabled ? stored_packed_attention_block_count * attention_row_count : 0;
     const std::int64_t stored_packed_attention_lse_bytes =
@@ -3972,7 +3996,9 @@ bool print_tile_plan(
         << "  \"validation_shards_resolved\": " << (!dataset.val_shards.empty() ? "true" : "false") << ",\n"
         << "  \"tile_ops_library\": \"" << json_escape(tile_ops) << "\",\n"
         << "  \"shape\": {\"num_layers\": " << cfg.num_layers
-        << ", \"model_dim\": 768, \"num_heads\": 12, \"vocab_size\": " << public_vocab
+        << ", \"model_dim\": " << geometry.model_dim
+        << ", \"num_heads\": " << geometry.num_heads
+        << ", \"vocab_size\": " << public_vocab
         << ", \"padded_vocab_size\": " << padded_vocab << ", \"seq_len\": "
         << cfg.seq_len << ", \"batch_size\": " << cfg.batch_size << "},\n"
         << "  \"lm_head_classifier_strategy_contract\": "
@@ -9502,19 +9528,20 @@ int run_transformer_lm_training_json(
     const Config& cfg,
     const neuralfn::native_train::TokenShardDataset& dataset,
     const char* program) {
-    constexpr std::int64_t kHeads = 12;
-    constexpr std::int64_t kDefaultTargetLayers = 12;
-    constexpr std::int64_t kVocab = 50257;
-    constexpr std::int64_t kPaddedVocab = 50304;
-    constexpr std::int64_t kDim = 768;
-    constexpr std::int64_t kHeadDim = kDim / kHeads;
-    constexpr std::int64_t kHidden = kDim * 4;
-    constexpr std::int64_t kQkvDim = kDim * 3;
-    constexpr std::int64_t kTokenWeightElements = kPaddedVocab * kDim;
-    constexpr std::int64_t kQkvWeightElements = kQkvDim * kDim;
-    constexpr std::int64_t kAttnProjWeightElements = kDim * kDim;
-    constexpr std::int64_t kFcWeightElements = kHidden * kDim;
-    constexpr std::int64_t kMlpProjWeightElements = kDim * kHidden;
+    const DenseGptTemplateGeometry geometry = runtime_dense_gpt_geometry(cfg);
+    const std::int64_t kHeads = geometry.num_heads;
+    const std::int64_t kDefaultTargetLayers = geometry.num_layers;
+    const std::int64_t kVocab = geometry.vocab_size;
+    const std::int64_t kPaddedVocab = geometry.padded_vocab_size;
+    const std::int64_t kDim = geometry.model_dim;
+    const std::int64_t kHeadDim = geometry.head_dim;
+    const std::int64_t kHidden = kDim * geometry.mlp_multiplier;
+    const std::int64_t kQkvDim = kDim * 3;
+    const std::int64_t kTokenWeightElements = kPaddedVocab * kDim;
+    const std::int64_t kQkvWeightElements = kQkvDim * kDim;
+    const std::int64_t kAttnProjWeightElements = kDim * kDim;
+    const std::int64_t kFcWeightElements = kHidden * kDim;
+    const std::int64_t kMlpProjWeightElements = kDim * kHidden;
     constexpr float kInitialPositionWeight = 0.02f;
     constexpr float kInitialTokenWeightSample = -0.08f;
     constexpr float kLnWeight = 1.0f;
@@ -12487,9 +12514,9 @@ int run_transformer_lm_training_json(
         static_cast<std::size_t>(persistent_block_output_count),
         nullptr);
     float* block_output_restore = nullptr;
-    constexpr std::int64_t kBlockWeightBf16ElementsPerBlock =
+    const std::int64_t kBlockWeightBf16ElementsPerBlock =
         kQkvWeightElements + kAttnProjWeightElements + kFcWeightElements + kMlpProjWeightElements;
-    constexpr std::int64_t kBlockDweightBf16StagingElementsPerBlock =
+    const std::int64_t kBlockDweightBf16StagingElementsPerBlock =
         kQkvWeightElements + kFcWeightElements;
     const std::int64_t stored_mlp_activation_block_count =
         store_mlp_activations_enabled && trained_layers > 0
@@ -21590,7 +21617,18 @@ int main(int argc, char** argv) {
             cfg.batch_size = 32;
         }
     }
-    if (!cfg.graph_file.empty()) {
+    if (cfg.graph_file.empty()) {
+        const DenseGptTemplateGeometry geometry = selected_template_geometry(cfg);
+        if (!cfg.seq_len_explicit && geometry.seq_len > 0) {
+            cfg.seq_len = static_cast<int>(geometry.seq_len);
+            if (!cfg.batch_size_explicit && cfg.seq_len > 0 && cfg.seq_len != 1024) {
+                cfg.batch_size = std::max(1, 65536 / cfg.seq_len);
+            }
+        }
+        if (!cfg.num_layers_explicit && geometry.num_layers > 0) {
+            cfg.num_layers = static_cast<int>(geometry.num_layers);
+        }
+    } else {
         const CustomGraphTemplateMetadata meta = custom_graph_template_metadata(cfg);
         if (meta.found) {
             if (!cfg.seq_len_explicit && meta.geometry.seq_len > 0) {

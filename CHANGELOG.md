@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Generalized the native dense GPT transformer-LM geometry contract so the
+  compiled C++ trainer uses selected dense GPT template or compatible custom
+  graph metadata instead of fixed GPT-2 dimensions. `gpt`, `gpt2`, `gpt3`, and
+  `nanogpt` now all report `native-dense-gpt-transformer` geometry; NanoGPT
+  routes through `--template-name nanogpt` as an implemented full-transformer
+  native path with 320-wide, 5-head, 5-layer dense GPT layout/plan/allocation
+  metadata. The unified native model registry now reports `nanogpt` as
+  `implemented` with `transformer_lm_status: "native-transformer-lm"` and
+  `geometry_status: "dense-gpt-template-geometry"`. Non-dense templates and
+  incompatible custom graphs still fail in compiled C++ before token-shard
+  resolution instead of falling back to Torch or graph-editor tensor flow.
+
+  Verification: rebuilt `build/nfn_gpt_native_train` and
+  `build/nfn_native_train`; focused native GPT and unified native registry
+  pytest slices passed under the `NeuralFn` Conda environment; dry-runs for
+  `--template-name nanogpt`, `gpt3`, and explicit GPT-2 shape overrides
+  reported the selected runtime geometry. A sandboxed tiny NanoGPT
+  `--startup-only` probe failed with `CUDA error 35` because sandboxed GPU
+  access was blocked; rerunning the same command outside the sandbox on the
+  dedicated RTX 5090 passed with `status: "native-transformer-lm-startup-ready"`
+  and checkpoint metadata reporting NanoGPT `num_heads: 5` and `channels: 320`.
+
 - Strengthened the native no-Torch verifier to cover default direct-script
   dispatch, not only explicit dry-run/preflight paths. The verifier now runs
   guarded legacy training scripts for GPT-2 evo, NanoGPT, LLaMA fast/megakernel,

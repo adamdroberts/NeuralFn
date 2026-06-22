@@ -2053,8 +2053,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         == "dense-gpt-selectors-canonicalize-to-gpt-template-or-graph-selects-architecture"
     )
     assert default_payload["native_geometry_contract"] == {
-        "name": "gpt2-compatible-fixed-dense-transformer",
-        "shape_source": "compiled_dense_gpt_defaults",
+        "name": "native-dense-gpt-transformer",
+        "shape_source": "selected_dense_gpt_geometry",
         "template_selector": "gpt",
         "resolved_template_selector": "gpt2",
         "graph_file": "",
@@ -2100,7 +2100,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "nanogpt_modern",
             "nanogpt_megakernel",
         ],
-        "unsupported_geometry_next_step": "generalize-native-loop-dimensions-dropout-and-graph-shape-loading",
+        "unsupported_geometry_next_step": "add-native-non-dense-variant-and-non-gpt-vocab-training-plans",
     }
     assert default_payload["lm_head_classifier_strategy_contract"] == {
         "reference_strategy": "llm.kittens-full-resident-logits-fused-classifier",
@@ -2335,8 +2335,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         tile_payload["model_family_context_policy"]
         == "dense-gpt-selectors-canonicalize-to-gpt-template-or-graph-selects-architecture"
     )
-    assert tile_payload["native_geometry_contract"]["name"] == "gpt2-compatible-fixed-dense-transformer"
-    assert tile_payload["native_geometry_contract"]["shape_source"] == "compiled_dense_gpt_defaults"
+    assert tile_payload["native_geometry_contract"]["name"] == "native-dense-gpt-transformer"
+    assert tile_payload["native_geometry_contract"]["shape_source"] == "selected_dense_gpt_geometry"
     assert tile_payload["native_geometry_contract"]["selector_native_runnable"] is True
     assert tile_payload["native_geometry_contract"]["template_geometry_dynamic"] is False
     assert tile_payload["native_geometry_contract"]["custom_graph_geometry_dynamic"] is False
@@ -2726,12 +2726,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         if preset in {"gpt2", "gpt2_modern", "gpt2_megakernel", "gpt2_moa"}:
             assert preset_payload["selected_graph_support_status"] == "native-transformer-lm"
             assert preset_payload["selected_graph_native_runnable"] is True
-            assert preset_payload["native_geometry_contract"]["shape_source"] == "compiled_dense_gpt_defaults"
+            assert preset_payload["native_geometry_contract"]["shape_source"] == "selected_dense_gpt_geometry"
             assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is False
             assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
         elif preset in {"nanogpt", "nanogpt_modern", "nanogpt_megakernel"}:
-            assert preset_payload["selected_graph_support_status"] == "template-geometry-native-trainer-missing"
-            assert preset_payload["selected_graph_native_runnable"] is False
+            assert preset_payload["selected_graph_support_status"] == "native-transformer-lm"
+            assert preset_payload["selected_graph_native_runnable"] is True
             assert preset_payload["native_geometry_contract"]["selected_template_geometry"] == {
                 "source": "template",
                 "model_dim": 320,
@@ -2744,7 +2744,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
                 "seq_len": 1024,
                 "dropout_p": 0.1,
             }
-            assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is False
+            assert preset_payload["native_geometry_contract"]["template_geometry_dynamic"] is True
+            assert preset_payload["native_geometry_contract"]["geometry_matches_compiled_loop"] is True
         else:
             assert preset_payload["selected_graph_support_status"] == "template-native-trainer-missing"
             assert preset_payload["selected_graph_native_runnable"] is False
@@ -3482,10 +3483,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_profile_payload["periodic_checkpoint_enabled"] is False
     assert train_transformer_profile_payload["final_checkpoint_export_enabled"] is True
 
-    assert train_transformer_payload["native_geometry_contract"]["name"] == "gpt2-compatible-fixed-dense-transformer"
-    assert train_transformer_payload["native_geometry_contract"]["shape_source"] == "compiled_dense_gpt_defaults"
+    assert train_transformer_payload["native_geometry_contract"]["name"] == "native-dense-gpt-transformer"
+    assert train_transformer_payload["native_geometry_contract"]["shape_source"] == "selected_dense_gpt_geometry"
     assert train_transformer_payload["native_geometry_contract"]["selector_native_runnable"] is True
-    assert train_transformer_payload["native_geometry_contract"]["template_geometry_dynamic"] is False
+    assert train_transformer_payload["native_geometry_contract"]["template_geometry_dynamic"] is True
     assert train_transformer_payload["native_geometry_contract"]["custom_graph_geometry_dynamic"] is False
     assert train_transformer_payload["native_geometry_contract"]["model_dim"] == 768
     assert train_transformer_payload["native_geometry_contract"]["seq_len"] == 2
@@ -4709,7 +4710,7 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert statuses["gpt2"] == "implemented"
     assert statuses["gpt3"] == "implemented"
     assert statuses["gpt2-evo"] == "implemented"
-    assert statuses["nanogpt"] == "partial-native-trainer"
+    assert statuses["nanogpt"] == "implemented"
     assert native_targets["gpt"] == "nfn_gpt_native_train"
     assert native_targets["gpt2"] == "nfn_gpt_native_train"
     assert native_targets["gpt3"] == "nfn_gpt_native_train"
@@ -4719,11 +4720,11 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert transformer_statuses["gpt2"] == "native-transformer-lm"
     assert transformer_statuses["gpt3"] == "native-transformer-lm"
     assert transformer_statuses["gpt2-evo"] == "native-dense-gpt-layer-evo-delegate"
-    assert transformer_statuses["nanogpt"] == "template-geometry-native-trainer-missing"
+    assert transformer_statuses["nanogpt"] == "native-transformer-lm"
     assert token_statuses["gpt2-evo"] == "not-applicable"
     assert token_statuses["nanogpt"] == "implemented"
     assert geometry_statuses["gpt2-evo"] == "dense-gpt2-compatible-layer-evo-delegate"
-    assert geometry_statuses["nanogpt"] == "requires-dynamic-template-geometry"
+    assert geometry_statuses["nanogpt"] == "dense-gpt-template-geometry"
     sdk_payload = native_train_model_registry(native_train_cli=str(unified))
     sdk_statuses = {item["name"]: item["status"] for item in sdk_payload["models"]}
     sdk_transformer_statuses = {item["name"]: item["transformer_lm_status"] for item in sdk_payload["models"]}
