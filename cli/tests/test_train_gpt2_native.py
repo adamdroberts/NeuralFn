@@ -145,6 +145,51 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
         self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
 
+    def test_train_gpt2_evo_module_import_is_native_only(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import builtins
+            import sys
+
+            blocked = {{"torch", "numpy", "server.dataset_manager", "neuralfn.torch_backend"}}
+            real_import = builtins.__import__
+
+            def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+                if name in blocked or any(name.startswith(prefix + ".") for prefix in blocked):
+                    raise AssertionError(f"blocked import: {{name}}")
+                return real_import(name, globals, locals, fromlist, level)
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root / "cli" / "scripts"))
+            builtins.__import__ = guarded_import
+            try:
+                import train_gpt2_evo
+            finally:
+                builtins.__import__ = real_import
+
+            print("MODE_NAME", train_gpt2_evo.MODE_NAME)
+            print("TORCH_LOADED", "torch" in sys.modules)
+            print("NUMPY_LOADED", "numpy" in sys.modules)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("MODE_NAME gpt2_evo", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("NUMPY_LOADED False", proc.stdout)
+
     def test_nfn_subcommand_help_does_not_import_torch(self) -> None:
         cases = (
             (["train", "--help"], "Train NeuralFn models."),

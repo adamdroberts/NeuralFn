@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Replaced `cli/scripts/train_gpt2_evo.py` with a Torch-free native shim. Direct
+  execution still prefers `NFN_NATIVE_GPT2_EVO_CLI`,
+  `build/nfn_gpt2_evo_native_train`, or an installed
+  `nfn_gpt2_evo_native_train`, then falls back to the unified native frontend,
+  but importing the module no longer imports Torch, NumPy, dataset managers,
+  graph-editor helpers, or `TorchTrainer`. Added an import-blocker regression
+  test covering that module import path.
+
+  **Breaking changes:** `cli/scripts/train_gpt2_evo.py` no longer exposes the
+  legacy graph-backed parser, graph builder, or Torch training helpers. Use the
+  compiled native GPT-2-evo CLI for training/preflight, and use
+  `neuralfn.config.build_gpt2_evo_spec()` directly for SDK graph construction.
+
 - Fixed the SM120 native candidate wrapper for LM-head loss-bin profiles.
   `lm_head_loss_bins`, `lm_head_ce_loss_bins_default_specialized`, and
   `lm_head_ce_loss_bins_llmk_style_specialized` now add
