@@ -23,7 +23,6 @@ import server.dataset_manager as dataset_manager_module
 
 TRAIN_SCRIPT_CASES = [
     "train_jepa_semantic",
-    "train_mixllama_fast",
     "train_llama_fast",
     "train_llama_megakernel",
     "train_gpt2",

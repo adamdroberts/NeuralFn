@@ -20,7 +20,6 @@ from server import dataset_manager as dm
 
 TINYSTORIES_SCRIPT_CASES = [
     "train_jepa_semantic",
-    "train_mixllama_fast",
     "train_llama_fast",
     "train_llama_megakernel",
     "train_gpt2",

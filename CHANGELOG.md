@@ -6,10 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Replaced `cli/scripts/train_mixllama_fast.py` with a Torch-free native shim.
+  Direct execution dispatches to the MixLLaMA family native C++ binary or
+  unified native frontend, while module import now exposes only lightweight
+  defaults, path helpers, and a minimal native-inspection parser.
+
+  **Breaking changes:** `cli/scripts/train_mixllama_fast.py` no longer exposes
+  the legacy graph-backed graph builder, trainer config builder, progress
+  logger, dataset resolver workflow, evaluation helper, or Torch training loop.
+  Use `nfn train --base-model mixllama ...` or the MixLLaMA native C++ binary
+  for CLI preflight/status, and use `neuralfn.config.build_mixllama_fast_spec()`
+  or `build_mixllama_fast_megakernel_spec()` directly for SDK graph
+  construction while the native trainer kernels are completed.
+
+  Verification: `python tools/check_native_no_torch_deps.py`,
+  `python -m pytest cli/tests/test_train_gpt2_native.py::TrainGpt2NativeStartupTest::test_train_mixllama_module_import_and_parser_do_not_import_torch cli/tests/test_train_gpt2_native.py::TrainGpt2NativeStartupTest::test_legacy_training_scripts_reject_before_torch_import -q`,
+  and focused legacy parser/routing/tokenizer tests after removing MixLLaMA from
+  graph-backed helper matrices.
+
 - Extended `tools/check_native_no_torch_deps.py` with import-only checks for
-  the native-only GPT-2-evo, NanoGPT, and DeepSeek-V4 shim modules. These run
-  under the same import blocker used by direct native dispatch checks, so module
-  import cannot regress into Torch, NumPy, tokenizer, dataset-manager,
+  the native-only GPT-2-evo, NanoGPT, MixLLaMA, and DeepSeek-V4 shim modules.
+  These run under the same import blocker used by direct native dispatch checks,
+  so module import cannot regress into Torch, NumPy, tokenizer, dataset-manager,
   `train_gpt_native`, or `nfn_impl` startup.
 
   Verification: `python tools/check_native_no_torch_deps.py`.

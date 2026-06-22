@@ -33,11 +33,6 @@ def _load_train_jepa_module():
     return _load_harness_module("train_jepa_semantic_routing_diag", "train_jepa_semantic.py")
 
 
-def _load_train_mixllama_module():
-    _load_train_jepa_module()
-    return _load_harness_module("train_mixllama_fast_routing_diag", "train_mixllama_fast.py")
-
-
 def _load_train_semantic_router_module():
     _load_train_jepa_module()
     return _load_harness_module("train_semantic_router_moe_routing_diag", "train_semantic_router_moe.py")
@@ -334,33 +329,6 @@ def test_train_jepa_progress_logger_renders_semantic_route_preview(monkeypatch: 
     assert "route=active 2/8" in messages[0]
     assert "entropy=0.82" in messages[0]
     assert f"{EXPERT_TO_DIMENSION[2]}:60%" in messages[0]
-
-
-def test_mixllama_progress_logger_renders_numeric_route_preview(monkeypatch: pytest.MonkeyPatch) -> None:
-    module = _load_train_mixllama_module()
-    messages: list[str] = []
-    monkeypatch.setattr(module, "log_stage", messages.append)
-    on_step, _ = module.build_progress_logger(train_log_every=1, resolved_epochs=1, max_steps=10)
-
-    on_step(
-        {
-            "phase": "train",
-            "step": 1,
-            "max_steps": 10,
-            "epoch": 1,
-            "max_epochs": 1,
-            "epoch_step": 1,
-            "steps_per_epoch": 1,
-            "loss": 1.0,
-            "elapsed_seconds": 1.0,
-            "learning_rates": [1e-3],
-            "routing_stats": _sample_routing_stats(),
-        }
-    )
-
-    assert len(messages) == 1
-    assert "usage=[2:60%,0:40%]" in messages[0]
-    assert "topk_h=0.91" in messages[0]
 
 
 def test_semantic_router_progress_logger_logs_routing_during_warmup(monkeypatch: pytest.MonkeyPatch) -> None:

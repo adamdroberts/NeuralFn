@@ -124,11 +124,6 @@ def _load_train_jepa_module():
     return _load_harness_module("train_jepa_semantic", "train_jepa_semantic.py")
 
 
-def _load_train_mixllama_module():
-    _load_train_jepa_module()
-    return _load_harness_module("train_mixllama_fast_test_module", "train_mixllama_fast.py")
-
-
 def _load_train_llama_module():
     _load_train_jepa_module()
     return _load_harness_module("train_llama_fast_test_module", "train_llama_fast.py")
@@ -771,51 +766,6 @@ def test_apply_tinystories_dataset_defaults_rejects_conflicting_dataset_flags(
         train_module.apply_tinystories_dataset_defaults(args)
 
 
-def test_train_mixllama_main_uses_shared_dataset_resolver_before_missing_alias_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    mixllama_module = _load_train_mixllama_module()
-    sentinel = RuntimeError("after resolver")
-    resolved_calls: list[dict[str, object]] = []
-
-    def fake_resolve(alias: str, **kwargs):
-        resolved_calls.append({"alias": alias, **kwargs})
-        return alias, tmp_path / alias, {}
-
-    def fake_estimate_schedule(*_args, **_kwargs):
-        raise sentinel
-
-    monkeypatch.setattr(mixllama_module, "resolve_or_download_dataset", fake_resolve)
-    monkeypatch.setattr(mixllama_module, "estimate_text_schedule", fake_estimate_schedule)
-    monkeypatch.setattr(mixllama_module.torch.cuda, "is_available", lambda: True)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        ["train_mixllama_fast.py", "--dataset-alias", "custom_alias", "--download-if-missing"],
-    )
-
-    with pytest.raises(RuntimeError, match="after resolver"):
-        mixllama_module.main()
-
-    assert len(resolved_calls) == 1
-    _assert_call_includes(
-        resolved_calls[0],
-        {
-            "alias": "custom_alias",
-            "download_if_missing": True,
-            "raw_text_encoding_name": "o200k_base",
-            "dataset_hf_path": None,
-            "dataset_variant": None,
-            "dataset_train_shards": None,
-            "dataset_repo_id": None,
-            "dataset_remote_root_prefix": None,
-            "dataset_train_file": None,
-            "dataset_val_file": None,
-        },
-    )
-
-
 def test_train_llama_main_uses_shared_dataset_resolver_before_missing_alias_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -910,7 +860,6 @@ def test_train_llama_megakernel_main_uses_shared_dataset_resolver_before_missing
     ("loader", "argv0"),
     [
         (_load_train_jepa_module, "train_jepa_semantic.py"),
-        (_load_train_mixllama_module, "train_mixllama_fast.py"),
         (_load_train_llama_module, "train_llama_fast.py"),
         (_load_train_llama_megakernel_module, "train_llama_megakernel.py"),
         (_load_train_semantic_router_module, "train_semantic_router_moe.py"),
@@ -965,7 +914,6 @@ def test_train_scripts_main_pass_tinystories_raw_file_contract_to_shared_resolve
     ("loader", "argv0"),
     [
         (_load_train_jepa_module, "train_jepa_semantic.py"),
-        (_load_train_mixllama_module, "train_mixllama_fast.py"),
         (_load_train_llama_module, "train_llama_fast.py"),
         (_load_train_llama_megakernel_module, "train_llama_megakernel.py"),
         (_load_train_semantic_router_module, "train_semantic_router_moe.py"),

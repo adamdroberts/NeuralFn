@@ -26,7 +26,6 @@ TRAIN_SCRIPT_CASES = [
     ("train_gpt2", 1),
     ("train_llama_fast", 1),
     ("train_llama_megakernel", 1),
-    ("train_mixllama_fast", 1),
     ("train_semantic_router_moe", 1),
 ]
 

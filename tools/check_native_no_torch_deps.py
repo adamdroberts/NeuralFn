@@ -299,6 +299,14 @@ DEFAULT_NATIVE_SHIM_IMPORT_ENTRYPOINTS = (
             "import train_deepseek_v4; print('train_deepseek_v4-import-ok')",
         ),
     ),
+    (
+        "train_mixllama_fast_module_import",
+        (
+            sys.executable,
+            "-c",
+            "import train_mixllama_fast; print('train_mixllama_fast-import-ok')",
+        ),
+    ),
 )
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256
