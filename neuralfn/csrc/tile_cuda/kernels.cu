@@ -90,6 +90,7 @@ std::atomic<std::int64_t> g_lm_head_classifier_chunk_launch_count{0};
 std::atomic<std::int64_t> g_lm_head_classifier_last_rows{0};
 std::atomic<std::int64_t> g_lm_head_classifier_last_vocab{0};
 std::atomic<std::int64_t> g_lm_head_classifier_last_row_stride{0};
+std::atomic<std::int64_t> g_lm_head_classifier_loss_bin_launch_count{0};
 struct TokenCrossEntropyWorkspace {
   float* row_max = nullptr;
   float* row_denom = nullptr;
@@ -11610,6 +11611,77 @@ __global__ void token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_
   }
 }
 
+__global__ void token_cross_entropy_backward_loss_bins_inplace_strided_bf16_bits_u16_targets_fused_kernel(
+    std::uint16_t* __restrict__ logits,
+    const std::uint16_t* __restrict__ targets,
+    float* __restrict__ loss_bins,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    std::int64_t loss_bin_count,
+    float loss_scale,
+    bool vec_stores,
+    bool vec_normal_stores,
+    bool vec_loads,
+    bool use_exp2) {
+  const std::int64_t row = rows - static_cast<std::int64_t>(blockIdx.x) - 1;
+  if (row >= rows) {
+    return;
+  }
+  __shared__ float reduce_max_shared[32];
+  __shared__ float reduce_sum_shared[32];
+
+  std::uint16_t* row_logits = logits + row * row_stride;
+  float thread_max = bf16_row_max_vec8_or_scalar(row_logits, vocab, vec_loads);
+  const float row_max = block_reduce_max_f32(thread_max, reduce_max_shared);
+
+  float thread_sum = bf16_row_exp_sum_vec8_or_scalar(row_logits, vocab, row_max, vec_loads, use_exp2);
+  const float row_denom = block_reduce_sum_f32(thread_sum, reduce_sum_shared);
+  const std::uint16_t target = targets[row];
+  const float target_logit = bf16_bits_to_f32_device(row_logits[static_cast<std::int64_t>(target)]);
+
+  if (threadIdx.x == 0 && loss_bins != nullptr && loss_bin_count > 0) {
+    const float loss = logf(row_denom) + row_max - target_logit;
+    atomicAdd(loss_bins + (row % loss_bin_count), loss);
+  }
+
+  if (vec_stores || vec_normal_stores) {
+    constexpr std::int64_t kVec = 8;
+    const std::int64_t aligned_vocab = vocab & ~(kVec - 1);
+    for (std::int64_t col = static_cast<std::int64_t>(threadIdx.x) * kVec;
+         col < aligned_vocab;
+         col += static_cast<std::int64_t>(blockDim.x) * kVec) {
+      std::uint16_t grad[8];
+      const int4 packed =
+          (vec_normal_stores && vec_loads) ? load_bf16_vec8(row_logits + col) : make_int4(0, 0, 0, 0);
+#pragma unroll
+      for (int offset = 0; offset < 8; ++offset) {
+        const std::int64_t current_col = col + offset;
+        const std::uint16_t raw =
+            (vec_normal_stores && vec_loads) ? int4_u16_at(packed, offset) : row_logits[current_col];
+        const float value = bf16_bits_to_f32_device(raw);
+        const float prob = cross_entropy_exp_device(value - row_max, use_exp2) / row_denom;
+        const float onehot = current_col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
+        grad[offset] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+      }
+      store_bf16_vec8(row_logits + col, grad, vec_stores);
+    }
+    for (std::int64_t col = aligned_vocab + threadIdx.x; col < vocab; col += blockDim.x) {
+      const float value = bf16_bits_to_f32_device(row_logits[col]);
+      const float prob = cross_entropy_exp_device(value - row_max, use_exp2) / row_denom;
+      const float onehot = col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
+      row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+    }
+  } else {
+    for (std::int64_t col = threadIdx.x; col < vocab; col += blockDim.x) {
+      const float value = bf16_bits_to_f32_device(row_logits[col]);
+      const float prob = cross_entropy_exp_device(value - row_max, use_exp2) / row_denom;
+      const float onehot = col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
+      row_logits[col] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+    }
+  }
+}
+
 __tile_global__ void token_cross_entropy_backward_chunked_float32_kernel(
     const float* __restrict__ logits,
     const std::int64_t* __restrict__ targets,
@@ -17485,6 +17557,30 @@ void launch_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_b
       logits, targets, row_losses, rows, vocab, row_stride, loss_scale, vec_stores, vec_normal_stores, vec_loads, use_exp2, false, true);
 }
 
+void launch_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* loss_bins,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    std::int64_t loss_bin_count,
+    float loss_scale,
+    cudaStream_t stream) {
+  g_lm_head_classifier_chunk_launch_count.fetch_add(1, std::memory_order_relaxed);
+  g_lm_head_classifier_loss_bin_launch_count.fetch_add(1, std::memory_order_relaxed);
+  g_lm_head_classifier_last_rows.store(rows, std::memory_order_relaxed);
+  g_lm_head_classifier_last_vocab.store(vocab, std::memory_order_relaxed);
+  g_lm_head_classifier_last_row_stride.store(row_stride, std::memory_order_relaxed);
+  const int threads = cross_entropy_bf16_threads_per_row();
+  const bool vec_stores = cross_entropy_bf16_vec_stores_enabled();
+  const bool vec_normal_stores = cross_entropy_bf16_vec_normal_stores_enabled();
+  const bool vec_loads = cross_entropy_bf16_vec_loads_enabled();
+  const bool use_exp2 = cross_entropy_bf16_exp2_enabled();
+  token_cross_entropy_backward_loss_bins_inplace_strided_bf16_bits_u16_targets_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
+      logits, targets, loss_bins, rows, vocab, row_stride, loss_bin_count, loss_scale, vec_stores, vec_normal_stores, vec_loads, use_exp2);
+}
+
 void launch_masked_token_cross_entropy_backward_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -18698,6 +18794,7 @@ void reset_lm_head_classifier_chunk_stats() {
   g_lm_head_classifier_last_rows.store(0, std::memory_order_relaxed);
   g_lm_head_classifier_last_vocab.store(0, std::memory_order_relaxed);
   g_lm_head_classifier_last_row_stride.store(0, std::memory_order_relaxed);
+  g_lm_head_classifier_loss_bin_launch_count.store(0, std::memory_order_relaxed);
 }
 
 std::int64_t lm_head_classifier_chunk_launch_count() {
@@ -18714,6 +18811,10 @@ std::int64_t lm_head_classifier_last_vocab() {
 
 std::int64_t lm_head_classifier_last_row_stride() {
   return g_lm_head_classifier_last_row_stride.load(std::memory_order_relaxed);
+}
+
+std::int64_t lm_head_classifier_loss_bin_launch_count() {
+  return g_lm_head_classifier_loss_bin_launch_count.load(std::memory_order_relaxed);
 }
 
 std::int64_t attention_forward_row_fallback_count() {

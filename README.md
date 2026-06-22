@@ -1320,6 +1320,17 @@ row-loss `sum_partials` plus scalar `gradient_accumulate` launches with one
 for normal training: the CUDA 13.3.33 RTX 5090 paired benchmark regressed to
 `1.008595x` train-loop wall time and `1.015517x` LM-head CE time versus the
 current row-loss reduction default.
+`NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1` is another default-off
+loss-logging diagnostic that lets the BF16/u16 classifier row blocks atomically
+accumulate row losses into 1024 bins, then reduces those bins with
+`nfn_native_tile_sum_accumulate_float32`. Runtime JSON reports
+`lm_head_ce_loss_bin_reduction_*`, `lm_head_ce_loss_bin_count_requested`, and
+`lm_head_classifier_loss_bin_launch_count`; the named paired profile is
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins`. Keep it disabled for
+normal training: it only runs on logged train-loss steps, does not affect
+no-loss hot-path timing, and the dedicated RTX 5090 logging-path check showed
+the route active (`0 -> 16` bin launches for one logged step) while still
+failing the strict stage gates.
 
 For native GEMM profiling, set `NFN_NATIVE_LINEAR_SHAPE_STATS=1`, `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1`, `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1`, or `NFN_NATIVE_GPT2_LINEAR_SHAPE_STATS=1` before running `nfn_gpt_native_train`. The Tile ops ABI records successful linear dispatch buckets and the GPT runtime JSON reports `linear_shape_stats` entries with `path_name`, `m`, `n`, `k`, transpose flags, call counts, `total_us`, and `avg_us` for TK BF16, TK float-output conversion, fused TK GELU/dGELU, cuBLASLt, cuBLAS GEMMEx BF16, and SGEMM paths. When the rebuilt v2 stats ABI is available, cuBLASLt rows also include `cublaslt_selected_heuristic`, `cublaslt_returned_heuristics`, and `cublaslt_workspace_bytes`, which prevents no-op heuristic overrides from being mistaken for real route changes. Timing uses CUDA events and synchronizes measured GEMMs, with a host-synchronized fallback for fused TK GELU rows whose helper dispatch is not captured by the stream event path, so leave this disabled for normal training; it is intended for paired kernel-candidate profiling on the dedicated compute GPU. `tools/paired_kernel_speed.py` also prints and ratios native backend counters such as `linear_tk_gemm_count`, `linear_cublaslt_gemm_count`, `linear_bf16_gemm_count`, `linear_bf16_gemm_fast16bf_request_count`, and attention TK launch counts, so an active backend or compute-type candidate is visible even when the higher-level strategy label is unchanged.
 

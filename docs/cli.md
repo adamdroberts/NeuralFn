@@ -1007,6 +1007,12 @@ at `1.009016x` train-loop wall time and `1.091020x`
 same-script benchmark moved 80 dWeight GEMMs from cuBLASLt to TK but rejected
 the route at `1.022262x` train-loop wall time and `1.279309x`
 `stage.lm_head_backward.dweight.total_ms`.
+`lm_head_loss_bins` expands to
+`NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1` for the train-loss logging path.
+It is diagnostic-only: the no-loss parity benchmark does not execute loss
+accumulation, and a one-step `--train-loss-every-steps 1` check proved the
+route counter changed (`lm_head_classifier_loss_bin_launch_count: 0 -> 16`) but
+still failed strict stage gates.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

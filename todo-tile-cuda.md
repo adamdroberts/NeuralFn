@@ -71,6 +71,18 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     train-loop wall time and `1.015517x` LM-head CE time versus the current
     row-loss default. Keep
     `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` diagnostic-only.
+  - 2026-06-22 added and rejected-as-default the loss-bin train-loss logging
+    diagnostic. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins` expands
+    to `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`; the new
+    `nfn_native_tile_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets`
+    ABI accumulates row losses into a fixed bin workspace before a
+    `sum_accumulate` tail. The normal no-loss parity benchmark does not execute
+    loss accumulation, and the one-step `--train-loss-every-steps 1` RTX 5090
+    check proved the route active (`lm_head_classifier_loss_bin_launch_count:
+    0 -> 16`) but rejected it at `1.002592x` train-loop wall, `1.000254x`
+    LM-head backward, and `1.007361x` block backward. Keep it diagnostic-only;
+    the next LM-head parity route still needs a fused/cooperative
+    classifier-backward kernel, not another train-loss tail tweak.
   - 2026-06-20 accepted the BF16/u16 row-loss target-logit prefetch barrier
     removal after the CUDA 13.3.33 rebuild. The fused row-loss+dlogits kernel
     now reads the target logit before in-place dlogit writes and no longer needs

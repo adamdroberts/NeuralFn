@@ -22,6 +22,7 @@ std::int64_t lm_head_classifier_chunk_launch_count();
 std::int64_t lm_head_classifier_last_rows();
 std::int64_t lm_head_classifier_last_vocab();
 std::int64_t lm_head_classifier_last_row_stride();
+std::int64_t lm_head_classifier_loss_bin_launch_count();
 std::int64_t attention_forward_row_fallback_count();
 std::int64_t attention_forward_scalar_launch_count();
 int attention_forward_row_last_error();
@@ -1359,6 +1360,16 @@ void launch_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_b
     std::int64_t row_stride,
     float loss_scale,
     cudaStream_t stream);
+void launch_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* loss_bins,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    std::int64_t loss_bin_count,
+    float loss_scale,
+    cudaStream_t stream);
 void launch_masked_token_cross_entropy_backward_float32(
     const float* logits,
     const std::int64_t* targets,
@@ -1815,6 +1826,10 @@ std::int64_t nfn_native_tile_lm_head_classifier_last_vocab() {
 
 std::int64_t nfn_native_tile_lm_head_classifier_last_row_stride() {
     return neuralfn::tile_cuda::lm_head_classifier_last_row_stride();
+}
+
+std::int64_t nfn_native_tile_lm_head_classifier_loss_bin_launch_count() {
+    return neuralfn::tile_cuda::lm_head_classifier_loss_bin_launch_count();
 }
 
 std::int64_t nfn_native_tile_attention_forward_row_fallback_count() {
@@ -4548,6 +4563,29 @@ int nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pa
         rows,
         vocab,
         row_stride,
+        loss_scale,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* loss_bins,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    std::int64_t loss_bin_count,
+    float loss_scale,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+        logits,
+        targets,
+        loss_bins,
+        rows,
+        vocab,
+        row_stride,
+        loss_bin_count,
         loss_scale,
         as_stream(cuda_stream));
     return launch_status();

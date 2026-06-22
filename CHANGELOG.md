@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off dense GPT LM-head loss-bin classifier diagnostic for
+  train-loss logging. The Tile CUDA ABI now exports
+  `nfn_native_tile_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets`;
+  `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1` routes logged train-loss
+  classifier rows to atomically accumulate row losses into a fixed bin workspace
+  and then reduce those bins with `nfn_native_tile_sum_accumulate_float32`.
+  Runtime JSON and paired benchmark summaries now report
+  `lm_head_ce_loss_bin_reduction_available`,
+  `lm_head_ce_loss_bin_reduction_requested`,
+  `lm_head_ce_loss_bin_reduction_enabled`,
+  `lm_head_ce_loss_bin_count_requested`, and
+  `lm_head_classifier_loss_bin_launch_count`. The SM120 wrapper exposes the
+  reproducible profile
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins`.
+
+  Keep the route default-off. The normal no-loss parity benchmark does not
+  execute train-loss accumulation, so this is not a hot-path parity candidate.
+  A one-step RTX 5090 logging-path check with `--train-loss-every-steps 1`
+  proved the route active (`lm_head_classifier_loss_bin_launch_count: 0 -> 16`)
+  but still failed strict timing gates (`1.002592x` train-loop wall,
+  `1.000254x` LM-head backward, `1.007361x` block backward).
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; focused wrapper dry-run tests passed;
+  `tools/check_native_no_torch_deps.py` passed; `git diff --check`; dedicated
+  RTX 5090 5-step and one-step logging-path paired checks ran on
+  display-disabled GPU 0.
+
 - Added a diagnostic SM120 TK dWeight route for native dense GPT linear
   bisection. The BF16/BF16 dWeight ABI can now route shape-selected calls
   through the existing TK `A^T*B` bridge, write BF16 dWeight scratch, and

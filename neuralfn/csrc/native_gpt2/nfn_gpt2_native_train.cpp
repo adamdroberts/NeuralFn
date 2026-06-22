@@ -9696,6 +9696,7 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_logits_cublaslt_gemm_count = 0;
     std::int64_t lm_head_logits_bf16_gemm_count = 0;
     std::int64_t lm_head_classifier_chunk_launch_count = 0;
+    std::int64_t lm_head_classifier_loss_bin_launch_count = 0;
     std::int64_t lm_head_classifier_last_rows = 0;
     std::int64_t lm_head_classifier_last_vocab = 0;
     std::int64_t lm_head_classifier_last_row_stride = 0;
@@ -9932,11 +9933,13 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace",
         "nfn_native_tile_lm_head_classifier_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets",
         "nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets",
+        "nfn_native_tile_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets",
         "nfn_native_tile_lm_head_classifier_stats_reset",
         "nfn_native_tile_lm_head_classifier_chunk_launch_count",
         "nfn_native_tile_lm_head_classifier_last_rows",
         "nfn_native_tile_lm_head_classifier_last_vocab",
         "nfn_native_tile_lm_head_classifier_last_row_stride",
+        "nfn_native_tile_lm_head_classifier_loss_bin_launch_count",
         "nfn_native_tile_adamw_step_float32",
         "nfn_native_tile_adamw_step_with_device_scale_float32",
         "nfn_native_tile_adamw_step_many_with_device_scale_float32",
@@ -10257,6 +10260,9 @@ int run_transformer_lm_training_json(
     using LmHeadClassifierBackwardRowLossesBf16U16Fn = int (*)(
         std::uint16_t*, const std::uint16_t*, float*,
         std::int64_t, std::int64_t, std::int64_t, float, void*);
+    using LmHeadClassifierBackwardLossBinsBf16U16Fn = int (*)(
+        std::uint16_t*, const std::uint16_t*, float*,
+        std::int64_t, std::int64_t, std::int64_t, std::int64_t, float, void*);
     using AdamWManyWithDeviceScaleFn = int (*)(
         float* const*, const float* const*, const float*, float* const*, float* const*,
         const std::int64_t*, const float*, std::int64_t, std::int64_t,
@@ -10469,6 +10475,7 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn lm_head_classifier_last_rows_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_classifier_last_vocab_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_classifier_last_row_stride_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_classifier_loss_bin_launch_count_fn = nullptr;
     AttentionBackwardToQkvReuseForwardFn attention_backward_to_qkv_reuse_forward = nullptr;
     PackedAttentionForwardFn packed_attention_forward = nullptr;
     PackedAttentionForwardStoreLseFn packed_attention_forward_store_lse = nullptr;
@@ -10507,6 +10514,8 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_loss_bf16_u16 = nullptr;
     LmHeadClassifierBackwardRowLossesBf16U16Fn
         lm_head_classifier_backward_row_losses_bf16_u16 = nullptr;
+    LmHeadClassifierBackwardLossBinsBf16U16Fn
+        lm_head_classifier_backward_loss_bins_bf16_u16 = nullptr;
     FillManyFn fill_many = nullptr;
     AdamWManyWithDeviceScaleFn adamw_many_with_device_scale = nullptr;
     AdamWManyWithDeviceScaleBf16ShadowFn adamw_many_with_device_scale_bf16_shadow = nullptr;
@@ -10944,6 +10953,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_lm_head_classifier_last_vocab");
                 lm_head_classifier_last_row_stride_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_lm_head_classifier_last_row_stride");
+                lm_head_classifier_loss_bin_launch_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_classifier_loss_bin_launch_count");
                 attention_stats_reset();
                 trainer_linear_stats_reset();
                 lm_head_classifier_stats_reset();
@@ -11064,6 +11075,10 @@ int run_transformer_lm_training_json(
                     load_symbol<LmHeadClassifierBackwardRowLossesBf16U16Fn>(
                         tile_handle,
                         "nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets");
+                lm_head_classifier_backward_loss_bins_bf16_u16 =
+                    load_symbol<LmHeadClassifierBackwardLossBinsBf16U16Fn>(
+                        tile_handle,
+                        "nfn_native_tile_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets");
                 adamw_many_with_device_scale = load_symbol<AdamWManyWithDeviceScaleFn>(
                     tile_handle, "nfn_native_tile_adamw_step_many_with_device_scale_float32");
                 adamw_many_with_device_scale_bf16_shadow =
@@ -11454,6 +11469,17 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE",
                               "NFN_NATIVE_GPT2_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE"}),
             false);
+    const bool lm_head_loss_bin_reduction_requested =
+        lm_head_row_loss_reduction_requested &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION",
+                              "NFN_NATIVE_GPT2_LM_HEAD_LOSS_BIN_REDUCTION"}),
+            false);
+    const std::int64_t lm_head_loss_bin_count_requested =
+        env_nonnegative_i64_or(
+            {"NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_COUNT",
+             "NFN_NATIVE_GPT2_LM_HEAD_LOSS_BIN_COUNT"},
+            1024);
     const bool bgrad_first_write_direct_enabled =
         dweight_first_microbatch_beta_zero_enabled &&
         env_flag_enabled_or_default(
@@ -15132,6 +15158,12 @@ int run_transformer_lm_training_json(
                 use_row_loss_reduction &&
                 lm_head_row_loss_sum_accumulate_requested &&
                 sum_accumulate != nullptr;
+            const bool use_loss_bin_reduction =
+                use_row_loss_reduction &&
+                lm_head_loss_bin_reduction_requested &&
+                lm_head_classifier_backward_loss_bins_bf16_u16 != nullptr &&
+                sum_accumulate != nullptr &&
+                row_max != nullptr;
             auto* ce_backward_bf16_u16 =
                 lm_head_skip_ce_pad_zero_enabled &&
                         lm_head_classifier_backward_bf16_u16_workspace != nullptr
@@ -15245,7 +15277,35 @@ int run_transformer_lm_training_json(
                         if (lm_head_public_vocab_ce_enabled) {
                             if (direct_u16_token_ids_enabled) {
                                 if (use_fused_ce_loss_backward) {
-                                    if (use_row_loss_reduction) {
+                                    if (use_loss_bin_reduction) {
+                                        const std::int64_t loss_bin_count =
+                                            std::max<std::int64_t>(
+                                                1,
+                                                std::min<std::int64_t>(
+                                                    row_count,
+                                                    lm_head_loss_bin_count_requested > 0
+                                                        ? lm_head_loss_bin_count_requested
+                                                        : 1024));
+                                        run(fill(row_max, loss_bin_count, 0.0f, nullptr),
+                                            "ce.backward_loss_bins.zero");
+                                        if (error.empty()) {
+                                            run(lm_head_classifier_backward_loss_bins_bf16_u16(
+                                                    bf16_logit_chunk,
+                                                    target_chunk_u16,
+                                                    row_max,
+                                                    row_count,
+                                                    kVocab,
+                                                    kPaddedVocab,
+                                                    loss_bin_count,
+                                                    accumulation_scale / static_cast<float>(active_rows),
+                                                    nullptr),
+                                                "ce.backward_loss_bins.inplace.public_vocab_strided_bf16_bits_u16_targets");
+                                        }
+                                        if (error.empty()) {
+                                            run(sum_accumulate(row_max, loss_total, loss_bin_count, nullptr),
+                                                "ce.backward_loss_bins.sum_accumulate");
+                                        }
+                                    } else if (use_row_loss_reduction) {
                                         run(lm_head_classifier_backward_row_losses_bf16_u16(
                                                 bf16_logit_chunk,
                                                 target_chunk_u16,
@@ -18445,6 +18505,9 @@ int run_transformer_lm_training_json(
     if (lm_head_classifier_chunk_launch_count_fn != nullptr) {
         lm_head_classifier_chunk_launch_count = lm_head_classifier_chunk_launch_count_fn();
     }
+    if (lm_head_classifier_loss_bin_launch_count_fn != nullptr) {
+        lm_head_classifier_loss_bin_launch_count = lm_head_classifier_loss_bin_launch_count_fn();
+    }
     if (lm_head_classifier_last_rows_fn != nullptr) {
         lm_head_classifier_last_rows = lm_head_classifier_last_rows_fn();
     }
@@ -19123,6 +19186,22 @@ int run_transformer_lm_training_json(
                     sum_accumulate != nullptr
                 ? "true"
                 : "false") << ",\n"
+        << "  \"lm_head_ce_loss_bin_reduction_available\": "
+        << (lm_head_classifier_backward_loss_bins_bf16_u16 != nullptr &&
+                    sum_accumulate != nullptr
+                ? "true"
+                : "false") << ",\n"
+        << "  \"lm_head_ce_loss_bin_reduction_requested\": "
+        << (lm_head_loss_bin_reduction_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_ce_loss_bin_reduction_enabled\": "
+        << (lm_head_row_loss_reduction_requested &&
+                    lm_head_loss_bin_reduction_requested &&
+                    lm_head_classifier_backward_loss_bins_bf16_u16 != nullptr &&
+                    sum_accumulate != nullptr
+                ? "true"
+                : "false") << ",\n"
+        << "  \"lm_head_ce_loss_bin_count_requested\": "
+        << lm_head_loss_bin_count_requested << ",\n"
         << "  \"lm_head_ce_loss_backward_fused_enabled\": "
         << (lm_head_fused_loss_backward_enabled &&
                     lm_head_classifier_backward_loss_bf16_u16 != nullptr
@@ -19132,12 +19211,19 @@ int run_transformer_lm_training_json(
         << (lm_head_fused_loss_backward_enabled &&
                     lm_head_classifier_backward_loss_bf16_u16 != nullptr
                 ? (lm_head_row_loss_reduction_requested &&
-                           lm_head_classifier_backward_row_losses_bf16_u16 != nullptr &&
-                           ((lm_head_row_loss_sum_accumulate_requested && sum_accumulate != nullptr) ||
-                            (sum_partials != nullptr && gradient_accumulate != nullptr))
-                       ? (lm_head_row_loss_sum_accumulate_requested && sum_accumulate != nullptr
+                           ((lm_head_loss_bin_reduction_requested &&
+                             lm_head_classifier_backward_loss_bins_bf16_u16 != nullptr &&
+                             sum_accumulate != nullptr) ||
+                            (lm_head_classifier_backward_row_losses_bf16_u16 != nullptr &&
+                             ((lm_head_row_loss_sum_accumulate_requested && sum_accumulate != nullptr) ||
+                              (sum_partials != nullptr && gradient_accumulate != nullptr))))
+                       ? (lm_head_loss_bin_reduction_requested &&
+                                  lm_head_classifier_backward_loss_bins_bf16_u16 != nullptr &&
+                                  sum_accumulate != nullptr
+                              ? "fused-loss-bins-sum-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"
+                              : (lm_head_row_loss_sum_accumulate_requested && sum_accumulate != nullptr
                               ? "fused-row-losses-sum-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"
-                              : "fused-row-losses-reduce-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets")
+                              : "fused-row-losses-reduce-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"))
                        : (lm_head_skip_ce_pad_zero_enabled
                               ? "fused-loss-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"
                               : "fused-loss-accumulate-and-dlogits-public-vocab-bf16-u16-targets"))
@@ -19157,6 +19243,8 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"lm_head_classifier_chunk_launch_count\": "
         << lm_head_classifier_chunk_launch_count << ",\n"
+        << "  \"lm_head_classifier_loss_bin_launch_count\": "
+        << lm_head_classifier_loss_bin_launch_count << ",\n"
         << "  \"lm_head_classifier_last_rows\": "
         << lm_head_classifier_last_rows << ",\n"
         << "  \"lm_head_classifier_last_vocab\": "

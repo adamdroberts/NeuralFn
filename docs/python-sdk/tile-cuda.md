@@ -267,6 +267,15 @@ diagnostic for replacing the generic row-loss partial-reduction tail with
 `nfn_native_tile_sum_accumulate_float32`. Leave it disabled for normal training;
 the CUDA 13.3 RTX 5090 paired gate measured it slower than the default row-loss
 tail.
+`NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1` is a separate default-off
+train-loss logging diagnostic. It routes the BF16/u16 classifier row blocks to
+accumulate row losses into a fixed bin workspace before one
+`nfn_native_tile_sum_accumulate_float32` tail, and JSON reports
+`lm_head_ce_loss_bin_reduction_*`, `lm_head_ce_loss_bin_count_requested`, and
+`lm_head_classifier_loss_bin_launch_count`. The named wrapper profile is
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins`; keep it disabled for
+normal training because it only executes when train-loss logging is enabled and
+the RTX 5090 logging-path check rejected it on strict timing gates.
 
 Grouped cuBLASLt execution is exposed as a diagnostic probe, not a training
 route. Set `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`,

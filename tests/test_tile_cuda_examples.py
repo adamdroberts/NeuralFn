@@ -907,6 +907,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=2304,65536,768,T,N" in text
     assert "ce_bf16_threads_512" in text
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=512" in text
+    assert "lm_head_loss_bins" in text
+    assert "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1" in text
     assert "cublaslt_min_waves" in text
     assert "cublaslt_max_waves" in text
     assert "tk_dgelu_dinput" in text
@@ -1266,6 +1268,40 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "512"
     )
     assert ce_threads_payload["metric_ratio_gates"]["enabled"] is False
+
+    loss_bins_output_path = tmp_path / "candidate-loss-bins-dry-run.json"
+    loss_bins_env = os.environ.copy()
+    loss_bins_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_STAGE_TIMING": "1",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_loss_bins",
+            "NFN_SM120_NATIVE_JSON_OUT": str(loss_bins_output_path),
+        }
+    )
+
+    loss_bins_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=loss_bins_env,
+    )
+
+    assert loss_bins_dry_run.returncode == 0, loss_bins_dry_run.stderr
+    loss_bins_payload = json.loads(
+        loss_bins_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        loss_bins_payload["candidate_env"][
+            "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION"
+        ]
+        == "1"
+    )
+    assert loss_bins_payload["metric_ratio_gates"]["enabled"] is False
 
     combined_arena_output_path = tmp_path / "candidate-combined-arena-dry-run.json"
     combined_arena_env = os.environ.copy()
