@@ -913,6 +913,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1" in text
     assert "cublaslt_min_waves" in text
     assert "cublaslt_max_waves" in text
+    assert "cublaslt_grouped_probe" in text
+    assert "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1" in text
+    assert "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1" in text
     assert "tk_dgelu_dinput" in text
     assert "tk_dgelu_approx_tanh" in text
     assert "attention_atomic_dq" in text
@@ -1207,6 +1210,45 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "max_waves"
     )
     assert max_waves_payload["metric_ratio_gates"]["enabled"] is False
+
+    grouped_probe_output_path = tmp_path / "candidate-cublaslt-grouped-probe-dry-run.json"
+    grouped_probe_env = os.environ.copy()
+    grouped_probe_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "cublaslt_grouped_probe",
+            "NFN_SM120_NATIVE_JSON_OUT": str(grouped_probe_output_path),
+        }
+    )
+
+    grouped_probe_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=grouped_probe_env,
+    )
+
+    assert grouped_probe_dry_run.returncode == 0, grouped_probe_dry_run.stderr
+    grouped_probe_payload = json.loads(
+        grouped_probe_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        grouped_probe_payload["candidate_env"][
+            "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT"
+        ]
+        == "1"
+    )
+    assert (
+        grouped_probe_payload["candidate_env"][
+            "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL"
+        ]
+        == "1"
+    )
+    assert grouped_probe_payload["metric_ratio_gates"]["enabled"] is False
 
     max_connections_output_path = tmp_path / "candidate-max-connections-dry-run.json"
     max_connections_env = os.environ.copy()

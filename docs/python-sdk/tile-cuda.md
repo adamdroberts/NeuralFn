@@ -291,6 +291,11 @@ matmul smoke during native GPT startup. Runtime JSON reports
 failing startup; the current CUDA 13.3 RTX 5090 result is status `15`, so
 grouped cuBLASLt matmul remains a blocked candidate for LM-head/block-backward
 parity even though `linear_cublaslt_grouped_layout_supported` is true.
+The paired SM120 wrapper profile
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe` enables both the
+layout and grouped-matmul probes for repeatable CUDA-upgrade checks; the
+current CUDA 13.3 WSL probe still reports grouped layout status `0` and grouped
+matmul status `15`.
 CUDA 13.3.33 post-reinstall paired checks keep 32768 rows as the default.
 Retesting `--lm-head-row-chunk-size 8192` against the current 32768-row route
 regressed train-loop wall time to `1.001841x` despite slightly improving the

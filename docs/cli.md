@@ -1044,6 +1044,11 @@ still failed strict stage gates.
 single-kernel row-loss tail. It is also diagnostic-only: it only affects logged
 train-loss steps, and previous CUDA 13.3 RTX 5090 timing rejected it as a
 default.
+`cublaslt_grouped_probe` expands to
+`NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1
+NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`. Use it as a readiness check
+before grouped block-backward work; on the current CUDA 13.3 WSL stack the
+layout probe passes but grouped matmul execution still reports status `15`.
 `lm_head_ce_vec8_io` expands to
 `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1 NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1` for
 the normal no-loss LM-head classifier path. It keeps the default vec8 BF16

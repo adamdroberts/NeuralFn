@@ -458,6 +458,10 @@ does not fail startup on a nonzero execution status; the current CUDA 13.3 RTX
 5090 check reports status `15`, so grouped cuBLASLt execution is not yet a
 safe route for LM-head or block-backward parity work even though grouped layout
 creation succeeds.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe` to run both
+cuBLASLt grouped layout and grouped execution probes through the same native
+paired wrapper as the other SM120 candidates; the current CUDA 13.3 WSL recheck
+still reports layout status `0` and grouped matmul status `15`.
 The native trainer now prewarms CUDA 13.3 BF16 cuBLASLt plans by default for
 real training runs, but leaves prewarm off for `--startup-only` probes so
 startup diagnostics do not pay the extra setup cost. Set

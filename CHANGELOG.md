@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the named SM120 candidate profile `cublaslt_grouped_probe` to the
+  native paired benchmark wrapper. The profile expands to
+  `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1` and
+  `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`, giving future CUDA upgrades
+  a repeatable readiness check before grouped block-backward or LM-head GEMM
+  work. A current CUDA 13.3 WSL recheck on the dedicated RTX 5090 reports
+  grouped layout support (`status 0`) but grouped cuBLASLt matmul execution is
+  still unsupported (`status 15`), so grouped kernels remain blocked for the
+  default route.
+
+  Verification: ran the grouped startup probe on the dedicated RTX 5090, ran
+  the candidate wrapper dry-run for `cublaslt_grouped_probe`, and ran the
+  focused Tile-CUDA wrapper pytest slice.
+
 - Added the named SM120 candidate profile
   `lm_head_row_loss_sum_accumulate` to `tools/bench_native_gpt_sm120_candidate.sh`.
   The profile expands to
