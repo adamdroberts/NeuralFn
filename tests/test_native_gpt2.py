@@ -925,6 +925,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_until_integrated() -> None:
     source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
         encoding="utf-8"
     )
+    tile_ops_source = (root / "neuralfn" / "csrc" / "native_train" / "tile_ops.cu").read_text(
+        encoding="utf-8"
+    )
     assert "using LmHeadClassifierBackwardCooperativeBf16U16Fn = int (*)();" not in source
     for required_arg in [
         "std::uint16_t* logits_bf16",
@@ -942,6 +945,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_until_integrated() -> None:
         "void* stream",
     ]:
         assert required_arg in source
+        assert required_arg.replace("stream", "cuda_stream") in tile_ops_source or required_arg in tile_ops_source
+    assert "nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16" in tile_ops_source
+    assert "launch_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets" in tile_ops_source
+    assert "launch_linear_backward_input_bf16_bits_weight_bf16_float32" in tile_ops_source
+    assert "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta" in tile_ops_source
     assert "const bool lm_head_cooperative_backward_route_integrated = false;" in source
 
 

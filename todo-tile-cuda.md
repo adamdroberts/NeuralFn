@@ -74,6 +74,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       hidden inputs, BF16/float token weights, dHidden, dWeight, shape metadata,
       loss scale, dWeight beta, flags, and stream. The route remains explicitly
       unintegrated until a Tile implementation with that contract is called.
+    - 2026-06-22 exported the first matching Tile wrapper under that symbol. It
+      sequences the existing row-loss classifier, BF16 dHidden, and BF16 dWeight
+      launches behind one C ABI so candidate plans can probe a concrete symbol.
+      This is not promoted or called by the trainer yet; the open work remains
+      replacing the wrapper sequence with a genuinely fused/cooperative kernel
+      and then integrating the route.
   - 2026-06-20 promoted the row-loss reduction classifier variant to the dense
     GPT default after CUDA 13.3.33 RTX 5090 same-script gating. The new
     `nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets`

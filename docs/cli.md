@@ -799,10 +799,12 @@ Runtime JSON reports `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_strategy`; until the real cooperative Tile route
 is implemented and wired into training, the strategy is
 `missing-required-sm120-parity-kernel` and the required run fails explicitly.
-The future Tile symbol is no longer an untyped probe: its C ABI must receive the
-BF16 logit/dlogit chunk, u16 targets, row-loss buffer, BF16/float hidden inputs,
-BF16/float token weights, dHidden, dWeight, shape metadata, loss scale,
-dWeight beta, flags, and stream.
+The Tile symbol is no longer an untyped probe in rebuilt ops libraries: its C
+ABI receives the BF16 logit/dlogit chunk, u16 targets, row-loss buffer,
+BF16/float hidden inputs, BF16/float token weights, dHidden, dWeight, shape
+metadata, loss scale, dWeight beta, flags, and stream. Runtime JSON reports
+`lm_head_cooperative_backward_kernel_available: true` only when the run loads a
+Tile ops library that exports that symbol.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
@@ -1046,9 +1048,9 @@ time, `1.000944x` LM-head backward, and `1.004197x` CE time.
 strict missing-kernel guard, not a timing candidate: it should fail until the
 cooperative classifier/dHidden/dWeight Tile route replaces the current
 row-chunked classifier plus separate GEMM schedule.
-The candidate is wired to the typed cooperative ABI contract, but
-`lm_head_cooperative_backward_route_integrated` remains false until the trainer
-actually dispatches that symbol.
+The candidate probes the typed cooperative ABI contract when the loaded Tile ops
+library exports it, but `lm_head_cooperative_backward_route_integrated` remains
+false until the trainer actually dispatches that symbol.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

@@ -1671,10 +1671,12 @@ route; `lm_head_cooperative_backward_kernel_available` only means the probe
 symbol exists, while `lm_head_cooperative_backward_route_integrated` and
 `lm_head_cooperative_backward_kernel_enabled` remain false until the trainer
 actually calls that route.
-The probed symbol has a typed C ABI contract for the future cooperative route:
-BF16 logit/dlogit chunk, u16 targets, optional row losses, BF16/float hidden
-inputs, BF16/float token weights, dHidden, dWeight, shape metadata, loss scale,
-dWeight beta, flags, and stream.
+Rebuilt Tile ops libraries export the probed symbol with a typed C ABI contract
+for the future cooperative route: BF16 logit/dlogit chunk, u16 targets,
+optional row losses, BF16/float hidden inputs, BF16/float token weights,
+dHidden, dWeight, shape metadata, loss scale, dWeight beta, flags, and stream.
+Runtime JSON reports the kernel as available only when the loaded library
+contains that symbol.
 
 Startup-only token-weight initializer bisections can use the same profile
 mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,

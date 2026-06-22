@@ -7,18 +7,21 @@ Future updates should append new entries here rather than replacing older notes.
 ## Unreleased
 
 - Replaced the placeholder dense GPT cooperative LM-head backward probe typedef
-  with a typed C ABI contract. The future
-  `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16` symbol now
-  has to accept the BF16 logit/dlogit chunk, u16 targets, optional row losses,
-  BF16/float hidden inputs, BF16/float token weights, dHidden, dWeight, shape
-  metadata, loss scale, dWeight beta, flags, and stream. This is a prerequisite
-  for the real cooperative classifier/dHidden/dWeight Tile route; the trainer
-  still keeps `lm_head_cooperative_backward_route_integrated: false`, so
-  `--require-cooperative-lm-head-backward` continues to fail until the route is
-  actually called.
+  with a typed C ABI contract and exported the matching diagnostic Tile wrapper.
+  `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16` now accepts
+  the BF16 logit/dlogit chunk, u16 targets, optional row losses, BF16/float
+  hidden inputs, BF16/float token weights, dHidden, dWeight, shape metadata,
+  loss scale, dWeight beta, flags, and stream. The wrapper currently sequences
+  the existing row-loss CE, BF16 dHidden, and BF16 dWeight launches behind one
+  symbol; the trainer still keeps `lm_head_cooperative_backward_route_integrated:
+  false`, so `--require-cooperative-lm-head-backward` continues to fail until
+  the route is actually called.
 
-  Verification: rebuilt `build/nfn_gpt_native_train`; source-only cooperative
-  ABI regression test passed.
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; `nm -D` confirms the cooperative symbol is
+  exported; source-only cooperative ABI regression and compiled native GPT CLI
+  plan tests passed; native no-Torch dependency check and `git diff --check`
+  passed.
 
 - Fixed the dense GPT BF16 CE vector-store candidate to reuse packed vec8 BF16
   loads during the final dlogit write pass whenever vec loads are enabled. The

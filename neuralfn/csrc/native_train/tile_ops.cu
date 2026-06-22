@@ -4591,6 +4591,78 @@ int nfn_native_tile_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad
     return launch_status();
 }
 
+int nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16(
+    std::uint16_t* logits_bf16,
+    const std::uint16_t* targets_u16,
+    float* row_losses,
+    const std::uint16_t* hidden_bf16,
+    const float* hidden_float,
+    const std::uint16_t* token_weight_bf16,
+    const float* token_weight_float,
+    float* grad_hidden,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t hidden_dim,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    float dweight_beta,
+    int flags,
+    void* cuda_stream) {
+    (void)hidden_float;
+    (void)token_weight_float;
+    (void)flags;
+    if (logits_bf16 == nullptr ||
+        targets_u16 == nullptr ||
+        row_losses == nullptr ||
+        hidden_bf16 == nullptr ||
+        token_weight_bf16 == nullptr ||
+        grad_hidden == nullptr ||
+        grad_weight == nullptr ||
+        rows <= 0 ||
+        hidden_dim <= 0 ||
+        vocab <= 0 ||
+        row_stride < vocab) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    cudaStream_t stream = as_stream(cuda_stream);
+    neuralfn::tile_cuda::launch_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+        logits_bf16,
+        targets_u16,
+        row_losses,
+        rows,
+        vocab,
+        row_stride,
+        loss_scale,
+        stream);
+    int status = launch_status();
+    if (status != 0) {
+        return status;
+    }
+    neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
+        logits_bf16,
+        token_weight_bf16,
+        grad_hidden,
+        rows,
+        hidden_dim,
+        row_stride,
+        stream);
+    status = launch_status();
+    if (status != 0) {
+        return status;
+    }
+    neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+        hidden_bf16,
+        logits_bf16,
+        grad_weight,
+        rows,
+        hidden_dim,
+        row_stride,
+        dweight_beta,
+        stream);
+    return launch_status();
+}
+
 int nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
     std::uint16_t* logits,
     const std::uint16_t* targets,
