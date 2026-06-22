@@ -466,6 +466,12 @@ cap to fit and measured slower than the default chunked-logit path
 `1.061321x` with four). Runtime JSON reports
 `lm_head_reuse_forward_logits_enabled`, `lm_head_full_logit_elements`, and
 `lm_head_bf16_logit_bytes`.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_full_resident_reuse` to reproduce
+the full-resident/full-batch submode in paired benchmarks. It remains rejected:
+the CUDA 13.3 dedicated RTX 5090 one-step run improved LM-head backward to
+`0.705502x`, but regressed train-loop wall time to `21.830567x` and block
+backward to `44.496727x` because the resident-logit footprint is too large for
+the current saved-activation layout.
 Native LM-head CE now softmaxes over the
 public vocab and uses 50,304 only as the logits/dlogits row stride; runtime JSON
 reports `lm_head_public_vocab_ce_enabled`, `lm_head_softmax_vocab`,

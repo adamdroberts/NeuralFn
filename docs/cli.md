@@ -1053,6 +1053,16 @@ stream-enabled fields. Keep it
 diagnostic-only for now: the 2026-06-22 CUDA 13.3 dedicated RTX 5090 3-sample
 gate proved the route active and measured `0.999109x` train-loop wall time, but
 failed the strict total LM-head stage gate at `1.000506x`.
+`lm_head_full_resident_reuse` expands to
+`NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1
+NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1
+NFN_NATIVE_GPT_FULL_BATCH_LM_HEAD_REUSE=1` plus
+`--lm-head-row-chunk-size 65536`, reproducing the closest current
+llm.kittens-style resident-logit/full-batch LM-head schedule. Keep it
+diagnostic-only: the CUDA 13.3 dedicated RTX 5090 one-step same-script run
+improved LM-head backward to `0.705502x`, but regressed train-loop wall to
+`21.830567x` and block backward to `44.496727x` under the 6.59 GB resident-logit
+footprint.
 `cublaslt_grouped_probe` expands to
 `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1
 NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`. Use it as a readiness check
@@ -1077,10 +1087,12 @@ time, `1.000944x` LM-head backward, and `1.004197x` CE time.
 `lm_head_cooperative_backward_required` adds the same environment flag plus
 `--require-cooperative-lm-head-backward`. Use the non-required profile for
 same-script wrapper-symbol timing, and the required profile for preflight
-checks that must fail until the fused cooperative kernel exists. The current
-typed ABI wrapper is reported as available but does not satisfy the strict
-required guard because it still sequences the old CE, dHidden, and dWeight
-launches.
+checks that must prove the strict cooperative ABI is available and integrated.
+The current strict ABI is reported as available and satisfies the required
+guard, but its implementation still sequences the old CE, dHidden, and dWeight
+launches; runtime strategy strings include
+`strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity`
+so it is not mistaken for the final fused parity kernel.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

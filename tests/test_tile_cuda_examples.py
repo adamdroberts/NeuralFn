@@ -935,6 +935,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "lm_head_row_chunk_65536" in text
     assert "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1" in text
     assert "--lm-head-row-chunk-size 65536" in text
+    assert "lm_head_full_resident_reuse" in text
+    assert "NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1" in text
+    assert "NFN_NATIVE_GPT_FULL_BATCH_LM_HEAD_REUSE=1" in text
     assert "token_weight_vector4_strided" in text
     assert "token_weight_threaded" in text
     assert "token_weight_fast_int32" in text
@@ -1576,6 +1579,53 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "--lm-head-row-chunk-size" in full_row_payload["candidate_command"]
     assert "65536" in full_row_payload["candidate_command"]
     assert full_row_payload["metric_ratio_gates"]["enabled"] is False
+
+    full_resident_output_path = tmp_path / "candidate-lm-head-full-resident-reuse-dry-run.json"
+    full_resident_env = os.environ.copy()
+    full_resident_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_full_resident_reuse",
+            "NFN_SM120_NATIVE_JSON_OUT": str(full_resident_output_path),
+        }
+    )
+
+    full_resident_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=full_resident_env,
+    )
+
+    assert full_resident_dry_run.returncode == 0, full_resident_dry_run.stderr
+    full_resident_payload = json.loads(
+        full_resident_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        full_resident_payload["candidate_env"][
+            "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK"
+        ]
+        == "1"
+    )
+    assert (
+        full_resident_payload["candidate_env"][
+            "NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS"
+        ]
+        == "1"
+    )
+    assert (
+        full_resident_payload["candidate_env"][
+            "NFN_NATIVE_GPT_FULL_BATCH_LM_HEAD_REUSE"
+        ]
+        == "1"
+    )
+    assert "--lm-head-row-chunk-size" in full_resident_payload["candidate_command"]
+    assert "65536" in full_resident_payload["candidate_command"]
+    assert full_resident_payload["metric_ratio_gates"]["enabled"] is False
 
     cooperative_required_output_path = (
         tmp_path / "candidate-lm-head-cooperative-required-dry-run.json"

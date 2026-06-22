@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_full_resident_reuse`
+  wrapper profile for the existing dense GPT full-resident LM-head reuse
+  diagnostic. The profile expands to
+  `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1`,
+  `NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1`,
+  `NFN_NATIVE_GPT_FULL_BATCH_LM_HEAD_REUSE=1`, and
+  `--lm-head-row-chunk-size 65536`, so future same-script comparisons can
+  reproduce the closest current llm.kittens-style resident-logit schedule
+  without manual env strings. It remains rejected/default-off: on the CUDA 13.3
+  dedicated RTX 5090 one-step paired run, LM-head backward improved to
+  `0.705502x`, but train-loop wall regressed to `21.830567x` and block backward
+  to `44.496727x` because the 6.59 GB resident-logit footprint pushed the
+  following attention backward path over the memory cliff.
+
+  Verification: ran the profile-equivalent one-sample same-script paired
+  benchmark on the dedicated RTX 5090 and recorded the rejected ratios; dry-run
+  profile coverage verifies the new wrapper expansion.
+
 - Exported and integrated the strict dense GPT LM-head cooperative backward Tile
   ABI symbol
   `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`.

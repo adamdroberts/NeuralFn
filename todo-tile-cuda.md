@@ -84,12 +84,22 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       sequences the existing row-loss classifier, BF16 dHidden, and BF16 dWeight
       launches, and runtime strategy strings explicitly say
       `strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity`.
-      A dedicated RTX 5090 1-step, 3-sample gate measured `0.999224x` train-loop
-      wall time and `0.997052x` block backward, but the route still failed the
-      strict total LM-head gate at `1.000739x`. Keep it
-      default-off; the open work remains replacing that sequenced body with a
-      genuinely fused/cooperative kernel under the now-concrete strict symbol.
-  - 2026-06-20 promoted the row-loss reduction classifier variant to the dense
+	      A dedicated RTX 5090 1-step, 3-sample gate measured `0.999224x` train-loop
+	      wall time and `0.997052x` block backward, but the route still failed the
+	      strict total LM-head gate at `1.000739x`. Keep it
+	      default-off; the open work remains replacing that sequenced body with a
+	      genuinely fused/cooperative kernel under the now-concrete strict symbol.
+	    - 2026-06-22 added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_full_resident_reuse`
+	      as the reproducible wrapper for the current full-resident logits/full-batch
+	      LM-head reuse diagnostic. It proves why llm.kittens-style resident logits
+	      cannot be adopted directly in the current NeuralFn saved-activation layout:
+	      the one-step dedicated RTX 5090 paired run improved LM-head backward to
+	      `0.705502x`, but train-loop wall regressed to `21.830567x` and block
+	      backward to `44.496727x` after the 6.59 GB resident-logit arena pushed
+	      attention backward over the memory cliff. Keep this rejected/default-off;
+	      the required fix remains a cooperative LM-head backward kernel that avoids
+	      both row-chunk recompute and full resident logits.
+	  - 2026-06-20 promoted the row-loss reduction classifier variant to the dense
     GPT default after CUDA 13.3.33 RTX 5090 same-script gating. The new
     `nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets`
     ABI writes one loss per classifier row, then the trainer reduces those rows
