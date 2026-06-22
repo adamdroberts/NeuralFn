@@ -888,6 +888,15 @@ measured command. For `tools/bench_native_gpt_sm120_candidate.sh` startup
 bisections, set `NFN_SM120_NATIVE_STARTUP_ONLY=1`; measured candidate runs then
 auto-gate `setup_wall_ms=1.000` unless an explicit max-ratio override is set,
 because startup-only JSON has no `train_loop_wall_ms_per_step` metric. When
+using the native candidate wrapper for common workload controls, canonical
+`NFN_SM120_NATIVE_*` names win first, explicit
+`NFN_SM120_NATIVE_CANDIDATE_*` aliases win next, short
+`NFN_SM120_CANDIDATE_*` aliases win next, then parity and generic
+`NFN_SM120_*` fallbacks apply. This means aliases such as
+`NFN_SM120_NATIVE_CANDIDATE_STEPS`, `NFN_SM120_NATIVE_CANDIDATE_SAMPLES`,
+`NFN_SM120_NATIVE_CANDIDATE_WARMUP`, `NFN_SM120_NATIVE_CANDIDATE_JSON_OUT`,
+and `NFN_SM120_NATIVE_CANDIDATE_CUDA_VISIBLE_DEVICES` select the paired
+workload instead of being ignored by the wrapper. When
 `nvidia-smi` is present, the result JSON includes the resolved
 `cuda_device_selection`, run-level `gpu_before` / `gpu_after` snapshots plus
 per-sample `paired_samples[].gpu_before` / `paired_samples[].gpu_after`

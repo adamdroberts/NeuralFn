@@ -340,7 +340,14 @@ Both SM120 benchmark wrappers accept generic `NFN_SM120_*` fallbacks for shared
 controls such as steps, samples, warmup, GPU selection, profile directory, and
 JSON output. Wrapper-specific aliases still take precedence, so
 `NFN_SM120_NATIVE_STEPS` or `NFN_SM120_PARITY_STEPS` override
-`NFN_SM120_STEPS` when both are present.
+`NFN_SM120_STEPS` when both are present. The native candidate wrapper also
+accepts explicit `NFN_SM120_NATIVE_CANDIDATE_*` common-shape aliases between
+the canonical native names and the short `NFN_SM120_CANDIDATE_*` names; for
+example, `NFN_SM120_NATIVE_CANDIDATE_STEPS=5`,
+`NFN_SM120_NATIVE_CANDIDATE_SAMPLES=1`,
+`NFN_SM120_NATIVE_CANDIDATE_WARMUP=0`, and
+`NFN_SM120_NATIVE_CANDIDATE_JSON_OUT=/tmp/run.json` now affect the paired
+workload instead of falling back to the default 10-step/3-sample run.
 For one-shape TK forward bisection from the SDK, pass
 `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` or
 `NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` in the same

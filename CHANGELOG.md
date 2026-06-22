@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended `tools/bench_native_gpt_sm120_candidate.sh` so the common benchmark
+  shape controls also accept explicit `NFN_SM120_NATIVE_CANDIDATE_*` aliases.
+  `NFN_SM120_NATIVE_CANDIDATE_STEPS`, `..._SAMPLES`, `..._WARMUP`,
+  `..._TRAIN_BATCH_TOKENS`, `..._CUDA_VISIBLE_DEVICES`,
+  `..._MAX_GPU_UTILIZATION_PCT`, `..._JSON_OUT`, `..._PROFILE_DIR`,
+  `..._STAGE_TIMING`, `..._LINEAR_SHAPE_STATS`, and related shared controls
+  now resolve between the canonical `NFN_SM120_NATIVE_*` names and the short
+  `NFN_SM120_CANDIDATE_*` aliases. This prevents native-candidate benchmark
+  invocations from silently falling back to the default 10-step, 3-sample,
+  1-warmup workload when the user spells the paired workload with the explicit
+  native-candidate prefix.
+
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh`; focused
+  `tests/test_tile_cuda_examples.py` dry-run coverage for the new aliases;
+  focused native GPT pytest coverage. A same-script RTX 5090 check also
+  rejected a slot-event LM-head pipeline experiment at `22.958049x`
+  train-loop wall time, so no pipeline default was changed.
+
 - Added a fused BF16 persistent block-output diagnostic path for the dense GPT
   native trainer. `libnfn_native_train_tile_ops.so` now exports
   `nfn_native_tile_linear_bias_residual_add_bf16_linear_bf16_residual_float32`,

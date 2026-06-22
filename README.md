@@ -210,6 +210,13 @@ For native-vs-native dense GPT kernel bisections, `tools/bench_native_gpt_sm120_
 accepts the canonical `NFN_SM120_NATIVE_*` environment variables and the shorter
 `NFN_SM120_CANDIDATE_*` aliases for steps, samples, warmup, profile directory,
 CUDA device selection, candidate env, template/graph selection, and JSON output.
+The common-shape controls also accept the explicit
+`NFN_SM120_NATIVE_CANDIDATE_*` aliases, such as
+`NFN_SM120_NATIVE_CANDIDATE_STEPS`, `NFN_SM120_NATIVE_CANDIDATE_SAMPLES`,
+`NFN_SM120_NATIVE_CANDIDATE_WARMUP`, and
+`NFN_SM120_NATIVE_CANDIDATE_JSON_OUT`, so candidate wrapper commands can spell
+the workload consistently without silently falling back to the 10-step,
+3-sample default run.
 The SM120 wrappers also accept generic `NFN_SM120_*` names such as
 `NFN_SM120_STEPS`, `NFN_SM120_SAMPLES`, `NFN_SM120_WARMUP`,
 `NFN_SM120_CUDA_VISIBLE_DEVICES`, `NFN_SM120_PROFILE_DIR`, and
@@ -667,10 +674,14 @@ candidate Tile ops build against `build/libnfn_native_train_tile_ops.so`. Common
 controls include `NFN_SM120_NATIVE_STEPS`, `NFN_SM120_NATIVE_SAMPLES`,
 `NFN_SM120_NATIVE_WARMUP`, `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_NATIVE_TEMPLATE_NAME`, `NFN_SM120_NATIVE_GRAPH_FILE`, and
-`NFN_SM120_NATIVE_STAGE_TIMING=1` for attribution sidecars. Generic
-`NFN_SM120_*` aliases are accepted as lowest-priority fallbacks for shared
-shape/output controls, while native-specific names still win over candidate and
-parity aliases. Set candidate-only
+`NFN_SM120_NATIVE_STAGE_TIMING=1` for attribution sidecars. The explicit
+`NFN_SM120_NATIVE_CANDIDATE_*` common-shape aliases are accepted between the
+canonical native names and the short `NFN_SM120_CANDIDATE_*` aliases, so
+`NFN_SM120_NATIVE_CANDIDATE_STEPS=5` and
+`NFN_SM120_NATIVE_CANDIDATE_JSON_OUT=/tmp/run.json` affect the paired workload
+instead of being ignored. Generic `NFN_SM120_*` aliases are accepted as
+lowest-priority fallbacks for shared shape/output controls, while
+native-specific names still win over candidate and parity aliases. Set candidate-only
 CLI flags with `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS`, the natural
 `NFN_SM120_NATIVE_CANDIDATE_ARGS` alias, or the short
 `NFN_SM120_CANDIDATE_EXTRA_ARGS`; use `NFN_SM120_NATIVE_EXTRA_ARGS` or

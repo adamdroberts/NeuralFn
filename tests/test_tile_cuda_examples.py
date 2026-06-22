@@ -369,6 +369,15 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "env_or_alias()" in text
     assert "env_or_alias3()" in text
     assert "env_or_alias4()" in text
+    assert "env_or_alias5()" in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_STEPS" in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_SAMPLES" in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_WARMUP" in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_CUDA_VISIBLE_DEVICES" in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_MAX_GPU_UTILIZATION_PCT" in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_DRY_RUN_PLAN" in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_TEMPLATE_NAME" in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_GRAPH_FILE" in text
     assert "append_env_overrides()" in text
     assert "[A-Za-z_][A-Za-z0-9_]*=" in text
     assert "NFN_SM120_PARITY_STEPS" in text
@@ -461,6 +470,45 @@ def test_native_gpt_sm120_candidate_wrapper_accepts_short_aliases(tmp_path: Path
     candidate_command = proc.stdout.split("  candidate:", 1)[1]
     assert "--lm-head-row-chunk-size 32768" not in baseline_command
     assert "--lm-head-row-chunk-size 32768" in candidate_command
+
+
+def test_native_gpt_sm120_candidate_wrapper_accepts_native_candidate_common_aliases(tmp_path: Path) -> None:
+    script = Path("tools/bench_native_gpt_sm120_candidate.sh")
+    output_path = tmp_path / "native-candidate-common-alias.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "NFN_SM120_NATIVE_CANDIDATE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_CANDIDATE_STEPS": "4",
+            "NFN_SM120_NATIVE_CANDIDATE_SAMPLES": "2",
+            "NFN_SM120_NATIVE_CANDIDATE_WARMUP": "0",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CANDIDATE_JSON_OUT": str(output_path),
+        }
+    )
+
+    proc = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=env,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "samples: 2" in proc.stdout
+    assert "warmup: 0" in proc.stdout
+    assert "--max-steps 4" in proc.stdout
+    assert "/tmp/nfn_sm120_native_candidate_profiles_10step" not in proc.stdout
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["samples"] == 2
+    assert payload["warmup"] == 0
+    baseline_max_steps = payload["baseline_command"].index("--max-steps")
+    candidate_max_steps = payload["candidate_command"].index("--max-steps")
+    assert payload["baseline_command"][baseline_max_steps + 1] == "4"
+    assert payload["candidate_command"][candidate_max_steps + 1] == "4"
 
 
 def test_native_gpt_sm120_candidate_wrapper_accepts_candidate_train_bin(tmp_path: Path) -> None:
