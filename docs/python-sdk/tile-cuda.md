@@ -660,7 +660,8 @@ writes dlogits, but stayed non-default after the dedicated RTX 5090 5-step,
 tokens/sec versus the default CE -> dHidden -> dWeight order. Runtime JSON
 reports `lm_head_dweight_before_dhidden_enabled`; the paired wrapper profile
 `lm_head_dweight_before_dhidden` expands to the same env switch for reproducible
-same-script gates.
+same-script gates. The CUDA 13.3 2-step, 2-sample wrapper rerun still rejected
+it at `1.001517x` train-loop wall time and `1.000862x` LM-head backward.
 Set `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` only for same-script LM-head
 schedule profiling. The opt-in candidate keeps the current bounded row-chunked
 classifier memory model but allocates two BF16 logit chunks instead of one,

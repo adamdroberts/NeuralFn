@@ -633,7 +633,9 @@ dlogits; the dedicated RTX 5090 5-step, 3-sample check measured `1.001048x`
 train-loop wall time and `0.998959x` tokens/sec, so the default remains
 CE -> dHidden -> dWeight. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_dweight_before_dhidden` to rerun it
-through the same-script paired wrapper and route-change gate.
+through the same-script paired wrapper and route-change gate; the CUDA 13.3
+2-step, 2-sample wrapper rerun still rejected it at `1.001517x` train-loop wall
+time and `1.000862x` LM-head backward.
 `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` is a new opt-in LM-head schedule
 candidate for same-script benchmarking. It doubles the bounded BF16 logit
 scratch from one 8,192-row chunk to two chunks, computes logits/CE on the
