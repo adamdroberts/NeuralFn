@@ -4032,8 +4032,8 @@ bool print_tile_plan(
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (cooperative_lm_head_backward_enabled
                 ? (cooperative_lm_head_loss_bins_requested
-                    ? "strict-cooperative-abi-sequences-loss-bins-ce-dhidden-dweight-kernels-not-yet-parity"
-                    : "strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity")
+                    ? "strict-cooperative-abi-event-ordered-loss-bins-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity"
+                    : "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity")
                 : (cooperative_lm_head_backward_abi_wrapper_found
                     ? "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity"
                     : "missing-required-sm120-parity-kernel"))
@@ -19495,8 +19495,8 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_dhidden_dweight_schedule_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
                 ? (lm_head_cooperative_loss_bins_requested
-                    ? "strict-cooperative-abi-sequences-loss-bins-ce-dhidden-dweight-kernels"
-                    : "strict-cooperative-abi-sequences-ce-dhidden-dweight-kernels")
+                    ? "strict-cooperative-abi-event-ordered-loss-bins-ce-side-stream-dhidden-dweight"
+                    : "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight")
         : (lm_head_full_batch_reuse_schedule_enabled
                 ? "resident-full-logit-single-row-batch-gemms"
                 : (lm_head_pipeline_chunks_enabled
@@ -19527,8 +19527,8 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
                 ? (lm_head_cooperative_loss_bins_requested
-                    ? "strict-cooperative-abi-sequences-loss-bins-ce-dhidden-dweight-kernels-not-yet-parity"
-                    : "strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity")
+                    ? "strict-cooperative-abi-event-ordered-loss-bins-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity"
+                    : "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity")
                 : (lm_head_cooperative_backward_abi_wrapper_available
                     ? "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity"
                     : "missing-required-sm120-parity-kernel"))

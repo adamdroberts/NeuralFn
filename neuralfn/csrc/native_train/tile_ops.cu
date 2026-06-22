@@ -1,6 +1,7 @@
 #include "tile_ops.h"
 
 #include <algorithm>
+#include <mutex>
 
 #include <cuda_runtime_api.h>
 
@@ -1754,6 +1755,47 @@ cudaStream_t as_stream(void* cuda_stream) {
 
 int launch_status() {
     return static_cast<int>(cudaPeekAtLastError());
+}
+
+struct LmHeadCooperativeStreams {
+    cudaStream_t dhidden = nullptr;
+    cudaStream_t dweight = nullptr;
+    cudaEvent_t ce_done = nullptr;
+    cudaEvent_t dhidden_done = nullptr;
+    cudaEvent_t dweight_done = nullptr;
+    int status = 0;
+};
+
+LmHeadCooperativeStreams& lm_head_cooperative_streams() {
+    static LmHeadCooperativeStreams resources;
+    static std::once_flag init_once;
+    std::call_once(init_once, []() {
+        int status = static_cast<int>(cudaStreamCreateWithFlags(
+            &resources.dhidden,
+            cudaStreamNonBlocking));
+        if (status == 0) {
+            status = static_cast<int>(cudaStreamCreateWithFlags(
+                &resources.dweight,
+                cudaStreamNonBlocking));
+        }
+        if (status == 0) {
+            status = static_cast<int>(cudaEventCreateWithFlags(
+                &resources.ce_done,
+                cudaEventDisableTiming));
+        }
+        if (status == 0) {
+            status = static_cast<int>(cudaEventCreateWithFlags(
+                &resources.dhidden_done,
+                cudaEventDisableTiming));
+        }
+        if (status == 0) {
+            status = static_cast<int>(cudaEventCreateWithFlags(
+                &resources.dweight_done,
+                cudaEventDisableTiming));
+        }
+        resources.status = status;
+    });
+    return resources;
 }
 
 }  // namespace
@@ -4620,6 +4662,163 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
     float loss_scale,
     float dweight_beta,
     int flags,
+    void* cuda_stream,
+    bool schedule_dhidden_dweight_concurrently) {
+    (void)hidden_float;
+    (void)token_weight_float;
+    if (logits_bf16 == nullptr ||
+        targets_u16 == nullptr ||
+        row_losses == nullptr ||
+        hidden_bf16 == nullptr ||
+        token_weight_bf16 == nullptr ||
+        grad_hidden == nullptr ||
+        grad_weight == nullptr ||
+        rows <= 0 ||
+        hidden_dim <= 0 ||
+        vocab <= 0 ||
+        row_stride < vocab) {
+        return static_cast<int>(cudaErrorInvalidValue);
+    }
+    cudaStream_t stream = as_stream(cuda_stream);
+    if ((flags & kLmHeadCooperativeFlagLossBins) != 0) {
+        neuralfn::tile_cuda::launch_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+            logits_bf16,
+            targets_u16,
+            row_losses,
+            rows,
+            vocab,
+            row_stride,
+            lm_head_cooperative_loss_bin_count_from_flags(flags, rows),
+            loss_scale,
+            stream);
+    } else {
+        neuralfn::tile_cuda::launch_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+            logits_bf16,
+            targets_u16,
+            row_losses,
+            rows,
+            vocab,
+            row_stride,
+            loss_scale,
+            stream);
+    }
+    int status = launch_status();
+    if (status != 0) {
+        return status;
+    }
+    if (schedule_dhidden_dweight_concurrently) {
+        LmHeadCooperativeStreams& cooperative_streams = lm_head_cooperative_streams();
+        if (cooperative_streams.status != 0) {
+            return cooperative_streams.status;
+        }
+        status = static_cast<int>(cudaEventRecord(cooperative_streams.ce_done, stream));
+        if (status != 0) {
+            return status;
+        }
+        status = static_cast<int>(cudaStreamWaitEvent(
+            cooperative_streams.dhidden,
+            cooperative_streams.ce_done,
+            0));
+        if (status != 0) {
+            return status;
+        }
+        status = static_cast<int>(cudaStreamWaitEvent(
+            cooperative_streams.dweight,
+            cooperative_streams.ce_done,
+            0));
+        if (status != 0) {
+            return status;
+        }
+        neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
+            logits_bf16,
+            token_weight_bf16,
+            grad_hidden,
+            rows,
+            hidden_dim,
+            row_stride,
+            cooperative_streams.dhidden);
+        status = launch_status();
+        if (status != 0) {
+            return status;
+        }
+        neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+            hidden_bf16,
+            logits_bf16,
+            grad_weight,
+            rows,
+            hidden_dim,
+            row_stride,
+            dweight_beta,
+            cooperative_streams.dweight);
+        status = launch_status();
+        if (status != 0) {
+            return status;
+        }
+        status = static_cast<int>(cudaEventRecord(
+            cooperative_streams.dhidden_done,
+            cooperative_streams.dhidden));
+        if (status != 0) {
+            return status;
+        }
+        status = static_cast<int>(cudaEventRecord(
+            cooperative_streams.dweight_done,
+            cooperative_streams.dweight));
+        if (status != 0) {
+            return status;
+        }
+        status = static_cast<int>(cudaStreamWaitEvent(
+            stream,
+            cooperative_streams.dhidden_done,
+            0));
+        if (status != 0) {
+            return status;
+        }
+        return static_cast<int>(cudaStreamWaitEvent(
+            stream,
+            cooperative_streams.dweight_done,
+            0));
+    }
+    neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+        hidden_bf16,
+        logits_bf16,
+        grad_weight,
+        rows,
+        hidden_dim,
+        row_stride,
+        dweight_beta,
+        stream);
+    status = launch_status();
+    if (status != 0) {
+        return status;
+    }
+    neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
+        logits_bf16,
+        token_weight_bf16,
+        grad_hidden,
+        rows,
+        hidden_dim,
+        row_stride,
+        stream);
+    return launch_status();
+}
+
+static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16_legacy_order(
+    std::uint16_t* logits_bf16,
+    const std::uint16_t* targets_u16,
+    float* row_losses,
+    const std::uint16_t* hidden_bf16,
+    const float* hidden_float,
+    const std::uint16_t* token_weight_bf16,
+    const float* token_weight_float,
+    float* grad_hidden,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t hidden_dim,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    float dweight_beta,
+    int flags,
     void* cuda_stream) {
     (void)hidden_float;
     (void)token_weight_float;
@@ -4705,7 +4904,7 @@ int nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16(
     float dweight_beta,
     int flags,
     void* cuda_stream) {
-    return run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
+    return run_lm_head_classifier_backward_cooperative_sequence_bf16_u16_legacy_order(
         logits_bf16,
         targets_u16,
         row_losses,
@@ -4760,7 +4959,8 @@ int nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16(
         loss_scale,
         dweight_beta,
         flags,
-        cuda_stream);
+        cuda_stream,
+        true);
 }
 
 int nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(

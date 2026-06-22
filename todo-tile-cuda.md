@@ -89,6 +89,16 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 	      strict total LM-head gate at `1.000739x`. Keep it
 	      default-off; the open work remains replacing that sequenced body with a
 	      genuinely fused/cooperative kernel under the now-concrete strict symbol.
+	    - 2026-06-22 changed the strict fused cooperative export to use persistent
+	      non-blocking CUDA streams plus events: CE still runs first on the caller
+	      stream, then dHidden and dWeight are queued on side streams, and the
+	      caller stream waits on both completion events. Runtime JSON now reports
+	      `strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity`
+	      or the matching loss-bin variant. The CUDA 13.3 dedicated RTX 5090
+	      2-step, 2-sample same-script gate rejected this schedule at `1.003537x`
+	      train-loop wall, `1.000399x` LM-head backward, and `1.003647x` block
+	      backward versus the normal native baseline. Keep it diagnostic-only; the
+	      open work is still a genuinely fused/cooperative LM-head kernel body.
 	    - 2026-06-22 added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_full_resident_reuse`
 	      as the reproducible wrapper for the current full-resident logits/full-batch
 	      LM-head reuse diagnostic. It proves why llm.kittens-style resident logits

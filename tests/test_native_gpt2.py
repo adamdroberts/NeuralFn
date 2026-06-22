@@ -1004,12 +1004,14 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in source
     assert "lm_head.backward.cooperative.bf16_u16" in source
     assert "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity" in source
-    assert "strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity" in source
-    assert "strict-cooperative-abi-sequences-loss-bins-ce-dhidden-dweight-kernels-not-yet-parity" in source
-    assert "strict-cooperative-abi-sequences-ce-dhidden-dweight-kernels" in source
+    assert "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity" in source
+    assert "strict-cooperative-abi-event-ordered-loss-bins-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity" in source
+    assert "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight" in source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_header
     assert "run_lm_head_classifier_backward_cooperative_sequence_bf16_u16" in tile_ops_source
+    assert "LmHeadCooperativeStreams" in tile_ops_source
+    assert "cudaStreamWaitEvent" in tile_ops_source
     assert "return include_symbol_check ? (loaded && all_symbols && plan_passed) : false;" in source
     assert "const bool lm_head_cooperative_backward_route_integrated = false;" not in source
     bench_source = (root / "tools" / "bench_native_gpt_sm120_candidate.sh").read_text(

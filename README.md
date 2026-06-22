@@ -532,16 +532,20 @@ kernel.
 Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or the
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` benchmark
 profile to request the current cooperative LM-head backward path. Today this
-routes through the strict cooperative ABI symbol, but that symbol still
-sequences the existing CE, dHidden, and dWeight launches and is not the final
-fused SM120 parity kernel.
+routes through the strict cooperative ABI symbol, and the fused export now uses
+persistent non-blocking CUDA streams plus events to queue dHidden and dWeight
+after CE without a host-side stream synchronize. This still reuses the existing
+CE, dHidden, and dWeight kernels; it is not the final fused SM120 parity kernel.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when
 a parity run must require the strict cooperative ABI to be available and
 integrated. The current implementation satisfies the ABI guard but reports
-`strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity`
-so it cannot be mistaken for the final fused kernel.
+`strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity`
+so it cannot be mistaken for the final fused kernel. Keep it diagnostic-only:
+the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample same-script gate measured
+`1.003537x` train-loop wall, `1.000399x` LM-head backward, and `1.003647x`
+block backward versus the normal native baseline.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins` enables the
 same strict cooperative ABI plus `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`
 and `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1`; the wrapper also applies

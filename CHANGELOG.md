@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the strict dense GPT LM-head cooperative backward fused ABI export to
+  use persistent non-blocking CUDA streams and events for the dHidden/dWeight
+  half of the sequence. The wrapper still launches the existing row-loss or
+  loss-bin CE/dlogit kernel first, then records a CE completion event, queues
+  dHidden and dWeight on side streams, and makes the caller stream wait on both
+  completion events. This avoids a host-side side-stream synchronize inside the
+  strict ABI, but it is still a diagnostic sequence of existing kernels rather
+  than the final fused/cooperative LM-head kernel body.
+
+  This remains rejected/default-off. A CUDA 13.3 dedicated RTX 5090 2-step,
+  2-sample same-script gate for
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required`
+  measured `1.003537x` train-loop wall, `1.000399x` LM-head backward, and
+  `1.003647x` block backward versus the normal native baseline. Runtime JSON
+  now reports the strategy as
+  `strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity`
+  or the matching loss-bin variant so this route is not confused with the older
+  serial wrapper or with the eventual fused kernel.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; ran the focused cooperative ABI source test and
+  candidate-wrapper test; ran a one-step CUDA smoke with
+  `--require-cooperative-lm-head-backward` on the dedicated RTX 5090; checked
+  the direct native plan JSON; ran the 2-step, 2-sample paired candidate gate
+  that rejected the stream-cooperative sequence.
+
 - Added an opt-in cooperative LM-head loss-bin diagnostic under the existing
   strict dense GPT cooperative backward ABI. The ABI `flags` field can now select
   loss-bin CE/dlogit production, and the native trainer wires
