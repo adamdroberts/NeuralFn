@@ -525,20 +525,27 @@ LM-head classifier route changes instead of relying only on coarse stage timing.
 This keeps the LM-head classifier path auditable while the next kernel step
 replaces the ABI internals with a cooperative classifier plus dHidden/dWeight
 kernel.
+Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or the
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` benchmark
+profile to exercise the current cooperative LM-head backward ABI wrapper.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when
-a parity run must fail until that cooperative route is wired into training.
+a parity run must fail unless that route is available and requested.
 Runtime JSON reports
 `lm_head_cooperative_backward_required`,
+`lm_head_cooperative_backward_requested`,
 `lm_head_cooperative_backward_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`, and
-`lm_head_cooperative_backward_strategy`; today the strategy is
-`missing-required-sm120-parity-kernel`, so the guard is a deliberate failing
-preflight rather than a performance candidate.
+`lm_head_cooperative_backward_strategy`. The route stays default-off because a
+2026-06-22 dedicated RTX 5090 one-step same-script promotion gate proved the
+strategy changed but rejected it at `1.001674x` train-loop wall time and
+`1.001581x` LM-head backward time. A non-promotion verification run with 1%
+gates passed and reported
+`cooperative-classifier-dhidden-dweight-tile-abi-wrapper`.
 The probed Tile symbol is now exported by the rebuilt ops library with a typed
-C ABI contract for the eventual fused route: it accepts the BF16 logit/dlogit
+C ABI contract for this diagnostic wrapper: it accepts the BF16 logit/dlogit
 chunk, u16 targets, optional row-loss buffer, BF16/float hidden inputs,
 BF16/float token weights, dHidden, dWeight, shape metadata, loss scale, dWeight
 beta, flags, and stream. Runtime JSON only reports

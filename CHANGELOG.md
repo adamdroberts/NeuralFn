@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Wired the dense GPT cooperative LM-head backward ABI wrapper into the native
+  training loop behind the default-off
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` /
+  `NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_BACKWARD=1` flags. The route replaces
+  each LM-head row chunk's separate CE, dHidden, and dWeight dispatch sequence
+  with `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16`,
+  reports `lm_head_cooperative_backward_requested`, and marks
+  `lm_head_dhidden_dweight_schedule_strategy` as
+  `cooperative-classifier-dhidden-dweight-tile-abi-wrapper` when active. The
+  `lm_head_cooperative_backward` benchmark profile now enables the route, and
+  the strict `lm_head_cooperative_backward_required` profile both enables and
+  requires it. The route is not promoted to default: the dedicated RTX 5090
+  one-step same-script promotion gate proved the route changed but rejected it
+  at `1.001674x` train-loop wall time and `1.001581x` LM-head backward time.
+
+  Verification: rebuilt `build/nfn_gpt_native_train`; strict dry-run with
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` and
+  `--require-cooperative-lm-head-backward` passed and reported
+  `lm_head_cooperative_backward_kernel_enabled: true`; focused native GPT
+  tests passed under the `NeuralFn` Conda environment; native no-Torch
+  dependency check and `git diff --check` passed; a relaxed 1% same-script
+  CUDA benchmark passed route verification on the dedicated RTX 5090.
+
 - Replaced the placeholder dense GPT cooperative LM-head backward probe typedef
   with a typed C ABI contract and exported the matching diagnostic Tile wrapper.
   `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16` now accepts
@@ -13,9 +36,7 @@ Future updates should append new entries here rather than replacing older notes.
   hidden inputs, BF16/float token weights, dHidden, dWeight, shape metadata,
   loss scale, dWeight beta, flags, and stream. The wrapper currently sequences
   the existing row-loss CE, BF16 dHidden, and BF16 dWeight launches behind one
-  symbol; the trainer still keeps `lm_head_cooperative_backward_route_integrated:
-  false`, so `--require-cooperative-lm-head-backward` continues to fail until
-  the route is actually called.
+  symbol; later entries describe the default-off trainer integration.
 
   Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
   `build/nfn_gpt_native_train`; `nm -D` confirms the cooperative symbol is

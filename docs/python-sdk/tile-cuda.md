@@ -1657,20 +1657,24 @@ LM-head dHidden/dWeight concurrent bucket for candidate-side inspection when
 stage timing is enabled. Train-loop and total LM-head timing remain the
 enforceable gates for that profile because the serial baseline emits split
 dHidden and dWeight substages.
-Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required`
-or pass `--require-cooperative-lm-head-backward` to the compiled dense GPT CLI
-when a parity/preflight run must fail until the cooperative LM-head backward
-route is wired into training. Runtime JSON reports
+Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` to exercise
+the current cooperative LM-head backward ABI wrapper. Use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` or
+pass `--require-cooperative-lm-head-backward` to the compiled dense GPT CLI
+when a parity/preflight run must require that route. Runtime JSON reports
 `lm_head_cooperative_backward_required`,
+`lm_head_cooperative_backward_requested`,
 `lm_head_cooperative_backward_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`, and
-`lm_head_cooperative_backward_strategy`. Today this is a default-off strictness
-guard that reports `missing-required-sm120-parity-kernel`, not a performance
-route; `lm_head_cooperative_backward_kernel_available` only means the probe
-symbol exists, while `lm_head_cooperative_backward_route_integrated` and
-`lm_head_cooperative_backward_kernel_enabled` remain false until the trainer
-actually calls that route.
+`lm_head_cooperative_backward_strategy`. When active, the route reports
+`cooperative-classifier-dhidden-dweight-tile-abi-wrapper` and replaces each
+LM-head chunk's CE, dHidden, and dWeight dispatch sequence with the typed
+wrapper call. It remains default-off because the 2026-06-22 dedicated RTX 5090
+one-step promotion gate rejected it at `1.001674x` train-loop wall time and
+`1.001581x` LM-head backward time; a relaxed 1% same-script route verification
+gate passed.
 Rebuilt Tile ops libraries export the probed symbol with a typed C ABI contract
 for the future cooperative route: BF16 logit/dlogit chunk, u16 targets,
 optional row losses, BF16/float hidden inputs, BF16/float token weights,

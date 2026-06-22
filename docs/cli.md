@@ -789,16 +789,21 @@ logit reduction. `tools/paired_kernel_speed.py` extracts the contract's
 full/chunk BF16 byte counts, chunk rows/count, and reduction ratio into native
 metric summaries so candidate-vs-baseline reports show whether a classifier
 kernel experiment changed memory contract or only changed timing.
-Use `nfn_gpt_native_train --require-cooperative-lm-head-backward` when a
-parity/preflight run must reject the current row-chunked classifier plus
-separate dHidden/dWeight GEMMs. The flag is default-off for normal training.
+Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` to exercise the current
+cooperative LM-head backward ABI wrapper, or
+`nfn_gpt_native_train --require-cooperative-lm-head-backward` when a
+parity/preflight run must require that route. The flag is default-off for
+normal training.
 Runtime JSON reports `lm_head_cooperative_backward_required`,
+`lm_head_cooperative_backward_requested`,
 `lm_head_cooperative_backward_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`, and
-`lm_head_cooperative_backward_strategy`; until the real cooperative Tile route
-is implemented and wired into training, the strategy is
-`missing-required-sm120-parity-kernel` and the required run fails explicitly.
+`lm_head_cooperative_backward_strategy`. When active, the schedule strategy is
+`cooperative-classifier-dhidden-dweight-tile-abi-wrapper`. The route remains
+diagnostic-only: a 2026-06-22 dedicated RTX 5090 one-step promotion gate
+rejected it at `1.001674x` train-loop wall time and `1.001581x` LM-head
+backward time, while a 1% route-verification gate passed.
 The Tile symbol is no longer an untyped probe in rebuilt ops libraries: its C
 ABI receives the BF16 logit/dlogit chunk, u16 targets, row-loss buffer,
 BF16/float hidden inputs, BF16/float token weights, dHidden, dWeight, shape
@@ -1043,14 +1048,13 @@ dlogit write pass, but remains diagnostic-only: the 2026-06-22 dedicated RTX
 5090 same-script gate proved the strategy changed to
 `vec8-loads-streaming-stores` and rejected it at `1.001346x` train-loop wall
 time, `1.000944x` LM-head backward, and `1.004197x` CE time.
-`lm_head_cooperative_backward_required` appends
-`--require-cooperative-lm-head-backward` to the candidate command. It is a
-strict missing-kernel guard, not a timing candidate: it should fail until the
-cooperative classifier/dHidden/dWeight Tile route replaces the current
-row-chunked classifier plus separate GEMM schedule.
-The candidate probes the typed cooperative ABI contract when the loaded Tile ops
-library exports it, but `lm_head_cooperative_backward_route_integrated` remains
-false until the trainer actually dispatches that symbol.
+`lm_head_cooperative_backward` adds
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` to the candidate command.
+`lm_head_cooperative_backward_required` adds the same environment flag plus
+`--require-cooperative-lm-head-backward`. Use the non-required profile for
+same-script timing, and the required profile for preflight/strictness checks.
+The trainer dispatches the typed cooperative ABI wrapper when the loaded Tile
+ops library exports it and the BF16/token-weight prerequisites are active.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

@@ -920,7 +920,7 @@ def test_native_gpt_bf16_ce_vector_stores_reuse_vec_loads() -> None:
     assert "(vec_normal_stores && vec_loads) ? int4_u16_at" not in kernels_text
 
 
-def test_native_gpt_lm_head_cooperative_abi_is_typed_until_integrated() -> None:
+def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
         encoding="utf-8"
@@ -950,7 +950,16 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_until_integrated() -> None:
     assert "launch_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets" in tile_ops_source
     assert "launch_linear_backward_input_bf16_bits_weight_bf16_float32" in tile_ops_source
     assert "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta" in tile_ops_source
-    assert "const bool lm_head_cooperative_backward_route_integrated = false;" in source
+    assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD" in source
+    assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_BACKWARD" in source
+    assert "lm_head.backward.cooperative.bf16_u16" in source
+    assert "cooperative-classifier-dhidden-dweight-tile-abi-wrapper" in source
+    assert "const bool lm_head_cooperative_backward_route_integrated = false;" not in source
+    bench_source = (root / "tools" / "bench_native_gpt_sm120_candidate.sh").read_text(
+        encoding="utf-8"
+    )
+    assert '"lm_head_cooperative_backward"|"lm-head-cooperative-backward")' in bench_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1" in bench_source
 
 
 def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path: Path) -> None:

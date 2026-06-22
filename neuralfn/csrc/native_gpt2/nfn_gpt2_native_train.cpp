@@ -3885,12 +3885,19 @@ bool print_tile_plan(
         plan_error = message.str();
     }
 
+    const bool cooperative_lm_head_backward_requested =
+        cfg.require_cooperative_lm_head_backward ||
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD",
+                              "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_BACKWARD"}),
+            false);
+
     bool loaded = false;
     bool all_symbols = false;
     bool cooperative_lm_head_backward_symbol_found = false;
     std::string error;
     std::vector<bool> found(symbols.size(), false);
-    if (include_symbol_check || cfg.require_cooperative_lm_head_backward) {
+    if (include_symbol_check || cooperative_lm_head_backward_requested) {
         void* handle = dlopen(tile_ops.c_str(), RTLD_NOW | RTLD_LOCAL);
         if (handle == nullptr) {
             const char* dl_error = dlerror();
@@ -3909,7 +3916,9 @@ bool print_tile_plan(
             dlclose(handle);
         }
     }
-    const bool cooperative_lm_head_backward_route_integrated = false;
+    const bool cooperative_lm_head_backward_route_integrated =
+        cooperative_lm_head_backward_requested &&
+        cooperative_lm_head_backward_symbol_found;
     const bool cooperative_lm_head_backward_enabled =
         cooperative_lm_head_backward_symbol_found &&
         cooperative_lm_head_backward_route_integrated;
@@ -3969,6 +3978,8 @@ bool print_tile_plan(
         << (unsafe_lm_head_row_chunk_allowed ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_required\": "
         << (cfg.require_cooperative_lm_head_backward ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_requested\": "
+        << (cooperative_lm_head_backward_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_available\": "
         << (cooperative_lm_head_backward_symbol_found ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_route_integrated\": "
@@ -3977,7 +3988,7 @@ bool print_tile_plan(
         << (cooperative_lm_head_backward_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (cooperative_lm_head_backward_enabled
-                ? "cooperative-classifier-dhidden-dweight-tile-abi"
+                ? "cooperative-classifier-dhidden-dweight-tile-abi-wrapper"
                 : "missing-required-sm120-parity-kernel")
         << "\",\n"
         << "  \"schedule\": {\"max_steps\": " << cfg.max_steps
@@ -11679,6 +11690,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD",
                               "NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD"}),
             true);
+    const bool lm_head_cooperative_backward_requested =
+        cfg.require_cooperative_lm_head_backward ||
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD",
+                              "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_BACKWARD"}),
+            false);
     const bool lm_head_concurrent_dhidden_dweight_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT",
@@ -11701,17 +11718,29 @@ int run_transformer_lm_training_json(
         cuda_event_destroy != nullptr;
     const bool lm_head_concurrent_dhidden_dweight_enabled =
         lm_head_concurrent_dhidden_dweight_requested &&
-        lm_head_concurrent_dhidden_dweight_available;
+        lm_head_concurrent_dhidden_dweight_available &&
+        !lm_head_cooperative_backward_requested;
     const bool lm_head_pipeline_chunks_enabled =
         lm_head_pipeline_chunks_requested &&
         lm_head_concurrent_dhidden_dweight_available &&
         lm_head_bf16_logits_enabled &&
         !lm_head_reuse_forward_logits_enabled &&
         !lm_head_full_batch_reuse_schedule_enabled &&
+        !lm_head_cooperative_backward_requested &&
         lm_head_chunk_count > 1;
     const bool lm_head_cooperative_backward_kernel_available =
         lm_head_classifier_backward_cooperative_bf16_u16 != nullptr;
-    const bool lm_head_cooperative_backward_route_integrated = false;
+    const bool lm_head_cooperative_backward_route_integrated =
+        lm_head_cooperative_backward_requested &&
+        lm_head_cooperative_backward_kernel_available &&
+        lm_head_bf16_logits_enabled &&
+        lm_head_public_vocab_ce_enabled &&
+        direct_u16_token_ids_enabled &&
+        lm_head_fused_loss_backward_enabled &&
+        lm_head_prepack_bf16_hidden_enabled &&
+        token_weight_bf16_shadow_enabled &&
+        !lm_head_reuse_forward_logits_enabled &&
+        !lm_head_full_batch_reuse_schedule_enabled;
     const bool lm_head_cooperative_backward_kernel_enabled =
         lm_head_cooperative_backward_kernel_available &&
         lm_head_cooperative_backward_route_integrated;
@@ -15251,6 +15280,30 @@ int run_transformer_lm_training_json(
                 lm_head_classifier_backward_loss_bins_bf16_u16 != nullptr &&
                 sum_accumulate != nullptr &&
                 row_max != nullptr;
+            auto reduce_lm_head_row_losses = [&]() {
+                if (!record_loss || !error.empty()) {
+                    return;
+                }
+                if (use_row_loss_sum_accumulate) {
+                    run(sum_accumulate(row_max, loss_total, row_count, nullptr),
+                        "ce.backward_row_losses.sum_accumulate");
+                    return;
+                }
+                const float* current = row_max;
+                std::int64_t current_count = row_count;
+                float* next = loss_reduce_a;
+                while (current_count > 1 && error.empty()) {
+                    run(sum_partials(current, next, current_count, nullptr),
+                        "ce.backward_row_losses.sum_partials");
+                    current = next;
+                    current_count = partial_count_for(current_count);
+                    next = (next == loss_reduce_a) ? loss_reduce_b : loss_reduce_a;
+                }
+                if (error.empty()) {
+                    run(gradient_accumulate(loss_total, current, 1, 1.0f, nullptr),
+                        "ce.backward_row_losses.loss.accumulate");
+                }
+            };
             auto* ce_backward_bf16_u16 =
                 lm_head_skip_ce_pad_zero_enabled &&
                         lm_head_classifier_backward_bf16_u16_workspace != nullptr
@@ -15358,86 +15411,123 @@ int run_transformer_lm_training_json(
                     }
                 });
             }
-            run_timed_stage("lm_head_backward.ce", [&]() {
-                if (error.empty()) {
-                    if (lm_head_bf16_logits_enabled) {
-                        if (lm_head_public_vocab_ce_enabled) {
-                            if (direct_u16_token_ids_enabled) {
-                                if (use_fused_ce_loss_backward) {
-                                    if (use_loss_bin_reduction) {
-                                        const std::int64_t loss_bin_count =
-                                            std::max<std::int64_t>(
-                                                1,
-                                                std::min<std::int64_t>(
-                                                    row_count,
-                                                    lm_head_loss_bin_count_requested > 0
-                                                        ? lm_head_loss_bin_count_requested
-                                                        : 1024));
-                                        run(fill(row_max, loss_bin_count, 0.0f, nullptr),
-                                            "ce.backward_loss_bins.zero");
-                                        if (error.empty()) {
-                                            run(lm_head_classifier_backward_loss_bins_bf16_u16(
+            bool lm_head_chunk_backward_done = false;
+            const bool use_cooperative_lm_head_backward =
+                lm_head_cooperative_backward_kernel_enabled &&
+                !use_loss_bin_reduction &&
+                (!record_loss || use_row_loss_reduction) &&
+                hidden_bf16_chunk != nullptr &&
+                token_weight_bf16_shadow_enabled &&
+                token_weight_bf16 != nullptr &&
+                row_max != nullptr;
+            if (use_cooperative_lm_head_backward) {
+                run_timed_stage("lm_head_backward.cooperative", [&]() {
+                    if (!error.empty()) {
+                        return;
+                    }
+                    run(lm_head_classifier_backward_cooperative_bf16_u16(
+                            bf16_logit_chunk,
+                            target_chunk_u16,
+                            row_max,
+                            hidden_bf16_chunk,
+                            hidden_chunk,
+                            token_weight_bf16,
+                            token_weight,
+                            grad_hidden_chunk,
+                            accum_grad_token_weight,
+                            row_count,
+                            kDim,
+                            kVocab,
+                            kPaddedVocab,
+                            accumulation_scale / static_cast<float>(active_rows),
+                            lm_head_dweight_beta,
+                            0,
+                            nullptr),
+                        "lm_head.backward.cooperative.bf16_u16");
+                    if (error.empty()) {
+                        lm_head_chunk_backward_done = true;
+                        if (record_loss) {
+                            reduce_lm_head_row_losses();
+                        }
+                    }
+                });
+            }
+            if (!lm_head_chunk_backward_done) {
+                run_timed_stage("lm_head_backward.ce", [&]() {
+                    if (error.empty()) {
+                        if (lm_head_bf16_logits_enabled) {
+                            if (lm_head_public_vocab_ce_enabled) {
+                                if (direct_u16_token_ids_enabled) {
+                                    if (use_fused_ce_loss_backward) {
+                                        if (use_loss_bin_reduction) {
+                                            const std::int64_t loss_bin_count =
+                                                std::max<std::int64_t>(
+                                                    1,
+                                                    std::min<std::int64_t>(
+                                                        row_count,
+                                                        lm_head_loss_bin_count_requested > 0
+                                                            ? lm_head_loss_bin_count_requested
+                                                            : 1024));
+                                            run(fill(row_max, loss_bin_count, 0.0f, nullptr),
+                                                "ce.backward_loss_bins.zero");
+                                            if (error.empty()) {
+                                                run(lm_head_classifier_backward_loss_bins_bf16_u16(
+                                                        bf16_logit_chunk,
+                                                        target_chunk_u16,
+                                                        row_max,
+                                                        row_count,
+                                                        kVocab,
+                                                        kPaddedVocab,
+                                                        loss_bin_count,
+                                                        accumulation_scale / static_cast<float>(active_rows),
+                                                        nullptr),
+                                                    "ce.backward_loss_bins.inplace.public_vocab_strided_bf16_bits_u16_targets");
+                                            }
+                                            if (error.empty()) {
+                                                run(sum_accumulate(row_max, loss_total, loss_bin_count, nullptr),
+                                                    "ce.backward_loss_bins.sum_accumulate");
+                                            }
+                                        } else if (use_row_loss_reduction) {
+                                            run(lm_head_classifier_backward_row_losses_bf16_u16(
                                                     bf16_logit_chunk,
                                                     target_chunk_u16,
                                                     row_max,
                                                     row_count,
                                                     kVocab,
                                                     kPaddedVocab,
-                                                    loss_bin_count,
                                                     accumulation_scale / static_cast<float>(active_rows),
                                                     nullptr),
-                                                "ce.backward_loss_bins.inplace.public_vocab_strided_bf16_bits_u16_targets");
+                                                "ce.backward_row_losses.inplace.public_vocab_strided_bf16_bits_u16_targets");
+                                            reduce_lm_head_row_losses();
+                                        } else {
+                                            run(lm_head_classifier_backward_loss_bf16_u16(
+                                                    bf16_logit_chunk,
+                                                    target_chunk_u16,
+                                                    loss_total,
+                                                    row_count,
+                                                    kVocab,
+                                                    kPaddedVocab,
+                                                    accumulation_scale / static_cast<float>(active_rows),
+                                                    nullptr),
+                                                "ce.backward_loss.inplace.public_vocab_strided_bf16_bits_u16_targets");
                                         }
-                                        if (error.empty()) {
-                                            run(sum_accumulate(row_max, loss_total, loss_bin_count, nullptr),
-                                                "ce.backward_loss_bins.sum_accumulate");
-                                        }
-                                    } else if (use_row_loss_reduction) {
-                                        run(lm_head_classifier_backward_row_losses_bf16_u16(
+                                    } else {
+                                        run(ce_backward_bf16_u16(
                                                 bf16_logit_chunk,
                                                 target_chunk_u16,
                                                 row_max,
+                                                row_denom,
                                                 row_count,
                                                 kVocab,
                                                 kPaddedVocab,
                                                 accumulation_scale / static_cast<float>(active_rows),
                                                 nullptr),
-                                            "ce.backward_row_losses.inplace.public_vocab_strided_bf16_bits_u16_targets");
-                                        if (use_row_loss_sum_accumulate) {
-                                            run(sum_accumulate(row_max, loss_total, row_count, nullptr),
-                                                "ce.backward_row_losses.sum_accumulate");
-                                        } else {
-                                            const float* current = row_max;
-                                            std::int64_t current_count = row_count;
-                                            float* next = loss_reduce_a;
-                                            while (current_count > 1 && error.empty()) {
-                                                run(sum_partials(current, next, current_count, nullptr),
-                                                    "ce.backward_row_losses.sum_partials");
-                                                current = next;
-                                                current_count = partial_count_for(current_count);
-                                                next = (next == loss_reduce_a) ? loss_reduce_b : loss_reduce_a;
-                                            }
-                                            if (error.empty()) {
-                                                run(gradient_accumulate(loss_total, current, 1, 1.0f, nullptr),
-                                                    "ce.backward_row_losses.loss.accumulate");
-                                            }
-                                        }
-                                    } else {
-                                        run(lm_head_classifier_backward_loss_bf16_u16(
-                                                bf16_logit_chunk,
-                                                target_chunk_u16,
-                                                loss_total,
-                                                row_count,
-                                                kVocab,
-                                                kPaddedVocab,
-                                                accumulation_scale / static_cast<float>(active_rows),
-                                                nullptr),
-                                            "ce.backward_loss.inplace.public_vocab_strided_bf16_bits_u16_targets");
+                                            "ce.backward.inplace.public_vocab_strided_bf16_bits_u16_targets");
                                     }
                                 } else {
-                                    run(ce_backward_bf16_u16(
+                                    run(ce_backward_bf16_i64(
                                             bf16_logit_chunk,
-                                            target_chunk_u16,
+                                            target_chunk,
                                             row_max,
                                             row_denom,
                                             row_count,
@@ -15445,11 +15535,24 @@ int run_transformer_lm_training_json(
                                             kPaddedVocab,
                                             accumulation_scale / static_cast<float>(active_rows),
                                             nullptr),
-                                        "ce.backward.inplace.public_vocab_strided_bf16_bits_u16_targets");
+                                        "ce.backward.inplace.public_vocab_strided_bf16_bits");
                                 }
                             } else {
-                                run(ce_backward_bf16_i64(
+                                run(ce_backward_inplace_bf16_bits_workspace(
                                         bf16_logit_chunk,
+                                        target_chunk,
+                                        row_max,
+                                        row_denom,
+                                        row_count,
+                                        kPaddedVocab,
+                                        accumulation_scale / static_cast<float>(active_rows),
+                                        nullptr),
+                                    "ce.backward.inplace.padded_vocab_bf16_bits");
+                            }
+                        } else {
+                            if (lm_head_public_vocab_ce_enabled) {
+                                run(ce_backward_float_i64(
+                                        float_logit_chunk,
                                         target_chunk,
                                         row_max,
                                         row_denom,
@@ -15458,48 +15561,23 @@ int run_transformer_lm_training_json(
                                         kPaddedVocab,
                                         accumulation_scale / static_cast<float>(active_rows),
                                         nullptr),
-                                    "ce.backward.inplace.public_vocab_strided_bf16_bits");
+                                    "ce.backward.inplace.public_vocab_strided");
+                            } else {
+                                run(ce_backward_inplace_workspace(
+                                        float_logit_chunk,
+                                        target_chunk,
+                                        row_max,
+                                        row_denom,
+                                        row_count,
+                                        kPaddedVocab,
+                                        accumulation_scale / static_cast<float>(active_rows),
+                                        nullptr),
+                                    "ce.backward.inplace.padded_vocab");
                             }
-                        } else {
-                            run(ce_backward_inplace_bf16_bits_workspace(
-                                    bf16_logit_chunk,
-                                    target_chunk,
-                                    row_max,
-                                    row_denom,
-                                    row_count,
-                                    kPaddedVocab,
-                                    accumulation_scale / static_cast<float>(active_rows),
-                                    nullptr),
-                                "ce.backward.inplace.padded_vocab_bf16_bits");
-                        }
-                    } else {
-                        if (lm_head_public_vocab_ce_enabled) {
-                            run(ce_backward_float_i64(
-                                    float_logit_chunk,
-                                    target_chunk,
-                                    row_max,
-                                    row_denom,
-                                    row_count,
-                                    kVocab,
-                                    kPaddedVocab,
-                                    accumulation_scale / static_cast<float>(active_rows),
-                                    nullptr),
-                                "ce.backward.inplace.public_vocab_strided");
-                        } else {
-                            run(ce_backward_inplace_workspace(
-                                    float_logit_chunk,
-                                    target_chunk,
-                                    row_max,
-                                    row_denom,
-                                    row_count,
-                                    kPaddedVocab,
-                                    accumulation_scale / static_cast<float>(active_rows),
-                                    nullptr),
-                                "ce.backward.inplace.padded_vocab");
                         }
                     }
-                }
-            });
+                });
+            }
             auto run_lm_head_dhidden_kernel = [&](void* stream) {
                 if (error.empty()) {
                     if (lm_head_bf16_logits_enabled) {
@@ -15689,7 +15767,9 @@ int run_transformer_lm_training_json(
                     run_lm_head_dweight_kernel(lm_head_dweight_stream);
                 });
             };
-            if (lm_head_pipeline_chunks_enabled) {
+            if (lm_head_chunk_backward_done) {
+                continue;
+            } else if (lm_head_pipeline_chunks_enabled) {
                 queue_lm_head_dhidden_dweight_pipeline();
             } else if (lm_head_concurrent_dhidden_dweight_enabled) {
                 run_lm_head_dhidden_dweight_concurrent();
@@ -19231,17 +19311,21 @@ int run_transformer_lm_training_json(
         << (lm_head_pipeline_chunks_enabled ? logit_elements * static_cast<std::int64_t>(sizeof(std::uint16_t)) : 0)
         << ",\n"
         << "  \"lm_head_dhidden_dweight_schedule_strategy\": \""
-        << (lm_head_full_batch_reuse_schedule_enabled
+        << (lm_head_cooperative_backward_kernel_enabled
+                ? "cooperative-classifier-dhidden-dweight-tile-abi-wrapper"
+        : (lm_head_full_batch_reuse_schedule_enabled
                 ? "resident-full-logit-single-row-batch-gemms"
                 : (lm_head_pipeline_chunks_enabled
                 ? "double-buffered-logits-ce-default-stream-side-stream-dhidden-ordered-dweight"
                 : (lm_head_concurrent_dhidden_dweight_enabled
                 ? "two-nonblocking-cuda-streams-after-ce-event"
                 : (lm_head_dweight_before_dhidden_enabled ? "serial-dweight-before-dhidden"
-                                                          : "serial-dhidden-before-dweight"))))
+                                                          : "serial-dhidden-before-dweight")))))
         << "\",\n"
         << "  \"lm_head_cooperative_backward_required\": "
         << (cfg.require_cooperative_lm_head_backward ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_requested\": "
+        << (lm_head_cooperative_backward_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_available\": "
         << (lm_head_cooperative_backward_kernel_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_route_integrated\": "
@@ -19250,7 +19334,7 @@ int run_transformer_lm_training_json(
         << (lm_head_cooperative_backward_kernel_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
-                ? "cooperative-classifier-dhidden-dweight-tile-abi"
+                ? "cooperative-classifier-dhidden-dweight-tile-abi-wrapper"
                 : "missing-required-sm120-parity-kernel")
         << "\",\n"
         << "  \"lm_head_reverse_chunk_order_enabled\": "
