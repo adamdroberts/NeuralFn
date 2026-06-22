@@ -1618,6 +1618,16 @@ to require raw candidate env overrides: `bf16_attention_grad_out`,
 disabled so the no-loss classifier CE candidate is measured directly. Diagnostic
 profiles make same-script bisection reproducible and attach the relevant
 hot-stage gates automatically.
+Default timing-only optimizer steps use the older no-loss CE+dlogits path, not
+the row-loss or loss-bin tail. Runtime JSON reports that route separately with
+`lm_head_classifier_no_loss_chunk_count`,
+`lm_head_classifier_ce_no_loss_enabled`, `lm_head_ce_kernel_strategy:
+"no-loss-dlogits-vec8-loads-scalar-stores"`, and
+`lm_head_ce_loss_backward_strategy:
+"no-loss-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"` when active, and
+`tools/paired_kernel_speed.py` includes the no-loss chunk counter in route
+changes. This prevents no-loss training benchmarks from being misread as fused
+row-loss/loss-bin runs.
 The native-vs-native wrapper also forwards the selected-GPU utilization retry
 aliases to the paired benchmark tool: use
 `NFN_SM120_NATIVE_SELECTED_GPU_UTILIZATION_RETRIES`,

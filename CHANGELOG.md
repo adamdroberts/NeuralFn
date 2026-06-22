@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native dense GPT runtime JSON now reports the default no-loss LM-head
+  CE+dlogits route separately from row-loss and loss-bin train-loss routes.
+  Timing-only optimizer steps increment `lm_head_classifier_no_loss_chunk_count`
+  and report `lm_head_ce_kernel_strategy:
+  "no-loss-dlogits-vec8-loads-scalar-stores"` plus
+  `lm_head_ce_loss_backward_strategy:
+  "no-loss-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"` when the
+  no-loss path is active. `tools/paired_kernel_speed.py` includes the new
+  counter in route metrics so SM120 candidate comparisons no longer mislabel
+  no-loss training as fused row-loss/loss-bin work.
+
+  Verification: focused native GPT source tests, no-Torch dependency verifier,
+  and a one-step CUDA-visible dense GPT runtime smoke on the dedicated RTX
+  5090.
+
 - `cli/scripts/train_gpt_native.py` and the raw `nfn_gpt_native_train` C++
   frontend now accept `--model-family nanogpt` directly. Both canonicalize that
   selector to the shared dense GPT native C++ trainer (`model_family: "gpt"`)

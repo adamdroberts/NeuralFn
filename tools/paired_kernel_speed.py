@@ -152,6 +152,10 @@ NATIVE_METRIC_PATHS = (
         "lm_head_classifier_loss_bin_launch_count",
         ("lm_head_classifier_loss_bin_launch_count",),
     ),
+    (
+        "lm_head_classifier_no_loss_chunk_count",
+        ("lm_head_classifier_no_loss_chunk_count",),
+    ),
     ("lm_head_classifier_last_rows", ("lm_head_classifier_last_rows",)),
     ("lm_head_classifier_last_vocab", ("lm_head_classifier_last_vocab",)),
     ("lm_head_classifier_last_row_stride", ("lm_head_classifier_last_row_stride",)),
@@ -276,6 +280,7 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "lm_head_ce_loss_bin_count_requested",
     "lm_head_classifier_chunk_launch_count",
     "lm_head_classifier_loss_bin_launch_count",
+    "lm_head_classifier_no_loss_chunk_count",
     "lm_head_classifier_last_rows",
     "lm_head_classifier_last_vocab",
     "lm_head_classifier_last_row_stride",

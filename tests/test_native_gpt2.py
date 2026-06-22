@@ -595,6 +595,7 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "lm_head_classifier_last_row_stride" in speed_tool
     assert "lm_head_classifier_ce_no_loss_requested" in speed_tool
     assert "lm_head_classifier_ce_no_loss_enabled" in speed_tool
+    assert "lm_head_classifier_no_loss_chunk_count" in speed_tool
     assert "lm_head_ce_row_loss_reduction_enabled" in speed_tool
     assert "lm_head_ce_row_loss_sum_accumulate_requested" in speed_tool
     assert "lm_head_ce_row_loss_sum_accumulate_enabled" in speed_tool
@@ -3892,6 +3893,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert (
         train_transformer_payload["lm_head_ce_loss_backward_strategy"]
         in {
+            "no-loss-dlogits-public-vocab-no-pad-zero-bf16-u16-targets",
+            "no-loss-dlogits-public-vocab-bf16-u16-targets",
             "fused-loss-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets",
             "fused-loss-accumulate-and-dlogits-public-vocab-bf16-u16-targets",
             "separate-loss-partials-reduction-then-dlogits",
@@ -6973,9 +6976,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_fused_loss_backward_enabled" in gpt2_source_text
     assert "lm_head_classifier_ce_no_loss_requested" in gpt2_source_text
     assert "lm_head_classifier_ce_no_loss_enabled" in gpt2_source_text
+    assert "lm_head_classifier_no_loss_chunk_count" in gpt2_source_text
     assert "lm_head_ce_loss_backward_fused_enabled" in gpt2_source_text
     assert "lm_head_ce_row_loss_reduction_enabled" in gpt2_source_text
     assert "lm_head_ce_row_loss_sum_accumulate_enabled" in gpt2_source_text
+    assert "no-loss-dlogits-public-vocab-no-pad-zero-bf16-u16-targets" in gpt2_source_text
+    assert "no-loss-dlogits-vec8-loads-scalar-stores" in gpt2_source_text
     assert "fused-row-losses-sum-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets" in gpt2_source_text
     assert "row-chunked-public-vocab-bf16-u16-loss-dlogits-tile-abi" in gpt2_source_text
     assert "ce_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_workspace" in gpt2_source_text
