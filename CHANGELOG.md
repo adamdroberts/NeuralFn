@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added low-overhead cuBLASLt plan-cache inspection to the raw CUDA Tile
+  trainer ABI. `libnfn_native_train_tile_ops.so` now exports
+  `nfn_native_tile_trainer_linear_cublaslt_plan_cache_count` and
+  `nfn_native_tile_trainer_linear_cublaslt_plan_cache_entry`, and
+  `nfn_gpt_native_train` reports `linear_cublaslt_plan_cache_available`,
+  `linear_cublaslt_plan_cache_count`, and `linear_cublaslt_plan_cache` in
+  normal JSON output. Each entry includes GEMM shape, transpose flags, selected
+  heuristic, returned heuristic count, workspace bytes, and epilogue metadata,
+  so same-script SM120 parity runs can prove which cached cuBLASLt plans were
+  used without turning on synchronized `linear_shape_stats` timing.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; confirmed the new exported symbols with
+  `nm -D`; ran the focused native source tests
+  `test_native_tile_linear_exposes_cublaslt_grouped_layout_probe` and
+  `test_native_train_tile_ops_builds_torch_free_c_abi` (the build-backed branch
+  remains skipped by its existing guard); ran `git diff --check`; ran a
+  one-step CUDA 13.3 dedicated RTX 5090 smoke with `--tinystories`,
+  `--train-transformer-lm`, `NFN_NATIVE_GPT_REQUIRE_TILE_CUDA=1`, and
+  `NFN_NATIVE_GPT_REQUIRE_NO_TORCH=1`, which reported shape stats disabled,
+  plan-cache reporting available, 9 cached plans, and 9 successful plan prewarms.
+
 - Changed the strict dense GPT LM-head cooperative backward fused ABI export to
   use persistent non-blocking CUDA streams and events for the dHidden/dWeight
   half of the sequence. The wrapper still launches the existing row-loss or

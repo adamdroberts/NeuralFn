@@ -572,6 +572,15 @@ Unified native training helpers are exported from `neuralfn.native_train` and to
 
 When profiling native GPT linear dispatch with `NFN_NATIVE_LINEAR_SHAPE_STATS=1`, the v2 Tile stats ABI reports `cublaslt_selected_heuristic`, `cublaslt_returned_heuristics`, and `cublaslt_workspace_bytes` for cuBLASLt rows. Treat heuristic override candidates as unproven until those fields show the requested index was available and selected in the compiled run.
 
+For ordinary same-script parity runs, prefer the low-overhead plan-cache JSON:
+`linear_cublaslt_plan_cache_available`, `linear_cublaslt_plan_cache_count`, and
+`linear_cublaslt_plan_cache`. These are backed by the raw ABI symbols
+`nfn_native_tile_trainer_linear_cublaslt_plan_cache_count` and
+`nfn_native_tile_trainer_linear_cublaslt_plan_cache_entry`, and report cached
+cuBLASLt shape, transpose, selected heuristic, returned heuristic count,
+workspace, and epilogue metadata without enabling synchronized
+`linear_shape_stats` timing.
+
 For grouped-GEMM work, distinguish layout support from execution support.
 `linear_cublaslt_grouped_layout_supported` can be true while the opt-in
 `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1` smoke reports nonzero

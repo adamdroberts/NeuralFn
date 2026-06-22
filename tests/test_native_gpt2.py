@@ -511,6 +511,12 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan" in tile_header
     assert "nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan" in tile_source
     assert "trainer_linear_cublaslt_prewarm_bf16_plan" in kernels_source
+    assert "nfn_native_tile_trainer_linear_cublaslt_plan_cache_count" in tile_header
+    assert "nfn_native_tile_trainer_linear_cublaslt_plan_cache_count" in tile_source
+    assert "trainer_linear_cublaslt_plan_cache_count" in kernels_source
+    assert "nfn_native_tile_trainer_linear_cublaslt_plan_cache_entry" in tile_header
+    assert "nfn_native_tile_trainer_linear_cublaslt_plan_cache_entry" in tile_source
+    assert "trainer_linear_cublaslt_plan_cache_entry" in kernels_source
     assert "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLANS" in gpt_source
     assert "NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS" in gpt_source
     assert "NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM" in gpt_source
@@ -532,6 +538,9 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_cublaslt_plan_prewarm_available" in gpt_source
     assert "linear_cublaslt_plan_prewarm_attempted_count" in gpt_source
     assert "linear_cublaslt_plan_prewarm_success_count" in gpt_source
+    assert "linear_cublaslt_plan_cache_available" in gpt_source
+    assert "linear_cublaslt_plan_cache_count" in gpt_source
+    assert "linear_cublaslt_plan_cache" in gpt_source
     assert "setup.cublaslt_plan_prewarm" in gpt_source
     assert "linear_cublaslt_grouped_layout_probe_status" in speed_tool
     assert "linear_cublaslt_grouped_layout_supported" in speed_tool
@@ -6214,6 +6223,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "cublaslt_selected_heuristic" in kernels_text
     assert "cublaslt_returned_heuristics" in kernels_text
     assert "cublaslt_workspace_bytes" in kernels_text
+    assert "trainer_linear_cublaslt_plan_cache_count" in kernels_text
+    assert "trainer_linear_cublaslt_plan_cache_entry" in kernels_text
+    assert "linear_cublaslt_plan_cache_available" in gpt2_source_text
+    assert "linear_cublaslt_plan_cache_count" in gpt2_source_text
+    assert "linear_cublaslt_plan_cache" in gpt2_source_text
     assert "trainer_linear_cublaslt_descriptor_cache_enabled" in kernels_text
     assert 'std::getenv("NFN_TILE_CUDA_CUBLASLT_DESCRIPTOR_CACHE")' in kernels_text
     assert 'std::getenv("NFN_NATIVE_LINEAR_CUBLASLT_DESCRIPTOR_CACHE")' in kernels_text
@@ -7611,6 +7625,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status" in exported
         assert "nfn_native_tile_trainer_linear_shape_stats_count" in exported
         assert "nfn_native_tile_trainer_linear_shape_stats_entry" in exported
+        assert "nfn_native_tile_trainer_linear_cublaslt_plan_cache_count" in exported
+        assert "nfn_native_tile_trainer_linear_cublaslt_plan_cache_entry" in exported
         assert "nfn_native_tile_adamw_step_with_device_scale_float32" in exported
         assert "nfn_native_tile_global_norm_clip_scale_float32" in exported
         assert "nfn_native_tile_scale_inplace_by_device_float32" in exported

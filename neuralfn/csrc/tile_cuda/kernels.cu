@@ -18699,6 +18699,90 @@ bool trainer_linear_shape_stats_entry_v2(
 #endif
 }
 
+std::int64_t trainer_linear_cublaslt_plan_cache_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  std::lock_guard<std::mutex> lock(g_trainer_linear_cublaslt_workspace_mutex);
+  std::int64_t count = 0;
+  for (const TrainerLinearCublasLtPlan& plan : g_trainer_linear_cublaslt_workspace.plans) {
+    if (plan.valid) {
+      count += 1;
+    }
+  }
+  return count;
+#else
+  return 0;
+#endif
+}
+
+bool trainer_linear_cublaslt_plan_cache_entry(
+    std::int64_t index,
+    int* m,
+    int* n,
+    int* k,
+    int* op_a,
+    int* op_b,
+    int* selected_heuristic,
+    int* returned_heuristics,
+    std::int64_t* workspace_bytes,
+    int* epilogue) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  std::lock_guard<std::mutex> lock(g_trainer_linear_cublaslt_workspace_mutex);
+  if (index < 0) {
+    return false;
+  }
+  std::int64_t valid_index = 0;
+  for (const TrainerLinearCublasLtPlan& plan : g_trainer_linear_cublaslt_workspace.plans) {
+    if (!plan.valid) {
+      continue;
+    }
+    if (valid_index == index) {
+      if (m != nullptr) {
+        *m = plan.key.m;
+      }
+      if (n != nullptr) {
+        *n = plan.key.n;
+      }
+      if (k != nullptr) {
+        *k = plan.key.k;
+      }
+      if (op_a != nullptr) {
+        *op_a = plan.key.op_a;
+      }
+      if (op_b != nullptr) {
+        *op_b = plan.key.op_b;
+      }
+      if (selected_heuristic != nullptr) {
+        *selected_heuristic = plan.selected_heuristic;
+      }
+      if (returned_heuristics != nullptr) {
+        *returned_heuristics = plan.returned_heuristics;
+      }
+      if (workspace_bytes != nullptr) {
+        *workspace_bytes = static_cast<std::int64_t>(plan.workspace_size);
+      }
+      if (epilogue != nullptr) {
+        *epilogue = plan.key.epilogue;
+      }
+      return true;
+    }
+    valid_index += 1;
+  }
+  return false;
+#else
+  (void)index;
+  (void)m;
+  (void)n;
+  (void)k;
+  (void)op_a;
+  (void)op_b;
+  (void)selected_heuristic;
+  (void)returned_heuristics;
+  (void)workspace_bytes;
+  (void)epilogue;
+  return false;
+#endif
+}
+
 std::int64_t attention_forward_row_launch_count() {
   return g_attention_forward_row_launch_count.load(std::memory_order_relaxed);
 }

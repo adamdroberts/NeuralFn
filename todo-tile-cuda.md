@@ -48,6 +48,13 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Expose global gradient norm clip scale finalization and device-scalar gradient scaling through the native ABI.
 - [x] Expose token embedding, absolute position embedding, RMSNorm, LayerNorm, softmax, scaled dot-product attention, token CE partials, and masked token CE partials through the native ABI.
 - [x] Expose token CE logits backward and masked token CE logits backward through the native ABI.
+- [x] Expose low-overhead cuBLASLt plan-cache inspection through
+  `nfn_native_tile_trainer_linear_cublaslt_plan_cache_count` and
+  `nfn_native_tile_trainer_linear_cublaslt_plan_cache_entry`, with native GPT
+  JSON fields `linear_cublaslt_plan_cache_available`,
+  `linear_cublaslt_plan_cache_count`, and `linear_cublaslt_plan_cache`. Use
+  this for normal same-script parity runs where synchronized
+  `linear_shape_stats` timing would perturb the kernel candidate.
 - [x] Expose the dense-GPT LM-head classifier row-chunk path as a distinct
   native Tile ABI route with launch/shape counters, separate from the generic
   token CE symbols. The current symbol still performs BF16/u16 public-vocab

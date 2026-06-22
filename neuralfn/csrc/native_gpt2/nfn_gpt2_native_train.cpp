@@ -3255,6 +3255,8 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan",
         "nfn_native_tile_trainer_linear_shape_stats_count",
         "nfn_native_tile_trainer_linear_shape_stats_entry",
+        "nfn_native_tile_trainer_linear_cublaslt_plan_cache_count",
+        "nfn_native_tile_trainer_linear_cublaslt_plan_cache_entry",
         "nfn_native_tile_scaled_dot_product_attention_backward_float32",
         "nfn_native_tile_scaled_dot_product_attention_backward_from_merged_grad_float32",
         "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_merged_grad_float32",
@@ -9829,6 +9831,18 @@ int run_transformer_lm_training_json(
         std::int64_t total_us = 0;
     };
     std::vector<LinearShapeStat> linear_shape_stats;
+    struct LinearCublasLtPlanCacheEntry {
+        int m = 0;
+        int n = 0;
+        int k = 0;
+        int op_a = 0;
+        int op_b = 0;
+        int selected_heuristic = -1;
+        int returned_heuristics = 0;
+        std::int64_t workspace_bytes = 0;
+        int epilogue = 0;
+    };
+    std::vector<LinearCublasLtPlanCacheEntry> linear_cublaslt_plan_cache;
     std::string checkpoint_path_json;
     std::string done_marker_json;
     std::int64_t checkpoint_step = 0;
@@ -10005,6 +10019,8 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status",
         "nfn_native_tile_trainer_linear_shape_stats_count",
         "nfn_native_tile_trainer_linear_shape_stats_entry",
+        "nfn_native_tile_trainer_linear_cublaslt_plan_cache_count",
+        "nfn_native_tile_trainer_linear_cublaslt_plan_cache_entry",
         "nfn_native_tile_scaled_dot_product_attention_backward_float32",
         "nfn_native_tile_scaled_dot_product_attention_backward_from_merged_grad_float32",
         "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_reuse_forward_from_merged_grad_float32",
@@ -10270,6 +10286,8 @@ int run_transformer_lm_training_json(
     using TrainerLinearShapeStatsEntryV2Fn = bool (*)(
         std::int64_t, int*, int*, int*, int*, int*, int*, std::int64_t*, std::int64_t*,
         int*, int*, std::int64_t*);
+    using TrainerLinearCublasLtPlanCacheEntryFn = bool (*)(
+        std::int64_t, int*, int*, int*, int*, int*, int*, int*, std::int64_t*, int*);
     using AttentionBackwardToQkvReuseForwardFn = int (*)(
         const float*, float*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t,
@@ -10592,6 +10610,8 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_shape_stats_count_fn = nullptr;
     TrainerLinearShapeStatsEntryFn trainer_linear_shape_stats_entry_fn = nullptr;
     TrainerLinearShapeStatsEntryV2Fn trainer_linear_shape_stats_entry_v2_fn = nullptr;
+    TrainerLinearStatsCountFn trainer_linear_cublaslt_plan_cache_count_fn = nullptr;
+    TrainerLinearCublasLtPlanCacheEntryFn trainer_linear_cublaslt_plan_cache_entry_fn = nullptr;
     TrainerLinearStatsResetFn lm_head_classifier_stats_reset = nullptr;
     TrainerLinearStatsCountFn lm_head_classifier_chunk_launch_count_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_classifier_last_rows_fn = nullptr;
@@ -11069,6 +11089,12 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_trainer_linear_shape_stats_entry");
                 trainer_linear_shape_stats_entry_v2_fn = load_symbol<TrainerLinearShapeStatsEntryV2Fn>(
                     tile_handle, "nfn_native_tile_trainer_linear_shape_stats_entry_v2");
+                trainer_linear_cublaslt_plan_cache_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_cublaslt_plan_cache_count");
+                trainer_linear_cublaslt_plan_cache_entry_fn =
+                    load_symbol<TrainerLinearCublasLtPlanCacheEntryFn>(
+                        tile_handle,
+                        "nfn_native_tile_trainer_linear_cublaslt_plan_cache_entry");
                 lm_head_classifier_stats_reset = load_symbol<TrainerLinearStatsResetFn>(
                     tile_handle, "nfn_native_tile_lm_head_classifier_stats_reset");
                 lm_head_classifier_chunk_launch_count_fn = load_symbol<TrainerLinearStatsCountFn>(
@@ -18886,6 +18912,29 @@ int run_transformer_lm_training_json(
             }
         }
     }
+    if (trainer_linear_cublaslt_plan_cache_count_fn != nullptr &&
+        trainer_linear_cublaslt_plan_cache_entry_fn != nullptr) {
+        const std::int64_t plan_count = trainer_linear_cublaslt_plan_cache_count_fn();
+        const std::int64_t capped_plan_count = std::min<std::int64_t>(plan_count, 256);
+        linear_cublaslt_plan_cache.reserve(static_cast<std::size_t>(capped_plan_count));
+        for (std::int64_t index = 0; index < capped_plan_count; ++index) {
+            LinearCublasLtPlanCacheEntry entry;
+            const bool loaded = trainer_linear_cublaslt_plan_cache_entry_fn(
+                index,
+                &entry.m,
+                &entry.n,
+                &entry.k,
+                &entry.op_a,
+                &entry.op_b,
+                &entry.selected_heuristic,
+                &entry.returned_heuristics,
+                &entry.workspace_bytes,
+                &entry.epilogue);
+            if (loaded) {
+                linear_cublaslt_plan_cache.push_back(entry);
+            }
+        }
+    }
     attention_forward_row_successes =
         std::max<std::int64_t>(0, attention_forward_row_launches - attention_forward_row_fallbacks);
     if (passed && cfg.require_optimized_attention && attention_forward_scalar_launches > 0) {
@@ -19134,6 +19183,30 @@ int run_transformer_lm_training_json(
         linear_shape_stats_json << "\n";
     }
     linear_shape_stats_json << "  ],\n";
+
+    std::ostringstream linear_cublaslt_plan_cache_json;
+    linear_cublaslt_plan_cache_json << "  \"linear_cublaslt_plan_cache\": [\n";
+    for (std::size_t i = 0; i < linear_cublaslt_plan_cache.size(); ++i) {
+        const LinearCublasLtPlanCacheEntry& entry = linear_cublaslt_plan_cache[i];
+        linear_cublaslt_plan_cache_json
+            << "    {\"m\": " << entry.m
+            << ", \"n\": " << entry.n
+            << ", \"k\": " << entry.k
+            << ", \"op_a\": " << entry.op_a
+            << ", \"op_a_name\": \"" << linear_shape_op_name(entry.op_a) << "\""
+            << ", \"op_b\": " << entry.op_b
+            << ", \"op_b_name\": \"" << linear_shape_op_name(entry.op_b) << "\""
+            << ", \"selected_heuristic\": " << entry.selected_heuristic
+            << ", \"returned_heuristics\": " << entry.returned_heuristics
+            << ", \"workspace_bytes\": " << entry.workspace_bytes
+            << ", \"epilogue\": " << entry.epilogue
+            << "}";
+        if (i + 1 != linear_cublaslt_plan_cache.size()) {
+            linear_cublaslt_plan_cache_json << ",";
+        }
+        linear_cublaslt_plan_cache_json << "\n";
+    }
+    linear_cublaslt_plan_cache_json << "  ],\n";
 
     auto append_arena_request_stats_json = [](
                                                  std::ostringstream& out,
@@ -19852,6 +19925,11 @@ int run_transformer_lm_training_json(
         << linear_cublaslt_plan_prewarm_success_count << ",\n"
         << "  \"linear_cublaslt_plan_prewarm_failure_count\": "
         << linear_cublaslt_plan_prewarm_failure_count << ",\n"
+        << "  \"linear_cublaslt_plan_cache_available\": "
+        << (trainer_linear_cublaslt_plan_cache_count_fn != nullptr &&
+            trainer_linear_cublaslt_plan_cache_entry_fn != nullptr ? "true" : "false") << ",\n"
+        << "  \"linear_cublaslt_plan_cache_count\": " << linear_cublaslt_plan_cache.size() << ",\n"
+        << linear_cublaslt_plan_cache_json.str()
         << "  \"linear_sgemm_count\": " << linear_sgemm_count << ",\n"
         << "  \"linear_bf16_a_pack_count\": " << linear_bf16_a_pack_count << ",\n"
         << "  \"linear_bf16_a_cache_hit_count\": " << linear_bf16_a_cache_hit_count << ",\n"
