@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Improved native GPT CUDA failure diagnostics for CUDA error 35. The compiled
+  dense GPT frontend now appends an actionable hint when CUDA reports
+  "driver version is insufficient for CUDA runtime version", calling out both
+  real runtime/driver mismatches and sandboxed or blocked GPU device access,
+  and points operators at unsandboxed `nvidia-smi` plus the selected
+  `--cuda-runtime-lib` / `NFN_CUDA_RUNTIME_LIB`.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; confirmed sandboxed CUDA smoke reports error
+  35 while unsandboxed `nvidia-smi` sees the dedicated RTX 5090 with CUDA UMD
+  13.3 and no compute processes; reran the same native optimizer smoke
+  unsandboxed and it passed all 148 AdamW buffer updates.
+
 - Added a default-off dense GPT BF16 CE scalar streaming-store diagnostic. The
   CUDA Tile CE kernels now accept
   `NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1`,

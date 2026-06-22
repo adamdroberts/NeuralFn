@@ -1513,6 +1513,13 @@ same-script startup evidence.
 
 Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is metadata-only on the default `compiled-cli` runner: Python builds the compiled C++ argv from the dataset alias/path and leaves shard validation or raw-text rejection to the compiled frontend. It must not import `server.dataset_manager`, NumPy, tiktoken, or Torch, must not write `fineweb_train_*.bin` shards, and must not add the external `--target train_gpt2cu` bridge argument for the default Tile-CUDA backend. The compiled Tile-CUDA frontend also treats `--print-command` as a no-data/no-CUDA action, printing the exact `nfn_gpt_native_train ...` invocation before token-shard resolution, CUDA runtime loading, or driver preflight.
 
+When a native smoke or trainer run reports CUDA error 35, the dense GPT C++
+frontend now annotates the error with a runtime/driver versus blocked-device
+hint. For workstation checks, compare sandboxed results with unsandboxed
+`nvidia-smi` and verify the libcudart chosen by `--cuda-runtime-lib` or
+`NFN_CUDA_RUNTIME_LIB` before classifying the failure as a Tile-CUDA kernel
+regression.
+
 `tools/check_native_no_torch_deps.py` is the native dependency gate for this
 path. In addition to checking `pyproject.toml` so Torch stays out of default
 dependencies and the aggregate `.[all]` extra, it runs `ldd` checks for

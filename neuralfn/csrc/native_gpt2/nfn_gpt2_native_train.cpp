@@ -47,6 +47,20 @@ constexpr const char* kLmHeadCooperativeBackwardSequenceWrapperSymbol =
 constexpr const char* kLmHeadCooperativeBackwardTrueFusedKernelSymbol =
     "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16";
 
+void append_cuda_error_message(
+    std::ostringstream& out,
+    int code,
+    const char* message) {
+    if (message != nullptr) {
+        out << ": " << message;
+    }
+    if (code == 35) {
+        out << " (CUDA runtime/driver mismatch or blocked GPU device access; "
+               "verify unsandboxed nvidia-smi and the libcudart selected by "
+               "--cuda-runtime-lib/NFN_CUDA_RUNTIME_LIB)";
+    }
+}
+
 struct Config {
     std::string model_family = "gpt";
     std::string dataset_alias = "roneneldan__TinyStories__TinyStoriesV2-GPT4";
@@ -4422,10 +4436,7 @@ int print_tile_ops_smoke_json(const Config& cfg, const char* program) {
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
-            const char* message = cuda_get_error_string(code);
-            if (message != nullptr) {
-                out << ": " << message;
-            }
+            append_cuda_error_message(out, code, cuda_get_error_string(code));
         }
         return out.str();
     };
@@ -4636,10 +4647,7 @@ int print_optimizer_smoke_json(const Config& cfg, const char* program) {
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
-            const char* message = cuda_get_error_string(code);
-            if (message != nullptr) {
-                out << ": " << message;
-            }
+            append_cuda_error_message(out, code, cuda_get_error_string(code));
         }
         return out.str();
     };
@@ -4984,10 +4992,7 @@ int print_lm_step_smoke_json(const Config& cfg, const char* program) {
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
-            const char* message = cuda_get_error_string(code);
-            if (message != nullptr) {
-                out << ": " << message;
-            }
+            append_cuda_error_message(out, code, cuda_get_error_string(code));
         }
         return out.str();
     };
@@ -5441,10 +5446,7 @@ int print_embedding_lm_step_smoke_json(
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
-            const char* message = cuda_get_error_string(code);
-            if (message != nullptr) {
-                out << ": " << message;
-            }
+            append_cuda_error_message(out, code, cuda_get_error_string(code));
         }
         return out.str();
     };
@@ -6014,10 +6016,7 @@ int run_embedding_lm_training_json(
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
-            const char* message = cuda_get_error_string(code);
-            if (message != nullptr) {
-                out << ": " << message;
-            }
+            append_cuda_error_message(out, code, cuda_get_error_string(code));
         }
         return out.str();
     };
@@ -6632,10 +6631,7 @@ int print_attention_step_smoke_json(const Config& cfg, const char* program) {
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
-            const char* message = cuda_get_error_string(code);
-            if (message != nullptr) {
-                out << ": " << message;
-            }
+            append_cuda_error_message(out, code, cuda_get_error_string(code));
         }
         return out.str();
     };
@@ -7140,10 +7136,7 @@ int print_mlp_step_smoke_json(const Config& cfg, const char* program) {
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
-            const char* message = cuda_get_error_string(code);
-            if (message != nullptr) {
-                out << ": " << message;
-            }
+            append_cuda_error_message(out, code, cuda_get_error_string(code));
         }
         return out.str();
     };
@@ -7644,10 +7637,7 @@ int print_transformer_block_step_smoke_json(const Config& cfg, const char* progr
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
-            const char* message = cuda_get_error_string(code);
-            if (message != nullptr) {
-                out << ": " << message;
-            }
+            append_cuda_error_message(out, code, cuda_get_error_string(code));
         }
         return out.str();
     };
@@ -8850,10 +8840,7 @@ int print_transformer_lm_step_smoke_json(
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
-            const char* message = cuda_get_error_string(code);
-            if (message != nullptr) {
-                out << ": " << message;
-            }
+            append_cuda_error_message(out, code, cuda_get_error_string(code));
         }
         return out.str();
     };
@@ -10734,10 +10721,7 @@ int run_transformer_lm_training_json(
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
-            const char* message = cuda_get_error_string(code);
-            if (message != nullptr) {
-                out << ": " << message;
-            }
+            append_cuda_error_message(out, code, cuda_get_error_string(code));
         }
         return out.str();
     };
@@ -21311,10 +21295,7 @@ int print_norm_residual_step_smoke_json(const Config& cfg, const char* program) 
         std::ostringstream out;
         out << context << " failed with CUDA error " << code;
         if (cuda_get_error_string != nullptr) {
-            const char* message = cuda_get_error_string(code);
-            if (message != nullptr) {
-                out << ": " << message;
-            }
+            append_cuda_error_message(out, code, cuda_get_error_string(code));
         }
         return out.str();
     };

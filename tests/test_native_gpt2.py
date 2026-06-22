@@ -1064,6 +1064,19 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head_cooperative_backward_sequence_wrapper_enabled" in speed_tool
 
 
+def test_native_gpt_cuda_error_35_reports_runtime_visibility_hint() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
+        encoding="utf-8"
+    )
+    assert "void append_cuda_error_message(" in source
+    assert "code == 35" in source
+    assert "CUDA runtime/driver mismatch or blocked GPU device access" in source
+    assert "verify unsandboxed nvidia-smi" in source
+    assert "--cuda-runtime-lib/NFN_CUDA_RUNTIME_LIB" in source
+    assert source.count("append_cuda_error_message(out, code, cuda_get_error_string(code));") >= 10
+
+
 def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles() -> None:
     root = Path(__file__).resolve().parents[1]
     bench_source = (root / "tools" / "bench_native_gpt_sm120_candidate.sh").read_text(
