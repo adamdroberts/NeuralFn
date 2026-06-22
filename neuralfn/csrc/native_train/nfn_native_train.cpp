@@ -138,6 +138,9 @@ std::string lower_model(std::string value) {
             ch = '-';
         }
     }
+    if (value == "nano-gpt") {
+        return "nanogpt";
+    }
     return value;
 }
 

@@ -388,6 +388,8 @@ def native_gpt2_encoding_vocab_size(encoding_name: str) -> int:
 
 def _canonical_native_gpt2_model_family(model_family: str | None) -> str:
     normalized = str(model_family or "gpt").strip().lower().replace("_", "-")
+    if normalized == "nano-gpt":
+        normalized = "nanogpt"
     if normalized not in {"gpt", "gpt2", "gpt3", "nanogpt"}:
         raise ValueError("native GPT model_family must be one of: gpt, gpt2, gpt3, nanogpt")
     return "gpt"
@@ -400,6 +402,8 @@ def _native_gpt2_template_for_model_family(
     graph_file: str | None,
 ) -> str:
     normalized_model = str(model_family or "gpt").strip().lower().replace("_", "-")
+    if normalized_model == "nano-gpt":
+        normalized_model = "nanogpt"
     normalized_template = _normalize_native_gpt2_template_name(template_name)
     if normalized_model == "nanogpt" and normalized_template == "gpt" and not str(graph_file or "").strip():
         return "nanogpt"

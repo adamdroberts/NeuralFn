@@ -13,10 +13,13 @@ Future updates should append new entries here rather than replacing older notes.
   custom graph selector, matching the top-level `nfn train --base-model
   nanogpt` behavior. The `neuralfn.native_gpt` and compatibility
   `neuralfn.native_gpt2` SDK config helpers now accept the same model-family
-  selector and resolve the default template to `nanogpt`.
+  selector and resolve the default template to `nanogpt`. The generic
+  `neuralfn.native_train` SDK helper and `nfn-native-train` C++ frontend now
+  canonicalize `nano_gpt` / `nano-gpt` to `nanogpt` before direct dense GPT
+  dispatch, avoiding an unsupported `--model-family nano-gpt` handoff.
 
-  Verification: focused direct-wrapper pytest, SDK config assertions, and
-  compiled C++ plan coverage.
+  Verification: focused direct-wrapper pytest, native-train alias assertions,
+  SDK config assertions, and compiled C++ plan coverage.
 
 - Retested the default-off `qkv_concurrent_dinput_dweight` SM120 candidate
   against the current packed-QKV dense GPT default. The route changed as

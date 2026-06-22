@@ -14,13 +14,12 @@ from typing import Any, Sequence
 
 DEFAULT_NATIVE_TRAIN_CLI = "build/nfn_native_train"
 DEFAULT_NATIVE_GPT_TRAIN_CLI = "build/nfn_gpt_native_train"
-DENSE_GPT_MODEL_FAMILIES = frozenset({"gpt", "gpt2", "gpt3", "nanogpt", "nano-gpt"})
+DENSE_GPT_MODEL_FAMILIES = frozenset({"gpt", "gpt2", "gpt3", "nanogpt"})
 NATIVE_TRAIN_FAMILY_TARGETS = {
     "gpt": "nfn_gpt_native_train",
     "gpt2": "nfn_gpt_native_train",
     "gpt3": "nfn_gpt_native_train",
     "nanogpt": "nfn_gpt_native_train",
-    "nano-gpt": "nfn_gpt_native_train",
     "gpt2-evo": "nfn_gpt2_evo_native_train",
     "llama": "nfn_llama_native_train",
     "mixllama": "nfn_mixllama_native_train",
@@ -91,6 +90,8 @@ class NativeTrainRunConfig:
 
 def normalize_native_model_family(value: str | None) -> str:
     normalized = str(value or "gpt").strip().lower().replace("_", "-")
+    if normalized == "nano-gpt":
+        return "nanogpt"
     return normalized or "gpt"
 
 

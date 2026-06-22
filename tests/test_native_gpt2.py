@@ -1285,6 +1285,30 @@ def test_build_native_gpt2_compiled_cli_config_canonicalizes_dense_gpt_family(tm
     assert nanogpt_graph_cfg.template_name == "gpt"
     assert nanogpt_graph_cfg.graph_file == "/tmp/custom-gpt.json"
 
+    nano_gpt_alias_cfg = build_native_gpt2_compiled_cli_run_config(
+        dataset_alias="cached-shards",
+        executable="/opt/nfn/train_gpt2cu",
+        output_dir=tmp_path / "nano-gpt-alias",
+        eval_every_steps=1000,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=20000,
+        num_layers=12,
+        activation="gelu",
+        model_family="nano_gpt",
+    )
+
+    assert nano_gpt_alias_cfg.model_family == "gpt"
+    assert nano_gpt_alias_cfg.template_name == "nanogpt"
+
 
 def test_train_gpt_native_direct_wrapper_accepts_nanogpt_selector(capsys) -> None:
     module = _load_train_gpt_native_script_module()
@@ -2008,14 +2032,14 @@ def test_native_train_run_config_and_subprocess_runner(
     cfg = build_native_train_run_config("nano_gpt", ["--tinystories", "--dry-run"])
 
     assert resolve_native_train_cli() == str(cli)
-    assert cfg.to_dict()["model_family"] == "nano-gpt"
-    assert cfg.argv()[:3] == [str(cli), "--base-model", "nano-gpt"]
+    assert cfg.to_dict()["model_family"] == "nanogpt"
+    assert cfg.argv()[:3] == [str(cli), "--base-model", "nanogpt"]
     status = native_train_runner_status("auto")
     assert status.resolved == "compiled-cli"
     assert status.available is True
     assert run_native_train(cfg, runner="auto") == 29
     args = output.read_text(encoding="utf-8").splitlines()
-    assert args[:4] == ["--base-model", "nano-gpt", "--tinystories", "--dry-run"]
+    assert args[:4] == ["--base-model", "nanogpt", "--tinystories", "--dry-run"]
     env_lines = env_output.read_text(encoding="utf-8").splitlines()
     assert "CUDA_VISIBLE_DEVICES=0" in env_lines
     assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in env_lines
@@ -4947,6 +4971,28 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert "--train-transformer-lm" in nanogpt_dense.stdout
     assert "--backend\ntile-cuda" in nanogpt_dense.stdout
     assert "--base-model" not in nanogpt_dense.stdout
+
+    nano_gpt_alias = subprocess.run(
+        [
+            str(unified),
+            "train",
+            "--base-model",
+            "nano-gpt",
+            "--native-gpt-cli",
+            str(fake_gpt),
+            "--dataset-alias",
+            "/tmp/native-cache",
+            "--dry-run",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert nano_gpt_alias.returncode == 0, nano_gpt_alias.stderr
+    assert "--model-family\ngpt" in nano_gpt_alias.stdout
+    assert "--template-name\nnanogpt" in nano_gpt_alias.stdout
+    assert "--base-model" not in nano_gpt_alias.stdout
 
     high_level_aliases = subprocess.run(
         [
