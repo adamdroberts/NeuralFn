@@ -1079,6 +1079,15 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head_cooperative_loss_bins_requested" in source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in source
+    assert "lm_head_classifier_backward_true_fused_kernel_bf16_u16" in source
+    assert (
+        "lm_head_cooperative_backward_kernel_enabled\n"
+        "                            ? lm_head_classifier_backward_true_fused_kernel_bf16_u16\n"
+        "                            : lm_head_classifier_backward_cooperative_fused_bf16_u16"
+    ) in source
+    assert (
+        "cooperative LM-head backward route selected without a callable Tile function"
+    ) in source
     assert "lm_head_cooperative_backward_sequence_wrapper_available" in source
     assert "lm_head_cooperative_backward_sequence_wrapper_enabled" in source
     assert "lm_head.backward.cooperative.bf16_u16" in source

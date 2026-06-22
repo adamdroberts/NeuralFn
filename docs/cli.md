@@ -848,6 +848,11 @@ only satisfies `lm_head_cooperative_backward_sequence_wrapper_available`. The
 future hard fused route is probed through
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`; only that
 separate symbol satisfies `lm_head_cooperative_backward_fused_kernel_available`.
+At runtime the compiled trainer also loads that separate true-fused callable
+and uses it only when `lm_head_cooperative_backward_kernel_enabled` is true.
+The sequence-wrapper callable is used only for non-required diagnostic runs, so
+adding or rebuilding the wrapper symbol cannot accidentally satisfy
+`--require-cooperative-lm-head-backward`.
 Rebuilt Tile ops libraries expose cooperative sequence counters in the native
 training JSON: `lm_head_cooperative_sequence_launch_count`,
 `lm_head_cooperative_sequence_ce_launch_count`,

@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tightened dense GPT cooperative LM-head backward ABI selection. The compiled
+  trainer now loads the future true-fused symbol
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` into a
+  separate typed callable and uses it only when
+  `lm_head_cooperative_backward_kernel_enabled` is true. The existing
+  `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
+  symbol remains the non-required event-ordered sequence-wrapper path, so
+  wrapper-only Tile ops builds cannot accidentally satisfy
+  `--require-cooperative-lm-head-backward` or be reported as the strict fused
+  classifier/dHidden/dWeight kernel.
+
+  Verification: focused source-contract pytest, native no-Torch verifier,
+  native GPT dry-run plan, and `git diff --check`.
+
 - Added `exec_native_gpt(config, runner="compiled-cli")` and compatibility
   `exec_native_gpt2(config, runner="compiled-cli")` to the public Python SDK.
   These functions apply the same native CUDA environment defaults as

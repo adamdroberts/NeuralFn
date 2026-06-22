@@ -109,6 +109,14 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       hidden inputs, BF16/float token weights, dHidden, dWeight, shape metadata,
       loss scale, dWeight beta, flags, and stream. The route remains explicitly
       unintegrated until a Tile implementation with that contract is called.
+    - 2026-06-22 tightened the strict fused-callable handoff: the trainer now
+      loads `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
+      into its own typed function pointer and calls it only when the strict
+      fused route is enabled. The older
+      `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
+      wrapper remains a non-required diagnostic sequence route, so wrapper-only
+      builds cannot accidentally satisfy
+      `--require-cooperative-lm-head-backward`.
     - 2026-06-22 exported the strict Tile ABI symbol
       `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
       and integrated it behind `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`

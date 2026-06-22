@@ -81,7 +81,13 @@ at `1.018294x` with NeuralFn at `2497.910 ms/step` versus llm.kittens at
 Torch, Python, or graph-editor execution. Because parity samples can move with
 reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
-build. A post-reinstall wrapper timing check also confirms that
+build. The cooperative LM-head diagnostic wrapper is intentionally separate
+from the future strict fused classifier/dHidden/dWeight callable: wrapper-only
+builds still fail `--require-cooperative-lm-head-backward`, and strict JSON
+availability requires loading
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` rather than
+the existing sequence wrapper. A post-reinstall wrapper timing check also
+confirms that
 `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run --native-cuda-print-command`
 returns the compiled C++ delegate in about `0.03s`, so the old Python schedule
 estimation path is not on the current native GPT startup route. A native

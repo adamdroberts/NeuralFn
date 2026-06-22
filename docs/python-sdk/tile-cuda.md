@@ -369,6 +369,17 @@ and reports `lm_head_reverse_chunk_order_enabled` plus
 train-loop wall time versus the previous forward order; set the variable to `0`
 only for bisection.
 
+The dense GPT cooperative LM-head backward ABI has two distinct callable
+surfaces. `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
+is the existing event-ordered sequence wrapper and only satisfies
+`lm_head_cooperative_backward_sequence_wrapper_available`.
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` is the
+future strict fused classifier/dHidden/dWeight callable and must be loaded
+before `lm_head_cooperative_backward_fused_kernel_available` or
+`lm_head_cooperative_backward_kernel_enabled` can become true. SDK and CLI
+strict runs therefore still fail on wrapper-only builds instead of silently
+benchmarking the older CE plus dHidden plus dWeight sequence.
+
 `NativeGptRunConfig.train_loss_every_steps` and
 `NativeGpt2RunConfig.train_loss_every_steps` default to `0` and forward
 `--train-loss-every-steps` through `compiled_cli_argv()`. Set it to `1000` to

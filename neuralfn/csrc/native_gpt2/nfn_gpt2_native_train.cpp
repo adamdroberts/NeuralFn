@@ -10752,6 +10752,8 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_cooperative_bf16_u16 = nullptr;
     LmHeadClassifierBackwardCooperativeBf16U16Fn
         lm_head_classifier_backward_cooperative_fused_bf16_u16 = nullptr;
+    LmHeadClassifierBackwardCooperativeBf16U16Fn
+        lm_head_classifier_backward_true_fused_kernel_bf16_u16 = nullptr;
     bool lm_head_classifier_backward_true_fused_kernel_available = false;
     FillManyFn fill_many = nullptr;
     AdamWManyWithDeviceScaleFn adamw_many_with_device_scale = nullptr;
@@ -11361,8 +11363,12 @@ int run_transformer_lm_training_json(
                     load_symbol<LmHeadClassifierBackwardCooperativeBf16U16Fn>(
                         tile_handle,
                         kLmHeadCooperativeBackwardSequenceWrapperSymbol);
+                lm_head_classifier_backward_true_fused_kernel_bf16_u16 =
+                    load_symbol<LmHeadClassifierBackwardCooperativeBf16U16Fn>(
+                        tile_handle,
+                        kLmHeadCooperativeBackwardTrueFusedKernelSymbol);
                 lm_head_classifier_backward_true_fused_kernel_available =
-                    dlsym(tile_handle, kLmHeadCooperativeBackwardTrueFusedKernelSymbol) != nullptr;
+                    lm_head_classifier_backward_true_fused_kernel_bf16_u16 != nullptr;
                 adamw_many_with_device_scale = load_symbol<AdamWManyWithDeviceScaleFn>(
                     tile_handle, "nfn_native_tile_adamw_step_many_with_device_scale_float32");
                 adamw_many_with_device_scale_bf16_shadow =
@@ -12032,7 +12038,8 @@ int run_transformer_lm_training_json(
     const bool lm_head_cooperative_backward_sequence_wrapper_available =
         lm_head_classifier_backward_cooperative_fused_bf16_u16 != nullptr;
     const bool lm_head_cooperative_backward_fused_kernel_available =
-        lm_head_classifier_backward_true_fused_kernel_available;
+        lm_head_classifier_backward_true_fused_kernel_available &&
+        lm_head_classifier_backward_true_fused_kernel_bf16_u16 != nullptr;
     const bool lm_head_cooperative_backward_route_integrated =
         lm_head_cooperative_backward_requested &&
         lm_head_cooperative_backward_fused_kernel_available &&
@@ -15815,7 +15822,15 @@ int run_transformer_lm_training_json(
                             return;
                         }
                     }
-                    run(lm_head_classifier_backward_cooperative_fused_bf16_u16(
+                    auto* cooperative_backward_fn =
+                        lm_head_cooperative_backward_kernel_enabled
+                            ? lm_head_classifier_backward_true_fused_kernel_bf16_u16
+                            : lm_head_classifier_backward_cooperative_fused_bf16_u16;
+                    if (cooperative_backward_fn == nullptr) {
+                        error = "cooperative LM-head backward route selected without a callable Tile function";
+                        return;
+                    }
+                    run(cooperative_backward_fn(
                             bf16_logit_chunk,
                             target_chunk_u16,
                             row_max,
