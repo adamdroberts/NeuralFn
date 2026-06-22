@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended `tools/check_native_no_torch_deps.py` with import-only checks for
+  the native-only GPT-2-evo, NanoGPT, and DeepSeek-V4 shim modules. These run
+  under the same import blocker used by direct native dispatch checks, so module
+  import cannot regress into Torch, NumPy, tokenizer, dataset-manager,
+  `train_gpt_native`, or `nfn_impl` startup.
+
+  Verification: `python tools/check_native_no_torch_deps.py`.
+
 - Replaced `cli/scripts/train_deepseek_v4.py` with a Torch-free native shim.
   Direct execution still dispatches to the DeepSeek-V4 family native C++ binary
   or unified native frontend, while module import now exposes only lightweight

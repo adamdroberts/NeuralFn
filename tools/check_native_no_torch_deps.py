@@ -274,6 +274,32 @@ DEFAULT_SCRIPT_NATIVE_DISPATCH_ENTRYPOINTS = (
         ),
     ),
 )
+DEFAULT_NATIVE_SHIM_IMPORT_ENTRYPOINTS = (
+    (
+        "train_gpt2_evo_module_import",
+        (
+            sys.executable,
+            "-c",
+            "import train_gpt2_evo; print('train_gpt2_evo-import-ok')",
+        ),
+    ),
+    (
+        "train_nanogpt_module_import",
+        (
+            sys.executable,
+            "-c",
+            "import train_nanogpt; print('train_nanogpt-import-ok')",
+        ),
+    ),
+    (
+        "train_deepseek_v4_module_import",
+        (
+            sys.executable,
+            "-c",
+            "import train_deepseek_v4; print('train_deepseek_v4-import-ok')",
+        ),
+    ),
+)
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256
 DEFAULT_MAX_ENTRYPOINT_SECONDS = 2.0
@@ -452,10 +478,12 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
         env["NFN_NATIVE_DEEPSEEK_V4_CLI"] = str(native_cli)
         env["NFN_NATIVE_SEMANTIC_ROUTER_MOE_CLI"] = str(native_cli)
         cli_root = repo_root / "cli"
+        scripts_root = cli_root / "scripts"
         env["PYTHONPATH"] = os.pathsep.join(
             part
             for part in (
                 str(temp_root),
+                str(scripts_root),
                 str(cli_root),
                 str(repo_root),
                 env.get("PYTHONPATH", ""),
@@ -467,6 +495,7 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
         entrypoints = [
             *DEFAULT_PYTHON_ENTRYPOINTS,
             *DEFAULT_SCRIPT_NATIVE_DISPATCH_ENTRYPOINTS,
+            *DEFAULT_NATIVE_SHIM_IMPORT_ENTRYPOINTS,
             (
                 "train_gpt2_evo_fast_command",
                 (
