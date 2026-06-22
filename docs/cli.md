@@ -779,6 +779,15 @@ execution: `nfn = "nfn:main"` dispatches default dense GPT training to the
 compiled native command before importing `train_gpt_native`, `nfn_impl`, or
 Torch.
 
+Native checkpoint inference uses the same direct boundary for token-id prompts:
+`nfn infer --native-checkpoint PATH --prompt-tokens IDS` and
+`nfn infer --checkpoint PATH --prompt-tokens IDS` exec the compiled
+`nfn_gpt_native_train --sample-checkpoint` path before importing `infer_gpt`,
+Torch, graph-backed inference helpers, NumPy, tiktoken, or dataset managers.
+Use `--prompt-tokens` for the no-tokenizer path; text `--prompt` inference may
+still import tiktoken locally to encode GPT-2 prompt text before calling the
+same native sampler.
+
 Plan and runtime JSON also include `native_geometry_contract`. The compiled dense GPT loop reports `name: "native-dense-gpt-transformer"` and `shape_source: "selected_dense_gpt_geometry"` for preset selection or `"custom_graph_template_spec"` for compatible custom graph metadata. The contract records the selected dense model width, head count, head dim, GELU 4x MLP, absolute positions, LayerNorm, public vocab 50,257, padded vocab 50,304, sequence length, and layer count. `template_geometry_dynamic` is true whenever the selected runtime geometry differs from the GPT-2 default, such as `gpt3` context or `nanogpt` width/layer count; `custom_graph_geometry_dynamic` is true when an existing graph file exposes compatible GPT `template_spec` metadata. The same object includes `selected_template_geometry` and `geometry_matches_compiled_loop`, so selecting `nanogpt` records and uses its 320-wide/5-head/5-layer dense GPT geometry.
 
 Plan and runtime JSON also include `lm_head_classifier_strategy_contract` for

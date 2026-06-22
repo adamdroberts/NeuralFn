@@ -1534,6 +1534,12 @@ When `eval_every_steps <= 0` or `eval_batches <= 0`, the compiled
 transformer-LM loop skips validation sampler construction as well as validation
 execution. Runtime JSON exposes `validation.runtime_enabled` and
 `validation.sampler_constructed` for timing-profile checks.
+Top-level `nfn infer --native-checkpoint PATH --prompt-tokens IDS` and
+`nfn infer --checkpoint PATH --prompt-tokens IDS` now dispatch directly to the
+compiled `nfn_gpt_native_train --sample-checkpoint` path before importing
+`infer_gpt`, graph-backed inference helpers, Torch, NumPy, tiktoken, or dataset
+managers. Use prompt tokens for the no-tokenizer path; text prompts may still
+use tiktoken locally before the same native sampler is launched.
 Measured runs default to a strict
 `train_loop_wall_ms_per_step=1.000` metric-ratio gate, so the parity wrapper
 exits nonzero when NeuralFn is slower than the llm.kittens reference on the

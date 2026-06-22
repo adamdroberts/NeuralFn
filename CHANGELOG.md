@@ -25,6 +25,17 @@ Future updates should append new entries here rather than replacing older notes.
   Verification: updated the native GPT JSON contract test and source-path
   assertions for the lazy sampler.
 
+- Routed top-level native checkpoint token-id inference directly to the
+  compiled C++ sampler. `nfn infer --native-checkpoint PATH --prompt-tokens IDS`
+  and `nfn infer --checkpoint PATH --prompt-tokens IDS` now exec
+  `nfn_gpt_native_train --sample-checkpoint` from `cli/nfn.py` before importing
+  `infer_gpt`, graph-backed inference helpers, Torch, NumPy, tiktoken, or
+  dataset managers.
+
+  Verification: extended the no-Torch verifier to block `infer_gpt` imports and
+  to exercise both script-level and top-level native checkpoint sampling with
+  prompt tokens.
+
 - Extended `tools/check_native_no_torch_deps.py` to cover the installed
   `nfn:main` console-entry dense GPT training fast path. The verifier now
   imports `nfn.main()`, runs a dry-run native GPT training command against a

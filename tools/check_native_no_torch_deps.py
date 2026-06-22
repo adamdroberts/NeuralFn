@@ -49,6 +49,7 @@ FORBIDDEN_PYTHON_IMPORT_ROOTS = (
     "tiktoken",
     "server.dataset_manager",
     "train_gpt_native",
+    "infer_gpt",
     "nfn_impl",
 )
 FORBIDDEN_PROJECT_DEPENDENCY_PREFIXES = (
@@ -568,6 +569,19 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
                 ),
             ),
             (
+                "infer_gpt_native_sample_prompt_tokens",
+                (
+                    sys.executable,
+                    "cli/scripts/infer_gpt.py",
+                    "--native-checkpoint",
+                    str(native_checkpoint),
+                    "--prompt-tokens",
+                    "1,2,3",
+                    "--max-new-tokens",
+                    "2",
+                ),
+            ),
+            (
                 "nfn_infer_native_info",
                 (
                     sys.executable,
@@ -576,6 +590,20 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
                     "--native-checkpoint",
                     str(native_checkpoint),
                     "--native-info",
+                ),
+            ),
+            (
+                "nfn_infer_native_sample_prompt_tokens",
+                (
+                    sys.executable,
+                    "cli/nfn.py",
+                    "infer",
+                    "--native-checkpoint",
+                    str(native_checkpoint),
+                    "--prompt-tokens",
+                    "1,2,3",
+                    "--max-new-tokens",
+                    "2",
                 ),
             ),
         ]

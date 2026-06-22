@@ -142,6 +142,7 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
         "numpy",
         "tiktoken",
         "server.dataset_manager",
+        "infer_gpt",
         "nfn_impl",
     }
     project_dependencies = payload["project_dependencies"]
@@ -182,7 +183,9 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert entrypoints["nfn_train_fast_command"]["passed"] is True
     assert entrypoints["nfn_train_default_fast_command"]["passed"] is True
     assert entrypoints["infer_gpt_native_info"]["passed"] is True
+    assert entrypoints["infer_gpt_native_sample_prompt_tokens"]["passed"] is True
     assert entrypoints["nfn_infer_native_info"]["passed"] is True
+    assert entrypoints["nfn_infer_native_sample_prompt_tokens"]["passed"] is True
     assert entrypoints["native_sdk_imports"]["passed"] is True
     assert entrypoints["native_sdk_public_exports"]["passed"] is True
     assert entrypoints["native_sdk_binding_imports"]["passed"] is True

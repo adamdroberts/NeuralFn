@@ -986,6 +986,14 @@ validation shards; runtime JSON reports `validation.runtime_enabled` and
 `validation.sampler_constructed` so timing profiles can prove the validation
 path is inactive.
 
+Top-level native checkpoint token-id inference now dispatches directly from
+`nfn infer --native-checkpoint PATH --prompt-tokens IDS` or
+`nfn infer --checkpoint PATH --prompt-tokens IDS` to the compiled
+`nfn_gpt_native_train --sample-checkpoint` frontend. This path runs before
+`infer_gpt`, graph-backed inference, Torch, NumPy, tiktoken, or dataset-manager
+imports; text prompts can still use GPT-2 tokenization when tiktoken is
+available, but `--prompt-tokens` is the no-tokenizer native path.
+
 When `libnfn_native_train_tile_ops.so` is built without the trainer cuBLAS linear fast path, large-row linear dWeight fallbacks now use a shared-memory 2D tiled CUDA kernel for float32-output dWeight accumulation across float32/BF16 activation and gradient combinations. The normal workstation build still tries cuBLAS/cuBLASLt first; the tiled fallback only replaces the older row-chunked atomic dWeight reduction after those GEMM routes are unavailable. Bias-only fallback reductions keep the shared row-chunk path.
 
 `tools/bench_native_gpt_sm120_parity.sh` now defaults `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=auto`, so the parity run selects an idle display-disabled NVIDIA GPU on mixed display/compute workstations. It also defaults selected-GPU utilization polling to three samples with a 0.25 second interval before each measured command, matching the native-vs-native candidate wrapper. Set `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=0` or another explicit value to pin the benchmark manually, and tune `NFN_SM120_PARITY_SELECTED_GPU_UTILIZATION_RETRIES` / `NFN_SM120_PARITY_SELECTED_GPU_UTILIZATION_RETRY_INTERVAL_SECONDS` only when the local NVML idle signal needs a different policy.

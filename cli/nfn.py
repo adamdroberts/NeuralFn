@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import os
 import shutil
@@ -340,23 +341,102 @@ def _lightweight_native_gpt_infer_main(argv: list[str] | None = None) -> int:
         print(f"  checkpoint_step: {info.step} (DONE marker {marker})")
     if _has_any(tokens, "--native-info"):
         return 0
-    from argparse import Namespace
-    from infer_gpt import run_native_checkpoint_sampler
+    return _run_lightweight_native_gpt_sampler(tokens, checkpoint)
 
-    args = Namespace(
-        checkpoint=checkpoint,
-        native_sampler_script=_arg_value(tokens, "--native-sampler-script") or "",
-        prompt=_arg_value(tokens, "--prompt") or "",
-        prompt_tokens=_arg_value(tokens, "--prompt-tokens") or "",
-        max_new_tokens=int(_arg_value(tokens, "--max-new-tokens") or 64),
-        temperature=float(_arg_value(tokens, "--temperature") or 1.0),
-        top_k=int(_arg_value(tokens, "--top-k") or 0),
-        device=_arg_value(tokens, "--device") or "auto",
-        raw_text_encoding_override=(
-            _arg_value(tokens, "--tokenizer") or ("gpt2" if _has_any(tokens, "--tokgpt2") else None)
-        ),
-    )
-    return run_native_checkpoint_sampler(args, checkpoint)
+
+def _native_prompt_tokens(tokens: list[str]) -> str:
+    prompt_tokens = (_arg_value(tokens, "--prompt-tokens") or "").strip()
+    if prompt_tokens:
+        return prompt_tokens
+    encoding_name = (_arg_value(tokens, "--tokenizer") or ("gpt2" if _has_any(tokens, "--tokgpt2") else "gpt2")).strip()
+    if encoding_name != "gpt2":
+        raise ValueError(
+            f"Native GPT .bin checkpoint prompt inference requires the gpt2 tokenizer, got {encoding_name!r}."
+        )
+    prompt = _arg_value(tokens, "--prompt") or ""
+    if not prompt:
+        return "50256"
+    try:
+        import tiktoken
+    except Exception as exc:
+        raise RuntimeError(
+            "Native GPT .bin checkpoint prompt inference requires tiktoken for GPT-2 tokenization. "
+            "Pass --prompt-tokens IDS to stay on the no-tokenizer native path."
+        ) from exc
+    token_ids = tiktoken.get_encoding("gpt2").encode(prompt)
+    if not token_ids:
+        return "50256"
+    return ",".join(str(int(token_id)) for token_id in token_ids)
+
+
+def _run_lightweight_native_gpt_sampler(tokens: list[str], checkpoint: str) -> int:
+    try:
+        from neuralfn.native_gpt2 import resolve_native_gpt2_cli
+
+        command = [
+            resolve_native_gpt2_cli(),
+            "--sample-checkpoint",
+            str(Path(checkpoint).expanduser()),
+            "--prompt-tokens",
+            _native_prompt_tokens(tokens),
+            "--max-new-tokens",
+            str(int(_arg_value(tokens, "--max-new-tokens") or 64)),
+        ]
+    except (RuntimeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    env = os.environ.copy()
+    env.setdefault("CUDA_VISIBLE_DEVICES", "0")
+    env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
+    try:
+        result = subprocess.run(
+            command,
+            env=env,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        print(
+            "Native GPT prompt-token inference needs the compiled nfn_gpt_native_train binary. "
+            "Build it with tools/build_native_gpt_cli.sh or set NFN_NATIVE_GPT_CLI.",
+            file=sys.stderr,
+        )
+        return 2
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+    if result.stderr:
+        print(result.stderr, end="" if result.stderr.endswith("\n") else "\n", file=sys.stderr)
+    if result.returncode == 0:
+        _render_lightweight_native_sampler_text(result.stdout)
+    return int(result.returncode)
+
+
+def _render_lightweight_native_sampler_text(stdout: str) -> None:
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        return
+    generated_tokens = payload.get("generated_tokens")
+    if not isinstance(generated_tokens, list) or not generated_tokens:
+        return
+    token_ids: list[int] = []
+    for token_id in generated_tokens:
+        if not isinstance(token_id, int):
+            return
+        token_ids.append(int(token_id))
+    print(f"Generated token ids: {token_ids}")
+    try:
+        import tiktoken
+    except Exception:
+        return
+    try:
+        generated_text = tiktoken.get_encoding("gpt2").decode(token_ids)
+    except Exception:
+        return
+    print("Generated text:")
+    print(generated_text)
 
 
 def _native_gpt_argv(argv: list[str]) -> list[str]:
