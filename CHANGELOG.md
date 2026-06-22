@@ -1792,13 +1792,14 @@ Future updates should append new entries here rather than replacing older notes.
   `transformer_device_arena_cuda_malloc_count`,
   `transformer_device_arena_requested_bytes`,
   `transformer_device_arena_allocated_bytes`, and
-  `transformer_device_arena_uint16_byte_offset`. It remains rejected as a
-  default: the dedicated RTX 5090 startup gate measured `1.036978x` setup wall
-  time, `1.036923x` total startup wall time, and `1.289723x` token-weight
-  initialization time versus the default split-arena allocation path.
+  `transformer_device_arena_uint16_byte_offset`. It remains diagnostic-only:
+  after the CUDA 13.3 reinstall, the dedicated RTX 5090 startup-only gate
+  improved setup wall time to `0.966425x`, but the one-step training gate still
+  failed strict stage checks on LM-head backward (`1.011609x`) and block
+  backward (`1.049889x`) despite improving train-loop wall time to `0.991747x`.
   Verification: focused native GPT pytest coverage, wrapper syntax checks,
-  SM120 native rebuild, one-step combined-arena CUDA smoke, and same-script
-  startup benchmark rejection.
+  SM120 native rebuild, one-step combined-arena CUDA smoke, same-script startup
+  benchmark recheck, and one-step training benchmark rejection.
 
 - Added two repeatable SM120 native candidate profiles for rejected routing and
   scheduling probes. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_forward_no_n96`

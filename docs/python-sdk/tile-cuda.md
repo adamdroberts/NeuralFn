@@ -1481,10 +1481,10 @@ aligned `cudaMalloc` after both layouts are known. JSON reports
 `transformer_device_arena_requested_bytes`,
 `transformer_device_arena_allocated_bytes`, and
 `transformer_device_arena_uint16_byte_offset`. Keep it disabled for normal
-training: the dedicated RTX 5090 startup gate rejected
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=combined_device_arena` at `1.036978x` setup
-wall time and `1.036923x` total startup wall time, with token-weight
-initialization regressing to `1.289723x`.
+training: after the CUDA 13.3 reinstall, the dedicated RTX 5090 startup-only
+gate improved setup wall time to `0.966425x`, but the one-step training gate
+still failed strict stage checks on LM-head backward (`1.011609x`) and block
+backward (`1.049889x`) despite improving train-loop wall time to `0.991747x`.
 Runtime timing JSON also reports `setup_timing_accounted_ms`,
 `setup_timing_unattributed_ms`, and `setup_timing_record_count` beside
 `setup_wall_ms`. These fields summarize how much of native dense-GPT startup is
@@ -2147,8 +2147,10 @@ allocation strategies plus `transformer_device_arena_requested`,
 `transformer_device_arena_requested_bytes`,
 `transformer_device_arena_allocated_bytes`, and
 `transformer_device_arena_uint16_byte_offset`. Keep it default-off because the
-dedicated RTX 5090 startup gate rejected the candidate at `1.036978x` setup wall
-time and `1.036923x` total startup wall time. Set
+CUDA 13.3 dedicated RTX 5090 recheck only passed the startup-only gate
+(`0.966425x` setup wall) while the one-step training gate still failed strict
+stage checks on LM-head backward (`1.011609x`) and block backward (`1.049889x`).
+Set
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF=0` to compare against the
 older packed path that expands `dQKV` to float32 before QKV dWeight/dInput. Set
 `NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE=0`,

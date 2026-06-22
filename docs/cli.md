@@ -490,10 +490,10 @@ are known, then packs them into one aligned `cudaMalloc`. JSON reports
 `transformer_device_arena_requested_bytes`,
 `transformer_device_arena_allocated_bytes`, and
 `transformer_device_arena_uint16_byte_offset`. Keep it disabled for normal
-training: the dedicated RTX 5090 startup gate rejected
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=combined_device_arena` at `1.036978x` setup
-wall time and `1.036923x` total startup wall time, with token-weight
-initialization regressing to `1.289723x`.
+training: after the CUDA 13.3 reinstall, the dedicated RTX 5090 startup-only
+gate improved setup wall time to `0.966425x`, but the one-step training gate
+still failed strict stage checks on LM-head backward (`1.011609x`) and block
+backward (`1.049889x`) despite improving train-loop wall time to `0.991747x`.
 Startup zeroes only AdamW first/second moment state as coalesced contiguous
 ranges with `cudaMemsetAsync` by default, then overwrites nonzero weights with
 device initializers and zeroes gradients per optimizer step. Set
