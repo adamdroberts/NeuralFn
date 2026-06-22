@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Mirrored the selected SM120 parity activation into the NeuralFn native
+  candidate command. `tools/bench_native_gpt_sm120_parity.sh` already passed
+  `NFN_SM120_PARITY_ACTIVATION` / `NFN_SM120_ACTIVATION` to the llm.kittens
+  baseline as `-af`; it now also passes the same value to
+  `build/nfn_gpt_native_train` as `--native-cuda-activation`, so non-default
+  activation parity runs compare the same workload.
+
+  Verification: added a dry-run wrapper regression that checks both the
+  llm.kittens baseline command and NeuralFn candidate command receive
+  `sd-prelu`.
+
 - Extended `tools/check_native_no_torch_deps.py` to cover the installed
   `nfn:main` console-entry dense GPT training fast path. The verifier now
   imports `nfn.main()`, runs a dry-run native GPT training command against a

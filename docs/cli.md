@@ -877,6 +877,9 @@ reference still runs its built-in validation passes around short runs. Set
 `NFN_SM120_PARITY_GENERATE_TOKENS=144` when deliberately reproducing the full
 `train-sm120.sh` sample/checkpoint cadence instead of measuring only training
 throughput.
+Set `NFN_SM120_PARITY_ACTIVATION` or the generic `NFN_SM120_ACTIVATION`
+fallback for activation bisections; the wrapper passes the same value to
+llm.kittens as `-af` and to NeuralFn as `--native-cuda-activation`.
 
 For timing-only native GPT probes, pass wrapper
 `--native-cuda-no-checkpoint` or compiled C++ `--no-checkpoint` to skip final

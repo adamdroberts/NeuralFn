@@ -127,6 +127,7 @@ candidate_cmd="$(
     --native-cuda-sample-every "$SAMPLE_EVERY" \
     --native-cuda-generate-tokens "$GENERATE_TOKENS" \
     --native-cuda-checkpoint-every "$CHECKPOINT_EVERY" \
+    --native-cuda-activation "$ACTIVATION" \
     --no-checkpoint \
     --tile-ops-lib "$NFN_NATIVE_TILE_OPS_LIB"
 )"

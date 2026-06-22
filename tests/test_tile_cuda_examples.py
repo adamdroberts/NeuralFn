@@ -342,6 +342,7 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "--native-cuda-sample-every \"$SAMPLE_EVERY\"" in text
     assert "--native-cuda-generate-tokens \"$GENERATE_TOKENS\"" in text
     assert "--native-cuda-checkpoint-every \"$CHECKPOINT_EVERY\"" in text
+    assert "--native-cuda-activation \"$ACTIVATION\"" in text
     assert "--no-checkpoint" in text
     assert "--tile-ops-lib \"$NFN_NATIVE_TILE_OPS_LIB\"" in text
     assert '"${profile_args[@]}"' in text
@@ -801,6 +802,7 @@ def test_native_gpt_sm120_parity_wrapper_accepts_generic_aliases(tmp_path: Path)
             "NFN_SM120_STEPS": "2",
             "NFN_SM120_SAMPLES": "1",
             "NFN_SM120_WARMUP": "0",
+            "NFN_SM120_ACTIVATION": "sd-prelu",
             "NFN_SM120_PROFILE_DIR": "none",
             "NFN_SM120_CUDA_VISIBLE_DEVICES": "7",
             "NFN_SM120_JSON_OUT": str(output_path),
@@ -826,6 +828,11 @@ def test_native_gpt_sm120_parity_wrapper_accepts_generic_aliases(tmp_path: Path)
     assert payload["selected_gpu_utilization_retries"] == 3
     assert payload["selected_gpu_utilization_retry_interval_seconds"] == 0.25
     assert payload["metric_ratio_gates"]["enabled"] is False
+    assert payload["baseline_command"][payload["baseline_command"].index("-af") + 1] == "sd-prelu"
+    assert (
+        payload["candidate_command"][payload["candidate_command"].index("--native-cuda-activation") + 1]
+        == "sd-prelu"
+    )
 
 
 def test_native_gpt_sm120_parity_wrapper_stage_timing_without_profile_dir(tmp_path: Path) -> None:
