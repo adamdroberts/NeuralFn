@@ -249,6 +249,14 @@ row chunk. Tied LM-head dWeight chunks accumulate directly into the optimizer-st
 full-vocab scratch gradient buffer per chunk or per microbatch. The JSON reports
 `lm_head_row_chunk_count` and `loss_partial_count`.
 
+Direct `python cli/scripts/train_gpt_native.py ...` compiled-cli executions use
+the Python harness for argument resolution, dry runs, and command printing, then
+replace that process with the compiled C++ trainer for non-dry-run actions. The
+handoff applies the same default `CUDA_VISIBLE_DEVICES`,
+`CUDA_DEVICE_MAX_CONNECTIONS`, and `CUDA_MODULE_LOADING=LAZY` policy as
+`run_native_gpt()`, so legacy script launches do not keep a Python parent alive
+during CUDA Tile training.
+
 The dense GPT compiled trainer also defaults to the row-loss classifier
 backward route when the trainer-facing Tile ops library exports
 `nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets`.

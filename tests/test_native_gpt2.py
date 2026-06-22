@@ -983,6 +983,9 @@ def test_native_gpt_external_bridge_defaults_are_removed_from_training_paths() -
     root = Path(__file__).resolve().parents[1]
     native_sdk_source = (root / "neuralfn" / "native_gpt2.py").read_text(encoding="utf-8")
     train_gpt_source = (root / "cli" / "scripts" / "train_gpt.py").read_text(encoding="utf-8")
+    train_gpt_native_source = (root / "cli" / "scripts" / "train_gpt_native.py").read_text(
+        encoding="utf-8"
+    )
     native_cli_source = (
         root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
     ).read_text(encoding="utf-8")
@@ -995,6 +998,9 @@ def test_native_gpt_external_bridge_defaults_are_removed_from_training_paths() -
     assert 'return "train_gpt2cu"' not in native_cli_source
     assert '"status": "external-fast-path"' not in native_cli_source
     assert "build_command(const Config& cfg" not in native_cli_source
+    assert "os.execvpe(command[0], command, _compiled_cli_env(config))" in train_gpt_native_source
+    assert 'env.setdefault("CUDA_MODULE_LOADING", "LAZY")' in train_gpt_native_source
+    assert "subprocess.run(compiled_cli_args or native_cfg.compiled_cli_argv()" not in train_gpt_native_source
 
 
 def test_native_gpt_lm_smoke_uses_stable_cuda_13_3_expectations() -> None:

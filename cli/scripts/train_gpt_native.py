@@ -69,6 +69,21 @@ NATIVE_GPT_DEFAULTS = {
 NATIVE_GPT2_DEFAULTS = NATIVE_GPT_DEFAULTS
 
 
+def _compiled_cli_env(config: NativeGptRunConfig) -> dict[str, str]:
+    env = os.environ.copy()
+    if str(config.cuda_visible_devices or "").strip():
+        env.setdefault("CUDA_VISIBLE_DEVICES", str(config.cuda_visible_devices))
+    if str(config.cuda_device_max_connections or "").strip():
+        env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", str(config.cuda_device_max_connections))
+    env.setdefault("CUDA_MODULE_LOADING", "LAZY")
+    return env
+
+
+def _exec_compiled_cli(command: list[str], config: NativeGptRunConfig) -> int:
+    os.execvpe(command[0], command, _compiled_cli_env(config))
+    return 127
+
+
 def env_int(name: str, default: int) -> int:
     return int(os.environ.get(name, default))
 
@@ -639,9 +654,7 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 2
-        import subprocess
-
-        return int(subprocess.run(compiled_cli_args or native_cfg.compiled_cli_argv(), check=False).returncode)
+        return _exec_compiled_cli(compiled_cli_args or native_cfg.compiled_cli_argv(), native_cfg)
     LOGGER.info("Launching native CUDA GPT trainer")
     return run_native_gpt(native_cfg, runner=str(args.native_cuda_runner))
 

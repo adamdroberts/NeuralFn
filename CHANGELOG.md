@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `cli/scripts/train_gpt_native.py` now hands non-dry-run compiled-cli actions
+  to the compiled C++ GPT trainer with `exec` instead of spawning a child
+  process and waiting. Dry runs and command printing still return through the
+  Python harness, while actual native training inherits the same default
+  `CUDA_VISIBLE_DEVICES`, `CUDA_DEVICE_MAX_CONNECTIONS`, and
+  `CUDA_MODULE_LOADING=LAZY` environment policy used by SDK launches. This keeps
+  direct legacy script invocations from holding a long-lived Python parent
+  process during CUDA Tile training.
+
+  Verification: ran focused native GPT launch/source tests, the no-Torch native
+  dependency verifier, a direct `train_gpt_native.py` dry-run command, and
+  `git diff --check`.
+
 - Added native Tile telemetry for the diagnostic dense GPT LM-head cooperative
   sequence wrapper. Rebuilt Tile ops libraries now export counters for wrapper
   launches and the CE, dHidden, dWeight, concurrent-stream, legacy-order, and

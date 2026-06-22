@@ -1139,6 +1139,11 @@ Compiled CUDA Tile graphs can opt into runtime NVFP4 activation packing with `gr
 
 Programmatic `nfn.main([...], stdin_isatty=..., stdout_isatty=...)` calls that pass native training arguments use the same compiled native dispatcher before importing `train_gpt_native`, `nfn_impl`, or Torch.
 
+Direct `python cli/scripts/train_gpt_native.py ...` compiled-cli executions now
+replace the Python harness with the compiled C++ trainer after command
+resolution. Dry runs and command printing still return through Python, but
+actual native training does not keep a Python parent process alive.
+
 Native compiled entrypoints, SDK bindings, the master `nfn train` native dispatcher, the direct `cli/scripts/train_gpt.py` / `train_gpt2.py` compiled-CLI fast path, and legacy training-script native guards set `CUDA_MODULE_LOADING=LAZY` when unset before executing native trainers or loading Tile CUDA libraries, matching the dense GPT C++ trainer. Existing user-provided `CUDA_MODULE_LOADING` values still take precedence.
 
 The unified native model registry exposes capability-specific status fields in addition to the legacy top-level status. `nfn-native-train --list-models --json` now includes `transformer_lm_status`, `token_lm_status`, and `geometry_status` for each model. `gpt2-evo` is reported as `implemented` with `transformer_lm_status: "native-dense-gpt-layer-evo-delegate"` because the family binary delegates dense GPT-2-compatible runs to the native CUDA Tile transformer-LM loop with `--layer-evo`. `nanogpt` is reported as `implemented`: full transformer training routes through the shared dense GPT Tile-CUDA loop with `--template-name nanogpt`, and the explicit `--train-token-lm` path remains available for token-LM diagnostics.
