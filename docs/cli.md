@@ -1000,6 +1000,13 @@ CUDA or driver changes. Keep that profile diagnostic-only: the dedicated RTX
 5090 same-script run changed `linear_tk_gemm_count` as expected but rejected it
 at `1.009016x` train-loop wall time and `1.091020x`
 `stage.block_forward.attention.total_ms`.
+`lm_head_tk_dweight_32768` expands to
+`NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,32768,N,T` for the current
+32768-row LM-head dWeight bucket. Runtime JSON reports
+`linear_tk_dweight_gemm_count`; the dedicated RTX 5090 5-step, 3-sample
+same-script benchmark moved 80 dWeight GEMMs from cuBLASLt to TK but rejected
+the route at `1.022262x` train-loop wall time and `1.279309x`
+`stage.lm_head_backward.dweight.total_ms`.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

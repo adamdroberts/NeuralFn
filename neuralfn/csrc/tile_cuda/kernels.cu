@@ -102,6 +102,7 @@ std::atomic<std::int64_t> g_linear_bf16_gemm_count{0};
 std::atomic<std::int64_t> g_linear_bf16_gemm_fast16bf_request_count{0};
 std::atomic<std::int64_t> g_linear_tk_gemm_count{0};
 std::atomic<std::int64_t> g_linear_tk_float_out_gemm_count{0};
+std::atomic<std::int64_t> g_linear_tk_dweight_gemm_count{0};
 std::atomic<std::int64_t> g_linear_cublaslt_gemm_count{0};
 std::atomic<std::int64_t> g_linear_sgemm_count{0};
 std::atomic<std::int64_t> g_linear_bf16_a_pack_count{0};
@@ -4512,6 +4513,67 @@ bool trainer_linear_tk_dinput_shape_disabled(
     const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_TK_DINPUT_DISABLE_SHAPE");
     if (value == nullptr) {
       value = std::getenv("NFN_NATIVE_LINEAR_TK_DINPUT_DISABLE_SHAPE");
+    }
+    LinearShapeStat shape{};
+    parse_linear_shape_token(value, &shape);
+    return shape;
+  }();
+  return linear_shape_matches(disabled_shape, m, n, k, op_a, op_b);
+}
+
+bool trainer_linear_tk_dweight_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_NATIVE_LINEAR_TK_DWEIGHT");
+    if (value == nullptr) {
+      value = std::getenv("NFN_TILE_CUDA_LINEAR_TK_DWEIGHT");
+    }
+    if (value == nullptr) {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
+bool trainer_linear_tk_dweight_shape_enabled(
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  static const LinearShapeStat enabled_shape = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_TK_DWEIGHT_ENABLE_SHAPE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE");
+    }
+    LinearShapeStat shape{};
+    parse_linear_shape_token(value, &shape);
+    return shape;
+  }();
+  return linear_shape_matches(enabled_shape, m, n, k, op_a, op_b);
+}
+
+bool trainer_linear_tk_dweight_shape_disabled(
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  static const LinearShapeStat disabled_shape = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_TK_DWEIGHT_DISABLE_SHAPE");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_LINEAR_TK_DWEIGHT_DISABLE_SHAPE");
     }
     LinearShapeStat shape{};
     parse_linear_shape_token(value, &shape);
@@ -9597,6 +9659,19 @@ __global__ void linear_backward_weight_accumulate_bf16_bits_bf16_bits_bf16_bits_
     acc += x_value * grad_value;
   }
   grad_weight_bf16_bits[idx] = f32_to_bf16_bits_device(acc);
+}
+
+__global__ void bf16_bits_accumulate_to_float32_kernel(
+    float* __restrict__ dst,
+    const std::uint16_t* __restrict__ src_bf16_bits,
+    std::int64_t n,
+    float beta) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const float src = bf16_bits_to_f32_device(src_bf16_bits[idx]);
+  dst[idx] = beta == 0.0f ? src : (beta * dst[idx] + src);
 }
 
 __global__ void linear_backward_input_bf16_bits_float32_kernel(
@@ -16333,6 +16408,78 @@ void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32(
       x_bf16_bits, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, 1.0f, stream);
 }
 
+bool tk_linear_backward_weight_bf16_bits_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    float beta,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  constexpr cublasOperation_t kOpA = CUBLAS_OP_N;
+  constexpr cublasOperation_t kOpB = CUBLAS_OP_T;
+  if (rows <= 0 || input_dim <= 0 || output_dim <= 0 ||
+      rows > std::numeric_limits<int>::max() ||
+      input_dim > std::numeric_limits<int>::max() ||
+      output_dim > std::numeric_limits<int>::max()) {
+    return false;
+  }
+  const int m = static_cast<int>(input_dim);
+  const int n = static_cast<int>(output_dim);
+  const int k = static_cast<int>(rows);
+  const bool shape_enabled = trainer_linear_tk_dweight_shape_enabled(m, n, k, kOpA, kOpB);
+  if (!trainer_linear_tk_gemm_enabled() ||
+      trainer_linear_tk_dweight_shape_disabled(m, n, k, kOpA, kOpB) ||
+      (!trainer_linear_tk_dweight_enabled() && !shape_enabled)) {
+    return false;
+  }
+  if (x_bf16_bits == nullptr || grad_out_bf16_bits == nullptr || grad_weight == nullptr) {
+    return false;
+  }
+  if (rows % 64 != 0 || input_dim % 128 != 0 || output_dim % 128 != 0) {
+    return false;
+  }
+  const std::int64_t weight_elements = input_dim * output_dim;
+  TrainerLinearBf16Workspace* workspace = ensure_trainer_linear_bf16_workspace(1, 1, weight_elements);
+  if (workspace == nullptr || workspace->c_bits == nullptr) {
+    return false;
+  }
+  ensure_llmk_sm120_cublaslt_initialized();
+  const auto host_start = std::chrono::steady_clock::now();
+  LinearShapeTiming timing = begin_linear_shape_timing(stream);
+  ::matmul_dispatch_tk_atb(
+      reinterpret_cast<floatX*>(workspace->c_bits),
+      reinterpret_cast<const floatX*>(grad_out_bf16_bits),
+      reinterpret_cast<const floatX*>(x_bf16_bits),
+      static_cast<int>(output_dim),
+      static_cast<int>(input_dim),
+      static_cast<int>(rows),
+      stream);
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((weight_elements + threads - 1) / threads);
+  bf16_bits_accumulate_to_float32_kernel<<<blocks, threads, 0, stream>>>(
+      grad_weight, workspace->c_bits, weight_elements, beta);
+  const std::int64_t elapsed_us = finish_linear_shape_timing_with_host_fallback(&timing, host_start);
+  g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  g_linear_tk_dweight_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  record_linear_shape_stat(2, m, n, k, kOpA, kOpB, elapsed_us);
+  return true;
+#else
+  (void)x_bf16_bits;
+  (void)grad_out_bf16_bits;
+  (void)grad_weight;
+  (void)rows;
+  (void)input_dim;
+  (void)output_dim;
+  (void)beta;
+  (void)stream;
+  return false;
+#endif
+}
+
 void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
     const std::uint16_t* x_bf16_bits,
     const std::uint16_t* grad_out_bf16_bits,
@@ -16342,6 +16489,10 @@ void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
     std::int64_t output_dim,
     float beta,
     cudaStream_t stream) {
+  if (tk_linear_backward_weight_bf16_bits_bf16_bits_float32(
+          x_bf16_bits, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, beta, stream)) {
+    return;
+  }
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
       cublas_linear_gemm_ex_bf16_bits_ab_float32(
@@ -17682,6 +17833,7 @@ void reset_trainer_linear_launch_stats() {
   g_linear_bf16_gemm_fast16bf_request_count.store(0, std::memory_order_relaxed);
   g_linear_tk_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_tk_float_out_gemm_count.store(0, std::memory_order_relaxed);
+  g_linear_tk_dweight_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_cublaslt_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_sgemm_count.store(0, std::memory_order_relaxed);
   g_linear_bf16_a_pack_count.store(0, std::memory_order_relaxed);
@@ -17734,6 +17886,14 @@ std::int64_t trainer_linear_tk_gemm_count() {
 std::int64_t trainer_linear_tk_float_out_gemm_count() {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   return g_linear_tk_float_out_gemm_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_tk_dweight_gemm_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_tk_dweight_gemm_count.load(std::memory_order_relaxed);
 #else
   return 0;
 #endif

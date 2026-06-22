@@ -1615,6 +1615,16 @@ changes without hand-writing env strings:
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`. These
 profiles stay default-off and must pass the same-script candidate gates before
 any route promotion.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dweight_32768` expands to
+`NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,32768,N,T`. The Tile-CUDA
+candidate computes BF16/BF16 dWeight into BF16 scratch with the SM120 TK bridge
+and accumulates that scratch into the existing FP32 gradient buffer. Runtime
+JSON reports `linear_tk_dweight_gemm_count`; when the route is active,
+`lm_head_dweight_strategy` reports
+`tk-sm120-bf16-scratch-to-float32-dweight-diagnostic`. Keep it default-off: the
+dedicated RTX 5090 5-step, 3-sample paired benchmark moved 80 LM-head dWeight
+GEMMs from cuBLASLt to TK but regressed train-loop wall time to `1.022262x` and
+`stage.lm_head_backward.dweight.total_ms` to `1.279309x`.
 `ce_bf16_threads_512` expands to `NFN_NATIVE_GPT_CE_BF16_THREADS=512` for
 repeatable BF16 CE row-block bisection. It stays diagnostic-only: the dedicated
 RTX 5090 stage-timed gate regressed CE time to `1.144675x`, total LM-head

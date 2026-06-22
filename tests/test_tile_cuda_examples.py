@@ -899,6 +899,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "lm_head_cublaslt_dhidden_32768" in text
     assert "lm_head_dhidden_fast16bf_32768" in text
     assert "NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE=768,32768,50304,N,N" in text
+    assert "lm_head_tk_dweight_32768" in text
+    assert "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,32768,N,T" in text
     assert "lm_head_logits_bf16_fallback_32768" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N" in text
     assert "qkv_forward_bf16_fallback_65536" in text
@@ -1042,6 +1044,37 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "768,32768,50304,N,N"
     )
     assert fast16bf_payload["metric_ratio_gates"]["enabled"] is False
+
+    tk_dweight_output_path = tmp_path / "candidate-tk-dweight-dry-run.json"
+    tk_dweight_env = os.environ.copy()
+    tk_dweight_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_tk_dweight_32768",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tk_dweight_output_path),
+        }
+    )
+
+    tk_dweight_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=tk_dweight_env,
+    )
+
+    assert tk_dweight_dry_run.returncode == 0, tk_dweight_dry_run.stderr
+    tk_dweight_payload = json.loads(tk_dweight_output_path.read_text(encoding="utf-8"))
+    assert (
+        tk_dweight_payload["candidate_env"][
+            "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE"
+        ]
+        == "768,50304,32768,N,T"
+    )
+    assert tk_dweight_payload["metric_ratio_gates"]["enabled"] is False
 
     logits_fallback_output_path = tmp_path / "candidate-logits-fallback-dry-run.json"
     logits_fallback_env = os.environ.copy()
@@ -2129,23 +2162,31 @@ def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> N
 
     baseline = {
         "linear_tk_gemm_count": {"mean": 1632.0, "median": 1632.0, "min": 1632.0, "max": 1632.0},
+        "linear_tk_dweight_gemm_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
         "linear_cublaslt_gemm_count": {"mean": 2208.0, "median": 2208.0, "min": 2208.0, "max": 2208.0},
     }
     candidate = {
         "linear_tk_gemm_count": {"mean": 1344.0, "median": 1344.0, "min": 1344.0, "max": 1344.0},
+        "linear_tk_dweight_gemm_count": {"mean": 16.0, "median": 16.0, "min": 16.0, "max": 16.0},
         "linear_cublaslt_gemm_count": {"mean": 2208.0, "median": 2208.0, "min": 2208.0, "max": 2208.0},
     }
 
     changes = module.summarize_native_route_counter_changes(baseline, candidate)
 
     assert changes["has_route_counter_change"] is True
-    assert changes["changed_count"] == 1
-    assert changes["tracked_count"] == 2
+    assert changes["changed_count"] == 2
+    assert changes["tracked_count"] == 3
     assert changes["changed"]["linear_tk_gemm_count"] == {
         "baseline_mean": 1632.0,
         "candidate_mean": 1344.0,
         "delta": -288.0,
         "ratio": 1344.0 / 1632.0,
+    }
+    assert changes["changed"]["linear_tk_dweight_gemm_count"] == {
+        "baseline_mean": 0.0,
+        "candidate_mean": 16.0,
+        "delta": 16.0,
+        "ratio": None,
     }
     assert changes["unchanged"] == ["linear_cublaslt_gemm_count"]
     assert "linear_bf16_gemm_count" in changes["missing"]

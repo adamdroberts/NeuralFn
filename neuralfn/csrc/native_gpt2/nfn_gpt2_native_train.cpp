@@ -3207,6 +3207,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_trainer_linear_bf16_gemm_fast16bf_request_count",
         "nfn_native_tile_trainer_linear_tk_gemm_count",
         "nfn_native_tile_trainer_linear_tk_float_out_gemm_count",
+        "nfn_native_tile_trainer_linear_tk_dweight_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_gemm_count",
         "nfn_native_tile_trainer_linear_sgemm_count",
         "nfn_native_tile_trainer_linear_bf16_a_pack_count",
@@ -9652,6 +9653,7 @@ int run_transformer_lm_training_json(
     std::int64_t linear_bf16_gemm_fast16bf_request_count = 0;
     std::int64_t linear_tk_gemm_count = 0;
     std::int64_t linear_tk_float_out_gemm_count = 0;
+    std::int64_t linear_tk_dweight_gemm_count = 0;
     std::int64_t linear_cublaslt_gemm_count = 0;
     std::int64_t linear_sgemm_count = 0;
     std::int64_t linear_bf16_a_pack_count = 0;
@@ -9882,6 +9884,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_trainer_linear_bf16_gemm_fast16bf_request_count",
         "nfn_native_tile_trainer_linear_tk_gemm_count",
         "nfn_native_tile_trainer_linear_tk_float_out_gemm_count",
+        "nfn_native_tile_trainer_linear_tk_dweight_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_gemm_count",
         "nfn_native_tile_trainer_linear_sgemm_count",
         "nfn_native_tile_trainer_linear_bf16_a_pack_count",
@@ -10443,6 +10446,7 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_bf16_gemm_fast16bf_request_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_tk_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_tk_float_out_gemm_count_fn = nullptr;
+    TrainerLinearStatsCountFn trainer_linear_tk_dweight_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_cublaslt_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_sgemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_a_pack_count_fn = nullptr;
@@ -10886,6 +10890,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_trainer_linear_tk_gemm_count");
                 trainer_linear_tk_float_out_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_tk_float_out_gemm_count");
+                trainer_linear_tk_dweight_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_tk_dweight_gemm_count");
                 trainer_linear_cublaslt_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_cublaslt_gemm_count");
                 trainer_linear_sgemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
@@ -18403,6 +18409,9 @@ int run_transformer_lm_training_json(
     if (trainer_linear_tk_float_out_gemm_count_fn != nullptr) {
         linear_tk_float_out_gemm_count = trainer_linear_tk_float_out_gemm_count_fn();
     }
+    if (trainer_linear_tk_dweight_gemm_count_fn != nullptr) {
+        linear_tk_dweight_gemm_count = trainer_linear_tk_dweight_gemm_count_fn();
+    }
     if (trainer_linear_cublaslt_gemm_count_fn != nullptr) {
         linear_cublaslt_gemm_count = trainer_linear_cublaslt_gemm_count_fn();
     }
@@ -19006,7 +19015,9 @@ int run_transformer_lm_training_json(
                 ? "bf16"
                 : (lm_head_bf16_logits_enabled ? "float32" : "float32")) << "\",\n"
         << "  \"lm_head_dweight_strategy\": \""
-        << (lm_head_prepack_bf16_hidden_enabled
+        << (linear_tk_dweight_gemm_count > 0
+                ? "tk-sm120-bf16-scratch-to-float32-dweight-diagnostic"
+                : (lm_head_prepack_bf16_hidden_enabled
                 ? (dweight_first_microbatch_beta_zero_enabled
                        ? "full-final-norm-bf16-prepack-bf16-dlogit-dweight-first-write-then-accumulate"
                        : "full-final-norm-bf16-prepack-bf16-dlogit-dweight-accumulate")
@@ -19016,7 +19027,7 @@ int run_transformer_lm_training_json(
                        : "chunked-final-norm-bf16-pack-bf16-dlogit-dweight-accumulate")
                 : (lm_head_bf16_logits_enabled
                        ? "float32-hidden-bf16-dlogit-dweight-accumulate"
-                       : "float32-hidden-float32-dlogit-dweight-accumulate")))
+                       : "float32-hidden-float32-dlogit-dweight-accumulate"))))
         << "\",\n"
         << "  \"dweight_first_microbatch_beta_zero_enabled\": "
         << (dweight_first_microbatch_beta_zero_enabled ? "true" : "false") << ",\n"
@@ -19311,6 +19322,7 @@ int run_transformer_lm_training_json(
         << linear_bf16_gemm_fast16bf_request_count << ",\n"
         << "  \"linear_tk_gemm_count\": " << linear_tk_gemm_count << ",\n"
         << "  \"linear_tk_float_out_gemm_count\": " << linear_tk_float_out_gemm_count << ",\n"
+        << "  \"linear_tk_dweight_gemm_count\": " << linear_tk_dweight_gemm_count << ",\n"
         << "  \"linear_cublaslt_gemm_count\": " << linear_cublaslt_gemm_count << ",\n"
         << "  \"linear_cublaslt_descriptor_cache_enabled\": "
         << (linear_cublaslt_descriptor_cache_enabled ? "true" : "false") << ",\n"

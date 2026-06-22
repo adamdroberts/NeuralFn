@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a diagnostic SM120 TK dWeight route for native dense GPT linear
+  bisection. The BF16/BF16 dWeight ABI can now route shape-selected calls
+  through the existing TK `A^T*B` bridge, write BF16 dWeight scratch, and
+  accumulate that scratch into the existing FP32 gradient buffer. The route is
+  default-off behind `NFN_NATIVE_LINEAR_TK_DWEIGHT=1` /
+  `NFN_TILE_CUDA_LINEAR_TK_DWEIGHT=1`, with shape-selective
+  `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=m,n,k,opA,opB` and matching Tile
+  aliases. `tools/bench_native_gpt_sm120_candidate.sh` now exposes
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dweight_32768`, which expands
+  to `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,32768,N,T`. Native
+  GPT JSON and paired benchmark summaries now report
+  `linear_tk_dweight_gemm_count`, and active TK dWeight runs report
+  `lm_head_dweight_strategy:
+  "tk-sm120-bf16-scratch-to-float32-dweight-diagnostic"`.
+
+  Keep the route default-off. The dedicated RTX 5090 5-step, 3-sample
+  same-script benchmark proved the route moved 80 LM-head dWeight GEMMs from
+  cuBLASLt to TK (`linear_tk_dweight_gemm_count: 0 -> 80`) but rejected it at
+  `1.022262x` train-loop wall time, `0.978245x` tokens/sec, and `1.279309x`
+  `stage.lm_head_backward.dweight.total_ms`.
+
+  Verification: focused native GPT and paired-benchmark tests passed; rebuilt
+  `build/libnfn_native_train_tile_ops.so` and `build/nfn_gpt_native_train`;
+  `tools/check_native_no_torch_deps.py` passed; an escalated RTX 5090 one-step
+  smoke and the 5-step, 3-sample benchmark both ran on display-disabled GPU 0
+  with no compute processes before the run.
+
 - Added an opt-in fused padded-vocab token-weight initializer to the native
   dense GPT Tile-CUDA ABI. The new
   `nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32`
