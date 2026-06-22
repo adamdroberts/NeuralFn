@@ -17768,6 +17768,215 @@ int trainer_linear_cublaslt_grouped_layout_probe_status() {
 #endif
 }
 
+int trainer_linear_cublaslt_grouped_matmul_probe_status() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  cublasLtHandle_t handle = trainer_linear_cublaslt_handle();
+  if (handle == nullptr) {
+    return -2;
+  }
+
+  constexpr int group_count = 2;
+  constexpr int m_host[group_count] = {16, 16};
+  constexpr int n_host[group_count] = {2, 2};
+  constexpr int k_host[group_count] = {16, 16};
+  constexpr int a_ld_host[group_count] = {16, 16};
+  constexpr int b_ld_host[group_count] = {16, 16};
+  constexpr int c_ld_host[group_count] = {16, 16};
+  constexpr std::size_t a_elements = 16 * 16;
+  constexpr std::size_t b_elements = 16 * 2;
+  constexpr std::size_t c_elements = 16 * 2;
+  constexpr std::uint16_t bf16_one = 0x3f80;
+  constexpr std::uint16_t expected_bf16 = 0x4180;
+
+  std::array<std::uint16_t*, group_count> a_device = {nullptr, nullptr};
+  std::array<std::uint16_t*, group_count> b_device = {nullptr, nullptr};
+  std::array<std::uint16_t*, group_count> c_device = {nullptr, nullptr};
+  const void** a_ptrs_device = nullptr;
+  const void** b_ptrs_device = nullptr;
+  void** c_ptrs_device = nullptr;
+  std::int64_t* a_rows_device = nullptr;
+  std::int64_t* a_cols_device = nullptr;
+  std::int64_t* a_ld_device = nullptr;
+  std::int64_t* b_rows_device = nullptr;
+  std::int64_t* b_cols_device = nullptr;
+  std::int64_t* b_ld_device = nullptr;
+  std::int64_t* c_rows_device = nullptr;
+  std::int64_t* c_cols_device = nullptr;
+  std::int64_t* c_ld_device = nullptr;
+  cublasLtMatmulDesc_t matmul_desc = nullptr;
+  cublasLtMatrixLayout_t a_desc = nullptr;
+  cublasLtMatrixLayout_t b_desc = nullptr;
+  cublasLtMatrixLayout_t c_desc = nullptr;
+  cublasLtMatmulPreference_t preference = nullptr;
+  cublasLtMatmulHeuristicResult_t heuristic{};
+  int returned_results = 0;
+  int status = 0;
+
+  auto free_all = [&]() {
+    if (preference != nullptr) cublasLtMatmulPreferenceDestroy(preference);
+    if (a_desc != nullptr) cublasLtMatrixLayoutDestroy(a_desc);
+    if (b_desc != nullptr) cublasLtMatrixLayoutDestroy(b_desc);
+    if (c_desc != nullptr) cublasLtMatrixLayoutDestroy(c_desc);
+    if (matmul_desc != nullptr) cublasLtMatmulDescDestroy(matmul_desc);
+    if (a_ptrs_device != nullptr) cudaFree(a_ptrs_device);
+    if (b_ptrs_device != nullptr) cudaFree(b_ptrs_device);
+    if (c_ptrs_device != nullptr) cudaFree(c_ptrs_device);
+    if (a_rows_device != nullptr) cudaFree(a_rows_device);
+    if (a_cols_device != nullptr) cudaFree(a_cols_device);
+    if (a_ld_device != nullptr) cudaFree(a_ld_device);
+    if (b_rows_device != nullptr) cudaFree(b_rows_device);
+    if (b_cols_device != nullptr) cudaFree(b_cols_device);
+    if (b_ld_device != nullptr) cudaFree(b_ld_device);
+    if (c_rows_device != nullptr) cudaFree(c_rows_device);
+    if (c_cols_device != nullptr) cudaFree(c_cols_device);
+    if (c_ld_device != nullptr) cudaFree(c_ld_device);
+    for (int i = 0; i < group_count; ++i) {
+      if (a_device[i] != nullptr) cudaFree(a_device[i]);
+      if (b_device[i] != nullptr) cudaFree(b_device[i]);
+      if (c_device[i] != nullptr) cudaFree(c_device[i]);
+    }
+  };
+  auto fail = [&](int value) {
+    free_all();
+    return value;
+  };
+  auto cuda_step = [&](cudaError_t value) {
+    if (status == 0 && value != cudaSuccess) {
+      status = static_cast<int>(value);
+    }
+  };
+  auto cublas_step = [&](cublasStatus_t value) {
+    if (status == 0 && value != CUBLAS_STATUS_SUCCESS) {
+      status = static_cast<int>(value);
+    }
+  };
+
+  const std::array<std::int64_t, group_count> a_rows = {m_host[0], m_host[1]};
+  const std::array<std::int64_t, group_count> a_cols = {k_host[0], k_host[1]};
+  const std::array<std::int64_t, group_count> a_ld = {a_ld_host[0], a_ld_host[1]};
+  const std::array<std::int64_t, group_count> b_rows = {k_host[0], k_host[1]};
+  const std::array<std::int64_t, group_count> b_cols = {n_host[0], n_host[1]};
+  const std::array<std::int64_t, group_count> b_ld = {b_ld_host[0], b_ld_host[1]};
+  const std::array<std::int64_t, group_count> c_rows = {m_host[0], m_host[1]};
+  const std::array<std::int64_t, group_count> c_cols = {n_host[0], n_host[1]};
+  const std::array<std::int64_t, group_count> c_ld = {c_ld_host[0], c_ld_host[1]};
+
+  for (int i = 0; i < group_count && status == 0; ++i) {
+    cuda_step(cudaMalloc(reinterpret_cast<void**>(&a_device[i]), a_elements * sizeof(std::uint16_t)));
+    cuda_step(cudaMalloc(reinterpret_cast<void**>(&b_device[i]), b_elements * sizeof(std::uint16_t)));
+    cuda_step(cudaMalloc(reinterpret_cast<void**>(&c_device[i]), c_elements * sizeof(std::uint16_t)));
+    if (status == 0) {
+      std::vector<std::uint16_t> a_host(a_elements, bf16_one);
+      std::vector<std::uint16_t> b_host(b_elements, bf16_one);
+      cuda_step(cudaMemcpy(a_device[i], a_host.data(), a_host.size() * sizeof(std::uint16_t), cudaMemcpyHostToDevice));
+      cuda_step(cudaMemcpy(b_device[i], b_host.data(), b_host.size() * sizeof(std::uint16_t), cudaMemcpyHostToDevice));
+      cuda_step(cudaMemset(c_device[i], 0, c_elements * sizeof(std::uint16_t)));
+    }
+  }
+  if (status != 0) return fail(status);
+
+  const void* a_ptrs_host[group_count] = {a_device[0], a_device[1]};
+  const void* b_ptrs_host[group_count] = {b_device[0], b_device[1]};
+  void* c_ptrs_host[group_count] = {c_device[0], c_device[1]};
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&a_ptrs_device), sizeof(a_ptrs_host)));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&b_ptrs_device), sizeof(b_ptrs_host)));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&c_ptrs_device), sizeof(c_ptrs_host)));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&a_rows_device), sizeof(std::int64_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&a_cols_device), sizeof(std::int64_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&a_ld_device), sizeof(std::int64_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&b_rows_device), sizeof(std::int64_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&b_cols_device), sizeof(std::int64_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&b_ld_device), sizeof(std::int64_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&c_rows_device), sizeof(std::int64_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&c_cols_device), sizeof(std::int64_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&c_ld_device), sizeof(std::int64_t) * group_count));
+  if (status != 0) return fail(status);
+
+  cuda_step(cudaMemcpy(a_ptrs_device, a_ptrs_host, sizeof(a_ptrs_host), cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(b_ptrs_device, b_ptrs_host, sizeof(b_ptrs_host), cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(c_ptrs_device, c_ptrs_host, sizeof(c_ptrs_host), cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(a_rows_device, a_rows.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(a_cols_device, a_cols.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(a_ld_device, a_ld.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(b_rows_device, b_rows.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(b_cols_device, b_cols.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(b_ld_device, b_ld.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(c_rows_device, c_rows.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(c_cols_device, c_cols.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(c_ld_device, c_ld.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
+  if (status != 0) return fail(status);
+
+  cublas_step(cublasLtMatmulDescCreate(&matmul_desc, CUBLAS_COMPUTE_32F_FAST_16BF, CUDA_R_32F));
+  cublas_step(cublasLtGroupedMatrixLayoutCreate(
+      &a_desc, CUDA_R_16BF, group_count, a_rows_device, a_cols_device, a_ld_device));
+  cublas_step(cublasLtGroupedMatrixLayoutCreate(
+      &b_desc, CUDA_R_16BF, group_count, b_rows_device, b_cols_device, b_ld_device));
+  cublas_step(cublasLtGroupedMatrixLayoutCreate(
+      &c_desc, CUDA_R_16BF, group_count, c_rows_device, c_cols_device, c_ld_device));
+  const int batch_count = group_count;
+  const cublasLtBatchMode_t grouped_mode = CUBLASLT_BATCH_MODE_GROUPED;
+  if (status == 0) {
+    cublas_step(cublasLtMatrixLayoutSetAttribute(
+        a_desc, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, &batch_count, sizeof(batch_count)));
+    cublas_step(cublasLtMatrixLayoutSetAttribute(
+        b_desc, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, &batch_count, sizeof(batch_count)));
+    cublas_step(cublasLtMatrixLayoutSetAttribute(
+        c_desc, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, &batch_count, sizeof(batch_count)));
+    cublas_step(cublasLtMatrixLayoutSetAttribute(
+        a_desc, CUBLASLT_MATRIX_LAYOUT_BATCH_MODE, &grouped_mode, sizeof(grouped_mode)));
+    cublas_step(cublasLtMatrixLayoutSetAttribute(
+        b_desc, CUBLASLT_MATRIX_LAYOUT_BATCH_MODE, &grouped_mode, sizeof(grouped_mode)));
+    cublas_step(cublasLtMatrixLayoutSetAttribute(
+        c_desc, CUBLASLT_MATRIX_LAYOUT_BATCH_MODE, &grouped_mode, sizeof(grouped_mode)));
+  }
+  if (status != 0) return fail(status);
+
+  cublas_step(cublasLtMatmulPreferenceCreate(&preference));
+  if (status == 0) {
+    cublas_step(cublasLtMatmulAlgoGetHeuristic(
+        handle, matmul_desc, a_desc, b_desc, c_desc, c_desc, preference, 1, &heuristic, &returned_results));
+  }
+  if (status != 0) return fail(status);
+  if (returned_results <= 0) return fail(-3);
+
+  const float alpha = 1.0f;
+  const float beta = 0.0f;
+  cublas_step(cublasLtMatmul(
+      handle,
+      matmul_desc,
+      &alpha,
+      a_ptrs_device,
+      a_desc,
+      b_ptrs_device,
+      b_desc,
+      &beta,
+      c_ptrs_device,
+      c_desc,
+      c_ptrs_device,
+      c_desc,
+      &heuristic.algo,
+      nullptr,
+      0,
+      nullptr));
+  cuda_step(cudaDeviceSynchronize());
+  if (status != 0) return fail(status);
+
+  for (int i = 0; i < group_count && status == 0; ++i) {
+    std::vector<std::uint16_t> c_host(c_elements, 0);
+    cuda_step(cudaMemcpy(c_host.data(), c_device[i], c_host.size() * sizeof(std::uint16_t), cudaMemcpyDeviceToHost));
+    for (std::uint16_t value : c_host) {
+      if (status == 0 && value != expected_bf16) {
+        status = -4;
+      }
+    }
+  }
+  free_all();
+  return status;
+#else
+  return -1;
+#endif
+}
+
 int trainer_linear_cublas_grouped_bf16_gemm_probe_status() {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   cublasHandle_t handle = trainer_linear_cublas_handle(nullptr);

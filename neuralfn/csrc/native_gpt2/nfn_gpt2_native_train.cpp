@@ -3218,6 +3218,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_trainer_linear_bf16_cached_a_capacity",
         "nfn_native_tile_trainer_linear_bf16_cache_entry_count",
         "nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status",
+        "nfn_native_tile_trainer_linear_cublaslt_grouped_matmul_probe_status",
         "nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status",
         "nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan",
         "nfn_native_tile_trainer_linear_shape_stats_count",
@@ -9658,6 +9659,14 @@ int run_transformer_lm_training_json(
     std::int64_t linear_bf16_cached_a_capacity = 0;
     std::int64_t linear_bf16_cache_entry_count = 0;
     int linear_cublaslt_grouped_layout_probe_status = -1;
+    int linear_cublaslt_grouped_matmul_probe_status = -1;
+    const bool linear_cublaslt_grouped_matmul_probe_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any(
+                {"NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL",
+                 "NFN_NATIVE_GPT2_PROBE_CUBLASLT_GROUPED_MATMUL",
+                 "NFN_TILE_CUDA_LINEAR_CUBLASLT_GROUPED_MATMUL_PROBE"}),
+            false);
     int linear_cublas_grouped_bf16_gemm_probe_status = -1;
     const bool linear_cublas_grouped_bf16_gemm_probe_requested =
         env_flag_enabled_or_default(
@@ -9872,6 +9881,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_trainer_linear_bf16_cached_a_capacity",
         "nfn_native_tile_trainer_linear_bf16_cache_entry_count",
         "nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status",
+        "nfn_native_tile_trainer_linear_cublaslt_grouped_matmul_probe_status",
         "nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status",
         "nfn_native_tile_trainer_linear_shape_stats_count",
         "nfn_native_tile_trainer_linear_shape_stats_entry",
@@ -10423,6 +10433,7 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_bf16_cached_a_capacity_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_bf16_cache_entry_count_fn = nullptr;
     TrainerLinearCublasLtProbeFn trainer_linear_cublaslt_grouped_layout_probe_status_fn = nullptr;
+    TrainerLinearCublasLtProbeFn trainer_linear_cublaslt_grouped_matmul_probe_status_fn = nullptr;
     TrainerLinearCublasLtProbeFn trainer_linear_cublas_grouped_bf16_gemm_probe_status_fn = nullptr;
     TrainerLinearCublasLtPrewarmBf16PlanFn trainer_linear_cublaslt_prewarm_bf16_plan_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_shape_stats_count_fn = nullptr;
@@ -10852,6 +10863,10 @@ int run_transformer_lm_training_json(
                     load_symbol<TrainerLinearCublasLtProbeFn>(
                         tile_handle,
                         "nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status");
+                trainer_linear_cublaslt_grouped_matmul_probe_status_fn =
+                    load_symbol<TrainerLinearCublasLtProbeFn>(
+                        tile_handle,
+                        "nfn_native_tile_trainer_linear_cublaslt_grouped_matmul_probe_status");
                 trainer_linear_cublas_grouped_bf16_gemm_probe_status_fn =
                     load_symbol<TrainerLinearCublasLtProbeFn>(
                         tile_handle,
@@ -10882,6 +10897,13 @@ int run_transformer_lm_training_json(
                 if (trainer_linear_cublaslt_grouped_layout_probe_status_fn != nullptr) {
                     linear_cublaslt_grouped_layout_probe_status =
                         trainer_linear_cublaslt_grouped_layout_probe_status_fn();
+                }
+                if (linear_cublaslt_grouped_matmul_probe_requested &&
+                    trainer_linear_cublaslt_grouped_matmul_probe_status_fn != nullptr) {
+                    linear_cublaslt_grouped_matmul_probe_status =
+                        trainer_linear_cublaslt_grouped_matmul_probe_status_fn();
+                } else if (linear_cublaslt_grouped_matmul_probe_requested) {
+                    error = "requested cuBLASLt grouped matmul probe is unavailable in the Tile ops library";
                 }
                 if (linear_cublas_grouped_bf16_gemm_probe_requested &&
                     trainer_linear_cublas_grouped_bf16_gemm_probe_status_fn != nullptr) {
@@ -19134,6 +19156,14 @@ int run_transformer_lm_training_json(
         << linear_cublaslt_grouped_layout_probe_status << ",\n"
         << "  \"linear_cublaslt_grouped_layout_supported\": "
         << (linear_cublaslt_grouped_layout_probe_status == 0 ? "true" : "false") << ",\n"
+        << "  \"linear_cublaslt_grouped_matmul_probe_available\": "
+        << (trainer_linear_cublaslt_grouped_matmul_probe_status_fn != nullptr ? "true" : "false") << ",\n"
+        << "  \"linear_cublaslt_grouped_matmul_probe_requested\": "
+        << (linear_cublaslt_grouped_matmul_probe_requested ? "true" : "false") << ",\n"
+        << "  \"linear_cublaslt_grouped_matmul_probe_status\": "
+        << linear_cublaslt_grouped_matmul_probe_status << ",\n"
+        << "  \"linear_cublaslt_grouped_matmul_supported\": "
+        << (linear_cublaslt_grouped_matmul_probe_status == 0 ? "true" : "false") << ",\n"
         << "  \"linear_cublas_grouped_bf16_gemm_probe_available\": "
         << (trainer_linear_cublas_grouped_bf16_gemm_probe_status_fn != nullptr ? "true" : "false") << ",\n"
         << "  \"linear_cublas_grouped_bf16_gemm_probe_requested\": "

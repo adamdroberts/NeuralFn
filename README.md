@@ -399,6 +399,19 @@ The probe launches tiny aligned BF16 grouped GEMMs through
 `cublasGemmGroupedBatchedEx` and checks the BF16 outputs, so candidate work can
 distinguish descriptor support from an actually working grouped-GEMM execution
 path on the selected CUDA install.
+The separate cuBLASLt grouped execution smoke is opt-in via
+`NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`,
+`NFN_NATIVE_GPT2_PROBE_CUBLASLT_GROUPED_MATMUL=1`, or
+`NFN_TILE_CUDA_LINEAR_CUBLASLT_GROUPED_MATMUL_PROBE=1`. It uses grouped
+cuBLASLt matrix layouts plus device pointer arrays and reports
+`linear_cublaslt_grouped_matmul_probe_available`,
+`linear_cublaslt_grouped_matmul_probe_requested`,
+`linear_cublaslt_grouped_matmul_probe_status`, and
+`linear_cublaslt_grouped_matmul_supported`. The probe is telemetry only and
+does not fail startup on a nonzero execution status; the current CUDA 13.3 RTX
+5090 check reports status `15`, so grouped cuBLASLt execution is not yet a
+safe route for LM-head or block-backward parity work even though grouped layout
+creation succeeds.
 The native trainer now prewarms CUDA 13.3 BF16 cuBLASLt plans by default for
 real training runs, but leaves prewarm off for `--startup-only` probes so
 startup diagnostics do not pay the extra setup cost. Set

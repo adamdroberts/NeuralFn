@@ -252,6 +252,19 @@ diagnostic for replacing the generic row-loss partial-reduction tail with
 `nfn_native_tile_sum_accumulate_float32`. Leave it disabled for normal training;
 the CUDA 13.3 RTX 5090 paired gate measured it slower than the default row-loss
 tail.
+
+Grouped cuBLASLt execution is exposed as a diagnostic probe, not a training
+route. Set `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`,
+`NFN_NATIVE_GPT2_PROBE_CUBLASLT_GROUPED_MATMUL=1`, or
+`NFN_TILE_CUDA_LINEAR_CUBLASLT_GROUPED_MATMUL_PROBE=1` to run the tiny grouped
+matmul smoke during native GPT startup. Runtime JSON reports
+`linear_cublaslt_grouped_matmul_probe_available`,
+`linear_cublaslt_grouped_matmul_probe_requested`,
+`linear_cublaslt_grouped_matmul_probe_status`, and
+`linear_cublaslt_grouped_matmul_supported`. A nonzero status is recorded without
+failing startup; the current CUDA 13.3 RTX 5090 result is status `15`, so
+grouped cuBLASLt matmul remains a blocked candidate for LM-head/block-backward
+parity even though `linear_cublaslt_grouped_layout_supported` is true.
 CUDA 13.3.33 post-reinstall paired checks keep 32768 rows as the default.
 Retesting `--lm-head-row-chunk-size 8192` against the current 32768-row route
 regressed train-loop wall time to `1.001841x` despite slightly improving the

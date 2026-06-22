@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a diagnostic cuBLASLt grouped matmul execution probe to the raw
+  Tile-CUDA trainer ABI:
+  `nfn_native_tile_trainer_linear_cublaslt_grouped_matmul_probe_status`.
+  Native GPT startup reports
+  `linear_cublaslt_grouped_matmul_probe_available`,
+  `linear_cublaslt_grouped_matmul_probe_requested`,
+  `linear_cublaslt_grouped_matmul_probe_status`, and
+  `linear_cublaslt_grouped_matmul_supported`; request the smoke with
+  `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`. Unlike the older legacy
+  cuBLAS grouped BF16 probe, nonzero cuBLASLt grouped matmul status is telemetry
+  and does not fail startup. Current CUDA 13.3 RTX 5090 verification reports
+  status `15`, so grouped cuBLASLt execution is not yet a safe training route.
+  Verification: rebuilt Tile ops and native GPT CLI, ran normal startup smoke,
+  ran the requested grouped cuBLASLt probe, checked GPU state, and added focused
+  source/export tests.
+
 - Added a diagnostic dense GPT vector4 token-weight initializer variant that
   writes the BF16 LM-head shadow from the deterministic 16-value BF16 pattern
   instead of calling `__float2bfloat16` for every token-weight element. It is

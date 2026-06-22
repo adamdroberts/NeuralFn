@@ -471,6 +471,11 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status" in tile_source
     assert "trainer_linear_cublaslt_grouped_layout_probe_status" in kernels_source
     assert "cublasLtGroupedMatrixLayoutCreate" in kernels_source
+    assert "nfn_native_tile_trainer_linear_cublaslt_grouped_matmul_probe_status" in tile_header
+    assert "nfn_native_tile_trainer_linear_cublaslt_grouped_matmul_probe_status" in tile_source
+    assert "trainer_linear_cublaslt_grouped_matmul_probe_status" in kernels_source
+    assert "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL" in gpt_source
+    assert "linear_cublaslt_grouped_matmul_probe_status" in gpt_source
     assert "nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status" in tile_header
     assert "nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status" in tile_source
     assert "trainer_linear_cublas_grouped_bf16_gemm_probe_status" in kernels_source
@@ -485,6 +490,9 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_cublaslt_grouped_layout_probe_available" in gpt_source
     assert "linear_cublaslt_grouped_layout_probe_status" in gpt_source
     assert "linear_cublaslt_grouped_layout_supported" in gpt_source
+    assert "linear_cublaslt_grouped_matmul_probe_available" in gpt_source
+    assert "linear_cublaslt_grouped_matmul_probe_requested" in gpt_source
+    assert "linear_cublaslt_grouped_matmul_supported" in gpt_source
     assert "linear_cublas_grouped_bf16_gemm_probe_available" in gpt_source
     assert "linear_cublas_grouped_bf16_gemm_probe_requested" in gpt_source
     assert "linear_cublas_grouped_bf16_gemm_probe_status" in gpt_source
@@ -497,6 +505,9 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "setup.cublaslt_plan_prewarm" in gpt_source
     assert "linear_cublaslt_grouped_layout_probe_status" in speed_tool
     assert "linear_cublaslt_grouped_layout_supported" in speed_tool
+    assert "linear_cublaslt_grouped_matmul_probe_requested" in speed_tool
+    assert "linear_cublaslt_grouped_matmul_probe_status" in speed_tool
+    assert "linear_cublaslt_grouped_matmul_supported" in speed_tool
     assert "linear_cublas_grouped_bf16_gemm_probe_status" in speed_tool
     assert "linear_cublas_grouped_bf16_gemm_probe_requested" in speed_tool
     assert "linear_cublas_grouped_bf16_gemm_supported" in speed_tool
@@ -7258,6 +7269,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
             "nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets"
             in exported
         )
+        assert "nfn_native_tile_trainer_linear_cublaslt_grouped_matmul_probe_status" in exported
         assert "nfn_native_tile_sum_accumulate_float32" in exported
         assert (
             "nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace"
