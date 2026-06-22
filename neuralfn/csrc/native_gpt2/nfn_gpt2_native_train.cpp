@@ -11740,6 +11740,19 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT2_CE_BF16_SCALAR_STREAMING_STORES",
                               "NFN_TILE_CUDA_CE_BF16_SCALAR_STREAMING_STORES"}),
             false);
+    const bool lm_head_ce_default_specialized_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED",
+                              "NFN_NATIVE_GPT2_LM_HEAD_CE_DEFAULT_SPECIALIZED",
+                              "NFN_TILE_CUDA_LM_HEAD_CE_DEFAULT_SPECIALIZED"}),
+            false);
+    const bool lm_head_ce_default_specialized_enabled =
+        lm_head_ce_default_specialized_requested &&
+        lm_head_ce_bf16_vec_loads_enabled &&
+        !lm_head_ce_bf16_vec_stores_enabled &&
+        !lm_head_ce_bf16_vec_normal_stores_enabled &&
+        !lm_head_ce_bf16_scalar_streaming_stores_enabled &&
+        !lm_head_ce_bf16_exp2_enabled;
     const bool lm_head_bf16_dweight_enabled =
         lm_head_bf16_logits_enabled &&
             env_flag_enabled_or_default(
@@ -19587,6 +19600,14 @@ int run_transformer_lm_training_json(
         << (lm_head_ce_bf16_vec_normal_stores_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_bf16_scalar_streaming_stores_enabled\": "
         << (lm_head_ce_bf16_scalar_streaming_stores_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_ce_default_specialized_requested\": "
+        << (lm_head_ce_default_specialized_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_ce_default_specialized_enabled\": "
+        << (lm_head_ce_default_specialized_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_ce_kernel_strategy\": \""
+        << (lm_head_ce_default_specialized_enabled
+                ? "default-specialized-row-loss-vec8-loads-scalar-stores"
+                : "generic-runtime-configured") << "\",\n"
         << "  \"lm_head_ce_bf16_vector_io_strategy\": \""
         << (lm_head_ce_bf16_vec_stores_enabled
                 ? "vec8-loads-streaming-stores"

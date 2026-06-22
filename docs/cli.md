@@ -1090,6 +1090,15 @@ scalar-store cache-hint probe. It is diagnostic-only: the candidate changes
 `lm_head_ce_bf16_vector_io_strategy` to
 `vec8-loads-scalar-streaming-stores`, but the dedicated RTX 5090 gate rejected
 it at `1.005702x` train-loop wall and `1.135829x` LM-head CE time.
+`lm_head_ce_default_specialized` expands to
+`NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`. It selects a default-shape
+row-loss CE kernel only when the current dense GPT CE defaults are otherwise
+unchanged: 1024 threads, vec8 BF16 loads, scalar cached stores, and `expf`.
+Runtime JSON reports `lm_head_ce_default_specialized_requested`,
+`lm_head_ce_default_specialized_enabled`, and `lm_head_ce_kernel_strategy`.
+Keep it diagnostic-only: the CUDA 13.3 dedicated RTX 5090 same-script gate
+proved the route changed but rejected it at `1.001545x` train-loop wall and
+`1.000331x` LM-head CE time.
 `lm_head_overlap_last_dweight` expands to
 `NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1` for the narrower LM-head
 side-stream schedule that overlaps only the last processed row chunk's dWeight

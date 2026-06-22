@@ -289,6 +289,18 @@ JSON from `vec8-loads-scalar-stores` to
 gate rejected it at `1.005702x` train-loop wall and `1.135829x` LM-head CE
 time, so normal training should leave it unset.
 
+`NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`,
+`NFN_NATIVE_GPT2_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`, and
+`NFN_TILE_CUDA_LM_HEAD_CE_DEFAULT_SPECIALIZED=1` expose a default-off
+row-loss CE kernel specialization for the current dense GPT LM-head defaults:
+1024 CE threads, vec8 BF16 loads, scalar cached stores, and `expf`.
+Runtime JSON reports `lm_head_ce_default_specialized_requested`,
+`lm_head_ce_default_specialized_enabled`, and `lm_head_ce_kernel_strategy`;
+the SM120 wrapper profile is `lm_head_ce_default_specialized`. Keep it
+diagnostic-only: the CUDA 13.3 dedicated RTX 5090 same-script gate proved the
+route changed but rejected it at `1.001545x` train-loop wall, `1.000931x`
+LM-head backward, and `1.000331x` LM-head CE time.
+
 Grouped cuBLASLt execution is exposed as a diagnostic probe, not a training
 route. Set `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`,
 `NFN_NATIVE_GPT2_PROBE_CUBLASLT_GROUPED_MATMUL=1`, or

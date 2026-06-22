@@ -896,7 +896,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO" in text
     assert "NFN_SM120_CANDIDATE_MIN_CANDIDATE_RATIO" in text
     assert 'paired_args+=(--min-candidate-ratio "$item")' in text
-    assert "*CE_BF16*|*ce_bf16*" in text
+    assert "*CE_BF16*|*ce_bf16*|*LM_HEAD_CE*|*lm_head_ce*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.ce.total_ms=1.000"' in text
     assert "*LM_HEAD_PREPACK_BF16_HIDDEN*|*lm_head_prepack_bf16_hidden*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.dhidden.total_ms=1.000"' in text
@@ -920,6 +920,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=512" in text
     assert "lm_head_ce_scalar_streaming_store" in text
     assert "NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1" in text
+    assert "lm_head_ce_default_specialized" in text
+    assert "NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1" in text
     assert "lm_head_loss_bins" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1" in text
     assert "lm_head_row_loss_sum_accumulate" in text
@@ -1399,6 +1401,40 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "1"
     )
     assert ce_vec8_payload["metric_ratio_gates"]["enabled"] is False
+
+    ce_specialized_output_path = tmp_path / "candidate-ce-specialized-dry-run.json"
+    ce_specialized_env = os.environ.copy()
+    ce_specialized_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_STAGE_TIMING": "1",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_ce_default_specialized",
+            "NFN_SM120_NATIVE_JSON_OUT": str(ce_specialized_output_path),
+        }
+    )
+
+    ce_specialized_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=ce_specialized_env,
+    )
+
+    assert ce_specialized_dry_run.returncode == 0, ce_specialized_dry_run.stderr
+    ce_specialized_payload = json.loads(
+        ce_specialized_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        ce_specialized_payload["candidate_env"][
+            "NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED"
+        ]
+        == "1"
+    )
+    assert ce_specialized_payload["metric_ratio_gates"]["enabled"] is False
 
     loss_bins_output_path = tmp_path / "candidate-loss-bins-dry-run.json"
     loss_bins_env = os.environ.copy()

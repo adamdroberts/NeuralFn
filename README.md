@@ -995,6 +995,17 @@ default-off cache hint for scalar BF16 dlogit writes. It changes
 `vec8-loads-scalar-streaming-stores`; the CUDA 13.3 RTX 5090 same-script gate
 rejected it at `1.005702x` train-loop wall, `1.027580x` LM-head backward, and
 `1.135829x` LM-head CE time, so scalar cached stores remain the default.
+`NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`,
+`NFN_NATIVE_GPT2_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`, or
+`NFN_TILE_CUDA_LM_HEAD_CE_DEFAULT_SPECIALIZED=1` enables a default-shape
+row-loss CE kernel specialization for the dense GPT LM-head path. It only
+routes when the current default CE settings are active: 1024 threads, vec8 BF16
+loads, scalar cached stores, and `expf`. Runtime JSON reports
+`lm_head_ce_default_specialized_requested`,
+`lm_head_ce_default_specialized_enabled`, and `lm_head_ce_kernel_strategy`.
+Keep it diagnostic-only: the CUDA 13.3 dedicated RTX 5090 same-script gate
+proved the route change but rejected it at `1.001545x` train-loop wall,
+`1.000931x` LM-head backward, and `1.000331x` LM-head CE time.
 `NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1`,
 `NFN_NATIVE_GPT2_CE_BF16_VEC_NORMAL_STORES=1`, or
 `NFN_TILE_CUDA_CE_BF16_VEC_NORMAL_STORES=1` is a separate default-off

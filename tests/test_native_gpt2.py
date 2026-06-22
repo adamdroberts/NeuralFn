@@ -6181,6 +6181,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_CE_BF16_SCALAR_STREAMING_STORES" in kernels_text
     assert "cross_entropy_bf16_scalar_streaming_stores_enabled" in kernels_text
     assert "lm_head_ce_bf16_scalar_streaming_stores_enabled" in gpt2_source_text
+    assert "NFN_TILE_CUDA_LM_HEAD_CE_DEFAULT_SPECIALIZED" in kernels_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED" in kernels_text
+    assert "NFN_NATIVE_GPT2_LM_HEAD_CE_DEFAULT_SPECIALIZED" in kernels_text
+    assert "lm_head_ce_default_specialized_enabled" in gpt2_source_text
+    assert "lm_head_ce_kernel_strategy" in gpt2_source_text
+    assert "default-specialized-row-loss-vec8-loads-scalar-stores" in gpt2_source_text
     assert "vec8-loads-scalar-streaming-stores" in gpt2_source_text
     assert "bf16_row_max_vec8_or_scalar" in kernels_text
     assert "bf16_row_exp_sum_vec8_or_scalar" in kernels_text

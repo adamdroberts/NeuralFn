@@ -144,6 +144,9 @@ case "${CANDIDATE_PROFILE,,}" in
   "lm_head_ce_scalar_streaming_store"|"lm-head-ce-scalar-streaming-store"|"ce_bf16_scalar_streaming_store"|"ce-bf16-scalar-streaming-store")
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1 NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1"
     ;;
+  "lm_head_ce_default_specialized"|"lm-head-ce-default-specialized"|"ce_bf16_default_specialized"|"ce-bf16-default-specialized")
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1"
+    ;;
   "lm_head_loss_bins"|"lm-head-loss-bins"|"lm_head_loss_bin_reduction"|"lm-head-loss-bin-reduction")
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1"
     ;;
@@ -246,7 +249,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   *)
     echo "Unknown NFN_SM120_NATIVE_CANDIDATE_PROFILE: $CANDIDATE_PROFILE" >&2
-    echo "Known profiles: lm_head_tk_dinput_32768, lm_head_cublaslt_dhidden_32768, lm_head_dhidden_fast16bf_32768, lm_head_tk_dweight_32768, mlp_proj_tk_dweight_65536, lm_head_logits_bf16_fallback_32768, qkv_forward_bf16_fallback_65536, ce_bf16_threads_512, lm_head_ce_vec8_io, lm_head_ce_vec8_normal_store, lm_head_ce_scalar_streaming_store, lm_head_loss_bins, lm_head_row_loss_sum_accumulate, cublaslt_min_waves, cublaslt_max_waves, cublaslt_grouped_probe, tk_dgelu_dinput, tk_dgelu_approx_tanh, attention_atomic_dq, bf16_attention_grad_out, bf16_attention_dprep_grad_out, mlp_proj_dinput_before_dweight, mlp_fc_dinput_before_dweight, attn_proj_dinput_before_dweight, lm_head_fused_loss_backward_off, tk_forward_no_n96, cuda_device_max_connections_1, combined_device_arena, qkv_concurrent_dinput_dweight, mlp_fc_concurrent_dinput_dweight, attn_proj_concurrent_dinput_dweight, lm_head_concurrent_dhidden_dweight, lm_head_pipeline_chunks, lm_head_overlap_last_dweight, lm_head_row_chunk_65536, lm_head_full_resident_reuse, lm_head_cooperative_backward, lm_head_cooperative_backward_required, lm_head_cooperative_loss_bins, token_weight_vector4_strided, token_weight_threaded, token_weight_fast_int32, token_weight_two_pass_bf16" >&2
+    echo "Known profiles: lm_head_tk_dinput_32768, lm_head_cublaslt_dhidden_32768, lm_head_dhidden_fast16bf_32768, lm_head_tk_dweight_32768, mlp_proj_tk_dweight_65536, lm_head_logits_bf16_fallback_32768, qkv_forward_bf16_fallback_65536, ce_bf16_threads_512, lm_head_ce_vec8_io, lm_head_ce_vec8_normal_store, lm_head_ce_scalar_streaming_store, lm_head_ce_default_specialized, lm_head_loss_bins, lm_head_row_loss_sum_accumulate, cublaslt_min_waves, cublaslt_max_waves, cublaslt_grouped_probe, tk_dgelu_dinput, tk_dgelu_approx_tanh, attention_atomic_dq, bf16_attention_grad_out, bf16_attention_dprep_grad_out, mlp_proj_dinput_before_dweight, mlp_fc_dinput_before_dweight, attn_proj_dinput_before_dweight, lm_head_fused_loss_backward_off, tk_forward_no_n96, cuda_device_max_connections_1, combined_device_arena, qkv_concurrent_dinput_dweight, mlp_fc_concurrent_dinput_dweight, attn_proj_concurrent_dinput_dweight, lm_head_concurrent_dhidden_dweight, lm_head_pipeline_chunks, lm_head_overlap_last_dweight, lm_head_row_chunk_65536, lm_head_full_resident_reuse, lm_head_cooperative_backward, lm_head_cooperative_backward_required, lm_head_cooperative_loss_bins, token_weight_vector4_strided, token_weight_threaded, token_weight_fast_int32, token_weight_two_pass_bf16" >&2
     exit 2
     ;;
 esac
@@ -299,7 +302,7 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
             MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.total_ms=1.000"
             candidate_gate_text="$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN $NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB $CANDIDATE_ENV_RAW $CANDIDATE_EXTRA_ARGS_RAW"
             case "$candidate_gate_text" in
-              *CE_BF16*|*ce_bf16*)
+              *CE_BF16*|*ce_bf16*|*LM_HEAD_CE*|*lm_head_ce*)
                 MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.ce.total_ms=1.000"
                 ;;
             esac

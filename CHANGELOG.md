@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off dense GPT LM-head CE default-shape specialization
+  diagnostic. `NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`,
+  `NFN_NATIVE_GPT2_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`, or
+  `NFN_TILE_CUDA_LM_HEAD_CE_DEFAULT_SPECIALIZED=1` routes the row-loss BF16/u16
+  classifier path through a dedicated kernel when the current CE defaults are
+  otherwise unchanged: 1024 row threads, vec8 BF16 loads, scalar cached stores,
+  and `expf`. Runtime JSON now reports
+  `lm_head_ce_default_specialized_requested`,
+  `lm_head_ce_default_specialized_enabled`, and
+  `lm_head_ce_kernel_strategy`; the candidate wrapper exposes
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_default_specialized`.
+  The route is diagnostic-only. The CUDA 13.3 dedicated RTX 5090 same-script
+  gate proved the strategy change but rejected it at `1.001545x` train-loop
+  wall, `1.000931x` LM-head backward, and `1.000331x` LM-head CE time.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; ran focused native/source and candidate-wrapper
+  pytest checks; ran the 3-step, 3-sample dedicated RTX 5090
+  `lm_head_ce_default_specialized` paired benchmark.
+
 - Improved native GPT CUDA failure diagnostics for CUDA error 35. The compiled
   dense GPT frontend now appends an actionable hint when CUDA reports
   "driver version is insufficient for CUDA runtime version", calling out both
