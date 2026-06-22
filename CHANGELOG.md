@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a named no-loss LM-head CE vector-IO candidate for dense GPT native
+  kernel bisection. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_vec8_io`
+  expands to `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1` and
+  `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1`, switching the classifier dlogit write
+  pass to vec8 streaming stores while preserving the current vec8 load path.
+  Runtime JSON now reports `lm_head_ce_bf16_vec_loads_enabled`,
+  `lm_head_ce_bf16_vec_stores_enabled`,
+  `lm_head_ce_bf16_vec_normal_stores_enabled`, and
+  `lm_head_ce_bf16_vector_io_strategy` so paired runs can prove which CE route
+  was selected.
+
+  Keep this route diagnostic-only. The dedicated RTX 5090 5-step, 3-sample
+  same-script benchmark showed the CE substage itself at `0.999670x`, but
+  rejected the candidate on strict hot-stage gates:
+  `stage.lm_head_backward.total_ms=1.001033x` and
+  `stage.block_backward.mlp_proj.total_ms=1.000934x`. A follow-up 2-step parser
+  check confirmed the paired summary reports the route transition from
+  `vec8-loads-scalar-stores` to `vec8-loads-streaming-stores`.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; focused wrapper and paired-parser tests passed;
+  `tools/paired_kernel_speed.py` compiled; `git diff --check`; dedicated RTX
+  5090 5-step and 2-step paired checks ran on display-disabled GPU 0 with no
+  compute processes before the run.
+
 - Added a default-off dense GPT LM-head loss-bin classifier diagnostic for
   train-loss logging. The Tile CUDA ABI now exports
   `nfn_native_tile_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets`;

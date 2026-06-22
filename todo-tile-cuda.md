@@ -187,6 +187,17 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     to `1.003056x`, block backward to `1.008069x`, and attention projection
     dInput to `1.159150x`. Neither changed tracked route counters, so keep both
     diagnostic-only and continue with real fused/cooperative kernel work.
+  - 2026-06-22 added the named no-loss classifier candidate profile
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_vec8_io`, which expands to
+    `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1 NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1`.
+    Native runtime JSON now reports `lm_head_ce_bf16_vector_io_strategy` and
+    the individual CE vec-load/store booleans so paired RTX 5090 runs can prove
+    the candidate changed the normal LM-head CE dlogit write route before
+    judging timing. Keep it diagnostic-only: the 2026-06-22 5-step, 3-sample
+    same-script gate saw the CE substage at `0.999670x`, but failed total
+    LM-head and block MLP-proj gates (`1.001033x` and `1.000934x`). A shorter
+    parser check confirmed paired output records the strategy transition from
+    `vec8-loads-scalar-stores` to `vec8-loads-streaming-stores`.
   - 2026-06-20 rejected CUDA write-combined pinned token staging for the native
     GPT token/target host buffer. The candidate changed the trainer
     `cudaHostAlloc` flags from default to write-combined and passed the

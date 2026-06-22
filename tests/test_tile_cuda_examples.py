@@ -1269,6 +1269,40 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     )
     assert ce_threads_payload["metric_ratio_gates"]["enabled"] is False
 
+    ce_vec8_output_path = tmp_path / "candidate-ce-vec8-dry-run.json"
+    ce_vec8_env = os.environ.copy()
+    ce_vec8_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_STAGE_TIMING": "1",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_ce_vec8_io",
+            "NFN_SM120_NATIVE_JSON_OUT": str(ce_vec8_output_path),
+        }
+    )
+
+    ce_vec8_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=ce_vec8_env,
+    )
+
+    assert ce_vec8_dry_run.returncode == 0, ce_vec8_dry_run.stderr
+    ce_vec8_payload = json.loads(ce_vec8_output_path.read_text(encoding="utf-8"))
+    assert (
+        ce_vec8_payload["candidate_env"]["NFN_NATIVE_GPT_CE_BF16_VEC_LOADS"]
+        == "1"
+    )
+    assert (
+        ce_vec8_payload["candidate_env"]["NFN_NATIVE_GPT_CE_BF16_VEC_STORES"]
+        == "1"
+    )
+    assert ce_vec8_payload["metric_ratio_gates"]["enabled"] is False
+
     loss_bins_output_path = tmp_path / "candidate-loss-bins-dry-run.json"
     loss_bins_env = os.environ.copy()
     loss_bins_env.update(
@@ -1682,6 +1716,71 @@ def test_paired_kernel_speed_tool_reports_strategy_change_without_route_counter_
     }
     assert "native_strategy_value_changes: has_strategy_value_change=true changed_count=2" in proc.stdout
     assert "lm_head_ce_loss_backward_strategy: baseline=fused-row-losses-reduce" in proc.stdout
+    assert "tracked route counters did not change" not in proc.stdout
+
+
+def test_paired_kernel_speed_tool_reports_lm_head_ce_vector_io_strategy_change() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-ce-vector-io-change.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
+        "\\\"lm_head_ce_bf16_vector_io_strategy\\\": \\\"vec8-loads-scalar-stores\\\", "
+        "\\\"lm_head_ce_bf16_vec_loads_enabled\\\": true, "
+        "\\\"lm_head_ce_bf16_vec_stores_enabled\\\": false, "
+        "\\\"lm_head_ce_bf16_vec_normal_stores_enabled\\\": false"
+        "}"
+    )
+    candidate_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 9.9}, "
+        "\\\"lm_head_ce_bf16_vector_io_strategy\\\": \\\"vec8-loads-streaming-stores\\\", "
+        "\\\"lm_head_ce_bf16_vec_loads_enabled\\\": true, "
+        "\\\"lm_head_ce_bf16_vec_stores_enabled\\\": true, "
+        "\\\"lm_head_ce_bf16_vec_normal_stores_enabled\\\": false"
+        "}"
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    strategy_changes = payload["native_strategy_value_changes"]
+    assert strategy_changes["has_strategy_value_change"] is True
+    assert strategy_changes["changed"]["lm_head_ce_bf16_vector_io_strategy"] == {
+        "baseline_values": ["vec8-loads-scalar-stores"],
+        "candidate_values": ["vec8-loads-streaming-stores"],
+    }
+    assert strategy_changes["changed"]["lm_head_ce_bf16_vec_stores_enabled"] == {
+        "baseline_values": ["false"],
+        "candidate_values": ["true"],
+    }
+    assert "lm_head_ce_bf16_vector_io_strategy: baseline=vec8-loads-scalar-stores" in proc.stdout
     assert "tracked route counters did not change" not in proc.stdout
 
 

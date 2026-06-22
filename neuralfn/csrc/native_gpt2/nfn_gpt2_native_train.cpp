@@ -11540,6 +11540,24 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT2_CE_BF16_EXP2",
                               "NFN_TILE_CUDA_CE_BF16_EXP2"}),
             false);
+    const bool lm_head_ce_bf16_vec_stores_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_CE_BF16_VEC_STORES",
+                              "NFN_NATIVE_GPT2_CE_BF16_VEC_STORES",
+                              "NFN_TILE_CUDA_CE_BF16_VEC_STORES"}),
+            false);
+    const bool lm_head_ce_bf16_vec_normal_stores_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES",
+                              "NFN_NATIVE_GPT2_CE_BF16_VEC_NORMAL_STORES",
+                              "NFN_TILE_CUDA_CE_BF16_VEC_NORMAL_STORES"}),
+            false);
+    const bool lm_head_ce_bf16_vec_loads_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_CE_BF16_VEC_LOADS",
+                              "NFN_NATIVE_GPT2_CE_BF16_VEC_LOADS",
+                              "NFN_TILE_CUDA_CE_BF16_VEC_LOADS"}),
+            true);
     const bool lm_head_bf16_dweight_enabled =
         lm_head_bf16_logits_enabled &&
             env_flag_enabled_or_default(
@@ -19063,6 +19081,20 @@ int run_transformer_lm_training_json(
         << (lm_head_bf16_loss_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_bf16_exp2_enabled\": "
         << (lm_head_ce_bf16_exp2_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_ce_bf16_vec_loads_enabled\": "
+        << (lm_head_ce_bf16_vec_loads_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_ce_bf16_vec_stores_enabled\": "
+        << (lm_head_ce_bf16_vec_stores_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_ce_bf16_vec_normal_stores_enabled\": "
+        << (lm_head_ce_bf16_vec_normal_stores_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_ce_bf16_vector_io_strategy\": \""
+        << (lm_head_ce_bf16_vec_stores_enabled
+                ? "vec8-loads-streaming-stores"
+                : (lm_head_ce_bf16_vec_normal_stores_enabled
+                       ? "vec8-loads-normal-stores"
+                       : (lm_head_ce_bf16_vec_loads_enabled ? "vec8-loads-scalar-stores"
+                                                            : "scalar-loads-scalar-stores")))
+        << "\",\n"
         << "  \"lm_head_bf16_logits_enabled\": "
         << (lm_head_bf16_logits_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_bf16_logit_elements\": " << lm_head_bf16_logit_elements << ",\n"

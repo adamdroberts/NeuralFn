@@ -1013,6 +1013,15 @@ It is diagnostic-only: the no-loss parity benchmark does not execute loss
 accumulation, and a one-step `--train-loss-every-steps 1` check proved the
 route counter changed (`lm_head_classifier_loss_bin_launch_count: 0 -> 16`) but
 still failed strict stage gates.
+`lm_head_ce_vec8_io` expands to
+`NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1 NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1` for
+the normal no-loss LM-head classifier path. It keeps the default vec8 BF16
+loads and changes the dlogit write pass from scalar stores to vec8 streaming
+stores. Runtime JSON reports `lm_head_ce_bf16_vec_loads_enabled`,
+`lm_head_ce_bf16_vec_stores_enabled`,
+`lm_head_ce_bf16_vec_normal_stores_enabled`, and
+`lm_head_ce_bf16_vector_io_strategy`, and stage-timed wrapper runs gate the
+candidate on `stage.lm_head_backward.ce.total_ms`.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

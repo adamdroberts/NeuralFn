@@ -132,6 +132,12 @@ case "${CANDIDATE_PROFILE,,}" in
   "ce_bf16_threads_512"|"ce-bf16-threads-512"|"lm_head_ce_bf16_threads_512"|"lm-head-ce-bf16-threads-512")
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_CE_BF16_THREADS=512"
     ;;
+  "lm_head_ce_vec8_io"|"lm-head-ce-vec8-io"|"ce_bf16_vec8_io"|"ce-bf16-vec8-io")
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1 NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1"
+    ;;
+  "lm_head_ce_vec8_normal_store"|"lm-head-ce-vec8-normal-store"|"ce_bf16_vec8_normal_store"|"ce-bf16-vec8-normal-store")
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1 NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1"
+    ;;
   "lm_head_loss_bins"|"lm-head-loss-bins"|"lm_head_loss_bin_reduction"|"lm-head-loss-bin-reduction")
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1"
     ;;
@@ -192,7 +198,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   *)
     echo "Unknown NFN_SM120_NATIVE_CANDIDATE_PROFILE: $CANDIDATE_PROFILE" >&2
-    echo "Known profiles: lm_head_tk_dinput_32768, lm_head_cublaslt_dhidden_32768, lm_head_dhidden_fast16bf_32768, lm_head_tk_dweight_32768, lm_head_logits_bf16_fallback_32768, qkv_forward_bf16_fallback_65536, ce_bf16_threads_512, lm_head_loss_bins, cublaslt_min_waves, cublaslt_max_waves, tk_dgelu_dinput, tk_dgelu_approx_tanh, attention_atomic_dq, tk_forward_no_n96, cuda_device_max_connections_1, combined_device_arena, qkv_concurrent_dinput_dweight, mlp_fc_concurrent_dinput_dweight, attn_proj_concurrent_dinput_dweight, lm_head_concurrent_dhidden_dweight, lm_head_pipeline_chunks, lm_head_row_chunk_65536, token_weight_vector4_strided, token_weight_threaded, token_weight_fast_int32, token_weight_two_pass_bf16" >&2
+    echo "Known profiles: lm_head_tk_dinput_32768, lm_head_cublaslt_dhidden_32768, lm_head_dhidden_fast16bf_32768, lm_head_tk_dweight_32768, lm_head_logits_bf16_fallback_32768, qkv_forward_bf16_fallback_65536, ce_bf16_threads_512, lm_head_ce_vec8_io, lm_head_ce_vec8_normal_store, lm_head_loss_bins, cublaslt_min_waves, cublaslt_max_waves, tk_dgelu_dinput, tk_dgelu_approx_tanh, attention_atomic_dq, tk_forward_no_n96, cuda_device_max_connections_1, combined_device_arena, qkv_concurrent_dinput_dweight, mlp_fc_concurrent_dinput_dweight, attn_proj_concurrent_dinput_dweight, lm_head_concurrent_dhidden_dweight, lm_head_pipeline_chunks, lm_head_row_chunk_65536, token_weight_vector4_strided, token_weight_threaded, token_weight_fast_int32, token_weight_two_pass_bf16" >&2
     exit 2
     ;;
 esac
