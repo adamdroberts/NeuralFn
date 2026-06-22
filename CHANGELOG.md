@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Replaced `cli/scripts/train_deepseek_v4.py` with a Torch-free native shim.
+  Direct execution still dispatches to the DeepSeek-V4 family native C++ binary
+  or unified native frontend, while module import now exposes only lightweight
+  defaults, path helpers, and a minimal native-inspection parser.
+
+  **Breaking changes:** `cli/scripts/train_deepseek_v4.py` no longer exposes
+  the legacy graph-backed graph builder, trainer config builder, evaluation
+  helper, or Torch training loop. Use `nfn train --base-model deepseek-v4 ...`
+  or the DeepSeek-V4 native C++ binary for CLI preflight/status, and use
+  `neuralfn.config.build_deepseek_v4_spec()` directly for SDK graph
+  construction while the native trainer kernels are completed.
+
+  Verification: `python tools/check_native_no_torch_deps.py`,
+  `python -m pytest cli/tests/test_train_gpt2_native.py::TrainGpt2NativeStartupTest::test_train_deepseek_v4_module_import_and_parser_do_not_import_torch cli/tests/test_train_gpt2_native.py::TrainGpt2NativeStartupTest::test_legacy_training_scripts_reject_before_torch_import -q`,
+  and `python -m pytest cli/tests/test_cli_help_behavior.py -q`.
+
 - Replaced `cli/scripts/train_nanogpt.py` with a Torch-free native shim. Direct
   execution dispatches to `nfn_gpt_native_train --template-name nanogpt
   --train-transformer-lm` before importing Torch, NumPy, dataset managers,
