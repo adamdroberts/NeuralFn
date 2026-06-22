@@ -466,6 +466,8 @@ validates required ABI symbols explicitly; JSON reports
 `tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`, `tile_ops_dlopen_wall_ms`,
 `tile_ops_required_symbol_scan_wall_ms`, and
 `tile_ops_typed_symbol_load_wall_ms`.
+CUDA runtime setup also reports `cuda_runtime_symbol_load_wall_ms` and
+`cuda_runtime_version_preflight_wall_ms`.
 Set `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` only for startup allocator
 profiling. It waits until both the float arena and the BF16/uint16 arena layouts
 are known, then packs them into one aligned `cudaMalloc`. JSON reports
@@ -763,7 +765,14 @@ kernel experiment changed memory contract or only changed timing.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
-The compiled GPT-2 `--train-transformer-lm` JSON includes `cuda_runtime_preflight` before any allocation. Driver version `0` or a loaded CUDA runtime newer than the driver exits early with an actionable GPU-access/runtime error, which is the expected gate before live SM120 throughput comparison.
+The compiled GPT-2 `--train-transformer-lm` JSON includes `cuda_runtime_preflight`.
+Set `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT=1` or
+`NFN_NATIVE_GPT2_CUDA_VERSION_PREFLIGHT=1` when you want the trainer to query
+`cudaRuntimeGetVersion` / `cudaDriverGetVersion` before allocation and fail
+early on driver version `0` or a loaded CUDA runtime newer than the driver.
+Normal workstation training leaves this version preflight off to avoid its
+startup cost; CUDA allocation or kernel errors still surface through the native
+runtime error path.
 
 For the canonical RTX 5090 SM120 parity benchmark, run
 `tools/bench_native_gpt_sm120_parity.sh`. It compares the local

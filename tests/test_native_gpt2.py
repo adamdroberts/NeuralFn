@@ -379,6 +379,8 @@ def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     assert "tile_ops_dlopen_wall_ms" in source
     assert "tile_ops_required_symbol_scan_wall_ms" in source
     assert "tile_ops_typed_symbol_load_wall_ms" in source
+    assert "cuda_runtime_symbol_load_wall_ms" in source
+    assert "cuda_runtime_version_preflight_wall_ms" in source
     assert "NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA" in source
     assert "transformer_device_arena_requested" in source
     assert "transformer_device_arena_enabled" in source
@@ -5366,6 +5368,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
 
     assert "cudaRuntimeGetVersion" in gpt2_source_text
     assert "cudaDriverGetVersion" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT" in gpt2_source_text
+    assert '"requested": ' in gpt2_source_text
     assert "cuda_runtime_preflight" in gpt2_source_text
     assert "CUDA driver is unavailable to the native trainer" in gpt2_source_text
     assert "CUDA runtime/driver mismatch" in gpt2_source_text

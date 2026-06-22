@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added CUDA runtime setup subphase timing to dense GPT native runtime JSON:
+  `cuda_runtime_symbol_load_wall_ms` and
+  `cuda_runtime_version_preflight_wall_ms`. These fields split
+  `setup.cuda_runtime_symbols` into `dlsym` work versus the
+  `cudaRuntimeGetVersion` / `cudaDriverGetVersion` preflight. The version
+  preflight is now opt-in via `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT=1` or
+  `NFN_NATIVE_GPT2_CUDA_VERSION_PREFLIGHT=1`; runtime JSON reports
+  `cuda_runtime_preflight.requested` and `cuda_runtime_preflight.checked`.
+  Normal workstation training skips the version query because the CUDA 13.3
+  RTX 5090 smoke measured default `setup.cuda_runtime_symbols` at about 0.03 ms
+  with preflight unchecked, versus about 82 ms when the explicit preflight
+  reported runtime 13.3 and driver 13.3. Verification: focused source pytest,
+  native GPT CLI rebuild, default startup-only CUDA smoke, and requested
+  preflight CUDA smoke.
+
 - Changed the dense GPT cuBLASLt grouped-layout capability smoke from
   always-on startup telemetry to an opt-in diagnostic requested with
   `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1`,

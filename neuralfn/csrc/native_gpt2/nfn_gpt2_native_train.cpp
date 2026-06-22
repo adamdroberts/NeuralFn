@@ -10521,10 +10521,17 @@ int run_transformer_lm_training_json(
     double tile_ops_dlopen_wall_ms = 0.0;
     double tile_ops_required_symbol_scan_wall_ms = 0.0;
     double tile_ops_typed_symbol_load_wall_ms = 0.0;
+    double cuda_runtime_symbol_load_wall_ms = 0.0;
+    double cuda_runtime_version_preflight_wall_ms = 0.0;
     int cuda_runtime_version = 0;
     int cuda_driver_version = 0;
     int cuda_runtime_version_status = -1;
     int cuda_driver_version_status = -1;
+    const bool cuda_runtime_version_preflight_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT",
+                              "NFN_NATIVE_GPT2_CUDA_VERSION_PREFLIGHT"}),
+            false);
 
     auto cuda_error = [&](int code, std::string_view context) {
         std::ostringstream out;
@@ -11070,6 +11077,7 @@ int run_transformer_lm_training_json(
 
     run_setup_timed("setup.cuda_runtime_symbols", [&]() {
         if (error.empty()) {
+            const auto cuda_runtime_symbol_load_start = Clock::now();
             cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
         cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
         cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
@@ -11093,16 +11101,22 @@ int run_transformer_lm_training_json(
         cuda_event_record = load_symbol<CudaEventRecordFn>(cuda_handle, "cudaEventRecord");
         cuda_event_elapsed_time = load_symbol<CudaEventElapsedTimeFn>(cuda_handle, "cudaEventElapsedTime");
         cuda_event_destroy = load_symbol<CudaEventDestroyFn>(cuda_handle, "cudaEventDestroy");
+            cuda_runtime_symbol_load_wall_ms =
+                elapsed_ms(cuda_runtime_symbol_load_start, Clock::now());
         if (cuda_malloc == nullptr || cuda_free == nullptr || cuda_memcpy == nullptr ||
             cuda_memcpy_async == nullptr || cuda_host_alloc == nullptr || cuda_free_host == nullptr ||
             cuda_device_synchronize == nullptr) {
             error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaMemcpyAsync/cudaHostAlloc/cudaFreeHost/cudaDeviceSynchronize";
-        } else if (cuda_runtime_get_version == nullptr || cuda_driver_get_version == nullptr) {
+        } else if (cuda_runtime_version_preflight_requested &&
+                   (cuda_runtime_get_version == nullptr || cuda_driver_get_version == nullptr)) {
             error = "CUDA runtime is missing cudaRuntimeGetVersion/cudaDriverGetVersion";
-            } else {
+        } else if (cuda_runtime_version_preflight_requested) {
+                const auto cuda_runtime_version_preflight_start = Clock::now();
                 cuda_runtime_preflight_checked = true;
                 cuda_runtime_version_status = cuda_runtime_get_version(&cuda_runtime_version);
                 cuda_driver_version_status = cuda_driver_get_version(&cuda_driver_version);
+                cuda_runtime_version_preflight_wall_ms =
+                    elapsed_ms(cuda_runtime_version_preflight_start, Clock::now());
                 if (cuda_runtime_version_status != 0) {
                     error = cuda_error(cuda_runtime_version_status, "cudaRuntimeGetVersion");
                 } else if (cuda_driver_version_status != 0) {
@@ -18801,10 +18815,16 @@ int run_transformer_lm_training_json(
         << "  \"tile_ops_typed_symbol_load_wall_ms\": "
         << tile_ops_typed_symbol_load_wall_ms << ",\n"
         << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
+        << "  \"cuda_runtime_symbol_load_wall_ms\": "
+        << cuda_runtime_symbol_load_wall_ms << ",\n"
+        << "  \"cuda_runtime_version_preflight_wall_ms\": "
+        << cuda_runtime_version_preflight_wall_ms << ",\n"
         << "  \"cuda_module_loading\": \"" << json_escape(env_or_empty("CUDA_MODULE_LOADING")) << "\",\n"
         << "  \"loaded\": " << (tile_loaded ? "true" : "false") << ",\n"
         << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
         << "  \"cuda_runtime_preflight\": {\n"
+        << "    \"requested\": "
+        << (cuda_runtime_version_preflight_requested ? "true" : "false") << ",\n"
         << "    \"checked\": " << (cuda_runtime_preflight_checked ? "true" : "false") << ",\n"
         << "    \"runtime_version\": " << cuda_runtime_version << ",\n"
         << "    \"runtime_version_string\": \"" << json_escape(cuda_version_string(cuda_runtime_version)) << "\",\n"

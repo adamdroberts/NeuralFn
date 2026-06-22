@@ -1308,6 +1308,8 @@ validating required ABI symbols explicitly; runtime JSON reports
 `tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`, `tile_ops_dlopen_wall_ms`,
 `tile_ops_required_symbol_scan_wall_ms`, and
 `tile_ops_typed_symbol_load_wall_ms`.
+CUDA runtime setup also reports `cuda_runtime_symbol_load_wall_ms` and
+`cuda_runtime_version_preflight_wall_ms`.
 When stored BF16 MLP activations cover every transformer block, the dense GPT
 trainer also defers the validation-only float MLP scratch buffers (`fc_out` and
 `act`) instead of reserving them in the startup float arena. The buffers are
@@ -1606,7 +1608,14 @@ For a direct check of the rejected vector4 BF16 pattern writer, set
 `setup.token_weight_init.total_ms` because the candidate env mentions
 token-weight initialization.
 
-Full GPT-2 `--train-transformer-lm` runs report a `cuda_runtime_preflight` object before allocation. If `cudaDriverGetVersion` returns driver version `0`, or if the loaded CUDA runtime is newer than the reported driver, the trainer exits before `cudaMalloc` so benchmark failures point at GPU access/runtime compatibility instead of kernel execution.
+Full GPT-2 `--train-transformer-lm` runs report a `cuda_runtime_preflight`
+object. Set `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT=1` or
+`NFN_NATIVE_GPT2_CUDA_VERSION_PREFLIGHT=1` to query
+`cudaRuntimeGetVersion` / `cudaDriverGetVersion` before allocation and fail
+early on driver version `0` or a loaded CUDA runtime newer than the driver.
+Normal workstation training leaves this version preflight off to avoid its
+startup cost; allocation and kernel failures still report through native CUDA
+errors.
 
 Set `NativeGptRunConfig.startup_only=True` or
 `NativeGpt2RunConfig.startup_only=True` to forward `--startup-only` to the
