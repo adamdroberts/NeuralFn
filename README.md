@@ -603,6 +603,23 @@ route rejected: it enabled `lm_head_pipeline_chunks_enabled: true`, but
 regressed train-loop wall to `22.955358x` and block backward to `45.070737x`,
 with the slowdown concentrated after the LM-head pipeline in attention
 projection and SDPA backward.
+`NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1` is a narrower opt-in LM-head
+schedule candidate. It queues only the last processed row chunk's LM-head
+dWeight accumulation on the dWeight side stream after CE, runs dHidden on the
+default stream, overlaps that side-stream work with final norm and block
+backward, and synchronizes before the next microbatch/optimizer can reuse the
+shared token-weight gradient. Runtime JSON reports
+`lm_head_overlap_last_dweight_requested`,
+`lm_head_overlap_last_dweight_available`,
+`lm_head_overlap_last_dweight_enabled`,
+`lm_head_overlap_last_dweight_queue_count`,
+`lm_head_overlap_last_dweight_sync_count`, and the schedule strategy
+`last-processed-row-chunk-dweight-side-stream-overlaps-final-norm-block-backward`.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_overlap_last_dweight` to run it
+through the paired wrapper. Keep it disabled for normal training: the 2026-06-22
+CUDA 13.3 dedicated RTX 5090 3-sample gate proved the route active
+(`queue_count: 8`, `sync_count: 8`) and slightly improved train-loop wall time
+to `0.999109x`, but still failed the strict total LM-head gate at `1.000506x`.
 The BF16 linear operand cache is limited to stable operands such as weights;
 LM-head dWeight repacks the mutable hidden activation chunks each microbatch so
 gradient accumulation does not reuse stale packed activations.

@@ -654,6 +654,22 @@ LM-head timing because the serial baseline emits split dHidden and dWeight
 substages.
 Keep it disabled for normal training until the paired RTX 5090 gate proves it
 beats the default serial chunk schedule.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_overlap_last_dweight` for the
+narrow last-chunk overlap schedule. The route sets
+`NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1`, queues only the last processed
+LM-head dWeight chunk on the side stream after CE, leaves dHidden on the default
+stream, and waits after embedding backward before the next microbatch or
+optimizer can touch the accumulated token-weight gradient. Runtime JSON reports
+`lm_head_overlap_last_dweight_requested`,
+`lm_head_overlap_last_dweight_available`,
+`lm_head_overlap_last_dweight_enabled`,
+`lm_head_overlap_last_dweight_queue_count`,
+`lm_head_overlap_last_dweight_sync_count`, and the schedule strategy
+`last-processed-row-chunk-dweight-side-stream-overlaps-final-norm-block-backward`.
+Keep it default-off: the 2026-06-22 CUDA 13.3 dedicated RTX 5090 3-sample gate
+proved activation (`queue_count: 8`, `sync_count: 8`) and measured
+`0.999109x` train-loop wall time, but still failed the strict total LM-head
+stage gate at `1.000506x`.
 For cuBLASLt BGRADB dWeight+bias routes, the default writes the epilogue bias
 gradient into Tile-owned scratch
 and accumulates it into `grad_bias`. Runtime JSON reports

@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an opt-in dense GPT native LM-head last-dWeight overlap candidate.
+  `NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1` queues only the last
+  processed LM-head row chunk's dWeight accumulation on the side stream after
+  CE, runs dHidden on the default stream, overlaps the pending dWeight with
+  final norm and block backward, and synchronizes before the next microbatch or
+  optimizer touches the shared token-weight gradient. Runtime JSON now reports
+  `lm_head_overlap_last_dweight_requested`,
+  `lm_head_overlap_last_dweight_available`,
+  `lm_head_overlap_last_dweight_enabled`,
+  `lm_head_overlap_last_dweight_queue_count`,
+  `lm_head_overlap_last_dweight_sync_count`, and the schedule strategy. The
+  paired wrapper profile `lm_head_overlap_last_dweight` expands to the new env
+  flag, and `tools/paired_kernel_speed.py` extracts the new queue/sync counters.
+  This route remains default-off: the CUDA 13.3 dedicated RTX 5090 3-sample gate
+  proved activation (`queue_count: 8`, `sync_count: 8`) and measured
+  `0.999109x` train-loop wall time, but failed the strict total LM-head stage
+  gate at `1.000506x`.
+
+  Verification: rebuilt `build/nfn_gpt_native_train`; ran focused native GPT
+  and Tile-CUDA wrapper pytest slices; ran a NanoGPT one-step CUDA Tile smoke
+  proving the route counters moved; ran the 3-sample same-script
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_overlap_last_dweight` paired
+  benchmark on the dedicated RTX 5090.
+
 - Added the named SM120 candidate profile `cublaslt_grouped_probe` to the
   native paired benchmark wrapper. The profile expands to
   `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1` and

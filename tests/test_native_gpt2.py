@@ -548,6 +548,31 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "lm_head_ce_row_loss_sum_accumulate_enabled" in speed_tool
 
 
+def test_native_gpt2_exposes_lm_head_last_dweight_overlap_candidate() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "neuralfn/csrc/native_gpt2/nfn_gpt2_native_train.cpp").read_text(
+        encoding="utf-8"
+    )
+    candidate_script = (root / "tools/bench_native_gpt_sm120_candidate.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT" in source
+    assert "lm_head_overlap_last_dweight_requested" in source
+    assert "lm_head_overlap_last_dweight_available" in source
+    assert "lm_head_overlap_last_dweight_enabled" in source
+    assert "lm_head_overlap_last_dweight_queue_count" in source
+    assert "lm_head_overlap_last_dweight_sync_count" in source
+    assert "last-processed-row-chunk-dweight-side-stream-overlaps-final-norm-block-backward" in source
+    assert "lm_head_backward.last_dweight_overlap_queue" in source
+    assert "lm_head_backward.last_dweight_overlap_final_wait" in source
+    assert "lm_head_overlap_last_dweight" in candidate_script
+    assert "NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1" in candidate_script
+    speed_tool = (root / "tools/paired_kernel_speed.py").read_text(encoding="utf-8")
+    assert "lm_head_overlap_last_dweight_queue_count" in speed_tool
+    assert "lm_head_overlap_last_dweight_sync_count" in speed_tool
+
+
 def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) -> None:
     dataset_path, meta = _write_raw_text_dataset(tmp_path)
 

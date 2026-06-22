@@ -9789,6 +9789,8 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_logits_bf16_gemm_count = 0;
     std::int64_t lm_head_classifier_chunk_launch_count = 0;
     std::int64_t lm_head_classifier_loss_bin_launch_count = 0;
+    std::int64_t lm_head_last_dweight_overlap_queue_count = 0;
+    std::int64_t lm_head_last_dweight_overlap_sync_count = 0;
     std::int64_t lm_head_classifier_last_rows = 0;
     std::int64_t lm_head_classifier_last_vocab = 0;
     std::int64_t lm_head_classifier_last_row_stride = 0;
@@ -11754,6 +11756,11 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS",
                               "NFN_NATIVE_GPT2_LM_HEAD_PIPELINE_CHUNKS"}),
             false);
+    const bool lm_head_overlap_last_dweight_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT",
+                              "NFN_NATIVE_GPT2_LM_HEAD_OVERLAP_LAST_DWEIGHT"}),
+            false);
     constexpr unsigned int kCudaStreamNonBlocking = 1;
     constexpr unsigned int kCudaEventDisableTiming = 2;
     const bool lm_head_concurrent_dhidden_dweight_available =
@@ -11774,6 +11781,16 @@ int run_transformer_lm_training_json(
         lm_head_bf16_logits_enabled &&
         !lm_head_reuse_forward_logits_enabled &&
         !lm_head_full_batch_reuse_schedule_enabled &&
+        !lm_head_cooperative_backward_requested &&
+        lm_head_chunk_count > 1;
+    const bool lm_head_overlap_last_dweight_enabled =
+        lm_head_overlap_last_dweight_requested &&
+        lm_head_concurrent_dhidden_dweight_available &&
+        lm_head_bf16_logits_enabled &&
+        !lm_head_reuse_forward_logits_enabled &&
+        !lm_head_full_batch_reuse_schedule_enabled &&
+        !lm_head_pipeline_chunks_enabled &&
+        !lm_head_concurrent_dhidden_dweight_enabled &&
         !lm_head_cooperative_backward_requested &&
         lm_head_chunk_count > 1;
     const bool lm_head_cooperative_backward_abi_wrapper_available =
@@ -11821,7 +11838,9 @@ int run_transformer_lm_training_json(
         block_attn_proj_concurrent_dinput_dweight_requested &&
         block_backward_pair_streams_available;
     const bool lm_head_side_streams_enabled =
-        lm_head_concurrent_dhidden_dweight_enabled || lm_head_pipeline_chunks_enabled;
+        lm_head_concurrent_dhidden_dweight_enabled ||
+        lm_head_pipeline_chunks_enabled ||
+        lm_head_overlap_last_dweight_enabled;
     if (error.empty() && lm_head_side_streams_enabled) {
         int status = cuda_stream_create_with_flags(&lm_head_dhidden_stream, kCudaStreamNonBlocking);
         if (status != 0) {
@@ -15254,6 +15273,23 @@ int run_transformer_lm_training_json(
         return error.empty() ? static_cast<double>(host_loss[0]) : 0.0;
     };
 
+    bool lm_head_last_dweight_overlap_pending = false;
+    auto sync_lm_head_last_dweight_overlap = [&](const std::string& label) {
+        if (!lm_head_last_dweight_overlap_pending) {
+            return;
+        }
+        run_timed_stage(label, [&]() {
+            const int status = cuda_stream_synchronize(lm_head_dweight_stream);
+            if (status != 0 && error.empty()) {
+                error = cuda_error(status, label + ".cudaStreamSynchronize");
+            }
+        });
+        lm_head_last_dweight_overlap_pending = false;
+        if (error.empty()) {
+            lm_head_last_dweight_overlap_sync_count += 1;
+        }
+    };
+
     auto lm_head_backward = [&](float accumulation_scale, bool dweight_accumulate, bool record_loss) {
         const std::int64_t stage_event = stage_begin("lm_head_backward");
         if (lm_head_prepack_bf16_hidden_enabled && !lm_head_reuse_forward_logits_enabled) {
@@ -15792,6 +15828,36 @@ int run_transformer_lm_training_json(
                     }
                 });
             };
+            auto queue_lm_head_last_dweight_overlap = [&]() {
+                run_timed_stage("lm_head_backward.last_dweight_overlap_queue", [&]() {
+                    if (!error.empty()) {
+                        return;
+                    }
+                    if (lm_head_last_dweight_overlap_pending) {
+                        run(cuda_stream_synchronize(lm_head_dweight_stream),
+                            "lm_head.last_dweight_overlap.prior_wait");
+                        lm_head_last_dweight_overlap_pending = false;
+                        if (!error.empty()) {
+                            return;
+                        }
+                    }
+                    int status = cuda_event_record(lm_head_ce_done_event, nullptr);
+                    if (status != 0) {
+                        error = cuda_error(status, "cudaEventRecord lm_head_last_dweight_ce_done");
+                        return;
+                    }
+                    status = cuda_stream_wait_event(lm_head_dweight_stream, lm_head_ce_done_event, 0);
+                    if (status != 0) {
+                        error = cuda_error(status, "cudaStreamWaitEvent lm_head_last_dweight");
+                        return;
+                    }
+                    run_lm_head_dweight_kernel(lm_head_dweight_stream);
+                    if (error.empty()) {
+                        lm_head_last_dweight_overlap_pending = true;
+                        lm_head_last_dweight_overlap_queue_count += 1;
+                    }
+                });
+            };
             auto queue_lm_head_dhidden_dweight_pipeline = [&]() {
                 run_timed_stage("lm_head_backward.pipeline_queue", [&]() {
                     if (!error.empty()) {
@@ -15823,6 +15889,10 @@ int run_transformer_lm_training_json(
                 queue_lm_head_dhidden_dweight_pipeline();
             } else if (lm_head_concurrent_dhidden_dweight_enabled) {
                 run_lm_head_dhidden_dweight_concurrent();
+            } else if (lm_head_overlap_last_dweight_enabled &&
+                       chunk_index + 1 == backward_chunk_count) {
+                queue_lm_head_last_dweight_overlap();
+                run_lm_head_dhidden();
             } else if (lm_head_dweight_before_dhidden_enabled) {
                 run_lm_head_dweight();
                 run_lm_head_dhidden();
@@ -18001,6 +18071,7 @@ int run_transformer_lm_training_json(
         }
         if (error.empty()) run(position_embedding_backward_accumulate(incoming_grad, accum_grad_position_weight, active_batch_size, seq_len, kDim, nullptr), "wpe.backward_weight.accumulate");
         stage_end(embedding_backward_event, "embedding_backward");
+        sync_lm_head_last_dweight_overlap("lm_head_backward.last_dweight_overlap_final_wait");
     };
 
     auto forward_backward_update = [&](std::int64_t step, bool record_train_loss) -> double {
@@ -18020,6 +18091,7 @@ int run_transformer_lm_training_json(
                 train_microbatches_completed += 1;
             }
         }
+        sync_lm_head_last_dweight_overlap("lm_head_backward.last_dweight_overlap_optimizer_wait");
         flush_bf16_block_dweight_staging();
         clip_gradients();
 
@@ -19360,6 +19432,16 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_pipeline_extra_bf16_logit_bytes\": "
         << (lm_head_pipeline_chunks_enabled ? logit_elements * static_cast<std::int64_t>(sizeof(std::uint16_t)) : 0)
         << ",\n"
+        << "  \"lm_head_overlap_last_dweight_requested\": "
+        << (lm_head_overlap_last_dweight_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_overlap_last_dweight_available\": "
+        << (lm_head_concurrent_dhidden_dweight_available ? "true" : "false") << ",\n"
+        << "  \"lm_head_overlap_last_dweight_enabled\": "
+        << (lm_head_overlap_last_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_overlap_last_dweight_queue_count\": "
+        << lm_head_last_dweight_overlap_queue_count << ",\n"
+        << "  \"lm_head_overlap_last_dweight_sync_count\": "
+        << lm_head_last_dweight_overlap_sync_count << ",\n"
         << "  \"lm_head_dhidden_dweight_schedule_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
                 ? "cooperative-classifier-dhidden-dweight-fused-sm120-kernel"
@@ -19369,8 +19451,10 @@ int run_transformer_lm_training_json(
                 ? "double-buffered-logits-ce-default-stream-side-stream-dhidden-ordered-dweight"
                 : (lm_head_concurrent_dhidden_dweight_enabled
                 ? "two-nonblocking-cuda-streams-after-ce-event"
+                : (lm_head_overlap_last_dweight_enabled
+                ? "last-processed-row-chunk-dweight-side-stream-overlaps-final-norm-block-backward"
                 : (lm_head_dweight_before_dhidden_enabled ? "serial-dweight-before-dhidden"
-                                                          : "serial-dhidden-before-dweight")))))
+                                                          : "serial-dhidden-before-dweight"))))))
         << "\",\n"
         << "  \"lm_head_cooperative_backward_required\": "
         << (cfg.require_cooperative_lm_head_backward ? "true" : "false") << ",\n"

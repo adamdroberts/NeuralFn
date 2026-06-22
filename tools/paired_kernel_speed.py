@@ -87,6 +87,14 @@ NATIVE_METRIC_PATHS = (
     ("lm_head_logits_cublaslt_gemm_count", ("lm_head_logits_cublaslt_gemm_count",)),
     ("lm_head_logits_bf16_gemm_count", ("lm_head_logits_bf16_gemm_count",)),
     (
+        "lm_head_overlap_last_dweight_queue_count",
+        ("lm_head_overlap_last_dweight_queue_count",),
+    ),
+    (
+        "lm_head_overlap_last_dweight_sync_count",
+        ("lm_head_overlap_last_dweight_sync_count",),
+    ),
+    (
         "lm_head_classifier_chunk_kernel_available",
         ("lm_head_classifier_chunk_kernel_available",),
     ),
@@ -276,6 +284,11 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "lm_head_ce_row_loss_reduction_enabled",
     "lm_head_ce_row_loss_sum_accumulate_enabled",
     "lm_head_dhidden_dweight_schedule_strategy",
+    "lm_head_overlap_last_dweight_requested",
+    "lm_head_overlap_last_dweight_available",
+    "lm_head_overlap_last_dweight_enabled",
+    "lm_head_overlap_last_dweight_queue_count",
+    "lm_head_overlap_last_dweight_sync_count",
     "lm_head_pipeline_chunks_enabled",
     "lm_head_pipeline_logit_buffer_count",
     "linear_cublaslt_grouped_layout_supported",

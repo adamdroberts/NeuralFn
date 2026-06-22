@@ -1044,6 +1044,17 @@ still failed strict stage gates.
 single-kernel row-loss tail. It is also diagnostic-only: it only affects logged
 train-loss steps, and previous CUDA 13.3 RTX 5090 timing rejected it as a
 default.
+`lm_head_overlap_last_dweight` expands to
+`NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1` for the narrower LM-head
+side-stream schedule that overlaps only the last processed row chunk's dWeight
+accumulation with final norm and block backward. Runtime JSON reports
+`lm_head_overlap_last_dweight_requested`,
+`lm_head_overlap_last_dweight_enabled`,
+`lm_head_overlap_last_dweight_queue_count`,
+`lm_head_overlap_last_dweight_sync_count`, and the schedule strategy. Keep it
+diagnostic-only for now: the 2026-06-22 CUDA 13.3 dedicated RTX 5090 3-sample
+gate proved the route active and measured `0.999109x` train-loop wall time, but
+failed the strict total LM-head stage gate at `1.000506x`.
 `cublaslt_grouped_probe` expands to
 `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1
 NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`. Use it as a readiness check
