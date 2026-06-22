@@ -58,6 +58,17 @@ The trainer-facing raw C ABI build is separate:
 bash tools/build_native_train_tile_ops.sh
 ```
 
+The raw ABI includes an opt-in dense GPT token-weight startup probe,
+`nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32`,
+which initializes the public vocabulary rows and zeroes the padded vocabulary
+tail plus BF16 shadow in one launch. The native trainer leaves this route
+default-off because the CUDA 13.3 RTX 5090 paired startup benchmark measured it
+slower than the current vector4 BF16-shadow initializer. Enable it only for
+paired bisection with `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`; runtime
+JSON reports `token_weight_padded_init_fusion_available`,
+`token_weight_padded_init_fusion_enabled`, and
+`token_weight_padding_zero_launches_elided`.
+
 On SM120 with TK attention enabled, that script defines
 `LLMK_SM120_USE_CUBLASLT_GEMM` by default to match the supported llm.kittens
 CUDA 13.3 build path. It also normalizes inherited

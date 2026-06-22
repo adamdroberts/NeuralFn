@@ -6565,6 +6565,46 @@ __global__ void init_gpt2_token_weight_vector4_with_bf16_shadow_convert_float32_
   }
 }
 
+__global__ void init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_kernel(
+    float* __restrict__ values,
+    std::uint16_t* __restrict__ shadow_bf16_bits,
+    std::int64_t public_n,
+    std::int64_t total_n) {
+  const std::int64_t idx = (static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x) * 4;
+  if (idx + 3 < total_n) {
+    if (idx >= public_n) {
+      reinterpret_cast<float4*>(values)[idx / 4] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
+      reinterpret_cast<ushort4*>(shadow_bf16_bits)[idx / 4] = make_ushort4(0, 0, 0, 0);
+      return;
+    }
+    if (idx + 3 < public_n) {
+      const int bucket = static_cast<int>(idx) & 15;
+      const float value0 = static_cast<float>(bucket - 8) * 0.01f;
+      const float value1 = static_cast<float>(((bucket + 1) & 15) - 8) * 0.01f;
+      const float value2 = static_cast<float>(((bucket + 2) & 15) - 8) * 0.01f;
+      const float value3 = static_cast<float>(((bucket + 3) & 15) - 8) * 0.01f;
+      reinterpret_cast<float4*>(values)[idx / 4] = make_float4(value0, value1, value2, value3);
+      reinterpret_cast<ushort4*>(shadow_bf16_bits)[idx / 4] = make_ushort4(
+          bf16_bits_from_float(value0),
+          bf16_bits_from_float(value1),
+          bf16_bits_from_float(value2),
+          bf16_bits_from_float(value3));
+      return;
+    }
+  }
+  for (std::int64_t tail = idx; tail < total_n; ++tail) {
+    if (tail < public_n) {
+      const int bucket = static_cast<int>(tail) & 15;
+      const float value = static_cast<float>(bucket - 8) * 0.01f;
+      values[tail] = value;
+      shadow_bf16_bits[tail] = bf16_bits_from_float(value);
+    } else {
+      values[tail] = 0.0f;
+      shadow_bf16_bits[tail] = 0;
+    }
+  }
+}
+
 __global__ void init_gpt2_token_weight_vector4_strided_float32_kernel(
     float* __restrict__ values,
     std::int64_t n) {
@@ -13816,6 +13856,29 @@ void launch_init_gpt2_token_weight_fast_with_bf16_shadow_float32(
   }
   init_gpt2_token_weight_fast_with_bf16_shadow_float32_kernel<<<blocks, 1, 0, stream>>>(
       values, shadow_bf16_bits, n);
+}
+
+void launch_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32(
+    float* values,
+    std::uint16_t* shadow_bf16_bits,
+    std::int64_t public_n,
+    std::int64_t total_n,
+    cudaStream_t stream) {
+  if (total_n <= 0) {
+    return;
+  }
+  if (shadow_bf16_bits == nullptr || public_n >= total_n) {
+    launch_init_gpt2_token_weight_fast_with_bf16_shadow_float32(
+        values, shadow_bf16_bits, total_n, stream);
+    return;
+  }
+  if (public_n < 0) {
+    public_n = 0;
+  }
+  constexpr int kThreads = 256;
+  const int blocks = static_cast<int>((total_n + (kThreads * 4 - 1)) / (kThreads * 4));
+  init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_kernel<<<blocks, kThreads, 0, stream>>>(
+      values, shadow_bf16_bits, public_n, total_n);
 }
 
 void launch_sumsq_partials_float32(

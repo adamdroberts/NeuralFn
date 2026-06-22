@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an opt-in fused padded-vocab token-weight initializer to the native
+  dense GPT Tile-CUDA ABI. The new
+  `nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32`
+  symbol initializes public token rows and zeroes the padded-vocab tail plus
+  BF16 shadow in one launch, while the native trainer reports
+  `token_weight_padded_init_fusion_requested`,
+  `token_weight_padded_init_fusion_available`,
+  `token_weight_padded_init_fusion_enabled`, and
+  `token_weight_padding_zero_launches_elided`. The route is intentionally
+  default-off behind `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1` because
+  the dedicated RTX 5090 CUDA 13.3 paired startup benchmark rejected it as a
+  default (`1.025186x` setup wall time and `1.061587x`
+  `setup.token_weight_init.total_ms` versus the current vector4 BF16-shadow
+  route). The native C++ CLI default `train_loss_every_steps` was also restored
+  to `10`, matching the compiled CLI contract and tests.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; focused native GPT tests passed; an escalated
+  startup-only RTX 5090 smoke passed with the new symbol available; the
+  same-script startup gate compared
+  `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=0` against the opt-in route and
+  rejected the candidate, so the default remains unchanged; `git diff --check`.
+
 - Added lower-bound metric gates to paired native kernel benchmarks.
   `tools/paired_kernel_speed.py` now accepts repeatable
   `--min-candidate-ratio [STAT:]METRIC=RATIO` checks alongside the existing

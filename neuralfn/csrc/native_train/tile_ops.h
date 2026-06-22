@@ -258,6 +258,13 @@ int nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_float32(
     std::int64_t n,
     void* cuda_stream);
 
+int nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32(
+    float* values,
+    std::uint16_t* shadow_bf16_bits,
+    std::int64_t public_n,
+    std::int64_t total_n,
+    void* cuda_stream);
+
 int nfn_native_tile_sumsq_partials_float32(
     const float* values,
     float* partials,

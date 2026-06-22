@@ -3303,7 +3303,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["train_loss_host_copy_scope"] == "once-per-logged-optimizer-step"
     assert train_transformer_payload["train_loss_host_d2h_count"] == 0
     assert train_transformer_payload["train_loss_host_d2h_copies_per_logged_step"] == 1
-    assert train_transformer_payload["train_loss_microbatch_host_d2h_copies_elided_per_logged_step"] == 0
+    assert (
+        train_transformer_payload["train_loss_microbatch_host_d2h_copies_elided_per_logged_step"]
+        == max(0, train_transformer_payload["grad_accum_steps"] - 1)
+    )
     assert train_transformer_payload["sample_every_steps"] == 20000
     assert train_transformer_payload["generate_tokens"] == 144
     assert train_transformer_payload["checkpoint_every_steps"] == 200
@@ -3888,13 +3891,15 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "gradient_sumsq_per_buffer_launches_elided": 147,
         "adamw_device_clip_scale_fused": True,
         "adamw_bf16_shadow_refresh_strategy": "elided-bf16-primary-params",
-        "block_weight_bf16_initialization_strategy": "direct-bf16-fill-many-values",
-        "token_weight_bf16_shadow_enabled": True,
-        "token_weight_bf16_refresh_count": 0,
-        "token_weight_bf16_initial_refresh_fusion_enabled": True,
-        "token_weight_bf16_adamw_refresh_fusion_enabled": True,
-        "token_weight_bf16_initial_refresh_elided": False,
-        "block_weight_bf16_primary_param_update_enabled": True,
+            "block_weight_bf16_initialization_strategy": "direct-bf16-fill-many-values",
+            "token_weight_bf16_shadow_enabled": True,
+            "token_weight_bf16_refresh_count": 0,
+            "token_weight_bf16_initial_refresh_fusion_enabled": True,
+            "token_weight_bf16_adamw_refresh_fusion_enabled": True,
+            "token_weight_padded_init_fusion_enabled": False,
+            "token_weight_padding_zero_launches_elided": 0,
+            "token_weight_bf16_initial_refresh_elided": False,
+            "block_weight_bf16_primary_param_update_enabled": True,
         "direct_bf16_block_weight_initialization_enabled": True,
         "block_weight_bf16_gradient_storage_strategy": "float32-accumulation-buffer",
         "adamw_bf16_param_bf16_grad_kernel_loaded": False,
@@ -5507,12 +5512,18 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW" in gpt2_source_text
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT" in gpt2_source_text
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_ADAMW_REFRESH" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT" in gpt2_source_text
     assert "token_weight_bf16_shadow_enabled" in gpt2_source_text
     assert "token_weight_bf16_refresh_count" in gpt2_source_text
     assert "token_weight_bf16_fused_adamw_refresh_count" in gpt2_source_text
     assert "token_weight_bf16_adamw_refresh_fusion_enabled" in gpt2_source_text
     assert "token_weight_bf16_initial_refresh_elided" in gpt2_source_text
+    assert "token_weight_padded_init_fusion_enabled" in gpt2_source_text
+    assert "token_weight_padding_zero_launches_elided" in gpt2_source_text
     assert "token_weight_bf16.initial_refresh" in gpt2_source_text
+    assert "nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32" in header_text
+    assert "launch_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32" in source_text
+    assert "init_gpt2_token_weight_vector4_with_bf16_shadow_padded_float32_kernel" in kernels_text
     assert "adamw_float_update_bf16_shadow_offsets" in gpt2_source_text
     assert "adamw_many_with_device_scale_bf16_shadow.float_params_token_shadow" in gpt2_source_text
     assert "split-float32-token-shadow-and-bf16-param-multi-buffer-device-scale" in gpt2_source_text

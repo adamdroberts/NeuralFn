@@ -174,6 +174,12 @@ void launch_init_gpt2_token_weight_fast_with_bf16_shadow_float32(
     std::uint16_t* shadow_bf16_bits,
     std::int64_t n,
     cudaStream_t stream);
+void launch_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32(
+    float* values,
+    std::uint16_t* shadow_bf16_bits,
+    std::int64_t public_n,
+    std::int64_t total_n,
+    cudaStream_t stream);
 void launch_sumsq_partials_float32(const float* values, float* partials, std::int64_t n, cudaStream_t stream);
 void launch_sumsq_partials_many_float32(
     const float* const* buffers,
@@ -2245,6 +2251,21 @@ int nfn_native_tile_float32_to_bf16_bits_many(
     void* cuda_stream) {
     neuralfn::tile_cuda::launch_float32_to_bf16_bits_many(
         sources, elements, offsets, dest, buffer_count, max_elements, as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32(
+    float* values,
+    std::uint16_t* shadow_bf16_bits,
+    std::int64_t public_n,
+    std::int64_t total_n,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32(
+        values,
+        shadow_bf16_bits,
+        public_n,
+        total_n,
+        as_stream(cuda_stream));
     return launch_status();
 }
 

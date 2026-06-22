@@ -100,6 +100,11 @@ The opt-in vector4-strided token-weight initializer
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1`) is also diagnostic-only:
 it improved the token-init substage in a startup-only RTX 5090 run but did not
 beat the strict setup-wall gate.
+The fused padded-vocab BF16-shadow token initializer is exposed for paired
+bisection as `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`, but remains
+default-off: the CUDA 13.3 RTX 5090 startup gate measured the route at
+`1.025186x` setup wall time and `1.061587x` token-init time versus the current
+vector4 BF16-shadow default.
 Dense GPT native BF16 classifier/CE now uses vectorized BF16 row loads by
 default to match the llm.kittens fused-classifier memory access pattern,
 including the final dlogit write pass when scalar stores are selected; set
