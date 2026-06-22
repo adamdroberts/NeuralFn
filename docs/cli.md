@@ -458,7 +458,9 @@ Startup timing JSON reports `setup_timing_accounted_ms`,
 `setup_timing_unattributed_ms`, and `setup_timing_record_count` beside
 `setup_wall_ms`. Use these fields with `timing.setup_timing` to separate
 explicitly measured arena/kernel setup phases from loader, symbol-resolution,
-and other host overhead before the first optimizer step.
+and other host overhead before the first optimizer step. The setup timing array
+includes `setup.load_tile_ops`, `setup.load_cuda_runtime`, and
+`setup.cuda_runtime_symbols` before arena materialization.
 Set `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` only for startup allocator
 profiling. It waits until both the float arena and the BF16/uint16 arena layouts
 are known, then packs them into one aligned `cudaMalloc`. JSON reports

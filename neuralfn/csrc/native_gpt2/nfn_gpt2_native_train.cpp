@@ -10527,22 +10527,23 @@ int run_transformer_lm_training_json(
         return out.str();
     };
 
-    if (error.empty()) {
-        tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
-        if (tile_handle == nullptr) {
-            error = dl_last_error("dlopen tile ops failed");
-        } else {
-            tile_loaded = true;
-            for (const std::string& symbol : required_symbols) {
-                void* ptr = dlsym(tile_handle, symbol.c_str());
-                if (ptr == nullptr) {
-                    missing_symbols.push_back(symbol);
-                }
-            }
-            if (!missing_symbols.empty()) {
-                error = "missing required GPT-2 transformer/LM training Tile ABI symbols";
+    run_setup_timed("setup.load_tile_ops", [&]() {
+        if (error.empty()) {
+            tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+            if (tile_handle == nullptr) {
+                error = dl_last_error("dlopen tile ops failed");
             } else {
-                fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
+                tile_loaded = true;
+                for (const std::string& symbol : required_symbols) {
+                    void* ptr = dlsym(tile_handle, symbol.c_str());
+                    if (ptr == nullptr) {
+                        missing_symbols.push_back(symbol);
+                    }
+                }
+                if (!missing_symbols.empty()) {
+                    error = "missing required GPT-2 transformer/LM training Tile ABI symbols";
+                } else {
+                    fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
                 fill_many = load_symbol<FillManyFn>(tile_handle, "nfn_native_tile_fill_many_float32");
                 adamw_many_with_device_scale_bf16_param_bf16_grad =
                     load_symbol<AdamWManyWithDeviceScaleBf16ParamBf16GradFn>(
@@ -11020,30 +11021,34 @@ int run_transformer_lm_training_json(
                     load_symbol<AdamWManyWithDeviceScaleBf16ParamFn>(
                         tile_handle,
                         "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32");
+                }
             }
         }
-    }
+    });
 
     std::vector<std::string> runtime_candidates = cuda_runtime_candidates(cfg);
     std::string cuda_lib_path = runtime_candidates.empty() ? "libcudart.so" : runtime_candidates.front();
-    if (error.empty()) {
-        std::string runtime_error;
-        for (const std::string& candidate : runtime_candidates) {
-            cuda_lib_path = candidate;
-            cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
-            if (cuda_handle != nullptr) {
-                cuda_runtime_loaded = true;
-                break;
+    run_setup_timed("setup.load_cuda_runtime", [&]() {
+        if (error.empty()) {
+            std::string runtime_error;
+            for (const std::string& candidate : runtime_candidates) {
+                cuda_lib_path = candidate;
+                cuda_handle = dlopen(candidate.c_str(), RTLD_NOW | RTLD_LOCAL);
+                if (cuda_handle != nullptr) {
+                    cuda_runtime_loaded = true;
+                    break;
+                }
+                runtime_error = dl_last_error("dlopen CUDA runtime failed");
             }
-            runtime_error = dl_last_error("dlopen CUDA runtime failed");
+            if (cuda_handle == nullptr) {
+                error = runtime_error.empty() ? "could not load CUDA runtime" : runtime_error;
+            }
         }
-        if (cuda_handle == nullptr) {
-            error = runtime_error.empty() ? "could not load CUDA runtime" : runtime_error;
-        }
-    }
+    });
 
-    if (error.empty()) {
-        cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
+    run_setup_timed("setup.cuda_runtime_symbols", [&]() {
+        if (error.empty()) {
+            cuda_malloc = load_symbol<CudaMallocFn>(cuda_handle, "cudaMalloc");
         cuda_free = load_symbol<CudaFreeFn>(cuda_handle, "cudaFree");
         cuda_memcpy = load_symbol<CudaMemcpyFn>(cuda_handle, "cudaMemcpy");
         cuda_memcpy_async = load_symbol<CudaMemcpyAsyncFn>(cuda_handle, "cudaMemcpyAsync");
@@ -11072,31 +11077,32 @@ int run_transformer_lm_training_json(
             error = "CUDA runtime is missing cudaMalloc/cudaFree/cudaMemcpy/cudaMemcpyAsync/cudaHostAlloc/cudaFreeHost/cudaDeviceSynchronize";
         } else if (cuda_runtime_get_version == nullptr || cuda_driver_get_version == nullptr) {
             error = "CUDA runtime is missing cudaRuntimeGetVersion/cudaDriverGetVersion";
-        } else {
-            cuda_runtime_preflight_checked = true;
-            cuda_runtime_version_status = cuda_runtime_get_version(&cuda_runtime_version);
-            cuda_driver_version_status = cuda_driver_get_version(&cuda_driver_version);
-            if (cuda_runtime_version_status != 0) {
-                error = cuda_error(cuda_runtime_version_status, "cudaRuntimeGetVersion");
-            } else if (cuda_driver_version_status != 0) {
-                error = cuda_error(cuda_driver_version_status, "cudaDriverGetVersion");
-            } else if (cuda_driver_version <= 0) {
-                std::ostringstream out;
-                out << "CUDA driver is unavailable to the native trainer: loaded " << cuda_lib_path
-                    << " reports runtime " << cuda_version_string(cuda_runtime_version)
-                    << " but cudaDriverGetVersion returned " << cuda_driver_version
-                    << ". Ensure the process has GPU/driver access before benchmarking SM120 throughput.";
-                error = out.str();
-            } else if (cuda_driver_version > 0 && cuda_runtime_version > 0 && cuda_driver_version < cuda_runtime_version) {
-                std::ostringstream out;
-                out << "CUDA runtime/driver mismatch: loaded " << cuda_lib_path
-                    << " reports runtime " << cuda_version_string(cuda_runtime_version)
-                    << " but the driver reports " << cuda_version_string(cuda_driver_version)
-                    << ". Rebuild or run with --cuda-runtime-lib/NFN_CUDA_RUNTIME_LIB pointing at a runtime supported by the installed driver.";
-                error = out.str();
+            } else {
+                cuda_runtime_preflight_checked = true;
+                cuda_runtime_version_status = cuda_runtime_get_version(&cuda_runtime_version);
+                cuda_driver_version_status = cuda_driver_get_version(&cuda_driver_version);
+                if (cuda_runtime_version_status != 0) {
+                    error = cuda_error(cuda_runtime_version_status, "cudaRuntimeGetVersion");
+                } else if (cuda_driver_version_status != 0) {
+                    error = cuda_error(cuda_driver_version_status, "cudaDriverGetVersion");
+                } else if (cuda_driver_version <= 0) {
+                    std::ostringstream out;
+                    out << "CUDA driver is unavailable to the native trainer: loaded " << cuda_lib_path
+                        << " reports runtime " << cuda_version_string(cuda_runtime_version)
+                        << " but cudaDriverGetVersion returned " << cuda_driver_version
+                        << ". Ensure the process has GPU/driver access before benchmarking SM120 throughput.";
+                    error = out.str();
+                } else if (cuda_driver_version > 0 && cuda_runtime_version > 0 && cuda_driver_version < cuda_runtime_version) {
+                    std::ostringstream out;
+                    out << "CUDA runtime/driver mismatch: loaded " << cuda_lib_path
+                        << " reports runtime " << cuda_version_string(cuda_runtime_version)
+                        << " but the driver reports " << cuda_version_string(cuda_driver_version)
+                        << ". Rebuild or run with --cuda-runtime-lib/NFN_CUDA_RUNTIME_LIB pointing at a runtime supported by the installed driver.";
+                    error = out.str();
+                }
             }
         }
-    }
+    });
 
     struct StageTimingRecord {
         std::string name;

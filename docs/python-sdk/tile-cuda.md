@@ -1296,7 +1296,9 @@ Runtime timing JSON also reports `setup_timing_accounted_ms`,
 `setup_timing_unattributed_ms`, and `setup_timing_record_count` beside
 `setup_wall_ms`. These fields summarize how much of native dense-GPT startup is
 covered by explicit `timing.setup_timing` records and how much remains in
-loader, symbol-resolution, and other pre-loop host overhead.
+loader, symbol-resolution, and other pre-loop host overhead. The explicit setup
+records include `setup.load_tile_ops`, `setup.load_cuda_runtime`, and
+`setup.cuda_runtime_symbols` before arena materialization.
 When stored BF16 MLP activations cover every transformer block, the dense GPT
 trainer also defers the validation-only float MLP scratch buffers (`fc_out` and
 `act`) instead of reserving them in the startup float arena. The buffers are
