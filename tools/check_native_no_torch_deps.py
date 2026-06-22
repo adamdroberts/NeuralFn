@@ -90,6 +90,11 @@ FORBIDDEN_OPTIONAL_EXTRA_DEPENDENCY_PREFIXES = {
         "torchaudio",
     ),
 }
+FORBIDDEN_REQUIREMENTS_DEPENDENCY_PREFIXES = (
+    "torch",
+    "torchvision",
+    "torchaudio",
+)
 DEFAULT_PYTHON_ENTRYPOINTS = (
     (
         "train_gpt_fast_command",
@@ -947,6 +952,36 @@ def project_dependency_report(repo_root: Path) -> dict[str, object]:
     }
 
 
+def requirements_dependency_report(repo_root: Path) -> dict[str, object]:
+    requirements = repo_root / "requirements.txt"
+    offenders: list[str] = []
+    if requirements.exists():
+        for raw_line in requirements.read_text(encoding="utf-8").splitlines():
+            dependency = raw_line.split("#", 1)[0].strip()
+            if not dependency or dependency.startswith(("-", "--")):
+                continue
+            normalized = dependency.lower().replace("_", "-")
+            for prefix in FORBIDDEN_REQUIREMENTS_DEPENDENCY_PREFIXES:
+                if (
+                    normalized == prefix
+                    or normalized.startswith(prefix + ">")
+                    or normalized.startswith(prefix + "=")
+                    or normalized.startswith(prefix + "[")
+                    or normalized.startswith(prefix + "~")
+                    or normalized.startswith(prefix + "!")
+                ):
+                    offenders.append(raw_line.strip())
+                    break
+    return {
+        "name": "requirements_default_dependencies",
+        "path": str(requirements),
+        "exists": requirements.exists(),
+        "passed": not offenders,
+        "offenders": offenders,
+        "forbidden_dependency_prefixes": list(FORBIDDEN_REQUIREMENTS_DEPENDENCY_PREFIXES),
+    }
+
+
 def main() -> int:
     args = parse_args()
     artifact_report: list[dict[str, object]] = []
@@ -974,10 +1009,13 @@ def main() -> int:
 
     python_report: list[dict[str, object]] = []
     dependency_report: dict[str, object] | None = None
+    requirements_report: dict[str, object] | None = None
     if not args.skip_python_entrypoints:
         repo_root = Path(__file__).resolve().parents[1]
         dependency_report = project_dependency_report(repo_root)
         failed = failed or not bool(dependency_report["passed"])
+        requirements_report = requirements_dependency_report(repo_root)
+        failed = failed or not bool(requirements_report["passed"])
         python_report = python_entrypoint_report(
             repo_root,
             max_entrypoint_seconds=float(args.max_entrypoint_seconds),
@@ -992,6 +1030,7 @@ def main() -> int:
                     "forbidden_python_import_roots": list(FORBIDDEN_PYTHON_IMPORT_ROOTS),
                     "artifacts": artifact_report,
                     "project_dependencies": dependency_report,
+                    "requirements_dependencies": requirements_report,
                     "python_entrypoints": python_report,
                 },
                 indent=2,
@@ -1020,6 +1059,13 @@ def main() -> int:
                     print(f"  forbidden optional extra: {extra_name}", file=sys.stderr)
                 for prefix in dependency_report["missing_optional_dependency_prefixes"]:
                     print(f"  missing optional dependency coverage: {prefix}", file=sys.stderr)
+        if requirements_report is not None:
+            if requirements_report["passed"]:
+                print(f"{requirements_report['name']}: ok")
+            else:
+                print(f"{requirements_report['name']}: failed", file=sys.stderr)
+                for dependency in requirements_report["offenders"]:
+                    print(f"  requirement dependency: {dependency}", file=sys.stderr)
         for entry in python_report:
             if entry["passed"]:
                 print(f"{entry['name']}: ok ({float(entry['elapsed_seconds']):.3f}s)")

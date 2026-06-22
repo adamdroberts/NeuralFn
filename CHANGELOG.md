@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the native no-Torch dependency verifier to scan `requirements.txt`
+  as part of the default install contract. The guard now fails if the visible
+  requirements file reintroduces `torch`, `torchvision`, or `torchaudio`, in
+  addition to the existing `pyproject.toml`, compiled-artifact, and blocked
+  Python-import checks.
+
+  Verification: focused verifier pytest and
+  `tools/check_native_no_torch_deps.py --skip-artifacts`.
+
 - Added a default-off dense GPT no-loss LM-head classifier CE candidate route.
   `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1` (or the GPT-2 alias)
   routes no-loss optimizer steps through the classifier row-loss CE kernel

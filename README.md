@@ -1788,10 +1788,10 @@ Legacy graph-backed Torch workflows require a separately managed PyTorch install
 outside NeuralFn's package metadata.
 
 After rebuilding native training artifacts, run the dependency gate to verify
-the default package metadata still keeps Torch out of hard dependencies, the
-aggregate `.[all]` extra remains Torch-free, no `torch` extra is advertised, the
-compiled artifacts still avoid Torch, c10, and Python runtime libraries, and
-default native GPT Python training and inference entrypoints can construct their compiled-C++ commands or
+the default package metadata and `requirements.txt` still keep Torch out of
+hard dependencies, the aggregate `.[all]` extra remains Torch-free, no `torch`
+extra is advertised, the compiled artifacts still avoid Torch, c10, and Python
+runtime libraries, and default native GPT Python training and inference entrypoints can construct their compiled-C++ commands or
 inspect native checkpoints while imports of `torch`, NumPy, tiktoken,
 `server.dataset_manager`, and `nfn_impl` are blocked.
 By default the artifact scan checks the required native GPT trainer and raw Tile

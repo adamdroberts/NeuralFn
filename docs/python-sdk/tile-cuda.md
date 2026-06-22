@@ -1563,8 +1563,8 @@ hint. For workstation checks, compare sandboxed results with unsandboxed
 regression.
 
 `tools/check_native_no_torch_deps.py` is the native dependency gate for this
-path. In addition to checking `pyproject.toml` so Torch stays out of default
-dependencies and the aggregate `.[all]` extra, it runs `ldd` checks for
+path. In addition to checking `pyproject.toml` and `requirements.txt` so Torch
+stays out of default dependencies and the aggregate `.[all]` extra, it runs `ldd` checks for
 Torch/c10/Python runtime libraries on the required compiled GPT trainer and Tile
 ops library plus optional compiled native frontends/per-family trainers already
 present in `build/` and built SDK binding modules matching `neuralfn/_native*.so`, then runs
