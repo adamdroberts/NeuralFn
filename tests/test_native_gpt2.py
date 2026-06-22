@@ -368,6 +368,9 @@ def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     assert "device_cuda_malloc_async_enabled" in source
     assert "device_cuda_malloc_async_fallback_count" in source
     assert "cudaDeviceSynchronize after cudaFreeAsync" in source
+    assert "setup_timing_accounted_ms" in source
+    assert "setup_timing_unattributed_ms" in source
+    assert "setup_timing_record_count" in source
     assert "NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA" in source
     assert "transformer_device_arena_requested" in source
     assert "transformer_device_arena_enabled" in source

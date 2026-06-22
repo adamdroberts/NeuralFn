@@ -9494,6 +9494,8 @@ int run_transformer_lm_training_json(
         record_setup_timing(name, elapsed_ms(start, Clock::now()));
     };
     double setup_wall_ms = 0.0;
+    double setup_timing_accounted_ms = 0.0;
+    double setup_timing_unattributed_ms = 0.0;
     double train_loop_wall_ms = 0.0;
     double validation_wall_ms = 0.0;
     double post_train_sample_wall_ms = 0.0;
@@ -17826,6 +17828,13 @@ int run_transformer_lm_training_json(
 
     const auto train_loop_start_time = Clock::now();
     setup_wall_ms = elapsed_ms(total_start_time, train_loop_start_time);
+    for (const SetupTimingRecord& record : setup_timing_records) {
+        setup_timing_accounted_ms += record.total_ms;
+    }
+    setup_timing_unattributed_ms = setup_wall_ms - setup_timing_accounted_ms;
+    if (setup_timing_unattributed_ms < 0.0) {
+        setup_timing_unattributed_ms = 0.0;
+    }
     if (!cfg.startup_only) {
         for (std::int64_t step = 1; step <= cfg.max_steps && error.empty(); ++step) {
             const bool should_run_validation =
@@ -18734,6 +18743,9 @@ int run_transformer_lm_training_json(
         << "  \"timing\": {\n"
         << "    \"clock\": \"steady_clock_host_wall_ms\",\n"
         << "    \"setup_wall_ms\": " << setup_wall_ms << ",\n"
+        << "    \"setup_timing_accounted_ms\": " << setup_timing_accounted_ms << ",\n"
+        << "    \"setup_timing_unattributed_ms\": " << setup_timing_unattributed_ms << ",\n"
+        << "    \"setup_timing_record_count\": " << setup_timing_records.size() << ",\n"
         << "    \"train_loop_wall_ms\": " << train_loop_wall_ms << ",\n"
         << "    \"validation_wall_ms\": " << validation_wall_ms << ",\n"
         << "    \"train_compute_wall_ms\": " << (train_loop_wall_ms - validation_wall_ms) << ",\n"

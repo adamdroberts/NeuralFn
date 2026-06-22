@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added dense GPT startup timing accounting to native runtime JSON. The
+  `timing` object now reports `setup_timing_accounted_ms`,
+  `setup_timing_unattributed_ms`, and `setup_timing_record_count` beside
+  `setup_wall_ms`, making it clear how much startup time is covered by
+  explicit `timing.setup_timing` records versus loader, symbol-resolution, and
+  other pre-loop host overhead. This was added after a CUDA 13.3 RTX 5090
+  startup-only profile showed about 596 ms total setup, with token-weight init
+  and arena materialization accounting for the largest named phases but a
+  substantial unattributed remainder. Verification: source-level pytest
+  coverage, native Tile ops rebuild, native GPT CLI rebuild, and startup-only
+  CUDA smoke.
+
 - Added a diagnostic cuBLASLt grouped matmul execution probe to the raw
   Tile-CUDA trainer ABI:
   `nfn_native_tile_trainer_linear_cublaslt_grouped_matmul_probe_status`.

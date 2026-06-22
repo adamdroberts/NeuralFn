@@ -1292,6 +1292,11 @@ training: the dedicated RTX 5090 startup gate rejected
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=combined_device_arena` at `1.036978x` setup
 wall time and `1.036923x` total startup wall time, with token-weight
 initialization regressing to `1.289723x`.
+Runtime timing JSON also reports `setup_timing_accounted_ms`,
+`setup_timing_unattributed_ms`, and `setup_timing_record_count` beside
+`setup_wall_ms`. These fields summarize how much of native dense-GPT startup is
+covered by explicit `timing.setup_timing` records and how much remains in
+loader, symbol-resolution, and other pre-loop host overhead.
 When stored BF16 MLP activations cover every transformer block, the dense GPT
 trainer also defers the validation-only float MLP scratch buffers (`fc_out` and
 `act`) instead of reserving them in the startup float arena. The buffers are
