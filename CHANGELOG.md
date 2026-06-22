@@ -17,8 +17,9 @@ Future updates should append new entries here rather than replacing older notes.
   `lm_head_cooperative_sequence_concurrent_count`,
   `lm_head_cooperative_sequence_legacy_count`, and
   `lm_head_cooperative_sequence_loss_bin_count` in runtime JSON.
-  `tools/paired_kernel_speed.py` extracts the fields so same-script candidate
-  benchmarks can prove whether a route is still sequencing the older kernels.
+  `tools/paired_kernel_speed.py` extracts, prints, and tracks the fields as
+  route counters so same-script candidate benchmarks can prove whether a route
+  is still sequencing the older kernels.
 
   Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
   `build/nfn_gpt_native_train`, ran focused native GPT source tests, focused

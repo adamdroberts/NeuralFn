@@ -1875,7 +1875,8 @@ The sequence wrapper also reports launch counters in the native training JSON:
 `lm_head_cooperative_sequence_legacy_count`, and
 `lm_head_cooperative_sequence_loss_bin_count`. Use these when validating a
 candidate against the older kernels in the same paired benchmark; nonzero
-values mean the route is still the diagnostic sequence wrapper.
+values mean the route is still the diagnostic sequence wrapper. The paired
+kernel speed tool prints these counters and treats them as route counters.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins` exercises the
 same strict ABI with the existing loss-bin classifier reduction inside the
 cooperative sequence. The profile sets

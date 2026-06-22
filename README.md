@@ -649,6 +649,8 @@ diagnostic wrapper. Runtime JSON reports
 `lm_head_cooperative_sequence_legacy_count`, and
 `lm_head_cooperative_sequence_loss_bin_count` so paired speed tests can prove
 whether a candidate is still sequencing the old CE/dHidden/dWeight launches.
+The paired kernel speed tool prints these counters and treats them as route
+counters.
 `NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0` (or the GPT-2 alias
 `NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD=0`) disables the default fused
 loss-accumulate+dlogits classifier path for same-script bisection, making

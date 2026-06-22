@@ -851,7 +851,9 @@ training JSON: `lm_head_cooperative_sequence_launch_count`,
 `lm_head_cooperative_sequence_legacy_count`, and
 `lm_head_cooperative_sequence_loss_bin_count`. These fields are intended for
 same-script candidate comparisons and should remain nonzero only for diagnostic
-sequence-wrapper routes, not for the future true fused kernel.
+sequence-wrapper routes, not for the future true fused kernel. The paired
+kernel speed tool includes these counters in human summaries and route-change
+tracking.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
