@@ -7640,6 +7640,85 @@ def test_top_level_nfn_train_defaults_to_native_gpt_without_base_model(tmp_path:
     assert "TorchTrainer path" not in proc.stderr
 
 
+def test_top_level_nfn_train_prefers_direct_family_native_cli(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    family_cli = tmp_path / "nfn_gpt2_evo_native_train"
+    family_cli.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
+    family_cli.chmod(0o755)
+
+    env = os.environ.copy()
+    env.pop("NFN_NATIVE_TRAIN_CLI", None)
+    env["NFN_NATIVE_GPT2_EVO_CLI"] = str(family_cli)
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli" / "nfn.py"),
+            "train",
+            "--base-model",
+            "gpt2-evo",
+            "--tinystories",
+            "--native-cuda-print-command",
+            "--native-cuda-dry-run",
+            "--eval-every-steps",
+            "1000",
+        ],
+        cwd=root,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "--tinystories" in proc.stdout
+    assert "--print-command" in proc.stdout
+    assert "--dry-run" in proc.stdout
+    assert "--eval-every-steps\n1000" in proc.stdout
+    assert "--base-model" not in proc.stdout
+    assert "--model-family" not in proc.stdout
+    assert "TorchTrainer path" not in proc.stderr
+
+
+def test_top_level_nfn_train_explicit_unified_cli_overrides_direct_family_native_cli(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    family_cli = tmp_path / "nfn_gpt2_evo_native_train"
+    family_cli.write_text("#!/bin/sh\nexit 44\n", encoding="utf-8")
+    family_cli.chmod(0o755)
+    unified_cli = tmp_path / "nfn_native_train"
+    unified_cli.write_text("#!/bin/sh\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
+    unified_cli.chmod(0o755)
+
+    env = os.environ.copy()
+    env["NFN_NATIVE_GPT2_EVO_CLI"] = str(family_cli)
+    env["NFN_NATIVE_TRAIN_CLI"] = str(unified_cli)
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "cli" / "nfn.py"),
+            "train",
+            "--base-model",
+            "gpt2-evo",
+            "--tinystories",
+            "--native-cuda-print-command",
+            "--native-cuda-dry-run",
+        ],
+        cwd=root,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "--base-model\ngpt2-evo" in proc.stdout
+    assert "--tinystories" in proc.stdout
+    assert "--print-command" in proc.stdout
+    assert "--dry-run" in proc.stdout
+    assert "--model-family" not in proc.stdout
+
+
 def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     if shutil.which("c++") is None:
         pytest.skip("c++ compiler not available")

@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Removed the matching top-level CLI dispatch hop for non-dense compiled
+  native families. `nfn train --base-model gpt2-evo|llama|mixllama|jepa|
+  semantic-router-moe|deepseek-v4 ...` now resolves directly to the matching
+  family C++ binary when it exists or when `NFN_NATIVE_<FAMILY>_CLI` is set.
+  Family binaries receive only their native arguments; the CLI only injects
+  `--base-model` when falling back to the unified `nfn_native_train` frontend.
+  Explicit `NFN_NATIVE_TRAIN_CLI` still forces the unified frontend.
+
+  Verification: focused top-level native CLI dispatch tests passed and
+  `cli/nfn.py` compiled.
+
 - Removed an SDK startup dispatch hop for non-dense compiled native families.
   `neuralfn.native_train.build_native_train_run_config()` now resolves
   `gpt2-evo`, `llama`, `mixllama`, `jepa`, `semantic-router-moe`, and

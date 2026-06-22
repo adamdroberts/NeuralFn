@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import os
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -56,6 +57,19 @@ def _is_lightweight_root_help(argv: list[str]) -> bool:
             continue
         return False
     return saw_help or not argv
+
+
+_DENSE_GPT_NATIVE_MODELS = {"gpt", "gpt2", "gpt3", "nanogpt", "nano-gpt"}
+_NATIVE_TRAIN_FAMILY_TARGETS = {
+    "gpt2-evo": "nfn_gpt2_evo_native_train",
+    "llama": "nfn_llama_native_train",
+    "mixllama": "nfn_mixllama_native_train",
+    "jepa": "nfn_jepa_native_train",
+    "semantic-router-moe": "nfn_semantic_router_moe_native_train",
+    "deepseek-v4": "nfn_deepseek_v4_native_train",
+    "nanogpt": "nfn_nanogpt_native_train",
+    "nano-gpt": "nfn_nanogpt_native_train",
+}
 
 
 def _print_lightweight_root_help() -> None:
@@ -388,7 +402,7 @@ def _native_gpt_requested_runtime(argv: list[str]) -> str:
 
 
 def _is_dense_gpt_native_model(model: str) -> bool:
-    return model.strip().lower().replace("_", "-") in {"gpt", "gpt2", "gpt3", "nanogpt"}
+    return model.strip().lower().replace("_", "-") in _DENSE_GPT_NATIVE_MODELS
 
 
 def _is_direct_native_train_cli_train(argv: list[str]) -> bool:
@@ -419,10 +433,37 @@ def _resolve_direct_native_train_cli(model: str) -> str:
         if requested:
             return requested
         return str(ROOT.parent / "build" / "nfn_gpt_native_train")
+    family_cli = _resolve_direct_native_train_family_cli(model)
+    if family_cli:
+        return family_cli
     native_train = ROOT.parent / "build" / "nfn_native_train"
     if native_train.exists():
         return str(native_train)
     return str(native_train)
+
+
+def _native_train_family_cli_env(model: str) -> str:
+    suffix = "".join(ch if ch.isalnum() else "_" for ch in model.upper()).strip("_")
+    return f"NFN_NATIVE_{suffix}_CLI"
+
+
+def _resolve_direct_native_train_family_cli(model: str) -> str | None:
+    if os.environ.get("NFN_NATIVE_TRAIN_CLI", "").strip():
+        return None
+    normalized = model.strip().lower().replace("_", "-")
+    target = _NATIVE_TRAIN_FAMILY_TARGETS.get(normalized)
+    if target is None:
+        return None
+    requested = os.environ.get(_native_train_family_cli_env(normalized), "").strip()
+    if requested:
+        return requested
+    built = ROOT.parent / "build" / target
+    if built.exists():
+        return str(built)
+    resolved = shutil.which(target)
+    if resolved:
+        return resolved
+    return None
 
 
 def _native_train_model(argv: list[str]) -> str:
@@ -489,11 +530,12 @@ def _has_native_activation(argv: list[str]) -> bool:
 def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
     model = _native_train_model(argv)
     token_lm_requested = any(arg == "--train-token-lm" for arg in argv)
-    dense_gpt = _is_dense_gpt_native_model(model) and not (model == "nanogpt" and token_lm_requested)
+    dense_gpt = _is_dense_gpt_native_model(model) and not (model in {"nanogpt", "nano-gpt"} and token_lm_requested)
     explicit_dense_model = dense_gpt and _explicit_arg(argv, "--base-model", "--model")
-    native_cli = _resolve_direct_native_train_cli("gpt" if dense_gpt else model)
+    family_cli = None if dense_gpt else _resolve_direct_native_train_family_cli(model)
+    native_cli = family_cli or _resolve_direct_native_train_cli("gpt" if dense_gpt else model)
     out = [native_cli]
-    include_model = not dense_gpt
+    include_model = not dense_gpt and family_cli is None
     if include_model:
         out.extend(["--base-model", model])
     elif dense_gpt:
