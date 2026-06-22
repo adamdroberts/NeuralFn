@@ -210,6 +210,8 @@ when `NFN_NATIVE_GPT_CLI` is set or `build/nfn_gpt_native_train` exists; set
 the unified frontend. The generic native-train binding also uses
 `posix_spawnp()` and preserves caller-supplied CUDA module-loading policy,
 defaulting to `CUDA_MODULE_LOADING=LAZY` only when unset. Use
+`resolve_native_gpt_binding_command(config)`,
+`resolve_native_gpt2_binding_command(config)`, or
 `resolve_native_train_binding_command(config)` to inspect the exact argv the
 compiled binding will spawn, and use `native_train_model_registry()` to inspect
 the compiled model coverage exposed by `nfn-native-train --list-models --json`.

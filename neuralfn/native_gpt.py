@@ -24,6 +24,7 @@ from .native_gpt2 import (
     normalize_native_gpt2_encoding_name as normalize_native_gpt_encoding_name,
     read_native_gpt2_checkpoint_info,
     resolve_native_gpt2_cli as resolve_native_gpt_cli,
+    resolve_native_gpt2_binding_command,
     resolve_native_gpt2_executable as resolve_native_gpt_executable,
     resolve_native_gpt2_launcher as resolve_native_gpt_launcher,
     resolve_native_gpt2_token_shards as resolve_native_gpt_token_shards,
@@ -71,6 +72,10 @@ def native_gpt_runner_status(requested: str = "auto") -> NativeGptRunnerStatus:
     return _generic_status(native_gpt2_runner_status(requested))
 
 
+def resolve_native_gpt_binding_command(config: NativeGptRunConfig) -> list[str]:
+    return resolve_native_gpt2_binding_command(config)
+
+
 def read_native_gpt_checkpoint_info(*args, **kwargs) -> NativeGptCheckpointInfo:
     return _generic_checkpoint(read_native_gpt2_checkpoint_info(*args, **kwargs))
 
@@ -97,6 +102,7 @@ __all__ = [
     "native_gpt_runner_status",
     "normalize_native_gpt_encoding_name",
     "read_native_gpt_checkpoint_info",
+    "resolve_native_gpt_binding_command",
     "resolve_native_gpt_cli",
     "resolve_native_gpt_executable",
     "resolve_native_gpt_launcher",

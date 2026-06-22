@@ -59,6 +59,7 @@ class NativeGpt2RunnerStatus:
     binding_module: str | None = None
     available: bool = True
     reason: str = ""
+    command_resolver_available: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -875,9 +876,17 @@ def _load_native_gpt2_binding():
             errors.append(f"{module_name}: {exc}")
             continue
         runner = getattr(module, "run_gpt", None) or getattr(module, "run_gpt2", None) or getattr(module, "run_train", None)
-        if callable(runner):
-            return module_name, runner
-        errors.append(f"{module_name}: missing run_gpt(config_dict), run_gpt2(config_dict), or run_train(config_dict)")
+        resolver = (
+            getattr(module, "resolve_command", None)
+            or getattr(module, "resolve_native_gpt_command", None)
+            or getattr(module, "resolve_native_gpt2_command", None)
+        )
+        if callable(runner) and callable(resolver):
+            return module_name, runner, resolver
+        errors.append(
+            f"{module_name}: missing run_gpt(config_dict), run_gpt2(config_dict), or run_train(config_dict) "
+            "or resolve_command(config_dict)/resolve_native_gpt_command(config_dict)/resolve_native_gpt2_command(config_dict)"
+        )
     raise ImportError("; ".join(errors) if errors else "no native GPT binding modules configured")
 
 
@@ -902,7 +911,7 @@ def native_gpt2_runner_status(requested: str = "auto") -> NativeGpt2RunnerStatus
             reason="" if launcher.exists() else f"compiled launcher not found: {launcher}",
         )
     try:
-        module_name, _runner = _load_native_gpt2_binding()
+        module_name, _runner, _resolver = _load_native_gpt2_binding()
     except ImportError as exc:
         if normalized == "binding":
             return NativeGpt2RunnerStatus(
@@ -940,7 +949,15 @@ def native_gpt2_runner_status(requested: str = "auto") -> NativeGpt2RunnerStatus
         requested=normalized,
         resolved="binding",
         binding_module=module_name,
+        command_resolver_available=True,
     )
+
+
+def resolve_native_gpt2_binding_command(config: NativeGpt2RunConfig) -> list[str]:
+    """Return the argv that the compiled native GPT binding will spawn."""
+
+    _module_name, _runner, resolver = _load_native_gpt2_binding()
+    return [str(item) for item in resolver(config.to_dict())]
 
 
 def run_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "auto") -> int:
@@ -948,7 +965,7 @@ def run_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "auto") -> int
     if status.resolved == "binding":
         if not status.available:
             raise RuntimeError(f"Native GPT binding requested but unavailable: {status.reason}")
-        _module_name, binding_runner = _load_native_gpt2_binding()
+        _module_name, binding_runner, _resolver = _load_native_gpt2_binding()
         return int(binding_runner(config.to_dict()))
     if status.resolved == "compiled-cli":
         if not status.available:

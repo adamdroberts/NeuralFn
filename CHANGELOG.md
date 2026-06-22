@@ -2879,6 +2879,22 @@ Future updates should append new entries here rather than replacing older notes.
   `resolve_command` / `resolve_native_train_command`. Verification: focused
   native-train binding tests and the no-Torch dependency checker.
 
+- Added command resolvers to the native GPT C++ bindings and exported
+  `resolve_native_gpt_binding_command(config)` plus
+  `resolve_native_gpt2_binding_command(config)` from the Python SDK. The GPT
+  SDK can now inspect the exact compiled C++ trainer argv before running
+  training, including alias-only compiled-CLI configs, without importing Torch
+  or materializing dataset/graph payloads through Python. Breaking changes: old
+  locally built `neuralfn._native_gpt` / `neuralfn._native_gpt2` /
+  `neuralfn_native_gpt*` extension modules that expose only runner symbols no
+  longer satisfy `runner="binding"`; rebuild with
+  `bash tools/build_native_gpt_binding.sh` and
+  `bash tools/build_native_gpt2_binding.sh` so the bindings also export
+  `resolve_command` / `resolve_native_gpt_command` /
+  `resolve_native_gpt2_command`. Verification: rebuilt both GPT binding
+  modules, focused native GPT binding tests, and the no-Torch dependency
+  checker.
+
 - Made dense GPT native training reject slow scalar attention fallback by
   default. Runtime JSON now reports `optimized_attention_required` and
   `attention_forward_scalar_launch_allowed`; if scalar attention launches, the

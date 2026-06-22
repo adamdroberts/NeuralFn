@@ -26,6 +26,7 @@ from neuralfn.native_gpt import (
     native_gpt_runner_status,
     normalize_native_gpt_encoding_name,
     read_native_gpt_checkpoint_info,
+    resolve_native_gpt_binding_command,
     run_native_gpt,
 )
 from neuralfn.native_gpt2 import (
@@ -38,6 +39,7 @@ from neuralfn.native_gpt2 import (
     native_gpt2_runner_status,
     read_native_gpt2_checkpoint_info,
     resolve_native_gpt2_cli,
+    resolve_native_gpt2_binding_command,
     resolve_native_gpt2_executable,
     resolve_native_gpt2_launcher,
     resolve_native_gpt2_token_shards,
@@ -1542,6 +1544,21 @@ def test_native_train_cpp_binding_requires_command_resolver_symbol() -> None:
     assert "resolve_command(config_dict)/resolve_native_train_command(config_dict)" in python_source
 
 
+def test_native_gpt_cpp_binding_requires_command_resolver_symbol() -> None:
+    root = Path(__file__).resolve().parents[1]
+    binding_source = (root / "neuralfn" / "csrc" / "native_gpt2" / "binding.cpp").read_text(encoding="utf-8")
+    python_source = (root / "neuralfn" / "native_gpt2.py").read_text(encoding="utf-8")
+    generic_source = (root / "neuralfn" / "native_gpt.py").read_text(encoding="utf-8")
+
+    assert '"resolve_command"' in binding_source
+    assert '"resolve_native_gpt_command"' in binding_source
+    assert '"resolve_native_gpt2_command"' in binding_source
+    assert "command_resolver_available" in python_source
+    assert "resolve_native_gpt2_binding_command" in python_source
+    assert "resolve_native_gpt_binding_command" in generic_source
+    assert "resolve_command(config_dict)/resolve_native_gpt_command(config_dict)/resolve_native_gpt2_command(config_dict)" in python_source
+
+
 def test_native_gpt2_cpp_binding_uses_compiled_cli_for_alias_only_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1601,7 +1618,14 @@ def test_native_gpt2_cpp_binding_uses_compiled_cli_for_alias_only_config(
     )
 
     assert cfg.train_data == ""
-    assert native_gpt2_runner_status("auto").resolved == "binding"
+    status = native_gpt2_runner_status("auto")
+    assert status.resolved == "binding"
+    assert status.command_resolver_available is True
+    assert resolve_native_gpt2_binding_command(cfg) == cfg.compiled_cli_argv()
+    generic_cfg = NativeGptRunConfig(
+        **{key: value for key, value in cfg.to_dict().items() if key in NativeGptRunConfig.__dataclass_fields__}
+    )
+    assert resolve_native_gpt_binding_command(generic_cfg) == cfg.compiled_cli_argv()
     assert run_native_gpt2(cfg, runner="auto") == 37
     args = observed_args.read_text(encoding="utf-8").splitlines()
     assert args[:6] == [

@@ -60,6 +60,8 @@ _LAZY_EXPORTS = {
     "resolve_native_gpt2_launcher": ("native_gpt2", "resolve_native_gpt2_launcher"),
     "resolve_native_gpt_token_shards": ("native_gpt", "resolve_native_gpt_token_shards"),
     "resolve_native_gpt2_token_shards": ("native_gpt2", "resolve_native_gpt2_token_shards"),
+    "resolve_native_gpt_binding_command": ("native_gpt", "resolve_native_gpt_binding_command"),
+    "resolve_native_gpt2_binding_command": ("native_gpt2", "resolve_native_gpt2_binding_command"),
     "resolve_native_train_binding_command": ("native_train", "resolve_native_train_binding_command"),
     "resolve_native_train_cli": ("native_train", "resolve_native_train_cli"),
     "run_native_gpt": ("native_gpt", "run_native_gpt"),

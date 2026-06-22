@@ -91,6 +91,73 @@ bool optional_string_from_config(PyObject* config, const char* key, std::string*
     return ok;
 }
 
+bool command_from_config(PyObject* config, std::vector<std::string>* command, std::string* error) {
+    std::string train_data;
+    std::string val_data;
+    if (!optional_string_from_config(config, "train_data", &train_data)) {
+        return false;
+    }
+    if (!optional_string_from_config(config, "val_data", &val_data)) {
+        return false;
+    }
+
+    command->clear();
+    const bool use_compiled_cli = train_data.empty() || val_data.empty();
+    if (use_compiled_cli) {
+        if (!string_list_from_config(config, "compiled_cli_argv", command)) {
+            return false;
+        }
+        if (!command->empty()) {
+            return true;
+        }
+    }
+
+    if (!string_list_from_config(config, "argv", command)) {
+        return false;
+    }
+    if (!command->empty()) {
+        return true;
+    }
+
+    if (!use_compiled_cli) {
+        if (!string_list_from_config(config, "compiled_cli_argv", command)) {
+            return false;
+        }
+        if (!command->empty()) {
+            return true;
+        }
+    }
+
+    if (!string_list_from_config(config, "launcher_argv", command)) {
+        return false;
+    }
+    if (!command->empty()) {
+        return true;
+    }
+
+    *error = use_compiled_cli
+        ? "native GPT alias-only config requires a non-empty compiled_cli_argv, argv, or launcher_argv list"
+        : "native GPT config requires a non-empty argv, compiled_cli_argv, or launcher_argv list";
+    return true;
+}
+
+PyObject* command_to_list(const std::vector<std::string>& command) {
+    PyObject* list = PyList_New(static_cast<Py_ssize_t>(command.size()));
+    if (list == nullptr) {
+        return nullptr;
+    }
+    for (Py_ssize_t i = 0; i < static_cast<Py_ssize_t>(command.size()); ++i) {
+        const std::string& item = command[static_cast<std::size_t>(i)];
+        PyObject* value = PyUnicode_FromStringAndSize(item.c_str(), static_cast<Py_ssize_t>(item.size()));
+        if (value == nullptr) {
+            Py_DECREF(list);
+            return nullptr;
+        }
+        PyList_SET_ITEM(list, i, value);
+    }
+    return list;
+}
+
 int run_exec_and_wait(const std::vector<std::string>& command) {
     std::vector<char*> exec_args;
     exec_args.reserve(command.size() + 1);
@@ -130,38 +197,13 @@ PyObject* run_gpt(PyObject*, PyObject* args) {
         return nullptr;
     }
 
-    std::string train_data;
-    std::string val_data;
-    if (!optional_string_from_config(config, "train_data", &train_data)) {
-        return nullptr;
-    }
-    if (!optional_string_from_config(config, "val_data", &val_data)) {
-        return nullptr;
-    }
-
     std::vector<std::string> command;
-    const bool use_compiled_cli = train_data.empty() || val_data.empty();
-    if (use_compiled_cli) {
-        if (!string_list_from_config(config, "compiled_cli_argv", &command)) {
-            return nullptr;
-        }
+    std::string command_error;
+    if (!command_from_config(config, &command, &command_error)) {
+        return nullptr;
     }
     if (command.empty()) {
-        if (!string_list_from_config(config, "argv", &command)) {
-            return nullptr;
-        }
-    }
-    if (command.empty()) {
-        if (!string_list_from_config(config, "launcher_argv", &command)) {
-            return nullptr;
-        }
-    }
-    if (command.empty()) {
-        PyErr_SetString(
-            PyExc_ValueError,
-            use_compiled_cli
-                ? "native GPT alias-only config requires a non-empty compiled_cli_argv list"
-                : "native GPT config requires a non-empty argv list");
+        PyErr_SetString(PyExc_ValueError, command_error.c_str());
         return nullptr;
     }
 
@@ -192,10 +234,31 @@ PyObject* run_gpt(PyObject*, PyObject* args) {
     return PyLong_FromLong(return_code);
 }
 
+PyObject* resolve_command(PyObject*, PyObject* args) {
+    PyObject* config = nullptr;
+    if (!PyArg_ParseTuple(args, "O!:resolve_command", &PyDict_Type, &config)) {
+        return nullptr;
+    }
+
+    std::vector<std::string> command;
+    std::string command_error;
+    if (!command_from_config(config, &command, &command_error)) {
+        return nullptr;
+    }
+    if (command.empty()) {
+        PyErr_SetString(PyExc_ValueError, command_error.c_str());
+        return nullptr;
+    }
+    return command_to_list(command);
+}
+
 PyMethodDef methods[] = {
     {"run_gpt", run_gpt, METH_VARARGS, "Run the native GPT CUDA trainer from a NeuralFn config dict."},
     {"run_gpt2", run_gpt, METH_VARARGS, "Compatibility alias for run_gpt."},
     {"run_train", run_gpt, METH_VARARGS, "Alias for run_gpt."},
+    {"resolve_command", resolve_command, METH_VARARGS, "Return the native GPT command argv without running it."},
+    {"resolve_native_gpt_command", resolve_command, METH_VARARGS, "Alias for resolve_command."},
+    {"resolve_native_gpt2_command", resolve_command, METH_VARARGS, "Compatibility alias for resolve_command."},
     {nullptr, nullptr, 0, nullptr},
 };
 

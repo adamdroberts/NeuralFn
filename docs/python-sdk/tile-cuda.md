@@ -1701,7 +1701,11 @@ and `nfn_impl` while checking GPT, GPT-2-evo, NanoGPT, explicit
 The generic compiled binding must expose both a runner symbol and a command
 resolver symbol; `resolve_native_train_binding_command(config)` returns the
 argv that `neuralfn._native_train` will spawn so SDK callers can assert the
-compiled handoff path before training.
+compiled handoff path before training. Dense GPT bindings expose the same
+inspection path through `resolve_native_gpt_binding_command(config)` and
+`resolve_native_gpt2_binding_command(config)`, backed by `resolve_command` /
+`resolve_native_gpt_command` / `resolve_native_gpt2_command` in the C++
+extension.
 Dense GPT training also requires optimized attention by default. If the Tile
 ABI drops into the scalar attention fallback, the native trainer marks the run
 failed before final checkpoint export and reports
