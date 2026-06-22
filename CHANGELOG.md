@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Promoted the native dense GPT LM-head row-loss sum-accumulate tail to the
+  default. `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE` and the
+  GPT2-prefixed alias now default to enabled, replacing the older row-loss
+  `sum_partials` plus scalar `gradient_accumulate` tail with one
+  `nfn_native_tile_sum_accumulate_float32` launch per row chunk. Set the env var
+  to `0` to reproduce the older partial-reduction route; the SM120 paired
+  wrapper now exposes that opt-out as
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_partial_reduce`. The
+  CUDA 13.3 dedicated RTX 5090 3-step, 2-sample same-script gate passed at
+  `0.998849x` train-loop wall time, `0.999887x` LM-head backward, `0.998400x`
+  block backward, and `0.999498x` MLP projection versus the prior default.
+
 - Rechecked native dense GPT SM120 candidate surfaces after the CUDA 13.3 WSL
   reinstall on the dedicated RTX 5090. The native Tile ops library and
   compiled GPT trainer rebuilt cleanly; focused native GPT tests passed; and

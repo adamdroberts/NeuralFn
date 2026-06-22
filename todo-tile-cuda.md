@@ -161,14 +161,14 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     time per step and `0.993379x` LM-head backward time versus the prior default.
     Keep `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_REDUCTION=0` only as the rollback
     bisection path.
-  - 2026-06-20 added and rejected-as-default the narrower
+  - 2026-06-20 added and initially rejected-as-default the narrower
     `nfn_native_tile_sum_accumulate_float32` row-loss tail. It replaces the
     generic `sum_partials` plus scalar `gradient_accumulate` launches with one
     CUDA reduction/atomic-accumulate launch per LM-head row chunk, but the
     3-step, 3-sample native-vs-native RTX 5090 gate measured `1.008595x`
     train-loop wall time and `1.015517x` LM-head CE time versus the current
-    row-loss default. Keep
-    `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` diagnostic-only.
+    row-loss default. Superseded on 2026-06-22 by the current CUDA 13.3
+    recheck/promotion below.
   - 2026-06-22 added and rejected-as-default the loss-bin train-loss logging
     diagnostic. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins` expands
     to `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`; the new
@@ -606,6 +606,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   - 2026-06-21 rejected a current-shape LM-head dHidden cuBLASLt probe after the CUDA 13.3 rebuild. `NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1 NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,32768,50304,N,N,0` moved the dHidden route from BF16 GEMMEx to cuBLASLt for the 32768-row chunk shape, but the same-script RTX 5090 stage-timed gate failed at `1.001298x` `stage.lm_head_backward.total_ms` and `1.001356x` `stage.lm_head_backward.dhidden.total_ms`. Keep the 32768-row dHidden shape on the current GEMMEx route.
   - 2026-06-21 corrected the named `lm_head_cublaslt_dhidden_32768` candidate profile so it expands to the same route-changing env used by the rejected probe: `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1 NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,32768,50304,N,N,0`. This is benchmark tooling only; it does not promote the rejected route.
   - 2026-06-22 CUDA 13.3 WSL reinstall recheck on the dedicated RTX 5090: `nvidia-smi` reported CUDA UMD `13.3`, no compute processes, and the native builds/tests were green (`bash tools/build_native_train_tile_ops.sh build/libnfn_native_train_tile_ops.so`, `bash tools/build_native_gpt_cli.sh`, focused native GPT pytest, and `tools/check_native_no_torch_deps.py --skip-artifacts --json`). Rechecked `lm_head_cooperative_backward`; the route enabled `lm_head_cooperative_backward_sequence_wrapper_enabled: true`, but the gate rejected it at `1.004660x` `stage.lm_head_backward.total_ms`. Rechecked `lm_head_dweight_before_dhidden`; it changed `lm_head_dhidden_dweight_schedule_strategy` to `serial-dweight-before-dhidden`, but failed train-loop (`1.011427x`) and block-backward (`1.020745x`) gates. Rechecked `cublaslt_grouped_probe`; grouped layout still succeeds (`linear_cublaslt_grouped_layout_probe_status: 0`) while grouped matmul execution remains blocked (`linear_cublaslt_grouped_matmul_probe_status: 15`). These are still diagnostic-only and not defaults.
+  - 2026-06-22 promoted the row-loss sum-accumulate tail to the default after the current CUDA 13.3 dedicated RTX 5090 gate passed. `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` measured `0.998849x` train-loop wall, `1.001155x` tokens/sec, `0.999887x` LM-head backward, `0.998400x` block backward, and `0.999498x` MLP projection versus the older partial-reduction tail. The old route remains available with `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0` or `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_partial_reduce`.
   - Next implementation target: add a NeuralFn-owned fused row-chunked LM-head backward kernel or cooperative launch family that keeps the current bounded resident-logit cap but co-schedules logits, public-vocab CE/dlogits, dHidden, and dWeight so the loop stops paying three independent GEMM/CE passes per chunk. The correctness surface is now green under CUDA 13.3, so future work should start from a new ABI/kernel design rather than another environment-switch promotion.
 - [x] Extend native GPT checkpoint text-prompt inference with GPT-2 tokenization in the lightweight wrapper so `.bin` checkpoint inference no longer needs the transitional external sampler bridge.
 - [x] Add GPT-2 evo raw Tile-CUDA trainer ABI for device-side candidate mutation, best-loss selection, and best-candidate adoption without graph-editor tensor flow.

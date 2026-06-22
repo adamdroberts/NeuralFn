@@ -1079,10 +1079,10 @@ accumulation, and a one-step `--train-loss-every-steps 1` check proved the
 route counter changed (`lm_head_classifier_loss_bin_launch_count: 0 -> 16`) but
 still failed strict stage gates.
 `lm_head_row_loss_sum_accumulate` expands to
-`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` for paired checks of the
-single-kernel row-loss tail. It is also diagnostic-only: it only affects logged
-train-loss steps, and previous CUDA 13.3 RTX 5090 timing rejected it as a
-default.
+`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1`; this is now the default
+row-loss tail. `lm_head_row_loss_partial_reduce` expands to
+`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0` for paired checks against
+the older `sum_partials` plus scalar `gradient_accumulate` tail.
 `lm_head_ce_scalar_streaming_store` expands to
 `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1` and
 `NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1` for the narrower BF16 CE

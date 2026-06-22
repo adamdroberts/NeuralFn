@@ -11684,7 +11684,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE",
                               "NFN_NATIVE_GPT2_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE"}),
-            false);
+            true);
     const bool lm_head_loss_bin_reduction_requested =
         lm_head_row_loss_reduction_requested &&
         env_flag_enabled_or_default(

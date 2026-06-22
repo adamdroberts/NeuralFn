@@ -1105,6 +1105,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_ce_loss_bins_default_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED=1",
         "lm_head_ce_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_ce_loss_bins_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1 NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
+        "lm_head_row_loss_partial_reduce": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0",
     }
     for profile, env_assignment in expected_profiles.items():
         assert profile in bench_source
@@ -3762,7 +3763,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["lm_head_ce_row_loss_reduction_available"] is False
     assert train_transformer_payload["lm_head_ce_row_loss_reduction_enabled"] is False
     assert train_transformer_payload["lm_head_ce_row_loss_sum_accumulate_available"] is False
-    assert train_transformer_payload["lm_head_ce_row_loss_sum_accumulate_requested"] is False
+    assert train_transformer_payload["lm_head_ce_row_loss_sum_accumulate_requested"] is True
     assert train_transformer_payload["lm_head_ce_row_loss_sum_accumulate_enabled"] is False
     assert train_transformer_payload["linear_bf16_gemm_count"] == 0
     assert train_transformer_payload["linear_tk_gemm_count"] == 0

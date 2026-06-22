@@ -1543,15 +1543,15 @@ the older fused-loss atomic route. The BF16/u16 row-loss kernel reads the target
 logit before it overwrites the row with dlogits, so the in-place loss path avoids
 an extra post-loss CTA barrier while preserving the same row-loss and dlogit
 outputs.
-There is also a default-off diagnostic tail,
-`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1`, that replaces the generic
+The row-loss tail now defaults to
+`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1`, which replaces the generic
 row-loss `sum_partials` plus scalar `gradient_accumulate` launches with one
-`nfn_native_tile_sum_accumulate_float32` launch per row chunk. Keep it disabled
-for normal training: the CUDA 13.3.33 RTX 5090 paired benchmark regressed to
-`1.008595x` train-loop wall time and `1.015517x` LM-head CE time versus the
-current row-loss reduction default. To measure it through the same paired
-wrapper as the other SM120 candidates, use
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_sum_accumulate`.
+`nfn_native_tile_sum_accumulate_float32` launch per row chunk. The CUDA 13.3
+RTX 5090 paired gate measured it at `0.998849x` train-loop wall time and
+`0.999887x` LM-head backward time versus the older partial-reduction tail. Set
+`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0` only to reproduce the older
+row-loss partial-reduction path; the same-script candidate wrapper exposes that
+opt-out as `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_partial_reduce`.
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1` is another default-off
 loss-logging diagnostic that lets the BF16/u16 classifier row blocks atomically
 accumulate row losses into 1024 bins, then reduces those bins with
