@@ -910,6 +910,15 @@ so a short parity command can be reused for native bisection without falling
 back to the wrapper defaults.
 If both names are set for one control, the canonical `NFN_SM120_NATIVE_*` value
 wins.
+Known route-bisection profiles are exposed through
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE`. For example,
+`qkv_forward_bf16_fallback_65536` expands to
+`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=2304,65536,768,T,N` so the current
+packed-QKV forward shape can be retested against the cuBLAS/BF16 fallback after
+CUDA or driver changes. Keep that profile diagnostic-only: the dedicated RTX
+5090 same-script run changed `linear_tk_gemm_count` as expected but rejected it
+at `1.009016x` train-loop wall time and `1.091020x`
+`stage.block_forward.attention.total_ms`.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

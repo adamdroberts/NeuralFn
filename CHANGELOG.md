@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_forward_bf16_fallback_65536` for
+  reproducible bisection of the packed-QKV forward route. It expands to
+  `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=2304,65536,768,T,N`, moving the
+  current `64 x 1024` packed-QKV forward shape off the TK BF16 path for the
+  candidate command only. It remains rejected as a default: the dedicated RTX
+  5090 same-script gate showed the intended counter change
+  (`linear_tk_gemm_count` from `1488` to `1200` over three measured steps), but
+  failed at `1.009016x` train-loop wall time and regressed
+  `stage.block_forward.attention.total_ms` to `1.091020x`. Verification:
+  wrapper dry-run coverage asserts the exact profile expansion, and the route
+  was measured with `tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Added shape-scoped BF16 `cublasGemmEx` compute-type bisection for native
   Tile-CUDA training. `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE` /
   `NFN_TILE_CUDA_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE` accept

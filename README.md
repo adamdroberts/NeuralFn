@@ -284,11 +284,15 @@ For repeatable CUDA/driver bisection of known LM-head dHidden routes, set
 `lm_head_logits_bf16_fallback_32768` to disable the TK forward route for the
 current 32768-row LM-head logits shape with
 `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`. Use
+`qkv_forward_bf16_fallback_65536` to disable the TK forward route for the
+current packed-QKV forward shape with
+`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=2304,65536,768,T,N`. Use
 `lm_head_dhidden_fast16bf_32768` to test only the current 32768-row LM-head
 dHidden BF16 GEMMEx fallback with
 `NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE=768,32768,50304,N,N`. These
-profiles are measurement shortcuts only; the alternate LM-head routes remain
-default-off until the same-script candidate gate beats the current route.
+profiles are measurement shortcuts only; the alternate LM-head and packed-QKV
+routes remain default-off until the same-script candidate gate beats the current
+route.
 For compile-time Tile ops candidates, set
 `NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_BUILD_FLAGS` or
 `NFN_SM120_CANDIDATE_TILE_OPS_BUILD_FLAGS`; the wrapper builds a temporary

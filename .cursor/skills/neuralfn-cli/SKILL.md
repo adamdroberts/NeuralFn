@@ -202,6 +202,11 @@ Canonical docs:
   `block_forward_linear_strategy`, `block_backward_input_linear_strategy`,
   `block_backward_weight_linear_strategy`,
   and `non_block_forward_backward_linear_strategy`.
+- When adding dense GPT candidate profiles, keep rejected SM120 route probes
+  reproducible but default-off. `qkv_forward_bf16_fallback_65536` must expand to
+  `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=2304,65536,768,T,N`; current RTX
+  5090 evidence rejects that packed-QKV forward fallback at `1.009016x`
+  train-loop wall time and `1.091020x` block-forward attention time.
 - The row-vector forward and query-row atomic backward float32 SDPA kernels are
   fallback/diagnostic paths for unsupported shapes or
   `NFN_TILE_CUDA_USE_TK_ATTENTION=0` builds. Do not make them the default dense

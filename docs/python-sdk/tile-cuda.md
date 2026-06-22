@@ -1538,6 +1538,12 @@ repeatable BF16 CE row-block bisection. It stays diagnostic-only: the dedicated
 RTX 5090 stage-timed gate regressed CE time to `1.144675x`, total LM-head
 backward to `1.017380x`, block backward to `1.016928x`, and train-loop wall
 time to `1.002998x` versus the 1024-thread default.
+`qkv_forward_bf16_fallback_65536` expands to
+`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=2304,65536,768,T,N` for repeatable
+packed-QKV forward fallback bisection. It stays diagnostic-only: the dedicated
+RTX 5090 stage-timed gate reduced `linear_tk_gemm_count` from `1488` to `1200`
+over three measured steps but regressed train-loop wall time to `1.009016x`
+and block-forward attention time to `1.091020x` versus the TK default.
 The same wrapper exposes `qkv_concurrent_dinput_dweight`, which expands to
 `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` for repeatable
 stage-timed QKV side-stream bisections. That profile remains default-off and is
