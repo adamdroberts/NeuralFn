@@ -1019,6 +1019,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS" in source
     assert "lm_head_cooperative_loss_bins_requested" in source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in source
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in source
+    assert "lm_head_cooperative_backward_sequence_wrapper_available" in source
     assert "lm_head.backward.cooperative.bf16_u16" in source
     assert "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity" in source
     assert "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity" in source
@@ -2190,6 +2192,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     }
     assert default_payload["selected_graph_native_runnable"] is True
     assert default_payload["checkpoint_export_enabled"] is True
+    assert default_payload["lm_head_cooperative_backward_sequence_wrapper_available"] is False
     assert default_payload["lm_head_cooperative_backward_kernel_available"] is False
     assert default_payload["lm_head_cooperative_backward_fused_kernel_available"] is False
     assert default_payload["lm_head_cooperative_backward_route_integrated"] is False

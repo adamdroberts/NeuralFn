@@ -165,6 +165,10 @@ NATIVE_METRIC_PATHS = (
         ("lm_head_cooperative_backward_abi_wrapper_available",),
     ),
     (
+        "lm_head_cooperative_backward_sequence_wrapper_available",
+        ("lm_head_cooperative_backward_sequence_wrapper_available",),
+    ),
+    (
         "lm_head_cooperative_backward_kernel_available",
         ("lm_head_cooperative_backward_kernel_available",),
     ),
@@ -278,6 +282,7 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "lm_head_cooperative_backward_strategy",
     "lm_head_cooperative_backward_required",
     "lm_head_cooperative_backward_abi_wrapper_available",
+    "lm_head_cooperative_backward_sequence_wrapper_available",
     "lm_head_cooperative_backward_kernel_available",
     "lm_head_cooperative_backward_fused_kernel_available",
     "lm_head_cooperative_backward_route_integrated",
@@ -368,6 +373,7 @@ NATIVE_TEXT_METRIC_KEYS = (
     "lm_head_ce_bf16_vec_normal_stores_enabled",
     "lm_head_cooperative_backward_required",
     "lm_head_cooperative_backward_abi_wrapper_available",
+    "lm_head_cooperative_backward_sequence_wrapper_available",
     "lm_head_cooperative_backward_kernel_available",
     "lm_head_cooperative_backward_fused_kernel_available",
     "lm_head_cooperative_backward_route_integrated",

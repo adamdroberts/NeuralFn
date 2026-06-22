@@ -1700,12 +1700,14 @@ the current cooperative LM-head backward ABI wrapper. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` or
 pass `--require-cooperative-lm-head-backward` to the compiled dense GPT CLI
 when a parity/preflight run must require the strict cooperative LM-head backward
-ABI. The current strict ABI route still sequences the existing CE, dHidden, and
-dWeight launches, so runtime strategy strings mark it as not-yet-parity instead
-of a final fused kernel. Runtime JSON reports
+Tile kernel. The current wrapper route still sequences the existing CE, dHidden,
+and dWeight launches, so wrapper-only builds fail the strict guard and runtime
+strategy strings mark them as not-yet-parity instead of a final fused kernel.
+Runtime JSON reports
 `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,
 `lm_head_cooperative_backward_abi_wrapper_available`,
+`lm_head_cooperative_backward_sequence_wrapper_available`,
 `lm_head_cooperative_backward_kernel_available`,
 `lm_head_cooperative_backward_fused_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
@@ -1716,13 +1718,17 @@ for the future cooperative route: BF16 logit/dlogit chunk, u16 targets,
 optional row losses, BF16/float hidden inputs, BF16/float token weights,
 dHidden, dWeight, shape metadata, loss scale, dWeight beta, flags, and stream.
 Runtime JSON reports the strict ABI as available only when the loaded library
-contains a fused implementation; wrapper-only libraries report
+contains the wrapper symbol; wrapper-only libraries report
 `lm_head_cooperative_backward_abi_wrapper_available: true` and
+`lm_head_cooperative_backward_sequence_wrapper_available: true`, but
 `lm_head_cooperative_backward_kernel_available: false`.
-The fused implementation must export the separate symbol
-`nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`;
-the existing `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16`
-symbol remains the diagnostic wrapper probe.
+The existing
+`nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
+symbol remains the event-ordered sequence wrapper probe. The fused
+implementation must export the separate future symbol
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` before
+`lm_head_cooperative_backward_kernel_available` or
+`lm_head_cooperative_backward_fused_kernel_available` can become true.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins` exercises the
 same strict ABI with the existing loss-bin classifier reduction inside the
 cooperative sequence. The profile sets

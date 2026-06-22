@@ -537,18 +537,20 @@ kernel.
 Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or the
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` benchmark
 profile to request the current cooperative LM-head backward path. Today this
-routes through the strict cooperative ABI symbol, and the fused export now uses
+can only see the diagnostic ABI/sequence wrappers. Those wrappers use
 persistent non-blocking CUDA streams plus events to queue dHidden and dWeight
-after CE without a host-side stream synchronize. This still reuses the existing
-CE, dHidden, and dWeight kernels; it is not the final fused SM120 parity kernel.
+after CE without a host-side stream synchronize, but still reuse the existing
+CE, dHidden, and dWeight kernels; they are not the final fused SM120 parity
+kernel.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when
-a parity run must require the strict cooperative ABI to be available and
-integrated. The current implementation satisfies the ABI guard but reports
-`strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity`
-so it cannot be mistaken for the final fused kernel. Keep it diagnostic-only:
-the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample same-script gate measured
+a parity run must require the true fused cooperative classifier/dHidden/dWeight
+Tile kernel to be available and integrated. Wrapper-only builds now fail this
+strict guard and report
+`abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity` instead
+of marking the route integrated. Keep the wrapper diagnostic-only: the CUDA
+13.3 dedicated RTX 5090 2-step, 2-sample same-script gate measured
 `1.003537x` train-loop wall, `1.000399x` LM-head backward, and `1.003647x`
 block backward versus the normal native baseline.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins` enables the
@@ -567,6 +569,7 @@ Runtime JSON reports
 `lm_head_cooperative_backward_requested`,
 `lm_head_cooperative_loss_bins_requested`,
 `lm_head_cooperative_backward_abi_wrapper_available`,
+`lm_head_cooperative_backward_sequence_wrapper_available`,
 `lm_head_cooperative_backward_kernel_available`,
 `lm_head_cooperative_backward_fused_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
@@ -583,9 +586,14 @@ BF16/float token weights, dHidden, dWeight, shape metadata, loss scale, dWeight
 beta, flags, and stream. Runtime JSON only reports
 `lm_head_cooperative_backward_abi_wrapper_available: true` when the current run
 loads a Tile ops library containing that symbol.
-The strict fused-kernel probe uses the separate symbol
-`nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`; only
-that symbol can make `lm_head_cooperative_backward_fused_kernel_available` true.
+The existing
+`nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16` export
+is the event-ordered sequence wrapper and only makes
+`lm_head_cooperative_backward_sequence_wrapper_available` true. The strict
+fused-kernel probe uses the separate future symbol
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`; only that
+symbol can make `lm_head_cooperative_backward_kernel_available` and
+`lm_head_cooperative_backward_fused_kernel_available` true.
 `NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0` (or the GPT-2 alias
 `NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD=0`) disables the default fused
 loss-accumulate+dlogits classifier path for same-script bisection, making

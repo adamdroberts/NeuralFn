@@ -6,6 +6,37 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Corrected dense GPT cooperative LM-head backward reporting so wrapper
+  sequences are no longer reported as true fused Tile kernels. The runtime and
+  `--check-tile-ops` JSON now emit
+  `lm_head_cooperative_backward_sequence_wrapper_available` for the existing
+  `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
+  event-ordered wrapper, while
+  `lm_head_cooperative_backward_kernel_available` and
+  `lm_head_cooperative_backward_fused_kernel_available` only become true when a
+  separate future
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` symbol is
+  present. `--require-cooperative-lm-head-backward` now remains a strict parity
+  guard and fails on wrapper-only builds.
+
+  **Breaking changes:** JSON consumers that treated
+  `lm_head_cooperative_backward_kernel_available` or
+  `lm_head_cooperative_backward_fused_kernel_available` as evidence that the
+  current wrapper sequence was available must switch to
+  `lm_head_cooperative_backward_sequence_wrapper_available`. Keep using the
+  kernel/fused fields only for the future true fused cooperative
+  classifier/dHidden/dWeight kernel.
+
+  The CUDA 13.3 cuBLASLt heuristic-policy retest also kept the current default:
+  the `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY=min_waves` candidate changed
+  five cached cuBLASLt plans but was rejected by the same-script RTX 5090 gate
+  at `1.010100x` train-loop wall time versus baseline.
+
+  Verification: rebuilt `build/nfn_gpt_native_train`; ran focused cooperative
+  native GPT tests, the full `tests/test_tile_cuda_examples.py` benchmark-tool
+  suite, `git diff --check`, and a one-step strict no-Torch CUDA smoke on the
+  dedicated RTX 5090.
+
 - Reworked the opt-in dense GPT LM-head double-buffered row-chunk pipeline to
   use per-slot CUDA completion events instead of synchronizing the entire
   dHidden and dWeight side streams before BF16 logit-buffer reuse. The pipeline

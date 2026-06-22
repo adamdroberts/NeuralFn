@@ -2711,6 +2711,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "lm_head_ce_bf16_threads_per_row": 1024,
                 "lm_head_cooperative_backward_required": True,
                 "lm_head_cooperative_backward_abi_wrapper_available": True,
+                "lm_head_cooperative_backward_sequence_wrapper_available": True,
                 "lm_head_cooperative_backward_kernel_available": False,
                 "lm_head_cooperative_backward_fused_kernel_available": False,
                 "lm_head_cooperative_backward_route_integrated": False,
@@ -2791,6 +2792,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["lm_head_ce_bf16_threads_per_row"] == 1024
     assert metrics["lm_head_cooperative_backward_required"] is True
     assert metrics["lm_head_cooperative_backward_abi_wrapper_available"] is True
+    assert metrics["lm_head_cooperative_backward_sequence_wrapper_available"] is True
     assert metrics["lm_head_cooperative_backward_kernel_available"] is False
     assert metrics["lm_head_cooperative_backward_fused_kernel_available"] is False
     assert metrics["lm_head_cooperative_backward_route_integrated"] is False
@@ -2849,6 +2851,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
         "lm_head_cooperative_backward_strategy": ["missing-required-sm120-parity-kernel"],
         "lm_head_cooperative_backward_required": ["true"],
         "lm_head_cooperative_backward_abi_wrapper_available": ["true"],
+        "lm_head_cooperative_backward_sequence_wrapper_available": ["true"],
         "lm_head_cooperative_backward_kernel_available": ["false"],
         "lm_head_cooperative_backward_fused_kernel_available": ["false"],
         "lm_head_cooperative_backward_route_integrated": ["false"],

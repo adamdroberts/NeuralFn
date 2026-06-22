@@ -69,11 +69,21 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `lm_head_cooperative_backward_required`,
     `lm_head_cooperative_backward_requested`,
     `lm_head_cooperative_backward_abi_wrapper_available`,
+    `lm_head_cooperative_backward_sequence_wrapper_available`,
     `lm_head_cooperative_backward_kernel_available`,
     `lm_head_cooperative_backward_fused_kernel_available`,
     `lm_head_cooperative_backward_route_integrated`,
     `lm_head_cooperative_backward_kernel_enabled`, and
     `lm_head_cooperative_backward_strategy`.
+  - 2026-06-22 corrected the runtime contract so the existing
+    `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
+    symbol is reported as the event-ordered sequence wrapper, not as a true
+    fused parity kernel. `lm_head_cooperative_backward_kernel_available` and
+    `lm_head_cooperative_backward_fused_kernel_available` now require the
+    separate future symbol
+    `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`; until
+    that exists, `--require-cooperative-lm-head-backward` must fail instead of
+    accepting wrapper-only CE/dHidden/dWeight sequencing.
   - [ ] Implement the actual cooperative LM-head backward Tile ABI that fuses or
     co-schedules classifier dlogit production with dHidden and dWeight work
     without materializing full resident logits or routing tensors through Torch.
