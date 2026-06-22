@@ -1472,12 +1472,15 @@ fields under `baseline_native_metric_values` and
 routes, block linear routes, and attention routes. Use those summaries with the
 numeric ratios to verify that a candidate benchmark actually exercised the
 intended kernel path. The same payload now includes
+`native_strategy_value_changes`, which compares those categorical fields between
+baseline and candidate, and
 `native_route_counter_changes`, which compares tracked route counters such as
 TK, cuBLASLt, BF16 GEMM, LM-head logits, BF16 packing/cache, and attention
 launch counts between baseline and candidate. When candidate-only environment
-knobs are present but those tracked counters are unchanged, the text output
-warns that timing-only improvements should be treated as noise until a route
-change or separate kernel-level attribution confirms the candidate.
+knobs are present but tracked counters, strategy values, and linear-shape plan
+metadata are unchanged, the text output warns that timing-only improvements
+should be treated as noise until a route, strategy, or separate kernel-level
+attribution confirms the candidate.
 When native stage timing is present, the text report also prints the high-value
 LM-head backward substages (`logits`, `ce`, `dhidden`, `dweight`, and optional
 `dhidden_dweight_concurrent`) and block-backward substages across MLP FC,

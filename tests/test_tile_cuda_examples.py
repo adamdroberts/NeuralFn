@@ -1529,8 +1529,87 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
         "linear_cublaslt_gemm_count",
         "linear_bf16_gemm_count",
     ]
+    strategy_changes = payload["native_strategy_value_changes"]
+    assert strategy_changes["has_strategy_value_change"] is False
+    assert strategy_changes["changed_count"] == 0
+    assert strategy_changes["tracked_count"] == 0
     assert "native_route_counter_changes: has_route_counter_change=false changed_count=0" in proc.stdout
+    assert "native_strategy_value_changes:" not in proc.stdout
     assert "tracked route counters did not change" in proc.stdout
+
+
+def test_paired_kernel_speed_tool_reports_strategy_change_without_route_counter_warning() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-strategy-change.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
+        "\\\"linear_tk_gemm_count\\\": 1632, "
+        "\\\"linear_cublaslt_gemm_count\\\": 2208, "
+        "\\\"linear_bf16_gemm_count\\\": 1824, "
+        "\\\"lm_head_ce_loss_backward_strategy\\\": "
+        "\\\"fused-row-losses-reduce-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets\\\", "
+        "\\\"lm_head_ce_row_loss_sum_accumulate_enabled\\\": false"
+        "}"
+    )
+    candidate_json = baseline_json.replace(
+        "\\\"fused-row-losses-reduce-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets\\\"",
+        "\\\"fused-row-losses-sum-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets\\\"",
+    ).replace(
+        "\\\"lm_head_ce_row_loss_sum_accumulate_enabled\\\": false",
+        "\\\"lm_head_ce_row_loss_sum_accumulate_enabled\\\": true",
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--candidate-env",
+            "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    route_changes = payload["native_route_counter_changes"]
+    assert route_changes["has_route_counter_change"] is False
+    strategy_changes = payload["native_strategy_value_changes"]
+    assert strategy_changes["has_strategy_value_change"] is True
+    assert strategy_changes["changed_count"] == 2
+    assert strategy_changes["changed"]["lm_head_ce_loss_backward_strategy"] == {
+        "baseline_values": [
+            "fused-row-losses-reduce-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"
+        ],
+        "candidate_values": [
+            "fused-row-losses-sum-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"
+        ],
+    }
+    assert strategy_changes["changed"]["lm_head_ce_row_loss_sum_accumulate_enabled"] == {
+        "baseline_values": ["false"],
+        "candidate_values": ["true"],
+    }
+    assert "native_strategy_value_changes: has_strategy_value_change=true changed_count=2" in proc.stdout
+    assert "lm_head_ce_loss_backward_strategy: baseline=fused-row-losses-reduce" in proc.stdout
+    assert "tracked route counters did not change" not in proc.stdout
 
 
 def test_paired_kernel_speed_tool_reports_cublaslt_plan_change_without_route_counter_warning() -> None:

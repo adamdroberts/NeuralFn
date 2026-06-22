@@ -598,6 +598,12 @@ commands, preventing two local same-GPU paired benchmarks from overlapping
 before the idle-process guard can see them. The default is fail-fast; use
 `--gpu-benchmark-lock-timeout-seconds N` to wait for the lock, or
 `--no-gpu-benchmark-lock` only for intentionally unmanaged measurements.
+When native JSON is present, paired output includes
+`native_strategy_value_changes` for categorical strategy switches such as
+LM-head CE, block linear, attention, allocator, or token-init route names, plus
+`native_route_counter_changes` for numeric route counters. Candidate-only
+environment knobs now trigger the timing-only warning only when route counters,
+strategy values, and linear-shape plan metadata all remain unchanged.
 
 Persistent block-output preservation in the compiled GPT trainer writes the MLP
 residual-add output directly into each non-final block's persistent

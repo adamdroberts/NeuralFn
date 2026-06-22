@@ -1119,6 +1119,36 @@ def summarize_native_route_counter_changes(
     }
 
 
+def summarize_native_strategy_value_changes(
+    baseline_values: dict[str, list[str]],
+    candidate_values: dict[str, list[str]],
+) -> dict[str, object]:
+    changed: dict[str, dict[str, list[str]]] = {}
+    unchanged: list[str] = []
+    missing: list[str] = []
+    for key in NATIVE_STRATEGY_METRIC_KEYS:
+        baseline_observed = baseline_values.get(key)
+        candidate_observed = candidate_values.get(key)
+        if not baseline_observed or not candidate_observed:
+            missing.append(key)
+            continue
+        if baseline_observed == candidate_observed:
+            unchanged.append(key)
+            continue
+        changed[key] = {
+            "baseline_values": list(baseline_observed),
+            "candidate_values": list(candidate_observed),
+        }
+    return {
+        "has_strategy_value_change": bool(changed),
+        "changed_count": len(changed),
+        "tracked_count": len(changed) + len(unchanged),
+        "changed": changed,
+        "unchanged": unchanged,
+        "missing": missing,
+    }
+
+
 def linear_shape_key(row: dict[str, object]) -> str | None:
     path_name = row.get("path_name")
     m = row.get("m")
@@ -2046,6 +2076,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             baseline_native_metrics,
             candidate_native_metrics,
         )
+        native_strategy_value_changes = summarize_native_strategy_value_changes(
+            baseline_native_metric_values,
+            candidate_native_metric_values,
+        )
         native_linear_shape_stats = summarize_linear_shape_stats(sample_rows)
         gpu_sample_summary = summarize_gpu_sample_load(sample_rows, cuda_visible_devices)
 
@@ -2088,6 +2122,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "baseline_native_metric_values": baseline_native_metric_values,
         "candidate_native_metric_values": candidate_native_metric_values,
         "native_route_counter_changes": native_route_counter_changes,
+        "native_strategy_value_changes": native_strategy_value_changes,
         "native_linear_shape_stats": native_linear_shape_stats,
         "candidate_over_baseline_native_metrics": summarize_metric_ratios(
             sample_rows,
@@ -2267,6 +2302,31 @@ def print_text(payload: dict[str, object]) -> None:
             if isinstance(observed, list) and observed:
                 print(f"    {key}: {', '.join(str(item) for item in observed)}")
     route_changes = payload.get("native_route_counter_changes")
+    strategy_changes = payload.get("native_strategy_value_changes")
+    has_strategy_change = (
+        isinstance(strategy_changes, dict)
+        and strategy_changes.get("has_strategy_value_change") is True
+    )
+    if isinstance(strategy_changes, dict) and int(strategy_changes.get("tracked_count", 0) or 0) > 0:
+        changed = strategy_changes.get("changed")
+        changed_count = strategy_changes.get("changed_count", 0)
+        print(
+            "  native_strategy_value_changes: "
+            f"has_strategy_value_change={str(strategy_changes.get('has_strategy_value_change', False)).lower()} "
+            f"changed_count={changed_count}"
+        )
+        if isinstance(changed, dict):
+            for key in NATIVE_STRATEGY_METRIC_KEYS:
+                stats = changed.get(key)
+                if not isinstance(stats, dict):
+                    continue
+                baseline_values = stats.get("baseline_values")
+                candidate_values = stats.get("candidate_values")
+                if not isinstance(baseline_values, list) or not isinstance(candidate_values, list):
+                    continue
+                baseline_text = ", ".join(str(item) for item in baseline_values)
+                candidate_text = ", ".join(str(item) for item in candidate_values)
+                print(f"    {key}: baseline={baseline_text} candidate={candidate_text}")
     if isinstance(route_changes, dict) and int(route_changes.get("tracked_count", 0) or 0) > 0:
         changed = route_changes.get("changed")
         changed_count = route_changes.get("changed_count", 0)
@@ -2291,11 +2351,12 @@ def print_text(payload: dict[str, object]) -> None:
             route_changes.get("has_route_counter_change") is False
             and isinstance(candidate_env, dict)
             and bool(candidate_env)
+            and not has_strategy_change
             and not has_shape_plan_change
         ):
             print(
                 "    note: tracked route counters did not change; treat timing-only "
-                "candidate improvements as noise until a route change or separate "
+                "candidate improvements as noise until a route, strategy, or separate "
                 "kernel-level attribution confirms the candidate."
             )
     if isinstance(shape_stats, dict) and shape_stats.get("enabled") is True:

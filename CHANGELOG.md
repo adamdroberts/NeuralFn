@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `native_strategy_value_changes` to `tools/paired_kernel_speed.py`.
+  Paired native JSON now compares categorical strategy fields between baseline
+  and candidate, such as LM-head CE strategy, block linear strategy, attention
+  strategy, allocator strategy, and token-initialization strategy. The text
+  report prints changed strategy fields and no longer emits the timing-only
+  route-counter warning when a candidate changes a tracked strategy string even
+  if numeric route counters remain unchanged. The warning now means route
+  counters, strategy values, and linear-shape plan metadata all stayed the same.
+  A corrected RTX 5090 probe of
+  `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` showed the strategy change
+  and passed a short 5-step timing gate, but a stage-timed follow-up did not
+  confirm an LM-head CE win, so no dense GPT runtime default was changed.
+
+  Verification: `python -m py_compile tools/paired_kernel_speed.py`; focused
+  `tests/test_tile_cuda_examples.py` coverage for no-change route warnings,
+  categorical strategy-change summaries, cuBLASLt plan-change summaries, and
+  route-counter summaries; `git diff --check`.
+
 - Added a stale-utilization escape hatch to `tools/paired_kernel_speed.py`:
   `--allow-stale-selected-gpu-utilization-without-compute-processes`. After
   utilization retries are exhausted, this allows a paired benchmark to continue
