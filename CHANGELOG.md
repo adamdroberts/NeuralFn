@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off Tile CUDA loss-bin CE specialization for native dense GPT
+  LM-head backward bisection. The Tile ops library now reads
+  `NFN_TILE_CUDA_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED`,
+  `NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED`, or the
+  GPT2-prefixed alias, and routes loss-bin BF16/u16 CE+dlogits through a
+  dedicated default-shape kernel when CE still uses 1024 row threads, vec8 BF16
+  loads, scalar cached stores, and `expf`. Native training JSON reports
+  `lm_head_ce_loss_bins_default_specialized_requested`,
+  `lm_head_ce_loss_bins_default_specialized_enabled`, and
+  `lm_head_ce_kernel_strategy` with value
+  `"default-specialized-loss-bins-vec8-loads-scalar-stores"`. The SM120 paired
+  wrapper exposes
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_loss_bins_default_specialized`,
+  which also enables loss-bin reduction for the candidate command. The route is
+  diagnostic-only: the CUDA 13.3 dedicated RTX 5090 3-step, 3-sample gate
+  proved the strategy change and passed train-loop wall (`0.999215x`) but
+  rejected the candidate on LM-head backward (`1.000741x`), LM-head CE
+  (`1.000339x`), and MLP projection (`1.001222x`).
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; ran focused native source/wrapper tests; ran
+  `tests/test_native_gpt2.py` (`70 passed, 1 skipped`); ran the dedicated RTX
+  5090 same-script 2-step/2-sample and 3-step/3-sample paired benchmarks for
+  the new candidate profile.
+
 - Added a tunable Tile CUDA linear-bias row-chunk diagnostic for native dense
   GPT block dWeight+bias fallback/reduction paths. The Tile ops library now
   reads `NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE`,

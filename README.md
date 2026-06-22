@@ -306,7 +306,13 @@ prepack candidates mentioning `LM_HEAD_PREPACK_BF16_HIDDEN` additionally gate
 `NFN_NATIVE_GPT_CE_BF16_THREADS=512` for repeatable CE row-block bisection and
 stays diagnostic-only after the dedicated RTX 5090 gate regressed CE time to
 `1.144675x` and train-loop wall time to `1.002998x` versus the 1024-thread
-default. LM-head pipeline overlap candidates
+default. `lm_head_ce_loss_bins_default_specialized` expands to loss-bin
+reduction plus `NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED=1` for
+repeatable loss-bin CE branch-specialization checks; the current dedicated RTX
+5090 3-step, 3-sample gate proved the route and passed train-loop wall
+(`0.999215x`) but rejected the candidate on LM-head backward (`1.000741x`),
+LM-head CE (`1.000339x`), and MLP projection (`1.001222x`).
+LM-head pipeline overlap candidates
 still use the comparable train-loop and total LM-head gates; their
 candidate-only `stage.lm_head_backward.pipeline_queue.total_ms` and
 `stage.lm_head_backward.pipeline_final_wait.total_ms` fields are reported for

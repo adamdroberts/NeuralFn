@@ -354,6 +354,23 @@ logged step. Runtime JSON reports `lm_head_ce_loss_backward_fused_available`,
 value `"once-per-logged-optimizer-step"`, `train_loss_host_d2h_count`,
 `train_loss_host_d2h_copies_per_logged_step: 1`, and
 `train_loss_microbatch_host_d2h_copies_elided_per_logged_step`.
+For loss-bin CE bisection, set
+`NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED=1`,
+`NFN_NATIVE_GPT2_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED=1`, or
+`NFN_TILE_CUDA_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED=1` with loss-bin
+reduction enabled. The Tile CUDA launcher then uses a dedicated default-shape
+loss-bin CE/dlogit kernel when the CE launch still uses 1024 row threads, vec8
+BF16 loads, scalar cached stores, and `expf`. Runtime JSON reports
+`lm_head_ce_loss_bins_default_specialized_requested`,
+`lm_head_ce_loss_bins_default_specialized_enabled`, and
+`lm_head_ce_kernel_strategy` with value
+`"default-specialized-loss-bins-vec8-loads-scalar-stores"`. The SM120 paired
+wrapper exposes this as
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_loss_bins_default_specialized`.
+Keep it diagnostic-only for now: the CUDA 13.3 dedicated RTX 5090 3-step,
+3-sample gate proved the route and passed train-loop wall (`0.999215x`) but
+rejected the candidate on LM-head backward (`1.000741x`), LM-head CE
+(`1.000339x`), and MLP projection (`1.001222x`).
 
 For SDK-launched native GPT profiling, include
 `NFN_NATIVE_LINEAR_SHAPE_STATS=1`, `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1`,
