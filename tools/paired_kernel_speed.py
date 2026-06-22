@@ -270,6 +270,7 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "lm_head_dhidden_linear_strategy",
     "lm_head_dweight_strategy",
     "lm_head_ce_loss_backward_strategy",
+    "lm_head_ce_bf16_threads_per_row",
     "lm_head_ce_bf16_vector_io_strategy",
     "lm_head_ce_bf16_vec_loads_enabled",
     "lm_head_ce_bf16_vec_stores_enabled",

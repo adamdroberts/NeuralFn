@@ -6112,6 +6112,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS" in kernels_text
     assert "NFN_NATIVE_GPT2_CE_BF16_THREADS" in kernels_text
     assert "cross_entropy_bf16_threads_per_row" in kernels_text
+    assert "token_cross_entropy_bf16_threads_per_row" in kernels_text
+    assert "nfn_native_tile_token_cross_entropy_bf16_threads_per_row" in header_text
+    assert "nfn_native_tile_token_cross_entropy_bf16_threads_per_row" in source_text
+    assert "token_cross_entropy_bf16_threads_per_row_fn" in gpt2_source_text
+    assert "lm_head_ce_bf16_threads_per_row" in gpt2_source_text
     assert "NFN_TILE_CUDA_CE_BF16_VEC_STORES" in kernels_text
     assert "NFN_NATIVE_GPT_CE_BF16_VEC_STORES" in kernels_text
     assert "NFN_NATIVE_GPT2_CE_BF16_VEC_STORES" in kernels_text

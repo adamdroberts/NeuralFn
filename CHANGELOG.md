@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added native Tile launch-shape reporting for dense GPT BF16 LM-head
+  cross-entropy. The raw CUDA Tile ABI now exports
+  `nfn_native_tile_token_cross_entropy_bf16_threads_per_row`, and
+  `nfn_gpt_native_train` reports the resolved value as
+  `lm_head_ce_bf16_threads_per_row` in runtime JSON. This reports the actual
+  value after invalid `NFN_NATIVE_GPT_CE_BF16_THREADS`,
+  `NFN_NATIVE_GPT2_CE_BF16_THREADS`, or `NFN_TILE_CUDA_CE_BF16_THREADS` inputs
+  fall back to the default 1024 threads per row. `tools/paired_kernel_speed.py`
+  now treats the field as a native strategy value, so CE row-block bisections
+  are visible as real strategy changes instead of timing-only noise.
+
+  **Breaking changes:** existing `libnfn_native_train_tile_ops.so` builds must
+  be rebuilt before running the compiled dense GPT transformer trainer because
+  the trainer now requires
+  `nfn_native_tile_token_cross_entropy_bf16_threads_per_row` during startup
+  symbol validation.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; ran the focused native GPT source test and
+  paired benchmark-tool tests covering CE thread strategy reporting and sidecar
+  extraction; ran `git diff --check`; ran a one-step dedicated RTX 5090 smoke
+  with strict no-Torch Tile CUDA settings and confirmed
+  `lm_head_ce_bf16_threads_per_row: 1024`.
+
 - Updated `tools/paired_kernel_speed.py` to consume native GPT
   `linear_cublaslt_plan_cache` JSON from stdout or sidecar files. The paired
   result now includes `native_cublaslt_plan_cache`, reports cached-plan changes

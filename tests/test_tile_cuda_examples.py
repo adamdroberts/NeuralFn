@@ -1997,6 +1997,61 @@ def test_paired_kernel_speed_tool_reports_lm_head_ce_vector_io_strategy_change()
     assert "tracked route counters did not change" not in proc.stdout
 
 
+def test_paired_kernel_speed_tool_reports_lm_head_ce_thread_strategy_change() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-ce-thread-change.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
+        "\\\"lm_head_ce_bf16_threads_per_row\\\": 1024"
+        "}"
+    )
+    candidate_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 9.9}, "
+        "\\\"lm_head_ce_bf16_threads_per_row\\\": 512"
+        "}"
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    strategy_changes = payload["native_strategy_value_changes"]
+    assert strategy_changes["has_strategy_value_change"] is True
+    assert strategy_changes["changed"]["lm_head_ce_bf16_threads_per_row"] == {
+        "baseline_values": ["1024"],
+        "candidate_values": ["512"],
+    }
+    assert "lm_head_ce_bf16_threads_per_row: baseline=1024 candidate=512" in proc.stdout
+    assert "tracked route counters did not change" not in proc.stdout
+
+
 def test_paired_kernel_speed_tool_reports_train_loss_copy_scope_change() -> None:
     script = Path("tools/paired_kernel_speed.py")
     output_path = Path(tempfile.mkdtemp()) / "paired-train-loss-copy.json"
@@ -2653,6 +2708,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "lm_head_logits_linear_strategy": "padded-lm-head-bf16-cublaslt-fallback",
                 "lm_head_dhidden_linear_strategy": "bf16-cublas-gemmex",
                 "lm_head_ce_loss_backward_strategy": "separate-loss-partials-reduction-then-dlogits",
+                "lm_head_ce_bf16_threads_per_row": 1024,
                 "lm_head_cooperative_backward_required": True,
                 "lm_head_cooperative_backward_abi_wrapper_available": True,
                 "lm_head_cooperative_backward_kernel_available": False,
@@ -2732,6 +2788,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["lm_head_logits_linear_strategy"] == "padded-lm-head-bf16-cublaslt-fallback"
     assert metrics["lm_head_dhidden_linear_strategy"] == "bf16-cublas-gemmex"
     assert metrics["lm_head_ce_loss_backward_strategy"] == "separate-loss-partials-reduction-then-dlogits"
+    assert metrics["lm_head_ce_bf16_threads_per_row"] == 1024
     assert metrics["lm_head_cooperative_backward_required"] is True
     assert metrics["lm_head_cooperative_backward_abi_wrapper_available"] is True
     assert metrics["lm_head_cooperative_backward_kernel_available"] is False
@@ -2788,6 +2845,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
         "lm_head_logits_linear_strategy": ["padded-lm-head-bf16-cublaslt-fallback"],
         "lm_head_dhidden_linear_strategy": ["bf16-cublas-gemmex"],
         "lm_head_ce_loss_backward_strategy": ["separate-loss-partials-reduction-then-dlogits"],
+        "lm_head_ce_bf16_threads_per_row": ["1024"],
         "lm_head_cooperative_backward_strategy": ["missing-required-sm120-parity-kernel"],
         "lm_head_cooperative_backward_required": ["true"],
         "lm_head_cooperative_backward_abi_wrapper_available": ["true"],

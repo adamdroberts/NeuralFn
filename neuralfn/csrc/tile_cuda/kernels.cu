@@ -13361,6 +13361,10 @@ __global__ void jepa_mask_int64_kernel(
 
 }  // namespace
 
+std::int64_t token_cross_entropy_bf16_threads_per_row() {
+  return static_cast<std::int64_t>(cross_entropy_bf16_threads_per_row());
+}
+
 void launch_unary_float32(const float* x, float* out, std::int64_t n, int op, cudaStream_t stream) {
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   unary_float32_kernel<<<blocks, 1, 0, stream>>>(x, out, n, op);
