@@ -814,9 +814,12 @@ BF16/float hidden inputs, BF16/float token weights, dHidden, dWeight, shape
 metadata, loss scale, dWeight beta, flags, and stream. Runtime JSON reports
 `lm_head_cooperative_backward_abi_wrapper_available: true` when the run loads a
 Tile ops library that exports that wrapper symbol.
-The hard fused route is probed through the separate symbol
-`nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`; only
-that symbol satisfies `lm_head_cooperative_backward_fused_kernel_available`.
+The current wrapper symbol is
+`nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`; it
+only satisfies `lm_head_cooperative_backward_sequence_wrapper_available`. The
+future hard fused route is probed through
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`; only that
+separate symbol satisfies `lm_head_cooperative_backward_fused_kernel_available`.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
