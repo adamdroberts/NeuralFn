@@ -142,7 +142,7 @@ def _load_train_gpt2_script_module():
 
 
 def _load_train_gpt_script_module():
-    script = ROOT / "cli" / "scripts" / "train_gpt2.py"
+    script = ROOT / "cli" / "scripts" / "train_gpt.py"
     spec = importlib.util.spec_from_file_location("train_gpt_template_pass_through_test", script)
     assert spec is not None
     assert spec.loader is not None
