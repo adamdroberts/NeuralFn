@@ -559,6 +559,9 @@ BF16/float token weights, dHidden, dWeight, shape metadata, loss scale, dWeight
 beta, flags, and stream. Runtime JSON only reports
 `lm_head_cooperative_backward_abi_wrapper_available: true` when the current run
 loads a Tile ops library containing that symbol.
+The strict fused-kernel probe uses the separate symbol
+`nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`; only
+that symbol can make `lm_head_cooperative_backward_fused_kernel_available` true.
 `NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0` (or the GPT-2 alias
 `NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD=0`) disables the default fused
 loss-accumulate+dlogits classifier path for same-script bisection, making

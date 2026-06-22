@@ -41,6 +41,8 @@ constexpr int kDefaultLmHeadRowChunkSize = 32768;
 constexpr int kDefaultSafeLmHeadRowChunkSize = 32768;
 constexpr const char* kLmHeadCooperativeBackwardSymbol =
     "nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16";
+constexpr const char* kLmHeadCooperativeBackwardFusedSymbol =
+    "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16";
 
 struct Config {
     std::string model_family = "gpt";
@@ -3895,6 +3897,7 @@ bool print_tile_plan(
     bool loaded = false;
     bool all_symbols = false;
     bool cooperative_lm_head_backward_abi_wrapper_found = false;
+    bool cooperative_lm_head_backward_fused_kernel_found = false;
     std::string error;
     std::vector<bool> found(symbols.size(), false);
     if (include_symbol_check || cooperative_lm_head_backward_requested) {
@@ -3913,10 +3916,11 @@ bool print_tile_plan(
             }
             cooperative_lm_head_backward_abi_wrapper_found =
                 dlsym(handle, kLmHeadCooperativeBackwardSymbol) != nullptr;
+            cooperative_lm_head_backward_fused_kernel_found =
+                dlsym(handle, kLmHeadCooperativeBackwardFusedSymbol) != nullptr;
             dlclose(handle);
         }
     }
-    const bool cooperative_lm_head_backward_fused_kernel_found = false;
     const bool cooperative_lm_head_backward_route_integrated =
         cooperative_lm_head_backward_requested &&
         cooperative_lm_head_backward_fused_kernel_found;
@@ -10597,6 +10601,8 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_loss_bins_bf16_u16 = nullptr;
     LmHeadClassifierBackwardCooperativeBf16U16Fn
         lm_head_classifier_backward_cooperative_bf16_u16 = nullptr;
+    LmHeadClassifierBackwardCooperativeBf16U16Fn
+        lm_head_classifier_backward_cooperative_fused_bf16_u16 = nullptr;
     FillManyFn fill_many = nullptr;
     AdamWManyWithDeviceScaleFn adamw_many_with_device_scale = nullptr;
     AdamWManyWithDeviceScaleBf16ShadowFn adamw_many_with_device_scale_bf16_shadow = nullptr;
@@ -11164,6 +11170,10 @@ int run_transformer_lm_training_json(
                     load_symbol<LmHeadClassifierBackwardCooperativeBf16U16Fn>(
                         tile_handle,
                         kLmHeadCooperativeBackwardSymbol);
+                lm_head_classifier_backward_cooperative_fused_bf16_u16 =
+                    load_symbol<LmHeadClassifierBackwardCooperativeBf16U16Fn>(
+                        tile_handle,
+                        kLmHeadCooperativeBackwardFusedSymbol);
                 adamw_many_with_device_scale = load_symbol<AdamWManyWithDeviceScaleFn>(
                     tile_handle, "nfn_native_tile_adamw_step_many_with_device_scale_float32");
                 adamw_many_with_device_scale_bf16_shadow =
@@ -11741,7 +11751,8 @@ int run_transformer_lm_training_json(
         lm_head_chunk_count > 1;
     const bool lm_head_cooperative_backward_abi_wrapper_available =
         lm_head_classifier_backward_cooperative_bf16_u16 != nullptr;
-    const bool lm_head_cooperative_backward_fused_kernel_available = false;
+    const bool lm_head_cooperative_backward_fused_kernel_available =
+        lm_head_classifier_backward_cooperative_fused_bf16_u16 != nullptr;
     const bool lm_head_cooperative_backward_route_integrated =
         lm_head_cooperative_backward_requested &&
         lm_head_cooperative_backward_fused_kernel_available &&
@@ -15437,7 +15448,7 @@ int run_transformer_lm_training_json(
                     if (!error.empty()) {
                         return;
                     }
-                    run(lm_head_classifier_backward_cooperative_bf16_u16(
+                    run(lm_head_classifier_backward_cooperative_fused_bf16_u16(
                             bf16_logit_chunk,
                             target_chunk_u16,
                             row_max,

@@ -952,6 +952,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta" in tile_ops_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_BACKWARD" in source
+    assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in source
     assert "lm_head.backward.cooperative.bf16_u16" in source
     assert "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity" in source
     assert "cooperative-classifier-dhidden-dweight-fused-sm120-kernel" in source

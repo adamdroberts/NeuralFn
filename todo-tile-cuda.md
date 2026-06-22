@@ -85,11 +85,14 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       contract reports it only as
       `lm_head_cooperative_backward_abi_wrapper_available` and keeps
       `lm_head_cooperative_backward_kernel_available: false` until a fused
-      kernel lands. This is not promoted because the dedicated RTX 5090
-      one-step promotion gate rejected the wrapper at `1.001674x` train-loop
-      wall time and `1.001581x` LM-head backward time. The open work remains
-      replacing the wrapper sequence with a genuinely fused/cooperative kernel
-      and then integrating the route.
+      kernel lands. The strict fused route now probes the separate symbol
+      `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
+      so the diagnostic wrapper cannot accidentally satisfy the parity guard.
+      This is not promoted because the dedicated RTX 5090 one-step promotion
+      gate rejected the wrapper at `1.001674x` train-loop wall time and
+      `1.001581x` LM-head backward time. The open work remains replacing the
+      wrapper sequence with a genuinely fused/cooperative kernel under that
+      fused symbol and then integrating the route.
   - 2026-06-20 promoted the row-loss reduction classifier variant to the dense
     GPT default after CUDA 13.3.33 RTX 5090 same-script gating. The new
     `nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets`

@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Split the dense GPT cooperative LM-head ABI probes into wrapper and fused
+  symbols. The existing
+  `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16` remains the
+  diagnostic wrapper probe, while the strict fused route now looks for
+  `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16` and
+  calls only that pointer when `lm_head_cooperative_backward_kernel_enabled`
+  becomes true. This keeps wrapper-only Tile ops libraries from accidentally
+  satisfying the parity guard and lets the future fused kernel become active by
+  exporting the distinct fused symbol.
+
+  Verification: rebuilt `build/nfn_gpt_native_train`; strict
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 --check-tile-ops
+  --require-cooperative-lm-head-backward` returned exit code 2 with the
+  wrapper-only Tile ops library and reported wrapper availability true but fused
+  availability false; focused native GPT pytest slices passed; native no-Torch
+  dependency check and `git diff --check` passed.
+
 - **Breaking changes:** tightened the dense GPT cooperative LM-head strictness
   contract. `--require-cooperative-lm-head-backward` and
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required`

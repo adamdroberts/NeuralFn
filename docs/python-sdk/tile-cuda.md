@@ -1686,6 +1686,10 @@ Runtime JSON reports the kernel as available only when the loaded library
 contains a fused implementation; wrapper-only libraries report
 `lm_head_cooperative_backward_abi_wrapper_available: true` and
 `lm_head_cooperative_backward_kernel_available: false`.
+The fused implementation must export the separate symbol
+`nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`;
+the existing `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16`
+symbol remains the diagnostic wrapper probe.
 
 Startup-only token-weight initializer bisections can use the same profile
 mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,
