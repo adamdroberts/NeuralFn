@@ -1032,6 +1032,11 @@ stores. Runtime JSON reports `lm_head_ce_bf16_vec_loads_enabled`,
 `lm_head_ce_bf16_vec_normal_stores_enabled`, and
 `lm_head_ce_bf16_vector_io_strategy`, and stage-timed wrapper runs gate the
 candidate on `stage.lm_head_backward.ce.total_ms`.
+The streaming-store candidate reuses packed vec8 BF16 loads in the final
+dlogit write pass, but remains diagnostic-only: the 2026-06-22 dedicated RTX
+5090 same-script gate proved the strategy changed to
+`vec8-loads-streaming-stores` and rejected it at `1.001346x` train-loop wall
+time, `1.000944x` LM-head backward, and `1.004197x` CE time.
 `lm_head_cooperative_backward_required` appends
 `--require-cooperative-lm-head-backward` to the candidate command. It is a
 strict missing-kernel guard, not a timing candidate: it should fail until the

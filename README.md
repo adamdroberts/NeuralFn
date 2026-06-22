@@ -874,6 +874,10 @@ previously rejected streaming-store path. The CUDA 13.3.33 dedicated RTX 5090
 same-script gate measured the final-pass vector-load candidate at `0.995665x`
 mean train-loop wall time, `0.997949x` LM-head backward time, and `0.994846x`
 CE time versus the prior scalar final-pass load path.
+The opt-in streaming-store path now reuses those packed vec8 loads too, but the
+2026-06-22 dedicated RTX 5090 same-script gate still rejected it at
+`1.001346x` train-loop wall time, `1.000944x` LM-head backward time, and
+`1.004197x` CE time, so leave it unset for normal training.
 `NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1`,
 `NFN_NATIVE_GPT2_CE_BF16_VEC_NORMAL_STORES=1`, or
 `NFN_TILE_CUDA_CE_BF16_VEC_NORMAL_STORES=1` is a separate default-off

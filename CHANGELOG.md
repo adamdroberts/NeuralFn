@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the dense GPT BF16 CE vector-store candidate to reuse packed vec8 BF16
+  loads during the final dlogit write pass whenever vec loads are enabled. The
+  previous default-off `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1` /
+  `NFN_TILE_CUDA_CE_BF16_VEC_STORES=1` path could still scalar-reload logits
+  in the dlogit loop, so the `lm_head_ce_vec8_io` candidate did not fully match
+  the intended llm.kittens-style load128/store128cs access shape. The switch is
+  still diagnostic-only: the dedicated RTX 5090 2-step, 2-sample same-script
+  gate confirmed the route changed from `vec8-loads-scalar-stores` to
+  `vec8-loads-streaming-stores`, but rejected it at `1.001346x` train-loop wall
+  time, `1.000944x` LM-head backward, and `1.004197x` CE time.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so`; source-only
+  BF16 CE vector-store regression test passed; native no-Torch dependency check
+  passed; `git diff --check` passed; dedicated RTX 5090 paired candidate
+  benchmark ran with no compute processes before the run and failed the strict
+  timing gates as expected.
+
 - Removed the matching top-level CLI dispatch hop for non-dense compiled
   native families. `nfn train --base-model gpt2-evo|llama|mixllama|jepa|
   semantic-router-moe|deepseek-v4 ...` now resolves directly to the matching

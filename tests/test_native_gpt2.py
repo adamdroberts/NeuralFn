@@ -907,6 +907,19 @@ def test_native_gpt_lm_smoke_uses_stable_cuda_13_3_expectations() -> None:
     assert "max_grad_abs_error <= 1e-5 && max_weight_abs_error <= 1e-4" in source
 
 
+def test_native_gpt_bf16_ce_vector_stores_reuse_vec_loads() -> None:
+    root = Path(__file__).resolve().parents[1]
+    kernels_text = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text(encoding="utf-8")
+    packed_load = (
+        "const int4 packed = vec_loads ? load_bf16_vec8(row_logits + col) : make_int4(0, 0, 0, 0);"
+    )
+    raw_load = "const std::uint16_t raw = vec_loads ? int4_u16_at(packed, offset) : row_logits[current_col];"
+    assert kernels_text.count(packed_load) >= 5
+    assert kernels_text.count(raw_load) >= 5
+    assert "(vec_normal_stores && vec_loads) ? load_bf16_vec8" not in kernels_text
+    assert "(vec_normal_stores && vec_loads) ? int4_u16_at" not in kernels_text
+
+
 def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path: Path) -> None:
     cfg = build_native_gpt_compiled_cli_run_config(
         dataset_alias="cached-shards",
@@ -5969,6 +5982,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "bf16_row_exp_sum_vec8_or_scalar" in kernels_text
     assert "if (vec_loads) {" in kernels_text
     assert "const int4 packed = load_bf16_vec8(row_logits + col);" in kernels_text
+    assert (
+        "const int4 packed = vec_loads ? load_bf16_vec8(row_logits + col) : make_int4(0, 0, 0, 0);"
+        in kernels_text
+    )
+    assert "(vec_normal_stores && vec_loads) ? load_bf16_vec8" not in kernels_text
     assert "bf16_bits_to_f32_device(int4_u16_at(packed, offset))" in kernels_text
     assert "store_bf16_vec8_streaming" in kernels_text
     assert "store_bf16_vec8_normal" in kernels_text

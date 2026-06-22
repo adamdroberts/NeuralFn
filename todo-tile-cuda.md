@@ -211,6 +211,14 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     LM-head and block MLP-proj gates (`1.001033x` and `1.000934x`). A shorter
     parser check confirmed paired output records the strategy transition from
     `vec8-loads-scalar-stores` to `vec8-loads-streaming-stores`.
+  - 2026-06-22 fixed the default-off streaming-store candidate so the final
+    dlogit write pass reuses packed vec8 BF16 loads whenever vec loads are
+    enabled, matching the intended load128/store128cs memory-access shape more
+    closely. Keep it diagnostic-only: the post-fix dedicated RTX 5090 2-step,
+    2-sample same-script gate proved the strategy transition from
+    `vec8-loads-scalar-stores` to `vec8-loads-streaming-stores`, but rejected
+    the candidate at `1.001346x` train-loop wall time, `0.998656x` tokens/sec,
+    `1.000944x` LM-head backward, and `1.004197x` CE time.
   - 2026-06-20 rejected CUDA write-combined pinned token staging for the native
     GPT token/target host buffer. The candidate changed the trainer
     `cudaHostAlloc` flags from default to write-combined and passed the
