@@ -1362,6 +1362,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "1"
     )
     assert grouped_probe_payload["metric_ratio_gates"]["enabled"] is False
+    assert "AUTO_DISABLE_METRIC_RATIO_GATES=1" in text
 
     max_connections_output_path = tmp_path / "candidate-max-connections-dry-run.json"
     max_connections_env = os.environ.copy()

@@ -1193,6 +1193,9 @@ footprint.
 NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`. Use it as a readiness check
 before grouped block-backward work; on the current CUDA 13.3 WSL stack the
 layout probe passes but grouped matmul execution still reports status `15`.
+The wrapper keeps route-change proof enabled but skips automatic metric-ratio
+gates for this capability-only profile, so setup timing noise does not make the
+readiness check exit nonzero.
 The profile intentionally omits `NFN_NATIVE_GPT_PROBE_CUBLAS_GROUPED_BF16_GEMM`
 because the current CUDA stack still leaves the trainer context unusable after
 that unsupported probe.

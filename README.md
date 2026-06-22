@@ -507,7 +507,9 @@ Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe` to run both
 cuBLASLt grouped layout and grouped execution probes through the same native
 paired wrapper as the other SM120 candidates; the current CUDA 13.3 WSL recheck
 still reports layout status `0` and grouped matmul status `15`. The wrapper
-intentionally does not request the classic cuBLAS grouped BF16 probe because the
+keeps the native route-change gate but disables automatic timing-ratio gates
+for this capability-only profile, so startup noise cannot hide the probe status.
+It intentionally does not request the classic cuBLAS grouped BF16 probe because the
 CUDA 13.3 recheck showed that unsupported route still poisons the selected CUDA
 context before the trainer can allocate model arenas.
 The native trainer now prewarms CUDA 13.3 BF16 cuBLASLt plans by default for

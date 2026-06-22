@@ -361,7 +361,10 @@ The paired SM120 wrapper profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe` enables the
 cuBLASLt layout and grouped-matmul probes for repeatable CUDA-upgrade checks;
 the current CUDA 13.3 WSL probe still reports grouped layout status `0` and
-grouped matmul status `15`. The profile deliberately omits the classic cuBLAS
+grouped matmul status `15`. The wrapper keeps native route-change proof enabled
+but skips automatic timing-ratio gates for this capability-only profile, so the
+readiness check reports probe support instead of setup timing noise. The profile
+deliberately omits the classic cuBLAS
 grouped BF16 probe because the CUDA 13.3 recheck showed it still poisons the
 selected CUDA context before model allocation when unsupported.
 CUDA 13.3.33 post-reinstall paired checks keep 32768 rows as the default.

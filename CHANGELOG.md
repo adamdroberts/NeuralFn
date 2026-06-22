@@ -1113,13 +1113,16 @@ Future updates should append new entries here rather than replacing older notes.
   work. A current CUDA 13.3 WSL recheck on the dedicated RTX 5090 reports
   grouped layout support (`status 0`) but grouped cuBLASLt matmul execution is
   still unsupported (`status 15`), so grouped kernels remain blocked for the
-  default route. The profile intentionally omits the classic cuBLAS grouped BF16
+  default route. The profile now keeps the native route-change gate but disables
+  automatic timing-ratio gates because this is a capability check, not a speed
+  promotion candidate. It intentionally omits the classic cuBLAS grouped BF16
   probe because the CUDA 13.3 recheck reproduced a poisoned CUDA context and
   error `700` on the following model arena allocation.
 
   Verification: ran the grouped startup probe on the dedicated RTX 5090, ran
-  the candidate wrapper dry-run for `cublaslt_grouped_probe`, and ran the
-  focused Tile-CUDA wrapper pytest slice.
+  the candidate wrapper dry-run for `cublaslt_grouped_probe`, reran the focused
+  Tile-CUDA wrapper pytest slice, and reran the startup probe after disabling
+  automatic timing-ratio gates.
 
 - Added the named SM120 candidate profile
   `lm_head_row_loss_sum_accumulate` to `tools/bench_native_gpt_sm120_candidate.sh`.
