@@ -782,6 +782,9 @@ The installed console entry point uses the same fast path as direct script
 execution: `nfn = "nfn:main"` dispatches default dense GPT training to the
 compiled native command before importing `train_gpt_native`, `nfn_impl`, or
 Torch.
+Programmatic `nfn.main([...], stdin_isatty=..., stdout_isatty=...)` calls with
+native training arguments take that same compiled dispatcher before the
+graph-backed implementation module is loaded.
 
 Native checkpoint inference uses the same direct boundary for token-id prompts:
 `nfn infer --native-checkpoint PATH --prompt-tokens IDS` and
@@ -1246,11 +1249,12 @@ Non-dense-GPT `nfn train` commands now enter compiled native C++ before any lega
 
 The no-Torch verifier also executes the guarded legacy training scripts with no
 native flags against stubbed native CLIs, and it imports the installed
-`nfn:main` console entry point for dense GPT training dry-run plus native
-checkpoint metadata and prompt-token inference. These checks prove the default
-direct-script and console-entry train/infer paths cross into native C++ before
-Torch, NumPy, tokenizer, dataset-manager, `infer_gpt`, `train_gpt_native`, or
-`nfn_impl` imports. It also imports the native-only GPT-2-evo, NanoGPT,
+`nfn:main` console entry point plus programmatic `nfn.main([...],
+stdin_isatty=..., stdout_isatty=...)` dense GPT training dry-runs, native
+checkpoint metadata, and prompt-token inference. These checks prove the default
+direct-script, console-entry, and programmatic train/infer paths cross into
+native C++ before Torch, NumPy, tokenizer, dataset-manager, `infer_gpt`,
+`train_gpt_native`, or `nfn_impl` imports. It also imports the native-only GPT-2-evo, NanoGPT,
 LLaMA fast/megakernel, MixLLaMA, semantic-router MoE, and DeepSeek-V4 shim modules under that same blocker so import-time
 regressions are caught.
 

@@ -148,6 +148,25 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
         ),
     ),
     (
+        "nfn_programmatic_train_fast_command",
+        (
+            sys.executable,
+            "-c",
+            "\n".join(
+                [
+                    "from nfn import main",
+                    "raise SystemExit(int(main([",
+                    "    'train',",
+                    "    '--tinystories',",
+                    "    '--native-cuda-dry-run',",
+                    "    '--native-cuda-print-command',",
+                    "    '--no-checkpoint',",
+                    "], stdin_isatty=False, stdout_isatty=False) or 0))",
+                ]
+            ),
+        ),
+    ),
+    (
         "native_sdk_imports",
         (
             sys.executable,

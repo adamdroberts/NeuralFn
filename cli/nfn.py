@@ -877,9 +877,9 @@ def main(
     stdout_isatty: bool | None = None,
 ) -> int:
     tokens = list(sys.argv[1:] if argv is None else argv)
+    if _is_direct_native_train_cli_train(tokens):
+        return _direct_native_train_cli_main(tokens)
     if stdin_isatty is None and stdout_isatty is None:
-        if _is_direct_native_train_cli_train(tokens):
-            return _direct_native_train_cli_main(tokens)
         if _is_explicit_native_gpt_train(tokens):
             from train_gpt_native import main as train_gpt_native_main
 

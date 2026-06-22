@@ -83,12 +83,13 @@ and server packages remain optional-only, checks the compiled native GPT
 artifacts with `ldd` for Torch, c10, or Python runtime libraries, then runs the
 default native GPT, GPT-2-evo, NanoGPT, LLaMA fast/megakernel, MixLLaMA, JEPA
 semantic, semantic-router MoE, DeepSeek-V4, explicit `nfn train --tinystories`,
-default `nfn train`, and native inference entrypoints under an import blocker
-and a 2-second-per-entrypoint startup budget. The JSON report includes
-`elapsed_seconds`, `startup_budget_seconds`, and `startup_within_budget`; pass
-`--max-entrypoint-seconds 0` only when intentionally disabling the startup
-budget for diagnostics.
-for `torch`, NumPy, tiktoken, `server.dataset_manager`, and `nfn_impl`. Use
+default `nfn train`, programmatic `nfn.main([...], stdin_isatty=...,
+stdout_isatty=...)` native training, and native inference entrypoints under an
+import blocker for `torch`, NumPy, tiktoken, `server.dataset_manager`, and
+`nfn_impl`, plus a 2-second-per-entrypoint startup budget. The JSON report
+includes `elapsed_seconds`, `startup_budget_seconds`, and
+`startup_within_budget`; pass `--max-entrypoint-seconds 0` only when
+intentionally disabling the startup budget for diagnostics. Use
 `--skip-artifacts` when only the Python no-import contract should be checked
 without local build outputs.
 

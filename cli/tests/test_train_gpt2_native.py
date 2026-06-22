@@ -145,6 +145,62 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
         self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
 
+    def test_nfn_programmatic_train_dispatches_native_without_python_harness(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root / "cli"))
+            sys.path.insert(0, str(root / "cli" / "scripts"))
+            sys.path.insert(0, str(root))
+
+            from nfn import main
+
+            exit_code = int(main(
+                [
+                    "train",
+                    "--base-model",
+                    "gpt",
+                    "--dataset-alias=/tmp/native-cache",
+                    "--native-cuda-dry-run",
+                    "--native-cuda-print-command",
+                    "--eval-every-steps=1000",
+                ],
+                stdin_isatty=False,
+                stdout_isatty=False,
+            ) or 0)
+            print("TORCH_LOADED", "torch" in sys.modules)
+            print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
+            print("TRAIN_GPT_NATIVE_LOADED", "train_gpt_native" in sys.modules)
+            raise SystemExit(exit_code)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        env["NFN_NATIVE_TRAIN_CLI"] = "/bin/echo"
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("--model-family gpt", proc.stdout)
+        self.assertIn("--dataset-alias /tmp/native-cache", proc.stdout)
+        self.assertIn("--eval-every-steps 1000", proc.stdout)
+        self.assertIn("--dry-run", proc.stdout)
+        self.assertIn("--print-command", proc.stdout)
+        self.assertIn("--train-transformer-lm", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
+        self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
+
     def test_train_gpt2_evo_module_import_is_native_only(self) -> None:
         code = textwrap.dedent(
             f"""

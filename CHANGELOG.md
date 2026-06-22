@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Routed programmatic native training calls through the lightweight `nfn`
+  dispatcher before any graph-backed imports. Calls such as
+  `nfn.main(["train", ...], stdin_isatty=False, stdout_isatty=False)` now
+  execute the compiled native C++ trainer handoff directly, matching the
+  installed console entry point and avoiding `nfn_impl`, Torch, NumPy, tokenizer,
+  and dataset-manager startup work.
+
+  Verification: focused programmatic `nfn.main()` no-Torch native dispatch test,
+  `python tools/check_native_no_torch_deps.py`, and `python -m py_compile
+  cli/nfn.py`.
+
 - Made `cli/scripts/train_jepa_semantic.py` lazy-load its graph-backed
   Torch/NumPy training runtime. Importing the module and constructing its parser
   no longer imports Torch, so sibling inference scripts and CLI helpers can
