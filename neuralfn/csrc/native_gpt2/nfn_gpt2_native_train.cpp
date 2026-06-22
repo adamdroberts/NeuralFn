@@ -9808,6 +9808,8 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_classifier_last_rows = 0;
     std::int64_t lm_head_classifier_last_vocab = 0;
     std::int64_t lm_head_classifier_last_row_stride = 0;
+    std::int64_t lm_head_pipeline_slot_event_wait_count = 0;
+    std::int64_t lm_head_pipeline_done_event_record_count = 0;
     const bool linear_cublaslt_descriptor_cache_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_TILE_CUDA_CUBLASLT_DESCRIPTOR_CACHE",
@@ -15393,11 +15395,23 @@ int run_transformer_lm_training_json(
             const float lm_head_dweight_beta = first_lm_head_dweight_chunk ? 0.0f : 1.0f;
             if (lm_head_pipeline_chunks_enabled && chunk_index >= 2) {
                 run_timed_stage("lm_head_backward.pipeline_buffer_wait", [&]() {
-                    if (error.empty()) {
-                        run(cuda_stream_synchronize(lm_head_dhidden_stream), "lm_head.pipeline.wait_dhidden_buffer");
+                    if (!error.empty()) {
+                        return;
                     }
-                    if (error.empty()) {
-                        run(cuda_stream_synchronize(lm_head_dweight_stream), "lm_head.pipeline.wait_dweight_buffer");
+                    const std::size_t slot = static_cast<std::size_t>(chunk_index % 2);
+                    if (lm_head_pipeline_dhidden_done_events[slot] != nullptr) {
+                        run(cuda_stream_wait_event(nullptr, lm_head_pipeline_dhidden_done_events[slot], 0),
+                            "lm_head.pipeline.wait_dhidden_slot");
+                        if (error.empty()) {
+                            lm_head_pipeline_slot_event_wait_count += 1;
+                        }
+                    }
+                    if (error.empty() && lm_head_pipeline_dweight_done_events[slot] != nullptr) {
+                        run(cuda_stream_wait_event(nullptr, lm_head_pipeline_dweight_done_events[slot], 0),
+                            "lm_head.pipeline.wait_dweight_slot");
+                        if (error.empty()) {
+                            lm_head_pipeline_slot_event_wait_count += 1;
+                        }
                     }
                 });
             }
@@ -15957,7 +15971,23 @@ int run_transformer_lm_training_json(
                         return;
                     }
                     run_lm_head_dhidden_kernel(lm_head_dhidden_stream);
+                    if (error.empty() && lm_head_pipeline_dhidden_done_events[slot] != nullptr) {
+                        status = cuda_event_record(lm_head_pipeline_dhidden_done_events[slot], lm_head_dhidden_stream);
+                        if (status != 0) {
+                            error = cuda_error(status, "cudaEventRecord lm_head_pipeline_dhidden_done");
+                            return;
+                        }
+                        lm_head_pipeline_done_event_record_count += 1;
+                    }
                     run_lm_head_dweight_kernel(lm_head_dweight_stream);
+                    if (error.empty() && lm_head_pipeline_dweight_done_events[slot] != nullptr) {
+                        status = cuda_event_record(lm_head_pipeline_dweight_done_events[slot], lm_head_dweight_stream);
+                        if (status != 0) {
+                            error = cuda_error(status, "cudaEventRecord lm_head_pipeline_dweight_done");
+                            return;
+                        }
+                        lm_head_pipeline_done_event_record_count += 1;
+                    }
                 });
             };
             if (lm_head_chunk_backward_done) {
@@ -15980,11 +16010,26 @@ int run_transformer_lm_training_json(
         }
         if (lm_head_pipeline_chunks_enabled) {
             run_timed_stage("lm_head_backward.pipeline_final_wait", [&]() {
-                if (error.empty()) {
-                    run(cuda_stream_synchronize(lm_head_dhidden_stream), "lm_head.pipeline.final_wait_dhidden");
+                if (!error.empty()) {
+                    return;
                 }
-                if (error.empty()) {
-                    run(cuda_stream_synchronize(lm_head_dweight_stream), "lm_head.pipeline.final_wait_dweight");
+                const std::size_t active_slots = static_cast<std::size_t>(
+                    std::min<std::int64_t>(backward_chunk_count, 2));
+                for (std::size_t slot = 0; slot < active_slots && error.empty(); ++slot) {
+                    if (lm_head_pipeline_dhidden_done_events[slot] != nullptr) {
+                        run(cuda_stream_wait_event(nullptr, lm_head_pipeline_dhidden_done_events[slot], 0),
+                            "lm_head.pipeline.final_wait_dhidden_slot");
+                        if (error.empty()) {
+                            lm_head_pipeline_slot_event_wait_count += 1;
+                        }
+                    }
+                    if (error.empty() && lm_head_pipeline_dweight_done_events[slot] != nullptr) {
+                        run(cuda_stream_wait_event(nullptr, lm_head_pipeline_dweight_done_events[slot], 0),
+                            "lm_head.pipeline.final_wait_dweight_slot");
+                        if (error.empty()) {
+                            lm_head_pipeline_slot_event_wait_count += 1;
+                        }
+                    }
                 }
             });
         }
@@ -19568,6 +19613,10 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_pipeline_extra_bf16_logit_bytes\": "
         << (lm_head_pipeline_chunks_enabled ? logit_elements * static_cast<std::int64_t>(sizeof(std::uint16_t)) : 0)
         << ",\n"
+        << "  \"lm_head_pipeline_slot_event_wait_count\": "
+        << lm_head_pipeline_slot_event_wait_count << ",\n"
+        << "  \"lm_head_pipeline_done_event_record_count\": "
+        << lm_head_pipeline_done_event_record_count << ",\n"
         << "  \"lm_head_overlap_last_dweight_requested\": "
         << (lm_head_overlap_last_dweight_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_overlap_last_dweight_available\": "
@@ -19586,7 +19635,7 @@ int run_transformer_lm_training_json(
         : (lm_head_full_batch_reuse_schedule_enabled
                 ? "resident-full-logit-single-row-batch-gemms"
                 : (lm_head_pipeline_chunks_enabled
-                ? "double-buffered-logits-ce-default-stream-side-stream-dhidden-ordered-dweight"
+                ? "double-buffered-logits-ce-default-stream-side-stream-dhidden-ordered-dweight-slot-events"
                 : (lm_head_concurrent_dhidden_dweight_enabled
                 ? "two-nonblocking-cuda-streams-after-ce-event"
                 : (lm_head_overlap_last_dweight_enabled

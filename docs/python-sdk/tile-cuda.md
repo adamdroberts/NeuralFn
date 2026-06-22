@@ -640,17 +640,23 @@ schedule profiling. The opt-in candidate keeps the current bounded row-chunked
 classifier memory model but allocates two BF16 logit chunks instead of one,
 computes logits and public-vocab CE/dlogits on the default stream, and queues
 dHidden plus serialized dWeight accumulation on nonblocking side streams before
-the chunk buffer is reused. Runtime JSON reports
+the chunk buffer is reused. The route records per-slot side-stream completion
+events and waits only on the BF16 logit slot being reused instead of
+synchronizing whole side streams. Runtime JSON reports
 `lm_head_pipeline_chunks_requested`, `lm_head_pipeline_chunks_enabled`,
 `lm_head_pipeline_logit_buffer_count`,
-`lm_head_pipeline_extra_bf16_logit_bytes`, and the schedule strategy
-`double-buffered-logits-ce-default-stream-side-stream-dhidden-ordered-dweight`.
+`lm_head_pipeline_extra_bf16_logit_bytes`,
+`lm_head_pipeline_slot_event_wait_count`,
+`lm_head_pipeline_done_event_record_count`, and the schedule strategy
+`double-buffered-logits-ce-default-stream-side-stream-dhidden-ordered-dweight-slot-events`.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_pipeline_chunks` to run this
 candidate through the native SM120 wrapper's standard idle guard and default
 train-loop, total LM-head, block-backward, and MLP-projection gates. The
 pipeline queue and final-wait substages are extracted for candidate-side
 inspection, not ratio-gated by default, because the serial baseline does not
-emit those stage names.
+emit those stage names. The slot-event route is still rejected as a default:
+the one-step same-script RTX 5090 retest proved the event counters moved but
+measured `18.448472x` native train-loop wall time versus the serial baseline.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_concurrent_dhidden_dweight` for
 the simpler side-stream schedule that launches LM-head dHidden and dWeight from
 separate nonblocking streams after CE writes dlogits. Stage-timed runs report

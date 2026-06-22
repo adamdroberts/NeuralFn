@@ -610,11 +610,14 @@ CE -> dHidden -> dWeight.
 `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` is a new opt-in LM-head schedule
 candidate for same-script benchmarking. It doubles the bounded BF16 logit
 scratch from one 8,192-row chunk to two chunks, computes logits/CE on the
-default stream, and queues dHidden plus ordered dWeight on side streams while
-the next chunk starts. Runtime JSON reports
+default stream, queues dHidden plus ordered dWeight on side streams while
+the next chunk starts, and uses per-slot CUDA completion events before reusing
+either BF16 logit buffer. Runtime JSON reports
 `lm_head_pipeline_chunks_requested`, `lm_head_pipeline_chunks_enabled`,
 `lm_head_pipeline_logit_buffer_count`, `lm_head_pipeline_extra_bf16_logit_bytes`,
-and the active `lm_head_dhidden_dweight_schedule_strategy`. Use
+`lm_head_pipeline_slot_event_wait_count`,
+`lm_head_pipeline_done_event_record_count`, and the active
+`lm_head_dhidden_dweight_schedule_strategy`. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_pipeline_chunks` to route the
 candidate through the standard same-script SM120 wrapper and its default stage
 gates. Leave it unset for normal training until paired RTX 5090 gates prove a
@@ -622,7 +625,12 @@ durable win. The 2026-06-22 CUDA 13.3 dedicated RTX 5090 recheck kept this
 route rejected: it enabled `lm_head_pipeline_chunks_enabled: true`, but
 regressed train-loop wall to `22.955358x` and block backward to `45.070737x`,
 with the slowdown concentrated after the LM-head pipeline in attention
-projection and SDPA backward.
+projection and SDPA backward. The later slot-event ownership update replaces
+the old full side-stream synchronization before slot reuse, but remains an
+opt-in candidate: the follow-up one-step same-script RTX 5090 run proved
+`lm_head_pipeline_slot_event_wait_count: 32` and
+`lm_head_pipeline_done_event_record_count: 32`, but still regressed native
+train-loop wall time to `18.448472x` versus the serial baseline.
 `NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1` is a narrower opt-in LM-head
 schedule candidate. It queues only the last processed row chunk's LM-head
 dWeight accumulation on the dWeight side stream after CE, runs dHidden on the

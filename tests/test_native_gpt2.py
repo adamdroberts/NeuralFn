@@ -473,10 +473,18 @@ def test_native_gpt_transformer_lm_exposes_opt_in_lm_head_chunk_pipeline() -> No
     assert "lm_head_pipeline_chunks_enabled" in gpt_source
     assert "lm_head_pipeline_logit_buffer_count" in gpt_source
     assert "lm_head_pipeline_extra_bf16_logit_bytes" in gpt_source
+    assert "lm_head_pipeline_slot_event_wait_count" in gpt_source
+    assert "lm_head_pipeline_done_event_record_count" in gpt_source
     assert "lm_head_backward.pipeline_buffer_wait" in gpt_source
     assert "lm_head_backward.pipeline_queue" in gpt_source
     assert "lm_head_backward.pipeline_final_wait" in gpt_source
-    assert "double-buffered-logits-ce-default-stream-side-stream-dhidden-ordered-dweight" in gpt_source
+    assert "cudaEventRecord lm_head_pipeline_dhidden_done" in gpt_source
+    assert "cudaEventRecord lm_head_pipeline_dweight_done" in gpt_source
+    assert "lm_head.pipeline.wait_dhidden_slot" in gpt_source
+    assert "lm_head.pipeline.wait_dweight_slot" in gpt_source
+    assert "lm_head.pipeline.wait_dhidden_buffer" not in gpt_source
+    assert "lm_head.pipeline.wait_dweight_buffer" not in gpt_source
+    assert "double-buffered-logits-ce-default-stream-side-stream-dhidden-ordered-dweight-slot-events" in gpt_source
 
 
 def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:

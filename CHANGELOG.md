@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Reworked the opt-in dense GPT LM-head double-buffered row-chunk pipeline to
+  use per-slot CUDA completion events instead of synchronizing the entire
+  dHidden and dWeight side streams before BF16 logit-buffer reuse. The pipeline
+  now records a done event after each side-stream dHidden/dWeight launch, waits
+  only on the slot being reused, and reports
+  `lm_head_pipeline_slot_event_wait_count`,
+  `lm_head_pipeline_done_event_record_count`, and the strategy
+  `double-buffered-logits-ce-default-stream-side-stream-dhidden-ordered-dweight-slot-events`.
+  This keeps the route diagnostic-only behind
+  `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` while making its ownership model
+  suitable for same-script retesting.
+
+  The route remains rejected/default-off. A one-step same-script RTX 5090
+  paired run proved the candidate active with
+  `lm_head_pipeline_slot_event_wait_count: 32`,
+  `lm_head_pipeline_done_event_record_count: 32`, and the new slot-event
+  strategy, but measured `18.448472x` native train-loop wall time versus the
+  serial baseline. The next LM-head parity slice should move away from
+  cross-stream overlap around the same GEMMs and toward a real fused or
+  materially different classifier-backward/GEMM route.
+
+  Verification: rebuilt `build/nfn_gpt_native_train`; ran the focused pipeline
+  source test, the full `tests/test_tile_cuda_examples.py` benchmark-tool
+  suite, and `git diff --check`; ran a one-step strict no-Torch CUDA smoke with
+  `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1`; ran the same-script paired
+  baseline-vs-candidate measurement on the dedicated RTX 5090.
+
 - Added native Tile launch-shape reporting for dense GPT BF16 LM-head
   cross-entropy. The raw CUDA Tile ABI now exports
   `nfn_native_tile_token_cross_entropy_bf16_threads_per_row`, and

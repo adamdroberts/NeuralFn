@@ -295,6 +295,8 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "lm_head_overlap_last_dweight_sync_count",
     "lm_head_pipeline_chunks_enabled",
     "lm_head_pipeline_logit_buffer_count",
+    "lm_head_pipeline_slot_event_wait_count",
+    "lm_head_pipeline_done_event_record_count",
     "linear_cublaslt_grouped_layout_supported",
     "linear_cublaslt_grouped_matmul_probe_requested",
     "linear_cublaslt_grouped_matmul_supported",
