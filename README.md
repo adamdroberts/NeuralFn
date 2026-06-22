@@ -312,6 +312,16 @@ repeatable loss-bin CE branch-specialization checks; the current dedicated RTX
 5090 3-step, 3-sample gate proved the route and passed train-loop wall
 (`0.999215x`) but rejected the candidate on LM-head backward (`1.000741x`),
 LM-head CE (`1.000339x`), and MLP projection (`1.001222x`).
+`lm_head_ce_llmk_style_specialized` and
+`lm_head_ce_loss_bins_llmk_style_specialized` expand to
+`NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1` (with loss-bin reduction
+for the second profile) for an explicit llm.kittens-style CE+dlogits probe:
+1024 row threads, vec8 BF16 loads, and vector streaming stores for the logits
+overwrite. The CUDA 13.3 dedicated RTX 5090 gate proved both routes but rejected
+promotion: row-loss improved train-loop wall (`0.997562x`) but missed LM-head
+backward (`1.000511x`) and CE (`1.000411x`); loss-bin improved train-loop wall
+(`0.997439x`) but missed LM-head backward (`1.000466x`), CE (`1.000176x`), and
+MLP projection (`1.001883x`).
 LM-head pipeline overlap candidates
 still use the comparable train-loop and total LM-head gates; their
 candidate-only `stage.lm_head_backward.pipeline_queue.total_ms` and
@@ -1019,6 +1029,16 @@ loads, scalar cached stores, and `expf`. Runtime JSON reports
 Keep it diagnostic-only: the CUDA 13.3 dedicated RTX 5090 same-script gate
 proved the route change but rejected it at `1.001545x` train-loop wall,
 `1.000931x` LM-head backward, and `1.000331x` LM-head CE time.
+`NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1`,
+`NFN_NATIVE_GPT2_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1`, or
+`NFN_TILE_CUDA_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1` enables the default-off
+llm.kittens-style row-loss/loss-bin CE specialization. Runtime JSON reports
+`lm_head_ce_llmk_style_specialized_requested`,
+`lm_head_ce_llmk_style_specialized_enabled`, and `lm_head_ce_kernel_strategy`
+values `llmk-style-row-loss-vec8-loads-streaming-vec8-stores` or
+`llmk-style-loss-bins-vec8-loads-streaming-vec8-stores`. Keep it
+diagnostic-only: both same-script candidate profiles proved the route but
+failed the strict timing gates.
 `NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1`,
 `NFN_NATIVE_GPT2_CE_BF16_VEC_NORMAL_STORES=1`, or
 `NFN_TILE_CUDA_CE_BF16_VEC_NORMAL_STORES=1` is a separate default-off

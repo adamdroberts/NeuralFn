@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off llm.kittens-style Tile CUDA CE+dlogits specialization for
+  native dense GPT LM-head backward bisection. The Tile ops library now reads
+  `NFN_TILE_CUDA_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED`,
+  `NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED`, or the GPT2-prefixed
+  alias, and routes row-loss or loss-bin BF16/u16 CE through dedicated
+  1024-thread kernels that use vec8 BF16 loads and vector streaming stores for
+  the logits overwrite. Native training JSON reports
+  `lm_head_ce_llmk_style_specialized_requested`,
+  `lm_head_ce_llmk_style_specialized_enabled`, and `lm_head_ce_kernel_strategy`
+  values `llmk-style-row-loss-vec8-loads-streaming-vec8-stores` or
+  `llmk-style-loss-bins-vec8-loads-streaming-vec8-stores`. The paired SM120
+  wrapper exposes `NFN_SM120_NATIVE_CANDIDATE_PROFILE` values
+  `lm_head_ce_llmk_style_specialized` and
+  `lm_head_ce_loss_bins_llmk_style_specialized`; the route remains
+  diagnostic-only. The CUDA 13.3 dedicated RTX 5090 3-step, 3-sample gate
+  proved both routes but rejected promotion: row-loss improved train-loop wall
+  (`0.997562x`) while missing LM-head backward (`1.000511x`) and LM-head CE
+  (`1.000411x`); loss-bin improved train-loop wall (`0.997439x`) while missing
+  LM-head backward (`1.000466x`), LM-head CE (`1.000176x`), and MLP projection
+  (`1.001883x`).
+
 - Fixed `tools/check_native_no_torch_deps.py` so installed-style
   `from nfn import main` console-entry checks add the `cli/` module root to
   `PYTHONPATH` while preserving the temporary import blocker. This makes
