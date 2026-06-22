@@ -39,6 +39,8 @@ constexpr std::int64_t kDefaultStoredMlpBlocks = 12;
 constexpr std::int64_t kDefaultStoredPackedAttentionBlocks = 12;
 constexpr int kDefaultLmHeadRowChunkSize = 32768;
 constexpr int kDefaultSafeLmHeadRowChunkSize = 32768;
+constexpr const char* kLmHeadCooperativeBackwardSymbol =
+    "nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16";
 
 struct Config {
     std::string model_family = "gpt";
@@ -3877,18 +3879,14 @@ bool print_tile_plan(
                 << " exceeds the safe default cap " << kDefaultSafeLmHeadRowChunkSize
                 << "; set NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1 only for paired diagnostics";
         plan_error = message.str();
-    } else if (cfg.require_cooperative_lm_head_backward) {
-        plan_error =
-            "cooperative LM-head backward required, but the Tile ABI symbol is not implemented; "
-            "required next step: replace row-chunked classifier plus separate dHidden/dWeight GEMMs "
-            "with a cooperative classifier/dHidden/dWeight kernel";
     }
 
     bool loaded = false;
     bool all_symbols = false;
+    bool cooperative_lm_head_backward_symbol_found = false;
     std::string error;
     std::vector<bool> found(symbols.size(), false);
-    if (include_symbol_check) {
+    if (include_symbol_check || cfg.require_cooperative_lm_head_backward) {
         void* handle = dlopen(tile_ops.c_str(), RTLD_NOW | RTLD_LOCAL);
         if (handle == nullptr) {
             const char* dl_error = dlerror();
@@ -3896,12 +3894,24 @@ bool print_tile_plan(
         } else {
             loaded = true;
             all_symbols = true;
-            for (std::size_t i = 0; i < symbols.size(); ++i) {
-                found[i] = dlsym(handle, symbols[i].c_str()) != nullptr;
-                all_symbols = all_symbols && found[i];
+            if (include_symbol_check) {
+                for (std::size_t i = 0; i < symbols.size(); ++i) {
+                    found[i] = dlsym(handle, symbols[i].c_str()) != nullptr;
+                    all_symbols = all_symbols && found[i];
+                }
             }
+            cooperative_lm_head_backward_symbol_found =
+                dlsym(handle, kLmHeadCooperativeBackwardSymbol) != nullptr;
             dlclose(handle);
         }
+    }
+    if (plan_error.empty() &&
+        cfg.require_cooperative_lm_head_backward &&
+        !cooperative_lm_head_backward_symbol_found) {
+        plan_error =
+            "cooperative LM-head backward required, but the Tile ABI symbol is not implemented; "
+            "required next step: replace row-chunked classifier plus separate dHidden/dWeight GEMMs "
+            "with a cooperative classifier/dHidden/dWeight kernel";
     }
 
     std::cout
@@ -3951,9 +3961,15 @@ bool print_tile_plan(
         << (unsafe_lm_head_row_chunk_allowed ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_required\": "
         << (cfg.require_cooperative_lm_head_backward ? "true" : "false") << ",\n"
-        << "  \"lm_head_cooperative_backward_kernel_available\": false,\n"
-        << "  \"lm_head_cooperative_backward_kernel_enabled\": false,\n"
-        << "  \"lm_head_cooperative_backward_strategy\": \"missing-required-sm120-parity-kernel\",\n"
+        << "  \"lm_head_cooperative_backward_kernel_available\": "
+        << (cooperative_lm_head_backward_symbol_found ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_kernel_enabled\": "
+        << (cooperative_lm_head_backward_symbol_found ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_strategy\": \""
+        << (cooperative_lm_head_backward_symbol_found
+                ? "cooperative-classifier-dhidden-dweight-tile-abi"
+                : "missing-required-sm120-parity-kernel")
+        << "\",\n"
         << "  \"schedule\": {\"max_steps\": " << cfg.max_steps
         << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
         << ", \"train_loss_every_steps\": " << cfg.train_loss_every_steps
@@ -10276,6 +10292,7 @@ int run_transformer_lm_training_json(
     using LmHeadClassifierBackwardLossBinsBf16U16Fn = int (*)(
         std::uint16_t*, const std::uint16_t*, float*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t, float, void*);
+    using LmHeadClassifierBackwardCooperativeBf16U16Fn = int (*)();
     using AdamWManyWithDeviceScaleFn = int (*)(
         float* const*, const float* const*, const float*, float* const*, float* const*,
         const std::int64_t*, const float*, std::int64_t, std::int64_t,
@@ -10529,6 +10546,8 @@ int run_transformer_lm_training_json(
         lm_head_classifier_backward_row_losses_bf16_u16 = nullptr;
     LmHeadClassifierBackwardLossBinsBf16U16Fn
         lm_head_classifier_backward_loss_bins_bf16_u16 = nullptr;
+    LmHeadClassifierBackwardCooperativeBf16U16Fn
+        lm_head_classifier_backward_cooperative_bf16_u16 = nullptr;
     FillManyFn fill_many = nullptr;
     AdamWManyWithDeviceScaleFn adamw_many_with_device_scale = nullptr;
     AdamWManyWithDeviceScaleBf16ShadowFn adamw_many_with_device_scale_bf16_shadow = nullptr;
@@ -11092,6 +11111,10 @@ int run_transformer_lm_training_json(
                     load_symbol<LmHeadClassifierBackwardLossBinsBf16U16Fn>(
                         tile_handle,
                         "nfn_native_tile_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets");
+                lm_head_classifier_backward_cooperative_bf16_u16 =
+                    load_symbol<LmHeadClassifierBackwardCooperativeBf16U16Fn>(
+                        tile_handle,
+                        kLmHeadCooperativeBackwardSymbol);
                 adamw_many_with_device_scale = load_symbol<AdamWManyWithDeviceScaleFn>(
                     tile_handle, "nfn_native_tile_adamw_step_many_with_device_scale_float32");
                 adamw_many_with_device_scale_bf16_shadow =
@@ -11659,7 +11682,8 @@ int run_transformer_lm_training_json(
         !lm_head_reuse_forward_logits_enabled &&
         !lm_head_full_batch_reuse_schedule_enabled &&
         lm_head_chunk_count > 1;
-    const bool lm_head_cooperative_backward_kernel_available = false;
+    const bool lm_head_cooperative_backward_kernel_available =
+        lm_head_classifier_backward_cooperative_bf16_u16 != nullptr;
     const bool lm_head_cooperative_backward_kernel_enabled =
         lm_head_cooperative_backward_kernel_available;
     void* lm_head_dhidden_stream = nullptr;

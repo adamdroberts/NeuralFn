@@ -17,7 +17,10 @@ Future updates should append new entries here rather than replacing older notes.
   `lm_head_cooperative_backward_strategy`. The SM120 wrapper exposes
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required`
   so parity checks can fail fast until the real cooperative
-  classifier/dHidden/dWeight kernel lands.
+  classifier/dHidden/dWeight kernel lands. The guard dynamically probes for
+  the future Tile ABI symbol
+  `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16`; no stub
+  is exported today.
 
   Migration note: this is a default-off strictness flag, not a replacement
   kernel. Normal training keeps the current native CUDA Tile path. Use the flag
