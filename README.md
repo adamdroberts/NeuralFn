@@ -388,6 +388,15 @@ same-script gate rejected it after it changed no tracked route counters.
 The named `qkv_concurrent_dinput_dweight` profile expands to
 `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` for repeatable
 stage-timed reruns of the default-off QKV side-stream diagnostic.
+The named `mlp_proj_tk_dweight_65536` profile expands to
+`NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T` for repeatable
+MLP projection dWeight reruns. Runtime JSON reports
+`block_backward_mlp_proj_tk_dweight_requested`,
+`block_backward_mlp_proj_tk_dweight_enabled`, and the diagnostic
+`block_backward_weight_linear_strategy` label when the route runs. Keep it
+default-off: the CUDA 13.3 dedicated RTX 5090 3-step, 2-sample same-script gate
+proved the route counter change but regressed train-loop wall and MLP projection
+dWeight+bias.
 The named `lm_head_concurrent_dhidden_dweight` profile expands to
 `NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` for repeatable LM-head
 dHidden/dWeight side-stream bisections. Stage-timed runs report the combined

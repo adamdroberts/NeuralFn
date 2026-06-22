@@ -19009,6 +19009,14 @@ int run_transformer_lm_training_json(
                               "NFN_TILE_CUDA_LINEAR_TK_DWEIGHT"}),
             false) ||
         requested_tk_dweight_shape == lm_head_tk_dweight_shape_expected.str();
+    std::ostringstream mlp_proj_tk_dweight_shape_expected;
+    mlp_proj_tk_dweight_shape_expected << kHidden << "," << kDim << "," << rows << ",N,T";
+    const bool block_backward_mlp_proj_tk_dweight_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_LINEAR_TK_DWEIGHT",
+                              "NFN_TILE_CUDA_LINEAR_TK_DWEIGHT"}),
+            false) ||
+        requested_tk_dweight_shape == mlp_proj_tk_dweight_shape_expected.str();
     if (trainer_linear_cublaslt_gemm_count_fn != nullptr) {
         linear_cublaslt_gemm_count = trainer_linear_cublaslt_gemm_count_fn();
     }
@@ -19343,6 +19351,11 @@ int run_transformer_lm_training_json(
         has_linear_shape_stat(1, kDim, lm_head_chunk_rows, kPaddedVocab, 0, 0);
     const bool lm_head_dhidden_gemmex_shape_used =
         has_linear_shape_stat(4, kDim, lm_head_chunk_rows, kPaddedVocab, 0, 0);
+    const bool block_backward_mlp_proj_tk_dweight_shape_used =
+        has_linear_shape_stat(2, kHidden, kDim, rows, 0, 1);
+    const bool block_backward_mlp_proj_tk_dweight_enabled =
+        block_backward_mlp_proj_tk_dweight_requested &&
+        (block_backward_mlp_proj_tk_dweight_shape_used || linear_tk_dweight_gemm_count > 0);
     std::ostringstream linear_shape_stats_json;
     linear_shape_stats_json << "  \"linear_shape_stats\": [\n";
     for (std::size_t i = 0; i < linear_shape_stats.size(); ++i) {
@@ -20030,6 +20043,10 @@ int run_transformer_lm_training_json(
         << (block_attn_proj_concurrent_dinput_dweight_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_attn_proj_dinput_before_dweight_enabled\": "
         << (attn_proj_dinput_before_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_mlp_proj_tk_dweight_requested\": "
+        << (block_backward_mlp_proj_tk_dweight_requested ? "true" : "false") << ",\n"
+        << "  \"block_backward_mlp_proj_tk_dweight_enabled\": "
+        << (block_backward_mlp_proj_tk_dweight_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_mlp_proj_dgelu_strategy\": \""
         << (reuse_mlp_proj_bf16_grad_out_enabled
                 ? "tk-sm120-fused-dinput-dgelu-reused-bf16-grad-out-bf16-store-bf16-shadow-weight"
@@ -20067,11 +20084,13 @@ int run_transformer_lm_training_json(
                 : "disabled-fp32-accumulation-default")
         << "\",\n"
         << "  \"block_backward_weight_linear_strategy\": \""
-        << (linear_cublaslt_gemm_count > 0
+        << (block_backward_mlp_proj_tk_dweight_enabled
+                ? "diagnostic-tk-sm120-mlp-proj-dweight-plus-tile-bias"
+                : (linear_cublaslt_gemm_count > 0
                 ? (dweight_first_microbatch_beta_zero_enabled
                        ? "shape-gated-bf16-cublaslt-dweight-bgrad-first-write-then-accumulate"
                        : "shape-gated-bf16-cublaslt-dweight-bgrad-accumulate")
-                : "forced-bf16-gemmex-dweight-plus-bias-accumulate-fallback")
+                : "forced-bf16-gemmex-dweight-plus-bias-accumulate-fallback"))
         << "\",\n"
         << "  \"non_block_forward_backward_linear_strategy\": \""
         << (lm_head_bf16_logits_enabled && lm_head_logits_tk_used

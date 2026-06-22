@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Native dense GPT runtime JSON now reports
+  `block_backward_mlp_proj_tk_dweight_requested` and
+  `block_backward_mlp_proj_tk_dweight_enabled`, and
+  `block_backward_weight_linear_strategy` switches to
+  `diagnostic-tk-sm120-mlp-proj-dweight-plus-tile-bias` when the
+  `mlp_proj_tk_dweight_65536` diagnostic route actually runs. This is
+  observability only; the route remains default-off. A CUDA 13.3 dedicated RTX
+  5090 3-step, 2-sample same-script gate moved 288 measured dWeight GEMMs from
+  cuBLASLt to TK but rejected the candidate at `1.017138x` train-loop wall,
+  `1.037585x` block backward, `1.148117x` MLP projection backward, and
+  `1.313764x` MLP projection dWeight+bias.
+
 - Promoted the native dense GPT LM-head row-loss sum-accumulate tail to the
   default. `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE` and the
   GPT2-prefixed alias now default to enabled, replacing the older row-loss

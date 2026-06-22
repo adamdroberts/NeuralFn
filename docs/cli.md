@@ -1071,7 +1071,14 @@ hot MLP projection block bucket, then runs the existing Tile bias reducer. It
 gates `stage.block_backward.mlp_proj.dweight_bias.total_ms` and remains
 diagnostic-only: the dedicated RTX 5090 one-step probe moved 96 dWeight GEMMs
 from cuBLASLt to TK but failed the whole-step, block-backward, MLP-projection,
-and MLP-projection dWeight+bias gates.
+and MLP-projection dWeight+bias gates. Current runtime JSON now reports
+`block_backward_mlp_proj_tk_dweight_requested`,
+`block_backward_mlp_proj_tk_dweight_enabled`, and
+`block_backward_weight_linear_strategy:
+"diagnostic-tk-sm120-mlp-proj-dweight-plus-tile-bias"` when that diagnostic
+route runs. A stronger CUDA 13.3 dedicated RTX 5090 3-step, 2-sample recheck
+kept it rejected at `1.017138x` train-loop wall and `1.313764x`
+`stage.block_backward.mlp_proj.dweight_bias.total_ms`.
 `lm_head_loss_bins` expands to
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1` for the train-loss logging path.
 It is diagnostic-only: the no-loss parity benchmark does not execute loss

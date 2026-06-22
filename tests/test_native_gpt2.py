@@ -6841,6 +6841,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block_backward_qkv_concurrent_dinput_dweight_requested" in gpt2_source_text
     assert "block_backward_qkv_concurrent_dinput_dweight_enabled" in gpt2_source_text
     assert "block_backward.qkv.dinput_dweight_concurrent" in gpt2_source_text
+    assert "block_backward_mlp_proj_tk_dweight_requested" in gpt2_source_text
+    assert "block_backward_mlp_proj_tk_dweight_enabled" in gpt2_source_text
+    assert "diagnostic-tk-sm120-mlp-proj-dweight-plus-tile-bias" in gpt2_source_text
     assert "block_backward_attn_proj_concurrent_dinput_dweight_requested" in gpt2_source_text
     assert "block_backward_attn_proj_concurrent_dinput_dweight_enabled" in gpt2_source_text
     assert "block_backward.attn_proj.dinput_dweight_concurrent" in gpt2_source_text
