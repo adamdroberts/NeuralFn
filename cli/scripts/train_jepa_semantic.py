@@ -22,20 +22,8 @@ from native_training_guard import reject_torch_training_by_default
 if __name__ == "__main__":
     reject_torch_training_by_default("train_jepa_semantic.py", native_target="nfn train --base-model jepa", model_family="jepa")
 
-import numpy as np
-import torch
-
 from cli_utils import artifact_path, create_argument_parser
 import neuralfn.semantic as semantic_module
-from neuralfn import TorchTrainConfig, TorchTrainer, save_graph
-from neuralfn.config import (
-    build_jepa_semantic_hybrid_megakernel_spec,
-    build_jepa_semantic_hybrid_spec,
-    model_spec_to_dict,
-)
-from neuralfn.inference import export_to_pt
-from neuralfn.torch_backend import CompiledTorchGraph, resolve_torch_train_drop_last
-from neuralfn.torch_templates import build_gpt_root_graph, build_model_spec_from_config
 import server.dataset_manager as dataset_manager_module
 from server.dataset_manager import (
     DATASETS_DIR,
@@ -415,6 +403,8 @@ def sanitized_model_spec_dict(spec: Any, *, raw_text_encoding_name: str | None =
     if isinstance(spec, dict):
         serialized = dict(spec)
     else:
+        from neuralfn.config import model_spec_to_dict
+
         serialized = model_spec_to_dict(spec)
     resolved_encoding_name = normalize_raw_text_encoding_name(raw_text_encoding_name)
     if resolved_encoding_name is not None:
@@ -639,6 +629,66 @@ _CACHED_VARIANT_ALIAS_RE = re.compile(
 )
 
 
+def _ensure_numpy_runtime():
+    import numpy as np
+
+    return np
+
+
+def _ensure_torch_runtime():
+    import torch
+
+    return torch
+
+
+def _ensure_torch_training_runtime():
+    import numpy as np
+    import torch
+    from neuralfn import TorchTrainConfig, TorchTrainer, save_graph
+    from neuralfn.inference import export_to_pt
+    from neuralfn.torch_backend import CompiledTorchGraph, resolve_torch_train_drop_last
+
+    return {
+        "np": np,
+        "torch": torch,
+        "TorchTrainConfig": TorchTrainConfig,
+        "TorchTrainer": TorchTrainer,
+        "save_graph": save_graph,
+        "export_to_pt": export_to_pt,
+        "CompiledTorchGraph": CompiledTorchGraph,
+        "resolve_torch_train_drop_last": resolve_torch_train_drop_last,
+    }
+
+
+class _LazyModuleProxy:
+    def __init__(self, module_name: str) -> None:
+        self._module_name = module_name
+
+    def _load(self):
+        import importlib
+
+        return importlib.import_module(self._module_name)
+
+    def __getattr__(self, name: str):
+        return getattr(self._load(), name)
+
+
+torch = _LazyModuleProxy("torch")
+np = _LazyModuleProxy("numpy")
+
+
+def export_to_pt(graph, weights_path: Path) -> None:
+    from neuralfn.inference import export_to_pt as _export_to_pt
+
+    _export_to_pt(graph, weights_path)
+
+
+def save_graph(graph, graph_path: Path, *, include_module_state: bool = False) -> None:
+    from neuralfn import save_graph as _save_graph
+
+    _save_graph(graph, graph_path, include_module_state=include_module_state)
+
+
 def env_int(name: str, default: int) -> int:
     return int(os.environ.get(name, default))
 
@@ -852,6 +902,8 @@ def _resolve_schedule_layout(
     if all_train_rows:
         effective_drop_last = False
     else:
+        from neuralfn.torch_backend import resolve_torch_train_drop_last
+
         effective_drop_last = resolve_torch_train_drop_last(
             drop_last=drop_last,
             template_runtime=template_runtime,
@@ -1175,6 +1227,7 @@ def _prepare_dataset_from_text(
     train_tokens = all_tokens[val_token_count:]
 
     # Write validation shard
+    np = _ensure_numpy_runtime()
     np.array(val_tokens, dtype=np.uint16).tofile(ds_dir / "fineweb_val_000000.bin")
 
     # Write training shards
@@ -1645,6 +1698,8 @@ def resolve_raw_text_tokenizer_policy_for_preset(
     encoding_override: str | None = None,
     prefer_cl100k: bool = False,
 ) -> dict[str, object]:
+    from neuralfn.torch_templates import build_model_spec_from_config
+
     spec = build_model_spec_from_config({"preset": preset_name}, preview_defaults=True)
     backbone = str(spec.template.backbone)
     encoding_name = raw_text_encoding_name_for_backbone(
@@ -1833,6 +1888,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def build_graph(args: argparse.Namespace, dataset_name: str):
+    from neuralfn.config import build_jepa_semantic_hybrid_megakernel_spec, build_jepa_semantic_hybrid_spec
+    from neuralfn.torch_templates import build_gpt_root_graph
+
     builder = build_jepa_semantic_hybrid_megakernel_spec if args.megakernel else build_jepa_semantic_hybrid_spec
     semantic_vocab_ref = semantic_module.semantic_vocab_ref_for_tokenizer(effective_tokenizer_name_for_args(args))
     spec = builder(
@@ -2097,7 +2155,7 @@ def save_artifacts(
     save_graph(graph, graph_path, include_module_state=False)
 
 
-class DualSourceEvalDataset(torch.utils.data.Dataset):
+class DualSourceEvalDataset:
     def __init__(
         self,
         text_dataset: torch.utils.data.Dataset,
@@ -2153,6 +2211,9 @@ def graph_input_roles(graph) -> list[str]:
 
 
 def load_semantic_inputs(graph, active_dims: int) -> dict[str, torch.Tensor]:
+    np = _ensure_numpy_runtime()
+    torch = _ensure_torch_runtime()
+
     vocab_ref = semantic_module.semantic_vocab_ref_for_graph(graph)
     vocab = semantic_module.ConversationalVocabulary(vocab_ref)
     _ids, targets = semantic_module.load_training_targets(active_dims=active_dims, vocab=vocab)
@@ -2166,6 +2227,9 @@ def load_semantic_inputs(graph, active_dims: int) -> dict[str, torch.Tensor]:
 
 
 def load_semantic_tokens(active_dims: int, *, vocab_ref: str | None = None) -> torch.Tensor:
+    np = _ensure_numpy_runtime()
+    torch = _ensure_torch_runtime()
+
     vocab = semantic_module.ConversationalVocabulary(vocab_ref or None)
     _ids, targets = semantic_module.load_training_targets(active_dims=active_dims, vocab=vocab)
     return torch.from_numpy(targets.astype(np.int64))
@@ -2212,6 +2276,8 @@ def load_val_token_dataset(
     *,
     encoding_name: str = "gpt2",
 ) -> torch.utils.data.Dataset:
+    np = _ensure_numpy_runtime()
+
     if not dataset_path.exists():
         raise FileNotFoundError(f"Dataset path {dataset_path} does not exist.")
     if dataset_path.is_dir():
@@ -2253,6 +2319,9 @@ def evaluate_model(
 ) -> float:
     if eval_batches <= 0:
         return float("nan")
+    runtime = _ensure_torch_training_runtime()
+    torch = runtime["torch"]
+    CompiledTorchGraph = runtime["CompiledTorchGraph"]
 
     template_spec = dict(graph.torch_config.get("template_spec", {}))
     resolved_encoding_name = encoding_name or raw_text_encoding_name_for_template_spec(template_spec)
@@ -2394,6 +2463,8 @@ def build_trainer_config(
     max_wallclock_seconds: float | None = None,
     respect_epoch_boundaries: bool | None = None,
 ) -> TorchTrainConfig:
+    from neuralfn import TorchTrainConfig
+
     resolved_drop_last = drop_last
     if resolved_drop_last is None and bool(getattr(args, "all_train_rows", False)):
         resolved_drop_last = False
@@ -2448,6 +2519,8 @@ def build_trainer_config(
 
 
 def build_trainer_summary(trainer_cfg: TorchTrainConfig) -> dict[str, Any]:
+    from neuralfn import TorchTrainer
+
     summary = {
         "epochs": trainer_cfg.epochs,
         "max_steps": trainer_cfg.max_steps,
@@ -2648,6 +2721,11 @@ def build_progress_logger(
 
 
 def main() -> int:
+    runtime = _ensure_torch_training_runtime()
+    np = runtime["np"]
+    torch = runtime["torch"]
+    TorchTrainer = runtime["TorchTrainer"]
+
     configure_console_logging()
     parser = build_parser()
     args = parser.parse_args()

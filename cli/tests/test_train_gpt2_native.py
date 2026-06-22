@@ -2169,6 +2169,40 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
         self.assertIn("NUMPY_LOADED False", proc.stdout)
 
+    def test_train_jepa_module_import_and_parser_do_not_import_torch(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            import importlib
+            from pathlib import Path
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root / "cli" / "scripts"))
+            sys.path.insert(0, str(root))
+
+            module = importlib.import_module("train_jepa_semantic")
+            parser = module.build_parser()
+            args = parser.parse_args(["--tinystories"])
+            print("DATASET_ALIAS", args.dataset_alias)
+            print("TORCH_LOADED", "torch" in sys.modules)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("DATASET_ALIAS", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+
     def test_train_gpt_native_defaults_to_tinystories_not_parameter_golf(self) -> None:
         code = textwrap.dedent(
             f"""

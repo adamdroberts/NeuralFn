@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Made `cli/scripts/train_jepa_semantic.py` lazy-load its graph-backed
+  Torch/NumPy training runtime. Importing the module and constructing its parser
+  no longer imports Torch, so sibling inference scripts and CLI helpers can
+  reuse JEPA dataset/tokenizer helpers without paying Torch startup cost.
+
+  Verification: focused no-Torch module import/parser test for
+  `train_jepa_semantic.py` plus `python -m py_compile
+  cli/scripts/train_jepa_semantic.py cli/nfn_impl.py`.
+
 - Replaced `cli/scripts/train_semantic_router_moe.py` and
   `cli/scripts/train_semantic_router_moe-overnight.py` with Torch-free native
   shims. Direct execution dispatches to the semantic-router MoE family native

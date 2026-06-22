@@ -123,7 +123,10 @@ from train_jepa_semantic import (
     estimate_text_schedule,
     env_optional_float,
     env_optional_int,
+    build_progress_logger,
+    configure_console_logging,
     evaluate_model as evaluate_semantic_model,
+    evaluate_model as evaluate_text_model,
     format_elapsed,
     print_graph_summary,
     raw_text_tokenizer_is_available,
@@ -139,15 +142,7 @@ from train_jepa_semantic import (
     tokenizer_download_kwargs_from_args,
     validate_raw_text_tokenizer_availability,
 )
-from train_llama_fast import (
-    LLAMA_DEFAULTS,
-    build_progress_logger,
-    configure_console_logging,
-    env_float,
-    env_int,
-    env_str,
-    evaluate_model as evaluate_text_model,
-)
+from train_llama_fast import LLAMA_DEFAULTS
 from train_mixllama_fast import MIXLLAMA_DEFAULTS
 from train_nanogpt import NANOGPT_DEFAULTS
 from train_gpt import GPT_DEFAULTS
