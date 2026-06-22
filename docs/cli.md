@@ -461,6 +461,9 @@ explicitly measured arena/kernel setup phases from loader, symbol-resolution,
 and other host overhead before the first optimizer step. The setup timing array
 includes `setup.load_tile_ops`, `setup.load_cuda_runtime`, and
 `setup.cuda_runtime_symbols` before arena materialization.
+The dense GPT training route loads Tile ops with lazy dynamic binding and still
+validates required ABI symbols explicitly; JSON reports
+`tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`.
 Set `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` only for startup allocator
 profiling. It waits until both the float arena and the BF16/uint16 arena layouts
 are known, then packs them into one aligned `cudaMalloc`. JSON reports

@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed dense GPT native training to load the Tile ops library with
+  `RTLD_LAZY | RTLD_LOCAL` instead of `RTLD_NOW | RTLD_LOCAL` while preserving
+  the explicit required-symbol validation loop. Runtime JSON now reports
+  `tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`, and startup timing continues
+  to report `setup.load_tile_ops` so this can be measured directly on the
+  dedicated RTX 5090. The startup-only CUDA smoke selected `RTLD_LAZY` and
+  measured `setup.load_tile_ops` at about 259 ms, down from the preceding
+  attribution run's roughly 287 ms. Verification: focused source pytest, native
+  GPT CLI rebuild, and startup-only CUDA smoke.
+
 - Added dense GPT startup timing accounting to native runtime JSON. The
   `timing` object now reports `setup_timing_accounted_ms`,
   `setup_timing_unattributed_ms`, and `setup_timing_record_count` beside

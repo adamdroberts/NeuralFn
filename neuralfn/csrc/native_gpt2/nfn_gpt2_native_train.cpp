@@ -10510,6 +10510,7 @@ int run_transformer_lm_training_json(
     CudaEventRecordFn cuda_event_record = nullptr;
     CudaEventElapsedTimeFn cuda_event_elapsed_time = nullptr;
     CudaEventDestroyFn cuda_event_destroy = nullptr;
+    const char* tile_ops_dlopen_binding_strategy = "RTLD_LAZY";
     int cuda_runtime_version = 0;
     int cuda_driver_version = 0;
     int cuda_runtime_version_status = -1;
@@ -10529,7 +10530,7 @@ int run_transformer_lm_training_json(
 
     run_setup_timed("setup.load_tile_ops", [&]() {
         if (error.empty()) {
-            tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+            tile_handle = dlopen(tile_lib_path.c_str(), RTLD_LAZY | RTLD_LOCAL);
             if (tile_handle == nullptr) {
                 error = dl_last_error("dlopen tile ops failed");
             } else {
@@ -18771,6 +18772,8 @@ int run_transformer_lm_training_json(
         << stage_timing_json.str()
         << "  },\n"
         << "  \"tile_ops_library\": \"" << json_escape(tile_lib_path) << "\",\n"
+        << "  \"tile_ops_dlopen_binding_strategy\": \""
+        << tile_ops_dlopen_binding_strategy << "\",\n"
         << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
         << "  \"cuda_module_loading\": \"" << json_escape(env_or_empty("CUDA_MODULE_LOADING")) << "\",\n"
         << "  \"loaded\": " << (tile_loaded ? "true" : "false") << ",\n"
