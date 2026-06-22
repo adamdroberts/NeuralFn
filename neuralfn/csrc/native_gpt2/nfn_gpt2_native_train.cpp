@@ -11814,6 +11814,12 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT2_CE_BF16_VEC_LOADS",
                               "NFN_TILE_CUDA_CE_BF16_VEC_LOADS"}),
             true);
+    const bool lm_head_ce_reverse_rows_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS",
+                              "NFN_NATIVE_GPT2_LM_HEAD_CE_REVERSE_ROWS",
+                              "NFN_TILE_CUDA_LM_HEAD_CE_REVERSE_ROWS"}),
+            true);
     const bool lm_head_ce_bf16_scalar_streaming_stores_enabled =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES",
@@ -20051,6 +20057,13 @@ int run_transformer_lm_training_json(
                 : (lm_head_bf16_logits_enabled
                        ? "padded-vocab-fused-row-bf16-logits-dlogits"
                        : "padded-vocab-inplace-logits-dlogits-workspace"))
+        << "\",\n"
+        << "  \"lm_head_ce_reverse_rows_enabled\": "
+        << (lm_head_ce_reverse_rows_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_ce_row_order_strategy\": \""
+        << (lm_head_ce_reverse_rows_enabled
+                ? "reverse-row-order-default"
+                : "natural-row-order-diagnostic")
         << "\",\n"
         << "  \"lm_head_ce_loss_backward_fused_available\": "
         << (ce_backward_loss_inplace_strided_bf16_bits_u16_targets != nullptr ? "true" : "false") << ",\n"

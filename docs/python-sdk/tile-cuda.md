@@ -1618,6 +1618,12 @@ Runtime JSON then reports `train_loop_cuda_event_wall_ms`,
 `train_loop_cuda_event_steady_state_wall_ms_per_step` under `timing`, plus
 request/enabled flags and step counts. Set
 `NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0` to suppress those event records.
+Set `NFN_SM120_PARITY_CANDIDATE_ENV` or generic `NFN_SM120_CANDIDATE_ENV` to
+append candidate-only `KEY=VALUE` overrides to the NeuralFn side of the parity
+comparison. This is useful for one-off route checks such as
+`NFN_SM120_PARITY_CANDIDATE_ENV='NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS=0'`,
+which runs the LM-head CE natural-row diagnostic without changing the
+llm.kittens baseline environment.
 It also mirrors `NFN_SM120_PARITY_ACTIVATION` or the generic
 `NFN_SM120_ACTIVATION` fallback into both sides of the comparison, using
 llm.kittens `-af` and NeuralFn `--native-cuda-activation`.

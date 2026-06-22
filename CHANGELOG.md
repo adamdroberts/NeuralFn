@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off LM-head CE row-order diagnostic for the no-loss native GPT
+  training path. `NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS=0` (or the
+  `NFN_NATIVE_GPT2_*` / `NFN_TILE_CUDA_*` aliases) makes the hot
+  no-loss BF16+dlogits classifier kernel process rows in natural launch order
+  instead of the default reverse order; runtime JSON reports
+  `lm_head_ce_reverse_rows_enabled` and `lm_head_ce_row_order_strategy`, and
+  `tools/paired_kernel_speed.py` includes those fields in strategy summaries.
+  `tools/bench_native_gpt_sm120_parity.sh` also accepts
+  `NFN_SM120_PARITY_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` for
+  candidate-only env bisections against the llm.kittens baseline.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`, ran a one-step CUDA smoke with
+  `NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS=0`, then ran a 10-step
+  RTX 5090 same-script parity sample with stage timing. The smoke reported
+  `lm_head_ce_reverse_rows_enabled: false`,
+  `lm_head_ce_row_order_strategy: "natural-row-order-diagnostic"`, and
+  `lm_head_classifier_no_loss_chunk_count: 16`. The paired sample proved the
+  route but kept it rejected as a default: NeuralFn measured `1.019563x`
+  all-step CUDA-event wall time, `1.019690x` steady-state CUDA-event wall time,
+  and `0.978913x` tokens/sec versus llm.kittens.
+
 - Dense GPT native runtime JSON now has opt-in CUDA-event training-loop timing
   for parity attribution. Set `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` to
   record CUDA events around the compiled training loop and report

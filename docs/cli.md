@@ -901,7 +901,13 @@ also enables `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on the NeuralFn side by
 default and reports CUDA-event loop metrics such as
 `train_loop_cuda_event_wall_ms_per_step` and
 `train_loop_cuda_event_steady_state_wall_ms_per_step`; set
-`NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0` to turn that off. Compare
+`NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0` to turn that off. Set
+`NFN_SM120_PARITY_CANDIDATE_ENV` or generic `NFN_SM120_CANDIDATE_ENV` to pass
+extra `KEY=VALUE` overrides only to the NeuralFn candidate side; this is the
+parity-wrapper equivalent of `tools/paired_kernel_speed.py --candidate-env`.
+For example,
+`NFN_SM120_PARITY_CANDIDATE_ENV='NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS=0'`
+reproduces the LM-head CE natural-row diagnostic. Compare
 `train_loop_wall_ms_per_step`, the CUDA-event loop fields, and
 `train_tokens_per_second` under the native metrics summaries rather than
 child-process `seconds`; the llm.kittens reference still runs its built-in

@@ -989,6 +989,11 @@ llm.kittens step log:
 `train_loop_cuda_event_wall_ms_per_step` and
 `train_loop_cuda_event_steady_state_wall_ms_per_step`. Set
 `NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0` to suppress those event records.
+Set `NFN_SM120_PARITY_CANDIDATE_ENV` or generic `NFN_SM120_CANDIDATE_ENV` to
+append extra `KEY=VALUE` pairs to the NeuralFn candidate command without
+affecting the llm.kittens baseline; for example,
+`NFN_SM120_PARITY_CANDIDATE_ENV='NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS=0'`
+reproduces the LM-head CE natural-row diagnostic.
 Compare `train_loop_wall_ms_per_step`, the CUDA-event fields, and
 `train_tokens_per_second` in the native metrics block rather than child-process
 `seconds`, because the llm.kittens reference still performs its built-in

@@ -401,6 +401,29 @@ bool lm_head_ce_loss_bins_default_specialized_enabled() {
   return value;
 }
 
+bool lm_head_ce_reverse_rows_enabled() {
+  static const bool value = []() {
+    const char* raw = std::getenv("NFN_TILE_CUDA_LM_HEAD_CE_REVERSE_ROWS");
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS");
+    }
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT2_LM_HEAD_CE_REVERSE_ROWS");
+    }
+    if (raw == nullptr) {
+      return true;
+    }
+    if (std::strcmp(raw, "0") == 0 || std::strcmp(raw, "false") == 0 ||
+        std::strcmp(raw, "FALSE") == 0 || std::strcmp(raw, "off") == 0 ||
+        std::strcmp(raw, "OFF") == 0 || std::strcmp(raw, "no") == 0 ||
+        std::strcmp(raw, "NO") == 0) {
+      return false;
+    }
+    return true;
+  }();
+  return value;
+}
+
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && defined(LLMK_SM120_USE_CUBLASLT_GEMM) && defined(KITTENS_SM120)
 std::once_flag g_llmk_sm120_cublaslt_init_once;
 
@@ -11742,8 +11765,10 @@ __global__ void token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bi
     std::int64_t rows,
     std::int64_t vocab,
     std::int64_t row_stride,
-    float loss_scale) {
-  const std::int64_t row = rows - static_cast<std::int64_t>(blockIdx.x) - 1;
+    float loss_scale,
+    bool reverse_rows) {
+  const std::int64_t launch_row = static_cast<std::int64_t>(blockIdx.x);
+  const std::int64_t row = reverse_rows ? rows - launch_row - 1 : launch_row;
   if (row >= rows) {
     return;
   }
@@ -18028,7 +18053,7 @@ void launch_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u
       !scalar_streaming_stores &&
       !use_exp2) {
     token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_default_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
-        logits, targets, rows, vocab, row_stride, loss_scale);
+        logits, targets, rows, vocab, row_stride, loss_scale, lm_head_ce_reverse_rows_enabled());
     return;
   }
   token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_fused_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(

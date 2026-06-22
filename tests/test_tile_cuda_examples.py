@@ -815,6 +815,7 @@ def test_native_gpt_sm120_parity_wrapper_accepts_generic_aliases(tmp_path: Path)
             "NFN_SM120_PROFILE_DIR": "none",
             "NFN_SM120_CUDA_VISIBLE_DEVICES": "7",
             "NFN_SM120_JSON_OUT": str(output_path),
+            "NFN_SM120_CANDIDATE_ENV": "NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS=0",
         }
     )
 
@@ -837,6 +838,7 @@ def test_native_gpt_sm120_parity_wrapper_accepts_generic_aliases(tmp_path: Path)
     assert payload["selected_gpu_utilization_retries"] == 3
     assert payload["selected_gpu_utilization_retry_interval_seconds"] == 0.25
     assert payload["metric_ratio_gates"]["enabled"] is False
+    assert payload["candidate_env"]["NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS"] == "0"
     assert payload["baseline_command"][payload["baseline_command"].index("-af") + 1] == "sd-prelu"
     assert (
         payload["candidate_command"][payload["candidate_command"].index("--native-cuda-activation") + 1]
