@@ -237,6 +237,23 @@ std::string env_or_empty_any(std::initializer_list<const char*> names) {
     return {};
 }
 
+std::int64_t resolved_layer_norm_affine_row_chunk_size() {
+    const std::string raw =
+        env_or_empty_any({"NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE",
+                          "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE",
+                          "NFN_NATIVE_GPT2_LAYERNORM_AFFINE_ROW_CHUNK_SIZE"});
+    constexpr std::int64_t kDefaultRowChunkSize = 256;
+    if (raw.empty()) {
+        return kDefaultRowChunkSize;
+    }
+    char* end = nullptr;
+    const long long parsed = std::strtoll(raw.c_str(), &end, 10);
+    if (end == raw.c_str() || (end != nullptr && *end != '\0') || parsed <= 0) {
+        return kDefaultRowChunkSize;
+    }
+    return static_cast<std::int64_t>(parsed);
+}
+
 bool packed_qkv_attention_default_enabled() {
     const std::string value =
         env_or_empty_any({"NFN_NATIVE_GPT_PACKED_QKV_ATTENTION", "NFN_NATIVE_GPT2_PACKED_QKV_ATTENTION"});
@@ -21001,6 +21018,8 @@ int run_transformer_lm_training_json(
         << "    \"position_gradient_scratch_buffer_allocated\": false,\n"
         << "    \"position_gradient_microbatch_full_copy_elided\": true,\n"
         << "    \"layer_norm_backward_affine_strategy\": \"auto-chunked-atomic-accumulate\",\n"
+        << "    \"layer_norm_backward_affine_row_chunk_size\": "
+        << resolved_layer_norm_affine_row_chunk_size() << ",\n"
         << "    \"layer_norm_stats_strategy\": \""
         << (layer_norm_stats_enabled ? "forward-store-mean-rstd-backward-reuse" : "backward-recompute") << "\",\n"
         << "    \"layer_norm_backward_reuses_forward_stats\": "

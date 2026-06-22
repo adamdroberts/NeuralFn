@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added LayerNorm affine row-chunk profiling for the native dense GPT Tile-CUDA
+  path. Runtime JSON now reports
+  `block_state_layout.layer_norm_backward_affine_row_chunk_size`, and the
+  paired SM120 wrapper exposes
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=layernorm_affine_row_chunk_128` and
+  `layernorm_affine_row_chunk_512`, expanding to
+  `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128` or `512`. The paired
+  tool treats the nested block-state value as a route metric so
+  `--require-native-route-change` can prove the candidate actually reached the
+  Tile kernel. Both candidates are diagnostic-only and the default remains
+  `256`: the dedicated RTX 5090 gate rejected `128` at `1.000147x` train-loop
+  wall and rejected `512` at `1.019837x` train-loop wall / `1.039994x` block
+  backward.
+
+  Verification: ran focused source/wrapper tests and rebuilt native binaries;
+  ran the dedicated RTX 5090 paired benchmarks for both LayerNorm row-chunk
+  profiles.
+
 - Added a default-off dense GPT LM-head CE default-shape specialization
   diagnostic. `NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`,
   `NFN_NATIVE_GPT2_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`, or

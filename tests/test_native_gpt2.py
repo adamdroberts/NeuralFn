@@ -5594,8 +5594,13 @@ def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> N
 def test_large_row_reduction_fallbacks_use_tiled_dweight_and_shared_bias_chunks() -> None:
     root = Path(__file__).resolve().parents[1]
     kernels_text = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text()
+    gpt2_source_text = (
+        root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp"
+    ).read_text()
 
     assert "kLayerNormBackwardAffineDefaultRowChunkSize = 256" in kernels_text
+    assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in gpt2_source_text
+    assert '\\"layer_norm_backward_affine_row_chunk_size\\"' in gpt2_source_text
     assert "NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in kernels_text
     assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in kernels_text
     assert "kLinearBackwardBiasRowChunkSize = 512" in kernels_text

@@ -229,6 +229,10 @@ NATIVE_METRIC_PATHS = (
         "lm_head_classifier.native_logit_chunk_count",
         ("lm_head_classifier_strategy_contract", "native_logit_chunk_count"),
     ),
+    (
+        "block_state_layout.layer_norm_backward_affine_row_chunk_size",
+        ("block_state_layout", "layer_norm_backward_affine_row_chunk_size"),
+    ),
 )
 NATIVE_ROUTE_COUNTER_KEYS = (
     "linear_tk_gemm_count",
@@ -259,6 +263,7 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "lm_head_classifier_last_rows",
     "lm_head_classifier_last_vocab",
     "lm_head_classifier_last_row_stride",
+    "block_state_layout.layer_norm_backward_affine_row_chunk_size",
     "linear_bf16_a_pack_count",
     "linear_bf16_a_cache_hit_count",
     "attention_forward_tk_launch_count",

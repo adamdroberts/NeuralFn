@@ -110,6 +110,7 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"lm_head_classifier_last_rows\\\": 8192, "
                 "\\\"lm_head_classifier_last_vocab\\\": 50257, "
                 "\\\"lm_head_classifier_last_row_stride\\\": 50304, "
+                "\\\"block_state_layout\\\": {\\\"layer_norm_backward_affine_row_chunk_size\\\": 512}, "
                 "\\\"status\\\": \\\"native-test\\\"}')\""
             ),
             "--samples",
@@ -204,6 +205,12 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["lm_head_classifier_last_rows"]["mean"] == 8192.0
     assert payload["candidate_native_metrics"]["lm_head_classifier_last_vocab"]["mean"] == 50257.0
     assert payload["candidate_native_metrics"]["lm_head_classifier_last_row_stride"]["mean"] == 50304.0
+    assert (
+        payload["candidate_native_metrics"][
+            "block_state_layout.layer_norm_backward_affine_row_chunk_size"
+        ]["mean"]
+        == 512.0
+    )
     assert "linear_tk_gemm_count: mean=3.000000" in proc.stdout
     assert "linear_cublaslt_gemm_count: mean=4.000000" in proc.stdout
     assert "linear_bf16_gemm_count: mean=7.000000" in proc.stdout
@@ -912,6 +919,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,32768,N,T" in text
     assert "mlp_proj_tk_dweight_65536" in text
     assert "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T" in text
+    assert "layernorm_affine_row_chunk_128" in text
+    assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128" in text
+    assert "layernorm_affine_row_chunk_512" in text
+    assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=512" in text
     assert "lm_head_logits_bf16_fallback_32768" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N" in text
     assert "qkv_forward_bf16_fallback_65536" in text
@@ -1137,6 +1148,37 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "3072,768,65536,N,T"
     )
     assert mlp_proj_tk_dweight_payload["metric_ratio_gates"]["enabled"] is False
+
+    ln_chunk_output_path = tmp_path / "candidate-ln-row-chunk-dry-run.json"
+    ln_chunk_env = os.environ.copy()
+    ln_chunk_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "layernorm_affine_row_chunk_512",
+            "NFN_SM120_NATIVE_JSON_OUT": str(ln_chunk_output_path),
+        }
+    )
+
+    ln_chunk_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=ln_chunk_env,
+    )
+
+    assert ln_chunk_dry_run.returncode == 0, ln_chunk_dry_run.stderr
+    ln_chunk_payload = json.loads(ln_chunk_output_path.read_text(encoding="utf-8"))
+    assert (
+        ln_chunk_payload["candidate_env"][
+            "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE"
+        ]
+        == "512"
+    )
+    assert ln_chunk_payload["metric_ratio_gates"]["enabled"] is False
 
     logits_fallback_output_path = tmp_path / "candidate-logits-fallback-dry-run.json"
     logits_fallback_env = os.environ.copy()
