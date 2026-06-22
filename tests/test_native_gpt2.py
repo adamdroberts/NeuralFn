@@ -1128,6 +1128,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0"'
         in bench_source
     )
+    assert (
+        'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=0"'
+        in bench_source
+    )
 
     for gated_metric in [
         "stage.block_backward.attn_sdpa.total_ms=1.000",

@@ -77,21 +77,21 @@ Future updates should append new entries here rather than replacing older notes.
   Verification: focused verifier pytest and
   `tools/check_native_no_torch_deps.py --skip-artifacts`.
 
-- Added a default-off dense GPT no-loss LM-head classifier CE candidate route.
-  `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1` (or the GPT-2 alias)
-  routes no-loss optimizer steps through the classifier row-loss CE kernel
-  without enabling train-loss logging or the loss-bin reduction tail. Runtime
-  JSON now reports `lm_head_classifier_ce_no_loss_requested` and
+- Kept the dense GPT no-loss LM-head classifier CE route default-off after the
+  full gate rerun, but made its paired candidate profile pin both sides
+  explicitly. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_classifier_ce_no_loss`
+  now forces baseline to `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=0` and
+  candidate to `=1`, so future runs still compare the classifier no-loss CE
+  route against the older generic no-loss CE path even if defaults change.
+  Runtime JSON reports `lm_head_classifier_ce_no_loss_requested` and
   `lm_head_classifier_ce_no_loss_enabled`, and
-  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_classifier_ce_no_loss` measures
-  the route in the same paired script.
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_classifier_ce_no_loss` now forces
+  the older path on the baseline side.
 
-  Verification: rebuilt `build/nfn_gpt_native_train`, ran a one-step
-  GPU-visible RTX 5090 smoke with the route enabled, and ran the 3-step,
-  2-sample paired candidate benchmark. The route-change gate passed
-  (`lm_head_classifier_ce_no_loss_enabled: false -> true`) and train-loop wall
-  time measured `0.994721x`, but the strict LM-head backward gate failed at
-  `1.001254x`, so the route remains diagnostic-only and is not promoted.
+  Verification: the post-default CUDA 13.3 dedicated RTX 5090 3-step,
+  2-sample paired gate measured `0.998998x` train-loop wall time, `1.001029x`
+  tokens/sec, `1.005316x` LM-head backward, and `1.000570x` MLP-proj backward,
+  so the route remains a candidate rather than a default.
 
 - Promoted the dense GPT native LM-head loss-bin train-loss reduction route to
   the default. Logged train-loss steps now use the BF16/u16 classifier

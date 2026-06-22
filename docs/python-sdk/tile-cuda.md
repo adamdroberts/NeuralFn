@@ -280,14 +280,14 @@ baseline command to `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` so it still
 measures the new default against the older row-loss route. Set
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` manually only for regression
 checks against the older row-loss tail.
-`NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1` is a default-off diagnostic
-for no-loss optimizer steps. It routes the BF16/u16 LM-head CE stage through
-the classifier row-loss kernel and skips loss reduction, letting
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_classifier_ce_no_loss` measure the
-same no-loss hot path without turning on train-loss logging. JSON reports
+`NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1` is a default-off candidate for
+no-loss optimizer steps. It routes the BF16/u16 LM-head CE stage through the
+classifier row-loss kernel and skips loss reduction. The paired wrapper profile
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_classifier_ce_no_loss` forces that
+older generic no-loss CE path on the baseline side and the classifier route on
+the candidate side. JSON reports
 `lm_head_classifier_ce_no_loss_requested` and
-`lm_head_classifier_ce_no_loss_enabled`; leave it disabled unless the paired
-gate proves it faster than the default generic no-loss CE path.
+`lm_head_classifier_ce_no_loss_enabled`.
 
 `NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1`,
 `NFN_NATIVE_GPT2_CE_BF16_SCALAR_STREAMING_STORES=1`, and
