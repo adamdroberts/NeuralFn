@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Recorded the current post-CE-default SM120 parity state and rejected the
+  compile-time atomic-dQ attention backward candidate against the current dense
+  GPT native baseline. A 10-step same-script parity sample still measured
+  NeuralFn at `1.021069x` train-loop wall time and `0.978059x` tokens/sec
+  versus the llm.kittens SM120 reference. A one-step section profile attributed
+  packed-attention backward to about `30.440 ms` dprep and `233.277 ms` TK body
+  over 96 launches, and the `attention_atomic_dq` paired candidate regressed to
+  `1.139065x` train-loop wall time, `0.877916x` tokens/sec, `2.251237x`
+  attention-backward time, and `2.470843x` attention TK timing. The candidate
+  stays rejected; remaining work should target the default TK body or larger
+  fused/cooperative block-backward and LM-head schedules, not dprep-only tweaks.
+
+  Verification: CUDA-visible one-step attention-section profile plus
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_atomic_dq` through
+  `tools/bench_native_gpt_sm120_candidate.sh` on the dedicated RTX 5090.
+
 - Dense GPT no-loss LM-head CE now defaults to a specialized Tile CUDA kernel,
   with `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0` kept as the
   opt-out for regression checks. The matching paired profile is
