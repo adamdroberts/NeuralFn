@@ -1785,8 +1785,8 @@ Future updates should append new entries here rather than replacing older notes.
   and the candidate was measured with
   `tools/bench_native_gpt_sm120_candidate.sh`.
 
-- Added `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` as an opt-in dense GPT startup
-  allocator diagnostic plus the matching
+- Initially added `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` as an opt-in dense
+  GPT startup allocator diagnostic plus the matching
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=combined_device_arena` benchmark profile.
   The route packs the float arena and BF16/uint16 arena into one aligned
   `cudaMalloc` after both layouts are known, and runtime JSON reports
@@ -1795,14 +1795,26 @@ Future updates should append new entries here rather than replacing older notes.
   `transformer_device_arena_cuda_malloc_count`,
   `transformer_device_arena_requested_bytes`,
   `transformer_device_arena_allocated_bytes`, and
-  `transformer_device_arena_uint16_byte_offset`. It remains diagnostic-only:
-  after the CUDA 13.3 reinstall, the dedicated RTX 5090 startup-only gate
-  improved setup wall time to `0.966425x`, but the one-step training gate still
-  failed strict stage checks on LM-head backward (`1.011609x`) and block
-  backward (`1.049889x`) despite improving train-loop wall time to `0.991747x`.
+  `transformer_device_arena_uint16_byte_offset`. The later promotion entry below
+  supersedes the original default-off diagnostic status.
   Verification: focused native GPT pytest coverage, wrapper syntax checks,
   SM120 native rebuild, one-step combined-arena CUDA smoke, same-script startup
   benchmark recheck, and one-step training benchmark rejection.
+
+- Promoted the dense GPT combined device arena to the default native allocation
+  path. `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA` now defaults to `1`, and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=combined_device_arena` forces the baseline
+  to `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0` so the profile still compares the
+  old split float/BF16 arena path against the new default. Breaking changes:
+  callers that depended on separate float and BF16/uint16 device arenas must set
+  `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0` explicitly. The CUDA 13.3 dedicated
+  RTX 5090 3-step gate passed at `0.991645x` train-loop wall time, `1.008465x`
+  tokens/sec, `0.993960x` LM-head backward, `0.998550x` block backward, and
+  `0.988817x` MLP projection time.
+
+  Verification: focused native GPT pytest coverage, wrapper dry-run coverage,
+  no-Torch native dependency guard, and the 3-step dedicated RTX 5090 paired
+  benchmark above.
 
 - Added two repeatable SM120 native candidate profiles for rejected routing and
   scheduling probes. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_forward_no_n96`

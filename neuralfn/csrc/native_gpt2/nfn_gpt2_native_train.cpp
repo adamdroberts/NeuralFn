@@ -12559,7 +12559,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA",
                               "NFN_NATIVE_GPT2_COMBINED_DEVICE_ARENA"}),
-            false);
+            true);
     const bool combined_transformer_device_arena_enabled =
         combined_transformer_device_arena_requested && combined_uint16_arena_enabled;
     auto allocate = [&](float** ptr, std::int64_t elements, const std::string& name) {

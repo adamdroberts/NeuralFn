@@ -1555,6 +1555,12 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         combined_arena_output_path.read_text(encoding="utf-8")
     )
     assert (
+        combined_arena_payload["baseline_env"][
+            "NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA"
+        ]
+        == "0"
+    )
+    assert (
         combined_arena_payload["candidate_env"][
             "NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA"
         ]

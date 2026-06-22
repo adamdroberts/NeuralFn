@@ -480,8 +480,8 @@ validates required ABI symbols explicitly; JSON reports
 `tile_ops_typed_symbol_load_wall_ms`.
 CUDA runtime setup also reports `cuda_runtime_symbol_load_wall_ms` and
 `cuda_runtime_version_preflight_wall_ms`.
-Set `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` only for startup allocator
-profiling. It waits until both the float arena and the BF16/uint16 arena layouts
+Dense GPT native training defaults `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1`.
+The trainer waits until both the float arena and the BF16/uint16 arena layouts
 are known, then packs them into one aligned `cudaMalloc`. JSON reports
 `float_allocation_strategy: "combined-transformer-device-arena"`,
 `uint16_allocation_strategy: "combined-transformer-device-arena"`,
@@ -489,11 +489,12 @@ are known, then packs them into one aligned `cudaMalloc`. JSON reports
 `transformer_device_arena_cuda_malloc_count`,
 `transformer_device_arena_requested_bytes`,
 `transformer_device_arena_allocated_bytes`, and
-`transformer_device_arena_uint16_byte_offset`. Keep it disabled for normal
-training: after the CUDA 13.3 reinstall, the dedicated RTX 5090 startup-only
-gate improved setup wall time to `0.966425x`, but the one-step training gate
-still failed strict stage checks on LM-head backward (`1.011609x`) and block
-backward (`1.049889x`) despite improving train-loop wall time to `0.991747x`.
+`transformer_device_arena_uint16_byte_offset`. Set
+`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0` only to compare against the older split
+float/BF16 arena path. The CUDA 13.3 dedicated RTX 5090 3-step gate promoted the
+combined arena at `0.991645x` train-loop wall time, `1.008465x` tokens/sec,
+`0.993960x` LM-head backward, `0.998550x` block backward, and `0.988817x` MLP
+projection time.
 Startup zeroes only AdamW first/second moment state as coalesced contiguous
 ranges with `cudaMemsetAsync` by default, then overwrites nonzero weights with
 device initializers and zeroes gradients per optimizer step. Set

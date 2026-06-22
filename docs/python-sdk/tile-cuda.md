@@ -1474,20 +1474,21 @@ scratch, saved packed-attention LN1 BF16 tape, and block BF16 weight shadows. Se
 `uint16_allocation_request_count`, `uint16_arena_requested_elements`,
 `uint16_arena_allocated_elements`, `uint16_arena_cuda_malloc_count`, and
 `uint16_arena_suballocation_count`.
-Set `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` only for startup allocator
-profiling. It packs the dense GPT float arena and BF16/uint16 arena into one
-aligned `cudaMalloc` after both layouts are known. JSON reports
+Dense GPT native training defaults `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1`.
+It packs the dense GPT float arena and BF16/uint16 arena into one aligned
+`cudaMalloc` after both layouts are known. JSON reports
 `float_allocation_strategy: "combined-transformer-device-arena"`,
 `uint16_allocation_strategy: "combined-transformer-device-arena"`,
 `transformer_device_arena_requested`, `transformer_device_arena_enabled`,
 `transformer_device_arena_cuda_malloc_count`,
 `transformer_device_arena_requested_bytes`,
 `transformer_device_arena_allocated_bytes`, and
-`transformer_device_arena_uint16_byte_offset`. Keep it disabled for normal
-training: after the CUDA 13.3 reinstall, the dedicated RTX 5090 startup-only
-gate improved setup wall time to `0.966425x`, but the one-step training gate
-still failed strict stage checks on LM-head backward (`1.011609x`) and block
-backward (`1.049889x`) despite improving train-loop wall time to `0.991747x`.
+`transformer_device_arena_uint16_byte_offset`. Set
+`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0` only to compare against the older split
+float/BF16 arena path. The CUDA 13.3 dedicated RTX 5090 3-step gate promoted the
+combined arena at `0.991645x` train-loop wall time, `1.008465x` tokens/sec,
+`0.993960x` LM-head backward, `0.998550x` block backward, and `0.988817x` MLP
+projection time.
 Runtime timing JSON also reports `setup_timing_accounted_ms`,
 `setup_timing_unattributed_ms`, and `setup_timing_record_count` beside
 `setup_wall_ms`. These fields summarize how much of native dense-GPT startup is
@@ -2141,18 +2142,18 @@ CUDA 13.3 explicit arena-gated retest measured `1.177290x` setup wall time,
 materialization, and `1.176781x` total startup wall time. Runtime JSON
 reports `device_allocator_strategy`, `device_cuda_malloc_async_requested`,
 `device_cuda_malloc_async_enabled`, async symbol availability, allocation/free
-counts, and `device_cuda_malloc_async_fallback_count`. Set
-`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` only for startup allocator profiling of
-the same dense GPT transformer-LM arenas. It packs the float and BF16/uint16
-arenas into one aligned `cudaMalloc`; runtime JSON reports the combined
-allocation strategies plus `transformer_device_arena_requested`,
+counts, and `device_cuda_malloc_async_fallback_count`. The same dense GPT
+transformer-LM arenas now default to the combined device arena
+(`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1`), which packs the float and
+BF16/uint16 arenas into one aligned `cudaMalloc`; runtime JSON reports the
+combined allocation strategies plus `transformer_device_arena_requested`,
 `transformer_device_arena_enabled`, `transformer_device_arena_cuda_malloc_count`,
 `transformer_device_arena_requested_bytes`,
 `transformer_device_arena_allocated_bytes`, and
-`transformer_device_arena_uint16_byte_offset`. Keep it default-off because the
-CUDA 13.3 dedicated RTX 5090 recheck only passed the startup-only gate
-(`0.966425x` setup wall) while the one-step training gate still failed strict
-stage checks on LM-head backward (`1.011609x`) and block backward (`1.049889x`).
+`transformer_device_arena_uint16_byte_offset`. Set
+`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0` only to compare against the older split
+float/BF16 arena path. The CUDA 13.3 dedicated RTX 5090 3-step gate promoted the
+combined arena at `0.991645x` train-loop wall time and `1.008465x` tokens/sec.
 Set
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF=0` to compare against the
 older packed path that expands `dQKV` to float32 before QKV dWeight/dInput. Set
