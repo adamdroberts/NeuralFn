@@ -596,6 +596,8 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "lm_head_classifier_ce_no_loss_requested" in speed_tool
     assert "lm_head_classifier_ce_no_loss_enabled" in speed_tool
     assert "lm_head_classifier_no_loss_chunk_count" in speed_tool
+    assert "lm_head_ce_no_loss_default_specialized_requested" in speed_tool
+    assert "lm_head_ce_no_loss_default_specialized_enabled" in speed_tool
     assert "lm_head_ce_row_loss_reduction_enabled" in speed_tool
     assert "lm_head_ce_row_loss_sum_accumulate_requested" in speed_tool
     assert "lm_head_ce_row_loss_sum_accumulate_enabled" in speed_tool
@@ -6444,6 +6446,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED" in kernels_text
     assert "lm_head_ce_default_specialized_enabled" in gpt2_source_text
+    assert "lm_head_ce_no_loss_default_specialized_enabled" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED" in gpt2_source_text
     assert "lm_head_ce_llmk_style_specialized_enabled" in gpt2_source_text
     assert "lm_head_ce_loss_bins_default_specialized_enabled" in gpt2_source_text
     assert "lm_head_ce_loss_bin_reduction_runtime_enabled" in gpt2_source_text
@@ -6780,6 +6784,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "token_cross_entropy_backward_inplace_strided_bf16_bits_fused_kernel" in kernels_text
     assert "token_cross_entropy_backward_inplace_strided_bf16_bits_u16_targets_fused_kernel" in kernels_text
     assert (
+        "token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_default_kernel"
+        in kernels_text
+    )
+    assert (
         "token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets_fused_kernel"
         in kernels_text
     )
@@ -6982,6 +6990,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_ce_row_loss_sum_accumulate_enabled" in gpt2_source_text
     assert "no-loss-dlogits-public-vocab-no-pad-zero-bf16-u16-targets" in gpt2_source_text
     assert "no-loss-dlogits-vec8-loads-scalar-stores" in gpt2_source_text
+    assert "no-loss-default-specialized-dlogits-vec8-loads-scalar-stores" in gpt2_source_text
     assert "fused-row-losses-sum-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets" in gpt2_source_text
     assert "row-chunked-public-vocab-bf16-u16-loss-dlogits-tile-abi" in gpt2_source_text
     assert "ce_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_workspace" in gpt2_source_text

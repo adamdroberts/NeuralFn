@@ -1628,6 +1628,13 @@ the row-loss or loss-bin tail. Runtime JSON reports that route separately with
 `tools/paired_kernel_speed.py` includes the no-loss chunk counter in route
 changes. This prevents no-loss training benchmarks from being misread as fused
 row-loss/loss-bin runs.
+`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` is a default-off
+candidate for that no-loss path. The named wrapper profile
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`
+forces `--train-loss-every-steps 0` and reports
+`lm_head_ce_no_loss_default_specialized_*` plus
+`lm_head_ce_kernel_strategy:
+"no-loss-default-specialized-dlogits-vec8-loads-scalar-stores"`.
 The native-vs-native wrapper also forwards the selected-GPU utilization retry
 aliases to the paired benchmark tool: use
 `NFN_SM120_NATIVE_SELECTED_GPU_UTILIZATION_RETRIES`,

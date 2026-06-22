@@ -111,6 +111,14 @@ NATIVE_METRIC_PATHS = (
         ("lm_head_classifier_ce_no_loss_enabled",),
     ),
     (
+        "lm_head_ce_no_loss_default_specialized_requested",
+        ("lm_head_ce_no_loss_default_specialized_requested",),
+    ),
+    (
+        "lm_head_ce_no_loss_default_specialized_enabled",
+        ("lm_head_ce_no_loss_default_specialized_enabled",),
+    ),
+    (
         "lm_head_ce_row_loss_reduction_requested",
         ("lm_head_ce_row_loss_reduction_requested",),
     ),
@@ -313,6 +321,8 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "lm_head_ce_bf16_vec_normal_stores_enabled",
     "lm_head_ce_default_specialized_requested",
     "lm_head_ce_default_specialized_enabled",
+    "lm_head_ce_no_loss_default_specialized_requested",
+    "lm_head_ce_no_loss_default_specialized_enabled",
     "lm_head_ce_llmk_style_specialized_requested",
     "lm_head_ce_llmk_style_specialized_enabled",
     "lm_head_ce_loss_bins_default_specialized_requested",
