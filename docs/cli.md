@@ -792,24 +792,27 @@ kernel experiment changed memory contract or only changed timing.
 Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` to exercise the current
 cooperative LM-head backward ABI wrapper, or
 `nfn_gpt_native_train --require-cooperative-lm-head-backward` when a
-parity/preflight run must require that route. The flag is default-off for
-normal training.
+parity/preflight run must require the real fused/cooperative LM-head backward
+kernel. The flag is default-off for normal training. `--dry-run` reports the
+unmet required route as JSON with `passed: false`; `--check-tile-ops` returns
+nonzero for the same condition so shell automation can fail fast.
 Runtime JSON reports `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,
+`lm_head_cooperative_backward_abi_wrapper_available`,
 `lm_head_cooperative_backward_kernel_available`,
+`lm_head_cooperative_backward_fused_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`, and
-`lm_head_cooperative_backward_strategy`. When active, the schedule strategy is
-`cooperative-classifier-dhidden-dweight-tile-abi-wrapper`. The route remains
-diagnostic-only: a 2026-06-22 dedicated RTX 5090 one-step promotion gate
-rejected it at `1.001674x` train-loop wall time and `1.001581x` LM-head
-backward time, while a 1% route-verification gate passed.
+`lm_head_cooperative_backward_strategy`. `kernel_available` and
+`fused_kernel_available` mean the fused parity kernel; the existing wrapper is
+reported separately as `abi_wrapper_available` and does not satisfy the strict
+required guard.
 The Tile symbol is no longer an untyped probe in rebuilt ops libraries: its C
 ABI receives the BF16 logit/dlogit chunk, u16 targets, row-loss buffer,
 BF16/float hidden inputs, BF16/float token weights, dHidden, dWeight, shape
 metadata, loss scale, dWeight beta, flags, and stream. Runtime JSON reports
-`lm_head_cooperative_backward_kernel_available: true` only when the run loads a
-Tile ops library that exports that symbol.
+`lm_head_cooperative_backward_abi_wrapper_available: true` when the run loads a
+Tile ops library that exports that wrapper symbol.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
@@ -1052,9 +1055,11 @@ time, `1.000944x` LM-head backward, and `1.004197x` CE time.
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` to the candidate command.
 `lm_head_cooperative_backward_required` adds the same environment flag plus
 `--require-cooperative-lm-head-backward`. Use the non-required profile for
-same-script timing, and the required profile for preflight/strictness checks.
-The trainer dispatches the typed cooperative ABI wrapper when the loaded Tile
-ops library exports it and the BF16/token-weight prerequisites are active.
+same-script wrapper-symbol timing, and the required profile for preflight
+checks that must fail until the fused cooperative kernel exists. The current
+typed ABI wrapper is reported as available but does not satisfy the strict
+required guard because it still sequences the old CE, dHidden, and dWeight
+launches.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

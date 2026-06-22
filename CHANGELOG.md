@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- **Breaking changes:** tightened the dense GPT cooperative LM-head strictness
+  contract. `--require-cooperative-lm-head-backward` and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required`
+  no longer treat the typed ABI wrapper as a satisfying parity kernel. Runtime
+  JSON now separates
+  `lm_head_cooperative_backward_abi_wrapper_available` from the fused-kernel
+  fields (`lm_head_cooperative_backward_kernel_available` and
+  `lm_head_cooperative_backward_fused_kernel_available`). Wrapper-only builds
+  report the ABI wrapper as available, keep the fused-kernel availability false,
+  and fail the required guard. Use the non-required cooperative profile for
+  wrapper-symbol smoke checks; use the required profile only when the real fused
+  classifier/dHidden/dWeight kernel must exist.
+
+  Verification: rebuilt `build/nfn_gpt_native_train`; strict
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 --check-tile-ops
+  --require-cooperative-lm-head-backward` returned exit code 2 and reported
+  `lm_head_cooperative_backward_abi_wrapper_available: true`,
+  `lm_head_cooperative_backward_kernel_available: false`,
+  `lm_head_cooperative_backward_fused_kernel_available: false`, and
+  `lm_head_cooperative_backward_strategy:
+  "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity"`;
+  focused native GPT and paired-kernel parser pytest slices passed; native
+  no-Torch dependency check and `git diff --check` passed.
+
 - Rechecked the existing double-buffered LM-head row-chunk pipeline candidate
   after the CUDA 13.3 candidate-profile cleanup. The
   `lm_head_pipeline_chunks` profile still enabled the intended route

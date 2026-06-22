@@ -1662,25 +1662,30 @@ Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or
 the current cooperative LM-head backward ABI wrapper. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` or
 pass `--require-cooperative-lm-head-backward` to the compiled dense GPT CLI
-when a parity/preflight run must require that route. Runtime JSON reports
+when a parity/preflight run must require the real fused/cooperative LM-head
+backward kernel. `--dry-run` keeps the JSON-report convention and emits
+`passed: false`; `--check-tile-ops` returns nonzero for the same unmet required
+route. Runtime JSON reports
 `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,
+`lm_head_cooperative_backward_abi_wrapper_available`,
 `lm_head_cooperative_backward_kernel_available`,
+`lm_head_cooperative_backward_fused_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`, and
-`lm_head_cooperative_backward_strategy`. When active, the route reports
-`cooperative-classifier-dhidden-dweight-tile-abi-wrapper` and replaces each
-LM-head chunk's CE, dHidden, and dWeight dispatch sequence with the typed
-wrapper call. It remains default-off because the 2026-06-22 dedicated RTX 5090
-one-step promotion gate rejected it at `1.001674x` train-loop wall time and
-`1.001581x` LM-head backward time; a relaxed 1% same-script route verification
-gate passed.
+`lm_head_cooperative_backward_strategy`. `kernel_available` and
+`fused_kernel_available` mean the fused parity kernel. The existing typed
+wrapper symbol is reported separately as `abi_wrapper_available`; it sequences
+the old CE, dHidden, and dWeight launches and no longer satisfies the strict
+required guard.
 Rebuilt Tile ops libraries export the probed symbol with a typed C ABI contract
 for the future cooperative route: BF16 logit/dlogit chunk, u16 targets,
 optional row losses, BF16/float hidden inputs, BF16/float token weights,
 dHidden, dWeight, shape metadata, loss scale, dWeight beta, flags, and stream.
 Runtime JSON reports the kernel as available only when the loaded library
-contains that symbol.
+contains a fused implementation; wrapper-only libraries report
+`lm_head_cooperative_backward_abi_wrapper_available: true` and
+`lm_head_cooperative_backward_kernel_available: false`.
 
 Startup-only token-weight initializer bisections can use the same profile
 mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,

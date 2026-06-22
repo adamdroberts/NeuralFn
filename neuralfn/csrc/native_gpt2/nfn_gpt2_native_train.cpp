@@ -3894,7 +3894,7 @@ bool print_tile_plan(
 
     bool loaded = false;
     bool all_symbols = false;
-    bool cooperative_lm_head_backward_symbol_found = false;
+    bool cooperative_lm_head_backward_abi_wrapper_found = false;
     std::string error;
     std::vector<bool> found(symbols.size(), false);
     if (include_symbol_check || cooperative_lm_head_backward_requested) {
@@ -3911,16 +3911,17 @@ bool print_tile_plan(
                     all_symbols = all_symbols && found[i];
                 }
             }
-            cooperative_lm_head_backward_symbol_found =
+            cooperative_lm_head_backward_abi_wrapper_found =
                 dlsym(handle, kLmHeadCooperativeBackwardSymbol) != nullptr;
             dlclose(handle);
         }
     }
+    const bool cooperative_lm_head_backward_fused_kernel_found = false;
     const bool cooperative_lm_head_backward_route_integrated =
         cooperative_lm_head_backward_requested &&
-        cooperative_lm_head_backward_symbol_found;
+        cooperative_lm_head_backward_fused_kernel_found;
     const bool cooperative_lm_head_backward_enabled =
-        cooperative_lm_head_backward_symbol_found &&
+        cooperative_lm_head_backward_fused_kernel_found &&
         cooperative_lm_head_backward_route_integrated;
     if (plan_error.empty() &&
         cfg.require_cooperative_lm_head_backward &&
@@ -3980,16 +3981,22 @@ bool print_tile_plan(
         << (cfg.require_cooperative_lm_head_backward ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_requested\": "
         << (cooperative_lm_head_backward_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_abi_wrapper_available\": "
+        << (cooperative_lm_head_backward_abi_wrapper_found ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_available\": "
-        << (cooperative_lm_head_backward_symbol_found ? "true" : "false") << ",\n"
+        << (cooperative_lm_head_backward_fused_kernel_found ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_fused_kernel_available\": "
+        << (cooperative_lm_head_backward_fused_kernel_found ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_route_integrated\": "
         << (cooperative_lm_head_backward_route_integrated ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_enabled\": "
         << (cooperative_lm_head_backward_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (cooperative_lm_head_backward_enabled
-                ? "cooperative-classifier-dhidden-dweight-tile-abi-wrapper"
-                : "missing-required-sm120-parity-kernel")
+                ? "cooperative-classifier-dhidden-dweight-fused-sm120-kernel"
+                : (cooperative_lm_head_backward_abi_wrapper_found
+                    ? "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity"
+                    : "missing-required-sm120-parity-kernel"))
         << "\",\n"
         << "  \"schedule\": {\"max_steps\": " << cfg.max_steps
         << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
@@ -4262,10 +4269,14 @@ bool print_tile_plan(
         std::cout << "  }";
     }
     std::cout << "\n}\n";
-    if (include_symbol_check && (!loaded || !all_symbols)) {
-        mirror_json_profile_failure_to_stderr(cfg, "native-tile-ops-check-failed", error);
+    const bool plan_passed = native_runnable && plan_error.empty();
+    if (include_symbol_check && (!loaded || !all_symbols || !plan_passed)) {
+        mirror_json_profile_failure_to_stderr(
+            cfg,
+            "native-tile-ops-check-failed",
+            plan_error.empty() ? error : plan_error);
     }
-    return include_symbol_check ? (loaded && all_symbols) : false;
+    return include_symbol_check ? (loaded && all_symbols && plan_passed) : false;
 }
 
 int print_selected_graph_unsupported_json(
@@ -11728,11 +11739,12 @@ int run_transformer_lm_training_json(
         !lm_head_full_batch_reuse_schedule_enabled &&
         !lm_head_cooperative_backward_requested &&
         lm_head_chunk_count > 1;
-    const bool lm_head_cooperative_backward_kernel_available =
+    const bool lm_head_cooperative_backward_abi_wrapper_available =
         lm_head_classifier_backward_cooperative_bf16_u16 != nullptr;
+    const bool lm_head_cooperative_backward_fused_kernel_available = false;
     const bool lm_head_cooperative_backward_route_integrated =
         lm_head_cooperative_backward_requested &&
-        lm_head_cooperative_backward_kernel_available &&
+        lm_head_cooperative_backward_fused_kernel_available &&
         lm_head_bf16_logits_enabled &&
         lm_head_public_vocab_ce_enabled &&
         direct_u16_token_ids_enabled &&
@@ -11742,7 +11754,7 @@ int run_transformer_lm_training_json(
         !lm_head_reuse_forward_logits_enabled &&
         !lm_head_full_batch_reuse_schedule_enabled;
     const bool lm_head_cooperative_backward_kernel_enabled =
-        lm_head_cooperative_backward_kernel_available &&
+        lm_head_cooperative_backward_fused_kernel_available &&
         lm_head_cooperative_backward_route_integrated;
     void* lm_head_dhidden_stream = nullptr;
     void* lm_head_dweight_stream = nullptr;
@@ -19312,7 +19324,7 @@ int run_transformer_lm_training_json(
         << ",\n"
         << "  \"lm_head_dhidden_dweight_schedule_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
-                ? "cooperative-classifier-dhidden-dweight-tile-abi-wrapper"
+                ? "cooperative-classifier-dhidden-dweight-fused-sm120-kernel"
         : (lm_head_full_batch_reuse_schedule_enabled
                 ? "resident-full-logit-single-row-batch-gemms"
                 : (lm_head_pipeline_chunks_enabled
@@ -19326,16 +19338,22 @@ int run_transformer_lm_training_json(
         << (cfg.require_cooperative_lm_head_backward ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_requested\": "
         << (lm_head_cooperative_backward_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_abi_wrapper_available\": "
+        << (lm_head_cooperative_backward_abi_wrapper_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_available\": "
-        << (lm_head_cooperative_backward_kernel_available ? "true" : "false") << ",\n"
+        << (lm_head_cooperative_backward_fused_kernel_available ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_fused_kernel_available\": "
+        << (lm_head_cooperative_backward_fused_kernel_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_route_integrated\": "
         << (lm_head_cooperative_backward_route_integrated ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_enabled\": "
         << (lm_head_cooperative_backward_kernel_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
-                ? "cooperative-classifier-dhidden-dweight-tile-abi-wrapper"
-                : "missing-required-sm120-parity-kernel")
+                ? "cooperative-classifier-dhidden-dweight-fused-sm120-kernel"
+                : (lm_head_cooperative_backward_abi_wrapper_available
+                    ? "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity"
+                    : "missing-required-sm120-parity-kernel"))
         << "\",\n"
         << "  \"lm_head_reverse_chunk_order_enabled\": "
         << (lm_head_reverse_chunk_order_enabled ? "true" : "false") << ",\n"

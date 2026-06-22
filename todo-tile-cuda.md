@@ -57,11 +57,13 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   - 2026-06-22 added a default-off strict parity guard for this route:
     `nfn_gpt_native_train --require-cooperative-lm-head-backward` and
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required`
-    now fail explicitly unless the cooperative classifier/dHidden/dWeight ABI
-    wrapper is available and requested. Runtime JSON reports
+    now fail explicitly unless the fused cooperative classifier/dHidden/dWeight
+    kernel is available and integrated. Runtime JSON reports
     `lm_head_cooperative_backward_required`,
     `lm_head_cooperative_backward_requested`,
+    `lm_head_cooperative_backward_abi_wrapper_available`,
     `lm_head_cooperative_backward_kernel_available`,
+    `lm_head_cooperative_backward_fused_kernel_available`,
     `lm_head_cooperative_backward_route_integrated`,
     `lm_head_cooperative_backward_kernel_enabled`, and
     `lm_head_cooperative_backward_strategy`.
@@ -78,15 +80,14 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     - 2026-06-22 exported the first matching Tile wrapper under that symbol. It
       sequences the existing row-loss classifier, BF16 dHidden, and BF16 dWeight
       launches behind one C ABI so candidate plans can probe a concrete symbol.
-      The trainer can now call it behind
-      `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or
-      `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward`; the
-      strict profile additionally passes `--require-cooperative-lm-head-backward`.
-      This is not promoted because the dedicated RTX 5090 one-step promotion
-      gate rejected it at `1.001674x` train-loop wall time and `1.001581x`
-      LM-head backward time. A relaxed 1% route-verification gate passed and
-      reported `cooperative-classifier-dhidden-dweight-tile-abi-wrapper`. The
-      open work remains
+      Earlier trainer builds could call it behind
+      `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`, but the current strict
+      contract reports it only as
+      `lm_head_cooperative_backward_abi_wrapper_available` and keeps
+      `lm_head_cooperative_backward_kernel_available: false` until a fused
+      kernel lands. This is not promoted because the dedicated RTX 5090
+      one-step promotion gate rejected the wrapper at `1.001674x` train-loop
+      wall time and `1.001581x` LM-head backward time. The open work remains
       replacing the wrapper sequence with a genuinely fused/cooperative kernel
       and then integrating the route.
   - 2026-06-20 promoted the row-loss reduction classifier variant to the dense

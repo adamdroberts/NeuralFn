@@ -527,30 +527,38 @@ replaces the ABI internals with a cooperative classifier plus dHidden/dWeight
 kernel.
 Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or the
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` benchmark
-profile to exercise the current cooperative LM-head backward ABI wrapper.
+profile to request the current cooperative LM-head backward path. Today this
+only proves that the ABI wrapper symbol can be loaded; the wrapper still
+sequences the existing CE, dHidden, and dWeight launches and is not the fused
+SM120 parity kernel.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when
-a parity run must fail unless that route is available and requested.
+a parity run must fail unless a genuinely fused/cooperative LM-head backward
+kernel is available and integrated. `--dry-run` keeps the usual JSON-report
+convention and emits `passed: false`; `--check-tile-ops` returns nonzero for
+the same unmet required route so scripts can use it as a hard preflight.
 Runtime JSON reports
 `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,
+`lm_head_cooperative_backward_abi_wrapper_available`,
 `lm_head_cooperative_backward_kernel_available`,
+`lm_head_cooperative_backward_fused_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`, and
-`lm_head_cooperative_backward_strategy`. The route stays default-off because a
-2026-06-22 dedicated RTX 5090 one-step same-script promotion gate proved the
-strategy changed but rejected it at `1.001674x` train-loop wall time and
-`1.001581x` LM-head backward time. A non-promotion verification run with 1%
-gates passed and reported
-`cooperative-classifier-dhidden-dweight-tile-abi-wrapper`.
+`lm_head_cooperative_backward_strategy`. `kernel_available` and
+`fused_kernel_available` now mean the fused parity kernel, not just the wrapper
+symbol. The wrapper remains default-off and non-promoted because a 2026-06-22
+dedicated RTX 5090 one-step same-script promotion gate proved it changed the
+route but rejected it at `1.001674x` train-loop wall time and `1.001581x`
+LM-head backward time.
 The probed Tile symbol is now exported by the rebuilt ops library with a typed
 C ABI contract for this diagnostic wrapper: it accepts the BF16 logit/dlogit
 chunk, u16 targets, optional row-loss buffer, BF16/float hidden inputs,
 BF16/float token weights, dHidden, dWeight, shape metadata, loss scale, dWeight
 beta, flags, and stream. Runtime JSON only reports
-`lm_head_cooperative_backward_kernel_available: true` when the current run loads
-a Tile ops library containing that symbol.
+`lm_head_cooperative_backward_abi_wrapper_available: true` when the current run
+loads a Tile ops library containing that symbol.
 `NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0` (or the GPT-2 alias
 `NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD=0`) disables the default fused
 loss-accumulate+dlogits classifier path for same-script bisection, making

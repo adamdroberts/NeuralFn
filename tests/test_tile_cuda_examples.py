@@ -2405,7 +2405,9 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "lm_head_dhidden_linear_strategy": "bf16-cublas-gemmex",
                 "lm_head_ce_loss_backward_strategy": "separate-loss-partials-reduction-then-dlogits",
                 "lm_head_cooperative_backward_required": True,
+                "lm_head_cooperative_backward_abi_wrapper_available": True,
                 "lm_head_cooperative_backward_kernel_available": False,
+                "lm_head_cooperative_backward_fused_kernel_available": False,
                 "lm_head_cooperative_backward_route_integrated": False,
                 "lm_head_cooperative_backward_kernel_enabled": False,
                 "lm_head_cooperative_backward_strategy": "missing-required-sm120-parity-kernel",
@@ -2469,7 +2471,9 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["lm_head_dhidden_linear_strategy"] == "bf16-cublas-gemmex"
     assert metrics["lm_head_ce_loss_backward_strategy"] == "separate-loss-partials-reduction-then-dlogits"
     assert metrics["lm_head_cooperative_backward_required"] is True
+    assert metrics["lm_head_cooperative_backward_abi_wrapper_available"] is True
     assert metrics["lm_head_cooperative_backward_kernel_available"] is False
+    assert metrics["lm_head_cooperative_backward_fused_kernel_available"] is False
     assert metrics["lm_head_cooperative_backward_route_integrated"] is False
     assert metrics["lm_head_cooperative_backward_kernel_enabled"] is False
     assert metrics["lm_head_cooperative_backward_strategy"] == "missing-required-sm120-parity-kernel"
@@ -2507,7 +2511,9 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
         "lm_head_ce_loss_backward_strategy": ["separate-loss-partials-reduction-then-dlogits"],
         "lm_head_cooperative_backward_strategy": ["missing-required-sm120-parity-kernel"],
         "lm_head_cooperative_backward_required": ["true"],
+        "lm_head_cooperative_backward_abi_wrapper_available": ["true"],
         "lm_head_cooperative_backward_kernel_available": ["false"],
+        "lm_head_cooperative_backward_fused_kernel_available": ["false"],
         "lm_head_cooperative_backward_route_integrated": ["false"],
         "lm_head_cooperative_backward_kernel_enabled": ["false"],
     }

@@ -953,7 +953,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_BACKWARD" in source
     assert "lm_head.backward.cooperative.bf16_u16" in source
-    assert "cooperative-classifier-dhidden-dweight-tile-abi-wrapper" in source
+    assert "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity" in source
+    assert "cooperative-classifier-dhidden-dweight-fused-sm120-kernel" in source
+    assert "return include_symbol_check ? (loaded && all_symbols && plan_passed) : false;" in source
     assert "const bool lm_head_cooperative_backward_route_integrated = false;" not in source
     bench_source = (root / "tools" / "bench_native_gpt_sm120_candidate.sh").read_text(
         encoding="utf-8"
@@ -2111,6 +2113,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["selected_graph_native_runnable"] is True
     assert default_payload["checkpoint_export_enabled"] is True
     assert default_payload["lm_head_cooperative_backward_kernel_available"] is False
+    assert default_payload["lm_head_cooperative_backward_fused_kernel_available"] is False
     assert default_payload["lm_head_cooperative_backward_route_integrated"] is False
     assert default_payload["lm_head_cooperative_backward_kernel_enabled"] is False
     assert default_payload["lm_head_cooperative_backward_strategy"] == "missing-required-sm120-parity-kernel"
