@@ -115,8 +115,8 @@ Runtime JSON also exposes a classic cuBLAS grouped BF16 GEMM execution probe as
 `linear_cublas_grouped_bf16_gemm_supported`. This raw Tile ABI probe is
 opt-in with `NFN_NATIVE_GPT_PROBE_CUBLAS_GROUPED_BF16_GEMM=1` because rejected
 or unsupported grouped BF16 launches can poison the CUDA context before model
-arena allocation. When requested, a nonzero probe status now fails native
-preflight immediately instead of continuing into model arena allocation. The
+arena allocation. When requested, a nonzero probe status fails native preflight
+immediately instead of continuing into model arena allocation. The
 probe launches tiny aligned BF16 grouped GEMMs through
 `cublasGemmGroupedBatchedEx`, copies back the BF16 outputs, and verifies the
 expected sums. Use it to gate future grouped linear-backward candidates; it is
@@ -292,10 +292,12 @@ failing startup; the current CUDA 13.3 RTX 5090 result is status `15`, so
 grouped cuBLASLt matmul remains a blocked candidate for LM-head/block-backward
 parity even though `linear_cublaslt_grouped_layout_supported` is true.
 The paired SM120 wrapper profile
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe` enables both the
-layout and grouped-matmul probes for repeatable CUDA-upgrade checks; the
-current CUDA 13.3 WSL probe still reports grouped layout status `0` and grouped
-matmul status `15`.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe` enables the
+cuBLASLt layout and grouped-matmul probes for repeatable CUDA-upgrade checks;
+the current CUDA 13.3 WSL probe still reports grouped layout status `0` and
+grouped matmul status `15`. The profile deliberately omits the classic cuBLAS
+grouped BF16 probe because the CUDA 13.3 recheck showed it still poisons the
+selected CUDA context before model allocation when unsupported.
 CUDA 13.3.33 post-reinstall paired checks keep 32768 rows as the default.
 Retesting `--lm-head-row-chunk-size 8192` against the current 32768-row route
 regressed train-loop wall time to `1.001841x` despite slightly improving the

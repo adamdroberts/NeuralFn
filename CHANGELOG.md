@@ -376,7 +376,9 @@ Future updates should append new entries here rather than replacing older notes.
   work. A current CUDA 13.3 WSL recheck on the dedicated RTX 5090 reports
   grouped layout support (`status 0`) but grouped cuBLASLt matmul execution is
   still unsupported (`status 15`), so grouped kernels remain blocked for the
-  default route.
+  default route. The profile intentionally omits the classic cuBLAS grouped BF16
+  probe because the CUDA 13.3 recheck reproduced a poisoned CUDA context and
+  error `700` on the following model arena allocation.
 
   Verification: ran the grouped startup probe on the dedicated RTX 5090, ran
   the candidate wrapper dry-run for `cublaslt_grouped_probe`, and ran the
@@ -979,18 +981,20 @@ Future updates should append new entries here rather than replacing older notes.
   vector4 writer. Verification: focused native source pytest, native CUDA Tile
   rebuild, and startup-only paired benchmark.
 
-- Changed the opt-in cuBLAS grouped BF16 GEMM execution probe to fail native
-  GPT preflight immediately when the requested probe returns a nonzero status.
-  This prevents `NFN_NATIVE_GPT_PROBE_CUBLAS_GROUPED_BF16_GEMM=1` from
-  continuing into model arena allocation after an unsupported grouped BF16
-  launch has already left the CUDA context in an illegal-access state. The
-  runtime JSON still reports
+- Kept the opt-in cuBLAS grouped BF16 GEMM execution probe as a fatal native
+  GPT preflight when the requested probe returns a nonzero status. A CUDA 13.3
+  attempt to make it report-only and include it in
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe` reproduced
+  `cudaMalloc transformer_lm_float_arena failed with CUDA error 700`, so the
+  guard remains necessary to avoid a misleading later allocation failure. The
+  runtime JSON reports
   `linear_cublas_grouped_bf16_gemm_probe_requested`,
   `linear_cublas_grouped_bf16_gemm_probe_status`, and
   `linear_cublas_grouped_bf16_gemm_supported`; callers should treat nonzero
-  status as a diagnostic preflight failure and avoid grouped-GEMM benchmark
+  status as a blocked grouped-GEMM route and avoid grouped-GEMM benchmark
   candidates on that CUDA install. Verification: focused native source pytest,
-  native GPT rebuild, and a live CUDA 13.3 opt-in probe rerun.
+  native GPT rebuild, live CUDA 13.3 cuBLASLt grouped-profile rerun, and the
+  failed report-only classic cuBLAS grouped probe attempt.
 
 - Added
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_forward_bf16_fallback_65536` for

@@ -1110,6 +1110,9 @@ footprint.
 NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`. Use it as a readiness check
 before grouped block-backward work; on the current CUDA 13.3 WSL stack the
 layout probe passes but grouped matmul execution still reports status `15`.
+The profile intentionally omits `NFN_NATIVE_GPT_PROBE_CUBLAS_GROUPED_BF16_GEMM`
+because the current CUDA stack still leaves the trainer context unusable after
+that unsupported probe.
 `lm_head_ce_vec8_io` expands to
 `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1 NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1` for
 the normal no-loss LM-head classifier path. It keeps the default vec8 BF16
