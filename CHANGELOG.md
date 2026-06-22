@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Routed the installed `nfn = "nfn:main"` console entry point through the same
+  direct compiled native dense GPT training dispatch as `python cli/nfn.py`.
+  Default `nfn train --base-model gpt|gpt2|gpt3|nanogpt ...` commands now exec
+  `nfn_gpt_native_train` before importing `train_gpt_native`, `nfn_impl`, or
+  Torch even when launched through the packaging entry point.
+
+  Verification: added a console-entry regression test that uses `/bin/echo` as
+  the native train target and asserts the resolved command includes
+  `--train-transformer-lm` while `torch`, `nfn_impl`, and `train_gpt_native`
+  stay unloaded.
+
 - Corrected dense GPT cooperative LM-head backward reporting so wrapper
   sequences are no longer reported as true fused Tile kernels. The runtime and
   `--check-tile-ops` JSON now emit

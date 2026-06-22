@@ -14,10 +14,11 @@ intentionally want to force the unified `nfn_native_train --base-model ...`
 frontend.
 
 The top-level `nfn` module keeps that startup contract when imported as a CLI
-shim: `from nfn import main; main()` can serve root help and native fast-path
-inference without importing `nfn_impl` or `torch`. Planner helpers such as
-`maybe_plan`, `recipe_from_state`, and `render_help` are still available from
-`nfn`, but they load the graph-backed planner lazily when first accessed.
+shim: `from nfn import main; main()` can serve root help, direct dense GPT
+native training, and native fast-path inference without importing `nfn_impl`,
+`train_gpt_native`, or `torch`. Planner helpers such as `maybe_plan`,
+`recipe_from_state`, and `render_help` are still available from `nfn`, but they
+load the graph-backed planner lazily when first accessed.
 
 Install extras only for the workflows you need:
 

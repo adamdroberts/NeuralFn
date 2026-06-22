@@ -797,6 +797,12 @@ def main(
 ) -> int:
     tokens = list(sys.argv[1:] if argv is None else argv)
     if stdin_isatty is None and stdout_isatty is None:
+        if _is_direct_native_train_cli_train(tokens):
+            return _direct_native_train_cli_main(tokens)
+        if _is_explicit_native_gpt_train(tokens):
+            from train_gpt_native import main as train_gpt_native_main
+
+            return int(train_gpt_native_main(_native_gpt_argv(tokens)))
         if _is_lightweight_root_help(tokens):
             return _lightweight_root_main(tokens)
         if _is_lightweight_command_help(tokens):
@@ -805,6 +811,8 @@ def main(
             return _lightweight_kernels_list_main(tokens)
         if _is_lightweight_native_gpt_infer(tokens):
             return _lightweight_native_gpt_infer_main(tokens)
+        if _is_legacy_graph_train(tokens):
+            return _legacy_graph_train_main(tokens)
     impl = _load_full_impl()
     kwargs: dict[str, bool] = {}
     if stdin_isatty is not None:
