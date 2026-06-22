@@ -4773,6 +4773,7 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
             "tinystories",
             "--native-cuda-print-command",
             "--native-cuda-no-checkpoint",
+            "--native-cuda-startup-only",
             "--kernel-backend",
             "tile-cuda",
             "--output",
@@ -4787,11 +4788,13 @@ def test_unified_native_train_cli_builds_dispatches_dense_gpt_aliases_and_reject
     assert "--model-family gpt3" in high_level_aliases.stdout
     assert "--tinystories" in high_level_aliases.stdout
     assert "--no-checkpoint" in high_level_aliases.stdout
+    assert "--startup-only" in high_level_aliases.stdout
     assert "--backend tile-cuda" in high_level_aliases.stdout
     assert "--output-dir /tmp/native-model" in high_level_aliases.stdout
     assert "--train-transformer-lm" in high_level_aliases.stdout
     assert "--train-seq-len 2048" in high_level_aliases.stdout
     assert "--native-cuda-print-command" not in high_level_aliases.stdout
+    assert "--native-cuda-startup-only" not in high_level_aliases.stdout
     assert "--kernel-backend" not in high_level_aliases.stdout
     assert "--output " not in high_level_aliases.stdout
 
@@ -5531,6 +5534,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
             str(gpt2_evo),
             "--native-cuda-dry-run",
             "--native-cuda-print-command",
+            "--native-cuda-startup-only",
             "--dataset-alias",
             "/tmp/native-cache",
             "--eval-every-steps",
@@ -5548,6 +5552,8 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--dataset-alias /tmp/native-cache" in evo_delegate_print_command.stdout
     assert "--eval-every-steps 1000" in evo_delegate_print_command.stdout
     assert "--native-cuda-print-command" not in evo_delegate_print_command.stdout
+    assert "--startup-only" in evo_delegate_print_command.stdout
+    assert "--native-cuda-startup-only" not in evo_delegate_print_command.stdout
 
 
 def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> None:
@@ -7867,6 +7873,7 @@ def test_top_level_nfn_train_defaults_to_native_gpt_without_base_model(tmp_path:
             "--tinystories",
             "--native-cuda-print-command",
             "--native-cuda-no-checkpoint",
+            "--native-cuda-startup-only",
         ],
         cwd=root,
         env=env,
@@ -7881,7 +7888,9 @@ def test_top_level_nfn_train_defaults_to_native_gpt_without_base_model(tmp_path:
     assert "--train-transformer-lm" in proc.stdout
     assert "--tinystories" in proc.stdout
     assert "--no-checkpoint" in proc.stdout
+    assert "--startup-only" in proc.stdout
     assert "--native-cuda-no-checkpoint" not in proc.stdout
+    assert "--native-cuda-startup-only" not in proc.stdout
     assert "TorchTrainer path" not in proc.stderr
 
 
@@ -7904,6 +7913,7 @@ def test_top_level_nfn_train_prefers_direct_family_native_cli(tmp_path: Path) ->
             "--tinystories",
             "--native-cuda-print-command",
             "--native-cuda-dry-run",
+            "--native-cuda-startup-only",
             "--eval-every-steps",
             "1000",
         ],
@@ -7919,6 +7929,7 @@ def test_top_level_nfn_train_prefers_direct_family_native_cli(tmp_path: Path) ->
     assert "--tinystories" in proc.stdout
     assert "--print-command" in proc.stdout
     assert "--dry-run" in proc.stdout
+    assert "--startup-only" in proc.stdout
     assert "--eval-every-steps\n1000" in proc.stdout
     assert "--base-model" not in proc.stdout
     assert "--model-family" not in proc.stdout

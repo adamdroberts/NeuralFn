@@ -650,6 +650,7 @@ int main(int argc, char** argv) {
                 "--native-cuda-allow-train-val-fallback",
                 "--native-cuda-no-checkpoint",
                 "--native-cuda-write-checkpoint",
+                "--native-cuda-startup-only",
             })) {
             if (arg == "--native-cuda-print-plan") {
                 forwarded.push_back("--print-plan");
@@ -679,6 +680,8 @@ int main(int argc, char** argv) {
                 forwarded.push_back("--no-checkpoint");
             } else if (arg == "--native-cuda-write-checkpoint") {
                 forwarded.push_back("--write-checkpoint");
+            } else if (arg == "--native-cuda-startup-only") {
+                forwarded.push_back("--startup-only");
             }
             continue;
         }

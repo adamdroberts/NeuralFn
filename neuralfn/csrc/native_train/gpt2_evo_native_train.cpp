@@ -47,6 +47,7 @@ struct Gpt2EvoPlan {
     double grad_clip_norm = 1.0;
     double evo_layer_mutation_scale = 0.02;
     bool layer_evo_enabled = true;
+    bool startup_only = false;
     bool smoke_evo_kernels = false;
     std::string tile_ops_lib;
     std::string cuda_runtime_lib;
@@ -836,6 +837,10 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run, b
             *print_delegate_command = true;
             continue;
         }
+        if (arg == "--startup-only" || arg == "--native-cuda-startup-only") {
+            plan.startup_only = true;
+            continue;
+        }
         if (arg == "--smoke-evo-kernels" || arg == "--native-cuda-smoke-evo-kernels") {
             plan.smoke_evo_kernels = true;
             continue;
@@ -1069,6 +1074,9 @@ std::vector<std::string> dense_gpt_delegate_args(const Gpt2EvoPlan& plan, const 
         args.push_back(std::to_string(plan.evo_layer_mutation_scale));
     } else {
         args.push_back("--no-layer-evo");
+    }
+    if (plan.startup_only) {
+        args.push_back("--startup-only");
     }
     args.insert(args.end(), plan.unparsed_args.begin(), plan.unparsed_args.end());
     return args;

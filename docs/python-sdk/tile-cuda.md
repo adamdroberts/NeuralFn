@@ -1833,13 +1833,16 @@ errors.
 
 Set `NativeGptRunConfig.startup_only=True` or
 `NativeGpt2RunConfig.startup_only=True` to forward `--startup-only` to the
-compiled CLI. Startup-only runs still resolve cached token shards, load CUDA,
-allocate the full Tile-CUDA transformer training arenas, initialize native
-parameters, and emit normal setup timing, but exit before optimizer steps or
-checkpoint export with `status: "native-transformer-lm-startup-ready"`. Native
-GPT SDK subprocess launchers set `CUDA_MODULE_LOADING=LAZY` by default when the
-caller has not already set that environment variable, and runtime JSON reports
-the resolved value as `cuda_module_loading`. Startup-only suppresses final
+compiled CLI. High-level native training commands also accept
+`--native-cuda-startup-only` and normalize it to the same compiled C++ flag
+before dispatch; the dense native GPT parser accepts either spelling for direct
+calls. Startup-only runs still resolve cached token shards, load CUDA, allocate
+the full Tile-CUDA transformer training arenas, initialize native parameters,
+and emit normal setup timing, but exit before optimizer steps or checkpoint
+export with `status: "native-transformer-lm-startup-ready"`. Native GPT SDK
+subprocess launchers set `CUDA_MODULE_LOADING=LAZY` by default when the caller
+has not already set that environment variable, and runtime JSON reports the
+resolved value as `cuda_module_loading`. Startup-only suppresses final
 checkpoint export even when export was requested; plan/runtime JSON reports
 `checkpoint_export_enabled: false` and
 `checkpoint_export_startup_only_elided: true` for that case. Startup-only also

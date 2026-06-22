@@ -177,6 +177,7 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         "--native-cuda-dry-run": "--dry-run",
         "--native-cuda-print-command": "--print-command",
         "--native-cuda-print-plan": "--print-plan",
+        "--native-cuda-startup-only": "--startup-only",
         "--native-cuda-check-tile-ops": "--check-tile-ops",
         "--native-cuda-smoke-tile-ops": "--smoke-tile-ops",
         "--native-cuda-smoke-optimizer-step": "--smoke-optimizer-step",

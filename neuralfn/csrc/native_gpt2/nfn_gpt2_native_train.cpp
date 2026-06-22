@@ -21764,7 +21764,7 @@ int main(int argc, char** argv) {
         } else if (arg == "--train-transformer-lm") {
             cfg.backend = "tile-cuda";
             cfg.train_transformer_lm = true;
-        } else if (arg == "--startup-only") {
+        } else if (arg == "--startup-only" || arg == "--native-cuda-startup-only") {
             cfg.backend = "tile-cuda";
             cfg.startup_only = true;
             cfg.train_transformer_lm = true;

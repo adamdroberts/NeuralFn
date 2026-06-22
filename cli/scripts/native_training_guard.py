@@ -53,6 +53,7 @@ _NATIVE_BOOL_ALIASES = {
     "--native-cuda-dry-run": "--dry-run",
     "--native-cuda-print-command": "--print-command",
     "--native-cuda-print-plan": "--print-plan",
+    "--native-cuda-startup-only": "--startup-only",
     "--native-cuda-smoke-attention-step": "--smoke-attention-step",
     "--native-cuda-smoke-embedding-lm-step": "--smoke-embedding-lm-step",
     "--native-cuda-smoke-embedding-norm-step": "--smoke-embedding-norm-step",

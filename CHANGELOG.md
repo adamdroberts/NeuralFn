@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `--native-cuda-startup-only` as a high-level alias for native GPT
+  training commands. `nfn train`, `train_gpt.py`, and guarded legacy direct
+  scripts normalize it to the compiled C++ `--startup-only` flag before
+  dispatch, and the compiled unified/native GPT2-evo frontend paths now do the
+  same. The dense native GPT parser also accepts either spelling for direct
+  calls, so setup-only CUDA Tile profiling no longer leaks wrapper flags to
+  delegated `nfn_gpt_native_train` calls or imports Torch.
+
+  Verification: added command-print coverage for top-level dense GPT, direct
+  GPT2-evo delegation, and direct family-native dispatch.
+
 - Added the named SM120 wrapper profile
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_dweight_before_dhidden` for the
   existing default-off `NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1`
