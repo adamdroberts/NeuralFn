@@ -794,10 +794,11 @@ parity/preflight run must reject the current row-chunked classifier plus
 separate dHidden/dWeight GEMMs. The flag is default-off for normal training.
 Runtime JSON reports `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_kernel_available`,
+`lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`, and
-`lm_head_cooperative_backward_strategy`; until the real cooperative Tile ABI is
-implemented, the strategy is `missing-required-sm120-parity-kernel` and the
-required run fails explicitly.
+`lm_head_cooperative_backward_strategy`; until the real cooperative Tile route
+is implemented and wired into training, the strategy is
+`missing-required-sm120-parity-kernel` and the required run fails explicitly.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
@@ -1034,7 +1035,7 @@ candidate on `stage.lm_head_backward.ce.total_ms`.
 `lm_head_cooperative_backward_required` appends
 `--require-cooperative-lm-head-backward` to the candidate command. It is a
 strict missing-kernel guard, not a timing candidate: it should fail until the
-cooperative classifier/dHidden/dWeight Tile ABI replaces the current
+cooperative classifier/dHidden/dWeight Tile route replaces the current
 row-chunked classifier plus separate GEMM schedule.
 
 Prefer the generic dense GPT environment names for new native runs:

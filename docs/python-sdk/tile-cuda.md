@@ -1660,13 +1660,17 @@ dHidden and dWeight substages.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required`
 or pass `--require-cooperative-lm-head-backward` to the compiled dense GPT CLI
 when a parity/preflight run must fail until the cooperative LM-head backward
-ABI exists. Runtime JSON reports
+route is wired into training. Runtime JSON reports
 `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_kernel_available`,
+`lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`, and
 `lm_head_cooperative_backward_strategy`. Today this is a default-off strictness
 guard that reports `missing-required-sm120-parity-kernel`, not a performance
-route.
+route; `lm_head_cooperative_backward_kernel_available` only means the probe
+symbol exists, while `lm_head_cooperative_backward_route_integrated` and
+`lm_head_cooperative_backward_kernel_enabled` remain false until the trainer
+actually calls that route.
 
 Startup-only token-weight initializer bisections can use the same profile
 mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,

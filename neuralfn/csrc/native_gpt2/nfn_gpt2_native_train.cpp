@@ -3909,11 +3909,15 @@ bool print_tile_plan(
             dlclose(handle);
         }
     }
+    const bool cooperative_lm_head_backward_route_integrated = false;
+    const bool cooperative_lm_head_backward_enabled =
+        cooperative_lm_head_backward_symbol_found &&
+        cooperative_lm_head_backward_route_integrated;
     if (plan_error.empty() &&
         cfg.require_cooperative_lm_head_backward &&
-        !cooperative_lm_head_backward_symbol_found) {
+        !cooperative_lm_head_backward_enabled) {
         plan_error =
-            "cooperative LM-head backward required, but the Tile ABI symbol is not implemented; "
+            "cooperative LM-head backward required, but the optimized Tile route is not integrated; "
             "required next step: replace row-chunked classifier plus separate dHidden/dWeight GEMMs "
             "with a cooperative classifier/dHidden/dWeight kernel";
     }
@@ -3967,10 +3971,12 @@ bool print_tile_plan(
         << (cfg.require_cooperative_lm_head_backward ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_available\": "
         << (cooperative_lm_head_backward_symbol_found ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_route_integrated\": "
+        << (cooperative_lm_head_backward_route_integrated ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_enabled\": "
-        << (cooperative_lm_head_backward_symbol_found ? "true" : "false") << ",\n"
+        << (cooperative_lm_head_backward_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""
-        << (cooperative_lm_head_backward_symbol_found
+        << (cooperative_lm_head_backward_enabled
                 ? "cooperative-classifier-dhidden-dweight-tile-abi"
                 : "missing-required-sm120-parity-kernel")
         << "\",\n"
@@ -11688,8 +11694,10 @@ int run_transformer_lm_training_json(
         lm_head_chunk_count > 1;
     const bool lm_head_cooperative_backward_kernel_available =
         lm_head_classifier_backward_cooperative_bf16_u16 != nullptr;
+    const bool lm_head_cooperative_backward_route_integrated = false;
     const bool lm_head_cooperative_backward_kernel_enabled =
-        lm_head_cooperative_backward_kernel_available;
+        lm_head_cooperative_backward_kernel_available &&
+        lm_head_cooperative_backward_route_integrated;
     void* lm_head_dhidden_stream = nullptr;
     void* lm_head_dweight_stream = nullptr;
     void* lm_head_ce_done_event = nullptr;
@@ -18629,9 +18637,9 @@ int run_transformer_lm_training_json(
         passed = false;
     }
     if (passed && cfg.require_cooperative_lm_head_backward &&
-        !lm_head_cooperative_backward_kernel_available) {
+        !lm_head_cooperative_backward_kernel_enabled) {
         error =
-            "cooperative LM-head backward required, but the Tile ABI symbol is not implemented; "
+            "cooperative LM-head backward required, but the optimized Tile route is not integrated; "
             "required next step: replace row-chunked classifier plus separate dHidden/dWeight GEMMs "
             "with a cooperative classifier/dHidden/dWeight kernel";
         passed = false;
@@ -19219,6 +19227,8 @@ int run_transformer_lm_training_json(
         << (cfg.require_cooperative_lm_head_backward ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_available\": "
         << (lm_head_cooperative_backward_kernel_available ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_route_integrated\": "
+        << (lm_head_cooperative_backward_route_integrated ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_enabled\": "
         << (lm_head_cooperative_backward_kernel_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""

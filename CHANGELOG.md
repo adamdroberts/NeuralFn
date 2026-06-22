@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tightened the cooperative LM-head backward parity contract. Native dense-GPT
+  JSON now distinguishes `lm_head_cooperative_backward_kernel_available`
+  (future symbol probe) from `lm_head_cooperative_backward_route_integrated`
+  (training loop actually calls the optimized route), and
+  `lm_head_cooperative_backward_kernel_enabled` now requires both. The strict
+  `--require-cooperative-lm-head-backward` guard fails until the optimized Tile
+  route is integrated, so a future placeholder/exported probe symbol cannot
+  accidentally satisfy SM120 parity checks.
+
+  Verification: rebuilt `build/nfn_gpt_native_train`; strict
+  `--print-plan --require-cooperative-lm-head-backward` smoke against the
+  llm.kittens TinyStories shards reports
+  `lm_head_cooperative_backward_route_integrated: false` and the integrated
+  route error; focused native GPT C++ CLI and paired-speed parser/wrapper tests
+  passed; wrapper syntax check, `tools/paired_kernel_speed.py` compile, native
+  no-Torch dependency check, and `git diff --check` passed.
+
 - Changed native dense-GPT startup-only token-shard resolution to skip
   validation shard discovery. `nfn_gpt_native_train --startup-only` exits
   before optimizer or validation work, so the native resolver now treats
@@ -27,6 +44,7 @@ Future updates should append new entries here rather than replacing older notes.
   GEMMs. Runtime JSON and paired benchmark summaries now report
   `lm_head_cooperative_backward_required`,
   `lm_head_cooperative_backward_kernel_available`,
+  `lm_head_cooperative_backward_route_integrated`,
   `lm_head_cooperative_backward_kernel_enabled`, and
   `lm_head_cooperative_backward_strategy`. The SM120 wrapper exposes
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required`

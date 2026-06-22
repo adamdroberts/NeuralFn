@@ -61,6 +61,7 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     implemented. Runtime JSON reports
     `lm_head_cooperative_backward_required`,
     `lm_head_cooperative_backward_kernel_available`,
+    `lm_head_cooperative_backward_route_integrated`,
     `lm_head_cooperative_backward_kernel_enabled`, and
     `lm_head_cooperative_backward_strategy`.
   - [ ] Implement the actual cooperative LM-head backward Tile ABI that fuses or

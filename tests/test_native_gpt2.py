@@ -1982,6 +1982,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     }
     assert default_payload["selected_graph_native_runnable"] is True
     assert default_payload["checkpoint_export_enabled"] is True
+    assert default_payload["lm_head_cooperative_backward_kernel_available"] is False
+    assert default_payload["lm_head_cooperative_backward_route_integrated"] is False
+    assert default_payload["lm_head_cooperative_backward_kernel_enabled"] is False
+    assert default_payload["lm_head_cooperative_backward_strategy"] == "missing-required-sm120-parity-kernel"
     assert default_payload["validation_shards_required"] is True
     assert default_payload["validation_shards_resolved"] is True
     assert default_payload["lm_head_row_chunk_size"] == 32768
