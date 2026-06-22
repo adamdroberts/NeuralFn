@@ -86,12 +86,16 @@ no-Torch path.
 
 Native GPT runtime JSON exposes the trainer-facing cuBLASLt grouped-layout
 probe as `linear_cublaslt_grouped_layout_probe_available`,
+`linear_cublaslt_grouped_layout_probe_requested`,
 `linear_cublaslt_grouped_layout_probe_status`, and
-`linear_cublaslt_grouped_layout_supported`. The probe creates and destroys a
-minimal grouped matrix-layout descriptor through the raw Tile C ABI so CUDA
-13.3 grouped-GEMM experiments can be gated by actual local support before a
-candidate route is benchmarked. It is diagnostic-only; a supported probe does
-not change the default dense GPT training schedule.
+`linear_cublaslt_grouped_layout_supported`. Request it with
+`NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1`,
+`NFN_NATIVE_GPT2_PROBE_CUBLASLT_GROUPED_LAYOUT=1`, or
+`NFN_TILE_CUDA_LINEAR_CUBLASLT_GROUPED_LAYOUT_PROBE=1`. The probe creates and
+destroys a minimal grouped matrix-layout descriptor through the raw Tile C ABI
+so CUDA 13.3 grouped-GEMM experiments can be gated by actual local support
+before a candidate route is benchmarked. It is diagnostic-only; a supported
+probe does not change the default dense GPT training schedule.
 
 Runtime JSON also exposes a classic cuBLAS grouped BF16 GEMM execution probe as
 `linear_cublas_grouped_bf16_gemm_probe_available`,

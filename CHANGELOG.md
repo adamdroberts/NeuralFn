@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the dense GPT cuBLASLt grouped-layout capability smoke from
+  always-on startup telemetry to an opt-in diagnostic requested with
+  `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1`,
+  `NFN_NATIVE_GPT2_PROBE_CUBLASLT_GROUPED_LAYOUT=1`, or
+  `NFN_TILE_CUDA_LINEAR_CUBLASLT_GROUPED_LAYOUT_PROBE=1`. Runtime JSON keeps
+  `linear_cublaslt_grouped_layout_probe_available`,
+  `linear_cublaslt_grouped_layout_probe_status`, and
+  `linear_cublaslt_grouped_layout_supported`, and now also reports
+  `linear_cublaslt_grouped_layout_probe_requested`. Normal training startup no
+  longer runs a grouped-layout descriptor probe that is unrelated to the active
+  dense GPT route. Verification: focused source pytest, native GPT CLI rebuild,
+  normal startup-only CUDA smoke, and requested-probe CUDA smoke. The default
+  smoke reported `linear_cublaslt_grouped_layout_probe_requested: false`,
+  `setup.load_tile_ops` about 68 ms, and typed symbol/preflight time about 0.03
+  ms; the requested-probe smoke reported status `0`, supported `true`, and
+  `setup.load_tile_ops` about 364 ms, confirming the probe was the costly
+  startup side effect.
+
 - Added dense GPT Tile ops load subphase timing to native runtime JSON:
   `tile_ops_dlopen_wall_ms`, `tile_ops_required_symbol_scan_wall_ms`, and
   `tile_ops_typed_symbol_load_wall_ms`. These fields split the still-large

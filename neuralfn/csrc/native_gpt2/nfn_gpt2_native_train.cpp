@@ -9661,6 +9661,13 @@ int run_transformer_lm_training_json(
     std::int64_t linear_bf16_cached_a_capacity = 0;
     std::int64_t linear_bf16_cache_entry_count = 0;
     int linear_cublaslt_grouped_layout_probe_status = -1;
+    const bool linear_cublaslt_grouped_layout_probe_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any(
+                {"NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT",
+                 "NFN_NATIVE_GPT2_PROBE_CUBLASLT_GROUPED_LAYOUT",
+                 "NFN_TILE_CUDA_LINEAR_CUBLASLT_GROUPED_LAYOUT_PROBE"}),
+            false);
     int linear_cublaslt_grouped_matmul_probe_status = -1;
     const bool linear_cublaslt_grouped_matmul_probe_requested =
         env_flag_enabled_or_default(
@@ -10907,9 +10914,12 @@ int run_transformer_lm_training_json(
                 attention_stats_reset();
                 trainer_linear_stats_reset();
                 lm_head_classifier_stats_reset();
-                if (trainer_linear_cublaslt_grouped_layout_probe_status_fn != nullptr) {
+                if (linear_cublaslt_grouped_layout_probe_requested &&
+                    trainer_linear_cublaslt_grouped_layout_probe_status_fn != nullptr) {
                     linear_cublaslt_grouped_layout_probe_status =
                         trainer_linear_cublaslt_grouped_layout_probe_status_fn();
+                } else if (linear_cublaslt_grouped_layout_probe_requested) {
+                    error = "requested cuBLASLt grouped layout probe is unavailable in the Tile ops library";
                 }
                 if (linear_cublaslt_grouped_matmul_probe_requested &&
                     trainer_linear_cublaslt_grouped_matmul_probe_status_fn != nullptr) {
@@ -19189,6 +19199,8 @@ int run_transformer_lm_training_json(
         << (linear_cublaslt_descriptor_cache_enabled ? "true" : "false") << ",\n"
         << "  \"linear_cublaslt_grouped_layout_probe_available\": "
         << (trainer_linear_cublaslt_grouped_layout_probe_status_fn != nullptr ? "true" : "false") << ",\n"
+        << "  \"linear_cublaslt_grouped_layout_probe_requested\": "
+        << (linear_cublaslt_grouped_layout_probe_requested ? "true" : "false") << ",\n"
         << "  \"linear_cublaslt_grouped_layout_probe_status\": "
         << linear_cublaslt_grouped_layout_probe_status << ",\n"
         << "  \"linear_cublaslt_grouped_layout_supported\": "
