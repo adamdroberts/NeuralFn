@@ -1779,7 +1779,9 @@ The same wrapper exposes `qkv_concurrent_dinput_dweight`, which expands to
 stage-timed QKV side-stream bisections. That profile remains default-off and is
 gated on total QKV block-backward time; the candidate-only combined concurrent
 substage is reported for inspection while the serial baseline continues to emit
-split dInput and dWeight substages.
+split dInput and dWeight substages. The current packed-QKV one-step gate proved
+the route active but rejected it at `1.009068x` train-loop wall time,
+`0.991012x` tokens/sec, and `1.040672x` QKV backward.
 It also exposes `lm_head_concurrent_dhidden_dweight`, which expands to
 `NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` and reports the combined
 LM-head dHidden/dWeight concurrent bucket for candidate-side inspection when

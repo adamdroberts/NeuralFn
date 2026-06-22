@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Retested the default-off `qkv_concurrent_dinput_dweight` SM120 candidate
+  against the current packed-QKV dense GPT default. The route changed as
+  intended (`block_backward_qkv_concurrent_dinput_dweight_enabled: true`) but
+  remains rejected: the one-step same-script RTX 5090 gate measured `1.009068x`
+  train-loop wall time, `0.991012x` tokens/sec, and `1.040672x`
+  `stage.block_backward.qkv.total_ms`.
+
+  Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_concurrent_dinput_dweight`
+  through `tools/bench_native_gpt_sm120_candidate.sh` on GPU 0.
+
 - Dense GPT CLI training now treats explicit `--native-cuda-runner auto` as the
   same direct compiled C++ fast path as the default `compiled-cli` runner for
   `cli/scripts/train_gpt.py` and dense `nfn train` commands. Before, explicit

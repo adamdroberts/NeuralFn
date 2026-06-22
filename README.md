@@ -94,8 +94,9 @@ direct bias-gradient first-write probes remain rejected diagnostic switches
 rather than workflow guidance. The QKV dInput/dWeight side-stream diagnostic is
 also rejected as a default: set
 `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` only for paired
-bisection, since the CUDA 13.3 RTX 5090 same-script run enabled the route but
-slowed train-loop wall time to `1.008821x`. Dense GPT startup defaults the tied token-weight
+bisection, since the current packed-QKV CUDA 13.3 RTX 5090 same-script run
+enabled the route but slowed train-loop wall time to `1.009068x` and QKV
+backward to `1.040672x`. Dense GPT startup defaults the tied token-weight
 initializer to the vector4 CUDA Tile route; set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` only for paired bisection against
@@ -387,7 +388,9 @@ profile, not a default-training recommendation; the dedicated RTX 5090
 same-script gate rejected it after it changed no tracked route counters.
 The named `qkv_concurrent_dinput_dweight` profile expands to
 `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` for repeatable
-stage-timed reruns of the default-off QKV side-stream diagnostic.
+stage-timed reruns of the default-off QKV side-stream diagnostic. The current
+packed-QKV one-step gate still rejects it at `1.009068x` train-loop wall time
+and `1.040672x` QKV backward.
 The named `mlp_proj_tk_dweight_65536` profile expands to
 `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T` for repeatable
 MLP projection dWeight reruns. Runtime JSON reports
