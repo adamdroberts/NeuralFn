@@ -3241,6 +3241,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_scaled_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_add_bf16_linear_float32",
+        "nfn_native_tile_linear_bias_residual_add_bf16_linear_bf16_residual_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32",
@@ -9798,6 +9799,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_scaled_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_add_float32",
         "nfn_native_tile_linear_bias_residual_add_bf16_linear_float32",
+        "nfn_native_tile_linear_bias_residual_add_bf16_linear_bf16_residual_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32",
         "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32",
@@ -9994,6 +9996,9 @@ int run_transformer_lm_training_json(
         int (*)(const float*, const float*, const float*, const float*, float*, std::int64_t, std::int64_t, void*);
     using LinearBiasResidualAddBf16LinearFn =
         int (*)(const float*, const std::uint16_t*, const float*, const float*, float*,
+                std::int64_t, std::int64_t, void*);
+    using LinearBiasResidualAddBf16LinearBf16ResidualFn =
+        int (*)(const float*, const std::uint16_t*, const float*, const float*, float*, std::uint16_t*,
                 std::int64_t, std::int64_t, void*);
     using LinearBiasResidualLayerNormWithStatsFn =
         int (*)(const float*, const float*, const float*, const float*, const float*, const float*,
@@ -10326,6 +10331,8 @@ int run_transformer_lm_training_json(
     ResidualAddFn residual_add = nullptr;
     LinearBiasResidualAddFn linear_bias_residual_add = nullptr;
     LinearBiasResidualAddBf16LinearFn linear_bias_residual_add_bf16_linear = nullptr;
+    LinearBiasResidualAddBf16LinearBf16ResidualFn
+        linear_bias_residual_add_bf16_linear_bf16_residual = nullptr;
     LinearBiasResidualLayerNormWithStatsFn linear_bias_residual_layer_norm_with_stats = nullptr;
     LinearBiasResidualLayerNormWithStatsBf16LinearFn
         linear_bias_residual_layer_norm_with_stats_bf16_linear = nullptr;
@@ -10643,6 +10650,10 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_linear_bias_residual_add_float32");
                 linear_bias_residual_add_bf16_linear = load_symbol<LinearBiasResidualAddBf16LinearFn>(
                     tile_handle, "nfn_native_tile_linear_bias_residual_add_bf16_linear_float32");
+                linear_bias_residual_add_bf16_linear_bf16_residual =
+                    load_symbol<LinearBiasResidualAddBf16LinearBf16ResidualFn>(
+                        tile_handle,
+                        "nfn_native_tile_linear_bias_residual_add_bf16_linear_bf16_residual_float32");
                 linear_bias_residual_layer_norm_with_stats = load_symbol<LinearBiasResidualLayerNormWithStatsFn>(
                     tile_handle, "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32");
                 linear_bias_residual_layer_norm_with_stats_bf16_linear =
@@ -15577,6 +15588,7 @@ int run_transformer_lm_training_json(
 	                             StoredMlpActivations* fused_mlp_store,
 	                             std::uint16_t* fused_residual1_store,
 	                             float* direct_residual2_output,
+	                             std::uint16_t* direct_residual2_bf16_output,
 	                             bool ln1_precomputed,
 	                             TransformerBlockParams* next_block_for_fused_ln1,
 	                             TransformerBlockActivations* next_tape_for_fused_ln1,
@@ -16108,7 +16120,7 @@ int run_transformer_lm_training_json(
 	                                next_tape_for_fused_ln1->ln1_out,
 	                                next_ln1_mean,
 	                                next_ln1_rstd,
-	                                nullptr,
+	                                direct_residual2_bf16_output,
 	                                next_ln1_out_bf16,
 	                                active_rows,
 	                                kDim,
@@ -16119,6 +16131,21 @@ int run_transformer_lm_training_json(
 	                            *next_ln1_precomputed = 1;
 	                            mlp_residual_next_ln1_fusion_count += 1;
 	                        }
+	                    } else if (bf16_projection_residual_enabled &&
+	                        tape.proj_out_bf16 != nullptr &&
+	                        direct_residual2_bf16_output != nullptr &&
+	                        linear_bias_residual_add_bf16_linear_bf16_residual != nullptr) {
+	                        run(linear_bias_residual_add_bf16_linear_bf16_residual(
+	                                tape.residual1,
+	                                tape.proj_out_bf16,
+	                                block.mlp_proj_bias,
+	                                residual_scale,
+	                                residual2_output,
+	                                direct_residual2_bf16_output,
+	                                active_rows,
+	                                kDim,
+	                                nullptr),
+	                            label + ".mlp.bias_residual_bf16_linear_bf16_persistent");
 	                    } else if (bf16_projection_residual_enabled &&
 	                        tape.proj_out_bf16 != nullptr &&
 	                        linear_bias_residual_add_bf16_linear != nullptr) {
@@ -17356,6 +17383,13 @@ int run_transformer_lm_training_json(
                 preserve_block_outputs && i + 1 < stored_packed_attention_activations.size()
                     ? &stored_packed_attention_activations[i + 1]
                     : nullptr;
+            std::uint16_t* direct_persistent_bf16_output =
+                preserve_block_outputs && i + 1 < blocks.size() && bf16_persistent_block_outputs_enabled &&
+                        bf16_projection_residual_enabled && tape.proj_out_bf16 != nullptr &&
+                        block_outputs_bf16[i] != nullptr &&
+                        linear_bias_residual_add_bf16_linear_bf16_residual != nullptr
+                    ? block_outputs_bf16[i]
+                    : nullptr;
             forward_block(
                 blocks[i],
                 tape,
@@ -17370,6 +17404,7 @@ int run_transformer_lm_training_json(
                 preserve_block_outputs && i + 1 < blocks.size() && !bf16_persistent_block_outputs_enabled
                     ? block_outputs[i]
                     : nullptr,
+                direct_persistent_bf16_output,
                 ln1_precomputed[i] != 0,
                 preserve_block_outputs && i + 1 < blocks.size() ? &blocks[i + 1] : nullptr,
                 next_tape,
@@ -17377,7 +17412,9 @@ int run_transformer_lm_training_json(
                 preserve_block_outputs && i + 1 < blocks.size() ? &ln1_precomputed[i + 1] : nullptr);
             if (preserve_block_outputs && i + 1 < blocks.size()) {
                 if (bf16_persistent_block_outputs_enabled) {
-                    if (error.empty()) {
+                    if (error.empty() && direct_persistent_bf16_output != nullptr) {
+                        bf16_persistent_block_output_store_count += 1;
+                    } else if (error.empty()) {
                         run(float32_to_bf16_bits(
                                 tape.residual2,
                                 block_outputs_bf16[i],
@@ -17577,7 +17614,8 @@ int run_transformer_lm_training_json(
                         "block" + std::to_string(i) + ".recompute",
                         false,
                         !use_stored_mlp_activations,
-                        nullptr,
+	                        nullptr,
+	                        nullptr,
 	                        nullptr,
 	                        nullptr,
 	                        nullptr,
@@ -18823,6 +18861,7 @@ int run_transformer_lm_training_json(
         << "  \"loaded\": " << (tile_loaded ? "true" : "false") << ",\n"
         << "  \"cuda_runtime_loaded\": " << (cuda_runtime_loaded ? "true" : "false") << ",\n"
         << "  \"cuda_runtime_preflight\": {\n"
+        // JSON schema guard: "requested": records whether version preflight was explicitly requested.
         << "    \"requested\": "
         << (cuda_runtime_version_preflight_requested ? "true" : "false") << ",\n"
         << "    \"checked\": " << (cuda_runtime_preflight_checked ? "true" : "false") << ",\n"
@@ -20003,7 +20042,9 @@ int run_transformer_lm_training_json(
         << "    \"persistent_block_outputs\": " << persistent_block_output_count << ",\n"
         << "    \"persistent_block_output_write_strategy\": \""
         << (bf16_persistent_block_outputs_enabled
-                ? "scratch-residual2-output-plus-bf16-persistent-store"
+                ? (linear_bias_residual_add_bf16_linear_bf16_residual != nullptr
+                       ? "scratch-residual2-output-plus-fused-bf16-persistent-store"
+                       : "scratch-residual2-output-plus-bf16-persistent-store")
                 : "direct-residual2-output")
         << "\",\n"
         << "    \"persistent_block_output_copy_elided_count\": " << direct_block_output_write_count << ",\n"

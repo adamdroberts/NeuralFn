@@ -203,12 +203,17 @@ FP32 scratch buffer during backward, and reports
 `bf16_persistent_block_outputs_enabled`,
 `bf16_persistent_block_output_store_count`,
 `bf16_persistent_block_output_restore_count`,
+`persistent_block_output_write_strategy`,
 `fp32_persistent_block_output_elements_elided`, and
 `fp32_persistent_block_output_bytes_elided` in runtime JSON. At the default
-12-layer `64 x 1024 x 768` shape it elides `2,214,592,512` FP32 bytes, but it
-remains off by default because the dedicated RTX 5090 paired benchmark measured
-`1.021212x` train-loop wall time and `0.979238x` tokens/sec versus the current
-default.
+12-layer `64 x 1024 x 768` shape it elides `2,214,592,512` FP32 bytes. The
+current Tile ABI can report
+`scratch-residual2-output-plus-fused-bf16-persistent-store` when the MLP
+residual-add output and BF16 persistent side-store are fused through
+`nfn_native_tile_linear_bias_residual_add_bf16_linear_bf16_residual_float32`.
+It remains off by default because the 2026-06-22 CUDA 13.3 dedicated RTX 5090
+full-token paired benchmark measured `1.010946x` train-loop wall time and
+`0.989173x` tokens/sec versus the current default.
 Validation uses a separate C++ validation sampler and active forward batch size
 from `--eval-batch-size`; that value must be at least 1 and no larger than the
 training `--batch-size` because the fixed activation arena is allocated for the

@@ -6,6 +6,35 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a fused BF16 persistent block-output diagnostic path for the dense GPT
+  native trainer. `libnfn_native_train_tile_ops.so` now exports
+  `nfn_native_tile_linear_bias_residual_add_bf16_linear_bf16_residual_float32`,
+  which computes the BF16-linear MLP projection residual-add FP32 output and
+  writes the optional BF16 persistent block-output side buffer in the same CUDA
+  Tile launch. When `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUTS=1` is active
+  and the fused path is available, runtime JSON reports
+  `persistent_block_output_write_strategy:
+  "scratch-residual2-output-plus-fused-bf16-persistent-store"`. The candidate
+  keeps the FP32 persistent block-output arena elided by `2,214,592,512` bytes
+  at the default 12-layer `64 x 1024 x 768` shape and avoids the previous
+  separate BF16 store launch. It remains opt-in: the 2026-06-22 CUDA 13.3
+  dedicated RTX 5090 full-token paired benchmark measured `1.010946x`
+  train-loop wall time and `0.989173x` tokens/sec versus the default, despite
+  improving setup wall time to `0.958090x` and float-arena materialization to
+  `0.892982x`.
+
+  **Breaking changes:** the rebuilt `nfn_gpt_native_train` binary now validates
+  the new raw Tile ABI symbol when loading `libnfn_native_train_tile_ops.so`.
+  Rebuild the Tile shared object with `bash tools/build_native_train_tile_ops.sh`
+  after updating; an older shared object will fail startup with a missing Tile
+  ABI symbol error.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; ran focused native GPT pytest coverage; ran
+  default and BF16-persistent startup-only CUDA smokes; ran a short one-step
+  paired train smoke; ran a full-token three-step paired benchmark using
+  `tools/paired_kernel_speed.py`.
+
 - Added CUDA runtime setup subphase timing to dense GPT native runtime JSON:
   `cuda_runtime_symbol_load_wall_ms` and
   `cuda_runtime_version_preflight_wall_ms`. These fields split

@@ -5909,6 +5909,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block_backward_mlp_dgelu_float_grad_elided" in gpt2_source_text
     assert "NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUTS" in gpt2_source_text
     assert "fp32_persistent_block_output_bytes_elided" in gpt2_source_text
+    assert "scratch-residual2-output-plus-fused-bf16-persistent-store" in gpt2_source_text
     assert "NFN_NATIVE_GPT_REUSE_MLP_PROJ_BF16_GRAD_OUT" in gpt2_source_text
     assert "block_backward_mlp_proj_bf16_grad_out_reuse_enabled" in gpt2_source_text
     assert "tk-sm120-fused-dinput-dgelu-reused-bf16-grad-out-bf16-store-bf16-shadow-weight" in gpt2_source_text
@@ -6000,6 +6001,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_scaled_residual_add_float32" in header_text
     assert "nfn_native_tile_linear_bias_residual_add_float32" in header_text
     assert "nfn_native_tile_linear_bias_residual_add_bf16_linear_float32" in header_text
+    assert "nfn_native_tile_linear_bias_residual_add_bf16_linear_bf16_residual_float32" in header_text
     assert "nfn_native_tile_linear_bias_residual_layer_norm_float32" in header_text
     assert "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_float32" in header_text
     assert "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32" in header_text
@@ -6015,6 +6017,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     )
     assert "launch_linear_bias_residual_layer_norm_float32" in source_text
     assert "launch_linear_bias_residual_add_bf16_linear_float32" in source_text
+    assert "launch_linear_bias_residual_add_bf16_linear_bf16_residual_float32" in source_text
     assert "launch_linear_bias_residual_layer_norm_with_stats_float32" in source_text
     assert "launch_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32" in source_text
     assert "launch_linear_bias_residual_layer_norm_with_stats_bf16_residual_float32" in source_text
@@ -6025,6 +6028,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         in source_text
     )
     assert "linear_bias_residual_add_bf16_linear_float32_kernel" in kernels_text
+    assert "linear_bias_residual_add_bf16_linear_bf16_residual_float32_kernel" in kernels_text
     assert "linear_bias_residual_layer_norm_bf16_linear_float32_kernel" in kernels_text
     assert "NFN_NATIVE_GPT_BF16_PROJECTION_RESIDUAL" in gpt2_source_text
     assert "bf16_projection_residual_enabled" in gpt2_source_text
@@ -7355,6 +7359,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_evo_adopt_candidate_float32" in exported
         assert "nfn_native_tile_scaled_residual_add_float32" in exported
         assert "nfn_native_tile_linear_bias_residual_add_bf16_linear_float32" in exported
+        assert "nfn_native_tile_linear_bias_residual_add_bf16_linear_bf16_residual_float32" in exported
         assert "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_float32" in exported
         assert (
             "nfn_native_tile_linear_bias_residual_layer_norm_with_stats_bf16_linear_bf16_residual_float32"
