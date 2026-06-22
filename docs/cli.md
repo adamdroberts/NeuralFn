@@ -1083,6 +1083,13 @@ still failed strict stage gates.
 single-kernel row-loss tail. It is also diagnostic-only: it only affects logged
 train-loss steps, and previous CUDA 13.3 RTX 5090 timing rejected it as a
 default.
+`lm_head_ce_scalar_streaming_store` expands to
+`NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1` and
+`NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1` for the narrower BF16 CE
+scalar-store cache-hint probe. It is diagnostic-only: the candidate changes
+`lm_head_ce_bf16_vector_io_strategy` to
+`vec8-loads-scalar-streaming-stores`, but the dedicated RTX 5090 gate rejected
+it at `1.005702x` train-loop wall and `1.135829x` LM-head CE time.
 `lm_head_overlap_last_dweight` expands to
 `NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1` for the narrower LM-head
 side-stream schedule that overlaps only the last processed row chunk's dWeight

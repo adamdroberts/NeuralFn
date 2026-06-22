@@ -918,6 +918,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=2304,65536,768,T,N" in text
     assert "ce_bf16_threads_512" in text
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=512" in text
+    assert "lm_head_ce_scalar_streaming_store" in text
+    assert "NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1" in text
     assert "lm_head_loss_bins" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1" in text
     assert "lm_head_row_loss_sum_accumulate" in text

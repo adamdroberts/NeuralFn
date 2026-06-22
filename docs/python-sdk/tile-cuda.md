@@ -279,6 +279,16 @@ accumulate row losses into a fixed bin workspace before one
 normal training because it only executes when train-loss logging is enabled and
 the RTX 5090 logging-path check rejected it on strict timing gates.
 
+`NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1`,
+`NFN_NATIVE_GPT2_CE_BF16_SCALAR_STREAMING_STORES=1`, and
+`NFN_TILE_CUDA_CE_BF16_SCALAR_STREAMING_STORES=1` expose a default-off BF16 CE
+scalar dlogit store cache-hint probe. The SM120 wrapper profile
+`lm_head_ce_scalar_streaming_store` keeps vec8 BF16 loads and changes runtime
+JSON from `vec8-loads-scalar-stores` to
+`vec8-loads-scalar-streaming-stores`, but the dedicated RTX 5090 same-script
+gate rejected it at `1.005702x` train-loop wall and `1.135829x` LM-head CE
+time, so normal training should leave it unset.
+
 Grouped cuBLASLt execution is exposed as a diagnostic probe, not a training
 route. Set `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`,
 `NFN_NATIVE_GPT2_PROBE_CUBLASLT_GROUPED_MATMUL=1`, or

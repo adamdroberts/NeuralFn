@@ -126,6 +126,11 @@ loads and switches the no-loss LM-head CE dlogit write to vec8 streaming
 stores for same-script RTX 5090 checks. Runtime JSON reports
 `lm_head_ce_bf16_vector_io_strategy` plus the individual vec-load/store flags
 so the paired benchmark can confirm the classifier route used by the candidate.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_scalar_streaming_store` is the
+narrower scalar-store cache-hint probe; it keeps vec8 loads but writes scalar
+BF16 dlogits through `st.global.cs.u16`. It is diagnostic-only: the dedicated
+RTX 5090 gate rejected it at `1.005702x` train-loop wall and `1.135829x`
+LM-head CE time.
 
 For local server/editor development, leaving `NEURALFN_REDIS_URL` empty keeps
 live state and persistence in-process. Redis-backed deployments still enqueue
@@ -982,6 +987,14 @@ The opt-in streaming-store path now reuses those packed vec8 loads too, but the
 2026-06-22 dedicated RTX 5090 same-script gate still rejected it at
 `1.001346x` train-loop wall time, `1.000944x` LM-head backward time, and
 `1.004197x` CE time, so leave it unset for normal training.
+`NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1`,
+`NFN_NATIVE_GPT2_CE_BF16_SCALAR_STREAMING_STORES=1`, or
+`NFN_TILE_CUDA_CE_BF16_SCALAR_STREAMING_STORES=1` is an even narrower
+default-off cache hint for scalar BF16 dlogit writes. It changes
+`lm_head_ce_bf16_vector_io_strategy` from `vec8-loads-scalar-stores` to
+`vec8-loads-scalar-streaming-stores`; the CUDA 13.3 RTX 5090 same-script gate
+rejected it at `1.005702x` train-loop wall, `1.027580x` LM-head backward, and
+`1.135829x` LM-head CE time, so scalar cached stores remain the default.
 `NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1`,
 `NFN_NATIVE_GPT2_CE_BF16_VEC_NORMAL_STORES=1`, or
 `NFN_TILE_CUDA_CE_BF16_VEC_NORMAL_STORES=1` is a separate default-off

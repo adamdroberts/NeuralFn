@@ -987,6 +987,12 @@ def test_native_gpt_bf16_ce_vector_stores_reuse_vec_loads() -> None:
     assert kernels_text.count(raw_load) >= 5
     assert "(vec_normal_stores && vec_loads) ? load_bf16_vec8" not in kernels_text
     assert "(vec_normal_stores && vec_loads) ? int4_u16_at" not in kernels_text
+    assert "cross_entropy_bf16_scalar_streaming_stores_enabled" in kernels_text
+    assert "NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES" in kernels_text
+    assert "NFN_NATIVE_GPT2_CE_BF16_SCALAR_STREAMING_STORES" in kernels_text
+    assert "NFN_TILE_CUDA_CE_BF16_SCALAR_STREAMING_STORES" in kernels_text
+    assert "store_bf16_scalar(" in kernels_text
+    assert "st.global.cs.u16" in kernels_text
 
 
 def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
@@ -6157,6 +6163,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT_CE_BF16_VEC_LOADS" in kernels_text
     assert "NFN_NATIVE_GPT2_CE_BF16_VEC_LOADS" in kernels_text
     assert "cross_entropy_bf16_vec_loads_enabled" in kernels_text
+    assert "NFN_TILE_CUDA_CE_BF16_SCALAR_STREAMING_STORES" in kernels_text
+    assert "NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES" in kernels_text
+    assert "NFN_NATIVE_GPT2_CE_BF16_SCALAR_STREAMING_STORES" in kernels_text
+    assert "cross_entropy_bf16_scalar_streaming_stores_enabled" in kernels_text
+    assert "lm_head_ce_bf16_scalar_streaming_stores_enabled" in gpt2_source_text
+    assert "vec8-loads-scalar-streaming-stores" in gpt2_source_text
     assert "bf16_row_max_vec8_or_scalar" in kernels_text
     assert "bf16_row_exp_sum_vec8_or_scalar" in kernels_text
     assert "if (vec_loads) {" in kernels_text
@@ -6170,8 +6182,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "store_bf16_vec8_streaming" in kernels_text
     assert "store_bf16_vec8_normal" in kernels_text
     assert "store_bf16_vec8(row_logits + col, grad, vec_stores)" in kernels_text
+    assert "store_bf16_scalar(" in kernels_text
     assert "load_bf16_vec8" in kernels_text
     assert "__stcs(reinterpret_cast<int4*>(dst)" in kernels_text
+    assert "st.global.cs.u16" in kernels_text
     assert "ensure_llmk_sm120_cublaslt_initialized" in kernels_text
     assert "llmk::cublaslt_sm120::init()" in kernels_text
     assert "record_linear_shape_stat(4, m, n, k, op_a, op_b, elapsed_us)" in kernels_text

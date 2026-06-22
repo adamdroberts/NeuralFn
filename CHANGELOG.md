@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off dense GPT BF16 CE scalar streaming-store diagnostic. The
+  CUDA Tile CE kernels now accept
+  `NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1`,
+  `NFN_NATIVE_GPT2_CE_BF16_SCALAR_STREAMING_STORES=1`, or
+  `NFN_TILE_CUDA_CE_BF16_SCALAR_STREAMING_STORES=1` to write scalar BF16
+  dlogits with `st.global.cs.u16` while keeping the current vec8 load path.
+  The native GPT runtime reports
+  `lm_head_ce_bf16_scalar_streaming_stores_enabled` and the strategy
+  `vec8-loads-scalar-streaming-stores`, and the candidate wrapper adds
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_scalar_streaming_store`.
+  The profile is diagnostic-only: the dedicated RTX 5090 same-script gate
+  rejected it at `1.005702x` train-loop wall, `1.027580x` LM-head backward, and
+  `1.135829x` LM-head CE time.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; ran focused native/source and Tile CUDA example
+  tests; ran the 3-step, 2-sample dedicated RTX 5090
+  `lm_head_ce_scalar_streaming_store` paired benchmark.
+
 - Extended the shape-gated TK dWeight diagnostic into the BF16/BF16
   dWeight+bias launcher used by transformer block projections. When
   `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE` accepts a dWeight+bias shape, the
