@@ -418,7 +418,8 @@ void print_usage(const char* program) {
         << "  --allow-train-val-fallback        Reuse train shard when no validation shard exists\n"
         << "  --allow-scalar-attention-fallback Allow the slow scalar attention fallback for diagnostics; default fails if it launches\n\n"
         << "Template/graph options:\n"
-        << "  --model-family gpt|gpt2|gpt3    Dense GPT selector; all canonicalize to model_family=gpt, while gpt3 can default to 2048 context\n"
+        << "  --model-family gpt|gpt2|gpt3|nanogpt\n"
+        << "                                     Dense GPT selector; all canonicalize to model_family=gpt, gpt3 can default to 2048 context, and nanogpt selects the NanoGPT template\n"
         << "  --template-name NAME              GPT template preset or alias to select; default gpt resolves to the dense GPT native implementation\n"
         << "  --graph-file PATH                 Custom NeuralFn graph JSON to select; reports missing native graph trainer until implemented\n\n"
         << "Launch options:\n"
@@ -22117,6 +22118,9 @@ int main(int argc, char** argv) {
     }
 
     const std::string model_selector = normalize_model_family(cfg.model_family);
+    if (model_selector == "nanogpt" && !cfg.template_explicit && cfg.graph_file.empty()) {
+        cfg.template_name = "nanogpt";
+    }
     const std::string resolved_template_selector = resolved_native_template_name(cfg.template_name);
     const bool gpt3_default_context =
         !cfg.seq_len_explicit &&

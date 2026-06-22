@@ -2203,6 +2203,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "--train-transformer-lm" in help_proc.stdout
     assert "--startup-only" in help_proc.stdout
     assert "--cuda-runtime-lib PATH" in help_proc.stdout
+    assert "--model-family gpt|gpt2|gpt3|nanogpt" in help_proc.stdout
     assert "--template-name NAME" in help_proc.stdout
     assert "--graph-file PATH" in help_proc.stdout
     assert "Tile-CUDA smokes/training" in help_proc.stdout
@@ -2325,6 +2326,30 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["lm_head_row_chunk_size"] == 32768
     assert default_payload["lm_head_row_chunk_safe_cap"] == 32768
     assert default_payload["lm_head_row_chunk_unsafe_override_enabled"] is False
+
+    nanogpt_model_plan = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(dataset_path),
+            "--backend",
+            "tile-cuda",
+            "--model-family",
+            "nanogpt",
+            "--print-plan",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert nanogpt_model_plan.returncode == 0, nanogpt_model_plan.stderr
+    nanogpt_model_payload = json.loads(nanogpt_model_plan.stdout)
+    assert nanogpt_model_payload["model_family"] == "gpt"
+    assert nanogpt_model_payload["template_name"] == "nanogpt"
+    assert nanogpt_model_payload["resolved_native_template_name"] == "nanogpt"
+    assert nanogpt_model_payload["selected_graph_support_status"] == "native-transformer-lm"
+    assert nanogpt_model_payload["selected_graph_native_runnable"] is True
 
     unsafe_lm_head_chunk = subprocess.run(
         [
