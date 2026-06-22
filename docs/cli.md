@@ -1051,7 +1051,8 @@ accumulation with final norm and block backward. Runtime JSON reports
 `lm_head_overlap_last_dweight_requested`,
 `lm_head_overlap_last_dweight_enabled`,
 `lm_head_overlap_last_dweight_queue_count`,
-`lm_head_overlap_last_dweight_sync_count`, and the schedule strategy. Keep it
+`lm_head_overlap_last_dweight_sync_count`, `lm_head_side_stream_count`, and the
+stream-enabled fields. Keep it
 diagnostic-only for now: the 2026-06-22 CUDA 13.3 dedicated RTX 5090 3-sample
 gate proved the route active and measured `0.999109x` train-loop wall time, but
 failed the strict total LM-head stage gate at `1.000506x`.

@@ -563,6 +563,9 @@ def test_native_gpt2_exposes_lm_head_last_dweight_overlap_candidate() -> None:
     assert "lm_head_overlap_last_dweight_enabled" in source
     assert "lm_head_overlap_last_dweight_queue_count" in source
     assert "lm_head_overlap_last_dweight_sync_count" in source
+    assert "lm_head_side_stream_count" in source
+    assert "lm_head_dhidden_stream_enabled" in source
+    assert "lm_head_dweight_stream_enabled" in source
     assert "last-processed-row-chunk-dweight-side-stream-overlaps-final-norm-block-backward" in source
     assert "lm_head_backward.last_dweight_overlap_queue" in source
     assert "lm_head_backward.last_dweight_overlap_final_wait" in source
@@ -571,6 +574,7 @@ def test_native_gpt2_exposes_lm_head_last_dweight_overlap_candidate() -> None:
     speed_tool = (root / "tools/paired_kernel_speed.py").read_text(encoding="utf-8")
     assert "lm_head_overlap_last_dweight_queue_count" in speed_tool
     assert "lm_head_overlap_last_dweight_sync_count" in speed_tool
+    assert "lm_head_side_stream_count" in speed_tool
 
 
 def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) -> None:

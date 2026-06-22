@@ -613,7 +613,8 @@ shared token-weight gradient. Runtime JSON reports
 `lm_head_overlap_last_dweight_available`,
 `lm_head_overlap_last_dweight_enabled`,
 `lm_head_overlap_last_dweight_queue_count`,
-`lm_head_overlap_last_dweight_sync_count`, and the schedule strategy
+`lm_head_overlap_last_dweight_sync_count`, `lm_head_side_stream_count`,
+`lm_head_dhidden_stream_enabled`, `lm_head_dweight_stream_enabled`, and the schedule strategy
 `last-processed-row-chunk-dweight-side-stream-overlaps-final-norm-block-backward`.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_overlap_last_dweight` to run it
 through the paired wrapper. Keep it disabled for normal training: the 2026-06-22

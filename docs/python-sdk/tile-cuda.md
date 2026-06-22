@@ -664,7 +664,9 @@ optimizer can touch the accumulated token-weight gradient. Runtime JSON reports
 `lm_head_overlap_last_dweight_available`,
 `lm_head_overlap_last_dweight_enabled`,
 `lm_head_overlap_last_dweight_queue_count`,
-`lm_head_overlap_last_dweight_sync_count`, and the schedule strategy
+`lm_head_overlap_last_dweight_sync_count`, `lm_head_side_stream_count`,
+`lm_head_dhidden_stream_enabled`, `lm_head_dweight_stream_enabled`, and the
+schedule strategy
 `last-processed-row-chunk-dweight-side-stream-overlaps-final-norm-block-backward`.
 Keep it default-off: the 2026-06-22 CUDA 13.3 dedicated RTX 5090 3-sample gate
 proved activation (`queue_count: 8`, `sync_count: 8`) and measured

@@ -11841,12 +11841,21 @@ int run_transformer_lm_training_json(
         lm_head_concurrent_dhidden_dweight_enabled ||
         lm_head_pipeline_chunks_enabled ||
         lm_head_overlap_last_dweight_enabled;
+    const bool lm_head_dhidden_stream_enabled =
+        lm_head_concurrent_dhidden_dweight_enabled || lm_head_pipeline_chunks_enabled;
+    const bool lm_head_dweight_stream_enabled =
+        lm_head_concurrent_dhidden_dweight_enabled ||
+        lm_head_pipeline_chunks_enabled ||
+        lm_head_overlap_last_dweight_enabled;
     if (error.empty() && lm_head_side_streams_enabled) {
-        int status = cuda_stream_create_with_flags(&lm_head_dhidden_stream, kCudaStreamNonBlocking);
-        if (status != 0) {
-            error = cuda_error(status, "cudaStreamCreateWithFlags lm_head_dhidden");
+        int status = 0;
+        if (lm_head_dhidden_stream_enabled) {
+            status = cuda_stream_create_with_flags(&lm_head_dhidden_stream, kCudaStreamNonBlocking);
+            if (status != 0) {
+                error = cuda_error(status, "cudaStreamCreateWithFlags lm_head_dhidden");
+            }
         }
-        if (error.empty()) {
+        if (error.empty() && lm_head_dweight_stream_enabled) {
             status = cuda_stream_create_with_flags(&lm_head_dweight_stream, kCudaStreamNonBlocking);
             if (status != 0) {
                 error = cuda_error(status, "cudaStreamCreateWithFlags lm_head_dweight");
@@ -19423,6 +19432,13 @@ int run_transformer_lm_training_json(
         << (lm_head_concurrent_dhidden_dweight_available ? "true" : "false") << ",\n"
         << "  \"lm_head_concurrent_dhidden_dweight_enabled\": "
         << (lm_head_concurrent_dhidden_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_side_stream_count\": "
+        << ((lm_head_dhidden_stream_enabled ? 1 : 0) + (lm_head_dweight_stream_enabled ? 1 : 0))
+        << ",\n"
+        << "  \"lm_head_dhidden_stream_enabled\": "
+        << (lm_head_dhidden_stream_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_dweight_stream_enabled\": "
+        << (lm_head_dweight_stream_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_pipeline_chunks_requested\": "
         << (lm_head_pipeline_chunks_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_pipeline_chunks_enabled\": "

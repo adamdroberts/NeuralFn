@@ -30,6 +30,17 @@ Future updates should append new entries here rather than replacing older notes.
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_overlap_last_dweight` paired
   benchmark on the dedicated RTX 5090.
 
+- Trimmed LM-head side-stream setup for the last-dWeight overlap candidate so
+  it only creates the dWeight side stream it actually uses. Runtime JSON now
+  reports `lm_head_side_stream_count`, `lm_head_dhidden_stream_enabled`, and
+  `lm_head_dweight_stream_enabled`, and the paired speed tool extracts those
+  values for candidate comparisons.
+
+  Verification: rebuilt `build/nfn_gpt_native_train`; ran a one-step NanoGPT
+  CUDA Tile smoke with `NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1` and
+  confirmed the route uses one LM-head side stream; ran focused native GPT
+  tests and `git diff --check`.
+
 - Added the named SM120 candidate profile `cublaslt_grouped_probe` to the
   native paired benchmark wrapper. The profile expands to
   `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1` and
