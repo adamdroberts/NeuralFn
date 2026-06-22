@@ -1192,9 +1192,10 @@ Non-dense-GPT `nfn train` commands now enter compiled native C++ before any lega
 
 The no-Torch verifier also executes the guarded legacy training scripts with no
 native flags against stubbed native CLIs, and it imports the installed
-`nfn:main` console entry point for a dense GPT training dry-run. These checks
-prove the default direct-script and console-entry paths cross into native C++
-before Torch, NumPy, tokenizer, dataset-manager, `train_gpt_native`, or
+`nfn:main` console entry point for dense GPT training dry-run plus native
+checkpoint metadata and prompt-token inference. These checks prove the default
+direct-script and console-entry train/infer paths cross into native C++ before
+Torch, NumPy, tokenizer, dataset-manager, `infer_gpt`, `train_gpt_native`, or
 `nfn_impl` imports.
 
 SDK callers can use `neuralfn.native_train` for the same native frontend boundary. Build `neuralfn._native_train` with `bash tools/build_native_train_binding.sh`, then call `run_native_train(build_native_train_run_config("gpt", ["--tinystories"]), runner="auto")` or inspect coverage with `native_train_model_registry()` without importing Torch. Dense GPT-family configs (`gpt`, `gpt2`, `gpt3`, `nanogpt`) now resolve straight to `nfn_gpt_native_train --model-family ...` when `NFN_NATIVE_GPT_CLI` is set or `build/nfn_gpt_native_train` exists, so the SDK avoids the extra generic `nfn_native_train` dispatcher process on the normal workstation path; set `NFN_NATIVE_TRAIN_CLI` or pass `native_train_cli=` to force the unified frontend. `native_train_model_registry()` reports `gpt2-evo` as implemented through the `native-dense-gpt-layer-evo-delegate` transformer status, matching the C++ family binary that execs dense GPT CUDA Tile training with `--layer-evo`. The generic C++ binding accepts `argv`, `compiled_cli_argv`, and `launcher_argv`; GPT alias-only configs prefer `compiled_cli_argv` so cached-shard resolution stays in the compiled native frontend instead of falling back to a raw external trainer command with empty train/validation paths. Like the GPT-specific binding, the generic binding launches the selected native command with `posix_spawnp()` and the subprocess fallback defaults `CUDA_VISIBLE_DEVICES=0`, `CUDA_DEVICE_MAX_CONNECTIONS=1`, and `CUDA_MODULE_LOADING=LAZY` only when the caller has not already set them. For GPT compiled CLI dispatch, `build_native_gpt2_compiled_cli_run_config(dataset_alias=...)` creates that handoff config without Python-side shard inspection.

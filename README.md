@@ -729,10 +729,11 @@ where a slow fallback is intentionally being measured.
 `python tools/check_native_no_torch_deps.py --skip-artifacts --json` verifies
 that GPT, GPT-2-evo, NanoGPT, LLaMA fast/megakernel, MixLLaMA, JEPA semantic,
 semantic-router MoE, DeepSeek-V4, explicit `nfn train --tinystories`, default
-`nfn train`, installed `nfn:main` console-entry training, native inference, and
-SDK native training handoff surfaces still run under an import blocker for
+`nfn train`, installed `nfn:main` console-entry training, native inference,
+installed `nfn:main` console-entry native inference, and SDK native training
+handoff surfaces still run under an import blocker for
 Torch, NumPy, `tiktoken`, dataset manager imports, `train_gpt_native`, and
-`nfn_impl`. The verifier also records `elapsed_seconds` for each
+`infer_gpt`, and `nfn_impl`. The verifier also records `elapsed_seconds` for each
 native Python fast-path entrypoint and fails by default if any wrapper takes
 more than 2 seconds before handing off to the compiled path; pass
 `--max-entrypoint-seconds 0` only when collecting no-budget diagnostics.

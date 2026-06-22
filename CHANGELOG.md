@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended `tools/check_native_no_torch_deps.py` to cover installed
+  `nfn:main` console-entry native checkpoint inference. The verifier now imports
+  `nfn.main()` for both `--native-info` and `--prompt-tokens` checkpoint
+  inference against a stubbed compiled native CLI while blocking Torch, NumPy,
+  tokenizers, dataset-manager imports, `infer_gpt`, `train_gpt_native`, and
+  `nfn_impl`.
+
+  Verification: added focused pytest assertions for
+  `nfn_console_infer_native_info` and
+  `nfn_console_infer_native_sample_prompt_tokens`, including startup-budget
+  checks.
+
 - Mirrored the selected SM120 parity activation into the NeuralFn native
   candidate command. `tools/bench_native_gpt_sm120_parity.sh` already passed
   `NFN_SM120_PARITY_ACTIVATION` / `NFN_SM120_ACTIVATION` to the llm.kittens

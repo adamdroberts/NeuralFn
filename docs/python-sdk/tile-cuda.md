@@ -1814,9 +1814,10 @@ marker. Training JSON reports `checkpoint.payload_pack_strategy:
 Run `python tools/check_native_no_torch_deps.py --skip-artifacts --json` to
 verify the Python handoff layer stays Torch-free. The gate stubs the native
 CLIs and blocks imports of Torch, NumPy, `tiktoken`, dataset manager modules,
-and `nfn_impl` while checking GPT, GPT-2-evo, NanoGPT, explicit
-`nfn train --tinystories`, default `nfn train`, native inference,
-`neuralfn.native_train`, and the public SDK native training exports.
+`infer_gpt`, `train_gpt_native`, and `nfn_impl` while checking GPT, GPT-2-evo, NanoGPT, explicit
+`nfn train --tinystories`, default `nfn train`, native inference, installed
+`nfn:main` console-entry native inference, `neuralfn.native_train`, and the
+public SDK native training exports.
 It also executes the guarded legacy training scripts with no native flags
 against stubbed native CLIs, proving their default direct-script path enters
 native C++ before importing Torch or the Python dataset/runtime stack.

@@ -606,6 +606,51 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
                     "2",
                 ),
             ),
+            (
+                "nfn_console_infer_native_info",
+                (
+                    sys.executable,
+                    "-c",
+                    "\n".join(
+                        [
+                            "import sys",
+                            "sys.argv = [",
+                            "    'nfn',",
+                            "    'infer',",
+                            "    '--native-checkpoint',",
+                            f"    {str(native_checkpoint)!r},",
+                            "    '--native-info',",
+                            "]",
+                            "from nfn import main",
+                            "raise SystemExit(int(main() or 0))",
+                        ]
+                    ),
+                ),
+            ),
+            (
+                "nfn_console_infer_native_sample_prompt_tokens",
+                (
+                    sys.executable,
+                    "-c",
+                    "\n".join(
+                        [
+                            "import sys",
+                            "sys.argv = [",
+                            "    'nfn',",
+                            "    'infer',",
+                            "    '--native-checkpoint',",
+                            f"    {str(native_checkpoint)!r},",
+                            "    '--prompt-tokens',",
+                            "    '1,2,3',",
+                            "    '--max-new-tokens',",
+                            "    '2',",
+                            "]",
+                            "from nfn import main",
+                            "raise SystemExit(int(main() or 0))",
+                        ]
+                    ),
+                ),
+            ),
         ]
         for name, command in entrypoints:
             started = time.perf_counter()
