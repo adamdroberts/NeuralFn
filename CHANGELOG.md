@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added top-level native-family dispatch coverage for `nfn train --base-model
+  ...`. The master CLI is now guarded to prefer family-native C++ binaries
+  before importing graph-backed code for GPT-2 evo, NanoGPT token-LM, LLaMA,
+  MixLLaMA, JEPA, semantic-router MoE, and DeepSeek-V4.
+
+  Verification: focused per-family `nfn train --base-model ...` no-Torch test
+  plus the expanded `python tools/check_native_no_torch_deps.py` startup gate.
+
 - Routed programmatic native training calls through the lightweight `nfn`
   dispatcher before any graph-backed imports. Calls such as
   `nfn.main(["train", ...], stdin_isatty=False, stdout_isatty=False)` now

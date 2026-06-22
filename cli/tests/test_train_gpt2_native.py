@@ -1375,6 +1375,86 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
 
+    def test_nfn_train_prefers_family_native_cli_for_every_native_family(self) -> None:
+        cases = (
+            ("gpt2-evo", ()),
+            ("llama", ()),
+            ("mixllama", ()),
+            ("jepa", ()),
+            ("semantic-router-moe", ()),
+            ("deepseek-v4", ()),
+            ("nanogpt", ("--train-token-lm",)),
+        )
+        for model_family, extra_args in cases:
+            with self.subTest(model_family=model_family):
+                code = textwrap.dedent(
+                    f"""
+                    from pathlib import Path
+                    import os
+                    import runpy
+                    import sys
+                    import tempfile
+
+                    root = Path({str(NEURALFN_ROOT)!r})
+                    model_family = {model_family!r}
+                    extra_args = {list(extra_args)!r}
+                    family_env = "NFN_NATIVE_" + "".join(ch if ch.isalnum() else "_" for ch in model_family.upper()).strip("_") + "_CLI"
+                    family_cli = Path(tempfile.mkdtemp()) / ("nfn_" + "".join(ch if ch.isalnum() else "_" for ch in model_family.lower()).strip("_") + "_native_train")
+                    family_cli.write_text(
+                        "#!/usr/bin/env bash\\n"
+                        "printf 'NFN_FAMILY_NATIVE_DIRECT\\\\n'\\n"
+                        "printf '%s\\\\n' \\"$@\\"\\n"
+                        "exit 21\\n",
+                        encoding="utf-8",
+                    )
+                    family_cli.chmod(0o755)
+                    os.environ[family_env] = str(family_cli)
+                    sys.argv = [
+                        str(root / "cli" / "nfn.py"),
+                        "train",
+                        "--base-model",
+                        model_family,
+                        "--tinystories",
+                        "--native-cuda-dry-run",
+                        *extra_args,
+                    ]
+                    try:
+                        runpy.run_path(str(root / "cli" / "nfn.py"), run_name="__main__")
+                    except SystemExit as exc:
+                        exit_code = int(exc.code or 0)
+                    else:
+                        exit_code = 0
+                    print("TORCH_LOADED", "torch" in sys.modules)
+                    print("NFN_IMPL_LOADED", "nfn_impl" in sys.modules)
+                    print("TRAIN_GPT_NATIVE_LOADED", "train_gpt_native" in sys.modules)
+                    raise SystemExit(exit_code)
+                    """
+                )
+                env = os.environ.copy()
+                env.pop("PYTHONPATH", None)
+                env.pop("NFN_NATIVE_TRAIN_CLI", None)
+                proc = subprocess.run(
+                    [sys.executable, "-c", code],
+                    cwd=NEURALFN_ROOT,
+                    env=env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+
+                self.assertEqual(21, proc.returncode)
+                self.assertIn("NFN_FAMILY_NATIVE_DIRECT", proc.stdout)
+                self.assertIn("--tinystories", proc.stdout)
+                self.assertIn("--dry-run", proc.stdout)
+                self.assertNotIn("--base-model", proc.stdout)
+                if extra_args:
+                    for arg in extra_args:
+                        self.assertIn(arg, proc.stdout)
+                self.assertIn("TORCH_LOADED False", proc.stdout)
+                self.assertIn("NFN_IMPL_LOADED False", proc.stdout)
+                self.assertIn("TRAIN_GPT_NATIVE_LOADED False", proc.stdout)
+
     def test_legacy_training_scripts_reject_before_torch_import(self) -> None:
         scripts = (
             ("train_llama_fast.py", "llama"),

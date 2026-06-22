@@ -777,8 +777,10 @@ that GPT, GPT-2-evo, NanoGPT, LLaMA fast/megakernel, MixLLaMA, JEPA semantic,
 semantic-router MoE, DeepSeek-V4, explicit `nfn train --tinystories`, default
 `nfn train`, installed `nfn:main` console-entry training, native inference,
 programmatic `nfn.main([...], stdin_isatty=..., stdout_isatty=...)` native
-training, installed `nfn:main` console-entry native inference, and SDK native
-training handoff surfaces still run under an import blocker for
+training, top-level `nfn train --base-model ...` family dispatch for GPT-2 evo,
+NanoGPT token-LM, LLaMA, MixLLaMA, JEPA, semantic-router MoE, and DeepSeek-V4,
+installed `nfn:main` console-entry native inference, and SDK native training
+handoff surfaces still run under an import blocker for
 Torch, NumPy, `tiktoken`, dataset manager imports, `train_gpt_native`, and
 `infer_gpt`, and `nfn_impl`. The verifier also records `elapsed_seconds` for each
 native Python fast-path entrypoint and fails by default if any wrapper takes

@@ -1892,8 +1892,9 @@ CLIs and blocks imports of Torch, NumPy, `tiktoken`, dataset manager modules,
 `infer_gpt`, `train_gpt_native`, and `nfn_impl` while checking GPT, GPT-2-evo, NanoGPT, explicit
 `nfn train --tinystories`, default `nfn train`, programmatic
 `nfn.main([...], stdin_isatty=..., stdout_isatty=...)` native training, native
-inference, installed `nfn:main` console-entry native inference,
-`neuralfn.native_train`, and the public SDK native training exports.
+inference, top-level per-family `nfn train --base-model ...` dispatch,
+installed `nfn:main` console-entry native inference, `neuralfn.native_train`,
+and the public SDK native training exports.
 It also executes the guarded legacy training scripts with no native flags
 against stubbed native CLIs, proving their default direct-script path enters
 native C++ before importing Torch or the Python dataset/runtime stack.
