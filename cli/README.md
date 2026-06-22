@@ -360,9 +360,11 @@ stage through Q/K/V projections, SDPA forward/backward, output projection
 forward/backward, Q/K/V projection backward, and AdamW updates for all
 attention weights, then verify forward, gradient, and weight update values
 without Python or Torch.
-The targets still intentionally fail for real training until the family-specific
-CUDA Tile work lands, and give the unified frontend a compiled target to
-dispatch to while the real trainers are implemented.
+The non-dense-GPT targets still intentionally fail for real training until the
+family-specific CUDA Tile work lands, and give the unified frontend a compiled
+target to dispatch to while the real trainers are implemented. Dense GPT,
+GPT-2, GPT-3, and NanoGPT transformer-LM training use the shared
+`nfn_gpt_native_train` CUDA Tile loop.
 Installed per-family targets are linked with both underscore and hyphen names,
 and `NFN_NATIVE_<MODEL>_CLI` can override a single family, for example
 `NFN_NATIVE_NANOGPT_CLI`.

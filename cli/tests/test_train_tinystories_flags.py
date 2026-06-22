@@ -24,12 +24,10 @@ TINYSTORIES_SCRIPT_CASES = [
     "train_llama_fast",
     "train_llama_megakernel",
     "train_gpt2",
-    "train_nanogpt",
     "train_semantic_router_moe",
 ]
 GPT2_FAMILY_SCRIPT_CASES = [
     "train_gpt2",
-    "train_nanogpt",
 ]
 NON_GPT2_TINYSTORIES_SCRIPT_CASES = [
     module_name for module_name in TINYSTORIES_SCRIPT_CASES if module_name not in GPT2_FAMILY_SCRIPT_CASES

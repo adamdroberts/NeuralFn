@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Replaced `cli/scripts/train_nanogpt.py` with a Torch-free native shim. Direct
+  execution dispatches to `nfn_gpt_native_train --template-name nanogpt
+  --train-transformer-lm` before importing Torch, NumPy, dataset managers,
+  graph-editor helpers, `train_gpt_native`, or `TorchTrainer`; explicit
+  `--train-token-lm` still routes to the NanoGPT family token-LM diagnostic
+  binary. Importing the module now exposes only lightweight native defaults,
+  path helpers, and a parser for help/native-default inspection.
+
+  **Breaking changes:** `cli/scripts/train_nanogpt.py` no longer exposes the
+  legacy graph-backed parser extensions, graph builder, trainer config builder,
+  or Torch training loop. Use `nfn train --base-model nanogpt ...` or direct
+  native C++ CLIs for training, and use `neuralfn.config.build_nanogpt_spec()`
+  or `build_nanogpt_megakernel_spec()` directly for SDK graph construction.
+
+  Verification: `python tools/check_native_no_torch_deps.py`,
+  `python -m pytest cli/tests/test_train_gpt2_native.py::TrainGpt2NativeStartupTest::test_train_nanogpt_direct_script_defaults_to_native_transformer_lm cli/tests/test_train_gpt2_native.py::TrainGpt2NativeStartupTest::test_train_nanogpt_module_import_and_parser_do_not_import_torch cli/tests/test_train_gpt2_native.py::TrainGpt2NativeStartupTest::test_legacy_training_scripts_reject_before_torch_import -q`,
+  `python -m pytest cli/tests/test_cli_help_behavior.py -q`,
+  `python -m pytest cli/tests/test_train_tinystories_flags.py cli/tests/test_train_scheduler_flags.py cli/tests/test_cached_tokenizer_variants.py -q`,
+  `python -m pytest cli/tests/test_train_pretraining_file_flags.py cli/tests/test_train_evolutionary_flags.py cli/tests/test_train_megakernel_flags.py -q`,
+  and `python -m pytest tests/test_native_gpt2.py -q`.
+
 - Replaced `cli/scripts/train_gpt2_evo.py` with a Torch-free native shim. Direct
   execution still prefers `NFN_NATIVE_GPT2_EVO_CLI`,
   `build/nfn_gpt2_evo_native_train`, or an installed

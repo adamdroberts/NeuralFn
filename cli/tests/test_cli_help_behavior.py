@@ -24,7 +24,7 @@ SCRIPT_CASES = [
     ("train_llama_fast", "Train llama_fast with the NeuralFn CUDA harness."),
     ("train_llama_megakernel", "Train llama_megakernel with the NeuralFn CUDA harness."),
     ("train_mixllama_fast", "Train mixllama_fast with the NeuralFn CUDA harness."),
-    ("train_nanogpt", "Train nanogpt with the NeuralFn CUDA harness."),
+    ("train_nanogpt", "Train nanogpt with the NeuralFn native CUDA harness."),
     ("train_semantic_router_moe", "Train semantic_router_moe with the NeuralFn CUDA harness."),
     ("train_semantic_router_moe-overnight", "Train semantic_router_moe overnight with the NeuralFn CUDA harness."),
     ("infer_gpt", "Run text generation with exported GPT artifacts on CUDA."),

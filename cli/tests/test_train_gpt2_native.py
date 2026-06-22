@@ -1323,7 +1323,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         scripts = (
             ("train_llama_fast.py", "llama"),
             ("train_llama_megakernel.py", "llama"),
-            ("train_nanogpt.py", "nanogpt"),
+            ("train_nanogpt.py", "gpt"),
             ("train_mixllama_fast.py", "mixllama"),
             ("train_jepa_semantic.py", "jepa"),
             ("train_semantic_router_moe.py", "semantic-router-moe"),
@@ -1867,6 +1867,49 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertEqual(0, proc.returncode, proc.stderr)
         self.assertIn("RUNTIME native-cuda", proc.stdout)
         self.assertIn("RUNNER compiled-cli", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+        self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
+        self.assertIn("NUMPY_LOADED False", proc.stdout)
+
+    def test_train_nanogpt_module_import_and_parser_do_not_import_torch(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            import importlib
+            from pathlib import Path
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root / "cli" / "scripts"))
+            sys.path.insert(0, str(root))
+
+            module = importlib.import_module("train_nanogpt")
+            parser = module.build_parser()
+            args = parser.parse_args(["--native-cuda-dry-run"])
+            module.resolve_mode_defaults(args)
+            print("RUNTIME", args.runtime)
+            print("MODEL_FAMILY", args.model_family)
+            print("TEMPLATE", args.template_name)
+            print("TORCH_LOADED", "torch" in sys.modules)
+            print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
+            print("NUMPY_LOADED", "numpy" in sys.modules)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("RUNTIME native-cuda", proc.stdout)
+        self.assertIn("MODEL_FAMILY gpt", proc.stdout)
+        self.assertIn("TEMPLATE nanogpt", proc.stdout)
         self.assertIn("TORCH_LOADED False", proc.stdout)
         self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
         self.assertIn("NUMPY_LOADED False", proc.stdout)

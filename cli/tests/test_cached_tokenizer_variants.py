@@ -24,7 +24,6 @@ import train_jepa_semantic
 TRAIN_SCRIPT_CASES = [
     ("train_jepa_semantic", 1),
     ("train_gpt2", 1),
-    ("train_nanogpt", 1),
     ("train_llama_fast", 1),
     ("train_llama_megakernel", 1),
     ("train_mixllama_fast", 1),
