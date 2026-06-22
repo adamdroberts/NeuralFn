@@ -84,3 +84,33 @@ print("TORCH_LOADED", "torch" in sys.modules)
     assert proc.returncode == 0, proc.stderr
     assert "ARGV" in proc.stdout
     assert "TORCH_LOADED False" in proc.stdout
+
+
+def test_no_torch_verifier_covers_console_train_fast_path() -> None:
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "tools/check_native_no_torch_deps.py",
+            "--skip-artifacts",
+            "--json",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    import json
+
+    report = json.loads(proc.stdout)
+    entries = {
+        str(entry["name"]): entry
+        for entry in report["python_entrypoints"]
+    }
+    console_entry = entries["nfn_console_train_fast_command"]
+    assert console_entry["passed"] is True
+    assert "--train-transformer-lm" in str(console_entry["stdout"])
+    assert "--backend" in str(console_entry["stdout"])
+    assert "tile-cuda" in str(console_entry["stdout"])

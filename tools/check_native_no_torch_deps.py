@@ -48,6 +48,7 @@ FORBIDDEN_PYTHON_IMPORT_ROOTS = (
     "numpy",
     "tiktoken",
     "server.dataset_manager",
+    "train_gpt_native",
     "nfn_impl",
 )
 FORBIDDEN_PROJECT_DEPENDENCY_PREFIXES = (
@@ -121,6 +122,28 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
             "--native-cuda-dry-run",
             "--native-cuda-print-command",
             "--no-checkpoint",
+        ),
+    ),
+    (
+        "nfn_console_train_fast_command",
+        (
+            sys.executable,
+            "-c",
+            "\n".join(
+                [
+                    "import sys",
+                    "sys.argv = [",
+                    "    'nfn',",
+                    "    'train',",
+                    "    '--tinystories',",
+                    "    '--native-cuda-dry-run',",
+                    "    '--native-cuda-print-command',",
+                    "    '--no-checkpoint',",
+                    "]",
+                    "from nfn import main",
+                    "raise SystemExit(int(main() or 0))",
+                ]
+            ),
         ),
     ),
     (

@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended `tools/check_native_no_torch_deps.py` to cover the installed
+  `nfn:main` console-entry dense GPT training fast path. The verifier now
+  imports `nfn.main()`, runs a dry-run native GPT training command against a
+  stubbed native CLI, and keeps the import blocker active for Torch, NumPy,
+  tokenizers, `server.dataset_manager`, `train_gpt_native`, and `nfn_impl`.
+
+  Verification: added a focused pytest assertion that the verifier reports
+  `nfn_console_train_fast_command` as passed and that the resolved command
+  includes the compiled transformer-LM Tile-CUDA handoff.
+
 - Routed the installed `nfn = "nfn:main"` console entry point through the same
   direct compiled native dense GPT training dispatch as `python cli/nfn.py`.
   Default `nfn train --base-model gpt|gpt2|gpt3|nanogpt ...` commands now exec
