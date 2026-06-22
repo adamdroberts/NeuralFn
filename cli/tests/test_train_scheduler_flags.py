@@ -23,9 +23,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 SCRIPT_CASES = [
     "train_jepa_semantic",
     "train_gpt2",
-    "train_semantic_router_moe",
 ]
-OVERNIGHT_SCRIPT_PATH = ROOT / "scripts" / "train_semantic_router_moe-overnight.py"
 
 
 class TrainSchedulerFlagTest(unittest.TestCase):
@@ -261,23 +259,6 @@ class TrainSchedulerFlagTest(unittest.TestCase):
                     resolved_max_wallclock_seconds,
                 ) = module.resolve_effective_training_schedule(args, {"steps_per_epoch": 100})
                 self.assertEqual(resolved_max_wallclock_seconds, 7200.0)
-
-    def test_overnight_script_resolves_all_train_rows_schedule(self) -> None:
-        module = self.load_path_module("train_semantic_router_moe_overnight_scheduler_test", OVERNIGHT_SCRIPT_PATH)
-        args = self.parse_args(module, ["--megakernel", "--max-steps", "53", "--all-train-rows"])
-        (
-            derived,
-            resolved_epochs,
-            resolved_max_steps,
-            resolved_lr_decay_iters,
-            resolved_max_wallclock_seconds,
-        ) = module.resolve_effective_training_schedule(args, {"steps_per_epoch": 52})
-        self.assertEqual(resolved_epochs, 2)
-        self.assertEqual(resolved_max_steps, 104)
-        self.assertIsNone(resolved_lr_decay_iters)
-        self.assertTrue(derived["all_train_rows"])
-        self.assertEqual(resolved_max_wallclock_seconds, 0.0)
-
 
 if __name__ == "__main__":
     unittest.main()

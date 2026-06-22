@@ -24,7 +24,6 @@ import train_jepa_semantic
 TRAIN_SCRIPT_CASES = [
     ("train_jepa_semantic", 1),
     ("train_gpt2", 1),
-    ("train_semantic_router_moe", 1),
 ]
 
 

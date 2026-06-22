@@ -27,9 +27,7 @@ from server import dataset_manager as dm
 
 SCRIPT_CASES = [
     "train_jepa_semantic",
-    "train_semantic_router_moe",
 ]
-OVERNIGHT_SCRIPT_PATH = ROOT / "scripts" / "train_semantic_router_moe-overnight.py"
 
 
 class _LenOnlyDataset:
@@ -226,15 +224,6 @@ class TrainDropLastTest(unittest.TestCase):
                 trainer_cfg = module.build_trainer_config(args, resolved_epochs=3)
                 self.assertFalse(trainer_cfg.drop_last)
                 self.assertTrue(trainer_cfg.respect_epoch_boundaries)
-
-    def test_overnight_parser_accepts_all_train_rows(self) -> None:
-        module = self.load_path_module("train_semantic_router_moe_overnight_test", OVERNIGHT_SCRIPT_PATH)
-        args = self.parse_args(module, ["--megakernel", "--all-train-rows"])
-        trainer_cfg = module.build_trainer_config(args, resolved_epochs=3)
-        self.assertTrue(args.all_train_rows)
-        self.assertFalse(trainer_cfg.drop_last)
-        self.assertTrue(trainer_cfg.respect_epoch_boundaries)
-
 
 if __name__ == "__main__":
     unittest.main()

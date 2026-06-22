@@ -24,7 +24,6 @@ import server.dataset_manager as dataset_manager_module
 TRAIN_SCRIPT_CASES = [
     "train_jepa_semantic",
     "train_gpt2",
-    "train_semantic_router_moe",
 ]
 
 

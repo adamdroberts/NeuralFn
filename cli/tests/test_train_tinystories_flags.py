@@ -21,7 +21,6 @@ from server import dataset_manager as dm
 TINYSTORIES_SCRIPT_CASES = [
     "train_jepa_semantic",
     "train_gpt2",
-    "train_semantic_router_moe",
 ]
 GPT2_FAMILY_SCRIPT_CASES = [
     "train_gpt2",
@@ -172,7 +171,7 @@ class TrainTinyStoriesFlagTest(unittest.TestCase):
                 self.assertEqual(expected_vocab, args.vocab_size)
 
     def test_conflicting_raw_text_vocab_fails_fast(self) -> None:
-        for module_name in ("train_semantic_router_moe", "train_gpt2"):
+        for module_name in ("train_gpt2",):
             module = self.load_module(module_name)
             with self.subTest(script=module_name):
                 parser = module.build_parser()

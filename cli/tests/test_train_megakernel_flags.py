@@ -17,7 +17,6 @@ if str(SCRIPTS_DIR) not in sys.path:
 SCRIPT_CASES = [
     ("train_jepa_semantic", "jepa_semantic_hybrid", "jepa_semantic_hybrid_megakernel", "compile"),
     ("train_gpt2", "gpt2", "gpt2_megakernel", "eager"),
-    ("train_semantic_router_moe", "semantic_router_moe", "semantic_router_moe_megakernel", "compile"),
 ]
 
 

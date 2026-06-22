@@ -23,9 +23,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 SCRIPT_CASES = [
     "train_jepa_semantic",
     "train_gpt2",
-    "train_semantic_router_moe",
 ]
-OVERNIGHT_SCRIPT_PATH = ROOT / "scripts" / "train_semantic_router_moe-overnight.py"
 
 
 class TrainEvolutionaryFlagTest(unittest.TestCase):
@@ -134,24 +132,6 @@ class TrainEvolutionaryFlagTest(unittest.TestCase):
                 self.assertIn('"ignored_gradient_optimizer_fields"', output)
                 self.assertIn('"population_size": 7', output)
                 self.assertIn('"seed": 123', output)
-
-    def test_overnight_parser_accepts_evolutionary_flags(self) -> None:
-        module = self.load_path_module("train_semantic_router_moe_overnight_evo_test", OVERNIGHT_SCRIPT_PATH)
-        args = self.parse_args(
-            module,
-            [
-                "--evolutionary",
-                "--evo-population-size",
-                "7",
-                "--evo-seed",
-                "123",
-            ],
-        )
-        trainer_cfg = module.build_trainer_config(args, resolved_epochs=3)
-        self.assertTrue(args.evolutionary)
-        self.assertEqual(trainer_cfg.evo_population_size, 7)
-        self.assertEqual(trainer_cfg.evo_seed, 123)
-
 
 if __name__ == "__main__":
     unittest.main()

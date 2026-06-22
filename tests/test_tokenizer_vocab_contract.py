@@ -124,11 +124,6 @@ def _load_train_jepa_module():
     return _load_harness_module("train_jepa_semantic", "train_jepa_semantic.py")
 
 
-def _load_train_semantic_router_module():
-    _load_train_jepa_module()
-    return _load_harness_module("train_semantic_router_moe_test_module", "train_semantic_router_moe.py")
-
-
 def _load_infer_mixllama_module():
     _load_harness_module("train_jepa_semantic", "train_jepa_semantic.py")
     _load_harness_module("infer_jepa_semantic", "infer_jepa_semantic.py")
@@ -725,7 +720,6 @@ def test_apply_tinystories_dataset_defaults_rejects_conflicting_dataset_flags(
     ("loader", "argv0"),
     [
         (_load_train_jepa_module, "train_jepa_semantic.py"),
-        (_load_train_semantic_router_module, "train_semantic_router_moe.py"),
     ],
 )
 def test_train_scripts_main_pass_tinystories_raw_file_contract_to_shared_resolver(
@@ -742,7 +736,7 @@ def test_train_scripts_main_pass_tinystories_raw_file_contract_to_shared_resolve
         resolved_calls.append({"alias": alias, **kwargs})
         return alias, tmp_path / alias, {}
 
-    estimate_name = "estimate_schedule" if argv0 in {"train_jepa_semantic.py", "train_semantic_router_moe.py"} else "estimate_text_schedule"
+    estimate_name = "estimate_schedule" if argv0 in {"train_jepa_semantic.py"} else "estimate_text_schedule"
 
     def fake_estimate_schedule(*_args, **_kwargs):
         raise sentinel
@@ -777,7 +771,6 @@ def test_train_scripts_main_pass_tinystories_raw_file_contract_to_shared_resolve
     ("loader", "argv0"),
     [
         (_load_train_jepa_module, "train_jepa_semantic.py"),
-        (_load_train_semantic_router_module, "train_semantic_router_moe.py"),
     ],
 )
 def test_train_scripts_main_pass_dataset_tinystories_raw_file_contract_to_shared_resolver(
@@ -794,7 +787,7 @@ def test_train_scripts_main_pass_dataset_tinystories_raw_file_contract_to_shared
         resolved_calls.append({"alias": alias, **kwargs})
         return alias, tmp_path / alias, {}
 
-    estimate_name = "estimate_schedule" if argv0 in {"train_jepa_semantic.py", "train_semantic_router_moe.py"} else "estimate_text_schedule"
+    estimate_name = "estimate_schedule" if argv0 in {"train_jepa_semantic.py"} else "estimate_text_schedule"
 
     def fake_estimate_schedule(*_args, **_kwargs):
         raise sentinel

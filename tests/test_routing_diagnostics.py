@@ -33,11 +33,6 @@ def _load_train_jepa_module():
     return _load_harness_module("train_jepa_semantic_routing_diag", "train_jepa_semantic.py")
 
 
-def _load_train_semantic_router_module():
-    _load_train_jepa_module()
-    return _load_harness_module("train_semantic_router_moe_routing_diag", "train_semantic_router_moe.py")
-
-
 def _cpu_graph(graph):
     template_spec = dict(graph.torch_config.get("template_spec", {}))
     template = dict(template_spec.get("template", {}))
@@ -331,8 +326,8 @@ def test_train_jepa_progress_logger_renders_semantic_route_preview(monkeypatch: 
     assert f"{EXPERT_TO_DIMENSION[2]}:60%" in messages[0]
 
 
-def test_semantic_router_progress_logger_logs_routing_during_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
-    module = _load_train_semantic_router_module()
+def test_train_jepa_progress_logger_logs_routing_during_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = _load_train_jepa_module()
     messages: list[str] = []
     monkeypatch.setattr(module, "log_stage", messages.append)
     on_step, _ = module.build_progress_logger(train_log_every=1, resolved_epochs=1, max_steps=10)

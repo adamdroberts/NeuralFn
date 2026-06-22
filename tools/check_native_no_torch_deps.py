@@ -323,6 +323,22 @@ DEFAULT_NATIVE_SHIM_IMPORT_ENTRYPOINTS = (
             "import train_mixllama_fast; print('train_mixllama_fast-import-ok')",
         ),
     ),
+    (
+        "train_semantic_router_moe_module_import",
+        (
+            sys.executable,
+            "-c",
+            "import train_semantic_router_moe; print('train_semantic_router_moe-import-ok')",
+        ),
+    ),
+    (
+        "train_semantic_router_moe_overnight_module_import",
+        (
+            sys.executable,
+            "-c",
+            "import importlib.util; from pathlib import Path; p=Path('cli/scripts/train_semantic_router_moe-overnight.py'); s=importlib.util.spec_from_file_location('train_semantic_router_moe_overnight', p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print('train_semantic_router_moe_overnight-import-ok')",
+        ),
+    ),
 )
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256

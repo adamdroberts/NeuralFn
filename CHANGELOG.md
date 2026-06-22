@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Replaced `cli/scripts/train_semantic_router_moe.py` and
+  `cli/scripts/train_semantic_router_moe-overnight.py` with Torch-free native
+  shims. Direct execution dispatches to the semantic-router MoE family native
+  C++ binary or unified native frontend, while module import now exposes only
+  lightweight defaults, path helpers, and minimal native-inspection parsers.
+
+  **Breaking changes:** the semantic-router MoE training scripts no longer
+  expose the legacy graph-backed graph builders, trainer config builders,
+  progress loggers, dataset resolver workflow, evaluation helpers, overnight
+  all-rows schedule helper, or Torch training loops. Use
+  `nfn train --base-model semantic-router-moe ...` or the semantic-router MoE
+  native C++ binary for CLI preflight/status, and use
+  `neuralfn.config.build_semantic_router_moe_spec()` or
+  `build_semantic_router_moe_megakernel_spec()` directly for SDK graph
+  construction while the native trainer kernels are completed.
+
+  Verification: focused no-Torch shim import tests, `python
+  tools/check_native_no_torch_deps.py`, and legacy parser/tokenizer/routing
+  suites after removing semantic-router MoE scripts from graph-backed helper
+  matrices.
+
 - Replaced `cli/scripts/train_llama_fast.py` and
   `cli/scripts/train_llama_megakernel.py` with Torch-free native shims. Direct
   execution dispatches to the LLaMA family native C++ binary or unified native
@@ -45,8 +66,8 @@ Future updates should append new entries here rather than replacing older notes.
   graph-backed helper matrices.
 
 - Extended `tools/check_native_no_torch_deps.py` with import-only checks for
-  the native-only GPT-2-evo, NanoGPT, LLaMA fast/megakernel, MixLLaMA, and
-  DeepSeek-V4 shim modules.
+  the native-only GPT-2-evo, NanoGPT, LLaMA fast/megakernel, MixLLaMA,
+  semantic-router MoE, and DeepSeek-V4 shim modules.
   These run under the same import blocker used by direct native dispatch checks,
   so module import cannot regress into Torch, NumPy, tokenizer, dataset-manager,
   `train_gpt_native`, or `nfn_impl` startup.
