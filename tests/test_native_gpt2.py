@@ -573,6 +573,8 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_cublas_grouped_bf16_gemm_supported" in speed_tool
     assert "lm_head_classifier_chunk_launch_count" in speed_tool
     assert "lm_head_classifier_last_row_stride" in speed_tool
+    assert "lm_head_classifier_ce_no_loss_requested" in speed_tool
+    assert "lm_head_classifier_ce_no_loss_enabled" in speed_tool
     assert "lm_head_ce_row_loss_reduction_enabled" in speed_tool
     assert "lm_head_ce_row_loss_sum_accumulate_requested" in speed_tool
     assert "lm_head_ce_row_loss_sum_accumulate_enabled" in speed_tool
@@ -1099,6 +1101,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "mlp_fc_dinput_before_dweight": "NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1",
         "attn_proj_dinput_before_dweight": "NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1",
         "lm_head_fused_loss_backward_off": "NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0",
+        "lm_head_classifier_ce_no_loss": "NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1",
         "mlp_proj_tk_dweight_65536": "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T",
         "linear_bias_row_chunk_256": "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=256",
         "linear_bias_row_chunk_1024": "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=1024",
@@ -6766,11 +6769,15 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_classifier_backward_row_losses_bf16_u16" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_LM_HEAD_CLASSIFIER_CE_NO_LOSS" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_REDUCTION" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_ROW_LOSS_REDUCTION" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE" in gpt2_source_text
     assert "lm_head_fused_loss_backward_enabled" in gpt2_source_text
+    assert "lm_head_classifier_ce_no_loss_requested" in gpt2_source_text
+    assert "lm_head_classifier_ce_no_loss_enabled" in gpt2_source_text
     assert "lm_head_ce_loss_backward_fused_enabled" in gpt2_source_text
     assert "lm_head_ce_row_loss_reduction_enabled" in gpt2_source_text
     assert "lm_head_ce_row_loss_sum_accumulate_enabled" in gpt2_source_text

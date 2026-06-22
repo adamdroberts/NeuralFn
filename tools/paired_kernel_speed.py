@@ -103,6 +103,14 @@ NATIVE_METRIC_PATHS = (
         ("lm_head_classifier_chunk_kernel_enabled",),
     ),
     (
+        "lm_head_classifier_ce_no_loss_requested",
+        ("lm_head_classifier_ce_no_loss_requested",),
+    ),
+    (
+        "lm_head_classifier_ce_no_loss_enabled",
+        ("lm_head_classifier_ce_no_loss_enabled",),
+    ),
+    (
         "lm_head_ce_row_loss_reduction_requested",
         ("lm_head_ce_row_loss_reduction_requested",),
     ),
@@ -304,6 +312,8 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "lm_head_ce_llmk_style_specialized_enabled",
     "lm_head_ce_loss_bins_default_specialized_requested",
     "lm_head_ce_loss_bins_default_specialized_enabled",
+    "lm_head_classifier_ce_no_loss_requested",
+    "lm_head_classifier_ce_no_loss_enabled",
     "lm_head_ce_kernel_strategy",
     "lm_head_cooperative_backward_strategy",
     "lm_head_cooperative_backward_required",
@@ -416,6 +426,8 @@ NATIVE_TEXT_METRIC_KEYS = (
     "lm_head_cooperative_backward_sequence_wrapper_enabled",
     "lm_head_classifier_chunk_kernel_available",
     "lm_head_classifier_chunk_kernel_enabled",
+    "lm_head_classifier_ce_no_loss_requested",
+    "lm_head_classifier_ce_no_loss_enabled",
     "lm_head_ce_row_loss_reduction_requested",
     "lm_head_ce_row_loss_reduction_available",
     "lm_head_ce_row_loss_reduction_enabled",

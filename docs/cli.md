@@ -1093,6 +1093,13 @@ older row-loss path. The candidate side expands to
 `--train-loss-every-steps 1` to both sides so the route counter is meaningful.
 Set `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` manually only for regression
 checks against the older row-loss tail.
+`lm_head_classifier_ce_no_loss` expands to
+`NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1` and keeps train-loss logging
+disabled, so the paired benchmark measures the no-loss optimizer-step CE route
+directly. Runtime JSON reports
+`lm_head_classifier_ce_no_loss_requested` and
+`lm_head_classifier_ce_no_loss_enabled`; keep it diagnostic-only unless a
+same-script gate proves it faster than the default generic no-loss CE path.
 `lm_head_row_loss_sum_accumulate` expands to
 `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1`; this is now the default
 row-loss tail. `lm_head_row_loss_partial_reduce` expands to

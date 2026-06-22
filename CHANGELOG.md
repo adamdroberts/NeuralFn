@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off dense GPT no-loss LM-head classifier CE candidate route.
+  `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1` (or the GPT-2 alias)
+  routes no-loss optimizer steps through the classifier row-loss CE kernel
+  without enabling train-loss logging or the loss-bin reduction tail. Runtime
+  JSON now reports `lm_head_classifier_ce_no_loss_requested` and
+  `lm_head_classifier_ce_no_loss_enabled`, and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_classifier_ce_no_loss` measures
+  the route in the same paired script.
+
+  Verification: rebuilt `build/nfn_gpt_native_train`, ran a one-step
+  GPU-visible RTX 5090 smoke with the route enabled, and ran the 3-step,
+  2-sample paired candidate benchmark. The route-change gate passed
+  (`lm_head_classifier_ce_no_loss_enabled: false -> true`) and train-loop wall
+  time measured `0.994721x`, but the strict LM-head backward gate failed at
+  `1.001254x`, so the route remains diagnostic-only and is not promoted.
+
 - Promoted the dense GPT native LM-head loss-bin train-loss reduction route to
   the default. Logged train-loss steps now use the BF16/u16 classifier
   loss-bin kernel and one Tile sum-accumulate tail instead of the older row-loss

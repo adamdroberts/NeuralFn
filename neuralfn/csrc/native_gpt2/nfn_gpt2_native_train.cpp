@@ -11875,6 +11875,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD",
                               "NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD"}),
             true);
+    const bool lm_head_classifier_ce_no_loss_requested =
+        lm_head_fused_loss_backward_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS",
+                              "NFN_NATIVE_GPT2_LM_HEAD_CLASSIFIER_CE_NO_LOSS"}),
+            false);
     const bool lm_head_cooperative_backward_requested =
         cfg.require_cooperative_lm_head_backward ||
         env_flag_enabled_or_default(
@@ -15520,7 +15526,7 @@ int run_transformer_lm_training_json(
                 });
             }
             const bool use_fused_ce_loss_backward =
-                record_loss &&
+                (record_loss || lm_head_classifier_ce_no_loss_requested) &&
                 lm_head_fused_loss_backward_enabled &&
                 lm_head_bf16_logits_enabled &&
                 lm_head_public_vocab_ce_enabled &&
@@ -15538,6 +15544,7 @@ int run_transformer_lm_training_json(
                 lm_head_row_loss_sum_accumulate_requested &&
                 sum_accumulate != nullptr;
             const bool use_loss_bin_reduction =
+                record_loss &&
                 use_row_loss_reduction &&
                 lm_head_loss_bin_reduction_requested &&
                 lm_head_classifier_backward_loss_bins_bf16_u16 != nullptr &&
@@ -19869,6 +19876,14 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"lm_head_fused_loss_backward_enabled\": "
         << (lm_head_fused_loss_backward_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_classifier_ce_no_loss_requested\": "
+        << (lm_head_classifier_ce_no_loss_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_classifier_ce_no_loss_enabled\": "
+        << (lm_head_classifier_ce_no_loss_requested &&
+                    lm_head_row_loss_reduction_requested &&
+                    lm_head_classifier_backward_row_losses_bf16_u16 != nullptr
+                ? "true"
+                : "false") << ",\n"
         << "  \"lm_head_ce_backward_strategy\": \""
         << (lm_head_public_vocab_ce_enabled
                 ? (lm_head_bf16_logits_enabled

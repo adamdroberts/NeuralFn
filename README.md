@@ -645,6 +645,15 @@ Runtime JSON reports `lm_head_fused_loss_backward_enabled`,
 `lm_head_ce_loss_backward_strategy`. Keep the default enabled: the CUDA 13.3
 RTX 5090 confirmation run for the disabled route regressed train-loop wall time
 to `1.001484x` and failed the block-backward gates.
+`NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1` (or the GPT-2 alias) is a
+default-off no-loss CE diagnostic. It routes no-loss optimizer steps through
+the LM-head classifier row-loss kernel and skips the loss reduction tail, so the
+same no-loss parity command can test the classifier CE path without enabling
+train-loss logging. Runtime JSON reports
+`lm_head_classifier_ce_no_loss_requested` and
+`lm_head_classifier_ce_no_loss_enabled`; use the same-script profile
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_classifier_ce_no_loss` before
+considering it for a default.
 
 The native dense-GPT BF16 LM-head CE backward path now uses reverse
 row-chunk traversal by default because paired dedicated-RTX-5090 CUDA 13.3
@@ -1598,9 +1607,12 @@ The wrapper also has named profiles for existing diagnostic switches that used
 to require raw candidate env overrides: `bf16_attention_grad_out`,
 `bf16_attention_dprep_grad_out`, `mlp_proj_dinput_before_dweight`,
 `mlp_fc_dinput_before_dweight`, `attn_proj_dinput_before_dweight`, and
-`lm_head_fused_loss_backward_off`. These profiles do not change normal
-training defaults; they only make same-script bisection reproducible and attach
-the relevant hot-stage gates automatically.
+`lm_head_fused_loss_backward_off`. The LM-head no-loss classifier CE profile is
+`lm_head_classifier_ce_no_loss`; it expands to
+`NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1` and keeps train-loss logging
+disabled so the no-loss hot path is measured directly. These profiles do not
+change normal training defaults; they only make same-script bisection
+reproducible and attach the relevant hot-stage gates automatically.
 The native-vs-native wrapper also forwards the selected-GPU utilization retry
 aliases to the paired benchmark tool: use
 `NFN_SM120_NATIVE_SELECTED_GPU_UTILIZATION_RETRIES`,
