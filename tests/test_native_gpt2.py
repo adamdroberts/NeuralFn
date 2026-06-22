@@ -376,6 +376,9 @@ def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     assert "setup.cuda_runtime_symbols" in source
     assert "tile_ops_dlopen_binding_strategy" in source
     assert "RTLD_LAZY | RTLD_LOCAL" in source
+    assert "tile_ops_dlopen_wall_ms" in source
+    assert "tile_ops_required_symbol_scan_wall_ms" in source
+    assert "tile_ops_typed_symbol_load_wall_ms" in source
     assert "NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA" in source
     assert "transformer_device_arena_requested" in source
     assert "transformer_device_arena_enabled" in source

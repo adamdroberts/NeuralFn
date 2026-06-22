@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added dense GPT Tile ops load subphase timing to native runtime JSON:
+  `tile_ops_dlopen_wall_ms`, `tile_ops_required_symbol_scan_wall_ms`, and
+  `tile_ops_typed_symbol_load_wall_ms`. These fields split the still-large
+  `setup.load_tile_ops` startup phase so the next optimization can distinguish
+  ELF loading, required ABI validation, and typed symbol binding/preflight.
+  The CUDA 13.3 RTX 5090 startup smoke measured about 72 ms in `dlopen`, 0.03
+  ms in the required-symbol scan, and 244 ms in typed symbol binding/preflight,
+  so the duplicate required-symbol check is not the meaningful startup target.
+  Verification: focused source pytest, native GPT CLI rebuild, and startup-only
+  CUDA smoke.
+
 - Changed dense GPT native training to load the Tile ops library with
   `RTLD_LAZY | RTLD_LOCAL` instead of `RTLD_NOW | RTLD_LOCAL` while preserving
   the explicit required-symbol validation loop. Runtime JSON now reports

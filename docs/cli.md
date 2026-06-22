@@ -463,7 +463,9 @@ includes `setup.load_tile_ops`, `setup.load_cuda_runtime`, and
 `setup.cuda_runtime_symbols` before arena materialization.
 The dense GPT training route loads Tile ops with lazy dynamic binding and still
 validates required ABI symbols explicitly; JSON reports
-`tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`.
+`tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`, `tile_ops_dlopen_wall_ms`,
+`tile_ops_required_symbol_scan_wall_ms`, and
+`tile_ops_typed_symbol_load_wall_ms`.
 Set `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` only for startup allocator
 profiling. It waits until both the float arena and the BF16/uint16 arena layouts
 are known, then packs them into one aligned `cudaMalloc`. JSON reports

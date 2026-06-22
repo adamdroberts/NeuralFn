@@ -10511,6 +10511,9 @@ int run_transformer_lm_training_json(
     CudaEventElapsedTimeFn cuda_event_elapsed_time = nullptr;
     CudaEventDestroyFn cuda_event_destroy = nullptr;
     const char* tile_ops_dlopen_binding_strategy = "RTLD_LAZY";
+    double tile_ops_dlopen_wall_ms = 0.0;
+    double tile_ops_required_symbol_scan_wall_ms = 0.0;
+    double tile_ops_typed_symbol_load_wall_ms = 0.0;
     int cuda_runtime_version = 0;
     int cuda_driver_version = 0;
     int cuda_runtime_version_status = -1;
@@ -10530,20 +10533,26 @@ int run_transformer_lm_training_json(
 
     run_setup_timed("setup.load_tile_ops", [&]() {
         if (error.empty()) {
+            const auto tile_ops_dlopen_start = Clock::now();
             tile_handle = dlopen(tile_lib_path.c_str(), RTLD_LAZY | RTLD_LOCAL);
+            tile_ops_dlopen_wall_ms = elapsed_ms(tile_ops_dlopen_start, Clock::now());
             if (tile_handle == nullptr) {
                 error = dl_last_error("dlopen tile ops failed");
             } else {
                 tile_loaded = true;
+                const auto required_symbol_scan_start = Clock::now();
                 for (const std::string& symbol : required_symbols) {
                     void* ptr = dlsym(tile_handle, symbol.c_str());
                     if (ptr == nullptr) {
                         missing_symbols.push_back(symbol);
                     }
                 }
+                tile_ops_required_symbol_scan_wall_ms =
+                    elapsed_ms(required_symbol_scan_start, Clock::now());
                 if (!missing_symbols.empty()) {
                     error = "missing required GPT-2 transformer/LM training Tile ABI symbols";
                 } else {
+                    const auto typed_symbol_load_start = Clock::now();
                     fill = load_symbol<FillFn>(tile_handle, "nfn_native_tile_fill_float32");
                 fill_many = load_symbol<FillManyFn>(tile_handle, "nfn_native_tile_fill_many_float32");
                 adamw_many_with_device_scale_bf16_param_bf16_grad =
@@ -11022,6 +11031,8 @@ int run_transformer_lm_training_json(
                     load_symbol<AdamWManyWithDeviceScaleBf16ParamFn>(
                         tile_handle,
                         "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32");
+                    tile_ops_typed_symbol_load_wall_ms =
+                        elapsed_ms(typed_symbol_load_start, Clock::now());
                 }
             }
         }
@@ -18774,6 +18785,11 @@ int run_transformer_lm_training_json(
         << "  \"tile_ops_library\": \"" << json_escape(tile_lib_path) << "\",\n"
         << "  \"tile_ops_dlopen_binding_strategy\": \""
         << tile_ops_dlopen_binding_strategy << "\",\n"
+        << "  \"tile_ops_dlopen_wall_ms\": " << tile_ops_dlopen_wall_ms << ",\n"
+        << "  \"tile_ops_required_symbol_scan_wall_ms\": "
+        << tile_ops_required_symbol_scan_wall_ms << ",\n"
+        << "  \"tile_ops_typed_symbol_load_wall_ms\": "
+        << tile_ops_typed_symbol_load_wall_ms << ",\n"
         << "  \"cuda_runtime_library\": \"" << json_escape(cuda_lib_path) << "\",\n"
         << "  \"cuda_module_loading\": \"" << json_escape(env_or_empty("CUDA_MODULE_LOADING")) << "\",\n"
         << "  \"loaded\": " << (tile_loaded ? "true" : "false") << ",\n"

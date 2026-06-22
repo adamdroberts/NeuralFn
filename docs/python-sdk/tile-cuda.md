@@ -1301,7 +1301,9 @@ records include `setup.load_tile_ops`, `setup.load_cuda_runtime`, and
 `setup.cuda_runtime_symbols` before arena materialization.
 The native dense-GPT path loads Tile ops with lazy dynamic binding while still
 validating required ABI symbols explicitly; runtime JSON reports
-`tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`.
+`tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`, `tile_ops_dlopen_wall_ms`,
+`tile_ops_required_symbol_scan_wall_ms`, and
+`tile_ops_typed_symbol_load_wall_ms`.
 When stored BF16 MLP activations cover every transformer block, the dense GPT
 trainer also defers the validation-only float MLP scratch buffers (`fc_out` and
 `act`) instead of reserving them in the startup float arena. The buffers are
