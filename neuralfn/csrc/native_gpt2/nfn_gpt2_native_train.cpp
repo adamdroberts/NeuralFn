@@ -122,6 +122,10 @@ struct Config {
     bool layer_evo_enabled = false;
 };
 
+bool validation_shards_required_for_config(const Config& cfg) {
+    return !cfg.startup_only && cfg.eval_every_steps > 0 && cfg.eval_batches > 0;
+}
+
 struct BufferPlan {
     std::string name;
     std::vector<std::int64_t> shape;
@@ -3946,7 +3950,7 @@ bool print_tile_plan(
         << "  \"train_shard\": \"" << json_escape(dataset.train_shards.empty() ? std::string() : dataset.train_shards[0].path.string()) << "\",\n"
         << "  \"val_shard\": \"" << json_escape(dataset.val_shards.empty() ? std::string() : dataset.val_shards[0].path.string()) << "\",\n"
         << "  \"validation_shards_required\": "
-        << ((cfg.eval_every_steps > 0 && cfg.eval_batches > 0) ? "true" : "false") << ",\n"
+        << (validation_shards_required_for_config(cfg) ? "true" : "false") << ",\n"
         << "  \"validation_shards_resolved\": " << (!dataset.val_shards.empty() ? "true" : "false") << ",\n"
         << "  \"tile_ops_library\": \"" << json_escape(tile_ops) << "\",\n"
         << "  \"shape\": {\"num_layers\": " << cfg.num_layers
@@ -19056,7 +19060,7 @@ int run_transformer_lm_training_json(
         << "  },\n"
         << "  \"token_shards\": " << neuralfn::native_train::token_shard_dataset_json(dataset, &batch_plan) << ",\n"
         << "  \"validation_shards_required\": "
-        << ((cfg.eval_every_steps > 0 && cfg.eval_batches > 0) ? "true" : "false") << ",\n"
+        << (validation_shards_required_for_config(cfg) ? "true" : "false") << ",\n"
         << "  \"validation_shards_resolved\": " << (!dataset.val_shards.empty() ? "true" : "false") << ",\n"
         << "  \"batch_size\": " << batch_size << ",\n"
         << "  \"seq_len\": " << seq_len << ",\n"
@@ -21615,8 +21619,7 @@ int main(int argc, char** argv) {
 
     neuralfn::native_train::TokenShardDataset dataset;
     try {
-        const bool require_validation_shards =
-            cfg.eval_every_steps > 0 && cfg.eval_batches > 0;
+        const bool require_validation_shards = validation_shards_required_for_config(cfg);
         dataset = neuralfn::native_train::resolve_token_shards(
             cfg.dataset_alias,
             cfg.allow_train_as_val,

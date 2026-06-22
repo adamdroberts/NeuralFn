@@ -2068,6 +2068,25 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_only_payload["validation_shards_required"] is False
     assert train_only_payload["validation_shards_resolved"] is False
     assert train_only_payload["val_shard"] == ""
+
+    train_only_startup = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(train_only_dataset),
+            "--dry-run",
+            "--startup-only",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert train_only_startup.returncode == 0, train_only_startup.stderr
+    train_only_startup_payload = json.loads(train_only_startup.stdout)
+    assert train_only_startup_payload["validation_shards_required"] is False
+    assert train_only_startup_payload["validation_shards_resolved"] is False
+    assert train_only_startup_payload["val_shard"] == ""
     assert default_payload["checkpoint_export_startup_only_elided"] is False
     assert default_payload["train_shard"].endswith("fineweb_train_000000.bin")
     assert default_payload["val_shard"].endswith("fineweb_val_000000.bin")
@@ -2199,6 +2218,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     startup_tile_payload = json.loads(startup_tile_plan.stdout)
     assert startup_tile_payload["checkpoint_export_enabled"] is False
     assert startup_tile_payload["checkpoint_export_startup_only_elided"] is True
+    assert startup_tile_payload["validation_shards_required"] is False
+    assert startup_tile_payload["validation_shards_resolved"] is False
+    assert startup_tile_payload["val_shard"] == ""
     assert tile_payload["shipped_template_catalog_count"] == len(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert tile_payload["shipped_template_catalog"] == list(SHIPPED_GPT_TEMPLATE_PRESETS)
     assert tile_payload["selected_graph_support_status"] == "native-transformer-lm"

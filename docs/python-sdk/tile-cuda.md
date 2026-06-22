@@ -1701,7 +1701,11 @@ caller has not already set that environment variable, and runtime JSON reports
 the resolved value as `cuda_module_loading`. Startup-only suppresses final
 checkpoint export even when export was requested; plan/runtime JSON reports
 `checkpoint_export_enabled: false` and
-`checkpoint_export_startup_only_elided: true` for that case.
+`checkpoint_export_startup_only_elided: true` for that case. Startup-only also
+skips validation shard discovery even when validation cadence is configured,
+because no validation pass can run before the process exits; JSON reports
+`validation_shards_required: false` and leaves `val_shard` empty for train-only
+token caches.
 
 Set `NativeGptRunConfig.write_checkpoint=False` or
 `NativeGpt2RunConfig.write_checkpoint=False` for benchmark/preflight runs that

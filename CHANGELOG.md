@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed native dense-GPT startup-only token-shard resolution to skip
+  validation shard discovery. `nfn_gpt_native_train --startup-only` exits
+  before optimizer or validation work, so the native resolver now treats
+  validation shards as unnecessary even when `--eval-every-steps` and
+  `--eval-batches` are positive. Plan/runtime JSON reports
+  `validation_shards_required: false`, `validation_shards_resolved: false`,
+  and an empty `val_shard` for train-only caches in startup-only mode. Normal
+  dry-run and real training still require validation shards when validation
+  cadence is enabled.
+
+  Verification: rebuilt `build/nfn_gpt_native_train`; focused native GPT C++
+  CLI test passed; wrapper syntax check, `tools/paired_kernel_speed.py`
+  compile, native no-Torch dependency check, and `git diff --check` passed.
+
 - Added an explicit native dense-GPT guard for the missing cooperative LM-head
   backward Tile ABI. `nfn_gpt_native_train` now accepts
   `--require-cooperative-lm-head-backward`; when set, the run fails if the
