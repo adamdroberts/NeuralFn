@@ -166,6 +166,19 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert entrypoints["train_gpt_fast_command"]["startup_within_budget"] is True
     assert entrypoints["train_gpt2_evo_fast_command"]["passed"] is True
     assert entrypoints["train_nanogpt_fast_command"]["passed"] is True
+    for name in (
+        "train_gpt2_evo_default_native_dispatch",
+        "train_nanogpt_default_native_dispatch",
+        "train_llama_fast_default_native_dispatch",
+        "train_llama_megakernel_default_native_dispatch",
+        "train_mixllama_fast_default_native_dispatch",
+        "train_jepa_semantic_default_native_dispatch",
+        "train_semantic_router_moe_default_native_dispatch",
+        "train_semantic_router_moe_overnight_default_native_dispatch",
+        "train_deepseek_v4_default_native_dispatch",
+    ):
+        assert entrypoints[name]["passed"] is True
+        assert entrypoints[name]["startup_within_budget"] is True
     assert entrypoints["nfn_train_fast_command"]["passed"] is True
     assert entrypoints["nfn_train_default_fast_command"]["passed"] is True
     assert entrypoints["infer_gpt_native_info"]["passed"] is True

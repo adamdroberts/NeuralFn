@@ -1754,6 +1754,9 @@ CLIs and blocks imports of Torch, NumPy, `tiktoken`, dataset manager modules,
 and `nfn_impl` while checking GPT, GPT-2-evo, NanoGPT, explicit
 `nfn train --tinystories`, default `nfn train`, native inference,
 `neuralfn.native_train`, and the public SDK native training exports.
+It also executes the guarded legacy training scripts with no native flags
+against stubbed native CLIs, proving their default direct-script path enters
+native C++ before importing Torch or the Python dataset/runtime stack.
 The generic compiled binding must expose both a runner symbol and a command
 resolver symbol; `resolve_native_train_binding_command(config)` returns the
 argv that `neuralfn._native_train` will spawn so SDK callers can assert the

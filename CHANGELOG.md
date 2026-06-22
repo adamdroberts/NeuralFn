@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Strengthened the native no-Torch verifier to cover default direct-script
+  dispatch, not only explicit dry-run/preflight paths. The verifier now runs
+  guarded legacy training scripts for GPT-2 evo, NanoGPT, LLaMA fast/megakernel,
+  MixLLaMA, JEPA semantic, semantic-router MoE, semantic-router MoE overnight,
+  and DeepSeek-V4 with no native flags against stubbed native CLIs under the
+  import blocker. This proves normal direct script execution crosses into
+  compiled native C++ before importing Torch, NumPy, tokenizer, dataset-manager,
+  or `nfn_impl` modules.
+
+  Verification: focused native no-Torch verifier pytest passed; full
+  `python tools/check_native_no_torch_deps.py` passed and reported the new
+  default-dispatch entries at roughly 0.036-0.055 seconds each.
+
 - Split the dense GPT cooperative LM-head ABI probes into wrapper and fused
   symbols. The existing
   `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16` remains the

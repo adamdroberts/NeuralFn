@@ -185,6 +185,71 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
         ),
     ),
 )
+DEFAULT_SCRIPT_NATIVE_DISPATCH_ENTRYPOINTS = (
+    (
+        "train_gpt2_evo_default_native_dispatch",
+        (
+            sys.executable,
+            "cli/scripts/train_gpt2_evo.py",
+        ),
+    ),
+    (
+        "train_nanogpt_default_native_dispatch",
+        (
+            sys.executable,
+            "cli/scripts/train_nanogpt.py",
+        ),
+    ),
+    (
+        "train_llama_fast_default_native_dispatch",
+        (
+            sys.executable,
+            "cli/scripts/train_llama_fast.py",
+        ),
+    ),
+    (
+        "train_llama_megakernel_default_native_dispatch",
+        (
+            sys.executable,
+            "cli/scripts/train_llama_megakernel.py",
+        ),
+    ),
+    (
+        "train_mixllama_fast_default_native_dispatch",
+        (
+            sys.executable,
+            "cli/scripts/train_mixllama_fast.py",
+        ),
+    ),
+    (
+        "train_jepa_semantic_default_native_dispatch",
+        (
+            sys.executable,
+            "cli/scripts/train_jepa_semantic.py",
+        ),
+    ),
+    (
+        "train_semantic_router_moe_default_native_dispatch",
+        (
+            sys.executable,
+            "cli/scripts/train_semantic_router_moe.py",
+        ),
+    ),
+    (
+        "train_semantic_router_moe_overnight_default_native_dispatch",
+        (
+            sys.executable,
+            "cli/scripts/train_semantic_router_moe-overnight.py",
+        ),
+    ),
+    (
+        "train_deepseek_v4_default_native_dispatch",
+        (
+            sys.executable,
+            "cli/scripts/train_deepseek_v4.py",
+        ),
+    ),
+)
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256
 DEFAULT_MAX_ENTRYPOINT_SECONDS = 2.0
@@ -369,6 +434,7 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
         env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
         entrypoints = [
             *DEFAULT_PYTHON_ENTRYPOINTS,
+            *DEFAULT_SCRIPT_NATIVE_DISPATCH_ENTRYPOINTS,
             (
                 "train_gpt2_evo_fast_command",
                 (
