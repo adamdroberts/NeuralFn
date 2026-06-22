@@ -1,5 +1,7 @@
 #include "tile_ops.h"
 
+#include <algorithm>
+
 #include <cuda_runtime_api.h>
 
 namespace neuralfn::tile_cuda {
@@ -1735,6 +1737,16 @@ int launch_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_
 }  // namespace neuralfn::tile_cuda
 
 namespace {
+
+constexpr int kLmHeadCooperativeFlagLossBins = 1 << 0;
+constexpr int kLmHeadCooperativeLossBinCountShift = 8;
+
+std::int64_t lm_head_cooperative_loss_bin_count_from_flags(int flags, std::int64_t rows) {
+    const std::int64_t encoded =
+        static_cast<std::int64_t>(static_cast<unsigned int>(flags) >> kLmHeadCooperativeLossBinCountShift);
+    const std::int64_t requested = encoded > 0 ? encoded : 1024;
+    return std::max<std::int64_t>(1, std::min<std::int64_t>(rows, requested));
+}
 
 cudaStream_t as_stream(void* cuda_stream) {
     return reinterpret_cast<cudaStream_t>(cuda_stream);
@@ -4611,7 +4623,6 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
     void* cuda_stream) {
     (void)hidden_float;
     (void)token_weight_float;
-    (void)flags;
     if (logits_bf16 == nullptr ||
         targets_u16 == nullptr ||
         row_losses == nullptr ||
@@ -4626,15 +4637,28 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
         return static_cast<int>(cudaErrorInvalidValue);
     }
     cudaStream_t stream = as_stream(cuda_stream);
-    neuralfn::tile_cuda::launch_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
-        logits_bf16,
-        targets_u16,
-        row_losses,
-        rows,
-        vocab,
-        row_stride,
-        loss_scale,
-        stream);
+    if ((flags & kLmHeadCooperativeFlagLossBins) != 0) {
+        neuralfn::tile_cuda::launch_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+            logits_bf16,
+            targets_u16,
+            row_losses,
+            rows,
+            vocab,
+            row_stride,
+            lm_head_cooperative_loss_bin_count_from_flags(flags, rows),
+            loss_scale,
+            stream);
+    } else {
+        neuralfn::tile_cuda::launch_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
+            logits_bf16,
+            targets_u16,
+            row_losses,
+            rows,
+            vocab,
+            row_stride,
+            loss_scale,
+            stream);
+    }
     int status = launch_status();
     if (status != 0) {
         return status;

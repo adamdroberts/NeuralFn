@@ -938,6 +938,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "lm_head_full_resident_reuse" in text
     assert "NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1" in text
     assert "NFN_NATIVE_GPT_FULL_BATCH_LM_HEAD_REUSE=1" in text
+    assert "lm_head_cooperative_loss_bins" in text
+    assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1" in text
     assert "token_weight_vector4_strided" in text
     assert "token_weight_threaded" in text
     assert "token_weight_fast_int32" in text
@@ -1659,6 +1661,55 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         in cooperative_required_payload["candidate_command"]
     )
     assert cooperative_required_payload["metric_ratio_gates"]["enabled"] is False
+
+    cooperative_loss_bins_output_path = (
+        tmp_path / "candidate-lm-head-cooperative-loss-bins-dry-run.json"
+    )
+    cooperative_loss_bins_env = os.environ.copy()
+    cooperative_loss_bins_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_cooperative_loss_bins",
+            "NFN_SM120_NATIVE_JSON_OUT": str(cooperative_loss_bins_output_path),
+        }
+    )
+
+    cooperative_loss_bins_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=cooperative_loss_bins_env,
+    )
+
+    assert cooperative_loss_bins_dry_run.returncode == 0, cooperative_loss_bins_dry_run.stderr
+    cooperative_loss_bins_payload = json.loads(
+        cooperative_loss_bins_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        cooperative_loss_bins_payload["candidate_env"][
+            "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD"
+        ]
+        == "1"
+    )
+    assert (
+        cooperative_loss_bins_payload["candidate_env"][
+            "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION"
+        ]
+        == "1"
+    )
+    assert (
+        cooperative_loss_bins_payload["candidate_env"][
+            "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS"
+        ]
+        == "1"
+    )
+    assert "--train-loss-every-steps" in cooperative_loss_bins_payload["baseline_command"]
+    assert "--train-loss-every-steps" in cooperative_loss_bins_payload["candidate_command"]
+    assert cooperative_loss_bins_payload["metric_ratio_gates"]["enabled"] is False
 
     token_profiles = {
         "token_weight_vector4_strided": {

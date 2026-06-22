@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an opt-in cooperative LM-head loss-bin diagnostic under the existing
+  strict dense GPT cooperative backward ABI. The ABI `flags` field can now select
+  loss-bin CE/dlogit production, and the native trainer wires
+  `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1` so the cooperative sequence
+  uses the existing loss-bin classifier launcher before dHidden/dWeight. The
+  new `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins` expands
+  to cooperative backward, loss-bin reduction, cooperative loss bins, and common
+  `--train-loss-every-steps 1` so both baseline and candidate pay the same loss
+  logging cost while the candidate route counter moves.
+
+  This remains rejected/default-off. A CUDA 13.3 dedicated RTX 5090 2-step,
+  2-sample same-script gate with train-loss logging proved the route moved
+  `lm_head_classifier_loss_bin_launch_count` from `0` to `32`, but rejected the
+  candidate at `1.001346x` train-loop wall, `1.000068x` LM-head backward, and
+  `1.002485x` block backward. Runtime JSON now reports
+  `lm_head_cooperative_loss_bins_requested` and strategy strings that distinguish
+  the loss-bin cooperative sequence from the row-loss cooperative sequence.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; confirmed the cooperative and loss-bin symbols
+  are exported; ran focused native source and candidate-wrapper tests; ran
+  one-step CUDA smokes with and without train-loss logging; ran the 2-step,
+  2-sample paired candidate gate on the dedicated RTX 5090.
+
 - Added the `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_full_resident_reuse`
   wrapper profile for the existing dense GPT full-resident LM-head reuse
   diagnostic. The profile expands to

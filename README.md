@@ -542,9 +542,21 @@ a parity run must require the strict cooperative ABI to be available and
 integrated. The current implementation satisfies the ABI guard but reports
 `strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity`
 so it cannot be mistaken for the final fused kernel.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins` enables the
+same strict cooperative ABI plus `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`
+and `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1`; the wrapper also applies
+`--train-loss-every-steps 1` to both baseline and candidate so the loss-bin
+kernel is actually exercised. Runtime JSON reports
+`lm_head_cooperative_loss_bins_requested` and the loss-bin cooperative strategy
+strings when active. Keep this profile diagnostic-only: the CUDA 13.3 dedicated
+RTX 5090 2-step, 2-sample same-script gate moved
+`lm_head_classifier_loss_bin_launch_count` from `0` to `32`, but rejected the
+candidate at `1.001346x` train-loop wall, `1.000068x` LM-head backward, and
+`1.002485x` block backward.
 Runtime JSON reports
 `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,
+`lm_head_cooperative_loss_bins_requested`,
 `lm_head_cooperative_backward_abi_wrapper_available`,
 `lm_head_cooperative_backward_kernel_available`,
 `lm_head_cooperative_backward_fused_kernel_available`,

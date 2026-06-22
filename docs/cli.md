@@ -1093,6 +1093,15 @@ guard, but its implementation still sequences the old CE, dHidden, and dWeight
 launches; runtime strategy strings include
 `strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity`
 so it is not mistaken for the final fused parity kernel.
+`lm_head_cooperative_loss_bins` adds
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`,
+`NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`, and
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1`, and applies
+`--train-loss-every-steps 1` to both baseline and candidate commands so the
+loss-bin kernel is exercised fairly. It remains diagnostic-only: the dedicated
+RTX 5090 CUDA 13.3 2-step, 2-sample gate moved the loss-bin launch counter from
+`0` to `32`, but rejected the candidate at `1.001346x` train-loop wall,
+`1.000068x` LM-head backward, and `1.002485x` block backward.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

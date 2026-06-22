@@ -993,14 +993,19 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
         assert required_arg.replace("stream", "cuda_stream") in tile_ops_source or required_arg in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16" in tile_ops_source
     assert "launch_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets" in tile_ops_source
+    assert "kLmHeadCooperativeFlagLossBins" in tile_ops_source
+    assert "launch_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets" in tile_ops_source
     assert "launch_linear_backward_input_bf16_bits_weight_bf16_float32" in tile_ops_source
     assert "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta" in tile_ops_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_BACKWARD" in source
+    assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS" in source
+    assert "lm_head_cooperative_loss_bins_requested" in source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in source
     assert "lm_head.backward.cooperative.bf16_u16" in source
     assert "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity" in source
     assert "strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity" in source
+    assert "strict-cooperative-abi-sequences-loss-bins-ce-dhidden-dweight-kernels-not-yet-parity" in source
     assert "strict-cooperative-abi-sequences-ce-dhidden-dweight-kernels" in source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_header
@@ -1011,7 +1016,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
         encoding="utf-8"
     )
     assert '"lm_head_cooperative_backward"|"lm-head-cooperative-backward")' in bench_source
+    assert '"lm_head_cooperative_loss_bins"|"lm-head-cooperative-loss-bins")' in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1" in bench_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1" in bench_source
     speed_tool = (root / "tools" / "paired_kernel_speed.py").read_text(encoding="utf-8")
     assert "stage.lm_head_backward.cooperative.total_ms" in speed_tool
 

@@ -99,7 +99,18 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 	      attention backward over the memory cliff. Keep this rejected/default-off;
 	      the required fix remains a cooperative LM-head backward kernel that avoids
 	      both row-chunk recompute and full resident logits.
-	  - 2026-06-20 promoted the row-loss reduction classifier variant to the dense
+	    - 2026-06-22 added the opt-in cooperative loss-bin diagnostic
+	      `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins`.
+	      The strict cooperative ABI `flags` field now selects the existing
+	      loss-bin classifier launcher before the sequenced dHidden/dWeight work,
+	      and the benchmark profile applies `--train-loss-every-steps 1` to both
+	      baseline and candidate so the loss-bin route is actually exercised. The
+	      CUDA 13.3 dedicated RTX 5090 2-step, 2-sample gate moved
+	      `lm_head_classifier_loss_bin_launch_count` from `0` to `32`, but rejected
+	      the candidate at `1.001346x` train-loop wall, `1.000068x` LM-head
+	      backward, and `1.002485x` block backward. Keep it default-off; it is a
+	      measured dead end for parity, not the fused/cooperative kernel body.
+		  - 2026-06-20 promoted the row-loss reduction classifier variant to the dense
     GPT default after CUDA 13.3.33 RTX 5090 same-script gating. The new
     `nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets`
     ABI writes one loss per classifier row, then the trainer reduces those rows

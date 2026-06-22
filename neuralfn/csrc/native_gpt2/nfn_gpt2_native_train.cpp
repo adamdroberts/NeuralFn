@@ -3917,6 +3917,12 @@ bool print_tile_plan(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD",
                               "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_BACKWARD"}),
             false);
+    const bool cooperative_lm_head_loss_bins_requested =
+        cooperative_lm_head_backward_requested &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS",
+                              "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_LOSS_BINS"}),
+            false);
 
     bool loaded = false;
     bool all_symbols = false;
@@ -4011,6 +4017,8 @@ bool print_tile_plan(
         << (cfg.require_cooperative_lm_head_backward ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_requested\": "
         << (cooperative_lm_head_backward_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_loss_bins_requested\": "
+        << (cooperative_lm_head_loss_bins_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_abi_wrapper_available\": "
         << (cooperative_lm_head_backward_abi_wrapper_found ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_available\": "
@@ -4023,7 +4031,9 @@ bool print_tile_plan(
         << (cooperative_lm_head_backward_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (cooperative_lm_head_backward_enabled
-                ? "strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity"
+                ? (cooperative_lm_head_loss_bins_requested
+                    ? "strict-cooperative-abi-sequences-loss-bins-ce-dhidden-dweight-kernels-not-yet-parity"
+                    : "strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity")
                 : (cooperative_lm_head_backward_abi_wrapper_found
                     ? "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity"
                     : "missing-required-sm120-parity-kernel"))
@@ -11746,6 +11756,12 @@ int run_transformer_lm_training_json(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD",
                               "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_BACKWARD"}),
             false);
+    const bool lm_head_cooperative_loss_bins_requested =
+        lm_head_cooperative_backward_requested &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS",
+                              "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_LOSS_BINS"}),
+            false);
     const bool lm_head_concurrent_dhidden_dweight_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT",
@@ -15375,6 +15391,16 @@ int run_transformer_lm_training_json(
                 lm_head_classifier_backward_loss_bins_bf16_u16 != nullptr &&
                 sum_accumulate != nullptr &&
                 row_max != nullptr;
+            const std::int64_t loss_bin_count =
+                use_loss_bin_reduction
+                    ? std::max<std::int64_t>(
+                          1,
+                          std::min<std::int64_t>(
+                              row_count,
+                              lm_head_loss_bin_count_requested > 0
+                                  ? lm_head_loss_bin_count_requested
+                                  : 1024))
+                    : 0;
             auto reduce_lm_head_row_losses = [&]() {
                 if (!record_loss || !error.empty()) {
                     return;
@@ -15509,8 +15535,10 @@ int run_transformer_lm_training_json(
             bool lm_head_chunk_backward_done = false;
             const bool use_cooperative_lm_head_backward =
                 lm_head_cooperative_backward_kernel_enabled &&
-                !use_loss_bin_reduction &&
-                (!record_loss || use_row_loss_reduction) &&
+                (!record_loss ||
+                 (use_loss_bin_reduction
+                      ? lm_head_cooperative_loss_bins_requested
+                      : use_row_loss_reduction)) &&
                 hidden_bf16_chunk != nullptr &&
                 token_weight_bf16_shadow_enabled &&
                 token_weight_bf16 != nullptr &&
@@ -15519,6 +15547,15 @@ int run_transformer_lm_training_json(
                 run_timed_stage("lm_head_backward.cooperative", [&]() {
                     if (!error.empty()) {
                         return;
+                    }
+                    int cooperative_flags = 0;
+                    if (use_loss_bin_reduction) {
+                        cooperative_flags = 1 | (static_cast<int>(loss_bin_count) << 8);
+                        run(fill(row_max, loss_bin_count, 0.0f, nullptr),
+                            "lm_head.cooperative_loss_bins.zero");
+                        if (!error.empty()) {
+                            return;
+                        }
                     }
                     run(lm_head_classifier_backward_cooperative_fused_bf16_u16(
                             bf16_logit_chunk,
@@ -15536,13 +15573,18 @@ int run_transformer_lm_training_json(
                             kPaddedVocab,
                             accumulation_scale / static_cast<float>(active_rows),
                             lm_head_dweight_beta,
-                            0,
+                            cooperative_flags,
                             nullptr),
                         "lm_head.backward.cooperative.bf16_u16");
                     if (error.empty()) {
                         lm_head_chunk_backward_done = true;
                         if (record_loss) {
-                            reduce_lm_head_row_losses();
+                            if (use_loss_bin_reduction) {
+                                run(sum_accumulate(row_max, loss_total, loss_bin_count, nullptr),
+                                    "lm_head.cooperative_loss_bins.sum_accumulate");
+                            } else {
+                                reduce_lm_head_row_losses();
+                            }
                         }
                     }
                 });
@@ -15555,14 +15597,6 @@ int run_transformer_lm_training_json(
                                 if (direct_u16_token_ids_enabled) {
                                     if (use_fused_ce_loss_backward) {
                                         if (use_loss_bin_reduction) {
-                                            const std::int64_t loss_bin_count =
-                                                std::max<std::int64_t>(
-                                                    1,
-                                                    std::min<std::int64_t>(
-                                                        row_count,
-                                                        lm_head_loss_bin_count_requested > 0
-                                                            ? lm_head_loss_bin_count_requested
-                                                            : 1024));
                                             run(fill(row_max, loss_bin_count, 0.0f, nullptr),
                                                 "ce.backward_loss_bins.zero");
                                             if (error.empty()) {
@@ -19460,7 +19494,9 @@ int run_transformer_lm_training_json(
         << lm_head_last_dweight_overlap_sync_count << ",\n"
         << "  \"lm_head_dhidden_dweight_schedule_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
-                ? "strict-cooperative-abi-sequences-ce-dhidden-dweight-kernels"
+                ? (lm_head_cooperative_loss_bins_requested
+                    ? "strict-cooperative-abi-sequences-loss-bins-ce-dhidden-dweight-kernels"
+                    : "strict-cooperative-abi-sequences-ce-dhidden-dweight-kernels")
         : (lm_head_full_batch_reuse_schedule_enabled
                 ? "resident-full-logit-single-row-batch-gemms"
                 : (lm_head_pipeline_chunks_enabled
@@ -19476,6 +19512,8 @@ int run_transformer_lm_training_json(
         << (cfg.require_cooperative_lm_head_backward ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_requested\": "
         << (lm_head_cooperative_backward_requested ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_loss_bins_requested\": "
+        << (lm_head_cooperative_loss_bins_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_abi_wrapper_available\": "
         << (lm_head_cooperative_backward_abi_wrapper_available ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_kernel_available\": "
@@ -19488,7 +19526,9 @@ int run_transformer_lm_training_json(
         << (lm_head_cooperative_backward_kernel_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
-                ? "strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity"
+                ? (lm_head_cooperative_loss_bins_requested
+                    ? "strict-cooperative-abi-sequences-loss-bins-ce-dhidden-dweight-kernels-not-yet-parity"
+                    : "strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity")
                 : (lm_head_cooperative_backward_abi_wrapper_available
                     ? "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity"
                     : "missing-required-sm120-parity-kernel"))

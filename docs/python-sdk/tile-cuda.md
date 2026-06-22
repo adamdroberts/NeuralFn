@@ -1717,6 +1717,17 @@ The fused implementation must export the separate symbol
 `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`;
 the existing `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16`
 symbol remains the diagnostic wrapper probe.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins` exercises the
+same strict ABI with the existing loss-bin classifier reduction inside the
+cooperative sequence. The profile sets
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`,
+`NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`, and
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1`, and adds
+`--train-loss-every-steps 1` to both sides of the paired run. It remains
+diagnostic-only: the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample gate proved
+the route counter changed (`lm_head_classifier_loss_bin_launch_count` `0` to
+`32`) but rejected it at `1.001346x` train-loop wall, `1.000068x` LM-head
+backward, and `1.002485x` block backward.
 
 Startup-only token-weight initializer bisections can use the same profile
 mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,
