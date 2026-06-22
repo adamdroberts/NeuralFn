@@ -909,6 +909,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=512" in text
     assert "lm_head_loss_bins" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1" in text
+    assert "lm_head_row_loss_sum_accumulate" in text
+    assert "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1" in text
     assert "cublaslt_min_waves" in text
     assert "cublaslt_max_waves" in text
     assert "tk_dgelu_dinput" in text

@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the named SM120 candidate profile
+  `lm_head_row_loss_sum_accumulate` to `tools/bench_native_gpt_sm120_candidate.sh`.
+  The profile expands to
+  `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1`, so the existing
+  row-loss `sum_accumulate` diagnostic now runs through the same paired
+  candidate harness as the other LM-head kernel probes instead of requiring
+  ad-hoc environment wiring. This is still diagnostic-only; previous CUDA 13.3
+  RTX 5090 timing rejected the route as a default.
+
+  Verification: rebuilt `build/nfn_native_train` and
+  `build/nfn_gpt_native_train`; ran the no-Torch native dependency verifier;
+  ran the focused native GPT pytest slice; ran a dedicated RTX 5090 NanoGPT
+  `--startup-only` CUDA Tile smoke outside the sandbox.
+
 - Generalized the native dense GPT transformer-LM geometry contract so the
   compiled C++ trainer uses selected dense GPT template or compatible custom
   graph metadata instead of fixed GPT-2 dimensions. `gpt`, `gpt2`, `gpt3`, and

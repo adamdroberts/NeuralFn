@@ -1039,6 +1039,11 @@ It is diagnostic-only: the no-loss parity benchmark does not execute loss
 accumulation, and a one-step `--train-loss-every-steps 1` check proved the
 route counter changed (`lm_head_classifier_loss_bin_launch_count: 0 -> 16`) but
 still failed strict stage gates.
+`lm_head_row_loss_sum_accumulate` expands to
+`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` for paired checks of the
+single-kernel row-loss tail. It is also diagnostic-only: it only affects logged
+train-loss steps, and previous CUDA 13.3 RTX 5090 timing rejected it as a
+default.
 `lm_head_ce_vec8_io` expands to
 `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1 NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1` for
 the normal no-loss LM-head classifier path. It keeps the default vec8 BF16

@@ -266,7 +266,9 @@ older fused scalar-loss atomic route in a same-script paired benchmark.
 diagnostic for replacing the generic row-loss partial-reduction tail with
 `nfn_native_tile_sum_accumulate_float32`. Leave it disabled for normal training;
 the CUDA 13.3 RTX 5090 paired gate measured it slower than the default row-loss
-tail.
+tail. Use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_sum_accumulate` to route
+the diagnostic through the standard same-script candidate harness.
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1` is a separate default-off
 train-loss logging diagnostic. It routes the BF16/u16 classifier row blocks to
 accumulate row losses into a fixed bin workspace before one
