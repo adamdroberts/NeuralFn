@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked the remaining shape-specific 32768-row dense GPT LM-head backend
+  substitutions after the CUDA 13.3 reinstall. The existing benchmark profiles
+  all remain diagnostic-only: `lm_head_dhidden_fast16bf_32768` requested
+  FAST_16BF for the LM-head dHidden GEMMEx calls but failed the LM-head
+  backward gate at `1.001544x`; `lm_head_cublaslt_dhidden_32768` moved the
+  dHidden calls from BF16 GEMMEx to cuBLASLt but failed targeted dHidden at
+  `1.001794x`; `lm_head_tk_dinput_32768` regressed train-loop wall to
+  `1.014791x` and dHidden to `1.132698x`; and
+  `lm_head_tk_dweight_32768` regressed train-loop wall to `1.023848x` and
+  dWeight to `1.289424x`. No default route was changed; the next LM-head parity
+  item remains a real fused/cooperative classifier-backward kernel rather than
+  another substitution among the current per-chunk GEMMs.
+
+  Verification: each profile was run through
+  `tools/bench_native_gpt_sm120_candidate.sh` on the display-disabled RTX 5090
+  with the selected-GPU idle guard, stage timing enabled, three optimizer
+  steps, one sample, no warmup, and no compute processes on the selected GPU
+  before the run. Every candidate failed the strict stage gates as expected.
+
 - Wired the dense GPT cooperative LM-head backward ABI wrapper into the native
   training loop behind the default-off
   `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` /
