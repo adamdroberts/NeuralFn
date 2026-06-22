@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/bench_native_gpt_sm120_parity.sh` now passes
+  `--train-loss-every-steps 0` to the NeuralFn native candidate by default,
+  with `NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS` and generic
+  `NFN_SM120_TRAIN_LOSS_EVERY_STEPS` available for opt-in train-loss cadence.
+  This makes short llm.kittens parity runs explicitly timing-only on the
+  NeuralFn side instead of inheriting the raw C++ trainer's default
+  `train_loss_every_steps: 10`.
+
+  Verification: `bash -n tools/bench_native_gpt_sm120_parity.sh`,
+  `git diff --check`, and a CUDA-visible 10-step parity rerun on the dedicated
+  RTX 5090. The rerun confirmed `train_loss_host_d2h_count: 0` and
+  `lm_head_classifier_loss_bin_launch_count: 0`; the remaining kernel gap
+  measured `1.027108x` train-loop wall time and `0.972617x` tokens/sec versus
+  llm.kittens.
+
 - Recorded the current post-CE-default SM120 parity state and rejected the
   compile-time atomic-dQ attention backward candidate against the current dense
   GPT native baseline. A 10-step same-script parity sample still measured

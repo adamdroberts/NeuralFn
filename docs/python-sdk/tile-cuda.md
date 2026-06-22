@@ -1605,6 +1605,11 @@ throughput gap; `tools/bench_native_gpt_sm120_parity.sh` is the same-script RTX
 5090 comparison gate against `llm.kittens/train-sm120.sh`. The parity wrapper
 passes the NeuralFn candidate `--train-batch-tokens 524288` explicitly to match
 the reference `-d 524288` batch-token contract instead of relying on a default.
+It also passes `--train-loss-every-steps 0` to the NeuralFn side by default so
+short parity runs measure the training loop rather than the compiled trainer's
+raw-C++ default periodic train-loss accumulation path; set
+`NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS` or generic
+`NFN_SM120_TRAIN_LOSS_EVERY_STEPS` to opt back into timed train-loss logging.
 It also mirrors `NFN_SM120_PARITY_ACTIVATION` or the generic
 `NFN_SM120_ACTIVATION` fallback into both sides of the comparison, using
 llm.kittens `-af` and NeuralFn `--native-cuda-activation`.

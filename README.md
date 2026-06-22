@@ -979,7 +979,10 @@ separated gates through `NFN_SM120_PARITY_MAX_CANDIDATE_RATIO` /
 `NFN_SM120_MAX_CANDIDATE_RATIO`. Dry-run plans stay ungated.
 The parity wrapper defaults short runs to
 timing-only sample/checkpoint cadence (`NFN_SM120_PARITY_SAMPLE_EVERY=0`,
-`NFN_SM120_PARITY_CHECKPOINT_EVERY=0`); compare
+`NFN_SM120_PARITY_CHECKPOINT_EVERY=0`) and passes
+`--train-loss-every-steps 0` to the NeuralFn side unless
+`NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS` or generic
+`NFN_SM120_TRAIN_LOSS_EVERY_STEPS` overrides it; compare
 `train_loop_wall_ms_per_step` and `train_tokens_per_second` in the native
 metrics block rather than child-process `seconds`, because the llm.kittens
 reference still performs its built-in validation passes around short runs. It

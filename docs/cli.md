@@ -892,8 +892,11 @@ and run `bash tools/build_native_train_tile_ops.sh /tmp/libnfn_candidate.so`.
 Leave the variables unset for the default build.
 Short parity runs default to timing-only cadence with
 `NFN_SM120_PARITY_SAMPLE_EVERY=0` and
-`NFN_SM120_PARITY_CHECKPOINT_EVERY=0`, because llm.kittens samples and writes
-checkpoints on the final step whenever those intervals are positive. Compare
+`NFN_SM120_PARITY_CHECKPOINT_EVERY=0`, and the NeuralFn side now receives
+`--train-loss-every-steps 0` unless `NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS`
+or generic `NFN_SM120_TRAIN_LOSS_EVERY_STEPS` overrides it. This keeps short
+throughput runs from timing NeuralFn's periodic train-loss accumulation path
+while llm.kittens is configured for `-v 250` validation cadence. Compare
 `train_loop_wall_ms_per_step` and `train_tokens_per_second` under the native
 metrics summaries rather than child-process `seconds`; the llm.kittens
 reference still runs its built-in validation passes around short runs. Set
