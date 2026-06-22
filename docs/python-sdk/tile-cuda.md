@@ -560,22 +560,18 @@ paired bisection; the dedicated RTX 5090 same-script benchmark measured the
 specialized default at `0.998835x` mean train-loop wall time and `0.997518x`
 median total wall time versus the generic path.
 
-GPT-2-compatible causal SDPA now uses the SM120 ThunderKittens bf16
-FlashAttention-style bridge by default in `tools/build_native_train_tile_ops.sh`.
-The bridge accepts NeuralFn's float32 Q/K/V ABI, converts supported causal
-`[B,H,T,D]` heads to bf16, runs the llm.kittens SM120 attention forward/backward
-tiles, and converts gradients back to the float32 optimizer buffers. It is used
-only for equal Q/K heads, `D in {64, 128}`, equal query/key sequence lengths,
-sequence lengths divisible by the SM120 forward tile, and dense left-aligned
-causal masks. Training JSON reports
-`attention_backend_strategy: "tk-sm120-bf16-bridge"`,
-`attention_forward_strategy: "tk-sm120-bf16-flashattention-bridge"`,
-`attention_backward_strategy: "tk-sm120-bf16-recompute-forward-bridge"`,
+GPT-2-compatible causal SDPA now uses the packed-QKV SM120 ThunderKittens bf16
+route by default in `tools/build_native_train_tile_ops.sh`. The route accepts
+NeuralFn's row-major packed QKV BF16 ABI, runs the llm.kittens SM120 attention
+forward/backward tiles, keeps packed BF16 QKV gradients for the QKV backward
+GEMMs, and stores packed QKV/O/LSE tensors for direct backward reuse at the
+workstation shape. Training JSON reports `packed_qkv_attention_enabled: true`,
+`qkv_forward_layout_strategy: "packed-qkv-bf16-no-split"`,
+`attention_backward_strategy:
+"tk-sm120-packed-qkv-bf16-saved-activation-backward-direct-bf16-grad-scratch-handoff"`,
 `attention_forward_tk_launch_count`, and `attention_backward_tk_launch_count`.
-The packed-QKV bridge remains available for paired candidate profiling with
-`NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=1`, but it is not the default real-training
-route because the CUDA 13.3 RTX 5090 full trainer path can OOM in the packed
-saved-workspace forward.
+Set `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=0` to force the split-QKV fallback for
+paired bisection or lower-memory runs.
 Set `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` only for short
 diagnostic runs that need packed-backward section timing: it uses CUDA events
 and synchronizes the stream to report dprep and TK backward totals/counts as
@@ -967,7 +963,10 @@ sync-before-copy path for paired diagnostics. With
 still uses BF16 logits/dlogits but validation/test loss allocates and reports
 the older float logits workspace for paired benchmarking. With
 `NFN_NATIVE_GPT_LM_HEAD_BF16_LOGITS=0`, the same fields report the older
-float32 logits/dlogits strategy.
+float32 logits/dlogits strategy. Transformer validation uses the training batch
+size as its effective validation batch so loss stays on the tested full-row
+LM-head CE shape; JSON reports `validation.requested_eval_batch_size` and the
+effective `validation.eval_batch_size`.
 
 The older float32 row-vector forward and query-row atomic backward kernels stay
 compiled as a diagnostic/fallback path for unsupported attention shapes or
@@ -2069,8 +2068,7 @@ older packed path that expands `dQKV` to float32 before QKV dWeight/dInput. Set
 `NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE=0`,
 `NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE=0`, or
 `NFN_NATIVE_GPT2_BF16_BIAS_INPLACE_TILE=0` to compare against the older scalar
-CUDA BF16 bias kernel. Set `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=1` only when
-explicitly benchmarking the packed-QKV candidate route. The packed backward batch cap
+CUDA BF16 bias kernel. Set `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=0` only when explicitly benchmarking or using the split-QKV fallback. The packed backward batch cap
 defaults to 64 so the workstation `64 x 1024` microbatch runs as one TK backward
 chunk; set `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48` to reproduce
 the previous split for paired benchmarks. Packed attention dprep keeps the older row-linear launch by default; set

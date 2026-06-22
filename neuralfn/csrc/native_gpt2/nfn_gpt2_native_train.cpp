@@ -274,6 +274,18 @@ std::int64_t resolved_linear_backward_bias_row_chunk_size() {
 bool packed_qkv_attention_default_enabled() {
     const std::string value =
         env_or_empty_any({"NFN_NATIVE_GPT_PACKED_QKV_ATTENTION", "NFN_NATIVE_GPT2_PACKED_QKV_ATTENTION"});
+    if (value.empty()) {
+        return true;
+    }
+    if (value == "0" ||
+        value == "false" ||
+        value == "FALSE" ||
+        value == "off" ||
+        value == "OFF" ||
+        value == "no" ||
+        value == "NO") {
+        return false;
+    }
     return value == "1" ||
            value == "true" ||
            value == "TRUE" ||
@@ -1033,7 +1045,7 @@ std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
         << "\"seq_len\":" << geometry.seq_len << ","
         << "\"position_encoding\":\"absolute\","
         << "\"norm\":\"layernorm\","
-        << "\"attention\":\"causal-split-qkv-sm120-tk-bf16\","
+        << "\"attention\":\"causal-packed-qkv-sm120-tk-bf16\","
         << "\"mlp\":\"gelu-4x\","
         << "\"dropout_p\":" << geometry.dropout_p << ","
         << "\"supported_template_selectors\":["
@@ -5940,7 +5952,8 @@ int run_embedding_lm_training_json(
     constexpr int kCudaMemcpyDeviceToHost = 2;
 
     const std::int64_t train_batch_size = cfg.batch_size;
-    const std::int64_t eval_batch_size = cfg.eval_batch_size > 0 ? cfg.eval_batch_size : cfg.batch_size;
+    const std::int64_t requested_eval_batch_size = cfg.eval_batch_size > 0 ? cfg.eval_batch_size : cfg.batch_size;
+    const std::int64_t eval_batch_size = requested_eval_batch_size;
     const std::int64_t seq_len = cfg.seq_len;
     const std::int64_t train_rows = train_batch_size * seq_len;
     const std::int64_t eval_rows = eval_batch_size * seq_len;
@@ -6485,6 +6498,7 @@ int run_embedding_lm_training_json(
         << "  \"validation\": {\n"
         << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
         << "    \"eval_batches\": " << cfg.eval_batches << ",\n"
+        << "    \"requested_eval_batch_size\": " << requested_eval_batch_size << ",\n"
         << "    \"eval_batch_size\": " << eval_batch_size << ",\n"
         << "    \"eval_count\": " << validation_losses.size() << ",\n"
         << "    \"losses\": [\n";
@@ -14791,14 +14805,15 @@ int run_transformer_lm_training_json(
         }
     });
 
-    const std::int64_t eval_batch_size =
+    const std::int64_t requested_eval_batch_size =
         cfg.eval_batch_size > 0 ? static_cast<std::int64_t>(cfg.eval_batch_size) : batch_size;
-    if (error.empty() && (eval_batch_size <= 0 || eval_batch_size > batch_size)) {
+    if (error.empty() && (requested_eval_batch_size <= 0 || requested_eval_batch_size > batch_size)) {
         std::ostringstream out;
         out << "GPT transformer/LM eval batch size must be in [1, " << batch_size
-            << "] for the current fixed-size activation arena; got " << eval_batch_size;
+            << "] for the current fixed-size activation arena; got " << requested_eval_batch_size;
         error = out.str();
     }
+    const std::int64_t eval_batch_size = batch_size;
     std::int64_t active_batch_size = batch_size;
     std::int64_t active_rows = rows;
     std::int64_t active_activation_elements = activation_elements;
@@ -15287,13 +15302,20 @@ int run_transformer_lm_training_json(
             const std::int64_t logical_chunk_index =
                 lm_head_reverse_chunk_order_enabled ? (lm_head_chunk_count - 1 - chunk_index) : chunk_index;
             const std::int64_t row_start = logical_chunk_index * lm_head_chunk_rows;
+            if (row_start >= active_rows) {
+                break;
+            }
             const std::int64_t row_count =
                 (row_start + lm_head_chunk_rows < active_rows) ? lm_head_chunk_rows : (active_rows - row_start);
             const float* hidden_chunk = lnf_out + row_start * kDim;
             const std::int64_t* target_chunk =
                 direct_u16_token_ids_enabled ? nullptr : (active_targets + row_start);
             const std::uint16_t* target_chunk_u16 = active_targets_u16 + row_start;
-            if (lm_head_bf16_loss_enabled) {
+            const bool small_loss_chunk_bf16_output_fallback =
+                lm_head_bf16_loss_enabled && row_count < 8192;
+            const bool use_bf16_loss_logits =
+                lm_head_bf16_loss_enabled && !small_loss_chunk_bf16_output_fallback;
+            if (use_bf16_loss_logits) {
                 if (token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
                     run(linear_weight_bf16_output(
                             hidden_chunk,
@@ -15320,8 +15342,11 @@ int run_transformer_lm_training_json(
                         label + ".lm_head.forward.bf16_logits");
                 }
             } else {
+                const char* lm_head_label = small_loss_chunk_bf16_output_fallback
+                    ? ".lm_head.forward.float_logits_small_chunk"
+                    : ".lm_head.forward";
                 run(linear(hidden_chunk, token_weight, nullptr, logits, row_count, kDim, kPaddedVocab, false, nullptr),
-                    label + ".lm_head.forward");
+                    label + lm_head_label);
             }
             if (error.empty()) {
                 accumulate_lm_head_loss_from_current_logits(
@@ -15331,7 +15356,7 @@ int run_transformer_lm_training_json(
                     row_count,
                     target_chunk,
                     target_chunk_u16,
-                    lm_head_bf16_loss_enabled);
+                    use_bf16_loss_logits);
             }
         }
         if (error.empty() && copy_loss_to_host) {
@@ -21298,6 +21323,7 @@ int run_transformer_lm_training_json(
         << "  \"validation\": {\n"
         << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
         << "    \"eval_batches\": " << cfg.eval_batches << ",\n"
+        << "    \"requested_eval_batch_size\": " << requested_eval_batch_size << ",\n"
         << "    \"eval_batch_size\": " << eval_batch_size << ",\n"
         << "    \"runtime_enabled\": " << (validation_runtime_enabled ? "true" : "false") << ",\n"
         << "    \"sampler_constructed\": " << (validation_sampler_constructed ? "true" : "false") << ",\n"

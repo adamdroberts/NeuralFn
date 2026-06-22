@@ -6,17 +6,38 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
-- **Breaking changes:** Changed dense GPT native attention back to the
-  memory-safe split-QKV SM120 TK bridge by default. Before, the default dense
-  GPT native JSON reported the packed-QKV path. Now normal training reports
-  `packed_qkv_attention_enabled: false`,
-  `qkv_forward_layout_strategy: "fused-split-to-heads"`, and
-  `attention_backend_strategy: "tk-sm120-bf16-bridge"` unless the packed route
-  is explicitly enabled. The native geometry contract now reports
-  `attention: "causal-split-qkv-sm120-tk-bf16"` for the default dense GPT
-  route. Migration: update parsers that assumed the packed default, and set
-  `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=1` (or the GPT-2 alias) only for paired
-  packed-QKV benchmark candidates.
+- **Breaking changes:** Dense GPT native training defaults back to the packed-QKV
+  SM120 TK route for the full workstation shape. Before, normal training used
+  the split-QKV bridge unless callers explicitly set
+  `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=1`. Now normal training reports
+  `packed_qkv_attention_enabled: true`,
+  `qkv_forward_layout_strategy: "packed-qkv-bf16-no-split"`, fused QKV bias in
+  the TK GEMM, BF16 QKV gradient handoff, and
+  `attention: "causal-packed-qkv-sm120-tk-bf16"` in the native geometry
+  contract. Migration: set `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=0` (or the
+  GPT-2 alias) only when intentionally bisecting the split-QKV fallback.
+  Transformer validation now uses the training batch size as its effective
+  validation batch so periodic validation loss stays on the tested full-row
+  LM-head CE shape; JSON reports both `validation.requested_eval_batch_size`
+  and the effective `validation.eval_batch_size`.
+
+  Verification: `tools/bench_native_gpt_sm120_parity.sh` on the dedicated RTX
+  5090 reported NeuralFn at `3.58245s` train-loop wall time for one
+  524,288-token optimizer step versus `2.60666s` for llm.kittens. The
+  same-script packed-QKV candidate benchmark then reported `2.89345s` versus
+  the split-QKV baseline's `3.70742s`, `0.780448x` train-loop wall time,
+  `1.281312x` tokens/s, attention forward launches reduced from 184 to 96,
+  cublasLt GEMMs from 872 to 688, and BF16 activation packs from 396 to 12.
+  After the validation-batch fix, a full-shape one-step TinyStories run with
+  requested `--eval-batch-size 1` reported effective `validation.eval_batch_size:
+  64`, `validation.losses[0].loss_mean: 9.92186`, packed attention enabled, and
+  `tk-sm120-packed-qkv-bf16-flashattention`.
+
+- **Superseded breaking change note:** A prior unreleased change temporarily
+  moved dense GPT native attention back to the memory-safe split-QKV SM120 TK
+  bridge by default. That temporary default has been superseded by the
+  packed-QKV default above; keep this note only to explain the verification
+  history and why the split route remains available as an explicit fallback.
 
   Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
   `build/nfn_gpt_native_train` with CUDA 13.3; fill, optimizer, LM, attention,
