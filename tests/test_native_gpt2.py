@@ -3895,7 +3895,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["native_geometry_contract"]["seq_len"] == 2
     assert train_transformer_payload["batch_size"] == 1
     assert train_transformer_payload["seq_len"] == 2
-    assert train_transformer_payload["train_loss_every_steps"] == 10
+    assert train_transformer_payload["train_loss_every_steps"] == 0
     assert (
         train_transformer_payload["train_loss_device_accumulation_strategy"]
         == "optimizer-step-device-scalar-accumulate"

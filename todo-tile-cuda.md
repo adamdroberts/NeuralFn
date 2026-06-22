@@ -281,6 +281,22 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Revisit the CUDA 13.3 dedicated RTX 5090 parity baseline before retrying older candidates. The 2026-06-19 5-step same-script run measured llm.kittens at `2429.056 ms/step` and NeuralFn at `2536.100 ms/step`, or `1.044068x` train-loop wall time and `0.957209x` tokens/sec. The hottest remaining buckets were block backward (`6365.680 ms` over 5 steps) and LM-head backward (`3127.700 ms`), so parity work still needs new fused/cooperative kernel work rather than parameter-default retunes.
   - A no-stage-timing rerun after the CUDA 13.3 WSL reinstall measured llm.kittens at `2471.224 ms/step` and NeuralFn at `2541.080 ms/step`, or `1.028292x` train-loop wall time and `0.972465x` tokens/sec. The instrumentation-free parity gap is therefore smaller than the stage-attributed run, but still not closed.
   - 2026-06-20 refreshed the no-stage parity baseline after the CUDA-visible test rerun and candidate-wrapper trainer-binary fix: `NFN_SM120_PARITY_STEPS=5 NFN_SM120_PARITY_SAMPLES=3 NFN_SM120_PARITY_WARMUP=0 NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=0 NFN_SM120_PARITY_PROFILE_DIR=none bash tools/bench_native_gpt_sm120_parity.sh` measured llm.kittens at `2487.459333 ms/step` and NeuralFn at `2517.273333 ms/step`, or `1.012089x` train-loop wall time and `0.987647x` tokens/sec. The selected RTX 5090 had zero compute processes before every sample, so the remaining gap is still real but much narrower than the earlier stage-timed run.
+  - 2026-06-22 refreshed a short 2-step, 1-sample stage-timed parity sample
+    after the strict fused ABI handoff fix:
+    `NFN_SM120_PARITY_STEPS=2 NFN_SM120_PARITY_SAMPLES=1
+    NFN_SM120_PARITY_WARMUP=0 NFN_SM120_PARITY_STAGE_TIMING=1
+    NFN_SM120_PARITY_PROFILE_DIR=/tmp/nfn_parity_continue_20260622_2step
+    NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_parity_continue_20260622_2step.json
+    NFN_SM120_PARITY_MAX_GPU_UTILIZATION_PCT=30 bash
+    tools/bench_native_gpt_sm120_parity.sh` measured llm.kittens at
+    `2539.325 ms/step` and NeuralFn at `2610.800 ms/step`, or `1.028147x`
+    train-loop wall and `0.970733x` tokens/sec. The selected RTX 5090 had zero
+    compute processes and 0% utilization before and after the sample. The
+    hottest current buckets remain `stage.block_backward.total_ms=2622.810`,
+    `stage.lm_head_backward.total_ms=1166.160`, `stage.train.model_forward.total_ms=1378.810`,
+    `stage.block_backward.mlp_proj.total_ms=654.517`,
+    `stage.block_backward.attn_sdpa.total_ms=529.490`, and
+    `stage.block_backward.mlp_fc.total_ms=521.723` over 2 steps.
   - Rechecked `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1` on the dedicated RTX 5090; it improved the attention SDPA sub-bucket but regressed total train-loop wall to `1.019016x`, so it remains rejected/default-off. After the `cuda-toolkit-13-3` reinstall and clean rebuild, the same-script 2-step, 3-sample stage-timed rerun still failed the hot gates: attention SDPA improved to `0.976524x`, but train-loop wall regressed to `1.043912x`, block backward to `1.086617x`, and attention projection dInput to `2.843120x`. `NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1` also remains rejected after the reinstall because it changed no tracked GEMM route counters and regressed train-loop wall to `1.007955x`, block backward to `1.015600x`, and attention SDPA to `1.046114x` once the BF16 prep cost was included.
   - 2026-06-22 added and rejected a default-off float-gradient HD64/H12 packed-attention dprep CUDA Tile candidate behind `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_FLOAT_HD64_SPECIALIZED=1` and `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_dprep_float_hd64_specialized`. This targets the normal float dO path without the rejected BF16 pack/handoff cost and reports `attention_backward_float_hd64_dprep_launch_count`. The CUDA 13.3 dedicated RTX 5090 same-script 3-step, 3-sample gate proved the route (`0` baseline launches versus `288` candidate launches) and improved dprep timing to `0.998396x`, but failed promotion on LM-head backward (`1.000271x`), MLP projection (`1.000360x`), attention SDPA (`1.000526x`), attention `to_qkv` (`1.000468x`), and TK timing (`1.000963x`).
   - Rechecked the full-logit LM-head reuse probe after moving display work off the 5090; a three-step native-vs-native probe did not complete in the useful benchmark window, so the chunked LM-head classifier remains the only viable default until a fused/cooperative classifier backward lands.

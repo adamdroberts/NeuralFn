@@ -80,7 +80,7 @@ struct Config {
     int batch_size = 64;
     int seq_len = 1024;
     int train_batch_tokens = 524288;
-    int train_loss_every_steps = 10;
+    int train_loss_every_steps = 0;
     int warmup_steps = 60;
     int max_steps = 20000;
     int num_layers = 12;

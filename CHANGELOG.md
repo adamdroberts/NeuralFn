@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the direct compiled dense GPT trainer default
+  `train_loss_every_steps` from `10` to `0`, matching the Python native
+  wrappers and the documented timing-only default. Direct
+  `nfn_gpt_native_train --train-transformer-lm` invocations no longer pay the
+  periodic train-loss logging path unless callers explicitly pass
+  `--train-loss-every-steps N`; validation loss remains controlled separately
+  by `--eval-every-steps`.
+
+  Verification: focused native GPT transformer-plan pytest, native no-Torch
+  verifier, native GPT dry-run plan, and `git diff --check`.
+
 - Tightened dense GPT cooperative LM-head backward ABI selection. The compiled
   trainer now loads the future true-fused symbol
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` into a
