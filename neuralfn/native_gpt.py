@@ -16,6 +16,7 @@ from .native_gpt2 import (
     build_native_gpt2_run_config,
     is_native_gpt2_checkpoint as is_native_gpt_checkpoint,
     latest_native_gpt2_checkpoint as latest_native_gpt_checkpoint,
+    exec_native_gpt2,
     native_gpt2_activation as native_gpt_activation,
     native_gpt2_encoding_vocab_size as native_gpt_encoding_vocab_size,
     native_gpt2_kernel_backend as native_gpt_kernel_backend,
@@ -84,6 +85,10 @@ def run_native_gpt(config: NativeGptRunConfig, *, runner: str = "auto") -> int:
     return run_native_gpt2(config, runner=runner)
 
 
+def exec_native_gpt(config: NativeGptRunConfig, *, runner: str = "compiled-cli") -> int:
+    return exec_native_gpt2(config, runner=runner)
+
+
 def write_native_gpt_run_config(config: NativeGptRunConfig, path, *, runner: str = "auto"):
     return write_native_gpt2_run_config(config, path, runner=runner)
 
@@ -93,6 +98,7 @@ __all__ = [
     "NativeGptRunnerStatus",
     "build_native_gpt_compiled_cli_run_config",
     "build_native_gpt_run_config",
+    "exec_native_gpt",
     "is_native_gpt_checkpoint",
     "latest_native_gpt_checkpoint",
     "native_gpt_activation",

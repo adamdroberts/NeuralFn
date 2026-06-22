@@ -1139,6 +1139,11 @@ Compiled CUDA Tile graphs can opt into runtime NVFP4 activation packing with `gr
 
 Programmatic `nfn.main([...], stdin_isatty=..., stdout_isatty=...)` calls that pass native training arguments use the same compiled native dispatcher before importing `train_gpt_native`, `nfn_impl`, or Torch.
 
+SDK callers that need the same process-replacement handoff can call
+`exec_native_gpt(config)` or compatibility `exec_native_gpt2(config)`; the
+existing `run_native_gpt(...)` helpers still run the compiled path and return
+its exit code.
+
 Direct `python cli/scripts/train_gpt_native.py ...` compiled-cli executions now
 replace the Python harness with the compiled C++ trainer after command
 resolution. Dry runs and command printing still return through Python, but

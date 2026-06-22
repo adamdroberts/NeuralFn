@@ -56,7 +56,7 @@ from neuralfn import (
     build_native_gpt_compiled_cli_run_config, build_native_gpt_run_config, is_native_gpt_checkpoint,
     NativeTrainRunConfig, NativeTrainRunnerStatus,
     build_native_gpt2_compiled_cli_run_config, build_native_gpt2_run_config, is_native_gpt2_checkpoint,
-    build_native_train_run_config,
+    build_native_train_run_config, exec_native_gpt, exec_native_gpt2,
     latest_native_gpt_checkpoint, native_gpt_parameter_count,
     latest_native_gpt2_checkpoint, native_gpt2_parameter_count,
     native_gpt_runner_status, read_native_gpt_checkpoint_info,
@@ -110,6 +110,10 @@ launching subprocess, launcher, compiled-CLI, or binding runs; the C++ binding
 uses `posix_spawnp()` instead of `fork()` and defaults
 `CUDA_MODULE_LOADING=LAZY` when the caller has not set it. Set the corresponding
 environment variable yourself when you need a different CUDA device routing.
+Use `exec_native_gpt(config)` or the compatibility `exec_native_gpt2(config)`
+when an SDK launcher should replace the current Python process with the
+compiled CLI or launcher instead of waiting for a subprocess return code from
+`run_native_gpt(...)`.
 The default
 `template_name="gpt"` is the public dense GPT native template alias and reports
 `resolved_native_template_name: "gpt2"` in compiled JSON while the current

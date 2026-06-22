@@ -1009,6 +1009,27 @@ def run_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "auto") -> int
     raise RuntimeError(f"Native GPT runner unavailable: {status.reason}")
 
 
+def exec_native_gpt2(config: NativeGpt2RunConfig, *, runner: str = "compiled-cli") -> int:
+    """Replace this process with a compiled native GPT runner."""
+
+    status = native_gpt2_runner_status(runner)
+    if status.resolved == "compiled-cli":
+        if not status.available:
+            raise RuntimeError(f"Native GPT compiled CLI requested but unavailable: {status.reason}")
+        argv = config.compiled_cli_argv()
+        os.execvpe(argv[0], argv, _native_gpt2_subprocess_env(config))
+        return 127
+    if status.resolved == "launcher":
+        if not status.available:
+            raise RuntimeError(f"Native GPT launcher requested but unavailable: {status.reason}")
+        argv = config.launcher_argv()
+        os.execvpe(argv[0], argv, _native_gpt2_subprocess_env(config))
+        return 127
+    raise RuntimeError(
+        f"Native GPT exec handoff requires compiled-cli or launcher runner, got {status.resolved!r}"
+    )
+
+
 def _native_gpt2_subprocess_env(config: NativeGpt2RunConfig) -> dict[str, str]:
     env = os.environ.copy()
     if str(config.cuda_visible_devices or "").strip():

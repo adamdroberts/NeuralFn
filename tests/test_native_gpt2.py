@@ -20,6 +20,7 @@ from neuralfn.native_gpt import (
     NativeGptRunConfig,
     NativeGptRunnerStatus,
     build_native_gpt_compiled_cli_run_config,
+    exec_native_gpt,
     native_gpt_activation,
     native_gpt_encoding_vocab_size,
     native_gpt_kernel_backend,
@@ -33,6 +34,7 @@ from neuralfn.native_gpt2 import (
     NativeGpt2RunConfig,
     build_native_gpt2_compiled_cli_run_config,
     build_native_gpt2_run_config,
+    exec_native_gpt2,
     latest_native_gpt2_checkpoint,
     native_gpt2_activation,
     native_gpt2_parameter_count,
@@ -1710,6 +1712,75 @@ def test_native_gpt2_compiled_cli_runner_executes_cli(
     assert "CUDA_VISIBLE_DEVICES=0" in env_lines
     assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in env_lines
     assert "CUDA_MODULE_LOADING=LAZY" in env_lines
+
+
+def test_native_gpt_exec_handoff_uses_compiled_cli_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = tmp_path / "nfn_gpt_native_train"
+    cli.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    cli.chmod(0o755)
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", str(cli))
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.delenv("CUDA_DEVICE_MAX_CONNECTIONS", raising=False)
+    monkeypatch.delenv("CUDA_MODULE_LOADING", raising=False)
+    calls: list[tuple[str, list[str], dict[str, str]]] = []
+
+    def fake_execvpe(file: str, args: list[str], env: dict[str, str]) -> None:
+        calls.append((file, list(args), dict(env)))
+
+    monkeypatch.setattr(native_gpt2_module.os, "execvpe", fake_execvpe)
+    cfg = build_native_gpt2_compiled_cli_run_config(
+        dataset_alias=str(tmp_path / "dataset"),
+        executable=None,
+        output_dir=tmp_path / "gpt",
+        eval_every_steps=250,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        max_steps=1,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        num_layers=12,
+        activation="gelu",
+    )
+
+    assert exec_native_gpt2(cfg, runner="compiled-cli") == 127
+    generic_cfg = build_native_gpt_compiled_cli_run_config(
+        dataset_alias=str(tmp_path / "dataset"),
+        executable=None,
+        output_dir=tmp_path / "gpt",
+        eval_every_steps=250,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        max_steps=1,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        num_layers=12,
+        activation="gelu",
+    )
+    assert exec_native_gpt(generic_cfg, runner="compiled-cli") == 127
+
+    assert len(calls) == 2
+    for file, args, env in calls:
+        assert file == str(cli)
+        assert args[:4] == [str(cli), "--model-family", "gpt", "--dataset-alias"]
+        assert "--train-transformer-lm" in args
+        assert env["CUDA_VISIBLE_DEVICES"] == "0"
+        assert env["CUDA_DEVICE_MAX_CONNECTIONS"] == "1"
+        assert env["CUDA_MODULE_LOADING"] == "LAZY"
 
 
 def test_native_gpt2_cpp_launcher_builds_and_execs(tmp_path: Path) -> None:

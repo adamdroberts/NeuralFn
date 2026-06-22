@@ -36,6 +36,8 @@ _LAZY_EXPORTS = {
     "build_native_gpt_run_config": ("native_gpt", "build_native_gpt_run_config"),
     "build_native_gpt2_compiled_cli_run_config": ("native_gpt2", "build_native_gpt2_compiled_cli_run_config"),
     "build_native_gpt2_run_config": ("native_gpt2", "build_native_gpt2_run_config"),
+    "exec_native_gpt": ("native_gpt", "exec_native_gpt"),
+    "exec_native_gpt2": ("native_gpt2", "exec_native_gpt2"),
     "is_native_gpt_checkpoint": ("native_gpt", "is_native_gpt_checkpoint"),
     "is_native_gpt2_checkpoint": ("native_gpt2", "is_native_gpt2_checkpoint"),
     "latest_native_gpt_checkpoint": ("native_gpt", "latest_native_gpt_checkpoint"),

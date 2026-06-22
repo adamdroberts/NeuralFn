@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `exec_native_gpt(config, runner="compiled-cli")` and compatibility
+  `exec_native_gpt2(config, runner="compiled-cli")` to the public Python SDK.
+  These functions apply the same native CUDA environment defaults as
+  `run_native_gpt(...)`, then replace the current Python process with the
+  compiled GPT CLI or launcher via `execvpe`. They give SDK launchers the same
+  no-parent-process handoff used by the native CLI wrappers while preserving
+  the existing `run_native_gpt(...)` return-code API for callers that need it.
+
+  Verification: focused SDK runner/no-Torch verifier pytest, full
+  `tools/check_native_no_torch_deps.py --skip-artifacts --json`, and
+  `git diff --check`.
+
 - Extended `tools/check_native_no_torch_deps.py` to include direct
   `cli/scripts/train_gpt_native.py --tinystories --native-cuda-dry-run
   --native-cuda-print-command --native-cuda-no-checkpoint` coverage. The native
