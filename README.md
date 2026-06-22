@@ -1262,6 +1262,16 @@ Use `NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=m,n,k,opA,opB` or
 `NFN_TILE_CUDA_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=...` for narrower paired
 bisection when a single BF16/BF16 dWeight+bias shape should use the split
 dWeight plus separate bias reducer route without disabling BGRADB globally.
+The split route's separate Tile bias reducer keeps a default 512-row reduction
+chunk. Set `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`,
+`NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`, or
+`NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N` only for paired
+diagnostics, and use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linear_bias_row_chunk_256`
+or `linear_bias_row_chunk_1024` to benchmark candidate chunk sizes. Native
+training JSON reports `block_state_layout.linear_backward_bias_row_chunk_size`.
+The current default remains `512`: short dedicated RTX 5090 checks showed `256`
+improving target block buckets but failing the default train-loop gate, while
+`1024` regressed the focused block-backward gates.
 
 The current default `lm_head_ce_backward_strategy` value supersedes older notes
 in the long Tile ABI paragraph: expect

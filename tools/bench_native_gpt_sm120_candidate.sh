@@ -132,6 +132,12 @@ case "${CANDIDATE_PROFILE,,}" in
   "layernorm_affine_row_chunk_512"|"layernorm-affine-row-chunk-512"|"ln_affine_row_chunk_512"|"ln-affine-row-chunk-512")
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=512"
     ;;
+  "linear_bias_row_chunk_256"|"linear-bias-row-chunk-256"|"bgrad_row_chunk_256"|"bgrad-row-chunk-256")
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=256"
+    ;;
+  "linear_bias_row_chunk_1024"|"linear-bias-row-chunk-1024"|"bgrad_row_chunk_1024"|"bgrad-row-chunk-1024")
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=1024"
+    ;;
   "lm_head_logits_bf16_fallback_32768"|"lm-head-logits-bf16-fallback-32768")
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N"
     ;;
@@ -258,7 +264,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   *)
     echo "Unknown NFN_SM120_NATIVE_CANDIDATE_PROFILE: $CANDIDATE_PROFILE" >&2
-    echo "Known profiles: lm_head_tk_dinput_32768, lm_head_cublaslt_dhidden_32768, lm_head_dhidden_fast16bf_32768, lm_head_tk_dweight_32768, mlp_proj_tk_dweight_65536, layernorm_affine_row_chunk_128, layernorm_affine_row_chunk_512, lm_head_logits_bf16_fallback_32768, qkv_forward_bf16_fallback_65536, ce_bf16_threads_512, lm_head_ce_vec8_io, lm_head_ce_vec8_normal_store, lm_head_ce_scalar_streaming_store, lm_head_ce_default_specialized, lm_head_loss_bins, lm_head_row_loss_sum_accumulate, cublaslt_min_waves, cublaslt_max_waves, cublaslt_grouped_probe, tk_dgelu_dinput, tk_dgelu_approx_tanh, attention_atomic_dq, bf16_attention_grad_out, bf16_attention_dprep_grad_out, mlp_proj_dinput_before_dweight, mlp_fc_dinput_before_dweight, attn_proj_dinput_before_dweight, lm_head_fused_loss_backward_off, tk_forward_no_n96, cuda_device_max_connections_1, combined_device_arena, qkv_concurrent_dinput_dweight, mlp_fc_concurrent_dinput_dweight, attn_proj_concurrent_dinput_dweight, lm_head_concurrent_dhidden_dweight, lm_head_dweight_before_dhidden, lm_head_pipeline_chunks, lm_head_overlap_last_dweight, lm_head_row_chunk_65536, lm_head_full_resident_reuse, lm_head_cooperative_backward, lm_head_cooperative_backward_required, lm_head_cooperative_loss_bins, token_weight_vector4_strided, token_weight_threaded, token_weight_fast_int32, token_weight_two_pass_bf16" >&2
+    echo "Known profiles: lm_head_tk_dinput_32768, lm_head_cublaslt_dhidden_32768, lm_head_dhidden_fast16bf_32768, lm_head_tk_dweight_32768, mlp_proj_tk_dweight_65536, layernorm_affine_row_chunk_128, layernorm_affine_row_chunk_512, linear_bias_row_chunk_256, linear_bias_row_chunk_1024, lm_head_logits_bf16_fallback_32768, qkv_forward_bf16_fallback_65536, ce_bf16_threads_512, lm_head_ce_vec8_io, lm_head_ce_vec8_normal_store, lm_head_ce_scalar_streaming_store, lm_head_ce_default_specialized, lm_head_loss_bins, lm_head_row_loss_sum_accumulate, cublaslt_min_waves, cublaslt_max_waves, cublaslt_grouped_probe, tk_dgelu_dinput, tk_dgelu_approx_tanh, attention_atomic_dq, bf16_attention_grad_out, bf16_attention_dprep_grad_out, mlp_proj_dinput_before_dweight, mlp_fc_dinput_before_dweight, attn_proj_dinput_before_dweight, lm_head_fused_loss_backward_off, tk_forward_no_n96, cuda_device_max_connections_1, combined_device_arena, qkv_concurrent_dinput_dweight, mlp_fc_concurrent_dinput_dweight, attn_proj_concurrent_dinput_dweight, lm_head_concurrent_dhidden_dweight, lm_head_dweight_before_dhidden, lm_head_pipeline_chunks, lm_head_overlap_last_dweight, lm_head_row_chunk_65536, lm_head_full_resident_reuse, lm_head_cooperative_backward, lm_head_cooperative_backward_required, lm_head_cooperative_loss_bins, token_weight_vector4_strided, token_weight_threaded, token_weight_fast_int32, token_weight_two_pass_bf16" >&2
     exit 2
     ;;
 esac
@@ -306,10 +312,16 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
         MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"
         case "${STAGE_TIMING,,}" in
           "1"|"true"|"yes"|"on")
-            MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.total_ms=1.000"
+            candidate_gate_text="$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN $NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB $CANDIDATE_ENV_RAW $CANDIDATE_EXTRA_ARGS_RAW"
+            case "$candidate_gate_text" in
+              *LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE*|*linear_backward_bias_row_chunk_size*)
+                ;;
+              *)
+                MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.total_ms=1.000"
+                ;;
+            esac
             MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.total_ms=1.000"
             MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.total_ms=1.000"
-            candidate_gate_text="$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN $NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB $CANDIDATE_ENV_RAW $CANDIDATE_EXTRA_ARGS_RAW"
             case "$candidate_gate_text" in
               *CE_BF16*|*ce_bf16*|*LM_HEAD_CE*|*lm_head_ce*)
                 MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.ce.total_ms=1.000"
@@ -342,6 +354,12 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
             case "$candidate_gate_text" in
               *MLP_PROJ_TK_DWEIGHT*|*mlp_proj_tk_dweight*|*3072,768,65536,N,T*)
                 MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.dweight_bias.total_ms=1.000"
+                ;;
+            esac
+            case "$candidate_gate_text" in
+              *LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE*|*linear_backward_bias_row_chunk_size*)
+                MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.dweight_bias.total_ms=1.000"
+                MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_fc.dweight_bias.total_ms=1.000"
                 ;;
             esac
             case "$candidate_gate_text $CANDIDATE_TILE_OPS_BUILD_FLAGS" in

@@ -254,6 +254,23 @@ std::int64_t resolved_layer_norm_affine_row_chunk_size() {
     return static_cast<std::int64_t>(parsed);
 }
 
+std::int64_t resolved_linear_backward_bias_row_chunk_size() {
+    const std::string raw =
+        env_or_empty_any({"NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE",
+                          "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE",
+                          "NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE"});
+    constexpr std::int64_t kDefaultRowChunkSize = 512;
+    if (raw.empty()) {
+        return kDefaultRowChunkSize;
+    }
+    char* end = nullptr;
+    const long long parsed = std::strtoll(raw.c_str(), &end, 10);
+    if (end == raw.c_str() || (end != nullptr && *end != '\0') || parsed <= 0) {
+        return kDefaultRowChunkSize;
+    }
+    return static_cast<std::int64_t>(parsed);
+}
+
 bool packed_qkv_attention_default_enabled() {
     const std::string value =
         env_or_empty_any({"NFN_NATIVE_GPT_PACKED_QKV_ATTENTION", "NFN_NATIVE_GPT2_PACKED_QKV_ATTENTION"});
@@ -21014,6 +21031,8 @@ int run_transformer_lm_training_json(
         << "    \"linear_bias_gradient_accumulation_direct\": true,\n"
         << "    \"linear_bias_gradient_scratch_buffers_allocated\": false,\n"
         << "    \"linear_bias_gradient_microbatch_full_copy_elided\": true,\n"
+        << "    \"linear_backward_bias_row_chunk_size\": "
+        << resolved_linear_backward_bias_row_chunk_size() << ",\n"
         << "    \"position_gradient_accumulation_direct\": true,\n"
         << "    \"position_gradient_scratch_buffer_allocated\": false,\n"
         << "    \"position_gradient_microbatch_full_copy_elided\": true,\n"

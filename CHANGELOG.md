@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a tunable Tile CUDA linear-bias row-chunk diagnostic for native dense
+  GPT block dWeight+bias fallback/reduction paths. The Tile ops library now
+  reads `NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE`,
+  `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE`, or the GPT2-prefixed
+  alias, and native training JSON reports
+  `block_state_layout.linear_backward_bias_row_chunk_size`. The SM120 paired
+  wrapper exposes `linear_bias_row_chunk_256` and
+  `linear_bias_row_chunk_1024`, and `paired_kernel_speed.py` now treats the
+  nested runtime value as route proof. The default remains `512`: a focused
+  2-step, 2-sample dedicated RTX 5090 gate showed `256` improving the target
+  block buckets (`0.999220x` block backward, `0.998559x` MLP projection
+  dWeight+bias, `0.999280x` MLP FC dWeight+bias), but the default automatic
+  gate rerun still failed on train-loop noise at `1.000970x`. The `1024`
+  profile was rejected more clearly (`1.001730x` train-loop, `1.002737x`
+  block backward, `1.000599x` MLP FC dWeight+bias).
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; ran
+  `tests/test_native_gpt2.py` (`70 passed, 1 skipped`) before the paired-speed
+  route-detector edit, then reran the focused source/wrapper tests and both
+  dedicated RTX 5090 same-script candidate benchmarks.
+
 - Added `--native-cuda-startup-only` as a high-level alias for native GPT
   training commands. `nfn train`, `train_gpt.py`, and guarded legacy direct
   scripts normalize it to the compiled C++ `--startup-only` flag before

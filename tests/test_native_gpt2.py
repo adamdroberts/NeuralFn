@@ -1082,6 +1082,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     bench_source = (root / "tools" / "bench_native_gpt_sm120_candidate.sh").read_text(
         encoding="utf-8"
     )
+    speed_source = (root / "tools" / "paired_kernel_speed.py").read_text(encoding="utf-8")
 
     expected_profiles = {
         "bf16_attention_grad_out": "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1",
@@ -1091,6 +1092,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "attn_proj_dinput_before_dweight": "NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1",
         "lm_head_fused_loss_backward_off": "NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0",
         "mlp_proj_tk_dweight_65536": "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T",
+        "linear_bias_row_chunk_256": "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=256",
+        "linear_bias_row_chunk_1024": "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=1024",
     }
     for profile, env_assignment in expected_profiles.items():
         assert profile in bench_source
@@ -1101,11 +1104,13 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "stage.block_backward.attn_sdpa.to_qkv.total_ms=1.000",
         "stage.block_backward.mlp_proj.dinput.total_ms=1.000",
         "stage.block_backward.mlp_proj.dweight_bias.total_ms=1.000",
+        "stage.block_backward.mlp_fc.dweight_bias.total_ms=1.000",
         "stage.block_backward.mlp_fc.total_ms=1.000",
         "stage.block_backward.attn_proj.total_ms=1.000",
         "stage.lm_head_backward.ce.total_ms=1.000",
     ]:
         assert gated_metric in bench_source
+    assert "block_state_layout.linear_backward_bias_row_chunk_size" in speed_source
 
 
 def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path: Path) -> None:
@@ -4172,6 +4177,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "linear_bias_gradient_accumulation_direct": True,
         "linear_bias_gradient_scratch_buffers_allocated": False,
         "linear_bias_gradient_microbatch_full_copy_elided": True,
+        "linear_backward_bias_row_chunk_size": 512,
         "position_gradient_accumulation_direct": True,
         "position_gradient_scratch_buffer_allocated": False,
         "position_gradient_microbatch_full_copy_elided": True,
@@ -5615,9 +5621,15 @@ def test_large_row_reduction_fallbacks_use_tiled_dweight_and_shared_bias_chunks(
     assert "kLayerNormBackwardAffineDefaultRowChunkSize = 256" in kernels_text
     assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in gpt2_source_text
     assert '\\"layer_norm_backward_affine_row_chunk_size\\"' in gpt2_source_text
+    assert '\\"linear_backward_bias_row_chunk_size\\"' in gpt2_source_text
     assert "NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in kernels_text
     assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in kernels_text
     assert "kLinearBackwardBiasRowChunkSize = 512" in kernels_text
+    assert "linear_backward_bias_row_chunk_size()" in kernels_text
+    assert "NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE" in kernels_text
+    assert "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE" in kernels_text
+    assert "NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE" in kernels_text
+    assert "resolved_linear_backward_bias_row_chunk_size" in gpt2_source_text
     for function_name in (
         "launch_layer_norm_backward_affine_float32",
         "launch_layer_norm_backward_affine_accumulate_float32",
@@ -5641,7 +5653,7 @@ def test_large_row_reduction_fallbacks_use_tiled_dweight_and_shared_bias_chunks(
         "launch_linear_backward_bias_accumulate_float32",
     ):
         function_body = kernels_text.rsplit(f"void {function_name}(", 1)[1].split("\nvoid ", 1)[0]
-        assert "kRowChunkSize = kLinearBackwardBiasRowChunkSize" in function_body
+        assert "kRowChunkSize = linear_backward_bias_row_chunk_size()" in function_body
         assert "kRowChunkSize = 256" not in function_body
 
 

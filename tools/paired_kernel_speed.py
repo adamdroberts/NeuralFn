@@ -233,6 +233,10 @@ NATIVE_METRIC_PATHS = (
         "block_state_layout.layer_norm_backward_affine_row_chunk_size",
         ("block_state_layout", "layer_norm_backward_affine_row_chunk_size"),
     ),
+    (
+        "block_state_layout.linear_backward_bias_row_chunk_size",
+        ("block_state_layout", "linear_backward_bias_row_chunk_size"),
+    ),
 )
 NATIVE_ROUTE_COUNTER_KEYS = (
     "linear_tk_gemm_count",
@@ -264,6 +268,7 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "lm_head_classifier_last_vocab",
     "lm_head_classifier_last_row_stride",
     "block_state_layout.layer_norm_backward_affine_row_chunk_size",
+    "block_state_layout.linear_backward_bias_row_chunk_size",
     "linear_bf16_a_pack_count",
     "linear_bf16_a_cache_hit_count",
     "attention_forward_tk_launch_count",
@@ -330,6 +335,7 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "block_backward_qkv_concurrent_dinput_dweight_enabled",
     "block_backward_attn_proj_concurrent_dinput_dweight_requested",
     "block_backward_attn_proj_concurrent_dinput_dweight_enabled",
+    "block_state_layout.linear_backward_bias_row_chunk_size",
     "attention_backend_strategy",
     "attention_backward_strategy",
     "device_allocator_strategy",
