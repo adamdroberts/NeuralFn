@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `cli/scripts/train_gpt_native.py` now accepts `--model-family nanogpt`
+  directly. The wrapper canonicalizes that selector to the shared dense GPT
+  native C++ trainer (`model_family: "gpt"`) and injects
+  `--template-name nanogpt` unless the caller supplied a template or custom
+  graph selector, matching the top-level `nfn train --base-model nanogpt`
+  behavior.
+
+  Verification: focused direct-wrapper pytest.
+
 - Retested the default-off `qkv_concurrent_dinput_dweight` SM120 candidate
   against the current packed-QKV dense GPT default. The route changed as
   intended (`block_backward_qkv_concurrent_dinput_dweight_enabled: true`) but

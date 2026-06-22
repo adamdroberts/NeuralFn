@@ -86,6 +86,16 @@ def _write_uint16_shard_dataset(root: Path) -> Path:
     return dataset_path
 
 
+def _load_train_gpt_native_script_module():
+    root = Path(__file__).resolve().parents[1]
+    script = root / "cli" / "scripts" / "train_gpt_native.py"
+    spec = importlib.util.spec_from_file_location("train_gpt_native_direct_test", script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _write_native_checkpoint(path: Path, *, step: int | None = None, version: int = 5) -> Path:
     max_seq_len = 8
     vocab_size = 16
@@ -1218,6 +1228,34 @@ def test_build_native_gpt2_compiled_cli_config_canonicalizes_dense_gpt_family(tm
     assert cfg.model_family == "gpt"
     assert argv[argv.index("--model-family") + 1] == "gpt"
     assert argv[argv.index("--train-seq-len") + 1] == "2048"
+
+
+def test_train_gpt_native_direct_wrapper_accepts_nanogpt_selector(capsys) -> None:
+    module = _load_train_gpt_native_script_module()
+
+    rc = module.main(
+        [
+            "--model-family",
+            "nanogpt",
+            "--dataset-alias",
+            "/tmp/native-cache",
+            "--native-cuda-dry-run",
+            "--native-cuda-print-command",
+            "--eval-every-steps",
+            "1000",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "Native CUDA model family: gpt" in captured.out
+    assert "Native CUDA template: nanogpt" in captured.out
+    assert "--model-family gpt" in captured.out
+    assert "--template-name nanogpt" in captured.out
+    assert "--dataset-alias /tmp/native-cache" in captured.out
+    assert "--eval-every-steps 1000" in captured.out
+    assert "--train-transformer-lm" in captured.out
+    assert "--base-model" not in captured.out
 
 
 def test_build_native_gpt2_compiled_cli_config_maps_gpt2_moa_template_to_native_activation(tmp_path: Path) -> None:

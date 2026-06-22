@@ -279,11 +279,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--model-family",
         "--base-model",
         "--model",
-        choices=("gpt", "gpt2", "gpt3"),
+        choices=("gpt", "gpt2", "gpt3", "nanogpt"),
         default=env_str("MODEL_FAMILY", env_str("BASE_MODEL", NATIVE_GPT_DEFAULTS["model_family"])),
         help=(
             "Dense GPT family label for native metadata and defaults. gpt3 uses the same native GPT "
-            "kernel family and defaults to a 2048 context only when no template, graph, or seq len is supplied."
+            "kernel family and defaults to a 2048 context only when no template, graph, or seq len is supplied. "
+            "nanogpt selects the shared dense GPT trainer with the nanogpt template."
         ),
     )
     parser.add_argument("--run-id", default=env_str("RUN_ID", NATIVE_GPT_DEFAULTS["run_id"]))
@@ -461,7 +462,9 @@ def main(argv: list[str] | None = None) -> int:
         args._seq_len_explicit = explicit_seq_len
     args._batch_size_explicit = explicit_batch_size
     args._num_layers_explicit = explicit_num_layers
-    args.model_family = "gpt" if model_selector in {"gpt", "gpt2", "gpt3"} else model_selector
+    if model_selector == "nanogpt" and not explicit_template and not explicit_graph:
+        args.template_name = "nanogpt"
+    args.model_family = "gpt" if model_selector in {"gpt", "gpt2", "gpt3", "nanogpt"} else model_selector
     _apply_dataset_shortcuts(args)
     encoding_name = _resolve_tokenizer(args)
     if not str(args.output or "").strip():
