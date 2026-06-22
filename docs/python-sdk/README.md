@@ -122,8 +122,10 @@ Compiled plan and runtime JSON also report `architecture_source`,
 `resolved_native_template_name`, making the template or graph the architecture
 source of truth. The compatibility
 `NativeGpt2RunConfig` and `build_native_gpt2_*` helpers now canonicalize dense
-GPT selectors to `model_family="gpt"`; pass `template_name` or `graph_file` for
-architecture selection instead of keying off the model-family label.
+GPT selectors to `model_family="gpt"`; `model_family="nanogpt"` resolves the
+default template to `nanogpt` unless a graph or non-default template is supplied.
+Pass `template_name` or `graph_file` for explicit architecture selection instead
+of keying off the model-family label.
 `build_native_gpt_compiled_cli_run_config()` and the GPT-2 compatibility helper
 preserve `eval_every_steps=0`, `sample_every_steps=0`, and
 `checkpoint_every_steps=0` as explicit disabled cadences, matching the compiled
@@ -134,10 +136,11 @@ New code should import `neuralfn.native_gpt` for generic dense GPT names:
 `build_native_gpt_run_config()`, `run_native_gpt()`, and related checkpoint/
 resolver helpers delegate to the same GPT-compatible native implementation
 without importing Torch and prefer the generic `_native_gpt` C++ module when it
-is installed. CLI users can select `--base-model gpt`, `gpt2`, or
-`gpt3`; `gpt3` defaults to a 2048-token context only when no template, graph,
-or explicit sequence length was supplied. Otherwise the template/custom graph
-still determines the architecture, context window, and unsupported-native status.
+is installed. CLI users can select `--base-model gpt`, `gpt2`, `gpt3`, or
+`nanogpt`; SDK callers can use matching `model_family` values. `gpt3` defaults
+to a 2048-token context only when no template, graph, or explicit sequence length
+was supplied. Otherwise the template/custom graph still determines the
+architecture, context window, and unsupported-native status.
 The composed-spec SDK path mirrors this: `build_composed_lm_spec()` accepts
 `base_model="gpt"`, `"gpt2"`, or `"gpt3"` and canonicalizes all three through
 the GPT-compatible template builder.

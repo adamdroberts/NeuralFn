@@ -1229,6 +1229,62 @@ def test_build_native_gpt2_compiled_cli_config_canonicalizes_dense_gpt_family(tm
     assert argv[argv.index("--model-family") + 1] == "gpt"
     assert argv[argv.index("--train-seq-len") + 1] == "2048"
 
+    nanogpt_cfg = build_native_gpt_compiled_cli_run_config(
+        dataset_alias="cached-shards",
+        executable="/opt/nfn/train_gpt2cu",
+        output_dir=tmp_path / "nanogpt",
+        eval_every_steps=1000,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=20000,
+        num_layers=12,
+        activation="gelu",
+        model_family="nanogpt",
+    )
+
+    nanogpt_argv = nanogpt_cfg.compiled_cli_argv("/opt/nfn/nfn_gpt_native_train")
+
+    assert isinstance(nanogpt_cfg, NativeGptRunConfig)
+    assert nanogpt_cfg.model_family == "gpt"
+    assert nanogpt_cfg.template_name == "nanogpt"
+    assert nanogpt_argv[nanogpt_argv.index("--model-family") + 1] == "gpt"
+    assert nanogpt_argv[nanogpt_argv.index("--template-name") + 1] == "nanogpt"
+
+    nanogpt_graph_cfg = build_native_gpt2_compiled_cli_run_config(
+        dataset_alias="cached-shards",
+        executable="/opt/nfn/train_gpt2cu",
+        output_dir=tmp_path / "nanogpt-graph",
+        eval_every_steps=1000,
+        sample_every_steps=20000,
+        generate_tokens=144,
+        checkpoint_every_steps=200,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=20000,
+        num_layers=12,
+        activation="gelu",
+        model_family="nanogpt",
+        graph_file="/tmp/custom-gpt.json",
+    )
+
+    assert isinstance(nanogpt_graph_cfg, NativeGpt2RunConfig)
+    assert nanogpt_graph_cfg.model_family == "gpt"
+    assert nanogpt_graph_cfg.template_name == "gpt"
+    assert nanogpt_graph_cfg.graph_file == "/tmp/custom-gpt.json"
+
 
 def test_train_gpt_native_direct_wrapper_accepts_nanogpt_selector(capsys) -> None:
     module = _load_train_gpt_native_script_module()

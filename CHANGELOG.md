@@ -11,9 +11,12 @@ Future updates should append new entries here rather than replacing older notes.
   selector to the shared dense GPT native C++ trainer (`model_family: "gpt"`)
   and inject `--template-name nanogpt` unless the caller supplied a template or
   custom graph selector, matching the top-level `nfn train --base-model
-  nanogpt` behavior.
+  nanogpt` behavior. The `neuralfn.native_gpt` and compatibility
+  `neuralfn.native_gpt2` SDK config helpers now accept the same model-family
+  selector and resolve the default template to `nanogpt`.
 
-  Verification: focused direct-wrapper pytest and compiled C++ plan coverage.
+  Verification: focused direct-wrapper pytest, SDK config assertions, and
+  compiled C++ plan coverage.
 
 - Retested the default-off `qkv_concurrent_dinput_dweight` SM120 candidate
   against the current packed-QKV dense GPT default. The route changed as

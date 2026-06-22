@@ -388,9 +388,22 @@ def native_gpt2_encoding_vocab_size(encoding_name: str) -> int:
 
 def _canonical_native_gpt2_model_family(model_family: str | None) -> str:
     normalized = str(model_family or "gpt").strip().lower().replace("_", "-")
-    if normalized not in {"gpt", "gpt2", "gpt3"}:
-        raise ValueError("native GPT model_family must be one of: gpt, gpt2, gpt3")
+    if normalized not in {"gpt", "gpt2", "gpt3", "nanogpt"}:
+        raise ValueError("native GPT model_family must be one of: gpt, gpt2, gpt3, nanogpt")
     return "gpt"
+
+
+def _native_gpt2_template_for_model_family(
+    *,
+    model_family: str | None,
+    template_name: str | None,
+    graph_file: str | None,
+) -> str:
+    normalized_model = str(model_family or "gpt").strip().lower().replace("_", "-")
+    normalized_template = _normalize_native_gpt2_template_name(template_name)
+    if normalized_model == "nanogpt" and normalized_template == "gpt" and not str(graph_file or "").strip():
+        return "nanogpt"
+    return normalized_template
 
 
 def native_gpt2_parameter_count(
@@ -687,6 +700,11 @@ def build_native_gpt2_run_config(
     )
     lr = float(learning_rate)
     final_lr_fraction = 0.0 if min_lr is None else max(0.0, min(float(min_lr) / lr, 1.0))
+    resolved_template_name = _native_gpt2_template_for_model_family(
+        model_family=model_family,
+        template_name=template_name,
+        graph_file=graph_file,
+    )
     cfg = NativeGpt2RunConfig(
         executable=resolve_native_gpt2_executable(executable),
         train_data=str(train_data),
@@ -710,7 +728,7 @@ def build_native_gpt2_run_config(
         warmup_steps=int(warmup_steps),
         weight_decay=float(weight_decay),
         max_steps=int(max_steps),
-        activation=_native_gpt2_activation_for_template(template_name, activation),
+        activation=_native_gpt2_activation_for_template(resolved_template_name, activation),
         moa_interval=int(moa_interval),
         kernel_backend=native_gpt2_kernel_backend(kernel_backend),
         tile_ops_lib=str(tile_ops_lib or ""),
@@ -732,7 +750,7 @@ def build_native_gpt2_run_config(
         seq_len_explicit=bool(seq_len_explicit),
         num_layers_explicit=bool(num_layers_explicit),
         dataset_alias=str(dataset_path),
-        template_name=_normalize_native_gpt2_template_name(template_name),
+        template_name=resolved_template_name,
         graph_file=str(graph_file or ""),
         write_checkpoint=bool(write_checkpoint),
     )
@@ -792,6 +810,11 @@ def build_native_gpt2_compiled_cli_run_config(
     lr = float(learning_rate)
     final_lr_fraction = 0.0 if min_lr is None else max(0.0, min(float(min_lr) / lr, 1.0))
     resolved_kernel_backend = native_gpt2_kernel_backend(kernel_backend)
+    resolved_template_name = _native_gpt2_template_for_model_family(
+        model_family=model_family,
+        template_name=template_name,
+        graph_file=graph_file,
+    )
     return NativeGpt2RunConfig(
         executable=resolve_native_gpt2_cli(executable),
         train_data="",
@@ -815,7 +838,7 @@ def build_native_gpt2_compiled_cli_run_config(
         warmup_steps=int(warmup_steps),
         weight_decay=float(weight_decay),
         max_steps=int(max_steps),
-        activation=_native_gpt2_activation_for_template(template_name, activation),
+        activation=_native_gpt2_activation_for_template(resolved_template_name, activation),
         moa_interval=int(moa_interval),
         kernel_backend=resolved_kernel_backend,
         tile_ops_lib=str(tile_ops_lib or ""),
@@ -837,7 +860,7 @@ def build_native_gpt2_compiled_cli_run_config(
         seq_len_explicit=bool(seq_len_explicit),
         num_layers_explicit=bool(num_layers_explicit),
         dataset_alias=str(dataset_alias),
-        template_name=_normalize_native_gpt2_template_name(template_name),
+        template_name=resolved_template_name,
         graph_file=str(graph_file or ""),
         write_checkpoint=bool(write_checkpoint),
     )
