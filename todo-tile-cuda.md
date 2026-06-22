@@ -67,6 +67,13 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   - [ ] Implement the actual cooperative LM-head backward Tile ABI that fuses or
     co-schedules classifier dlogit production with dHidden and dWeight work
     without materializing full resident logits or routing tensors through Torch.
+    - 2026-06-22 prerequisite: the native trainer no longer treats
+      `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16` as an
+      untyped `int (*)()` probe. The function pointer now encodes the required
+      BF16 logit/dlogit chunk, u16 targets, optional row losses, BF16/float
+      hidden inputs, BF16/float token weights, dHidden, dWeight, shape metadata,
+      loss scale, dWeight beta, flags, and stream. The route remains explicitly
+      unintegrated until a Tile implementation with that contract is called.
   - 2026-06-20 promoted the row-loss reduction classifier variant to the dense
     GPT default after CUDA 13.3.33 RTX 5090 same-script gating. The new
     `nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets`

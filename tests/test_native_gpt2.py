@@ -920,6 +920,31 @@ def test_native_gpt_bf16_ce_vector_stores_reuse_vec_loads() -> None:
     assert "(vec_normal_stores && vec_loads) ? int4_u16_at" not in kernels_text
 
 
+def test_native_gpt_lm_head_cooperative_abi_is_typed_until_integrated() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
+        encoding="utf-8"
+    )
+    assert "using LmHeadClassifierBackwardCooperativeBf16U16Fn = int (*)();" not in source
+    for required_arg in [
+        "std::uint16_t* logits_bf16",
+        "const std::uint16_t* targets_u16",
+        "float* row_losses",
+        "const std::uint16_t* hidden_bf16",
+        "const float* hidden_float",
+        "const std::uint16_t* token_weight_bf16",
+        "const float* token_weight_float",
+        "float* grad_hidden",
+        "float* grad_weight",
+        "std::int64_t row_stride",
+        "float dweight_beta",
+        "int flags",
+        "void* stream",
+    ]:
+        assert required_arg in source
+    assert "const bool lm_head_cooperative_backward_route_integrated = false;" in source
+
+
 def test_build_native_gpt_compiled_cli_config_defaults_to_universal_gpt(tmp_path: Path) -> None:
     cfg = build_native_gpt_compiled_cli_run_config(
         dataset_alias="cached-shards",

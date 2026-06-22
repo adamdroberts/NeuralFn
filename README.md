@@ -537,6 +537,10 @@ Runtime JSON reports
 `lm_head_cooperative_backward_strategy`; today the strategy is
 `missing-required-sm120-parity-kernel`, so the guard is a deliberate failing
 preflight rather than a performance candidate.
+The probed symbol now has a typed C ABI contract for the eventual fused route:
+it must accept the BF16 logit/dlogit chunk, u16 targets, optional row-loss
+buffer, BF16/float hidden inputs, BF16/float token weights, dHidden, dWeight,
+shape metadata, loss scale, dWeight beta, flags, and stream.
 `NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0` (or the GPT-2 alias
 `NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD=0`) disables the default fused
 loss-accumulate+dlogits classifier path for same-script bisection, making

@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Replaced the placeholder dense GPT cooperative LM-head backward probe typedef
+  with a typed C ABI contract. The future
+  `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16` symbol now
+  has to accept the BF16 logit/dlogit chunk, u16 targets, optional row losses,
+  BF16/float hidden inputs, BF16/float token weights, dHidden, dWeight, shape
+  metadata, loss scale, dWeight beta, flags, and stream. This is a prerequisite
+  for the real cooperative classifier/dHidden/dWeight Tile route; the trainer
+  still keeps `lm_head_cooperative_backward_route_integrated: false`, so
+  `--require-cooperative-lm-head-backward` continues to fail until the route is
+  actually called.
+
+  Verification: rebuilt `build/nfn_gpt_native_train`; source-only cooperative
+  ABI regression test passed.
+
 - Fixed the dense GPT BF16 CE vector-store candidate to reuse packed vec8 BF16
   loads during the final dlogit write pass whenever vec loads are enabled. The
   previous default-off `NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1` /

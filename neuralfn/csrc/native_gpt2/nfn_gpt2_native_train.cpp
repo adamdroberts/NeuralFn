@@ -10302,7 +10302,24 @@ int run_transformer_lm_training_json(
     using LmHeadClassifierBackwardLossBinsBf16U16Fn = int (*)(
         std::uint16_t*, const std::uint16_t*, float*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t, float, void*);
-    using LmHeadClassifierBackwardCooperativeBf16U16Fn = int (*)();
+    using LmHeadClassifierBackwardCooperativeBf16U16Fn = int (*)(
+        std::uint16_t* logits_bf16,
+        const std::uint16_t* targets_u16,
+        float* row_losses,
+        const std::uint16_t* hidden_bf16,
+        const float* hidden_float,
+        const std::uint16_t* token_weight_bf16,
+        const float* token_weight_float,
+        float* grad_hidden,
+        float* grad_weight,
+        std::int64_t rows,
+        std::int64_t hidden_dim,
+        std::int64_t vocab,
+        std::int64_t row_stride,
+        float loss_scale,
+        float dweight_beta,
+        int flags,
+        void* stream);
     using AdamWManyWithDeviceScaleFn = int (*)(
         float* const*, const float* const*, const float*, float* const*, float* const*,
         const std::int64_t*, const float*, std::int64_t, std::int64_t,
