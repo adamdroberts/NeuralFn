@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked native dense GPT SM120 candidate surfaces after the CUDA 13.3 WSL
+  reinstall on the dedicated RTX 5090. The native Tile ops library and
+  compiled GPT trainer rebuilt cleanly; focused native GPT tests passed; and
+  `tools/check_native_no_torch_deps.py --skip-artifacts --json` reported all
+  native training/inference entrypoints clean. The measured candidate rechecks
+  remain rejected: `lm_head_cooperative_backward` proved the diagnostic
+  sequence-wrapper route but regressed `stage.lm_head_backward.total_ms` to
+  `1.004660x`; `lm_head_dweight_before_dhidden` changed the LM-head schedule
+  but failed train-loop and block-backward gates; and the cuBLASLt grouped
+  probe still reports grouped layout status `0` with grouped matmul execution
+  status `15`. Keep all three diagnostic/default-off; the remaining parity
+  work still needs a real fused/cooperative row-chunked LM-head backward kernel
+  or a materially different GEMM route.
+
 - Fixed the native-vs-native SM120 candidate wrapper so stage-timed attention
   candidates that auto-add `attention_backward_tk_timing_us` or
   `attention_backward_dprep_timing_us` gates also pass
