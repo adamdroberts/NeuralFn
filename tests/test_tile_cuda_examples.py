@@ -883,6 +883,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.total_ms=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.total_ms=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.total_ms=1.000"' in text
+    assert "MIN_CANDIDATE_RATIO_RAW" in text
+    assert "NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO" in text
+    assert "NFN_SM120_CANDIDATE_MIN_CANDIDATE_RATIO" in text
+    assert 'paired_args+=(--min-candidate-ratio "$item")' in text
     assert "*CE_BF16*|*ce_bf16*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.ce.total_ms=1.000"' in text
     assert "*LM_HEAD_PREPACK_BF16_HIDDEN*|*lm_head_prepack_bf16_hidden*" in text
@@ -1960,6 +1964,66 @@ def test_paired_kernel_speed_tool_fails_metric_ratio_gate_by_median() -> None:
     assert result["actual_ratio"] == 1.02
     assert result["passed"] is False
     assert "median:train_loop_wall_ms_per_step: actual_ratio=1.020000" in proc.stdout
+
+
+def test_paired_kernel_speed_tool_fails_min_metric_ratio_gate() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-min-ratio-gate.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_tokens_per_second\\\": 100.0}"
+        "}"
+    )
+    candidate_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_tokens_per_second\\\": 97.5}"
+        "}"
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+            "--min-candidate-ratio",
+            "train_tokens_per_second=1.0",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 1
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    result = payload["metric_ratio_gates"]["results"][0]
+    assert result == {
+        "metric": "train_tokens_per_second",
+        "stat": "mean",
+        "min_ratio": 1.0,
+        "actual_ratio": 0.975,
+        "actual_mean_ratio": 0.975,
+        "missing": False,
+        "passed": False,
+    }
+    assert "mean:train_tokens_per_second: actual_ratio=0.975000" in proc.stdout
+    assert "min_ratio=1.000000" in proc.stdout
+    assert "metric ratio gate failed: train_tokens_per_second" in proc.stderr
 
 
 def test_paired_kernel_speed_tool_metric_ratio_gate_fails_missing_metric() -> None:

@@ -894,7 +894,15 @@ or kernel-load cost out of the reported samples. It sets
 `--cuda-device-max-connections ""` to leave that environment unchanged. Pass
 repeatable `--baseline-env KEY=VALUE` or `--candidate-env KEY=VALUE` flags for
 environment-gated kernel candidates; these overrides apply only to that side of
-the pair and are recorded in the JSON/text output. `--command-timeout-seconds N`
+the pair and are recorded in the JSON/text output. Use repeatable
+`--max-candidate-ratio [STAT:]METRIC=RATIO` gates for hot metrics that must not
+regress, and `--min-candidate-ratio [STAT:]METRIC=RATIO` gates for metrics that
+must stay at or above baseline, such as `train_tokens_per_second` or required
+route counters; `STAT` defaults to `mean` and can be `median`, `min`, or `max`.
+The SM120 native candidate wrapper forwards
+`NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO` /
+`NFN_SM120_CANDIDATE_MIN_CANDIDATE_RATIO` the same way it forwards the existing
+max-ratio aliases. `--command-timeout-seconds N`
 terminates the timed-out command's process group so a slow native candidate does
 not leave child GPU work running after the sample is recorded. Pass
 `--require-idle-selected-gpu` when a speed test should fail before warmup or a

@@ -170,8 +170,10 @@ overrides apply only to that side of the pair and are recorded in the JSON/text
 output. Pass repeatable `--max-candidate-ratio [STAT:]METRIC=RATIO` gates when a
 candidate must not regress a hot native metric such as
 `stage.lm_head_backward.total_ms`, `stage.block_backward.total_ms`, or
-`train_loop_wall_ms_per_step`; `STAT` defaults to `mean` and can be `median`,
-`min`, or `max`, so use gates such as
+`train_loop_wall_ms_per_step`; pass `--min-candidate-ratio [STAT:]METRIC=RATIO`
+when a candidate must preserve or improve a metric such as
+`train_tokens_per_second` or a required route counter. `STAT` defaults to
+`mean` and can be `median`, `min`, or `max`, so use gates such as
 `median:train_loop_wall_ms_per_step=1.000` for noisy GPU timing. Missing metrics
 fail the gate so a stage-timing or JSON-output mistake cannot be accepted as a
 passing kernel result.
@@ -258,7 +260,11 @@ Set `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` or
 `METRIC=RATIO` gates, for example
 `stage.lm_head_backward.total_ms=1.000 train_loop_wall_ms_per_step=1.005`, so
 native candidate runs fail nonzero when they worsen the LM-head/block hot
-buckets even if total command timing looks flat.
+buckets even if total command timing looks flat. Use
+`NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO` or
+`NFN_SM120_CANDIDATE_MIN_CANDIDATE_RATIO` for lower-bound gates such as
+`train_tokens_per_second=1.000` when a candidate must meet or beat baseline
+throughput.
 When no explicit ratio list is supplied, measured candidate runs that actually
 change the candidate Tile ops library, candidate-only env, or candidate-only
 extra args now default to `train_loop_wall_ms_per_step=1.000`; if native stage

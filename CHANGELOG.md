@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added lower-bound metric gates to paired native kernel benchmarks.
+  `tools/paired_kernel_speed.py` now accepts repeatable
+  `--min-candidate-ratio [STAT:]METRIC=RATIO` checks alongside the existing
+  max-ratio gates, so same-script comparisons can fail candidates that do not
+  meet baseline throughput (`train_tokens_per_second=1.000`) or that lose a
+  required route/counter. `tools/bench_native_gpt_sm120_candidate.sh` forwards
+  the same control through `NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO` and
+  `NFN_SM120_CANDIDATE_MIN_CANDIDATE_RATIO`.
+
+  Verification: focused paired-benchmark tests cover max-gate failures,
+  median-gate failures, min-gate failures, missing metrics, and wrapper alias
+  forwarding; `python -m py_compile tools/paired_kernel_speed.py`; `bash -n
+  tools/bench_native_gpt_sm120_candidate.sh`; `git diff --check`.
+
 - Reduced train-loss logging synchronization in the dense GPT native Tile-CUDA
   trainer. When `--train-loss-every-steps` is enabled, the compiled
   transformer-LM loop now zeroes one device scalar at the start of the logged
