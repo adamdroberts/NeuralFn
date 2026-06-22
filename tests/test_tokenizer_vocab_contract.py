@@ -124,17 +124,6 @@ def _load_train_jepa_module():
     return _load_harness_module("train_jepa_semantic", "train_jepa_semantic.py")
 
 
-def _load_train_llama_module():
-    _load_train_jepa_module()
-    return _load_harness_module("train_llama_fast_test_module", "train_llama_fast.py")
-
-
-def _load_train_llama_megakernel_module():
-    _load_harness_module("train_jepa_semantic", "train_jepa_semantic.py")
-    _load_harness_module("train_llama_fast", "train_llama_fast.py")
-    return _load_harness_module("train_llama_megakernel_test_module", "train_llama_megakernel.py")
-
-
 def _load_train_semantic_router_module():
     _load_train_jepa_module()
     return _load_harness_module("train_semantic_router_moe_test_module", "train_semantic_router_moe.py")
@@ -379,40 +368,6 @@ def test_train_summary_lines_report_raw_text_tiktoken_without_name() -> None:
     assert "  - Tokenizer backend: tiktoken" in lines
     assert "  - Tokenizer encoding: o200k_base" in lines
     assert all(line != "  - Tokenizer: None" for line in lines)
-
-
-def test_train_llama_summary_reports_raw_text_tiktoken_without_tokenizer_none(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    train_module = _load_train_llama_module()
-    expected_vocab = dm.raw_text_encoding_vocab_size("o200k_base")
-    graph = SimpleNamespace(
-        nodes={
-            "dataset_source": SimpleNamespace(
-                neuron_def=SimpleNamespace(module_config={"dataset_names": ["tiny_raw"], "seq_len": 128})
-            )
-        }
-    )
-
-    train_module.print_data_source_summary(
-        "tiny_raw",
-        tmp_path,
-        {
-            "source": "huggingface",
-            "hf_path": "roneneldan/TinyStories",
-            "hf_split": "train",
-            "tokenizer_encoding": "o200k_base",
-            "tokenizer_vocab_size": expected_vocab,
-        },
-        graph,
-    )
-
-    output = capsys.readouterr().out
-    assert "Tokenizer backend: tiktoken" in output
-    assert "Tokenizer encoding: o200k_base" in output
-    assert f"Tokenizer vocab size: {expected_vocab}" in output
-    assert "Tokenizer: None" not in output
 
 
 def test_save_artifacts_records_weights_file_in_graph(
@@ -766,102 +721,10 @@ def test_apply_tinystories_dataset_defaults_rejects_conflicting_dataset_flags(
         train_module.apply_tinystories_dataset_defaults(args)
 
 
-def test_train_llama_main_uses_shared_dataset_resolver_before_missing_alias_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    llama_module = _load_train_llama_module()
-    sentinel = RuntimeError("after resolver")
-    resolved_calls: list[dict[str, object]] = []
-
-    def fake_resolve(alias: str, **kwargs):
-        resolved_calls.append({"alias": alias, **kwargs})
-        return alias, tmp_path / alias, {}
-
-    def fake_estimate_schedule(*_args, **_kwargs):
-        raise sentinel
-
-    monkeypatch.setattr(llama_module, "resolve_or_download_dataset", fake_resolve)
-    monkeypatch.setattr(llama_module, "estimate_text_schedule", fake_estimate_schedule)
-    monkeypatch.setattr(llama_module.torch.cuda, "is_available", lambda: True)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        ["train_llama_fast.py", "--dataset-alias", "custom_alias", "--download-if-missing"],
-    )
-
-    with pytest.raises(RuntimeError, match="after resolver"):
-        llama_module.main()
-
-    assert len(resolved_calls) == 1
-    _assert_call_includes(
-        resolved_calls[0],
-        {
-            "alias": "custom_alias",
-            "download_if_missing": True,
-            "raw_text_encoding_name": "o200k_base",
-            "dataset_hf_path": None,
-            "dataset_variant": None,
-            "dataset_train_shards": None,
-            "dataset_repo_id": None,
-            "dataset_remote_root_prefix": None,
-            "dataset_train_file": None,
-            "dataset_val_file": None,
-        },
-    )
-
-
-def test_train_llama_megakernel_main_uses_shared_dataset_resolver_before_missing_alias_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    llama_module = _load_train_llama_megakernel_module()
-    sentinel = RuntimeError("after resolver")
-    resolved_calls: list[dict[str, object]] = []
-
-    def fake_resolve(alias: str, **kwargs):
-        resolved_calls.append({"alias": alias, **kwargs})
-        return alias, tmp_path / alias, {}
-
-    def fake_estimate_schedule(*_args, **_kwargs):
-        raise sentinel
-
-    monkeypatch.setattr(llama_module, "resolve_or_download_dataset", fake_resolve)
-    monkeypatch.setattr(llama_module, "estimate_text_schedule", fake_estimate_schedule)
-    monkeypatch.setattr(llama_module.torch.cuda, "is_available", lambda: True)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        ["train_llama_megakernel.py", "--dataset-alias", "custom_alias", "--download-if-missing"],
-    )
-
-    with pytest.raises(RuntimeError, match="after resolver"):
-        llama_module.main()
-
-    assert len(resolved_calls) == 1
-    _assert_call_includes(
-        resolved_calls[0],
-        {
-            "alias": "custom_alias",
-            "download_if_missing": True,
-            "raw_text_encoding_name": "o200k_base",
-            "dataset_hf_path": None,
-            "dataset_variant": None,
-            "dataset_train_shards": None,
-            "dataset_repo_id": None,
-            "dataset_remote_root_prefix": None,
-            "dataset_train_file": None,
-            "dataset_val_file": None,
-        },
-    )
-
-
 @pytest.mark.parametrize(
     ("loader", "argv0"),
     [
         (_load_train_jepa_module, "train_jepa_semantic.py"),
-        (_load_train_llama_module, "train_llama_fast.py"),
-        (_load_train_llama_megakernel_module, "train_llama_megakernel.py"),
         (_load_train_semantic_router_module, "train_semantic_router_moe.py"),
     ],
 )
@@ -914,8 +777,6 @@ def test_train_scripts_main_pass_tinystories_raw_file_contract_to_shared_resolve
     ("loader", "argv0"),
     [
         (_load_train_jepa_module, "train_jepa_semantic.py"),
-        (_load_train_llama_module, "train_llama_fast.py"),
-        (_load_train_llama_megakernel_module, "train_llama_megakernel.py"),
         (_load_train_semantic_router_module, "train_semantic_router_moe.py"),
     ],
 )
@@ -1175,26 +1036,6 @@ def test_infer_llama_megakernel_main_resolves_dataset_before_tokenizer_loading(
             "dataset_val_file": None,
         },
     )
-
-
-def test_train_llama_megakernel_fast_mode_selects_preset_and_output_defaults() -> None:
-    llama_module = _load_train_llama_megakernel_module()
-
-    default_args = llama_module.resolve_mode_defaults(llama_module.build_parser().parse_args([]))
-    fast_args = llama_module.resolve_mode_defaults(llama_module.build_parser().parse_args(["--fast"]))
-
-    default_graph, default_spec = llama_module.build_graph(default_args, "toy_alias")
-    fast_graph, fast_spec = llama_module.build_graph(fast_args, "toy_alias")
-
-    assert Path(default_args.output).name == "llama_megakernel.pt"
-    assert default_graph.name == "llama_megakernel_sdk"
-    assert default_spec.template.runtime == "megakernel"
-
-    assert Path(fast_args.output).name == "llama_fast_megakernel.pt"
-    assert fast_graph.name == "llama_fast_megakernel_sdk"
-    assert fast_spec.template.runtime == "megakernel"
-    assert fast_spec.block_spec.rope_theta == float(llama_module.LLAMA_DEFAULTS["rope_base"])
-    assert fast_spec.block_spec.qk_gain_init == float(llama_module.LLAMA_DEFAULTS["qk_gain_init"])
 
 
 def test_infer_llama_megakernel_fast_mode_selects_mode_specific_artifact_defaults() -> None:

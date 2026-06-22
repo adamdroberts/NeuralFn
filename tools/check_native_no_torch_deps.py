@@ -300,6 +300,22 @@ DEFAULT_NATIVE_SHIM_IMPORT_ENTRYPOINTS = (
         ),
     ),
     (
+        "train_llama_fast_module_import",
+        (
+            sys.executable,
+            "-c",
+            "import train_llama_fast; print('train_llama_fast-import-ok')",
+        ),
+    ),
+    (
+        "train_llama_megakernel_module_import",
+        (
+            sys.executable,
+            "-c",
+            "import train_llama_megakernel; print('train_llama_megakernel-import-ok')",
+        ),
+    ),
+    (
         "train_mixllama_fast_module_import",
         (
             sys.executable,

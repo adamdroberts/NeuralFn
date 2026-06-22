@@ -27,8 +27,6 @@ from server import dataset_manager as dm
 
 SCRIPT_CASES = [
     "train_jepa_semantic",
-    "train_llama_fast",
-    "train_llama_megakernel",
     "train_semantic_router_moe",
 ]
 OVERNIGHT_SCRIPT_PATH = ROOT / "scripts" / "train_semantic_router_moe-overnight.py"

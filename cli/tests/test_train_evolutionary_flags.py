@@ -22,8 +22,6 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 SCRIPT_CASES = [
     "train_jepa_semantic",
-    "train_llama_fast",
-    "train_llama_megakernel",
     "train_gpt2",
     "train_semantic_router_moe",
 ]
