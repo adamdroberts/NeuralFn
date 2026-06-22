@@ -982,10 +982,17 @@ timing-only sample/checkpoint cadence (`NFN_SM120_PARITY_SAMPLE_EVERY=0`,
 `NFN_SM120_PARITY_CHECKPOINT_EVERY=0`) and passes
 `--train-loss-every-steps 0` to the NeuralFn side unless
 `NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS` or generic
-`NFN_SM120_TRAIN_LOSS_EVERY_STEPS` overrides it; compare
-`train_loop_wall_ms_per_step` and `train_tokens_per_second` in the native
-metrics block rather than child-process `seconds`, because the llm.kittens
-reference still performs its built-in validation passes around short runs. It
+`NFN_SM120_TRAIN_LOSS_EVERY_STEPS` overrides it. It also enables
+`NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on the NeuralFn side by default so
+the native metrics include CUDA-event training-loop fields comparable to the
+llm.kittens step log:
+`train_loop_cuda_event_wall_ms_per_step` and
+`train_loop_cuda_event_steady_state_wall_ms_per_step`. Set
+`NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0` to suppress those event records.
+Compare `train_loop_wall_ms_per_step`, the CUDA-event fields, and
+`train_tokens_per_second` in the native metrics block rather than child-process
+`seconds`, because the llm.kittens reference still performs its built-in
+validation passes around short runs. It
 also writes NeuralFn native sidecars through `--append-native-profile-json-dir`,
 defaulting to
 `/tmp/nfn_sm120_parity_profiles_${NFN_SM120_PARITY_STEPS:-10}step`; set

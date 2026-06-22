@@ -7017,6 +7017,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "steady_clock_host_wall_ms" in gpt2_source_text
     assert "setup_wall_ms" in gpt2_source_text
     assert "train_loop_wall_ms" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING" in gpt2_source_text
+    assert "train_loop_cuda_event_wall_ms_per_step" in gpt2_source_text
+    assert "train_loop_cuda_event_steady_state_wall_ms_per_step" in gpt2_source_text
     assert 'run(cuda_device_synchronize(), "train_loop.complete");' in gpt2_source_text
     assert (
         gpt2_source_text.index('run(cuda_device_synchronize(), "train_loop.complete");')

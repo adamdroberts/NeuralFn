@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT native runtime JSON now has opt-in CUDA-event training-loop timing
+  for parity attribution. Set `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` to
+  record CUDA events around the compiled training loop and report
+  `train_loop_cuda_event_wall_ms_per_step` plus
+  `train_loop_cuda_event_steady_state_wall_ms_per_step` under `timing`. The
+  implementation records events in stream order and reads them after the final
+  loop synchronize, avoiding a per-step synchronization point. The SM120
+  llm.kittens parity wrapper enables this on the NeuralFn side by default and
+  exposes `NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0` as the opt-out.
+  `tools/paired_kernel_speed.py` now extracts these fields and maps the
+  llm.kittens step log to the same metric names for direct report ratios.
+
+  Verification: focused native GPT source tests, paired-kernel metric tests,
+  shell syntax check, diff check, native rebuild, a CUDA-visible one-step route
+  smoke, and a 10-step RTX 5090 parity sample. The parity sample reported
+  NeuralFn at `1.021390x` all-step CUDA-event wall time and `1.022219x`
+  first-step-excluded CUDA-event wall time versus llm.kittens, confirming the
+  remaining gap is GPU loop work rather than host-wall measurement noise.
+
 - `tools/bench_native_gpt_sm120_parity.sh` now passes
   `--train-loss-every-steps 0` to the NeuralFn native candidate by default,
   with `NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS` and generic

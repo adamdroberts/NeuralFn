@@ -896,10 +896,16 @@ Short parity runs default to timing-only cadence with
 `--train-loss-every-steps 0` unless `NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS`
 or generic `NFN_SM120_TRAIN_LOSS_EVERY_STEPS` overrides it. This keeps short
 throughput runs from timing NeuralFn's periodic train-loss accumulation path
-while llm.kittens is configured for `-v 250` validation cadence. Compare
-`train_loop_wall_ms_per_step` and `train_tokens_per_second` under the native
-metrics summaries rather than child-process `seconds`; the llm.kittens
-reference still runs its built-in validation passes around short runs. Set
+while llm.kittens is configured for `-v 250` validation cadence. The wrapper
+also enables `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on the NeuralFn side by
+default and reports CUDA-event loop metrics such as
+`train_loop_cuda_event_wall_ms_per_step` and
+`train_loop_cuda_event_steady_state_wall_ms_per_step`; set
+`NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0` to turn that off. Compare
+`train_loop_wall_ms_per_step`, the CUDA-event loop fields, and
+`train_tokens_per_second` under the native metrics summaries rather than
+child-process `seconds`; the llm.kittens reference still runs its built-in
+validation passes around short runs. Set
 `NFN_SM120_PARITY_SAMPLE_EVERY=20000`,
 `NFN_SM120_PARITY_CHECKPOINT_EVERY=200`, and
 `NFN_SM120_PARITY_GENERATE_TOKENS=144` when deliberately reproducing the full

@@ -42,6 +42,26 @@ class MetricRatioLimit:
 NATIVE_METRIC_PATHS = (
     ("steps_completed", ("steps_completed",)),
     ("train_loop_wall_ms", ("timing", "train_loop_wall_ms")),
+    (
+        "train_loop_cuda_event_wall_ms",
+        ("timing", "train_loop_cuda_event_wall_ms"),
+    ),
+    (
+        "train_loop_cuda_event_wall_ms_per_step",
+        ("timing", "train_loop_cuda_event_wall_ms_per_step"),
+    ),
+    (
+        "train_loop_cuda_event_steady_state_wall_ms",
+        ("timing", "train_loop_cuda_event_steady_state_wall_ms"),
+    ),
+    (
+        "train_loop_cuda_event_steady_state_wall_ms_per_step",
+        ("timing", "train_loop_cuda_event_steady_state_wall_ms_per_step"),
+    ),
+    (
+        "train_loop_cuda_event_timing_enabled",
+        ("timing", "train_loop_cuda_event_timing_enabled"),
+    ),
     ("setup_wall_ms", ("timing", "setup_wall_ms")),
     ("checkpoint_wall_ms", ("timing", "checkpoint_wall_ms")),
     ("total_wall_ms", ("timing", "total_wall_ms")),
@@ -393,6 +413,10 @@ NATIVE_STRATEGY_METRIC_KEYS = (
 NATIVE_TEXT_METRIC_KEYS = (
     "train_loop_wall_ms_per_step",
     "train_loop_wall_ms",
+    "train_loop_cuda_event_wall_ms_per_step",
+    "train_loop_cuda_event_steady_state_wall_ms_per_step",
+    "train_loop_cuda_event_wall_ms",
+    "train_loop_cuda_event_steady_state_wall_ms",
     "steps_completed",
     "train_tokens_per_second",
     "llm_kittens_bf16_mfu_pct",
@@ -1081,6 +1105,12 @@ def llm_kittens_metrics_from_stdout(stdout: str) -> dict[str, float | int | str 
         metrics["status"] = "llm-kittens-step-log"
         metrics["train_loop_wall_ms"] = sum(step_ms_values)
         metrics["train_loop_wall_ms_per_step"] = mean(step_ms_values)
+        metrics["train_loop_cuda_event_wall_ms"] = sum(step_ms_values)
+        metrics["train_loop_cuda_event_wall_ms_per_step"] = mean(step_ms_values)
+        if len(step_ms_values) > 1:
+            steady_state_values = step_ms_values[1:]
+            metrics["train_loop_cuda_event_steady_state_wall_ms"] = sum(steady_state_values)
+            metrics["train_loop_cuda_event_steady_state_wall_ms_per_step"] = mean(steady_state_values)
         metrics["train_tokens_per_second"] = mean(tok_s_values)
         metrics["llm_kittens_bf16_mfu_pct"] = mean(mfu_values)
         metrics["llm_kittens_last_step_wall_ms"] = step_ms_values[-1]

@@ -9661,6 +9661,10 @@ int run_transformer_lm_training_json(
     double setup_timing_accounted_ms = 0.0;
     double setup_timing_unattributed_ms = 0.0;
     double train_loop_wall_ms = 0.0;
+    double train_loop_cuda_event_wall_ms = 0.0;
+    double train_loop_cuda_event_steady_state_wall_ms = 0.0;
+    std::int64_t train_loop_cuda_event_step_count = 0;
+    std::int64_t train_loop_cuda_event_steady_state_step_count = 0;
     double validation_wall_ms = 0.0;
     double post_train_sample_wall_ms = 0.0;
     bool post_train_diagnostic_samples_elided = false;
@@ -9669,6 +9673,11 @@ int run_transformer_lm_training_json(
     double cleanup_wall_ms = 0.0;
     double checkpoint_wall_ms = 0.0;
     double total_wall_ms = 0.0;
+    bool train_loop_cuda_event_timing_requested = false;
+    bool train_loop_cuda_event_timing_enabled = false;
+    void* train_loop_cuda_event_start = nullptr;
+    void* train_loop_cuda_event_first_step_end = nullptr;
+    void* train_loop_cuda_event_last_step_end = nullptr;
 
     const std::int64_t batch_size = cfg.batch_size;
     const std::int64_t seq_len = cfg.seq_len;
@@ -10779,6 +10788,20 @@ int run_transformer_lm_training_json(
             append_cuda_error_message(out, code, cuda_get_error_string(code));
         }
         return out.str();
+    };
+    train_loop_cuda_event_timing_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING",
+                              "NFN_NATIVE_GPT2_TRAIN_LOOP_EVENT_TIMING"}),
+            false);
+    auto destroy_train_loop_cuda_event = [&](void*& event, const std::string& label) {
+        if (event != nullptr && cuda_event_destroy != nullptr) {
+            const int status = cuda_event_destroy(event);
+            if (status != 0 && error.empty()) {
+                error = cuda_error(status, "cudaEventDestroy " + label);
+            }
+            event = nullptr;
+        }
     };
 
     run_setup_timed("setup.load_tile_ops", [&]() {
@@ -18597,7 +18620,30 @@ int run_transformer_lm_training_json(
     if (setup_timing_unattributed_ms < 0.0) {
         setup_timing_unattributed_ms = 0.0;
     }
+    train_loop_cuda_event_timing_enabled =
+        train_loop_cuda_event_timing_requested &&
+        cuda_event_create_with_flags != nullptr &&
+        cuda_event_record != nullptr &&
+        cuda_event_elapsed_time != nullptr &&
+        cuda_event_destroy != nullptr &&
+        !cfg.startup_only &&
+        cfg.max_steps > 0;
+    if (train_loop_cuda_event_timing_enabled && error.empty()) {
+        int status = cuda_event_create_with_flags(&train_loop_cuda_event_start, 0);
+        if (status == 0) {
+            status = cuda_event_create_with_flags(&train_loop_cuda_event_first_step_end, 0);
+        }
+        if (status == 0) {
+            status = cuda_event_create_with_flags(&train_loop_cuda_event_last_step_end, 0);
+        }
+        if (status != 0) {
+            error = cuda_error(status, "cudaEventCreateWithFlags train_loop_cuda_event_timing");
+        }
+    }
     if (!cfg.startup_only) {
+        if (train_loop_cuda_event_timing_enabled && error.empty()) {
+            run(cuda_event_record(train_loop_cuda_event_start, nullptr), "train_loop.cuda_event.start");
+        }
         for (std::int64_t step = 1; step <= cfg.max_steps && error.empty(); ++step) {
             const bool should_run_validation =
                 cfg.eval_every_steps > 0 && (step % cfg.eval_every_steps) == 0;
@@ -18605,6 +18651,16 @@ int run_transformer_lm_training_json(
                 cfg.train_loss_every_steps > 0 && (step % cfg.train_loss_every_steps) == 0;
             const double train_loss_sum = forward_backward_update(step, should_record_train_loss);
             if (error.empty()) {
+                if (train_loop_cuda_event_timing_enabled) {
+                    if (step == 1) {
+                        run(cuda_event_record(train_loop_cuda_event_first_step_end, nullptr),
+                            "train_loop.cuda_event.first_step_end");
+                    }
+                    if (error.empty()) {
+                        run(cuda_event_record(train_loop_cuda_event_last_step_end, nullptr),
+                            "train_loop.cuda_event.last_step_end");
+                    }
+                }
                 steps_completed = step;
                 tokens_processed += effective_train_batch_tokens;
                 if (should_record_train_loss) {
@@ -18623,6 +18679,34 @@ int run_transformer_lm_training_json(
     if (error.empty()) {
         run(cuda_device_synchronize(), "train_loop.complete");
     }
+    if (error.empty() && train_loop_cuda_event_timing_enabled && steps_completed > 0) {
+        float elapsed_ms_value = 0.0f;
+        int status = cuda_event_elapsed_time(
+            &elapsed_ms_value,
+            train_loop_cuda_event_start,
+            train_loop_cuda_event_last_step_end);
+        if (status != 0) {
+            error = cuda_error(status, "cudaEventElapsedTime train_loop_cuda_event");
+        } else {
+            train_loop_cuda_event_wall_ms = static_cast<double>(elapsed_ms_value);
+            train_loop_cuda_event_step_count = steps_completed;
+        }
+        if (error.empty() && steps_completed > 1) {
+            status = cuda_event_elapsed_time(
+                &elapsed_ms_value,
+                train_loop_cuda_event_first_step_end,
+                train_loop_cuda_event_last_step_end);
+            if (status != 0) {
+                error = cuda_error(status, "cudaEventElapsedTime train_loop_cuda_event_steady_state");
+            } else {
+                train_loop_cuda_event_steady_state_wall_ms = static_cast<double>(elapsed_ms_value);
+                train_loop_cuda_event_steady_state_step_count = steps_completed - 1;
+            }
+        }
+    }
+    destroy_train_loop_cuda_event(train_loop_cuda_event_start, "train_loop_cuda_event_start");
+    destroy_train_loop_cuda_event(train_loop_cuda_event_first_step_end, "train_loop_cuda_event_first_step_end");
+    destroy_train_loop_cuda_event(train_loop_cuda_event_last_step_end, "train_loop_cuda_event_last_step_end");
     const auto train_loop_end_time = Clock::now();
     train_loop_wall_ms = elapsed_ms(train_loop_start_time, train_loop_end_time);
     const auto post_train_sample_start_time = Clock::now();
@@ -19609,6 +19693,27 @@ int run_transformer_lm_training_json(
         << "    \"setup_timing_unattributed_ms\": " << setup_timing_unattributed_ms << ",\n"
         << "    \"setup_timing_record_count\": " << setup_timing_records.size() << ",\n"
         << "    \"train_loop_wall_ms\": " << train_loop_wall_ms << ",\n"
+        << "    \"train_loop_cuda_event_timing_requested\": "
+        << (train_loop_cuda_event_timing_requested ? "true" : "false") << ",\n"
+        << "    \"train_loop_cuda_event_timing_enabled\": "
+        << (train_loop_cuda_event_timing_enabled ? "true" : "false") << ",\n"
+        << "    \"train_loop_cuda_event_wall_ms\": " << train_loop_cuda_event_wall_ms << ",\n"
+        << "    \"train_loop_cuda_event_step_count\": " << train_loop_cuda_event_step_count << ",\n"
+        << "    \"train_loop_cuda_event_wall_ms_per_step\": "
+        << (train_loop_cuda_event_step_count > 0
+                ? (train_loop_cuda_event_wall_ms / static_cast<double>(train_loop_cuda_event_step_count))
+                : 0.0)
+        << ",\n"
+        << "    \"train_loop_cuda_event_steady_state_wall_ms\": "
+        << train_loop_cuda_event_steady_state_wall_ms << ",\n"
+        << "    \"train_loop_cuda_event_steady_state_step_count\": "
+        << train_loop_cuda_event_steady_state_step_count << ",\n"
+        << "    \"train_loop_cuda_event_steady_state_wall_ms_per_step\": "
+        << (train_loop_cuda_event_steady_state_step_count > 0
+                ? (train_loop_cuda_event_steady_state_wall_ms /
+                   static_cast<double>(train_loop_cuda_event_steady_state_step_count))
+                : 0.0)
+        << ",\n"
         << "    \"validation_wall_ms\": " << validation_wall_ms << ",\n"
         << "    \"train_compute_wall_ms\": " << (train_loop_wall_ms - validation_wall_ms) << ",\n"
         << "    \"post_train_sample_wall_ms\": " << post_train_sample_wall_ms << ",\n"
