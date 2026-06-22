@@ -182,7 +182,11 @@ the selected CUDA GPU before each warmup or measured command. The idle check is 
 to the selected GPU UUID, so a separate display GPU can still be active. Pass
 `--max-selected-gpu-utilization-pct N` to also reject samples when the selected
 CUDA GPU's `nvidia-smi` utilization is already above `N` before each warmup or
-measured command. When `nvidia-smi` is available, the JSON also includes
+measured command. Pass
+`--allow-stale-selected-gpu-utilization-without-compute-processes` only when a
+WSL/NVML idle poll is stuck high on a dedicated GPU; compute processes still
+fail immediately, and the stale-utilization allowance is recorded in text and
+JSON output. When `nvidia-smi` is available, the JSON also includes
 the resolved `cuda_device_selection`, run-level
 `gpu_before` / `gpu_after` snapshots and per-sample `paired_samples[].gpu_before`
 / `paired_samples[].gpu_after` snapshots, plus command-level
@@ -1316,7 +1320,11 @@ and the matching `..._RETRY_INTERVAL_SECONDS` aliases to control the pause
 between samples. By default the wrapper now requires three idle samples spaced
 0.25 seconds apart before each measured run. This is useful on WSL systems where
 `nvidia-smi` can report a brief nonzero utilization spike on a display-disabled
-GPU with no compute processes.
+GPU with no compute processes. The native-vs-native wrapper also defaults
+`NFN_SM120_NATIVE_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE=1`, so a stuck
+high utilization counter does not block dedicated-GPU benchmark runs when the
+selected GPU has no compute processes; set it to `0` for strict utilization
+gating.
 Stage timing is independent from profile sidecar generation: use
 `NFN_SM120_NATIVE_STAGE_TIMING=1`, `NFN_SM120_CANDIDATE_STAGE_TIMING=1`, or
 `NFN_SM120_STAGE_TIMING=1` with `NFN_SM120_PROFILE_DIR=none` when you need the

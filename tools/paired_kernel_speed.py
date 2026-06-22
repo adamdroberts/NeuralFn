@@ -492,6 +492,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--allow-stale-selected-gpu-utilization-without-compute-processes",
+        action="store_true",
+        help=(
+            "After selected-GPU utilization retries are exhausted, allow the run "
+            "to continue when nvidia-smi still reports high utilization but the "
+            "selected GPU has no compute processes. This is intended for WSL/NVML "
+            "stale-utilization samples on a display-disabled dedicated compute GPU; "
+            "active compute processes still fail immediately."
+        ),
+    )
+    parser.add_argument(
         "--no-gpu-benchmark-lock",
         action="store_true",
         help=(
@@ -1535,6 +1546,7 @@ def enforce_selected_gpu_guards(
     phase: str,
     utilization_retries: int = 1,
     utilization_retry_interval_seconds: float = 0.0,
+    allow_stale_utilization_without_compute_processes: bool = False,
     snapshot_supplier: Any | None = None,
 ) -> dict[str, object]:
     if require_idle:
@@ -1573,6 +1585,12 @@ def enforce_selected_gpu_guards(
                 _selected_gpu_uuid(retry_snapshot, cuda_visible_devices),
             ) > 0:
                 break
+        selected_uuid = _selected_gpu_uuid(snapshot, cuda_visible_devices)
+        if (
+            allow_stale_utilization_without_compute_processes
+            and _compute_process_count(snapshot, selected_uuid) == 0
+        ):
+            return snapshot
     raise SystemExit(result)
 
 
@@ -1644,6 +1662,7 @@ def snapshot_and_enforce_selected_gpu_guards(
     max_utilization_pct: float,
     utilization_retries: int,
     utilization_retry_interval_seconds: float,
+    allow_stale_utilization_without_compute_processes: bool,
     phase: str,
 ) -> dict[str, object]:
     snapshot = gpu_snapshot()
@@ -1654,6 +1673,9 @@ def snapshot_and_enforce_selected_gpu_guards(
         max_utilization_pct=max_utilization_pct,
         utilization_retries=utilization_retries,
         utilization_retry_interval_seconds=utilization_retry_interval_seconds,
+        allow_stale_utilization_without_compute_processes=(
+            allow_stale_utilization_without_compute_processes
+        ),
         snapshot_supplier=gpu_snapshot,
         phase=phase,
     )
@@ -1818,6 +1840,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         0.0,
         float(args.selected_gpu_utilization_retry_interval_seconds),
     )
+    allow_stale_utilization_without_compute_processes = bool(
+        args.allow_stale_selected_gpu_utilization_without_compute_processes
+    )
     gpu_lock_path = gpu_benchmark_lock_path(cuda_visible_devices)
     gpu_lock_enabled = bool(cuda_visible_devices and not args.no_gpu_benchmark_lock)
     gpu_lock_timeout_seconds = max(0.0, float(args.gpu_benchmark_lock_timeout_seconds or 0.0))
@@ -1851,6 +1876,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             "selected_gpu_utilization_retries": selected_gpu_utilization_retries,
             "selected_gpu_utilization_retry_interval_seconds": (
                 selected_gpu_utilization_retry_interval_seconds
+            ),
+            "allow_stale_selected_gpu_utilization_without_compute_processes": (
+                allow_stale_utilization_without_compute_processes
             ),
             "gpu_benchmark_lock_enabled": gpu_lock_enabled,
             "gpu_benchmark_lock_path": str(gpu_lock_path) if gpu_lock_path is not None else "",
@@ -1903,6 +1931,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             max_utilization_pct=max_selected_gpu_utilization_pct,
             utilization_retries=selected_gpu_utilization_retries,
             utilization_retry_interval_seconds=selected_gpu_utilization_retry_interval_seconds,
+            allow_stale_utilization_without_compute_processes=(
+                allow_stale_utilization_without_compute_processes
+            ),
             snapshot_supplier=gpu_snapshot,
             phase="initial snapshot",
         )
@@ -1915,6 +1946,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                 max_utilization_pct=max_selected_gpu_utilization_pct,
                 utilization_retries=selected_gpu_utilization_retries,
                 utilization_retry_interval_seconds=selected_gpu_utilization_retry_interval_seconds,
+                allow_stale_utilization_without_compute_processes=(
+                    allow_stale_utilization_without_compute_processes
+                ),
                 snapshot_supplier=gpu_snapshot,
                 phase=f"warmup pair {warmup_index + 1}",
             )
@@ -1926,6 +1960,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                     utilization_retries=selected_gpu_utilization_retries,
                     utilization_retry_interval_seconds=(
                         selected_gpu_utilization_retry_interval_seconds
+                    ),
+                    allow_stale_utilization_without_compute_processes=(
+                        allow_stale_utilization_without_compute_processes
                     ),
                     phase=f"warmup pair {warmup_index + 1} {command.name}",
                 )
@@ -1952,6 +1989,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                 max_utilization_pct=max_selected_gpu_utilization_pct,
                 utilization_retries=selected_gpu_utilization_retries,
                 utilization_retry_interval_seconds=selected_gpu_utilization_retry_interval_seconds,
+                allow_stale_utilization_without_compute_processes=(
+                    allow_stale_utilization_without_compute_processes
+                ),
                 snapshot_supplier=gpu_snapshot,
                 phase=f"measured sample {sample_index + 1}",
             )
@@ -1971,6 +2011,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                     utilization_retries=selected_gpu_utilization_retries,
                     utilization_retry_interval_seconds=(
                         selected_gpu_utilization_retry_interval_seconds
+                    ),
+                    allow_stale_utilization_without_compute_processes=(
+                        allow_stale_utilization_without_compute_processes
                     ),
                     phase=f"measured sample {sample_index + 1} {command.name}",
                 )
@@ -2019,6 +2062,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "selected_gpu_utilization_retries": selected_gpu_utilization_retries,
         "selected_gpu_utilization_retry_interval_seconds": (
             selected_gpu_utilization_retry_interval_seconds
+        ),
+        "allow_stale_selected_gpu_utilization_without_compute_processes": (
+            allow_stale_utilization_without_compute_processes
         ),
         "gpu_benchmark_lock_enabled": gpu_lock_enabled,
         "gpu_benchmark_lock_path": str(gpu_lock_path) if gpu_lock_path is not None else "",
@@ -2097,6 +2143,10 @@ def print_text(payload: dict[str, object]) -> None:
         f"{payload.get('selected_gpu_utilization_retries', 1)} "
         "interval_seconds="
         f"{payload.get('selected_gpu_utilization_retry_interval_seconds', 0.0)}"
+    )
+    print(
+        "  allow_stale_selected_gpu_utilization_without_compute_processes: "
+        f"{payload.get('allow_stale_selected_gpu_utilization_without_compute_processes', False)}"
     )
     if payload.get("gpu_benchmark_lock_enabled") is not None:
         print(

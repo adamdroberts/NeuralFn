@@ -135,8 +135,10 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["cuda_device_max_connections"] == "1"
     assert payload["require_idle_selected_gpu"] is False
     assert payload["max_selected_gpu_utilization_pct"] == -1.0
+    assert payload["allow_stale_selected_gpu_utilization_without_compute_processes"] is False
     assert "require_idle_selected_gpu: False" in proc.stdout
     assert "max_selected_gpu_utilization_pct: -1.0" in proc.stdout
+    assert "allow_stale_selected_gpu_utilization_without_compute_processes: False" in proc.stdout
     assert payload["gpu_benchmark_lock_enabled"] is True
     assert payload["gpu_benchmark_lock_acquired"] is True
     assert payload["gpu_benchmark_lock_path"].endswith("nfn_paired_kernel_speed_gpu_test-device.lock")
@@ -375,6 +377,7 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "NFN_SM120_NATIVE_CANDIDATE_WARMUP" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_CUDA_VISIBLE_DEVICES" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_MAX_GPU_UTILIZATION_PCT" in text
+    assert "NFN_SM120_NATIVE_CANDIDATE_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_DRY_RUN_PLAN" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_TEMPLATE_NAME" in text
     assert "NFN_SM120_NATIVE_CANDIDATE_GRAPH_FILE" in text
@@ -505,6 +508,7 @@ def test_native_gpt_sm120_candidate_wrapper_accepts_native_candidate_common_alia
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["samples"] == 2
     assert payload["warmup"] == 0
+    assert payload["allow_stale_selected_gpu_utilization_without_compute_processes"] is True
     baseline_max_steps = payload["baseline_command"].index("--max-steps")
     candidate_max_steps = payload["candidate_command"].index("--max-steps")
     assert payload["baseline_command"][baseline_max_steps + 1] == "4"
@@ -2489,6 +2493,17 @@ def test_paired_kernel_speed_tool_selected_gpu_utilization_guard_retries_idle_gp
         utilization_retries=2,
         utilization_retry_interval_seconds=0.0,
         snapshot_supplier=lambda: next(snapshots),
+        phase="unit test",
+    )
+    module.enforce_selected_gpu_guards(
+        high_snapshot,
+        "0",
+        require_idle=True,
+        max_utilization_pct=15.0,
+        utilization_retries=1,
+        utilization_retry_interval_seconds=0.0,
+        allow_stale_utilization_without_compute_processes=True,
+        snapshot_supplier=lambda: pytest.fail("stale-utilization allowance should not retry"),
         phase="unit test",
     )
 

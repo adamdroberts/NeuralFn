@@ -884,7 +884,14 @@ GPU; the check uses the selected GPU UUID so a separate display GPU does not
 fail a dedicated compute-GPU run. Pass
 `--max-selected-gpu-utilization-pct N` to fail the run when the selected CUDA
 GPU's `nvidia-smi` utilization is already above `N` before each warmup or
-measured command. For `tools/bench_native_gpt_sm120_candidate.sh` startup
+measured command. Use
+`--allow-stale-selected-gpu-utilization-without-compute-processes` only for
+dedicated WSL/NVML runs where the selected GPU has no compute processes but the
+utilization counter remains stuck high after retries; active compute processes
+still fail immediately, and the allowance is recorded in text and JSON output.
+The native candidate wrapper enables that allowance by default through
+`NFN_SM120_NATIVE_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE=1`; set it to `0`
+for strict utilization gating. For `tools/bench_native_gpt_sm120_candidate.sh` startup
 bisections, set `NFN_SM120_NATIVE_STARTUP_ONLY=1`; measured candidate runs then
 auto-gate `setup_wall_ms=1.000` unless an explicit max-ratio override is set,
 because startup-only JSON has no `train_loop_wall_ms_per_step` metric. When

@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a stale-utilization escape hatch to `tools/paired_kernel_speed.py`:
+  `--allow-stale-selected-gpu-utilization-without-compute-processes`. After
+  utilization retries are exhausted, this allows a paired benchmark to continue
+  when the selected GPU still reports high `nvidia-smi` utilization but has no
+  compute processes. Active compute processes still fail immediately via the
+  selected-GPU idle guard. The native-vs-native SM120 wrapper now defaults
+  `NFN_SM120_NATIVE_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE=1` and accepts
+  native-candidate, short candidate, parity, and generic aliases for that
+  control, which prevents dedicated WSL compute-GPU runs from being blocked by
+  stale utilization telemetry while still recording the utilization in the
+  benchmark JSON/text output.
+
+  Verification: `python -m py_compile tools/paired_kernel_speed.py`; focused
+  `tests/test_tile_cuda_examples.py` coverage for paired benchmark output,
+  selected-GPU utilization guards, and native candidate wrapper dry-runs;
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`; `git diff --check`.
+
 - Extended `tools/bench_native_gpt_sm120_candidate.sh` so the common benchmark
   shape controls also accept explicit `NFN_SM120_NATIVE_CANDIDATE_*` aliases.
   `NFN_SM120_NATIVE_CANDIDATE_STEPS`, `..._SAMPLES`, `..._WARMUP`,
