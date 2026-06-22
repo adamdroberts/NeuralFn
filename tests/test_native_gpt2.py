@@ -1382,9 +1382,16 @@ def test_native_gpt2_binding_runner_invokes_in_process_module(monkeypatch: pytes
         calls.append(payload)
         return 17
 
+    def fake_resolve(payload: dict[str, object]) -> list[str]:
+        return ["native-gpt2-binding", str(payload["train_data"])]
+
     monkeypatch.delitem(sys.modules, "neuralfn_native_gpt", raising=False)
     monkeypatch.delitem(sys.modules, "neuralfn._native_gpt", raising=False)
-    monkeypatch.setitem(sys.modules, "neuralfn_native_gpt2", SimpleNamespace(run_gpt2=fake_run))
+    monkeypatch.setitem(
+        sys.modules,
+        "neuralfn_native_gpt2",
+        SimpleNamespace(run_gpt2=fake_run, resolve_native_gpt2_command=fake_resolve),
+    )
     monkeypatch.setattr(native_gpt2_module, "NATIVE_GPT2_BINDING_MODULES", ("neuralfn_native_gpt2",))
     cfg = NativeGpt2RunConfig(
         executable="train_gpt2cu",
@@ -4169,18 +4176,19 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "position_gradient_scratch_buffer_allocated": False,
         "position_gradient_microbatch_full_copy_elided": True,
         "layer_norm_backward_affine_strategy": "auto-chunked-atomic-accumulate",
-            "layer_norm_stats_strategy": "forward-store-mean-rstd-backward-reuse",
-            "layer_norm_backward_reuses_forward_stats": True,
-            "layer_norm_stats_disabled_by_fused_residual_ln2": False,
-            "layer_norm_backward_residual_fusion_enabled": True,
-            "layer_norm_backward_affine_residual_fusion_enabled": True,
-            "layer_norm_backward_affine_residual_fused_kernel_launches": 0,
-            "layer_norm_backward_residual_strategy": "fused-affine-dinput-residual-add-with-forward-stats",
-            "layer_norm_backward_residual_scratch_buffers_allocated": False,
-            "layer_norm_backward_residual_scratch_buffers_elided": 2,
-            "layer_norm_backward_residual_scratch_elements_elided": 2 * 2 * 768,
-            "residual1_backward_consumer_strategy": "bf16-layernorm-backward",
-            "gradient_clip_loop": False,
+        "layer_norm_backward_affine_row_chunk_size": 256,
+        "layer_norm_stats_strategy": "forward-store-mean-rstd-backward-reuse",
+        "layer_norm_backward_reuses_forward_stats": True,
+        "layer_norm_stats_disabled_by_fused_residual_ln2": False,
+        "layer_norm_backward_residual_fusion_enabled": True,
+        "layer_norm_backward_affine_residual_fusion_enabled": True,
+        "layer_norm_backward_affine_residual_fused_kernel_launches": 0,
+        "layer_norm_backward_residual_strategy": "fused-affine-dinput-residual-add-with-forward-stats",
+        "layer_norm_backward_residual_scratch_buffers_allocated": False,
+        "layer_norm_backward_residual_scratch_buffers_elided": 2,
+        "layer_norm_backward_residual_scratch_elements_elided": 2 * 2 * 768,
+        "residual1_backward_consumer_strategy": "bf16-layernorm-backward",
+        "gradient_clip_loop": False,
         "gradient_clip_loop_elided": True,
         "gradient_clip_strategy": "fused-multi-buffer-sumsq-device-scale",
         "gradient_clip_descriptor_count": 0,
