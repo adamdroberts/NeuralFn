@@ -119,7 +119,7 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         or os.environ.get("NFN_NATIVE_GPT_RUNNER")
         or os.environ.get("NFN_NATIVE_GPT2_RUNNER", "compiled-cli")
     )
-    if runner.strip().lower().replace("_", "-") not in {"", "compiled-cli"}:
+    if runner.strip().lower().replace("_", "-") not in {"", "auto", "compiled-cli"}:
         return None
     if _has_any(argv, "-h", "--help", "--native-cuda-config-out") or any(
         arg.startswith("--native-cuda-config-out=") for arg in argv

@@ -1216,7 +1216,8 @@ variables remain compatibility fallbacks for the GPT-2-named wrapper,
 launcher, and existing local scripts.
 
 Wrapper-level dry-runs are metadata-only on the default GPT `compiled-cli`
-runner. `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run
+runner, and explicit `--native-cuda-runner auto` uses the same direct compiled
+C++ fast path for dense GPT `train_gpt.py` and `nfn train` commands. `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run
 --native-cuda-print-command` builds the compiled C++ argv from the dataset
 alias/path and leaves shard validation to C++, so it does not import
 `server.dataset_manager`, NumPy, tiktoken, or Torch and does not materialize

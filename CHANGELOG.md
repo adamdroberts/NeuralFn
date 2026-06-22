@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Dense GPT CLI training now treats explicit `--native-cuda-runner auto` as the
+  same direct compiled C++ fast path as the default `compiled-cli` runner for
+  `cli/scripts/train_gpt.py` and dense `nfn train` commands. Before, explicit
+  `auto` skipped that fast path and entered the heavier Python native wrapper
+  selection path. `binding` and `launcher` remain explicit wrapper routes, and
+  SDK `run_native_gpt(..., runner="auto")` keeps its binding-first semantics.
+
+  Verification: focused CLI/template tests and the no-Torch dependency
+  verifier.
+
 - **Breaking changes:** Dense GPT native training defaults back to the packed-QKV
   SM120 TK route for the full workstation shape. Before, normal training used
   the split-QKV bridge unless callers explicitly set

@@ -120,6 +120,20 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
         ),
     ),
     (
+        "nfn_train_auto_runner_fast_command",
+        (
+            sys.executable,
+            "cli/nfn.py",
+            "train",
+            "--tinystories",
+            "--native-cuda-runner",
+            "auto",
+            "--native-cuda-dry-run",
+            "--native-cuda-print-command",
+            "--no-checkpoint",
+        ),
+    ),
+    (
         "nfn_train_default_fast_command",
         (
             sys.executable,

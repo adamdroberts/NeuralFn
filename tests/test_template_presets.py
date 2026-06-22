@@ -237,6 +237,23 @@ def test_train_gpt_fast_path_accepts_every_gpt_template_name() -> None:
         assert argv[argv.index("--template-name") + 1] == preset
 
 
+def test_train_gpt_fast_path_treats_auto_runner_as_compiled_cli() -> None:
+    module = _load_train_gpt_script_module()
+    argv = module._fast_compiled_cli_argv(
+        [
+            "--dataset-alias",
+            "/tmp/native-cache",
+            "--native-cuda-dry-run",
+            "--native-cuda-runner",
+            "auto",
+        ]
+    )
+    assert argv is not None
+    assert "--model-family" in argv
+    assert argv[argv.index("--model-family") + 1] == "gpt"
+    assert "--native-cuda-runner" not in argv
+
+
 def test_native_gpt2_compiled_cli_accepts_custom_graph_file() -> None:
     config = build_native_gpt2_compiled_cli_run_config(
         dataset_alias="/tmp/native-cache",

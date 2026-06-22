@@ -497,7 +497,7 @@ def _is_direct_native_train_cli_train(argv: list[str]) -> bool:
         if not _is_explicit_native_gpt_train(argv):
             return False
         runner = _native_gpt_requested_runner(argv)
-        return runner == "compiled-cli"
+        return runner in {"auto", "compiled-cli"}
     return True
 
 

@@ -203,6 +203,9 @@ nfn-gpt-native --dataset-alias /path/to/cached-dataset --backend tile-cuda --pri
 
 The Python-facing GPT harness defaults to `--native-cuda-runner compiled-cli`,
 which requires the no-Python cached-shard CLI at `build/nfn_gpt_native_train`.
+Explicit `--native-cuda-runner auto` uses that same direct compiled C++ fast
+path for `python scripts/train_gpt.py` and dense `nfn train` commands; use
+`binding` or `launcher` only when you intentionally want those wrapper routes.
 That compiled CLI exposes `--backend tile-cuda`, the default and only NeuralFn-owned
 12-layer transformer/LM loop over the raw trainer ABI. Use `--backend tile-cuda
 --print-plan` or `--check-tile-ops --tile-ops-lib PATH` to inspect it, and use
@@ -236,9 +239,10 @@ want the compiled top-level training command, and `nfn-native-train
 hand off to this compiled frontend before graph-backed Python can start; dense
 GPT and NanoGPT are implemented through the dense GPT target, and LLaMA,
 GPT-2 evo, JEPA, semantic/MoE, and DeepSeek
-variants intentionally report missing or preflight-only native trainers. Use `auto` to
-try the Python SDK binding, compiled CLI, then launcher in order and to allow
-Python raw-text materialization; use `binding` to require the C++ binding,
+variants intentionally report missing or preflight-only native trainers. SDK
+calls to `run_native_gpt(..., runner="auto")` still try the Python SDK binding,
+compiled CLI, then launcher in order and allow Python raw-text materialization;
+use `binding` to require the C++ binding,
 `compiled-cli` to require the cached-shard C++ frontend, or `launcher` to
 require the compiled launcher. Alias-only configs from
 `build_native_gpt2_compiled_cli_run_config()` still execute the compiled CLI argv
