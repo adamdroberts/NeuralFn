@@ -21,11 +21,13 @@ Future updates should append new entries here rather than replacing older notes.
   `lm_head_ce_llmk_style_specialized` and
   `lm_head_ce_loss_bins_llmk_style_specialized`; the route remains
   diagnostic-only. The CUDA 13.3 dedicated RTX 5090 3-step, 3-sample gate
-  proved both routes but rejected promotion: row-loss improved train-loop wall
+  proved the row-loss route but rejected promotion: row-loss improved train-loop wall
   (`0.997562x`) while missing LM-head backward (`1.000511x`) and LM-head CE
-  (`1.000411x`); loss-bin improved train-loop wall (`0.997439x`) while missing
-  LM-head backward (`1.000466x`), LM-head CE (`1.000176x`), and MLP projection
-  (`1.001883x`).
+  (`1.000411x`). The loss-bin profile proved request/strategy plumbing, but
+  `lm_head_classifier_loss_bin_launch_count` stayed at zero in that short run;
+  final JSON now derives `lm_head_ce_loss_bin_reduction_enabled` and loss-bin
+  kernel strategy selection from the runtime launch counter so request-only
+  profiles cannot masquerade as executed loss-bin CE routes.
 
 - Fixed `tools/check_native_no_torch_deps.py` so installed-style
   `from nfn import main` console-entry checks add the `cli/` module root to

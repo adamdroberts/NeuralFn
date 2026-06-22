@@ -319,9 +319,10 @@ for the second profile) for an explicit llm.kittens-style CE+dlogits probe:
 1024 row threads, vec8 BF16 loads, and vector streaming stores for the logits
 overwrite. The CUDA 13.3 dedicated RTX 5090 gate proved both routes but rejected
 promotion: row-loss improved train-loop wall (`0.997562x`) but missed LM-head
-backward (`1.000511x`) and CE (`1.000411x`); loss-bin improved train-loop wall
-(`0.997439x`) but missed LM-head backward (`1.000466x`), CE (`1.000176x`), and
-MLP projection (`1.001883x`).
+backward (`1.000511x`) and CE (`1.000411x`). The loss-bin profile proved the
+request/strategy plumbing but the loss-bin route counter stayed at zero in that
+short run; with runtime counter-derived reporting it remains a request-only
+diagnostic until a measured run emits loss-bin launches.
 LM-head pipeline overlap candidates
 still use the comparable train-loop and total LM-head gates; their
 candidate-only `stage.lm_head_backward.pipeline_queue.total_ms` and
@@ -1037,8 +1038,9 @@ llm.kittens-style row-loss/loss-bin CE specialization. Runtime JSON reports
 `lm_head_ce_llmk_style_specialized_enabled`, and `lm_head_ce_kernel_strategy`
 values `llmk-style-row-loss-vec8-loads-streaming-vec8-stores` or
 `llmk-style-loss-bins-vec8-loads-streaming-vec8-stores`. Keep it
-diagnostic-only: both same-script candidate profiles proved the route but
-failed the strict timing gates.
+diagnostic-only: the row-loss profile proved the route but failed the strict
+timing gates, and the loss-bin profile is only considered enabled when
+`lm_head_classifier_loss_bin_launch_count > 0`.
 `NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1`,
 `NFN_NATIVE_GPT2_CE_BF16_VEC_NORMAL_STORES=1`, or
 `NFN_TILE_CUDA_CE_BF16_VEC_NORMAL_STORES=1` is a separate default-off

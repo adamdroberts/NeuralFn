@@ -19050,6 +19050,8 @@ int run_transformer_lm_training_json(
     if (lm_head_classifier_last_row_stride_fn != nullptr) {
         lm_head_classifier_last_row_stride = lm_head_classifier_last_row_stride_fn();
     }
+    const bool lm_head_ce_loss_bin_reduction_runtime_enabled =
+        lm_head_classifier_loss_bin_launch_count > 0;
     if (trainer_linear_shape_stats_count_fn != nullptr &&
         trainer_linear_shape_stats_entry_fn != nullptr) {
         const std::int64_t shape_stat_count = trainer_linear_shape_stats_count_fn();
@@ -19675,7 +19677,7 @@ int run_transformer_lm_training_json(
         << (lm_head_ce_loss_bins_default_specialized_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_kernel_strategy\": \""
         << (lm_head_ce_llmk_style_specialized_runtime_enabled
-                ? (lm_head_loss_bin_reduction_requested
+                ? (lm_head_ce_loss_bin_reduction_runtime_enabled
                        ? "llmk-style-loss-bins-vec8-loads-streaming-vec8-stores"
                        : "llmk-style-row-loss-vec8-loads-streaming-vec8-stores")
                 : (lm_head_ce_loss_bins_default_specialized_enabled
@@ -19891,12 +19893,7 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_ce_loss_bin_reduction_requested\": "
         << (lm_head_loss_bin_reduction_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_loss_bin_reduction_enabled\": "
-        << (lm_head_row_loss_reduction_requested &&
-                    lm_head_loss_bin_reduction_requested &&
-                    lm_head_classifier_backward_loss_bins_bf16_u16 != nullptr &&
-                    sum_accumulate != nullptr
-                ? "true"
-                : "false") << ",\n"
+        << (lm_head_ce_loss_bin_reduction_runtime_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_loss_bin_count_requested\": "
         << lm_head_loss_bin_count_requested << ",\n"
         << "  \"lm_head_ce_loss_backward_fused_enabled\": "
@@ -19914,9 +19911,7 @@ int run_transformer_lm_training_json(
                             (lm_head_classifier_backward_row_losses_bf16_u16 != nullptr &&
                              ((lm_head_row_loss_sum_accumulate_requested && sum_accumulate != nullptr) ||
                               (sum_partials != nullptr && gradient_accumulate != nullptr))))
-                       ? (lm_head_loss_bin_reduction_requested &&
-                                  lm_head_classifier_backward_loss_bins_bf16_u16 != nullptr &&
-                                  sum_accumulate != nullptr
+                       ? (lm_head_ce_loss_bin_reduction_runtime_enabled
                               ? "fused-loss-bins-sum-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"
                               : (lm_head_row_loss_sum_accumulate_requested && sum_accumulate != nullptr
                               ? "fused-row-losses-sum-accumulate-and-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"

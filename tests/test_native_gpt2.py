@@ -6234,6 +6234,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_ce_default_specialized_enabled" in gpt2_source_text
     assert "lm_head_ce_llmk_style_specialized_enabled" in gpt2_source_text
     assert "lm_head_ce_loss_bins_default_specialized_enabled" in gpt2_source_text
+    assert "lm_head_ce_loss_bin_reduction_runtime_enabled" in gpt2_source_text
+    assert "lm_head_classifier_loss_bin_launch_count > 0" in gpt2_source_text
     assert (
         "lm_head_ce_loss_bins_default_specialized_requested &&\n"
         "        lm_head_loss_bin_reduction_requested &&"
