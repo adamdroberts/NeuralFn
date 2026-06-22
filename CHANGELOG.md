@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Hardened native-vs-native SM120 candidate benchmarks against timing-only
+  false positives. `tools/paired_kernel_speed.py` now supports
+  `--require-native-route-change`, which fails a run when candidate native JSON
+  shows no tracked route-counter, strategy-value, linear-shape, or cuBLASLt-plan
+  change. `tools/bench_native_gpt_sm120_candidate.sh` enables that gate
+  automatically for measured candidate changes, while dry-run plans remain
+  unaffected. A fresh dedicated RTX 5090 probe also re-confirmed that the
+  existing LM-head cooperative ABI wrapper changes no route and fails strict
+  hot-stage gates, so it remains diagnostic-only rather than a parity fix.
+
+  Verification: added focused paired-kernel tests for the new hard gate and
+  reran a one-step `lm_head_cooperative_backward` candidate probe on the
+  dedicated RTX 5090.
+
 - Extended `tools/check_native_no_torch_deps.py` to cover installed
   `nfn:main` console-entry native checkpoint inference. The verifier now imports
   `nfn.main()` for both `--native-info` and `--prompt-tokens` checkpoint

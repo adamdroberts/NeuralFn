@@ -661,6 +661,16 @@ def parse_args() -> argparse.Namespace:
             "route counters that must not disappear."
         ),
     )
+    parser.add_argument(
+        "--require-native-route-change",
+        action="store_true",
+        help=(
+            "Fail after measurement when candidate native metrics do not show any "
+            "tracked route-counter, strategy-value, linear-shape, or cuBLASLt-plan "
+            "change. Use this for kernel/profile promotion gates so timing-only "
+            "noise cannot pass as an implementation change."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -1333,6 +1343,38 @@ def summarize_native_strategy_value_changes(
         "changed": changed,
         "unchanged": unchanged,
         "missing": missing,
+    }
+
+
+def evaluate_native_route_change_gate(
+    *,
+    required: bool,
+    route_changes: dict[str, object],
+    strategy_changes: dict[str, object],
+    linear_shape_stats: dict[str, object],
+    cublaslt_plan_cache: dict[str, object],
+) -> dict[str, object]:
+    has_route_counter_change = route_changes.get("has_route_counter_change") is True
+    has_strategy_value_change = strategy_changes.get("has_strategy_value_change") is True
+    has_linear_shape_change = bool(linear_shape_stats.get("cublaslt_plan_changed"))
+    has_plan_cache_change = bool(cublaslt_plan_cache.get("plan_cache_changed"))
+    passed = (
+        not required
+        or has_route_counter_change
+        or has_strategy_value_change
+        or has_linear_shape_change
+        or has_plan_cache_change
+    )
+    return {
+        "enabled": bool(required),
+        "passed": bool(passed),
+        "has_route_counter_change": bool(has_route_counter_change),
+        "has_strategy_value_change": bool(has_strategy_value_change),
+        "has_linear_shape_change": bool(has_linear_shape_change),
+        "has_cublaslt_plan_cache_change": bool(has_plan_cache_change),
+        "failure_reason": ""
+        if passed
+        else "candidate-native-metrics-did-not-change-route-strategy-or-plan",
     }
 
 
@@ -2450,6 +2492,13 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "paired_samples": sample_rows,
     }
     payload["metric_ratio_gates"] = evaluate_metric_ratio_limits(payload, metric_ratio_limits)
+    payload["native_route_change_gate"] = evaluate_native_route_change_gate(
+        required=bool(args.require_native_route_change),
+        route_changes=native_route_counter_changes,
+        strategy_changes=native_strategy_value_changes,
+        linear_shape_stats=native_linear_shape_stats,
+        cublaslt_plan_cache=native_cublaslt_plan_cache,
+    )
     return payload
 
 
@@ -2683,6 +2732,19 @@ def print_text(payload: dict[str, object]) -> None:
                 "candidate improvements as noise until a route, strategy, or separate "
                 "kernel-level attribution confirms the candidate."
             )
+    route_gate = payload.get("native_route_change_gate")
+    if isinstance(route_gate, dict) and route_gate.get("enabled") is True:
+        print(f"  native_route_change_gate: passed={str(route_gate.get('passed', False)).lower()}")
+        print(
+            "    changes: "
+            f"route_counter={str(route_gate.get('has_route_counter_change', False)).lower()} "
+            f"strategy={str(route_gate.get('has_strategy_value_change', False)).lower()} "
+            f"linear_shape={str(route_gate.get('has_linear_shape_change', False)).lower()} "
+            f"cublaslt_plan_cache={str(route_gate.get('has_cublaslt_plan_cache_change', False)).lower()}"
+        )
+        failure_reason = route_gate.get("failure_reason")
+        if failure_reason:
+            print(f"    failure_reason: {failure_reason}")
     if isinstance(plan_cache, dict) and plan_cache.get("enabled") is True:
         print("  native_cublaslt_plan_cache:")
         plan_changes = plan_cache.get("plan_cache_changed")
@@ -2830,6 +2892,18 @@ def main() -> int:
         print(
             "metric ratio gate failed"
             + (": " + ", ".join(metric for metric in failed if metric) if failed else ""),
+            file=sys.stderr,
+        )
+        return 1
+    route_gate = payload.get("native_route_change_gate")
+    if (
+        isinstance(route_gate, dict)
+        and route_gate.get("enabled") is True
+        and route_gate.get("passed") is False
+    ):
+        print(
+            "native route change gate failed: "
+            + str(route_gate.get("failure_reason", "candidate-native-route-unchanged")),
             file=sys.stderr,
         )
         return 1

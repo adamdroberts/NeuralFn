@@ -1565,6 +1565,10 @@ knobs are present but tracked counters, strategy values, and linear-shape plan
 metadata are unchanged, the text output warns that timing-only improvements
 should be treated as noise until a route, strategy, or separate kernel-level
 attribution confirms the candidate.
+Use `--require-native-route-change` to make that condition a hard failure. The
+SM120 candidate wrapper enables the gate automatically for measured candidate
+changes, and `NFN_SM120_NATIVE_REQUIRE_ROUTE_CHANGE=0` disables it only for
+explicit diagnostics.
 When native stage timing is present, the text report also prints the high-value
 LM-head backward substages (`logits`, `ce`, `dhidden`, `dweight`, and optional
 `dhidden_dweight_concurrent`) and block-backward substages across MLP FC,
@@ -1590,6 +1594,9 @@ and stage-timed runs additionally gate `stage.lm_head_backward.total_ms`,
 `stage.block_backward.total_ms`, and `stage.block_backward.mlp_proj.total_ms` at
 `1.000`. Set an explicit `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` /
 `NFN_SM120_CANDIDATE_MAX_CANDIDATE_RATIO` list to override those defaults.
+The wrapper also requires a tracked route, strategy, linear-shape, or cuBLASLt
+plan change for measured candidates; timing-only changes with no implementation
+attribution fail even if a coarse wall-time sample happens to improve.
 After the CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 validation
 pass rebuilt every native trainer and passed the GPU-visible native/Tile pytest
 gate (`247` tests), the GPT template preset suite (`26` tests), the full

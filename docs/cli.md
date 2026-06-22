@@ -619,6 +619,10 @@ LM-head CE, block linear, attention, allocator, or token-init route names, plus
 `native_route_counter_changes` for numeric route counters. Candidate-only
 environment knobs now trigger the timing-only warning only when route counters,
 strategy values, and linear-shape plan metadata all remain unchanged.
+`--require-native-route-change` makes that condition fail the run, and
+`tools/bench_native_gpt_sm120_candidate.sh` enables it automatically for
+measured candidate changes so a timing-only fluctuation cannot pass as a kernel
+promotion.
 
 Persistent block-output preservation in the compiled GPT trainer writes the MLP
 residual-add output directly into each non-final block's persistent

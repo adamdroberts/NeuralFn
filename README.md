@@ -423,6 +423,10 @@ candidate-specific environment knobs
 are set but those counters do not change, the text report warns that timing-only
 improvements should be treated as noise until a route counter change, strategy
 value change, or separate kernel-level attribution confirms the candidate.
+Pass `--require-native-route-change` to make that warning a hard failure; the
+SM120 candidate wrapper enables this gate automatically for measured candidate
+runs that change candidate-only environment, candidate-only args, or candidate
+Tile/native binaries, while leaving dry-run plans unaffected.
 CUDA 13.3 grouped cuBLASLt layout readiness is opt-in via
 `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1`,
 `NFN_NATIVE_GPT2_PROBE_CUBLASLT_GROUPED_LAYOUT=1`, or

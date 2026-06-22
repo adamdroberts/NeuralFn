@@ -256,6 +256,7 @@ GRAPH_FILE="$(env_or_alias5 NFN_SM120_NATIVE_GRAPH_FILE NFN_SM120_NATIVE_CANDIDA
 DRY_RUN_PLAN="$(env_or_alias5 NFN_SM120_NATIVE_DRY_RUN_PLAN NFN_SM120_NATIVE_CANDIDATE_DRY_RUN_PLAN NFN_SM120_CANDIDATE_DRY_RUN_PLAN NFN_SM120_PARITY_DRY_RUN_PLAN NFN_SM120_DRY_RUN_PLAN 0)"
 MAX_CANDIDATE_RATIO_RAW="$(env_or_alias NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO NFN_SM120_CANDIDATE_MAX_CANDIDATE_RATIO "")"
 MIN_CANDIDATE_RATIO_RAW="$(env_or_alias NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO NFN_SM120_CANDIDATE_MIN_CANDIDATE_RATIO "")"
+REQUIRE_NATIVE_ROUTE_CHANGE="$(env_or_alias NFN_SM120_NATIVE_REQUIRE_ROUTE_CHANGE NFN_SM120_CANDIDATE_REQUIRE_ROUTE_CHANGE auto)"
 if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
   has_candidate_change=0
   if [[ "$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" != "$NFN_NATIVE_GPT_TRAIN_BIN" ||
@@ -509,6 +510,35 @@ done
 for item in $MIN_CANDIDATE_RATIO_RAW; do
   paired_args+=(--min-candidate-ratio "$item")
 done
+case "${REQUIRE_NATIVE_ROUTE_CHANGE,,}" in
+  "1"|"true"|"yes"|"on")
+    paired_args+=(--require-native-route-change)
+    ;;
+  "0"|"false"|"no"|"off")
+    ;;
+  "auto"|"")
+    has_candidate_change=0
+    if [[ "$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" != "$NFN_NATIVE_GPT_TRAIN_BIN" ||
+          "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB" != "$NFN_NATIVE_TILE_OPS_LIB" ||
+          -n "$CANDIDATE_TILE_OPS_BUILD_FLAGS" ||
+          -n "$CANDIDATE_ENV_RAW" ||
+          -n "$CANDIDATE_EXTRA_ARGS_RAW" ]]; then
+      has_candidate_change=1
+    fi
+    case "${DRY_RUN_PLAN,,}" in
+      "1"|"true"|"yes"|"on")
+        has_candidate_change=0
+        ;;
+    esac
+    if [[ "$has_candidate_change" == "1" ]]; then
+      paired_args+=(--require-native-route-change)
+    fi
+    ;;
+  *)
+    echo "Unsupported NFN_SM120_NATIVE_REQUIRE_ROUTE_CHANGE value: $REQUIRE_NATIVE_ROUTE_CHANGE" >&2
+    exit 2
+    ;;
+esac
 case "${DRY_RUN_PLAN,,}" in
   "1"|"true"|"yes"|"on")
     paired_args+=(--dry-run-plan)

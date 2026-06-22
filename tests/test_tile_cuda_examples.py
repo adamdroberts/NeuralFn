@@ -384,6 +384,8 @@ def test_native_gpt_sm120_candidate_wrapper_forwards_bisection_controls() -> Non
     assert "NFN_SM120_NATIVE_CANDIDATE_GRAPH_FILE" in text
     assert "append_env_overrides()" in text
     assert "[A-Za-z_][A-Za-z0-9_]*=" in text
+    assert "NFN_SM120_NATIVE_REQUIRE_ROUTE_CHANGE" in text
+    assert "--require-native-route-change" in text
     assert "NFN_SM120_PARITY_STEPS" in text
     assert "NFN_SM120_PARITY_PROFILE_DIR" in text
     assert "NFN_SM120_PARITY_DRY_RUN_PLAN" in text
@@ -1856,6 +1858,15 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
         "linear_cublaslt_gemm_count",
         "linear_bf16_gemm_count",
     ]
+    assert payload["native_route_change_gate"] == {
+        "enabled": False,
+        "passed": True,
+        "has_route_counter_change": False,
+        "has_strategy_value_change": False,
+        "has_linear_shape_change": False,
+        "has_cublaslt_plan_cache_change": False,
+        "failure_reason": "",
+    }
     strategy_changes = payload["native_strategy_value_changes"]
     assert strategy_changes["has_strategy_value_change"] is False
     assert strategy_changes["changed_count"] == 0
@@ -1863,6 +1874,66 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
     assert "native_route_counter_changes: has_route_counter_change=false changed_count=0" in proc.stdout
     assert "native_strategy_value_changes:" not in proc.stdout
     assert "tracked route counters did not change" in proc.stdout
+
+
+def test_paired_kernel_speed_tool_fails_required_native_route_change_gate() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-route-gate.json"
+    native_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
+        "\\\"linear_tk_gemm_count\\\": 1632, "
+        "\\\"linear_cublaslt_gemm_count\\\": 2208, "
+        "\\\"linear_bf16_gemm_count\\\": 1824"
+        "}"
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{native_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{native_json}')\"",
+            "--candidate-env",
+            "NFN_NATIVE_LINEAR_TK_DINPUT_DISABLE_SHAPE=3072,65536,768,N,N",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+            "--require-native-route-change",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 1
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["native_route_change_gate"] == {
+        "enabled": True,
+        "passed": False,
+        "has_route_counter_change": False,
+        "has_strategy_value_change": False,
+        "has_linear_shape_change": False,
+        "has_cublaslt_plan_cache_change": False,
+        "failure_reason": "candidate-native-metrics-did-not-change-route-strategy-or-plan",
+    }
+    assert "native_route_change_gate: passed=false" in proc.stdout
+    assert "failure_reason: candidate-native-metrics-did-not-change-route-strategy-or-plan" in proc.stdout
+    assert (
+        "native route change gate failed: candidate-native-metrics-did-not-change-route-strategy-or-plan"
+        in proc.stderr
+    )
 
 
 def test_paired_kernel_speed_tool_reports_strategy_change_without_route_counter_warning() -> None:
