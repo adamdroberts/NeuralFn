@@ -1530,6 +1530,10 @@ It also defaults selected-GPU idle polling to three utilization samples spaced
 0.25 seconds apart before each measured command, matching the native-vs-native
 candidate wrapper and reducing noise from transient WSL/NVML utilization
 spikes on the dedicated RTX 5090.
+When `eval_every_steps <= 0` or `eval_batches <= 0`, the compiled
+transformer-LM loop skips validation sampler construction as well as validation
+execution. Runtime JSON exposes `validation.runtime_enabled` and
+`validation.sampler_constructed` for timing-profile checks.
 Measured runs default to a strict
 `train_loop_wall_ms_per_step=1.000` metric-ratio gate, so the parity wrapper
 exits nonzero when NeuralFn is slower than the llm.kittens reference on the

@@ -4219,6 +4219,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "eval_every_steps": 1,
         "eval_batches": 1,
         "eval_batch_size": 1,
+        "runtime_enabled": True,
+        "sampler_constructed": True,
         "eval_count": 0,
         "losses": [],
     }
@@ -6679,6 +6681,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         < gpt2_source_text.index('"token_weight.sample"')
     )
     assert "validation_wall_ms" in gpt2_source_text
+    assert "const bool validation_runtime_enabled = cfg.eval_every_steps > 0 && cfg.eval_batches > 0;" in gpt2_source_text
+    assert "std::optional<neuralfn::native_train::SequentialTokenBatchSampler> val_sampler" in gpt2_source_text
+    assert "const bool validation_sampler_constructed = val_sampler.has_value();" in gpt2_source_text
     assert "checkpoint_wall_ms" in gpt2_source_text
     assert 'std::getenv("CUDA_VISIBLE_DEVICES")' in gpt2_source_text
     assert 'setenv("CUDA_VISIBLE_DEVICES", "0", 0)' in gpt2_source_text

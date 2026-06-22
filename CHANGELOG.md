@@ -17,6 +17,14 @@ Future updates should append new entries here rather than replacing older notes.
   llm.kittens baseline command and NeuralFn candidate command receive
   `sd-prelu`.
 
+- Made dense GPT transformer validation sampler setup lazy in the compiled
+  C++ trainer. Runs with `--eval-every-steps 0` or `--eval-batches 0` now skip
+  constructing the validation sampler entirely, and runtime JSON reports
+  `validation.runtime_enabled` plus `validation.sampler_constructed`.
+
+  Verification: updated the native GPT JSON contract test and source-path
+  assertions for the lazy sampler.
+
 - Extended `tools/check_native_no_torch_deps.py` to cover the installed
   `nfn:main` console-entry dense GPT training fast path. The verifier now
   imports `nfn.main()`, runs a dry-run native GPT training command against a

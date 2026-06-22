@@ -880,6 +880,10 @@ throughput.
 Set `NFN_SM120_PARITY_ACTIVATION` or the generic `NFN_SM120_ACTIVATION`
 fallback for activation bisections; the wrapper passes the same value to
 llm.kittens as `-af` and to NeuralFn as `--native-cuda-activation`.
+When validation is disabled with `--eval-every-steps 0` or
+`--eval-batches 0`, the compiled transformer-LM loop also skips validation
+sampler construction; runtime JSON reports `validation.runtime_enabled` and
+`validation.sampler_constructed`.
 
 For timing-only native GPT probes, pass wrapper
 `--native-cuda-no-checkpoint` or compiled C++ `--no-checkpoint` to skip final

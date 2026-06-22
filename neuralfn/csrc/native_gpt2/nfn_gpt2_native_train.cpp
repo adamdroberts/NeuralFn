@@ -15,6 +15,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -18404,9 +18405,14 @@ int run_transformer_lm_training_json(
         return record_train_loss ? copy_train_loss_total_to_host("train_loss.loss_copy") : 0.0;
     };
 
-    neuralfn::native_train::SequentialTokenBatchSampler val_sampler(dataset.val_shards, seq_len, eval_batch_size);
+    const bool validation_runtime_enabled = cfg.eval_every_steps > 0 && cfg.eval_batches > 0;
+    std::optional<neuralfn::native_train::SequentialTokenBatchSampler> val_sampler;
+    if (validation_runtime_enabled) {
+        val_sampler.emplace(dataset.val_shards, seq_len, eval_batch_size);
+    }
+    const bool validation_sampler_constructed = val_sampler.has_value();
     auto run_validation = [&](std::int64_t step) {
-        if (!error.empty() || cfg.eval_every_steps <= 0 || cfg.eval_batches <= 0) {
+        if (!error.empty() || !validation_runtime_enabled) {
             return;
         }
         set_active_batch_size(eval_batch_size);
@@ -18414,9 +18420,9 @@ int run_transformer_lm_training_json(
         ValidationLossRecord record;
         record.step = step;
         for (std::int64_t batch_index = 0; batch_index < cfg.eval_batches; ++batch_index) {
-            if (!val_sampler.next_into(token_ids_pinned, active_targets_pinned, active_rows)) {
-                val_sampler.reset();
-                if (!val_sampler.next_into(token_ids_pinned, active_targets_pinned, active_rows)) {
+            if (!val_sampler->next_into(token_ids_pinned, active_targets_pinned, active_rows)) {
+                val_sampler->reset();
+                if (!val_sampler->next_into(token_ids_pinned, active_targets_pinned, active_rows)) {
                     error = "not enough validation tokens to build one GPT-2 transformer/LM validation batch";
                     break;
                 }
@@ -21107,6 +21113,8 @@ int run_transformer_lm_training_json(
         << "    \"eval_every_steps\": " << cfg.eval_every_steps << ",\n"
         << "    \"eval_batches\": " << cfg.eval_batches << ",\n"
         << "    \"eval_batch_size\": " << eval_batch_size << ",\n"
+        << "    \"runtime_enabled\": " << (validation_runtime_enabled ? "true" : "false") << ",\n"
+        << "    \"sampler_constructed\": " << (validation_sampler_constructed ? "true" : "false") << ",\n"
         << "    \"eval_count\": " << validation_losses.size() << ",\n"
         << "    \"losses\": [\n";
     for (std::size_t i = 0; i < validation_losses.size(); ++i) {
