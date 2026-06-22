@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Promoted the dense GPT native LM-head loss-bin train-loss reduction route to
+  the default. Logged train-loss steps now use the BF16/u16 classifier
+  loss-bin kernel and one Tile sum-accumulate tail instead of the older row-loss
+  tail. `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` remains available only as
+  a regression/profiling opt-out, and the `lm_head_loss_bins` candidate profile
+  now forces its baseline side to that older route so same-script speed checks
+  still compare new versus old.
+
+  Verification: dedicated RTX 5090 CUDA 13.3 3-step, 2-sample same-script
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins` benchmark showed
+  `0.977282x` train-loop wall time and `0.909537x` LM-head backward with
+  `lm_head_classifier_loss_bin_launch_count` moving from `0` to `48`.
+
 - Refreshed the CUDA 13.3 dedicated-RTX-5090 native parity status. The
   sandbox still blocks NVML/GPU allocation, but unsandboxed `nvidia-smi`
   reports CUDA UMD 13.3 and an idle RTX 5090, the llm.kittens-vs-NeuralFn

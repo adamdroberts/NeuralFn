@@ -269,15 +269,17 @@ only when comparing against the older `sum_partials` plus scalar
 `gradient_accumulate` path. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_partial_reduce` to route
 the opt-out through the standard same-script candidate harness.
-`NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1` is a separate default-off
-train-loss logging diagnostic. It routes the BF16/u16 classifier row blocks to
-accumulate row losses into a fixed bin workspace before one
+`NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1` is the default train-loss logging
+path. It routes the BF16/u16 classifier row blocks to accumulate row losses
+into a fixed bin workspace before one
 `nfn_native_tile_sum_accumulate_float32` tail, and JSON reports
 `lm_head_ce_loss_bin_reduction_*`, `lm_head_ce_loss_bin_count_requested`, and
 `lm_head_classifier_loss_bin_launch_count`. The named wrapper profile is
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins`; keep it disabled for
-normal training because it only executes when train-loss logging is enabled and
-the RTX 5090 logging-path check rejected it on strict timing gates.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins`; the wrapper forces its
+baseline command to `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` so it still
+measures the new default against the older row-loss route. Set
+`NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` manually only for regression
+checks against the older row-loss tail.
 
 `NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1`,
 `NFN_NATIVE_GPT2_CE_BF16_SCALAR_STREAMING_STORES=1`, and
@@ -1822,9 +1824,8 @@ cooperative sequence. The profile sets
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1`, and adds
 `--train-loss-every-steps 1` to both sides of the paired run. It remains
 diagnostic-only: the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample gate proved
-the route counter changed (`lm_head_classifier_loss_bin_launch_count` `0` to
-`32`) but rejected it at `1.001346x` train-loop wall, `1.000068x` LM-head
-backward, and `1.002485x` block backward.
+the cooperative loss-bin strategy, but rejected it at `1.001346x` train-loop
+wall, `1.000068x` LM-head backward, and `1.002485x` block backward.
 
 Startup-only token-weight initializer bisections can use the same profile
 mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,

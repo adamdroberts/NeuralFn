@@ -1102,6 +1102,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "mlp_proj_tk_dweight_65536": "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T",
         "linear_bias_row_chunk_256": "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=256",
         "linear_bias_row_chunk_1024": "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=1024",
+        "lm_head_loss_bins": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1",
         "lm_head_ce_loss_bins_default_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED=1",
         "lm_head_ce_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_ce_loss_bins_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1 NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
@@ -1110,6 +1111,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     for profile, env_assignment in expected_profiles.items():
         assert profile in bench_source
         assert env_assignment in bench_source
+    assert (
+        'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0"'
+        in bench_source
+    )
 
     for gated_metric in [
         "stage.block_backward.attn_sdpa.total_ms=1.000",
@@ -6245,6 +6250,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert (
         "lm_head_ce_loss_bins_default_specialized_requested &&\n"
         "        lm_head_loss_bin_reduction_requested &&"
+    ) in gpt2_source_text
+    assert (
+        'env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION",\n'
+        '                              "NFN_NATIVE_GPT2_LM_HEAD_LOSS_BIN_REDUCTION"}),\n'
+        "            true);"
     ) in gpt2_source_text
     assert "lm_head_ce_kernel_strategy" in gpt2_source_text
     assert "default-specialized-row-loss-vec8-loads-scalar-stores" in gpt2_source_text

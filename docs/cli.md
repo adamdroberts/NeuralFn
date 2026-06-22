@@ -1086,12 +1086,13 @@ and MLP-projection dWeight+bias gates. Current runtime JSON now reports
 route runs. A stronger CUDA 13.3 dedicated RTX 5090 3-step, 2-sample recheck
 kept it rejected at `1.017138x` train-loop wall and `1.313764x`
 `stage.block_backward.mlp_proj.dweight_bias.total_ms`.
-`lm_head_loss_bins` expands to
-`NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1` for the train-loss logging path.
-It is diagnostic-only: the no-loss parity benchmark does not execute loss
-accumulation, and a one-step `--train-loss-every-steps 1` check proved the
-route counter changed (`lm_head_classifier_loss_bin_launch_count: 0 -> 16`) but
-still failed strict stage gates.
+`lm_head_loss_bins` compares the current train-loss logging default against the
+older row-loss path. The candidate side expands to
+`NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`, the baseline side is forced to
+`NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0`, and the wrapper applies
+`--train-loss-every-steps 1` to both sides so the route counter is meaningful.
+Set `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` manually only for regression
+checks against the older row-loss tail.
 `lm_head_row_loss_sum_accumulate` expands to
 `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1`; this is now the default
 row-loss tail. `lm_head_row_loss_partial_reduce` expands to
@@ -1174,8 +1175,8 @@ so it is not mistaken for the final fused parity kernel.
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1`, and applies
 `--train-loss-every-steps 1` to both baseline and candidate commands so the
 loss-bin kernel is exercised fairly. It remains diagnostic-only: the dedicated
-RTX 5090 CUDA 13.3 2-step, 2-sample gate moved the loss-bin launch counter from
-`0` to `32`, but rejected the candidate at `1.001346x` train-loop wall,
+RTX 5090 CUDA 13.3 2-step, 2-sample gate proved the cooperative loss-bin
+strategy, but rejected the candidate at `1.001346x` train-loop wall,
 `1.000068x` LM-head backward, and `1.002485x` block backward.
 
 Prefer the generic dense GPT environment names for new native runs:

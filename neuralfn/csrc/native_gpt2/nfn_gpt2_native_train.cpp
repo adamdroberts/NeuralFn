@@ -11690,7 +11690,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION",
                               "NFN_NATIVE_GPT2_LM_HEAD_LOSS_BIN_REDUCTION"}),
-            false);
+            true);
     const std::int64_t lm_head_loss_bin_count_requested =
         env_nonnegative_i64_or(
             {"NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_COUNT",
