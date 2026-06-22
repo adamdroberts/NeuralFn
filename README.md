@@ -143,8 +143,11 @@ default BF16/u16-token native GPT path now fuses public-vocab CE loss
 accumulation with the in-place BF16 dlogits kernel, avoiding the older separate
 loss-partials pass. The fused kernel synchronizes after the target-logit loss
 read and before overwriting logits with dlogits, so sampled train loss does not
-race the in-place classifier backward write. Validation loss still uses
-`--eval-every-steps` and remains separate from sampled train loss.
+race the in-place classifier backward write. The scalar is accumulated on
+device across the whole gradient-accumulation optimizer step and copied to the
+host once per logged step, so train-loss logging does not add one host sync per
+microbatch. Validation loss still uses `--eval-every-steps` and remains
+separate from sampled train loss.
 Dense GPT native training also now defaults to eliding the unused FP32
 attention-projection and MLP-projection scratch-tape buffers when BF16
 projection-residual is active. Set
@@ -1253,7 +1256,7 @@ With BF16-primary block weights enabled, startup now splits nonzero constant ini
 
 Token upload buffers use combined arenas too: widened int64 tokens/targets and compact uint16 H2D staging share one aligned device token arena, while compact source staging uses one pinned uint16 host arena. Training JSON reports `token_buffer_allocation_strategy: "combined-arenas"`, `token_device_allocation_strategy: "single-device-arena"`, `token_device_arena_cuda_malloc_count`, `token_device_arena_suballocation_count`, `token_device_cuda_mallocs_elided`, and the token arena element counts.
 
-The compiled GPT-2 transformer-LM trainer does not sample training loss in the hot path. Optimizer steps run the forward activations needed for backward, CE gradient generation, gradient clipping, and AdamW only; validation cadence computes validation loss from validation shards according to `--eval-every-steps` without also measuring train loss. Set `--eval-batch-size N` to reduce validation rows per eval batch; runtime JSON reports the resolved value under `validation.eval_batch_size` and each record token count under `validation.losses[].tokens`. The output fields `train_loss_sparse: false`, `train_loss_sampling: "disabled"`, `train_loss_on_validation_steps: false`, `train_loss_eval_count`, and `train_loss_last_step` describe that contract.
+The compiled GPT-2 transformer-LM trainer keeps train-loss sampling disabled by default. Optimizer steps run the forward activations needed for backward, CE gradient generation, gradient clipping, and AdamW only; validation cadence computes validation loss from validation shards according to `--eval-every-steps` without also measuring train loss. Set `--train-loss-every-steps N` only when you want sampled native train loss. When train-loss logging is enabled, CE loss is accumulated in a device scalar across all gradient-accumulation microbatches for the optimizer step and copied to the host once for the logged step. Runtime JSON reports `train_loss_device_accumulation_strategy: "optimizer-step-device-scalar-accumulate"`, `train_loss_host_copy_scope: "once-per-logged-optimizer-step"`, `train_loss_host_d2h_count`, `train_loss_host_d2h_copies_per_logged_step: 1`, and `train_loss_microbatch_host_d2h_copies_elided_per_logged_step` alongside `train_loss_sparse: false`, `train_loss_sampling`, `train_loss_on_validation_steps: false`, `train_loss_eval_count`, and `train_loss_last_step`. Set `--eval-batch-size N` to reduce validation rows per eval batch; runtime JSON reports the resolved value under `validation.eval_batch_size` and each record token count under `validation.losses[].tokens`.
 
 Persistent transformer block outputs in the compiled GPT trainer are written directly from each non-final block's MLP residual-add stage into the per-layer backward-recompute buffer. That removes the previous post-block `nfn_native_tile_copy_float32` preservation launch while keeping the scratch-recompute tape layout. The final block output copy is still elided because final LayerNorm consumes that tensor before backward recomputation starts; the default 12-layer run reports `persistent_block_outputs: 11`, `persistent_block_output_write_strategy: "direct-residual2-output"`, `persistent_block_output_copy_elided_count`, and `final_block_output_copy_elided: true`.
 

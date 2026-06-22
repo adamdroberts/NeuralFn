@@ -1612,6 +1612,76 @@ def test_paired_kernel_speed_tool_reports_strategy_change_without_route_counter_
     assert "tracked route counters did not change" not in proc.stdout
 
 
+def test_paired_kernel_speed_tool_reports_train_loss_copy_scope_change() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-train-loss-copy.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
+        "\\\"train_loss_host_d2h_count\\\": 8, "
+        "\\\"train_loss_host_d2h_copies_per_logged_step\\\": 8, "
+        "\\\"train_loss_microbatch_host_d2h_copies_elided_per_logged_step\\\": 0, "
+        "\\\"train_loss_device_accumulation_strategy\\\": \\\"microbatch-host-sum\\\", "
+        "\\\"train_loss_host_copy_scope\\\": \\\"once-per-accumulation-microbatch\\\""
+        "}"
+    )
+    candidate_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 9.5}, "
+        "\\\"train_loss_host_d2h_count\\\": 1, "
+        "\\\"train_loss_host_d2h_copies_per_logged_step\\\": 1, "
+        "\\\"train_loss_microbatch_host_d2h_copies_elided_per_logged_step\\\": 7, "
+        "\\\"train_loss_device_accumulation_strategy\\\": \\\"optimizer-step-device-scalar-accumulate\\\", "
+        "\\\"train_loss_host_copy_scope\\\": \\\"once-per-logged-optimizer-step\\\""
+        "}"
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    candidate_metrics = payload["candidate_native_metrics"]
+    assert candidate_metrics["train_loss_host_d2h_count"]["mean"] == 1
+    assert candidate_metrics["train_loss_host_d2h_copies_per_logged_step"]["mean"] == 1
+    assert candidate_metrics["train_loss_microbatch_host_d2h_copies_elided_per_logged_step"]["mean"] == 7
+    strategy_changes = payload["native_strategy_value_changes"]
+    assert strategy_changes["changed"]["train_loss_device_accumulation_strategy"] == {
+        "baseline_values": ["microbatch-host-sum"],
+        "candidate_values": ["optimizer-step-device-scalar-accumulate"],
+    }
+    assert strategy_changes["changed"]["train_loss_host_copy_scope"] == {
+        "baseline_values": ["once-per-accumulation-microbatch"],
+        "candidate_values": ["once-per-logged-optimizer-step"],
+    }
+    assert "train_loss_host_d2h_count: mean=1.000000" in proc.stdout
+    assert "train_loss_host_copy_scope: baseline=once-per-accumulation-microbatch" in proc.stdout
+
+
 def test_paired_kernel_speed_tool_reports_cublaslt_plan_change_without_route_counter_warning() -> None:
     script = Path("tools/paired_kernel_speed.py")
     output_path = Path(tempfile.mkdtemp()) / "paired-plan-change.json"

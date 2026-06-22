@@ -3295,6 +3295,15 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["native_geometry_contract"]["seq_len"] == 2
     assert train_transformer_payload["batch_size"] == 1
     assert train_transformer_payload["seq_len"] == 2
+    assert train_transformer_payload["train_loss_every_steps"] == 10
+    assert (
+        train_transformer_payload["train_loss_device_accumulation_strategy"]
+        == "optimizer-step-device-scalar-accumulate"
+    )
+    assert train_transformer_payload["train_loss_host_copy_scope"] == "once-per-logged-optimizer-step"
+    assert train_transformer_payload["train_loss_host_d2h_count"] == 0
+    assert train_transformer_payload["train_loss_host_d2h_copies_per_logged_step"] == 1
+    assert train_transformer_payload["train_loss_microbatch_host_d2h_copies_elided_per_logged_step"] == 0
     assert train_transformer_payload["sample_every_steps"] == 20000
     assert train_transformer_payload["generate_tokens"] == 144
     assert train_transformer_payload["checkpoint_every_steps"] == 200

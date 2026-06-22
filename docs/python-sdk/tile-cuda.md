@@ -294,8 +294,15 @@ logging. On the default BF16 logits plus direct-u16 target path, loss sampling
 uses the fused raw C ABI
 `nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets`
 so the CE scalar accumulation and in-place BF16 dlogit write share one Tile CUDA
-kernel. Runtime JSON reports `lm_head_ce_loss_backward_fused_available` and
-`lm_head_ce_loss_backward_strategy`.
+kernel. The train-loss scalar is accumulated on device for the whole optimizer
+step across gradient-accumulation microbatches and copied to the host once per
+logged step. Runtime JSON reports `lm_head_ce_loss_backward_fused_available`,
+`lm_head_ce_loss_backward_strategy`,
+`train_loss_device_accumulation_strategy` with value
+`"optimizer-step-device-scalar-accumulate"`, `train_loss_host_copy_scope` with
+value `"once-per-logged-optimizer-step"`, `train_loss_host_d2h_count`,
+`train_loss_host_d2h_copies_per_logged_step: 1`, and
+`train_loss_microbatch_host_d2h_copies_elided_per_logged_step`.
 
 For SDK-launched native GPT profiling, include
 `NFN_NATIVE_LINEAR_SHAPE_STATS=1`, `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1`,
@@ -1029,13 +1036,20 @@ not-promoted threaded CUDA initializer, and set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_INIT_LEGACY_MOD17=1` only when reproducing the older
 modulo-17 values in a paired benchmark.
 
-The compiled GPT-2 transformer-LM trainer does not sample train loss in the hot
-path. Ordinary optimizer steps run the forward activations needed for backward,
-CE gradient generation, gradient clipping, and AdamW only; validation cadence
-computes validation loss from validation shards without also measuring train
-loss. The output fields `train_loss_sparse: false`,
-`train_loss_sampling: "disabled"`, `train_loss_on_validation_steps: false`,
-`train_loss_eval_count`, and `train_loss_last_step` describe that contract.
+The compiled GPT-2 transformer-LM trainer leaves train loss disabled unless
+`train_loss_every_steps` / `--train-loss-every-steps` is positive. Ordinary
+optimizer steps run the forward activations needed for backward, CE gradient
+generation, gradient clipping, and AdamW only; validation cadence computes
+validation loss from validation shards without also measuring train loss. When
+enabled, train-loss logging uses device-side CE scalar accumulation across the
+optimizer step and one D2H scalar copy for the logged step. The output fields
+`train_loss_sparse: false`, `train_loss_sampling`,
+`train_loss_on_validation_steps: false`, `train_loss_eval_count`,
+`train_loss_last_step`, `train_loss_device_accumulation_strategy`,
+`train_loss_host_copy_scope`, `train_loss_host_d2h_count`,
+`train_loss_host_d2h_copies_per_logged_step`, and
+`train_loss_microbatch_host_d2h_copies_elided_per_logged_step` describe that
+contract.
 
 Persistent block-output preservation writes each non-final block's MLP
 residual-add output directly into the per-layer backward-recompute buffer,

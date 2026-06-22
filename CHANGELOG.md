@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Reduced train-loss logging synchronization in the dense GPT native Tile-CUDA
+  trainer. When `--train-loss-every-steps` is enabled, the compiled
+  transformer-LM loop now zeroes one device scalar at the start of the logged
+  optimizer step, accumulates CE loss into it across all gradient-accumulation
+  microbatches, and copies that scalar to the host once per logged step instead
+  of copying after each microbatch. Runtime JSON now reports
+  `train_loss_device_accumulation_strategy` with value
+  `"optimizer-step-device-scalar-accumulate"`, `train_loss_host_copy_scope`
+  with value `"once-per-logged-optimizer-step"`, `train_loss_host_d2h_count`,
+  `train_loss_host_d2h_copies_per_logged_step`, and
+  `train_loss_microbatch_host_d2h_copies_elided_per_logged_step`. The paired
+  benchmark parser tracks these numeric counters and train-loss strategy fields
+  so old-vs-new runs can show the host-copy scope change.
+
+  Verification: rebuilt `build/nfn_gpt_native_train`; focused native GPT and
+  paired-benchmark tests passed; a one-step RTX 5090 smoke reported two
+  microbatches, one train-loss D2H copy, and one elided microbatch copy; an
+  old-vs-new three-step RTX 5090 benchmark with `--train-loss-every-steps 1`
+  passed the strict native-candidate gate at `0.999670x` train-loop wall time
+  and `1.000331x` tokens/sec, with seven train-loss scalar copies elided per
+  logged step at the default eight-microbatch schedule.
+
 - Added `native_strategy_value_changes` to `tools/paired_kernel_speed.py`.
   Paired native JSON now compares categorical strategy fields between baseline
   and candidate, such as LM-head CE strategy, block linear strategy, attention

@@ -582,13 +582,21 @@ against the older int64-index Tile path. Output JSON reports
 `token_weight_fast_int32_init_enabled`, and `token_weight_host_materialization:
 false`.
 
-For performance, the compiled GPT-2 transformer-LM trainer does not compute
-training loss in the hot path. Ordinary steps run the forward activations
-needed for backward, CE gradient generation, gradient clipping, and AdamW only;
-validation cadence computes validation loss from validation shards without also
-measuring train loss. The JSON fields `train_loss_sparse: false`,
-`train_loss_sampling: "disabled"`, `train_loss_on_validation_steps: false`,
-`train_loss_eval_count`, and `train_loss_last_step` report that contract.
+For performance, the compiled GPT-2 transformer-LM trainer keeps training loss
+disabled unless `--train-loss-every-steps` is positive. Ordinary steps run the
+forward activations needed for backward, CE gradient generation, gradient
+clipping, and AdamW only; validation cadence computes validation loss from
+validation shards without also measuring train loss. When sampled train loss is
+enabled, the CE scalar accumulates on device across the whole optimizer step and
+is copied to the host once per logged step. The JSON fields
+`train_loss_sparse: false`, `train_loss_sampling`,
+`train_loss_on_validation_steps: false`, `train_loss_eval_count`,
+`train_loss_last_step`,
+`train_loss_device_accumulation_strategy`,
+`train_loss_host_copy_scope`, `train_loss_host_d2h_count`,
+`train_loss_host_d2h_copies_per_logged_step`, and
+`train_loss_microbatch_host_d2h_copies_elided_per_logged_step` report that
+contract.
 
 Paired CUDA benchmark runs use `tools/paired_kernel_speed.py` to alternate
 baseline and candidate commands under the same selected GPU. For GPU-visible
@@ -865,7 +873,12 @@ one Tile CUDA kernel. Runtime JSON reports
 `lm_head_ce_loss_backward_strategy`; the expected default strategy is
 `fused-loss-accumulate-and-dlogits-public-vocab-bf16-u16-targets`. Validation
 loss is still controlled by `--eval-every-steps` and does not use graph-editor
-nodes or the Torch trainer.
+nodes or the Torch trainer. Train-loss records also report
+`train_loss_device_accumulation_strategy` with value
+`"optimizer-step-device-scalar-accumulate"` and `train_loss_host_copy_scope`
+with value `"once-per-logged-optimizer-step"`, plus
+`train_loss_host_d2h_copies_per_logged_step: 1`; microbatch scalar copies are
+elided according to `grad_accum_steps - 1`.
 
 For native kernel candidate comparisons, use
 `python tools/paired_kernel_speed.py --baseline "OLD_COMMAND" --candidate

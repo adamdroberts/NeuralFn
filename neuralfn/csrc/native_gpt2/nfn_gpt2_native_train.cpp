@@ -9619,6 +9619,7 @@ int run_transformer_lm_training_json(
     double final_loss_mean = 0.0;
     std::int64_t train_loss_eval_count = 0;
     std::int64_t train_loss_last_step = 0;
+    std::int64_t train_loss_host_d2h_count = 0;
     bool cuda_runtime_preflight_checked = false;
     bool checkpoint_written = false;
     std::int64_t attention_forward_row_launches = 0;
@@ -14995,11 +14996,24 @@ int run_transformer_lm_training_json(
         stage_end(stage_event, label + ".lm_head_logits");
     };
 
-    auto lm_head_backward = [&](float accumulation_scale, bool dweight_accumulate, bool record_loss) -> double {
+    auto copy_train_loss_total_to_host = [&](const std::string& label) -> double {
+        run_timed_stage(label, [&]() {
+            if (lm_head_loss_copy_device_sync_enabled && error.empty()) {
+                run(cuda_device_synchronize(), label + ".cudaDeviceSynchronize");
+            }
+            if (error.empty()) {
+                run(cuda_memcpy(host_loss.data(), loss_total, sizeof(float), kCudaMemcpyDeviceToHost),
+                    label + ".copy");
+                if (error.empty()) {
+                    train_loss_host_d2h_count += 1;
+                }
+            }
+        });
+        return error.empty() ? static_cast<double>(host_loss[0]) : 0.0;
+    };
+
+    auto lm_head_backward = [&](float accumulation_scale, bool dweight_accumulate, bool record_loss) {
         const std::int64_t stage_event = stage_begin("lm_head_backward");
-        if (record_loss) {
-            fill_buffer(loss_total, 1, 0.0f, "lm_head_backward.loss_total.zero");
-        }
         if (lm_head_prepack_bf16_hidden_enabled && !lm_head_reuse_forward_logits_enabled) {
             run_timed_stage("lm_head_backward.hidden_prepack", [&]() {
                 run(float32_to_bf16_bits(
@@ -15500,19 +15514,7 @@ int run_transformer_lm_training_json(
                 }
             });
         }
-        if (record_loss) {
-            run_timed_stage("lm_head_backward.loss_copy", [&]() {
-                if (lm_head_loss_copy_device_sync_enabled && error.empty()) {
-                    run(cuda_device_synchronize(), "lm_head_backward.loss.cudaDeviceSynchronize");
-                }
-                if (error.empty()) {
-                    run(cuda_memcpy(host_loss.data(), loss_total, sizeof(float), kCudaMemcpyDeviceToHost),
-                        "lm_head_backward.loss.copy");
-                }
-            });
-        }
         stage_end(stage_event, "lm_head_backward");
-        return error.empty() && record_loss ? static_cast<double>(host_loss[0]) : 0.0;
     };
 
     auto block_input_for = [&](std::size_t block_index) -> const float* {
@@ -17566,12 +17568,13 @@ int run_transformer_lm_training_json(
         return false;
     };
 
-    auto run_backward_microbatch = [&](bool record_train_loss, float accumulation_scale, bool dweight_accumulate) -> double {
+    auto run_backward_microbatch = [&](bool record_train_loss, float accumulation_scale, bool dweight_accumulate) {
         zero_gradients();
         forward_loss("train", false, true, true);
         lm_head_forward_logits_for_backward("train");
-        const double train_loss_sum =
-            error.empty() ? lm_head_backward(accumulation_scale, dweight_accumulate, record_train_loss) : 0.0;
+        if (error.empty()) {
+            lm_head_backward(accumulation_scale, dweight_accumulate, record_train_loss);
+        }
         const std::int64_t final_norm_event = stage_begin("final_norm_backward");
         run_layer_norm_backward_affine_accumulate(lnf_input, grad_lnf, lnf_mean, lnf_rstd, accum_grad_lnf_weight, accum_grad_lnf_bias, "ln_f.backward_affine.accumulate");
         run_layer_norm_backward_input(lnf_input, grad_lnf, lnf_weight, lnf_mean, lnf_rstd, grad_residual2, "ln_f.backward_input");
@@ -17671,23 +17674,20 @@ int run_transformer_lm_training_json(
         }
         if (error.empty()) run(position_embedding_backward_accumulate(incoming_grad, accum_grad_position_weight, active_batch_size, seq_len, kDim, nullptr), "wpe.backward_weight.accumulate");
         stage_end(embedding_backward_event, "embedding_backward");
-        return train_loss_sum;
     };
 
     auto forward_backward_update = [&](std::int64_t step, bool record_train_loss) -> double {
         zero_accumulated_gradients();
-        double train_loss_sum = 0.0;
+        if (record_train_loss) {
+            fill_buffer(loss_total, 1, 0.0f, "train_loss.loss_total.zero");
+        }
         const float accumulation_scale = 1.0f / static_cast<float>(grad_accum_steps);
         for (std::int64_t accum_index = 0; accum_index < grad_accum_steps && error.empty(); ++accum_index) {
             if (!next_train_batch()) {
                 break;
             }
             const bool dweight_accumulate = accum_index != 0 || !dweight_first_microbatch_beta_zero_enabled;
-            const double microbatch_loss_sum =
-                run_backward_microbatch(record_train_loss, accumulation_scale, dweight_accumulate);
-            if (record_train_loss && error.empty()) {
-                train_loss_sum += microbatch_loss_sum;
-            }
+            run_backward_microbatch(record_train_loss, accumulation_scale, dweight_accumulate);
             if (error.empty()) {
                 accumulate_gradients(accumulation_scale);
                 train_microbatches_completed += 1;
@@ -17868,7 +17868,7 @@ int run_transformer_lm_training_json(
             stage_end(stage_event, "adamw_update");
         }
         run_layer_evo_step(step);
-        return train_loss_sum;
+        return record_train_loss ? copy_train_loss_total_to_host("train_loss.loss_copy") : 0.0;
     };
 
     neuralfn::native_train::SequentialTokenBatchSampler val_sampler(dataset.val_shards, seq_len, eval_batch_size);
@@ -18880,6 +18880,12 @@ int run_transformer_lm_training_json(
         << "  \"seq_len\": " << seq_len << ",\n"
         << "  \"rows\": " << rows << ",\n"
         << "  \"train_loss_every_steps\": " << cfg.train_loss_every_steps << ",\n"
+        << "  \"train_loss_device_accumulation_strategy\": \"optimizer-step-device-scalar-accumulate\",\n"
+        << "  \"train_loss_host_copy_scope\": \"once-per-logged-optimizer-step\",\n"
+        << "  \"train_loss_host_d2h_count\": " << train_loss_host_d2h_count << ",\n"
+        << "  \"train_loss_host_d2h_copies_per_logged_step\": 1,\n"
+        << "  \"train_loss_microbatch_host_d2h_copies_elided_per_logged_step\": "
+        << std::max<std::int64_t>(0, grad_accum_steps - 1) << ",\n"
         << "  \"sample_every_steps\": " << cfg.sample_every_steps << ",\n"
         << "  \"generate_tokens\": " << cfg.generate_tokens << ",\n"
         << "  \"checkpoint_every_steps\": " << cfg.checkpoint_every_steps << ",\n"
