@@ -974,7 +974,12 @@ copies the full token-weight matrix through host RAM. The default initializer
 uses CUDA Tile, vectorized float4 stores for GPT-sized tables, and a power-of-two
 deterministic value pattern for the full padded vocabulary table; direct
 low-level Tile ABI calls use that same vectorized default when no token-init
-environment variable is set. Set
+environment variable is set. The default vector4 BF16-shadow writer keeps the
+conversion-based route because the precomputed-pattern variant regressed
+startup timing. Set `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1`,
+`NFN_NATIVE_GPT2_TOKEN_WEIGHT_BF16_PATTERN_INIT=1`, or
+`NFN_TILE_CUDA_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` only when comparing against
+that rejected BF16-pattern writer. Set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0`,
 `NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_INIT=0`, or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` only when comparing against the
@@ -1565,6 +1570,12 @@ mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,
 matching native GPT token-initializer env flags and are intended for paired
 `NFN_SM120_NATIVE_STARTUP_ONLY=1` runs. They remain diagnostic-only; the default
 compiled trainer still uses the fused vector4 FP32/BF16-shadow initializer.
+For a direct check of the rejected vector4 BF16 pattern writer, set
+`NFN_SM120_NATIVE_STARTUP_ONLY=1` and put
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` in
+`NFN_SM120_NATIVE_CANDIDATE_ENV`; the wrapper will gate
+`setup.token_weight_init.total_ms` because the candidate env mentions
+token-weight initialization.
 
 Full GPT-2 `--train-transformer-lm` runs report a `cuda_runtime_preflight` object before allocation. If `cudaDriverGetVersion` returns driver version `0`, or if the loaded CUDA runtime is newer than the reported driver, the trainer exits before `cudaMalloc` so benchmark failures point at GPU access/runtime compatibility instead of kernel execution.
 

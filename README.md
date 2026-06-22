@@ -89,7 +89,12 @@ slowed train-loop wall time to `1.008821x`. Dense GPT startup defaults the tied 
 initializer to the vector4 CUDA Tile route; set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` only for paired bisection against
-the previous fast int32 path.
+the previous fast int32 path. The alternative BF16-pattern vector4 shadow
+writer remains diagnostic-only behind
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` or
+`NFN_TILE_CUDA_TOKEN_WEIGHT_BF16_PATTERN_INIT=1`; the CUDA 13.3 RTX 5090
+startup gate rejected it as slower than the conversion-based vector4 shadow
+writer.
 The opt-in vector4-strided token-weight initializer
 (`NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1` /
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1`) is also diagnostic-only:
@@ -996,7 +1001,13 @@ CE-padding-scrub route. Runtime JSON reports `lm_head_ce_pad_zero_skipped`,
 `token_weight_padding_elements`.
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT` defaults on for dense GPT startup,
 using the vectorized token-weight initializer while preserving the deterministic
-power-of-two initialization contract and fused BF16 shadow write. Set
+power-of-two initialization contract and fused BF16 shadow write. The
+conversion-based vector4 BF16 shadow writer remains the default because the
+precomputed-pattern variant regressed startup timing. Set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1`,
+`NFN_NATIVE_GPT2_TOKEN_WEIGHT_BF16_PATTERN_INIT=1`, or
+`NFN_TILE_CUDA_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` only for paired startup
+bisection of that rejected pattern writer. Set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT=0` or
 `NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT=0` to reproduce the previous fast int32
 Tile initializer in paired startup benchmarks. On the CUDA 13.3 dedicated RTX

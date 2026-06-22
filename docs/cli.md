@@ -250,7 +250,11 @@ LM-head logits and dHidden while retaining the FP32 master for token embedding,
 AdamW state, and checkpoint export. Runtime JSON reports
 `token_weight_bf16_shadow_enabled` and `token_weight_bf16_refresh_count`. Set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW=0` only for paired benchmarks against
-the older per-step BF16 bridge/cache route, or set
+the older per-step BF16 bridge/cache route. The default vector4 token-weight
+initializer keeps the conversion-based BF16 shadow writer; set
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` or
+`NFN_TILE_CUDA_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` only for paired startup
+benchmarks against the rejected precomputed-pattern shadow writer. Set
 `NFN_NATIVE_GPT2_LM_HEAD_BF16_LOGITS=0` to return only the tied LM-head chunks
 to the older optimized TF32 tensor-op `cublasSgemm` path for debugging.
 `nfn_native_tile_linear_weight_bf16_gelu_bf16_float32` now handles stored-MLP

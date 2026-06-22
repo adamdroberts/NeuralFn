@@ -5380,10 +5380,29 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_TILE_CUDA_TOKEN_WEIGHT_THREADED_INIT" in kernels_text
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT" in kernels_text
     assert "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT" in kernels_text
+    assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT" in kernels_text
+    assert "NFN_TILE_CUDA_TOKEN_WEIGHT_BF16_PATTERN_INIT" in kernels_text
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_FAST_INT32_INIT" in kernels_text
     assert "NFN_TILE_CUDA_TOKEN_WEIGHT_FAST_INT32_INIT" in kernels_text
     assert "init_gpt2_token_weight_fast_int32_with_bf16_shadow_float32_kernel" in kernels_text
     assert "init_gpt2_token_weight_vector4_with_bf16_shadow_float32_kernel" in kernels_text
+    assert "init_gpt2_token_weight_vector4_with_bf16_shadow_convert_float32_kernel" in kernels_text
+    assert "bool token_weight_bf16_pattern_init_enabled()" in kernels_text
+    assert "gpt2_token_weight_init_bf16_pattern4" in kernels_text
+    assert "gpt2_token_weight_init_bf16_pattern1" in kernels_text
+    assert "make_ushort4(0xbda4u, 0xbd8fu, 0xbd76u, 0xbd4du)" in kernels_text
+    vector4_shadow_init = kernels_text[
+        kernels_text.index("init_gpt2_token_weight_vector4_with_bf16_shadow_float32_kernel") :
+        kernels_text.index("init_gpt2_token_weight_vector4_with_bf16_shadow_convert_float32_kernel")
+    ]
+    assert "gpt2_token_weight_init_bf16_pattern4(bucket)" in vector4_shadow_init
+    assert "shadow_bf16_bits[tail] = gpt2_token_weight_init_bf16_pattern1(bucket)" in vector4_shadow_init
+    assert "bf16_bits_from_float(value0)" not in vector4_shadow_init
+    vector4_convert_shadow_init = kernels_text[
+        kernels_text.index("init_gpt2_token_weight_vector4_with_bf16_shadow_convert_float32_kernel") :
+        kernels_text.index("init_gpt2_token_weight_vector4_strided_float32_kernel")
+    ]
+    assert "bf16_bits_from_float(value0)" in vector4_convert_shadow_init
     token_threaded_init_helper = kernels_text[
         kernels_text.index("bool token_weight_threaded_init_enabled()") :
         kernels_text.index("void launch_init_gpt2_token_weight_threaded_float32")
@@ -5663,6 +5682,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "tk_linear_gemm_bf16_forward_gelu_to_bf16_bits" in kernels_text
     assert "tk_linear_gemm_bf16_forward_gelu_weight_bf16_to_bf16_bits" in kernels_text
     assert "linear_bf16_input_weight_bf16_gelu_bf16_float32_kernel" in kernels_text
+
     assert "cublas_linear_gemm_ex_bf16_bits_b_float32" in kernels_text
     assert "linear_bf16_output_float32_kernel" in kernels_text
     assert "linear_weight_bf16_output_float32_kernel" in kernels_text
@@ -7381,6 +7401,36 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
             "nfn_native_tile_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_merged_grad_float32"
             in exported
         )
+
+
+def test_native_tile_token_weight_bf16_pattern_initializer_is_opt_in() -> None:
+    root = Path(__file__).resolve().parents[1]
+    kernels_text = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text()
+    assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT" in kernels_text
+    assert "NFN_NATIVE_GPT2_TOKEN_WEIGHT_BF16_PATTERN_INIT" in kernels_text
+    assert "NFN_TILE_CUDA_TOKEN_WEIGHT_BF16_PATTERN_INIT" in kernels_text
+    pattern_env_helper = kernels_text[
+        kernels_text.index("bool token_weight_bf16_pattern_init_enabled()") :
+        kernels_text.index("bool token_weight_vector4_strided_init_enabled()")
+    ]
+    assert "return false;" in pattern_env_helper
+    vector4_dispatch = kernels_text[
+        kernels_text.index("if (token_weight_bf16_pattern_init_enabled())") :
+        kernels_text.index("constexpr int kTokenInitTileSize", kernels_text.index("if (token_weight_bf16_pattern_init_enabled())"))
+    ]
+    assert "init_gpt2_token_weight_vector4_with_bf16_shadow_float32_kernel" in vector4_dispatch
+    assert "init_gpt2_token_weight_vector4_with_bf16_shadow_convert_float32_kernel" in vector4_dispatch
+    pattern_kernel = kernels_text[
+        kernels_text.index("init_gpt2_token_weight_vector4_with_bf16_shadow_float32_kernel") :
+        kernels_text.index("init_gpt2_token_weight_vector4_with_bf16_shadow_convert_float32_kernel")
+    ]
+    assert "gpt2_token_weight_init_bf16_pattern4(bucket)" in pattern_kernel
+    assert "bf16_bits_from_float(value0)" not in pattern_kernel
+    convert_kernel = kernels_text[
+        kernels_text.index("init_gpt2_token_weight_vector4_with_bf16_shadow_convert_float32_kernel") :
+        kernels_text.index("init_gpt2_token_weight_vector4_strided_float32_kernel")
+    ]
+    assert "bf16_bits_from_float(value0)" in convert_kernel
 
 
 def test_cli_install_script_help_and_no_native_mode() -> None:

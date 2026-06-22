@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a diagnostic dense GPT vector4 token-weight initializer variant that
+  writes the BF16 LM-head shadow from the deterministic 16-value BF16 pattern
+  instead of calling `__float2bfloat16` for every token-weight element. It is
+  opt-in via `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1`,
+  `NFN_NATIVE_GPT2_TOKEN_WEIGHT_BF16_PATTERN_INIT=1`, or
+  `NFN_TILE_CUDA_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` because the CUDA 13.3 RTX
+  5090 same-script gate rejected it as slower than the default conversion-based
+  vector4 writer. Verification: focused native source pytest, native CUDA Tile
+  rebuild, and startup-only paired benchmark.
+
 - Changed the opt-in cuBLAS grouped BF16 GEMM execution probe to fail native
   GPT preflight immediately when the requested probe returns a nonzero status.
   This prevents `NFN_NATIVE_GPT_PROBE_CUBLAS_GROUPED_BF16_GEMM=1` from
