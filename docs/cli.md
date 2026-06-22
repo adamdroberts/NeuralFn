@@ -791,10 +791,10 @@ kernel experiment changed memory contract or only changed timing.
 Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` to exercise the current
 cooperative LM-head backward ABI wrapper, or
 `nfn_gpt_native_train --require-cooperative-lm-head-backward` when a
-parity/preflight run must require the real fused/cooperative LM-head backward
-kernel. The flag is default-off for normal training. `--dry-run` reports the
-unmet required route as JSON with `passed: false`; `--check-tile-ops` returns
-nonzero for the same condition so shell automation can fail fast.
+parity/preflight run must require the strict cooperative LM-head backward ABI.
+The flag is default-off for normal training. The current strict ABI route still
+sequences the existing CE, dHidden, and dWeight launches, so runtime strategy
+strings mark it as not-yet-parity instead of a final fused kernel.
 Runtime JSON reports `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,
 `lm_head_cooperative_backward_abi_wrapper_available`,
@@ -802,10 +802,7 @@ Runtime JSON reports `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_fused_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`, and
-`lm_head_cooperative_backward_strategy`. `kernel_available` and
-`fused_kernel_available` mean the fused parity kernel; the existing wrapper is
-reported separately as `abi_wrapper_available` and does not satisfy the strict
-required guard.
+`lm_head_cooperative_backward_strategy`.
 The Tile symbol is no longer an untyped probe in rebuilt ops libraries: its C
 ABI receives the BF16 logit/dlogit chunk, u16 targets, row-loss buffer,
 BF16/float hidden inputs, BF16/float token weights, dHidden, dWeight, shape

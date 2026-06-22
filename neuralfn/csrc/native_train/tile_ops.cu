@@ -4591,7 +4591,7 @@ int nfn_native_tile_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad
     return launch_status();
 }
 
-int nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16(
+static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
     std::uint16_t* logits_bf16,
     const std::uint16_t* targets_u16,
     float* row_losses,
@@ -4661,6 +4661,82 @@ int nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16(
         dweight_beta,
         stream);
     return launch_status();
+}
+
+int nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16(
+    std::uint16_t* logits_bf16,
+    const std::uint16_t* targets_u16,
+    float* row_losses,
+    const std::uint16_t* hidden_bf16,
+    const float* hidden_float,
+    const std::uint16_t* token_weight_bf16,
+    const float* token_weight_float,
+    float* grad_hidden,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t hidden_dim,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    float dweight_beta,
+    int flags,
+    void* cuda_stream) {
+    return run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
+        logits_bf16,
+        targets_u16,
+        row_losses,
+        hidden_bf16,
+        hidden_float,
+        token_weight_bf16,
+        token_weight_float,
+        grad_hidden,
+        grad_weight,
+        rows,
+        hidden_dim,
+        vocab,
+        row_stride,
+        loss_scale,
+        dweight_beta,
+        flags,
+        cuda_stream);
+}
+
+int nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16(
+    std::uint16_t* logits_bf16,
+    const std::uint16_t* targets_u16,
+    float* row_losses,
+    const std::uint16_t* hidden_bf16,
+    const float* hidden_float,
+    const std::uint16_t* token_weight_bf16,
+    const float* token_weight_float,
+    float* grad_hidden,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t hidden_dim,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    float dweight_beta,
+    int flags,
+    void* cuda_stream) {
+    return run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
+        logits_bf16,
+        targets_u16,
+        row_losses,
+        hidden_bf16,
+        hidden_float,
+        token_weight_bf16,
+        token_weight_float,
+        grad_hidden,
+        grad_weight,
+        rows,
+        hidden_dim,
+        vocab,
+        row_stride,
+        loss_scale,
+        dweight_beta,
+        flags,
+        cuda_stream);
 }
 
 int nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(

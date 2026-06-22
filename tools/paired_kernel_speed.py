@@ -420,6 +420,7 @@ NATIVE_TEXT_METRIC_KEYS = (
     "stage.lm_head_backward.logits.total_ms",
     "stage.lm_head_backward.loss_accumulate.total_ms",
     "stage.lm_head_backward.ce.total_ms",
+    "stage.lm_head_backward.cooperative.total_ms",
     "stage.lm_head_backward.dhidden.total_ms",
     "stage.lm_head_backward.dweight.total_ms",
     "stage.lm_head_backward.dhidden_dweight_concurrent.total_ms",

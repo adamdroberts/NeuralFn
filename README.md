@@ -532,16 +532,16 @@ kernel.
 Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or the
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` benchmark
 profile to request the current cooperative LM-head backward path. Today this
-only proves that the ABI wrapper symbol can be loaded; the wrapper still
-sequences the existing CE, dHidden, and dWeight launches and is not the fused
-SM120 parity kernel.
+routes through the strict cooperative ABI symbol, but that symbol still
+sequences the existing CE, dHidden, and dWeight launches and is not the final
+fused SM120 parity kernel.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when
-a parity run must fail unless a genuinely fused/cooperative LM-head backward
-kernel is available and integrated. `--dry-run` keeps the usual JSON-report
-convention and emits `passed: false`; `--check-tile-ops` returns nonzero for
-the same unmet required route so scripts can use it as a hard preflight.
+a parity run must require the strict cooperative ABI to be available and
+integrated. The current implementation satisfies the ABI guard but reports
+`strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity`
+so it cannot be mistaken for the final fused kernel.
 Runtime JSON reports
 `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,
@@ -550,12 +550,11 @@ Runtime JSON reports
 `lm_head_cooperative_backward_fused_kernel_available`,
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`, and
-`lm_head_cooperative_backward_strategy`. `kernel_available` and
-`fused_kernel_available` now mean the fused parity kernel, not just the wrapper
-symbol. The wrapper remains default-off and non-promoted because a 2026-06-22
-dedicated RTX 5090 one-step same-script promotion gate proved it changed the
-route but rejected it at `1.001674x` train-loop wall time and `1.001581x`
-LM-head backward time.
+`lm_head_cooperative_backward_strategy`. The strict cooperative ABI remains
+default-off and non-promoted because the CUDA 13.3 dedicated RTX 5090 1-step, 3-sample
+same-script gate proved it changed the route and kept train-loop wall time at
+`0.999224x`, but still failed the strict total LM-head gate at `1.000739x`
+while block backward passed at `0.997052x`.
 The probed Tile symbol is now exported by the rebuilt ops library with a typed
 C ABI contract for this diagnostic wrapper: it accepts the BF16 logit/dlogit
 chunk, u16 targets, optional row-loss buffer, BF16/float hidden inputs,

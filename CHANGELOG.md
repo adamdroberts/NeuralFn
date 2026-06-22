@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Exported and integrated the strict dense GPT LM-head cooperative backward Tile
+  ABI symbol
+  `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`.
+  The symbol has the same typed C ABI as the existing cooperative wrapper and
+  currently sequences the row-loss classifier, BF16 dHidden, and BF16 dWeight
+  launches behind the strict route. `--require-cooperative-lm-head-backward`
+  now verifies that strict ABI availability/integration instead of failing on a
+  missing symbol, while runtime strategy strings explicitly report
+  `strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity`
+  so this is not confused with the final fused kernel body. The route remains
+  default-off: the CUDA 13.3 dedicated RTX 5090 1-step, 3-sample gate measured
+  `0.999224x` train-loop wall time and `0.997052x` block backward, but still
+  failed the strict total LM-head gate at `1.000739x`.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; confirmed both cooperative symbols are exported;
+  ran default and required cooperative startup smokes plus a required
+  cooperative one-step NanoGPT CUDA Tile smoke; ran the 3-sample paired
+  `lm_head_cooperative_backward` benchmark on the dedicated RTX 5090.
+
 - Added an opt-in dense GPT native LM-head last-dWeight overlap candidate.
   `NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1` queues only the last
   processed LM-head row chunk's dWeight accumulation on the side stream after

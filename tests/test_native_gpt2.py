@@ -970,6 +970,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     tile_ops_source = (root / "neuralfn" / "csrc" / "native_train" / "tile_ops.cu").read_text(
         encoding="utf-8"
     )
+    tile_ops_header = (root / "neuralfn" / "csrc" / "native_train" / "tile_ops.h").read_text(
+        encoding="utf-8"
+    )
     assert "using LmHeadClassifierBackwardCooperativeBf16U16Fn = int (*)();" not in source
     for required_arg in [
         "std::uint16_t* logits_bf16",
@@ -997,7 +1000,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in source
     assert "lm_head.backward.cooperative.bf16_u16" in source
     assert "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity" in source
-    assert "cooperative-classifier-dhidden-dweight-fused-sm120-kernel" in source
+    assert "strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity" in source
+    assert "strict-cooperative-abi-sequences-ce-dhidden-dweight-kernels" in source
+    assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_source
+    assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_header
+    assert "run_lm_head_classifier_backward_cooperative_sequence_bf16_u16" in tile_ops_source
     assert "return include_symbol_check ? (loaded && all_symbols && plan_passed) : false;" in source
     assert "const bool lm_head_cooperative_backward_route_integrated = false;" not in source
     bench_source = (root / "tools" / "bench_native_gpt_sm120_candidate.sh").read_text(
@@ -1005,6 +1012,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     )
     assert '"lm_head_cooperative_backward"|"lm-head-cooperative-backward")' in bench_source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1" in bench_source
+    speed_tool = (root / "tools" / "paired_kernel_speed.py").read_text(encoding="utf-8")
+    assert "stage.lm_head_backward.cooperative.total_ms" in speed_tool
 
 
 def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles() -> None:

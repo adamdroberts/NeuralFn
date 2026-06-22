@@ -57,8 +57,8 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   - 2026-06-22 added a default-off strict parity guard for this route:
     `nfn_gpt_native_train --require-cooperative-lm-head-backward` and
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required`
-    now fail explicitly unless the fused cooperative classifier/dHidden/dWeight
-    kernel is available and integrated. Runtime JSON reports
+    now fail explicitly unless the strict cooperative classifier/dHidden/dWeight
+    ABI symbol is available and integrated. Runtime JSON reports
     `lm_head_cooperative_backward_required`,
     `lm_head_cooperative_backward_requested`,
     `lm_head_cooperative_backward_abi_wrapper_available`,
@@ -77,22 +77,18 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       hidden inputs, BF16/float token weights, dHidden, dWeight, shape metadata,
       loss scale, dWeight beta, flags, and stream. The route remains explicitly
       unintegrated until a Tile implementation with that contract is called.
-    - 2026-06-22 exported the first matching Tile wrapper under that symbol. It
-      sequences the existing row-loss classifier, BF16 dHidden, and BF16 dWeight
-      launches behind one C ABI so candidate plans can probe a concrete symbol.
-      Earlier trainer builds could call it behind
-      `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`, but the current strict
-      contract reports it only as
-      `lm_head_cooperative_backward_abi_wrapper_available` and keeps
-      `lm_head_cooperative_backward_kernel_available: false` until a fused
-      kernel lands. The strict fused route now probes the separate symbol
+    - 2026-06-22 exported the strict Tile ABI symbol
       `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
-      so the diagnostic wrapper cannot accidentally satisfy the parity guard.
-      This is not promoted because the dedicated RTX 5090 one-step promotion
-      gate rejected the wrapper at `1.001674x` train-loop wall time and
-      `1.001581x` LM-head backward time. The open work remains replacing the
-      wrapper sequence with a genuinely fused/cooperative kernel under that
-      fused symbol and then integrating the route.
+      and integrated it behind `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`
+      / `--require-cooperative-lm-head-backward`. The implementation still
+      sequences the existing row-loss classifier, BF16 dHidden, and BF16 dWeight
+      launches, and runtime strategy strings explicitly say
+      `strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity`.
+      A dedicated RTX 5090 1-step, 3-sample gate measured `0.999224x` train-loop
+      wall time and `0.997052x` block backward, but the route still failed the
+      strict total LM-head gate at `1.000739x`. Keep it
+      default-off; the open work remains replacing that sequenced body with a
+      genuinely fused/cooperative kernel under the now-concrete strict symbol.
   - 2026-06-20 promoted the row-loss reduction classifier variant to the dense
     GPT default after CUDA 13.3.33 RTX 5090 same-script gating. The new
     `nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets`
