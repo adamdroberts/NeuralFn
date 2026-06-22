@@ -1691,6 +1691,14 @@ JSON reports `linear_tk_dweight_gemm_count`; when the route is active,
 dedicated RTX 5090 5-step, 3-sample paired benchmark moved 80 LM-head dWeight
 GEMMs from cuBLASLt to TK but regressed train-loop wall time to `1.022262x` and
 `stage.lm_head_backward.dweight.total_ms` to `1.279309x`.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_tk_dweight_65536` expands to
+`NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T`. The route uses
+the same TK dWeight bridge inside the BF16/BF16 dWeight+bias ABI for the dense
+GPT MLP projection bucket, then runs the existing Tile bias reducer. It remains
+default-off and gates `stage.block_backward.mlp_proj.dweight_bias.total_ms` in
+the paired benchmark wrapper. The CUDA 13.3 dedicated RTX 5090 one-step probe
+proved the route active but rejected it at `1.019937x` train-loop wall and
+`1.229754x` MLP projection dWeight+bias.
 `ce_bf16_threads_512` expands to `NFN_NATIVE_GPT_CE_BF16_THREADS=512` for
 repeatable BF16 CE row-block bisection. It stays diagnostic-only: the dedicated
 RTX 5090 stage-timed gate regressed CE time to `1.144675x`, total LM-head

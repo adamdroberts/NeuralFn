@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the shape-gated TK dWeight diagnostic into the BF16/BF16
+  dWeight+bias launcher used by transformer block projections. When
+  `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE` accepts a dWeight+bias shape, the
+  launcher now computes dWeight through the existing SM120 TK bridge and then
+  runs the Tile bias reducer. Added
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_tk_dweight_65536`, which expands
+  to `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T` and gates
+  `stage.block_backward.mlp_proj.dweight_bias.total_ms`.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; ran the Tile CUDA example suite and focused
+  native candidate-wrapper test; ran a one-step dedicated RTX 5090
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_tk_dweight_65536` probe. The
+  probe passed the route-change gate by moving 96 dWeight GEMMs from cuBLASLt
+  to TK (`linear_tk_dweight_gemm_count: 0 -> 96`) and no longer mislabeled the
+  LM-head dWeight strategy, but it failed performance gates at `1.019937x`
+  train-loop wall, `1.041530x` block backward, `1.112576x` MLP projection, and
+  `1.229754x` MLP projection dWeight+bias. The profile remains
+  diagnostic-only.
+
 - Wired the non-required dense GPT cooperative LM-head candidate flag to the
   existing event-ordered sequence wrapper route. `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`
   and `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` can now

@@ -1064,6 +1064,14 @@ at `1.009016x` train-loop wall time and `1.091020x`
 same-script benchmark moved 80 dWeight GEMMs from cuBLASLt to TK but rejected
 the route at `1.022262x` train-loop wall time and `1.279309x`
 `stage.lm_head_backward.dweight.total_ms`.
+`mlp_proj_tk_dweight_65536` expands to
+`NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T`. That profile
+uses the same TK dWeight bridge inside the BF16/BF16 dWeight+bias ABI for the
+hot MLP projection block bucket, then runs the existing Tile bias reducer. It
+gates `stage.block_backward.mlp_proj.dweight_bias.total_ms` and remains
+diagnostic-only: the dedicated RTX 5090 one-step probe moved 96 dWeight GEMMs
+from cuBLASLt to TK but failed the whole-step, block-backward, MLP-projection,
+and MLP-projection dWeight+bias gates.
 `lm_head_loss_bins` expands to
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1` for the train-loss logging path.
 It is diagnostic-only: the no-loss parity benchmark does not execute loss

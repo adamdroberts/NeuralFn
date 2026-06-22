@@ -18926,6 +18926,18 @@ int run_transformer_lm_training_json(
     if (trainer_linear_tk_dweight_gemm_count_fn != nullptr) {
         linear_tk_dweight_gemm_count = trainer_linear_tk_dweight_gemm_count_fn();
     }
+    std::ostringstream lm_head_tk_dweight_shape_expected;
+    lm_head_tk_dweight_shape_expected << kDim << "," << kPaddedVocab << ","
+                                      << lm_head_chunk_rows << ",N,T";
+    const std::string requested_tk_dweight_shape =
+        env_or_empty_any({"NFN_TILE_CUDA_LINEAR_TK_DWEIGHT_ENABLE_SHAPE",
+                          "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE"});
+    const bool lm_head_tk_dweight_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_LINEAR_TK_DWEIGHT",
+                              "NFN_TILE_CUDA_LINEAR_TK_DWEIGHT"}),
+            false) ||
+        requested_tk_dweight_shape == lm_head_tk_dweight_shape_expected.str();
     if (trainer_linear_cublaslt_gemm_count_fn != nullptr) {
         linear_cublaslt_gemm_count = trainer_linear_cublaslt_gemm_count_fn();
     }
@@ -19606,7 +19618,7 @@ int run_transformer_lm_training_json(
                 ? "bf16"
                 : (lm_head_bf16_logits_enabled ? "float32" : "float32")) << "\",\n"
         << "  \"lm_head_dweight_strategy\": \""
-        << (linear_tk_dweight_gemm_count > 0
+        << (linear_tk_dweight_gemm_count > 0 && lm_head_tk_dweight_requested
                 ? "tk-sm120-bf16-scratch-to-float32-dweight-diagnostic"
                 : (lm_head_prepack_bf16_hidden_enabled
                 ? (dweight_first_microbatch_beta_zero_enabled
