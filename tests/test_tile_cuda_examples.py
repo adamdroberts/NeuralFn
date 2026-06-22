@@ -1498,6 +1498,39 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "65536" in full_row_payload["candidate_command"]
     assert full_row_payload["metric_ratio_gates"]["enabled"] is False
 
+    cooperative_required_output_path = (
+        tmp_path / "candidate-lm-head-cooperative-required-dry-run.json"
+    )
+    cooperative_required_env = os.environ.copy()
+    cooperative_required_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_cooperative_backward_required",
+            "NFN_SM120_NATIVE_JSON_OUT": str(cooperative_required_output_path),
+        }
+    )
+
+    cooperative_required_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=cooperative_required_env,
+    )
+
+    assert cooperative_required_dry_run.returncode == 0, cooperative_required_dry_run.stderr
+    cooperative_required_payload = json.loads(
+        cooperative_required_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        "--require-cooperative-lm-head-backward"
+        in cooperative_required_payload["candidate_command"]
+    )
+    assert cooperative_required_payload["metric_ratio_gates"]["enabled"] is False
+
     token_profiles = {
         "token_weight_vector4_strided": {
             "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT": "1"
@@ -2371,6 +2404,10 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "lm_head_logits_linear_strategy": "padded-lm-head-bf16-cublaslt-fallback",
                 "lm_head_dhidden_linear_strategy": "bf16-cublas-gemmex",
                 "lm_head_ce_loss_backward_strategy": "separate-loss-partials-reduction-then-dlogits",
+                "lm_head_cooperative_backward_required": True,
+                "lm_head_cooperative_backward_kernel_available": False,
+                "lm_head_cooperative_backward_kernel_enabled": False,
+                "lm_head_cooperative_backward_strategy": "missing-required-sm120-parity-kernel",
                 "lm_head_classifier_strategy_contract": {
                     "reference_full_bf16_logit_bytes": 6593445888,
                     "native_chunk_bf16_logit_bytes": 825819136,
@@ -2430,6 +2467,10 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["lm_head_logits_linear_strategy"] == "padded-lm-head-bf16-cublaslt-fallback"
     assert metrics["lm_head_dhidden_linear_strategy"] == "bf16-cublas-gemmex"
     assert metrics["lm_head_ce_loss_backward_strategy"] == "separate-loss-partials-reduction-then-dlogits"
+    assert metrics["lm_head_cooperative_backward_required"] is True
+    assert metrics["lm_head_cooperative_backward_kernel_available"] is False
+    assert metrics["lm_head_cooperative_backward_kernel_enabled"] is False
+    assert metrics["lm_head_cooperative_backward_strategy"] == "missing-required-sm120-parity-kernel"
     assert metrics["lm_head_classifier.reference_full_bf16_logit_bytes"] == 6593445888
     assert metrics["lm_head_classifier.native_chunk_bf16_logit_bytes"] == 825819136
     assert metrics["lm_head_classifier.resident_logit_reduction_ratio"] == 8.0
@@ -2462,6 +2503,10 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
         "lm_head_logits_linear_strategy": ["padded-lm-head-bf16-cublaslt-fallback"],
         "lm_head_dhidden_linear_strategy": ["bf16-cublas-gemmex"],
         "lm_head_ce_loss_backward_strategy": ["separate-loss-partials-reduction-then-dlogits"],
+        "lm_head_cooperative_backward_strategy": ["missing-required-sm120-parity-kernel"],
+        "lm_head_cooperative_backward_required": ["true"],
+        "lm_head_cooperative_backward_kernel_available": ["false"],
+        "lm_head_cooperative_backward_kernel_enabled": ["false"],
     }
 
 

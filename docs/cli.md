@@ -789,6 +789,15 @@ logit reduction. `tools/paired_kernel_speed.py` extracts the contract's
 full/chunk BF16 byte counts, chunk rows/count, and reduction ratio into native
 metric summaries so candidate-vs-baseline reports show whether a classifier
 kernel experiment changed memory contract or only changed timing.
+Use `nfn_gpt_native_train --require-cooperative-lm-head-backward` when a
+parity/preflight run must reject the current row-chunked classifier plus
+separate dHidden/dWeight GEMMs. The flag is default-off for normal training.
+Runtime JSON reports `lm_head_cooperative_backward_required`,
+`lm_head_cooperative_backward_kernel_available`,
+`lm_head_cooperative_backward_kernel_enabled`, and
+`lm_head_cooperative_backward_strategy`; until the real cooperative Tile ABI is
+implemented, the strategy is `missing-required-sm120-parity-kernel` and the
+required run fails explicitly.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 
@@ -1022,6 +1031,11 @@ stores. Runtime JSON reports `lm_head_ce_bf16_vec_loads_enabled`,
 `lm_head_ce_bf16_vec_normal_stores_enabled`, and
 `lm_head_ce_bf16_vector_io_strategy`, and stage-timed wrapper runs gate the
 candidate on `stage.lm_head_backward.ce.total_ms`.
+`lm_head_cooperative_backward_required` appends
+`--require-cooperative-lm-head-backward` to the candidate command. It is a
+strict missing-kernel guard, not a timing candidate: it should fail until the
+cooperative classifier/dHidden/dWeight Tile ABI replaces the current
+row-chunked classifier plus separate GEMM schedule.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

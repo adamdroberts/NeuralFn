@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an explicit native dense-GPT guard for the missing cooperative LM-head
+  backward Tile ABI. `nfn_gpt_native_train` now accepts
+  `--require-cooperative-lm-head-backward`; when set, the run fails if the
+  trainer still uses the row-chunked classifier plus separate dHidden/dWeight
+  GEMMs. Runtime JSON and paired benchmark summaries now report
+  `lm_head_cooperative_backward_required`,
+  `lm_head_cooperative_backward_kernel_available`,
+  `lm_head_cooperative_backward_kernel_enabled`, and
+  `lm_head_cooperative_backward_strategy`. The SM120 wrapper exposes
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required`
+  so parity checks can fail fast until the real cooperative
+  classifier/dHidden/dWeight kernel lands.
+
+  Migration note: this is a default-off strictness flag, not a replacement
+  kernel. Normal training keeps the current native CUDA Tile path. Use the flag
+  only for parity/preflight checks that must reject the current LM-head
+  backward implementation.
+
+  Verification: rebuilt `build/nfn_gpt_native_train`; strict `--print-plan`
+  against the llm.kittens TinyStories token shards reports
+  `status: "native-transformer-lm-failed"` and `passed: false` with the
+  missing-kernel error; focused paired-kernel parser and wrapper dry-run tests
+  passed; `tools/paired_kernel_speed.py` compiled; native no-Torch dependency
+  check and `git diff --check` passed.
+
 - Added a named no-loss LM-head CE vector-IO candidate for dense GPT native
   kernel bisection. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_vec8_io`
   expands to `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1` and

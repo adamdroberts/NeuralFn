@@ -54,6 +54,18 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   loss+dlogits over each row chunk; the remaining parity work is to replace its
   internals with a cooperative classifier plus LM-head dHidden/dWeight kernel
   without reintroducing full resident logits.
+  - 2026-06-22 added a default-off strict parity guard for this missing kernel:
+    `nfn_gpt_native_train --require-cooperative-lm-head-backward` and
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required`
+    now fail explicitly until the cooperative classifier/dHidden/dWeight ABI is
+    implemented. Runtime JSON reports
+    `lm_head_cooperative_backward_required`,
+    `lm_head_cooperative_backward_kernel_available`,
+    `lm_head_cooperative_backward_kernel_enabled`, and
+    `lm_head_cooperative_backward_strategy`.
+  - [ ] Implement the actual cooperative LM-head backward Tile ABI that fuses or
+    co-schedules classifier dlogit production with dHidden and dWeight work
+    without materializing full resident logits or routing tensors through Torch.
   - 2026-06-20 promoted the row-loss reduction classifier variant to the dense
     GPT default after CUDA 13.3.33 RTX 5090 same-script gating. The new
     `nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets`

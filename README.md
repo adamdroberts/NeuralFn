@@ -516,6 +516,16 @@ LM-head classifier route changes instead of relying only on coarse stage timing.
 This keeps the LM-head classifier path auditable while the next kernel step
 replaces the ABI internals with a cooperative classifier plus dHidden/dWeight
 kernel.
+Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
+named benchmark profile
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when
+a parity run must fail until that cooperative ABI exists. Runtime JSON reports
+`lm_head_cooperative_backward_required`,
+`lm_head_cooperative_backward_kernel_available`,
+`lm_head_cooperative_backward_kernel_enabled`, and
+`lm_head_cooperative_backward_strategy`; today the strategy is
+`missing-required-sm120-parity-kernel`, so the guard is a deliberate failing
+preflight rather than a performance candidate.
 `NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0` (or the GPT-2 alias
 `NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD=0`) disables the default fused
 loss-accumulate+dlogits classifier path for same-script bisection, making

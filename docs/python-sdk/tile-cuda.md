@@ -1657,6 +1657,16 @@ LM-head dHidden/dWeight concurrent bucket for candidate-side inspection when
 stage timing is enabled. Train-loop and total LM-head timing remain the
 enforceable gates for that profile because the serial baseline emits split
 dHidden and dWeight substages.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required`
+or pass `--require-cooperative-lm-head-backward` to the compiled dense GPT CLI
+when a parity/preflight run must fail until the cooperative LM-head backward
+ABI exists. Runtime JSON reports
+`lm_head_cooperative_backward_required`,
+`lm_head_cooperative_backward_kernel_available`,
+`lm_head_cooperative_backward_kernel_enabled`, and
+`lm_head_cooperative_backward_strategy`. Today this is a default-off strictness
+guard that reports `missing-required-sm120-parity-kernel`, not a performance
+route.
 
 Startup-only token-weight initializer bisections can use the same profile
 mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,

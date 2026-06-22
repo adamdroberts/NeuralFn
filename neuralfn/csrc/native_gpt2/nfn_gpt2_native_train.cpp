@@ -93,6 +93,7 @@ struct Config {
     bool checkpoint_metadata_smoke = false;
     bool write_checkpoint = true;
     bool require_optimized_attention = true;
+    bool require_cooperative_lm_head_backward = false;
     bool template_explicit = false;
     bool seq_len_explicit = false;
     bool batch_size_explicit = false;
@@ -400,6 +401,8 @@ void print_usage(const char* program) {
         << "  --profile-json PATH               Alias for --json-out; useful with NFN_NATIVE_GPT_STAGE_TIMING=1\n"
         << "  --print-plan                      Print native backend JSON plan and exit\n"
         << "  --output-dir PATH                 Native output directory\n"
+        << "  --require-cooperative-lm-head-backward\n"
+        << "                                     Fail if the fused cooperative LM-head backward Tile ABI is unavailable\n"
         << "  --dry-run                         Print/resolve without exec\n"
         << "  --print-command                   Print the backend command without training; tile-cuda exits before CUDA/shard setup\n\n"
         << "Training options mirror train_gpt.py names, including --eval-every-steps, --eval-batches, --eval-batch-size, --train-loss-every-steps, --batch-size, --train-seq-len,\n"
@@ -3874,6 +3877,11 @@ bool print_tile_plan(
                 << " exceeds the safe default cap " << kDefaultSafeLmHeadRowChunkSize
                 << "; set NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1 only for paired diagnostics";
         plan_error = message.str();
+    } else if (cfg.require_cooperative_lm_head_backward) {
+        plan_error =
+            "cooperative LM-head backward required, but the Tile ABI symbol is not implemented; "
+            "required next step: replace row-chunked classifier plus separate dHidden/dWeight GEMMs "
+            "with a cooperative classifier/dHidden/dWeight kernel";
     }
 
     bool loaded = false;
@@ -3941,6 +3949,11 @@ bool print_tile_plan(
         << "  \"lm_head_row_chunk_safe_cap\": " << kDefaultSafeLmHeadRowChunkSize << ",\n"
         << "  \"lm_head_row_chunk_unsafe_override_enabled\": "
         << (unsafe_lm_head_row_chunk_allowed ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_required\": "
+        << (cfg.require_cooperative_lm_head_backward ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_kernel_available\": false,\n"
+        << "  \"lm_head_cooperative_backward_kernel_enabled\": false,\n"
+        << "  \"lm_head_cooperative_backward_strategy\": \"missing-required-sm120-parity-kernel\",\n"
         << "  \"schedule\": {\"max_steps\": " << cfg.max_steps
         << ", \"train_batch_tokens\": " << cfg.train_batch_tokens
         << ", \"train_loss_every_steps\": " << cfg.train_loss_every_steps
@@ -11646,6 +11659,9 @@ int run_transformer_lm_training_json(
         !lm_head_reuse_forward_logits_enabled &&
         !lm_head_full_batch_reuse_schedule_enabled &&
         lm_head_chunk_count > 1;
+    const bool lm_head_cooperative_backward_kernel_available = false;
+    const bool lm_head_cooperative_backward_kernel_enabled =
+        lm_head_cooperative_backward_kernel_available;
     void* lm_head_dhidden_stream = nullptr;
     void* lm_head_dweight_stream = nullptr;
     void* lm_head_ce_done_event = nullptr;
@@ -18584,6 +18600,14 @@ int run_transformer_lm_training_json(
         error = out.str();
         passed = false;
     }
+    if (passed && cfg.require_cooperative_lm_head_backward &&
+        !lm_head_cooperative_backward_kernel_available) {
+        error =
+            "cooperative LM-head backward required, but the Tile ABI symbol is not implemented; "
+            "required next step: replace row-chunked classifier plus separate dHidden/dWeight GEMMs "
+            "with a cooperative classifier/dHidden/dWeight kernel";
+        passed = false;
+    }
     if (passed && final_checkpoint_export_enabled) {
         const auto checkpoint_start_time = Clock::now();
         write_trained_checkpoint();
@@ -19162,6 +19186,17 @@ int run_transformer_lm_training_json(
                 ? "two-nonblocking-cuda-streams-after-ce-event"
                 : (lm_head_dweight_before_dhidden_enabled ? "serial-dweight-before-dhidden"
                                                           : "serial-dhidden-before-dweight"))))
+        << "\",\n"
+        << "  \"lm_head_cooperative_backward_required\": "
+        << (cfg.require_cooperative_lm_head_backward ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_kernel_available\": "
+        << (lm_head_cooperative_backward_kernel_available ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_kernel_enabled\": "
+        << (lm_head_cooperative_backward_kernel_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_cooperative_backward_strategy\": \""
+        << (lm_head_cooperative_backward_kernel_enabled
+                ? "cooperative-classifier-dhidden-dweight-tile-abi"
+                : "missing-required-sm120-parity-kernel")
         << "\",\n"
         << "  \"lm_head_reverse_chunk_order_enabled\": "
         << (lm_head_reverse_chunk_order_enabled ? "true" : "false") << ",\n"
@@ -21361,6 +21396,9 @@ int main(int argc, char** argv) {
         } else if (arg == "--allow-scalar-attention-fallback" ||
                    arg == "--native-cuda-allow-scalar-attention-fallback") {
             cfg.require_optimized_attention = false;
+        } else if (arg == "--require-cooperative-lm-head-backward" ||
+                   arg == "--native-cuda-require-cooperative-lm-head-backward") {
+            cfg.require_cooperative_lm_head_backward = true;
         } else if (arg == "--dry-run" || arg == "--native-cuda-dry-run") {
             cfg.dry_run = true;
         } else if (arg == "--print-command" || arg == "--native-cuda-print-command") {
