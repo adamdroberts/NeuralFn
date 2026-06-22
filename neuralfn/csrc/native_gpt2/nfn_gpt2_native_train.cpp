@@ -274,8 +274,7 @@ std::int64_t resolved_linear_backward_bias_row_chunk_size() {
 bool packed_qkv_attention_default_enabled() {
     const std::string value =
         env_or_empty_any({"NFN_NATIVE_GPT_PACKED_QKV_ATTENTION", "NFN_NATIVE_GPT2_PACKED_QKV_ATTENTION"});
-    return value.empty() ||
-           value == "1" ||
+    return value == "1" ||
            value == "true" ||
            value == "TRUE" ||
            value == "on" ||
@@ -1034,7 +1033,7 @@ std::string native_dense_gpt_geometry_contract_json(const Config& cfg) {
         << "\"seq_len\":" << geometry.seq_len << ","
         << "\"position_encoding\":\"absolute\","
         << "\"norm\":\"layernorm\","
-        << "\"attention\":\"causal-packed-qkv-sm120-bf16\","
+        << "\"attention\":\"causal-split-qkv-sm120-tk-bf16\","
         << "\"mlp\":\"gelu-4x\","
         << "\"dropout_p\":" << geometry.dropout_p << ","
         << "\"supported_template_selectors\":["
@@ -4136,7 +4135,9 @@ bool print_tile_plan(
         << ", \"logits\": " << logits
         << ", \"lm_head_row_chunk_size\": " << lm_head_chunk_rows << "},\n"
         << "  \"attention_forward_strategy\": \""
-        << (packed_qkv_attention_enabled ? "tk-sm120-packed-qkv-bf16-flashattention" : "row-vector-tile-score-reuse")
+        << (packed_qkv_attention_enabled
+                ? "tk-sm120-packed-qkv-bf16-flashattention"
+                : "tk-sm120-bf16-flashattention-bridge")
         << "\",\n"
         << "  \"attention_forward_row_count\": " << attention_row_count << ",\n"
         << "  \"attention_forward_scalar_output_count\": " << attention_scalar_output_count << ",\n"

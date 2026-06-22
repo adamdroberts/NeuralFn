@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- **Breaking changes:** Changed dense GPT native attention back to the
+  memory-safe split-QKV SM120 TK bridge by default. Before, the default dense
+  GPT native JSON reported the packed-QKV path. Now normal training reports
+  `packed_qkv_attention_enabled: false`,
+  `qkv_forward_layout_strategy: "fused-split-to-heads"`, and
+  `attention_backend_strategy: "tk-sm120-bf16-bridge"` unless the packed route
+  is explicitly enabled. The native geometry contract now reports
+  `attention: "causal-split-qkv-sm120-tk-bf16"` for the default dense GPT
+  route. Migration: update parsers that assumed the packed default, and set
+  `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=1` (or the GPT-2 alias) only for paired
+  packed-QKV benchmark candidates.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train` with CUDA 13.3; fill, optimizer, LM, attention,
+  MLP, norm/residual, transformer-block, and TinyStories transformer-LM smokes
+  passed on the dedicated RTX 5090. A one-step TinyStories train plus
+  validation run failed with the packed route at
+  `block0.attn.sdpa.forward_packed_qkv_bf16_store_lse` due CUDA OOM, then
+  passed with the split-QKV TK default and produced one validation-loss record
+  at step 1.
+
 - Extended the native no-Torch dependency verifier to scan `requirements.txt`
   as part of the default install contract. The guard now fails if the visible
   requirements file reintroduces `torch`, `torchvision`, or `torchaudio`, in

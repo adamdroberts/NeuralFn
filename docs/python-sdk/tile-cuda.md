@@ -572,6 +572,10 @@ causal masks. Training JSON reports
 `attention_forward_strategy: "tk-sm120-bf16-flashattention-bridge"`,
 `attention_backward_strategy: "tk-sm120-bf16-recompute-forward-bridge"`,
 `attention_forward_tk_launch_count`, and `attention_backward_tk_launch_count`.
+The packed-QKV bridge remains available for paired candidate profiling with
+`NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=1`, but it is not the default real-training
+route because the CUDA 13.3 RTX 5090 full trainer path can OOM in the packed
+saved-workspace forward.
 Set `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` only for short
 diagnostic runs that need packed-backward section timing: it uses CUDA events
 and synchronizes the stream to report dprep and TK backward totals/counts as
@@ -1992,7 +1996,7 @@ plan and training JSON report `qkv_forward_layout_strategy:
 `attention_backward_qkv_bridge_strategy:
 "tk-sm120-packed-qkv-direct-bf16-grad-scratch-handoff"`, and
 `attention_backward_strategy:
-"tk-sm120-packed-qkv-bf16-backward-direct-bf16-grad-scratch-handoff"` when the default path is
+"tk-sm120-packed-qkv-bf16-backward-direct-bf16-grad-scratch-handoff"` when the packed route is
 active. Set `NFN_NATIVE_GPT_DIRECT_BF16_QKV_GRAD_SCRATCH=0` to reproduce the
 older workspace-to-packed-QKV-buffer copy path, or set
 `NFN_NATIVE_GPT_FUSE_QKV_BIAS_TK_GEMM=0` to reproduce the older separate
@@ -2065,8 +2069,8 @@ older packed path that expands `dQKV` to float32 before QKV dWeight/dInput. Set
 `NFN_TILE_CUDA_BF16_BIAS_INPLACE_TILE=0`,
 `NFN_NATIVE_GPT_BF16_BIAS_INPLACE_TILE=0`, or
 `NFN_NATIVE_GPT2_BF16_BIAS_INPLACE_TILE=0` to compare against the older scalar
-CUDA BF16 bias kernel. Set `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=0` only when
-comparing against the older split-to-heads bridge. The packed backward batch cap
+CUDA BF16 bias kernel. Set `NFN_NATIVE_GPT_PACKED_QKV_ATTENTION=1` only when
+explicitly benchmarking the packed-QKV candidate route. The packed backward batch cap
 defaults to 64 so the workstation `64 x 1024` microbatch runs as one TK backward
 chunk; set `NFN_NATIVE_GPT_PACKED_ATTENTION_BACKWARD_BATCH_CAP=48` to reproduce
 the previous split for paired benchmarks. Packed attention dprep keeps the older row-linear launch by default; set
