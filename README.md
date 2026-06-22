@@ -639,6 +639,16 @@ fused-kernel probe uses the separate future symbol
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`; only that
 symbol can make `lm_head_cooperative_backward_kernel_available` and
 `lm_head_cooperative_backward_fused_kernel_available` true.
+Fresh Tile ops builds also export cooperative sequence counters for this
+diagnostic wrapper. Runtime JSON reports
+`lm_head_cooperative_sequence_launch_count`,
+`lm_head_cooperative_sequence_ce_launch_count`,
+`lm_head_cooperative_sequence_dhidden_launch_count`,
+`lm_head_cooperative_sequence_dweight_launch_count`,
+`lm_head_cooperative_sequence_concurrent_count`,
+`lm_head_cooperative_sequence_legacy_count`, and
+`lm_head_cooperative_sequence_loss_bin_count` so paired speed tests can prove
+whether a candidate is still sequencing the old CE/dHidden/dWeight launches.
 `NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0` (or the GPT-2 alias
 `NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD=0`) disables the default fused
 loss-accumulate+dlogits classifier path for same-script bisection, making

@@ -218,6 +218,14 @@ int nfn_native_tile_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad
     float loss_scale,
     void* cuda_stream);
 
+std::int64_t nfn_native_tile_lm_head_cooperative_sequence_launch_count();
+std::int64_t nfn_native_tile_lm_head_cooperative_sequence_ce_launch_count();
+std::int64_t nfn_native_tile_lm_head_cooperative_sequence_dhidden_launch_count();
+std::int64_t nfn_native_tile_lm_head_cooperative_sequence_dweight_launch_count();
+std::int64_t nfn_native_tile_lm_head_cooperative_sequence_concurrent_count();
+std::int64_t nfn_native_tile_lm_head_cooperative_sequence_legacy_count();
+std::int64_t nfn_native_tile_lm_head_cooperative_sequence_loss_bin_count();
+
 int nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16(
     std::uint16_t* logits_bf16,
     const std::uint16_t* targets_u16,

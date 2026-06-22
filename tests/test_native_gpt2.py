@@ -1082,6 +1082,15 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "run_lm_head_classifier_backward_cooperative_sequence_bf16_u16" in tile_ops_source
     assert "LmHeadCooperativeStreams" in tile_ops_source
     assert "cudaStreamWaitEvent" in tile_ops_source
+    assert "g_lm_head_cooperative_sequence_launch_count" in tile_ops_source
+    assert "nfn_native_tile_lm_head_cooperative_sequence_launch_count" in tile_ops_source
+    assert "nfn_native_tile_lm_head_cooperative_sequence_ce_launch_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_cooperative_sequence_dhidden_launch_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_cooperative_sequence_dweight_launch_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_cooperative_sequence_concurrent_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_cooperative_sequence_legacy_count" in tile_ops_header
+    assert "nfn_native_tile_lm_head_cooperative_sequence_loss_bin_count" in tile_ops_header
+    assert "lm_head_cooperative_sequence_launch_count" in source
     assert "return include_symbol_check ? (loaded && all_symbols && plan_passed) : false;" in source
     assert "const bool lm_head_cooperative_backward_route_integrated = false;" not in source
     bench_source = (root / "tools" / "bench_native_gpt_sm120_candidate.sh").read_text(

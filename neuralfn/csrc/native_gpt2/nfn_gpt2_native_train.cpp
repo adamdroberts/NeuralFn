@@ -9876,6 +9876,13 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_classifier_last_rows = 0;
     std::int64_t lm_head_classifier_last_vocab = 0;
     std::int64_t lm_head_classifier_last_row_stride = 0;
+    std::int64_t lm_head_cooperative_sequence_launch_count = 0;
+    std::int64_t lm_head_cooperative_sequence_ce_launch_count = 0;
+    std::int64_t lm_head_cooperative_sequence_dhidden_launch_count = 0;
+    std::int64_t lm_head_cooperative_sequence_dweight_launch_count = 0;
+    std::int64_t lm_head_cooperative_sequence_concurrent_count = 0;
+    std::int64_t lm_head_cooperative_sequence_legacy_count = 0;
+    std::int64_t lm_head_cooperative_sequence_loss_bin_count = 0;
     std::int64_t lm_head_pipeline_slot_event_wait_count = 0;
     std::int64_t lm_head_pipeline_done_event_record_count = 0;
     const bool linear_cublaslt_descriptor_cache_enabled =
@@ -10694,6 +10701,13 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn lm_head_classifier_last_vocab_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_classifier_last_row_stride_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_classifier_loss_bin_launch_count_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_cooperative_sequence_launch_count_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_cooperative_sequence_ce_launch_count_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_cooperative_sequence_dhidden_launch_count_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_cooperative_sequence_dweight_launch_count_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_cooperative_sequence_concurrent_count_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_cooperative_sequence_legacy_count_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_cooperative_sequence_loss_bin_count_fn = nullptr;
     AttentionBackwardToQkvReuseForwardFn attention_backward_to_qkv_reuse_forward = nullptr;
     PackedAttentionForwardFn packed_attention_forward = nullptr;
     PackedAttentionForwardStoreLseFn packed_attention_forward_store_lse = nullptr;
@@ -11201,6 +11215,20 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_lm_head_classifier_last_row_stride");
                 lm_head_classifier_loss_bin_launch_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_lm_head_classifier_loss_bin_launch_count");
+                lm_head_cooperative_sequence_launch_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_cooperative_sequence_launch_count");
+                lm_head_cooperative_sequence_ce_launch_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_cooperative_sequence_ce_launch_count");
+                lm_head_cooperative_sequence_dhidden_launch_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_cooperative_sequence_dhidden_launch_count");
+                lm_head_cooperative_sequence_dweight_launch_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_cooperative_sequence_dweight_launch_count");
+                lm_head_cooperative_sequence_concurrent_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_cooperative_sequence_concurrent_count");
+                lm_head_cooperative_sequence_legacy_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_cooperative_sequence_legacy_count");
+                lm_head_cooperative_sequence_loss_bin_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_lm_head_cooperative_sequence_loss_bin_count");
                 attention_stats_reset();
                 trainer_linear_stats_reset();
                 lm_head_classifier_stats_reset();
@@ -19209,6 +19237,27 @@ int run_transformer_lm_training_json(
     if (lm_head_classifier_last_row_stride_fn != nullptr) {
         lm_head_classifier_last_row_stride = lm_head_classifier_last_row_stride_fn();
     }
+    if (lm_head_cooperative_sequence_launch_count_fn != nullptr) {
+        lm_head_cooperative_sequence_launch_count = lm_head_cooperative_sequence_launch_count_fn();
+    }
+    if (lm_head_cooperative_sequence_ce_launch_count_fn != nullptr) {
+        lm_head_cooperative_sequence_ce_launch_count = lm_head_cooperative_sequence_ce_launch_count_fn();
+    }
+    if (lm_head_cooperative_sequence_dhidden_launch_count_fn != nullptr) {
+        lm_head_cooperative_sequence_dhidden_launch_count = lm_head_cooperative_sequence_dhidden_launch_count_fn();
+    }
+    if (lm_head_cooperative_sequence_dweight_launch_count_fn != nullptr) {
+        lm_head_cooperative_sequence_dweight_launch_count = lm_head_cooperative_sequence_dweight_launch_count_fn();
+    }
+    if (lm_head_cooperative_sequence_concurrent_count_fn != nullptr) {
+        lm_head_cooperative_sequence_concurrent_count = lm_head_cooperative_sequence_concurrent_count_fn();
+    }
+    if (lm_head_cooperative_sequence_legacy_count_fn != nullptr) {
+        lm_head_cooperative_sequence_legacy_count = lm_head_cooperative_sequence_legacy_count_fn();
+    }
+    if (lm_head_cooperative_sequence_loss_bin_count_fn != nullptr) {
+        lm_head_cooperative_sequence_loss_bin_count = lm_head_cooperative_sequence_loss_bin_count_fn();
+    }
     const bool lm_head_ce_loss_bin_reduction_runtime_enabled =
         lm_head_classifier_loss_bin_launch_count > 0;
     const bool lm_head_ce_no_loss_runtime_enabled =
@@ -20025,6 +20074,20 @@ int run_transformer_lm_training_json(
                     ? "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity"
                     : "missing-required-sm120-parity-kernel")))
         << "\",\n"
+        << "  \"lm_head_cooperative_sequence_launch_count\": "
+        << lm_head_cooperative_sequence_launch_count << ",\n"
+        << "  \"lm_head_cooperative_sequence_ce_launch_count\": "
+        << lm_head_cooperative_sequence_ce_launch_count << ",\n"
+        << "  \"lm_head_cooperative_sequence_dhidden_launch_count\": "
+        << lm_head_cooperative_sequence_dhidden_launch_count << ",\n"
+        << "  \"lm_head_cooperative_sequence_dweight_launch_count\": "
+        << lm_head_cooperative_sequence_dweight_launch_count << ",\n"
+        << "  \"lm_head_cooperative_sequence_concurrent_count\": "
+        << lm_head_cooperative_sequence_concurrent_count << ",\n"
+        << "  \"lm_head_cooperative_sequence_legacy_count\": "
+        << lm_head_cooperative_sequence_legacy_count << ",\n"
+        << "  \"lm_head_cooperative_sequence_loss_bin_count\": "
+        << lm_head_cooperative_sequence_loss_bin_count << ",\n"
         << "  \"lm_head_reverse_chunk_order_enabled\": "
         << (lm_head_reverse_chunk_order_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_reverse_chunk_order_strategy\": \""

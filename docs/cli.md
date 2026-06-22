@@ -842,6 +842,16 @@ only satisfies `lm_head_cooperative_backward_sequence_wrapper_available`. The
 future hard fused route is probed through
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`; only that
 separate symbol satisfies `lm_head_cooperative_backward_fused_kernel_available`.
+Rebuilt Tile ops libraries expose cooperative sequence counters in the native
+training JSON: `lm_head_cooperative_sequence_launch_count`,
+`lm_head_cooperative_sequence_ce_launch_count`,
+`lm_head_cooperative_sequence_dhidden_launch_count`,
+`lm_head_cooperative_sequence_dweight_launch_count`,
+`lm_head_cooperative_sequence_concurrent_count`,
+`lm_head_cooperative_sequence_legacy_count`, and
+`lm_head_cooperative_sequence_loss_bin_count`. These fields are intended for
+same-script candidate comparisons and should remain nonzero only for diagnostic
+sequence-wrapper routes, not for the future true fused kernel.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 

@@ -131,6 +131,17 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 	      train-loop wall, `1.000399x` LM-head backward, and `1.003647x` block
 	      backward versus the normal native baseline. Keep it diagnostic-only; the
 	      open work is still a genuinely fused/cooperative LM-head kernel body.
+	    - 2026-06-22 added cooperative sequence launch counters to the diagnostic
+	      wrapper and paired benchmark extraction. Runtime JSON now reports
+	      `lm_head_cooperative_sequence_launch_count`,
+	      `lm_head_cooperative_sequence_ce_launch_count`,
+	      `lm_head_cooperative_sequence_dhidden_launch_count`,
+	      `lm_head_cooperative_sequence_dweight_launch_count`,
+	      `lm_head_cooperative_sequence_concurrent_count`,
+	      `lm_head_cooperative_sequence_legacy_count`, and
+	      `lm_head_cooperative_sequence_loss_bin_count`, so future fused-kernel
+	      candidates can prove they are no longer just sequencing the old
+	      CE/dHidden/dWeight launches.
 	    - 2026-06-22 added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_full_resident_reuse`
 	      as the reproducible wrapper for the current full-resident logits/full-batch
 	      LM-head reuse diagnostic. It proves why llm.kittens-style resident logits

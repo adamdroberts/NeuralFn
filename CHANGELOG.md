@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added native Tile telemetry for the diagnostic dense GPT LM-head cooperative
+  sequence wrapper. Rebuilt Tile ops libraries now export counters for wrapper
+  launches and the CE, dHidden, dWeight, concurrent-stream, legacy-order, and
+  loss-bin sequence paths. The native trainer loads these symbols optionally
+  and reports `lm_head_cooperative_sequence_launch_count`,
+  `lm_head_cooperative_sequence_ce_launch_count`,
+  `lm_head_cooperative_sequence_dhidden_launch_count`,
+  `lm_head_cooperative_sequence_dweight_launch_count`,
+  `lm_head_cooperative_sequence_concurrent_count`,
+  `lm_head_cooperative_sequence_legacy_count`, and
+  `lm_head_cooperative_sequence_loss_bin_count` in runtime JSON.
+  `tools/paired_kernel_speed.py` extracts the fields so same-script candidate
+  benchmarks can prove whether a route is still sequencing the older kernels.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`, ran focused native GPT source tests, focused
+  paired-kernel parser tests, `tools/check_native_no_torch_deps.py
+  --skip-artifacts --json`, `bash -n tools/bench_native_gpt_sm120_parity.sh`,
+  and `git diff --check`. A one-step RTX 5090 cooperative-wrapper smoke with
+  train-loss logging disabled reported
+  `lm_head_cooperative_sequence_launch_count: 16` and matching
+  CE/dHidden/dWeight counts while
+  `lm_head_cooperative_backward_kernel_enabled` remained `false`.
+
 - Added a default-off LM-head CE row-order diagnostic for the no-loss native GPT
   training path. `NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS=0` (or the
   `NFN_NATIVE_GPT2_*` / `NFN_TILE_CUDA_*` aliases) makes the hot

@@ -232,6 +232,34 @@ NATIVE_METRIC_PATHS = (
         "lm_head_cooperative_backward_sequence_wrapper_enabled",
         ("lm_head_cooperative_backward_sequence_wrapper_enabled",),
     ),
+    (
+        "lm_head_cooperative_sequence_launch_count",
+        ("lm_head_cooperative_sequence_launch_count",),
+    ),
+    (
+        "lm_head_cooperative_sequence_ce_launch_count",
+        ("lm_head_cooperative_sequence_ce_launch_count",),
+    ),
+    (
+        "lm_head_cooperative_sequence_dhidden_launch_count",
+        ("lm_head_cooperative_sequence_dhidden_launch_count",),
+    ),
+    (
+        "lm_head_cooperative_sequence_dweight_launch_count",
+        ("lm_head_cooperative_sequence_dweight_launch_count",),
+    ),
+    (
+        "lm_head_cooperative_sequence_concurrent_count",
+        ("lm_head_cooperative_sequence_concurrent_count",),
+    ),
+    (
+        "lm_head_cooperative_sequence_legacy_count",
+        ("lm_head_cooperative_sequence_legacy_count",),
+    ),
+    (
+        "lm_head_cooperative_sequence_loss_bin_count",
+        ("lm_head_cooperative_sequence_loss_bin_count",),
+    ),
     ("lm_head_bf16_logit_bytes", ("lm_head_bf16_logit_bytes",)),
     ("lm_head_full_logit_elements", ("lm_head_full_logit_elements",)),
     ("stored_packed_attention_activation_blocks", ("stored_packed_attention_activation_blocks",)),

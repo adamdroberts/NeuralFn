@@ -3002,6 +3002,13 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "lm_head_cooperative_backward_kernel_enabled": False,
                 "lm_head_cooperative_backward_sequence_wrapper_enabled": False,
                 "lm_head_cooperative_backward_strategy": "missing-required-sm120-parity-kernel",
+                "lm_head_cooperative_sequence_launch_count": 32,
+                "lm_head_cooperative_sequence_ce_launch_count": 32,
+                "lm_head_cooperative_sequence_dhidden_launch_count": 32,
+                "lm_head_cooperative_sequence_dweight_launch_count": 32,
+                "lm_head_cooperative_sequence_concurrent_count": 32,
+                "lm_head_cooperative_sequence_legacy_count": 0,
+                "lm_head_cooperative_sequence_loss_bin_count": 0,
                 "lm_head_classifier_strategy_contract": {
                     "reference_full_bf16_logit_bytes": 6593445888,
                     "native_chunk_bf16_logit_bytes": 825819136,
@@ -3089,6 +3096,13 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["lm_head_cooperative_backward_kernel_enabled"] is False
     assert metrics["lm_head_cooperative_backward_sequence_wrapper_enabled"] is False
     assert metrics["lm_head_cooperative_backward_strategy"] == "missing-required-sm120-parity-kernel"
+    assert metrics["lm_head_cooperative_sequence_launch_count"] == 32
+    assert metrics["lm_head_cooperative_sequence_ce_launch_count"] == 32
+    assert metrics["lm_head_cooperative_sequence_dhidden_launch_count"] == 32
+    assert metrics["lm_head_cooperative_sequence_dweight_launch_count"] == 32
+    assert metrics["lm_head_cooperative_sequence_concurrent_count"] == 32
+    assert metrics["lm_head_cooperative_sequence_legacy_count"] == 0
+    assert metrics["lm_head_cooperative_sequence_loss_bin_count"] == 0
     assert metrics["lm_head_classifier.reference_full_bf16_logit_bytes"] == 6593445888
     assert metrics["lm_head_classifier.native_chunk_bf16_logit_bytes"] == 825819136
     assert metrics["lm_head_classifier.resident_logit_reduction_ratio"] == 8.0

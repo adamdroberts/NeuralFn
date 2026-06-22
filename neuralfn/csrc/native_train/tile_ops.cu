@@ -1,6 +1,7 @@
 #include "tile_ops.h"
 
 #include <algorithm>
+#include <atomic>
 #include <mutex>
 
 #include <cuda_runtime_api.h>
@@ -1756,6 +1757,24 @@ namespace {
 constexpr int kLmHeadCooperativeFlagLossBins = 1 << 0;
 constexpr int kLmHeadCooperativeLossBinCountShift = 8;
 
+std::atomic<std::int64_t> g_lm_head_cooperative_sequence_launch_count{0};
+std::atomic<std::int64_t> g_lm_head_cooperative_sequence_ce_launch_count{0};
+std::atomic<std::int64_t> g_lm_head_cooperative_sequence_dhidden_launch_count{0};
+std::atomic<std::int64_t> g_lm_head_cooperative_sequence_dweight_launch_count{0};
+std::atomic<std::int64_t> g_lm_head_cooperative_sequence_concurrent_count{0};
+std::atomic<std::int64_t> g_lm_head_cooperative_sequence_legacy_count{0};
+std::atomic<std::int64_t> g_lm_head_cooperative_sequence_loss_bin_count{0};
+
+void reset_lm_head_cooperative_sequence_stats() {
+    g_lm_head_cooperative_sequence_launch_count.store(0, std::memory_order_relaxed);
+    g_lm_head_cooperative_sequence_ce_launch_count.store(0, std::memory_order_relaxed);
+    g_lm_head_cooperative_sequence_dhidden_launch_count.store(0, std::memory_order_relaxed);
+    g_lm_head_cooperative_sequence_dweight_launch_count.store(0, std::memory_order_relaxed);
+    g_lm_head_cooperative_sequence_concurrent_count.store(0, std::memory_order_relaxed);
+    g_lm_head_cooperative_sequence_legacy_count.store(0, std::memory_order_relaxed);
+    g_lm_head_cooperative_sequence_loss_bin_count.store(0, std::memory_order_relaxed);
+}
+
 std::int64_t lm_head_cooperative_loss_bin_count_from_flags(int flags, std::int64_t rows) {
     const std::int64_t encoded =
         static_cast<std::int64_t>(static_cast<unsigned int>(flags) >> kLmHeadCooperativeLossBinCountShift);
@@ -1886,6 +1905,7 @@ std::int64_t nfn_native_tile_token_cross_entropy_bf16_threads_per_row() {
 
 void nfn_native_tile_lm_head_classifier_stats_reset() {
     neuralfn::tile_cuda::reset_lm_head_classifier_chunk_stats();
+    reset_lm_head_cooperative_sequence_stats();
 }
 
 std::int64_t nfn_native_tile_lm_head_classifier_chunk_launch_count() {
@@ -1906,6 +1926,34 @@ std::int64_t nfn_native_tile_lm_head_classifier_last_row_stride() {
 
 std::int64_t nfn_native_tile_lm_head_classifier_loss_bin_launch_count() {
     return neuralfn::tile_cuda::lm_head_classifier_loss_bin_launch_count();
+}
+
+std::int64_t nfn_native_tile_lm_head_cooperative_sequence_launch_count() {
+    return g_lm_head_cooperative_sequence_launch_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t nfn_native_tile_lm_head_cooperative_sequence_ce_launch_count() {
+    return g_lm_head_cooperative_sequence_ce_launch_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t nfn_native_tile_lm_head_cooperative_sequence_dhidden_launch_count() {
+    return g_lm_head_cooperative_sequence_dhidden_launch_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t nfn_native_tile_lm_head_cooperative_sequence_dweight_launch_count() {
+    return g_lm_head_cooperative_sequence_dweight_launch_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t nfn_native_tile_lm_head_cooperative_sequence_concurrent_count() {
+    return g_lm_head_cooperative_sequence_concurrent_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t nfn_native_tile_lm_head_cooperative_sequence_legacy_count() {
+    return g_lm_head_cooperative_sequence_legacy_count.load(std::memory_order_relaxed);
+}
+
+std::int64_t nfn_native_tile_lm_head_cooperative_sequence_loss_bin_count() {
+    return g_lm_head_cooperative_sequence_loss_bin_count.load(std::memory_order_relaxed);
 }
 
 std::int64_t nfn_native_tile_attention_forward_row_fallback_count() {
@@ -4729,8 +4777,13 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
         row_stride < vocab) {
         return static_cast<int>(cudaErrorInvalidValue);
     }
+    g_lm_head_cooperative_sequence_launch_count.fetch_add(1, std::memory_order_relaxed);
+    if (schedule_dhidden_dweight_concurrently) {
+        g_lm_head_cooperative_sequence_concurrent_count.fetch_add(1, std::memory_order_relaxed);
+    }
     cudaStream_t stream = as_stream(cuda_stream);
     if ((flags & kLmHeadCooperativeFlagLossBins) != 0) {
+        g_lm_head_cooperative_sequence_loss_bin_count.fetch_add(1, std::memory_order_relaxed);
         neuralfn::tile_cuda::launch_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
             logits_bf16,
             targets_u16,
@@ -4752,6 +4805,7 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
             loss_scale,
             stream);
     }
+    g_lm_head_cooperative_sequence_ce_launch_count.fetch_add(1, std::memory_order_relaxed);
     int status = launch_status();
     if (status != 0) {
         return status;
@@ -4787,6 +4841,7 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
             hidden_dim,
             row_stride,
             cooperative_streams.dhidden);
+        g_lm_head_cooperative_sequence_dhidden_launch_count.fetch_add(1, std::memory_order_relaxed);
         status = launch_status();
         if (status != 0) {
             return status;
@@ -4800,6 +4855,7 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
             row_stride,
             dweight_beta,
             cooperative_streams.dweight);
+        g_lm_head_cooperative_sequence_dweight_launch_count.fetch_add(1, std::memory_order_relaxed);
         status = launch_status();
         if (status != 0) {
             return status;
@@ -4837,6 +4893,7 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
         row_stride,
         dweight_beta,
         stream);
+    g_lm_head_cooperative_sequence_dweight_launch_count.fetch_add(1, std::memory_order_relaxed);
     status = launch_status();
     if (status != 0) {
         return status;
@@ -4849,6 +4906,7 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
         hidden_dim,
         row_stride,
         stream);
+    g_lm_head_cooperative_sequence_dhidden_launch_count.fetch_add(1, std::memory_order_relaxed);
     return launch_status();
 }
 
@@ -4885,8 +4943,11 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16_legacy_
         row_stride < vocab) {
         return static_cast<int>(cudaErrorInvalidValue);
     }
+    g_lm_head_cooperative_sequence_launch_count.fetch_add(1, std::memory_order_relaxed);
+    g_lm_head_cooperative_sequence_legacy_count.fetch_add(1, std::memory_order_relaxed);
     cudaStream_t stream = as_stream(cuda_stream);
     if ((flags & kLmHeadCooperativeFlagLossBins) != 0) {
+        g_lm_head_cooperative_sequence_loss_bin_count.fetch_add(1, std::memory_order_relaxed);
         neuralfn::tile_cuda::launch_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets(
             logits_bf16,
             targets_u16,
@@ -4908,6 +4969,7 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16_legacy_
             loss_scale,
             stream);
     }
+    g_lm_head_cooperative_sequence_ce_launch_count.fetch_add(1, std::memory_order_relaxed);
     int status = launch_status();
     if (status != 0) {
         return status;
@@ -4920,6 +4982,7 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16_legacy_
         hidden_dim,
         row_stride,
         stream);
+    g_lm_head_cooperative_sequence_dhidden_launch_count.fetch_add(1, std::memory_order_relaxed);
     status = launch_status();
     if (status != 0) {
         return status;
@@ -4933,6 +4996,7 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16_legacy_
         row_stride,
         dweight_beta,
         stream);
+    g_lm_head_cooperative_sequence_dweight_launch_count.fetch_add(1, std::memory_order_relaxed);
     return launch_status();
 }
 

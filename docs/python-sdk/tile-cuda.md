@@ -1866,6 +1866,16 @@ implementation must export the separate future symbol
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` before
 `lm_head_cooperative_backward_kernel_available` or
 `lm_head_cooperative_backward_fused_kernel_available` can become true.
+The sequence wrapper also reports launch counters in the native training JSON:
+`lm_head_cooperative_sequence_launch_count`,
+`lm_head_cooperative_sequence_ce_launch_count`,
+`lm_head_cooperative_sequence_dhidden_launch_count`,
+`lm_head_cooperative_sequence_dweight_launch_count`,
+`lm_head_cooperative_sequence_concurrent_count`,
+`lm_head_cooperative_sequence_legacy_count`, and
+`lm_head_cooperative_sequence_loss_bin_count`. Use these when validating a
+candidate against the older kernels in the same paired benchmark; nonzero
+values mean the route is still the diagnostic sequence wrapper.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins` exercises the
 same strict ABI with the existing loss-bin classifier reduction inside the
 cooperative sequence. The profile sets
