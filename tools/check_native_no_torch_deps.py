@@ -108,6 +108,17 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
         ),
     ),
     (
+        "train_gpt_native_fast_command",
+        (
+            sys.executable,
+            "cli/scripts/train_gpt_native.py",
+            "--tinystories",
+            "--native-cuda-dry-run",
+            "--native-cuda-print-command",
+            "--native-cuda-no-checkpoint",
+        ),
+    ),
+    (
         "nfn_train_fast_command",
         (
             sys.executable,

@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended `tools/check_native_no_torch_deps.py` to include direct
+  `cli/scripts/train_gpt_native.py --tinystories --native-cuda-dry-run
+  --native-cuda-print-command --native-cuda-no-checkpoint` coverage. The native
+  startup verifier now catches regressions where the legacy GPT-native harness
+  would reintroduce slow Python/Torch-adjacent setup before the compiled C++
+  trainer boundary.
+
+  Verification: focused no-Torch verifier pytest, full
+  `tools/check_native_no_torch_deps.py --skip-artifacts --json`, and
+  `git diff --check`.
+
 - `cli/scripts/train_gpt_native.py` now hands non-dry-run compiled-cli actions
   to the compiled C++ GPT trainer with `exec` instead of spawning a child
   process and waiting. Dry runs and command printing still return through the

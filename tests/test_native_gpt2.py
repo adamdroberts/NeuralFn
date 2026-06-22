@@ -188,6 +188,9 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert entrypoints["train_gpt_fast_command"]["elapsed_seconds"] >= 0.0
     assert entrypoints["train_gpt_fast_command"]["startup_budget_seconds"] == 2.0
     assert entrypoints["train_gpt_fast_command"]["startup_within_budget"] is True
+    assert entrypoints["train_gpt_native_fast_command"]["passed"] is True
+    assert entrypoints["train_gpt_native_fast_command"]["startup_within_budget"] is True
+    assert "nfn_gpt_native_train" in entrypoints["train_gpt_native_fast_command"]["stdout"]
     assert entrypoints["train_gpt2_evo_fast_command"]["passed"] is True
     assert entrypoints["train_nanogpt_fast_command"]["passed"] is True
     for name in (
