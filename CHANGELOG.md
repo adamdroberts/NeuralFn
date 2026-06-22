@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked the existing double-buffered LM-head row-chunk pipeline candidate
+  after the CUDA 13.3 candidate-profile cleanup. The
+  `lm_head_pipeline_chunks` profile still enabled the intended route
+  (`lm_head_pipeline_chunks_enabled: true`,
+  `lm_head_pipeline_logit_buffer_count: 2`), but the dedicated RTX 5090
+  same-script gate rejected it at `22.955358x` train-loop wall and
+  `45.070737x` block backward. Keep
+  `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` default-off; the current
+  cross-stream schedule is not a viable parity path without redesign.
+
+  Verification: ran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_pipeline_chunks` through
+  `tools/bench_native_gpt_sm120_candidate.sh` for three optimizer steps, one
+  sample, no warmup, stage timing enabled, selected-GPU idle guard enabled, and
+  no compute processes on the selected display-disabled RTX 5090 before or
+  after the sample. The strict gate failed as expected.
+
 - Added named SM120 native candidate-wrapper profiles for existing diagnostic
   switches that previously needed raw candidate env overrides:
   `bf16_attention_grad_out`, `bf16_attention_dprep_grad_out`,

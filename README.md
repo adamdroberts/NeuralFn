@@ -583,7 +583,11 @@ and the active `lm_head_dhidden_dweight_schedule_strategy`. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_pipeline_chunks` to route the
 candidate through the standard same-script SM120 wrapper and its default stage
 gates. Leave it unset for normal training until paired RTX 5090 gates prove a
-durable win.
+durable win. The 2026-06-22 CUDA 13.3 dedicated RTX 5090 recheck kept this
+route rejected: it enabled `lm_head_pipeline_chunks_enabled: true`, but
+regressed train-loop wall to `22.955358x` and block backward to `45.070737x`,
+with the slowdown concentrated after the LM-head pipeline in attention
+projection and SDPA backward.
 The BF16 linear operand cache is limited to stable operands such as weights;
 LM-head dWeight repacks the mutable hidden activation chunks each microbatch so
 gradient accumulation does not reuse stale packed activations.
