@@ -6,6 +6,35 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revalidated the native Tile linear-backward bias reducer row-chunk candidates
+  after rebuilding from source on the dedicated RTX 5090/CUDA 13.3 setup. The
+  default remains 512 rows: the fresh same-script 512-vs-1024 gate rejected the
+  1024-row route at `1.003284x` train-loop wall time and `0.996724x` train
+  tokens/sec, while the 256-row route remains rejected at `1.000324x`
+  train-loop wall time. Use
+  `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`,
+  `NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`, or
+  `NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N` only for paired
+  diagnostics.
+
+  Verification note: the rejected 1024 candidate was measured with
+  `tools/bench_native_gpt_sm120_candidate.sh` using baseline/candidate env
+  overrides on the same dedicated GPU so external GPU load did not skew an
+  older separate-script comparison.
+
+- Revalidated native dense-GPT BF16 LM-head schedule candidates after the CUDA
+  13.3 WSL reinstall and dedicated RTX 5090 setup. The base
+  `tools/bench_native_gpt_sm120_candidate.sh` gate now completes on GPU 0 at
+  about `210k` train tokens/sec. The rebuilt old-vs-new
+  `NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1` gate failed at
+  `1.005561x` train-loop wall time, so that schedule remains opt-in only.
+  Other rejected LM-head candidates remained slower:
+  `lm_head_cooperative_backward=1.023258x` and
+  `lm_head_concurrent_dhidden_dweight=1.008025x`.
+
+  Verification note: no runtime default changed; this records the fresh live
+  CUDA measurements and keeps the docs aligned with the accepted default.
+
 - Added public native GPT checkpoint sampler helpers to the Python SDK:
   `native_gpt_checkpoint_sampler_argv()`, `native_gpt_checkpoint_sampler_env()`,
   `native_gpt_prompt_tokens()`, `render_native_gpt_checkpoint_sampler_text()`,

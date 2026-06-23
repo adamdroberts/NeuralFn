@@ -729,13 +729,11 @@ Set `NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS=0` or
 chunk order during bisection.
 `NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1` is a diagnostic-only
 row-chunk order probe that runs LM-head dWeight before dHidden after CE writes
-dlogits; the dedicated RTX 5090 5-step, 3-sample check measured `1.001048x`
-train-loop wall time and `0.998959x` tokens/sec, so the default remains
-CE -> dHidden -> dWeight. Use
+dlogits. A CUDA 13.3 dedicated-RTX-5090 same-script wrapper run briefly measured
+`0.997213x` train-loop wall time, but the rebuilt old-vs-new default gate failed
+at `1.005561x`, so the default remains CE -> dHidden -> dWeight. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_dweight_before_dhidden` to rerun it
-through the same-script paired wrapper and route-change gate; the CUDA 13.3
-2-step, 2-sample wrapper rerun still rejected it at `1.001517x` train-loop wall
-time and `1.000862x` LM-head backward.
+through the same-script paired wrapper and route-change gate.
 `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` is a new opt-in LM-head schedule
 candidate for same-script benchmarking. It doubles the bounded BF16 logit
 scratch from one 8,192-row chunk to two chunks, computes logits/CE on the
@@ -1467,9 +1465,10 @@ chunk. Set `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`,
 diagnostics, and use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linear_bias_row_chunk_256`
 or `linear_bias_row_chunk_1024` to benchmark candidate chunk sizes. Native
 training JSON reports `block_state_layout.linear_backward_bias_row_chunk_size`.
-The current default remains `512`: short dedicated RTX 5090 checks showed `256`
-improving target block buckets but failing the default train-loop gate, while
-`1024` regressed the focused block-backward gates.
+The current default remains `512`: after rebuilding from source, the dedicated
+RTX 5090/CUDA 13.3 same-script gate rejected `1024` at `1.003284x` train-loop
+wall time and `0.996724x` train tokens/sec, and the `256` profile remains
+rejected after measuring `1.000324x` train-loop wall time.
 
 The current default `lm_head_ce_backward_strategy` value supersedes older notes
 in the long Tile ABI paragraph: expect
