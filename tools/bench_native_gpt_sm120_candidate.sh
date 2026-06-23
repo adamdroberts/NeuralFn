@@ -290,6 +290,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_TILE_OPS_BUILD_FLAGS="${CANDIDATE_TILE_OPS_BUILD_FLAGS:+$CANDIDATE_TILE_OPS_BUILD_FLAGS }-DLLMK_SM120_FORWARD_N96=0"
     ;;
   "cuda_device_max_connections_1"|"cuda-device-max-connections-1")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="This profile is a no-op in the SM120 paired wrapper: CUDA_DEVICE_MAX_CONNECTIONS already defaults to 1 for both baseline and candidate commands, matching the llm.kittens SM120 launcher policy."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }CUDA_DEVICE_MAX_CONNECTIONS=1"
     ;;
   "combined_device_arena"|"combined-device-arena")

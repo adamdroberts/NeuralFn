@@ -452,11 +452,11 @@ SM120 native rebuild, the dedicated idle RTX 5090 3-step parity gate completed
 cleanly and measured NeuralFn at about `208k` tokens/sec versus llm.kittens at
 about `216k` tokens/sec, leaving the remaining work as kernel-throughput
 closing rather than CUDA setup or graph/Torch startup.
-Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_device_max_connections_1` when
-you need to reproduce the workstation scheduling probe that sets only
-`CUDA_DEVICE_MAX_CONNECTIONS=1` on the candidate command. It is a benchmark
-profile, not a default-training recommendation; the dedicated RTX 5090
-same-script gate rejected it after it changed no tracked route counters.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_device_max_connections_1` is now a
+fast-fail no-op profile. The SM120 paired wrapper already applies
+`CUDA_DEVICE_MAX_CONNECTIONS=1` to both baseline and candidate commands,
+matching the llm.kittens SM120 launcher policy, so a candidate-only profile
+would not measure a real route change.
 The named `qkv_concurrent_dinput_dweight` profile expands to
 `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` for repeatable
 stage-timed reruns of the default-off QKV side-stream diagnostic. The current
@@ -1813,6 +1813,8 @@ Run SM120 parity and candidate benchmarks only from a shell with real WSL GPU dr
 Real runs of rejected SM120 candidate profiles now require
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; dry-run plan expansion
 remains available without the opt-in. The current rejected set includes
+`cuda_device_max_connections_1`, which is a no-op because the paired wrapper
+already applies `CUDA_DEVICE_MAX_CONNECTIONS=1` to both sides, and
 `attention_atomic_dq`, whose CUDA 13.3 RTX 5090 rerun failed route detection and
 attention section gates, and `qkv_forward_bf16_fallback_65536`, whose rerun
 regressed train-loop wall time to `1.011419x`. It also includes the block

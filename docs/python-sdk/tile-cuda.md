@@ -1878,6 +1878,11 @@ LM-head dHidden/dWeight concurrent bucket for candidate-side inspection when
 stage timing is enabled. Train-loop and total LM-head timing remain the
 enforceable gates for that profile because the serial baseline emits split
 dHidden and dWeight substages.
+The named `cuda_device_max_connections_1` profile is intentionally rejected as
+a no-op: the paired SM120 wrapper already sets `CUDA_DEVICE_MAX_CONNECTIONS=1`
+for both the baseline and candidate commands, matching the llm.kittens SM120
+launcher policy, so it cannot prove a candidate-only kernel or scheduling
+change.
 Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` to exercise
 the current cooperative LM-head backward ABI wrapper. Use

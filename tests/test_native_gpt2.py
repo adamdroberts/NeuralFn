@@ -563,6 +563,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1" in candidate_bench
     assert "lm_head_dweight_before_dhidden" in candidate_bench
     assert "NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1" in candidate_bench
+    assert "cuda_device_max_connections_1" in candidate_bench
+    assert "This profile is a no-op in the SM120 paired wrapper" in candidate_bench
+    assert "CUDA_DEVICE_MAX_CONNECTIONS already defaults to 1" in candidate_bench
     assert 'Path("build/nfn_gpt_native_train_linked")' in no_torch_verifier
 
 

@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked the `cuda_device_max_connections_1` SM120 native wrapper profile as a
+  rejected no-op. The paired benchmark wrapper already defaults
+  `CUDA_DEVICE_MAX_CONNECTIONS=1` for both baseline and candidate commands,
+  matching the llm.kittens SM120 launcher policy, so the named profile cannot
+  represent a candidate-only kernel or scheduling change.
+
+  Verification note: updated wrapper source-contract coverage plus README and
+  SDK Tile-CUDA notes; dry-run expansion remains available, while a real run now
+  requires the rejected-profile opt-in.
+
 - Marked the existing `lm_head_dweight_before_dhidden` SM120 native wrapper
   profile as rejected by default after a fresh CUDA 13.3 dedicated-RTX-5090
   confirmation. A 2-sample probe briefly passed at `0.996095x` train-loop wall
