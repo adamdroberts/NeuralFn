@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=layernorm_affine_row_chunk_64` as a
+  rejected diagnostic profile for the dense GPT LayerNorm affine/residual
+  fused backward route. The profile expands to
+  `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64` and proves a real route
+  change from the current 128-row default, but remains rejected: the CUDA 13.3
+  dedicated RTX 5090 5-step, 3-sample stage-timed gate improved
+  `train_loop_wall_ms_per_step` to `0.998045x` while failing hot-stage gates at
+  `stage.block_backward.mlp_proj.total_ms=1.004276x` and
+  `stage.lm_head_backward.total_ms=1.000446x`. The default remains 128 rows.
+
+  Verification note: wrote the paired benchmark result to
+  `/tmp/nfn_layernorm_row64_candidate.json`; updated the wrapper dry-run and
+  rejected-profile guard tests plus README, SDK Tile CUDA docs, and CUDA Tile
+  TODO notes.
+
 - Refreshed the CUDA 13.3 dense GPT one-step stage/shape profile and recorded
   two forward TK fallback probes as rejected SM120 candidate profiles instead
   of promoting either. `qkv_forward_bf16_fallback_65536` now records the latest
