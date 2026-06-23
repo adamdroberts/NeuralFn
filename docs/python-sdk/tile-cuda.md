@@ -907,6 +907,7 @@ block cuBLASLt plus TK LM-head path runs,
 `linear_tk_gemm_count`,
 `linear_tk_float_out_gemm_count`, `linear_cublaslt_gemm_count`,
 `linear_cublaslt_descriptor_cache_enabled`, `linear_sgemm_count`,
+`bf16_to_f32_vec4_count`,
 `linear_bf16_a_pack_count`, `linear_bf16_a_cache_hit_count`,
 `linear_bf16_cache_reset_count`, `linear_bf16_cached_a_capacity`, and
 `linear_bf16_cache_entry_count`.

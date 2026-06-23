@@ -92,6 +92,7 @@ std::atomic<std::int64_t> g_lm_head_classifier_last_rows{0};
 std::atomic<std::int64_t> g_lm_head_classifier_last_vocab{0};
 std::atomic<std::int64_t> g_lm_head_classifier_last_row_stride{0};
 std::atomic<std::int64_t> g_lm_head_classifier_loss_bin_launch_count{0};
+std::atomic<std::int64_t> g_bf16_to_f32_vec4_count{0};
 struct TokenCrossEntropyWorkspace {
   float* row_max = nullptr;
   float* row_denom = nullptr;
@@ -509,6 +510,21 @@ __device__ __forceinline__ float bf16_bits_to_f32_device(std::uint16_t value) {
   return __uint_as_float(static_cast<unsigned int>(value) << 16);
 }
 
+__global__ void bf16_bits_to_f32_vec4_kernel(
+    const std::uint16_t* __restrict__ src,
+    float* __restrict__ dst,
+    std::int64_t n4) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n4) {
+    return;
+  }
+  const std::int64_t base = idx * 4;
+  dst[base] = bf16_bits_to_f32_device(src[base]);
+  dst[base + 1] = bf16_bits_to_f32_device(src[base + 1]);
+  dst[base + 2] = bf16_bits_to_f32_device(src[base + 2]);
+  dst[base + 3] = bf16_bits_to_f32_device(src[base + 3]);
+}
+
 __global__ void bf16_bits_add_bias_inplace_kernel(
     std::uint16_t* __restrict__ values,
     const float* __restrict__ bias,
@@ -830,6 +846,50 @@ bool f32_to_bf16_bits_many_vec4_enabled() {
         std::strcmp(value, "ON") == 0;
   }();
   return enabled;
+}
+
+bool bf16_bits_to_f32_vec4_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_TILE_CUDA_BF16_TO_F32_VEC4");
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT_BF16_TO_F32_VEC4");
+    }
+    if (value == nullptr) {
+      value = std::getenv("NFN_NATIVE_GPT2_BF16_TO_F32_VEC4");
+    }
+    if (value == nullptr) {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
+void launch_bf16_bits_to_float32_internal(
+    const std::uint16_t* source,
+    float* dest,
+    std::int64_t n,
+    cudaStream_t stream) {
+  if (bf16_bits_to_f32_vec4_enabled() && n > 0 && (n % 4) == 0) {
+    const std::int64_t n4 = n / 4;
+    const int blocks = static_cast<int>((n4 + kTileSize - 1) / kTileSize);
+    bf16_bits_to_f32_vec4_kernel<<<blocks, kTileSize, 0, stream>>>(source, dest, n4);
+    g_bf16_to_f32_vec4_count.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  bf16_bits_to_f32_kernel<<<blocks, kTileSize, 0, stream>>>(source, dest, n);
 }
 
 void release_token_cross_entropy_workspace(TokenCrossEntropyWorkspace& workspace) {
@@ -4884,10 +4944,8 @@ bool tk_linear_gemm_bf16_forward_to_float32(
     return false;
   }
   const std::int64_t elements = static_cast<std::int64_t>(rows) * output_dim;
-  constexpr int threads = 256;
-  const int blocks = static_cast<int>((elements + threads - 1) / threads);
   LinearShapeTiming timing = begin_linear_shape_timing(stream);
-  bf16_bits_to_f32_kernel<<<blocks, threads, 0, stream>>>(out_bf16_bits, out, elements);
+  launch_bf16_bits_to_float32_internal(out_bf16_bits, out, elements, stream);
   const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
   g_linear_tk_float_out_gemm_count.fetch_add(1, std::memory_order_relaxed);
   record_linear_shape_stat(3, output_dim, rows, input_dim, op_a, op_b, elapsed_us);
@@ -4949,12 +5007,11 @@ bool tk_linear_backward_input_bf16_bits_weight_bf16_bits_float32(
       stream,
       nullptr,
       false);
-  constexpr int threads = 256;
-  const int blocks = static_cast<int>((elements + threads - 1) / threads);
-  bf16_bits_to_f32_kernel<<<blocks, threads, 0, stream>>>(
+  launch_bf16_bits_to_float32_internal(
       reinterpret_cast<const std::uint16_t*>(workspace->a),
       grad_x,
-      elements);
+      elements,
+      stream);
   const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -5205,9 +5262,7 @@ bool tk_linear_backward_input_dgelu_bf16_bits_float32(
       reinterpret_cast<const floatX*>(pre_gelu_bf16_bits),
       true);
   const std::int64_t elements = static_cast<std::int64_t>(rows) * input_dim;
-  constexpr int threads = 256;
-  const int blocks = static_cast<int>((elements + threads - 1) / threads);
-  bf16_bits_to_f32_kernel<<<blocks, threads, 0, stream>>>(grad_x_bf16_bits, grad_x, elements);
+  launch_bf16_bits_to_float32_internal(grad_x_bf16_bits, grad_x, elements, stream);
   const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -5277,9 +5332,7 @@ bool tk_linear_backward_input_dgelu_weight_bf16_bits_float32(
       true);
   if (write_float_grad) {
     const std::int64_t elements = static_cast<std::int64_t>(rows) * input_dim;
-    constexpr int threads = 256;
-    const int blocks = static_cast<int>((elements + threads - 1) / threads);
-    bf16_bits_to_f32_kernel<<<blocks, threads, 0, stream>>>(grad_x_bf16_bits, grad_x, elements);
+    launch_bf16_bits_to_float32_internal(grad_x_bf16_bits, grad_x, elements, stream);
   }
   const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
@@ -14136,8 +14189,7 @@ void launch_bf16_bits_to_float32(
     float* dest,
     std::int64_t n,
     cudaStream_t stream) {
-  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
-  bf16_bits_to_f32_kernel<<<blocks, kTileSize, 0, stream>>>(source, dest, n);
+  launch_bf16_bits_to_float32_internal(source, dest, n, stream);
 }
 
 void launch_store_mlp_activations_bf16_float32(
@@ -18639,6 +18691,7 @@ void reset_attention_forward_launch_stats() {
 }
 
 void reset_trainer_linear_launch_stats() {
+  g_bf16_to_f32_vec4_count.store(0, std::memory_order_relaxed);
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   g_linear_bf16_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_bf16_gemm_fast16bf_request_count.store(0, std::memory_order_relaxed);
@@ -18663,6 +18716,10 @@ void reset_trainer_linear_launch_stats() {
     g_linear_shape_stats.clear();
   }
 #endif
+}
+
+std::int64_t trainer_bf16_to_f32_vec4_count() {
+  return g_bf16_to_f32_vec4_count.load(std::memory_order_relaxed);
 }
 
 void reset_trainer_linear_bf16_cache() {

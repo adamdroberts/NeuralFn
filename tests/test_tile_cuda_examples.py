@@ -101,6 +101,7 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"total_ms\\\": 2.2, \\\"avg_ms\\\": 2.2, \\\"count\\\": 1}]}, "
                 "\\\"steps_completed\\\": 5, \\\"linear_tk_gemm_count\\\": 3, "
                 "\\\"linear_cublaslt_gemm_count\\\": 4, \\\"linear_bf16_gemm_count\\\": 7, "
+                "\\\"bf16_to_f32_vec4_count\\\": 5, "
                 "\\\"linear_cublaslt_bgrad_gemm_count\\\": 2, "
                 "\\\"linear_cublaslt_bgrad_direct_write_count\\\": 1, "
                 "\\\"linear_cublaslt_bgrad_accumulate_count\\\": 1, "
@@ -207,6 +208,7 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     )
     assert payload["candidate_native_metrics"]["linear_cublaslt_bgrad_accumulate_count"]["mean"] == 1.0
     assert payload["candidate_native_metrics"]["linear_bf16_gemm_count"]["mean"] == 7.0
+    assert payload["candidate_native_metrics"]["bf16_to_f32_vec4_count"]["mean"] == 5.0
     assert payload["candidate_native_metrics"]["lm_head_logits_tk_gemm_count"]["mean"] == 2.0
     assert payload["candidate_native_metrics"]["lm_head_logits_cublaslt_gemm_count"]["mean"] == 0.0
     assert payload["candidate_native_metrics"]["lm_head_logits_bf16_gemm_count"]["mean"] == 2.0
@@ -226,6 +228,7 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "linear_cublaslt_bgrad_direct_write_count: mean=1.000000" in proc.stdout
     assert "linear_cublaslt_bgrad_accumulate_count: mean=1.000000" in proc.stdout
     assert "linear_bf16_gemm_count: mean=7.000000" in proc.stdout
+    assert "bf16_to_f32_vec4_count: mean=5.000000" in proc.stdout
     assert "lm_head_logits_tk_gemm_count: mean=2.000000" in proc.stdout
     assert "lm_head_logits_cublaslt_gemm_count: mean=0.000000" in proc.stdout
     assert "lm_head_logits_bf16_gemm_count: mean=2.000000" in proc.stdout
@@ -3171,6 +3174,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "linear_tk_gemm_count": 8,
                 "linear_cublaslt_gemm_count": 11,
                 "linear_bf16_gemm_count": 13,
+                "bf16_to_f32_vec4_count": 21,
                 "lm_head_logits_tk_gemm_count": 4,
                 "lm_head_logits_cublaslt_gemm_count": 0,
                 "lm_head_logits_bf16_gemm_count": 4,
@@ -3264,6 +3268,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["linear_tk_gemm_count"] == 8
     assert metrics["linear_cublaslt_gemm_count"] == 11
     assert metrics["linear_bf16_gemm_count"] == 13
+    assert metrics["bf16_to_f32_vec4_count"] == 21
     assert metrics["lm_head_logits_tk_gemm_count"] == 4
     assert metrics["lm_head_logits_cublaslt_gemm_count"] == 0
     assert metrics["lm_head_logits_bf16_gemm_count"] == 4

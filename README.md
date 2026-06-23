@@ -1848,7 +1848,24 @@ assignment.
 
 The default dense GPT MLP projection backward now uses the BF16-only dGELU handoff path when BF16 MLP grad handoff is active, so the Tile kernel writes the BF16 gradient consumed by the following MLP FC backward stage without also converting it to an unused FP32 gradient buffer. If the SM120 TK fused route is unavailable in a non-default build or shape, the raw BF16-only ABI now falls back to BF16-output GEMM plus in-place BF16-bits dGELU instead of leaving the handoff buffer unwritten. When every trained block has stored MLP activations, the compiled trainer also skips the old FP32 `mlp.fc.grad_out` arena reservation, saving 805 MB at the default `64 x 1024 x 3072` hidden-gradient shape. The remaining one-buffer FP32-to-BF16 conversion path defaults to a guarded vec4 kernel for aligned buffers; set `NFN_NATIVE_GPT_F32_TO_BF16_VEC4=0` or `NFN_TILE_CUDA_F32_TO_BF16_VEC4=0` to compare against the scalar converter. Training JSON reports `block_backward_mlp_dgelu_float_grad_elided`, `block_backward_mlp_fc_grad_out_float_buffer_elided`, `block_backward_mlp_fc_grad_out_float_bytes_elided`, and the `...-no-float-grad` strategy suffix. Set `NFN_NATIVE_GPT_ELIDE_MLP_DGELU_FLOAT_GRAD=0` to restore the prior conversion/allocation path for paired kernel benchmarks.
 
-The multi-buffer BF16 packer and stored-MLP activation pack/restore path also include vec4 CUDA candidates, but they remain default-off diagnostics. Set `NFN_NATIVE_GPT_F32_TO_BF16_MANY_VEC4=1` / `NFN_TILE_CUDA_F32_TO_BF16_MANY_VEC4=1` or `NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS_VEC4=1` / `NFN_TILE_CUDA_STORE_MLP_ACTIVATIONS_VEC4=1` only for paired bisection. The launchers require aligned buffers and fall back to the scalar kernels for ineligible shapes. The CUDA 13.3 dedicated RTX 5090 two-sample paired run measured the vec4-default baseline slower than the scalar candidate (`0.994143x` candidate/default train-loop wall time, `1.005941x` tokens/sec), so the scalar route stays the normal training path.
+The multi-buffer BF16 packer, BF16-to-FP32 converter, and stored-MLP activation
+pack/restore path also include vec4 CUDA candidates, but they remain default-off
+diagnostics. Set `NFN_NATIVE_GPT_F32_TO_BF16_MANY_VEC4=1` /
+`NFN_TILE_CUDA_F32_TO_BF16_MANY_VEC4=1`,
+`NFN_NATIVE_GPT_BF16_TO_F32_VEC4=1` /
+`NFN_TILE_CUDA_BF16_TO_F32_VEC4=1`, or
+`NFN_NATIVE_GPT_STORE_MLP_ACTIVATIONS_VEC4=1` /
+`NFN_TILE_CUDA_STORE_MLP_ACTIVATIONS_VEC4=1` only for paired bisection. The
+F32-to-BF16-many and stored-activation launchers require aligned buffers, while
+the BF16-to-FP32 candidate is a lane-grouped four-value converter that only
+requires a multiple-of-four element count; all fall back to the scalar kernels
+for ineligible shapes. The CUDA 13.3 dedicated RTX 5090 two-sample paired run
+measured the F32-to-BF16-many vec4-default baseline slower than the scalar
+candidate (`0.994143x` candidate/default train-loop wall time, `1.005941x`
+tokens/sec), so the scalar route stays the normal training path for that
+conversion. Native trainer JSON and paired benchmark reports include
+`bf16_to_f32_vec4_count`, so route-change gates can confirm whether the
+BF16-to-FP32 candidate actually launched.
 
 Keep compile-time kernel candidates isolated until a same-script paired run
 holds up. For example, a Tile ops library built with

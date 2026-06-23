@@ -56,6 +56,7 @@ std::int64_t trainer_linear_cublaslt_bgrad_gemm_count();
 std::int64_t trainer_linear_cublaslt_bgrad_direct_write_count();
 std::int64_t trainer_linear_cublaslt_bgrad_accumulate_count();
 std::int64_t trainer_linear_sgemm_count();
+std::int64_t trainer_bf16_to_f32_vec4_count();
 std::int64_t trainer_linear_bf16_a_pack_count();
 std::int64_t trainer_linear_bf16_a_cache_hit_count();
 std::int64_t trainer_linear_bf16_cache_reset_count();
@@ -2065,6 +2066,10 @@ std::int64_t nfn_native_tile_trainer_linear_cublaslt_bgrad_accumulate_count() {
 
 std::int64_t nfn_native_tile_trainer_linear_sgemm_count() {
     return neuralfn::tile_cuda::trainer_linear_sgemm_count();
+}
+
+std::int64_t nfn_native_tile_trainer_bf16_to_f32_vec4_count() {
+    return neuralfn::tile_cuda::trainer_bf16_to_f32_vec4_count();
 }
 
 std::int64_t nfn_native_tile_trainer_linear_bf16_a_pack_count() {

@@ -3311,6 +3311,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         in tile_payload["available_native_kernels"]
     )
     assert "nfn_native_tile_trainer_linear_sgemm_count" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_trainer_bf16_to_f32_vec4_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_bf16_a_pack_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_bf16_a_cache_hit_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_bf16_cache_reset_count" in tile_payload["available_native_kernels"]
@@ -4330,6 +4331,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["linear_cublaslt_bgrad_accumulate_count"] == 0
     assert train_transformer_payload["linear_cublaslt_descriptor_cache_enabled"] is True
     assert train_transformer_payload["linear_sgemm_count"] == 0
+    assert train_transformer_payload["bf16_to_f32_vec4_count"] == 0
     assert train_transformer_payload["linear_bf16_a_pack_count"] == 0
     assert train_transformer_payload["linear_bf16_a_cache_hit_count"] == 0
     assert train_transformer_payload["linear_bf16_a_cache_strategy"] == "unused"
@@ -6609,6 +6611,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count" in header_text
     assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_accumulate_count" in header_text
     assert "nfn_native_tile_trainer_linear_sgemm_count" in header_text
+    assert "nfn_native_tile_trainer_bf16_to_f32_vec4_count" in header_text
     assert "nfn_native_tile_trainer_linear_bf16_a_pack_count" in header_text
     assert "nfn_native_tile_trainer_linear_bf16_a_cache_hit_count" in header_text
     assert "nfn_native_tile_trainer_linear_bf16_cache_reset_count" in header_text
@@ -6647,6 +6650,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_TILE_CUDA_F32_TO_BF16_VEC4" in kernels_text
     assert "NFN_NATIVE_GPT_F32_TO_BF16_VEC4" in kernels_text
     assert "NFN_NATIVE_GPT2_F32_TO_BF16_VEC4" in kernels_text
+    assert "bf16_bits_to_f32_kernel" in kernels_text
+    assert "bf16_bits_to_f32_vec4_kernel" in kernels_text
+    assert "NFN_TILE_CUDA_BF16_TO_F32_VEC4" in kernels_text
+    assert "NFN_NATIVE_GPT_BF16_TO_F32_VEC4" in kernels_text
+    assert "NFN_NATIVE_GPT2_BF16_TO_F32_VEC4" in kernels_text
+    assert "g_bf16_to_f32_vec4_count" in kernels_text
+    assert "trainer_bf16_to_f32_vec4_count" in kernels_text
     assert "f32_to_bf16_bits_many_kernel" in kernels_text
     assert "f32_to_bf16_bits_many_vec4_kernel" in kernels_text
     assert "NFN_TILE_CUDA_F32_TO_BF16_MANY_VEC4" in kernels_text
@@ -6904,6 +6914,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_LINEAR_TK_DINPUT" in kernels_text
     assert "tk_linear_backward_input_bf16_bits_weight_bf16_bits_float32" in kernels_text
     assert "linear_tk_gemm_count" in gpt2_source_text
+    assert "bf16_to_f32_vec4_count" in gpt2_source_text
     assert "linear_tk_float_out_gemm_count" in gpt2_source_text
     assert "linear_tk_dweight_gemm_count" in gpt2_source_text
     assert "linear_shape_stats" in gpt2_source_text
@@ -8389,6 +8400,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count" in exported
         assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_accumulate_count" in exported
         assert "nfn_native_tile_trainer_linear_sgemm_count" in exported
+        assert "nfn_native_tile_trainer_bf16_to_f32_vec4_count" in exported
         assert "nfn_native_tile_trainer_linear_bf16_a_pack_count" in exported
         assert "nfn_native_tile_trainer_linear_bf16_a_cache_hit_count" in exported
         assert "nfn_native_tile_trainer_linear_bf16_cache_reset_count" in exported

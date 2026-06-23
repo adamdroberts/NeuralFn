@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a guarded native Tile CUDA BF16-to-FP32 vec4 conversion candidate behind
+  `NFN_NATIVE_GPT_BF16_TO_F32_VEC4=1`,
+  `NFN_NATIVE_GPT2_BF16_TO_F32_VEC4=1`, or
+  `NFN_TILE_CUDA_BF16_TO_F32_VEC4=1`. The public
+  `launch_bf16_bits_to_float32` path and the TK float-output conversion helpers
+  now share a lane-grouped four-value converter for multiple-of-four element
+  counts, and otherwise fall back to the scalar converter. Native trainer JSON
+  and paired benchmark reports now expose
+  `bf16_to_f32_vec4_count`, so route-change gates can confirm whether the
+  candidate actually launched. The route remains default-off and does not affect
+  the current default dense-GPT workstation profile: the dedicated RTX 5090
+  same-script candidate run and a direct one-step profile both reported
+  `bf16_to_f32_vec4_count: 0`, because the active block dInput path is
+  `bf16-shadow-weight-shape-gated-cublaslt-dinput` rather than a TK
+  BF16-to-FP32 conversion path.
+
+  Verification note: added source-level native-kernel coverage for the new
+  kernel, env switches, C ABI counter, trainer JSON field, and paired benchmark
+  metric extraction. Rebuilt the full SM120 native artifact set, then ran the
+  dedicated RTX 5090 paired candidate benchmark with stage timing enabled and a
+  direct one-step profile to confirm the current default route does not launch
+  the candidate.
+
 - Aligned the llm.kittens SM120 parity wrapper with the native candidate
   wrapper stage-timing aliases. `tools/bench_native_gpt_sm120_parity.sh` now
   accepts `NFN_SM120_NATIVE_STAGE_TIMING=1` and
