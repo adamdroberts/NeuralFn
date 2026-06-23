@@ -1406,6 +1406,18 @@ Future updates should append new entries here rather than replacing older notes.
   prove the candidate actually reached the Tile kernel.
 
   Verification: ran focused source/wrapper tests and rebuilt native binaries;
+  reran the dedicated RTX 5090 same-script gate with the rebuilt native GPT CLI.
+
+- Refreshed the dedicated RTX 5090 llm.kittens parity measurement after the
+  128-row LayerNorm affine default. A no-stage five-step same-script sample
+  measured llm.kittens at `2471.728 ms/step` and NeuralFn at
+  `2496.600 ms/step`, or `1.010063x` train-loop wall time and `0.988567x`
+  train tokens/sec, with selected-GPU utilization and compute-process counts at
+  zero before and after the sample.
+
+  Verification: ran `tools/bench_native_gpt_sm120_parity.sh` with
+  `NFN_SM120_PARITY_STEPS=5`, `NFN_SM120_PARITY_SAMPLES=1`, warmup disabled,
+  and profile output disabled.
   ran the dedicated RTX 5090 paired benchmarks for both LayerNorm row-chunk
   profiles.
 
