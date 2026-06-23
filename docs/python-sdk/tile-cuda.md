@@ -2046,9 +2046,12 @@ cooperative sequence. The profile sets
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`, and
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1`, and adds
 `--train-loss-every-steps 1` to both sides of the paired run. It remains
-diagnostic-only: the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample gate proved
-the cooperative loss-bin strategy, but rejected it at `1.001346x` train-loop
-wall, `1.000068x` LM-head backward, and `1.002485x` block backward.
+diagnostic-only and rejected by default: the CUDA 13.3 dedicated RTX 5090
+3-step, 2-sample gate requested the cooperative loss-bin route but changed no
+tracked route counter, strategy value, linear shape stat, or cuBLASLt plan
+entry. Real paired-wrapper launches require
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` until a true
+fused/cooperative LM-head kernel is integrated.
 
 Startup-only token-weight initializer bisections can use the same profile
 mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,

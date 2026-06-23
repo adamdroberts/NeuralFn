@@ -431,6 +431,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_EXTRA_ARGS_RAW="${CANDIDATE_EXTRA_ARGS_RAW:+$CANDIDATE_EXTRA_ARGS_RAW }--require-cooperative-lm-head-backward"
     ;;
   "lm_head_cooperative_loss_bins"|"lm-head-cooperative-loss-bins")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 3-step, 2-sample same-script gate requested cooperative LM-head loss bins but did not change any tracked route counters, strategy values, linear shape stats, or cuBLASLt plan cache entries; the measured timing delta is noise until a real fused/cooperative kernel is integrated."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1 NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1"
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 1"
     ;;

@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rejected `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins`
+  by default. The CUDA 13.3 dedicated RTX 5090 3-step, 2-sample same-script
+  gate requested cooperative LM-head loss bins but changed no tracked route
+  counters, strategy values, linear shape stats, or cuBLASLt plan entries, so
+  the apparent timing delta is treated as noise. Real paired-wrapper launches
+  now require `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` until a
+  true fused/cooperative LM-head kernel is integrated.
+
+  Verification: ran the paired native-vs-native candidate wrapper for
+  `lm_head_cooperative_loss_bins`; it failed the native route-change gate with
+  `candidate-native-metrics-did-not-change-route-strategy-or-plan`.
+
 - Enforced existing SM120 rejection evidence for stale row-chunk benchmark
   profiles. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=layernorm_affine_row_chunk_512`
   and `linear_bias_row_chunk_1024` now fail before launching a real benchmark

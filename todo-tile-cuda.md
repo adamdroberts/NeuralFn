@@ -177,11 +177,11 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 	      loss-bin classifier launcher before the sequenced dHidden/dWeight work,
 	      and the benchmark profile applies `--train-loss-every-steps 1` to both
 	      baseline and candidate so the loss-bin route is actually exercised. The
-	      CUDA 13.3 dedicated RTX 5090 2-step, 2-sample gate moved
-	      `lm_head_classifier_loss_bin_launch_count` from `0` to `32`, but rejected
-	      the candidate at `1.001346x` train-loop wall, `1.000068x` LM-head
-	      backward, and `1.002485x` block backward. Keep it default-off; it is a
-	      measured dead end for parity, not the fused/cooperative kernel body.
+	      CUDA 13.3 dedicated RTX 5090 3-step, 2-sample gate requested the route,
+	      but changed no tracked route counter, strategy value, linear shape stat,
+	      or cuBLASLt plan entry; the apparent `0.993532x` train-loop timing delta
+	      is noise. Keep it rejected/default-off; it is not the fused/cooperative
+	      kernel body needed for parity.
 		  - 2026-06-20 promoted the row-loss reduction classifier variant to the dense
     GPT default after CUDA 13.3.33 RTX 5090 same-script gating. The new
     `nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets`

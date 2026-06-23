@@ -720,10 +720,13 @@ and `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1`; the wrapper also applies
 `--train-loss-every-steps 1` to both baseline and candidate so the loss-bin
 kernel is actually exercised. Runtime JSON reports
 `lm_head_cooperative_loss_bins_requested` and the loss-bin cooperative strategy
-strings when active. Keep this profile diagnostic-only: the CUDA 13.3 dedicated
-RTX 5090 2-step, 2-sample same-script gate proved the cooperative loss-bin
-strategy, but rejected the candidate at `1.001346x` train-loop wall,
-`1.000068x` LM-head backward, and `1.002485x` block backward.
+strings when active. Keep this profile diagnostic-only and rejected by default:
+the CUDA 13.3 dedicated RTX 5090 3-step, 2-sample same-script gate requested
+the cooperative loss-bin route but did not change any tracked route counter,
+strategy value, linear shape stat, or cuBLASLt plan entry. The apparent
+`0.993532x` train-loop timing delta is noise until a true fused/cooperative
+LM-head kernel is integrated. Real paired-wrapper launches now require
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
 Runtime JSON reports
 `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,

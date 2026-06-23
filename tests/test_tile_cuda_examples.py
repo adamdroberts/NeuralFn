@@ -2408,6 +2408,36 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "--train-loss-every-steps" in cooperative_loss_bins_payload["baseline_command"]
     assert "--train-loss-every-steps" in cooperative_loss_bins_payload["candidate_command"]
     assert cooperative_loss_bins_payload["metric_ratio_gates"]["enabled"] is False
+    assert "did not change any tracked route counters" in text
+
+    rejected_cooperative_loss_bins_env = os.environ.copy()
+    rejected_cooperative_loss_bins_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_cooperative_loss_bins",
+            "NFN_SM120_NATIVE_JSON_OUT": str(
+                tmp_path / "rejected-lm-head-cooperative-loss-bins.json"
+            ),
+        }
+    )
+
+    rejected_cooperative_loss_bins = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=rejected_cooperative_loss_bins_env,
+    )
+
+    assert rejected_cooperative_loss_bins.returncode == 2
+    assert "lm_head_cooperative_loss_bins is a rejected SM120 candidate" in (
+        rejected_cooperative_loss_bins.stderr
+    )
+    assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
+        rejected_cooperative_loss_bins.stderr
+    )
 
     lm_head_loss_bin_profiles = {
         "lm_head_loss_bins": {
