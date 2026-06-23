@@ -1319,7 +1319,22 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "kLmHeadCooperativeFlagLossBins" in tile_ops_source
     assert "launch_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets" in tile_ops_source
     assert "launch_linear_backward_input_bf16_bits_weight_bf16_float32" in tile_ops_source
+    assert "launch_linear_backward_input_bf16_bits_weight_bf16_strided_float32" in tile_ops_source
     assert "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta" in tile_ops_source
+    assert "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta" in tile_ops_source
+    assert "nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_float32" in tile_ops_header
+    assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta" in tile_ops_header
+    assert "NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM" in source
+    assert "NFN_NATIVE_GPT2_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM" in source
+    assert "lm_head_public_vocab_strided_gemm_requested" in source
+    default_off_strided_gemm = (
+        'env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM",\n'
+        + '                              "NFN_NATIVE_GPT2_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM"}),\n'
+        + "            false);"
+    )
+    assert default_off_strided_gemm in source
+    assert "public-vocab-strided-bf16-dinput-dhidden" in source
+    assert "public-vocab-strided-bf16-dlogit-dweight" in source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD" in source
     assert "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_BACKWARD" in source
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS" in source
@@ -1381,6 +1396,8 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     speed_tool = (root / "tools" / "paired_kernel_speed.py").read_text(encoding="utf-8")
     assert "stage.lm_head_backward.cooperative.total_ms" in speed_tool
     assert "lm_head_cooperative_backward_sequence_wrapper_enabled" in speed_tool
+    assert "lm_head_dhidden_strided_vocab_gemm_count" in speed_tool
+    assert "lm_head_dweight_strided_vocab_gemm_count" in speed_tool
 
 
 def test_native_gpt_cuda_error_35_reports_runtime_visibility_hint() -> None:

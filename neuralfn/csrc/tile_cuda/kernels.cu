@@ -10110,6 +10110,101 @@ void launch_linear_backward_weight_tiled_float32_fallback(
   }
 }
 
+template <bool X_BF16, bool GRAD_BF16>
+__global__ void linear_backward_weight_tiled_strided_float32_kernel(
+    const float* __restrict__ x,
+    const std::uint16_t* __restrict__ x_bf16_bits,
+    const float* __restrict__ grad_out,
+    const std::uint16_t* __restrict__ grad_out_bf16_bits,
+    float* __restrict__ grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride,
+    bool accumulate) {
+  constexpr int kTile = 16;
+  __shared__ float x_tile[kTile][kTile];
+  __shared__ float grad_tile[kTile][kTile];
+
+  const int in_col = static_cast<int>(blockIdx.x) * kTile + threadIdx.x;
+  const int out_col = static_cast<int>(blockIdx.y) * kTile + threadIdx.y;
+  float acc = 0.0f;
+
+  for (std::int64_t row_base = 0; row_base < rows; row_base += kTile) {
+    const std::int64_t row = row_base + threadIdx.y;
+    if (row < rows && in_col < input_dim) {
+      const std::int64_t x_idx = row * input_dim + in_col;
+      if constexpr (X_BF16) {
+        x_tile[threadIdx.y][threadIdx.x] = bf16_bits_to_f32_device(x_bf16_bits[x_idx]);
+      } else {
+        x_tile[threadIdx.y][threadIdx.x] = x[x_idx];
+      }
+    } else {
+      x_tile[threadIdx.y][threadIdx.x] = 0.0f;
+    }
+
+    const int grad_out_col = static_cast<int>(blockIdx.y) * kTile + threadIdx.x;
+    if (row < rows && grad_out_col < output_dim) {
+      const std::int64_t grad_idx = row * grad_out_row_stride + grad_out_col;
+      if constexpr (GRAD_BF16) {
+        grad_tile[threadIdx.y][threadIdx.x] = bf16_bits_to_f32_device(grad_out_bf16_bits[grad_idx]);
+      } else {
+        grad_tile[threadIdx.y][threadIdx.x] = grad_out[grad_idx];
+      }
+    } else {
+      grad_tile[threadIdx.y][threadIdx.x] = 0.0f;
+    }
+
+    __syncthreads();
+    if (in_col < input_dim && out_col < output_dim) {
+      for (int k = 0; k < kTile; ++k) {
+        acc += x_tile[k][threadIdx.x] * grad_tile[k][threadIdx.y];
+      }
+    }
+    __syncthreads();
+  }
+
+  if (in_col < input_dim && out_col < output_dim) {
+    const std::int64_t weight_idx = static_cast<std::int64_t>(out_col) * input_dim + in_col;
+    grad_weight[weight_idx] = accumulate ? grad_weight[weight_idx] + acc : acc;
+  }
+}
+
+void launch_linear_backward_weight_tiled_strided_float32_fallback(
+    const float* x,
+    const std::uint16_t* x_bf16_bits,
+    const float* grad_out,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride,
+    bool x_bf16,
+    bool grad_bf16,
+    bool accumulate,
+    cudaStream_t stream) {
+  constexpr int kTile = 16;
+  const dim3 block(kTile, kTile, 1);
+  const dim3 grid(
+      static_cast<unsigned int>((input_dim + kTile - 1) / kTile),
+      static_cast<unsigned int>((output_dim + kTile - 1) / kTile),
+      1);
+  if (x_bf16 && grad_bf16) {
+    linear_backward_weight_tiled_strided_float32_kernel<true, true><<<grid, block, 0, stream>>>(
+        nullptr, x_bf16_bits, nullptr, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, grad_out_row_stride, accumulate);
+  } else if (x_bf16) {
+    linear_backward_weight_tiled_strided_float32_kernel<true, false><<<grid, block, 0, stream>>>(
+        nullptr, x_bf16_bits, grad_out, nullptr, grad_weight, rows, input_dim, output_dim, grad_out_row_stride, accumulate);
+  } else if (grad_bf16) {
+    linear_backward_weight_tiled_strided_float32_kernel<false, true><<<grid, block, 0, stream>>>(
+        x, nullptr, nullptr, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, grad_out_row_stride, accumulate);
+  } else {
+    linear_backward_weight_tiled_strided_float32_kernel<false, false><<<grid, block, 0, stream>>>(
+        x, nullptr, grad_out, nullptr, grad_weight, rows, input_dim, output_dim, grad_out_row_stride, accumulate);
+  }
+}
+
 __global__ void linear_backward_weight_accumulate_bf16_bits_bf16_bits_bf16_bits_kernel(
     const std::uint16_t* __restrict__ x_bf16_bits,
     const std::uint16_t* __restrict__ grad_out_bf16_bits,
@@ -10183,6 +10278,29 @@ __global__ void linear_backward_input_bf16_bits_weight_bf16_bits_float32_kernel(
   float acc = 0.0f;
   for (std::int64_t out_col = 0; out_col < output_dim; ++out_col) {
     const float grad_value = bf16_bits_to_f32_device(grad_out_bf16_bits[row * output_dim + out_col]);
+    const float weight_value = bf16_bits_to_f32_device(weight_bf16_bits[out_col * input_dim + in_col]);
+    acc += grad_value * weight_value;
+  }
+  grad_x[idx] = acc;
+}
+
+__global__ void linear_backward_input_bf16_bits_weight_bf16_bits_strided_float32_kernel(
+    const std::uint16_t* __restrict__ grad_out_bf16_bits,
+    const std::uint16_t* __restrict__ weight_bf16_bits,
+    float* __restrict__ grad_x,
+    std::int64_t n,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const std::int64_t row = idx / input_dim;
+  const std::int64_t in_col = idx % input_dim;
+  float acc = 0.0f;
+  for (std::int64_t out_col = 0; out_col < output_dim; ++out_col) {
+    const float grad_value = bf16_bits_to_f32_device(grad_out_bf16_bits[row * grad_out_row_stride + out_col]);
     const float weight_value = bf16_bits_to_f32_device(weight_bf16_bits[out_col * input_dim + in_col]);
     acc += grad_value * weight_value;
   }
@@ -16790,6 +16908,48 @@ void launch_linear_backward_input_bf16_bits_weight_bf16_float32(
       grad_out_bf16_bits, weight_bf16_bits, grad_x, n, input_dim, output_dim);
 }
 
+void launch_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    const std::uint16_t* weight_bf16_bits,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride,
+    cudaStream_t stream) {
+  if (grad_out_row_stride == output_dim) {
+    launch_linear_backward_input_bf16_bits_weight_bf16_float32(
+        grad_out_bf16_bits, weight_bf16_bits, grad_x, rows, input_dim, output_dim, stream);
+    return;
+  }
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
+      fits_cublas_int(grad_out_row_stride) &&
+      cublas_linear_gemm_ex_bf16_bits_ab_float32(
+          weight_bf16_bits,
+          grad_out_bf16_bits,
+          grad_x,
+          static_cast<int>(input_dim),
+          static_cast<int>(rows),
+          static_cast<int>(output_dim),
+          CUBLAS_OP_N,
+          CUBLAS_OP_N,
+          static_cast<int>(input_dim),
+          static_cast<int>(grad_out_row_stride),
+          static_cast<int>(input_dim),
+          0.0f,
+          true,
+          stream)) {
+    return;
+  }
+#endif
+  const std::int64_t n = rows * input_dim;
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  linear_backward_input_bf16_bits_weight_bf16_bits_strided_float32_kernel<<<blocks, threads, 0, stream>>>(
+      grad_out_bf16_bits, weight_bf16_bits, grad_x, n, input_dim, output_dim, grad_out_row_stride);
+}
+
 void launch_linear_backward_input_bf16_bits_float32(
     const std::uint16_t* grad_out_bf16_bits,
     const float* weight,
@@ -17535,6 +17695,58 @@ void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
 #endif
   launch_linear_backward_weight_tiled_float32_fallback(
       nullptr, x_bf16_bits, nullptr, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, true, true, beta != 0.0f, stream);
+}
+
+void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride,
+    float beta,
+    cudaStream_t stream) {
+  if (grad_out_row_stride == output_dim) {
+    launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+        x_bf16_bits, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, beta, stream);
+    return;
+  }
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
+      fits_cublas_int(grad_out_row_stride) &&
+      cublas_linear_gemm_ex_bf16_bits_ab_float32(
+          x_bf16_bits,
+          grad_out_bf16_bits,
+          grad_weight,
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          static_cast<int>(rows),
+          CUBLAS_OP_N,
+          CUBLAS_OP_T,
+          static_cast<int>(input_dim),
+          static_cast<int>(grad_out_row_stride),
+          static_cast<int>(input_dim),
+          beta,
+          true,
+          stream)) {
+    return;
+  }
+#endif
+  launch_linear_backward_weight_tiled_strided_float32_fallback(
+      nullptr,
+      x_bf16_bits,
+      nullptr,
+      grad_out_bf16_bits,
+      grad_weight,
+      rows,
+      input_dim,
+      output_dim,
+      grad_out_row_stride,
+      true,
+      true,
+      beta != 0.0f,
+      stream);
 }
 
 void launch_linear_backward_weight_accumulate_float32_bf16_bits(

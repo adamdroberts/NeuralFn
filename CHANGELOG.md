@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added default-off public-vocab strided LM-head GEMM diagnostics to the native
+  CUDA Tile ABI. The new raw symbols
+  `nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_float32`
+  and
+  `nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta`
+  let dense GPT compare the logical-vocab LM-head dHidden/dWeight route against
+  the older aligned padded-vocab GEMMs with
+  `NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=1`. Runtime JSON and the
+  paired benchmark now report the strided dHidden/dWeight counters.
+
+  Migration note: no default training behavior changes. The route is
+  intentionally disabled by default because the CUDA 13.3 dedicated RTX 5090
+  same-binary paired run measured `1.117352x`
+  `train_loop_wall_ms_per_step` and `0.895573x` tokens/sec versus the padded
+  route for GPT-2's `50257 -> 50304` vocabulary padding.
+
+  Verification: rebuilt `libnfn_native_train_tile_ops.so` and
+  `nfn_gpt_native_train_linked`, ran a one-step native TinyStories smoke that
+  hit 16 strided dHidden and 16 strided dWeight calls, then ran
+  `tools/paired_kernel_speed.py` with baseline
+  `NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=0` versus the strided
+  candidate.
+
 - Rejected `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins`
   by default. The CUDA 13.3 dedicated RTX 5090 3-step, 2-sample same-script
   gate requested cooperative LM-head loss bins but changed no tracked route

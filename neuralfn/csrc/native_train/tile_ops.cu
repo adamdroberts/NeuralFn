@@ -571,6 +571,15 @@ void launch_linear_backward_input_bf16_bits_weight_bf16_float32(
     std::int64_t input_dim,
     std::int64_t output_dim,
     cudaStream_t stream);
+void launch_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    const std::uint16_t* weight_bf16_bits,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride,
+    cudaStream_t stream);
 void launch_linear_backward_input_bf16_bits_float32(
     const std::uint16_t* grad_out_bf16_bits,
     const float* weight,
@@ -721,6 +730,16 @@ void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
     std::int64_t rows,
     std::int64_t input_dim,
     std::int64_t output_dim,
+    float beta,
+    cudaStream_t stream);
+void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride,
     float beta,
     cudaStream_t stream);
 void launch_linear_backward_weight_accumulate_float32_bf16_bits(
@@ -3139,6 +3158,27 @@ int nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_float32(
     return launch_status();
 }
 
+int nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    const std::uint16_t* weight_bf16_bits,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
+        grad_out_bf16_bits,
+        weight_bf16_bits,
+        grad_x,
+        rows,
+        input_dim,
+        output_dim,
+        grad_out_row_stride,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
 int nfn_native_tile_linear_backward_input_bf16_bits_float32(
     const std::uint16_t* grad_out_bf16_bits,
     const float* weight,
@@ -3437,6 +3477,29 @@ int nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float3
         rows,
         input_dim,
         output_dim,
+        beta,
+        as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride,
+    float beta,
+    void* cuda_stream) {
+    neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
+        x_bf16_bits,
+        grad_out_bf16_bits,
+        grad_weight,
+        rows,
+        input_dim,
+        output_dim,
+        grad_out_row_stride,
         beta,
         as_stream(cuda_stream));
     return launch_status();
@@ -4861,28 +4924,53 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
         if (status != 0) {
             return status;
         }
-        neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
-            logits_bf16,
-            token_weight_bf16,
-            grad_hidden,
-            rows,
-            hidden_dim,
-            row_stride,
-            cooperative_streams.dhidden);
+        if (row_stride > vocab) {
+            neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
+                logits_bf16,
+                token_weight_bf16,
+                grad_hidden,
+                rows,
+                hidden_dim,
+                vocab,
+                row_stride,
+                cooperative_streams.dhidden);
+        } else {
+            neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
+                logits_bf16,
+                token_weight_bf16,
+                grad_hidden,
+                rows,
+                hidden_dim,
+                row_stride,
+                cooperative_streams.dhidden);
+        }
         g_lm_head_cooperative_sequence_dhidden_launch_count.fetch_add(1, std::memory_order_relaxed);
         status = launch_status();
         if (status != 0) {
             return status;
         }
-        neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
-            hidden_bf16,
-            logits_bf16,
-            grad_weight,
-            rows,
-            hidden_dim,
-            row_stride,
-            dweight_beta,
-            cooperative_streams.dweight);
+        if (row_stride > vocab) {
+            neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
+                hidden_bf16,
+                logits_bf16,
+                grad_weight,
+                rows,
+                hidden_dim,
+                vocab,
+                row_stride,
+                dweight_beta,
+                cooperative_streams.dweight);
+        } else {
+            neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+                hidden_bf16,
+                logits_bf16,
+                grad_weight,
+                rows,
+                hidden_dim,
+                row_stride,
+                dweight_beta,
+                cooperative_streams.dweight);
+        }
         g_lm_head_cooperative_sequence_dweight_launch_count.fetch_add(1, std::memory_order_relaxed);
         status = launch_status();
         if (status != 0) {
@@ -4912,28 +5000,53 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
             cooperative_streams.dweight_done,
             0));
     }
-    neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
-        hidden_bf16,
-        logits_bf16,
-        grad_weight,
-        rows,
-        hidden_dim,
-        row_stride,
-        dweight_beta,
-        stream);
+    if (row_stride > vocab) {
+        neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
+            hidden_bf16,
+            logits_bf16,
+            grad_weight,
+            rows,
+            hidden_dim,
+            vocab,
+            row_stride,
+            dweight_beta,
+            stream);
+    } else {
+        neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+            hidden_bf16,
+            logits_bf16,
+            grad_weight,
+            rows,
+            hidden_dim,
+            row_stride,
+            dweight_beta,
+            stream);
+    }
     g_lm_head_cooperative_sequence_dweight_launch_count.fetch_add(1, std::memory_order_relaxed);
     status = launch_status();
     if (status != 0) {
         return status;
     }
-    neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
-        logits_bf16,
-        token_weight_bf16,
-        grad_hidden,
-        rows,
-        hidden_dim,
-        row_stride,
-        stream);
+    if (row_stride > vocab) {
+        neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
+            logits_bf16,
+            token_weight_bf16,
+            grad_hidden,
+            rows,
+            hidden_dim,
+            vocab,
+            row_stride,
+            stream);
+    } else {
+        neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
+            logits_bf16,
+            token_weight_bf16,
+            grad_hidden,
+            rows,
+            hidden_dim,
+            row_stride,
+            stream);
+    }
     g_lm_head_cooperative_sequence_dhidden_launch_count.fetch_add(1, std::memory_order_relaxed);
     return launch_status();
 }
@@ -5002,28 +5115,53 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16_legacy_
     if (status != 0) {
         return status;
     }
-    neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
-        logits_bf16,
-        token_weight_bf16,
-        grad_hidden,
-        rows,
-        hidden_dim,
-        row_stride,
-        stream);
+    if (row_stride > vocab) {
+        neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
+            logits_bf16,
+            token_weight_bf16,
+            grad_hidden,
+            rows,
+            hidden_dim,
+            vocab,
+            row_stride,
+            stream);
+    } else {
+        neuralfn::tile_cuda::launch_linear_backward_input_bf16_bits_weight_bf16_float32(
+            logits_bf16,
+            token_weight_bf16,
+            grad_hidden,
+            rows,
+            hidden_dim,
+            row_stride,
+            stream);
+    }
     g_lm_head_cooperative_sequence_dhidden_launch_count.fetch_add(1, std::memory_order_relaxed);
     status = launch_status();
     if (status != 0) {
         return status;
     }
-    neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
-        hidden_bf16,
-        logits_bf16,
-        grad_weight,
-        rows,
-        hidden_dim,
-        row_stride,
-        dweight_beta,
-        stream);
+    if (row_stride > vocab) {
+        neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
+            hidden_bf16,
+            logits_bf16,
+            grad_weight,
+            rows,
+            hidden_dim,
+            vocab,
+            row_stride,
+            dweight_beta,
+            stream);
+    } else {
+        neuralfn::tile_cuda::launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
+            hidden_bf16,
+            logits_bf16,
+            grad_weight,
+            rows,
+            hidden_dim,
+            row_stride,
+            dweight_beta,
+            stream);
+    }
     g_lm_head_cooperative_sequence_dweight_launch_count.fetch_add(1, std::memory_order_relaxed);
     return launch_status();
 }

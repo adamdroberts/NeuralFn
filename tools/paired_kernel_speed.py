@@ -122,6 +122,14 @@ NATIVE_METRIC_PATHS = (
         ("lm_head_dhidden_cublaslt_gemm_count",),
     ),
     ("lm_head_dhidden_bf16_gemm_count", ("lm_head_dhidden_bf16_gemm_count",)),
+    (
+        "lm_head_dhidden_strided_vocab_gemm_count",
+        ("lm_head_dhidden_strided_vocab_gemm_count",),
+    ),
+    (
+        "lm_head_dweight_strided_vocab_gemm_count",
+        ("lm_head_dweight_strided_vocab_gemm_count",),
+    ),
     ("block_backward_dinput_tk_gemm_count", ("block_backward_dinput_tk_gemm_count",)),
     (
         "block_backward_dinput_cublaslt_gemm_count",
@@ -361,6 +369,8 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "lm_head_dhidden_tk_gemm_count",
     "lm_head_dhidden_cublaslt_gemm_count",
     "lm_head_dhidden_bf16_gemm_count",
+    "lm_head_dhidden_strided_vocab_gemm_count",
+    "lm_head_dweight_strided_vocab_gemm_count",
     "block_backward_dinput_tk_gemm_count",
     "block_backward_dinput_cublaslt_gemm_count",
     "block_backward_dinput_bf16_gemm_count",
@@ -530,6 +540,8 @@ NATIVE_TEXT_METRIC_KEYS = (
     "lm_head_dhidden_tk_gemm_count",
     "lm_head_dhidden_cublaslt_gemm_count",
     "lm_head_dhidden_bf16_gemm_count",
+    "lm_head_dhidden_strided_vocab_gemm_count",
+    "lm_head_dweight_strided_vocab_gemm_count",
     "block_backward_dinput_tk_gemm_count",
     "block_backward_dinput_cublaslt_gemm_count",
     "block_backward_dinput_bf16_gemm_count",

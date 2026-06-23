@@ -208,6 +208,11 @@ device across the whole gradient-accumulation optimizer step and copied to the
 host once per logged step, so train-loss logging does not add one host sync per
 microbatch. Validation loss still uses `--eval-every-steps` and remains
 separate from sampled train loss.
+The native Tile ABI also includes opt-in public-vocab strided LM-head dHidden
+and dWeight GEMM routes for padded BF16 dlogit chunks. They remain disabled by
+default (`NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=0`) because the
+CUDA 13.3 RTX 5090 same-binary paired run measured them slower than the current
+aligned padded-vocab GEMMs for GPT-2's `50257 -> 50304` padded vocabulary.
 Dense GPT native training also now defaults to eliding the unused FP32
 attention-projection and MLP-projection scratch-tape buffers when BF16
 projection-residual is active. Set

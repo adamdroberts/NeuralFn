@@ -150,6 +150,20 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 	      required profile is a strict ABI preflight probe. The open work is now a
 	      true fused/single-kernel body under this strict symbol, not another
 	      wrapper or preflight integration step.
+	    - 2026-06-23 added public-vocab strided LM-head dHidden/dWeight Tile ABI
+	      diagnostics:
+	      `nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_float32`
+	      and
+	      `nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta`.
+	      `NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=1` routes padded
+	      BF16 dlogit chunks through logical-vocab GEMMs while preserving the
+	      padded row stride, and runtime JSON reports
+	      `lm_head_dhidden_strided_vocab_gemm_count` plus
+	      `lm_head_dweight_strided_vocab_gemm_count`. The same-binary CUDA 13.3
+	      dedicated RTX 5090 gate rejected it as a default:
+	      `1.117352x` train-loop wall and `0.895573x` tokens/sec versus the
+	      current aligned padded-vocab route. Keep it diagnostic-only; GPT-2's
+	      current padding is only `50257 -> 50304`, so the old aligned K wins.
 	    - 2026-06-22 added cooperative sequence launch counters to the diagnostic
 	      wrapper and paired benchmark extraction. Runtime JSON now reports
 	      `lm_head_cooperative_sequence_launch_count`,
