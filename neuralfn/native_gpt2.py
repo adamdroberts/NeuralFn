@@ -666,6 +666,7 @@ def run_native_gpt2_checkpoint_sampler(
     encoding_name: str = "gpt2",
     cuda_visible_devices: str = "0",
     cuda_device_max_connections: str = "1",
+    runner: str = "auto",
 ) -> subprocess.CompletedProcess[str]:
     """Run the compiled native GPT checkpoint sampler without graph/Torch imports."""
 
@@ -677,6 +678,35 @@ def run_native_gpt2_checkpoint_sampler(
         cli=cli,
         encoding_name=encoding_name,
     )
+    normalized_runner = str(runner or "auto").strip().lower().replace("_", "-")
+    if normalized_runner not in {"auto", "binding", "compiled-cli"}:
+        raise ValueError("native GPT checkpoint sampler runner must be one of: auto, binding, compiled-cli")
+    if normalized_runner in {"auto", "binding"}:
+        try:
+            _module_name, _runner, _resolver = _load_native_gpt2_binding()
+            capture_runner = (
+                getattr(importlib.import_module(_module_name), "run_gpt_capture", None)
+                or getattr(importlib.import_module(_module_name), "run_gpt2_capture", None)
+                or getattr(importlib.import_module(_module_name), "run_infer", None)
+            )
+            if callable(capture_runner):
+                payload = {
+                    "compiled_cli_argv": command,
+                    "cuda_visible_devices": str(cuda_visible_devices),
+                    "cuda_device_max_connections": str(cuda_device_max_connections),
+                }
+                result = capture_runner(payload)
+                return subprocess.CompletedProcess(
+                    command,
+                    int(result.get("returncode", 126)),
+                    stdout=str(result.get("stdout", "")),
+                    stderr=str(result.get("stderr", "")),
+                )
+            if normalized_runner == "binding":
+                raise RuntimeError("native GPT binding does not expose run_gpt_capture/run_infer")
+        except ImportError as exc:
+            if normalized_runner == "binding":
+                raise RuntimeError(f"Native GPT binding requested but unavailable: {exc}") from exc
     return subprocess.run(
         command,
         env=native_gpt2_checkpoint_sampler_env(

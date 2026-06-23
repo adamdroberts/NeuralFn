@@ -51,6 +51,7 @@ from neuralfn.native_gpt2 import (
     resolve_native_gpt2_launcher,
     resolve_native_gpt2_token_shards,
     run_native_gpt2,
+    run_native_gpt2_checkpoint_sampler,
     write_native_gpt2_run_config,
 )
 from neuralfn.native_train import (
@@ -2080,6 +2081,61 @@ def test_native_gpt2_binding_runner_invokes_in_process_module(monkeypatch: pytes
     assert calls[0]["cuda_device_max_connections"] == "1"
 
 
+def test_native_gpt2_checkpoint_sampler_prefers_binding_capture(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    checkpoint = tmp_path / "model_00000001.bin"
+    checkpoint.write_bytes(b"placeholder")
+    calls: list[dict[str, object]] = []
+
+    def fake_run(payload: dict[str, object]) -> int:
+        raise AssertionError("sampler should use capture runner, not training runner")
+
+    def fake_capture(payload: dict[str, object]) -> dict[str, object]:
+        calls.append(payload)
+        return {"returncode": 0, "stdout": '{"generated_tokens": [42]}\\n', "stderr": ""}
+
+    def fake_resolve(payload: dict[str, object]) -> list[str]:
+        return list(payload["compiled_cli_argv"])  # type: ignore[index]
+
+    monkeypatch.delitem(sys.modules, "neuralfn_native_gpt", raising=False)
+    monkeypatch.delitem(sys.modules, "neuralfn._native_gpt", raising=False)
+    monkeypatch.setitem(
+        sys.modules,
+        "neuralfn_native_gpt2",
+        SimpleNamespace(
+            run_gpt2=fake_run,
+            run_gpt2_capture=fake_capture,
+            resolve_native_gpt2_command=fake_resolve,
+        ),
+    )
+    monkeypatch.setattr(native_gpt2_module, "NATIVE_GPT2_BINDING_MODULES", ("neuralfn_native_gpt2",))
+    monkeypatch.setenv("NFN_NATIVE_GPT2_CLI", "/opt/nfn/nfn_gpt_native_train")
+
+    result = run_native_gpt2_checkpoint_sampler(
+        checkpoint,
+        prompt_tokens="1,2,3",
+        max_new_tokens=4,
+        cuda_visible_devices="2",
+        runner="binding",
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == '{"generated_tokens": [42]}\\n'
+    assert calls[0]["compiled_cli_argv"] == [
+        "/opt/nfn/nfn_gpt_native_train",
+        "--sample-checkpoint",
+        str(checkpoint),
+        "--prompt-tokens",
+        "1,2,3",
+        "--max-new-tokens",
+        "4",
+    ]
+    assert calls[0]["cuda_visible_devices"] == "2"
+    assert calls[0]["cuda_device_max_connections"] == "1"
+
+
 def test_native_gpt2_binding_runner_errors_when_explicit_and_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2350,6 +2406,9 @@ def test_native_gpt2_cpp_binding_builds_and_runs(
     assert status.resolved == "binding"
     assert status.binding_module == "neuralfn._native_gpt2"
     assert run_native_gpt2(cfg, runner="auto") == 0
+    binding_module = importlib.import_module("neuralfn._native_gpt2")
+    captured = binding_module.run_gpt2_capture({"compiled_cli_argv": ["/bin/echo", "native-sampler-ok"]})
+    assert captured == {"returncode": 0, "stdout": "native-sampler-ok\n", "stderr": ""}
 
 
 def test_native_gpt_cpp_binding_builds_and_runs_generic_module(
@@ -2412,6 +2471,10 @@ def test_native_gpt_cpp_binding_uses_spawn_and_lazy_cuda_module_loading() -> Non
 
     assert "#include <spawn.h>" in source
     assert "posix_spawnp(&pid" in source
+    assert "pipe(stdout_pipe)" in source
+    assert "posix_spawn_file_actions_adddup2" in source
+    assert '"run_gpt_capture"' in source
+    assert '"run_infer"' in source
     assert 'setenv("CUDA_MODULE_LOADING", "LAZY", 0)' in source
     assert "fork()" not in source
 

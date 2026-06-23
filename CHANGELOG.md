@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added captured-output native GPT sampler bindings for SDK `.bin`
+  inference. Rebuilt `neuralfn._native_gpt` and `neuralfn._native_gpt2`
+  modules now expose `run_gpt_capture`, `run_gpt2_capture`, and `run_infer`,
+  which launch compiled native commands through the C++ `posix_spawnp()` route
+  while returning captured stdout to Python. `run_native_gpt_checkpoint_sampler`
+  and the GPT-2 compatibility helper now accept `runner="auto"`, `"binding"`,
+  or `"compiled-cli"`; `auto` uses the C++ binding capture path when available
+  and only falls back to Python `subprocess.run()` when the binding is absent.
+
+  Migration note: existing sampler calls keep their default behavior, but SDK
+  callers that need to enforce the no-Torch C++ binding route can pass
+  `runner="binding"`. Old local native GPT bindings should be rebuilt before
+  relying on the capture aliases.
+
+  Verification: added focused SDK and C++ binding tests for captured sampler
+  execution, source-contract coverage for the new binding exports, and updated
+  the no-Torch entrypoint gate to import the public sampler runner.
+
 - Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_no_loss_backward`
   to the SM120 native candidate wrapper. The profile expands to the cooperative
   LM-head sequence wrapper plus the optimizer-only no-loss CE route

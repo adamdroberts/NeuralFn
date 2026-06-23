@@ -110,6 +110,12 @@ launching subprocess, launcher, compiled-CLI, or binding runs; the C++ binding
 uses `posix_spawnp()` instead of `fork()` and defaults
 `CUDA_MODULE_LOADING=LAZY` when the caller has not set it. Set the corresponding
 environment variable yourself when you need a different CUDA device routing.
+Native checkpoint sampling also accepts `runner="auto"`, `"binding"`, or
+`"compiled-cli"` through `run_native_gpt_checkpoint_sampler()` /
+`run_native_gpt2_checkpoint_sampler()`. When a rebuilt GPT binding exposes
+`run_gpt_capture` / `run_gpt2_capture` / `run_infer`, the SDK uses that C++
+captured-output path for native `.bin` inference before falling back to Python
+`subprocess.run()`.
 Use `exec_native_gpt(config)` or the compatibility `exec_native_gpt2(config)`
 when an SDK launcher should replace the current Python process with the
 compiled CLI or launcher instead of waiting for a subprocess return code from
