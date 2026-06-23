@@ -69,9 +69,12 @@ the latest named-profile rerun also timed out at 360s. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_65536` only to reproduce
 that rejected diagnostic; it expands to
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1 --lm-head-row-chunk-size
-65536`. The native runner now rejects LM-head chunks above 32768 rows before
-launching CUDA unless `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` is set
-for explicit paired diagnostics. The
+65536`. Real paired-wrapper runs of timeout-prone LM-head profiles now also
+require `NFN_SM120_NATIVE_ALLOW_TIMEOUT_PRONE_LM_HEAD_PROFILE=1`; dry-run plan
+expansion remains available without that opt-in. The native runner now rejects
+LM-head chunks above 32768 rows before launching CUDA unless
+`NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` is set for explicit paired
+diagnostics. The
 current staged CUDA 13.3.33
 10-step parity sample on the dedicated RTX 5090 measured NeuralFn at
 `2564.590 ms/step` versus llm.kittens at `2447.451 ms/step`

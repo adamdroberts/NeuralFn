@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Guarded timeout-prone LM-head SM120 candidate profiles in
+  `tools/bench_native_gpt_sm120_candidate.sh`. Real paired benchmark runs of
+  `lm_head_pipeline_chunks`, `lm_head_row_chunk_65536`, and
+  `lm_head_full_resident_reuse` now fail fast unless
+  `NFN_SM120_NATIVE_ALLOW_TIMEOUT_PRONE_LM_HEAD_PROFILE=1` is set; dry-run plan
+  expansion still works without the opt-in.
+
+  Migration note: no trainer default changed. This only prevents exploratory
+  sweeps from spending the full command timeout on known unsafe diagnostic
+  routes. Set the opt-in when intentionally reproducing those candidates.
+
+  Verification: the CUDA 13.3.33 dedicated RTX 5090 LM-head sweep rejected
+  `lm_head_overlap_last_dweight` (`1.002145x` train-loop), rejected
+  `lm_head_cooperative_loss_bins` (`1.001778x` train-loop), and observed
+  300-second candidate timeouts for `lm_head_pipeline_chunks`,
+  `lm_head_row_chunk_65536`, and `lm_head_full_resident_reuse`.
+
 - Added `exec_native_train(config, runner="compiled-cli")` to the public Python
   SDK. Generic native-training launch scripts can now replace the current
   Python process with the selected compiled C++ trainer through `execvpe`, using

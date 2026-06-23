@@ -1812,6 +1812,29 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "65536" in full_resident_payload["candidate_command"]
     assert full_resident_payload["metric_ratio_gates"]["enabled"] is False
 
+    timeout_prone_env = os.environ.copy()
+    timeout_prone_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_pipeline_chunks",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "timeout-prone.json"),
+        }
+    )
+
+    timeout_prone_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=timeout_prone_env,
+    )
+
+    assert timeout_prone_run.returncode == 2
+    assert "timeout-prone" in timeout_prone_run.stderr
+    assert "NFN_SM120_NATIVE_ALLOW_TIMEOUT_PRONE_LM_HEAD_PROFILE=1" in timeout_prone_run.stderr
+
     cooperative_required_output_path = (
         tmp_path / "candidate-lm-head-cooperative-required-dry-run.json"
     )

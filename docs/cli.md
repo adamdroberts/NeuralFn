@@ -1242,7 +1242,11 @@ failed the strict total LM-head stage gate at `1.000506x`.
 NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1
 NFN_NATIVE_GPT_FULL_BATCH_LM_HEAD_REUSE=1` plus
 `--lm-head-row-chunk-size 65536`, reproducing the closest current
-llm.kittens-style resident-logit/full-batch LM-head schedule. Keep it
+llm.kittens-style resident-logit/full-batch LM-head schedule. Real paired
+benchmark runs of `lm_head_pipeline_chunks`, `lm_head_row_chunk_65536`, and
+`lm_head_full_resident_reuse` require
+`NFN_SM120_NATIVE_ALLOW_TIMEOUT_PRONE_LM_HEAD_PROFILE=1`; dry-run plan
+expansion still works without the opt-in. Keep it
 diagnostic-only: the CUDA 13.3 dedicated RTX 5090 one-step same-script run
 improved LM-head backward to `0.705502x`, but regressed train-loop wall to
 `21.830567x` and block backward to `44.496727x` under the 6.59 GB resident-logit
