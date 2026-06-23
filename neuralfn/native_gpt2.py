@@ -13,6 +13,7 @@ from typing import Any
 
 DEFAULT_NATIVE_GPT2_EXECUTABLE = "nfn_gpt_native_train"
 DEFAULT_NATIVE_GPT2_LAUNCHER = "build/nfn_gpt2_tile_train"
+DEFAULT_NATIVE_GPT_CLI_LINKED = "build/nfn_gpt_native_train_linked"
 DEFAULT_NATIVE_GPT_CLI = "build/nfn_gpt_native_train"
 DEFAULT_NATIVE_GPT2_CLI = DEFAULT_NATIVE_GPT_CLI
 LEGACY_NATIVE_GPT2_CLI = "build/nfn_gpt2_native_train"
@@ -239,8 +240,11 @@ class NativeGpt2RunConfig:
             args.extend(["--train-seq-len", str(int(self.seq_len))])
         if self.num_layers_explicit:
             args.extend(["--num-layers", str(int(str(self.model_descriptor).removeprefix("d") or "12"))])
-        if str(self.tile_ops_lib or "").strip():
-            args.extend(["--tile-ops-lib", self.tile_ops_lib])
+        tile_ops_lib = str(self.tile_ops_lib or "").strip()
+        if tile_ops_lib:
+            args.extend(["--tile-ops-lib", tile_ops_lib])
+        elif native_gpt2_cli_uses_linked_tile_ops(cli_path):
+            args.extend(["--tile-ops-lib", "linked"])
         if self.smoke_tile_ops:
             args.append("--smoke-tile-ops")
         if self.smoke_optimizer_step:
@@ -356,6 +360,9 @@ def resolve_native_gpt2_cli(value: str | None = None) -> str:
     if env_value:
         return env_value
     repo_root = Path(__file__).resolve().parents[1]
+    linked_path = repo_root / DEFAULT_NATIVE_GPT_CLI_LINKED
+    if linked_path.exists():
+        return str(linked_path)
     default_path = repo_root / DEFAULT_NATIVE_GPT2_CLI
     if default_path.exists():
         return str(default_path)
@@ -363,6 +370,11 @@ def resolve_native_gpt2_cli(value: str | None = None) -> str:
     if legacy_path.exists():
         return str(legacy_path)
     return str(default_path)
+
+
+def native_gpt2_cli_uses_linked_tile_ops(value: str | os.PathLike[str] | None) -> bool:
+    name = Path(str(value or "")).name
+    return name in {"nfn_gpt_native_train_linked", "nfn-gpt-native-train-linked"}
 
 
 def normalize_native_gpt2_encoding_name(encoding_name: str | None) -> str | None:

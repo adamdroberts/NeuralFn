@@ -22,6 +22,7 @@ REQUIRED_DEFAULT_ARTIFACTS = (
 )
 OPTIONAL_DEFAULT_ARTIFACTS = (
     Path("build/nfn_native_train"),
+    Path("build/nfn_gpt_native_train_linked"),
     Path("build/nfn_gpt2_native_train"),
     Path("build/nfn_gpt2_evo_native_train"),
     Path("build/nfn_nanogpt_native_train"),

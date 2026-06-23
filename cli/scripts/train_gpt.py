@@ -46,7 +46,14 @@ def _native_cli_path() -> str:
     requested = os.environ.get("NFN_NATIVE_GPT2_CLI", "").strip()
     if requested:
         return requested
+    linked = REPO_ROOT / "build" / "nfn_gpt_native_train_linked"
+    if linked.exists():
+        return str(linked)
     return str(REPO_ROOT / "build" / "nfn_gpt_native_train")
+
+
+def _native_cli_uses_linked_tile_ops(path: str) -> bool:
+    return Path(path).name in {"nfn_gpt_native_train_linked", "nfn-gpt-native-train-linked"}
 
 
 def _append_value(out: list[str], flag: str, value: str) -> None:
@@ -128,7 +135,9 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
     if (_arg_value(argv, "--runtime") or "native-cuda").strip().lower().replace("_", "-") != "native-cuda":
         return None
 
-    out = [_native_cli_path()]
+    native_cli = _native_cli_path()
+    out = [native_cli]
+    tile_ops_lib_explicit = _explicit_arg(argv, "--tile-ops-lib", "--native-cuda-tile-ops-lib")
     idx = 0
     drop_value_flags = {
         "--runtime",
@@ -328,6 +337,8 @@ def _fast_compiled_cli_argv(argv: list[str]) -> list[str] | None:
         _append_value(out, "--final-lr-fraction", final_lr)
     if _native_template_name(out) == "gpt2_moa" and not _has_native_activation(out):
         _append_value(out, "--native-cuda-activation", "moa")
+    if _native_cli_uses_linked_tile_ops(native_cli) and not tile_ops_lib_explicit:
+        _append_value(out, "--tile-ops-lib", "linked")
     if "--train-transformer-lm" not in out and "--no-train-transformer-lm" not in out:
         out.append("--train-transformer-lm")
     return out

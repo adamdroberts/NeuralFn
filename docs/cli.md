@@ -973,9 +973,13 @@ swapped, `bash tools/build_native_gpt_cli_linked.sh` builds
 binary with `--tile-ops-lib linked` to resolve Tile ABI symbols from
 `RTLD_DEFAULT` instead of calling `dlopen` on the shared object inside the
 trainer. JSON reports `tile_ops_dlopen_binding_strategy:
-"RTLD_DEFAULT-linked"` and keeps the same required-symbol scan fields. Use the
-regular `nfn_gpt_native_train --tile-ops-lib PATH` route for same-script kernel
-candidate comparisons that intentionally replace the Tile ops `.so` at runtime.
+"RTLD_DEFAULT-linked"` and keeps the same required-symbol scan fields. When
+`build/nfn_gpt_native_train_linked` exists, the normal Python and C++ dense GPT
+dispatchers prefer it automatically and the linked binary self-selects
+`--tile-ops-lib linked` from its executable name. Set `NFN_NATIVE_GPT_CLI`,
+`NFN_NATIVE_GPT2_CLI`, or explicit `--tile-ops-lib PATH` to force the regular
+dynamic route for same-script kernel candidate comparisons that intentionally
+replace the Tile ops `.so` at runtime.
 
 Native GPT startup initializes the tied token FP32 master weight and persistent
 BF16 LM-head shadow in a single CUDA Tile ABI call,

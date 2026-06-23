@@ -3805,6 +3805,11 @@ std::string default_tile_ops_lib(const char* program) {
         return env_value;
     }
     fs::path exe_path(program);
+    const std::string executable_name = exe_path.filename().string();
+    if (executable_name == "nfn_gpt_native_train_linked" ||
+        executable_name == "nfn-gpt-native-train-linked") {
+        return "linked";
+    }
     if (exe_path.has_parent_path()) {
         fs::path sibling = exe_path.parent_path() / "libnfn_native_train_tile_ops.so";
         if (fs::exists(sibling)) {

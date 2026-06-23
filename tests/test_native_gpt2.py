@@ -453,8 +453,25 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     linked_build = (root / "tools" / "build_native_gpt_cli_linked.sh").read_text(
         encoding="utf-8"
     )
+    train_gpt_source = (root / "cli" / "scripts" / "train_gpt.py").read_text(
+        encoding="utf-8"
+    )
+    nfn_source = (root / "cli" / "nfn.py").read_text(encoding="utf-8")
+    native_train_source = (
+        root / "neuralfn" / "csrc" / "native_train" / "nfn_native_train.cpp"
+    ).read_text(encoding="utf-8")
+    gpt2_evo_source = (
+        root / "neuralfn" / "csrc" / "native_train" / "gpt2_evo_native_train.cpp"
+    ).read_text(encoding="utf-8")
+    build_all = (root / "tools" / "build_native_gpt2_all.sh").read_text(encoding="utf-8")
+    rebuild_sm120 = (root / "tools" / "rebuild_native_sm120.sh").read_text(encoding="utf-8")
+    no_torch_verifier = (root / "tools" / "check_native_no_torch_deps.py").read_text(
+        encoding="utf-8"
+    )
 
     assert "linked_tile_ops_requested" in source
+    assert 'executable_name == "nfn_gpt_native_train_linked"' in source
+    assert 'return "linked";' in source
     assert 'normalized_tile_lib_path == "linked"' in source
     assert 'normalized_tile_lib_path == "builtin"' in source
     assert 'normalized_tile_lib_path == "rtld-default"' in source
@@ -470,6 +487,20 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "libnfn_native_train_tile_ops.so" in linked_build
     assert "-Wl,--no-as-needed" in linked_build
     assert "-Wl,-rpath" in linked_build
+    assert "nfn_gpt_native_train_linked" in train_gpt_source
+    assert "_native_cli_uses_linked_tile_ops" in train_gpt_source
+    assert '_append_value(out, "--tile-ops-lib", "linked")' in train_gpt_source
+    assert "nfn_gpt_native_train_linked" in nfn_source
+    assert "_native_gpt_cli_uses_linked_tile_ops" in nfn_source
+    assert '_append_value_arg(out, "--tile-ops-lib", "linked")' in nfn_source
+    assert "nfn_gpt_native_train_linked" in native_train_source
+    assert "linked_local_build" in native_train_source
+    assert "nfn_gpt_native_train_linked" in gpt2_evo_source
+    assert "linked_build_path" in gpt2_evo_source
+    assert "GPT_LINKED_CLI_OUT" in build_all
+    assert "build_native_gpt_cli_linked.sh" in build_all
+    assert "build_native_gpt_cli_linked.sh" in rebuild_sm120
+    assert 'Path("build/nfn_gpt_native_train_linked")' in no_torch_verifier
 
 
 def test_native_gpt_cli_supports_json_output_file_aliases() -> None:
@@ -1013,6 +1044,74 @@ def test_build_native_gpt2_compiled_cli_config_defaults_to_neuralfn_cli(
             activation="gelu",
             kernel_backend="llm-kittens",
         )
+
+
+def test_native_gpt2_compiled_cli_prefers_linked_workstation_binary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    linked_cli = tmp_path / "nfn_gpt_native_train_linked"
+    dynamic_cli = tmp_path / "nfn_gpt_native_train"
+    linked_cli.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    dynamic_cli.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    linked_cli.chmod(0o755)
+    dynamic_cli.chmod(0o755)
+
+    monkeypatch.delenv("NFN_NATIVE_GPT_CLI", raising=False)
+    monkeypatch.delenv("NFN_NATIVE_GPT2_CLI", raising=False)
+    monkeypatch.setattr(native_gpt2_module, "DEFAULT_NATIVE_GPT_CLI_LINKED", str(linked_cli))
+    monkeypatch.setattr(native_gpt2_module, "DEFAULT_NATIVE_GPT2_CLI", str(dynamic_cli))
+
+    cfg = build_native_gpt2_compiled_cli_run_config(
+        dataset_alias="cached-shards",
+        executable=None,
+        output_dir=tmp_path / "gpt",
+        eval_every_steps=0,
+        sample_every_steps=0,
+        generate_tokens=0,
+        checkpoint_every_steps=0,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=1,
+        num_layers=12,
+        activation="gelu",
+    )
+    argv = cfg.compiled_cli_argv()
+
+    assert resolve_native_gpt2_cli() == str(linked_cli)
+    assert argv[0] == str(linked_cli)
+    assert argv[argv.index("--tile-ops-lib") + 1] == "linked"
+
+    explicit_tile_ops = build_native_gpt2_compiled_cli_run_config(
+        dataset_alias="cached-shards",
+        executable=None,
+        output_dir=tmp_path / "gpt-explicit",
+        eval_every_steps=0,
+        sample_every_steps=0,
+        generate_tokens=0,
+        checkpoint_every_steps=0,
+        batch_size=64,
+        seq_len=1024,
+        train_batch_tokens=524288,
+        learning_rate=0.0006,
+        min_lr=None,
+        warmup_steps=60,
+        weight_decay=0.1,
+        max_steps=1,
+        num_layers=12,
+        activation="gelu",
+        tile_ops_lib="/tmp/libcandidate.so",
+    ).compiled_cli_argv()
+    assert explicit_tile_ops[0] == str(linked_cli)
+    assert explicit_tile_ops[explicit_tile_ops.index("--tile-ops-lib") + 1] == "/tmp/libcandidate.so"
+
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", str(dynamic_cli))
+    assert resolve_native_gpt2_cli() == str(dynamic_cli)
 
 
 def test_native_gpt_external_bridge_defaults_are_removed_from_training_paths() -> None:

@@ -19,6 +19,7 @@ NFN_NATIVE_TRAIN_TILE_OPS_OUT="${OUT_DIR}/libnfn_native_train_tile_ops.so" \
   bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh"
 
 bash "${ROOT_DIR}/tools/build_native_gpt_cli.sh" "${OUT_DIR}/nfn_gpt_native_train"
+bash "${ROOT_DIR}/tools/build_native_gpt_cli_linked.sh" "${OUT_DIR}/nfn_gpt_native_train_linked"
 bash "${ROOT_DIR}/tools/build_native_gpt2_cli.sh" "${OUT_DIR}/nfn_gpt2_native_train"
 bash "${ROOT_DIR}/tools/build_native_train_cli.sh" "${OUT_DIR}/nfn_native_train"
 bash "${ROOT_DIR}/tools/build_native_gpt2_launcher.sh" "${OUT_DIR}/nfn_gpt2_tile_train"

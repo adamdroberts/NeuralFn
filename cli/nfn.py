@@ -512,6 +512,9 @@ def _resolve_direct_native_train_cli(model: str) -> str:
         requested = os.environ.get("NFN_NATIVE_GPT2_CLI", "").strip()
         if requested:
             return requested
+        linked = ROOT.parent / "build" / "nfn_gpt_native_train_linked"
+        if linked.exists():
+            return str(linked)
         return str(ROOT.parent / "build" / "nfn_gpt_native_train")
     family_cli = _resolve_direct_native_train_family_cli(model)
     if family_cli:
@@ -552,6 +555,10 @@ def _native_train_model(argv: list[str]) -> str:
 
 def _canonical_dense_gpt_model_family(model: str) -> str:
     return "gpt" if _is_dense_gpt_native_model(model) else model
+
+
+def _native_gpt_cli_uses_linked_tile_ops(path: str) -> bool:
+    return Path(path).name in {"nfn_gpt_native_train_linked", "nfn-gpt-native-train-linked"}
 
 
 _NATIVE_TRAIN_ACTION_FLAGS = {
@@ -615,6 +622,7 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
     family_cli = None if dense_gpt else _resolve_direct_native_train_family_cli(model)
     native_cli = family_cli or _resolve_direct_native_train_cli("gpt" if dense_gpt else model)
     out = [native_cli]
+    tile_ops_lib_explicit = _explicit_arg(argv, "--tile-ops-lib", "--native-cuda-tile-ops-lib")
     include_model = not dense_gpt and family_cli is None
     if include_model:
         out.extend(["--base-model", model])
@@ -804,6 +812,8 @@ def _direct_native_train_cli_argv(argv: list[str]) -> list[str]:
         _append_value_arg(out, "--train-seq-len", "2048")
     if dense_gpt and not _explicit_arg(out, "--backend"):
         _append_value_arg(out, "--backend", "tile-cuda")
+    if dense_gpt and _native_gpt_cli_uses_linked_tile_ops(native_cli) and not tile_ops_lib_explicit:
+        _append_value_arg(out, "--tile-ops-lib", "linked")
     return out
 
 

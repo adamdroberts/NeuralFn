@@ -369,6 +369,10 @@ std::string sibling_gpt_cli(const char* program) {
     }
     fs::path exe_path(program);
     if (exe_path.has_parent_path()) {
+        fs::path linked_sibling = exe_path.parent_path() / "nfn_gpt_native_train_linked";
+        if (fs::exists(linked_sibling)) {
+            return linked_sibling.string();
+        }
         fs::path sibling = exe_path.parent_path() / "nfn_gpt_native_train";
         if (fs::exists(sibling)) {
             return sibling.string();
@@ -377,6 +381,10 @@ std::string sibling_gpt_cli(const char* program) {
         if (fs::exists(legacy_sibling)) {
             return legacy_sibling.string();
         }
+    }
+    fs::path linked_local_build = fs::current_path() / "build" / "nfn_gpt_native_train_linked";
+    if (fs::exists(linked_local_build)) {
+        return linked_local_build.string();
     }
     fs::path local_build = fs::current_path() / "build" / "nfn_gpt_native_train";
     if (fs::exists(local_build)) {

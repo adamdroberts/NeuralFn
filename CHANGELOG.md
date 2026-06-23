@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Default dense GPT native dispatch now prefers the linked Tile ops CLI when it
+  exists. SDK compiled-CLI resolution, `cli/scripts/train_gpt.py`, direct
+  `nfn train`, the unified `nfn_native_train` frontend, and the GPT-2-evo
+  native delegate select `build/nfn_gpt_native_train_linked` before the dynamic
+  `build/nfn_gpt_native_train` path when no explicit `NFN_NATIVE_GPT_CLI` /
+  `NFN_NATIVE_GPT2_CLI` override is set. The linked binary also self-selects
+  `tile_ops_library: "linked"` from its executable name, and the aggregate
+  native rebuild scripts now build the linked CLI by default.
+
+  Migration note: explicit CLI and Tile ops choices still win. Use
+  `NFN_NATIVE_GPT_CLI=build/nfn_gpt_native_train` or pass `--tile-ops-lib PATH`
+  when a candidate benchmark intentionally swaps the Tile ops shared library at
+  runtime.
+
+  Verification: focused native GPT resolver/source pytest, shell syntax checks
+  for the aggregate native build scripts, native GPT CLI rebuilds, no-Torch
+  verifier, direct linked startup smoke, and `git diff --check`. A dedicated
+  RTX 5090 2-sample paired startup benchmark measured the linked-default path at
+  `0.870426x` setup wall versus the dynamic-loader baseline with no native
+  strategy or route-counter changes.
+
 - Added a linked dense GPT native CLI build path for workstation runs that do
   not need to hot-swap the Tile ops shared object. `bash
   tools/build_native_gpt_cli_linked.sh` builds

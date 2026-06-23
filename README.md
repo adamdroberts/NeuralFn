@@ -1286,9 +1286,14 @@ For dedicated workstation runs that should avoid the in-process Tile ops
 symbols through `RTLD_DEFAULT`, while preserving the same explicit symbol scan
 and JSON telemetry. Runtime JSON reports
 `tile_ops_dlopen_binding_strategy: "RTLD_DEFAULT-linked"` and a near-zero
-`tile_ops_dlopen_wall_ms`; keep using the normal
-`tools/build_native_gpt_cli.sh` binary when you need to swap Tile ops libraries
-at runtime for candidate bisections.
+`tile_ops_dlopen_wall_ms`. The native Python SDK, `train_gpt.py`, `nfn train`,
+`nfn-native-train`, and the GPT-2-evo native delegate now prefer
+`build/nfn_gpt_native_train_linked` when it exists and no explicit
+`NFN_NATIVE_GPT_CLI` / `NFN_NATIVE_GPT2_CLI` override is set; the linked binary
+also self-selects `linked` from its executable name. Keep using the normal
+`tools/build_native_gpt_cli.sh` binary, or pass an explicit `--tile-ops-lib
+PATH`, when you need to swap Tile ops libraries at runtime for candidate
+bisections.
 
 The native SM120 candidate wrapper forces `--train-loss-every-steps 1` for
 LM-head loss-bin profiles so the old and new commands both execute the logged

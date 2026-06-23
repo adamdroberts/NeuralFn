@@ -188,10 +188,18 @@ std::string resolve_dense_gpt_cli(const char* program) {
     }
     std::filesystem::path exe_path(program);
     if (exe_path.has_parent_path()) {
+        std::filesystem::path linked_sibling = exe_path.parent_path() / "nfn_gpt_native_train_linked";
+        if (std::filesystem::exists(linked_sibling)) {
+            return linked_sibling.string();
+        }
         std::filesystem::path sibling = exe_path.parent_path() / "nfn_gpt_native_train";
         if (std::filesystem::exists(sibling)) {
             return sibling.string();
         }
+    }
+    std::filesystem::path linked_build_path = std::filesystem::current_path() / "build" / "nfn_gpt_native_train_linked";
+    if (std::filesystem::exists(linked_build_path)) {
+        return linked_build_path.string();
     }
     std::filesystem::path build_path = std::filesystem::current_path() / "build" / "nfn_gpt_native_train";
     if (std::filesystem::exists(build_path)) {
