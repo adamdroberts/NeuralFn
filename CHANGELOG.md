@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added public native GPT checkpoint sampler helpers to the Python SDK:
+  `native_gpt_checkpoint_sampler_argv()`, `native_gpt_checkpoint_sampler_env()`,
+  `native_gpt_prompt_tokens()`, `render_native_gpt_checkpoint_sampler_text()`,
+  and their `native_gpt2_*` compatibility names. `nfn infer --checkpoint
+  model_*.bin` and `cli/scripts/infer_gpt2.py --native-checkpoint model_*.bin`
+  now share those helpers instead of carrying separate sampler command/rendering
+  logic, keeping native `.bin` inference on the compiled CUDA Tile path without
+  importing Torch or graph-backed runtime modules.
+
+  Migration note: existing CLI flags and output remain compatible. SDK callers
+  can now construct the compiled `nfn_gpt_native_train --sample-checkpoint`
+  argv directly from `neuralfn.native_gpt` or `neuralfn.native_gpt2`.
+
+  Verification: added focused SDK tests for sampler command/env/render helpers
+  and reran the native no-Torch dependency gate.
+
 - Enabled CUDA runtime/driver version preflight by default in
   `tools/bench_native_gpt_sm120_candidate.sh` for both baseline and candidate
   commands. Benchmark sweeps now fail before warmup when WSL exposes a CUDA

@@ -16,6 +16,9 @@ from .native_gpt2 import (
     build_native_gpt2_run_config,
     is_native_gpt2_checkpoint as is_native_gpt_checkpoint,
     latest_native_gpt2_checkpoint as latest_native_gpt_checkpoint,
+    native_gpt2_checkpoint_sampler_argv,
+    native_gpt2_checkpoint_sampler_env,
+    native_gpt2_prompt_tokens,
     exec_native_gpt2,
     native_gpt2_activation as native_gpt_activation,
     native_gpt2_encoding_vocab_size as native_gpt_encoding_vocab_size,
@@ -24,12 +27,14 @@ from .native_gpt2 import (
     native_gpt2_runner_status,
     normalize_native_gpt2_encoding_name as normalize_native_gpt_encoding_name,
     read_native_gpt2_checkpoint_info,
+    render_native_gpt2_checkpoint_sampler_text,
     resolve_native_gpt2_cli as resolve_native_gpt_cli,
     resolve_native_gpt2_binding_command,
     resolve_native_gpt2_executable as resolve_native_gpt_executable,
     resolve_native_gpt2_launcher as resolve_native_gpt_launcher,
     resolve_native_gpt2_token_shards as resolve_native_gpt_token_shards,
     run_native_gpt2,
+    run_native_gpt2_checkpoint_sampler,
     write_native_gpt2_run_config,
 )
 
@@ -89,6 +94,26 @@ def exec_native_gpt(config: NativeGptRunConfig, *, runner: str = "compiled-cli")
     return exec_native_gpt2(config, runner=runner)
 
 
+def native_gpt_prompt_tokens(*args, **kwargs) -> str:
+    return native_gpt2_prompt_tokens(*args, **kwargs)
+
+
+def native_gpt_checkpoint_sampler_argv(*args, **kwargs) -> list[str]:
+    return native_gpt2_checkpoint_sampler_argv(*args, **kwargs)
+
+
+def native_gpt_checkpoint_sampler_env(*args, **kwargs) -> dict[str, str]:
+    return native_gpt2_checkpoint_sampler_env(*args, **kwargs)
+
+
+def render_native_gpt_checkpoint_sampler_text(*args, **kwargs) -> str:
+    return render_native_gpt2_checkpoint_sampler_text(*args, **kwargs)
+
+
+def run_native_gpt_checkpoint_sampler(*args, **kwargs):
+    return run_native_gpt2_checkpoint_sampler(*args, **kwargs)
+
+
 def write_native_gpt_run_config(config: NativeGptRunConfig, path, *, runner: str = "auto"):
     return write_native_gpt2_run_config(config, path, runner=runner)
 
@@ -102,17 +127,22 @@ __all__ = [
     "is_native_gpt_checkpoint",
     "latest_native_gpt_checkpoint",
     "native_gpt_activation",
+    "native_gpt_checkpoint_sampler_argv",
+    "native_gpt_checkpoint_sampler_env",
     "native_gpt_encoding_vocab_size",
     "native_gpt_kernel_backend",
     "native_gpt_parameter_count",
+    "native_gpt_prompt_tokens",
     "native_gpt_runner_status",
     "normalize_native_gpt_encoding_name",
     "read_native_gpt_checkpoint_info",
+    "render_native_gpt_checkpoint_sampler_text",
     "resolve_native_gpt_binding_command",
     "resolve_native_gpt_cli",
     "resolve_native_gpt_executable",
     "resolve_native_gpt_launcher",
     "resolve_native_gpt_token_shards",
+    "run_native_gpt_checkpoint_sampler",
     "run_native_gpt",
     "write_native_gpt_run_config",
 ]

@@ -38,9 +38,13 @@ from neuralfn.native_gpt2 import (
     exec_native_gpt2,
     latest_native_gpt2_checkpoint,
     native_gpt2_activation,
+    native_gpt2_checkpoint_sampler_argv,
+    native_gpt2_checkpoint_sampler_env,
     native_gpt2_parameter_count,
+    native_gpt2_prompt_tokens,
     native_gpt2_runner_status,
     read_native_gpt2_checkpoint_info,
+    render_native_gpt2_checkpoint_sampler_text,
     resolve_native_gpt2_cli,
     resolve_native_gpt2_binding_command,
     resolve_native_gpt2_executable,
@@ -303,6 +307,42 @@ def test_read_native_gpt_checkpoint_info_uses_generic_sdk_class(tmp_path: Path) 
     assert type(info) is neuralfn.NativeGptCheckpointInfo
     assert info.path == str(checkpoint)
     assert info.done_marker_exists is True
+
+
+def test_native_gpt_checkpoint_sampler_sdk_builds_no_torch_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkpoint = _write_native_checkpoint(tmp_path / "model_00000001.bin", step=1)
+    native_cli = tmp_path / "nfn_gpt_native_train"
+    native_cli.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    native_cli.chmod(0o755)
+    monkeypatch.setenv("NFN_NATIVE_GPT_CLI", str(native_cli))
+
+    assert native_gpt2_prompt_tokens(prompt_tokens="1,2,3") == "1,2,3"
+    assert native_gpt2_prompt_tokens(prompt="") == "50256"
+
+    argv = native_gpt2_checkpoint_sampler_argv(
+        checkpoint,
+        prompt_tokens="1,2,3",
+        max_new_tokens=7,
+    )
+
+    assert argv == [
+        str(native_cli),
+        "--sample-checkpoint",
+        str(checkpoint),
+        "--prompt-tokens",
+        "1,2,3",
+        "--max-new-tokens",
+        "7",
+    ]
+    env = native_gpt2_checkpoint_sampler_env(cuda_visible_devices="2")
+    assert env["CUDA_VISIBLE_DEVICES"] == "2"
+    assert env["CUDA_DEVICE_MAX_CONNECTIONS"] == "1"
+    assert env["CUDA_MODULE_LOADING"] == "LAZY"
+    rendered = render_native_gpt2_checkpoint_sampler_text('{"generated_tokens": [1, 2, 3]}')
+    assert "Generated token ids: [1, 2, 3]" in rendered
 
 
 def test_packed_qkv_attention_backward_chunks_large_batches() -> None:

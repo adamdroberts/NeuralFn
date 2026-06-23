@@ -550,6 +550,146 @@ def latest_native_gpt2_checkpoint(output_dir: str | Path) -> Path | None:
     return None
 
 
+def native_gpt2_prompt_tokens(
+    *,
+    prompt: str = "",
+    prompt_tokens: str = "",
+    encoding_name: str = "gpt2",
+) -> str:
+    """Resolve prompt text or token IDs for native GPT checkpoint sampling.
+
+    Passing ``prompt_tokens`` keeps the path tokenizer-free. Text prompts use
+    GPT-2 tokenization because current native checkpoint tensors use the GPT-2
+    public vocabulary.
+    """
+
+    resolved_prompt_tokens = str(prompt_tokens or "").strip()
+    if resolved_prompt_tokens:
+        return resolved_prompt_tokens
+    normalized_encoding = normalize_native_gpt2_encoding_name(encoding_name) or "gpt2"
+    if normalized_encoding != "gpt2":
+        raise ValueError(
+            f"Native GPT .bin checkpoint prompt inference requires the gpt2 tokenizer, "
+            f"got {normalized_encoding!r}."
+        )
+    prompt_text = str(prompt or "")
+    if not prompt_text:
+        return "50256"
+    try:
+        import tiktoken
+    except Exception as exc:  # pragma: no cover - package/environment dependent
+        raise RuntimeError(
+            "Native GPT .bin checkpoint prompt inference requires tiktoken for GPT-2 tokenization. "
+            "Pass prompt_tokens to stay on the no-tokenizer native path."
+        ) from exc
+    token_ids = tiktoken.get_encoding("gpt2").encode(prompt_text)
+    if not token_ids:
+        return "50256"
+    return ",".join(str(int(token_id)) for token_id in token_ids)
+
+
+def native_gpt2_checkpoint_sampler_argv(
+    checkpoint: str | Path,
+    *,
+    prompt: str = "",
+    prompt_tokens: str = "",
+    max_new_tokens: int = 64,
+    cli: str | None = None,
+    encoding_name: str = "gpt2",
+) -> list[str]:
+    """Return the compiled native GPT checkpoint sampler command."""
+
+    return [
+        resolve_native_gpt2_cli(cli),
+        "--sample-checkpoint",
+        str(Path(checkpoint).expanduser()),
+        "--prompt-tokens",
+        native_gpt2_prompt_tokens(
+            prompt=prompt,
+            prompt_tokens=prompt_tokens,
+            encoding_name=encoding_name,
+        ),
+        "--max-new-tokens",
+        str(int(max_new_tokens)),
+    ]
+
+
+def native_gpt2_checkpoint_sampler_env(
+    *,
+    cuda_visible_devices: str = "0",
+    cuda_device_max_connections: str = "1",
+) -> dict[str, str]:
+    """Return environment defaults for native GPT checkpoint sampling."""
+
+    env = os.environ.copy()
+    if str(cuda_visible_devices or "").strip():
+        env.setdefault("CUDA_VISIBLE_DEVICES", str(cuda_visible_devices))
+    if str(cuda_device_max_connections or "").strip():
+        env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", str(cuda_device_max_connections))
+    env.setdefault("CUDA_MODULE_LOADING", "LAZY")
+    return env
+
+
+def render_native_gpt2_checkpoint_sampler_text(stdout: str) -> str:
+    """Render generated token IDs and optional GPT-2 decoded text from sampler JSON."""
+
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        return ""
+    generated_tokens = payload.get("generated_tokens")
+    if not isinstance(generated_tokens, list) or not generated_tokens:
+        return ""
+    token_ids: list[int] = []
+    for token_id in generated_tokens:
+        if not isinstance(token_id, int):
+            return ""
+        token_ids.append(int(token_id))
+    lines = [f"Generated token ids: {token_ids}"]
+    try:
+        import tiktoken
+        generated_text = tiktoken.get_encoding("gpt2").decode(token_ids)
+    except Exception:
+        generated_text = ""
+    if generated_text:
+        lines.extend(["Generated text:", generated_text])
+    return "\n".join(lines)
+
+
+def run_native_gpt2_checkpoint_sampler(
+    checkpoint: str | Path,
+    *,
+    prompt: str = "",
+    prompt_tokens: str = "",
+    max_new_tokens: int = 64,
+    cli: str | None = None,
+    encoding_name: str = "gpt2",
+    cuda_visible_devices: str = "0",
+    cuda_device_max_connections: str = "1",
+) -> subprocess.CompletedProcess[str]:
+    """Run the compiled native GPT checkpoint sampler without graph/Torch imports."""
+
+    command = native_gpt2_checkpoint_sampler_argv(
+        checkpoint,
+        prompt=prompt,
+        prompt_tokens=prompt_tokens,
+        max_new_tokens=max_new_tokens,
+        cli=cli,
+        encoding_name=encoding_name,
+    )
+    return subprocess.run(
+        command,
+        env=native_gpt2_checkpoint_sampler_env(
+            cuda_visible_devices=cuda_visible_devices,
+            cuda_device_max_connections=cuda_device_max_connections,
+        ),
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
 def _metadata_matches_native_encoding(dataset_meta: dict[str, Any], encoding_name: str) -> bool:
     normalized = normalize_native_gpt2_encoding_name(encoding_name) or "gpt2"
     expected_vocab = native_gpt2_encoding_vocab_size(normalized)
