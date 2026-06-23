@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a compile-time CUDA Tile-size candidate knob for native optimizer
+  support kernels: `NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE=1024|2048|4096`. The
+  default remains `1024`, while candidate Tile ops libraries now expose
+  `nfn_native_tile_optimizer_tile_size()` so dense GPT runtime JSON reports
+  `optimizer_tile_size`, `optimizer_tile_size_symbol_loaded`, and
+  `optimizer_tile_strategy`. The paired native kernel benchmark also tracks
+  those fields in its strategy-change gate, so a candidate library can no
+  longer look like a no-route-change run just because the route changed at
+  compile time.
+
+  Verification note: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train`; ran the optimizer smoke and startup-only dense
+  GPT CUDA verification on the dedicated RTX 5090. Built and smoked a 2048 Tile
+  candidate library, then ran the same-script 3-step/3-sample candidate
+  benchmark. The 2048 candidate was rejected for default promotion:
+  `stage.adamw_update.total_ms` was `0.999946x`,
+  `stage.gradient_clip.total_ms` was `0.999543x`, and strict unrelated
+  hot-stage gates missed, so the knob is retained for diagnostics only.
+  Focused pytest coverage for native GPT source contracts and paired benchmark
+  strategy changes passed, and `tools/check_native_no_torch_deps.py` passed.
+
 - Fixed direct linked dense-GPT no-data CUDA smokes so `--tile-ops-lib linked`
   resolves Tile ABI symbols from `RTLD_DEFAULT` instead of attempting to
   `dlopen("linked")`. This covers `--smoke-tile-ops`,

@@ -269,6 +269,15 @@ same text summary also surfaces optimizer-step support stages:
 `stage.final_norm_backward.total_ms`, `stage.embedding_backward.total_ms`,
 `stage.gradient_zero.total_ms`, `stage.gradient_clip.total_ms`, and
 `stage.adamw_update.total_ms`.
+For optimizer/gradient-clipping Tile retile candidates, build a temporary Tile
+ops library with
+`NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DNFN_TILE_CUDA_OPTIMIZER_TILE_SIZE=2048"`
+or `4096`. The default remains `1024`; native runtime JSON reports
+`optimizer_tile_size`, `optimizer_tile_size_symbol_loaded`, and
+`optimizer_tile_strategy`, and the paired benchmark route-change gate tracks
+those fields. The current CUDA 13.3 dedicated RTX 5090 2048 candidate smoked
+successfully but did not improve the measured optimizer buckets, so it should
+stay a diagnostic build unless fresh same-script evidence proves otherwise.
 When a command exits nonzero and `--continue-on-error` is not set, the helper now
 prints both stdout and stderr tails so CUDA driver/runtime messages from
 external baselines are not hidden behind an empty stderr block.

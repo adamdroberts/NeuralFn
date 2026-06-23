@@ -2459,6 +2459,65 @@ def test_paired_kernel_speed_tool_reports_strategy_change_without_route_counter_
     assert "tracked route counters did not change" not in proc.stdout
 
 
+def test_paired_kernel_speed_tool_reports_optimizer_tile_size_strategy_change() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-optimizer-tile-change.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
+        "\\\"optimizer_tile_size\\\": 1024, "
+        "\\\"optimizer_tile_strategy\\\": \\\"tile-size-1024-sumsq-scale-adamw\\\""
+        "}"
+    )
+    candidate_json = baseline_json.replace("\\\"optimizer_tile_size\\\": 1024", "\\\"optimizer_tile_size\\\": 2048").replace(
+        "tile-size-1024-sumsq-scale-adamw",
+        "tile-size-2048-sumsq-scale-adamw",
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--candidate-env",
+            "NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE=2048",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    strategy_changes = payload["native_strategy_value_changes"]
+    assert strategy_changes["has_strategy_value_change"] is True
+    assert strategy_changes["changed"]["optimizer_tile_size"] == {
+        "baseline_values": ["1024"],
+        "candidate_values": ["2048"],
+    }
+    assert strategy_changes["changed"]["optimizer_tile_strategy"] == {
+        "baseline_values": ["tile-size-1024-sumsq-scale-adamw"],
+        "candidate_values": ["tile-size-2048-sumsq-scale-adamw"],
+    }
+    assert "native_strategy_value_changes: has_strategy_value_change=true changed_count=2" in proc.stdout
+    assert "tracked route counters did not change" not in proc.stdout
+
+
 def test_paired_kernel_speed_tool_reports_lm_head_ce_vector_io_strategy_change() -> None:
     script = Path("tools/paired_kernel_speed.py")
     output_path = Path(tempfile.mkdtemp()) / "paired-ce-vector-io-change.json"

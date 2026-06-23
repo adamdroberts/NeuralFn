@@ -1632,6 +1632,19 @@ The CUDA 13.3.33 post-reinstall startup sweep kept the same conclusion:
 leave the default library build unchanged unless they are collecting fresh
 same-script startup evidence.
 
+The optimizer and gradient-clipping support kernels have a separate
+compile-time Tile-size bisection knob. Build a temporary library with
+`NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DNFN_TILE_CUDA_OPTIMIZER_TILE_SIZE=2048"` or
+`4096` to retile the `sumsq`, device-scale, and multi-buffer AdamW kernels;
+normal builds default to `1024`. Dense GPT runtime JSON reports
+`optimizer_tile_size`, `optimizer_tile_size_symbol_loaded`, and
+`optimizer_tile_strategy`, and the paired benchmark's native strategy-change
+gate tracks those fields so candidate libraries are visible even when all
+runtime environment flags are otherwise unchanged. The CUDA 13.3 dedicated RTX
+5090 2048 candidate passed the optimizer smoke but was rejected for default
+promotion because the same-script 3-step/3-sample run measured no material
+AdamW or gradient-clip improvement and missed unrelated strict hot-stage gates.
+
 Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is metadata-only on the default `compiled-cli` runner: Python builds the compiled C++ argv from the dataset alias/path and leaves shard validation or raw-text rejection to the compiled frontend. It must not import `server.dataset_manager`, NumPy, tiktoken, or Torch, must not write `fineweb_train_*.bin` shards, and must not add the external `--target train_gpt2cu` bridge argument for the default Tile-CUDA backend. The compiled Tile-CUDA frontend also treats `--print-command` as a no-data/no-CUDA action, printing the exact `nfn_gpt_native_train ...` invocation before token-shard resolution, CUDA runtime loading, or driver preflight.
 
 When a native smoke or trainer run reports CUDA error 35, the dense GPT C++

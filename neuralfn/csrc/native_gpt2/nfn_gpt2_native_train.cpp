@@ -3221,6 +3221,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_sumsq_partials_float32",
         "nfn_native_tile_sumsq_partials_many_float32",
         "nfn_native_tile_sumsq_partials_many_bf16_bits_float32",
+        "nfn_native_tile_optimizer_tile_size",
         "nfn_native_tile_global_norm_clip_scale_float32",
         "nfn_native_tile_scale_inplace_by_device_float32",
         "nfn_native_tile_adamw_step_float32",
@@ -10062,6 +10063,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_sumsq_partials_float32",
         "nfn_native_tile_sumsq_partials_many_float32",
         "nfn_native_tile_sumsq_partials_many_bf16_bits_float32",
+        "nfn_native_tile_optimizer_tile_size",
         "nfn_native_tile_global_norm_clip_scale_float32",
         "nfn_native_tile_scale_inplace_by_device_float32",
         "nfn_native_tile_token_embedding_float32",
@@ -10448,6 +10450,7 @@ int run_transformer_lm_training_json(
         int*, int*, std::int64_t*);
     using TrainerLinearCublasLtPlanCacheEntryFn = bool (*)(
         std::int64_t, int*, int*, int*, int*, int*, int*, int*, std::int64_t*, int*);
+    using TileOptimizerTileSizeFn = int (*)();
     using AttentionBackwardToQkvReuseForwardFn = int (*)(
         const float*, float*,
         std::int64_t, std::int64_t, std::int64_t, std::int64_t,
@@ -10792,6 +10795,7 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn lm_head_cooperative_sequence_concurrent_count_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_cooperative_sequence_legacy_count_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_cooperative_sequence_loss_bin_count_fn = nullptr;
+    TileOptimizerTileSizeFn optimizer_tile_size_fn = nullptr;
     AttentionBackwardToQkvReuseForwardFn attention_backward_to_qkv_reuse_forward = nullptr;
     PackedAttentionForwardFn packed_attention_forward = nullptr;
     PackedAttentionForwardStoreLseFn packed_attention_forward_store_lse = nullptr;
@@ -11329,6 +11333,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_lm_head_cooperative_sequence_legacy_count");
                 lm_head_cooperative_sequence_loss_bin_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_lm_head_cooperative_sequence_loss_bin_count");
+                optimizer_tile_size_fn = load_symbol<TileOptimizerTileSizeFn>(
+                    tile_handle, "nfn_native_tile_optimizer_tile_size");
                 attention_stats_reset();
                 trainer_linear_stats_reset();
                 lm_head_classifier_stats_reset();
@@ -19890,6 +19896,11 @@ int run_transformer_lm_training_json(
                                                ? "device-vector4-strided-power2-deterministic"
                                                : "device-vector4-power2-deterministic")
                                         : "device-tile-power2-deterministic"))));
+    const bool optimizer_tile_size_symbol_loaded = optimizer_tile_size_fn != nullptr;
+    const int optimizer_tile_size =
+        optimizer_tile_size_symbol_loaded ? optimizer_tile_size_fn() : 1024;
+    const std::string optimizer_tile_strategy =
+        "tile-size-" + std::to_string(optimizer_tile_size) + "-sumsq-scale-adamw";
 
     std::cout
         << "{\n"
@@ -21260,6 +21271,10 @@ int run_transformer_lm_training_json(
         << "  \"train_microbatches_completed\": " << train_microbatches_completed << ",\n"
         << "  \"tokens_processed\": " << tokens_processed << ",\n"
         << "  \"weight_update_count\": " << (kGlobalParameterBuffers + kPerBlockParameterBuffers * trained_layers) << ",\n"
+        << "  \"optimizer_tile_size\": " << optimizer_tile_size << ",\n"
+        << "  \"optimizer_tile_size_symbol_loaded\": "
+        << (optimizer_tile_size_symbol_loaded ? "true" : "false") << ",\n"
+        << "  \"optimizer_tile_strategy\": \"" << json_escape(optimizer_tile_strategy) << "\",\n"
         << "  \"adamw_update_strategy\": \""
         << (bf16_block_weight_param_update_enabled
                 ? (token_weight_bf16_fused_adamw_refresh_count > 0
@@ -21555,6 +21570,8 @@ int run_transformer_lm_training_json(
         << "    \"gradient_clip_loop\": false,\n"
         << "    \"gradient_clip_loop_elided\": true,\n"
         << "    \"gradient_clip_strategy\": \"fused-multi-buffer-sumsq-device-scale\",\n"
+        << "    \"optimizer_tile_size\": " << optimizer_tile_size << ",\n"
+        << "    \"optimizer_tile_strategy\": \"" << json_escape(optimizer_tile_strategy) << "\",\n"
         << "    \"gradient_clip_descriptor_count\": " << adamw_descriptor_count << ",\n"
         << "    \"gradient_clip_bf16_sumsq_kernel_loaded\": "
         << (sumsq_partials_many_bf16_bits != nullptr ? "true" : "false") << ",\n"

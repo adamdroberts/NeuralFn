@@ -38,6 +38,16 @@ static_assert(
         NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE == 8192,
     "NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE must be 1024, 2048, 4096, or 8192");
 
+#ifndef NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE
+#define NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE 1024
+#endif
+
+static_assert(
+    NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE == 1024 ||
+        NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE == 2048 ||
+        NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE == 4096,
+    "NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE must be 1024, 2048, or 4096");
+
 #if NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE == 1024
 #define NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE 1024_ic
 #elif NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SIZE == 2048
@@ -48,9 +58,18 @@ static_assert(
 #define NFN_TILE_CUDA_TOKEN_WEIGHT_INIT_TILE_SHAPE 8192_ic
 #endif
 
+#if NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE == 1024
+#define NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE 1024_ic
+#elif NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE == 2048
+#define NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE 2048_ic
+#elif NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE == 4096
+#define NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE 4096_ic
+#endif
+
 namespace {
 
 constexpr int kTileSize = 1024;
+constexpr int kOptimizerTileSize = NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE;
 constexpr int kAttentionValueChunkSize = 64;
 constexpr int kGpt2AttentionHeads = 12;
 constexpr int kGpt2AttentionHeadDim = 64;
@@ -7127,8 +7146,8 @@ __tile_global__ void sumsq_partials_float32_kernel(
   partials = ct::assume_aligned(partials, 16_ic);
 
   const int bx = ct::bid().x;
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
-  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kOptimizerTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto tile = ct::load_masked(values + idx, mask);
   auto zero = ct::full<decltype(tile)>(0.0f);
@@ -7156,11 +7175,11 @@ __tile_global__ void sumsq_partials_many_float32_kernel(
   const float* values = ct::assume_aligned(buffers[tensor], 16_ic);
   partials = ct::assume_aligned(partials, 16_ic);
   const std::int64_t n = elements[tensor];
-  if (static_cast<std::int64_t>(chunk) * kTileSize >= n) {
+  if (static_cast<std::int64_t>(chunk) * kOptimizerTileSize >= n) {
     return;
   }
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
-  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kTileSize);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kOptimizerTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto tile = ct::load_masked(values + idx, mask);
   auto zero = ct::full<decltype(tile)>(0.0f);
@@ -7189,11 +7208,11 @@ __tile_global__ void sumsq_partials_many_bf16_bits_float32_kernel(
       reinterpret_cast<const __nv_bfloat16*>(buffers[tensor]), 16_ic);
   partials = ct::assume_aligned(partials, 16_ic);
   const std::int64_t n = elements[tensor];
-  if (static_cast<std::int64_t>(chunk) * kTileSize >= n) {
+  if (static_cast<std::int64_t>(chunk) * kOptimizerTileSize >= n) {
     return;
   }
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
-  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kTileSize);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kOptimizerTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto tile = ct::element_cast<float>(ct::load_masked(values + idx, mask));
   auto zero = ct::full<decltype(tile)>(0.0f);
@@ -7213,7 +7232,7 @@ __tile_global__ void scale_inplace_float32_kernel(
   values = ct::assume_aligned(values, 16_ic);
 
   const int bx = ct::bid().x;
-  auto view = ct::partition_view{ct::tensor_span{values, ct::extents{n}}, ct::shape{1024_ic}};
+  auto view = ct::partition_view{ct::tensor_span{values, ct::extents{n}}, ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE}};
   auto tile = view.load_masked(bx);
   view.store_masked(tile * ct::full<decltype(tile)>(scale), bx);
 }
@@ -7230,10 +7249,10 @@ __tile_global__ void global_norm_clip_scale_float32_kernel(
   sumsq_partials = ct::assume_aligned(sumsq_partials, 16_ic);
   clip_scale = ct::assume_aligned(clip_scale, 16_ic);
 
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE})>;
   auto idx = ct::iota<IndexTile>();
-  auto acc = ct::full<ct::tile<float, decltype(ct::shape{1024_ic})>>(0.0f);
-  for (std::int64_t offset = 0; offset < partial_count; offset += kTileSize) {
+  auto acc = ct::full<ct::tile<float, decltype(ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE})>>(0.0f);
+  for (std::int64_t offset = 0; offset < partial_count; offset += kOptimizerTileSize) {
     auto pos = idx + ct::full<IndexTile>(offset);
     auto mask = pos < ct::full<IndexTile>(partial_count);
     auto value = ct::load_masked(sumsq_partials + pos, mask);
@@ -7260,7 +7279,7 @@ __tile_global__ void scale_inplace_by_device_float32_kernel(
   scale = ct::assume_aligned(scale, 16_ic);
 
   const int bx = ct::bid().x;
-  auto view = ct::partition_view{ct::tensor_span{values, ct::extents{n}}, ct::shape{1024_ic}};
+  auto view = ct::partition_view{ct::tensor_span{values, ct::extents{n}}, ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE}};
   auto tile = view.load_masked(bx);
   auto scale_tile = ct::full<decltype(tile)>(*scale);
   view.store_masked(tile * scale_tile, bx);
@@ -7288,8 +7307,8 @@ __tile_global__ void adamw_step_float32_kernel(
   exp_avg_sq = ct::assume_aligned(exp_avg_sq, 16_ic);
 
   const int bx = ct::bid().x;
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
-  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kOptimizerTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto p = ct::load_masked(param + idx, mask);
   auto g = ct::load_masked(grad + idx, mask);
@@ -7333,8 +7352,8 @@ __tile_global__ void adamw_step_with_device_scale_float32_kernel(
   exp_avg_sq = ct::assume_aligned(exp_avg_sq, 16_ic);
 
   const int bx = ct::bid().x;
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
-  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kTileSize);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(bx) * kOptimizerTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto p = ct::load_masked(param + idx, mask);
   auto g = ct::load_masked(grad + idx, mask) * ct::full<decltype(p)>(*grad_scale);
@@ -7385,8 +7404,8 @@ __tile_global__ void adamw_step_many_with_device_scale_float32_kernel(
   float* exp_avg_sq = ct::assume_aligned(exp_avg_sqs[tensor], 16_ic);
 
   const std::int64_t n = elements[tensor];
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
-  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kTileSize);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kOptimizerTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto p = ct::load_masked(param + idx, mask);
   auto g = ct::load_masked(grad + idx, mask) * ct::full<decltype(p)>(*grad_scale);
@@ -7440,8 +7459,8 @@ __tile_global__ void adamw_step_many_with_device_scale_bf16_shadow_float32_kerne
   auto* shadow = ct::assume_aligned(reinterpret_cast<__nv_bfloat16*>(bf16_shadow_bits), 16_ic);
 
   const std::int64_t n = elements[tensor];
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
-  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kTileSize);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kOptimizerTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto p = ct::load_masked(param + idx, mask);
   auto g = ct::load_masked(grad + idx, mask) * ct::full<decltype(p)>(*grad_scale);
@@ -7500,8 +7519,8 @@ __tile_global__ void adamw_step_many_with_device_scale_bf16_param_float32_kernel
   float* exp_avg_sq = ct::assume_aligned(exp_avg_sqs[tensor], 16_ic);
 
   const std::int64_t n = elements[tensor];
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
-  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kTileSize);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kOptimizerTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto p = ct::element_cast<float>(ct::load_masked(param + idx, mask));
   auto g = ct::load_masked(grad + idx, mask) * ct::full<decltype(p)>(*grad_scale);
@@ -7554,8 +7573,8 @@ __tile_global__ void adamw_step_many_with_device_scale_bf16_param_bf16_grad_floa
   float* exp_avg_sq = ct::assume_aligned(exp_avg_sqs[tensor], 16_ic);
 
   const std::int64_t n = elements[tensor];
-  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{1024_ic})>;
-  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kTileSize);
+  using IndexTile = ct::tile<std::int64_t, decltype(ct::shape{NFN_TILE_CUDA_OPTIMIZER_TILE_SHAPE})>;
+  auto idx = ct::iota<IndexTile>() + ct::full<IndexTile>(static_cast<std::int64_t>(chunk) * kOptimizerTileSize);
   auto mask = idx < ct::full<IndexTile>(n);
   auto p = ct::element_cast<float>(ct::load_masked(param + idx, mask));
   auto g = ct::element_cast<float>(ct::load_masked(grad + idx, mask)) *
@@ -14779,7 +14798,7 @@ void launch_sumsq_partials_float32(
     float* partials,
     std::int64_t n,
     cudaStream_t stream) {
-  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  const int blocks = static_cast<int>((n + kOptimizerTileSize - 1) / kOptimizerTileSize);
   sumsq_partials_float32_kernel<<<blocks, 1, 0, stream>>>(values, partials, n);
 }
 
@@ -14795,7 +14814,7 @@ void launch_sumsq_partials_many_float32(
     return;
   }
   const int tensor_blocks = static_cast<int>(buffer_count);
-  const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  const int element_blocks = static_cast<int>((max_elements + kOptimizerTileSize - 1) / kOptimizerTileSize);
   sumsq_partials_many_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
       buffers,
       elements,
@@ -14816,7 +14835,7 @@ void launch_sumsq_partials_many_bf16_bits_float32(
     return;
   }
   const int tensor_blocks = static_cast<int>(buffer_count);
-  const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  const int element_blocks = static_cast<int>((max_elements + kOptimizerTileSize - 1) / kOptimizerTileSize);
   sumsq_partials_many_bf16_bits_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
       buffers,
       elements,
@@ -14830,7 +14849,7 @@ void launch_scale_inplace_float32(
     std::int64_t n,
     float scale,
     cudaStream_t stream) {
-  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  const int blocks = static_cast<int>((n + kOptimizerTileSize - 1) / kOptimizerTileSize);
   scale_inplace_float32_kernel<<<blocks, 1, 0, stream>>>(values, n, scale);
 }
 
@@ -14850,7 +14869,7 @@ void launch_scale_inplace_by_device_float32(
     const float* scale,
     std::int64_t n,
     cudaStream_t stream) {
-  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  const int blocks = static_cast<int>((n + kOptimizerTileSize - 1) / kOptimizerTileSize);
   scale_inplace_by_device_float32_kernel<<<blocks, 1, 0, stream>>>(values, scale, n);
 }
 
@@ -14868,7 +14887,7 @@ void launch_adamw_step_float32(
     float bias_correction1,
     float sqrt_bias_correction2,
     cudaStream_t stream) {
-  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  const int blocks = static_cast<int>((n + kOptimizerTileSize - 1) / kOptimizerTileSize);
   adamw_step_float32_kernel<<<blocks, 1, 0, stream>>>(
       param,
       grad,
@@ -14899,7 +14918,7 @@ void launch_adamw_step_with_device_scale_float32(
     float bias_correction1,
     float sqrt_bias_correction2,
     cudaStream_t stream) {
-  const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
+  const int blocks = static_cast<int>((n + kOptimizerTileSize - 1) / kOptimizerTileSize);
   adamw_step_with_device_scale_float32_kernel<<<blocks, 1, 0, stream>>>(
       param,
       grad,
@@ -14937,7 +14956,7 @@ void launch_adamw_step_many_with_device_scale_float32(
     return;
   }
   const int tensor_blocks = static_cast<int>(buffer_count);
-  const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  const int element_blocks = static_cast<int>((max_elements + kOptimizerTileSize - 1) / kOptimizerTileSize);
   adamw_step_many_with_device_scale_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
       params,
       grads,
@@ -14978,7 +14997,7 @@ void launch_adamw_step_many_with_device_scale_bf16_shadow_float32(
     return;
   }
   const int tensor_blocks = static_cast<int>(buffer_count);
-  const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  const int element_blocks = static_cast<int>((max_elements + kOptimizerTileSize - 1) / kOptimizerTileSize);
   adamw_step_many_with_device_scale_bf16_shadow_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
       params,
       grads,
@@ -15019,7 +15038,7 @@ void launch_adamw_step_many_with_device_scale_bf16_param_float32(
     return;
   }
   const int tensor_blocks = static_cast<int>(buffer_count);
-  const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  const int element_blocks = static_cast<int>((max_elements + kOptimizerTileSize - 1) / kOptimizerTileSize);
   adamw_step_many_with_device_scale_bf16_param_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
       params_bf16_bits,
       grads,
@@ -15058,7 +15077,7 @@ void launch_adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32(
     return;
   }
   const int tensor_blocks = static_cast<int>(buffer_count);
-  const int element_blocks = static_cast<int>((max_elements + kTileSize - 1) / kTileSize);
+  const int element_blocks = static_cast<int>((max_elements + kOptimizerTileSize - 1) / kOptimizerTileSize);
   adamw_step_many_with_device_scale_bf16_param_bf16_grad_float32_kernel<<<dim3(tensor_blocks, element_blocks), 1, 0, stream>>>(
       params_bf16_bits,
       grads_bf16_bits,
