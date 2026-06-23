@@ -1984,6 +1984,35 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         assert token_payload["metric_ratio_gates"]["enabled"] is False
 
 
+def test_native_gpt_sm120_candidate_sweep_keeps_same_script_gates() -> None:
+    script = Path("tools/sweep_native_gpt_sm120_candidates.sh")
+
+    proc = subprocess.run(
+        ["bash", "-n", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    text = script.read_text(encoding="utf-8")
+    assert "tools/bench_native_gpt_sm120_candidate.sh" in text
+    assert 'NFN_SM120_NATIVE_CANDIDATE_PROFILE="$profile"' in text
+    assert 'NFN_SM120_NATIVE_JSON_OUT="$json_out"' in text
+    assert 'NFN_SM120_NATIVE_PROFILE_DIR="$profile_dir"' in text
+    assert 'token_weight_vector4_strided' in text
+    assert 'token_weight_threaded' in text
+    assert 'token_weight_fast_int32' in text
+    assert 'token_weight_two_pass_bf16' in text
+    assert 'combined_device_arena' in text
+    assert 'fail_count=$((fail_count + 1))' in text
+    assert 'metric_ratio_gates' in text
+    assert 'native_route_change_gate' in text
+    assert 'summary.tsv' in text
+    assert 'NFN_SM120_NATIVE_SWEEP_ALLOW_FAILURES' in text
+
+
 def test_paired_kernel_speed_tool_applies_command_specific_env() -> None:
     script = Path("tools/paired_kernel_speed.py")
     output_path = Path(tempfile.mkdtemp()) / "paired-env.json"

@@ -260,6 +260,19 @@ For native-vs-native dense GPT kernel bisections, `tools/bench_native_gpt_sm120_
 accepts the canonical `NFN_SM120_NATIVE_*` environment variables and the shorter
 `NFN_SM120_CANDIDATE_*` aliases for steps, samples, warmup, profile directory,
 CUDA device selection, candidate env, template/graph selection, and JSON output.
+Use `tools/sweep_native_gpt_sm120_candidates.sh` when retesting several named
+profiles: it runs the same candidate wrapper once per profile, continues after
+failures, and writes per-profile logs, JSON sidecars, native profile
+directories, and a `summary.tsv` under
+`NFN_SM120_NATIVE_SWEEP_OUT_DIR` (defaulting to `/tmp`). Positional arguments
+select profiles, or set `NFN_SM120_NATIVE_SWEEP_PROFILES`; with no profile list
+it sweeps the startup bisection set
+`token_weight_vector4_strided`, `token_weight_threaded`,
+`token_weight_fast_int32`, `token_weight_two_pass_bf16`, and
+`combined_device_arena`. The sweep preserves the candidate wrapper's strict
+same-script route and metric gates and exits nonzero if any profile fails; set
+`NFN_SM120_NATIVE_SWEEP_ALLOW_FAILURES=1` only for exploratory evidence
+collection where rejected candidates should not fail the outer job.
 The common-shape controls also accept the explicit
 `NFN_SM120_NATIVE_CANDIDATE_*` aliases, such as
 `NFN_SM120_NATIVE_CANDIDATE_STEPS`, `NFN_SM120_NATIVE_CANDIDATE_SAMPLES`,
@@ -964,6 +977,16 @@ default change. After the CUDA 13.3 reinstall on the dedicated RTX 5090, the
 corrected `token_weight_vector4_strided` profile passed a 2-sample
 startup-only gate (`0.949594x` setup wall, `0.986349x` token init) with a
 strategy-value route change, but remains default-off pending broader evidence.
+The follow-up CUDA 13.3.33 three-sample sweep through the linked trainer kept
+all startup profiles default-off: `token_weight_vector4_strided` improved token
+init (`0.979990x`) but lost total setup (`1.016446x`),
+`token_weight_threaded` improved total setup (`0.980440x`) only by shifting
+unrelated arena timing while its own token init regressed (`1.009360x`),
+`token_weight_fast_int32` regressed setup (`1.021488x`),
+`token_weight_two_pass_bf16` regressed setup (`1.050417x`), and
+`combined_device_arena` regressed startup-only setup (`1.060057x`) versus the
+forced older allocation route. Keep the current linked/native defaults unless a
+same-script sweep passes the relevant stage gate for the optimized bucket.
 Add
 `--append-native-profile-json-dir /tmp/nfn-profiles`
 when comparing native NeuralFn commands that do not already write JSON; the

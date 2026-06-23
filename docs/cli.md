@@ -1056,6 +1056,21 @@ for strict utilization gating. For `tools/bench_native_gpt_sm120_candidate.sh` s
 bisections, set `NFN_SM120_NATIVE_STARTUP_ONLY=1`; measured candidate runs then
 auto-gate `setup_wall_ms=1.000` unless an explicit max-ratio override is set,
 because startup-only JSON has no `train_loop_wall_ms_per_step` metric. When
+several named profiles need a fresh run, use
+`tools/sweep_native_gpt_sm120_candidates.sh`. It invokes the same candidate
+wrapper once per profile, keeps strict route/metric gates, continues after
+failed candidates, and writes `summary.tsv` plus per-profile logs, JSON, and
+native sidecars under `NFN_SM120_NATIVE_SWEEP_OUT_DIR`. Pass profiles as
+arguments or set `NFN_SM120_NATIVE_SWEEP_PROFILES`; set
+`NFN_SM120_NATIVE_SWEEP_ALLOW_FAILURES=1` only when the outer command should
+return success after collecting rejected-candidate evidence.
+The CUDA 13.3.33 linked-trainer startup sweep left all existing startup
+profiles diagnostic-only: `token_weight_vector4_strided` improved token init
+but failed total setup, `token_weight_threaded` only won total setup through
+unrelated arena timing while its token stage regressed, and
+`token_weight_fast_int32`, `token_weight_two_pass_bf16`, and
+`combined_device_arena` all regressed setup.
+When
 using the native candidate wrapper for common workload controls, canonical
 `NFN_SM120_NATIVE_*` names win first, explicit
 `NFN_SM120_NATIVE_CANDIDATE_*` aliases win next, short

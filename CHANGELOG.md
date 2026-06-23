@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `tools/sweep_native_gpt_sm120_candidates.sh` for batch retesting native
+  SM120 dense-GPT candidate profiles without losing the strict same-script
+  comparison discipline. The sweep invokes
+  `tools/bench_native_gpt_sm120_candidate.sh` once per profile, preserves route
+  and metric gates, continues after rejected candidates, and writes per-profile
+  logs, result JSON, native profile sidecars, and a `summary.tsv`. Profiles can
+  be supplied as positional arguments or through
+  `NFN_SM120_NATIVE_SWEEP_PROFILES`; the default list covers the current startup
+  bisections. The command exits nonzero if any profile fails unless
+  `NFN_SM120_NATIVE_SWEEP_ALLOW_FAILURES=1` is set for exploratory evidence
+  collection.
+
+  Migration note: no trainer default changed. A CUDA 13.3.33 linked-trainer
+  startup sweep kept the supported startup profiles diagnostic-only:
+  `token_weight_vector4_strided` improved token init but failed total setup,
+  `token_weight_threaded` improved total setup only while its own token stage
+  regressed, and `token_weight_fast_int32`, `token_weight_two_pass_bf16`, and
+  `combined_device_arena` all regressed setup.
+
+  Verification: `bash -n tools/sweep_native_gpt_sm120_candidates.sh` passed; a
+  CUDA 13.3.33 dedicated RTX 5090 startup sweep produced per-profile JSON and
+  rejected the non-winning candidates; focused pytest and `git diff --check`
+  were run after the docs and test updates.
+
 - Fixed paired SM120/native speed profiling for the linked dense GPT trainer.
   `tools/paired_kernel_speed.py` now recognizes `nfn_gpt_native_train_linked`
   as a native NeuralFn command, so `--native-stage-timing` injects
