@@ -1075,7 +1075,9 @@ scheduling profiles `qkv_concurrent_dinput_dweight`,
 `mlp_proj_dinput_before_dweight`, `mlp_fc_dinput_before_dweight`, and
 `attn_proj_dinput_before_dweight`; the concurrent routes activated but
 regressed train-loop wall time, and the ordering-only routes failed route
-detection on the CUDA 13.3 RTX 5090 sweep.
+detection on the CUDA 13.3 RTX 5090 sweep. Startup-only rejected profiles also
+include `token_weight_vector4_strided`, whose broader gate failed the
+token-init stage ratio.
 The CUDA 13.3.33 linked-trainer startup sweep left all existing startup
 profiles diagnostic-only: `token_weight_vector4_strided` improved token init
 but failed total setup, `token_weight_threaded` only won total setup through

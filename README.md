@@ -126,8 +126,11 @@ native JSON reports
 `device-vector4-strided-power2-deterministic[-fused-bf16-shadow]` strategy.
 After the CUDA 13.3 reinstall on the dedicated RTX 5090, the corrected
 2-sample startup-only gate passed (`0.949594x` setup wall,
-`0.986349x` token init), but the route remains diagnostic-only until a broader
-startup run proves it is a stable default.
+`0.986349x` token init), but the broader 5-sample startup-only gate rejected the
+route because `setup.token_weight_init.total_ms` regressed to `1.003837x`.
+Real paired-wrapper runs now fail fast for this rejected profile unless
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set; dry-run expansion
+still works without that opt-in.
 The fused padded-vocab BF16-shadow token initializer is exposed for paired
 bisection as `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`, but remains
 default-off: the CUDA 13.3 RTX 5090 startup gate measured the route at
@@ -1741,7 +1744,9 @@ scheduling profiles `qkv_concurrent_dinput_dweight`,
 `mlp_proj_dinput_before_dweight`, `mlp_fc_dinput_before_dweight`, and
 `attn_proj_dinput_before_dweight`; the concurrent routes activated but
 regressed train-loop wall time, and the ordering-only routes failed route
-detection on the CUDA 13.3 RTX 5090 sweep.
+detection on the CUDA 13.3 RTX 5090 sweep. Startup-only rejected profiles also
+include `token_weight_vector4_strided`, whose broader gate failed the
+token-init stage ratio.
 The wrapper also has named profiles for existing diagnostic switches that used
 to require raw candidate env overrides: `bf16_attention_grad_out`,
 `bf16_attention_dprep_grad_out`, `mlp_proj_dinput_before_dweight`,

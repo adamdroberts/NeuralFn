@@ -2058,6 +2058,29 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
             assert token_payload["candidate_env"][env_name] == env_value
         assert token_payload["metric_ratio_gates"]["enabled"] is False
 
+    rejected_token_env = os.environ.copy()
+    rejected_token_env.update(
+        {
+            "NFN_SM120_NATIVE_STARTUP_ONLY": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "token_weight_vector4_strided",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "rejected-token-vector4-strided.json"),
+        }
+    )
+    rejected_token_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=rejected_token_env,
+    )
+
+    assert rejected_token_run.returncode == 2
+    assert "rejected SM120 candidate" in rejected_token_run.stderr
+    assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in rejected_token_run.stderr
+
 
 def test_native_gpt_sm120_candidate_sweep_keeps_same_script_gates() -> None:
     script = Path("tools/sweep_native_gpt_sm120_candidates.sh")

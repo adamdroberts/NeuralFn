@@ -9,6 +9,7 @@ Future updates should append new entries here rather than replacing older notes.
 - Guarded rejected SM120 native GPT candidate profiles in
   `tools/bench_native_gpt_sm120_candidate.sh`. Real paired benchmark runs of
   `attention_atomic_dq`, `qkv_forward_bf16_fallback_65536`,
+  `token_weight_vector4_strided`,
   `qkv_concurrent_dinput_dweight`, `mlp_fc_concurrent_dinput_dweight`,
   `attn_proj_concurrent_dinput_dweight`, `mlp_proj_dinput_before_dweight`,
   `mlp_fc_dinput_before_dweight`, and `attn_proj_dinput_before_dweight` now
@@ -30,8 +31,11 @@ Future updates should append new entries here rather than replacing older notes.
   (`1.005526x` train-loop), `mlp_fc_concurrent_dinput_dweight` (`1.005830x`),
   `attn_proj_concurrent_dinput_dweight` (`1.002312x`), and the route-unproven
   `mlp_proj_dinput_before_dweight`, `mlp_fc_dinput_before_dweight`, and
-  `attn_proj_dinput_before_dweight` profiles. Focused wrapper tests and shell
-  syntax checks were run after the guard change.
+  `attn_proj_dinput_before_dweight` profiles. A broader 5-sample startup-only
+  gate rejected `token_weight_vector4_strided` because
+  `setup.token_weight_init.total_ms` regressed to `1.003837x`, despite setup
+  wall time measuring `0.999649x`. Focused wrapper tests and shell syntax
+  checks were run after the guard change.
 
 - Guarded timeout-prone LM-head SM120 candidate profiles in
   `tools/bench_native_gpt_sm120_candidate.sh`. Real paired benchmark runs of
