@@ -295,6 +295,14 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `attn_proj_dinput_before_dweight`, and
     `lm_head_fused_loss_backward_off`. Stage-timed runs now attach the matching
     attention, ordering, or LM-head CE gates automatically.
+  - 2026-06-23 added execution counters for the three block-backward ordering
+    profiles:
+    `block_backward_mlp_proj_dinput_before_dweight_count`,
+    `block_backward_mlp_fc_dinput_before_dweight_count`, and
+    `block_backward_attn_proj_dinput_before_dweight_count`. The paired speed
+    tool now includes them in `native_route_counter_changes`, so these
+    scheduling probes are rejected or promoted with route proof instead of
+    failing route detection.
   - 2026-06-18 added short `NFN_SM120_CANDIDATE_*` aliases for the native-vs-native wrapper controls so ad hoc candidate benchmarks do not silently fall back to default steps/samples/profile settings when the shorter names are used.
   - 2026-06-19 added `native_route_counter_changes` to the paired benchmark JSON/text report so candidate timings are checked against tracked TK/cuBLASLt/BF16/LM-head/attention route counters before being treated as kernel evidence.
   - 2026-06-22 added `native_cublaslt_plan_cache` to the paired benchmark

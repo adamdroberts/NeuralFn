@@ -4438,6 +4438,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["block_backward_dinput_tk_gemm_count"] == 0
     assert train_transformer_payload["block_backward_dinput_cublaslt_gemm_count"] == 0
     assert train_transformer_payload["block_backward_dinput_bf16_gemm_count"] == 0
+    assert train_transformer_payload["block_backward_mlp_proj_dinput_before_dweight_count"] == 0
+    assert train_transformer_payload["block_backward_mlp_fc_dinput_before_dweight_count"] == 0
+    assert train_transformer_payload["block_backward_attn_proj_dinput_before_dweight_count"] == 0
     assert train_transformer_payload["linear_cublaslt_descriptor_cache_enabled"] is True
     assert train_transformer_payload["linear_sgemm_count"] == 0
     assert train_transformer_payload["bf16_to_f32_vec4_count"] == 0
@@ -7647,6 +7650,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block_backward_dinput_tk_gemm_count" in gpt2_source_text
     assert "block_backward_dinput_cublaslt_gemm_count" in gpt2_source_text
     assert "block_backward_dinput_bf16_gemm_count" in gpt2_source_text
+    assert "block_backward_mlp_proj_dinput_before_dweight_count" in gpt2_source_text
+    assert "block_backward_mlp_fc_dinput_before_dweight_count" in gpt2_source_text
+    assert "block_backward_attn_proj_dinput_before_dweight_count" in gpt2_source_text
     assert "lm_head_logits_tk_used" in gpt2_source_text
     assert "lm_head_dhidden_cublaslt_shape_used" in gpt2_source_text
     assert "lm_head_backward.dhidden" in gpt2_source_text

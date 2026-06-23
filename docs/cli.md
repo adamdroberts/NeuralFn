@@ -1181,7 +1181,9 @@ native-loop counters into `baseline_native_metrics` or
 `timing.train_tokens_per_second`, setup time, checkpoint time, total native
 wall time, selected linear/attention kernel counters, LM-head logits/dHidden
 route counters such as `lm_head_dhidden_cublaslt_gemm_count`, block dInput
-route counters such as `block_backward_dinput_bf16_gemm_count`, emitted
+route counters such as `block_backward_dinput_bf16_gemm_count`, block ordering
+execution counters such as
+`block_backward_mlp_proj_dinput_before_dweight_count`, emitted
 `timing.setup_timing` and `timing.stage_timing` totals/averages/counts, and paired native-metric ratios
 when both commands expose the same metric. If a child command uses
 `--json-out`, `--profile-json`, or `--stage-profile-json`, the helper reads
@@ -1302,6 +1304,11 @@ Native dense-GPT JSON also reports the cuBLASLt BGRADB epilogue counters
 route counters, so BGRADB first-write or split bias-accumulation candidates can
 prove whether they changed the active block dWeight+bias path before timing is
 accepted.
+The ordering profiles `mlp_proj_dinput_before_dweight`,
+`mlp_fc_dinput_before_dweight`, and `attn_proj_dinput_before_dweight` have
+matching execution counters in the same route-counter summary, so rejected
+scheduling candidates can be reproduced with proof that the alternate order
+actually ran.
 `lm_head_classifier_ce_no_loss` expands to
 `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1`, forces the baseline side to
 `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=0`, and keeps train-loss logging

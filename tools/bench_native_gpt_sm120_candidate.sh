@@ -334,17 +334,17 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "mlp_proj_dinput_before_dweight"|"mlp-proj-dinput-before-dweight")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate failed route detection and rejected this scheduling order."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate measured this scheduling order at 1.000405x train_loop_wall_ms_per_step and 0.999602x tokens/sec; route counters now prove execution, but it remains rejected as a default."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT=1"
     ;;
   "mlp_fc_dinput_before_dweight"|"mlp-fc-dinput-before-dweight")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate failed route detection and rejected this scheduling order."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate measured this scheduling order at 1.000858x train_loop_wall_ms_per_step and 0.999153x tokens/sec; route counters now prove execution, but it remains rejected as a default."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1"
     ;;
   "attn_proj_dinput_before_dweight"|"attn-proj-dinput-before-dweight")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate failed route detection and rejected this scheduling order."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate measured this scheduling order at 1.001009x train_loop_wall_ms_per_step and 0.999002x tokens/sec; route counters now prove execution, but it remains rejected as a default."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1"
     ;;
   "lm_head_fused_loss_backward_off"|"lm-head-fused-loss-backward-off"|"lm_head_separate_loss_backward"|"lm-head-separate-loss-backward")

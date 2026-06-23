@@ -9907,6 +9907,9 @@ int run_transformer_lm_training_json(
     std::int64_t block_backward_dinput_tk_gemm_count = 0;
     std::int64_t block_backward_dinput_cublaslt_gemm_count = 0;
     std::int64_t block_backward_dinput_bf16_gemm_count = 0;
+    std::int64_t block_backward_mlp_proj_dinput_before_dweight_count = 0;
+    std::int64_t block_backward_mlp_fc_dinput_before_dweight_count = 0;
+    std::int64_t block_backward_attn_proj_dinput_before_dweight_count = 0;
     std::int64_t linear_sgemm_count = 0;
     std::int64_t bf16_to_f32_vec4_count = 0;
     std::int64_t linear_bf16_a_pack_count = 0;
@@ -17558,6 +17561,7 @@ int run_transformer_lm_training_json(
                 });
             };
             if (mlp_proj_dinput_before_dweight_enabled) {
+                block_backward_mlp_proj_dinput_before_dweight_count += 1;
                 run_mlp_proj_dinput();
                 run_mlp_proj_dweight_bias();
             } else {
@@ -17692,6 +17696,7 @@ int run_transformer_lm_training_json(
                     }
                 });
             } else if (mlp_fc_dinput_before_dweight_enabled) {
+                block_backward_mlp_fc_dinput_before_dweight_count += 1;
                 run_mlp_fc_dinput();
                 run_mlp_fc_dweight_bias();
             } else {
@@ -17905,6 +17910,7 @@ int run_transformer_lm_training_json(
                     }
                 });
             } else if (attn_proj_dinput_before_dweight_enabled) {
+                block_backward_attn_proj_dinput_before_dweight_count += 1;
                 run_attn_proj_dinput();
                 run_attn_proj_dweight_bias();
             } else {
@@ -20633,8 +20639,12 @@ int run_transformer_lm_training_json(
         << (reuse_mlp_proj_bf16_grad_out_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_mlp_proj_dinput_before_dweight_enabled\": "
         << (mlp_proj_dinput_before_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_mlp_proj_dinput_before_dweight_count\": "
+        << block_backward_mlp_proj_dinput_before_dweight_count << ",\n"
         << "  \"block_backward_mlp_fc_dinput_before_dweight_enabled\": "
         << (mlp_fc_dinput_before_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_mlp_fc_dinput_before_dweight_count\": "
+        << block_backward_mlp_fc_dinput_before_dweight_count << ",\n"
         << "  \"block_backward_mlp_fc_concurrent_dinput_dweight_requested\": "
         << (block_mlp_fc_concurrent_dinput_dweight_requested ? "true" : "false") << ",\n"
         << "  \"block_backward_pair_streams_available\": "
@@ -20651,6 +20661,8 @@ int run_transformer_lm_training_json(
         << (block_attn_proj_concurrent_dinput_dweight_enabled ? "true" : "false") << ",\n"
         << "  \"block_backward_attn_proj_dinput_before_dweight_enabled\": "
         << (attn_proj_dinput_before_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_attn_proj_dinput_before_dweight_count\": "
+        << block_backward_attn_proj_dinput_before_dweight_count << ",\n"
         << "  \"block_backward_mlp_proj_tk_dweight_requested\": "
         << (block_backward_mlp_proj_tk_dweight_requested ? "true" : "false") << ",\n"
         << "  \"block_backward_mlp_proj_tk_dweight_enabled\": "

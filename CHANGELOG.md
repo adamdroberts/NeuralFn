@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added native dense-GPT route attribution counters for block-backward
+  scheduling diagnostics. Runtime JSON now reports
+  `block_backward_mlp_proj_dinput_before_dweight_count`,
+  `block_backward_mlp_fc_dinput_before_dweight_count`, and
+  `block_backward_attn_proj_dinput_before_dweight_count`, and
+  `tools/paired_kernel_speed.py` includes those fields in native metric
+  summaries and `native_route_counter_changes`.
+
+  Migration note: no default training behavior changes. The existing ordering
+  profiles remain default-off and rejected for normal training; the new
+  counters let same-script candidate runs prove that an alternate ordering path
+  executed before timing results are accepted or rejected.
+
+  Verification: focused pytest coverage checks the native JSON contract and
+  paired benchmark route-counter summaries for the new fields. A one-step
+  native RTX 5090 smoke with
+  `NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT=1` reported
+  `block_backward_mlp_proj_dinput_before_dweight_count=96`, and a minimal
+  native-vs-native wrapper run reported
+  `native_route_counter_changes: has_route_counter_change=true` with the same
+  counter changing from `0` to `96`.
+
 - Added default-off public-vocab strided LM-head GEMM diagnostics to the native
   CUDA Tile ABI. The new raw symbols
   `nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_float32`
