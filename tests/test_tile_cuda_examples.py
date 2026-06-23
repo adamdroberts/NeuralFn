@@ -394,7 +394,7 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "--native-cuda-checkpoint-every \"$CHECKPOINT_EVERY\"" in text
     assert "--native-cuda-activation \"$ACTIVATION\"" in text
     assert "--no-checkpoint" in text
-    assert "--tile-ops-lib \"$NFN_NATIVE_TILE_OPS_LIB\"" in text
+    assert "--tile-ops-lib \"$NFN_NATIVE_TILE_OPS_ARG\"" in text
     assert '"${profile_args[@]}"' in text
     assert '"${paired_args[@]}"' in text
 
@@ -656,10 +656,12 @@ def test_native_gpt_sm120_candidate_wrapper_applies_common_env_to_both_commands(
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["baseline_env"] == {
         "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT": "1",
+        "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING": "1",
         "NFN_SHARED_PROFILING": "1",
     }
     assert payload["candidate_env"] == {
         "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT": "1",
+        "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING": "1",
         "NFN_SHARED_PROFILING": "1",
         "NFN_CANDIDATE_ONLY": "1",
     }
@@ -702,11 +704,13 @@ def test_native_gpt_sm120_candidate_wrapper_splits_comma_separated_env_assignmen
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["baseline_env"] == {
         "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT": "1",
+        "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING": "1",
         "NFN_SHARED": "1",
         "NFN_SHARED_2": "2",
     }
     assert payload["candidate_env"] == {
         "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT": "1",
+        "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING": "1",
         "NFN_SHARED": "1",
         "NFN_SHARED_2": "2",
         "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE": "768,3072,65536,N,T,0",
@@ -2825,7 +2829,7 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
     route_changes = payload["native_route_counter_changes"]
     assert route_changes["has_route_counter_change"] is False
     assert route_changes["changed_count"] == 0
-    assert route_changes["tracked_count"] == 9
+    assert route_changes["tracked_count"] == 12
     assert route_changes["unchanged"] == [
         "linear_tk_gemm_count",
         "linear_cublaslt_gemm_count",
@@ -2836,6 +2840,9 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
         "block_backward_dinput_tk_gemm_count",
         "block_backward_dinput_cublaslt_gemm_count",
         "block_backward_dinput_bf16_gemm_count",
+        "block_backward_mlp_proj_dinput_before_dweight_count",
+        "block_backward_mlp_fc_dinput_before_dweight_count",
+        "block_backward_attn_proj_dinput_before_dweight_count",
     ]
     assert payload["native_route_change_gate"] == {
         "enabled": False,
