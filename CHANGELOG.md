@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_vec8_io` as a rejected
+  SM120 candidate for real paired-wrapper runs. Dry-run expansion remains
+  available, and intentional reruns can still set
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`. The current CUDA 13.3
+  dedicated RTX 5090 rerun proved the CE vector-I/O strategy changed but failed
+  the strict CE stage gate at
+  `stage.lm_head_backward.ce.total_ms=1.003780x`; the apparent train-loop gain
+  came from unrelated block-backward timing noise.
+
+  Migration note: normal training defaults do not change. Automation that
+  launched this candidate as a real benchmark must opt into rejected candidates
+  explicitly or use dry-run mode to inspect its command expansion.
+
+  Verification: focused wrapper tests cover dry-run expansion and rejected
+  real-run failure. A 10-step, 2-sample same-script parity refresh on the
+  dedicated RTX 5090 measured NeuralFn at `1.016739x` train-loop ms/step and
+  `0.982855x` tokens/sec versus `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`,
+  so remaining work still targets native CUDA Tile throughput rather than
+  Python, Torch, or graph-editor routing.
+
 - Added startup arena materialization submetrics to dense GPT native training
   JSON. Runtime output now reports
   `float_arena_cuda_malloc_wall_ms`,

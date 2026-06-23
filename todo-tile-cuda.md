@@ -410,6 +410,13 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `vec8-loads-scalar-stores` to `vec8-loads-streaming-stores`, but rejected
     the candidate at `1.001346x` train-loop wall time, `0.998656x` tokens/sec,
     `1.000944x` LM-head backward, and `1.004197x` CE time.
+  - 2026-06-23 rechecked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_vec8_io`
+    on the current CUDA 13.3 dedicated RTX 5090 stack. The route still changed
+    CE vector I/O, but the stage-timed 5-step, 2-sample gate failed
+    `stage.lm_head_backward.ce.total_ms=1.003780x`; the apparent total
+    train-loop gain was driven by unrelated block-backward timing noise. The
+    wrapper now rejects real runs by default unless
+    `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
   - 2026-06-20 rejected CUDA write-combined pinned token staging for the native
     GPT token/target host buffer. The candidate changed the trainer
     `cudaHostAlloc` flags from default to write-combined and passed the

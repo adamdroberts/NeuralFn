@@ -1404,7 +1404,12 @@ The streaming-store candidate reuses packed vec8 BF16 loads in the final
 dlogit write pass, but remains diagnostic-only: the 2026-06-22 dedicated RTX
 5090 same-script gate proved the strategy changed to
 `vec8-loads-streaming-stores` and rejected it at `1.001346x` train-loop wall
-time, `1.000944x` LM-head backward, and `1.004197x` CE time.
+time, `1.000944x` LM-head backward, and `1.004197x` CE time. The current CUDA
+13.3 dedicated RTX 5090 rerun keeps the profile rejected by default: it showed a
+noisy total train-loop improvement but failed the strict CE stage gate at
+`1.003780x`. Real reruns require
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; dry-run expansion stays
+available without the opt-in.
 `lm_head_cooperative_backward` adds
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` to the candidate command.
 `lm_head_cooperative_backward_required` adds the same environment flag plus

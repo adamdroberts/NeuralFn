@@ -1873,6 +1873,30 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     )
     assert ce_vec8_payload["metric_ratio_gates"]["enabled"] is False
 
+    ce_vec8_rejected_env = os.environ.copy()
+    ce_vec8_rejected_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_ce_vec8_io",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "candidate-ce-vec8-rejected.json"),
+        }
+    )
+
+    ce_vec8_rejected = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=ce_vec8_rejected_env,
+    )
+
+    assert ce_vec8_rejected.returncode == 2
+    assert "lm_head_ce_vec8_io is a rejected SM120 candidate" in ce_vec8_rejected.stderr
+    assert "stage.lm_head_backward.ce.total_ms=1.003780x" in ce_vec8_rejected.stderr
+    assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in ce_vec8_rejected.stderr
+
     ce_specialized_output_path = tmp_path / "candidate-ce-specialized-dry-run.json"
     ce_specialized_env = os.environ.copy()
     ce_specialized_env.update(

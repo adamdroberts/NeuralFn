@@ -160,6 +160,10 @@ loads and switches the no-loss LM-head CE dlogit write to vec8 streaming
 stores for same-script RTX 5090 checks. Runtime JSON reports
 `lm_head_ce_bf16_vector_io_strategy` plus the individual vec-load/store flags
 so the paired benchmark can confirm the classifier route used by the candidate.
+This profile is rejected for real runs unless
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set: the current CUDA
+13.3 dedicated RTX 5090 rerun failed the strict CE stage gate at
+`stage.lm_head_backward.ce.total_ms=1.003780x`.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_scalar_streaming_store` is the
 narrower scalar-store cache-hint probe; it keeps vec8 loads but writes scalar
 BF16 dlogits through `st.global.cs.u16`. It is diagnostic-only: the dedicated
