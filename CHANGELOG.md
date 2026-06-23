@@ -6,6 +6,14 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Corrected the CLI and CUDA Tile TODO documentation for the native dense-GPT
+  allocation default. The runtime and README/SDK docs already reflected
+  `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0`; `docs/cli.md` and two checklist
+  entries still described the superseded combined-arena promotion.
+
+  Verification note: compared the docs against the committed split-arena runtime
+  default and the latest dedicated-RTX-5090 combined-arena rejection evidence.
+
 - Marked the `lm_head_dhidden_fast16bf_32768` and
   `lm_head_tk_dweight_32768` SM120 native wrapper profiles as rejected by
   default after CUDA 13.3 dedicated-RTX-5090 stage-timed reruns. The FAST_16BF

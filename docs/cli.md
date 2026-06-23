@@ -507,21 +507,24 @@ validates required ABI symbols explicitly; JSON reports
 `tile_ops_typed_symbol_load_wall_ms`.
 CUDA runtime setup also reports `cuda_runtime_symbol_load_wall_ms` and
 `cuda_runtime_version_preflight_wall_ms`.
-Dense GPT native training defaults `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1`.
-The trainer waits until both the float arena and the BF16/uint16 arena layouts
-are known, then packs them into one aligned `cudaMalloc`. JSON reports
+Dense GPT native training defaults `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0`.
+The trainer suballocates float buffers from one float arena and BF16/uint16
+buffers from one uint16 arena; JSON reports
+`float_allocation_strategy: "single-arena"` and
+`uint16_allocation_strategy: "single-arena"` by default. Set
+`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` only for explicit combined-arena
+bisection. That opt-in path waits until both arena layouts are known, packs them
+into one aligned `cudaMalloc`, and reports
 `float_allocation_strategy: "combined-transformer-device-arena"`,
 `uint16_allocation_strategy: "combined-transformer-device-arena"`,
 `transformer_device_arena_requested`, `transformer_device_arena_enabled`,
 `transformer_device_arena_cuda_malloc_count`,
 `transformer_device_arena_requested_bytes`,
 `transformer_device_arena_allocated_bytes`, and
-`transformer_device_arena_uint16_byte_offset`. Set
-`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0` only to compare against the older split
-float/BF16 arena path. The CUDA 13.3 dedicated RTX 5090 3-step gate promoted the
-combined arena at `0.991645x` train-loop wall time, `1.008465x` tokens/sec,
-`0.993960x` LM-head backward, `0.998550x` block backward, and `0.988817x` MLP
-projection time.
+`transformer_device_arena_uint16_byte_offset`. The CUDA 13.3 dedicated RTX 5090
+rerun rejected the combined arena at `1.004991x` train-loop wall time and
+`0.995098x` tokens/sec; startup-only also rejected it at `1.063067x` setup wall
+time.
 Startup zeroes only AdamW first/second moment state as coalesced contiguous
 ranges with `cudaMemsetAsync` by default, then overwrites nonzero weights with
 device initializers and zeroes gradients per optimizer step. Set
