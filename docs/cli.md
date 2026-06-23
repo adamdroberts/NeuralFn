@@ -994,6 +994,11 @@ The wrapper writes NeuralFn native profile sidecars by default. Set
 directory to keep them. Sidecars do not enable CUDA-event stage timing by
 default; set `NFN_SM120_PARITY_STAGE_TIMING=1` for attribution runs, which
 default `NFN_NATIVE_GPT_STAGE_TIMING_MAX_EVENTS=80000` unless you override it.
+Set `NFN_SM120_PARITY_ATTENTION_SECTION_TIMING=1` (or generic
+`NFN_SM120_ATTENTION_SECTION_TIMING=1`) when a parity run needs the NeuralFn
+packed-attention backward split. This adds
+`NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` only to the NeuralFn
+candidate command; the llm.kittens baseline is unchanged.
 If attention backward section timing is enabled, paired summaries include the
 native `attention_backward_dprep_timing_*` and
 `attention_backward_tk_timing_*` counters next to the `stage.*` buckets and

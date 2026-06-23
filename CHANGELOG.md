@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_SM120_PARITY_ATTENTION_SECTION_TIMING=1` (with generic fallback
+  `NFN_SM120_ATTENTION_SECTION_TIMING=1`) to
+  `tools/bench_native_gpt_sm120_parity.sh`. The switch adds
+  `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` to the NeuralFn candidate
+  side of the llm.kittens-vs-NeuralFn parity run without changing the
+  llm.kittens baseline, so parity artifacts can now include
+  `attention_backward_dprep_timing_*` and `attention_backward_tk_timing_*`
+  counters directly. A CUDA 13.3 dedicated RTX 5090 2-step diagnostic run
+  measured `attention_backward_dprep_timing_us=60700` and
+  `attention_backward_tk_timing_us=1078455` across 192 packed-backward launches,
+  confirming the current attention gap is dominated by the TK backward section,
+  not the dprep launch.
+
+  Verification: updated static parity-wrapper coverage, ran shell syntax and the
+  focused pytest, and ran a short linked native CUDA Tile GPT measurement with
+  attention section timing enabled.
+
 - Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_logits_bf16_fallback_49152`
   for current-shape LM-head logits bisection. The profile expands to
   `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N`, matching the

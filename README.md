@@ -489,6 +489,18 @@ gate
 `attention_backward_dprep_timing_us` so packed-attention bisections fail on the
 hot substage even when total command timing is noisy. Dry-run planning and
 no-op baseline-vs-baseline checks stay ungated.
+For native-vs-llm.kittens parity attribution, set
+`NFN_SM120_PARITY_ATTENTION_SECTION_TIMING=1` (or the generic
+`NFN_SM120_ATTENTION_SECTION_TIMING=1`) to add
+`NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` to the NeuralFn candidate
+side of `tools/bench_native_gpt_sm120_parity.sh`. The llm.kittens baseline is
+unchanged, while the NeuralFn profile JSON and paired summary include
+`attention_backward_dprep_timing_*` and `attention_backward_tk_timing_*`. The
+current CUDA 13.3 dedicated RTX 5090 2-step diagnostic run reported
+`attention_backward_dprep_timing_us=60700` and
+`attention_backward_tk_timing_us=1078455` across 192 packed-backward launches,
+so the default attention gap is dominated by the TK backward section rather than
+the dprep launch.
 QKV side-stream candidates mentioning `BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT`
 also gate `stage.block_backward.qkv.total_ms`; the candidate-only combined
 `stage.block_backward.qkv.dinput_dweight_concurrent.total_ms` substage is still
