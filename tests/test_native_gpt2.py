@@ -6608,6 +6608,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     script_text = build_script.read_text()
     candidate_bench_text = candidate_bench.read_text()
 
+    assert "-Xlinker -Bsymbolic" in script_text
     assert "cudaRuntimeGetVersion" in gpt2_source_text
     assert "cudaDriverGetVersion" in gpt2_source_text
     assert "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT" in gpt2_source_text

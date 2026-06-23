@@ -516,16 +516,17 @@ the dprep launch.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_bwd_block_32` compiles a
 diagnostic candidate Tile ops library with `-DLLMK_SM120_ATTN_BWD_BLOCK=32` for
 repeatable packed-attention TK block-size bisection. Keep it rejected by
-default: the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample same-script gate
-measured `attention_backward_tk_timing_us=1.000555x` and missed the strict
-`stage.block_backward.mlp_proj.total_ms` gate at `1.000293x`, while tracked
-route counters and strategy labels stayed unchanged.
+default: the CUDA 13.3 dedicated RTX 5090 post-`-Bsymbolic` 1-step,
+1-sample same-script gate proved the route changed from
+`attention_backward_tk_block_size=16` to `32`, but measured
+`attention_backward_tk_timing_us=1.058092x` and missed the strict
+`stage.lm_head_backward.total_ms` gate at `1.002283x`.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_bwd_block_64` is also rejected by
-default: the same CUDA 13.3 2-step, 2-sample diagnostic compiled
-`-DLLMK_SM120_ATTN_BWD_BLOCK=64`, but target attention timing was effectively
-unchanged (`attention_backward_tk_timing_us=1.000035x` and
-`stage.block_backward.attn_sdpa.to_qkv.total_ms=1.000022x`) while
-`stage.block_backward.qkv.dweight_bias.total_ms` regressed to `1.033073x`.
+default: the same post-`-Bsymbolic` gate proved the route changed from
+`attention_backward_tk_block_size=16` to `64`, but regressed
+`train_loop_wall_ms_per_step` to `3.343485x`,
+`stage.block_backward.total_ms` to `5.034009x`, and
+`attention_backward_tk_timing_us` to `24.139285x`.
 QKV side-stream candidates mentioning `BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT`
 also gate `stage.block_backward.qkv.total_ms`; the candidate-only combined
 `stage.block_backward.qkv.dinput_dweight_concurrent.total_ms` substage is still
@@ -1374,7 +1375,7 @@ defines `LLMK_SM120_USE_CUBLASLT_GEMM` by default and normalizes inherited
 for the older float32 row-scan diagnostic build, or override
 `NFN_TILE_CUDA_ARCH` explicitly.
 
-For same-script kernel candidate builds, `tools/build_native_train_tile_ops.sh` accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and `NFN_TILE_CUDA_EXTRA_LDLIBS`, for example `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1" bash tools/build_native_train_tile_ops.sh /tmp/libnfn_candidate.so`; leave those variables unset for the default supported library.
+For same-script kernel candidate builds, `tools/build_native_train_tile_ops.sh` accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and `NFN_TILE_CUDA_EXTRA_LDLIBS`, for example `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1" bash tools/build_native_train_tile_ops.sh /tmp/libnfn_candidate.so`; leave those variables unset for the default supported library. The shared object links with `-Bsymbolic` so candidate C ABI wrappers bind to the candidate library's own C++ kernel implementations even when the benchmark uses a linked native trainer that already contains default Tile symbols.
 
 The SM120 bridge initializes the llm.kittens cuBLASLt handles before dispatching
 through the default compile-mode path. Raw TK GEMM bisections that intentionally

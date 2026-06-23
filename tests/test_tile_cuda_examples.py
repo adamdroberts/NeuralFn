@@ -991,10 +991,12 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "0.995826x train_loop_wall_ms_per_step" in text
     assert "attention_bwd_block_32" in text
     assert "-DLLMK_SM120_ATTN_BWD_BLOCK=32" in text
-    assert "attention_backward_tk_timing_us regressed to 1.000555x" in text
+    assert "attention_backward_tk_block_size=16 to 32" in text
+    assert "attention_backward_tk_timing_us regressed to 1.058092x" in text
     assert "attention_bwd_block_64" in text
     assert "-DLLMK_SM120_ATTN_BWD_BLOCK=64" in text
-    assert "attention_backward_tk_timing_us=1.000035x" in text
+    assert "attention_backward_tk_block_size=16 to 64" in text
+    assert "attention_backward_tk_timing_us to 24.139285x" in text
     assert "bf16_attention_dprep_grad_out" in text
     assert "NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1" in text
     assert "1.005344x train_loop_wall_ms_per_step" in text
@@ -1122,6 +1124,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "-DLLMK_SM120_APPROX_DGELU_TANH=1" in text
     assert "-DLLMK_SM120_ATOMIC_DQ" in text
     assert "tools/build_native_train_tile_ops.sh" in text
+    assert "Bsymbolic" in Path("tools/build_native_train_tile_ops.sh").read_text(encoding="utf-8")
     assert "NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=768,32768,50304,N,N" in text
     assert "NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N" in text
     assert "NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1" in text

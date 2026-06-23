@@ -16,15 +16,33 @@ Future updates should append new entries here rather than replacing older notes.
   `-DLLMK_SM120_ATTN_BWD_BLOCK=64` show up as an intentional route change even
   when launch counters and runtime env flags are unchanged. Added the rejected
   wrapper profile `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_bwd_block_64`;
-  the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample diagnostic left target
-  attention timing effectively flat (`attention_backward_tk_timing_us=1.000035x`
-  and `stage.block_backward.attn_sdpa.to_qkv.total_ms=1.000022x`) while
-  `stage.block_backward.qkv.dweight_bias.total_ms` regressed to `1.033073x`.
+  after the `-Bsymbolic` link fix below, that profile visibly changes the
+  reported block size from `16` to `64` and remains rejected because it regresses
+  train-loop wall time, block backward, and attention TK timing.
 
   Verification: updated focused native GPT source/JSON contract coverage,
   paired benchmark strategy-change coverage, and static wrapper profile
   coverage. Rebuilt and smoke-checked the linked native trainer after the C++
   ABI change.
+
+- Fixed trainer-facing Tile ops candidate library symbol interposition by
+  linking `tools/build_native_train_tile_ops.sh` outputs with `-Bsymbolic`.
+  Same-script benchmark candidates loaded by the linked native trainer now bind
+  their C ABI wrappers to their own C++ kernel implementations instead of
+  resolving through the default symbols already present in the executable. This
+  is required for compile-time-only candidate flags, including
+  `-DLLMK_SM120_ATTN_BWD_BLOCK=64`, to be visible in runtime JSON and route
+  gates. Fresh post-fix checks proved `attention_bwd_block_32` changes the
+  reported block size from `16` to `32` but still fails the strict gate at
+  `1.058092x` attention TK timing and `1.002283x` LM-head backward, while
+  `attention_bwd_block_64` changes the reported block size from `16` to `64`
+  and regresses train-loop wall time to `3.343485x`, block backward to
+  `5.034009x`, and attention TK timing to `24.139285x`.
+
+  Verification: added static build-script coverage and reran a small
+  allowed-rejected `attention_bwd_block_64` same-script candidate check to
+  expose the previous interposition failure before applying the fix, then reran
+  both `attention_bwd_block_32` and `attention_bwd_block_64` after the fix.
 
 - Corrected the native GPT LM-head schedule diagnostic to match the actual
   llm.kittens SM120 reference boundary. Runtime JSON now reports
@@ -50,9 +68,9 @@ Future updates should append new entries here rather than replacing older notes.
   temporary Tile ops build with `-DLLMK_SM120_ATTN_BWD_BLOCK=32` and auto-enables
   attention section timing for paired comparisons. It remains rejected by
   default: the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample same-script gate
-  measured `attention_backward_tk_timing_us=1.000555x`, missed the strict
-  `stage.block_backward.mlp_proj.total_ms` gate at `1.000293x`, and showed no
-  tracked route-counter or strategy-label change.
+  was later superseded by the post-`-Bsymbolic` measurement above: the profile
+  now visibly changes `attention_backward_tk_block_size` from `16` to `32` and
+  remains rejected because attention TK timing and LM-head backward regress.
 
   Verification: ran the same-script candidate benchmark with a temporary
   block-32 Tile ops build on the dedicated RTX 5090, then added static wrapper

@@ -1003,11 +1003,17 @@ candidate command; the llm.kittens baseline is unchanged.
 The native candidate wrapper also has a rejected
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_bwd_block_32` profile that builds
 a temporary Tile ops library with `-DLLMK_SM120_ATTN_BWD_BLOCK=32` for explicit
-SM120 packed-attention backward block-size reruns.
+SM120 packed-attention backward block-size reruns. The post-`-Bsymbolic`
+CUDA 13.3 dedicated RTX 5090 1-step gate proves the route changes from
+`attention_backward_tk_block_size=16` to `32`, but keeps it rejected because
+`attention_backward_tk_timing_us` regressed to `1.058092x` and
+`stage.lm_head_backward.total_ms` missed the strict gate at `1.002283x`.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_bwd_block_64` does the same with
 `-DLLMK_SM120_ATTN_BWD_BLOCK=64` and is also rejected by default because the
-latest CUDA 13.3 dedicated RTX 5090 gate left the target attention timing flat
-while QKV dWeight+bias regressed. Native JSON reports
+same gate proves the route changes to `64` but regresses
+`train_loop_wall_ms_per_step` to `3.343485x`,
+`stage.block_backward.total_ms` to `5.034009x`, and
+`attention_backward_tk_timing_us` to `24.139285x`. Native JSON reports
 `attention_backward_tk_block_size` and
 `attention_backward_tk_block_size_symbol_loaded`, and
 `tools/paired_kernel_speed.py` treats the block size as a strategy value so a
@@ -1040,7 +1046,10 @@ accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and
 Use this for temporary paired benchmark candidates; for example, set
 `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1"`
 and run `bash tools/build_native_train_tile_ops.sh /tmp/libnfn_candidate.so`.
-Leave the variables unset for the default build.
+Leave the variables unset for the default build. The helper links the shared
+object with `-Bsymbolic`, so a candidate library loaded by a linked native
+trainer resolves its C ABI wrappers to its own C++ kernel implementations rather
+than the trainer's built-in default Tile symbols.
 Short parity runs default to timing-only cadence with
 `NFN_SM120_PARITY_SAMPLE_EVERY=0` and
 `NFN_SM120_PARITY_CHECKPOINT_EVERY=0`, and the NeuralFn side now receives

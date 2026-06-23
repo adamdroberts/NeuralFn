@@ -1727,7 +1727,10 @@ ThunderKittens flags. This is intended for paired benchmark builds such as
 setting
 `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1"`
 and running `bash tools/build_native_train_tile_ops.sh /tmp/libnfn_candidate.so`;
-the default library build should leave both variables unset. The SM120 wrapper
+the default library build should leave both variables unset. Candidate shared
+objects are linked with `-Bsymbolic`, so their C ABI wrappers bind to the same
+shared object's C++ kernels even when a linked native trainer has already
+exported default Tile symbols. The SM120 wrapper
 profiles `tk_dgelu_dinput` and `tk_dgelu_approx_tanh` additionally force the
 trainer env split (`NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` for baseline, `=1`
 for candidate) so compile-time library candidates are measured against the

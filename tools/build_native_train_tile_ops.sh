@@ -60,6 +60,7 @@ mkdir -p "$(dirname "${OUT}")"
   -I"${ROOT_DIR}/neuralfn/csrc/native_train" \
   "${EXTRA_NVCC_FLAGS[@]}" \
   "${KERNELS_SRC}" "${ABI_SRC}" \
+  -Xlinker -Bsymbolic \
   -lcublas -lcublasLt "${EXTRA_LDLIBS[@]}" \
   -o "${OUT}"
 printf '%s\n' "${OUT}"
