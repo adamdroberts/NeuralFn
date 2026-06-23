@@ -112,7 +112,7 @@ kernel candidates should first run
 `build/lm_head_backward_bench` and compares the current cooperative sequence
 symbol against `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
 inside one CUDA process with event timing, route counters, decomposed
-`reference_components` timings for CE, dHidden, and dWeight, and a
+`reference_components` timings for logits, CE, dHidden, and dWeight, and a
 `candidate_true_fused_capability` JSON field. Use
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` to exercise the default
 49152-row trainer chunk scale, or

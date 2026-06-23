@@ -1004,8 +1004,9 @@ missing-symbol, and dataset-resolution failures during benchmark work.
 For the focused LM-head backward candidate gate, run
 `tools/bench_lm_head_backward_candidate.sh`. It compares the current
 cooperative sequence ABI against the strict fused-kernel symbol inside one CUDA
-process and emits `reference_components` JSON with decomposed CE, dHidden, and
-dWeight timings for the current raw Tile ABI. `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk`
+process and emits `reference_components` JSON with decomposed logits, CE,
+dHidden, and dWeight timings for the current raw Tile ABI.
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk`
 selects the 49152-row trainer chunk, while
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` selects the same chunk with
 1024 loss bins. Set

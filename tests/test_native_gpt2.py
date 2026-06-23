@@ -1437,10 +1437,13 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "candidate_true_fused_capability" in bench_source
     assert "candidate_to_baseline_ms_per_iter_ratio" in bench_source
     assert "reference_components" in bench_source
+    assert "logits_ms_per_iter" in bench_source
     assert "ce_ms_per_iter" in bench_source
     assert "dhidden_ms_per_iter" in bench_source
     assert "dweight_ms_per_iter" in bench_source
     assert "summed_ms_per_iter" in bench_source
+    assert "summed_with_logits_ms_per_iter" in bench_source
+    assert "nfn_native_tile_linear_bf16_input_weight_bf16_output_float32" in bench_source
     assert (
         "nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets"
         in bench_source

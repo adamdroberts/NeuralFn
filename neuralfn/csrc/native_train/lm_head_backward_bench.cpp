@@ -70,6 +70,16 @@ using LinearBackwardWeightStridedBetaFn = int (*)(
     std::int64_t,
     float,
     void*);
+using LinearBf16InputWeightBf16OutputFn = int (*)(
+    const std::uint16_t*,
+    const std::uint16_t*,
+    const float*,
+    std::uint16_t*,
+    std::int64_t,
+    std::int64_t,
+    std::int64_t,
+    bool,
+    void*);
 
 struct Options {
     std::string tile_ops_lib = "build/libnfn_native_train_tile_ops.so";
@@ -101,10 +111,12 @@ struct VariantResult {
 };
 
 struct ComponentResult {
+    double logits_ms_per_iter = 0.0;
     double ce_ms_per_iter = 0.0;
     double dhidden_ms_per_iter = 0.0;
     double dweight_ms_per_iter = 0.0;
     double summed_ms_per_iter = 0.0;
+    double summed_with_logits_ms_per_iter = 0.0;
 };
 
 [[noreturn]] void usage(const char* argv0) {
@@ -394,6 +406,7 @@ double time_component(
 }
 
 ComponentResult run_reference_components(
+    LinearBf16InputWeightBf16OutputFn logits_fn,
     LmHeadCeRowLossFn ce_fn,
     LinearBackwardInputStridedFn dhidden_fn,
     LinearBackwardWeightStridedBetaFn dweight_fn,
@@ -413,6 +426,24 @@ ComponentResult run_reference_components(
         static_cast<std::size_t>(options.hidden_dim * options.vocab) * sizeof(float);
     const float loss_scale = 1.0f / static_cast<float>(options.rows);
     ComponentResult result;
+    result.logits_ms_per_iter = time_component(
+        "reference.logits",
+        options.iterations,
+        [&]() {
+            cuda_check(cudaMemset(logits, 0, logits_bytes), "reference logits output memset");
+        },
+        [&]() {
+            return logits_fn(
+                hidden_bf16,
+                token_weight_bf16,
+                nullptr,
+                logits,
+                options.rows,
+                options.hidden_dim,
+                options.row_stride,
+                false,
+                nullptr);
+        });
     result.ce_ms_per_iter = time_component(
         "reference.ce_row_losses",
         options.iterations,
@@ -481,6 +512,8 @@ ComponentResult run_reference_components(
         });
     result.summed_ms_per_iter =
         result.ce_ms_per_iter + result.dhidden_ms_per_iter + result.dweight_ms_per_iter;
+    result.summed_with_logits_ms_per_iter =
+        result.logits_ms_per_iter + result.summed_ms_per_iter;
     return result;
 }
 
@@ -523,10 +556,12 @@ std::string render_json(
         << "  \"timed_reset_between_iterations\": false,\n"
         << "  \"candidate_true_fused_capability\": " << (true_fused_capability ? "true" : "false") << ",\n"
         << "  \"reference_components\": {"
+        << "\"logits_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.logits_ms_per_iter << ","
         << "\"ce_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.ce_ms_per_iter << ","
         << "\"dhidden_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.dhidden_ms_per_iter << ","
         << "\"dweight_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.dweight_ms_per_iter << ","
-        << "\"summed_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.summed_ms_per_iter
+        << "\"summed_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.summed_ms_per_iter << ","
+        << "\"summed_with_logits_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.summed_with_logits_ms_per_iter
         << "},\n"
         << "  \"baseline\": " << variant_json(baseline) << ",\n"
         << "  \"candidate\": " << variant_json(candidate) << ",\n"
@@ -565,6 +600,9 @@ int main(int argc, char** argv) {
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_cooperative_sequence_legacy_count");
         auto loss_bin_count =
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_cooperative_sequence_loss_bin_count");
+        auto reference_logits_fn = load_symbol<LinearBf16InputWeightBf16OutputFn>(
+            handle,
+            "nfn_native_tile_linear_bf16_input_weight_bf16_output_float32");
         auto reference_ce_fn = load_symbol<LmHeadCeRowLossFn>(
             handle,
             "nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets");
@@ -658,6 +696,7 @@ int main(int argc, char** argv) {
             static_cast<float*>(grad_hidden.get()),
             static_cast<float*>(grad_weight.get()));
         const ComponentResult reference_components = run_reference_components(
+            reference_logits_fn,
             reference_ce_fn,
             reference_dhidden_fn,
             reference_dweight_fn,
