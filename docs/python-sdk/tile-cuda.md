@@ -1902,7 +1902,10 @@ GPT MLP projection bucket, then runs the existing Tile bias reducer. It remains
 default-off and gates `stage.block_backward.mlp_proj.dweight_bias.total_ms` in
 the paired benchmark wrapper. The CUDA 13.3 dedicated RTX 5090 one-step probe
 proved the route active but rejected it at `1.019937x` train-loop wall and
-`1.229754x` MLP projection dWeight+bias.
+`1.229754x` MLP projection dWeight+bias. After the LM-head prepack default
+change, a 2-step, 2-sample rerun still regressed train-loop wall to
+`1.019797x`; the wrapper now requires
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for intentional reruns.
 `ce_bf16_threads_512` expands to `NFN_NATIVE_GPT_CE_BF16_THREADS=512` for
 repeatable BF16 CE row-block bisection. It stays diagnostic-only: the latest
 dedicated RTX 5090 stage-timed rerun changed

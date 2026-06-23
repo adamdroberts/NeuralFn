@@ -491,7 +491,9 @@ MLP projection dWeight reruns. Runtime JSON reports
 `block_backward_weight_linear_strategy` label when the route runs. Keep it
 default-off: the CUDA 13.3 dedicated RTX 5090 3-step, 2-sample same-script gate
 proved the route counter change but regressed train-loop wall and MLP projection
-dWeight+bias.
+dWeight+bias. After the LM-head prepack default change, a 2-step, 2-sample
+rerun still regressed train-loop wall to `1.019797x`; the wrapper now requires
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for intentional reruns.
 The named `lm_head_concurrent_dhidden_dweight` profile expands to
 `NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` for repeatable LM-head
 dHidden/dWeight side-stream bisections. Stage-timed runs report the combined

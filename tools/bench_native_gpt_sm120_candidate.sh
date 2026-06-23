@@ -169,6 +169,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0"
     ;;
   "mlp_proj_tk_dweight_65536"|"mlp-proj-tk-dweight-65536"|"block_mlp_proj_tk_dweight_65536"|"block-mlp-proj-tk-dweight-65536")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate moved 192 MLP projection dWeight calls to TK but regressed train_loop_wall_ms_per_step to 1.019797x and train_tokens_per_second to 0.980596x, so cuBLASLt BGRADB remains the default for this block bucket."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T"
     ;;
   "block_split_bgrad_65536"|"block-split-bgrad-65536"|"block_bf16_bf16_split_bgrad_65536"|"block-bf16-bf16-split-bgrad-65536"|"block_disable_bgradb_65536"|"block-disable-bgradb-65536")

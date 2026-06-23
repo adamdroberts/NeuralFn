@@ -1263,7 +1263,10 @@ and MLP-projection dWeight+bias gates. Current runtime JSON now reports
 "diagnostic-tk-sm120-mlp-proj-dweight-plus-tile-bias"` when that diagnostic
 route runs. A stronger CUDA 13.3 dedicated RTX 5090 3-step, 2-sample recheck
 kept it rejected at `1.017138x` train-loop wall and `1.313764x`
-`stage.block_backward.mlp_proj.dweight_bias.total_ms`.
+`stage.block_backward.mlp_proj.dweight_bias.total_ms`. After the LM-head
+prepack default change, a 2-step, 2-sample rerun still regressed train-loop wall
+to `1.019797x`; the wrapper now requires
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for intentional reruns.
 `block_split_bgrad_65536` expands to
 `NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=768,2304,65536,N,T:768,768,65536,N,T:768,3072,65536,N,T:3072,768,65536,N,T`.
 That shape-list route tests the dense GPT QKV, attention projection, MLP FC,

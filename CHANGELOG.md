@@ -23,6 +23,17 @@ Future updates should append new entries here rather than replacing older notes.
   prepack-on baseline, with no route-counter change and only the LM-head
   dWeight strategy changing.
 
+- Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_tk_dweight_65536` as a
+  rejected SM120 candidate. The profile still expands to the shape-gated TK
+  dWeight probe for `3072,768,65536,N,T`, but real runs now require
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
+
+  Verification note: after the LM-head prepack default change, the dedicated
+  RTX 5090 CUDA 13.3 same-script 2-step, 2-sample gate moved 192 MLP projection
+  dWeight calls from cuBLASLt/BGRADB to TK plus Tile bias reduction, but
+  regressed `train_loop_wall_ms_per_step` to `1.019797x` and train tokens/sec
+  to `0.980596x`.
+
 - Reordered `tools/build_native_gpt2_all.sh` so
   `libnfn_native_train_tile_ops.so` is rebuilt before
   `nfn_gpt_native_train_linked`. The SDK and CLI prefer the linked dense GPT
