@@ -109,7 +109,9 @@ CUDA-event timing in one process. Select trainer-shaped profiles with
 `mlp-fc-dinput`, `mlp-fc-dweight`, `qkv-dinput`, `qkv-dweight`,
 `attn-proj-dinput`, `attn-proj-dweight`, `lm-head-dinput`, or
 `lm-head-dweight`; set `NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL` for a new C ABI
-symbol and `NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` for a no-regression gate.
+symbol and `NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` for a no-regression gate. Keep
+the default `NFN_LINEAR_BACKWARD_WARMUP=1` or higher for candidate comparisons
+so first-call cuBLAS/TK setup is not counted as kernel time.
 The compiled runtime reports token-weight startup routes with
 `token_weight_init_strategy`, `token_weight_vector4_strided_init_requested`,
 `token_weight_padded_init_fusion_requested`,

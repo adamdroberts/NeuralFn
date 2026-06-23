@@ -142,6 +142,8 @@ CUDA event timing in one process. Profiles include the current hot shapes:
 `lm-head-dinput`, and `lm-head-dweight`. Use
 `NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` to fail a candidate that is slower than
 the current ABI symbol before spending time in full trainer-loop parity runs.
+Keep the default `NFN_LINEAR_BACKWARD_WARMUP=1` or higher so first-call
+cuBLAS/TK setup is not counted as kernel time.
 
 Native BF16 `cublasGemmEx` fallback paths expose default-off bisection controls
 for CUDA 13.3+ performance work. Set

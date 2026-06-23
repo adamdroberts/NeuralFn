@@ -135,7 +135,9 @@ dWeight kernels inside one CUDA process. Use
 without dataset, graph-editor, or trainer-loop noise. Override
 `NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL` for a new kernel candidate and set
 `NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` when the candidate must be no slower than
-the current symbol. A
+the current symbol. Keep the default `NFN_LINEAR_BACKWARD_WARMUP=1` or higher
+for candidate comparisons so first-call cuBLAS/TK setup is not counted as kernel
+time. A
 post-reinstall wrapper
 timing check also confirms that
 `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run --native-cuda-print-command`
