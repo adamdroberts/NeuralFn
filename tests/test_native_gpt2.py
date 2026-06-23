@@ -1363,6 +1363,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_ce_loss_bins_default_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED=1",
         "lm_head_ce_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_ce_loss_bins_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1 NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
+        "cublaslt_block_dinput_h3_65536": "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,65536,3072,N,N,3:768,65536,2304,N,N,3",
         "lm_head_row_loss_partial_reduce": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0",
         "bgrad_first_write_direct": "NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1",
     }
@@ -1386,6 +1387,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "LinearShapeList parse_linear_shape_list" in tile_source
     assert "current != ':' && current != ';'" in tile_source
     assert "return linear_shape_list_matches(disabled_shapes, m, n, k, op_a, op_b);" in tile_source
+    assert "CublasLtHeuristicShapeOverrideList parse_cublaslt_heuristic_shape_override_list" in tile_source
+    assert "parse_cublaslt_heuristic_shape_override_token(token_start, &shape)" in tile_source
 
     for gated_metric in [
         "stage.block_backward.attn_sdpa.total_ms=1.000",

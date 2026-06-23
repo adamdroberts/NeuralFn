@@ -363,6 +363,15 @@ cuBLASLt selected heuristics and slightly improved train-loop wall time
 recheck changed selected heuristics but regressed train-loop wall time to
 `1.010956x`, LM-head backward to `1.007568x`, block backward to `1.025454x`,
 and attention projection dWeight+bias to `1.400435x`.
+`NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE` and
+`NFN_TILE_CUDA_CUBLASLT_HEURISTIC_SHAPE` accept either one
+`m,n,k,opA,opB,index` override or a colon/semicolon/whitespace-separated list
+of overrides. The `cublaslt_block_dinput_h3_65536` wrapper profile uses that
+list form to pin only `768,65536,3072,N,N` and `768,65536,2304,N,N` to
+heuristic `3`, but is rejected by default: the CUDA 13.3 RTX 5090 3-sample
+confirmation changed only those intended plans and regressed train-loop wall
+time to `1.005964x`, LM-head backward to `1.011344x`, block backward to
+`1.004976x`, and MLP projection total to `1.010875x`.
 The BF16 operand cache is only for stable operands such as weights and biases;
 BF16-output GEMMs repack mutable activation inputs because native scratch
 activation pointers are reused with new contents.

@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added list parsing for `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_SHAPE` /
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE`, so paired native GPT benchmarks
+  can pin multiple cuBLASLt shapes with one colon/semicolon/whitespace-separated
+  `m,n,k,opA,opB,index` list while preserving the old single-shape format. The
+  new SM120 wrapper profile
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_block_dinput_h3_65536` uses that
+  list form for the dense GPT `768,65536,3072,N,N` and
+  `768,65536,2304,N,N` dInput plans at heuristic `3`. It is rejected by
+  default: a CUDA 13.3 RTX 5090 2-sample probe initially looked promising, but
+  the required 3-sample same-script confirmation changed only those intended
+  cuBLASLt plans and regressed train-loop wall time to `1.005964x`, train
+  tokens/sec to `0.994156x`, LM-head backward to `1.011344x`, block backward to
+  `1.004976x`, and MLP projection total to `1.010875x`.
+
+  Verification note: added source-contract coverage for the list parser and
+  wrapper expansion, rebuilt the native Tile ops library and native GPT CLI, ran
+  dry-run expansion coverage, and ran both 2-sample and 3-sample paired GPU
+  benchmarks on the dedicated RTX 5090 with stage timing and linear shape stats.
+
 - Marked the existing `cublaslt_min_waves` SM120 wrapper profile as rejected by
   default, and reconfirmed `cublaslt_max_waves` as rejected on the current
   workstation stack. The fresh CUDA 13.3 dedicated-RTX-5090 3-step/2-sample

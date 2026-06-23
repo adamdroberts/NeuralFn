@@ -3317,6 +3317,98 @@ bool linear_shape_list_matches(
   return false;
 }
 
+struct CublasLtHeuristicShapeOverride {
+  int m = 0;
+  int n = 0;
+  int k = 0;
+  int op_a = CUBLAS_OP_N;
+  int op_b = CUBLAS_OP_N;
+  int index = -1;
+  bool valid = false;
+};
+
+struct CublasLtHeuristicShapeOverrideList {
+  std::array<CublasLtHeuristicShapeOverride, 16> shapes{};
+  int count = 0;
+};
+
+bool parse_cublaslt_heuristic_shape_override_token(
+    const char* value,
+    CublasLtHeuristicShapeOverride* shape) {
+  if (value == nullptr || value[0] == '\0' || shape == nullptr) {
+    return false;
+  }
+  int parsed_m = 0;
+  int parsed_n = 0;
+  int parsed_k = 0;
+  int parsed_index = -1;
+  char parsed_op_a[8] = {};
+  char parsed_op_b[8] = {};
+  if (std::sscanf(
+          value,
+          "%d,%d,%d,%7[^,],%7[^,],%d",
+          &parsed_m,
+          &parsed_n,
+          &parsed_k,
+          parsed_op_a,
+          parsed_op_b,
+          &parsed_index) != 6) {
+    return false;
+  }
+  cublasOperation_t parsed_a = CUBLAS_OP_N;
+  cublasOperation_t parsed_b = CUBLAS_OP_N;
+  if (parsed_m <= 0 || parsed_n <= 0 || parsed_k <= 0 ||
+      parsed_index < 0 || parsed_index > 31 ||
+      !parse_cublas_op_token(parsed_op_a, &parsed_a) ||
+      !parse_cublas_op_token(parsed_op_b, &parsed_b)) {
+    return false;
+  }
+  shape->m = parsed_m;
+  shape->n = parsed_n;
+  shape->k = parsed_k;
+  shape->op_a = static_cast<int>(parsed_a);
+  shape->op_b = static_cast<int>(parsed_b);
+  shape->index = parsed_index;
+  shape->valid = true;
+  return true;
+}
+
+CublasLtHeuristicShapeOverrideList parse_cublaslt_heuristic_shape_override_list(
+    const char* value) {
+  CublasLtHeuristicShapeOverrideList list{};
+  if (value == nullptr || value[0] == '\0') {
+    return list;
+  }
+  std::array<char, 2048> buffer{};
+  const std::size_t length = std::min(std::strlen(value), buffer.size() - 1);
+  std::memcpy(buffer.data(), value, length);
+  buffer[length] = '\0';
+
+  char* token_start = buffer.data();
+  for (std::size_t index = 0; index <= length; ++index) {
+    char& current = buffer[index];
+    if (current != ':' && current != ';' && current != ' ' &&
+        current != '\t' && current != '\n' && current != '\0') {
+      continue;
+    }
+    const char separator = current;
+    current = '\0';
+    if (token_start[0] != '\0' &&
+        list.count < static_cast<int>(list.shapes.size())) {
+      CublasLtHeuristicShapeOverride shape{};
+      if (parse_cublaslt_heuristic_shape_override_token(token_start, &shape)) {
+        list.shapes[static_cast<std::size_t>(list.count)] = shape;
+        ++list.count;
+      }
+    }
+    if (separator == '\0') {
+      break;
+    }
+    token_start = buffer.data() + index + 1;
+  }
+  return list;
+}
+
 bool trainer_linear_bf16_cublaslt_shape_disabled(
     int m,
     int n,
@@ -3715,63 +3807,23 @@ int trainer_linear_cublaslt_shape_heuristic_index_override(
     int k,
     cublasOperation_t op_a,
     cublasOperation_t op_b) {
-  struct ShapeOverride {
-    int m = 0;
-    int n = 0;
-    int k = 0;
-    int op_a = CUBLAS_OP_N;
-    int op_b = CUBLAS_OP_N;
-    int index = -1;
-    bool valid = false;
-  };
-  static const ShapeOverride override = []() {
+  static const CublasLtHeuristicShapeOverrideList overrides = []() {
     const char* value = std::getenv("NFN_TILE_CUDA_CUBLASLT_HEURISTIC_SHAPE");
     if (value == nullptr) {
       value = std::getenv("NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE");
     }
-    ShapeOverride shape{};
-    if (value == nullptr || value[0] == '\0') {
-      return shape;
-    }
-    int parsed_m = 0;
-    int parsed_n = 0;
-    int parsed_k = 0;
-    int parsed_index = -1;
-    char parsed_op_a[8] = {};
-    char parsed_op_b[8] = {};
-    if (std::sscanf(
-            value,
-            "%d,%d,%d,%7[^,],%7[^,],%d",
-            &parsed_m,
-            &parsed_n,
-            &parsed_k,
-            parsed_op_a,
-            parsed_op_b,
-            &parsed_index) != 6) {
-      return shape;
-    }
-    cublasOperation_t parsed_a = CUBLAS_OP_N;
-    cublasOperation_t parsed_b = CUBLAS_OP_N;
-    if (parsed_m <= 0 || parsed_n <= 0 || parsed_k <= 0 ||
-        parsed_index < 0 || parsed_index > 31 ||
-        !parse_cublas_op_token(parsed_op_a, &parsed_a) ||
-        !parse_cublas_op_token(parsed_op_b, &parsed_b)) {
-      return shape;
-    }
-    shape.m = parsed_m;
-    shape.n = parsed_n;
-    shape.k = parsed_k;
-    shape.op_a = static_cast<int>(parsed_a);
-    shape.op_b = static_cast<int>(parsed_b);
-    shape.index = parsed_index;
-    shape.valid = true;
-    return shape;
+    return parse_cublaslt_heuristic_shape_override_list(value);
   }();
-  if (!override.valid || override.m != m || override.n != n || override.k != k ||
-      override.op_a != static_cast<int>(op_a) || override.op_b != static_cast<int>(op_b)) {
-    return -1;
+  for (int index = 0; index < overrides.count; ++index) {
+    const CublasLtHeuristicShapeOverride& override =
+        overrides.shapes[static_cast<std::size_t>(index)];
+    if (override.valid && override.m == m && override.n == n && override.k == k &&
+        override.op_a == static_cast<int>(op_a) &&
+        override.op_b == static_cast<int>(op_b)) {
+      return override.index;
+    }
   }
-  return override.index;
+  return -1;
 }
 
 cublasComputeType_t trainer_linear_bf16_gemm_ex_compute_type(
