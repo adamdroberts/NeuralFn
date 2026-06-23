@@ -331,6 +331,14 @@ prepack candidates mentioning `LM_HEAD_PREPACK_BF16_HIDDEN` additionally gate
 `stage.lm_head_backward.dhidden.total_ms`,
 `stage.lm_head_backward.dweight.total_ms`, and
 `setup.uint16_arena_materialize.total_ms`. The named
+`lm_head_prepack_bf16_hidden_off` profile pins the baseline to
+`NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` and the candidate to `0`, so the
+default-on full-microbatch BF16 final-norm hidden prepack can be retested
+against the older per-chunk LM-head hidden packing path without a manual env
+pair. The CUDA 13.3.33 linked-trainer RTX 5090 gate kept prepack default-on:
+the opt-out regressed train-loop wall time to `1.001656x`,
+`stage.lm_head_backward.total_ms` to `1.006690x`, and
+`stage.lm_head_backward.dweight.total_ms` to `1.006903x`. The named
 `ce_bf16_threads_512` profile expands to
 `NFN_NATIVE_GPT_CE_BF16_THREADS=512` for repeatable CE row-block bisection and
 stays diagnostic-only after the dedicated RTX 5090 gate regressed CE time to

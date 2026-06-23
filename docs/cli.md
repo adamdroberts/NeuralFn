@@ -1152,6 +1152,14 @@ at `1.009016x` train-loop wall time and `1.091020x`
 same-script benchmark moved 80 dWeight GEMMs from cuBLASLt to TK but rejected
 the route at `1.022262x` train-loop wall time and `1.279309x`
 `stage.lm_head_backward.dweight.total_ms`.
+`lm_head_prepack_bf16_hidden_off` pins
+`NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` on the baseline and `0` on the
+candidate, making the default-on full-microbatch BF16 final-norm hidden prepack
+measurable against the older per-chunk LM-head hidden packing path without
+custom paired env wiring. The CUDA 13.3.33 linked-trainer RTX 5090 gate kept
+prepack default-on because the opt-out regressed train-loop wall time to
+`1.001656x`, LM-head backward to `1.006690x`, and LM-head dWeight to
+`1.006903x`.
 `mlp_proj_tk_dweight_65536` expands to
 `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T`. That profile
 uses the same TK dWeight bridge inside the BF16/BF16 dWeight+bias ABI for the

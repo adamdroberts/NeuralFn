@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the named SM120 native GPT candidate profile
+  `lm_head_prepack_bf16_hidden_off`. The profile pins the baseline to
+  `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` and the candidate to `0`, so
+  the default-on full-microbatch BF16 final-norm hidden prepack can be retested
+  against the older per-chunk LM-head hidden packing path without hand-written
+  paired env flags.
+
+  Migration note: no default changed. The profile is diagnostic coverage for a
+  current default-on LM-head route. The CUDA 13.3.33 linked-trainer RTX 5090
+  same-script gate kept prepack default-on: the opt-out regressed train-loop
+  wall time to `1.001656x`, `stage.lm_head_backward.total_ms` to `1.006690x`,
+  and `stage.lm_head_backward.dweight.total_ms` to `1.006903x`.
+
+  Verification: shell syntax checks, focused source-contract pytest, dry-run
+  profile expansion, and a dedicated RTX 5090 same-script benchmark were run.
+
 - Added `tools/sweep_native_gpt_sm120_candidates.sh` for batch retesting native
   SM120 dense-GPT candidate profiles without losing the strict same-script
   comparison discipline. The sweep invokes
