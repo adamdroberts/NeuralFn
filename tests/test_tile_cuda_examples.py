@@ -105,6 +105,12 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"linear_cublaslt_bgrad_gemm_count\\\": 2, "
                 "\\\"linear_cublaslt_bgrad_direct_write_count\\\": 1, "
                 "\\\"linear_cublaslt_bgrad_accumulate_count\\\": 1, "
+                "\\\"float_arena_cuda_malloc_wall_ms\\\": 0.61, "
+                "\\\"float_arena_pointer_assign_wall_ms\\\": 0.02, "
+                "\\\"uint16_arena_cuda_malloc_wall_ms\\\": 0.51, "
+                "\\\"uint16_arena_pointer_assign_wall_ms\\\": 0.01, "
+                "\\\"transformer_device_arena_cuda_malloc_wall_ms\\\": 0.0, "
+                "\\\"transformer_device_arena_pointer_assign_wall_ms\\\": 0.0, "
                 "\\\"lm_head_logits_tk_gemm_count\\\": 2, "
                 "\\\"lm_head_logits_cublaslt_gemm_count\\\": 0, "
                 "\\\"lm_head_logits_bf16_gemm_count\\\": 2, "
@@ -216,6 +222,12 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
         == 1.0
     )
     assert payload["candidate_native_metrics"]["linear_cublaslt_bgrad_accumulate_count"]["mean"] == 1.0
+    assert payload["candidate_native_metrics"]["float_arena_cuda_malloc_wall_ms"]["mean"] == 0.61
+    assert payload["candidate_native_metrics"]["float_arena_pointer_assign_wall_ms"]["mean"] == 0.02
+    assert payload["candidate_native_metrics"]["uint16_arena_cuda_malloc_wall_ms"]["mean"] == 0.51
+    assert payload["candidate_native_metrics"]["uint16_arena_pointer_assign_wall_ms"]["mean"] == 0.01
+    assert payload["candidate_native_metrics"]["transformer_device_arena_cuda_malloc_wall_ms"]["mean"] == 0.0
+    assert payload["candidate_native_metrics"]["transformer_device_arena_pointer_assign_wall_ms"]["mean"] == 0.0
     assert payload["candidate_native_metrics"]["linear_bf16_gemm_count"]["mean"] == 7.0
     assert payload["candidate_native_metrics"]["bf16_to_f32_vec4_count"]["mean"] == 5.0
     assert payload["candidate_native_metrics"]["lm_head_logits_tk_gemm_count"]["mean"] == 2.0

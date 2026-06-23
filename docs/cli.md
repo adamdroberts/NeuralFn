@@ -471,7 +471,8 @@ Float buffers are suballocated from one aligned CUDA device arena, so the full
 trainer does not issue one `cudaMalloc` per parameter, gradient, moment,
 activation, and workspace buffer. JSON reports
 `float_allocation_strategy: "single-arena"`,
-`float_allocation_cuda_malloc_count`, `float_allocation_request_count`,
+`float_allocation_cuda_malloc_count`, `float_arena_cuda_malloc_wall_ms`,
+`float_arena_pointer_assign_wall_ms`, `float_allocation_request_count`,
 `float_arena_requested_elements`, `float_arena_allocated_elements`, and
 `float_arena_request_stats` with the largest named suballocations and grouped
 allocation families.
@@ -484,9 +485,13 @@ scratch, and block BF16 weight shadows. Set
 BF16 `cudaMalloc` path during paired benchmarks. JSON reports
 `uint16_allocation_strategy`, `uint16_allocation_cuda_malloc_count`,
 `uint16_allocation_request_count`, `uint16_arena_requested_elements`,
-`uint16_arena_allocated_elements`, `uint16_arena_cuda_malloc_count`, and
+`uint16_arena_allocated_elements`, `uint16_arena_cuda_malloc_count`,
+`uint16_arena_cuda_malloc_wall_ms`,
+`uint16_arena_pointer_assign_wall_ms`, and
 `uint16_arena_suballocation_count`, plus `uint16_arena_request_stats` with the
-largest named BF16/uint16 suballocations and grouped allocation families.
+largest named BF16/uint16 suballocations and grouped allocation families. The
+arena wall-time fields split startup arena materialization into CUDA allocation
+time and host pointer-assignment time.
 Set `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` only for allocator profiling. It routes
 the same large native GPT device arenas through CUDA runtime `cudaMallocAsync`
 and frees them with `cudaFreeAsync` when those symbols are available, falling
@@ -525,6 +530,8 @@ into one aligned `cudaMalloc`, and reports
 `uint16_allocation_strategy: "combined-transformer-device-arena"`,
 `transformer_device_arena_requested`, `transformer_device_arena_enabled`,
 `transformer_device_arena_cuda_malloc_count`,
+`transformer_device_arena_cuda_malloc_wall_ms`,
+`transformer_device_arena_pointer_assign_wall_ms`,
 `transformer_device_arena_requested_bytes`,
 `transformer_device_arena_allocated_bytes`, and
 `transformer_device_arena_uint16_byte_offset`. The CUDA 13.3 dedicated RTX 5090

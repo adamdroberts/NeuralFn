@@ -4444,6 +4444,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["linear_cublaslt_descriptor_cache_enabled"] is True
     assert train_transformer_payload["linear_sgemm_count"] == 0
     assert train_transformer_payload["bf16_to_f32_vec4_count"] == 0
+    assert "float_arena_cuda_malloc_wall_ms" in train_transformer_payload
+    assert "float_arena_pointer_assign_wall_ms" in train_transformer_payload
+    assert "uint16_arena_cuda_malloc_wall_ms" in train_transformer_payload
+    assert "uint16_arena_pointer_assign_wall_ms" in train_transformer_payload
+    assert "transformer_device_arena_cuda_malloc_wall_ms" in train_transformer_payload
+    assert "transformer_device_arena_pointer_assign_wall_ms" in train_transformer_payload
     assert train_transformer_payload["linear_bf16_a_pack_count"] == 0
     assert train_transformer_payload["linear_bf16_a_cache_hit_count"] == 0
     assert train_transformer_payload["linear_bf16_a_cache_strategy"] == "unused"
@@ -7653,6 +7659,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block_backward_mlp_proj_dinput_before_dweight_count" in gpt2_source_text
     assert "block_backward_mlp_fc_dinput_before_dweight_count" in gpt2_source_text
     assert "block_backward_attn_proj_dinput_before_dweight_count" in gpt2_source_text
+    assert "float_arena_cuda_malloc_wall_ms" in gpt2_source_text
+    assert "float_arena_pointer_assign_wall_ms" in gpt2_source_text
+    assert "uint16_arena_cuda_malloc_wall_ms" in gpt2_source_text
+    assert "uint16_arena_pointer_assign_wall_ms" in gpt2_source_text
+    assert "transformer_device_arena_cuda_malloc_wall_ms" in gpt2_source_text
+    assert "transformer_device_arena_pointer_assign_wall_ms" in gpt2_source_text
     assert "lm_head_logits_tk_used" in gpt2_source_text
     assert "lm_head_dhidden_cublaslt_shape_used" in gpt2_source_text
     assert "lm_head_backward.dhidden" in gpt2_source_text

@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added startup arena materialization submetrics to dense GPT native training
+  JSON. Runtime output now reports
+  `float_arena_cuda_malloc_wall_ms`,
+  `float_arena_pointer_assign_wall_ms`,
+  `uint16_arena_cuda_malloc_wall_ms`,
+  `uint16_arena_pointer_assign_wall_ms`,
+  `transformer_device_arena_cuda_malloc_wall_ms`, and
+  `transformer_device_arena_pointer_assign_wall_ms`; the paired kernel speed
+  tool also includes these values in `*_native_metrics`. These fields split the
+  existing broad `setup.float_arena_materialize` and
+  `setup.uint16_arena_materialize` phases into CUDA allocation time versus
+  host-side pointer assignment so startup candidates can target the actual
+  source of delay.
+
+  Migration note: no default training behavior changes. The split float and
+  uint16 arena fields describe the default separate-arena path; the
+  `transformer_device_arena_*_wall_ms` fields describe only the explicit
+  `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` diagnostic path.
+
+  Verification: focused native GPT pytest coverage checks the JSON contract and
+  paired-speed metric extraction for the new fields. After rebuilding the
+  linked native trainer, a startup-only RTX 5090 smoke reported
+  `float_arena_cuda_malloc_wall_ms: 262.478`,
+  `float_arena_pointer_assign_wall_ms: 0.002203`,
+  `uint16_arena_cuda_malloc_wall_ms: 117.214`,
+  `uint16_arena_pointer_assign_wall_ms: 0.00054`, and zero combined-arena
+  timing fields on the default separate-arena path.
+
 - Added native dense-GPT route attribution counters for block-backward
   scheduling diagnostics. Runtime JSON now reports
   `block_backward_mlp_proj_dinput_before_dweight_count`,

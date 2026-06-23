@@ -359,6 +359,24 @@ NATIVE_METRIC_PATHS = (
         "block_state_layout.linear_backward_bias_row_chunk_size",
         ("block_state_layout", "linear_backward_bias_row_chunk_size"),
     ),
+    ("float_arena_cuda_malloc_wall_ms", ("float_arena_cuda_malloc_wall_ms",)),
+    (
+        "float_arena_pointer_assign_wall_ms",
+        ("float_arena_pointer_assign_wall_ms",),
+    ),
+    ("uint16_arena_cuda_malloc_wall_ms", ("uint16_arena_cuda_malloc_wall_ms",)),
+    (
+        "uint16_arena_pointer_assign_wall_ms",
+        ("uint16_arena_pointer_assign_wall_ms",),
+    ),
+    (
+        "transformer_device_arena_cuda_malloc_wall_ms",
+        ("transformer_device_arena_cuda_malloc_wall_ms",),
+    ),
+    (
+        "transformer_device_arena_pointer_assign_wall_ms",
+        ("transformer_device_arena_pointer_assign_wall_ms",),
+    ),
 )
 NATIVE_ROUTE_COUNTER_KEYS = (
     "linear_tk_gemm_count",

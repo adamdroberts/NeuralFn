@@ -12590,13 +12590,19 @@ int run_transformer_lm_training_json(
     std::int64_t float_arena_requested_elements = 0;
     std::int64_t float_arena_allocated_elements = 0;
     std::int64_t float_arena_cuda_malloc_count = 0;
+    double float_arena_cuda_malloc_wall_ms = 0.0;
+    double float_arena_pointer_assign_wall_ms = 0.0;
     std::int64_t uint16_arena_requested_elements = 0;
     std::int64_t uint16_arena_allocated_elements = 0;
     std::int64_t uint16_arena_cuda_malloc_count = 0;
+    double uint16_arena_cuda_malloc_wall_ms = 0.0;
+    double uint16_arena_pointer_assign_wall_ms = 0.0;
     std::size_t transformer_device_arena_requested_bytes = 0;
     std::size_t transformer_device_arena_allocated_bytes = 0;
     std::size_t transformer_device_arena_uint16_byte_offset = 0;
     std::int64_t transformer_device_arena_cuda_malloc_count = 0;
+    double transformer_device_arena_cuda_malloc_wall_ms = 0.0;
+    double transformer_device_arena_pointer_assign_wall_ms = 0.0;
     std::int64_t token_i64_arena_elements = 0;
     std::int64_t token_u16_device_arena_elements = 0;
     std::int64_t token_u16_pinned_arena_elements = 0;
@@ -12748,18 +12754,22 @@ int run_transformer_lm_training_json(
         if (combined_transformer_device_arena_enabled) {
             return;
         }
+        const auto malloc_start = Clock::now();
         const int status = device_malloc(
             reinterpret_cast<void**>(&float_arena),
             sizeof(float) * static_cast<std::size_t>(float_arena_allocated_elements));
+        float_arena_cuda_malloc_wall_ms += elapsed_ms(malloc_start, Clock::now());
         if (status != 0) {
             error = cuda_error(status, "cudaMalloc transformer_lm_float_arena");
             return;
         }
         float_ptrs.push_back(float_arena);
         float_arena_cuda_malloc_count = 1;
+        const auto assign_start = Clock::now();
         for (const FloatArenaRequest& request : float_arena_requests) {
             *request.ptr = float_arena + request.offset;
         }
+        float_arena_pointer_assign_wall_ms += elapsed_ms(assign_start, Clock::now());
     };
     auto allocate_uint16 = [&](std::uint16_t** ptr, std::int64_t elements, const std::string& name) {
         if (!error.empty() || !combined_uint16_arena_enabled) {
@@ -12816,7 +12826,9 @@ int run_transformer_lm_training_json(
                 return;
             }
             const std::size_t total_bytes = uint16_offset + uint16_bytes;
+            const auto malloc_start = Clock::now();
             const int status = device_malloc(&transformer_device_arena, total_bytes);
+            transformer_device_arena_cuda_malloc_wall_ms += elapsed_ms(malloc_start, Clock::now());
             if (status != 0) {
                 error = cuda_error(status, "cudaMalloc transformer_lm_combined_device_arena");
                 return;
@@ -12831,26 +12843,32 @@ int run_transformer_lm_training_json(
             transformer_device_arena_cuda_malloc_count = 1;
             float_arena_cuda_malloc_count = 0;
             uint16_arena_cuda_malloc_count = 0;
+            const auto assign_start = Clock::now();
             for (const FloatArenaRequest& request : float_arena_requests) {
                 *request.ptr = float_arena + request.offset;
             }
             for (const Uint16ArenaRequest& request : uint16_arena_requests) {
                 *request.ptr = uint16_arena + request.offset;
             }
+            transformer_device_arena_pointer_assign_wall_ms += elapsed_ms(assign_start, Clock::now());
             return;
         }
+        const auto malloc_start = Clock::now();
         const int status = device_malloc(
             reinterpret_cast<void**>(&uint16_arena),
             sizeof(std::uint16_t) * static_cast<std::size_t>(uint16_arena_allocated_elements));
+        uint16_arena_cuda_malloc_wall_ms += elapsed_ms(malloc_start, Clock::now());
         if (status != 0) {
             error = cuda_error(status, "cudaMalloc transformer_lm_uint16_arena");
             return;
         }
         uint16_ptrs.push_back(uint16_arena);
         uint16_arena_cuda_malloc_count = 1;
+        const auto assign_start = Clock::now();
         for (const Uint16ArenaRequest& request : uint16_arena_requests) {
             *request.ptr = uint16_arena + request.offset;
         }
+        uint16_arena_pointer_assign_wall_ms += elapsed_ms(assign_start, Clock::now());
     };
 
     struct TransformerBlockParams {
@@ -21385,6 +21403,8 @@ int run_transformer_lm_training_json(
                 ? "combined-transformer-device-arena"
                 : "single-arena") << "\",\n"
         << "  \"float_allocation_cuda_malloc_count\": " << float_arena_cuda_malloc_count << ",\n"
+        << "  \"float_arena_cuda_malloc_wall_ms\": " << float_arena_cuda_malloc_wall_ms << ",\n"
+        << "  \"float_arena_pointer_assign_wall_ms\": " << float_arena_pointer_assign_wall_ms << ",\n"
         << "  \"float_allocation_request_count\": " << float_arena_requests.size() << ",\n"
         << "  \"float_arena_requested_elements\": " << float_arena_requested_elements << ",\n"
         << "  \"float_arena_allocated_elements\": " << float_arena_allocated_elements << ",\n"
@@ -21399,6 +21419,8 @@ int run_transformer_lm_training_json(
         << "  \"uint16_arena_requested_elements\": " << uint16_arena_requested_elements << ",\n"
         << "  \"uint16_arena_allocated_elements\": " << uint16_arena_allocated_elements << ",\n"
         << "  \"uint16_arena_cuda_malloc_count\": " << uint16_arena_cuda_malloc_count << ",\n"
+        << "  \"uint16_arena_cuda_malloc_wall_ms\": " << uint16_arena_cuda_malloc_wall_ms << ",\n"
+        << "  \"uint16_arena_pointer_assign_wall_ms\": " << uint16_arena_pointer_assign_wall_ms << ",\n"
         << "  \"uint16_arena_suballocation_count\": " << uint16_arena_requests.size() << ",\n"
         << "  \"transformer_device_arena_requested\": "
         << (combined_transformer_device_arena_requested ? "true" : "false") << ",\n"
@@ -21406,6 +21428,10 @@ int run_transformer_lm_training_json(
         << (combined_transformer_device_arena_enabled ? "true" : "false") << ",\n"
         << "  \"transformer_device_arena_cuda_malloc_count\": "
         << transformer_device_arena_cuda_malloc_count << ",\n"
+        << "  \"transformer_device_arena_cuda_malloc_wall_ms\": "
+        << transformer_device_arena_cuda_malloc_wall_ms << ",\n"
+        << "  \"transformer_device_arena_pointer_assign_wall_ms\": "
+        << transformer_device_arena_pointer_assign_wall_ms << ",\n"
         << "  \"transformer_device_arena_requested_bytes\": "
         << transformer_device_arena_requested_bytes << ",\n"
         << "  \"transformer_device_arena_allocated_bytes\": "
