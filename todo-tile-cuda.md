@@ -1177,6 +1177,17 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     projection, MLP FC, attention projection, and QKV dInput bodies so the next
     block-backward candidate must prove it moved the hot dInput GEMM route
     before timing wins are trusted.
+  - 2026-06-23 added `NFN_NATIVE_LINEAR_TK_DINPUT_DEFAULT_BLOCK=1` /
+    `NFN_TILE_CUDA_LINEAR_TK_DINPUT_DEFAULT_BLOCK=1` as an opt-in diagnostic
+    route for block-sized GPT BF16-gradient/BF16-weight dInput shapes with
+    `m <= 4096`, `k <= 4096`, valid tile multiples, and `N,N` layout. The
+    same-script 3-sample RTX 5090 benchmark moved 384 two-step block dInput
+    calls from cuBLASLt to TK, but rejected the route at `1.027648x`
+    train-loop wall and `0.973558x` tokens/sec, so keep the cuBLASLt/GEMMEx
+    block fallback as the default. Keep the LM-head dHidden classifier shape
+    opt-in through `NFN_NATIVE_LINEAR_TK_DINPUT=1` or
+    `NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=...` because the 5090 paired
+    checks also rejected that larger shape.
   - 2026-06-22 promoted the no-loss LM-head CE specialization to the default
     behind `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` /
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`.

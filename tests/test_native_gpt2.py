@@ -7099,10 +7099,15 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert 'std::getenv("NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE")' in kernels_text
     assert 'std::getenv("NFN_TILE_CUDA_LINEAR_TK_DINPUT_DISABLE_SHAPE")' in kernels_text
     assert 'std::getenv("NFN_NATIVE_LINEAR_TK_DINPUT_DISABLE_SHAPE")' in kernels_text
+    assert "trainer_linear_tk_dinput_default_shape_enabled" in kernels_text
+    assert "trainer_linear_tk_dinput_default_block_enabled" in kernels_text
+    assert 'std::getenv("NFN_NATIVE_LINEAR_TK_DINPUT_DEFAULT_BLOCK")' in kernels_text
+    assert 'std::getenv("NFN_TILE_CUDA_LINEAR_TK_DINPUT_DEFAULT_BLOCK")' in kernels_text
+    assert "return m <= 4096 && k <= 4096;" in kernels_text
     tk_dinput_body = kernels_text.split(
         "bool tk_linear_backward_input_bf16_bits_weight_bf16_bits_float32(", 1
     )[1].split("\nbool tk_linear_gemm_bf16_forward_gelu_to_bf16_bits", 1)[0]
-    assert "!trainer_linear_tk_dinput_enabled() && !shape_enabled" in tk_dinput_body
+    assert "!trainer_linear_tk_dinput_enabled() && !shape_enabled && !default_block_enabled" in tk_dinput_body
     assert "trainer_linear_tk_dinput_shape_disabled(input_dim, rows, output_dim, kOpA, kOpB)" in tk_dinput_body
     assert "write_float_grad" in kernels_text
     assert "matmul_dispatch_tk_ab" in kernels_text

@@ -4917,6 +4917,31 @@ bool trainer_linear_tk_dinput_enabled() {
   return enabled;
 }
 
+bool trainer_linear_tk_dinput_default_block_enabled() {
+  static const bool enabled = []() {
+    const char* value = std::getenv("NFN_NATIVE_LINEAR_TK_DINPUT_DEFAULT_BLOCK");
+    if (value == nullptr) {
+      value = std::getenv("NFN_TILE_CUDA_LINEAR_TK_DINPUT_DEFAULT_BLOCK");
+    }
+    if (value == nullptr) {
+      return false;
+    }
+    if (std::strcmp(value, "0") == 0 ||
+        std::strcmp(value, "false") == 0 ||
+        std::strcmp(value, "FALSE") == 0 ||
+        std::strcmp(value, "off") == 0 ||
+        std::strcmp(value, "OFF") == 0) {
+      return false;
+    }
+    return std::strcmp(value, "1") == 0 ||
+        std::strcmp(value, "true") == 0 ||
+        std::strcmp(value, "TRUE") == 0 ||
+        std::strcmp(value, "on") == 0 ||
+        std::strcmp(value, "ON") == 0;
+  }();
+  return enabled;
+}
+
 bool trainer_linear_tk_dinput_shape_enabled(
     int m,
     int n,
@@ -4933,6 +4958,24 @@ bool trainer_linear_tk_dinput_shape_enabled(
     return shape;
   }();
   return linear_shape_matches(enabled_shape, m, n, k, op_a, op_b);
+}
+
+bool trainer_linear_tk_dinput_default_shape_enabled(
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  if (op_a != CUBLAS_OP_N || op_b != CUBLAS_OP_N) {
+    return false;
+  }
+  if (m <= 0 || n <= 0 || k <= 0) {
+    return false;
+  }
+  if (n % 128 != 0 || m % 128 != 0 || k % 64 != 0) {
+    return false;
+  }
+  return m <= 4096 && k <= 4096;
 }
 
 bool trainer_linear_tk_dinput_shape_disabled(
@@ -5125,9 +5168,13 @@ bool tk_linear_backward_input_bf16_bits_weight_bf16_bits_float32(
   constexpr cublasOperation_t kOpB = CUBLAS_OP_N;
   const bool shape_enabled = trainer_linear_tk_dinput_shape_enabled(
       input_dim, rows, output_dim, kOpA, kOpB);
+  const bool default_shape_enabled = trainer_linear_tk_dinput_default_shape_enabled(
+      input_dim, rows, output_dim, kOpA, kOpB);
+  const bool default_block_enabled =
+      default_shape_enabled && trainer_linear_tk_dinput_default_block_enabled();
   if (!trainer_linear_tk_gemm_enabled() ||
       trainer_linear_tk_dinput_shape_disabled(input_dim, rows, output_dim, kOpA, kOpB) ||
-      (!trainer_linear_tk_dinput_enabled() && !shape_enabled)) {
+      (!trainer_linear_tk_dinput_enabled() && !shape_enabled && !default_block_enabled)) {
     return false;
   }
   if (grad_out_bf16_bits == nullptr || weight_bf16_bits == nullptr || grad_x == nullptr) {

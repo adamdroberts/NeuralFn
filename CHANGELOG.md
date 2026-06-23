@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_NATIVE_LINEAR_TK_DINPUT_DEFAULT_BLOCK=1` /
+  `NFN_TILE_CUDA_LINEAR_TK_DINPUT_DEFAULT_BLOCK=1` as an opt-in diagnostic route
+  for block-sized GPT BF16-gradient/BF16-weight dInput shapes. The gate is
+  intentionally narrow (`m <= 4096`, `k <= 4096`, valid tile multiples, `N,N`)
+  so transformer-block MLP FC, MLP projection, attention projection, and QKV
+  dInput calls can be tested through the SM120 TK GEMM bridge without also
+  promoting the rejected LM-head dHidden classifier shape. The old
+  cuBLASLt/GEMMEx block fallback remains the default.
+
+  Verification note: rebuilt Tile ops and ran default/opt-in one-step CUDA
+  smokes plus a same-script 3-sample paired benchmark on the dedicated RTX
+  5090. The opt-in route moved 384 two-step block dInput calls from cuBLASLt to
+  TK, but rejected as a default at `1.027648x` train-loop wall and `0.973558x`
+  tokens/sec versus the fallback baseline.
+
 - Added block-backward dInput route counters to dense GPT native training JSON:
   `block_backward_dinput_tk_gemm_count`,
   `block_backward_dinput_cublaslt_gemm_count`, and

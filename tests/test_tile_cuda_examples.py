@@ -2507,6 +2507,9 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
         "\\\"linear_cublaslt_bgrad_gemm_count\\\": 1152, "
         "\\\"linear_cublaslt_bgrad_direct_write_count\\\": 0, "
         "\\\"linear_cublaslt_bgrad_accumulate_count\\\": 1152, "
+        "\\\"block_backward_dinput_tk_gemm_count\\\": 96, "
+        "\\\"block_backward_dinput_cublaslt_gemm_count\\\": 288, "
+        "\\\"block_backward_dinput_bf16_gemm_count\\\": 96, "
         "\\\"linear_bf16_gemm_count\\\": 1824"
         "}"
     )
@@ -2543,7 +2546,7 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
     route_changes = payload["native_route_counter_changes"]
     assert route_changes["has_route_counter_change"] is False
     assert route_changes["changed_count"] == 0
-    assert route_changes["tracked_count"] == 6
+    assert route_changes["tracked_count"] == 9
     assert route_changes["unchanged"] == [
         "linear_tk_gemm_count",
         "linear_cublaslt_gemm_count",
@@ -2551,6 +2554,9 @@ def test_paired_kernel_speed_tool_warns_when_candidate_env_does_not_change_route
         "linear_cublaslt_bgrad_direct_write_count",
         "linear_cublaslt_bgrad_accumulate_count",
         "linear_bf16_gemm_count",
+        "block_backward_dinput_tk_gemm_count",
+        "block_backward_dinput_cublaslt_gemm_count",
+        "block_backward_dinput_bf16_gemm_count",
     ]
     assert payload["native_route_change_gate"] == {
         "enabled": False,
@@ -2579,6 +2585,9 @@ def test_paired_kernel_speed_tool_fails_required_native_route_change_gate() -> N
         "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
         "\\\"linear_tk_gemm_count\\\": 1632, "
         "\\\"linear_cublaslt_gemm_count\\\": 2208, "
+        "\\\"block_backward_dinput_tk_gemm_count\\\": 96, "
+        "\\\"block_backward_dinput_cublaslt_gemm_count\\\": 288, "
+        "\\\"block_backward_dinput_bf16_gemm_count\\\": 96, "
         "\\\"linear_bf16_gemm_count\\\": 1824"
         "}"
     )
