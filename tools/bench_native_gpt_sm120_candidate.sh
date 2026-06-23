@@ -366,6 +366,17 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
         case "${STAGE_TIMING,,}" in
           "1"|"true"|"yes"|"on")
             candidate_gate_text="$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN $NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB $CANDIDATE_ENV_RAW $CANDIDATE_EXTRA_ARGS_RAW"
+            lm_head_only_candidate_gate=0
+            case "$candidate_gate_text" in
+              *LM_HEAD*|*lm_head*|*CE_BF16*|*ce_bf16*)
+                lm_head_only_candidate_gate=1
+                ;;
+            esac
+            case "$candidate_gate_text" in
+              *BLOCK_*|*block_*|*MLP_*|*mlp_*|*QKV*|*qkv*|*ATTN*|*attn*|*LINEAR_BACKWARD*|*linear_backward*)
+                lm_head_only_candidate_gate=0
+                ;;
+            esac
             case "$candidate_gate_text" in
               *LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE*|*linear_backward_bias_row_chunk_size*)
                 ;;
@@ -373,8 +384,10 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
                 MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.total_ms=1.000"
                 ;;
             esac
-            MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.total_ms=1.000"
-            MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.total_ms=1.000"
+            if [[ "$lm_head_only_candidate_gate" != "1" ]]; then
+              MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.total_ms=1.000"
+              MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.total_ms=1.000"
+            fi
             case "$candidate_gate_text" in
               *CE_BF16*|*ce_bf16*|*LM_HEAD_CE*|*lm_head_ce*)
                 MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.ce.total_ms=1.000"

@@ -3420,6 +3420,38 @@ def test_paired_kernel_speed_tool_stage_timing_is_explicit() -> None:
     )["NFN_NATIVE_GPT_STAGE_TIMING"] == "1"
 
 
+def test_paired_kernel_speed_tool_recognizes_linked_native_gpt_trainer(tmp_path: Path) -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+
+    argv = ["build/nfn_gpt_native_train_linked", "--backend", "tile-cuda"]
+    assert module.looks_like_neuralfn_native_command(argv) is True
+    assert module.command_env_with_auto_stage_timing(
+        module.TimedCommand(name="candidate", argv=argv, env_overrides={}),
+        env={},
+        native_stage_timing=True,
+    )["NFN_NATIVE_GPT_STAGE_TIMING"] == "1"
+
+    profiled = module.argv_with_auto_profile_json(
+        argv,
+        command_name="candidate",
+        profile_json_dir=tmp_path,
+    )
+    assert profiled[: len(argv)] == argv
+    assert "--profile-json" in profiled
+    profile_path = Path(profiled[profiled.index("--profile-json") + 1])
+    assert profile_path.parent == tmp_path
+    assert profile_path.name.startswith("candidate_")
+
+
 def test_paired_kernel_speed_tool_extracts_forward_stage_timing() -> None:
     script = Path("tools/paired_kernel_speed.py")
     spec = importlib.util.spec_from_file_location("paired_kernel_speed", script)

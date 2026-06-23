@@ -1058,6 +1058,7 @@ def looks_like_neuralfn_native_command(argv: Sequence[str]) -> bool:
         return False
     executable = Path(argv[0]).name
     return executable in {
+        "nfn_gpt_native_train_linked",
         "nfn_gpt_native_train",
         "nfn-native-train",
         "nfn-gpt-native",

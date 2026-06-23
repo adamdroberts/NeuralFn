@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed paired SM120/native speed profiling for the linked dense GPT trainer.
+  `tools/paired_kernel_speed.py` now recognizes `nfn_gpt_native_train_linked`
+  as a native NeuralFn command, so `--native-stage-timing` injects
+  `NFN_NATIVE_GPT_STAGE_TIMING=1` and `--append-native-profile-json-dir`
+  appends per-command profile JSON sidecars for linked runs. This keeps
+  same-script stage-ratio gates meaningful after the benchmark wrappers select
+  the linked trainer by default. The SM120 candidate wrapper now scopes
+  auto-added stage gates to the candidate family, so LM-head-only profiles gate
+  the total train loop and LM-head stages without failing on unrelated block
+  stage noise.
+
+  Migration note: no command changes are required. Existing linked benchmark
+  commands now emit the same native sidecars as the dynamic trainer path.
+
+  Verification: `py_compile` passed for `tools/paired_kernel_speed.py`;
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh` and `git diff --check`
+  passed; focused pytest passed (`4 passed, 123 deselected`); and a 3-sample,
+  1-warmup linked RTX 5090 `lm_head_loss_bins` benchmark passed with native
+  stage sidecars, route change, `train_loop_wall_ms_per_step=0.969924x`,
+  `stage.lm_head_backward.total_ms=0.909470x`, and
+  `stage.lm_head_backward.ce.total_ms=0.543440x` versus the forced older
+  row-loss baseline.
+
 - Fixed SM120 candidate wrapper handling for generated Tile-ops libraries under
   the linked-trainer default. When
   `NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_BUILD_FLAGS` builds a temporary

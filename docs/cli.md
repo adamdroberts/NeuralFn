@@ -1159,6 +1159,14 @@ older row-loss path. The candidate side expands to
 `--train-loss-every-steps 1` to both sides so the route counter is meaningful.
 Set `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` manually only for regression
 checks against the older row-loss tail.
+When `--native-stage-timing` is used through the paired speed tool or the SM120
+candidate wrapper, linked dense GPT commands named `nfn_gpt_native_train_linked`
+are treated as native commands. The harness injects
+`NFN_NATIVE_GPT_STAGE_TIMING=1` and appends per-command native profile JSON
+sidecars before applying stage-ratio gates.
+The SM120 candidate wrapper scopes those gates to the candidate family:
+LM-head-only profiles require the overall train loop plus LM-head stages, while
+block, attention, MLP, and QKV profiles retain the extra block-stage gates.
 Native dense-GPT JSON also reports the cuBLASLt BGRADB epilogue counters
 `linear_cublaslt_bgrad_gemm_count`,
 `linear_cublaslt_bgrad_direct_write_count`, and

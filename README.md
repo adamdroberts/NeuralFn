@@ -914,7 +914,12 @@ explicit candidate library even with the linked trainer selected. Common control
 include `NFN_SM120_NATIVE_STEPS`, `NFN_SM120_NATIVE_SAMPLES`,
 `NFN_SM120_NATIVE_WARMUP`, `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_NATIVE_TEMPLATE_NAME`, `NFN_SM120_NATIVE_GRAPH_FILE`, and
-`NFN_SM120_NATIVE_STAGE_TIMING=1` for attribution sidecars. The explicit
+`NFN_SM120_NATIVE_STAGE_TIMING=1` for attribution sidecars. Linked trainer
+commands are recognized as native commands by the paired speed harness, so
+stage-timing runs inject `NFN_NATIVE_GPT_STAGE_TIMING=1` and create
+per-command native profile sidecars. LM-head-only profiles gate the total train
+loop and LM-head stages; block, attention, MLP, and QKV profiles keep the
+additional block-stage gates. The explicit
 `NFN_SM120_NATIVE_CANDIDATE_*` common-shape aliases are accepted between the
 canonical native names and the short `NFN_SM120_CANDIDATE_*` aliases, so
 `NFN_SM120_NATIVE_CANDIDATE_STEPS=5` and
