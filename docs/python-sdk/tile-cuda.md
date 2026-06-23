@@ -1885,7 +1885,10 @@ launcher policy, so it cannot prove a candidate-only kernel or scheduling
 change.
 Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` to exercise
-the current cooperative LM-head backward ABI wrapper. Use
+the current cooperative LM-head backward ABI wrapper. The named profile is
+rejected by default because the CUDA 13.3 RTX 5090 same-script rerun activated
+the sequence wrapper but regressed train-loop wall time to `1.005235x` and
+LM-head backward to `1.103379x`. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` or
 pass `--require-cooperative-lm-head-backward` to the compiled dense GPT CLI
 when a parity/preflight run must require the strict cooperative LM-head backward

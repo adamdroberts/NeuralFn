@@ -360,6 +360,8 @@ case "${CANDIDATE_PROFILE,,}" in
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 1"
     ;;
   "lm_head_cooperative_backward"|"lm-head-cooperative-backward")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 2-sample same-script gate activated the cooperative LM-head sequence wrapper but regressed train_loop_wall_ms_per_step to 1.005235x and stage.lm_head_backward.total_ms to 1.103379x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1"
     ;;
   "token_weight_vector4_strided"|"token-weight-vector4-strided")

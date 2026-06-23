@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked the `lm_head_cooperative_backward` SM120 native wrapper profile as
+  rejected by default after a CUDA 13.3 dedicated-RTX-5090 same-script rerun.
+  The candidate activated the cooperative LM-head sequence wrapper and changed
+  the intended route counters, but the 3-step/2-sample gate regressed
+  train-loop wall time to `1.005235x`, tokens/sec to `0.994799x`, and
+  LM-head backward time to `1.103379x`.
+
+  Verification note: ran the paired benchmark with stage timing and linear
+  shape stats on the dedicated RTX 5090, then updated wrapper coverage plus
+  README and SDK Tile-CUDA notes.
+
 - Marked the `cuda_device_max_connections_1` SM120 native wrapper profile as a
   rejected no-op. The paired benchmark wrapper already defaults
   `CUDA_DEVICE_MAX_CONNECTIONS=1` for both baseline and candidate commands,

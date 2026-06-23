@@ -566,6 +566,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "cuda_device_max_connections_1" in candidate_bench
     assert "This profile is a no-op in the SM120 paired wrapper" in candidate_bench
     assert "CUDA_DEVICE_MAX_CONNECTIONS already defaults to 1" in candidate_bench
+    assert "lm_head_cooperative_backward" in candidate_bench
+    assert "activated the cooperative LM-head sequence wrapper" in candidate_bench
+    assert "stage.lm_head_backward.total_ms to 1.103379x" in candidate_bench
     assert 'Path("build/nfn_gpt_native_train_linked")' in no_torch_verifier
 
 

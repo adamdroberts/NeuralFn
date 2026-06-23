@@ -1815,6 +1815,9 @@ Real runs of rejected SM120 candidate profiles now require
 remains available without the opt-in. The current rejected set includes
 `cuda_device_max_connections_1`, which is a no-op because the paired wrapper
 already applies `CUDA_DEVICE_MAX_CONNECTIONS=1` to both sides, and
+`lm_head_cooperative_backward`, whose CUDA 13.3 RTX 5090 rerun activated the
+cooperative LM-head sequence wrapper but regressed train-loop wall time to
+`1.005235x` and LM-head backward to `1.103379x`, and
 `attention_atomic_dq`, whose CUDA 13.3 RTX 5090 rerun failed route detection and
 attention section gates, and `qkv_forward_bf16_fallback_65536`, whose rerun
 regressed train-loop wall time to `1.011419x`. It also includes the block
