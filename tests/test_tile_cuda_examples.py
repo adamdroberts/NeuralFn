@@ -2044,6 +2044,28 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "1"
     )
     assert ce_specialized_payload["metric_ratio_gates"]["enabled"] is False
+    ce_specialized_rejected_env = os.environ.copy()
+    ce_specialized_rejected_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_ce_default_specialized",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "candidate-ce-specialized-rejected.json"),
+        }
+    )
+    ce_specialized_rejected = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=ce_specialized_rejected_env,
+    )
+    assert ce_specialized_rejected.returncode == 2
+    assert "lm_head_ce_default_specialized is a rejected SM120 candidate" in (
+        ce_specialized_rejected.stderr
+    )
+    assert "1.001545x train_loop_wall_ms_per_step" in ce_specialized_rejected.stderr
 
     ce_no_loss_llmk_output_path = tmp_path / "candidate-ce-no-loss-llmk-dry-run.json"
     ce_no_loss_llmk_env = os.environ.copy()
@@ -2114,6 +2136,28 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "1"
     )
     assert loss_bins_payload["metric_ratio_gates"]["enabled"] is False
+    loss_bins_rejected_env = os.environ.copy()
+    loss_bins_rejected_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_loss_bins",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "candidate-loss-bins-rejected.json"),
+        }
+    )
+    loss_bins_rejected = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=loss_bins_rejected_env,
+    )
+    assert loss_bins_rejected.returncode == 2
+    assert "lm_head_loss_bins is a rejected SM120 candidate" in loss_bins_rejected.stderr
+    assert "stage.block_backward.total_ms regressed to 1.019348x" in (
+        loss_bins_rejected.stderr
+    )
 
     combined_arena_output_path = tmp_path / "candidate-combined-arena-dry-run.json"
     combined_arena_env = os.environ.copy()

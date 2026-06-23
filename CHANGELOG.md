@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned the SM120 candidate wrapper with the existing rejected evidence for
+  CE specialization and loss-bin profiles. Real paired runs of
+  `lm_head_ce_default_specialized`, `lm_head_ce_llmk_style_specialized`,
+  `lm_head_ce_loss_bins_llmk_style_specialized`,
+  `lm_head_ce_loss_bins_default_specialized`, and `lm_head_loss_bins` now fail
+  fast unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set,
+  while dry-run expansion remains available for command inspection. This avoids
+  accidentally spending GPU time on profiles that already missed the same-script
+  CUDA 13.3 gates.
+
+  Verification: focused static tests cover dry-run expansion plus rejected
+  runtime launches for representative CE and loss-bin profiles.
+
 - Marked the remaining BF16 LM-head CE store-policy probes as rejected in the
   SM120 native candidate wrapper. `lm_head_ce_vec8_normal_store` now fails fast
   unless explicitly overridden: the dedicated RTX 5090 3-step, 2-sample

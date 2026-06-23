@@ -358,7 +358,9 @@ Runtime JSON reports `lm_head_ce_default_specialized_requested`,
 the SM120 wrapper profile is `lm_head_ce_default_specialized`. Keep it
 diagnostic-only: the CUDA 13.3 dedicated RTX 5090 same-script gate proved the
 route changed but rejected it at `1.001545x` train-loop wall, `1.000931x`
-LM-head backward, and `1.000331x` LM-head CE time.
+LM-head backward, and `1.000331x` LM-head CE time. Real paired reruns require
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; dry-run expansion remains
+available without the override.
 
 Grouped cuBLASLt execution is exposed as a diagnostic probe, not a training
 route. Set `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`,

@@ -1394,7 +1394,9 @@ Runtime JSON reports `lm_head_ce_default_specialized_requested`,
 `lm_head_ce_default_specialized_enabled`, and `lm_head_ce_kernel_strategy`.
 Keep it diagnostic-only: the CUDA 13.3 dedicated RTX 5090 same-script gate
 proved the route changed but rejected it at `1.001545x` train-loop wall and
-`1.000331x` LM-head CE time.
+`1.000331x` LM-head CE time. The wrapper rejects real paired runs unless
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set; dry-run expansion
+remains available for inspecting the candidate command.
 `lm_head_overlap_last_dweight` expands to
 `NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1` for the narrower LM-head
 side-stream schedule that overlaps only the last processed row chunk's dWeight

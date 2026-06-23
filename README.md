@@ -437,7 +437,9 @@ reduction plus `NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED=1` for
 repeatable loss-bin CE branch-specialization checks; the current dedicated RTX
 5090 3-step, 3-sample gate proved the route and passed train-loop wall
 (`0.999215x`) but rejected the candidate on LM-head backward (`1.000741x`),
-LM-head CE (`1.000339x`), and MLP projection (`1.001222x`).
+LM-head CE (`1.000339x`), and MLP projection (`1.001222x`). Real reruns now
+require `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; dry-run
+expansion stays available without the opt-in.
 `lm_head_ce_llmk_style_specialized` and
 `lm_head_ce_loss_bins_llmk_style_specialized` expand to
 `NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1` (with loss-bin reduction
