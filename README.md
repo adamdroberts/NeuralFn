@@ -623,22 +623,22 @@ compares it against the baseline library without overwriting `build/`. The
 dry-run plan path does not build that temporary shared object; it resolves the
 generated candidate path and env split only, so build-flag profiles can be
 inspected without launching nvcc or CUDA work. The
-named profiles `tk_dgelu_dinput` and `tk_dgelu_approx_tanh` build the
-llm.kittens SM120 fused dGELU dInput candidates with
-`-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP` and, for the latter,
-`-DLLMK_SM120_APPROX_DGELU_TANH=1`. Those profiles now force the baseline to
-`NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` and the candidate to
-`NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=1`, so a same-script run compares the
-older separate MLP projection dInput+dGELU path against the fused TK route
-instead of timing the default against itself. `tk_forward_no_n96` builds a
+named profiles `tk_dgelu_dinput` and `tk_dgelu_approx_tanh` are now
+rejected/no-op historical diagnostics. The current linked SM120 baseline
+already uses the fused TK MLP projection dInput+dGELU route and reports
+`linear_tk_dgelu_dinput_gemm_count`, so rebuilding a candidate Tile library
+with `-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP` no longer proves a distinct route.
+Use those profile names only with
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` when intentionally
+reproducing older dGELU route evidence. `tk_forward_no_n96` builds a
 temporary candidate library with `-DLLMK_SM120_FORWARD_N96=0` to reroute
 eligible llm.kittens forward GEMM shapes away from the N96 path. Stage-timed
-dGELU candidates also gate
-`stage.block_backward.mlp_proj.dinput.total_ms=1.000`. These are still
-candidate-only routes. Runtime JSON reports
+dGELU diagnostics still gate
+`stage.block_backward.mlp_proj.dinput.total_ms=1.000` when explicitly rerun.
+Runtime JSON reports
 `linear_tk_dgelu_dinput_gemm_count`, and the paired benchmark treats it as a
-route counter so build-flag candidates cannot be accepted on timing noise when
-the fused dGELU route does not actually launch.
+route counter so compile-flag candidates cannot be accepted on timing noise
+when they do not change the fused dGELU route.
 The llm.kittens parity wrapper accepts the same stage-timing aliases as the
 native candidate wrapper: set `NFN_SM120_NATIVE_STAGE_TIMING=1`,
 `NFN_SM120_NATIVE_PARITY_STAGE_TIMING=1`, `NFN_SM120_PARITY_STAGE_TIMING=1`, or
@@ -2157,6 +2157,8 @@ regressed train-loop wall to `1.000384x`, LM-head dHidden to `1.000199x`, and
 block backward to `1.001504x`,
 `cuda_device_max_connections_1`, which is a no-op because the paired wrapper
 already applies `CUDA_DEVICE_MAX_CONNECTIONS=1` to both sides, and
+`tk_dgelu_dinput` / `tk_dgelu_approx_tanh`, which are now no-ops because the
+linked SM120 baseline already uses the fused TK dGELU dInput route, and
 `lm_head_cooperative_backward`, whose CUDA 13.3 RTX 5090 rerun activated the
 cooperative LM-head sequence wrapper but regressed train-loop wall time to
 `1.005235x` and LM-head backward to `1.103379x`, and

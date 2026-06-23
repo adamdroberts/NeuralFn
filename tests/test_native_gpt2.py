@@ -1697,6 +1697,12 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1"'
         in bench_source
     )
+    assert '"tk_dgelu_dinput"|"tk-dgelu-dinput")' in bench_source
+    assert '"tk_dgelu_approx_tanh"|"tk-dgelu-approx-tanh")' in bench_source
+    assert "baseline already reports linear_tk_dgelu_dinput_gemm_count=288" in bench_source
+    assert "The tanh approximation variant is therefore historical/diagnostic-only" in bench_source
+    assert "-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP" in bench_source
+    assert "-DLLMK_SM120_APPROX_DGELU_TANH=1" in bench_source
     assert "CUDA 13.3 RTX 5090 same-script gate moved 192 MLP projection dWeight calls to TK" in bench_source
     assert "lm_head_only_candidate_gate=1" in bench_source
     assert 'if [[ "$lm_head_only_candidate_gate" != "1" ]]; then' in bench_source

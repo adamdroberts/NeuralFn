@@ -354,11 +354,15 @@ case "${CANDIDATE_PROFILE,,}" in
     AUTO_DISABLE_METRIC_RATIO_GATES=1
     ;;
   "tk_dgelu_dinput"|"tk-dgelu-dinput")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 recheck showed this compile-flag profile is no longer a valid route candidate: the linked baseline already reports linear_tk_dgelu_dinput_gemm_count=288, the generated candidate reports the same route counters, and the native route-change gate fails. Keep the default fused TK dGELU dInput route; use this profile only for intentional historical no-op/rejection reproduction."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=1"
     CANDIDATE_TILE_OPS_BUILD_FLAGS="${CANDIDATE_TILE_OPS_BUILD_FLAGS:+$CANDIDATE_TILE_OPS_BUILD_FLAGS }-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP"
     ;;
   "tk_dgelu_approx_tanh"|"tk-dgelu-approx-tanh")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 recheck of the non-approx dGELU compile-flag profile showed the linked baseline already uses the fused TK dGELU dInput route. The tanh approximation variant is therefore historical/diagnostic-only until it proves a distinct route and passes same-script gates."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=1"
     CANDIDATE_TILE_OPS_BUILD_FLAGS="${CANDIDATE_TILE_OPS_BUILD_FLAGS:+$CANDIDATE_TILE_OPS_BUILD_FLAGS }-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1"

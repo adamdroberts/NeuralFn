@@ -1438,6 +1438,12 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `block_backward_dinput_tk_gemm_count` from `0` to `96`, and
     `block_backward_dinput_cublaslt_gemm_count` from `384` to `288`, with the
     native route-change gate passing.
+  - 2026-06-24 rechecked the same compile-time dGELU profile after the linked
+    SM120 baseline had already absorbed the fused TK dInput+dGELU route. The
+    baseline now reports `linear_tk_dgelu_dinput_gemm_count=288`, the generated
+    candidate reports the same route counters, and the native route-change gate
+    fails. Keep `tk_dgelu_dinput` and `tk_dgelu_approx_tanh` rejected/no-op
+    historical diagnostics unless a future compile flag proves a distinct route.
   - 2026-06-23 added the clearer
     `NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES=1` alias, plus candidate,
     parity, and shared variants, for route-proof-only candidate smokes that

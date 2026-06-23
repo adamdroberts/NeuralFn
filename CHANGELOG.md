@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Reclassified `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_dgelu_dinput` and
+  `tk_dgelu_approx_tanh` as rejected/no-op historical diagnostics. The current
+  linked SM120 baseline already uses the fused TK MLP projection dInput+dGELU
+  route and reports `linear_tk_dgelu_dinput_gemm_count=288`, so rebuilding a
+  candidate Tile ops library with the dGELU compile flag no longer proves a
+  route change. Real runs now require
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`, while dry-run plan
+  expansion still works for inspection.
+
+  Verification: direct one-step and three-step native GPT probes completed on
+  the CUDA 13.3 dedicated RTX 5090; a direct paired run with the generated
+  dGELU candidate library showed identical route counters and failed the native
+  route-change gate as intended.
+
 - Reclassified `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_pipeline_chunks`
   from timeout-prone to rejected by default. A current CUDA 13.3 dedicated RTX
   5090 short 3-step, 2-sample stage-timed rerun timed out the candidate command
