@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a named SM120 benchmark profile for the isolated MLP projection
+  BF16/BF16 split-BGRADB diagnostic:
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_split_bgrad_65536` expands to
+  `NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=3072,768,65536,N,T` and
+  gates `stage.block_backward.mlp_proj.dweight_bias.total_ms`. The profile
+  keeps the production default unchanged; it is a repeatable llm.kittens-style
+  dWeight plus separate Tile bias-reduction probe for the hot MLP projection
+  bucket. It remains diagnostic-only: the fresh CUDA 13.3 dedicated-RTX-5090
+  same-script gate changed the expected cuBLASLt BGRADB route counters
+  (`3840 -> 2880`) but regressed train-loop wall time to `1.017997x`, train
+  tokens/sec to `0.982326x`, block backward to `1.034034x`, and MLP projection
+  dWeight+bias to `1.256535x`.
+
+  Verification note: added static coverage for the wrapper expansion, checked
+  shell syntax and whitespace, ran a plan-only expansion, and reran the allowed
+  paired GPU benchmark on the dedicated RTX 5090.
+
 - Added a guarded native Tile CUDA BF16-to-FP32 vec4 conversion candidate behind
   `NFN_NATIVE_GPT_BF16_TO_F32_VEC4=1`,
   `NFN_NATIVE_GPT2_BF16_TO_F32_VEC4=1`, or

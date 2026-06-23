@@ -1479,6 +1479,12 @@ Use `NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=m,n,k,opA,opB` or
 `NFN_TILE_CUDA_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=...` for narrower paired
 bisection when a single BF16/BF16 dWeight+bias shape should use the split
 dWeight plus separate bias reducer route without disabling BGRADB globally.
+The same-script wrapper profile `mlp_proj_split_bgrad_65536` expands to
+`NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=3072,768,65536,N,T` for the
+hot dense-GPT MLP projection dWeight+bias bucket. Keep it diagnostic-only: the
+fresh CUDA 13.3 dedicated-RTX-5090 same-script gate changed the expected BGRADB
+route counters but regressed train-loop wall time to `1.017997x` and MLP
+projection dWeight+bias to `1.256535x`, so fused BGRADB remains the default.
 The split route's separate Tile bias reducer keeps a default 512-row reduction
 chunk. Set `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`,
 `NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`, or
