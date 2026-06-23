@@ -335,6 +335,15 @@ on both baseline and candidate commands by default. Leave this on for WSL/CUDA
 13.x sweeps so driver/runtime mismatches fail before warmup; set
 `NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=0` only when intentionally measuring
 the raw allocation failure path.
+The native candidate wrapper also enables
+`NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on both compared commands by
+default. For measured training comparisons with more than one step, automatic
+gates include `train_loop_cuda_event_steady_state_wall_ms_per_step=1.000`
+beside `train_loop_wall_ms_per_step=1.000`, so a candidate must hold the
+steady-state CUDA-event slice instead of passing only on first-step or setup
+movement. Set `NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING=0` or
+`NFN_SM120_CANDIDATE_TRAIN_LOOP_EVENT_TIMING=0` for a timing-only rerun without
+native CUDA-event records.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.

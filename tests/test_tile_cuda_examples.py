@@ -952,12 +952,17 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert 'MAX_CANDIDATE_RATIO_RAW+=" setup.token_weight_init.total_ms=1.000"' in text
     assert "*TOKEN_WEIGHT*|*token_weight*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"' in text
+    assert 'MAX_CANDIDATE_RATIO_RAW+=" train_loop_cuda_event_steady_state_wall_ms_per_step=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.total_ms=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.total_ms=1.000"' in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.mlp_proj.total_ms=1.000"' in text
     assert "MIN_CANDIDATE_RATIO_RAW" in text
     assert "NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO" in text
     assert "NFN_SM120_CANDIDATE_MIN_CANDIDATE_RATIO" in text
+    assert "NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING" in text
+    assert "NFN_SM120_CANDIDATE_TRAIN_LOOP_EVENT_TIMING" in text
+    assert 'paired_args+=(--baseline-env "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1")' in text
+    assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1")' in text
     assert 'paired_args+=(--min-candidate-ratio "$item")' in text
     assert "*CE_BF16*|*ce_bf16*|*LM_HEAD_CE*|*lm_head_ce*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.ce.total_ms=1.000"' in text

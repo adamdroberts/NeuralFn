@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tightened SM120 native-vs-native candidate benchmark gating. The candidate
+  wrapper now enables `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on both
+  baseline and candidate commands by default, and measured training comparisons
+  with more than one step automatically gate
+  `train_loop_cuda_event_steady_state_wall_ms_per_step=1.000` alongside the
+  existing host wall-time gate. Set
+  `NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING=0` or
+  `NFN_SM120_CANDIDATE_TRAIN_LOOP_EVENT_TIMING=0` to opt out for timing-only
+  reruns.
+
+  Verification: focused wrapper tests assert the default env forwarding and
+  steady-state gate, and dry-run candidate plans show the generated paired
+  command before launching CUDA.
+
 - Restored default NeuralFn CUDA-event train-loop timing in
   `tools/bench_native_gpt_sm120_parity.sh`. Same-script llm.kittens parity JSON
   now includes `train_loop_cuda_event_wall_ms_per_step`,

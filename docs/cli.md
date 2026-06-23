@@ -1115,6 +1115,13 @@ The SM120 native candidate wrapper forwards
 max-ratio aliases. `--command-timeout-seconds N`
 terminates the timed-out command's process group so a slow native candidate does
 not leave child GPU work running after the sample is recorded. Pass
+`NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING=0` only when intentionally disabling
+native train-loop CUDA-event records. The wrapper enables
+`NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on both baseline and candidate by
+default, and measured training runs with more than one step auto-gate
+`train_loop_cuda_event_steady_state_wall_ms_per_step=1.000` beside the host
+`train_loop_wall_ms_per_step=1.000` gate so first-step/setup noise cannot hide a
+steady-state regression. Pass
 `--require-idle-selected-gpu` when a speed test should fail before warmup or a
 measured command if `nvidia-smi` reports a compute process on the selected CUDA
 GPU; the check uses the selected GPU UUID so a separate display GPU does not
