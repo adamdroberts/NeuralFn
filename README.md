@@ -1813,6 +1813,9 @@ Run SM120 parity and candidate benchmarks only from a shell with real WSL GPU dr
 Real runs of rejected SM120 candidate profiles now require
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; dry-run plan expansion
 remains available without the opt-in. The current rejected set includes
+`lm_head_tk_dinput_32768`, whose CUDA 13.3 RTX 5090 rerun routed LM-head
+dHidden through TK dInput but regressed train-loop wall time to `1.045528x` and
+LM-head dHidden to `1.132973x`,
 `cuda_device_max_connections_1`, which is a no-op because the paired wrapper
 already applies `CUDA_DEVICE_MAX_CONNECTIONS=1` to both sides, and
 `lm_head_cooperative_backward`, whose CUDA 13.3 RTX 5090 rerun activated the

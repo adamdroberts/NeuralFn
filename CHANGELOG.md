@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked the `lm_head_tk_dinput_32768` SM120 native wrapper profile as rejected
+  by default after a CUDA 13.3 dedicated-RTX-5090 same-script rerun. The route
+  changed the intended LM-head dHidden backend from BF16 GEMMEx to TK dInput
+  (`linear_tk_gemm_count` increased by 48), but the 3-step/2-sample gate
+  regressed train-loop wall time to `1.045528x`, tokens/sec to `0.956463x`,
+  LM-head backward to `1.040702x`, and LM-head dHidden to `1.132973x`.
+
+  Verification note: ran the paired benchmark with stage timing and linear
+  shape stats on the dedicated RTX 5090, then updated wrapper coverage plus
+  README and SDK Tile-CUDA notes.
+
 - Changed `tools/bench_native_gpt_sm120_parity.sh` so it no longer enables
   `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on the NeuralFn side by default.
   A short dedicated-RTX-5090 parity rerun showed the candidate-only event

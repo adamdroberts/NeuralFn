@@ -560,6 +560,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB_EXPLICIT="generated"' in candidate_bench
     assert '--tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"' in candidate_bench
     assert '--tile-ops-lib "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_ARG"' in candidate_bench
+    assert "lm_head_tk_dinput_32768" in candidate_bench
+    assert "routed LM-head dHidden through TK dInput" in candidate_bench
+    assert "stage.lm_head_backward.dhidden.total_ms to 1.132973x" in candidate_bench
     assert "lm_head_concurrent_dhidden_dweight" in candidate_bench
     assert "CUDA 13.3 RTX 5090 3-sample same-script confirmation" in candidate_bench
     assert "NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1" in candidate_bench

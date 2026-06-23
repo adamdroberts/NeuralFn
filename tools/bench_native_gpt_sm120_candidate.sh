@@ -135,6 +135,8 @@ case "${CANDIDATE_PROFILE,,}" in
   ""|"none"|"off"|"0"|"false"|"no")
     ;;
   "lm_head_tk_dinput_32768"|"lm-head-tk-dinput-32768")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 2-sample same-script gate routed LM-head dHidden through TK dInput but regressed train_loop_wall_ms_per_step to 1.045528x and stage.lm_head_backward.dhidden.total_ms to 1.132973x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=768,32768,50304,N,N"
     ;;
   "lm_head_cublaslt_dhidden_32768"|"lm-head-cublaslt-dhidden-32768")

@@ -1829,7 +1829,10 @@ For the current 32768-row LM-head chunk route, the SM120 candidate wrapper has
 named profile shortcuts so the route can be retested after CUDA or driver
 changes without hand-writing env strings:
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dinput_32768` expands to
-`NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=768,32768,50304,N,N`, and
+`NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=768,32768,50304,N,N`, but is rejected
+by default after the CUDA 13.3 RTX 5090 rerun routed LM-head dHidden through TK
+dInput and regressed train-loop wall time to `1.045528x` plus LM-head dHidden
+time to `1.132973x`. The related profile
 `lm_head_cublaslt_dhidden_32768` expands to
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`. These
 profiles stay default-off and must pass the same-script candidate gates before
