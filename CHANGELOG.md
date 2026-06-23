@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Hardened the focused native CUDA benchmark wrappers' auto GPU selector.
+  `tools/bench_linear_backward_candidate.sh` and
+  `tools/bench_lm_head_backward_candidate.sh` now fall back to CUDA device `0`
+  when `nvidia-smi` exists but cannot query GPUs, letting the C++ benchmark
+  report the real CUDA runtime/driver error instead of the shell exiting early
+  under `set -euo pipefail`.
+
+  Verification: added source-contract coverage for the guarded `nvidia-smi`
+  query path and fallback behavior.
+
 - Added `tools/bench_native_gpt_linear_hot_matrix.sh`, a matrix gate for native
   GPT block-backward and LM-head linear kernel candidates. The wrapper reuses
   the C++ CUDA event `linear_backward_bench` harness for every current hot

@@ -156,6 +156,10 @@ C++ benchmark and emits `native_gpt_linear_hot_matrix` JSON. Set
 profile-specific override such as
 `NFN_LINEAR_HOT_QKV_DWEIGHT_CANDIDATE_SYMBOL` for a single shape. Set
 `NFN_LINEAR_HOT_MATRIX_MAX_RATIO=1.000` to fail fast when any profile regresses.
+The focused linear and LM-head benchmark wrappers default to auto GPU selection;
+when `nvidia-smi` cannot be executed, they now fall back to CUDA device `0` so
+the C++ harness can emit the actual CUDA runtime/driver error instead of the
+shell exiting before the benchmark starts.
 
 `NFN_LINEAR_BACKWARD_PROFILE=lm-head-dinput-cublaslt` and
 `lm-head-dweight-cublaslt` expose explicit forced-cuBLASLt symbols for the

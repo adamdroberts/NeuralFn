@@ -1476,6 +1476,8 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES" in wrapper
     assert "select_auto_cuda_device" in wrapper
     assert "nvidia-smi --query-gpu=index,display_active,utilization.gpu" in wrapper
+    assert "if ! query_output=\"$(nvidia-smi --query-gpu=index,display_active,utilization.gpu" in wrapper
+    assert "printf '%s\\n' \"0\"" in wrapper
     assert 'export CUDA_VISIBLE_DEVICES="${SELECTED_CUDA_VISIBLE_DEVICE}"' in wrapper
     assert "NFN_LM_HEAD_BACKWARD_PROFILE" in wrapper
     assert "trainer-chunk|trainer_chunk" in wrapper
@@ -1547,6 +1549,8 @@ def test_native_gpt_linear_backward_microbench_profiles_block_and_lm_head_shapes
     assert "NFN_LINEAR_BACKWARD_BASELINE_SYMBOL" in wrapper
     assert "NFN_LINEAR_BACKWARD_CUDA_VISIBLE_DEVICES" in wrapper
     assert "select_auto_cuda_device" in wrapper
+    assert "if ! query_output=\"$(nvidia-smi --query-gpu=index,display_active,utilization.gpu" in wrapper
+    assert "printf '%s\\n' \"0\"" in wrapper
     assert "mlp-proj-dinput|mlp_proj_dinput" in wrapper
     assert "mlp-fc-dweight|mlp_fc_dweight" in wrapper
     assert "qkv-dinput|qkv_dinput" in wrapper

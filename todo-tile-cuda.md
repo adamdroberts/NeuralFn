@@ -727,6 +727,11 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     operation-wide and profile-specific candidate symbols, and emits aggregate
     `native_gpt_linear_hot_matrix` JSON so block-backward/LM-head candidates can
     be rejected before noisy full-loop parity runs.
+  - 2026-06-23 hardened the focused LM-head and linear-backward benchmark
+    wrappers so `CUDA_VISIBLE_DEVICES=auto` falls back to device `0` when
+    `nvidia-smi` cannot query GPUs. This preserves a useful C++ CUDA error in
+    sandboxed or driver-mismatch environments instead of silently failing before
+    the benchmark starts.
   - 2026-06-23 first isolated profile sweep with the new harness ranked the
     current padded-vocab LM-head linear calls as the largest standalone targets:
     `lm-head-dinput` was about `32.17 ms` per 49152-row chunk and

@@ -176,8 +176,12 @@ select_auto_cuda_device() {
     printf '%s\n' "0"
     return
   fi
-  nvidia-smi --query-gpu=index,display_active,utilization.gpu --format=csv,noheader,nounits 2>/dev/null \
-    | awk -F, '
+  local query_output
+  if ! query_output="$(nvidia-smi --query-gpu=index,display_active,utilization.gpu --format=csv,noheader,nounits 2>/dev/null)"; then
+    printf '%s\n' "0"
+    return
+  fi
+  printf '%s\n' "${query_output}" | awk -F, '
       {
         idx=$1; display=$2; util=$3;
         gsub(/^[ \t]+|[ \t]+$/, "", idx);

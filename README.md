@@ -129,7 +129,9 @@ chunk comparison, or
 candidate that is not a real fused kernel or is slower than the baseline. The
 wrapper defaults `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=auto`, selecting an
 idle display-disabled NVIDIA GPU when `nvidia-smi` can report one; set it or
-`NFN_LM_HEAD_BACKWARD_CUDA_DEVICE` explicitly to pin the benchmark. A matching
+`NFN_LM_HEAD_BACKWARD_CUDA_DEVICE` explicitly to pin the benchmark. If
+`nvidia-smi` is unavailable or blocked, the wrapper falls back to CUDA device
+`0` so the C++ benchmark reports the real CUDA runtime error. A matching
 lower-level linear-backward harness is available as
 `bash tools/bench_linear_backward_candidate.sh`. It builds
 `build/linear_backward_bench`, loads `libnfn_native_train_tile_ops.so`, and
