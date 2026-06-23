@@ -16,6 +16,7 @@ mkdir -p "$(dirname "${OUT}")"
 "${CXX_BIN}" -std=c++20 -O3 -Wall -Wextra -pedantic \
   -I"${ROOT_DIR}/neuralfn/csrc/native_train" \
   "${SRC}" "${TOKEN_SHARDS_SRC}" \
+  -rdynamic -Wl,--export-dynamic \
   -Wl,--no-as-needed "${TILE_OPS_LIB}" -Wl,--as-needed \
   -Wl,-rpath,"$(dirname "${TILE_OPS_LIB}")" \
   -ldl -o "${OUT}"

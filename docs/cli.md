@@ -825,13 +825,17 @@ Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` to exercise the current
 cooperative LM-head backward ABI wrapper, or
 `nfn_gpt_native_train --require-cooperative-lm-head-backward` when a
 parity/preflight run must require the strict cooperative LM-head backward ABI.
-The flag is default-off for normal training. The current strict ABI route still
-sequences the existing CE, dHidden, and dWeight launches, so runtime strategy
-strings mark it as not-yet-parity instead of a final fused kernel.
-The non-required candidate path can enable that event-ordered sequence wrapper
-and reports `lm_head_cooperative_backward_sequence_wrapper_enabled: true`; the
-strict `--require-cooperative-lm-head-backward` path still requires the future
-fused parity symbol and fails on wrapper-only builds.
+The flag is default-off for normal training. Rebuilt Tile ops libraries now
+export the strict
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` callable,
+so `--require-cooperative-lm-head-backward` can pass preflight, but the current
+body is co-scheduled rather than a single fused parity kernel. It launches CE
+first, then queues dHidden and dWeight on persistent non-blocking side streams.
+Runtime strategy strings include
+`strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight-not-single-kernel`.
+The non-required candidate path can still enable the event-ordered sequence
+wrapper and reports `lm_head_cooperative_backward_sequence_wrapper_enabled:
+true`; wrapper-only builds fail the strict guard.
 Runtime JSON reports `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,
 `lm_head_cooperative_backward_abi_wrapper_available`,
@@ -1241,10 +1245,10 @@ time, `1.000944x` LM-head backward, and `1.004197x` CE time.
 same-script wrapper-symbol timing, and the required profile for preflight
 checks that must prove the strict cooperative ABI is available and integrated.
 The current strict ABI is reported as available and satisfies the required
-guard, but its implementation still sequences the old CE, dHidden, and dWeight
-launches; runtime strategy strings include
-`strict-cooperative-abi-sequences-existing-ce-dhidden-dweight-kernels-not-yet-parity`
-so it is not mistaken for the final fused parity kernel.
+guard, but it remains opt-in. The CUDA 13.3 dedicated RTX 5090 one-step,
+two-sample same-script gate proved the strict route executed with 16
+cooperative sequence launches, but rejected promotion at `1.022567x`
+train-loop wall and `0.977929x` tokens/sec versus the normal native baseline.
 `lm_head_cooperative_loss_bins` adds
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`,
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`, and

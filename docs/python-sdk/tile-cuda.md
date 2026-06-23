@@ -1870,9 +1870,14 @@ the current cooperative LM-head backward ABI wrapper. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` or
 pass `--require-cooperative-lm-head-backward` to the compiled dense GPT CLI
 when a parity/preflight run must require the strict cooperative LM-head backward
-Tile kernel. The current wrapper route still sequences the existing CE, dHidden,
-and dWeight launches, so wrapper-only builds fail the strict guard and runtime
-strategy strings mark them as not-yet-parity instead of a final fused kernel.
+Tile ABI. Rebuilt Tile ops libraries now export the strict
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` callable,
+so the required guard can pass, but the current strict body is co-scheduled
+rather than a single fused parity kernel: it launches CE first, then queues
+dHidden and dWeight on persistent non-blocking side streams. Runtime strategy
+strings include
+`strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight-not-single-kernel`.
+Wrapper-only builds still fail the strict guard.
 The non-required candidate route now explicitly enables the event-ordered
 sequence wrapper and reports
 `lm_head_cooperative_backward_sequence_wrapper_enabled: true`, which lets the
@@ -1900,11 +1905,15 @@ contains the wrapper symbol; wrapper-only libraries report
 `lm_head_cooperative_backward_kernel_available: false`.
 The existing
 `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
-symbol remains the event-ordered sequence wrapper probe. The fused
-implementation must export the separate future symbol
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` before
-`lm_head_cooperative_backward_kernel_available` or
-`lm_head_cooperative_backward_fused_kernel_available` can become true.
+symbol remains the event-ordered sequence wrapper probe. The strict
+co-scheduled implementation exports the separate
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` symbol,
+which makes `lm_head_cooperative_backward_kernel_available` and
+`lm_head_cooperative_backward_fused_kernel_available` true, but the route is not
+promoted by default. The CUDA 13.3 dedicated RTX 5090 one-step, two-sample
+same-script gate proved route execution with 16 cooperative sequence launches,
+but rejected promotion at `1.022567x` train-loop wall and `0.977929x`
+tokens/sec versus the normal native baseline.
 The sequence wrapper also reports launch counters in the native training JSON:
 `lm_head_cooperative_sequence_launch_count`,
 `lm_head_cooperative_sequence_ce_launch_count`,

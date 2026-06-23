@@ -139,6 +139,21 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 	      train-loop wall, `1.000399x` LM-head backward, and `1.003647x` block
 	      backward versus the normal native baseline. Keep it diagnostic-only; the
 	      open work is still a genuinely fused/cooperative LM-head kernel body.
+	    - 2026-06-23 exported the strict
+	      `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
+	      symbol from the rebuilt Tile ops library and fixed linked-binary dry-run
+	      preflight so `--tile-ops-lib linked --check-tile-ops
+	      --require-cooperative-lm-head-backward` uses `RTLD_DEFAULT` correctly.
+	      The strict route now reports
+	      `lm_head_cooperative_backward_kernel_available: true`,
+	      `lm_head_cooperative_backward_route_integrated: true`, and
+	      `strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight-not-single-kernel`.
+	      It remains default-off: a dedicated RTX 5090 one-step, two-sample
+	      same-script gate proved 16 cooperative CE/dHidden/dWeight launches but
+	      rejected promotion at `1.022567x` train-loop wall and `0.977929x`
+	      tokens/sec versus the normal native baseline. The open work is now a
+	      true fused/single-kernel body under this strict symbol, not another
+	      wrapper or preflight integration step.
 	    - 2026-06-22 added cooperative sequence launch counters to the diagnostic
 	      wrapper and paired benchmark extraction. Runtime JSON now reports
 	      `lm_head_cooperative_sequence_launch_count`,

@@ -593,27 +593,28 @@ replaces the ABI internals with a cooperative classifier plus dHidden/dWeight
 kernel.
 Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or the
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` benchmark
-profile to request the current cooperative LM-head backward path. Today this
-can only see the diagnostic ABI/sequence wrappers. Those wrappers use
-persistent non-blocking CUDA streams plus events to queue dHidden and dWeight
-after CE without a host-side stream synchronize, but still reuse the existing
-CE, dHidden, and dWeight kernels; they are not the final fused SM120 parity
-kernel. The non-required benchmark profile now enables that event-ordered
-sequence wrapper route and reports
-`lm_head_cooperative_backward_sequence_wrapper_enabled: true`, so paired
-candidate runs can prove the wrapper path executed instead of only proving that
-an environment variable was set.
+profile to request the current cooperative LM-head backward path. The rebuilt
+Tile ops library now exports both the diagnostic sequence wrapper and the
+strict callable symbol
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`; the strict
+symbol is a co-scheduled implementation, not a single fused SM120 parity
+kernel. It uses persistent non-blocking CUDA streams plus events to queue
+dHidden and dWeight after CE, while still reusing the existing CE, dHidden, and
+dWeight kernels. Runtime JSON reports
+`strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight-not-single-kernel`
+when that strict route is active.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when
 a parity run must require the true fused cooperative classifier/dHidden/dWeight
-Tile kernel to be available and integrated. Wrapper-only builds now fail this
+Tile ABI to be available and integrated. Wrapper-only builds still fail this
 strict guard and report
 `abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity` instead
-of marking the route integrated. Keep the wrapper diagnostic-only: the CUDA
-13.3 dedicated RTX 5090 2-step, 2-sample same-script gate measured
-`1.003537x` train-loop wall, `1.000399x` LM-head backward, and `1.003647x`
-block backward versus the normal native baseline.
+of marking the route integrated. Keep the co-scheduled route opt-in: the CUDA
+13.3 dedicated RTX 5090 one-step, two-sample same-script gate proved route
+execution with 16 cooperative CE/dHidden/dWeight launches but rejected promotion
+at `1.022567x` train-loop wall and `0.977929x` tokens/sec versus the normal
+native baseline.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins` enables the
 same strict cooperative ABI plus `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`
 and `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1`; the wrapper also applies
@@ -636,9 +637,9 @@ Runtime JSON reports
 `lm_head_cooperative_backward_kernel_enabled`,
 `lm_head_cooperative_backward_sequence_wrapper_enabled`, and
 `lm_head_cooperative_backward_strategy`. The strict cooperative ABI remains
-default-off and non-promoted; the wrapper route is only a measurable diagnostic
-candidate until the separate fused parity symbol is implemented and passes the
-same-script gates.
+default-off and non-promoted; the current strict symbol is measurable
+co-scheduling groundwork until a later single-kernel or truly fused parity body
+passes the same-script gates.
 The probed Tile symbol is now exported by the rebuilt ops library with a typed
 C ABI contract for this diagnostic wrapper: it accepts the BF16 logit/dlogit
 chunk, u16 targets, optional row-loss buffer, BF16/float hidden inputs,

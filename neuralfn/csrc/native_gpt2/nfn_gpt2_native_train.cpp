@@ -3964,6 +3964,12 @@ bool print_tile_plan(
     const std::int64_t stored_packed_attention_lse_bytes =
         stored_packed_attention_lse_elements * static_cast<std::int64_t>(sizeof(float));
     const std::string tile_ops = cfg.tile_ops_lib.empty() ? default_tile_ops_lib(program) : cfg.tile_ops_lib;
+    const std::string normalized_tile_ops = normalize_backend(tile_ops);
+    const bool linked_tile_ops_requested =
+        normalized_tile_ops == "linked" ||
+        normalized_tile_ops == "builtin" ||
+        normalized_tile_ops == "rtld-default" ||
+        normalized_tile_ops == "rtld_default";
     std::vector<std::string> symbols = required_tile_symbols();
     const std::vector<BufferPlan> parameter_layout = build_gpt2_parameter_layout(cfg);
     const std::vector<StagePlan> stage_plan = build_gpt2_stage_plan(cfg);
@@ -4008,8 +4014,8 @@ bool print_tile_plan(
     std::string error;
     std::vector<bool> found(symbols.size(), false);
     if (include_symbol_check || cooperative_lm_head_backward_requested) {
-        void* handle = dlopen(tile_ops.c_str(), RTLD_NOW | RTLD_LOCAL);
-        if (handle == nullptr) {
+        void* handle = linked_tile_ops_requested ? RTLD_DEFAULT : dlopen(tile_ops.c_str(), RTLD_NOW | RTLD_LOCAL);
+        if (!linked_tile_ops_requested && handle == nullptr) {
             const char* dl_error = dlerror();
             error = dl_error == nullptr ? "dlopen failed" : dl_error;
         } else {
@@ -4027,7 +4033,9 @@ bool print_tile_plan(
                 dlsym(handle, kLmHeadCooperativeBackwardSequenceWrapperSymbol) != nullptr;
             cooperative_lm_head_backward_true_fused_kernel_found =
                 dlsym(handle, kLmHeadCooperativeBackwardTrueFusedKernelSymbol) != nullptr;
-            dlclose(handle);
+            if (!linked_tile_ops_requested) {
+                dlclose(handle);
+            }
         }
     }
     const bool cooperative_lm_head_backward_route_integrated =
@@ -4120,8 +4128,8 @@ bool print_tile_plan(
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (cooperative_lm_head_backward_enabled
                 ? (cooperative_lm_head_loss_bins_requested
-                    ? "strict-cooperative-abi-event-ordered-loss-bins-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity"
-                    : "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity")
+                    ? "strict-cooperative-abi-co-scheduled-loss-bins-ce-side-stream-dhidden-dweight-not-single-kernel"
+                    : "strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight-not-single-kernel")
                 : (cooperative_lm_head_backward_sequence_wrapper_enabled
                     ? (cooperative_lm_head_loss_bins_requested
                         ? "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity"
@@ -20125,8 +20133,8 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_dhidden_dweight_schedule_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
                 ? (lm_head_cooperative_loss_bins_requested
-                    ? "strict-cooperative-abi-event-ordered-loss-bins-ce-side-stream-dhidden-dweight"
-                    : "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight")
+                    ? "strict-cooperative-abi-co-scheduled-loss-bins-ce-side-stream-dhidden-dweight"
+                    : "strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight")
         : (lm_head_cooperative_backward_sequence_wrapper_enabled
                 ? (lm_head_cooperative_loss_bins_requested
                     ? "diagnostic-cooperative-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight"
@@ -20165,8 +20173,8 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_cooperative_backward_strategy\": \""
         << (lm_head_cooperative_backward_kernel_enabled
                 ? (lm_head_cooperative_loss_bins_requested
-                    ? "strict-cooperative-abi-event-ordered-loss-bins-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity"
-                    : "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity")
+                    ? "strict-cooperative-abi-co-scheduled-loss-bins-ce-side-stream-dhidden-dweight-not-single-kernel"
+                    : "strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight-not-single-kernel")
                 : (lm_head_cooperative_backward_sequence_wrapper_enabled
                     ? (lm_head_cooperative_loss_bins_requested
                         ? "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity"

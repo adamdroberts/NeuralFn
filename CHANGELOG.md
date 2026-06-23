@@ -6,6 +6,30 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Exported the strict dense GPT cooperative LM-head backward Tile ABI symbol
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` from the
+  rebuilt Tile ops library and made linked-binary dry-run preflight handle
+  `RTLD_DEFAULT` correctly for `--tile-ops-lib linked --check-tile-ops`. The
+  strict route now satisfies `--require-cooperative-lm-head-backward` and
+  reports `lm_head_cooperative_backward_kernel_available: true`,
+  `lm_head_cooperative_backward_route_integrated: true`, and
+  `strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight-not-single-kernel`
+  when active.
+
+  Migration note: this is still opt-in. The exported strict symbol currently
+  co-schedules the existing CE, dHidden, and dWeight kernels with events and
+  side streams; it is not the final single-kernel fused LM-head parity body, and
+  the default route is unchanged.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so`,
+  `build/nfn_gpt_native_train`, and `build/nfn_gpt_native_train_linked`; checked
+  the exported strict symbols with `nm`; ran focused native GPT pytest for the
+  cooperative ABI and linked loader coverage; ran strict linked and dynamic
+  `--check-tile-ops --require-cooperative-lm-head-backward` dry-runs. A
+  dedicated RTX 5090 one-step, two-sample same-script gate proved 16
+  cooperative CE/dHidden/dWeight launches but rejected promotion at `1.022567x`
+  train-loop wall and `0.977929x` tokens/sec versus the normal native baseline.
+
 - Default dense GPT native dispatch now prefers the linked Tile ops CLI when it
   exists. SDK compiled-CLI resolution, `cli/scripts/train_gpt.py`, direct
   `nfn train`, the unified `nfn_native_train` frontend, and the GPT-2-evo

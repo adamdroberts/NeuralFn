@@ -485,6 +485,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
 
     assert "nfn_gpt_native_train_linked" in linked_build
     assert "libnfn_native_train_tile_ops.so" in linked_build
+    assert "-Wl,--export-dynamic" in linked_build
     assert "-Wl,--no-as-needed" in linked_build
     assert "-Wl,-rpath" in linked_build
     assert "nfn_gpt_native_train_linked" in train_gpt_source
@@ -1224,15 +1225,19 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity" in source
     assert "diagnostic-sequence-wrapper-ce-side-stream-dhidden-dweight-not-parity" in source
     assert "diagnostic-sequence-wrapper-loss-bins-ce-side-stream-dhidden-dweight-not-parity" in source
-    assert "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity" in source
-    assert "strict-cooperative-abi-event-ordered-loss-bins-ce-side-stream-dhidden-dweight-diagnostic-not-yet-parity" in source
-    assert "strict-cooperative-abi-event-ordered-ce-side-stream-dhidden-dweight" in source
+    assert "strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight-not-single-kernel" in source
+    assert "strict-cooperative-abi-co-scheduled-loss-bins-ce-side-stream-dhidden-dweight-not-single-kernel" in source
+    assert "strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight" in source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_header
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in tile_ops_source
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in tile_ops_header
     assert "run_lm_head_classifier_backward_cooperative_sequence_bf16_u16" in tile_ops_source
     assert "LmHeadCooperativeStreams" in tile_ops_source
     assert "cudaStreamWaitEvent" in tile_ops_source
     assert "g_lm_head_cooperative_sequence_launch_count" in tile_ops_source
+    assert "linked_tile_ops_requested ? RTLD_DEFAULT : dlopen" in source
+    assert "if (!linked_tile_ops_requested && handle == nullptr)" in source
     assert "nfn_native_tile_lm_head_cooperative_sequence_launch_count" in tile_ops_source
     assert "nfn_native_tile_lm_head_cooperative_sequence_ce_launch_count" in tile_ops_header
     assert "nfn_native_tile_lm_head_cooperative_sequence_dhidden_launch_count" in tile_ops_header
