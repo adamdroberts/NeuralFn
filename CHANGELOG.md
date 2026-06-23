@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked the `lm_head_dhidden_fast16bf_32768` and
+  `lm_head_tk_dweight_32768` SM120 native wrapper profiles as rejected by
+  default after CUDA 13.3 dedicated-RTX-5090 stage-timed reruns. The FAST_16BF
+  dHidden route requested 48 fast-16BF GEMMEx calls but regressed total
+  LM-head backward time to `1.004489x` while the targeted dHidden stage stayed
+  flat at `1.000265x`. The TK dWeight route moved 48 LM-head dWeight calls to
+  TK but regressed train-loop wall time to `1.052253x` and
+  `stage.lm_head_backward.dweight.total_ms` to `1.337552x`.
+
+  Verification note: ran 3-step/2-sample stage-timed paired benchmarks for both
+  profiles on the dedicated RTX 5090, then updated wrapper source-contract
+  coverage plus README and SDK Tile-CUDA notes.
+
 - Changed the native dense-GPT allocation default so
   `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA` now defaults to `0`. The compiled
   trainer still uses one float arena and one uint16/BF16 arena by default, but

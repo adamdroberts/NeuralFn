@@ -1840,6 +1840,12 @@ time to `1.132973x`. The related profile
 `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`. These
 profiles stay default-off and must pass the same-script candidate gates before
 any route promotion.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_dhidden_fast16bf_32768` expands to
+`NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE=768,32768,50304,N,N`, but is
+also rejected by default: the CUDA 13.3 dedicated RTX 5090 stage-timed rerun
+requested FAST_16BF for 48 LM-head dHidden calls, regressed total LM-head
+backward to `1.004489x`, and left the targeted dHidden stage effectively flat
+at `1.000265x`.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dweight_32768` expands to
 `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,32768,N,T`. The Tile-CUDA
 candidate computes BF16/BF16 dWeight into BF16 scratch with the SM120 TK bridge
@@ -1849,7 +1855,9 @@ JSON reports `linear_tk_dweight_gemm_count`; when the route is active,
 `tk-sm120-bf16-scratch-to-float32-dweight-diagnostic`. Keep it default-off: the
 dedicated RTX 5090 5-step, 3-sample paired benchmark moved 80 LM-head dWeight
 GEMMs from cuBLASLt to TK but regressed train-loop wall time to `1.022262x` and
-`stage.lm_head_backward.dweight.total_ms` to `1.279309x`.
+`stage.lm_head_backward.dweight.total_ms` to `1.279309x`. The current CUDA 13.3
+stage-timed rerun is worse, moving 48 dWeight calls to TK while regressing
+train-loop wall to `1.052253x` and LM-head dWeight time to `1.337552x`.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_tk_dweight_65536` expands to
 `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T`. The route uses
 the same TK dWeight bridge inside the BF16/BF16 dWeight+bias ABI for the dense
