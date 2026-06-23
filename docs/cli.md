@@ -989,7 +989,8 @@ throughput runs from timing NeuralFn's periodic train-loss accumulation path
 while llm.kittens is configured for `-v 250` validation cadence. The wrapper
 also enables `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on the NeuralFn side by
 default and reports CUDA-event loop metrics such as
-`train_loop_cuda_event_wall_ms_per_step` and
+`train_loop_cuda_event_wall_ms_per_step`,
+`train_loop_cuda_event_first_step_wall_ms_per_step`, and
 `train_loop_cuda_event_steady_state_wall_ms_per_step`; set
 `NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0` to turn that off. Set
 `NFN_SM120_PARITY_CANDIDATE_ENV` or generic `NFN_SM120_CANDIDATE_ENV` to pass

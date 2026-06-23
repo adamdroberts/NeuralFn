@@ -51,6 +51,14 @@ NATIVE_METRIC_PATHS = (
         ("timing", "train_loop_cuda_event_wall_ms_per_step"),
     ),
     (
+        "train_loop_cuda_event_first_step_wall_ms",
+        ("timing", "train_loop_cuda_event_first_step_wall_ms"),
+    ),
+    (
+        "train_loop_cuda_event_first_step_wall_ms_per_step",
+        ("timing", "train_loop_cuda_event_first_step_wall_ms_per_step"),
+    ),
+    (
         "train_loop_cuda_event_steady_state_wall_ms",
         ("timing", "train_loop_cuda_event_steady_state_wall_ms"),
     ),
@@ -562,8 +570,10 @@ NATIVE_TEXT_METRIC_KEYS = (
     "train_loop_wall_ms_per_step",
     "train_loop_wall_ms",
     "train_loop_cuda_event_wall_ms_per_step",
+    "train_loop_cuda_event_first_step_wall_ms_per_step",
     "train_loop_cuda_event_steady_state_wall_ms_per_step",
     "train_loop_cuda_event_wall_ms",
+    "train_loop_cuda_event_first_step_wall_ms",
     "train_loop_cuda_event_steady_state_wall_ms",
     "steps_completed",
     "train_tokens_per_second",
@@ -1288,6 +1298,8 @@ def llm_kittens_metrics_from_stdout(stdout: str) -> dict[str, float | int | str 
         metrics["train_loop_wall_ms_per_step"] = mean(step_ms_values)
         metrics["train_loop_cuda_event_wall_ms"] = sum(step_ms_values)
         metrics["train_loop_cuda_event_wall_ms_per_step"] = mean(step_ms_values)
+        metrics["train_loop_cuda_event_first_step_wall_ms"] = step_ms_values[0]
+        metrics["train_loop_cuda_event_first_step_wall_ms_per_step"] = step_ms_values[0]
         if len(step_ms_values) > 1:
             steady_state_values = step_ms_values[1:]
             metrics["train_loop_cuda_event_steady_state_wall_ms"] = sum(steady_state_values)

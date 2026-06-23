@@ -1725,6 +1725,8 @@ candidate-only CUDA event records do not contaminate pass/fail parity timing.
 Set `NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=1` only for explicit attribution
 runs that need `train_loop_cuda_event_wall_ms`,
 `train_loop_cuda_event_wall_ms_per_step`,
+`train_loop_cuda_event_first_step_wall_ms`,
+`train_loop_cuda_event_first_step_wall_ms_per_step`,
 `train_loop_cuda_event_steady_state_wall_ms`, and
 `train_loop_cuda_event_steady_state_wall_ms_per_step` under `timing`.
 Set `NFN_SM120_PARITY_CANDIDATE_ENV` or generic `NFN_SM120_CANDIDATE_ENV` to

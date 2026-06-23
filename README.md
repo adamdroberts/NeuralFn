@@ -1216,6 +1216,7 @@ CUDA event records measurably contaminate the same-script ratio. Host wall and
 token/sec fields remain the parity gates. Set
 `NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=1` only for explicit attribution runs
 that need `train_loop_cuda_event_wall_ms_per_step` and
+`train_loop_cuda_event_first_step_wall_ms_per_step` plus
 `train_loop_cuda_event_steady_state_wall_ms_per_step` from the NeuralFn side.
 Set `NFN_SM120_PARITY_CANDIDATE_ENV` or generic `NFN_SM120_CANDIDATE_ENV` to
 append extra `KEY=VALUE` pairs to the NeuralFn candidate command without

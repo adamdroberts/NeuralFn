@@ -3696,6 +3696,8 @@ step    2/2 | loss 10.0 (+nanz)| norm 20.0 (+nanz)| lr 2.00e-05 | 2600.00 ms | 4
     assert metrics["train_loop_wall_ms_per_step"] == 2500.0
     assert metrics["train_loop_cuda_event_wall_ms"] == 5000.0
     assert metrics["train_loop_cuda_event_wall_ms_per_step"] == 2500.0
+    assert metrics["train_loop_cuda_event_first_step_wall_ms"] == 2400.0
+    assert metrics["train_loop_cuda_event_first_step_wall_ms_per_step"] == 2400.0
     assert metrics["train_loop_cuda_event_steady_state_wall_ms"] == 2600.0
     assert metrics["train_loop_cuda_event_steady_state_wall_ms_per_step"] == 2600.0
     assert metrics["train_tokens_per_second"] == 215000.0
@@ -3825,6 +3827,8 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                     "train_loop_wall_ms": 20.0,
                     "train_loop_cuda_event_wall_ms": 18.0,
                     "train_loop_cuda_event_wall_ms_per_step": 4.5,
+                    "train_loop_cuda_event_first_step_wall_ms": 6.0,
+                    "train_loop_cuda_event_first_step_wall_ms_per_step": 6.0,
                     "train_loop_cuda_event_steady_state_wall_ms": 12.0,
                     "train_loop_cuda_event_steady_state_wall_ms_per_step": 4.0,
                     "train_loop_cuda_event_timing_enabled": True,
@@ -3928,6 +3932,8 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["train_loop_wall_ms_per_step"] == 5.0
     assert metrics["train_loop_cuda_event_wall_ms"] == 18.0
     assert metrics["train_loop_cuda_event_wall_ms_per_step"] == 4.5
+    assert metrics["train_loop_cuda_event_first_step_wall_ms"] == 6.0
+    assert metrics["train_loop_cuda_event_first_step_wall_ms_per_step"] == 6.0
     assert metrics["train_loop_cuda_event_steady_state_wall_ms"] == 12.0
     assert metrics["train_loop_cuda_event_steady_state_wall_ms_per_step"] == 4.0
     assert metrics["train_loop_cuda_event_timing_enabled"] is True

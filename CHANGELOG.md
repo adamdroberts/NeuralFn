@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added explicit first-step CUDA-event train-loop timing to native dense-GPT
+  JSON and paired benchmark summaries. When
+  `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` is enabled, the timing block now
+  reports `train_loop_cuda_event_first_step_wall_ms`,
+  `train_loop_cuda_event_first_step_count`, and
+  `train_loop_cuda_event_first_step_wall_ms_per_step` in addition to the
+  existing total-loop and post-first steady-state fields. The llm.kittens log
+  parser in `tools/paired_kernel_speed.py` also maps the first parsed step into
+  the same metric names, so parity reports can compare cold first-step overhead
+  directly.
+
+  Migration note: default benchmark behavior does not change; parity wrappers
+  still only emit these fields when event timing is explicitly enabled.
+
+  Verification: focused native timing/source and paired-speed parser tests were
+  updated for the new fields, and a 2-step RTX 5090 smoke with
+  `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` reported first-step CUDA-event
+  timing (`2732.23 ms`) separately from post-first steady-state timing
+  (`2448.72 ms`).
+
 - Added a default-off cuBLAS handle prewarm diagnostic for native dense-GPT
   training. The raw Tile ABI now exports
   `nfn_native_tile_trainer_linear_cublas_prewarm`, and native training JSON

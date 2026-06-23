@@ -9731,8 +9731,10 @@ int run_transformer_lm_training_json(
     double setup_timing_unattributed_ms = 0.0;
     double train_loop_wall_ms = 0.0;
     double train_loop_cuda_event_wall_ms = 0.0;
+    double train_loop_cuda_event_first_step_wall_ms = 0.0;
     double train_loop_cuda_event_steady_state_wall_ms = 0.0;
     std::int64_t train_loop_cuda_event_step_count = 0;
+    std::int64_t train_loop_cuda_event_first_step_count = 0;
     std::int64_t train_loop_cuda_event_steady_state_step_count = 0;
     double validation_wall_ms = 0.0;
     double post_train_sample_wall_ms = 0.0;
@@ -19060,6 +19062,18 @@ int run_transformer_lm_training_json(
             train_loop_cuda_event_wall_ms = static_cast<double>(elapsed_ms_value);
             train_loop_cuda_event_step_count = steps_completed;
         }
+        if (error.empty()) {
+            status = cuda_event_elapsed_time(
+                &elapsed_ms_value,
+                train_loop_cuda_event_start,
+                train_loop_cuda_event_first_step_end);
+            if (status != 0) {
+                error = cuda_error(status, "cudaEventElapsedTime train_loop_cuda_event_first_step");
+            } else {
+                train_loop_cuda_event_first_step_wall_ms = static_cast<double>(elapsed_ms_value);
+                train_loop_cuda_event_first_step_count = 1;
+            }
+        }
         if (error.empty() && steps_completed > 1) {
             status = cuda_event_elapsed_time(
                 &elapsed_ms_value,
@@ -20143,6 +20157,16 @@ int run_transformer_lm_training_json(
         << "    \"train_loop_cuda_event_wall_ms_per_step\": "
         << (train_loop_cuda_event_step_count > 0
                 ? (train_loop_cuda_event_wall_ms / static_cast<double>(train_loop_cuda_event_step_count))
+                : 0.0)
+        << ",\n"
+        << "    \"train_loop_cuda_event_first_step_wall_ms\": "
+        << train_loop_cuda_event_first_step_wall_ms << ",\n"
+        << "    \"train_loop_cuda_event_first_step_count\": "
+        << train_loop_cuda_event_first_step_count << ",\n"
+        << "    \"train_loop_cuda_event_first_step_wall_ms_per_step\": "
+        << (train_loop_cuda_event_first_step_count > 0
+                ? (train_loop_cuda_event_first_step_wall_ms /
+                   static_cast<double>(train_loop_cuda_event_first_step_count))
                 : 0.0)
         << ",\n"
         << "    \"train_loop_cuda_event_steady_state_wall_ms\": "
