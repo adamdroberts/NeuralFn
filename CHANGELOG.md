@@ -11,9 +11,13 @@ Future updates should append new entries here rather than replacing older notes.
   `block_state_layout`, matching the existing top-level runtime JSON fields.
   This keeps kernel-strategy metadata colocated with the optimizer tile strategy
   and other block-loop flags used by native plan/profile consumers.
+  `tools/paired_kernel_speed.py` now also flattens those nested block-layout
+  fields, plus the existing nested optimizer tile fields, into native metric
+  summaries.
 
   Verification: reran the previously failing focused native GPT C++ CLI test
-  slice after updating the JSON renderer.
+  slice after updating the JSON renderer, then reran the paired metric
+  extraction coverage.
 
 - Added a trainer-facing Tile ABI and native GPT JSON diagnostic for the
   compiled SM120 TK attention-backward block size:

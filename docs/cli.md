@@ -1018,7 +1018,9 @@ same gate proves the route changes to `64` but regresses
 `attention_backward_tk_block_size_symbol_loaded` at the top level and inside
 `block_state_layout`, and
 `tools/paired_kernel_speed.py` treats the block size as a strategy value so a
-compile-time block-size candidate is visible in the same-script comparison.
+compile-time block-size candidate is visible in the same-script comparison. The
+paired summary also flattens the nested block-layout block-size fields for
+profile consumers that compare `block_state_layout.*` metrics.
 If attention backward section timing is enabled, paired summaries include the
 native `attention_backward_dprep_timing_*` and
 `attention_backward_tk_timing_*` counters next to the `stage.*` buckets and

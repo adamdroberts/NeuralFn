@@ -393,6 +393,22 @@ NATIVE_METRIC_PATHS = (
         "block_state_layout.linear_backward_bias_row_chunk_size",
         ("block_state_layout", "linear_backward_bias_row_chunk_size"),
     ),
+    (
+        "block_state_layout.optimizer_tile_size",
+        ("block_state_layout", "optimizer_tile_size"),
+    ),
+    (
+        "block_state_layout.optimizer_tile_strategy",
+        ("block_state_layout", "optimizer_tile_strategy"),
+    ),
+    (
+        "block_state_layout.attention_backward_tk_block_size",
+        ("block_state_layout", "attention_backward_tk_block_size"),
+    ),
+    (
+        "block_state_layout.attention_backward_tk_block_size_symbol_loaded",
+        ("block_state_layout", "attention_backward_tk_block_size_symbol_loaded"),
+    ),
     ("float_arena_cuda_malloc_wall_ms", ("float_arena_cuda_malloc_wall_ms",)),
     (
         "float_arena_pointer_assign_wall_ms",
@@ -562,6 +578,8 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "attention_backend_strategy",
     "attention_backward_strategy",
     "attention_backward_tk_block_size",
+    "block_state_layout.attention_backward_tk_block_size",
+    "block_state_layout.attention_backward_tk_block_size_symbol_loaded",
     "device_allocator_strategy",
     "device_cuda_malloc_async_requested",
     "device_cuda_malloc_async_enabled",

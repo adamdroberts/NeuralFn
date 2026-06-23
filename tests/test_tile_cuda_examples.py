@@ -4300,6 +4300,12 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "attention_backward_dprep_timing_count": 12,
                 "attention_backward_tk_block_size": 16,
                 "attention_backward_tk_block_size_symbol_loaded": True,
+                "block_state_layout": {
+                    "optimizer_tile_size": 1024,
+                    "optimizer_tile_strategy": "tile-size-1024-sumsq-scale-adamw",
+                    "attention_backward_tk_block_size": 16,
+                    "attention_backward_tk_block_size_symbol_loaded": True,
+                },
                 "attention_backward_tk_timing_us": 240000,
                 "attention_backward_tk_timing_count": 96,
                 "lm_head_logits_linear_strategy": "padded-lm-head-bf16-cublaslt-fallback",
@@ -4404,6 +4410,10 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["attention_backward_dprep_timing_count"] == 12
     assert metrics["attention_backward_tk_block_size"] == 16
     assert metrics["attention_backward_tk_block_size_symbol_loaded"] is True
+    assert metrics["block_state_layout.optimizer_tile_size"] == 1024
+    assert metrics["block_state_layout.optimizer_tile_strategy"] == "tile-size-1024-sumsq-scale-adamw"
+    assert metrics["block_state_layout.attention_backward_tk_block_size"] == 16
+    assert metrics["block_state_layout.attention_backward_tk_block_size_symbol_loaded"] is True
     assert metrics["attention_backward_tk_timing_us"] == 240000
     assert metrics["attention_backward_tk_timing_count"] == 96
     assert metrics["lm_head_logits_linear_strategy"] == "padded-lm-head-bf16-cublaslt-fallback"
@@ -4490,6 +4500,10 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
         "lm_head_cooperative_backward_kernel_enabled": ["false"],
         "lm_head_cooperative_backward_sequence_wrapper_enabled": ["false"],
         "attention_backward_tk_block_size": ["16"],
+        "block_state_layout.optimizer_tile_size": ["1024"],
+        "block_state_layout.optimizer_tile_strategy": ["tile-size-1024-sumsq-scale-adamw"],
+        "block_state_layout.attention_backward_tk_block_size": ["16"],
+        "block_state_layout.attention_backward_tk_block_size_symbol_loaded": ["true"],
     }
 
 

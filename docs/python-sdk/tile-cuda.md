@@ -715,7 +715,10 @@ emits `attention_backward_tk_block_size` and
 inside `block_state_layout`; the paired benchmark strategy gate tracks the field
 so temporary builds with
 `-DLLMK_SM120_ATTN_BWD_BLOCK=16|32|64` are visible even if their launch counters
-match the default route. The `attention_bwd_block_32` and
+match the default route. `tools/paired_kernel_speed.py` also flattens the nested
+`block_state_layout.attention_backward_tk_block_size` and
+`block_state_layout.attention_backward_tk_block_size_symbol_loaded` fields for
+profile consumers. The `attention_bwd_block_32` and
 `attention_bwd_block_64` SM120 candidate profiles are rejected by default unless
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
 The trainer-facing build mirrors llm.kittens' SM120 NVCC threading,
