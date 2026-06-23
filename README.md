@@ -1065,6 +1065,9 @@ both setup wall time (`1.009714x`) and token initialization (`1.035894x`) versus
 the vector4 default. Set
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only when intentionally
 rerunning those rejected routes after a CUDA or kernel change.
+`token_weight_two_pass_bf16` is rejected under the same policy: the current
+startup-only rerun left total setup flat (`0.996873x`) but regressed token
+initialization to `1.017739x` versus the fused BF16-shadow vector4 default.
 Add
 `--append-native-profile-json-dir /tmp/nfn-profiles`
 when comparing native NeuralFn commands that do not already write JSON; the

@@ -18,6 +18,16 @@ Future updates should append new entries here rather than replacing older notes.
   for both profiles on the dedicated RTX 5090, then updated wrapper
   source-contract coverage plus README and SDK Tile-CUDA notes.
 
+- Marked the `token_weight_two_pass_bf16` SM120 native wrapper profile as
+  rejected by default after a CUDA 13.3 dedicated-RTX-5090 startup-only rerun.
+  The route kept setup wall time effectively flat at `0.996873x`, but failed
+  the token-weight stage gate by regressing `setup.token_weight_init.total_ms`
+  to `1.017739x` versus the fused BF16-shadow vector4 default.
+
+  Verification note: ran the 3-sample same-script startup-only paired benchmark
+  on the dedicated RTX 5090, then updated wrapper source-contract coverage plus
+  README and SDK Tile-CUDA notes.
+
 - Marked the `lm_head_tk_dinput_32768` SM120 native wrapper profile as rejected
   by default after a CUDA 13.3 dedicated-RTX-5090 same-script rerun. The route
   changed the intended LM-head dHidden backend from BF16 GEMMEx to TK dInput

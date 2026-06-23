@@ -1989,6 +1989,9 @@ wall time to `1.009714x` and token-weight initialization to `1.035894x` versus
 the vector4 default. Set
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for deliberate
 post-kernel-change revalidation.
+`token_weight_two_pass_bf16` is rejected for the same reason: the current
+startup-only rerun kept setup wall time flat (`0.996873x`) but regressed token
+initialization to `1.017739x` versus the fused BF16-shadow vector4 default.
 For a direct check of the rejected vector4 BF16 pattern writer, set
 `NFN_SM120_NATIVE_STARTUP_ONLY=1` and put
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` in
