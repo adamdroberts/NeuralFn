@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the rejected `lm_head_loss_bins` native GPT benchmark profile after
+  the CUDA reinstall on the dedicated RTX 5090. The wrapper rejection reason now
+  reflects the current 2026-06-24 evidence: the route improves steady-state
+  CUDA-event timing and LM-head backward, but remains diagnostic-only because
+  the strict total train-loop wall gate still misses.
+
+  Verification: ran the llm.kittens parity refresh plus the intentional
+  native-vs-native `lm_head_loss_bins` rerun with stage timing on the selected
+  idle RTX 5090.
+
 - Extended the native no-Torch dependency verifier to cover the focused
   LM-head backward benchmark. `tools/bench_lm_head_backward_candidate.sh` now
   supports `NFN_LM_HEAD_BACKWARD_DRY_RUN=1`, printing the resolved compiled
