@@ -464,21 +464,25 @@ For compile-time Tile ops candidates, set
 `NFN_SM120_CANDIDATE_TILE_OPS_BUILD_FLAGS`; the wrapper builds a temporary
 candidate `libnfn_native_train_tile_ops.so` with those extra nvcc flags and
 compares it against the baseline library without overwriting `build/`. The
+dry-run plan path does not build that temporary shared object; it resolves the
+generated candidate path and env split only, so build-flag profiles can be
+inspected without launching nvcc or CUDA work. The
 named profiles `tk_dgelu_dinput` and `tk_dgelu_approx_tanh` build the
 llm.kittens SM120 fused dGELU dInput candidates with
 `-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP` and, for the latter,
-`-DLLMK_SM120_APPROX_DGELU_TANH=1`; `tk_forward_no_n96` builds a temporary
-candidate library with `-DLLMK_SM120_FORWARD_N96=0` to reroute eligible
-llm.kittens forward GEMM shapes away from the N96 path. Stage-timed dGELU
-candidates also gate
+`-DLLMK_SM120_APPROX_DGELU_TANH=1`. Those profiles now force the baseline to
+`NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` and the candidate to
+`NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=1`, so a same-script run compares the
+older separate MLP projection dInput+dGELU path against the fused TK route
+instead of timing the default against itself. `tk_forward_no_n96` builds a
+temporary candidate library with `-DLLMK_SM120_FORWARD_N96=0` to reroute
+eligible llm.kittens forward GEMM shapes away from the N96 path. Stage-timed
+dGELU candidates also gate
 `stage.block_backward.mlp_proj.dinput.total_ms=1.000`. These are still
 candidate-only routes. Runtime JSON reports
 `linear_tk_dgelu_dinput_gemm_count`, and the paired benchmark treats it as a
 route counter so build-flag candidates cannot be accepted on timing noise when
-the fused dGELU route does not actually launch. The current CUDA 13.3 dedicated
-RTX 5090 5-step, 3-sample rerun kept `tk_dgelu_dinput` rejected: no tracked
-strategy changed, the dGELU counter did not move, and the strict LM-head stage
-gate measured `1.000159x` even though train-loop wall time was `0.997858x`.
+the fused dGELU route does not actually launch.
 The llm.kittens parity wrapper accepts the same stage-timing aliases as the
 native candidate wrapper: set `NFN_SM120_NATIVE_STAGE_TIMING=1`,
 `NFN_SM120_NATIVE_PARITY_STAGE_TIMING=1`, `NFN_SM120_PARITY_STAGE_TIMING=1`, or

@@ -1040,6 +1040,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1" in text
     assert "tk_dgelu_dinput" in text
     assert "tk_dgelu_approx_tanh" in text
+    assert "NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0" in text
+    assert "NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=1" in text
+    assert "-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP" in text
     assert "attention_atomic_dq" in text
     assert "tk_forward_no_n96" in text
     assert "-DLLMK_SM120_FORWARD_N96=0" in text
@@ -1228,6 +1231,37 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "768,50304,32768,N,T"
     )
     assert tk_dweight_payload["metric_ratio_gates"]["enabled"] is False
+
+    tk_dgelu_output_path = tmp_path / "candidate-tk-dgelu-dinput-dry-run.json"
+    tk_dgelu_env = os.environ.copy()
+    tk_dgelu_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "tk_dgelu_dinput",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tk_dgelu_output_path),
+        }
+    )
+
+    tk_dgelu_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=tk_dgelu_env,
+    )
+
+    assert tk_dgelu_dry_run.returncode == 0, tk_dgelu_dry_run.stderr
+    tk_dgelu_payload = json.loads(tk_dgelu_output_path.read_text(encoding="utf-8"))
+    assert tk_dgelu_payload["baseline_env"]["NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU"] == "0"
+    assert tk_dgelu_payload["candidate_env"]["NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU"] == "1"
+    assert any(
+        str(part).startswith("/tmp/nfn_sm120_candidate_tile_ops_tk_dgelu_dinput_")
+        for part in tk_dgelu_payload["candidate_command"]
+    )
+    assert tk_dgelu_payload["metric_ratio_gates"]["enabled"] is False
 
     mlp_proj_tk_dweight_output_path = tmp_path / "candidate-mlp-proj-tk-dweight-dry-run.json"
     mlp_proj_tk_dweight_env = os.environ.copy()

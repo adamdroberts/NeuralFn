@@ -983,9 +983,11 @@ Native dense-GPT JSON also reports `linear_tk_dgelu_dinput_gemm_count`, which
 tracks successful TK fused dInput+dGELU launches separately from the generic
 `linear_tk_gemm_count`. The SM120 candidate wrapper treats this as a route
 counter for compile-time Tile profiles such as `tk_dgelu_dinput` and
-`tk_dgelu_approx_tanh`; the CUDA 13.3 dedicated RTX 5090 5-step, 3-sample
-rerun kept `tk_dgelu_dinput` rejected because the counter did not move and
-`stage.lm_head_backward.total_ms` missed the strict gate at `1.000159x`.
+`tk_dgelu_approx_tanh`. Those profiles force the baseline to
+`NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` and the candidate to
+`NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=1`, so paired SDK/CLI runs compare the
+older separate dInput plus GELU-backward path against the fused TK route instead
+of timing the current default against itself.
 `NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1` is the matching diagnostic
 ordering switch for MLP FC backward. It runs dInput before dWeight+bias and
 reports `block_backward_mlp_fc_dinput_before_dweight_enabled`, but remains
@@ -1669,11 +1671,13 @@ ThunderKittens flags. This is intended for paired benchmark builds such as
 setting
 `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP -DLLMK_SM120_APPROX_DGELU_TANH=1"`
 and running `bash tools/build_native_train_tile_ops.sh /tmp/libnfn_candidate.so`;
-the default library build should leave both variables unset. On the dedicated
-RTX 5090, this fused-dGELU candidate stayed opt-in after paired timing: the
-two-sample run was narrowly faster, but the four-sample repeat was
-noise-equivalent at about `0.999900x` train-loop time and `1.000109x`
-tokens/sec.
+the default library build should leave both variables unset. The SM120 wrapper
+profiles `tk_dgelu_dinput` and `tk_dgelu_approx_tanh` additionally force the
+trainer env split (`NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` for baseline, `=1`
+for candidate) so compile-time library candidates are measured against the
+older unfused trainer path in the same paired run. Dry-run plan mode skips the
+temporary candidate Tile-op build and records the generated candidate shared
+object path/env only.
 
 The default trainer-facing token-weight initializer uses a 4096-element CUDA
 Tile shape. For paired startup bisection only, build alternate libraries with

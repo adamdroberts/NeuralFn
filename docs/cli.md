@@ -1331,7 +1331,12 @@ Compile-time dGELU candidates also have a dedicated route counter:
 `linear_tk_dgelu_dinput_gemm_count`. The paired benchmark prints and ratios it,
 and includes it in `native_route_counter_changes`, so `tk_dgelu_dinput` and
 `tk_dgelu_approx_tanh` runs cannot pass the route-change gate merely because a
-temporary Tile library was rebuilt.
+temporary Tile library was rebuilt. The named profiles also force the baseline
+to `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0` and the candidate to
+`NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=1`, so the same-script comparison is the
+older separate dInput plus GELU-backward path versus the fused TK route.
+`NFN_SM120_NATIVE_DRY_RUN_PLAN=1` skips temporary Tile-op compilation for these
+build-flag profiles and only records the resolved candidate library path/env.
 `lm_head_classifier_ce_no_loss` expands to
 `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1`, forces the baseline side to
 `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=0`, and keeps train-loss logging

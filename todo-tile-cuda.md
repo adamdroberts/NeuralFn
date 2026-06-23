@@ -1285,3 +1285,17 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     instead of leaving the handoff buffer unwritten. This is correctness
     hardening for fallback/candidate builds, not a promoted throughput fix for
     the remaining SM120 parity gap.
+  - 2026-06-23 fixed the SM120 paired wrapper's compile-time dGELU profiles so
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_dgelu_dinput` and
+    `tk_dgelu_approx_tanh` compare the current fused TK route against the older
+    unfused trainer route in one script. The baseline side now forces
+    `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0`, the candidate side forces
+    `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=1`, and the candidate Tile ops shared
+    object still rebuilds with the SM120 dGELU compile flag. This is benchmark
+    hygiene for future kernel work; it prevents another no-op default-vs-default
+    dGELU run before any promotion decision. A one-step dedicated RTX 5090
+    route smoke with ratio gates disabled changed
+    `linear_tk_dgelu_dinput_gemm_count` from `0` to `96`,
+    `block_backward_dinput_tk_gemm_count` from `0` to `96`, and
+    `block_backward_dinput_cublaslt_gemm_count` from `384` to `288`, with the
+    native route-change gate passing.

@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the SM120 native candidate wrapper profiles `tk_dgelu_dinput` and
+  `tk_dgelu_approx_tanh` so they benchmark the fused TK MLP projection dInput
+  dGELU route against the older unfused path in one paired run. The baseline
+  side now sets `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=0`, the candidate side
+  sets `NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU=1`, and the candidate Tile ops
+  library is still rebuilt with the relevant llm.kittens SM120 compile flag.
+  Dry-run plan mode now skips that temporary Tile-op rebuild and records only
+  the resolved command/env plan.
+
+  Migration note: no default native training behavior changes. This only fixes
+  the named benchmark profiles so they no longer compare the default fused
+  route against itself when proving `linear_tk_dgelu_dinput_gemm_count`.
+
+  Verification: dry-run coverage now asserts the explicit old-vs-new env split
+  and generated candidate Tile-op path for
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_dgelu_dinput`. A one-step dedicated
+  RTX 5090 paired smoke with ratio gates disabled for route proof exited
+  cleanly and moved `linear_tk_dgelu_dinput_gemm_count` from `0` on the
+  unfused baseline to `96` on the fused candidate, with the native
+  route-change gate passing.
+
 - Added a dedicated dense-GPT native diagnostic counter for TK fused
   dInput+dGELU launches. Tile ops now exports
   `nfn_native_tile_trainer_linear_tk_dgelu_dinput_gemm_count`, the compiled
