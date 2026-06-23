@@ -1751,7 +1751,10 @@ the default 49152-row trainer chunk, and
 1024-bin loss-reduction shape. Set
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` to reject the current sequence
 wrapper and `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000` to reject a candidate slower
-than the baseline before running the full GPT trainer. The wrapper defaults
+than the baseline before running the full GPT trainer. The JSON also includes
+`reference_components` with separate CE, dHidden, dWeight, and summed timings
+for the current raw Tile ABI, which is the fastest way to see which part of a
+new LM-head classifier-backward candidate actually moved. The wrapper defaults
 `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=auto`, selecting a display-disabled
 NVIDIA GPU through `nvidia-smi` when possible, and still allows explicit
 pinning through `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES` or

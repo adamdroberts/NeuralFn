@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the native CUDA LM-head backward benchmark to emit decomposed
+  `reference_components` timing for the current raw Tile ABI: classifier CE,
+  dHidden, dWeight, and their summed per-iteration time. This keeps future
+  fused/cooperative LM-head candidates measurable before full trainer parity
+  runs and preserves the separate `candidate_true_fused_capability` gate so the
+  existing sequence wrapper is still not reported as a real fused kernel.
+
+  Verification: updated static native GPT coverage for the new bench symbols
+  and JSON fields; rebuilt and ran the focused benchmark on the dedicated GPU.
+
 - Added explicit forced-cuBLASLt raw C ABI candidate symbols for the padded-vocab
   LM-head strided BF16 linear backward paths:
   `nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_cublaslt_float32`

@@ -9,6 +9,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -41,6 +42,34 @@ using LmHeadBackwardFn = int (*)(
 using IntFn = int (*)();
 using VoidFn = void (*)();
 using CountFn = std::int64_t (*)();
+using LmHeadCeRowLossFn = int (*)(
+    std::uint16_t*,
+    const std::uint16_t*,
+    float*,
+    std::int64_t,
+    std::int64_t,
+    std::int64_t,
+    float,
+    void*);
+using LinearBackwardInputStridedFn = int (*)(
+    const std::uint16_t*,
+    const std::uint16_t*,
+    float*,
+    std::int64_t,
+    std::int64_t,
+    std::int64_t,
+    std::int64_t,
+    void*);
+using LinearBackwardWeightStridedBetaFn = int (*)(
+    const std::uint16_t*,
+    const std::uint16_t*,
+    float*,
+    std::int64_t,
+    std::int64_t,
+    std::int64_t,
+    std::int64_t,
+    float,
+    void*);
 
 struct Options {
     std::string tile_ops_lib = "build/libnfn_native_train_tile_ops.so";
@@ -69,6 +98,13 @@ struct VariantResult {
     std::int64_t concurrent_count = 0;
     std::int64_t legacy_count = 0;
     std::int64_t loss_bin_count = 0;
+};
+
+struct ComponentResult {
+    double ce_ms_per_iter = 0.0;
+    double dhidden_ms_per_iter = 0.0;
+    double dweight_ms_per_iter = 0.0;
+    double summed_ms_per_iter = 0.0;
 };
 
 [[noreturn]] void usage(const char* argv0) {
@@ -326,11 +362,134 @@ VariantResult run_variant(
     return result;
 }
 
+double time_component(
+    const std::string& label,
+    int iterations,
+    const std::function<void()>& prepare,
+    const std::function<int()>& launch) {
+    double total_ms = 0.0;
+    for (int i = 0; i < iterations; ++i) {
+        prepare();
+        cuda_check(cudaDeviceSynchronize(), label + " prepare synchronize");
+        cudaEvent_t start = nullptr;
+        cudaEvent_t stop = nullptr;
+        cuda_check(cudaEventCreate(&start), label + " cudaEventCreate start");
+        cuda_check(cudaEventCreate(&stop), label + " cudaEventCreate stop");
+        cuda_check(cudaEventRecord(start), label + " cudaEventRecord start");
+        const int status = launch();
+        if (status != 0) {
+            cudaEventDestroy(start);
+            cudaEventDestroy(stop);
+            throw std::runtime_error(label + " returned status " + std::to_string(status));
+        }
+        cuda_check(cudaEventRecord(stop), label + " cudaEventRecord stop");
+        cuda_check(cudaEventSynchronize(stop), label + " cudaEventSynchronize stop");
+        float elapsed_ms = 0.0f;
+        cuda_check(cudaEventElapsedTime(&elapsed_ms, start, stop), label + " cudaEventElapsedTime");
+        total_ms += static_cast<double>(elapsed_ms);
+        cudaEventDestroy(start);
+        cudaEventDestroy(stop);
+    }
+    return iterations > 0 ? total_ms / static_cast<double>(iterations) : 0.0;
+}
+
+ComponentResult run_reference_components(
+    LmHeadCeRowLossFn ce_fn,
+    LinearBackwardInputStridedFn dhidden_fn,
+    LinearBackwardWeightStridedBetaFn dweight_fn,
+    const Options& options,
+    std::uint16_t* logits,
+    const std::uint16_t* targets,
+    float* row_losses,
+    const std::uint16_t* hidden_bf16,
+    const std::uint16_t* token_weight_bf16,
+    float* grad_hidden,
+    float* grad_weight) {
+    const std::size_t logits_bytes =
+        static_cast<std::size_t>(options.rows * options.row_stride) * sizeof(std::uint16_t);
+    const std::size_t grad_hidden_bytes =
+        static_cast<std::size_t>(options.rows * options.hidden_dim) * sizeof(float);
+    const std::size_t grad_weight_bytes =
+        static_cast<std::size_t>(options.hidden_dim * options.vocab) * sizeof(float);
+    const float loss_scale = 1.0f / static_cast<float>(options.rows);
+    ComponentResult result;
+    result.ce_ms_per_iter = time_component(
+        "reference.ce_row_losses",
+        options.iterations,
+        [&]() {
+            cuda_check(cudaMemset(logits, 0, logits_bytes), "reference ce logits memset");
+        },
+        [&]() {
+            return ce_fn(
+                logits,
+                targets,
+                row_losses,
+                options.rows,
+                options.vocab,
+                options.row_stride,
+                loss_scale,
+                nullptr);
+        });
+    cuda_check(cudaMemset(logits, 0, logits_bytes), "reference dlogits logits memset");
+    const int ce_status = ce_fn(
+        logits,
+        targets,
+        row_losses,
+        options.rows,
+        options.vocab,
+        options.row_stride,
+        loss_scale,
+        nullptr);
+    if (ce_status != 0) {
+        throw std::runtime_error("reference dlogits preparation returned status " + std::to_string(ce_status));
+    }
+    cuda_check(cudaDeviceSynchronize(), "reference dlogits preparation synchronize");
+    result.dhidden_ms_per_iter = time_component(
+        "reference.dhidden",
+        options.iterations,
+        [&]() {
+            cuda_check(cudaMemset(grad_hidden, 0, grad_hidden_bytes), "reference dhidden grad memset");
+        },
+        [&]() {
+            return dhidden_fn(
+                logits,
+                token_weight_bf16,
+                grad_hidden,
+                options.rows,
+                options.hidden_dim,
+                options.vocab,
+                options.row_stride,
+                nullptr);
+        });
+    result.dweight_ms_per_iter = time_component(
+        "reference.dweight",
+        options.iterations,
+        [&]() {
+            cuda_check(cudaMemset(grad_weight, 0, grad_weight_bytes), "reference dweight grad memset");
+        },
+        [&]() {
+            return dweight_fn(
+                hidden_bf16,
+                logits,
+                grad_weight,
+                options.rows,
+                options.hidden_dim,
+                options.vocab,
+                options.row_stride,
+                0.0f,
+                nullptr);
+        });
+    result.summed_ms_per_iter =
+        result.ce_ms_per_iter + result.dhidden_ms_per_iter + result.dweight_ms_per_iter;
+    return result;
+}
+
 std::string render_json(
     const Options& options,
     bool true_fused_capability,
     const VariantResult& baseline,
-    const VariantResult& candidate) {
+    const VariantResult& candidate,
+    const ComponentResult& reference_components) {
     const double ratio =
         baseline.ms_per_iter > 0.0 ? candidate.ms_per_iter / baseline.ms_per_iter : 0.0;
     auto variant_json = [](const VariantResult& value) {
@@ -363,6 +522,12 @@ std::string render_json(
         << "  \"flags\": " << options.flags << ",\n"
         << "  \"timed_reset_between_iterations\": false,\n"
         << "  \"candidate_true_fused_capability\": " << (true_fused_capability ? "true" : "false") << ",\n"
+        << "  \"reference_components\": {"
+        << "\"ce_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.ce_ms_per_iter << ","
+        << "\"dhidden_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.dhidden_ms_per_iter << ","
+        << "\"dweight_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.dweight_ms_per_iter << ","
+        << "\"summed_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.summed_ms_per_iter
+        << "},\n"
         << "  \"baseline\": " << variant_json(baseline) << ",\n"
         << "  \"candidate\": " << variant_json(candidate) << ",\n"
         << "  \"candidate_to_baseline_ms_per_iter_ratio\": " << std::fixed << std::setprecision(6) << ratio << "\n"
@@ -400,6 +565,15 @@ int main(int argc, char** argv) {
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_cooperative_sequence_legacy_count");
         auto loss_bin_count =
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_cooperative_sequence_loss_bin_count");
+        auto reference_ce_fn = load_symbol<LmHeadCeRowLossFn>(
+            handle,
+            "nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets");
+        auto reference_dhidden_fn = load_symbol<LinearBackwardInputStridedFn>(
+            handle,
+            "nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_float32");
+        auto reference_dweight_fn = load_symbol<LinearBackwardWeightStridedBetaFn>(
+            handle,
+            "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta");
 
         const std::size_t logits_bytes =
             static_cast<std::size_t>(options.rows * options.row_stride) * sizeof(std::uint16_t);
@@ -483,8 +657,21 @@ int main(int argc, char** argv) {
             static_cast<const float*>(token_weight_float.get()),
             static_cast<float*>(grad_hidden.get()),
             static_cast<float*>(grad_weight.get()));
+        const ComponentResult reference_components = run_reference_components(
+            reference_ce_fn,
+            reference_dhidden_fn,
+            reference_dweight_fn,
+            options,
+            static_cast<std::uint16_t*>(logits.get()),
+            static_cast<const std::uint16_t*>(targets.get()),
+            static_cast<float*>(row_losses.get()),
+            static_cast<const std::uint16_t*>(hidden_bf16.get()),
+            static_cast<const std::uint16_t*>(token_weight_bf16.get()),
+            static_cast<float*>(grad_hidden.get()),
+            static_cast<float*>(grad_weight.get()));
 
-        const std::string json = render_json(options, true_fused_capability() != 0, baseline, candidate);
+        const std::string json =
+            render_json(options, true_fused_capability() != 0, baseline, candidate, reference_components);
         if (!options.json_out.empty()) {
             std::filesystem::path out_path(options.json_out);
             if (!out_path.parent_path().empty()) {
