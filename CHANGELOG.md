@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linked_startup` (alias:
+  `linked_tile_ops`) to `tools/bench_native_gpt_sm120_candidate.sh`. The
+  profile compares `build/nfn_gpt_native_train` against
+  `build/nfn_gpt_native_train_linked` in startup-only mode with zero training
+  steps and no warmup by default, passes `--tile-ops-lib linked` to the linked
+  candidate, and disables the native route-change gate because this workflow
+  measures dynamic Tile-ops loading versus the linked Tile-ops path.
+  `NFN_SM120_NATIVE_BASELINE_TRAIN_BIN` and
+  `NFN_SM120_NATIVE_LINKED_STARTUP_CANDIDATE_BIN` override the compared
+  binaries.
+
+  Verification note: updated wrapper source-contract coverage, ran
+  `bash -n tools/bench_native_gpt_sm120_candidate.sh`, dry-ran
+  `linked_startup` to confirm the generated baseline/candidate commands, and
+  ran a real 3-sample dedicated-RTX-5090 startup profile. The linked candidate
+  passed the setup gate at `0.839626x` setup wall time with no route-change gate
+  failure.
+
 - Changed `tools/install_native_gpt2_commands.sh` so installed
   `nfn-gpt-native`, `nfn-gpt-native-train`, `nfn-gpt2-native`, and
   `nfn-gpt2-native-train` symlinks prefer the linked dense-GPT native CLI when

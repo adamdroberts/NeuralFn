@@ -1834,6 +1834,15 @@ For native GEMM profiling, set `NFN_NATIVE_LINEAR_SHAPE_STATS=1`, `NFN_TILE_CUDA
 Run SM120 parity and candidate benchmarks only from a shell with real WSL GPU driver access. If `nvidia-smi` reports "GPU access blocked by the operating system" or the native JSON reports `cudaDriverGetVersion` as `0`, the result is an execution-environment failure rather than a kernel result; rerun the same command with GPU-visible execution before accepting or rejecting a candidate. `tools/paired_kernel_speed.py` now also takes a per-selected-GPU lock at `/tmp/nfn_paired_kernel_speed_gpu_<device>.lock` for measured runs, so two same-GPU paired benchmarks cannot overlap and contaminate each other before `nvidia-smi` observes a compute process. The default lock fails fast; pass `--gpu-benchmark-lock-timeout-seconds N` to wait, or `--no-gpu-benchmark-lock` only for intentionally unmanaged measurements. The utilization guard still rejects active compute load immediately, but it now retries transient high `nvidia-smi` utilization samples on an otherwise idle selected GPU; tune this with `--selected-gpu-utilization-retries` and `--selected-gpu-utilization-retry-interval-seconds` when a WSL/NVML idle poll spikes without compute processes.
 
 `tools/bench_native_gpt_sm120_candidate.sh` accepts the native-specific `NFN_SM120_NATIVE_*` controls, the shorter `NFN_SM120_CANDIDATE_*` controls, and the shared parity-wrapper `NFN_SM120_PARITY_*` controls for common benchmark shape fields such as steps, samples, warmup, profile directory, stage timing, GPU selection, JSON output, and dry-run plan. Native-specific names win over candidate names, which win over parity names. Candidate-only env and candidate-only extra args stay separate, so `NFN_SM120_NATIVE_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` and `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` / `NFN_SM120_CANDIDATE_EXTRA_ARGS` still affect only the candidate command. This keeps quick parity-to-native bisections from silently falling back to the candidate wrapper defaults of 10 steps, 3 samples, and 1 warmup.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linked_startup` (alias:
+`linked_tile_ops`) to compare `build/nfn_gpt_native_train` against
+`build/nfn_gpt_native_train_linked` in the same paired wrapper. The profile
+forces startup-only mode with zero training steps, sets warmup to `0` unless
+overridden, passes `--tile-ops-lib linked` to the linked candidate, and disables
+the native route-change gate because the only expected change is dynamic
+Tile-ops loading versus the linked Tile-ops path. Override the compared binaries
+with `NFN_SM120_NATIVE_BASELINE_TRAIN_BIN` and
+`NFN_SM120_NATIVE_LINKED_STARTUP_CANDIDATE_BIN`.
 Real runs of rejected SM120 candidate profiles now require
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; dry-run plan expansion
 remains available without the opt-in. The current rejected set includes

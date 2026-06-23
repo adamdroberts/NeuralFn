@@ -1361,6 +1361,15 @@ loss-bin kernel is exercised fairly. It remains diagnostic-only: the dedicated
 RTX 5090 CUDA 13.3 2-step, 2-sample gate proved the cooperative loss-bin
 strategy, but rejected the candidate at `1.001346x` train-loop wall,
 `1.000068x` LM-head backward, and `1.002485x` block backward.
+`linked_startup` (alias: `linked_tile_ops`) compares the dynamic native GPT
+binary against the linked native GPT binary without entering the training loop.
+The profile selects `build/nfn_gpt_native_train` as the baseline,
+`build/nfn_gpt_native_train_linked` as the candidate, sets startup-only mode
+with zero steps and no warmup by default, and disables the route-change gate
+because the benchmark is measuring dynamic Tile-ops loading versus linked
+Tile-ops startup. Use `NFN_SM120_NATIVE_BASELINE_TRAIN_BIN` and
+`NFN_SM120_NATIVE_LINKED_STARTUP_CANDIDATE_BIN` when comparing binaries outside
+`build/`.
 
 Prefer the generic dense GPT environment names for new native runs:
 `NFN_NATIVE_GPT_CLI`, `NFN_NATIVE_GPT_RUNNER`, and `NFN_NATIVE_GPT_BINDING`. The `llm-kittens` GPT training backend has been removed; keep `tools/bench_native_gpt_sm120_parity.sh` for reference timing. Runtime tuning prefers

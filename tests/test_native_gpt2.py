@@ -591,6 +591,13 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "token_weight_two_pass_bf16" in candidate_bench
     assert "setup_wall_ms flat at 0.996873x" in candidate_bench
     assert "setup.token_weight_init.total_ms to 1.017739x" in candidate_bench
+    assert "linked_startup" in candidate_bench
+    assert "linked_tile_ops" in candidate_bench
+    assert "NFN_SM120_NATIVE_BASELINE_TRAIN_BIN" in candidate_bench
+    assert "NFN_SM120_NATIVE_LINKED_STARTUP_CANDIDATE_BIN" in candidate_bench
+    assert "FORCE_DISABLE_ROUTE_CHANGE=1" in candidate_bench
+    assert 'if [[ "$FORCE_DISABLE_ROUTE_CHANGE" == "1" ]]; then' in candidate_bench
+    assert "REQUIRE_NATIVE_ROUTE_CHANGE=0" in candidate_bench
     assert 'Path("build/nfn_gpt_native_train_linked")' in no_torch_verifier
 
 
