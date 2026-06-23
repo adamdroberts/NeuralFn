@@ -2052,6 +2052,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
 
         assert token_dry_run.returncode == 0, token_dry_run.stderr
         token_payload = json.loads(token_output_path.read_text(encoding="utf-8"))
+        assert token_payload["baseline_env"]["NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT"] == "1"
+        assert token_payload["candidate_env"]["NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT"] == "1"
         for env_name, env_value in expected_env["baseline"].items():
             assert token_payload["baseline_env"][env_name] == env_value
         for env_name, env_value in expected_env["candidate"].items():

@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Enabled CUDA runtime/driver version preflight by default in
+  `tools/bench_native_gpt_sm120_candidate.sh` for both baseline and candidate
+  commands. Benchmark sweeps now fail before warmup when WSL exposes a CUDA
+  runtime that the installed NVIDIA driver cannot use; set
+  `NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=0` only when intentionally measuring
+  the raw allocation failure path.
+
+  Verification: after the CUDA 13.3 reinstall, unsandboxed `nvidia-smi`
+  reported RTX 5090 driver `610.47`, while native CUDA 13.3, explicit CUDA 13.2,
+  and explicit CUDA 13.1 runtime probes all reported driver version `0` from
+  `cudaDriverGetVersion` before allocation. Focused wrapper tests and shell
+  syntax checks were run after the wrapper change.
+
 - Guarded rejected SM120 native GPT candidate profiles in
   `tools/bench_native_gpt_sm120_candidate.sh`. Real paired benchmark runs of
   `attention_atomic_dq`, `qkv_forward_bf16_fallback_65536`,

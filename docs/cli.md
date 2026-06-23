@@ -1052,7 +1052,11 @@ utilization counter remains stuck high after retries; active compute processes
 still fail immediately, and the allowance is recorded in text and JSON output.
 The native candidate wrapper enables that allowance by default through
 `NFN_SM120_NATIVE_ALLOW_STALE_GPU_UTILIZATION_WITHOUT_COMPUTE=1`; set it to `0`
-for strict utilization gating. For `tools/bench_native_gpt_sm120_candidate.sh` startup
+for strict utilization gating. It also enables the trainer CUDA version
+preflight by default through `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT=1` on both
+baseline and candidate commands, so WSL driver/runtime mismatches fail before
+warmup; set `NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=0` only when intentionally
+measuring the raw allocation failure path. For `tools/bench_native_gpt_sm120_candidate.sh` startup
 bisections, set `NFN_SM120_NATIVE_STARTUP_ONLY=1`; measured candidate runs then
 auto-gate `setup_wall_ms=1.000` unless an explicit max-ratio override is set,
 because startup-only JSON has no `train_loop_wall_ms_per_step` metric. When
