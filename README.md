@@ -108,7 +108,7 @@ kernel candidates should first run
 symbol against `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
 inside one CUDA process with event timing, route counters, and a
 `candidate_true_fused_capability` JSON field. Use
-`NFN_LM_HEAD_BACKWARD_ROWS=32768` to exercise the default 49152-row trainer
+`NFN_LM_HEAD_BACKWARD_ROWS=49152` to exercise the default 49152-row trainer
 chunk scale without involving the full training loop. A post-reinstall wrapper
 timing check also confirms that
 `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run --native-cuda-print-command`
