@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed `tools/bench_native_gpt_sm120_parity.sh` so it no longer enables
+  `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on the NeuralFn side by default.
+  A short dedicated-RTX-5090 parity rerun showed the candidate-only event
+  records inflated the NeuralFn/llm.kittens ratio from about `1.017950x` with
+  event timing disabled to about `1.053031x` with it enabled. Set
+  `NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=1` only for explicit attribution
+  runs that need native train-loop CUDA event fields.
+
+  Verification note: ran 3-step same-script parity checks with event timing on
+  and off on the dedicated RTX 5090, then updated wrapper source-contract
+  coverage plus README and SDK Tile-CUDA notes.
+
 - Marked the `lm_head_cooperative_backward` SM120 native wrapper profile as
   rejected by default after a CUDA 13.3 dedicated-RTX-5090 same-script rerun.
   The candidate activated the cooperative LM-head sequence wrapper and changed

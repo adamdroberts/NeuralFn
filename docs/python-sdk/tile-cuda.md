@@ -1655,14 +1655,13 @@ short parity runs measure the training loop rather than the compiled trainer's
 raw-C++ default periodic train-loss accumulation path; set
 `NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS` or generic
 `NFN_SM120_TRAIN_LOSS_EVERY_STEPS` to opt back into timed train-loss logging.
-For parity attribution the wrapper enables
-`NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on the NeuralFn side by default.
-Runtime JSON then reports `train_loop_cuda_event_wall_ms`,
+The wrapper leaves `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING` unset by default so
+candidate-only CUDA event records do not contaminate pass/fail parity timing.
+Set `NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=1` only for explicit attribution
+runs that need `train_loop_cuda_event_wall_ms`,
 `train_loop_cuda_event_wall_ms_per_step`,
 `train_loop_cuda_event_steady_state_wall_ms`, and
-`train_loop_cuda_event_steady_state_wall_ms_per_step` under `timing`, plus
-request/enabled flags and step counts. Set
-`NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0` to suppress those event records.
+`train_loop_cuda_event_steady_state_wall_ms_per_step` under `timing`.
 Set `NFN_SM120_PARITY_CANDIDATE_ENV` or generic `NFN_SM120_CANDIDATE_ENV` to
 append candidate-only `KEY=VALUE` overrides to the NeuralFn side of the parity
 comparison. This is useful for one-off route checks such as

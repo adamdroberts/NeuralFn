@@ -1117,13 +1117,13 @@ timing-only sample/checkpoint cadence (`NFN_SM120_PARITY_SAMPLE_EVERY=0`,
 `NFN_SM120_PARITY_CHECKPOINT_EVERY=0`) and passes
 `--train-loss-every-steps 0` to the NeuralFn side unless
 `NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS` or generic
-`NFN_SM120_TRAIN_LOSS_EVERY_STEPS` overrides it. It also enables
-`NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on the NeuralFn side by default so
-the native metrics include CUDA-event training-loop fields comparable to the
-llm.kittens step log:
-`train_loop_cuda_event_wall_ms_per_step` and
-`train_loop_cuda_event_steady_state_wall_ms_per_step`. Set
-`NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0` to suppress those event records.
+`NFN_SM120_TRAIN_LOSS_EVERY_STEPS` overrides it. It leaves
+`NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING` unset by default because candidate-only
+CUDA event records measurably contaminate the same-script ratio. Host wall and
+token/sec fields remain the parity gates. Set
+`NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=1` only for explicit attribution runs
+that need `train_loop_cuda_event_wall_ms_per_step` and
+`train_loop_cuda_event_steady_state_wall_ms_per_step` from the NeuralFn side.
 Set `NFN_SM120_PARITY_CANDIDATE_ENV` or generic `NFN_SM120_CANDIDATE_ENV` to
 append extra `KEY=VALUE` pairs to the NeuralFn candidate command without
 affecting the llm.kittens baseline; for example,
