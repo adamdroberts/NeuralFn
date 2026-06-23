@@ -848,7 +848,12 @@ rows when the v2 native Tile stats ABI is available. The CUDA 13.3 RTX 5090
 path reports only one returned heuristic for the hot dense GPT MLP projection
 dWeight shape `3072,768,65536,N,T`, so the dispatcher does not hardcode a
 shape-specific default pin there; pass a shape override only for explicit paired
-candidate bisection.
+candidate bisection. The matching QKV dWeight+bias hot shape
+`768,2304,65536,N,T` currently returns multiple cuBLASLt candidates, but the
+`cublaslt_qkv_dweight_h0_65536` wrapper profile is rejected: pinning it from
+heuristic `1` to `0` changed the intended plan and measured
+`stage.block_backward.qkv.dweight_bias.total_ms=1.003363x` plus
+`stage.block_backward.total_ms=1.000055x` on the CUDA 13.3 RTX 5090 stage gate.
 Set `NFN_TILE_CUDA_LINEAR_CUBLASLT_WORKSPACE_MB=N` or
 `NFN_NATIVE_LINEAR_CUBLASLT_WORKSPACE_MB=N` only for paired diagnostics that
 change the cuBLASLt heuristic workspace cap. The default remains 128 MiB because

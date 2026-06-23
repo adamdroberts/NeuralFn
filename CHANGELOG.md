@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the rejected `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_qkv_dweight_h0_65536`
+  wrapper profile for the dense GPT QKV dWeight+bias cuBLASLt plan. The profile
+  expands to
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,2304,65536,N,T,0` and records
+  the current CUDA 13.3 RTX 5090 stage-timed rejection: the plan cache changed
+  the intended `768x2304x65536:N,T` plan from heuristic `1` to `0`, but
+  regressed `stage.block_backward.qkv.dweight_bias.total_ms` to `1.003363x` and
+  `stage.block_backward.total_ms` to `1.000055x`.
+
+  Verification note: updated the SM120 wrapper source-contract coverage plus
+  README, CLI, SDK, and CUDA Tile TODO docs; reran the wrapper syntax and
+  focused wrapper pytest coverage.
+
 - Clarified the dense GPT cooperative LM-head strict ABI contract and tightened
   the SM120 candidate wrapper around
   `lm_head_cooperative_backward_required`. The profile is now tagged as a strict

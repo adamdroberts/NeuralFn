@@ -372,6 +372,12 @@ heuristic `3`, but is rejected by default: the CUDA 13.3 RTX 5090 3-sample
 confirmation changed only those intended plans and regressed train-loop wall
 time to `1.005964x`, LM-head backward to `1.011344x`, block backward to
 `1.004976x`, and MLP projection total to `1.010875x`.
+The `cublaslt_qkv_dweight_h0_65536` wrapper profile pins only the dense GPT QKV
+dWeight+bias plan `768,2304,65536,N,T` to heuristic `0`, but it is also
+rejected by default. The current CUDA 13.3 RTX 5090 stage-timed gate changed
+that plan from heuristic `1` to `0` while regressing
+`stage.block_backward.qkv.dweight_bias.total_ms` to `1.003363x` and
+`stage.block_backward.total_ms` to `1.000055x`.
 The BF16 operand cache is only for stable operands such as weights and biases;
 BF16-output GEMMs repack mutable activation inputs because native scratch
 activation pointers are reused with new contents.

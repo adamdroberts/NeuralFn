@@ -853,7 +853,12 @@ also remain diagnostic-only: overriding LM-head dWeight
 `768,50304,32768,N,T` from heuristic `1` to `0` was nearly neutral but failed
 strict LM-head gates at `stage.lm_head_backward.total_ms=1.000373x` and
 `stage.lm_head_backward.dweight.total_ms=1.000445x`; heuristic `2` regressed
-that shape to `1.078836x`. Overriding QKV dInput
+that shape to `1.078836x`. The wrapper profile
+`cublaslt_qkv_dweight_h0_65536` pins QKV dWeight+bias
+`768,2304,65536,N,T` from heuristic `1` to `0`, but it is rejected on the
+current CUDA 13.3 RTX 5090 path: the same-script stage gate changed the intended
+plan and measured `stage.block_backward.qkv.dweight_bias.total_ms=1.003363x`
+and `stage.block_backward.total_ms=1.000055x`. Overriding QKV dInput
 `768,65536,2304,N,N` from heuristic `1` to `0` regressed the shape to
 `1.082474x` and `stage.block_backward.qkv.dinput.total_ms` to `1.077788x`.
 When `NFN_SM120_NATIVE_LINEAR_SHAPE_STATS=1` is enabled, the paired benchmark

@@ -973,6 +973,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1" in text
     assert "cublaslt_min_waves" in text
     assert "cublaslt_max_waves" in text
+    assert "cublaslt_qkv_dweight_h0_65536" in text
+    assert "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,2304,65536,N,T,0" in text
+    assert "regressed stage.block_backward.qkv.dweight_bias.total_ms to 1.003363x" in text
     assert "cublaslt_grouped_probe" in text
     assert "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1" in text
     assert "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1" in text
