@@ -912,7 +912,10 @@ Future updates should append new entries here rather than replacing older notes.
   directly without hand-written paired env flags.
 
   Migration note: the default later changed to prepack-off in this Unreleased
-  series. Use the profile to continue comparing the old and new routes.
+  series. Use the off profile to continue comparing the old and new routes.
+  The mirror on profile is rejected by default after the CUDA 13.3 dedicated
+  RTX 5090 5-step, 3-sample stage-timed gate failed the strict LM-head dHidden
+  bucket at `1.000690x` even though the train-loop mean was `0.997953x`.
 
   Verification: shell syntax checks, focused source-contract pytest, dry-run
   profile expansion, and a dedicated RTX 5090 same-script benchmark were run.

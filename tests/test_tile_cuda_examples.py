@@ -1898,6 +1898,39 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "stage.lm_head_backward.ce.total_ms=1.003780x" in ce_vec8_rejected.stderr
     assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in ce_vec8_rejected.stderr
 
+    prepack_on_rejected_env = os.environ.copy()
+    prepack_on_rejected_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_prepack_bf16_hidden_on",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "candidate-prepack-on-rejected.json"),
+        }
+    )
+
+    prepack_on_rejected = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=prepack_on_rejected_env,
+    )
+
+    assert prepack_on_rejected.returncode == 2
+    assert (
+        "lm_head_prepack_bf16_hidden_on is a rejected SM120 candidate"
+        in prepack_on_rejected.stderr
+    )
+    assert (
+        "stage.lm_head_backward.dhidden.total_ms=1.000690x"
+        in prepack_on_rejected.stderr
+    )
+    assert (
+        "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1"
+        in prepack_on_rejected.stderr
+    )
+
     ce_specialized_output_path = tmp_path / "candidate-ce-specialized-dry-run.json"
     ce_specialized_env = os.environ.copy()
     ce_specialized_env.update(

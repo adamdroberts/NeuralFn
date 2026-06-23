@@ -1257,6 +1257,9 @@ measurable against the current per-chunk LM-head hidden packing default without
 custom paired env wiring. `lm_head_prepack_bf16_hidden_on` is the inverse
 profile: it pins the current per-chunk route to the baseline and the older
 full-prepack route to the candidate for direct default-regression checks. The
+inverse profile is rejected by default after a CUDA 13.3 dedicated RTX 5090
+5-step, 3-sample gate improved train-loop mean to `0.997953x` but failed
+`stage.lm_head_backward.dhidden.total_ms` at `1.000690x`. The
 CUDA 13.3 dedicated RTX 5090 5-step, 3-sample
 gate promoted prepack-off because the opt-out measured train-loop wall time at
 `0.997878x`, total wall time at `0.994429x`, and train tokens/sec at
