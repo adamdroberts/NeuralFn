@@ -1254,7 +1254,10 @@ BF16 GEMMEx to cuBLASLt but missed strict gates at `1.000384x` train-loop wall,
 `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` on the baseline and `0` on the
 candidate, making the older full-microbatch BF16 final-norm hidden prepack
 measurable against the current per-chunk LM-head hidden packing default without
-custom paired env wiring. The CUDA 13.3 dedicated RTX 5090 5-step, 3-sample
+custom paired env wiring. `lm_head_prepack_bf16_hidden_on` is the inverse
+profile: it pins the current per-chunk route to the baseline and the older
+full-prepack route to the candidate for direct default-regression checks. The
+CUDA 13.3 dedicated RTX 5090 5-step, 3-sample
 gate promoted prepack-off because the opt-out measured train-loop wall time at
 `0.997878x`, total wall time at `0.994429x`, and train tokens/sec at
 `1.002130x`.

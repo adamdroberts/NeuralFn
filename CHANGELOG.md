@@ -904,11 +904,12 @@ Future updates should append new entries here rather than replacing older notes.
   were run.
 
 - Added the named SM120 native GPT candidate profile
-  `lm_head_prepack_bf16_hidden_off`. The profile pins the baseline to
-  `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` and the candidate to `0`, so
-  the older full-microbatch BF16 final-norm hidden prepack can be retested
-  against the current per-chunk LM-head hidden packing default without hand-written
-  paired env flags.
+  `lm_head_prepack_bf16_hidden_off`, plus the mirror
+  `lm_head_prepack_bf16_hidden_on`. The off profile pins the baseline to
+  `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` and the candidate to `0`; the
+  on profile pins baseline `0` and candidate `1`, so either side of the
+  current per-chunk versus older full-prepack LM-head route can be measured
+  directly without hand-written paired env flags.
 
   Migration note: the default later changed to prepack-off in this Unreleased
   series. Use the profile to continue comparing the old and new routes.

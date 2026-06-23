@@ -384,6 +384,9 @@ prepack candidates mentioning `LM_HEAD_PREPACK_BF16_HIDDEN` additionally gate
 `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` and the candidate to `0`, so the
 older full-microbatch BF16 final-norm hidden prepack can be retested against
 the current per-chunk LM-head hidden packing default without a manual env pair.
+Use the mirror `lm_head_prepack_bf16_hidden_on` profile when the current
+per-chunk route should be the baseline and the old full-prepack route should be
+the candidate under the same strict LM-head dHidden, dWeight, and setup gates.
 The CUDA 13.3 dedicated RTX 5090 5-step, 3-sample gate promoted prepack-off:
 the opt-out measured train-loop wall time at `0.997878x`,
 `total_wall_ms` at `0.994429x`, and train tokens/sec at `1.002130x`. The named

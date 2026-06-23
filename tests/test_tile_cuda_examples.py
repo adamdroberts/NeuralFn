@@ -982,6 +982,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "attention_dprep_float_hd64_specialized" in text
     assert "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_FLOAT_HD64_SPECIALIZED=1" in text
     assert "lm_head_prepack_bf16_hidden_off" in text
+    assert "lm_head_prepack_bf16_hidden_on" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0" in text
     assert "mlp_proj_tk_dweight_65536" in text
