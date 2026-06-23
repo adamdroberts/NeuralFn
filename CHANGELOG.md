@@ -1389,19 +1389,21 @@ Future updates should append new entries here rather than replacing older notes.
   Verification: ran the focused SM120 wrapper dry-run test and the dedicated
   RTX 5090 same-script paired benchmark.
 
-- Added LayerNorm affine row-chunk profiling for the native dense GPT Tile-CUDA
-  path. Runtime JSON now reports
+- Promoted the native dense GPT LayerNorm affine-gradient chunk size from 256
+  rows to 128 rows after the CUDA 13.3 dedicated RTX 5090 same-script gate
+  measured `0.997750x` train-loop wall time and `1.002270x` train tokens/sec
+  across three interleaved five-step samples, with no selected-GPU utilization
+  or compute processes before/after each sample. Runtime JSON reports
   `block_state_layout.layer_norm_backward_affine_row_chunk_size`, and the
   paired SM120 wrapper exposes
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=layernorm_affine_row_chunk_128` and
   `layernorm_affine_row_chunk_512`, expanding to
-  `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128` or `512`. The paired
-  tool treats the nested block-state value as a route metric so
-  `--require-native-route-change` can prove the candidate actually reached the
-  Tile kernel. Both candidates are diagnostic-only and the default remains
-  `256`: the dedicated RTX 5090 gate rejected `128` at `1.000147x` train-loop
-  wall and rejected `512` at `1.019837x` train-loop wall / `1.039994x` block
-  backward.
+  `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128` or `512`. The promoted
+  `layernorm_affine_row_chunk_128` profile now forces its baseline to
+  `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=256` so future runs still
+  compare the default against the older route. The paired tool treats the nested
+  block-state value as a route metric so `--require-native-route-change` can
+  prove the candidate actually reached the Tile kernel.
 
   Verification: ran focused source/wrapper tests and rebuilt native binaries;
   ran the dedicated RTX 5090 paired benchmarks for both LayerNorm row-chunk

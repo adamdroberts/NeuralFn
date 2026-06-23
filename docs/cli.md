@@ -799,7 +799,9 @@ fused AdamW call when CUDA memset is unavailable or
 and `gradient_zero_per_buffer_launches_elided`.
 LayerNorm affine-gradient backward has an accumulate ABI and uses a chunked
 parallel atomic reduction for large row counts instead of one CUDA block looping
-over all rows. The LayerNorm affine row chunk now defaults to 256 rows; set
+over all rows. The LayerNorm affine row chunk now defaults to 128 rows after the
+CUDA 13.3 dedicated RTX 5090 paired gate measured `0.997750x` train-loop wall
+time and `1.002270x` train tokens/sec versus the older 256-row route; set
 `NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N`,
 `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N`, or
 `NFN_NATIVE_GPT2_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=N` to run paired chunk-size

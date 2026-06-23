@@ -4829,7 +4829,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "position_gradient_scratch_buffer_allocated": False,
         "position_gradient_microbatch_full_copy_elided": True,
         "layer_norm_backward_affine_strategy": "auto-chunked-atomic-accumulate",
-        "layer_norm_backward_affine_row_chunk_size": 256,
+        "layer_norm_backward_affine_row_chunk_size": 128,
         "layer_norm_stats_strategy": "forward-store-mean-rstd-backward-reuse",
         "layer_norm_backward_reuses_forward_stats": True,
         "layer_norm_stats_disabled_by_fused_residual_ln2": False,
