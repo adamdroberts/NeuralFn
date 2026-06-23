@@ -1299,3 +1299,9 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `block_backward_dinput_tk_gemm_count` from `0` to `96`, and
     `block_backward_dinput_cublaslt_gemm_count` from `384` to `288`, with the
     native route-change gate passing.
+  - 2026-06-23 added the clearer
+    `NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES=1` alias, plus candidate,
+    parity, and shared variants, for route-proof-only candidate smokes that
+    should keep native route-change checks but skip automatic timing-ratio
+    gates. The older `NFN_SM120_NATIVE_AUTO_DISABLE_METRIC_RATIO_GATES=1`
+    spelling remains supported.

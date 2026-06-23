@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES` and matching candidate,
+  parity, and shared aliases as clearer names for the SM120 native candidate
+  wrapper's diagnostic timing-gate bypass. The existing
+  `NFN_SM120_NATIVE_AUTO_DISABLE_METRIC_RATIO_GATES` names continue to work,
+  and route-change proof remains enabled unless separately disabled.
+
+  Verification: focused wrapper tests cover the new alias text, and the dGELU
+  route-proof smoke used the existing auto-disable path to confirm the gate
+  behavior remains separate from native route-change checks.
+
 - Fixed the SM120 native candidate wrapper profiles `tk_dgelu_dinput` and
   `tk_dgelu_approx_tanh` so they benchmark the fused TK MLP projection dInput
   dGELU route against the older unfused path in one paired run. The baseline

@@ -1400,7 +1400,10 @@ before grouped block-backward work; on the current CUDA 13.3 WSL stack the
 layout probe passes but grouped matmul execution still reports status `15`.
 The wrapper keeps route-change proof enabled but skips automatic metric-ratio
 gates for this capability-only profile, so setup timing noise does not make the
-readiness check exit nonzero.
+readiness check exit nonzero. For other route-proof-only diagnostics, set
+`NFN_SM120_NATIVE_AUTO_DISABLE_METRIC_RATIO_GATES=1` or the shorter
+`NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES=1`; both names keep route-change
+checks intact while suppressing automatic timing-ratio thresholds.
 The profile intentionally omits `NFN_NATIVE_GPT_PROBE_CUBLAS_GROUPED_BF16_GEMM`
 because the current CUDA stack still leaves the trainer context unusable after
 that unsupported probe.
