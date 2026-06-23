@@ -558,6 +558,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB_EXPLICIT="generated"' in candidate_bench
     assert '--tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"' in candidate_bench
     assert '--tile-ops-lib "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_ARG"' in candidate_bench
+    assert "lm_head_concurrent_dhidden_dweight" in candidate_bench
+    assert "CUDA 13.3 RTX 5090 3-sample same-script confirmation" in candidate_bench
+    assert "NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1" in candidate_bench
     assert 'Path("build/nfn_gpt_native_train_linked")' in no_torch_verifier
 
 
@@ -6331,6 +6334,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     source = root / "neuralfn" / "csrc" / "native_train" / "tile_ops.cu"
     kernels = root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu"
     build_script = root / "tools" / "build_native_train_tile_ops.sh"
+    candidate_bench = root / "tools" / "bench_native_gpt_sm120_candidate.sh"
     gpt2_source_text = gpt2_source.read_text()
     token_shards_header_text = token_shards_header.read_text()
     token_shards_source_text = token_shards_source.read_text()
@@ -6338,6 +6342,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     source_text = source.read_text()
     kernels_text = kernels.read_text()
     script_text = build_script.read_text()
+    candidate_bench_text = candidate_bench.read_text()
 
     assert "cudaRuntimeGetVersion" in gpt2_source_text
     assert "cudaDriverGetVersion" in gpt2_source_text
@@ -6607,6 +6612,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT" in gpt2_source_text
     assert "lm_head_concurrent_dhidden_dweight_enabled" in gpt2_source_text
     assert "two-nonblocking-cuda-streams-after-ce-event" in gpt2_source_text
+    assert "CUDA 13.3 RTX 5090 3-sample same-script confirmation" in candidate_bench_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1" in candidate_bench_text
     assert "NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS" in gpt2_source_text
     assert "lm_head_reverse_chunk_order_enabled" in gpt2_source_text
     assert "reverse-row-chunk-order-default-cuda-13-3-rtx-5090" in gpt2_source_text

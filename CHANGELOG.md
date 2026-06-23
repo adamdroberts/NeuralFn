@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked the existing `lm_head_concurrent_dhidden_dweight` SM120 native wrapper
+  profile as rejected by default after a fresh CUDA 13.3 dedicated-RTX-5090
+  confirmation. The candidate still activates the intended two-stream
+  LM-head dHidden/dWeight schedule, but the required 3-step/3-sample
+  same-script gate regressed train-loop wall time to `1.002970x` and train
+  tokens/sec to `0.997039x`, so the serial dHidden-then-dWeight route remains
+  the default. A prior 2-sample probe was slightly positive at `0.999636x`,
+  which is why the confirmation run is now treated as authoritative.
+
+  Verification note: ran the 2-sample and 3-sample paired GPU benchmarks on the
+  dedicated RTX 5090, updated wrapper fast-fail coverage, and refreshed the
+  README plus SDK Tile-CUDA notes with the rejected profile status.
+
 - Added list parsing for `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_SHAPE` /
   `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE`, so paired native GPT benchmarks
   can pin multiple cuBLASLt shapes with one colon/semicolon/whitespace-separated
