@@ -9943,6 +9943,9 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_logits_tk_gemm_count = 0;
     std::int64_t lm_head_logits_cublaslt_gemm_count = 0;
     std::int64_t lm_head_logits_bf16_gemm_count = 0;
+    std::int64_t lm_head_dhidden_tk_gemm_count = 0;
+    std::int64_t lm_head_dhidden_cublaslt_gemm_count = 0;
+    std::int64_t lm_head_dhidden_bf16_gemm_count = 0;
     std::int64_t lm_head_ce_bf16_threads_per_row = 0;
     std::int64_t lm_head_classifier_chunk_launch_count = 0;
     std::int64_t lm_head_classifier_loss_bin_launch_count = 0;
@@ -16116,6 +16119,12 @@ int run_transformer_lm_training_json(
             }
             auto run_lm_head_dhidden_kernel = [&](void* stream) {
                 if (error.empty()) {
+                    const std::int64_t tk_before =
+                        trainer_linear_tk_gemm_count_fn != nullptr ? trainer_linear_tk_gemm_count_fn() : 0;
+                    const std::int64_t cublaslt_before =
+                        trainer_linear_cublaslt_gemm_count_fn != nullptr ? trainer_linear_cublaslt_gemm_count_fn() : 0;
+                    const std::int64_t bf16_before =
+                        trainer_linear_bf16_gemm_count_fn != nullptr ? trainer_linear_bf16_gemm_count_fn() : 0;
                     if (lm_head_bf16_logits_enabled) {
                         if (token_weight_bf16_shadow_enabled && token_weight_bf16 != nullptr) {
                             run(linear_backward_input_bf16_bits_weight_bf16(
@@ -16143,6 +16152,15 @@ int run_transformer_lm_training_json(
                                 float_logit_chunk, token_weight, grad_hidden_chunk, row_count, kDim, kPaddedVocab, stream),
                             "lm_head.backward_input");
                     }
+                    const std::int64_t tk_after =
+                        trainer_linear_tk_gemm_count_fn != nullptr ? trainer_linear_tk_gemm_count_fn() : tk_before;
+                    const std::int64_t cublaslt_after =
+                        trainer_linear_cublaslt_gemm_count_fn != nullptr ? trainer_linear_cublaslt_gemm_count_fn() : cublaslt_before;
+                    const std::int64_t bf16_after =
+                        trainer_linear_bf16_gemm_count_fn != nullptr ? trainer_linear_bf16_gemm_count_fn() : bf16_before;
+                    lm_head_dhidden_tk_gemm_count += std::max<std::int64_t>(0, tk_after - tk_before);
+                    lm_head_dhidden_cublaslt_gemm_count += std::max<std::int64_t>(0, cublaslt_after - cublaslt_before);
+                    lm_head_dhidden_bf16_gemm_count += std::max<std::int64_t>(0, bf16_after - bf16_before);
                 }
             };
             auto run_lm_head_dhidden = [&]() {
@@ -19701,11 +19719,14 @@ int run_transformer_lm_training_json(
     const bool lm_head_logits_cublaslt_used =
         lm_head_logits_cublaslt_shape_used || lm_head_logits_cublaslt_gemm_count > 0;
     const bool lm_head_dhidden_tk_shape_used =
-        has_linear_shape_stat(2, kDim, lm_head_chunk_rows, kPaddedVocab, 0, 0);
+        has_linear_shape_stat(2, kDim, lm_head_chunk_rows, kPaddedVocab, 0, 0) ||
+        lm_head_dhidden_tk_gemm_count > 0;
     const bool lm_head_dhidden_cublaslt_shape_used =
-        has_linear_shape_stat(1, kDim, lm_head_chunk_rows, kPaddedVocab, 0, 0);
+        has_linear_shape_stat(1, kDim, lm_head_chunk_rows, kPaddedVocab, 0, 0) ||
+        lm_head_dhidden_cublaslt_gemm_count > 0;
     const bool lm_head_dhidden_gemmex_shape_used =
-        has_linear_shape_stat(4, kDim, lm_head_chunk_rows, kPaddedVocab, 0, 0);
+        has_linear_shape_stat(4, kDim, lm_head_chunk_rows, kPaddedVocab, 0, 0) ||
+        lm_head_dhidden_bf16_gemm_count > 0;
     const bool block_backward_mlp_proj_tk_dweight_shape_used =
         has_linear_shape_stat(2, kHidden, kDim, rows, 0, 1);
     const bool block_backward_mlp_proj_tk_dweight_enabled =
@@ -20575,6 +20596,9 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_logits_tk_gemm_count\": " << lm_head_logits_tk_gemm_count << ",\n"
         << "  \"lm_head_logits_cublaslt_gemm_count\": " << lm_head_logits_cublaslt_gemm_count << ",\n"
         << "  \"lm_head_logits_bf16_gemm_count\": " << lm_head_logits_bf16_gemm_count << ",\n"
+        << "  \"lm_head_dhidden_tk_gemm_count\": " << lm_head_dhidden_tk_gemm_count << ",\n"
+        << "  \"lm_head_dhidden_cublaslt_gemm_count\": " << lm_head_dhidden_cublaslt_gemm_count << ",\n"
+        << "  \"lm_head_dhidden_bf16_gemm_count\": " << lm_head_dhidden_bf16_gemm_count << ",\n"
         << "  \"lm_head_dhidden_linear_strategy\": \""
         << (lm_head_bf16_logits_enabled
                 ? (lm_head_dhidden_tk_shape_used

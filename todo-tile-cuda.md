@@ -1162,6 +1162,13 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     backward. This keeps backend substitution out of the default path and
     reinforces that the remaining parity work needs a real fused/cooperative
     classifier-backward implementation.
+  - 2026-06-23 added LM-head dHidden route counters to native JSON and paired
+    route-change detection:
+    `lm_head_dhidden_tk_gemm_count`,
+    `lm_head_dhidden_cublaslt_gemm_count`, and
+    `lm_head_dhidden_bf16_gemm_count`. Future candidates that only change the
+    dHidden backend no longer need expensive `linear_shape_stats` timing to
+    prove they routed.
   - 2026-06-22 promoted the no-loss LM-head CE specialization to the default
     behind `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` /
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`.

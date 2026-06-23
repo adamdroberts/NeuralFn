@@ -108,6 +108,9 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"lm_head_logits_tk_gemm_count\\\": 2, "
                 "\\\"lm_head_logits_cublaslt_gemm_count\\\": 0, "
                 "\\\"lm_head_logits_bf16_gemm_count\\\": 2, "
+                "\\\"lm_head_dhidden_tk_gemm_count\\\": 0, "
+                "\\\"lm_head_dhidden_cublaslt_gemm_count\\\": 0, "
+                "\\\"lm_head_dhidden_bf16_gemm_count\\\": 2, "
                 "\\\"lm_head_classifier_chunk_kernel_available\\\": true, "
                 "\\\"lm_head_classifier_chunk_kernel_enabled\\\": true, "
                 "\\\"lm_head_classifier_chunk_launch_count\\\": 64, "
@@ -212,6 +215,9 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["lm_head_logits_tk_gemm_count"]["mean"] == 2.0
     assert payload["candidate_native_metrics"]["lm_head_logits_cublaslt_gemm_count"]["mean"] == 0.0
     assert payload["candidate_native_metrics"]["lm_head_logits_bf16_gemm_count"]["mean"] == 2.0
+    assert payload["candidate_native_metrics"]["lm_head_dhidden_tk_gemm_count"]["mean"] == 0.0
+    assert payload["candidate_native_metrics"]["lm_head_dhidden_cublaslt_gemm_count"]["mean"] == 0.0
+    assert payload["candidate_native_metrics"]["lm_head_dhidden_bf16_gemm_count"]["mean"] == 2.0
     assert payload["candidate_native_metrics"]["lm_head_classifier_chunk_launch_count"]["mean"] == 64.0
     assert payload["candidate_native_metrics"]["lm_head_classifier_last_rows"]["mean"] == 8192.0
     assert payload["candidate_native_metrics"]["lm_head_classifier_last_vocab"]["mean"] == 50257.0
@@ -231,6 +237,7 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "bf16_to_f32_vec4_count: mean=5.000000" in proc.stdout
     assert "lm_head_logits_tk_gemm_count: mean=2.000000" in proc.stdout
     assert "lm_head_logits_cublaslt_gemm_count: mean=0.000000" in proc.stdout
+    assert "lm_head_dhidden_bf16_gemm_count: mean=2.000000" in proc.stdout
     assert "lm_head_logits_bf16_gemm_count: mean=2.000000" in proc.stdout
     assert "lm_head_classifier_chunk_launch_count: mean=64.000000" in proc.stdout
     assert "lm_head_classifier_last_rows: mean=8192.000000" in proc.stdout
@@ -3546,6 +3553,9 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "lm_head_logits_tk_gemm_count": 4,
                 "lm_head_logits_cublaslt_gemm_count": 0,
                 "lm_head_logits_bf16_gemm_count": 4,
+                "lm_head_dhidden_tk_gemm_count": 0,
+                "lm_head_dhidden_cublaslt_gemm_count": 0,
+                "lm_head_dhidden_bf16_gemm_count": 4,
                 "lm_head_classifier_chunk_kernel_available": True,
                 "lm_head_classifier_chunk_kernel_enabled": True,
                 "lm_head_classifier_chunk_launch_count": 32,
@@ -3640,6 +3650,9 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["lm_head_logits_tk_gemm_count"] == 4
     assert metrics["lm_head_logits_cublaslt_gemm_count"] == 0
     assert metrics["lm_head_logits_bf16_gemm_count"] == 4
+    assert metrics["lm_head_dhidden_tk_gemm_count"] == 0
+    assert metrics["lm_head_dhidden_cublaslt_gemm_count"] == 0
+    assert metrics["lm_head_dhidden_bf16_gemm_count"] == 4
     assert metrics["lm_head_classifier_chunk_kernel_available"] is True
     assert metrics["lm_head_classifier_chunk_kernel_enabled"] is True
     assert metrics["lm_head_classifier_chunk_launch_count"] == 32

@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added LM-head dHidden-specific route counters to dense GPT native training
+  JSON: `lm_head_dhidden_tk_gemm_count`,
+  `lm_head_dhidden_cublaslt_gemm_count`, and
+  `lm_head_dhidden_bf16_gemm_count`. The dHidden strategy label now uses these
+  counters when `linear_shape_stats` is disabled, and
+  `tools/paired_kernel_speed.py` treats them as native route counters. This
+  makes same-script SM120 candidates visibly route-changing when they only move
+  the LM-head dHidden GEMM.
+
+  Verification note: updated paired-speed synthetic JSON tests and native GPT
+  source-contract tests; rebuilt/smoke verification is recorded with the
+  implementation commit.
+
 - Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cublaslt_dhidden_32768`
   as a rejected SM120 candidate. The profile still expands to the shape-gated
   cuBLASLt dHidden route for `768,32768,50304,N,N`, but real runs now require

@@ -7598,7 +7598,11 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_logits_tk_gemm_count" in gpt2_source_text
     assert "lm_head_logits_cublaslt_gemm_count" in gpt2_source_text
     assert "lm_head_logits_bf16_gemm_count" in gpt2_source_text
+    assert "lm_head_dhidden_tk_gemm_count" in gpt2_source_text
+    assert "lm_head_dhidden_cublaslt_gemm_count" in gpt2_source_text
+    assert "lm_head_dhidden_bf16_gemm_count" in gpt2_source_text
     assert "lm_head_logits_tk_used" in gpt2_source_text
+    assert "lm_head_dhidden_cublaslt_shape_used" in gpt2_source_text
     assert "lm_head_backward.dhidden" in gpt2_source_text
     assert "lm_head_backward.dweight" in gpt2_source_text
     assert "lm_head_backward.dhidden_dweight_concurrent" in gpt2_source_text
