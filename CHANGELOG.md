@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the dense GPT native trainer default for
+  `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN` from `1` to `0`. The LM-head
+  dWeight path now packs final-norm hidden per chunk by default instead of
+  prepacking the full microbatch. This keeps the same BF16 logits, CE,
+  dHidden, and dWeight math, but avoids the full hidden prepack route on the
+  RTX 5090 workstation default path.
+
+  Migration note: set `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` or
+  `NFN_NATIVE_GPT2_LM_HEAD_PREPACK_BF16_HIDDEN=1` to reproduce the previous
+  full-microbatch BF16 final-norm hidden prepack route.
+
+  Verification note: the dedicated RTX 5090 CUDA 13.3 same-script 5-step,
+  3-sample candidate gate measured `0.997878x` train-loop wall time,
+  `1.002130x` train tokens/sec, and `0.994429x` total wall time versus the old
+  prepack-on baseline, with no route-counter change and only the LM-head
+  dWeight strategy changing.
+
 - Reordered `tools/build_native_gpt2_all.sh` so
   `libnfn_native_train_tile_ops.so` is rebuilt before
   `nfn_gpt_native_train_linked`. The SDK and CLI prefer the linked dense GPT
@@ -719,15 +736,12 @@ Future updates should append new entries here rather than replacing older notes.
 - Added the named SM120 native GPT candidate profile
   `lm_head_prepack_bf16_hidden_off`. The profile pins the baseline to
   `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` and the candidate to `0`, so
-  the default-on full-microbatch BF16 final-norm hidden prepack can be retested
-  against the older per-chunk LM-head hidden packing path without hand-written
+  the older full-microbatch BF16 final-norm hidden prepack can be retested
+  against the current per-chunk LM-head hidden packing default without hand-written
   paired env flags.
 
-  Migration note: no default changed. The profile is diagnostic coverage for a
-  current default-on LM-head route. The CUDA 13.3.33 linked-trainer RTX 5090
-  same-script gate kept prepack default-on: the opt-out regressed train-loop
-  wall time to `1.001656x`, `stage.lm_head_backward.total_ms` to `1.006690x`,
-  and `stage.lm_head_backward.dweight.total_ms` to `1.006903x`.
+  Migration note: the default later changed to prepack-off in this Unreleased
+  series. Use the profile to continue comparing the old and new routes.
 
   Verification: shell syntax checks, focused source-contract pytest, dry-run
   profile expansion, and a dedicated RTX 5090 same-script benchmark were run.

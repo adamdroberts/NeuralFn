@@ -12054,7 +12054,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN",
                               "NFN_NATIVE_GPT2_LM_HEAD_PREPACK_BF16_HIDDEN"}),
-            true);
+            false);
     const bool lm_head_reuse_forward_logits_enabled =
         lm_head_bf16_logits_enabled &&
         env_flag_enabled_or_default(

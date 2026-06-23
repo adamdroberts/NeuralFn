@@ -1243,12 +1243,12 @@ BF16 GEMMEx to cuBLASLt but missed strict gates at `1.000384x` train-loop wall,
 `1.000199x` LM-head dHidden, and `1.001504x` block backward.
 `lm_head_prepack_bf16_hidden_off` pins
 `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` on the baseline and `0` on the
-candidate, making the default-on full-microbatch BF16 final-norm hidden prepack
-measurable against the older per-chunk LM-head hidden packing path without
-custom paired env wiring. The CUDA 13.3.33 linked-trainer RTX 5090 gate kept
-prepack default-on because the opt-out regressed train-loop wall time to
-`1.001656x`, LM-head backward to `1.006690x`, and LM-head dWeight to
-`1.006903x`.
+candidate, making the older full-microbatch BF16 final-norm hidden prepack
+measurable against the current per-chunk LM-head hidden packing default without
+custom paired env wiring. The CUDA 13.3 dedicated RTX 5090 5-step, 3-sample
+gate promoted prepack-off because the opt-out measured train-loop wall time at
+`0.997878x`, total wall time at `0.994429x`, and train tokens/sec at
+`1.002130x`.
 `mlp_proj_tk_dweight_65536` expands to
 `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T`. That profile
 uses the same TK dWeight bridge inside the BF16/BF16 dWeight+bias ABI for the
