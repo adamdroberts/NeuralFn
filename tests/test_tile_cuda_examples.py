@@ -387,6 +387,9 @@ def test_native_gpt_sm120_parity_wrapper_uses_reference_shape() -> None:
     assert "NFN_SM120_ENFORCE_PARITY_GATE" in text
     assert "NFN_SM120_PARITY_ATTENTION_SECTION_TIMING" in text
     assert "NFN_SM120_ATTENTION_SECTION_TIMING" in text
+    assert "NFN_SM120_PARITY_SETUP_EVENT_TIMING" in text
+    assert "NFN_SM120_SETUP_EVENT_TIMING" in text
+    assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_SETUP_EVENT_TIMING=1")' in text
     assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1")' in text
     assert "Unsupported NFN_SM120_PARITY_ATTENTION_SECTION_TIMING value" in text
     assert 'MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"' in text
@@ -652,6 +655,7 @@ def test_native_gpt_sm120_candidate_wrapper_applies_common_env_to_both_commands(
             "NFN_SM120_CANDIDATE_WARMUP": "0",
             "NFN_SM120_CANDIDATE_PROFILE_DIR": "none",
             "NFN_SM120_CANDIDATE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_SETUP_EVENT_TIMING": "1",
             "NFN_SM120_COMMON_ENV": "NFN_SHARED_PROFILING=1",
             "NFN_SM120_CANDIDATE_ENV": "NFN_CANDIDATE_ONLY=1",
             "NFN_SM120_CANDIDATE_JSON_OUT": str(output_path),
@@ -674,11 +678,13 @@ def test_native_gpt_sm120_candidate_wrapper_applies_common_env_to_both_commands(
     assert payload["baseline_env"] == {
         "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT": "1",
         "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING": "1",
+        "NFN_NATIVE_GPT_SETUP_EVENT_TIMING": "1",
         "NFN_SHARED_PROFILING": "1",
     }
     assert payload["candidate_env"] == {
         "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT": "1",
         "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING": "1",
+        "NFN_NATIVE_GPT_SETUP_EVENT_TIMING": "1",
         "NFN_SHARED_PROFILING": "1",
         "NFN_CANDIDATE_ONLY": "1",
     }
@@ -984,6 +990,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_SM120_CANDIDATE_TRAIN_LOOP_EVENT_TIMING" in text
     assert 'paired_args+=(--baseline-env "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1")' in text
     assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1")' in text
+    assert "NFN_SM120_NATIVE_SETUP_EVENT_TIMING" in text
+    assert "NFN_SM120_CANDIDATE_SETUP_EVENT_TIMING" in text
+    assert 'paired_args+=(--baseline-env "NFN_NATIVE_GPT_SETUP_EVENT_TIMING=1")' in text
+    assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_SETUP_EVENT_TIMING=1")' in text
     assert 'paired_args+=(--min-candidate-ratio "$item")' in text
     assert "*CE_BF16*|*ce_bf16*|*LM_HEAD_CE*|*lm_head_ce*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.ce.total_ms=1.000"' in text

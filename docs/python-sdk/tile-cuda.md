@@ -1646,7 +1646,10 @@ refreshes. The SDK JSON mirrors the compiled CLI fields
 `setup_cuda_event_timing_requested`, `setup_cuda_event_timing_enabled`,
 `setup_cuda_event_timing_sync_count`, and
 `setup_cuda_event_timing_skipped_count`. This mode synchronizes between those
-setup phases, so use it for bisection rather than throughput comparison.
+setup phases, so use it for bisection rather than throughput comparison. The
+SM120 wrappers can enable the same mode with
+`NFN_SM120_NATIVE_SETUP_EVENT_TIMING=1` for native candidate comparisons or
+`NFN_SM120_PARITY_SETUP_EVENT_TIMING=1` for llm.kittens parity comparisons.
 The native dense-GPT path loads Tile ops with lazy dynamic binding while still
 validating required ABI symbols explicitly; runtime JSON reports
 `tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`, `tile_ops_dlopen_wall_ms`,

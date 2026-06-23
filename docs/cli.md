@@ -545,7 +545,10 @@ kernel-heavy setup phases. The diagnostic also reports
 `setup_cuda_event_timing_requested`, `setup_cuda_event_timing_enabled`,
 `setup_cuda_event_timing_sync_count`, and
 `setup_cuda_event_timing_skipped_count`; it inserts synchronization between
-those phases and should stay disabled for normal throughput benchmarks.
+those phases and should stay disabled for normal throughput benchmarks. The
+SM120 candidate and parity wrappers expose this as
+`NFN_SM120_NATIVE_SETUP_EVENT_TIMING=1` and
+`NFN_SM120_PARITY_SETUP_EVENT_TIMING=1`.
 The dense GPT training route loads Tile ops with lazy dynamic binding and still
 validates required ABI symbols explicitly; JSON reports
 `tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`, `tile_ops_dlopen_wall_ms`,

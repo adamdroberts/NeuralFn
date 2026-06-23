@@ -20,7 +20,17 @@ Future updates should append new entries here rather than replacing older notes.
   default, so normal training throughput is unchanged.
 
   Verification: added native source contract coverage plus paired metric
-  extraction coverage for the new event-timing fields.
+  extraction coverage for the new event-timing fields. Rebuilt
+  `build/nfn_gpt_native_train` and ran a startup-only CUDA smoke that reported
+  `setup.token_weight_init` at about 18.8 ms of CUDA-event time.
+
+- Added SM120 benchmark-wrapper aliases for the setup CUDA-event diagnostic:
+  `NFN_SM120_NATIVE_SETUP_EVENT_TIMING=1` enables it for native-vs-native
+  candidate runs, and `NFN_SM120_PARITY_SETUP_EVENT_TIMING=1` enables it for
+  the NeuralFn side of llm.kittens parity runs.
+
+  Verification: updated wrapper static/dry-run coverage for the candidate and
+  parity scripts.
 
 - Added `attention_backward_tk_block_size` and
   `attention_backward_tk_block_size_symbol_loaded` to dense GPT
