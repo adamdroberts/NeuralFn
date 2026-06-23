@@ -261,7 +261,7 @@ std::int64_t resolved_linear_backward_bias_row_chunk_size() {
         env_or_empty_any({"NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE",
                           "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE",
                           "NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE"});
-    constexpr std::int64_t kDefaultRowChunkSize = 512;
+    constexpr std::int64_t kDefaultRowChunkSize = 256;
     if (raw.empty()) {
         return kDefaultRowChunkSize;
     }

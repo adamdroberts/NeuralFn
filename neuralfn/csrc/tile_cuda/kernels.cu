@@ -624,7 +624,7 @@ bool bf16_bits_add_bias_tile_enabled() {
   return enabled;
 }
 
-constexpr std::int64_t kLinearBackwardBiasRowChunkSize = 512;
+constexpr std::int64_t kLinearBackwardBiasRowChunkSize = 256;
 
 std::int64_t linear_backward_bias_row_chunk_size() {
   static const std::int64_t value = []() {

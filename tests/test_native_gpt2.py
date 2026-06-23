@@ -1438,6 +1438,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=0"'
         in bench_source
     )
+    assert (
+        'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=512"'
+        in bench_source
+    )
     assert "CUDA 13.3 RTX 5090 same-script gate moved 192 MLP projection dWeight calls to TK" in bench_source
     assert "lm_head_only_candidate_gate=1" in bench_source
     assert 'if [[ "$lm_head_only_candidate_gate" != "1" ]]; then' in bench_source
@@ -4848,7 +4852,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "linear_bias_gradient_accumulation_direct": True,
         "linear_bias_gradient_scratch_buffers_allocated": False,
         "linear_bias_gradient_microbatch_full_copy_elided": True,
-        "linear_backward_bias_row_chunk_size": 512,
+        "linear_backward_bias_row_chunk_size": 256,
         "position_gradient_accumulation_direct": True,
         "position_gradient_scratch_buffer_allocated": False,
         "position_gradient_microbatch_full_copy_elided": True,
@@ -6322,7 +6326,7 @@ def test_large_row_reduction_fallbacks_use_tiled_dweight_and_shared_bias_chunks(
     assert '\\"linear_backward_bias_row_chunk_size\\"' in gpt2_source_text
     assert "NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in kernels_text
     assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in kernels_text
-    assert "kLinearBackwardBiasRowChunkSize = 512" in kernels_text
+    assert "kLinearBackwardBiasRowChunkSize = 256" in kernels_text
     assert "linear_backward_bias_row_chunk_size()" in kernels_text
     assert "NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE" in kernels_text
     assert "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE" in kernels_text
@@ -7122,7 +7126,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "matmul_dispatch_tk_ab" in kernels_text
     assert "kLayerNormBackwardAffineDefaultRowChunkSize = 256" in kernels_text
     assert "NFN_TILE_CUDA_LAYERNORM_AFFINE_ROW_CHUNK_SIZE" in kernels_text
-    assert "kLinearBackwardBiasRowChunkSize = 512" in kernels_text
+    assert "kLinearBackwardBiasRowChunkSize = 256" in kernels_text
     for function_name in (
         "launch_linear_backward_weight_accumulate_bf16_bits_float32",
         "launch_linear_backward_weight_accumulate_float32_bf16_bits",

@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the dense GPT native Tile linear-backward bias reducer default from
+  512-row chunks to 256-row chunks. The native trainer JSON and raw Tile CUDA
+  fallback now agree on the promoted default through
+  `block_state_layout.linear_backward_bias_row_chunk_size`.
+
+  Migration note: set `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=512`,
+  `NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=512`, or
+  `NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=512` to reproduce the
+  previous route.
+
+  Verification note: the dedicated RTX 5090 CUDA 13.3 same-script 5-step,
+  3-sample candidate gate measured `0.995306x` train-loop wall time,
+  `1.005073x` train tokens/sec, and `0.994292x` total wall time versus the old
+  512-row baseline.
+
 - Changed the dense GPT native trainer default for
   `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN` from `1` to `0`. The LM-head
   dWeight path now packs final-norm hidden per chunk by default instead of
@@ -624,10 +639,10 @@ Future updates should append new entries here rather than replacing older notes.
 
 - Revalidated the native Tile linear-backward bias reducer row-chunk candidates
   after rebuilding from source on the dedicated RTX 5090/CUDA 13.3 setup. The
-  default remains 512 rows: the fresh same-script 512-vs-1024 gate rejected the
-  1024-row route at `1.003284x` train-loop wall time and `0.996724x` train
-  tokens/sec, while the 256-row route remains rejected at `1.000324x`
-  train-loop wall time. Use
+  fresh same-script 512-vs-1024 gate rejected the 1024-row route at
+  `1.003284x` train-loop wall time and `0.996724x` train tokens/sec. A later
+  same-day 5-step, 3-sample gate superseded the initial 256-row rejection and
+  promoted 256 rows as the default. Use
   `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`,
   `NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`, or
   `NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N` only for paired
