@@ -4278,6 +4278,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     )
     assert train_transformer_payload["token_weight_threaded_init_enabled"] is False
     assert train_transformer_payload["token_weight_vector4_init_enabled"] is True
+    assert train_transformer_payload["token_weight_vector4_strided_init_requested"] is False
     assert train_transformer_payload["token_weight_fast_int32_init_enabled"] is False
     assert train_transformer_payload["token_weight_init_legacy_mod17_enabled"] is False
     assert train_transformer_payload["token_weight_bf16_initial_refresh_fusion_enabled"] is True

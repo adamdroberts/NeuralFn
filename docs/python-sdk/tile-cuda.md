@@ -1931,8 +1931,16 @@ Startup-only token-weight initializer bisections can use the same profile
 mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,
 `token_weight_fast_int32`, and `token_weight_two_pass_bf16` expand to the
 matching native GPT token-initializer env flags and are intended for paired
-`NFN_SM120_NATIVE_STARTUP_ONLY=1` runs. They remain diagnostic-only; the default
-compiled trainer still uses the fused vector4 FP32/BF16-shadow initializer.
+`NFN_SM120_NATIVE_STARTUP_ONLY=1` runs. The profiles now force explicit
+baseline/candidate envs for default-on switches; for example,
+`token_weight_vector4_strided` compares
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` against candidate `=1`.
+Native JSON reports `token_weight_vector4_strided_init_requested` and labels
+the selected path as
+`device-vector4-strided-power2-deterministic[-fused-bf16-shadow]`, so the
+paired route-change gate can distinguish the hidden Tile dispatch. They remain
+diagnostic-only; the default compiled trainer still uses the fused vector4
+FP32/BF16-shadow initializer.
 For a direct check of the rejected vector4 BF16 pattern writer, set
 `NFN_SM120_NATIVE_STARTUP_ONLY=1` and put
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` in

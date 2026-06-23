@@ -115,8 +115,15 @@ writer.
 The opt-in vector4-strided token-weight initializer
 (`NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1` /
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1`) is also diagnostic-only:
-it improved the token-init substage in a startup-only RTX 5090 run but did not
-beat the strict setup-wall gate.
+the paired wrapper now forces baseline
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` versus candidate `=1`, and
+native JSON reports
+`token_weight_vector4_strided_init_requested` plus the distinct
+`device-vector4-strided-power2-deterministic[-fused-bf16-shadow]` strategy.
+After the CUDA 13.3 reinstall on the dedicated RTX 5090, the corrected
+2-sample startup-only gate passed (`0.949594x` setup wall,
+`0.986349x` token init), but the route remains diagnostic-only until a broader
+startup run proves it is a stable default.
 The fused padded-vocab BF16-shadow token initializer is exposed for paired
 bisection as `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`, but remains
 default-off: the CUDA 13.3 RTX 5090 startup gate measured the route at
@@ -937,12 +944,13 @@ bisections can use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_vector4_strided`,
 `token_weight_threaded`, `token_weight_fast_int32`, or
 `token_weight_two_pass_bf16` instead of spelling out the individual env flags;
-these profiles are diagnostic-only and do not change the default vector4 fused
-BF16-shadow initializer. After the CUDA 13.3 reinstall on the dedicated RTX
-5090, a 9-sample startup-only gate for `token_weight_vector4_strided` passed
-mean setup/token-init gates (`0.997653x` setup wall, `0.996379x` token init)
-but stayed too close to noise, with median setup slightly slower, so it remains
-default-off. Add
+these profiles now force explicit baseline/candidate envs for default-on
+switches and remain diagnostic-only unless the measured gate justifies a
+default change. After the CUDA 13.3 reinstall on the dedicated RTX 5090, the
+corrected `token_weight_vector4_strided` profile passed a 2-sample
+startup-only gate (`0.949594x` setup wall, `0.986349x` token init) with a
+strategy-value route change, but remains default-off pending broader evidence.
+Add
 `--append-native-profile-json-dir /tmp/nfn-profiles`
 when comparing native NeuralFn commands that do not already write JSON; the
 harness appends unique `--profile-json` files without changing the timed native

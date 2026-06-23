@@ -11738,6 +11738,13 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_INIT",
                               "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_INIT"}),
             true);
+    const bool token_weight_vector4_strided_init_requested =
+        token_weight_vector4_init_enabled &&
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT",
+                              "NFN_NATIVE_GPT2_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT",
+                              "NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT"}),
+            false);
     const bool token_weight_bf16_pattern_init_requested =
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT",
@@ -19771,6 +19778,32 @@ int run_transformer_lm_training_json(
         uint16_arena_requested_elements,
         uint16_arena_allocated_elements,
         24);
+    const std::string token_weight_init_strategy =
+        token_weight_padded_init_fusion_enabled
+            ? "device-vector4-power2-deterministic-fused-bf16-shadow-padded-zero"
+            : (legacy_mod17_token_weight_init_enabled
+                   ? (token_weight_bf16_initial_refresh_elided
+                          ? (token_weight_threaded_init_enabled
+                                 ? "device-threaded-mod17-deterministic-fused-bf16-shadow"
+                                 : "device-tile-mod17-deterministic-fused-bf16-shadow")
+                          : (token_weight_threaded_init_enabled
+                                 ? "device-threaded-mod17-deterministic"
+                                 : "device-tile-mod17-deterministic"))
+                   : (token_weight_bf16_initial_refresh_elided
+                          ? (token_weight_threaded_init_enabled
+                                 ? "device-threaded-power2-deterministic-fused-bf16-shadow"
+                                 : (token_weight_vector4_init_enabled
+                                        ? (token_weight_vector4_strided_init_requested
+                                               ? "device-vector4-strided-power2-deterministic-fused-bf16-shadow"
+                                               : "device-vector4-power2-deterministic-fused-bf16-shadow")
+                                        : "device-tile-power2-deterministic-fused-bf16-shadow"))
+                          : (token_weight_threaded_init_enabled
+                                 ? "device-threaded-power2-deterministic"
+                                 : (token_weight_vector4_init_enabled
+                                        ? (token_weight_vector4_strided_init_requested
+                                               ? "device-vector4-strided-power2-deterministic"
+                                               : "device-vector4-power2-deterministic")
+                                        : "device-tile-power2-deterministic"))));
 
     std::cout
         << "{\n"
@@ -21030,33 +21063,13 @@ int run_transformer_lm_training_json(
         << "  \"token_i64_arena_elements\": " << token_i64_arena_elements << ",\n"
         << "  \"token_u16_device_arena_elements\": " << token_u16_device_arena_elements << ",\n"
         << "  \"token_u16_pinned_arena_elements\": " << token_u16_pinned_arena_elements << ",\n"
-        << "  \"token_weight_init_strategy\": \""
-        << (token_weight_padded_init_fusion_enabled
-                ? "device-vector4-power2-deterministic-fused-bf16-shadow-padded-zero"
-                : (legacy_mod17_token_weight_init_enabled
-                ? (token_weight_bf16_initial_refresh_elided
-                       ? (token_weight_threaded_init_enabled
-                              ? "device-threaded-mod17-deterministic-fused-bf16-shadow"
-                              : "device-tile-mod17-deterministic-fused-bf16-shadow")
-                       : (token_weight_threaded_init_enabled
-                              ? "device-threaded-mod17-deterministic"
-                              : "device-tile-mod17-deterministic"))
-                : (token_weight_bf16_initial_refresh_elided
-                       ? (token_weight_threaded_init_enabled
-                              ? "device-threaded-power2-deterministic-fused-bf16-shadow"
-                              : (token_weight_vector4_init_enabled
-                                     ? "device-vector4-power2-deterministic-fused-bf16-shadow"
-                                     : "device-tile-power2-deterministic-fused-bf16-shadow"))
-                       : (token_weight_threaded_init_enabled
-                              ? "device-threaded-power2-deterministic"
-                              : (token_weight_vector4_init_enabled
-                                     ? "device-vector4-power2-deterministic"
-                                     : "device-tile-power2-deterministic")))))
-        << "\",\n"
+        << "  \"token_weight_init_strategy\": \"" << token_weight_init_strategy << "\",\n"
         << "  \"token_weight_threaded_init_enabled\": "
         << (token_weight_threaded_init_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_vector4_init_enabled\": "
         << (token_weight_vector4_init_enabled ? "true" : "false") << ",\n"
+        << "  \"token_weight_vector4_strided_init_requested\": "
+        << (token_weight_vector4_strided_init_requested ? "true" : "false") << ",\n"
         << "  \"token_weight_fast_int32_init_enabled\": "
         << (token_weight_fast_int32_init_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_init_legacy_mod17_enabled\": "

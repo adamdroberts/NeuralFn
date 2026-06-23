@@ -1936,16 +1936,20 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
 
     token_profiles = {
         "token_weight_vector4_strided": {
-            "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT": "1"
+            "baseline": {"NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT": "0"},
+            "candidate": {"NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT": "1"},
         },
         "token_weight_threaded": {
-            "NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT": "1"
+            "baseline": {"NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT": "0"},
+            "candidate": {"NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT": "1"},
         },
         "token_weight_fast_int32": {
-            "NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT": "0"
+            "baseline": {"NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT": "1"},
+            "candidate": {"NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT": "0"},
         },
         "token_weight_two_pass_bf16": {
-            "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT": "0"
+            "baseline": {"NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT": "1"},
+            "candidate": {"NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT": "0"},
         },
     }
     for profile_name, expected_env in token_profiles.items():
@@ -1973,7 +1977,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
 
         assert token_dry_run.returncode == 0, token_dry_run.stderr
         token_payload = json.loads(token_output_path.read_text(encoding="utf-8"))
-        for env_name, env_value in expected_env.items():
+        for env_name, env_value in expected_env["baseline"].items():
+            assert token_payload["baseline_env"][env_name] == env_value
+        for env_name, env_value in expected_env["candidate"].items():
             assert token_payload["candidate_env"][env_name] == env_value
         assert token_payload["metric_ratio_gates"]["enabled"] is False
 

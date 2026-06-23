@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed dense GPT token-weight startup bisection profiles so default-on
+  initializer switches compare a real baseline and candidate instead of
+  measuring the current default against itself. `token_weight_vector4_strided`
+  now passes baseline `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` and
+  candidate `=1`; `token_weight_threaded`, `token_weight_fast_int32`, and
+  `token_weight_two_pass_bf16` also carry explicit baseline envs. Native GPT
+  JSON now reports `token_weight_vector4_strided_init_requested` and labels the
+  selected route as
+  `device-vector4-strided-power2-deterministic[-fused-bf16-shadow]`, so
+  same-script route gates can distinguish the hidden Tile dispatch.
+
+  Migration note: the default token-weight initializer did not change. The new
+  JSON field is additive; consumers that compare `token_weight_init_strategy`
+  should accept the new strided strategy string when the opt-in env is set.
+  The corrected dedicated RTX 5090 CUDA 13.3 startup-only gate for
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_vector4_strided` passed at
+  `0.949594x` setup wall and `0.986349x` token init over 2 samples, but the
+  route remains diagnostic-only pending broader evidence.
+
+  Verification: focused native GPT and paired-kernel pytest, native GPT CLI
+  build, corrected same-script RTX 5090 startup benchmark, and
+  `git diff --check`.
+
 - Added native dense-GPT cuBLASLt BGRADB route counters. Tile ops now exposes
   `nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count`,
   `nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count`, and

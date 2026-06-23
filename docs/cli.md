@@ -101,13 +101,18 @@ nfn kernels examples
 The native GPT compiled CLI has its own backend selector:
 `--backend tile-cuda` (or Python wrapper `--kernel-backend tile-cuda`). `tile-cuda` is the default and only NeuralFn-owned compiled trainer for dense GPT. Use the parity benchmark script, not a training backend, for llm.kittens reference timing.
 The compiled runtime reports token-weight startup routes with
-`token_weight_init_strategy`, `token_weight_padded_init_fusion_requested`,
+`token_weight_init_strategy`, `token_weight_vector4_strided_init_requested`,
+`token_weight_padded_init_fusion_requested`,
 `token_weight_padded_init_fusion_available`,
 `token_weight_padded_init_fusion_enabled`, and
 `token_weight_padding_zero_launches_elided`. The padded-vocab fused BF16-shadow
 initializer is diagnostic-only and default-off; set
 `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1` only for paired startup
-bisection after rebuilding the trainer-facing Tile ops library.
+bisection after rebuilding the trainer-facing Tile ops library. The
+`token_weight_vector4_strided` paired profile forces baseline
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=0` versus candidate `=1`, so
+the benchmark JSON has a visible strategy-value route change for the hidden
+Tile dispatch.
 Use `--base-model gpt` as the canonical native trainer surface. `gpt2` and
 `gpt3` are dense GPT selector aliases that canonicalize to
 `--model-family gpt` before the compiled C++ frontend runs; GPT3 defaults to
