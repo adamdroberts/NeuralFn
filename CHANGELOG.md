@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the native dense-GPT allocation default so
+  `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA` now defaults to `0`. The compiled
+  trainer still uses one float arena and one uint16/BF16 arena by default, but
+  no longer packs them into a single combined allocation unless explicitly
+  requested. The CUDA 13.3 dedicated-RTX-5090 3-step rerun rejected the
+  combined route at `1.004991x` train-loop wall time and `0.995098x`
+  tokens/sec; the startup-only rerun also rejected it at `1.063067x` setup wall
+  time.
+
+  Breaking changes: runtime JSON now reports
+  `float_allocation_strategy: "single-arena"` and
+  `uint16_allocation_strategy: "single-arena"` by default instead of
+  `"combined-transformer-device-arena"`. Set
+  `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` to reproduce the old combined-arena
+  allocation layout for bisection.
+
+  Verification note: ran startup-only and 3-step same-script paired benchmarks
+  on the dedicated RTX 5090, then updated wrapper source-contract coverage plus
+  README and SDK Tile-CUDA notes.
+
 - Marked the `token_weight_threaded` and `token_weight_fast_int32` SM120 native
   wrapper profiles as rejected by default after CUDA 13.3 dedicated-RTX-5090
   startup-only reruns. `token_weight_threaded` improved total setup to

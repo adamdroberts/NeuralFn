@@ -1488,21 +1488,24 @@ scratch, saved packed-attention LN1 BF16 tape, and block BF16 weight shadows. Se
 `uint16_allocation_request_count`, `uint16_arena_requested_elements`,
 `uint16_arena_allocated_elements`, `uint16_arena_cuda_malloc_count`, and
 `uint16_arena_suballocation_count`.
-Dense GPT native training defaults `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1`.
-It packs the dense GPT float arena and BF16/uint16 arena into one aligned
-`cudaMalloc` after both layouts are known. JSON reports
+Dense GPT native training defaults `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0`.
+The trainer suballocates float buffers from one float arena and BF16/uint16
+buffers from one uint16 arena. JSON reports
+`float_allocation_strategy: "single-arena"` and
+`uint16_allocation_strategy: "single-arena"` by default. Set
+`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` only for explicit arena bisection; the
+combined route packs the dense GPT float arena and BF16/uint16 arena into one
+aligned `cudaMalloc` and reports
 `float_allocation_strategy: "combined-transformer-device-arena"`,
 `uint16_allocation_strategy: "combined-transformer-device-arena"`,
 `transformer_device_arena_requested`, `transformer_device_arena_enabled`,
 `transformer_device_arena_cuda_malloc_count`,
 `transformer_device_arena_requested_bytes`,
 `transformer_device_arena_allocated_bytes`, and
-`transformer_device_arena_uint16_byte_offset`. Set
-`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0` only to compare against the older split
-float/BF16 arena path. The CUDA 13.3 dedicated RTX 5090 3-step gate promoted the
-combined arena at `0.991645x` train-loop wall time, `1.008465x` tokens/sec,
-`0.993960x` LM-head backward, `0.998550x` block backward, and `0.988817x` MLP
-projection time.
+`transformer_device_arena_uint16_byte_offset`. The CUDA 13.3 dedicated RTX 5090
+3-step rerun rejected the combined arena at `1.004991x` train-loop wall time
+and `0.995098x` tokens/sec, and a startup-only rerun rejected it at `1.063067x`
+setup wall time.
 Runtime timing JSON also reports `setup_timing_accounted_ms`,
 `setup_timing_unattributed_ms`, and `setup_timing_record_count` beside
 `setup_wall_ms`. These fields summarize how much of native dense-GPT startup is
@@ -2217,17 +2220,19 @@ materialization, and `1.176781x` total startup wall time. Runtime JSON
 reports `device_allocator_strategy`, `device_cuda_malloc_async_requested`,
 `device_cuda_malloc_async_enabled`, async symbol availability, allocation/free
 counts, and `device_cuda_malloc_async_fallback_count`. The same dense GPT
-transformer-LM arenas now default to the combined device arena
-(`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1`), which packs the float and
-BF16/uint16 arenas into one aligned `cudaMalloc`; runtime JSON reports the
-combined allocation strategies plus `transformer_device_arena_requested`,
-`transformer_device_arena_enabled`, `transformer_device_arena_cuda_malloc_count`,
+transformer-LM arenas now default to split float and BF16/uint16 device arenas
+(`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0`); runtime JSON reports
+`float_allocation_strategy: "single-arena"` and
+`uint16_allocation_strategy: "single-arena"` by default. Set
+`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1` only to compare against the combined
+arena route; that opt-in path reports the combined allocation strategies plus
+`transformer_device_arena_requested`, `transformer_device_arena_enabled`,
+`transformer_device_arena_cuda_malloc_count`,
 `transformer_device_arena_requested_bytes`,
 `transformer_device_arena_allocated_bytes`, and
-`transformer_device_arena_uint16_byte_offset`. Set
-`NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0` only to compare against the older split
-float/BF16 arena path. The CUDA 13.3 dedicated RTX 5090 3-step gate promoted the
-combined arena at `0.991645x` train-loop wall time and `1.008465x` tokens/sec.
+`transformer_device_arena_uint16_byte_offset`. The CUDA 13.3 dedicated RTX 5090
+3-step rerun rejected the combined arena at `1.004991x` train-loop wall time and
+`0.995098x` tokens/sec.
 Set
 `NFN_NATIVE_GPT_BF16_QKV_GRAD_HANDOFF=0` to compare against the
 older packed path that expands `dQKV` to float32 before QKV dWeight/dInput. Set

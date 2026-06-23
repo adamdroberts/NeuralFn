@@ -571,6 +571,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "cuda_device_max_connections_1" in candidate_bench
     assert "This profile is a no-op in the SM120 paired wrapper" in candidate_bench
     assert "CUDA_DEVICE_MAX_CONNECTIONS already defaults to 1" in candidate_bench
+    assert "combined_device_arena" in candidate_bench
+    assert "train_loop_wall_ms_per_step to 1.004991x" in candidate_bench
+    assert "setup_wall_ms to 1.063067x" in candidate_bench
     assert "lm_head_cooperative_backward" in candidate_bench
     assert "activated the cooperative LM-head sequence wrapper" in candidate_bench
     assert "stage.lm_head_backward.total_ms to 1.103379x" in candidate_bench
@@ -4601,12 +4604,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["token_weight_bf16_initial_refresh_fusion_enabled"] is True
     assert train_transformer_payload["token_weight_bf16_initial_refresh_elided"] is False
     assert train_transformer_payload["token_weight_host_materialization"] is False
-    assert train_transformer_payload["float_allocation_strategy"] == "combined-transformer-device-arena"
+    assert train_transformer_payload["float_allocation_strategy"] == "single-arena"
     assert train_transformer_payload["float_allocation_cuda_malloc_count"] == 0
     assert train_transformer_payload["float_allocation_request_count"] == 0
     assert train_transformer_payload["float_arena_requested_elements"] == 0
     assert train_transformer_payload["float_arena_allocated_elements"] == 0
-    assert train_transformer_payload["uint16_allocation_strategy"] == "combined-transformer-device-arena"
+    assert train_transformer_payload["uint16_allocation_strategy"] == "single-arena"
     assert train_transformer_payload["uint16_allocation_cuda_malloc_count"] == 0
     assert train_transformer_payload["uint16_allocation_request_count"] == 0
     assert train_transformer_payload["uint16_arena_requested_elements"] == 0
