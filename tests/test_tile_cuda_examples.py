@@ -958,6 +958,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "layernorm_affine_row_chunk_64" in text
     assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=64" in text
     assert "stage.block_backward.mlp_proj.total_ms to 1.004276x" in text
+    assert "layernorm_affine_row_chunk_96" in text
+    assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=96" in text
+    assert "stage.block_backward.mlp_proj.total_ms to 1.000296x" in text
     assert "layernorm_affine_row_chunk_512" in text
     assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=512" in text
     assert "lm_head_logits_bf16_fallback_32768" in text
@@ -1296,6 +1299,66 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     )
     assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
         rejected_ln_chunk_64_run.stderr
+    )
+
+    ln_chunk_96_output_path = tmp_path / "candidate-ln-row-chunk-96-dry-run.json"
+    ln_chunk_96_env = os.environ.copy()
+    ln_chunk_96_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "layernorm_affine_row_chunk_96",
+            "NFN_SM120_NATIVE_JSON_OUT": str(ln_chunk_96_output_path),
+        }
+    )
+
+    ln_chunk_96_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=ln_chunk_96_env,
+    )
+
+    assert ln_chunk_96_dry_run.returncode == 0, ln_chunk_96_dry_run.stderr
+    ln_chunk_96_payload = json.loads(
+        ln_chunk_96_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        ln_chunk_96_payload["candidate_env"][
+            "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE"
+        ]
+        == "96"
+    )
+    assert ln_chunk_96_payload["metric_ratio_gates"]["enabled"] is False
+
+    rejected_ln_chunk_96_env = os.environ.copy()
+    rejected_ln_chunk_96_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "layernorm_affine_row_chunk_96",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "rejected-ln-row-chunk-96.json"),
+        }
+    )
+
+    rejected_ln_chunk_96_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=rejected_ln_chunk_96_env,
+    )
+
+    assert rejected_ln_chunk_96_run.returncode == 2
+    assert "layernorm_affine_row_chunk_96 is a rejected SM120 candidate" in (
+        rejected_ln_chunk_96_run.stderr
+    )
+    assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
+        rejected_ln_chunk_96_run.stderr
     )
 
     logits_fallback_output_path = tmp_path / "candidate-logits-fallback-dry-run.json"

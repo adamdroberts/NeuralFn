@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the current no-stage llm.kittens parity sample on the dedicated RTX
+  5090 and added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=layernorm_affine_row_chunk_96`
+  as another rejected diagnostic for the dense GPT LayerNorm affine/residual
+  fused backward route. Current parity remains open: NeuralFn measured
+  `2499.550 ms/step` versus llm.kittens at `2451.837 ms/step`, or
+  `1.019517x` train-loop wall time and `0.980526x` tokens/sec. The 96-row
+  profile expands to `NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=96` and
+  changed the route from the 128-row default, but remains rejected: the
+  stage-timed native-vs-native gate improved `train_loop_wall_ms_per_step` to
+  `0.999112x` while missing hot-stage gates at
+  `stage.block_backward.mlp_proj.total_ms=1.000296x` and
+  `stage.lm_head_backward.total_ms=1.000002x`.
+
+  Verification note: wrote the parity result to
+  `/tmp/nfn_sm120_parity_current_continue.json` and the 96-row candidate result
+  to `/tmp/nfn_layernorm_row96_candidate.json`; updated wrapper dry-run and
+  rejected-profile guard tests plus README, SDK Tile CUDA docs, and CUDA Tile
+  TODO notes.
+
 - Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=layernorm_affine_row_chunk_64` as a
   rejected diagnostic profile for the dense GPT LayerNorm affine/residual
   fused backward route. The profile expands to
