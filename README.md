@@ -100,14 +100,18 @@ kernel throughput rather than Torch, Python, or graph-editor execution.
 Because parity samples can move with reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
 build. The cooperative LM-head diagnostic wrapper is intentionally separate
-from the future strict fused classifier/dHidden/dWeight callable: wrapper-only
+from the optional future strict fused classifier/dHidden/dWeight callable:
+wrapper-only
 builds still fail `--require-cooperative-lm-head-backward`, and strict JSON
 availability requires loading
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus a
 nonzero
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
-capability rather than the existing sequence wrapper. Future LM-head fused
-kernel candidates should first run
+capability rather than the existing sequence wrapper. The llm.kittens SM120
+reference keeps LM-head logits, classifier CE/dlogits, dHidden, and dWeight as
+separate stages, so this strict fused callable is a candidate optimization gate,
+not a required reference-parity condition. Future LM-head fused kernel
+candidates should first run
 `bash tools/bench_lm_head_backward_candidate.sh`, which builds
 `build/lm_head_backward_bench` and compares the current cooperative sequence
 symbol against `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
@@ -829,9 +833,10 @@ single-kernel or genuinely fused cooperative body is implemented.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when
-a parity run must require the true fused cooperative classifier/dHidden/dWeight
-Tile ABI to be available and integrated. The SM120 wrapper treats this named
-profile as a strict ABI preflight probe, not a metric-gated speed candidate.
+a candidate run must require the optional true fused cooperative
+classifier/dHidden/dWeight Tile ABI to be available and integrated. The SM120
+wrapper treats this named profile as a strict ABI preflight probe, not a
+reference-parity requirement or metric-gated speed candidate.
 Wrapper-only or placeholder-symbol builds still fail this strict guard and report
 `abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity` instead
 of marking the route integrated.
@@ -861,12 +866,11 @@ Runtime JSON reports
 `lm_head_cooperative_backward_sequence_wrapper_enabled`, and
 `lm_head_cooperative_backward_strategy`. Runtime JSON also reports
 `lm_head_classifier_fusion_scope` and `lm_head_schedule_parity_status` so
-paired benchmarks distinguish the existing CE/dlogits fusion from the still
-missing fused logits/CE/dHidden/dWeight LM-head schedule needed for parity. The
-strict cooperative ABI remains
-default-off and non-promoted; the current strict symbol is measurable
-co-scheduling groundwork until a later single-kernel or truly fused parity body
-passes the same-script gates.
+paired benchmarks distinguish the reference-parity separate-stage LM-head
+schedule from optional cooperative/fused candidate probes. The strict
+cooperative ABI remains default-off and non-promoted; the current strict symbol
+is measurable co-scheduling groundwork until a later single-kernel or truly
+fused optimization body passes the same-script gates.
 The probed Tile symbol is now exported by the rebuilt ops library with a typed
 C ABI contract for this diagnostic wrapper: it accepts the BF16 logit/dlogit
 chunk, u16 targets, optional row-loss buffer, BF16/float hidden inputs,

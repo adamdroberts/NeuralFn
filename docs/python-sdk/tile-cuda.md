@@ -432,12 +432,15 @@ surfaces. `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u1
 is the existing event-ordered sequence wrapper and only satisfies
 `lm_head_cooperative_backward_sequence_wrapper_available`.
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` is the
-future strict fused classifier/dHidden/dWeight callable and must be loaded
+optional future strict fused classifier/dHidden/dWeight callable and must be loaded
 with a nonzero
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
 capability before `lm_head_cooperative_backward_fused_kernel_available` or
-`lm_head_cooperative_backward_kernel_enabled` can become true. SDK and CLI
-strict runs therefore still fail on wrapper-only or placeholder-symbol builds
+`lm_head_cooperative_backward_kernel_enabled` can become true. The llm.kittens
+SM120 reference keeps logits, CE/dlogits, dHidden, and dWeight as separate
+stages, so this fused callable is an optimization candidate gate rather than a
+required parity condition. SDK and CLI strict runs therefore still fail on
+wrapper-only or placeholder-symbol builds
 instead of silently benchmarking the older CE plus dHidden plus dWeight
 sequence.
 
@@ -2122,7 +2125,7 @@ Runtime JSON reports
 `lm_head_cooperative_backward_strategy`. Runtime JSON also reports
 `lm_head_classifier_fusion_scope` and `lm_head_schedule_parity_status`, which
 the paired benchmark treats as strategy values so CE-only changes are not
-mistaken for the missing fused logits/CE/dHidden/dWeight LM-head schedule.
+mistaken for cooperative or fused LM-head schedule changes.
 Rebuilt Tile ops libraries export the probed symbol with a typed C ABI contract
 for the future cooperative route: BF16 logit/dlogit chunk, u16 targets,
 optional row losses, BF16/float hidden inputs, BF16/float token weights,

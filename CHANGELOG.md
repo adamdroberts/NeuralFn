@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Corrected the native GPT LM-head schedule diagnostic to match the actual
+  llm.kittens SM120 reference boundary. Runtime JSON now reports
+  `lm_head_schedule_parity_status:
+  reference-parity-separate-logits-ce-dhidden-dweight` for the default path
+  instead of treating a fused logits/CE/dHidden/dWeight cooperative kernel as a
+  required parity condition. The strict
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` capability
+  probe remains documented and tested as an optional optimization gate for
+  future same-script candidates, while the live performance gap remains tracked
+  through stage timings. A fresh CUDA 13.3 dedicated RTX 5090 2-step parity run
+  measured NeuralFn at `1.145214x` steady-state CUDA-event wall time versus
+  llm.kittens, with hot buckets still dominated by attention backward and
+  LM-head backward.
+
+  Verification: reran the native no-Torch audit, shell syntax checks, focused
+  wrapper pytest, and a short same-script llm.kittens-vs-NeuralFn parity refresh
+  with attention section timing enabled.
+
 - Added rejected native candidate profile
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_bwd_block_32` for repeatable
   SM120 packed-attention backward block-size bisection. The profile expands to a

@@ -20565,8 +20565,8 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"lm_head_schedule_parity_status\": \""
         << (lm_head_cooperative_backward_kernel_enabled
-                ? "cooperative-lm-head-schedule-enabled"
-                : "missing-fused-logits-ce-dhidden-dweight-schedule")
+                ? "non-reference-cooperative-lm-head-schedule-enabled"
+                : "reference-parity-separate-logits-ce-dhidden-dweight")
         << "\",\n"
         << "  \"lm_head_classifier_no_loss_chunk_count\": "
         << lm_head_classifier_no_loss_chunk_count << ",\n"
