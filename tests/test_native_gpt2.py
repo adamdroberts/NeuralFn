@@ -1502,8 +1502,15 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "NFN_LM_HEAD_BACKWARD_NO_LOSS" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_MAX_RATIO" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST" in wrapper
+    assert "CANDIDATE_FIRST_ARG=(--candidate-first)" in wrapper
     assert "candidate_true_fused_capability is false" in wrapper
     assert "candidate_to_baseline_ms_per_iter_ratio" in wrapper
+    assert "candidate_first" in bench_source
+    assert "--candidate-first" in bench_source
+    assert '\\"run_order\\": \\"' in bench_source
+    assert "candidate-first" in bench_source
+    assert "baseline-first" in bench_source
     assert "tools/build_native_train_tile_ops.sh" in wrapper
     assert "--candidate-symbol" in wrapper
     assert "--baseline-symbol" in wrapper

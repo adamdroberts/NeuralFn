@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added reverse-order timing support to the focused LM-head backward benchmark.
+  `lm_head_backward_bench` now accepts `--candidate-first`, emits `run_order`
+  in JSON, and `tools/bench_lm_head_backward_candidate.sh` exposes the option
+  as `NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST=1`. This lets strict fused LM-head
+  candidates be measured in both baseline-first and candidate-first order before
+  any full trainer parity run.
+
+  Verification: added source-contract coverage for the C++ flag, JSON field,
+  and wrapper env; rebuilt the benchmark and ran a candidate-first smoke.
+
 - Moved the strict dense GPT cooperative LM-head backward training preflight
   ahead of token-shard resolution and CUDA runtime setup. A real
   `--train-transformer-lm --require-cooperative-lm-head-backward` launch now

@@ -105,6 +105,7 @@ struct Options {
     int warmup = 1;
     int flags = 0;
     bool no_loss = false;
+    bool candidate_first = false;
 };
 
 struct VariantResult {
@@ -144,6 +145,7 @@ struct ComponentResult {
         << "  --warmup N\n"
         << "  --no-loss\n"
         << "  --loss-bins N\n"
+        << "  --candidate-first\n"
         << "  --cuda-device N\n"
         << "  --json-out PATH\n";
     std::exit(2);
@@ -202,6 +204,8 @@ Options parse_options(int argc, char** argv) {
             if (loss_bins > 0) {
                 options.flags = 1 | (loss_bins << 8);
             }
+        } else if (arg == "--candidate-first") {
+            options.candidate_first = true;
         } else if (arg == "--cuda-device") {
             options.cuda_device = static_cast<int>(parse_i64(require_value(arg), arg));
         } else if (arg == "--json-out") {
@@ -600,6 +604,7 @@ std::string render_json(
         << "  \"warmup\": " << options.warmup << ",\n"
         << "  \"no_loss\": " << (options.no_loss ? "true" : "false") << ",\n"
         << "  \"flags\": " << options.flags << ",\n"
+        << "  \"run_order\": \"" << (options.candidate_first ? "candidate-first" : "baseline-first") << "\",\n"
         << "  \"timed_reset_between_iterations\": false,\n"
         << "  \"candidate_true_fused_capability\": " << (true_fused_capability ? "true" : "false") << ",\n"
         << "  \"reference_components\": {"
@@ -701,50 +706,39 @@ int main(int argc, char** argv) {
         cuda_check(cudaMemset(token_weight_bf16.get(), 0, token_weight_bf16_bytes), "memset token_weight_bf16");
         cuda_check(cudaMemset(token_weight_float.get(), 0, token_weight_float_bytes), "memset token_weight_float");
 
-        const VariantResult baseline = run_variant(
-            "baseline",
-            options.baseline_symbol,
-            baseline_fn,
-            reset_stats,
-            launch_count,
-            ce_launch_count,
-            dhidden_launch_count,
-            dweight_launch_count,
-            concurrent_count,
-            legacy_count,
-            loss_bin_count,
-            options,
-            static_cast<std::uint16_t*>(logits.get()),
-            static_cast<const std::uint16_t*>(targets.get()),
-            static_cast<float*>(row_losses.get()),
-            static_cast<const std::uint16_t*>(hidden_bf16.get()),
-            static_cast<const float*>(hidden_float.get()),
-            static_cast<const std::uint16_t*>(token_weight_bf16.get()),
-            static_cast<const float*>(token_weight_float.get()),
-            static_cast<float*>(grad_hidden.get()),
-            static_cast<float*>(grad_weight.get()));
-        const VariantResult candidate = run_variant(
-            "candidate",
-            options.candidate_symbol,
-            candidate_fn,
-            reset_stats,
-            launch_count,
-            ce_launch_count,
-            dhidden_launch_count,
-            dweight_launch_count,
-            concurrent_count,
-            legacy_count,
-            loss_bin_count,
-            options,
-            static_cast<std::uint16_t*>(logits.get()),
-            static_cast<const std::uint16_t*>(targets.get()),
-            static_cast<float*>(row_losses.get()),
-            static_cast<const std::uint16_t*>(hidden_bf16.get()),
-            static_cast<const float*>(hidden_float.get()),
-            static_cast<const std::uint16_t*>(token_weight_bf16.get()),
-            static_cast<const float*>(token_weight_float.get()),
-            static_cast<float*>(grad_hidden.get()),
-            static_cast<float*>(grad_weight.get()));
+        auto run_named_variant = [&](const char* name, const std::string& symbol, LmHeadBackwardFn fn) {
+            return run_variant(
+                name,
+                symbol,
+                fn,
+                reset_stats,
+                launch_count,
+                ce_launch_count,
+                dhidden_launch_count,
+                dweight_launch_count,
+                concurrent_count,
+                legacy_count,
+                loss_bin_count,
+                options,
+                static_cast<std::uint16_t*>(logits.get()),
+                static_cast<const std::uint16_t*>(targets.get()),
+                static_cast<float*>(row_losses.get()),
+                static_cast<const std::uint16_t*>(hidden_bf16.get()),
+                static_cast<const float*>(hidden_float.get()),
+                static_cast<const std::uint16_t*>(token_weight_bf16.get()),
+                static_cast<const float*>(token_weight_float.get()),
+                static_cast<float*>(grad_hidden.get()),
+                static_cast<float*>(grad_weight.get()));
+        };
+        VariantResult baseline;
+        VariantResult candidate;
+        if (options.candidate_first) {
+            candidate = run_named_variant("candidate", options.candidate_symbol, candidate_fn);
+            baseline = run_named_variant("baseline", options.baseline_symbol, baseline_fn);
+        } else {
+            baseline = run_named_variant("baseline", options.baseline_symbol, baseline_fn);
+            candidate = run_named_variant("candidate", options.candidate_symbol, candidate_fn);
+        }
         const ComponentResult reference_components = run_reference_components(
             reference_logits_fn,
             reference_ce_fn,

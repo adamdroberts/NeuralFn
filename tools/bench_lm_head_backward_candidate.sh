@@ -56,6 +56,7 @@ LOSS_BINS="${NFN_LM_HEAD_BACKWARD_LOSS_BINS:-${DEFAULT_LOSS_BINS}}"
 NO_LOSS="${NFN_LM_HEAD_BACKWARD_NO_LOSS:-${DEFAULT_NO_LOSS}}"
 MAX_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_RATIO:-}"
 REQUIRE_TRUE_FUSED="${NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED:-0}"
+CANDIDATE_FIRST="${NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST:-0}"
 
 select_auto_cuda_device() {
   if ! command -v nvidia-smi >/dev/null 2>&1; then
@@ -121,6 +122,19 @@ case "${NO_LOSS,,}" in
     ;;
 esac
 
+case "${CANDIDATE_FIRST,,}" in
+  1|true|yes|on)
+    CANDIDATE_FIRST_ARG=(--candidate-first)
+    ;;
+  0|false|no|off|"")
+    CANDIDATE_FIRST_ARG=()
+    ;;
+  *)
+    echo "Invalid NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST='${CANDIDATE_FIRST}'" >&2
+    exit 2
+    ;;
+esac
+
 if [[ "${#NO_LOSS_ARG[@]}" -gt 0 && "${LOSS_BINS}" != "0" ]]; then
   echo "NFN_LM_HEAD_BACKWARD_NO_LOSS cannot be combined with NFN_LM_HEAD_BACKWARD_LOSS_BINS=${LOSS_BINS}" >&2
   exit 2
@@ -145,6 +159,7 @@ fi
   --warmup "${WARMUP}" \
   "${NO_LOSS_ARG[@]}" \
   --loss-bins "${LOSS_BINS}" \
+  "${CANDIDATE_FIRST_ARG[@]}" \
   --cuda-device "${CUDA_DEVICE}" \
   --json-out "${JSON_OUT}"
 
