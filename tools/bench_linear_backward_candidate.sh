@@ -109,6 +109,16 @@ case "${PROFILE}" in
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     ;;
+  lm-head-dinput-cublaslt|lm_head_dinput_cublaslt)
+    DEFAULT_OPERATION="dinput-strided"
+    DEFAULT_ROWS=49152
+    DEFAULT_INPUT_DIM=768
+    DEFAULT_OUTPUT_DIM=50257
+    DEFAULT_GRAD_OUT_ROW_STRIDE=50304
+    DEFAULT_ITERATIONS=3
+    DEFAULT_WARMUP=1
+    DEFAULT_CANDIDATE_SYMBOL="nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_cublaslt_float32"
+    ;;
   lm-head-dweight|lm_head_dweight)
     DEFAULT_OPERATION="dweight-strided"
     DEFAULT_ROWS=49152
@@ -118,9 +128,19 @@ case "${PROFILE}" in
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     ;;
+  lm-head-dweight-cublaslt|lm_head_dweight_cublaslt)
+    DEFAULT_OPERATION="dweight-strided"
+    DEFAULT_ROWS=49152
+    DEFAULT_INPUT_DIM=768
+    DEFAULT_OUTPUT_DIM=50257
+    DEFAULT_GRAD_OUT_ROW_STRIDE=50304
+    DEFAULT_ITERATIONS=3
+    DEFAULT_WARMUP=1
+    DEFAULT_CANDIDATE_SYMBOL="nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_cublaslt_float32_beta"
+    ;;
   *)
     echo "Unknown NFN_LINEAR_BACKWARD_PROFILE='${PROFILE}'" >&2
-    echo "Expected smoke-dinput, smoke-dweight, mlp-proj-dinput, mlp-proj-dweight, mlp-fc-dinput, mlp-fc-dweight, qkv-dinput, qkv-dweight, attn-proj-dinput, attn-proj-dweight, lm-head-dinput, or lm-head-dweight" >&2
+    echo "Expected smoke-dinput, smoke-dweight, mlp-proj-dinput, mlp-proj-dweight, mlp-fc-dinput, mlp-fc-dweight, qkv-dinput, qkv-dweight, attn-proj-dinput, attn-proj-dweight, lm-head-dinput, lm-head-dinput-cublaslt, lm-head-dweight, or lm-head-dweight-cublaslt" >&2
     exit 2
     ;;
 esac
@@ -149,7 +169,7 @@ case "${OPERATION}" in
 esac
 
 BASELINE_SYMBOL="${NFN_LINEAR_BACKWARD_BASELINE_SYMBOL:-${DEFAULT_BASELINE_SYMBOL}}"
-CANDIDATE_SYMBOL="${NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL:-${BASELINE_SYMBOL}}"
+CANDIDATE_SYMBOL="${NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL:-${DEFAULT_CANDIDATE_SYMBOL:-${BASELINE_SYMBOL}}}"
 
 select_auto_cuda_device() {
   if ! command -v nvidia-smi >/dev/null 2>&1; then

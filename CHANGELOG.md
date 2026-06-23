@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added explicit forced-cuBLASLt raw C ABI candidate symbols for the padded-vocab
+  LM-head strided BF16 linear backward paths:
+  `nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_cublaslt_float32`
+  and
+  `nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_cublaslt_float32_beta`.
+  `tools/bench_linear_backward_candidate.sh` exposes them through
+  `NFN_LINEAR_BACKWARD_PROFILE=lm-head-dinput-cublaslt` and
+  `lm-head-dweight-cublaslt`. These are diagnostic-only and not trainer defaults:
+  the CUDA 13.3 dedicated RTX 5090 isolated benchmark rejected them at
+  `1.017720x` dInput and `1.000576x` dWeight versus the current raw ABI symbols.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so`, ran the focused
+  native static test, and ran both forced-cuBLASLt LM-head profiles on the
+  display-disabled RTX 5090.
+
 - Added an isolated native CUDA Tile linear-backward candidate benchmark for the
   remaining SM120 throughput work. `tools/bench_linear_backward_candidate.sh`
   builds `build/linear_backward_bench`, loads the trainer-facing raw Tile C ABI,

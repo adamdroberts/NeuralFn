@@ -108,10 +108,14 @@ CUDA-event timing in one process. Select trainer-shaped profiles with
 `NFN_LINEAR_BACKWARD_PROFILE=mlp-proj-dinput`, `mlp-proj-dweight`,
 `mlp-fc-dinput`, `mlp-fc-dweight`, `qkv-dinput`, `qkv-dweight`,
 `attn-proj-dinput`, `attn-proj-dweight`, `lm-head-dinput`, or
-`lm-head-dweight`; set `NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL` for a new C ABI
-symbol and `NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` for a no-regression gate. Keep
-the default `NFN_LINEAR_BACKWARD_WARMUP=1` or higher for candidate comparisons
-so first-call cuBLAS/TK setup is not counted as kernel time.
+`lm-head-dweight`; `lm-head-dinput-cublaslt` and `lm-head-dweight-cublaslt`
+exercise explicit forced-cuBLASLt diagnostic symbols for the padded-vocab
+LM-head shapes. The CUDA 13.3 RTX 5090 isolated benchmark rejected those
+cuBLASLt candidates at `1.017720x` dInput and `1.000576x` dWeight, so they stay
+off the default trainer path. Set `NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL` for a
+new C ABI symbol and `NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` for a no-regression
+gate. Keep the default `NFN_LINEAR_BACKWARD_WARMUP=1` or higher for candidate
+comparisons so first-call cuBLAS/TK setup is not counted as kernel time.
 The compiled runtime reports token-weight startup routes with
 `token_weight_init_strategy`, `token_weight_vector4_strided_init_requested`,
 `token_weight_padded_init_fusion_requested`,

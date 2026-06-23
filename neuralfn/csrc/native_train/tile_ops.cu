@@ -582,6 +582,15 @@ void launch_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
     std::int64_t output_dim,
     std::int64_t grad_out_row_stride,
     cudaStream_t stream);
+bool cublaslt_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    const std::uint16_t* weight_bf16_bits,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride,
+    cudaStream_t stream);
 void launch_linear_backward_input_bf16_bits_float32(
     const std::uint16_t* grad_out_bf16_bits,
     const float* weight,
@@ -735,6 +744,16 @@ void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta(
     float beta,
     cudaStream_t stream);
 void launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride,
+    float beta,
+    cudaStream_t stream);
+bool cublaslt_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
     const std::uint16_t* x_bf16_bits,
     const std::uint16_t* grad_out_bf16_bits,
     float* grad_weight,
@@ -3189,6 +3208,31 @@ int nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
     return launch_status();
 }
 
+int nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_cublaslt_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    const std::uint16_t* weight_bf16_bits,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride,
+    void* cuda_stream) {
+    const bool launched =
+        neuralfn::tile_cuda::cublaslt_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
+            grad_out_bf16_bits,
+            weight_bf16_bits,
+            grad_x,
+            rows,
+            input_dim,
+            output_dim,
+            grad_out_row_stride,
+            as_stream(cuda_stream));
+    if (!launched) {
+        return static_cast<int>(cudaErrorNotSupported);
+    }
+    return launch_status();
+}
+
 int nfn_native_tile_linear_backward_input_bf16_bits_float32(
     const std::uint16_t* grad_out_bf16_bits,
     const float* weight,
@@ -3512,6 +3556,33 @@ int nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_stride
         grad_out_row_stride,
         beta,
         as_stream(cuda_stream));
+    return launch_status();
+}
+
+int nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_cublaslt_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride,
+    float beta,
+    void* cuda_stream) {
+    const bool launched =
+        neuralfn::tile_cuda::cublaslt_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
+            x_bf16_bits,
+            grad_out_bf16_bits,
+            grad_weight,
+            rows,
+            input_dim,
+            output_dim,
+            grad_out_row_stride,
+            beta,
+            as_stream(cuda_stream));
+    if (!launched) {
+        return static_cast<int>(cudaErrorNotSupported);
+    }
     return launch_status();
 }
 

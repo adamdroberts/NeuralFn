@@ -14381,6 +14381,120 @@ __global__ void jepa_mask_int64_kernel(
 
 }  // namespace
 
+bool cublaslt_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
+    const std::uint16_t* grad_out_bf16_bits,
+    const std::uint16_t* weight_bf16_bits,
+    float* grad_x,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (grad_out_bf16_bits == nullptr ||
+      weight_bf16_bits == nullptr ||
+      grad_x == nullptr ||
+      !fits_cublas_int(rows) ||
+      !fits_cublas_int(input_dim) ||
+      !fits_cublas_int(output_dim) ||
+      !fits_cublas_int(grad_out_row_stride) ||
+      grad_out_row_stride < output_dim) {
+    return false;
+  }
+  if (!trainer_linear_bf16_cublaslt_enabled()) {
+    return false;
+  }
+  const auto* weight_bf16 = reinterpret_cast<const __nv_bfloat16*>(weight_bf16_bits);
+  const auto* grad_out_bf16 = reinterpret_cast<const __nv_bfloat16*>(grad_out_bf16_bits);
+  return cublaslt_linear_matmul(
+      weight_bf16,
+      grad_out_bf16,
+      grad_x,
+      CUDA_R_16BF,
+      CUDA_R_16BF,
+      CUDA_R_32F,
+      CUBLAS_COMPUTE_32F_FAST_16BF,
+      static_cast<int>(input_dim),
+      static_cast<int>(rows),
+      static_cast<int>(output_dim),
+      CUBLAS_OP_N,
+      CUBLAS_OP_N,
+      static_cast<int>(input_dim),
+      static_cast<int>(grad_out_row_stride),
+      static_cast<int>(input_dim),
+      0.0f,
+      stream);
+#else
+  (void)grad_out_bf16_bits;
+  (void)weight_bf16_bits;
+  (void)grad_x;
+  (void)rows;
+  (void)input_dim;
+  (void)output_dim;
+  (void)grad_out_row_stride;
+  (void)stream;
+  return false;
+#endif
+}
+
+bool cublaslt_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta(
+    const std::uint16_t* x_bf16_bits,
+    const std::uint16_t* grad_out_bf16_bits,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t input_dim,
+    std::int64_t output_dim,
+    std::int64_t grad_out_row_stride,
+    float beta,
+    cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  if (x_bf16_bits == nullptr ||
+      grad_out_bf16_bits == nullptr ||
+      grad_weight == nullptr ||
+      !fits_cublas_int(rows) ||
+      !fits_cublas_int(input_dim) ||
+      !fits_cublas_int(output_dim) ||
+      !fits_cublas_int(grad_out_row_stride) ||
+      grad_out_row_stride < output_dim) {
+    return false;
+  }
+  if (!trainer_linear_bf16_cublaslt_enabled()) {
+    return false;
+  }
+  const auto* x_bf16 = reinterpret_cast<const __nv_bfloat16*>(x_bf16_bits);
+  const auto* grad_out_bf16 = reinterpret_cast<const __nv_bfloat16*>(grad_out_bf16_bits);
+  return cublaslt_linear_matmul(
+      x_bf16,
+      grad_out_bf16,
+      grad_weight,
+      CUDA_R_16BF,
+      CUDA_R_16BF,
+      CUDA_R_32F,
+      CUBLAS_COMPUTE_32F_FAST_16BF,
+      static_cast<int>(input_dim),
+      static_cast<int>(output_dim),
+      static_cast<int>(rows),
+      CUBLAS_OP_N,
+      CUBLAS_OP_T,
+      static_cast<int>(input_dim),
+      static_cast<int>(grad_out_row_stride),
+      static_cast<int>(input_dim),
+      beta,
+      stream);
+#else
+  (void)x_bf16_bits;
+  (void)grad_out_bf16_bits;
+  (void)grad_weight;
+  (void)rows;
+  (void)input_dim;
+  (void)output_dim;
+  (void)grad_out_row_stride;
+  (void)beta;
+  (void)stream;
+  return false;
+#endif
+}
+
 std::int64_t token_cross_entropy_bf16_threads_per_row() {
   return static_cast<std::int64_t>(cross_entropy_bf16_threads_per_row());
 }

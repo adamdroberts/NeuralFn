@@ -691,6 +691,14 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `mlp-fc-dweight` about `1.72 ms`, `qkv-dweight` about `1.00 ms`). The
     first no-warmup MLP projection dInput run exposed setup/cache bias, so keep
     `NFN_LINEAR_BACKWARD_WARMUP>=1` for candidate comparisons.
+  - 2026-06-23 added explicit forced-cuBLASLt raw C ABI candidate symbols for
+    the padded-vocab LM-head strided BF16 dInput/dWeight calls and exposed them
+    as `NFN_LINEAR_BACKWARD_PROFILE=lm-head-dinput-cublaslt` /
+    `lm-head-dweight-cublaslt`. The isolated CUDA 13.3 RTX 5090 benchmark
+    rejected default promotion: dInput regressed to `1.017720x` and dWeight to
+    `1.000576x` versus the current raw ABI symbols. Keep focusing LM-head work on
+    a materially different fused/cooperative logits/CE/dHidden/dWeight route,
+    not plain cuBLASLt substitution for the padded-vocab strided GEMMs.
   - 2026-06-22 after the no-loss LM-head CE specialization became the default, a 10-step same-script parity sample still measured NeuralFn at `1.021069x` train-loop wall time and `0.978059x` tokens/sec versus `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`. A one-step attention-section profile split packed-attention backward into `30.440 ms` dprep and `233.277 ms` TK body over 96 launches, so dprep-only work cannot close the gap. Rechecked compile-time `LLMK_SM120_ATOMIC_DQ` via `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_atomic_dq` after the CE default; keep it rejected because the 3-step, 3-sample dedicated RTX 5090 run measured `1.139065x` train-loop wall time, `0.877916x` tokens/sec, `2.251237x` `stage.block_backward.attn_sdpa.total_ms`, and `2.470843x` attention TK timing versus the current default.
   - 2026-06-22 made the same-script parity wrapper pass `--train-loss-every-steps 0` to the NeuralFn side by default, with `NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS` / `NFN_SM120_TRAIN_LOSS_EVERY_STEPS` as opt-ins, so short parity runs no longer inherit the raw C++ trainer's default train-loss interval. The verification rerun confirmed `train_loss_host_d2h_count: 0` and `lm_head_classifier_loss_bin_launch_count: 0` over 10 steps, but still measured a real gap: llm.kittens `2435.148 ms/step` and `215519.5 tok/s` versus NeuralFn `2501.160 ms/step` and `209618 tok/s`, or `1.027108x` train-loop wall time and `0.972617x` tokens/sec.
   - 2026-06-22 added opt-in NeuralFn CUDA-event train-loop timing behind `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1`, enabled by default from the llm.kittens parity wrapper with `NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0` as the opt-out. Runtime JSON now reports all-step and first-step-excluded event timings, and `tools/paired_kernel_speed.py` maps llm.kittens step logs to the same `train_loop_cuda_event_*` metric names. Use these fields on future parity runs to distinguish actual GPU training-loop time from host wall/setup/validation noise.

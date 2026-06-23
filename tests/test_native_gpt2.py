@@ -1482,6 +1482,31 @@ def test_native_gpt_linear_backward_microbench_profiles_block_and_lm_head_shapes
     assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta" in (
         bench_source
     )
+    tile_ops_header = (root / "neuralfn" / "csrc" / "native_train" / "tile_ops.h").read_text(
+        encoding="utf-8"
+    )
+    tile_ops_source = (root / "neuralfn" / "csrc" / "native_train" / "tile_ops.cu").read_text(
+        encoding="utf-8"
+    )
+    kernels_source = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        "nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_cublaslt_float32"
+        in tile_ops_header
+    )
+    assert (
+        "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_cublaslt_float32_beta"
+        in tile_ops_header
+    )
+    assert "cudaErrorNotSupported" in tile_ops_source
+    assert "cublaslt_linear_backward_input_bf16_bits_weight_bf16_strided_float32" in (
+        kernels_source
+    )
+    assert (
+        "cublaslt_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta"
+        in kernels_source
+    )
     assert "linear_backward_tile_ops" in bench_source
     assert "candidate_to_baseline_ms_per_iter_ratio" in bench_source
     assert "cudaEventElapsedTime" in bench_source
@@ -1498,7 +1523,11 @@ def test_native_gpt_linear_backward_microbench_profiles_block_and_lm_head_shapes
     assert "qkv-dinput|qkv_dinput" in wrapper
     assert "attn-proj-dweight|attn_proj_dweight" in wrapper
     assert "lm-head-dinput|lm_head_dinput" in wrapper
+    assert "lm-head-dinput-cublaslt|lm_head_dinput_cublaslt" in wrapper
     assert "lm-head-dweight|lm_head_dweight" in wrapper
+    assert "lm-head-dweight-cublaslt|lm_head_dweight_cublaslt" in wrapper
+    assert "DEFAULT_CANDIDATE_SYMBOL" in wrapper
+    assert "strided_cublaslt_float32" in wrapper
     assert "DEFAULT_ROWS=65536" in wrapper
     assert "DEFAULT_ROWS=49152" in wrapper
     assert "NFN_LINEAR_BACKWARD_MAX_RATIO" in wrapper

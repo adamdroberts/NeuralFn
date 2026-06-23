@@ -132,7 +132,11 @@ dWeight kernels inside one CUDA process. Use
 `mlp-fc-dinput`, `mlp-fc-dweight`, `qkv-dinput`, `qkv-dweight`,
 `attn-proj-dinput`, `attn-proj-dweight`, `lm-head-dinput`, or
 `lm-head-dweight` to isolate the current block-backward and LM-head hot shapes
-without dataset, graph-editor, or trainer-loop noise. Override
+without dataset, graph-editor, or trainer-loop noise. The diagnostic profiles
+`lm-head-dinput-cublaslt` and `lm-head-dweight-cublaslt` compare the current
+strided BF16 route against explicit forced-cuBLASLt C ABI symbols; the CUDA 13.3
+RTX 5090 isolated run rejected them for default promotion at `1.017720x` dInput
+and `1.000576x` dWeight versus the current symbols. Override
 `NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL` for a new kernel candidate and set
 `NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` when the candidate must be no slower than
 the current symbol. Keep the default `NFN_LINEAR_BACKWARD_WARMUP=1` or higher

@@ -145,6 +145,13 @@ the current ABI symbol before spending time in full trainer-loop parity runs.
 Keep the default `NFN_LINEAR_BACKWARD_WARMUP=1` or higher so first-call
 cuBLAS/TK setup is not counted as kernel time.
 
+`NFN_LINEAR_BACKWARD_PROFILE=lm-head-dinput-cublaslt` and
+`lm-head-dweight-cublaslt` expose explicit forced-cuBLASLt symbols for the
+padded-vocab LM-head strided BF16 dInput and dWeight shapes. They are
+diagnostic-only: the CUDA 13.3 RTX 5090 isolated benchmark rejected them for
+default promotion at `1.017720x` dInput and `1.000576x` dWeight versus the
+current raw ABI symbols.
+
 Native BF16 `cublasGemmEx` fallback paths expose default-off bisection controls
 for CUDA 13.3+ performance work. Set
 `NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO=N` or
