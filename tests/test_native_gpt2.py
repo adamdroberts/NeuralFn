@@ -1562,6 +1562,33 @@ def test_native_gpt_linear_backward_microbench_profiles_block_and_lm_head_shapes
     assert "NFN_LINEAR_BACKWARD_MAX_RATIO" in wrapper
     assert "tools/build_native_train_tile_ops.sh" in wrapper
     assert "--grad-out-row-stride" in wrapper
+    matrix_wrapper = (root / "tools" / "bench_native_gpt_linear_hot_matrix.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "DEFAULT_PROFILES=(" in matrix_wrapper
+    for profile in (
+        "mlp-proj-dinput",
+        "mlp-proj-dweight",
+        "mlp-fc-dinput",
+        "mlp-fc-dweight",
+        "qkv-dinput",
+        "qkv-dweight",
+        "attn-proj-dinput",
+        "attn-proj-dweight",
+        "lm-head-dinput",
+        "lm-head-dweight",
+    ):
+        assert profile in matrix_wrapper
+    assert "NFN_LINEAR_HOT_MATRIX_PROFILES" in matrix_wrapper
+    assert "NFN_LINEAR_HOT_DINPUT_CANDIDATE_SYMBOL" in matrix_wrapper
+    assert "NFN_LINEAR_HOT_DWEIGHT_CANDIDATE_SYMBOL" in matrix_wrapper
+    assert "NFN_LINEAR_HOT_${PROFILE_ENV}_CANDIDATE_SYMBOL" in matrix_wrapper
+    assert "NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL=${CANDIDATE_SYMBOL}" in matrix_wrapper
+    assert "NFN_LINEAR_BACKWARD_MAX_RATIO=${MAX_RATIO}" in matrix_wrapper
+    assert "native_gpt_linear_hot_matrix" in matrix_wrapper
+    assert "max_candidate_to_baseline_ms_per_iter_ratio" in matrix_wrapper
+    assert "mean_candidate_to_baseline_ms_per_iter_ratio" in matrix_wrapper
+    assert "bash \"${LINEAR_WRAPPER}\"" in matrix_wrapper
 
 
 def test_native_gpt_cuda_error_35_reports_runtime_visibility_hint() -> None:

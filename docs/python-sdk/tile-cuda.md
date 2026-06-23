@@ -145,6 +145,18 @@ the current ABI symbol before spending time in full trainer-loop parity runs.
 Keep the default `NFN_LINEAR_BACKWARD_WARMUP=1` or higher so first-call
 cuBLAS/TK setup is not counted as kernel time.
 
+Use `bash tools/bench_native_gpt_linear_hot_matrix.sh` when a candidate needs to
+cover the current native GPT hot linear path instead of one shape. The matrix
+wrapper runs `mlp-proj-dinput`, `mlp-proj-dweight`, `mlp-fc-dinput`,
+`mlp-fc-dweight`, `qkv-dinput`, `qkv-dweight`, `attn-proj-dinput`,
+`attn-proj-dweight`, `lm-head-dinput`, and `lm-head-dweight` through the same
+C++ benchmark and emits `native_gpt_linear_hot_matrix` JSON. Set
+`NFN_LINEAR_HOT_DINPUT_CANDIDATE_SYMBOL` or
+`NFN_LINEAR_HOT_DWEIGHT_CANDIDATE_SYMBOL` for operation-wide candidates, or a
+profile-specific override such as
+`NFN_LINEAR_HOT_QKV_DWEIGHT_CANDIDATE_SYMBOL` for a single shape. Set
+`NFN_LINEAR_HOT_MATRIX_MAX_RATIO=1.000` to fail fast when any profile regresses.
+
 `NFN_LINEAR_BACKWARD_PROFILE=lm-head-dinput-cublaslt` and
 `lm-head-dweight-cublaslt` expose explicit forced-cuBLASLt symbols for the
 padded-vocab LM-head strided BF16 dInput and dWeight shapes. They are

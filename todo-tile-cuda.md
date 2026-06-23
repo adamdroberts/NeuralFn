@@ -721,6 +721,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     CUDA process before spending time on full trainer-loop parity. Profiles now
     cover `mlp-proj`, `mlp-fc`, `qkv`, `attn-proj`, and `lm-head` dInput/dWeight
     shapes with CUDA-event timing and optional no-regression gates.
+  - 2026-06-23 added `tools/bench_native_gpt_linear_hot_matrix.sh` to run those
+    hot GPT linear profiles as one matrix gate. It keeps each profile as a
+    same-process baseline-vs-candidate CUDA event comparison, supports
+    operation-wide and profile-specific candidate symbols, and emits aggregate
+    `native_gpt_linear_hot_matrix` JSON so block-backward/LM-head candidates can
+    be rejected before noisy full-loop parity runs.
   - 2026-06-23 first isolated profile sweep with the new harness ranked the
     current padded-vocab LM-head linear calls as the largest standalone targets:
     `lm-head-dinput` was about `32.17 ms` per 49152-row chunk and

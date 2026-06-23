@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `tools/bench_native_gpt_linear_hot_matrix.sh`, a matrix gate for native
+  GPT block-backward and LM-head linear kernel candidates. The wrapper reuses
+  the C++ CUDA event `linear_backward_bench` harness for every current hot
+  dInput/dWeight shape, keeps baseline and candidate timing in the same process,
+  supports operation-wide and profile-specific candidate symbols, and writes
+  aggregate `native_gpt_linear_hot_matrix` JSON for no-regression checks before
+  full SM120 parity runs.
+
+  Verification: ran the matrix wrapper dry-run plan with operation-wide and
+  profile-specific candidate-symbol overrides, then ran a two-profile
+  `smoke-dinput smoke-dweight` CUDA matrix on the dedicated RTX 5090; added
+  source-contract coverage for the profile matrix, override env names,
+  aggregate JSON fields, and fail-fast ratio gate.
+
 - Refreshed the current SM120 NeuralFn-vs-llm.kittens parity evidence on the
   dedicated RTX 5090 after the latest native SDK and benchmark-gate work. The
   3-step, 2-sample stage-timed run measured NeuralFn at `2581.397 ms/step`
