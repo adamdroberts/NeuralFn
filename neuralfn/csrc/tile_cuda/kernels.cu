@@ -20223,6 +20223,16 @@ std::int64_t attention_backward_tk_launch_count() {
 #endif
 }
 
+int attention_backward_tk_block_size() {
+#if defined(NFN_TILE_CUDA_USE_TK_ATTENTION) && defined(LLMK_SM120_ATTN_BWD_BLOCK)
+  return LLMK_SM120_ATTN_BWD_BLOCK;
+#elif defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
+  return 16;
+#else
+  return 0;
+#endif
+}
+
 std::int64_t attention_backward_float_hd64_dprep_launch_count() {
 #if defined(NFN_TILE_CUDA_USE_TK_ATTENTION)
   return g_attention_backward_float_hd64_dprep_launch_count.load(std::memory_order_relaxed);

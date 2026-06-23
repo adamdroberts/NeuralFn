@@ -4885,6 +4885,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["optimizer_tile_size"] == 1024
     assert isinstance(train_transformer_payload["optimizer_tile_size_symbol_loaded"], bool)
     assert train_transformer_payload["optimizer_tile_strategy"] == "tile-size-1024-sumsq-scale-adamw"
+    assert train_transformer_payload["attention_backward_tk_block_size"] in {0, 16, 32, 64}
+    assert isinstance(train_transformer_payload["attention_backward_tk_block_size_symbol_loaded"], bool)
     assert train_transformer_payload["adamw_descriptor_count"] == 0
     assert train_transformer_payload["adamw_float_update_descriptor_count"] == 0
     assert train_transformer_payload["adamw_bf16_param_descriptor_count"] == 0
@@ -5062,6 +5064,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "gradient_clip_strategy": "fused-multi-buffer-sumsq-device-scale",
         "optimizer_tile_size": 1024,
         "optimizer_tile_strategy": "tile-size-1024-sumsq-scale-adamw",
+        "attention_backward_tk_block_size": 16,
+        "attention_backward_tk_block_size_symbol_loaded": True,
         "gradient_clip_descriptor_count": 0,
         "gradient_clip_bf16_sumsq_kernel_loaded": False,
         "gradient_sumsq_kernel_launches_per_optimizer_step": 0,
@@ -5142,6 +5146,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_sumsq_partials_many_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_sumsq_partials_many_bf16_bits_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_optimizer_tile_size" in train_transformer_payload["kernels"]
+    assert "nfn_native_tile_attention_backward_tk_block_size" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_global_norm_clip_scale_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_scale_inplace_by_device_float32" in train_transformer_payload["kernels"]
     assert "nfn_native_tile_scaled_dot_product_attention_backward_float32" in train_transformer_payload["kernels"]
@@ -6798,6 +6803,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_sumsq_partials_many_float32" in header_text
     assert "nfn_native_tile_sumsq_partials_many_bf16_bits_float32" in header_text
     assert "nfn_native_tile_optimizer_tile_size" in header_text
+    assert "nfn_native_tile_attention_backward_tk_block_size" in header_text
     assert "NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE" in source_text
     assert "nfn_native_tile_optimizer_tile_size" in gpt2_source_text
     assert "optimizer_tile_strategy" in gpt2_source_text
@@ -7992,11 +7998,13 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "tk-sm120-bf16-bridge" in gpt2_source_text
     assert "attention_forward_tk_launch_count" in gpt2_source_text
     assert "attention_backward_tk_launch_count" in gpt2_source_text
+    assert "attention_backward_tk_block_size" in gpt2_source_text
     assert "attention_backward_dprep_timing_us" in gpt2_source_text
     assert "attention_backward_float_hd64_dprep_launch_count" in gpt2_source_text
     assert "attention_backward_tk_timing_us" in gpt2_source_text
     assert "nfn_native_tile_attention_forward_tk_launch_count" in header_text
     assert "nfn_native_tile_attention_backward_tk_launch_count" in header_text
+    assert "nfn_native_tile_attention_backward_tk_block_size" in header_text
     assert "nfn_native_tile_attention_backward_float_hd64_dprep_launch_count" in header_text
     assert "nfn_native_tile_attention_backward_dprep_timing_us" in header_text
     assert "nfn_native_tile_attention_backward_tk_timing_us" in header_text

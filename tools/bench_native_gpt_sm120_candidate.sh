@@ -373,6 +373,12 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_TILE_OPS_BUILD_FLAGS="${CANDIDATE_TILE_OPS_BUILD_FLAGS:+$CANDIDATE_TILE_OPS_BUILD_FLAGS }-DLLMK_SM120_ATTN_BWD_BLOCK=32"
     AUTO_ATTENTION_SECTION_TIMING=1
     ;;
+  "attention_bwd_block_64"|"attention-bwd-block-64"|"attention_backward_block_64"|"attention-backward-block-64")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2-step, 2-sample stage-timed gate compiled the TK attention backward block size with -DLLMK_SM120_ATTN_BWD_BLOCK=64, but rejected it because target attention timing was unchanged at attention_backward_tk_timing_us=1.000035x and stage.block_backward.attn_sdpa.to_qkv.total_ms=1.000022x while stage.block_backward.qkv.dweight_bias.total_ms regressed to 1.033073x."
+    CANDIDATE_TILE_OPS_BUILD_FLAGS="${CANDIDATE_TILE_OPS_BUILD_FLAGS:+$CANDIDATE_TILE_OPS_BUILD_FLAGS }-DLLMK_SM120_ATTN_BWD_BLOCK=64"
+    AUTO_ATTENTION_SECTION_TIMING=1
+    ;;
   "bf16_attention_grad_out"|"bf16-attention-grad-out"|"attention_bf16_grad_out"|"attention-bf16-grad-out")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
     REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script sweep measured this attention BF16 grad-out handoff at 0.995826x train_loop_wall_ms_per_step, but rejected it because strict stage gates regressed."

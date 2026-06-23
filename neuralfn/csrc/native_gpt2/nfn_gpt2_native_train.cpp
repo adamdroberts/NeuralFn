@@ -3282,6 +3282,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_attention_forward_row_launch_count",
         "nfn_native_tile_attention_forward_tk_launch_count",
         "nfn_native_tile_attention_backward_tk_launch_count",
+        "nfn_native_tile_attention_backward_tk_block_size",
         "nfn_native_tile_attention_backward_float_hd64_dprep_launch_count",
         "nfn_native_tile_attention_backward_dprep_timing_us",
         "nfn_native_tile_attention_backward_dprep_timing_count",
@@ -10175,6 +10176,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_scaled_dot_product_attention_float32",
         "nfn_native_tile_attention_forward_tk_launch_count",
         "nfn_native_tile_attention_backward_tk_launch_count",
+        "nfn_native_tile_attention_backward_tk_block_size",
         "nfn_native_tile_attention_backward_float_hd64_dprep_launch_count",
         "nfn_native_tile_attention_backward_dprep_timing_us",
         "nfn_native_tile_attention_backward_dprep_timing_count",
@@ -10769,6 +10771,7 @@ int run_transformer_lm_training_json(
     AttentionStatsCountFn attention_row_launch_count = nullptr;
     AttentionStatsCountFn attention_forward_tk_launch_count = nullptr;
     AttentionStatsCountFn attention_backward_tk_launch_count = nullptr;
+    TileOptimizerTileSizeFn attention_backward_tk_block_size_fn = nullptr;
     AttentionStatsCountFn attention_backward_float_hd64_dprep_launch_count_fn = nullptr;
     AttentionStatsCountFn attention_backward_dprep_timing_us_fn = nullptr;
     AttentionStatsCountFn attention_backward_dprep_timing_count_fn = nullptr;
@@ -11237,6 +11240,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_attention_forward_tk_launch_count");
                 attention_backward_tk_launch_count = load_symbol<AttentionStatsCountFn>(
                     tile_handle, "nfn_native_tile_attention_backward_tk_launch_count");
+                attention_backward_tk_block_size_fn = load_symbol<TileOptimizerTileSizeFn>(
+                    tile_handle, "nfn_native_tile_attention_backward_tk_block_size");
                 attention_backward_float_hd64_dprep_launch_count_fn = load_symbol<AttentionStatsCountFn>(
                     tile_handle, "nfn_native_tile_attention_backward_float_hd64_dprep_launch_count");
                 attention_backward_dprep_timing_us_fn = load_symbol<AttentionStatsCountFn>(
@@ -20140,6 +20145,10 @@ int run_transformer_lm_training_json(
         optimizer_tile_size_symbol_loaded ? optimizer_tile_size_fn() : 1024;
     const std::string optimizer_tile_strategy =
         "tile-size-" + std::to_string(optimizer_tile_size) + "-sumsq-scale-adamw";
+    const bool attention_backward_tk_block_size_symbol_loaded =
+        attention_backward_tk_block_size_fn != nullptr;
+    const int attention_backward_tk_block_size =
+        attention_backward_tk_block_size_symbol_loaded ? attention_backward_tk_block_size_fn() : 0;
 
     std::cout
         << "{\n"
@@ -21216,6 +21225,9 @@ int run_transformer_lm_training_json(
         << "\",\n"
         << "  \"attention_backward_reuses_forward_workspace\": "
         << (attention_backward_tk_launches > 0 ? "true" : "false") << ",\n"
+        << "  \"attention_backward_tk_block_size\": " << attention_backward_tk_block_size << ",\n"
+        << "  \"attention_backward_tk_block_size_symbol_loaded\": "
+        << (attention_backward_tk_block_size_symbol_loaded ? "true" : "false") << ",\n"
         << "  \"attention_backward_uses_saved_forward_workspace\": "
         << (stored_attention_backward_kernel_launches > 0 || stored_packed_attention_backward_kernel_launches > 0
                 ? "true"

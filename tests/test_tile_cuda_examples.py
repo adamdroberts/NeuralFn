@@ -992,6 +992,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "attention_bwd_block_32" in text
     assert "-DLLMK_SM120_ATTN_BWD_BLOCK=32" in text
     assert "attention_backward_tk_timing_us regressed to 1.000555x" in text
+    assert "attention_bwd_block_64" in text
+    assert "-DLLMK_SM120_ATTN_BWD_BLOCK=64" in text
+    assert "attention_backward_tk_timing_us=1.000035x" in text
     assert "bf16_attention_dprep_grad_out" in text
     assert "NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1" in text
     assert "1.005344x train_loop_wall_ms_per_step" in text
@@ -3386,6 +3389,60 @@ def test_paired_kernel_speed_tool_reports_optimizer_tile_size_strategy_change() 
     assert "tracked route counters did not change" not in proc.stdout
 
 
+def test_paired_kernel_speed_tool_reports_attention_backward_block_size_strategy_change() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-attn-bwd-block-change.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}, "
+        "\\\"attention_backward_tk_block_size\\\": 16"
+        "}"
+    )
+    candidate_json = baseline_json.replace(
+        "\\\"attention_backward_tk_block_size\\\": 16",
+        "\\\"attention_backward_tk_block_size\\\": 64",
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--candidate-env",
+            "NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_BUILD_FLAGS=-DLLMK_SM120_ATTN_BWD_BLOCK=64",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    strategy_changes = payload["native_strategy_value_changes"]
+    assert strategy_changes["has_strategy_value_change"] is True
+    assert strategy_changes["changed"]["attention_backward_tk_block_size"] == {
+        "baseline_values": ["16"],
+        "candidate_values": ["64"],
+    }
+    assert "native_strategy_value_changes: has_strategy_value_change=true changed_count=1" in proc.stdout
+    assert "tracked route counters did not change" not in proc.stdout
+
+
 def test_paired_kernel_speed_tool_reports_lm_head_ce_vector_io_strategy_change() -> None:
     script = Path("tools/paired_kernel_speed.py")
     output_path = Path(tempfile.mkdtemp()) / "paired-ce-vector-io-change.json"
@@ -4238,6 +4295,8 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "lm_head_classifier_last_row_stride": 50304,
                 "attention_backward_dprep_timing_us": 30000,
                 "attention_backward_dprep_timing_count": 12,
+                "attention_backward_tk_block_size": 16,
+                "attention_backward_tk_block_size_symbol_loaded": True,
                 "attention_backward_tk_timing_us": 240000,
                 "attention_backward_tk_timing_count": 96,
                 "lm_head_logits_linear_strategy": "padded-lm-head-bf16-cublaslt-fallback",
@@ -4340,6 +4399,8 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["stage.block_backward.total_ms"] == 9.0
     assert metrics["attention_backward_dprep_timing_us"] == 30000
     assert metrics["attention_backward_dprep_timing_count"] == 12
+    assert metrics["attention_backward_tk_block_size"] == 16
+    assert metrics["attention_backward_tk_block_size_symbol_loaded"] is True
     assert metrics["attention_backward_tk_timing_us"] == 240000
     assert metrics["attention_backward_tk_timing_count"] == 96
     assert metrics["lm_head_logits_linear_strategy"] == "padded-lm-head-bf16-cublaslt-fallback"
@@ -4425,6 +4486,7 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
         "lm_head_cooperative_backward_route_integrated": ["false"],
         "lm_head_cooperative_backward_kernel_enabled": ["false"],
         "lm_head_cooperative_backward_sequence_wrapper_enabled": ["false"],
+        "attention_backward_tk_block_size": ["16"],
     }
 
 

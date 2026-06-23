@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a trainer-facing Tile ABI and native GPT JSON diagnostic for the
+  compiled SM120 TK attention-backward block size:
+  `nfn_native_tile_attention_backward_tk_block_size()`,
+  `attention_backward_tk_block_size`, and
+  `attention_backward_tk_block_size_symbol_loaded`. The paired native benchmark
+  now treats `attention_backward_tk_block_size` as a strategy value, so
+  compile-time Tile ops candidates such as
+  `-DLLMK_SM120_ATTN_BWD_BLOCK=64` show up as an intentional route change even
+  when launch counters and runtime env flags are unchanged. Added the rejected
+  wrapper profile `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_bwd_block_64`;
+  the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample diagnostic left target
+  attention timing effectively flat (`attention_backward_tk_timing_us=1.000035x`
+  and `stage.block_backward.attn_sdpa.to_qkv.total_ms=1.000022x`) while
+  `stage.block_backward.qkv.dweight_bias.total_ms` regressed to `1.033073x`.
+
+  Verification: updated focused native GPT source/JSON contract coverage,
+  paired benchmark strategy-change coverage, and static wrapper profile
+  coverage. Rebuilt and smoke-checked the linked native trainer after the C++
+  ABI change.
+
 - Corrected the native GPT LM-head schedule diagnostic to match the actual
   llm.kittens SM120 reference boundary. Runtime JSON now reports
   `lm_head_schedule_parity_status:

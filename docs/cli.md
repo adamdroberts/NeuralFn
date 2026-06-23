@@ -1004,6 +1004,14 @@ The native candidate wrapper also has a rejected
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_bwd_block_32` profile that builds
 a temporary Tile ops library with `-DLLMK_SM120_ATTN_BWD_BLOCK=32` for explicit
 SM120 packed-attention backward block-size reruns.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_bwd_block_64` does the same with
+`-DLLMK_SM120_ATTN_BWD_BLOCK=64` and is also rejected by default because the
+latest CUDA 13.3 dedicated RTX 5090 gate left the target attention timing flat
+while QKV dWeight+bias regressed. Native JSON reports
+`attention_backward_tk_block_size` and
+`attention_backward_tk_block_size_symbol_loaded`, and
+`tools/paired_kernel_speed.py` treats the block size as a strategy value so a
+compile-time block-size candidate is visible in the same-script comparison.
 If attention backward section timing is enabled, paired summaries include the
 native `attention_backward_dprep_timing_*` and
 `attention_backward_tk_timing_*` counters next to the `stage.*` buckets and
@@ -1256,6 +1264,7 @@ route counters such as `block_backward_dinput_bf16_gemm_count`, block ordering
 execution counters such as
 `block_backward_mlp_proj_dinput_before_dweight_count` and
 `block_backward_qkv_dinput_before_dweight_count`, emitted
+`attention_backward_tk_block_size`, emitted
 `timing.setup_timing` and `timing.stage_timing` totals/averages/counts, and paired native-metric ratios
 when both commands expose the same metric. If a child command uses
 `--json-out`, `--profile-json`, or `--stage-profile-json`, the helper reads

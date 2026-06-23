@@ -352,6 +352,14 @@ or `4096`. The default remains `1024`; native runtime JSON reports
 those fields. The current CUDA 13.3 dedicated RTX 5090 2048 candidate smoked
 successfully but did not improve the measured optimizer buckets, so it should
 stay a diagnostic build unless fresh same-script evidence proves otherwise.
+Packed-attention TK backward block-size candidates are reported the same way:
+the trainer-facing Tile ABI exports
+`nfn_native_tile_attention_backward_tk_block_size()`, native runtime JSON emits
+`attention_backward_tk_block_size` plus
+`attention_backward_tk_block_size_symbol_loaded`, and the paired benchmark
+strategy gate tracks the value so compile-time
+`-DLLMK_SM120_ATTN_BWD_BLOCK=N` builds are visible even when env flags and
+launch counters are otherwise unchanged.
 When a command exits nonzero and `--continue-on-error` is not set, the helper now
 prints both stdout and stderr tails so CUDA driver/runtime messages from
 external baselines are not hidden behind an empty stderr block.
@@ -512,6 +520,12 @@ default: the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample same-script gate
 measured `attention_backward_tk_timing_us=1.000555x` and missed the strict
 `stage.block_backward.mlp_proj.total_ms` gate at `1.000293x`, while tracked
 route counters and strategy labels stayed unchanged.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_bwd_block_64` is also rejected by
+default: the same CUDA 13.3 2-step, 2-sample diagnostic compiled
+`-DLLMK_SM120_ATTN_BWD_BLOCK=64`, but target attention timing was effectively
+unchanged (`attention_backward_tk_timing_us=1.000035x` and
+`stage.block_backward.attn_sdpa.to_qkv.total_ms=1.000022x`) while
+`stage.block_backward.qkv.dweight_bias.total_ms` regressed to `1.033073x`.
 QKV side-stream candidates mentioning `BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT`
 also gate `stage.block_backward.qkv.total_ms`; the candidate-only combined
 `stage.block_backward.qkv.dinput_dweight_concurrent.total_ms` substage is still

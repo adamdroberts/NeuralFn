@@ -708,6 +708,15 @@ and synchronizes the stream to report dprep and TK backward totals/counts as
 `attention_backward_dprep_timing_us`,
 `attention_backward_dprep_timing_count`, `attention_backward_tk_timing_us`, and
 `attention_backward_tk_timing_count`.
+The trainer-facing ABI also reports the compiled TK backward block size through
+`nfn_native_tile_attention_backward_tk_block_size()`. Dense GPT runtime JSON
+emits `attention_backward_tk_block_size` and
+`attention_backward_tk_block_size_symbol_loaded`; the paired benchmark strategy
+gate tracks the field so temporary builds with
+`-DLLMK_SM120_ATTN_BWD_BLOCK=16|32|64` are visible even if their launch counters
+match the default route. The `attention_bwd_block_32` and
+`attention_bwd_block_64` SM120 candidate profiles are rejected by default unless
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
 The trainer-facing build mirrors llm.kittens' SM120 NVCC threading,
 host-compiler, data-prep, memory, and LayerNorm tuning flags for those
 ThunderKittens headers while keeping GEMM on NeuralFn's initialized cublasLt
