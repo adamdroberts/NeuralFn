@@ -38,8 +38,8 @@ constexpr std::int64_t kAttentionForwardValueReuse = 64;
 constexpr std::int64_t kAttentionBackwardDimReuse = 64;
 constexpr std::int64_t kDefaultStoredMlpBlocks = 12;
 constexpr std::int64_t kDefaultStoredPackedAttentionBlocks = 12;
-constexpr int kDefaultLmHeadRowChunkSize = 32768;
-constexpr int kDefaultSafeLmHeadRowChunkSize = 32768;
+constexpr int kDefaultLmHeadRowChunkSize = 49152;
+constexpr int kDefaultSafeLmHeadRowChunkSize = 49152;
 constexpr const char* kLmHeadCooperativeBackwardSymbol =
     "nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16";
 constexpr const char* kLmHeadCooperativeBackwardSequenceWrapperSymbol =

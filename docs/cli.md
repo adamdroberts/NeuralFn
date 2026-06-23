@@ -396,11 +396,14 @@ The public GPT-2 tokenizer vocab stays 50,257, while the native tied token
 embedding/LM-head tensor is padded to 50,304 rows for GEMM-friendly layout;
 training JSON reports both `vocab: 50257` and `padded_vocab: 50304`, and
 `--dry-run` / `--print-plan` reports `shape.padded_vocab_size: 50304`.
-The tied LM-head row chunk defaults to 32768 rows on the dedicated RTX
+The tied LM-head row chunk defaults to 49152 rows on the dedicated RTX
 5090/CUDA 13.3 workstation route and can be overridden with
 `--lm-head-row-chunk-size` on the compiled C++ entrypoint or
-`--native-cuda-lm-head-row-chunk-size` from the wrapper/root CLI. Use 8192 only
-when reproducing the older lower-memory route. Loss partials
+`--native-cuda-lm-head-row-chunk-size` from the wrapper/root CLI. Use 32768
+when reproducing the previous workstation default, or 8192 when reproducing
+the older lower-memory route. Effective chunks above 49152 rows require
+`NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` for explicit diagnostics.
+Loss partials
 are reduced on device before one host loss copy per forward loss, and tied
 LM-head dWeight chunks accumulate directly into `accum_grad_token_weight` with
 `nfn_native_tile_linear_backward_weight_accumulate_float32` instead of using a

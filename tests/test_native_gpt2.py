@@ -862,7 +862,7 @@ def test_build_native_gpt2_run_config_matches_sm120_cli_shape(tmp_path: Path) ->
 
     argv = cfg.argv()
     assert cached_meta["token_cache_format"] == "raw_text_uint16_shards"
-    assert cfg.lm_head_row_chunk_size == 32768
+    assert cfg.lm_head_row_chunk_size == 49152
     assert argv[:3] == ["/opt/nfn/train_gpt2cu", "-i", str(dataset_path / "fineweb_train_000000.bin")]
     assert argv[argv.index("-j") + 1] == str(dataset_path / "fineweb_val_000000.bin")
     assert argv[argv.index("-v") + 1] == "1000"
@@ -2869,16 +2869,16 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "reference_strategy": "llm.kittens-full-resident-logits-fused-classifier",
         "native_strategy": "row-chunked-bf16-logits-public-vocab-lm-head-classifier-tile-abi",
         "reference_full_logit_rows": 64 * 1024,
-        "native_logit_chunk_rows": 32768,
+        "native_logit_chunk_rows": 49152,
         "native_logit_chunk_count": 2,
         "padded_vocab_size": 50304,
         "reference_full_bf16_logit_elements": 64 * 1024 * 50304,
         "reference_full_bf16_logit_bytes": 64 * 1024 * 50304 * 2,
         "reference_full_float32_logit_bytes": 64 * 1024 * 50304 * 4,
-        "native_chunk_bf16_logit_elements": 32768 * 50304,
-        "native_chunk_bf16_logit_bytes": 32768 * 50304 * 2,
-        "native_chunk_float32_logit_bytes": 32768 * 50304 * 4,
-        "resident_logit_reduction_ratio": 2,
+        "native_chunk_bf16_logit_elements": 49152 * 50304,
+        "native_chunk_bf16_logit_bytes": 49152 * 50304 * 2,
+        "native_chunk_float32_logit_bytes": 49152 * 50304 * 4,
+        "resident_logit_reduction_ratio": 1.33333,
         "dlogits_storage": "in-place-over-bf16-logits",
         "graph_editor_tensor_flow": False,
         "torch_required": False,
@@ -2897,8 +2897,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert default_payload["lm_head_cooperative_backward_strategy"] == "missing-required-sm120-parity-kernel"
     assert default_payload["validation_shards_required"] is True
     assert default_payload["validation_shards_resolved"] is True
-    assert default_payload["lm_head_row_chunk_size"] == 32768
-    assert default_payload["lm_head_row_chunk_safe_cap"] == 32768
+    assert default_payload["lm_head_row_chunk_size"] == 49152
+    assert default_payload["lm_head_row_chunk_safe_cap"] == 49152
     assert default_payload["lm_head_row_chunk_unsafe_override_enabled"] is False
 
     nanogpt_model_plan = subprocess.run(
@@ -2946,7 +2946,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert unsafe_payload["passed"] is False
     assert unsafe_payload["status"] == "native-transformer-lm-failed"
     assert unsafe_payload["lm_head_row_chunk_size"] == 65536
-    assert unsafe_payload["lm_head_row_chunk_safe_cap"] == 32768
+    assert unsafe_payload["lm_head_row_chunk_safe_cap"] == 49152
     assert unsafe_payload["lm_head_row_chunk_unsafe_override_enabled"] is False
     assert "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1" in unsafe_payload["error"]
 
@@ -7760,8 +7760,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "residual1_backward_consumer_strategy" in gpt2_source_text
     assert "bf16-layernorm-backward" in gpt2_source_text
     assert "restore-float32-layernorm-backward" in gpt2_source_text
-    assert "kDefaultLmHeadRowChunkSize = 32768" in gpt2_source_text
-    assert "kDefaultSafeLmHeadRowChunkSize = 32768" in gpt2_source_text
+    assert "kDefaultLmHeadRowChunkSize = 49152" in gpt2_source_text
+    assert "kDefaultSafeLmHeadRowChunkSize = 49152" in gpt2_source_text
     assert "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK" in gpt2_source_text
     assert "lm_head_row_chunk_safe_cap" in gpt2_source_text

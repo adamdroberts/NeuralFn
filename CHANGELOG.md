@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Promoted the dense-GPT native LM-head row chunk from 32768 to 49152 rows on
+  the dedicated RTX 5090/CUDA 13.3 Tile-CUDA route. The compiled C++ trainer,
+  Python SDK handoff defaults, and `train_gpt_native.py` now default
+  `lm_head_row_chunk_size` to `49152`, and the native safe cap is also `49152`.
+  Runtime JSON continues to report `lm_head_row_chunk_size`,
+  `lm_head_row_chunk_safe_cap`, `lm_head_row_chunk_unsafe_override_enabled`,
+  and the LM-head chunk counters so callers can verify the active route.
+
+  Migration note: pass `--lm-head-row-chunk-size 32768`,
+  `--native-cuda-lm-head-row-chunk-size 32768`, or
+  `NativeGpt2RunConfig(lm_head_row_chunk_size=32768, ...)` to reproduce the
+  previous workstation default. Chunks above `49152` remain guarded by
+  `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1`; the 65536 full-batch route
+  remains timeout-prone/diagnostic only.
+
+  Verification: the dedicated RTX 5090 CUDA 13.3 5-step, 3-sample same-script
+  gate for `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_49152` passed
+  at `0.992974x` train-loop wall time, `1.007129x` tokens/sec, and
+  `0.998563x` LM-head backward versus the pinned 32768-row baseline. The
+  wrapper now pins that old baseline for `lm_head_row_chunk_49152` and exposes
+  `lm_head_row_chunk_32768` as the inverse rollback profile.
+
 - Promoted dense-GPT native LM-head full BF16 hidden prepack back to the
   default. `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN` now defaults to `1`,
   so the LM-head dWeight path packs final-norm hidden once per microbatch

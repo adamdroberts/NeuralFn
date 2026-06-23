@@ -1061,6 +1061,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1" in text
     assert "lm_head_row_chunk_49152" in text
     assert "--lm-head-row-chunk-size 49152" in text
+    assert "lm_head_row_chunk_32768" in text
+    assert "--lm-head-row-chunk-size 32768" in text
     assert "lm_head_row_chunk_65536" in text
     assert "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1" in text
     assert "--lm-head-row-chunk-size 65536" in text
@@ -2343,12 +2345,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
 
     assert split_row_dry_run.returncode == 0, split_row_dry_run.stderr
     split_row_payload = json.loads(split_row_output_path.read_text(encoding="utf-8"))
-    assert (
-        split_row_payload["candidate_env"][
-            "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK"
-        ]
-        == "1"
-    )
+    assert "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK" not in split_row_payload["candidate_env"]
+    assert "--lm-head-row-chunk-size" in split_row_payload["baseline_command"]
+    assert "32768" in split_row_payload["baseline_command"]
     assert "--lm-head-row-chunk-size" in split_row_payload["candidate_command"]
     assert "49152" in split_row_payload["candidate_command"]
     assert split_row_payload["metric_ratio_gates"]["enabled"] is False

@@ -246,9 +246,9 @@ when unset before executing native trainers or loading Tile CUDA libraries,
 matching the dense GPT C++ trainer. Existing user-provided
 `CUDA_MODULE_LOADING` values still take precedence.
 
-`NativeGpt2RunConfig.lm_head_row_chunk_size` defaults to 32768 and forwards
-`--lm-head-row-chunk-size` through `compiled_cli_argv()`; pass 8192, 6144, or
-4096 explicitly to reproduce older smaller-workspace profiles. The C++ transformer-LM
+`NativeGpt2RunConfig.lm_head_row_chunk_size` defaults to 49152 and forwards
+`--lm-head-row-chunk-size` through `compiled_cli_argv()`; pass 32768, 8192,
+6144, or 4096 explicitly to reproduce older smaller-workspace profiles. The C++ transformer-LM
 loop uses that bounded full-vocab tied LM-head workspace and reduces CE loss
 partials on device with `nfn_native_tile_sum_partials_float32`, so training and
 validation loss copy one device scalar to the host instead of copying once per
@@ -377,8 +377,8 @@ readiness check reports probe support instead of setup timing noise. The profile
 deliberately omits the classic cuBLAS
 grouped BF16 probe because the CUDA 13.3 recheck showed it still poisons the
 selected CUDA context before model allocation when unsupported.
-CUDA 13.3.33 post-reinstall paired checks keep 32768 rows as the default.
-Retesting `--lm-head-row-chunk-size 8192` against the current 32768-row route
+CUDA 13.3.33 post-reinstall paired checks keep 49152 rows as the default.
+Retesting `--lm-head-row-chunk-size 8192` against the earlier 32768-row route
 regressed train-loop wall time to `1.001841x` despite slightly improving the
 isolated LM-head stage. Use 8192 only as an explicit lower-memory reproduction
 knob, not as the workstation default.
@@ -536,12 +536,13 @@ fallback probes. Both are rejected on CUDA 13.3 RTX 5090: QKV fallback reduced
 TK forward calls but regressed `stage.block_forward.attention.qkv.total_ms` to
 `1.143374x`, while MLP FC fallback did not change tracked route counters and
 regressed train-loop wall to `1.016916x`.
-The SDK default `NativeGpt2RunConfig.lm_head_row_chunk_size` is 32768 rows for
+The SDK default `NativeGpt2RunConfig.lm_head_row_chunk_size` is 49152 rows for
 the local RTX 5090/CUDA 13.3 workstation profile. This reduces default LM-head
 chunk launches at the 64x1024 shape from 8 chunks to 2 and reserves about
-3.30GB of resident BF16 logit workspace. Set `lm_head_row_chunk_size=8192` or
-pass `--lm-head-row-chunk-size 8192` to reproduce the older lower-memory
-default. Effective LM-head chunks above 32768 rows are rejected before CUDA
+4.95GB of resident BF16 logit workspace. Set `lm_head_row_chunk_size=32768` or
+pass `--lm-head-row-chunk-size 32768` to reproduce the previous workstation
+default, or use 8192 to reproduce the older lower-memory route. Effective
+LM-head chunks above 49152 rows are rejected before CUDA
 launch unless `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` is set for
 explicit diagnostics; runtime JSON reports `lm_head_row_chunk_safe_cap` and
 `lm_head_row_chunk_unsafe_override_enabled`.
@@ -1836,10 +1837,10 @@ startup initializers, cudaMallocAsync arenas, full-logit LM-head reuse, and the
 that rejected full-resident LM-head diagnostic; it expands to
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` plus
 `--lm-head-row-chunk-size 65536`, and the latest dedicated RTX 5090 rerun timed
-out at 360s while the safe 32768-row baseline completed. The promoted 32768-row LM-head
-chunk candidate reduced classifier chunk launches from `320` to `80` over the
-5-step paired run and measured `0.998625x` train-loop wall time versus the
-8192-row default; the 16384-row candidate regressed at `1.008471x`.
+out at 360s while the safe 32768-row baseline completed. The promoted 49152-row
+LM-head chunk candidate passed the latest 5-step, 3-sample same-script gate at
+`0.992974x` train-loop wall time and `0.998563x` LM-head backward versus the
+old 32768-row route; the 16384-row candidate regressed at `1.008471x`.
 Unsupported template names and custom graph files still report
 `selected-graph-native-trainer-missing` instead of falling back to Torch.
 
