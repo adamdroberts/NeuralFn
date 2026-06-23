@@ -859,6 +859,17 @@ reference-parity requirement or metric-gated speed candidate.
 Wrapper-only or placeholder-symbol builds still fail this strict guard and report
 `abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity` instead
 of marking the route integrated.
+For optimizer-only steps that do not record train loss, the diagnostic
+sequence wrapper now passes the explicit no-loss cooperative flag and reuses the
+normal BF16/u16 no-loss classifier CE+dlogits kernel instead of forcing the
+row-loss CE path. Validation and train-loss logging still use the row-loss or
+loss-bin routes when requested. This makes
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` a fairer
+same-script comparison of CE+dHidden+dWeight sequencing, but it remains
+default-off until the paired gate proves an actual speed win.
+The first linked-trainer rerun after this correction confirmed the candidate
+reports the no-loss CE strategy, but still rejected the wrapper at `1.117578x`
+train-loop wall and `1.294010x` LM-head backward on the dedicated RTX 5090.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins` enables the
 same strict cooperative ABI plus `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`
 and `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1`; the wrapper also applies

@@ -1336,7 +1336,12 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16" in tile_ops_source
     assert "launch_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets" in tile_ops_source
     assert "kLmHeadCooperativeFlagLossBins" in tile_ops_source
+    assert "kLmHeadCooperativeFlagNoLoss" in tile_ops_source
     assert "launch_lm_head_classifier_backward_loss_bins_inplace_strided_no_pad_zero_bf16_bits_u16_targets" in tile_ops_source
+    assert "launch_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace" in tile_ops_source
+    assert "record_loss ? 0 : kLmHeadCooperativeFlagNoLoss" in source
+    assert "kLmHeadCooperativeLossBinCountShift" in source
+    assert "lm_head_classifier_no_loss_chunk_count += 1" in source
     assert "launch_linear_backward_input_bf16_bits_weight_bf16_float32" in tile_ops_source
     assert "launch_linear_backward_input_bf16_bits_weight_bf16_strided_float32" in tile_ops_source
     assert "launch_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32_beta" in tile_ops_source

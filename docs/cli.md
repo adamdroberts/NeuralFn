@@ -1557,6 +1557,12 @@ same-script wrapper-symbol timing, and the required profile for preflight
 checks that must prove the strict cooperative ABI is available and integrated.
 The required profile is a strict ABI probe, not a speed candidate, and current
 placeholder builds fail it because the true-fused capability probe returns `0`.
+The non-required profile preserves the normal optimizer-only no-loss CE+dlogits
+kernel by passing the cooperative no-loss flag whenever train-loss recording is
+not active. It no longer measures a row-loss CE fallback during timing-only
+steps, while validation/train-loss paths still exercise row-loss or loss-bin
+collection as requested. Keep the profile rejected/default-off unless the
+paired candidate gate passes.
 `lm_head_cooperative_loss_bins` adds
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`,
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`, and

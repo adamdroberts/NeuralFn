@@ -16150,9 +16150,14 @@ int run_transformer_lm_training_json(
                     if (!error.empty()) {
                         return;
                     }
-                    int cooperative_flags = 0;
+                    constexpr int kLmHeadCooperativeFlagLossBins = 1 << 0;
+                    constexpr int kLmHeadCooperativeFlagNoLoss = 1 << 1;
+                    constexpr int kLmHeadCooperativeLossBinCountShift = 8;
+                    int cooperative_flags = record_loss ? 0 : kLmHeadCooperativeFlagNoLoss;
                     if (use_loss_bin_reduction) {
-                        cooperative_flags = 1 | (static_cast<int>(loss_bin_count) << 8);
+                        cooperative_flags =
+                            kLmHeadCooperativeFlagLossBins |
+                            (static_cast<int>(loss_bin_count) << kLmHeadCooperativeLossBinCountShift);
                         run(fill(row_max, loss_bin_count, 0.0f, nullptr),
                             "lm_head.cooperative_loss_bins.zero");
                         if (!error.empty()) {
@@ -16195,6 +16200,8 @@ int run_transformer_lm_training_json(
                             } else {
                                 reduce_lm_head_row_losses();
                             }
+                        } else {
+                            lm_head_classifier_no_loss_chunk_count += 1;
                         }
                     }
                 });

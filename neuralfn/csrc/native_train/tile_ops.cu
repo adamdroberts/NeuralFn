@@ -1800,6 +1800,7 @@ int launch_scaled_dot_product_attention_backward_to_qkv_from_saved_tk_bf16_from_
 namespace {
 
 constexpr int kLmHeadCooperativeFlagLossBins = 1 << 0;
+constexpr int kLmHeadCooperativeFlagNoLoss = 1 << 1;
 constexpr int kLmHeadCooperativeLossBinCountShift = 8;
 
 std::atomic<std::int64_t> g_lm_head_cooperative_sequence_launch_count{0};
@@ -4941,9 +4942,10 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
     bool schedule_dhidden_dweight_concurrently) {
     (void)hidden_float;
     (void)token_weight_float;
+    const bool no_loss = (flags & kLmHeadCooperativeFlagNoLoss) != 0;
     if (logits_bf16 == nullptr ||
         targets_u16 == nullptr ||
-        row_losses == nullptr ||
+        (!no_loss && row_losses == nullptr) ||
         hidden_bf16 == nullptr ||
         token_weight_bf16 == nullptr ||
         grad_hidden == nullptr ||
@@ -4969,6 +4971,17 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16(
             vocab,
             row_stride,
             lm_head_cooperative_loss_bin_count_from_flags(flags, rows),
+            loss_scale,
+            stream);
+    } else if (no_loss) {
+        neuralfn::tile_cuda::launch_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
+            logits_bf16,
+            targets_u16,
+            nullptr,
+            nullptr,
+            rows,
+            vocab,
+            row_stride,
             loss_scale,
             stream);
     } else {
@@ -5157,9 +5170,10 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16_legacy_
     void* cuda_stream) {
     (void)hidden_float;
     (void)token_weight_float;
+    const bool no_loss = (flags & kLmHeadCooperativeFlagNoLoss) != 0;
     if (logits_bf16 == nullptr ||
         targets_u16 == nullptr ||
-        row_losses == nullptr ||
+        (!no_loss && row_losses == nullptr) ||
         hidden_bf16 == nullptr ||
         token_weight_bf16 == nullptr ||
         grad_hidden == nullptr ||
@@ -5183,6 +5197,17 @@ static int run_lm_head_classifier_backward_cooperative_sequence_bf16_u16_legacy_
             vocab,
             row_stride,
             lm_head_cooperative_loss_bin_count_from_flags(flags, rows),
+            loss_scale,
+            stream);
+    } else if (no_loss) {
+        neuralfn::tile_cuda::launch_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
+            logits_bf16,
+            targets_u16,
+            nullptr,
+            nullptr,
+            rows,
+            vocab,
+            row_stride,
             loss_scale,
             stream);
     } else {

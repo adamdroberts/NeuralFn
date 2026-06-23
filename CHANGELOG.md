@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the opt-in dense GPT cooperative LM-head sequence wrapper so
+  optimizer-only steps preserve the normal BF16/u16 no-loss classifier
+  CE+dlogits path. The native trainer now passes an explicit cooperative
+  no-loss flag when train-loss recording is inactive, and the raw Tile ABI no
+  longer requires a row-loss buffer for that diagnostic route. Validation and
+  train-loss logging semantics are unchanged because row-loss and loss-bin
+  collection are still selected only when requested. This keeps
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` from
+  measuring an artificial row-loss fallback, but the route remains default-off
+  and unpromoted until paired full-loop gates pass.
+
+  Verification: added source-contract coverage for the cooperative no-loss
+  flag, no-loss CE launcher, and runtime no-loss counter. Rebuilt the
+  trainer-facing Tile ops library plus the dynamic and linked dense GPT native
+  CLIs, then reran focused native GPT and Tile CUDA test slices. A dedicated
+  RTX 5090 one-step same-script diagnostic confirmed the candidate now reports
+  `lm_head_ce_loss_backward_strategy:
+  no-loss-dlogits-public-vocab-no-pad-zero-bf16-u16-targets` and
+  `lm_head_classifier_ce_no_loss_enabled: true`, while still rejecting the
+  cooperative wrapper at `1.117578x` train-loop wall time and `1.294010x`
+  LM-head backward time.
+
 - Added default-off CUDA-event setup timing for native dense GPT startup
   bisections. Set `NFN_NATIVE_GPT_SETUP_EVENT_TIMING=1` (or the GPT-2 alias)
   to add `timing.setup_cuda_event_timing` records for selected kernel-heavy

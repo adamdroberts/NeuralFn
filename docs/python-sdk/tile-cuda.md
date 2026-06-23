@@ -443,6 +443,14 @@ required parity condition. SDK and CLI strict runs therefore still fail on
 wrapper-only or placeholder-symbol builds
 instead of silently benchmarking the older CE plus dHidden plus dWeight
 sequence.
+The non-strict cooperative sequence wrapper preserves the optimizer hot-path CE
+mode: when a native GPT step is not recording train loss, the trainer sets the
+cooperative no-loss flag and the wrapper calls the normal BF16/u16 no-loss
+classifier CE+dlogits kernel before dHidden and dWeight. Row-loss and loss-bin
+collection remain selected only for validation/train-loss logging paths. Treat
+this as fairer diagnostic attribution for
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`, not as promotion of the
+cooperative route.
 
 `NativeGptRunConfig.train_loss_every_steps` and
 `NativeGpt2RunConfig.train_loss_every_steps` default to `0` and forward
