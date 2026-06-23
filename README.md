@@ -1576,6 +1576,8 @@ Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_fc_concurrent_dinput_dweight` to rer
 
 `NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1` is the matching diagnostic ordering switch for the dense GPT attention projection backward path. It runs attention projection dInput before dWeight+bias to compare against the reference consumer order, while leaving the default dWeight+bias-first order active. Runtime JSON reports `block_backward_attn_proj_dinput_before_dweight_enabled` and `block_backward_attn_proj_dinput_before_dweight_count`; leave it disabled for normal training because the dedicated RTX 5090 5-step, 3-sample paired benchmark measured it at `1.001009x` train-loop wall time and `0.999002x` tokens/sec versus the default.
 
+`NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1` is the matching diagnostic ordering switch for the dense GPT packed-QKV backward path. It runs QKV dInput before QKV dWeight+bias to compare against the reference consumer order, while leaving the default dWeight+bias-first order active. Runtime JSON reports `block_backward_qkv_dinput_before_dweight_enabled` and `block_backward_qkv_dinput_before_dweight_count`; leave it disabled for normal training because the dedicated RTX 5090 5-step, 3-sample stage-timed gate proved the route counter moved from `0` to `480` and improved mean train-loop wall to `0.995958x`, but rejected default promotion because the target `stage.block_backward.qkv.total_ms` regressed to `1.001003x`.
+
 `NFN_NATIVE_GPT_DIRECT_BF16_BLOCK_WEIGHT_INIT` controls startup-only initialization of the BF16-primary transformer block weights. It defaults on when `NFN_NATIVE_GPT_BF16_BLOCK_WEIGHT_PARAMS` is on, initializes QKV/projection/MLP block weights directly with `nfn_native_tile_fill_many_values_bf16_bits_float32`, and skips the initial float32-to-BF16 pack. Set `NFN_NATIVE_GPT_DIRECT_BF16_BLOCK_WEIGHT_INIT=0` to reproduce the older float32 fill plus `nfn_native_tile_float32_to_bf16_bits_many` startup path while leaving BF16-primary AdamW updates enabled. Runtime JSON reports `direct_bf16_block_weight_initialization_enabled`, `block_weight_bf16_initialization_strategy`, and the split float/BF16 parameter initialization descriptor and launch counts.
 
 When `NFN_NATIVE_GPT_FUSE_LN_BACKWARD_RESIDUAL` is enabled, the native dense GPT trainer also skips the fallback-only `grad_residual1_from_mlp` and `grad_x_from_attn` activation scratch buffers instead of reserving them in the startup float arena. Runtime JSON reports `block_state_layout.layer_norm_backward_residual_scratch_buffers_allocated`, `block_state_layout.layer_norm_backward_residual_scratch_buffers_elided`, and `block_state_layout.layer_norm_backward_residual_scratch_elements_elided` so runs show whether that fused LayerNorm residual-backward path actually reduced the allocation footprint.
@@ -1963,15 +1965,16 @@ regressed train-loop wall time to `1.011419x`. It also includes the block
 scheduling profiles `qkv_concurrent_dinput_dweight`,
 `mlp_fc_concurrent_dinput_dweight`, `attn_proj_concurrent_dinput_dweight`,
 `mlp_proj_dinput_before_dweight`, `mlp_fc_dinput_before_dweight`, and
-`attn_proj_dinput_before_dweight`; the concurrent routes activated but
+`attn_proj_dinput_before_dweight`, and `qkv_dinput_before_dweight`; the concurrent routes activated but
 regressed train-loop wall time, and the ordering-only routes failed route
-detection on the CUDA 13.3 RTX 5090 sweep. Startup-only rejected profiles also
+detection or target-stage gates on the CUDA 13.3 RTX 5090 sweep. Startup-only rejected profiles also
 include `token_weight_vector4_strided`, whose broader gate failed the
 token-init stage ratio.
 The wrapper also has named profiles for existing diagnostic switches that used
 to require raw candidate env overrides: `bf16_attention_grad_out`,
 `bf16_attention_dprep_grad_out`, `mlp_proj_dinput_before_dweight`,
-`mlp_fc_dinput_before_dweight`, `attn_proj_dinput_before_dweight`, and
+`mlp_fc_dinput_before_dweight`, `attn_proj_dinput_before_dweight`,
+`qkv_dinput_before_dweight`, and
 `lm_head_fused_loss_backward_off`. The LM-head no-loss classifier CE profile is
 `lm_head_classifier_ce_no_loss`; it expands to
 `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1`, forces the baseline side to

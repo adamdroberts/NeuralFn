@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off QKV serial-ordering candidate for dense-GPT native
+  training. `NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1` runs packed-QKV
+  dInput before QKV dWeight+bias, and runtime JSON reports
+  `block_backward_qkv_dinput_before_dweight_enabled` and
+  `block_backward_qkv_dinput_before_dweight_count`. The SM120 candidate wrapper
+  now exposes this as `NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_dinput_before_dweight`,
+  automatically gates stage-timed runs on `stage.block_backward.qkv.total_ms`,
+  and `tools/paired_kernel_speed.py` treats the new counter as native route
+  attribution.
+
+  Migration note: no default training behavior changes. The current default
+  remains QKV dWeight+bias before dInput because the measured alternate order
+  missed the strict QKV-stage promotion gate.
+
+  Verification: focused tests were updated for the native source contract,
+  candidate-wrapper expansion, and paired-speed route-counter summaries. The
+  dedicated RTX 5090 5-step, 3-sample stage-timed same-script gate proved the
+  route active by moving `block_backward_qkv_dinput_before_dweight_count` from
+  `0` to `480`, and mean train-loop wall improved to `0.995958x`, but the
+  target `stage.block_backward.qkv.total_ms` regressed to `1.001003x`, so the
+  profile is guarded as rejected for real runs.
+
 - Added explicit first-step CUDA-event train-loop timing to native dense-GPT
   JSON and paired benchmark summaries. When
   `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` is enabled, the timing block now

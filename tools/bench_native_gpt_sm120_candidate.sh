@@ -355,6 +355,11 @@ case "${CANDIDATE_PROFILE,,}" in
     REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate measured this scheduling order at 1.001009x train_loop_wall_ms_per_step and 0.999002x tokens/sec; route counters now prove execution, but it remains rejected as a default."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1"
     ;;
+  "qkv_dinput_before_dweight"|"qkv-dinput-before-dweight")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 5-step, 3-sample stage-timed gate proved the route counter moved from 0 to 480 and improved mean train_loop_wall_ms_per_step to 0.995958x, but rejected default promotion because the target stage.block_backward.qkv.total_ms regressed to 1.001003x."
+    CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1"
+    ;;
   "lm_head_fused_loss_backward_off"|"lm-head-fused-loss-backward-off"|"lm_head_separate_loss_backward"|"lm-head-separate-loss-backward")
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0"
     ;;
@@ -481,7 +486,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   *)
     echo "Unknown NFN_SM120_NATIVE_CANDIDATE_PROFILE: $CANDIDATE_PROFILE" >&2
-    echo "Known profiles: linked_startup, lm_head_tk_dinput_32768, lm_head_cublaslt_dhidden_32768, lm_head_dhidden_fast16bf_32768, lm_head_tk_dweight_32768, lm_head_prepack_bf16_hidden_off, lm_head_prepack_bf16_hidden_on, mlp_proj_tk_dweight_65536, block_split_bgrad_65536, mlp_proj_split_bgrad_65536, layernorm_affine_row_chunk_128, layernorm_affine_row_chunk_64, layernorm_affine_row_chunk_96, layernorm_affine_row_chunk_512, linear_bias_row_chunk_256, linear_bias_row_chunk_1024, lm_head_logits_bf16_fallback_32768, qkv_forward_bf16_fallback_65536, mlp_fc_forward_bf16_fallback_65536, ce_bf16_threads_512, lm_head_ce_vec8_io, lm_head_ce_vec8_normal_store, lm_head_ce_scalar_streaming_store, lm_head_ce_natural_rows, lm_head_ce_default_specialized, lm_head_ce_no_loss_default_specialized, lm_head_ce_no_loss_llmk_style_specialized, lm_head_ce_llmk_style_specialized, lm_head_ce_loss_bins_llmk_style_specialized, lm_head_ce_loss_bins_default_specialized, lm_head_loss_bins, lm_head_row_loss_sum_accumulate, lm_head_row_loss_partial_reduce, cublaslt_min_waves, cublaslt_max_waves, cublaslt_block_dinput_h3_65536, cublaslt_qkv_dweight_h0_65536, cublaslt_grouped_probe, tk_dgelu_dinput, tk_dgelu_approx_tanh, attention_atomic_dq, bf16_attention_grad_out, bf16_attention_dprep_grad_out, attention_dprep_float_hd64_specialized, mlp_proj_dinput_before_dweight, mlp_fc_dinput_before_dweight, attn_proj_dinput_before_dweight, lm_head_fused_loss_backward_off, lm_head_classifier_ce_no_loss, cublas_handle_prewarm, tk_forward_no_n96, cuda_device_max_connections_1, combined_device_arena, bgrad_first_write_direct, qkv_concurrent_dinput_dweight, mlp_fc_concurrent_dinput_dweight, attn_proj_concurrent_dinput_dweight, lm_head_concurrent_dhidden_dweight, lm_head_dweight_before_dhidden, lm_head_pipeline_chunks, lm_head_overlap_last_dweight, lm_head_row_chunk_49152, lm_head_row_chunk_65536, lm_head_full_resident_reuse, lm_head_cooperative_backward, lm_head_cooperative_backward_required, lm_head_cooperative_loss_bins, token_weight_vector4_strided, token_weight_threaded, token_weight_fast_int32, token_weight_two_pass_bf16" >&2
+    echo "Known profiles: linked_startup, lm_head_tk_dinput_32768, lm_head_cublaslt_dhidden_32768, lm_head_dhidden_fast16bf_32768, lm_head_tk_dweight_32768, lm_head_prepack_bf16_hidden_off, lm_head_prepack_bf16_hidden_on, mlp_proj_tk_dweight_65536, block_split_bgrad_65536, mlp_proj_split_bgrad_65536, layernorm_affine_row_chunk_128, layernorm_affine_row_chunk_64, layernorm_affine_row_chunk_96, layernorm_affine_row_chunk_512, linear_bias_row_chunk_256, linear_bias_row_chunk_1024, lm_head_logits_bf16_fallback_32768, qkv_forward_bf16_fallback_65536, mlp_fc_forward_bf16_fallback_65536, ce_bf16_threads_512, lm_head_ce_vec8_io, lm_head_ce_vec8_normal_store, lm_head_ce_scalar_streaming_store, lm_head_ce_natural_rows, lm_head_ce_default_specialized, lm_head_ce_no_loss_default_specialized, lm_head_ce_no_loss_llmk_style_specialized, lm_head_ce_llmk_style_specialized, lm_head_ce_loss_bins_llmk_style_specialized, lm_head_ce_loss_bins_default_specialized, lm_head_loss_bins, lm_head_row_loss_sum_accumulate, lm_head_row_loss_partial_reduce, cublaslt_min_waves, cublaslt_max_waves, cublaslt_block_dinput_h3_65536, cublaslt_qkv_dweight_h0_65536, cublaslt_grouped_probe, tk_dgelu_dinput, tk_dgelu_approx_tanh, attention_atomic_dq, bf16_attention_grad_out, bf16_attention_dprep_grad_out, attention_dprep_float_hd64_specialized, mlp_proj_dinput_before_dweight, mlp_fc_dinput_before_dweight, attn_proj_dinput_before_dweight, qkv_dinput_before_dweight, lm_head_fused_loss_backward_off, lm_head_classifier_ce_no_loss, cublas_handle_prewarm, tk_forward_no_n96, cuda_device_max_connections_1, combined_device_arena, bgrad_first_write_direct, qkv_concurrent_dinput_dweight, mlp_fc_concurrent_dinput_dweight, attn_proj_concurrent_dinput_dweight, lm_head_concurrent_dhidden_dweight, lm_head_dweight_before_dhidden, lm_head_pipeline_chunks, lm_head_overlap_last_dweight, lm_head_row_chunk_49152, lm_head_row_chunk_65536, lm_head_full_resident_reuse, lm_head_cooperative_backward, lm_head_cooperative_backward_required, lm_head_cooperative_loss_bins, token_weight_vector4_strided, token_weight_threaded, token_weight_fast_int32, token_weight_two_pass_bf16" >&2
     exit 2
     ;;
 esac
@@ -666,6 +671,11 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
             case "$candidate_gate_text" in
               *ATTN_PROJ_DINPUT_BEFORE_DWEIGHT*|*attn_proj_dinput_before_dweight*)
                 MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.attn_proj.total_ms=1.000"
+                ;;
+            esac
+            case "$candidate_gate_text" in
+              *QKV_DINPUT_BEFORE_DWEIGHT*|*qkv_dinput_before_dweight*)
+                MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.total_ms=1.000"
                 ;;
             esac
             case "$candidate_gate_text" in

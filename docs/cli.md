@@ -1150,9 +1150,9 @@ regressed train-loop wall time to `1.011419x`. It also covers the block
 scheduling profiles `qkv_concurrent_dinput_dweight`,
 `mlp_fc_concurrent_dinput_dweight`, `attn_proj_concurrent_dinput_dweight`,
 `mlp_proj_dinput_before_dweight`, `mlp_fc_dinput_before_dweight`, and
-`attn_proj_dinput_before_dweight`; the concurrent routes activated but
+`attn_proj_dinput_before_dweight`, and `qkv_dinput_before_dweight`; the concurrent routes activated but
 regressed train-loop wall time, and the ordering-only routes failed route
-detection on the CUDA 13.3 RTX 5090 sweep. Startup-only rejected profiles also
+detection or target-stage gates on the CUDA 13.3 RTX 5090 sweep. Startup-only rejected profiles also
 include `token_weight_vector4_strided`, whose broader gate failed the
 token-init stage ratio.
 The CUDA 13.3.33 linked-trainer startup sweep left all existing startup
@@ -1194,7 +1194,8 @@ wall time, selected linear/attention kernel counters, LM-head logits/dHidden
 route counters such as `lm_head_dhidden_cublaslt_gemm_count`, block dInput
 route counters such as `block_backward_dinput_bf16_gemm_count`, block ordering
 execution counters such as
-`block_backward_mlp_proj_dinput_before_dweight_count`, emitted
+`block_backward_mlp_proj_dinput_before_dweight_count` and
+`block_backward_qkv_dinput_before_dweight_count`, emitted
 `timing.setup_timing` and `timing.stage_timing` totals/averages/counts, and paired native-metric ratios
 when both commands expose the same metric. If a child command uses
 `--json-out`, `--profile-json`, or `--stage-profile-json`, the helper reads
@@ -1322,7 +1323,8 @@ route counters, so BGRADB first-write or split bias-accumulation candidates can
 prove whether they changed the active block dWeight+bias path before timing is
 accepted.
 The ordering profiles `mlp_proj_dinput_before_dweight`,
-`mlp_fc_dinput_before_dweight`, and `attn_proj_dinput_before_dweight` have
+`mlp_fc_dinput_before_dweight`, `attn_proj_dinput_before_dweight`, and
+`qkv_dinput_before_dweight` have
 matching execution counters in the same route-counter summary, so rejected
 scheduling candidates can be reproduced with proof that the alternate order
 actually ran.

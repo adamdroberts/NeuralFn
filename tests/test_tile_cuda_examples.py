@@ -1098,6 +1098,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_queue.total_ms=1.000"' not in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.lm_head_backward.pipeline_final_wait.total_ms=1.000"' not in text
+    assert "qkv_dinput_before_dweight" in text
+    assert "NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1" in text
+    assert "target stage.block_backward.qkv.total_ms regressed to 1.001003x" in text
+    assert "*QKV_DINPUT_BEFORE_DWEIGHT*|*qkv_dinput_before_dweight*" in text
     assert "*BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT*|*block_qkv_concurrent_dinput_dweight*" in text
     assert 'MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.qkv.total_ms=1.000"' in text
     assert "*BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT*|*block_mlp_fc_concurrent_dinput_dweight*" in text
@@ -3732,6 +3736,7 @@ def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> N
         "block_backward_mlp_proj_dinput_before_dweight_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
         "block_backward_mlp_fc_dinput_before_dweight_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
         "block_backward_attn_proj_dinput_before_dweight_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
+        "block_backward_qkv_dinput_before_dweight_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
     }
     candidate = {
         "linear_tk_gemm_count": {"mean": 1344.0, "median": 1344.0, "min": 1344.0, "max": 1344.0},
@@ -3746,13 +3751,14 @@ def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> N
         "block_backward_mlp_proj_dinput_before_dweight_count": {"mean": 12.0, "median": 12.0, "min": 12.0, "max": 12.0},
         "block_backward_mlp_fc_dinput_before_dweight_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
         "block_backward_attn_proj_dinput_before_dweight_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
+        "block_backward_qkv_dinput_before_dweight_count": {"mean": 12.0, "median": 12.0, "min": 12.0, "max": 12.0},
     }
 
     changes = module.summarize_native_route_counter_changes(baseline, candidate)
 
     assert changes["has_route_counter_change"] is True
-    assert changes["changed_count"] == 7
-    assert changes["tracked_count"] == 12
+    assert changes["changed_count"] == 8
+    assert changes["tracked_count"] == 13
     assert changes["changed"]["linear_tk_gemm_count"] == {
         "baseline_mean": 1632.0,
         "candidate_mean": 1344.0,
@@ -3790,6 +3796,12 @@ def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> N
         "ratio": 380.0 / 384.0,
     }
     assert changes["changed"]["block_backward_mlp_proj_dinput_before_dweight_count"] == {
+        "baseline_mean": 0.0,
+        "candidate_mean": 12.0,
+        "delta": 12.0,
+        "ratio": None,
+    }
+    assert changes["changed"]["block_backward_qkv_dinput_before_dweight_count"] == {
         "baseline_mean": 0.0,
         "candidate_mean": 12.0,
         "delta": 12.0,

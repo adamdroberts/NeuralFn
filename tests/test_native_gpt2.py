@@ -1441,6 +1441,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "mlp_proj_dinput_before_dweight": "NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT=1",
         "mlp_fc_dinput_before_dweight": "NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1",
         "attn_proj_dinput_before_dweight": "NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1",
+        "qkv_dinput_before_dweight": "NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1",
         "lm_head_fused_loss_backward_off": "NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0",
         "lm_head_classifier_ce_no_loss": "NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1",
         "lm_head_prepack_bf16_hidden_off": "NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0",
@@ -4455,6 +4456,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["block_backward_mlp_proj_dinput_before_dweight_count"] == 0
     assert train_transformer_payload["block_backward_mlp_fc_dinput_before_dweight_count"] == 0
     assert train_transformer_payload["block_backward_attn_proj_dinput_before_dweight_count"] == 0
+    assert train_transformer_payload["block_backward_qkv_dinput_before_dweight_count"] == 0
     assert train_transformer_payload["linear_cublaslt_descriptor_cache_enabled"] is True
     assert train_transformer_payload["linear_sgemm_count"] == 0
     assert train_transformer_payload["bf16_to_f32_vec4_count"] == 0
@@ -7638,6 +7640,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
     assert "NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_QKV_DINPUT_BEFORE_DWEIGHT" in gpt2_source_text
     assert "NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT" in gpt2_source_text
     assert "block_backward_mlp_fc_concurrent_dinput_dweight_requested" in gpt2_source_text
@@ -7679,6 +7683,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "block_backward_mlp_proj_dinput_before_dweight_count" in gpt2_source_text
     assert "block_backward_mlp_fc_dinput_before_dweight_count" in gpt2_source_text
     assert "block_backward_attn_proj_dinput_before_dweight_count" in gpt2_source_text
+    assert "block_backward_qkv_dinput_before_dweight_count" in gpt2_source_text
     assert "float_arena_cuda_malloc_wall_ms" in gpt2_source_text
     assert "float_arena_pointer_assign_wall_ms" in gpt2_source_text
     assert "uint16_arena_cuda_malloc_wall_ms" in gpt2_source_text

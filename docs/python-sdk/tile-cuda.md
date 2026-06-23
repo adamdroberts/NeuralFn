@@ -943,6 +943,7 @@ block cuBLASLt plus TK LM-head path runs,
 `block_backward_mlp_proj_dinput_before_dweight_enabled`,
 `block_backward_mlp_fc_dinput_before_dweight_enabled`,
 `block_backward_attn_proj_dinput_before_dweight_enabled`,
+`block_backward_qkv_dinput_before_dweight_enabled`,
 `block_backward_weight_linear_strategy`,
 `non_block_forward_backward_linear_strategy`, `lm_head_logits_linear_strategy`,
 `lm_head_dhidden_linear_strategy`,
@@ -990,6 +991,14 @@ dWeight+bias and reports
 by default because the dedicated RTX 5090 5-step, 3-sample paired benchmark
 measured `1.001009x` train-loop wall time and `0.999002x` tokens/sec versus the
 current dWeight+bias-first order.
+`NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1` is the matching diagnostic
+ordering switch for packed-QKV backward. It runs QKV dInput before QKV
+dWeight+bias and reports `block_backward_qkv_dinput_before_dweight_enabled` and
+`block_backward_qkv_dinput_before_dweight_count`. Leave it disabled for normal
+training because the dedicated RTX 5090 5-step, 3-sample stage-timed gate
+proved the route counter moved from `0` to `480` and improved mean train-loop
+wall to `0.995958x`, but rejected default promotion because the target
+`stage.block_backward.qkv.total_ms` regressed to `1.001003x`.
 The default path still uses
 `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32`,
 packs the incoming projection gradient to BF16 once, reuses that scratch for MLP
@@ -1965,6 +1974,12 @@ substage is reported for inspection while the serial baseline continues to emit
 split dInput and dWeight substages. The current packed-QKV one-step gate proved
 the route active but rejected it at `1.009068x` train-loop wall time,
 `0.991012x` tokens/sec, and `1.040672x` QKV backward.
+The wrapper also exposes `qkv_dinput_before_dweight`, which expands to
+`NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1` for serial QKV ordering bisection.
+Stage-timed runs gate `stage.block_backward.qkv.total_ms`, and runtime JSON
+proves the route with `block_backward_qkv_dinput_before_dweight_count`. The
+current dedicated RTX 5090 gate rejected the profile for default use because
+the target QKV stage regressed to `1.001003x`.
 It also exposes `lm_head_concurrent_dhidden_dweight`, which expands to
 `NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1` and reports the combined
 LM-head dHidden/dWeight concurrent bucket for candidate-side inspection when

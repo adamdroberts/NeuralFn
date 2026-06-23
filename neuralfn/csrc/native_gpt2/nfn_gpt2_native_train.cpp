@@ -9913,6 +9913,7 @@ int run_transformer_lm_training_json(
     std::int64_t block_backward_mlp_proj_dinput_before_dweight_count = 0;
     std::int64_t block_backward_mlp_fc_dinput_before_dweight_count = 0;
     std::int64_t block_backward_attn_proj_dinput_before_dweight_count = 0;
+    std::int64_t block_backward_qkv_dinput_before_dweight_count = 0;
     std::int64_t linear_sgemm_count = 0;
     std::int64_t bf16_to_f32_vec4_count = 0;
     std::int64_t linear_bf16_a_pack_count = 0;
@@ -11727,6 +11728,11 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT",
                               "NFN_NATIVE_GPT2_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT"}),
+            false);
+    const bool qkv_dinput_before_dweight_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT",
+                              "NFN_NATIVE_GPT2_QKV_DINPUT_BEFORE_DWEIGHT"}),
             false);
     const bool block_attn_proj_concurrent_dinput_dweight_requested =
         env_flag_enabled_or_default(
@@ -18315,6 +18321,10 @@ int run_transformer_lm_training_json(
                         error = cuda_error(status, "cudaStreamSynchronize block_backward_dweight");
                     }
                 });
+            } else if (qkv_dinput_before_dweight_enabled) {
+                block_backward_qkv_dinput_before_dweight_count += 1;
+                run_qkv_dinput();
+                run_qkv_dweight_bias();
             } else {
                 run_qkv_dweight_bias();
                 run_qkv_dinput();
@@ -20738,6 +20748,10 @@ int run_transformer_lm_training_json(
         << (block_qkv_concurrent_dinput_dweight_requested ? "true" : "false") << ",\n"
         << "  \"block_backward_qkv_concurrent_dinput_dweight_enabled\": "
         << (block_qkv_concurrent_dinput_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_qkv_dinput_before_dweight_enabled\": "
+        << (qkv_dinput_before_dweight_enabled ? "true" : "false") << ",\n"
+        << "  \"block_backward_qkv_dinput_before_dweight_count\": "
+        << block_backward_qkv_dinput_before_dweight_count << ",\n"
         << "  \"block_backward_attn_proj_concurrent_dinput_dweight_requested\": "
         << (block_attn_proj_concurrent_dinput_dweight_requested ? "true" : "false") << ",\n"
         << "  \"block_backward_attn_proj_concurrent_dinput_dweight_enabled\": "
