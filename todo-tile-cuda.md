@@ -398,6 +398,21 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `2495.740 ms/step`, or `1.018025x` train-loop wall and `0.981253x`
     tokens/sec. The gap remains real and points back to fused/cooperative
     LM-head/block-backward kernel work rather than launch-shape retunes.
+  - 2026-06-23 refreshed the current stage-timed llm.kittens parity sample on
+    the dedicated RTX 5090 after the captured sampler binding and stricter
+    candidate-gate cleanup:
+    `NFN_SM120_PARITY_STEPS=3 NFN_SM120_PARITY_SAMPLES=2
+    NFN_SM120_PARITY_WARMUP=1 NFN_SM120_PARITY_STAGE_TIMING=1
+    NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_refresh_3step.json bash
+    tools/bench_native_gpt_sm120_parity.sh`. The selected GPU had zero compute
+    processes before every sample. llm.kittens measured `2499.553 ms/step` and
+    NeuralFn measured `2581.397 ms/step`, or `1.032719x` train-loop wall and
+    `0.967622x` tokens/sec. The steady-state CUDA-event ratio was narrower at
+    `1.014368x`, with current hot NeuralFn buckets over three steps:
+    `stage.block_backward.total_ms=3910.630`,
+    `stage.train.model_forward.total_ms=1996.405`, and
+    `stage.lm_head_backward.total_ms=1756.295`. This keeps the open parity
+    work focused on fused/cooperative LM-head and block-backward kernels.
   - 2026-06-23 rechecked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_dgelu_dinput`
     after the row-chunk 49152 promotion and CUDA 13.3 setup. The 5-step,
     3-sample stage-timed same-script run measured `0.997858x` train-loop wall

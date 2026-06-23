@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the current SM120 NeuralFn-vs-llm.kittens parity evidence on the
+  dedicated RTX 5090 after the latest native SDK and benchmark-gate work. The
+  3-step, 2-sample stage-timed run measured NeuralFn at `2581.397 ms/step`
+  versus llm.kittens at `2499.553 ms/step` (`1.032719x` train-loop wall,
+  `0.967622x` tokens/sec), while steady-state CUDA-event timing was narrower at
+  `1.014368x`. The selected GPU had zero compute processes before each sample.
+
+  Verification: `NFN_SM120_PARITY_STEPS=3 NFN_SM120_PARITY_SAMPLES=2
+  NFN_SM120_PARITY_WARMUP=1 NFN_SM120_PARITY_STAGE_TIMING=1
+  NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_refresh_3step.json bash
+  tools/bench_native_gpt_sm120_parity.sh`.
+
 - Tightened the SM120 native candidate gate for
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`.
   Stage-timed reruns now treat that default no-loss CE route as a whole-loop

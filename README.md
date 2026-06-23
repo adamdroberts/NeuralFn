@@ -91,12 +91,12 @@ LM-head chunks above 49152 rows before launching CUDA unless
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` is set for explicit paired
 diagnostics. The
 current CUDA 13.3.33
-3-step parity sample on the dedicated RTX 5090 measured NeuralFn at
-`2514.607 ms/step` versus llm.kittens at `2590.420 ms/step`
-(`0.970733x` train-loop wall time, `1.022057x` tokens/sec) with default
-NeuralFn CUDA-event train-loop timing enabled. Its steady-state CUDA-event
-slice still measured `1.015231x`, so remaining work is still native GPU
-kernel throughput rather than Torch, Python, or graph-editor execution.
+3-step, 2-sample stage-timed parity refresh on the dedicated RTX 5090 measured
+NeuralFn at `2581.397 ms/step` versus llm.kittens at `2499.553 ms/step`
+(`1.032719x` train-loop wall time, `0.967622x` tokens/sec) with zero compute
+processes before every sample. The steady-state CUDA-event slice measured
+`1.014368x`, so remaining work is still native GPU kernel throughput rather
+than Torch, Python, startup, graph-editor execution, or external GPU load.
 Because parity samples can move with reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
 build. The cooperative LM-head diagnostic wrapper is intentionally separate
