@@ -1714,7 +1714,11 @@ the default 49152-row trainer chunk, and
 1024-bin loss-reduction shape. Set
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` to reject the current sequence
 wrapper and `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000` to reject a candidate slower
-than the baseline before running the full GPT trainer.
+than the baseline before running the full GPT trainer. The wrapper defaults
+`NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=auto`, selecting a display-disabled
+NVIDIA GPU through `nvidia-smi` when possible, and still allows explicit
+pinning through `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES` or
+`NFN_LM_HEAD_BACKWARD_CUDA_DEVICE`.
 
 When a native smoke or trainer run reports CUDA error 35, the dense GPT C++
 frontend now annotates the error with a runtime/driver versus blocked-device

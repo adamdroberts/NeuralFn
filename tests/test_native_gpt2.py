@@ -1445,6 +1445,10 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "-lcudart -ldl" in build_script
     assert "NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_BASELINE_SYMBOL" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES" in wrapper
+    assert "select_auto_cuda_device" in wrapper
+    assert "nvidia-smi --query-gpu=index,display_active,utilization.gpu" in wrapper
+    assert 'export CUDA_VISIBLE_DEVICES="${SELECTED_CUDA_VISIBLE_DEVICE}"' in wrapper
     assert "NFN_LM_HEAD_BACKWARD_PROFILE" in wrapper
     assert "trainer-chunk|trainer_chunk" in wrapper
     assert "trainer-loss-bins|trainer_loss_bins" in wrapper

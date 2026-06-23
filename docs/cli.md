@@ -988,7 +988,10 @@ trainer chunk, while `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` selects
 the same chunk with 1024 loss bins. Set
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` and
 `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000` for a fail-fast gate before running the
-full parity wrapper.
+full parity wrapper. Like the full SM120 wrapper, this focused benchmark
+defaults `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=auto`, which selects a
+display-disabled NVIDIA GPU through `nvidia-smi` when one is available; set it
+or `NFN_LM_HEAD_BACKWARD_CUDA_DEVICE` explicitly for manual pinning.
 For compile-time kernel experiments, `tools/build_native_train_tile_ops.sh`
 accepts whitespace-separated `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS` and
 `NFN_TILE_CUDA_EXTRA_LDLIBS` and appends them after the default SM120 flags.

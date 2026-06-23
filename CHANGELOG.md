@@ -31,7 +31,10 @@ Future updates should append new entries here rather than replacing older notes.
   `trainer-loss-bins` profiles plus optional
   `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` and
   `NFN_LM_HEAD_BACKWARD_MAX_RATIO=...` gates, so strict kernel candidates can
-  fail fast before a full native training run. Timed iterations reset logits and
+  fail fast before a full native training run. The wrapper also defaults
+  `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=auto`, selecting a
+  display-disabled NVIDIA GPU through `nvidia-smi` when available and mapping it
+  to CUDA device 0 for the benchmark process. Timed iterations reset logits and
   gradients before the CUDA event window, so large buffer initialization is not
   counted as LM-head kernel time.
 

@@ -117,7 +117,9 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       The wrapper also has `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` and
       `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` profiles plus
       `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` /
-      `NFN_LM_HEAD_BACKWARD_MAX_RATIO=...` fail-fast gates.
+      `NFN_LM_HEAD_BACKWARD_MAX_RATIO=...` fail-fast gates, and defaults
+      `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=auto` so focused runs use the
+      dedicated display-disabled NVIDIA GPU when `nvidia-smi` can select one.
       CUDA 13.3 profile reruns against the current wrapper-only strict symbol
       measured `trainer-chunk` at `1.008311x` and `trainer-loss-bins` at
       `1.010302x`, and `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` failed with
