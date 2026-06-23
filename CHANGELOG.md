@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Updated the SM120 parity and candidate benchmark wrappers to measure the same
+  linked dense GPT executable used by CLI/SDK defaults. When
+  `build/nfn_gpt_native_train_linked` exists and no explicit
+  `NFN_NATIVE_GPT_TRAIN_BIN` override is supplied, both wrappers select it; when
+  no explicit Tile-ops library is supplied for a linked trainer, they pass
+  `--tile-ops-lib linked` instead of forcing the dynamic
+  `build/libnfn_native_train_tile_ops.so` loader path.
+
+  Migration note: explicit benchmark overrides still win. Set
+  `NFN_NATIVE_GPT_TRAIN_BIN` to compare an older dynamic trainer, or set
+  `NFN_NATIVE_TILE_OPS_LIB` / `NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB` when a
+  same-script bisection intentionally swaps Tile-ops shared libraries.
+
+  Verification: `bash -n` passed for both SM120 benchmark wrappers; focused
+  native GPT source pytest passed (`1 passed, 75 deselected`); parity dry-run
+  resolved the NeuralFn command to
+  `build/nfn_gpt_native_train_linked ... --tile-ops-lib linked`; and candidate
+  dry-run resolved both default sides to the same linked trainer path.
+
 - Aligned the generic `neuralfn.native_train` SDK resolver with the dense GPT
   CLI startup path: `gpt`, `gpt2`, `gpt3`, and `nanogpt` native run configs now
   choose `build/nfn_gpt_native_train_linked` before

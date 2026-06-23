@@ -292,8 +292,9 @@ commands so command separation can be audited before launching a long GPU job.
 When comparing a saved or freshly compiled native trainer executable, set
 `NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN=/tmp/nfn_gpt_native_train_candidate`
 or the shorter `NFN_SM120_CANDIDATE_TRAIN_BIN=...`; the baseline still comes
-from `NFN_NATIVE_GPT_TRAIN_BIN` and the candidate command no longer silently
-reuses the baseline trainer path.
+from `NFN_NATIVE_GPT_TRAIN_BIN`, defaulting to
+`build/nfn_gpt_native_train_linked` when it exists, and the candidate command no
+longer silently reuses the baseline trainer path.
 This keeps quick candidate runs from silently falling back to the wrapper's
 default 10-step, 3-sample profile when using the shorter alias names.
 Set `NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO` or
@@ -901,10 +902,13 @@ native command on both sides, selected-GPU idle guards, and
 candidate against the current default, or set
 `NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN=/tmp/nfn_gpt_native_train_candidate` to
 compare a candidate compiled trainer executable against
-`build/nfn_gpt_native_train`. Set
+the linked default trainer. Set
 `NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB=/tmp/libnfn_candidate.so` to compare a
-candidate Tile ops build against `build/libnfn_native_train_tile_ops.so`. Common
-controls include `NFN_SM120_NATIVE_STEPS`, `NFN_SM120_NATIVE_SAMPLES`,
+candidate Tile ops build against `build/libnfn_native_train_tile_ops.so`; when
+no explicit Tile-ops path is supplied and the selected trainer is
+`nfn_gpt_native_train_linked`, the wrapper passes `--tile-ops-lib linked` so it
+does not accidentally benchmark the dynamic loader branch. Common controls
+include `NFN_SM120_NATIVE_STEPS`, `NFN_SM120_NATIVE_SAMPLES`,
 `NFN_SM120_NATIVE_WARMUP`, `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_NATIVE_TEMPLATE_NAME`, `NFN_SM120_NATIVE_GRAPH_FILE`, and
 `NFN_SM120_NATIVE_STAGE_TIMING=1` for attribution sidecars. The explicit
@@ -990,8 +994,8 @@ hidden behind an empty stderr. Use
 `tools/bench_native_gpt_sm120_parity.sh` for the canonical RTX 5090
 SM120 parity check against `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`;
 it runs the llm.kittens `train_gpt2cu` reference and
-`build/nfn_gpt_native_train --backend tile-cuda` through the same paired harness
-with selected-GPU idle guards. The NeuralFn candidate side passes
+the NeuralFn linked native GPT trainer through the same paired harness with
+selected-GPU idle guards. The NeuralFn candidate side passes
 `--train-batch-tokens 524288` explicitly so it stays locked to the reference
 `train-sm120.sh` `-d 524288` contract even if native trainer defaults change.
 The parity wrapper uses the same default selected-GPU idle polling policy as

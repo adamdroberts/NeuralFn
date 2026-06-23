@@ -5,7 +5,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LLM_KITTENS_ROOT="${LLM_KITTENS_ROOT:-/mnt/disk2/dev/open-source/llm.kittens}"
 LLM_KITTENS_TRAIN_BIN="${LLM_KITTENS_TRAIN_BIN:-$LLM_KITTENS_ROOT/train_gpt2cu}"
 LLM_KITTENS_TINYSTORIES_DIR="${LLM_KITTENS_TINYSTORIES_DIR:-$LLM_KITTENS_ROOT/dev/data/tinystories}"
-NFN_NATIVE_GPT_TRAIN_BIN="${NFN_NATIVE_GPT_TRAIN_BIN:-$ROOT_DIR/build/nfn_gpt_native_train}"
+if [[ -z "${NFN_NATIVE_GPT_TRAIN_BIN-}" && -x "$ROOT_DIR/build/nfn_gpt_native_train_linked" ]]; then
+  NFN_NATIVE_GPT_TRAIN_BIN="$ROOT_DIR/build/nfn_gpt_native_train_linked"
+else
+  NFN_NATIVE_GPT_TRAIN_BIN="${NFN_NATIVE_GPT_TRAIN_BIN:-$ROOT_DIR/build/nfn_gpt_native_train}"
+fi
+NFN_NATIVE_TILE_OPS_LIB_EXPLICIT="${NFN_NATIVE_TILE_OPS_LIB+x}"
 NFN_NATIVE_TILE_OPS_LIB="${NFN_NATIVE_TILE_OPS_LIB:-$ROOT_DIR/build/libnfn_native_train_tile_ops.so}"
 
 STEPS="${NFN_SM120_PARITY_STEPS:-${NFN_SM120_STEPS:-10}}"
@@ -86,7 +91,11 @@ if [[ ! -x "$NFN_NATIVE_GPT_TRAIN_BIN" ]]; then
   echo "NeuralFn native GPT trainer is not executable: $NFN_NATIVE_GPT_TRAIN_BIN" >&2
   exit 2
 fi
-if [[ ! -f "$NFN_NATIVE_TILE_OPS_LIB" ]]; then
+NFN_NATIVE_TILE_OPS_ARG="$NFN_NATIVE_TILE_OPS_LIB"
+if [[ -z "$NFN_NATIVE_TILE_OPS_LIB_EXPLICIT" && "$(basename "$NFN_NATIVE_GPT_TRAIN_BIN")" == "nfn_gpt_native_train_linked" ]]; then
+  NFN_NATIVE_TILE_OPS_ARG="linked"
+fi
+if [[ "$NFN_NATIVE_TILE_OPS_ARG" != "linked" && ! -f "$NFN_NATIVE_TILE_OPS_ARG" ]]; then
   echo "NeuralFn Tile ops library is missing: $NFN_NATIVE_TILE_OPS_LIB" >&2
   exit 2
 fi
@@ -141,7 +150,7 @@ candidate_cmd="$(
     --native-cuda-checkpoint-every "$CHECKPOINT_EVERY" \
     --native-cuda-activation "$ACTIVATION" \
     --no-checkpoint \
-    --tile-ops-lib "$NFN_NATIVE_TILE_OPS_LIB"
+    --tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"
 )"
 
 cd "$ROOT_DIR"

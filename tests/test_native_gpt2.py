@@ -469,6 +469,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     ).read_text(encoding="utf-8")
     build_all = (root / "tools" / "build_native_gpt2_all.sh").read_text(encoding="utf-8")
     rebuild_sm120 = (root / "tools" / "rebuild_native_sm120.sh").read_text(encoding="utf-8")
+    parity_bench = (root / "tools" / "bench_native_gpt_sm120_parity.sh").read_text(encoding="utf-8")
+    candidate_bench = (root / "tools" / "bench_native_gpt_sm120_candidate.sh").read_text(encoding="utf-8")
     no_torch_verifier = (root / "tools" / "check_native_no_torch_deps.py").read_text(
         encoding="utf-8"
     )
@@ -507,6 +509,13 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "GPT_LINKED_CLI_OUT" in build_all
     assert "build_native_gpt_cli_linked.sh" in build_all
     assert "build_native_gpt_cli_linked.sh" in rebuild_sm120
+    assert "nfn_gpt_native_train_linked" in parity_bench
+    assert 'NFN_NATIVE_TILE_OPS_ARG="linked"' in parity_bench
+    assert '--tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"' in parity_bench
+    assert "nfn_gpt_native_train_linked" in candidate_bench
+    assert "tile_ops_arg_for" in candidate_bench
+    assert '--tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"' in candidate_bench
+    assert '--tile-ops-lib "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_ARG"' in candidate_bench
     assert 'Path("build/nfn_gpt_native_train_linked")' in no_torch_verifier
 
 

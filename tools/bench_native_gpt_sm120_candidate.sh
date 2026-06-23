@@ -2,8 +2,13 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-NFN_NATIVE_GPT_TRAIN_BIN="${NFN_NATIVE_GPT_TRAIN_BIN:-$ROOT_DIR/build/nfn_gpt_native_train}"
+if [[ -z "${NFN_NATIVE_GPT_TRAIN_BIN-}" && -x "$ROOT_DIR/build/nfn_gpt_native_train_linked" ]]; then
+  NFN_NATIVE_GPT_TRAIN_BIN="$ROOT_DIR/build/nfn_gpt_native_train_linked"
+else
+  NFN_NATIVE_GPT_TRAIN_BIN="${NFN_NATIVE_GPT_TRAIN_BIN:-$ROOT_DIR/build/nfn_gpt_native_train}"
+fi
 NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN="${NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN:-${NFN_SM120_CANDIDATE_TRAIN_BIN:-$NFN_NATIVE_GPT_TRAIN_BIN}}"
+NFN_NATIVE_TILE_OPS_LIB_EXPLICIT="${NFN_NATIVE_TILE_OPS_LIB+x}"
 NFN_NATIVE_TILE_OPS_LIB="${NFN_NATIVE_TILE_OPS_LIB:-$ROOT_DIR/build/libnfn_native_train_tile_ops.so}"
 NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB_EXPLICIT="${NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB-}${NFN_SM120_CANDIDATE_TILE_OPS_LIB-}"
 NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB="${NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB:-$NFN_NATIVE_TILE_OPS_LIB}"
@@ -75,6 +80,17 @@ env_or_alias5() {
     printf '%s' "${!generic_alias}"
   else
     printf '%s' "$default_value"
+  fi
+}
+
+tile_ops_arg_for() {
+  local train_bin="$1"
+  local tile_ops_lib="$2"
+  local explicit="$3"
+  if [[ -z "$explicit" && "$(basename "$train_bin")" == "nfn_gpt_native_train_linked" ]]; then
+    printf '%s' "linked"
+  else
+    printf '%s' "$tile_ops_lib"
   fi
 }
 
@@ -466,11 +482,13 @@ if [[ ! -x "$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" ]]; then
   echo "Candidate NeuralFn native GPT trainer is not executable: $NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" >&2
   exit 2
 fi
-if [[ ! -f "$NFN_NATIVE_TILE_OPS_LIB" ]]; then
+NFN_NATIVE_TILE_OPS_ARG="$(tile_ops_arg_for "$NFN_NATIVE_GPT_TRAIN_BIN" "$NFN_NATIVE_TILE_OPS_LIB" "$NFN_NATIVE_TILE_OPS_LIB_EXPLICIT")"
+NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_ARG="$(tile_ops_arg_for "$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB" "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB_EXPLICIT")"
+if [[ "$NFN_NATIVE_TILE_OPS_ARG" != "linked" && ! -f "$NFN_NATIVE_TILE_OPS_ARG" ]]; then
   echo "Baseline NeuralFn Tile ops library is missing: $NFN_NATIVE_TILE_OPS_LIB" >&2
   exit 2
 fi
-if [[ ! -f "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB" ]]; then
+if [[ "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_ARG" != "linked" && ! -f "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_ARG" ]]; then
   echo "Candidate NeuralFn Tile ops library is missing: $NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB" >&2
   exit 2
 fi
@@ -539,8 +557,8 @@ if [[ -n "$GRAPH_FILE" ]]; then
 fi
 append_split_args common_args "$COMMON_EXTRA_ARGS_RAW"
 
-baseline_args=("$NFN_NATIVE_GPT_TRAIN_BIN" "${common_args[@]}" --tile-ops-lib "$NFN_NATIVE_TILE_OPS_LIB")
-candidate_args=("$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" "${common_args[@]}" --tile-ops-lib "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB")
+baseline_args=("$NFN_NATIVE_GPT_TRAIN_BIN" "${common_args[@]}" --tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG")
+candidate_args=("$NFN_SM120_NATIVE_CANDIDATE_TRAIN_BIN" "${common_args[@]}" --tile-ops-lib "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_ARG")
 append_split_args baseline_args "$BASELINE_EXTRA_ARGS_RAW"
 append_split_args candidate_args "$CANDIDATE_EXTRA_ARGS_RAW"
 
