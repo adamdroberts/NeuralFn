@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed SM120 candidate wrapper handling for generated Tile-ops libraries under
+  the linked-trainer default. When
+  `NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_BUILD_FLAGS` builds a temporary
+  candidate `libnfn_native_train_tile_ops.so`, the candidate command now treats
+  that generated library as explicit and passes its path instead of falling back
+  to `--tile-ops-lib linked`.
+
+  Migration note: no command changes are required. This only corrects
+  same-script candidate runs that ask the wrapper to build a temporary Tile-ops
+  library while the default trainer binary is linked.
+
+  Verification: `bash -n tools/bench_native_gpt_sm120_candidate.sh` passed;
+  focused native GPT source pytest passed (`1 passed, 75 deselected`); and a
+  dry-run with a candidate Tile-ops path resolved the baseline command to
+  `--tile-ops-lib linked` while the candidate command used the explicit
+  candidate library path.
+
 - Updated the SM120 parity and candidate benchmark wrappers to measure the same
   linked dense GPT executable used by CLI/SDK defaults. When
   `build/nfn_gpt_native_train_linked` exists and no explicit

@@ -907,7 +907,10 @@ the linked default trainer. Set
 candidate Tile ops build against `build/libnfn_native_train_tile_ops.so`; when
 no explicit Tile-ops path is supplied and the selected trainer is
 `nfn_gpt_native_train_linked`, the wrapper passes `--tile-ops-lib linked` so it
-does not accidentally benchmark the dynamic loader branch. Common controls
+does not accidentally benchmark the dynamic loader branch. If
+`NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_BUILD_FLAGS` asks the wrapper to compile a
+temporary candidate Tile-ops library, that generated path is treated as an
+explicit candidate library even with the linked trainer selected. Common controls
 include `NFN_SM120_NATIVE_STEPS`, `NFN_SM120_NATIVE_SAMPLES`,
 `NFN_SM120_NATIVE_WARMUP`, `NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES`,
 `NFN_SM120_NATIVE_TEMPLATE_NAME`, `NFN_SM120_NATIVE_GRAPH_FILE`, and

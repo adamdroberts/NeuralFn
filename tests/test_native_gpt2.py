@@ -514,6 +514,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert '--tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"' in parity_bench
     assert "nfn_gpt_native_train_linked" in candidate_bench
     assert "tile_ops_arg_for" in candidate_bench
+    assert 'NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_LIB_EXPLICIT="generated"' in candidate_bench
     assert '--tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"' in candidate_bench
     assert '--tile-ops-lib "$NFN_SM120_NATIVE_CANDIDATE_TILE_OPS_ARG"' in candidate_bench
     assert 'Path("build/nfn_gpt_native_train_linked")' in no_torch_verifier
