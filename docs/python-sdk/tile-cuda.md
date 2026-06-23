@@ -58,14 +58,17 @@ The trainer-facing raw C ABI build is separate:
 bash tools/build_native_train_tile_ops.sh
 ```
 
-The raw ABI includes an opt-in dense GPT token-weight startup probe,
+The raw ABI includes an opt-in dense GPT token-weight startup route,
 `nfn_native_tile_init_gpt2_token_weight_fast_with_bf16_shadow_padded_float32`,
 which initializes the public vocabulary rows and zeroes the padded vocabulary
 tail plus BF16 shadow in one launch. The native trainer leaves this route
-default-off because the CUDA 13.3 RTX 5090 paired startup benchmark measured it
-slower than the current vector4 BF16-shadow initializer. Enable it only for
-paired bisection with `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`; runtime
-JSON reports `token_weight_padded_init_fusion_available`,
+default-off because the CUDA 13.3 dedicated RTX 5090 startup-only retest
+rejected it at `1.011381x` setup wall time versus the current vector4
+BF16-shadow initializer, despite a noise-equivalent `0.995702x` token-init
+sub-bucket. Enable it only for paired bisection with
+`NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`. Runtime JSON reports
+`token_weight_padded_init_fusion_requested`,
+`token_weight_padded_init_fusion_available`,
 `token_weight_padded_init_fusion_enabled`, and
 `token_weight_padding_zero_launches_elided`.
 
@@ -1399,8 +1402,12 @@ modulo-17 values, or set `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT=0` to
 reproduce the older two-pass startup path. Runtime JSON reports
 `token_weight_init_strategy`, `token_weight_fast_int32_init_enabled`,
 `token_weight_vector4_init_enabled`, `token_weight_init_legacy_mod17_enabled`,
-`token_weight_bf16_initial_refresh_fusion_enabled`, and
-`token_weight_bf16_initial_refresh_elided`, and `startup_only=True` isolates
+`token_weight_bf16_initial_refresh_fusion_enabled`,
+`token_weight_bf16_initial_refresh_elided`,
+`token_weight_padded_init_fusion_requested`,
+`token_weight_padded_init_fusion_available`,
+`token_weight_padded_init_fusion_enabled`, and
+`token_weight_padding_zero_launches_elided`, and `startup_only=True` isolates
 the setup cost for SDK-side paired timing.
 Token, position, and block Linear weight gradients accumulate directly into
 optimizer-step accumulation buffers in the full GPT-2 trainer. The tied LM-head

@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revalidated the fused padded-vocab token-weight initializer after rebuilding
+  the linked native GPT trainer on CUDA 13.3. The route remains opt-in behind
+  `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1` /
+  `NFN_NATIVE_GPT2_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`: the startup-only
+  same-script gate rejected it at `1.011381x` setup wall time versus the
+  current vector4 BF16-shadow initializer, despite a noise-equivalent
+  `0.995702x` `setup.token_weight_init.total_ms` sub-bucket. The linked runtime
+  still reports `token_weight_padded_init_fusion_available: true`, so the
+  rejection is a measured default decision rather than a missing-symbol issue.
+
+  Verification note: rebuilt `build/nfn_gpt_native_train_linked`, verified the
+  opt-in route reports
+  `token_weight_init_strategy:
+  "device-vector4-power2-deterministic-fused-bf16-shadow-padded-zero"` and
+  `token_weight_padding_zero_launches_elided: 2`, then reran the paired
+  startup-only gate with old-vs-new env overrides.
+
 - Revalidated the native Tile linear-backward bias reducer row-chunk candidates
   after rebuilding from source on the dedicated RTX 5090/CUDA 13.3 setup. The
   default remains 512 rows: the fresh same-script 512-vs-1024 gate rejected the

@@ -133,9 +133,12 @@ Real paired-wrapper runs now fail fast for this rejected profile unless
 still works without that opt-in.
 The fused padded-vocab BF16-shadow token initializer is exposed for paired
 bisection as `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1`, but remains
-default-off: the CUDA 13.3 RTX 5090 startup gate measured the route at
-`1.025186x` setup wall time and `1.061587x` token-init time versus the current
-vector4 BF16-shadow default.
+default-off. It initializes public token rows and zeroes the padded vocabulary
+tail plus BF16 shadow in one launch, eliding two separate padding zero/refresh
+operations when selected. The CUDA 13.3 dedicated RTX 5090 startup-only retest
+rejected the route at `1.011381x` setup wall time versus the current vector4
+BF16-shadow default, despite a noise-equivalent `0.995702x` token-init
+sub-bucket.
 Dense GPT native BF16 classifier/CE now uses vectorized BF16 row loads by
 default to match the llm.kittens fused-classifier memory access pattern,
 including the final dlogit write pass when scalar stores are selected; set
@@ -1650,8 +1653,12 @@ paired comparison against the older int64-index Tile path, and set
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT=1` only for paired comparison against
 the not-promoted threaded CUDA initializer. Training JSON reports
 `token_weight_init_strategy: "device-vector4-power2-deterministic"` or the fused
-BF16-shadow variant, `token_weight_threaded_init_enabled`,
-`token_weight_vector4_init_enabled`, `token_weight_fast_int32_init_enabled`, and
+BF16-shadow padded-zero opt-in variant, `token_weight_padded_init_fusion_requested`,
+`token_weight_padded_init_fusion_available`,
+`token_weight_padded_init_fusion_enabled`,
+`token_weight_padding_zero_launches_elided`,
+`token_weight_threaded_init_enabled`, `token_weight_vector4_init_enabled`,
+`token_weight_fast_int32_init_enabled`, and
 `token_weight_host_materialization: false`.
 
 GPT-2 transformer-LM startup has a single owner for per-block buffers. The block-vector visitors allocate parameters, gradients, AdamW state, and scratch-tape activations for every transformer block, including block 0; the global startup list now covers only token/position/final-norm/shared workspace buffers. Training JSON reports `block0_duplicate_allocation_elided`, `block0_duplicate_activation_allocation_elided`, `block0_duplicate_parameter_initialization_elided`, and `block0_duplicate_adamw_state_zero_elided` under `block_state_layout`.
