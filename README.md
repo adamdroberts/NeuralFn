@@ -838,7 +838,10 @@ CUDA 13.3 RTX 5090 3-step/3-sample gates rejected `min_waves` at
 block-backward regressions in both cases. A fresh CUDA 13.3 dedicated-RTX-5090
 3-step/2-sample recheck still rejects `min_waves`: train-loop wall time was
 slightly better at `0.998752x`, but LM-head backward regressed to `1.001151x`
-and MLP projection total to `1.020829x`, so the stage gates failed.
+and MLP projection total to `1.020829x`, so the stage gates failed. The matching
+`max_waves` recheck also failed, with train-loop wall time at `1.010956x`,
+LM-head backward at `1.007568x`, block backward at `1.025454x`, and attention
+projection dWeight+bias at `1.400435x`.
 Shape-specific cuBLASLt overrides
 also remain diagnostic-only: overriding LM-head dWeight
 `768,50304,32768,N,T` from heuristic `1` to `0` was nearly neutral but failed

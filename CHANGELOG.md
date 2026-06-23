@@ -7,15 +7,20 @@ Future updates should append new entries here rather than replacing older notes.
 ## Unreleased
 
 - Marked the existing `cublaslt_min_waves` SM120 wrapper profile as rejected by
-  default. The fresh CUDA 13.3 dedicated-RTX-5090 3-step/2-sample same-script
-  recheck changed cuBLASLt selected heuristics and produced a slightly faster
-  train-loop mean (`0.998752x`), but failed required stage gates with LM-head
-  backward at `1.001151x` and MLP projection total at `1.020829x`. Leave
-  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY=min_waves` as an intentional
-  manual diagnostic only.
+  default, and reconfirmed `cublaslt_max_waves` as rejected on the current
+  workstation stack. The fresh CUDA 13.3 dedicated-RTX-5090 3-step/2-sample
+  same-script `min_waves` recheck changed cuBLASLt selected heuristics and
+  produced a slightly faster train-loop mean (`0.998752x`), but failed required
+  stage gates with LM-head backward at `1.001151x` and MLP projection total at
+  `1.020829x`. The matching `max_waves` recheck regressed train-loop wall time
+  to `1.010956x`, LM-head backward to `1.007568x`, block backward to
+  `1.025454x`, and attention projection dWeight+bias to `1.400435x`. Leave
+  `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY=min_waves` or `max_waves` as
+  intentional manual diagnostics only.
 
-  Verification note: ran dry-run wrapper expansion and the paired GPU benchmark
-  on the dedicated RTX 5090 with stage timing and linear shape stats enabled.
+  Verification note: ran dry-run wrapper expansion and paired GPU benchmarks for
+  both profiles on the dedicated RTX 5090 with stage timing and linear shape
+  stats enabled.
 
 - Added a block-wide BF16/BF16 split-BGRADB benchmark profile for dense native
   GPT training:

@@ -359,6 +359,10 @@ default. The CUDA 13.3 dedicated-RTX-5090 3-step/2-sample recheck changed
 cuBLASLt selected heuristics and slightly improved train-loop wall time
 (`0.998752x`), but failed the required stage gates with LM-head backward at
 `1.001151x` and MLP projection total at `1.020829x`.
+`cublaslt_max_waves` is rejected by default for the same reason: the matching
+recheck changed selected heuristics but regressed train-loop wall time to
+`1.010956x`, LM-head backward to `1.007568x`, block backward to `1.025454x`,
+and attention projection dWeight+bias to `1.400435x`.
 The BF16 operand cache is only for stable operands such as weights and biases;
 BF16-output GEMMs repack mutable activation inputs because native scratch
 activation pointers are reused with new contents.
