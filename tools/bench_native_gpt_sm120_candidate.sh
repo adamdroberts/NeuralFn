@@ -245,12 +245,18 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_FLOAT_HD64_SPECIALIZED=1"
     ;;
   "mlp_proj_dinput_before_dweight"|"mlp-proj-dinput-before-dweight")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate failed route detection and rejected this scheduling order."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_MLP_PROJ_DINPUT_BEFORE_DWEIGHT=1"
     ;;
   "mlp_fc_dinput_before_dweight"|"mlp-fc-dinput-before-dweight")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate failed route detection and rejected this scheduling order."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1"
     ;;
   "attn_proj_dinput_before_dweight"|"attn-proj-dinput-before-dweight")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate failed route detection and rejected this scheduling order."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_ATTN_PROJ_DINPUT_BEFORE_DWEIGHT=1"
     ;;
   "lm_head_fused_loss_backward_off"|"lm-head-fused-loss-backward-off"|"lm_head_separate_loss_backward"|"lm-head-separate-loss-backward")
@@ -271,12 +277,18 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1"
     ;;
   "qkv_concurrent_dinput_dweight"|"qkv-concurrent-dinput-dweight")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate activated this route but regressed train_loop_wall_ms_per_step to 1.005526x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1"
     ;;
   "mlp_fc_concurrent_dinput_dweight"|"mlp-fc-concurrent-dinput-dweight")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate activated this route but regressed train_loop_wall_ms_per_step to 1.005830x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BLOCK_MLP_FC_CONCURRENT_DINPUT_DWEIGHT=1"
     ;;
   "attn_proj_concurrent_dinput_dweight"|"attn-proj-concurrent-dinput-dweight")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate activated this route but regressed train_loop_wall_ms_per_step to 1.002312x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BLOCK_ATTN_PROJ_CONCURRENT_DINPUT_DWEIGHT=1"
     ;;
   "lm_head_concurrent_dhidden_dweight"|"lm-head-concurrent-dhidden-dweight")

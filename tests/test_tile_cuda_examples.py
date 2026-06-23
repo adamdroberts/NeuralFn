@@ -1625,6 +1625,32 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     )
     assert qkv_payload["metric_ratio_gates"]["enabled"] is False
 
+    rejected_qkv_concurrent_env = os.environ.copy()
+    rejected_qkv_concurrent_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "qkv_concurrent_dinput_dweight",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "rejected-qkv-concurrent.json"),
+        }
+    )
+
+    rejected_qkv_concurrent_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=rejected_qkv_concurrent_env,
+    )
+
+    assert rejected_qkv_concurrent_run.returncode == 2
+    assert "rejected SM120 candidate" in rejected_qkv_concurrent_run.stderr
+    assert (
+        "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1"
+        in rejected_qkv_concurrent_run.stderr
+    )
+
     attn_proj_output_path = tmp_path / "candidate-attn-proj-concurrent-dry-run.json"
     attn_proj_env = os.environ.copy()
     attn_proj_env.update(

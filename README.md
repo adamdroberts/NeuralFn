@@ -1735,7 +1735,13 @@ Real runs of rejected SM120 candidate profiles now require
 remains available without the opt-in. The current rejected set includes
 `attention_atomic_dq`, whose CUDA 13.3 RTX 5090 rerun failed route detection and
 attention section gates, and `qkv_forward_bf16_fallback_65536`, whose rerun
-regressed train-loop wall time to `1.011419x`.
+regressed train-loop wall time to `1.011419x`. It also includes the block
+scheduling profiles `qkv_concurrent_dinput_dweight`,
+`mlp_fc_concurrent_dinput_dweight`, `attn_proj_concurrent_dinput_dweight`,
+`mlp_proj_dinput_before_dweight`, `mlp_fc_dinput_before_dweight`, and
+`attn_proj_dinput_before_dweight`; the concurrent routes activated but
+regressed train-loop wall time, and the ordering-only routes failed route
+detection on the CUDA 13.3 RTX 5090 sweep.
 The wrapper also has named profiles for existing diagnostic switches that used
 to require raw candidate env overrides: `bf16_attention_grad_out`,
 `bf16_attention_dprep_grad_out`, `mlp_proj_dinput_before_dweight`,

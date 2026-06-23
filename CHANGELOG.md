@@ -8,9 +8,12 @@ Future updates should append new entries here rather than replacing older notes.
 
 - Guarded rejected SM120 native GPT candidate profiles in
   `tools/bench_native_gpt_sm120_candidate.sh`. Real paired benchmark runs of
-  `attention_atomic_dq` and `qkv_forward_bf16_fallback_65536` now fail fast
-  unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set; dry-run
-  plan expansion still works without the opt-in.
+  `attention_atomic_dq`, `qkv_forward_bf16_fallback_65536`,
+  `qkv_concurrent_dinput_dweight`, `mlp_fc_concurrent_dinput_dweight`,
+  `attn_proj_concurrent_dinput_dweight`, `mlp_proj_dinput_before_dweight`,
+  `mlp_fc_dinput_before_dweight`, and `attn_proj_dinput_before_dweight` now
+  fail fast unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is
+  set; dry-run plan expansion still works without the opt-in.
 
   Migration note: no trainer default changed. This only keeps exploratory
   sweeps from rerunning candidates that current same-script RTX 5090 evidence
@@ -22,8 +25,13 @@ Future updates should append new entries here rather than replacing older notes.
   gates), `bf16_attention_dprep_grad_out` (`1.001524x` train-loop),
   `attention_dprep_float_hd64_specialized` (`0.997808x` train-loop but failed
   strict stage gates), `attention_atomic_dq` (route gate failed), and
-  `qkv_forward_bf16_fallback_65536` (`1.011419x` train-loop). Focused wrapper
-  tests and shell syntax checks were run after the guard change.
+  `qkv_forward_bf16_fallback_65536` (`1.011419x` train-loop). A follow-up
+  block-scheduling sweep rejected `qkv_concurrent_dinput_dweight`
+  (`1.005526x` train-loop), `mlp_fc_concurrent_dinput_dweight` (`1.005830x`),
+  `attn_proj_concurrent_dinput_dweight` (`1.002312x`), and the route-unproven
+  `mlp_proj_dinput_before_dweight`, `mlp_fc_dinput_before_dweight`, and
+  `attn_proj_dinput_before_dweight` profiles. Focused wrapper tests and shell
+  syntax checks were run after the guard change.
 
 - Guarded timeout-prone LM-head SM120 candidate profiles in
   `tools/bench_native_gpt_sm120_candidate.sh`. Real paired benchmark runs of
