@@ -1043,6 +1043,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1" in text
     assert "lm_head_row_loss_sum_accumulate" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1" in text
+    assert "1.000970x train_loop_cuda_event_steady_state_wall_ms_per_step" in text
+    assert "1.000304x stage.lm_head_backward.total_ms" in text
     assert "cublaslt_min_waves" in text
     assert "cublaslt_max_waves" in text
     assert "cublaslt_qkv_dweight_h0_65536" in text
@@ -2230,6 +2232,73 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "lm_head_loss_bins is a rejected SM120 candidate" in loss_bins_rejected.stderr
     assert "stage.block_backward.total_ms regressed to 1.019348x" in (
         loss_bins_rejected.stderr
+    )
+
+    row_loss_sum_output_path = tmp_path / "candidate-row-loss-sum-dry-run.json"
+    row_loss_sum_env = os.environ.copy()
+    row_loss_sum_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_STAGE_TIMING": "1",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_row_loss_sum_accumulate",
+            "NFN_SM120_NATIVE_JSON_OUT": str(row_loss_sum_output_path),
+        }
+    )
+
+    row_loss_sum_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=row_loss_sum_env,
+    )
+
+    assert row_loss_sum_dry_run.returncode == 0, row_loss_sum_dry_run.stderr
+    row_loss_sum_payload = json.loads(
+        row_loss_sum_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        row_loss_sum_payload["baseline_env"][
+            "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE"
+        ]
+        == "0"
+    )
+    assert (
+        row_loss_sum_payload["candidate_env"][
+            "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE"
+        ]
+        == "1"
+    )
+    assert row_loss_sum_payload["metric_ratio_gates"]["enabled"] is False
+
+    row_loss_sum_rejected_env = os.environ.copy()
+    row_loss_sum_rejected_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_row_loss_sum_accumulate",
+            "NFN_SM120_NATIVE_JSON_OUT": str(
+                tmp_path / "candidate-row-loss-sum-rejected.json"
+            ),
+        }
+    )
+    row_loss_sum_rejected = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=row_loss_sum_rejected_env,
+    )
+    assert row_loss_sum_rejected.returncode == 2
+    assert "lm_head_row_loss_sum_accumulate is a rejected SM120 candidate" in (
+        row_loss_sum_rejected.stderr
+    )
+    assert "1.000304x stage.lm_head_backward.total_ms" in (
+        row_loss_sum_rejected.stderr
     )
 
     combined_arena_output_path = tmp_path / "candidate-combined-arena-dry-run.json"

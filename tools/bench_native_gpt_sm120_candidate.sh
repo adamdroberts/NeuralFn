@@ -314,6 +314,8 @@ case "${CANDIDATE_PROFILE,,}" in
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 1"
     ;;
   "lm_head_row_loss_sum_accumulate"|"lm-head-row-loss-sum-accumulate"|"lm_head_loss_sum_accumulate"|"lm-head-loss-sum-accumulate")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed rerun changed the row-loss tail back to sum-accumulate, but failed the strict gates at 1.000970x train_loop_cuda_event_steady_state_wall_ms_per_step and 1.000304x stage.lm_head_backward.total_ms."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1"
     ;;

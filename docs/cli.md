@@ -1376,7 +1376,12 @@ route but regressed train-loop wall to `1.005933x`, LM-head backward to
 older one-launch sum-accumulate row-loss tail. `lm_head_row_loss_partial_reduce`
 forces the older route as its baseline and expands the candidate side to
 `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0`, which is the current default
-`sum_partials` plus scalar `gradient_accumulate` tail.
+`sum_partials` plus scalar `gradient_accumulate` tail. Real launches of
+`lm_head_row_loss_sum_accumulate` now fail fast unless
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set: the CUDA 13.3
+dedicated RTX 5090 3-step, 2-sample stage-timed rerun changed the strategy but
+failed the strict gates at `1.000970x` steady-state CUDA-event wall time and
+`1.000304x` LM-head backward.
 `lm_head_ce_scalar_streaming_store` expands to
 `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1` and
 `NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1` for the narrower BF16 CE

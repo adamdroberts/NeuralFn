@@ -286,7 +286,12 @@ Set it to `1` only when comparing against the older single
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_partial_reduce` to route
 the promoted path against the older sum-accumulate baseline, or
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_sum_accumulate` to opt into
-the older route.
+the older route. Real launches of the old-route candidate are rejected by
+default: the CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed rerun
+failed the strict gates at `1.000970x` steady-state CUDA-event wall time and
+`1.000304x` LM-head backward. Set
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for an intentional
+diagnostic rerun.
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1` is the default train-loss logging
 path. It routes the BF16/u16 classifier row blocks to accumulate row losses
 into a fixed bin workspace before one
