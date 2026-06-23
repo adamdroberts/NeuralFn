@@ -431,6 +431,15 @@ rejected promotion because `stage.block_backward.total_ms` measured `1.000689x`
 even while `stage.block_backward.mlp_proj.dinput.total_ms` stayed faster at
 `0.983891x`. The llm.kittens same-session notes show the same pattern of
 short-run wins but rejected stable defaults after longer gates.
+The llm.kittens parity wrapper accepts the same stage-timing aliases as the
+native candidate wrapper: set `NFN_SM120_NATIVE_STAGE_TIMING=1`,
+`NFN_SM120_NATIVE_PARITY_STAGE_TIMING=1`, `NFN_SM120_PARITY_STAGE_TIMING=1`, or
+`NFN_SM120_STAGE_TIMING=1` to add `--native-stage-timing` and capture
+`timing.stage_timing` from the NeuralFn side. After the CUDA 13.3 reinstall and
+SM120 native rebuild, the dedicated idle RTX 5090 3-step parity gate completed
+cleanly and measured NeuralFn at about `208k` tokens/sec versus llm.kittens at
+about `216k` tokens/sec, leaving the remaining work as kernel-throughput
+closing rather than CUDA setup or graph/Torch startup.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_device_max_connections_1` when
 you need to reproduce the workstation scheduling probe that sets only
 `CUDA_DEVICE_MAX_CONNECTIONS=1` on the candidate command. It is a benchmark

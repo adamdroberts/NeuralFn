@@ -799,7 +799,7 @@ def test_native_gpt_sm120_candidate_wrapper_stage_timing_without_profile_dir(tmp
             "NFN_SM120_SAMPLES": "1",
             "NFN_SM120_WARMUP": "0",
             "NFN_SM120_PROFILE_DIR": "none",
-            "NFN_SM120_STAGE_TIMING": "1",
+            "NFN_SM120_NATIVE_STAGE_TIMING": "1",
             "NFN_SM120_CUDA_VISIBLE_DEVICES": "7",
             "NFN_SM120_JSON_OUT": str(output_path),
         }
@@ -819,6 +819,9 @@ def test_native_gpt_sm120_candidate_wrapper_stage_timing_without_profile_dir(tmp
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["native_stage_timing"] is True
     assert payload["append_native_profile_json_dir"] == ""
+    text = script.read_text(encoding="utf-8")
+    assert "NFN_SM120_NATIVE_STAGE_TIMING" in text
+    assert "NFN_SM120_NATIVE_PARITY_STAGE_TIMING" in text
 
 
 def test_native_gpt_sm120_parity_wrapper_accepts_generic_aliases(tmp_path: Path) -> None:

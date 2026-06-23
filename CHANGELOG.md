@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned the llm.kittens SM120 parity wrapper with the native candidate
+  wrapper stage-timing aliases. `tools/bench_native_gpt_sm120_parity.sh` now
+  accepts `NFN_SM120_NATIVE_STAGE_TIMING=1` and
+  `NFN_SM120_NATIVE_PARITY_STAGE_TIMING=1` in addition to the existing parity
+  and generic stage-timing variables, so CUDA reinstall and parity checks do
+  not silently run without native stage timing when using the native wrapper
+  naming scheme. No trainer default changed.
+
+  Verification note: rebuilt the SM120 native artifacts on CUDA 13.3, verified
+  no-Torch native CLI/SDK/inference dispatch, reran the focused native dispatch
+  pytest slice, and ran idle dedicated-RTX-5090 parity gates. The rebuilt
+  linked trainer completed the 3-step llm.kittens comparison at roughly `208k`
+  NeuralFn tokens/sec versus roughly `216k` llm.kittens tokens/sec, and the
+  stage-timed rerun exposed the remaining kernel bottlenecks in block backward
+  and LM-head backward.
+
 - Added an explicit rejected SM120 benchmark profile for direct cuBLASLt BGRADB
   first-write bias gradients: `bgrad_first_write_direct` expands to
   `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1`. The route is not promoted: the
