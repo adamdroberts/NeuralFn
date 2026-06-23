@@ -354,6 +354,11 @@ matmul descriptors and matrix layouts instead of recreating them for every
 GEMM; set `NFN_TILE_CUDA_CUBLASLT_DESCRIPTOR_CACHE=0` or
 `NFN_NATIVE_LINEAR_CUBLASLT_DESCRIPTOR_CACHE=0` only for paired profiling
 against the older descriptor-recreate path.
+The SM120 candidate wrapper's `cublaslt_min_waves` profile is rejected by
+default. The CUDA 13.3 dedicated-RTX-5090 3-step/2-sample recheck changed
+cuBLASLt selected heuristics and slightly improved train-loop wall time
+(`0.998752x`), but failed the required stage gates with LM-head backward at
+`1.001151x` and MLP projection total at `1.020829x`.
 The BF16 operand cache is only for stable operands such as weights and biases;
 BF16-output GEMMs repack mutable activation inputs because native scratch
 activation pointers are reused with new contents.

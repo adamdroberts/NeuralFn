@@ -835,7 +835,11 @@ provides default-off `cublaslt_min_waves` and `cublaslt_max_waves` profiles for
 global cuBLASLt policy bisection. Leave both unset for normal training: the
 CUDA 13.3 RTX 5090 3-step/3-sample gates rejected `min_waves` at
 `1.002017x` train-loop wall time and rejected `max_waves` at `1.008622x`, with
-block-backward regressions in both cases. Shape-specific cuBLASLt overrides
+block-backward regressions in both cases. A fresh CUDA 13.3 dedicated-RTX-5090
+3-step/2-sample recheck still rejects `min_waves`: train-loop wall time was
+slightly better at `0.998752x`, but LM-head backward regressed to `1.001151x`
+and MLP projection total to `1.020829x`, so the stage gates failed.
+Shape-specific cuBLASLt overrides
 also remain diagnostic-only: overriding LM-head dWeight
 `768,50304,32768,N,T` from heuristic `1` to `0` was nearly neutral but failed
 strict LM-head gates at `stage.lm_head_backward.total_ms=1.000373x` and
