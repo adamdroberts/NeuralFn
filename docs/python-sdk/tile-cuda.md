@@ -132,6 +132,17 @@ JSON includes `block_backward.mlp_proj.grad_out_bf16`, which isolates the
 projection-gradient float32-to-BF16 pack from the surrounding MLP projection
 dWeight and dInput kernels.
 
+For isolated block-backward and LM-head linear kernel work, use
+`bash tools/bench_linear_backward_candidate.sh`. The wrapper builds
+`build/linear_backward_bench`, loads the trainer-facing raw Tile C ABI, and
+compares a baseline symbol against `NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL` with
+CUDA event timing in one process. Profiles include the current hot shapes:
+`mlp-proj-dinput`, `mlp-proj-dweight`, `mlp-fc-dinput`, `mlp-fc-dweight`,
+`qkv-dinput`, `qkv-dweight`, `attn-proj-dinput`, `attn-proj-dweight`,
+`lm-head-dinput`, and `lm-head-dweight`. Use
+`NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` to fail a candidate that is slower than
+the current ABI symbol before spending time in full trainer-loop parity runs.
+
 Native BF16 `cublasGemmEx` fallback paths expose default-off bisection controls
 for CUDA 13.3+ performance work. Set
 `NFN_NATIVE_LINEAR_BF16_GEMM_EX_ALGO=N` or

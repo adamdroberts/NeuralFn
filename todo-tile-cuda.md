@@ -677,6 +677,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Move dense GPT startup flag translation into the compiled `nfn_native_train` frontend so `--dataset tinystories`, `--output`, `--kernel-backend`, `--template` / `--preset`, `--graph`, `--native-cuda-*`, default `--train-transformer-lm`, default `--backend tile-cuda`, default TinyStories alias fallback, and GPT-3's implicit 2048 context no longer require the Python `nfn train` / `train_gpt.py` argument shim.
 - [x] Add opt-in CUDA-event packed-attention backward section timing (`NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1`) so dprep and TK backward costs are reported separately in native GPT runtime JSON without using Torch, Python tensors, or graph-editor nodes.
 - [ ] Close the remaining measured SM120 throughput gap between the NeuralFn-owned `libnfn_native_train_tile_ops.so` loop and the `llm.kittens` SM120 reference script.
+  - 2026-06-23 added `tools/bench_linear_backward_candidate.sh` and the native
+    `linear_backward_bench` C++ harness so new block-backward and LM-head linear
+    kernels can be compared against the current raw Tile C ABI symbols in one
+    CUDA process before spending time on full trainer-loop parity. Profiles now
+    cover `mlp-proj`, `mlp-fc`, `qkv`, `attn-proj`, and `lm-head` dInput/dWeight
+    shapes with CUDA-event timing and optional no-regression gates.
   - 2026-06-22 after the no-loss LM-head CE specialization became the default, a 10-step same-script parity sample still measured NeuralFn at `1.021069x` train-loop wall time and `0.978059x` tokens/sec versus `/mnt/disk2/dev/open-source/llm.kittens/train-sm120.sh`. A one-step attention-section profile split packed-attention backward into `30.440 ms` dprep and `233.277 ms` TK body over 96 launches, so dprep-only work cannot close the gap. Rechecked compile-time `LLMK_SM120_ATOMIC_DQ` via `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_atomic_dq` after the CE default; keep it rejected because the 3-step, 3-sample dedicated RTX 5090 run measured `1.139065x` train-loop wall time, `0.877916x` tokens/sec, `2.251237x` `stage.block_backward.attn_sdpa.total_ms`, and `2.470843x` attention TK timing versus the current default.
   - 2026-06-22 made the same-script parity wrapper pass `--train-loss-every-steps 0` to the NeuralFn side by default, with `NFN_SM120_PARITY_TRAIN_LOSS_EVERY_STEPS` / `NFN_SM120_TRAIN_LOSS_EVERY_STEPS` as opt-ins, so short parity runs no longer inherit the raw C++ trainer's default train-loss interval. The verification rerun confirmed `train_loss_host_d2h_count: 0` and `lm_head_classifier_loss_bin_launch_count: 0` over 10 steps, but still measured a real gap: llm.kittens `2435.148 ms/step` and `215519.5 tok/s` versus NeuralFn `2501.160 ms/step` and `209618 tok/s`, or `1.027108x` train-loop wall time and `0.972617x` tokens/sec.
   - 2026-06-22 added opt-in NeuralFn CUDA-event train-loop timing behind `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1`, enabled by default from the llm.kittens parity wrapper with `NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0` as the opt-out. Runtime JSON now reports all-step and first-step-excluded event timings, and `tools/paired_kernel_speed.py` maps llm.kittens step logs to the same `train_loop_cuda_event_*` metric names. Use these fields on future parity runs to distinguish actual GPU training-loop time from host wall/setup/validation noise.
@@ -1205,6 +1211,10 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
   `NFN_CUDA_RUNTIME_LIB`. The same optimizer smoke passes unsandboxed with all
   148 AdamW buffer updates.
 - [ ] Close the remaining SM120 parity gap with new kernel work, not more default-switch promotion. The next high-value implementation target is the LM-head classifier/backward contract reported in runtime JSON: fuse or otherwise co-schedule row-chunked BF16 logits, public-vocab CE/dlogits, dHidden, and dWeight so the default path is closer to llm.kittens' full-resident fused classifier without triggering the full-logit memory cliff.
+  - 2026-06-23 added the dedicated linear-backward microbench to keep the next
+    kernel work honest: candidate dInput/dWeight symbols for block backward and
+    LM-head can now be timed against the current C ABI without dataset loading,
+    graph-editor tensors, Python/Torch, or full trainer-loop noise.
   - 2026-06-22 kept the no-loss LM-head classifier CE route default-off after
     retesting it against the current packed-QKV dense GPT default. The route
     sends normal no-loss optimizer steps through the classifier row-loss kernel

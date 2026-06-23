@@ -100,6 +100,16 @@ nfn kernels examples
 
 The native GPT compiled CLI has its own backend selector:
 `--backend tile-cuda` (or Python wrapper `--kernel-backend tile-cuda`). `tile-cuda` is the default and only NeuralFn-owned compiled trainer for dense GPT. Use the parity benchmark script, not a training backend, for llm.kittens reference timing.
+Native linear-backward kernel candidates should be isolated before full parity
+runs with `bash tools/bench_linear_backward_candidate.sh`. The wrapper builds
+`build/linear_backward_bench`, loads the raw Tile C ABI, and compares baseline
+versus candidate symbols for strided BF16 dInput or dWeight kernels using
+CUDA-event timing in one process. Select trainer-shaped profiles with
+`NFN_LINEAR_BACKWARD_PROFILE=mlp-proj-dinput`, `mlp-proj-dweight`,
+`mlp-fc-dinput`, `mlp-fc-dweight`, `qkv-dinput`, `qkv-dweight`,
+`attn-proj-dinput`, `attn-proj-dweight`, `lm-head-dinput`, or
+`lm-head-dweight`; set `NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL` for a new C ABI
+symbol and `NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` for a no-regression gate.
 The compiled runtime reports token-weight startup routes with
 `token_weight_init_strategy`, `token_weight_vector4_strided_init_requested`,
 `token_weight_padded_init_fusion_requested`,

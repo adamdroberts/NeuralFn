@@ -122,7 +122,20 @@ inside one CUDA process with event timing, route counters, and a
 candidate that is not a real fused kernel or is slower than the baseline. The
 wrapper defaults `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=auto`, selecting an
 idle display-disabled NVIDIA GPU when `nvidia-smi` can report one; set it or
-`NFN_LM_HEAD_BACKWARD_CUDA_DEVICE` explicitly to pin the benchmark. A
+`NFN_LM_HEAD_BACKWARD_CUDA_DEVICE` explicitly to pin the benchmark. A matching
+lower-level linear-backward harness is available as
+`bash tools/bench_linear_backward_candidate.sh`. It builds
+`build/linear_backward_bench`, loads `libnfn_native_train_tile_ops.so`, and
+compares baseline versus candidate C ABI symbols for the strided BF16 dInput or
+dWeight kernels inside one CUDA process. Use
+`NFN_LINEAR_BACKWARD_PROFILE=mlp-proj-dinput`, `mlp-proj-dweight`,
+`mlp-fc-dinput`, `mlp-fc-dweight`, `qkv-dinput`, `qkv-dweight`,
+`attn-proj-dinput`, `attn-proj-dweight`, `lm-head-dinput`, or
+`lm-head-dweight` to isolate the current block-backward and LM-head hot shapes
+without dataset, graph-editor, or trainer-loop noise. Override
+`NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL` for a new kernel candidate and set
+`NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` when the candidate must be no slower than
+the current symbol. A
 post-reinstall wrapper
 timing check also confirms that
 `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run --native-cuda-print-command`

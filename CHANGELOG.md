@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an isolated native CUDA Tile linear-backward candidate benchmark for the
+  remaining SM120 throughput work. `tools/bench_linear_backward_candidate.sh`
+  builds `build/linear_backward_bench`, loads the trainer-facing raw Tile C ABI,
+  and compares baseline versus candidate symbols for strided BF16 dInput or
+  dWeight kernels with CUDA-event timing in one process. Profiles cover the
+  current hot block-backward and LM-head shapes: MLP projection, MLP FC, QKV,
+  attention projection, and LM-head dInput/dWeight. This does not change trainer
+  defaults; it gives new kernel candidates a focused no-regression gate before
+  full native-vs-llm.kittens parity runs.
+
+  Verification: added static native GPT coverage for the new source/build/wrapper
+  contract; ran shell syntax checks, compiled the bench with CUDA 13.3, and ran
+  smoke profile timing on the dedicated RTX 5090.
+
 - Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_32768` as a
   rejected rollback candidate for normal real launches. The CUDA 13.3 dedicated
   RTX 5090 3-step, 2-sample stage-timed rerun changed the LM-head row chunk

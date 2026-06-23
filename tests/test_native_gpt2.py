@@ -256,6 +256,7 @@ def test_native_no_torch_dependency_verifier_includes_optional_built_artifacts()
     assert Path("build/nfn_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_gpt2_evo_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_nanogpt_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
+    assert Path("build/linear_backward_bench") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert "neuralfn/_native*.so" in module.OPTIONAL_DEFAULT_ARTIFACT_GLOBS
 
 
@@ -617,6 +618,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'if [[ "$FORCE_DISABLE_ROUTE_CHANGE" == "1" ]]; then' in candidate_bench
     assert "REQUIRE_NATIVE_ROUTE_CHANGE=0" in candidate_bench
     assert 'Path("build/nfn_gpt_native_train_linked")' in no_torch_verifier
+    assert 'Path("build/linear_backward_bench")' in no_torch_verifier
 
 
 def test_native_gpt_cli_supports_json_output_file_aliases() -> None:
@@ -1459,6 +1461,49 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "tools/build_native_train_tile_ops.sh" in wrapper
     assert "--candidate-symbol" in wrapper
     assert "--baseline-symbol" in wrapper
+
+
+def test_native_gpt_linear_backward_microbench_profiles_block_and_lm_head_shapes() -> None:
+    root = Path(__file__).resolve().parents[1]
+    bench_source = (
+        root / "neuralfn" / "csrc" / "native_train" / "linear_backward_bench.cpp"
+    ).read_text(encoding="utf-8")
+    build_script = (root / "tools" / "build_linear_backward_bench.sh").read_text(
+        encoding="utf-8"
+    )
+    wrapper = (root / "tools" / "bench_linear_backward_candidate.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "using LinearDinputStridedFn = int (*)(" in bench_source
+    assert "using LinearDweightStridedFn = int (*)(" in bench_source
+    assert "nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_float32" in (
+        bench_source
+    )
+    assert "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta" in (
+        bench_source
+    )
+    assert "linear_backward_tile_ops" in bench_source
+    assert "candidate_to_baseline_ms_per_iter_ratio" in bench_source
+    assert "cudaEventElapsedTime" in bench_source
+    assert "timed_reset_between_iterations" in bench_source
+    assert "neuralfn/csrc/native_train/linear_backward_bench.cpp" in build_script
+    assert "-lcudart -ldl" in build_script
+    assert "NFN_LINEAR_BACKWARD_PROFILE" in wrapper
+    assert "NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL" in wrapper
+    assert "NFN_LINEAR_BACKWARD_BASELINE_SYMBOL" in wrapper
+    assert "NFN_LINEAR_BACKWARD_CUDA_VISIBLE_DEVICES" in wrapper
+    assert "select_auto_cuda_device" in wrapper
+    assert "mlp-proj-dinput|mlp_proj_dinput" in wrapper
+    assert "mlp-fc-dweight|mlp_fc_dweight" in wrapper
+    assert "qkv-dinput|qkv_dinput" in wrapper
+    assert "attn-proj-dweight|attn_proj_dweight" in wrapper
+    assert "lm-head-dinput|lm_head_dinput" in wrapper
+    assert "lm-head-dweight|lm_head_dweight" in wrapper
+    assert "DEFAULT_ROWS=65536" in wrapper
+    assert "DEFAULT_ROWS=49152" in wrapper
+    assert "NFN_LINEAR_BACKWARD_MAX_RATIO" in wrapper
+    assert "tools/build_native_train_tile_ops.sh" in wrapper
+    assert "--grad-out-row-stride" in wrapper
 
 
 def test_native_gpt_cuda_error_35_reports_runtime_visibility_hint() -> None:

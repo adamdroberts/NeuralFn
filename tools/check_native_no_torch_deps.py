@@ -31,6 +31,7 @@ OPTIONAL_DEFAULT_ARTIFACTS = (
     Path("build/nfn_jepa_native_train"),
     Path("build/nfn_semantic_router_moe_native_train"),
     Path("build/nfn_deepseek_v4_native_train"),
+    Path("build/linear_backward_bench"),
     Path("build/libnfn_native_train_tile_ops_tk.so"),
 )
 OPTIONAL_DEFAULT_ARTIFACT_GLOBS = (
