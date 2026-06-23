@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked the `token_weight_threaded` and `token_weight_fast_int32` SM120 native
+  wrapper profiles as rejected by default after CUDA 13.3 dedicated-RTX-5090
+  startup-only reruns. `token_weight_threaded` improved total setup to
+  `0.978343x` only through unrelated arena timing while its own
+  `setup.token_weight_init.total_ms` regressed to `1.122857x`.
+  `token_weight_fast_int32` regressed setup wall time to `1.009714x` and token
+  initialization to `1.035894x` versus the current vector4 default.
+
+  Verification note: ran 3-sample same-script startup-only paired benchmarks
+  for both profiles on the dedicated RTX 5090, then updated wrapper
+  source-contract coverage plus README and SDK Tile-CUDA notes.
+
 - Marked the `lm_head_tk_dinput_32768` SM120 native wrapper profile as rejected
   by default after a CUDA 13.3 dedicated-RTX-5090 same-script rerun. The route
   changed the intended LM-head dHidden backend from BF16 GEMMEx to TK dInput

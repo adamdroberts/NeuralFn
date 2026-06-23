@@ -1057,6 +1057,14 @@ unrelated arena timing while its own token init regressed (`1.009360x`),
 `combined_device_arena` regressed startup-only setup (`1.060057x`) versus the
 forced older allocation route. Keep the current linked/native defaults unless a
 same-script sweep passes the relevant stage gate for the optimized bucket.
+The current dedicated-RTX-5090 rerun keeps that policy: `token_weight_threaded`
+is now a rejected wrapper profile because it only improved total setup via
+arena-timing variance (`0.978343x`) while its own token initialization regressed
+to `1.122857x`, and `token_weight_fast_int32` is rejected because it regressed
+both setup wall time (`1.009714x`) and token initialization (`1.035894x`) versus
+the vector4 default. Set
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only when intentionally
+rerunning those rejected routes after a CUDA or kernel change.
 Add
 `--append-native-profile-json-dir /tmp/nfn-profiles`
 when comparing native NeuralFn commands that do not already write JSON; the

@@ -1980,6 +1980,15 @@ the selected path as
 paired route-change gate can distinguish the hidden Tile dispatch. They remain
 diagnostic-only; the default compiled trainer still uses the fused vector4
 FP32/BF16-shadow initializer.
+On the current dedicated RTX 5090 CUDA 13.3 stack, the wrapper rejects
+`token_weight_threaded` by default because a 3-sample startup-only rerun
+improved total setup only through unrelated arena timing (`0.978343x`) while
+the token-weight stage regressed to `1.122857x`. It also rejects
+`token_weight_fast_int32` because the same startup-only gate regressed setup
+wall time to `1.009714x` and token-weight initialization to `1.035894x` versus
+the vector4 default. Set
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for deliberate
+post-kernel-change revalidation.
 For a direct check of the rejected vector4 BF16 pattern writer, set
 `NFN_SM120_NATIVE_STARTUP_ONLY=1` and put
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` in
