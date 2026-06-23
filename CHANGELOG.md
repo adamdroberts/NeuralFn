@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Clarified the dense GPT cooperative LM-head strict ABI contract and tightened
+  the SM120 candidate wrapper around
+  `lm_head_cooperative_backward_required`. The profile is now tagged as a strict
+  ABI preflight probe rather than a metric-gated speed candidate: the wrapper
+  disables automatic ratio and route-change gates for that profile and prints a
+  preflight note on real runs. Current Tile ops builds may expose
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`, but
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+  returns `0`, so runtime JSON must keep
+  `lm_head_cooperative_backward_kernel_available` and
+  `lm_head_cooperative_backward_fused_kernel_available` false until the strict
+  callable has a real fused/cooperative body.
+
+  Verification note: updated the SM120 wrapper source-contract coverage plus
+  README, CLI, SDK, and CUDA Tile TODO docs; ran shell syntax and focused pytest
+  coverage for the wrapper expansion.
+
 - Refreshed the current SM120 llm.kittens parity measurement after the linked
   native default and CE-profile cleanup. On the dedicated idle RTX 5090,
   `NFN_SM120_PARITY_STEPS=5 NFN_SM120_PARITY_SAMPLES=1

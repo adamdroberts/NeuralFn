@@ -389,10 +389,13 @@ is the existing event-ordered sequence wrapper and only satisfies
 `lm_head_cooperative_backward_sequence_wrapper_available`.
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` is the
 future strict fused classifier/dHidden/dWeight callable and must be loaded
-before `lm_head_cooperative_backward_fused_kernel_available` or
+with a nonzero
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+capability before `lm_head_cooperative_backward_fused_kernel_available` or
 `lm_head_cooperative_backward_kernel_enabled` can become true. SDK and CLI
-strict runs therefore still fail on wrapper-only builds instead of silently
-benchmarking the older CE plus dHidden plus dWeight sequence.
+strict runs therefore still fail on wrapper-only or placeholder-symbol builds
+instead of silently benchmarking the older CE plus dHidden plus dWeight
+sequence.
 
 `NativeGptRunConfig.train_loss_every_steps` and
 `NativeGpt2RunConfig.train_loss_every_steps` default to `0` and forward
@@ -1910,14 +1913,16 @@ LM-head backward to `1.103379x`. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` or
 pass `--require-cooperative-lm-head-backward` to the compiled dense GPT CLI
 when a parity/preflight run must require the strict cooperative LM-head backward
-Tile ABI. Rebuilt Tile ops libraries now export the strict
+Tile ABI. Rebuilt Tile ops libraries can export the strict
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` callable,
-so the required guard can pass, but the current strict body is co-scheduled
-rather than a single fused parity kernel: it launches CE first, then queues
-dHidden and dWeight on persistent non-blocking side streams. Runtime strategy
-strings include
-`strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight-not-single-kernel`.
-Wrapper-only builds still fail the strict guard.
+but current builds return `0` from
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
+That means the required guard remains a strict ABI preflight and fails until a
+real single-kernel or genuinely fused cooperative classifier/dHidden/dWeight
+body lands. The SM120 candidate wrapper labels
+`lm_head_cooperative_backward_required` as a strict probe rather than a
+metric-gated speed candidate. Wrapper-only and placeholder-symbol builds still
+fail the strict guard.
 The non-required candidate route now explicitly enables the event-ordered
 sequence wrapper and reports
 `lm_head_cooperative_backward_sequence_wrapper_enabled: true`, which lets the
@@ -1946,11 +1951,12 @@ contains the wrapper symbol; wrapper-only libraries report
 The existing
 `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
 symbol remains the event-ordered sequence wrapper probe. The strict
-co-scheduled implementation exports the separate
+probe uses the separate
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` symbol plus
-a nonzero
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
-capability. Runtime JSON reports the placeholder symbol as
+a nonzero result from
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
+Current builds return `0` from that capability probe. Runtime JSON reports the
+placeholder symbol as
 `lm_head_cooperative_backward_fused_kernel_symbol_available` and the semantic
 capability as
 `lm_head_cooperative_backward_fused_kernel_capability_available`; only the

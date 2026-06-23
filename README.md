@@ -662,28 +662,25 @@ replaces the ABI internals with a cooperative classifier plus dHidden/dWeight
 kernel.
 Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or the
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` benchmark
-profile to request the current cooperative LM-head backward path. The rebuilt
-Tile ops library now exports both the diagnostic sequence wrapper and the
-strict callable symbol
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`; the strict
-symbol is a co-scheduled implementation, not a single fused SM120 parity
-kernel. It uses persistent non-blocking CUDA streams plus events to queue
-dHidden and dWeight after CE, while still reusing the existing CE, dHidden, and
-dWeight kernels. Runtime JSON reports
-`strict-cooperative-abi-co-scheduled-ce-side-stream-dhidden-dweight-not-single-kernel`
-when that strict route is active.
+profile to request the current cooperative LM-head backward diagnostic path.
+That path is the event-ordered sequence wrapper: it still launches the existing
+CE, dHidden, and dWeight kernels and is rejected by default as a speed
+candidate. The separate strict callable symbol
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` may be
+present in a Tile ops build, but current builds report
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused() == 0`.
+Runtime JSON therefore keeps `lm_head_cooperative_backward_kernel_available`
+and `lm_head_cooperative_backward_fused_kernel_available` false until a real
+single-kernel or genuinely fused cooperative body is implemented.
 Use `--require-cooperative-lm-head-backward` on `nfn_gpt_native_train` or the
 named benchmark profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` when
 a parity run must require the true fused cooperative classifier/dHidden/dWeight
-Tile ABI to be available and integrated. Wrapper-only builds still fail this
-strict guard and report
+Tile ABI to be available and integrated. The SM120 wrapper treats this named
+profile as a strict ABI preflight probe, not a metric-gated speed candidate.
+Wrapper-only or placeholder-symbol builds still fail this strict guard and report
 `abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity` instead
-of marking the route integrated. Keep the co-scheduled route opt-in: the CUDA
-13.3 dedicated RTX 5090 one-step, two-sample same-script gate proved route
-execution with 16 cooperative CE/dHidden/dWeight launches but rejected promotion
-at `1.022567x` train-loop wall and `0.977929x` tokens/sec versus the normal
-native baseline.
+of marking the route integrated.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins` enables the
 same strict cooperative ABI plus `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`
 and `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1`; the wrapper also applies
@@ -721,10 +718,10 @@ The existing
 is the event-ordered sequence wrapper and only makes
 `lm_head_cooperative_backward_sequence_wrapper_available` true. The strict
 fused-kernel probe uses the separate future symbol
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus the
-nonzero
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
-capability. Runtime JSON reports
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus a
+nonzero result from
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
+Current builds return `0` from that capability probe. Runtime JSON reports
 `lm_head_cooperative_backward_fused_kernel_symbol_available` for the placeholder
 symbol separately from
 `lm_head_cooperative_backward_fused_kernel_capability_available`; only the

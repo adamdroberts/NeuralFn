@@ -1006,6 +1006,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1" in text
     assert "NFN_NATIVE_GPT_FULL_BATCH_LM_HEAD_REUSE=1" in text
     assert "lm_head_cooperative_loss_bins" in text
+    assert "STRICT_PROBE_CANDIDATE_PROFILE" in text
+    assert "strict ABI preflight probe, not a speed candidate" in text
+    assert "AUTO_DISABLE_METRIC_RATIO_GATES=1" in text
+    assert "FORCE_DISABLE_ROUTE_CHANGE=1" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1" in text
     assert "token_weight_vector4_strided" in text
     assert "token_weight_threaded" in text
@@ -1996,6 +2000,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         "--require-cooperative-lm-head-backward"
         in cooperative_required_payload["candidate_command"]
     )
+    assert cooperative_required_payload["candidate_env"][
+        "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD"
+    ] == "1"
     assert cooperative_required_payload["metric_ratio_gates"]["enabled"] is False
 
     cooperative_loss_bins_output_path = (

@@ -127,6 +127,7 @@ CANDIDATE_EXTRA_ARGS_RAW="$(env_or_alias NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS N
 TIMEOUT_PRONE_CANDIDATE_PROFILE=""
 REJECTED_CANDIDATE_PROFILE=""
 REJECTED_CANDIDATE_REASON=""
+STRICT_PROBE_CANDIDATE_PROFILE=""
 AUTO_ATTENTION_SECTION_TIMING=0
 FORCE_DISABLE_ROUTE_CHANGE=0
 if [[ -z "$CANDIDATE_EXTRA_ARGS_RAW" && -n "${NFN_SM120_NATIVE_CANDIDATE_ARGS-}" ]]; then
@@ -374,6 +375,9 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_EXTRA_ARGS_RAW="${CANDIDATE_EXTRA_ARGS_RAW:+$CANDIDATE_EXTRA_ARGS_RAW }--lm-head-row-chunk-size 65536"
     ;;
   "lm_head_cooperative_backward_required"|"lm-head-cooperative-backward-required"|"require_cooperative_lm_head_backward"|"require-cooperative-lm-head-backward")
+    STRICT_PROBE_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    AUTO_DISABLE_METRIC_RATIO_GATES=1
+    FORCE_DISABLE_ROUTE_CHANGE=1
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1"
     CANDIDATE_EXTRA_ARGS_RAW="${CANDIDATE_EXTRA_ARGS_RAW:+$CANDIDATE_EXTRA_ARGS_RAW }--require-cooperative-lm-head-backward"
     ;;
@@ -448,6 +452,16 @@ if [[ -n "$TIMEOUT_PRONE_CANDIDATE_PROFILE" ]]; then
       echo "NFN_SM120_NATIVE_CANDIDATE_PROFILE=$TIMEOUT_PRONE_CANDIDATE_PROFILE is timeout-prone on the 64x1024 SM120 GPT shape." >&2
       echo "Set NFN_SM120_NATIVE_ALLOW_TIMEOUT_PRONE_LM_HEAD_PROFILE=1 to run it intentionally, or use NFN_SM120_NATIVE_DRY_RUN_PLAN=1 to inspect expansion only." >&2
       exit 2
+      ;;
+  esac
+fi
+if [[ -n "$STRICT_PROBE_CANDIDATE_PROFILE" ]]; then
+  case "${DRY_RUN_PLAN,,}" in
+    "1"|"true"|"yes"|"on")
+      ;;
+    *)
+      echo "NFN_SM120_NATIVE_CANDIDATE_PROFILE=$STRICT_PROBE_CANDIDATE_PROFILE is a strict ABI preflight probe, not a speed candidate." >&2
+      echo "It is expected to fail until the loaded Tile ops library reports a true fused cooperative LM-head backward capability." >&2
       ;;
   esac
 fi
