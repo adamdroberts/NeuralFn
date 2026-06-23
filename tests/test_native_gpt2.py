@@ -8920,7 +8920,8 @@ def test_top_level_nfn_train_explicit_unified_cli_overrides_direct_family_native
     )
 
     assert proc.returncode == 0, proc.stderr
-    assert "--base-model\ngpt2-evo" in proc.stdout
+    assert str(unified_cli) in proc.stdout
+    assert "--base-model gpt2-evo" in proc.stdout
     assert "--tinystories" in proc.stdout
     assert "--print-command" in proc.stdout
     assert "--dry-run" in proc.stdout
