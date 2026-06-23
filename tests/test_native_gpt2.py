@@ -772,6 +772,8 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "lm_head_classifier_no_loss_chunk_count" in speed_tool
     assert "lm_head_ce_no_loss_default_specialized_requested" in speed_tool
     assert "lm_head_ce_no_loss_default_specialized_enabled" in speed_tool
+    assert "lm_head_ce_no_loss_llmk_style_specialized_requested" in speed_tool
+    assert "lm_head_ce_no_loss_llmk_style_specialized_enabled" in speed_tool
     assert "lm_head_ce_row_loss_reduction_enabled" in speed_tool
     assert "lm_head_ce_row_loss_sum_accumulate_requested" in speed_tool
     assert "lm_head_ce_row_loss_sum_accumulate_enabled" in speed_tool
@@ -1413,6 +1415,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_loss_bins": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1",
         "lm_head_ce_loss_bins_default_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED=1",
         "lm_head_ce_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
+        "lm_head_ce_no_loss_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_ce_loss_bins_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1 NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
         "cublaslt_block_dinput_h3_65536": "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,65536,3072,N,N,3:768,65536,2304,N,N,3",
         "lm_head_row_loss_partial_reduce": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0",
@@ -6924,12 +6927,16 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_TILE_CUDA_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED" in kernels_text
+    assert "NFN_TILE_CUDA_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED" in kernels_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED" in kernels_text
+    assert "NFN_NATIVE_GPT2_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED" in kernels_text
     assert "NFN_TILE_CUDA_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED" in kernels_text
     assert "lm_head_ce_default_specialized_enabled" in gpt2_source_text
     assert "lm_head_ce_no_loss_default_specialized_enabled" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED" in gpt2_source_text
+    assert "lm_head_ce_no_loss_llmk_style_specialized_enabled" in gpt2_source_text
     assert "lm_head_ce_llmk_style_specialized_enabled" in gpt2_source_text
     assert "lm_head_ce_loss_bins_default_specialized_enabled" in gpt2_source_text
     assert "lm_head_ce_loss_bin_reduction_runtime_enabled" in gpt2_source_text
@@ -6946,8 +6953,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "lm_head_ce_kernel_strategy" in gpt2_source_text
     assert "default-specialized-row-loss-vec8-loads-scalar-stores" in gpt2_source_text
     assert "default-specialized-loss-bins-vec8-loads-scalar-stores" in gpt2_source_text
+    assert "no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores" in gpt2_source_text
     assert "llmk-style-row-loss-vec8-loads-streaming-vec8-stores" in gpt2_source_text
     assert "llmk-style-loss-bins-vec8-loads-streaming-vec8-stores" in gpt2_source_text
+    assert "token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_llmk_style_kernel" in kernels_text
     assert "lm_head_classifier_backward_loss_bins_default_bf16_bits_u16_targets_kernel" in kernels_text
     assert "lm_head_classifier_backward_row_losses_llmk_style_bf16_bits_u16_targets_kernel" in kernels_text
     assert "lm_head_classifier_backward_loss_bins_llmk_style_bf16_bits_u16_targets_kernel" in kernels_text

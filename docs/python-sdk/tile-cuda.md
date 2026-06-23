@@ -1964,6 +1964,20 @@ sequence wrapper and reports
 `lm_head_cooperative_backward_sequence_wrapper_enabled: true`, which lets the
 paired benchmark route-change gate reject no-op candidate runs while preserving
 the strict fused-kernel contract.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized`
+is the current no-loss classifier-store diagnostic. It expands to
+`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1` and keeps
+`--train-loss-every-steps 0` on both sides so the comparison stays on the
+no-loss optimizer-step path. The Tile CUDA route uses a dedicated BF16/u16
+CE+dlogits kernel with vec8 BF16 loads and streaming vec8 stores, and runtime
+JSON reports `lm_head_ce_no_loss_llmk_style_specialized_requested`,
+`lm_head_ce_no_loss_llmk_style_specialized_enabled`, and
+`lm_head_ce_kernel_strategy:
+no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores`. Keep this route
+diagnostic-only: the CUDA 13.3 dedicated RTX 5090 3-step, 3-sample stage-timed
+gate proved the strategy change and improved train-loop wall time to
+`0.994628x`, but failed strict hot-stage gates at `1.000785x` LM-head
+backward, `1.002295x` LM-head CE, and `1.000536x` MLP projection.
 Runtime JSON reports
 `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,

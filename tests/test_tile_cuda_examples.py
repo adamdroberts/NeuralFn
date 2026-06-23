@@ -980,6 +980,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "regressed CUDA-event wall time to 1.019563x" in text
     assert "lm_head_ce_default_specialized" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1" in text
+    assert "lm_head_ce_no_loss_llmk_style_specialized" in text
+    assert "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1" in text
     assert "lm_head_loss_bins" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1" in text
     assert "lm_head_row_loss_sum_accumulate" in text
@@ -1772,6 +1774,42 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "1"
     )
     assert ce_specialized_payload["metric_ratio_gates"]["enabled"] is False
+
+    ce_no_loss_llmk_output_path = tmp_path / "candidate-ce-no-loss-llmk-dry-run.json"
+    ce_no_loss_llmk_env = os.environ.copy()
+    ce_no_loss_llmk_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_STAGE_TIMING": "1",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_ce_no_loss_llmk_style_specialized",
+            "NFN_SM120_NATIVE_JSON_OUT": str(ce_no_loss_llmk_output_path),
+        }
+    )
+
+    ce_no_loss_llmk_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=ce_no_loss_llmk_env,
+    )
+
+    assert ce_no_loss_llmk_dry_run.returncode == 0, ce_no_loss_llmk_dry_run.stderr
+    ce_no_loss_llmk_payload = json.loads(
+        ce_no_loss_llmk_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        ce_no_loss_llmk_payload["candidate_env"][
+            "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED"
+        ]
+        == "1"
+    )
+    assert "--train-loss-every-steps" in ce_no_loss_llmk_payload["candidate_command"]
+    assert "0" in ce_no_loss_llmk_payload["candidate_command"]
+    assert ce_no_loss_llmk_payload["metric_ratio_gates"]["enabled"] is False
 
     loss_bins_output_path = tmp_path / "candidate-loss-bins-dry-run.json"
     loss_bins_env = os.environ.copy()

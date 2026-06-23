@@ -6,6 +6,29 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a diagnostic no-loss llm.kittens-style LM-head CE+dlogits route behind
+  `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1` and the paired
+  wrapper profile
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized`.
+  The Tile CUDA kernel uses vec8 BF16 loads plus streaming vec8 stores for the
+  default no-loss optimizer-step classifier path, and runtime JSON now reports
+  `lm_head_ce_no_loss_llmk_style_specialized_requested`,
+  `lm_head_ce_no_loss_llmk_style_specialized_enabled`, and
+  `lm_head_ce_kernel_strategy:
+  no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores`. The profile is
+  rejected by default: the CUDA 13.3 dedicated RTX 5090 3-step, 3-sample
+  stage-timed gate proved the strategy change and improved
+  `train_loop_wall_ms_per_step` to `0.994628x`, but missed strict hot-stage
+  gates at `stage.lm_head_backward.total_ms=1.000785x`,
+  `stage.lm_head_backward.ce.total_ms=1.002295x`, and
+  `stage.block_backward.mlp_proj.total_ms=1.000536x`.
+
+  Verification note: rebuilt `build/libnfn_native_train_tile_ops.so`,
+  `build/nfn_gpt_native_train`, and `build/nfn_gpt_native_train_linked`; the
+  one-step smoke wrote `/tmp/nfn_no_loss_llmk_smoke.json`; the rejected
+  candidate benchmark wrote `/tmp/nfn_no_loss_llmk_candidate2.json`; focused
+  source-contract and wrapper tests were updated.
+
 - Refreshed the current no-stage llm.kittens parity sample on the dedicated RTX
   5090 and added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=layernorm_affine_row_chunk_96`
   as another rejected diagnostic for the dense GPT LayerNorm affine/residual

@@ -407,6 +407,23 @@ bool lm_head_ce_llmk_style_specialized_enabled() {
   return value;
 }
 
+bool lm_head_ce_no_loss_llmk_style_specialized_enabled() {
+  static const bool value = []() {
+    const char* raw = std::getenv("NFN_TILE_CUDA_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED");
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED");
+    }
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT2_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED");
+    }
+    return raw != nullptr &&
+           (std::strcmp(raw, "1") == 0 || std::strcmp(raw, "true") == 0 ||
+            std::strcmp(raw, "TRUE") == 0 || std::strcmp(raw, "on") == 0 ||
+            std::strcmp(raw, "ON") == 0);
+  }();
+  return value;
+}
+
 bool lm_head_ce_loss_bins_default_specialized_enabled() {
   static const bool value = []() {
     const char* raw = std::getenv("NFN_TILE_CUDA_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED");
@@ -12016,6 +12033,67 @@ __global__ void token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bi
   }
 }
 
+__global__ void token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_llmk_style_kernel(
+    std::uint16_t* __restrict__ logits,
+    const std::uint16_t* __restrict__ targets,
+    std::int64_t rows,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    bool reverse_rows) {
+  const std::int64_t launch_row = static_cast<std::int64_t>(blockIdx.x);
+  const std::int64_t row = reverse_rows ? rows - launch_row - 1 : launch_row;
+  if (row >= rows) {
+    return;
+  }
+  __shared__ float reduce_max_shared[32];
+  __shared__ float reduce_sum_shared[32];
+
+  std::uint16_t* row_logits = logits + row * row_stride;
+  float thread_max = bf16_row_max_vec8_or_scalar(row_logits, vocab, true);
+  const float row_max = block_reduce_max_f32(thread_max, reduce_max_shared);
+
+  float thread_sum = bf16_row_exp_sum_vec8_or_scalar(row_logits, vocab, row_max, true, false);
+  const float row_denom = block_reduce_sum_f32(thread_sum, reduce_sum_shared);
+  const std::uint16_t target = targets[row];
+
+  constexpr std::int64_t kVec = 8;
+  const std::int64_t aligned_vocab = vocab & ~(kVec - 1);
+  for (std::int64_t col = static_cast<std::int64_t>(threadIdx.x) * kVec;
+       col < aligned_vocab;
+       col += static_cast<std::int64_t>(blockDim.x) * kVec) {
+    const int4 packed = load_bf16_vec8(row_logits + col);
+    std::uint16_t grad[8];
+#pragma unroll
+    for (int offset = 0; offset < 8; ++offset) {
+      const std::int64_t current_col = col + offset;
+      const float value = bf16_bits_to_f32_device(int4_u16_at(packed, offset));
+      const float prob = expf(value - row_max) / row_denom;
+      const float onehot = current_col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
+      grad[offset] = f32_to_bf16_bits_device((prob - onehot) * loss_scale);
+    }
+    store_bf16_vec8_streaming(
+        row_logits + col,
+        grad[0],
+        grad[1],
+        grad[2],
+        grad[3],
+        grad[4],
+        grad[5],
+        grad[6],
+        grad[7]);
+  }
+  for (std::int64_t col = aligned_vocab + threadIdx.x; col < vocab; col += blockDim.x) {
+    const float value = bf16_bits_to_f32_device(row_logits[col]);
+    const float prob = expf(value - row_max) / row_denom;
+    const float onehot = col == static_cast<std::int64_t>(target) ? 1.0f : 0.0f;
+    store_bf16_scalar(
+        row_logits + col,
+        f32_to_bf16_bits_device((prob - onehot) * loss_scale),
+        true);
+  }
+}
+
 __global__ void token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets_fused_kernel(
     std::uint16_t* __restrict__ logits,
     const std::uint16_t* __restrict__ targets,
@@ -18303,6 +18381,14 @@ void launch_token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u
   const bool vec_loads = cross_entropy_bf16_vec_loads_enabled();
   const bool scalar_streaming_stores = cross_entropy_bf16_scalar_streaming_stores_enabled();
   const bool use_exp2 = cross_entropy_bf16_exp2_enabled();
+  if (lm_head_ce_no_loss_llmk_style_specialized_enabled() &&
+      threads == 1024 &&
+      vec_loads &&
+      !use_exp2) {
+    token_cross_entropy_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_llmk_style_kernel<<<static_cast<int>(rows), threads, 0, stream>>>(
+        logits, targets, rows, vocab, row_stride, loss_scale, lm_head_ce_reverse_rows_enabled());
+    return;
+  }
   if (lm_head_ce_no_loss_default_specialized_enabled() &&
       threads == 1024 &&
       vec_loads &&
