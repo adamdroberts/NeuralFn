@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a named rejected SM120 benchmark profile for the unsafe asymmetric
+  two-chunk LM-head split:
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_49152` expands to
+  `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1 --lm-head-row-chunk-size
+  49152`. The fresh CUDA 13.3 dedicated-RTX-5090 same-script gate changed the
+  LM-head row chunk counter as expected and kept LM-head backward neutral
+  (`0.999602x`), but still regressed train-loop wall time to `1.005439x` and
+  train tokens/sec to `0.994598x`, so the 32768-row default remains active.
+
+  Verification note: ran the allowed paired GPU benchmark on the dedicated RTX
+  5090, added wrapper dry-run coverage for the profile expansion, and kept the
+  README native-training guidance aligned with the rejected result.
+
 - Added a named SM120 benchmark profile for the isolated MLP projection
   BF16/BF16 split-BGRADB diagnostic:
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=mlp_proj_split_bgrad_65536` expands to

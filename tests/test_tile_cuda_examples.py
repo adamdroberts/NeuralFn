@@ -995,6 +995,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "lm_head_pipeline_chunks" in text
     assert "lm_head_overlap_last_dweight" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1" in text
+    assert "lm_head_row_chunk_49152" in text
+    assert "--lm-head-row-chunk-size 49152" in text
     assert "lm_head_row_chunk_65536" in text
     assert "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1" in text
     assert "--lm-head-row-chunk-size 65536" in text
@@ -1832,6 +1834,39 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "--lm-head-row-chunk-size" in full_row_payload["candidate_command"]
     assert "65536" in full_row_payload["candidate_command"]
     assert full_row_payload["metric_ratio_gates"]["enabled"] is False
+
+    split_row_output_path = tmp_path / "candidate-lm-head-row-chunk-49152-dry-run.json"
+    split_row_env = os.environ.copy()
+    split_row_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_row_chunk_49152",
+            "NFN_SM120_NATIVE_JSON_OUT": str(split_row_output_path),
+        }
+    )
+
+    split_row_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=split_row_env,
+    )
+
+    assert split_row_dry_run.returncode == 0, split_row_dry_run.stderr
+    split_row_payload = json.loads(split_row_output_path.read_text(encoding="utf-8"))
+    assert (
+        split_row_payload["candidate_env"][
+            "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK"
+        ]
+        == "1"
+    )
+    assert "--lm-head-row-chunk-size" in split_row_payload["candidate_command"]
+    assert "49152" in split_row_payload["candidate_command"]
+    assert split_row_payload["metric_ratio_gates"]["enabled"] is False
 
     full_resident_output_path = tmp_path / "candidate-lm-head-full-resident-reuse-dry-run.json"
     full_resident_env = os.environ.copy()

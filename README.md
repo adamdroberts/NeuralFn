@@ -69,7 +69,12 @@ the latest named-profile rerun also timed out at 360s. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_65536` only to reproduce
 that rejected diagnostic; it expands to
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1 --lm-head-row-chunk-size
-65536`. Real paired-wrapper runs of timeout-prone LM-head profiles now also
+65536`. The intermediate unsafe
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_49152` profile expands to
+`NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1 --lm-head-row-chunk-size
+49152`; the fresh dedicated-RTX-5090 same-script gate rejected it at
+`1.005439x` train-loop wall time even though LM-head backward was neutral.
+Real paired-wrapper runs of timeout-prone LM-head profiles now also
 require `NFN_SM120_NATIVE_ALLOW_TIMEOUT_PRONE_LM_HEAD_PROFILE=1`; dry-run plan
 expansion remains available without that opt-in. The native runner now rejects
 LM-head chunks above 32768 rows before launching CUDA unless
@@ -476,6 +481,11 @@ The named `lm_head_row_chunk_65536` profile expands to
 rechecks. Keep it diagnostic-only: the current CUDA 13.3 dedicated RTX 5090
 same-script run timed the candidate out at 360s while the safe 32768-row
 baseline completed the 10-step run.
+The named `lm_head_row_chunk_49152` profile expands to the same unsafe opt-in
+plus `--lm-head-row-chunk-size 49152` for testing the asymmetric two-chunk
+split. Keep it diagnostic-only: the fresh CUDA 13.3 dedicated RTX 5090
+same-script gate measured neutral LM-head backward (`0.999602x`) but still
+regressed train-loop wall time (`1.005439x`).
 The helper decodes
 native binary stdout/stderr with replacement, so external CUDA trainers that
 emit non-UTF-8 bytes can still be compared in the same paired run. For
