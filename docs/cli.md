@@ -506,7 +506,11 @@ measured `1.177290x` setup wall time, `2.243472x` float-arena materialization,
 time. JSON reports `device_allocator_strategy`,
 `device_cuda_malloc_async_requested`, `device_cuda_malloc_async_enabled`, async
 symbol availability, async allocation/free counts, and
-`device_cuda_malloc_async_fallback_count`.
+`device_cuda_malloc_async_fallback_count`. The SM120 wrapper profile
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cuda_malloc_async` reproduces the allocator
+check by forcing baseline `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=0` and candidate
+`=1`; it is rejected by default because the CUDA 13.3 RTX 5090 startup gate
+regressed setup wall time and uint16 arena materialization.
 Startup timing JSON reports `setup_timing_accounted_ms`,
 `setup_timing_unattributed_ms`, and `setup_timing_record_count` beside
 `setup_wall_ms`. Use these fields with `timing.setup_timing` to separate

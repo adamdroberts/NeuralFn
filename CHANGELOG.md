@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added the rejected SM120 native candidate profile `cuda_malloc_async` for the
+  existing native async allocator. It expands to baseline
+  `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=0` versus candidate `=1`, but remains
+  default-off because the CUDA 13.3 dedicated RTX 5090 startup-only benchmark
+  regressed setup wall time and the uint16 arena materializer.
+
+  Verification: the 3-sample startup-only candidate run enabled
+  `device_allocator_strategy: cudaMallocAsync-null-stream` but failed the
+  setup gate at `1.145549x`; focused wrapper tests cover the profile name, env,
+  and rejection reason.
+
 - Tightened SM120 native-vs-native candidate benchmark gating. The candidate
   wrapper now enables `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` on both
   baseline and candidate commands by default, and measured training comparisons

@@ -1055,6 +1055,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in text
     assert "combined_device_arena" in text
     assert "NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1" in text
+    assert "cuda_malloc_async" in text
+    assert "NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1" in text
+    assert "setup.uint16_arena_materialize.total_ms to 1.775565x" in text
     assert "bgrad_first_write_direct" in text
     assert "NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1" in text
     assert "qkv_concurrent_dinput_dweight" in text
