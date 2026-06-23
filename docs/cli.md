@@ -1565,6 +1565,16 @@ not active. It no longer measures a row-loss CE fallback during timing-only
 steps, while validation/train-loss paths still exercise row-loss or loss-bin
 collection as requested. Keep the profile rejected/default-off unless the
 paired candidate gate passes.
+`lm_head_cooperative_no_loss_backward` is the explicit no-loss paired profile:
+it expands to `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`,
+`NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1`, and
+`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1`, and appends
+`--train-loss-every-steps 0` to both commands. It remains rejected for real
+launches unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
+The dedicated RTX 5090 one-step stage-timed gate activated the no-loss
+cooperative wrapper but measured `1.117578x` train-loop wall time,
+`1.294010x` LM-head backward time, and `0.894788x` tokens/sec versus the
+default.
 `lm_head_cooperative_loss_bins` adds
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`,
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`, and

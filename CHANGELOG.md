@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_no_loss_backward`
+  to the SM120 native candidate wrapper. The profile expands to the cooperative
+  LM-head sequence wrapper plus the optimizer-only no-loss CE route
+  (`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`,
+  `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1`, and
+  `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1`) and applies
+  `--train-loss-every-steps 0` to both paired commands. It is rejected by
+  default, so normal training remains on the faster serial LM-head path unless
+  an intentional rerun sets `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
+
+  Verification: added source-contract coverage for the new profile expansion.
+  The current dedicated RTX 5090 one-step stage-timed gate activated the
+  no-loss cooperative wrapper but rejected it at `1.117578x` train-loop wall
+  time, `1.294010x` LM-head backward time, and `0.894788x` tokens/sec versus
+  the default.
+
 - Updated the focused LM-head backward benchmark so
   `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` matches the real optimizer-only
   native trainer path. The profile now passes the cooperative no-loss flag,

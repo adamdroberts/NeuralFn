@@ -226,6 +226,17 @@ LM-head CE time. `lm_head_ce_vec8_normal_store` is also rejected: it improved
 the narrow CE bucket to `0.999055x`, but missed the total LM-head gate at
 `1.009078x` and regressed LM-head logits to `1.024165x`, so cached scalar
 stores remain the default.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_no_loss_backward`
+expands to the cooperative LM-head sequence wrapper plus the normal
+optimizer-only no-loss CE route:
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`,
+`NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1`, and
+`NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1`, with
+`--train-loss-every-steps 0` applied to both paired commands. It is rejected
+for real launches unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`
+is set: the dedicated RTX 5090 one-step stage-timed gate activated the no-loss
+cooperative wrapper but regressed train-loop wall time to `1.117578x`,
+LM-head backward to `1.294010x`, and tokens/sec to `0.894788x`.
 
 For local server/editor development, leaving `NEURALFN_REDIS_URL` empty keeps
 live state and persistence in-process. Redis-backed deployments still enqueue
