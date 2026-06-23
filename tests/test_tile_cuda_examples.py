@@ -995,6 +995,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1" in text
     assert "lm_head_pipeline_chunks" in text
     assert "lm_head_overlap_last_dweight" in text
+    assert "regressed train_loop_wall_ms_per_step to 1.001676x" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1" in text
     assert "lm_head_row_chunk_49152" in text
     assert "--lm-head-row-chunk-size 49152" in text

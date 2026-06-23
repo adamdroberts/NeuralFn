@@ -1300,10 +1300,11 @@ accumulation with final norm and block backward. Runtime JSON reports
 `lm_head_overlap_last_dweight_enabled`,
 `lm_head_overlap_last_dweight_queue_count`,
 `lm_head_overlap_last_dweight_sync_count`, `lm_head_side_stream_count`, and the
-stream-enabled fields. Keep it
-diagnostic-only for now: the 2026-06-22 CUDA 13.3 dedicated RTX 5090 3-sample
-gate proved the route active and measured `0.999109x` train-loop wall time, but
-failed the strict total LM-head stage gate at `1.000506x`.
+stream-enabled fields. The wrapper rejects this profile unless
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set: the CUDA 13.3
+dedicated RTX 5090 5-step, 3-sample confirmation proved the route active but
+regressed train-loop wall time to `1.001676x` and train tokens/sec to
+`0.998350x`.
 `lm_head_full_resident_reuse` expands to
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1
 NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS=1

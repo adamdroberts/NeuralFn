@@ -797,6 +797,8 @@ def test_native_gpt2_exposes_lm_head_last_dweight_overlap_candidate() -> None:
     assert "lm_head_backward.last_dweight_overlap_queue" in source
     assert "lm_head_backward.last_dweight_overlap_final_wait" in source
     assert "lm_head_overlap_last_dweight" in candidate_script
+    assert "REJECTED_CANDIDATE_PROFILE=\"$CANDIDATE_PROFILE\"" in candidate_script
+    assert "regressed train_loop_wall_ms_per_step to 1.001676x" in candidate_script
     assert "NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1" in candidate_script
     speed_tool = (root / "tools/paired_kernel_speed.py").read_text(encoding="utf-8")
     assert "lm_head_overlap_last_dweight_queue_count" in speed_tool

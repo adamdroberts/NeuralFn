@@ -1418,8 +1418,18 @@ Future updates should append new entries here rather than replacing older notes.
   Verification: ran `tools/bench_native_gpt_sm120_parity.sh` with
   `NFN_SM120_PARITY_STEPS=5`, `NFN_SM120_PARITY_SAMPLES=1`, warmup disabled,
   and profile output disabled.
-  ran the dedicated RTX 5090 paired benchmarks for both LayerNorm row-chunk
-  profiles.
+
+- Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_overlap_last_dweight` as
+  rejected by default. The CUDA 13.3 dedicated RTX 5090 5-step, 3-sample
+  same-script confirmation activated the route
+  (`lm_head_overlap_last_dweight_queue_count: 40`,
+  `lm_head_overlap_last_dweight_sync_count: 40`) but regressed
+  `train_loop_wall_ms_per_step` to `1.001676x` and train tokens/sec to
+  `0.998350x`; the preceding stage-timed probe also missed the total LM-head
+  backward gate at `1.000164x`.
+
+  Verification: ran the stage-timed and no-stage paired candidate gates on the
+  dedicated RTX 5090.
 
 - Added a default-off dense GPT LM-head CE default-shape specialization
   diagnostic. `NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`,
@@ -1813,10 +1823,8 @@ Future updates should append new entries here rather than replacing older notes.
   `lm_head_overlap_last_dweight_sync_count`, and the schedule strategy. The
   paired wrapper profile `lm_head_overlap_last_dweight` expands to the new env
   flag, and `tools/paired_kernel_speed.py` extracts the new queue/sync counters.
-  This route remains default-off: the CUDA 13.3 dedicated RTX 5090 3-sample gate
-  proved activation (`queue_count: 8`, `sync_count: 8`) and measured
-  `0.999109x` train-loop wall time, but failed the strict total LM-head stage
-  gate at `1.000506x`.
+  This route remains default-off and is now rejected by the wrapper unless
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
 
   Verification: rebuilt `build/nfn_gpt_native_train`; ran focused native GPT
   and Tile-CUDA wrapper pytest slices; ran a NanoGPT one-step CUDA Tile smoke

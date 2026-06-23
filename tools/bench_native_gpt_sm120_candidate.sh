@@ -353,6 +353,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1"
     ;;
   "lm_head_overlap_last_dweight"|"lm-head-overlap-last-dweight"|"lm_head_last_dweight_overlap"|"lm-head-last-dweight-overlap")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 5-step, 3-sample same-script confirmation activated the last-dWeight overlap schedule but regressed train_loop_wall_ms_per_step to 1.001676x and train tokens/sec to 0.998350x after a stage-timed probe also missed the LM-head backward gate at 1.000164x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1"
     ;;
   "lm_head_row_chunk_65536"|"lm-head-row-chunk-65536"|"lm_head_full_row_chunk"|"lm-head-full-row-chunk")

@@ -814,10 +814,12 @@ shared token-weight gradient. Runtime JSON reports
 `lm_head_dhidden_stream_enabled`, `lm_head_dweight_stream_enabled`, and the schedule strategy
 `last-processed-row-chunk-dweight-side-stream-overlaps-final-norm-block-backward`.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_overlap_last_dweight` to run it
-through the paired wrapper. Keep it disabled for normal training: the 2026-06-22
-CUDA 13.3 dedicated RTX 5090 3-sample gate proved the route active
-(`queue_count: 8`, `sync_count: 8`) and slightly improved train-loop wall time
-to `0.999109x`, but still failed the strict total LM-head gate at `1.000506x`.
+through the paired wrapper only with
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`. Keep it disabled for
+normal training: the CUDA 13.3 dedicated RTX 5090 5-step, 3-sample
+confirmation proved the route active but regressed train-loop wall time to
+`1.001676x` and train tokens/sec to `0.998350x`; the preceding stage-timed probe
+also missed the total LM-head backward gate at `1.000164x`.
 The BF16 linear operand cache is limited to stable operands such as weights;
 LM-head dWeight repacks the mutable hidden activation chunks each microbatch so
 gradient accumulation does not reuse stale packed activations.
