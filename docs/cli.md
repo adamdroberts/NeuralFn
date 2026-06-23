@@ -1572,6 +1572,22 @@ effect. `tools/paired_kernel_speed.py` summarizes this data under
 plan change as kernel-level attribution when deciding whether to emit the
 timing-only candidate warning.
 
+The native trainer also exposes `nfn_native_tile_trainer_linear_cublas_prewarm`
+for the non-Lt cuBLAS handle used by BF16 GEMMEx fallback paths. It is
+default-off: set `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=1`,
+`NFN_NATIVE_GPT2_PREWARM_CUBLAS_HANDLE=1`, or
+`NFN_TILE_CUDA_LINEAR_CUBLAS_PREWARM=1` to initialize the handle during setup.
+Runtime JSON reports `linear_cublas_handle_prewarm_available`,
+`linear_cublas_handle_prewarm_enabled`,
+`linear_cublas_handle_prewarm_requested`,
+`linear_cublas_handle_prewarm_success_count`, and
+`linear_cublas_handle_prewarm_failure_count`; setup timing includes
+`setup.cublas_handle_prewarm`.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm` compares baseline
+off versus candidate on in the native-vs-native wrapper, but it is guarded as a
+rejected real-run profile after the CUDA 13.3 RTX 5090 gate regressed strict
+timing metrics.
+
 The native GPT runtime `timing` block separates `setup_wall_ms`, `train_loop_wall_ms`, `post_train_sample_wall_ms`, `cleanup_wall_ms`, `checkpoint_wall_ms`, and `total_wall_ms`. Use `setup_wall_ms` for time-to-ready/training-start checks, `train_loop_wall_ms` for throughput comparisons, and `cleanup_wall_ms` to identify teardown from explicit CUDA frees and library close operations.
 
 Set `NFN_NATIVE_LINEAR_SHAPE_STATS=1`, `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1`, `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1`, or `NFN_NATIVE_GPT2_LINEAR_SHAPE_STATS=1` when profiling native GPT linear dispatch. `nfn_gpt_native_train` then emits `linear_shape_stats` JSON buckets with the backend path (`cublaslt`, `tk_bf16`, `tk_bf16_float_out`, `cublas_gemmex_bf16`, or `cublas_sgemm`), GEMM shape, transpose flags, call count, and timing. TK BF16 entries include normal forward/backward, TK float-output conversion, and fused TK GELU/dGELU paths, so active MLP buckets no longer appear as zero-time shape rows. Fused TK GELU rows use a host-synchronized fallback if CUDA stream events do not capture the helper dispatch. With the v2 Tile stats ABI, cuBLASLt rows also report selected heuristic index, returned heuristic count, and workspace bytes. Keep this off during normal training because it adds host-side bookkeeping around successful GEMM launches; use the `linear_cublaslt_plan_cache` JSON fields when you only need to prove which cuBLASLt plans were cached.

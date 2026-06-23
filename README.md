@@ -639,6 +639,20 @@ Native JSON reports
 `setup.cublaslt_plan_prewarm`. The dedicated RTX 5090 CUDA 13.3 retest measured
 the prewarmed route at `0.989405x` train-loop wall time and `0.964634x`
 LM-head backward time, while startup-only remains unprewarmed by default.
+The raw Tile ABI also exposes a default-off cuBLAS handle prewarm hook for the
+remaining GEMMEx routes that are not covered by cuBLASLt plan-cache prewarm.
+Set `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=1`,
+`NFN_NATIVE_GPT2_PREWARM_CUBLAS_HANDLE=1`, or
+`NFN_TILE_CUDA_LINEAR_CUBLAS_PREWARM=1` to initialize the process-wide cuBLAS
+handle during setup; native JSON reports
+`linear_cublas_handle_prewarm_available`,
+`linear_cublas_handle_prewarm_enabled`,
+`linear_cublas_handle_prewarm_success_count`, and
+`linear_cublas_handle_prewarm_failure_count`, and setup timing includes
+`setup.cublas_handle_prewarm`. The paired
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm` route is currently
+rejected for real runs because the dedicated RTX 5090 gate measured a small
+strict-stage regression.
 Normal native JSON also reports `linear_cublaslt_plan_cache_available`,
 `linear_cublaslt_plan_cache_count`, and `linear_cublaslt_plan_cache` entries
 with shape, transpose, selected heuristic, returned heuristic count, workspace,
@@ -1917,9 +1931,19 @@ the native route-change gate because the only expected change is dynamic
 Tile-ops loading versus the linked Tile-ops path. Override the compared binaries
 with `NFN_SM120_NATIVE_BASELINE_TRAIN_BIN` and
 `NFN_SM120_NATIVE_LINKED_STARTUP_CANDIDATE_BIN`.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm` measures the
+default-off cuBLAS handle prewarm route by pinning the baseline to
+`NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=0` and the candidate to
+`NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=1`, keeping all other native training
+arguments identical. It is guarded as a rejected real-run profile after the
+CUDA 13.3 RTX 5090 gate regressed strict timing metrics.
 Real runs of rejected SM120 candidate profiles now require
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; dry-run plan expansion
 remains available without the opt-in. The current rejected set includes
+`cublas_handle_prewarm`, whose CUDA 13.3 dedicated RTX 5090 5-step, 3-sample
+stage-timed gate initialized the non-Lt cuBLAS handle in setup but regressed
+train-loop wall to `1.000699x`, LM-head backward to `1.000673x`, and MLP
+projection backward to `1.001440x`,
 `lm_head_tk_dinput_32768`, whose CUDA 13.3 RTX 5090 rerun routed LM-head
 dHidden through TK dInput but regressed train-loop wall time to `1.045528x` and
 LM-head dHidden to `1.132973x`,

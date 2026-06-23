@@ -499,6 +499,21 @@ example, `NFN_SM120_NATIVE_CANDIDATE_STEPS=5`,
 `NFN_SM120_NATIVE_CANDIDATE_WARMUP=0`, and
 `NFN_SM120_NATIVE_CANDIDATE_JSON_OUT=/tmp/run.json` now affect the paired
 workload instead of falling back to the default 10-step/3-sample run.
+For non-Lt cuBLAS initialization bisection, use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublas_handle_prewarm`. The profile keeps
+baseline and candidate on the same native command while setting
+`NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=0` for baseline and `1` for candidate.
+The corresponding runtime fields are
+`linear_cublas_handle_prewarm_available`,
+`linear_cublas_handle_prewarm_enabled`,
+`linear_cublas_handle_prewarm_requested`,
+`linear_cublas_handle_prewarm_success_count`, and
+`linear_cublas_handle_prewarm_failure_count`; setup timing reports
+`setup.cublas_handle_prewarm`. The profile is currently guarded as rejected for
+real runs because the CUDA 13.3 dedicated RTX 5090 gate regressed strict timing
+metrics; use dry-run mode or
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for intentional
+rechecks.
 For one-shape TK forward bisection from the SDK, pass
 `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` or
 `NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` in the same

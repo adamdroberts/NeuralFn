@@ -68,6 +68,7 @@ std::int64_t trainer_linear_bf16_cache_entry_count();
 int trainer_linear_cublaslt_grouped_layout_probe_status();
 int trainer_linear_cublaslt_grouped_matmul_probe_status();
 int trainer_linear_cublas_grouped_bf16_gemm_probe_status();
+bool trainer_linear_cublas_prewarm(cudaStream_t stream);
 bool trainer_linear_cublaslt_prewarm_bf16_plan(
     int m,
     int n,
@@ -2133,6 +2134,10 @@ int nfn_native_tile_trainer_linear_cublaslt_grouped_matmul_probe_status() {
 
 int nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status() {
     return neuralfn::tile_cuda::trainer_linear_cublas_grouped_bf16_gemm_probe_status();
+}
+
+int nfn_native_tile_trainer_linear_cublas_prewarm(void* stream) {
+    return neuralfn::tile_cuda::trainer_linear_cublas_prewarm(static_cast<cudaStream_t>(stream)) ? 1 : 0;
 }
 
 int nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan(

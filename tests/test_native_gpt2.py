@@ -729,6 +729,9 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status" in tile_source
     assert "trainer_linear_cublas_grouped_bf16_gemm_probe_status" in kernels_source
     assert "cublasGemmGroupedBatchedEx" in kernels_source
+    assert "nfn_native_tile_trainer_linear_cublas_prewarm" in tile_header
+    assert "nfn_native_tile_trainer_linear_cublas_prewarm" in tile_source
+    assert "trainer_linear_cublas_prewarm" in kernels_source
     assert "nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan" in tile_header
     assert "nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan" in tile_source
     assert "trainer_linear_cublaslt_prewarm_bf16_plan" in kernels_source
@@ -756,6 +759,13 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_cublas_grouped_bf16_gemm_supported" in gpt_source
     assert "requested cuBLAS grouped BF16 GEMM probe failed with status" in gpt_source
     assert "requested cuBLAS grouped BF16 GEMM probe is unavailable in the Tile ops library" in gpt_source
+    assert "NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE" in gpt_source
+    assert "NFN_NATIVE_GPT2_PREWARM_CUBLAS_HANDLE" in gpt_source
+    assert "NFN_TILE_CUDA_LINEAR_CUBLAS_PREWARM" in gpt_source
+    assert "linear_cublas_handle_prewarm_available" in gpt_source
+    assert "linear_cublas_handle_prewarm_enabled" in gpt_source
+    assert "linear_cublas_handle_prewarm_success_count" in gpt_source
+    assert "setup.cublas_handle_prewarm" in gpt_source
     assert "linear_cublaslt_plan_prewarm_available" in gpt_source
     assert "linear_cublaslt_plan_prewarm_attempted_count" in gpt_source
     assert "linear_cublaslt_plan_prewarm_success_count" in gpt_source
@@ -771,6 +781,10 @@ def test_native_tile_linear_exposes_cublaslt_grouped_layout_probe() -> None:
     assert "linear_cublas_grouped_bf16_gemm_probe_status" in speed_tool
     assert "linear_cublas_grouped_bf16_gemm_probe_requested" in speed_tool
     assert "linear_cublas_grouped_bf16_gemm_supported" in speed_tool
+    assert "linear_cublas_handle_prewarm_enabled" in speed_tool
+    assert "linear_cublas_handle_prewarm_requested" in speed_tool
+    assert "linear_cublas_handle_prewarm_success_count" in speed_tool
+    assert "linear_cublas_handle_prewarm_failure_count" in speed_tool
     assert "lm_head_classifier_chunk_launch_count" in speed_tool
     assert "lm_head_classifier_last_row_stride" in speed_tool
     assert "lm_head_classifier_ce_no_loss_requested" in speed_tool
@@ -6755,6 +6769,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_trainer_linear_bf16_a_cache_hit_count" in header_text
     assert "nfn_native_tile_trainer_linear_bf16_cache_reset_count" in header_text
     assert "nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status" in header_text
+    assert "nfn_native_tile_trainer_linear_cublas_prewarm" in header_text
     assert "launch_float32_to_bf16_bits" in source_text
     assert "launch_bf16_bits_to_float32" in source_text
     assert "launch_bf16_bits_add_bias_inplace_float32" in source_text
@@ -8578,6 +8593,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_trainer_linear_bf16_cached_a_capacity" in exported
         assert "nfn_native_tile_trainer_linear_bf16_cache_entry_count" in exported
         assert "nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status" in exported
+        assert "nfn_native_tile_trainer_linear_cublas_prewarm" in exported
         assert "nfn_native_tile_trainer_linear_shape_stats_count" in exported
         assert "nfn_native_tile_trainer_linear_shape_stats_entry" in exported
         assert "nfn_native_tile_trainer_linear_cublaslt_plan_cache_count" in exported

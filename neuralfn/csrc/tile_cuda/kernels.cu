@@ -2488,6 +2488,10 @@ cublasHandle_t trainer_linear_cublas_handle(cudaStream_t stream) {
   return handle;
 }
 
+bool trainer_linear_cublas_prewarm(cudaStream_t stream) {
+  return trainer_linear_cublas_handle(stream) != nullptr;
+}
+
 cublasLtHandle_t trainer_linear_cublaslt_handle() {
   static cublasLtHandle_t handle = nullptr;
   if (handle == nullptr && cublasLtCreate(&handle) != CUBLAS_STATUS_SUCCESS) {

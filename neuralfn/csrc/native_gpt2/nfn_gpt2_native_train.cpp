@@ -3329,6 +3329,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_trainer_linear_cublaslt_grouped_layout_probe_status",
         "nfn_native_tile_trainer_linear_cublaslt_grouped_matmul_probe_status",
         "nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status",
+        "nfn_native_tile_trainer_linear_cublas_prewarm",
         "nfn_native_tile_trainer_linear_cublaslt_prewarm_bf16_plan",
         "nfn_native_tile_trainer_linear_shape_stats_count",
         "nfn_native_tile_trainer_linear_shape_stats_entry",
@@ -9948,6 +9949,9 @@ int run_transformer_lm_training_json(
     std::int64_t linear_cublaslt_plan_prewarm_attempted_count = 0;
     std::int64_t linear_cublaslt_plan_prewarm_success_count = 0;
     std::int64_t linear_cublaslt_plan_prewarm_failure_count = 0;
+    std::int64_t linear_cublas_handle_prewarm_requested = 0;
+    std::int64_t linear_cublas_handle_prewarm_success_count = 0;
+    std::int64_t linear_cublas_handle_prewarm_failure_count = 0;
     std::int64_t lm_head_logits_tk_gemm_count = 0;
     std::int64_t lm_head_logits_cublaslt_gemm_count = 0;
     std::int64_t lm_head_logits_bf16_gemm_count = 0;
@@ -9985,6 +9989,12 @@ int run_transformer_lm_training_json(
                               "NFN_NATIVE_GPT2_PREWARM_CUBLASLT_PLANS",
                               "NFN_TILE_CUDA_LINEAR_CUBLASLT_PREWARM"}),
             !cfg.startup_only);
+    const bool linear_cublas_handle_prewarm_enabled =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE",
+                              "NFN_NATIVE_GPT2_PREWARM_CUBLAS_HANDLE",
+                              "NFN_TILE_CUDA_LINEAR_CUBLAS_PREWARM"}),
+            false);
     struct LinearShapeStat {
         int path = 0;
         int m = 0;
@@ -10460,6 +10470,7 @@ int run_transformer_lm_training_json(
     using TrainerLinearStatsResetFn = void (*)();
     using TrainerLinearStatsCountFn = std::int64_t (*)();
     using TrainerLinearCublasLtProbeFn = int (*)();
+    using TrainerLinearCublasPrewarmFn = int (*)(void*);
     using TrainerLinearCublasLtPrewarmBf16PlanFn =
         int (*)(int, int, int, int, int, int, int, int, int);
     using TrainerLinearShapeStatsEntryFn = bool (*)(
@@ -10798,6 +10809,7 @@ int run_transformer_lm_training_json(
     TrainerLinearCublasLtProbeFn trainer_linear_cublaslt_grouped_layout_probe_status_fn = nullptr;
     TrainerLinearCublasLtProbeFn trainer_linear_cublaslt_grouped_matmul_probe_status_fn = nullptr;
     TrainerLinearCublasLtProbeFn trainer_linear_cublas_grouped_bf16_gemm_probe_status_fn = nullptr;
+    TrainerLinearCublasPrewarmFn trainer_linear_cublas_prewarm_fn = nullptr;
     TrainerLinearCublasLtPrewarmBf16PlanFn trainer_linear_cublaslt_prewarm_bf16_plan_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_shape_stats_count_fn = nullptr;
     TrainerLinearShapeStatsEntryFn trainer_linear_shape_stats_entry_fn = nullptr;
@@ -11318,6 +11330,10 @@ int run_transformer_lm_training_json(
                     load_symbol<TrainerLinearCublasLtProbeFn>(
                         tile_handle,
                         "nfn_native_tile_trainer_linear_cublas_grouped_bf16_gemm_probe_status");
+                trainer_linear_cublas_prewarm_fn =
+                    load_symbol<TrainerLinearCublasPrewarmFn>(
+                        tile_handle,
+                        "nfn_native_tile_trainer_linear_cublas_prewarm");
                 trainer_linear_cublaslt_prewarm_bf16_plan_fn =
                     load_symbol<TrainerLinearCublasLtPrewarmBf16PlanFn>(
                         tile_handle,
@@ -15004,6 +15020,21 @@ int run_transformer_lm_training_json(
             return;
         }
         refresh_block_weight_bf16("block_weight_bf16.initial_refresh");
+    });
+    run_setup_timed("setup.cublas_handle_prewarm", [&]() {
+        if (error.empty()) {
+            linear_cublas_handle_prewarm_requested = linear_cublas_handle_prewarm_enabled ? 1 : 0;
+        }
+        if (!linear_cublas_handle_prewarm_enabled ||
+            trainer_linear_cublas_prewarm_fn == nullptr ||
+            !error.empty()) {
+            return;
+        }
+        if (trainer_linear_cublas_prewarm_fn(nullptr) != 0) {
+            linear_cublas_handle_prewarm_success_count += 1;
+        } else {
+            linear_cublas_handle_prewarm_failure_count += 1;
+        }
     });
     run_setup_timed("setup.cublaslt_plan_prewarm", [&]() {
         if (error.empty()) {
@@ -20823,6 +20854,16 @@ int run_transformer_lm_training_json(
         << linear_cublas_grouped_bf16_gemm_probe_status << ",\n"
         << "  \"linear_cublas_grouped_bf16_gemm_supported\": "
         << (linear_cublas_grouped_bf16_gemm_probe_status == 0 ? "true" : "false") << ",\n"
+        << "  \"linear_cublas_handle_prewarm_available\": "
+        << (trainer_linear_cublas_prewarm_fn != nullptr ? "true" : "false") << ",\n"
+        << "  \"linear_cublas_handle_prewarm_enabled\": "
+        << (linear_cublas_handle_prewarm_enabled ? "true" : "false") << ",\n"
+        << "  \"linear_cublas_handle_prewarm_requested\": "
+        << linear_cublas_handle_prewarm_requested << ",\n"
+        << "  \"linear_cublas_handle_prewarm_success_count\": "
+        << linear_cublas_handle_prewarm_success_count << ",\n"
+        << "  \"linear_cublas_handle_prewarm_failure_count\": "
+        << linear_cublas_handle_prewarm_failure_count << ",\n"
         << "  \"linear_cublaslt_plan_prewarm_available\": "
         << (trainer_linear_cublaslt_prewarm_bf16_plan_fn != nullptr ? "true" : "false") << ",\n"
         << "  \"linear_cublaslt_plan_prewarm_enabled\": "

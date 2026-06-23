@@ -985,6 +985,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "lm_head_prepack_bf16_hidden_on" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0" in text
+    assert "cublas_handle_prewarm" in text
+    assert "NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=1" in text
+    assert "train_loop_wall_ms_per_step to 1.000699x" in text
     assert "mlp_proj_tk_dweight_65536" in text
     assert "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T" in text
     assert "mlp_proj_split_bgrad_65536" in text
@@ -1930,6 +1933,32 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1"
         in prepack_on_rejected.stderr
     )
+
+    cublas_handle_rejected_env = os.environ.copy()
+    cublas_handle_rejected_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "cublas_handle_prewarm",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "candidate-cublas-handle-rejected.json"),
+        }
+    )
+
+    cublas_handle_rejected = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=cublas_handle_rejected_env,
+    )
+
+    assert cublas_handle_rejected.returncode == 2
+    assert (
+        "cublas_handle_prewarm is a rejected SM120 candidate"
+        in cublas_handle_rejected.stderr
+    )
+    assert "stage.lm_head_backward.total_ms to 1.000673x" in cublas_handle_rejected.stderr
 
     ce_specialized_output_path = tmp_path / "candidate-ce-specialized-dry-run.json"
     ce_specialized_env = os.environ.copy()

@@ -6,6 +6,35 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off cuBLAS handle prewarm diagnostic for native dense-GPT
+  training. The raw Tile ABI now exports
+  `nfn_native_tile_trainer_linear_cublas_prewarm`, and native training JSON
+  reports `linear_cublas_handle_prewarm_available`,
+  `linear_cublas_handle_prewarm_enabled`,
+  `linear_cublas_handle_prewarm_requested`,
+  `linear_cublas_handle_prewarm_success_count`, and
+  `linear_cublas_handle_prewarm_failure_count`; setup timing also reports
+  `setup.cublas_handle_prewarm`. The route is controlled by
+  `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE`,
+  `NFN_NATIVE_GPT2_PREWARM_CUBLAS_HANDLE`, or
+  `NFN_TILE_CUDA_LINEAR_CUBLAS_PREWARM`.
+
+  Migration note: no default training behavior changes yet. The new
+  `cublas_handle_prewarm` SM120 native candidate profile pins baseline off and
+  candidate on for intentional same-script rechecks, but real runs are guarded
+  after the measured regression below.
+
+  Verification: rebuilt `build/nfn_gpt_native_train_linked`; focused native ABI
+  tests passed (`2 passed, 1 skipped`), the candidate-wrapper dry run expanded
+  baseline `NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=0` and candidate `=1`, and
+  `git diff --check` passed. The dedicated RTX 5090 5-step, 3-sample
+  stage-timed gate rejected the candidate at
+  `train_loop_wall_ms_per_step=1.000699x`,
+  `stage.lm_head_backward.total_ms=1.000673x`,
+  `stage.block_backward.total_ms=1.000035x`, and
+  `stage.block_backward.mlp_proj.total_ms=1.001440x`, so the profile is
+  guarded as rejected for real runs.
+
 - Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_vec8_io` as a rejected
   SM120 candidate for real paired-wrapper runs. Dry-run expansion remains
   available, and intentional reruns can still set
