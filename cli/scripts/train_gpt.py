@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -356,6 +357,23 @@ def _fast_compiled_cli_main(argv: list[str]) -> int | None:
     env.setdefault("CUDA_VISIBLE_DEVICES", "0")
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
     env.setdefault("CUDA_MODULE_LOADING", "LAZY")
+    native_execution_flags = {
+        "--print-plan",
+        "--check-tile-ops",
+        "--startup-only",
+        "--smoke-tile-ops",
+        "--smoke-optimizer-step",
+        "--smoke-lm-step",
+        "--smoke-attention-step",
+        "--smoke-mlp-step",
+        "--smoke-norm-residual-step",
+        "--smoke-transformer-block-step",
+        "--smoke-transformer-lm-step",
+        "--smoke-embedding-lm-step",
+    }
+    if "--dry-run" in command and "--print-command" in command and not any(flag in command for flag in native_execution_flags):
+        print(shlex.join(command))
+        return 0
     if "--dry-run" in command or "--print-command" in command or "--print-plan" in command or "--check-tile-ops" in command:
         return int(subprocess.run(command, env=env, check=False).returncode)
     os.execvpe(command[0], command, env)

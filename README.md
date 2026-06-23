@@ -112,8 +112,11 @@ inside one CUDA process with event timing, route counters, and a
 chunk scale without involving the full training loop. A post-reinstall wrapper
 timing check also confirms that
 `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run --native-cuda-print-command`
-returns the compiled C++ delegate in about `0.03s`, so the old Python schedule
-estimation path is not on the current native GPT startup route. A native
+now prints the already translated compiled C++ delegate directly from the
+lightweight shim without spawning the native binary, measuring about `0.04s` on
+this workstation; non-inspection dry-runs, Tile checks, smoke tests, plan
+prints, and real training still enter the compiled C++ frontend. The old
+Python schedule estimation path is not on the current native GPT startup route. A native
 startup-only paired run with and without `--tinystories` measured `1.000758x`
 setup wall time, which assigns startup cost to CUDA arena materialization and
 weight initialization rather than dataset alias resolution. LM-head cuBLASLt
