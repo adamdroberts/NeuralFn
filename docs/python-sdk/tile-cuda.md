@@ -143,7 +143,10 @@ CUDA event timing in one process. Profiles include the current hot shapes:
 `NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` to fail a candidate that is slower than
 the current ABI symbol before spending time in full trainer-loop parity runs.
 Keep the default `NFN_LINEAR_BACKWARD_WARMUP=1` or higher so first-call
-cuBLAS/TK setup is not counted as kernel time.
+cuBLAS/TK setup is not counted as kernel time. Set
+`NFN_LINEAR_BACKWARD_CANDIDATE_FIRST=1` to reverse the timing order when a
+candidate is close to the noise floor; the JSON includes `run_order` so the
+baseline-first and candidate-first measurements can be compared.
 
 Use `bash tools/bench_native_gpt_linear_hot_matrix.sh` when a candidate needs to
 cover the current native GPT hot linear path instead of one shape. The matrix
@@ -156,6 +159,8 @@ C++ benchmark and emits `native_gpt_linear_hot_matrix` JSON. Set
 profile-specific override such as
 `NFN_LINEAR_HOT_QKV_DWEIGHT_CANDIDATE_SYMBOL` for a single shape. Set
 `NFN_LINEAR_HOT_MATRIX_MAX_RATIO=1.000` to fail fast when any profile regresses.
+Set `NFN_LINEAR_BACKWARD_CANDIDATE_FIRST=1` on a matrix run to reverse every
+per-profile comparison order through the delegated lower-level wrapper.
 The focused linear and LM-head benchmark wrappers default to auto GPU selection;
 when `nvidia-smi` cannot be executed, they now fall back to CUDA device `0` so
 the C++ harness can emit the actual CUDA runtime/driver error instead of the

@@ -154,6 +154,7 @@ ITERATIONS="${NFN_LINEAR_BACKWARD_ITERATIONS:-${DEFAULT_ITERATIONS}}"
 WARMUP="${NFN_LINEAR_BACKWARD_WARMUP:-${DEFAULT_WARMUP}}"
 BETA="${NFN_LINEAR_BACKWARD_BETA:-0.0}"
 MAX_RATIO="${NFN_LINEAR_BACKWARD_MAX_RATIO:-}"
+CANDIDATE_FIRST="${NFN_LINEAR_BACKWARD_CANDIDATE_FIRST:-0}"
 
 case "${OPERATION}" in
   dinput-strided)
@@ -170,6 +171,12 @@ esac
 
 BASELINE_SYMBOL="${NFN_LINEAR_BACKWARD_BASELINE_SYMBOL:-${DEFAULT_BASELINE_SYMBOL}}"
 CANDIDATE_SYMBOL="${NFN_LINEAR_BACKWARD_CANDIDATE_SYMBOL:-${DEFAULT_CANDIDATE_SYMBOL:-${BASELINE_SYMBOL}}}"
+CANDIDATE_FIRST_ARGS=()
+case "${CANDIDATE_FIRST,,}" in
+  1|true|yes|on)
+    CANDIDATE_FIRST_ARGS=(--candidate-first)
+    ;;
+esac
 
 select_auto_cuda_device() {
   if ! command -v nvidia-smi >/dev/null 2>&1; then
@@ -242,7 +249,8 @@ fi
   --warmup "${WARMUP}" \
   --beta "${BETA}" \
   --cuda-device "${CUDA_DEVICE}" \
-  --json-out "${JSON_OUT}"
+  --json-out "${JSON_OUT}" \
+  "${CANDIDATE_FIRST_ARGS[@]}"
 
 if [[ -n "${MAX_RATIO}" ]]; then
   python -c 'import json, pathlib, sys

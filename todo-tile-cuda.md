@@ -732,6 +732,11 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `nvidia-smi` cannot query GPUs. This preserves a useful C++ CUDA error in
     sandboxed or driver-mismatch environments instead of silently failing before
     the benchmark starts.
+  - 2026-06-23 added `NFN_LINEAR_BACKWARD_CANDIDATE_FIRST=1` /
+    `--candidate-first` for the linear-backward C++ benchmark. JSON now records
+    `run_order`, so close kernel candidates can be checked in both
+    baseline-first and candidate-first order before deciding whether a full
+    trainer-loop parity run is meaningful.
   - 2026-06-23 first isolated profile sweep with the new harness ranked the
     current padded-vocab LM-head linear calls as the largest standalone targets:
     `lm-head-dinput` was about `32.17 ms` per 49152-row chunk and

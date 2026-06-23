@@ -57,6 +57,7 @@ struct Options {
     int iterations = 5;
     int warmup = 1;
     float beta = 0.0f;
+    bool candidate_first = false;
 };
 
 struct VariantResult {
@@ -80,6 +81,7 @@ struct VariantResult {
         << "  --iterations N\n"
         << "  --warmup N\n"
         << "  --beta FLOAT\n"
+        << "  --candidate-first\n"
         << "  --cuda-device N\n"
         << "  --json-out PATH\n";
     std::exit(2);
@@ -137,6 +139,8 @@ Options parse_options(int argc, char** argv) {
             options.warmup = static_cast<int>(parse_i64(require_value(arg), arg));
         } else if (arg == "--beta") {
             options.beta = parse_float(require_value(arg), arg);
+        } else if (arg == "--candidate-first") {
+            options.candidate_first = true;
         } else if (arg == "--cuda-device") {
             options.cuda_device = static_cast<int>(parse_i64(require_value(arg), arg));
         } else if (arg == "--json-out") {
@@ -360,6 +364,7 @@ std::string render_json(
         << "  \"iterations\": " << options.iterations << ",\n"
         << "  \"warmup\": " << options.warmup << ",\n"
         << "  \"beta\": " << std::fixed << std::setprecision(6) << options.beta << ",\n"
+        << "  \"run_order\": \"" << (options.candidate_first ? "candidate-first" : "baseline-first") << "\",\n"
         << "  \"timed_reset_between_iterations\": false,\n"
         << "  \"baseline\": " << variant_json(baseline) << ",\n"
         << "  \"candidate\": " << variant_json(candidate) << ",\n"
@@ -404,49 +409,95 @@ int main(int argc, char** argv) {
         if (options.operation == "dinput-strided") {
             auto baseline_fn = load_symbol<LinearDinputStridedFn>(handle, options.baseline_symbol);
             auto candidate_fn = load_symbol<LinearDinputStridedFn>(handle, options.candidate_symbol);
-            baseline = run_variant(
-                "baseline",
-                options.baseline_symbol,
-                baseline_fn,
-                options,
-                static_cast<const std::uint16_t*>(x_bf16.get()),
-                static_cast<const std::uint16_t*>(grad_out_bf16.get()),
-                static_cast<const std::uint16_t*>(weight_bf16.get()),
-                static_cast<float*>(grad_x.get()),
-                static_cast<float*>(grad_weight.get()));
-            candidate = run_variant(
-                "candidate",
-                options.candidate_symbol,
-                candidate_fn,
-                options,
-                static_cast<const std::uint16_t*>(x_bf16.get()),
-                static_cast<const std::uint16_t*>(grad_out_bf16.get()),
-                static_cast<const std::uint16_t*>(weight_bf16.get()),
-                static_cast<float*>(grad_x.get()),
-                static_cast<float*>(grad_weight.get()));
+            if (options.candidate_first) {
+                candidate = run_variant(
+                    "candidate",
+                    options.candidate_symbol,
+                    candidate_fn,
+                    options,
+                    static_cast<const std::uint16_t*>(x_bf16.get()),
+                    static_cast<const std::uint16_t*>(grad_out_bf16.get()),
+                    static_cast<const std::uint16_t*>(weight_bf16.get()),
+                    static_cast<float*>(grad_x.get()),
+                    static_cast<float*>(grad_weight.get()));
+                baseline = run_variant(
+                    "baseline",
+                    options.baseline_symbol,
+                    baseline_fn,
+                    options,
+                    static_cast<const std::uint16_t*>(x_bf16.get()),
+                    static_cast<const std::uint16_t*>(grad_out_bf16.get()),
+                    static_cast<const std::uint16_t*>(weight_bf16.get()),
+                    static_cast<float*>(grad_x.get()),
+                    static_cast<float*>(grad_weight.get()));
+            } else {
+                baseline = run_variant(
+                    "baseline",
+                    options.baseline_symbol,
+                    baseline_fn,
+                    options,
+                    static_cast<const std::uint16_t*>(x_bf16.get()),
+                    static_cast<const std::uint16_t*>(grad_out_bf16.get()),
+                    static_cast<const std::uint16_t*>(weight_bf16.get()),
+                    static_cast<float*>(grad_x.get()),
+                    static_cast<float*>(grad_weight.get()));
+                candidate = run_variant(
+                    "candidate",
+                    options.candidate_symbol,
+                    candidate_fn,
+                    options,
+                    static_cast<const std::uint16_t*>(x_bf16.get()),
+                    static_cast<const std::uint16_t*>(grad_out_bf16.get()),
+                    static_cast<const std::uint16_t*>(weight_bf16.get()),
+                    static_cast<float*>(grad_x.get()),
+                    static_cast<float*>(grad_weight.get()));
+            }
         } else {
             auto baseline_fn = load_symbol<LinearDweightStridedFn>(handle, options.baseline_symbol);
             auto candidate_fn = load_symbol<LinearDweightStridedFn>(handle, options.candidate_symbol);
-            baseline = run_variant(
-                "baseline",
-                options.baseline_symbol,
-                baseline_fn,
-                options,
-                static_cast<const std::uint16_t*>(x_bf16.get()),
-                static_cast<const std::uint16_t*>(grad_out_bf16.get()),
-                static_cast<const std::uint16_t*>(weight_bf16.get()),
-                static_cast<float*>(grad_x.get()),
-                static_cast<float*>(grad_weight.get()));
-            candidate = run_variant(
-                "candidate",
-                options.candidate_symbol,
-                candidate_fn,
-                options,
-                static_cast<const std::uint16_t*>(x_bf16.get()),
-                static_cast<const std::uint16_t*>(grad_out_bf16.get()),
-                static_cast<const std::uint16_t*>(weight_bf16.get()),
-                static_cast<float*>(grad_x.get()),
-                static_cast<float*>(grad_weight.get()));
+            if (options.candidate_first) {
+                candidate = run_variant(
+                    "candidate",
+                    options.candidate_symbol,
+                    candidate_fn,
+                    options,
+                    static_cast<const std::uint16_t*>(x_bf16.get()),
+                    static_cast<const std::uint16_t*>(grad_out_bf16.get()),
+                    static_cast<const std::uint16_t*>(weight_bf16.get()),
+                    static_cast<float*>(grad_x.get()),
+                    static_cast<float*>(grad_weight.get()));
+                baseline = run_variant(
+                    "baseline",
+                    options.baseline_symbol,
+                    baseline_fn,
+                    options,
+                    static_cast<const std::uint16_t*>(x_bf16.get()),
+                    static_cast<const std::uint16_t*>(grad_out_bf16.get()),
+                    static_cast<const std::uint16_t*>(weight_bf16.get()),
+                    static_cast<float*>(grad_x.get()),
+                    static_cast<float*>(grad_weight.get()));
+            } else {
+                baseline = run_variant(
+                    "baseline",
+                    options.baseline_symbol,
+                    baseline_fn,
+                    options,
+                    static_cast<const std::uint16_t*>(x_bf16.get()),
+                    static_cast<const std::uint16_t*>(grad_out_bf16.get()),
+                    static_cast<const std::uint16_t*>(weight_bf16.get()),
+                    static_cast<float*>(grad_x.get()),
+                    static_cast<float*>(grad_weight.get()));
+                candidate = run_variant(
+                    "candidate",
+                    options.candidate_symbol,
+                    candidate_fn,
+                    options,
+                    static_cast<const std::uint16_t*>(x_bf16.get()),
+                    static_cast<const std::uint16_t*>(grad_out_bf16.get()),
+                    static_cast<const std::uint16_t*>(weight_bf16.get()),
+                    static_cast<float*>(grad_x.get()),
+                    static_cast<float*>(grad_weight.get()));
+            }
         }
 
         const std::string json = render_json(options, baseline, candidate);

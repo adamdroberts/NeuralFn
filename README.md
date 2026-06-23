@@ -150,7 +150,10 @@ and `1.000576x` dWeight versus the current symbols. Override
 `NFN_LINEAR_BACKWARD_MAX_RATIO=1.000` when the candidate must be no slower than
 the current symbol. Keep the default `NFN_LINEAR_BACKWARD_WARMUP=1` or higher
 for candidate comparisons so first-call cuBLAS/TK setup is not counted as kernel
-time. To sweep the full native GPT hot linear set in one reproducible gate, run
+time. Set `NFN_LINEAR_BACKWARD_CANDIDATE_FIRST=1` to rerun a close result with
+the candidate timed before the baseline; JSON reports `run_order` so
+baseline-first and candidate-first checks can be compared directly. To sweep the
+full native GPT hot linear set in one reproducible gate, run
 `bash tools/bench_native_gpt_linear_hot_matrix.sh`. The matrix wrapper runs the
 MLP projection, MLP FC, QKV, attention projection, and LM-head dInput/dWeight
 profiles through the same C++ CUDA event harness and writes an aggregate JSON
@@ -160,7 +163,9 @@ summary to `NFN_LINEAR_HOT_MATRIX_JSON_OUT`. Set
 profile-specific variable such as
 `NFN_LINEAR_HOT_MLP_PROJ_DINPUT_CANDIDATE_SYMBOL` when only one shape should use
 a new symbol. `NFN_LINEAR_HOT_MATRIX_MAX_RATIO=1.000` fails the matrix if any
-candidate profile is slower than its baseline. A
+candidate profile is slower than its baseline.
+`NFN_LINEAR_BACKWARD_CANDIDATE_FIRST=1` also applies to matrix runs because the
+matrix delegates each profile to the same lower-level wrapper. A
 post-reinstall wrapper
 timing check also confirms that
 `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run --native-cuda-print-command`

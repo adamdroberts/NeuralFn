@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added reverse-order timing support to the native linear-backward C++ benchmark
+  and wrapper. `linear_backward_bench` now accepts `--candidate-first`, emits
+  `run_order` in JSON, and `tools/bench_linear_backward_candidate.sh` exposes
+  it as `NFN_LINEAR_BACKWARD_CANDIDATE_FIRST=1`. This makes close kernel
+  candidates easier to validate in both baseline-first and candidate-first order
+  before promoting them to trainer-loop parity tests.
+
+  Verification: added source-contract coverage for the C++ flag, JSON field,
+  and wrapper env; rebuilt the benchmark and ran a candidate-first CUDA smoke on
+  the dedicated RTX 5090.
+
 - Hardened the focused native CUDA benchmark wrappers' auto GPU selector.
   `tools/bench_linear_backward_candidate.sh` and
   `tools/bench_lm_head_backward_candidate.sh` now fall back to CUDA device `0`
