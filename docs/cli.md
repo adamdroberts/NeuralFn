@@ -548,7 +548,9 @@ kernel-heavy setup phases. The diagnostic also reports
 those phases and should stay disabled for normal throughput benchmarks. The
 SM120 candidate and parity wrappers expose this as
 `NFN_SM120_NATIVE_SETUP_EVENT_TIMING=1` and
-`NFN_SM120_PARITY_SETUP_EVENT_TIMING=1`.
+`NFN_SM120_PARITY_SETUP_EVENT_TIMING=1`. `tools/paired_kernel_speed.py` prints
+the common `setup.cuda_event.*.total_ms` fields in its text summary when the
+diagnostic records are present.
 The dense GPT training route loads Tile ops with lazy dynamic binding and still
 validates required ABI symbols explicitly; JSON reports
 `tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`, `tile_ops_dlopen_wall_ms`,

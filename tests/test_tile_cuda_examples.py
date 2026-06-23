@@ -165,6 +165,7 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert "require_idle_selected_gpu: False" in proc.stdout
     assert "max_selected_gpu_utilization_pct: -1.0" in proc.stdout
     assert "allow_stale_selected_gpu_utilization_without_compute_processes: False" in proc.stdout
+    assert "setup.cuda_event.token_weight_init.total_ms" in proc.stdout
     assert payload["gpu_benchmark_lock_enabled"] is True
     assert payload["gpu_benchmark_lock_acquired"] is True
     assert payload["gpu_benchmark_lock_path"].endswith("nfn_paired_kernel_speed_gpu_test-device.lock")

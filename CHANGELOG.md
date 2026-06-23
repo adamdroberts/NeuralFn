@@ -27,7 +27,9 @@ Future updates should append new entries here rather than replacing older notes.
 - Added SM120 benchmark-wrapper aliases for the setup CUDA-event diagnostic:
   `NFN_SM120_NATIVE_SETUP_EVENT_TIMING=1` enables it for native-vs-native
   candidate runs, and `NFN_SM120_PARITY_SETUP_EVENT_TIMING=1` enables it for
-  the NeuralFn side of llm.kittens parity runs.
+  the NeuralFn side of llm.kittens parity runs. The paired benchmark text
+  summary now prints the common `setup.cuda_event.*.total_ms` metrics directly
+  when they are present, instead of requiring a JSON inspection step.
 
   Verification: updated wrapper static/dry-run coverage for the candidate and
   parity scripts.
