@@ -258,9 +258,13 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1 NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1"
     ;;
   "lm_head_ce_vec8_normal_store"|"lm-head-ce-vec8-normal-store"|"ce_bf16_vec8_normal_store"|"ce-bf16-vec8-normal-store")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed gate changed the CE store route to vec8-loads-normal-stores and improved CE to 0.999055x, but regressed stage.lm_head_backward.total_ms to 1.009078x, stage.lm_head_backward.logits.total_ms to 1.024165x, and stage.block_backward.mlp_proj.total_ms to 1.014568x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1 NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1"
     ;;
   "lm_head_ce_scalar_streaming_store"|"lm-head-ce-scalar-streaming-store"|"ce_bf16_scalar_streaming_store"|"ce-bf16-scalar-streaming-store")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed rerun changed the CE store route to vec8-loads-scalar-streaming-stores but regressed train_loop_wall_ms_per_step to 1.020535x, train_loop_cuda_event_steady_state_wall_ms_per_step to 1.026691x, stage.lm_head_backward.total_ms to 1.122725x, and stage.lm_head_backward.ce.total_ms to 2.054816x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1 NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1"
     ;;
   "lm_head_ce_natural_rows"|"lm-head-ce-natural-rows"|"lm_head_ce_reverse_rows_off"|"lm-head-ce-reverse-rows-off")

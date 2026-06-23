@@ -1379,7 +1379,13 @@ forces the older route as its baseline and expands the candidate side to
 scalar-store cache-hint probe. It is diagnostic-only: the candidate changes
 `lm_head_ce_bf16_vector_io_strategy` to
 `vec8-loads-scalar-streaming-stores`, but the dedicated RTX 5090 gate rejected
-it at `1.005702x` train-loop wall and `1.135829x` LM-head CE time.
+it at `1.020535x` train-loop wall, `1.026691x` steady-state CUDA-event wall,
+`1.122725x` LM-head backward, and `2.054816x` LM-head CE time.
+`lm_head_ce_vec8_normal_store` expands to
+`NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1` and
+`NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1`; it is also rejected because its
+`0.999055x` CE bucket was outweighed by `1.009078x` total LM-head backward and
+`1.024165x` LM-head logits.
 `lm_head_ce_default_specialized` expands to
 `NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`. It selects a default-shape
 row-loss CE kernel only when the current dense GPT CE defaults are otherwise

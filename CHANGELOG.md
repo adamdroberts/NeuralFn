@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked the remaining BF16 LM-head CE store-policy probes as rejected in the
+  SM120 native candidate wrapper. `lm_head_ce_vec8_normal_store` now fails fast
+  unless explicitly overridden: the dedicated RTX 5090 3-step, 2-sample
+  stage-timed gate changed the route to `vec8-loads-normal-stores` and improved
+  the narrow CE bucket to `0.999055x`, but regressed total LM-head backward to
+  `1.009078x`, LM-head logits to `1.024165x`, and MLP projection to
+  `1.014568x`. `lm_head_ce_scalar_streaming_store` now carries the fresh
+  rejection reason from the same CUDA 13.3 environment: `1.020535x` train-loop
+  wall, `1.026691x` steady-state CUDA-event wall, `1.122725x` LM-head
+  backward, and `2.054816x` CE. Cached scalar stores remain the default.
+
+  Verification: ran both paired native candidate profiles unsandboxed on the
+  display-disabled RTX 5090 with selected-GPU locking and no compute processes;
+  updated focused static coverage for the rejection reasons.
+
 - Short-circuited direct `cli/scripts/train_gpt.py --native-cuda-dry-run
   --native-cuda-print-command` and top-level `nfn train ... --native-cuda-dry-run
   --native-cuda-print-command` inspection requests after the lightweight Python

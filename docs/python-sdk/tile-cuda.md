@@ -340,8 +340,13 @@ scalar dlogit store cache-hint probe. The SM120 wrapper profile
 `lm_head_ce_scalar_streaming_store` keeps vec8 BF16 loads and changes runtime
 JSON from `vec8-loads-scalar-stores` to
 `vec8-loads-scalar-streaming-stores`, but the dedicated RTX 5090 same-script
-gate rejected it at `1.005702x` train-loop wall and `1.135829x` LM-head CE
-time, so normal training should leave it unset.
+gate rejected it at `1.020535x` train-loop wall, `1.026691x` steady-state
+CUDA-event wall, `1.122725x` LM-head backward, and `2.054816x` LM-head CE time,
+so normal training should leave it unset. The companion
+`lm_head_ce_vec8_normal_store` profile requests
+`NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1`; it remains diagnostic-only after
+its paired gate improved the narrow CE bucket to `0.999055x` but regressed
+total LM-head backward to `1.009078x`.
 
 `NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`,
 `NFN_NATIVE_GPT2_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`, and

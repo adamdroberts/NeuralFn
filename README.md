@@ -189,8 +189,12 @@ This profile is rejected for real runs unless
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_scalar_streaming_store` is the
 narrower scalar-store cache-hint probe; it keeps vec8 loads but writes scalar
 BF16 dlogits through `st.global.cs.u16`. It is diagnostic-only: the dedicated
-RTX 5090 gate rejected it at `1.005702x` train-loop wall and `1.135829x`
-LM-head CE time.
+RTX 5090 rerun rejected it at `1.020535x` train-loop wall, `1.026691x`
+steady-state CUDA-event wall, `1.122725x` LM-head backward, and `2.054816x`
+LM-head CE time. `lm_head_ce_vec8_normal_store` is also rejected: it improved
+the narrow CE bucket to `0.999055x`, but missed the total LM-head gate at
+`1.009078x` and regressed LM-head logits to `1.024165x`, so cached scalar
+stores remain the default.
 
 For local server/editor development, leaving `NEURALFN_REDIS_URL` empty keeps
 live state and persistence in-process. Redis-backed deployments still enqueue
@@ -1324,8 +1328,12 @@ The opt-in streaming-store path now reuses those packed vec8 loads too, but the
 default-off cache hint for scalar BF16 dlogit writes. It changes
 `lm_head_ce_bf16_vector_io_strategy` from `vec8-loads-scalar-stores` to
 `vec8-loads-scalar-streaming-stores`; the CUDA 13.3 RTX 5090 same-script gate
-rejected it at `1.005702x` train-loop wall, `1.027580x` LM-head backward, and
-`1.135829x` LM-head CE time, so scalar cached stores remain the default.
+rejected it at `1.020535x` train-loop wall, `1.026691x` steady-state
+CUDA-event wall, `1.122725x` LM-head backward, and `2.054816x` LM-head CE time,
+so scalar cached stores remain the default. The vec8 normal-store probe
+`NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1` also remains diagnostic-only after
+its paired gate improved CE to `0.999055x` but regressed total LM-head backward
+to `1.009078x`.
 `NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`,
 `NFN_NATIVE_GPT2_LM_HEAD_CE_DEFAULT_SPECIALIZED=1`, or
 `NFN_TILE_CUDA_LM_HEAD_CE_DEFAULT_SPECIALIZED=1` enables a default-shape

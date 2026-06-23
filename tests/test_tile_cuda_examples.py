@@ -1026,8 +1026,12 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "stage.block_forward.mlp_fc_gelu.total_ms to 1.000722x" in text
     assert "ce_bf16_threads_512" in text
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=512" in text
+    assert "lm_head_ce_vec8_normal_store" in text
+    assert "NFN_NATIVE_GPT_CE_BF16_VEC_NORMAL_STORES=1" in text
+    assert "stage.lm_head_backward.total_ms to 1.009078x" in text
     assert "lm_head_ce_scalar_streaming_store" in text
     assert "NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1" in text
+    assert "stage.lm_head_backward.ce.total_ms to 2.054816x" in text
     assert "lm_head_ce_natural_rows" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS=0" in text
     assert "regressed CUDA-event wall time to 1.019563x" in text
@@ -4661,7 +4665,7 @@ def test_paired_kernel_speed_tool_records_command_timeout() -> None:
     child_script.write_text(
         "import time\n"
         "from pathlib import Path\n"
-        "time.sleep(1.0)\n"
+        "time.sleep(2.0)\n"
         f"Path({str(marker_path)!r}).write_text('alive')\n",
         encoding="utf-8",
     )
@@ -4690,7 +4694,7 @@ def test_paired_kernel_speed_tool_records_command_timeout() -> None:
             str(output_path),
             "--continue-on-error",
             "--command-timeout-seconds",
-            "0.1",
+            "0.5",
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -4705,9 +4709,9 @@ def test_paired_kernel_speed_tool_records_command_timeout() -> None:
     assert sample["baseline"]["timed_out"] is False
     assert sample["candidate"]["timed_out"] is True
     assert sample["candidate"]["returncode"] == -1
-    assert sample["candidate"]["timeout_seconds"] == 0.1
-    assert payload["command_timeout_seconds"] == 0.1
-    time.sleep(1.5)
+    assert sample["candidate"]["timeout_seconds"] == 0.5
+    assert payload["command_timeout_seconds"] == 0.5
+    time.sleep(2.5)
     assert not marker_path.exists()
 
 
