@@ -71,6 +71,22 @@ NATIVE_METRIC_PATHS = (
         ("timing", "train_loop_cuda_event_timing_enabled"),
     ),
     ("setup_wall_ms", ("timing", "setup_wall_ms")),
+    (
+        "setup_cuda_event_timing_requested",
+        ("timing", "setup_cuda_event_timing_requested"),
+    ),
+    (
+        "setup_cuda_event_timing_enabled",
+        ("timing", "setup_cuda_event_timing_enabled"),
+    ),
+    (
+        "setup_cuda_event_timing_sync_count",
+        ("timing", "setup_cuda_event_timing_sync_count"),
+    ),
+    (
+        "setup_cuda_event_timing_skipped_count",
+        ("timing", "setup_cuda_event_timing_skipped_count"),
+    ),
     ("checkpoint_wall_ms", ("timing", "checkpoint_wall_ms")),
     ("total_wall_ms", ("timing", "total_wall_ms")),
     ("train_tokens_per_second", ("timing", "train_tokens_per_second")),
@@ -585,6 +601,8 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "device_cuda_malloc_async_enabled",
     "device_cuda_malloc_async_symbol_loaded",
     "device_cuda_free_async_symbol_loaded",
+    "setup_cuda_event_timing_requested",
+    "setup_cuda_event_timing_enabled",
     "float_allocation_strategy",
     "uint16_allocation_strategy",
     "transformer_device_arena_requested",
@@ -1089,6 +1107,24 @@ def native_metrics_from_payload(payload: dict[str, Any]) -> dict[str, float | in
                 if not isinstance(name, str) or not name:
                     continue
                 metric_name = name if name.startswith("setup.") else "setup." + name
+                for source_key, suffix in (
+                    ("total_ms", "total_ms"),
+                    ("avg_ms", "avg_ms"),
+                    ("count", "count"),
+                ):
+                    value = stage.get(source_key)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        metrics[f"{metric_name}.{suffix}"] = value
+        setup_cuda_timing = timing.get("setup_cuda_event_timing")
+        if isinstance(setup_cuda_timing, list):
+            for stage in setup_cuda_timing:
+                if not isinstance(stage, dict):
+                    continue
+                name = stage.get("name")
+                if not isinstance(name, str) or not name:
+                    continue
+                metric_name = name if name.startswith("setup.") else "setup." + name
+                metric_name = metric_name.replace("setup.", "setup.cuda_event.", 1)
                 for source_key, suffix in (
                     ("total_ms", "total_ms"),
                     ("avg_ms", "avg_ms"),

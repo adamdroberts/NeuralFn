@@ -62,8 +62,14 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 f"{sys.executable} -c "
                 "\"print('{\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 12.5, "
                 "\\\"train_tokens_per_second\\\": 42.0, \\\"setup_wall_ms\\\": 1.0, "
+                "\\\"setup_cuda_event_timing_requested\\\": true, "
+                "\\\"setup_cuda_event_timing_enabled\\\": true, "
+                "\\\"setup_cuda_event_timing_sync_count\\\": 2, "
+                "\\\"setup_cuda_event_timing_skipped_count\\\": 0, "
                 "\\\"setup_timing\\\": [{\\\"name\\\": \\\"setup.float_arena_materialize\\\", "
                 "\\\"total_ms\\\": 0.7, \\\"avg_ms\\\": 0.7, \\\"count\\\": 1}], "
+                "\\\"setup_cuda_event_timing\\\": [{\\\"name\\\": \\\"setup.token_weight_init\\\", "
+                "\\\"total_ms\\\": 0.3, \\\"avg_ms\\\": 0.3, \\\"count\\\": 1}], "
                 "\\\"checkpoint_wall_ms\\\": 0.0, \\\"total_wall_ms\\\": 15.0, "
                 "\\\"stage_timing\\\": [{\\\"name\\\": \\\"lm_head_backward\\\", "
                 "\\\"total_ms\\\": 7.0, \\\"avg_ms\\\": 3.5, \\\"count\\\": 2}, "
@@ -171,6 +177,13 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["setup.float_arena_materialize.total_ms"]["mean"] == 0.7
     assert payload["candidate_native_metrics"]["setup.float_arena_materialize.avg_ms"]["mean"] == 0.7
     assert payload["candidate_native_metrics"]["setup.float_arena_materialize.count"]["mean"] == 1.0
+    assert payload["candidate_native_metric_values"]["setup_cuda_event_timing_requested"] == ["true"]
+    assert payload["candidate_native_metric_values"]["setup_cuda_event_timing_enabled"] == ["true"]
+    assert payload["candidate_native_metrics"]["setup_cuda_event_timing_sync_count"]["mean"] == 2.0
+    assert payload["candidate_native_metrics"]["setup_cuda_event_timing_skipped_count"]["mean"] == 0.0
+    assert payload["candidate_native_metrics"]["setup.cuda_event.token_weight_init.total_ms"]["mean"] == 0.3
+    assert payload["candidate_native_metrics"]["setup.cuda_event.token_weight_init.avg_ms"]["mean"] == 0.3
+    assert payload["candidate_native_metrics"]["setup.cuda_event.token_weight_init.count"]["mean"] == 1.0
     assert payload["candidate_native_metrics"]["stage.lm_head_backward.total_ms"]["mean"] == 7.0
     assert payload["candidate_native_metrics"]["stage.lm_head_backward.avg_ms"]["mean"] == 3.5
     assert payload["candidate_native_metrics"]["stage.lm_head_backward.count"]["mean"] == 2.0

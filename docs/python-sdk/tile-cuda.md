@@ -1639,6 +1639,14 @@ covered by explicit `timing.setup_timing` records and how much remains in
 loader, symbol-resolution, and other pre-loop host overhead. The explicit setup
 records include `setup.load_tile_ops`, `setup.load_cuda_runtime`, and
 `setup.cuda_runtime_symbols` before arena materialization.
+Diagnostic startup runs can set `NFN_NATIVE_GPT_SETUP_EVENT_TIMING=1` to add
+CUDA-event setup records under `timing.setup_cuda_event_timing` for selected
+kernel-heavy setup phases, including token-weight initialization and BF16
+refreshes. The SDK JSON mirrors the compiled CLI fields
+`setup_cuda_event_timing_requested`, `setup_cuda_event_timing_enabled`,
+`setup_cuda_event_timing_sync_count`, and
+`setup_cuda_event_timing_skipped_count`. This mode synchronizes between those
+setup phases, so use it for bisection rather than throughput comparison.
 The native dense-GPT path loads Tile ops with lazy dynamic binding while still
 validating required ABI symbols explicitly; runtime JSON reports
 `tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`, `tile_ops_dlopen_wall_ms`,

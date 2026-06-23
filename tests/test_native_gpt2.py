@@ -6791,6 +6791,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "setup.float_arena_materialize" in gpt2_source_text
     assert "setup.zero_init" in gpt2_source_text
     assert "setup.block_weight_bf16_initial_refresh" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_SETUP_EVENT_TIMING" in gpt2_source_text
+    assert "setup_cuda_event_timing" in gpt2_source_text
+    assert "run_setup_cuda_timed(\"setup.token_weight_init\"" in gpt2_source_text
     assert "--layer-evo" in gpt2_source_text
     assert "--native-cuda-layer-evo" in gpt2_source_text
     assert "layer_evo.graph_editor_tensor_flow" not in gpt2_source_text

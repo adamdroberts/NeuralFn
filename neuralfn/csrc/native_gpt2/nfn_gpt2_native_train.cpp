@@ -9713,7 +9713,21 @@ int run_transformer_lm_training_json(
         double total_ms = 0.0;
         std::int64_t count = 0;
     };
+    struct SetupCudaTimingRecord {
+        std::string name;
+        double total_ms = 0.0;
+        std::int64_t count = 0;
+    };
     std::vector<SetupTimingRecord> setup_timing_records;
+    std::vector<SetupCudaTimingRecord> setup_cuda_timing_records;
+    const bool setup_cuda_event_timing_requested =
+        env_flag_enabled_or_default(
+            env_or_empty_any({"NFN_NATIVE_GPT_SETUP_EVENT_TIMING",
+                              "NFN_NATIVE_GPT2_SETUP_EVENT_TIMING"}),
+            false);
+    bool setup_cuda_event_timing_enabled = false;
+    std::int64_t setup_cuda_event_timing_sync_count = 0;
+    std::int64_t setup_cuda_event_timing_skipped_count = 0;
     auto record_setup_timing = [&](const std::string& name, double ms) {
         for (SetupTimingRecord& record : setup_timing_records) {
             if (record.name == name) {
@@ -9723,6 +9737,16 @@ int run_transformer_lm_training_json(
             }
         }
         setup_timing_records.push_back(SetupTimingRecord{name, ms, 1});
+    };
+    auto record_setup_cuda_timing = [&](const std::string& name, double ms) {
+        for (SetupCudaTimingRecord& record : setup_cuda_timing_records) {
+            if (record.name == name) {
+                record.total_ms += ms;
+                record.count += 1;
+                return;
+            }
+        }
+        setup_cuda_timing_records.push_back(SetupCudaTimingRecord{name, ms, 1});
     };
     auto run_setup_timed = [&](const std::string& name, const auto& fn) {
         const auto start = Clock::now();
@@ -14204,6 +14228,83 @@ int run_transformer_lm_training_json(
             error = cuda_error(status, name);
         }
     };
+    auto run_setup_cuda_timed = [&](const std::string& name, const auto& fn) {
+        if (!setup_cuda_event_timing_requested) {
+            run_setup_timed(name, fn);
+            return;
+        }
+        const bool can_time =
+            error.empty() &&
+            cuda_event_create_with_flags != nullptr &&
+            cuda_event_record != nullptr &&
+            cuda_event_elapsed_time != nullptr &&
+            cuda_event_destroy != nullptr &&
+            cuda_device_synchronize != nullptr;
+        if (!can_time) {
+            setup_cuda_event_timing_skipped_count += 1;
+            run_setup_timed(name, fn);
+            return;
+        }
+        void* start_event = nullptr;
+        void* stop_event = nullptr;
+        int status = cuda_event_create_with_flags(&start_event, 0);
+        if (status != 0) {
+            setup_cuda_event_timing_skipped_count += 1;
+            run_setup_timed(name, fn);
+            return;
+        }
+        status = cuda_event_create_with_flags(&stop_event, 0);
+        if (status != 0) {
+            setup_cuda_event_timing_skipped_count += 1;
+            if (start_event != nullptr) {
+                cuda_event_destroy(start_event);
+            }
+            run_setup_timed(name, fn);
+            return;
+        }
+        const auto host_start = Clock::now();
+        status = cuda_event_record(start_event, nullptr);
+        if (status != 0 && error.empty()) {
+            error = cuda_error(status, "cudaEventRecord " + name + ".start");
+        }
+        fn();
+        if (error.empty()) {
+            status = cuda_event_record(stop_event, nullptr);
+            if (status != 0) {
+                error = cuda_error(status, "cudaEventRecord " + name + ".stop");
+            }
+        }
+        if (error.empty()) {
+            status = cuda_device_synchronize();
+            setup_cuda_event_timing_sync_count += 1;
+            if (status != 0) {
+                error = cuda_error(status, "cudaDeviceSynchronize " + name + ".setup_cuda_event_timing");
+            }
+        }
+        if (error.empty()) {
+            float elapsed_cuda_ms = 0.0f;
+            status = cuda_event_elapsed_time(&elapsed_cuda_ms, start_event, stop_event);
+            if (status != 0) {
+                error = cuda_error(status, "cudaEventElapsedTime " + name);
+            } else {
+                setup_cuda_event_timing_enabled = true;
+                record_setup_cuda_timing(name, static_cast<double>(elapsed_cuda_ms));
+            }
+        }
+        if (start_event != nullptr) {
+            const int destroy_status = cuda_event_destroy(start_event);
+            if (destroy_status != 0 && error.empty()) {
+                error = cuda_error(destroy_status, "cudaEventDestroy " + name + ".start");
+            }
+        }
+        if (stop_event != nullptr) {
+            const int destroy_status = cuda_event_destroy(stop_event);
+            if (destroy_status != 0 && error.empty()) {
+                error = cuda_error(destroy_status, "cudaEventDestroy " + name + ".stop");
+            }
+        }
+        record_setup_timing(name, elapsed_ms(host_start, Clock::now()));
+    };
     auto allocate_validation_mlp_float_scratch = [&]() {
         if (!lazy_validation_mlp_float_scratch_enabled || !error.empty()) {
             return;
@@ -14879,7 +14980,7 @@ int run_transformer_lm_training_json(
     run_setup_timed("setup.descriptor_arena_materialize", [&]() {
         materialize_descriptor_arena();
     });
-    run_setup_timed("setup.zero_init", [&]() {
+    run_setup_cuda_timed("setup.zero_init", [&]() {
         if (error.empty() && startup_zero_adamw_state_ranges_enabled && !adamw_zero_ranges.empty()) {
             for (const FloatZeroRange& range : adamw_zero_ranges) {
                 zero_float_buffer(range.ptr, range.elements, "adamw_state.zero_range");
@@ -14907,7 +15008,7 @@ int run_transformer_lm_training_json(
             }
         }
     });
-    run_setup_timed("setup.token_weight_init", [&]() {
+    run_setup_cuda_timed("setup.token_weight_init", [&]() {
         if (error.empty()) {
             const bool use_padded_token_weight_init =
                 fuse_token_weight_padded_init_requested &&
@@ -14984,13 +15085,13 @@ int run_transformer_lm_training_json(
             token_weight_bf16_refresh_count += 1;
         }
     };
-    run_setup_timed("setup.token_weight_bf16_initial_refresh", [&]() {
+    run_setup_cuda_timed("setup.token_weight_bf16_initial_refresh", [&]() {
         if (token_weight_bf16_initial_refresh_elided) {
             return;
         }
         refresh_token_weight_bf16("token_weight_bf16.initial_refresh");
     });
-    run_setup_timed("setup.nonzero_parameter_fill", [&]() {
+    run_setup_cuda_timed("setup.nonzero_parameter_fill", [&]() {
         if (error.empty() && parameter_fill_descriptor_count > 0) {
             run(fill_many_values(
                     parameter_fill_ptrs,
@@ -15035,7 +15136,7 @@ int run_transformer_lm_training_json(
             block_weight_bf16_refresh_count += 1;
         }
     };
-    run_setup_timed("setup.block_weight_bf16_initial_refresh", [&]() {
+    run_setup_cuda_timed("setup.block_weight_bf16_initial_refresh", [&]() {
         if (direct_bf16_block_weight_init_enabled) {
             return;
         }
@@ -19861,6 +19962,30 @@ int run_transformer_lm_training_json(
         setup_timing_json << "\n";
     }
     setup_timing_json << "    ],\n";
+    std::ostringstream setup_cuda_timing_json;
+    setup_cuda_timing_json
+        << "    \"setup_cuda_event_timing_requested\": "
+        << (setup_cuda_event_timing_requested ? "true" : "false") << ",\n"
+        << "    \"setup_cuda_event_timing_enabled\": "
+        << (setup_cuda_event_timing_enabled ? "true" : "false") << ",\n"
+        << "    \"setup_cuda_event_timing_record_count\": " << setup_cuda_timing_records.size() << ",\n"
+        << "    \"setup_cuda_event_timing_sync_count\": " << setup_cuda_event_timing_sync_count << ",\n"
+        << "    \"setup_cuda_event_timing_skipped_count\": " << setup_cuda_event_timing_skipped_count << ",\n"
+        << "    \"setup_cuda_event_timing\": [\n";
+    for (std::size_t i = 0; i < setup_cuda_timing_records.size(); ++i) {
+        const SetupCudaTimingRecord& record = setup_cuda_timing_records[i];
+        setup_cuda_timing_json
+            << "      {\"name\": \"" << json_escape(record.name) << "\", "
+            << "\"total_ms\": " << record.total_ms << ", "
+            << "\"count\": " << record.count << ", "
+            << "\"avg_ms\": " << (record.count > 0 ? record.total_ms / static_cast<double>(record.count) : 0.0)
+            << "}";
+        if (i + 1 != setup_cuda_timing_records.size()) {
+            setup_cuda_timing_json << ",";
+        }
+        setup_cuda_timing_json << "\n";
+    }
+    setup_cuda_timing_json << "    ],\n";
     std::ostringstream stage_timing_json;
     stage_timing_json
         << "    \"stage_timing_enabled\": " << (stage_timing_enabled ? "true" : "false") << ",\n"
@@ -20176,6 +20301,7 @@ int run_transformer_lm_training_json(
         << "    \"setup_timing_accounted_ms\": " << setup_timing_accounted_ms << ",\n"
         << "    \"setup_timing_unattributed_ms\": " << setup_timing_unattributed_ms << ",\n"
         << "    \"setup_timing_record_count\": " << setup_timing_records.size() << ",\n"
+        << setup_cuda_timing_json.str()
         << "    \"train_loop_wall_ms\": " << train_loop_wall_ms << ",\n"
         << "    \"train_loop_cuda_event_timing_requested\": "
         << (train_loop_cuda_event_timing_requested ? "true" : "false") << ",\n"

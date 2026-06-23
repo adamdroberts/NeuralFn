@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added default-off CUDA-event setup timing for native dense GPT startup
+  bisections. Set `NFN_NATIVE_GPT_SETUP_EVENT_TIMING=1` (or the GPT-2 alias)
+  to add `timing.setup_cuda_event_timing` records for selected kernel-heavy
+  setup phases such as zero init, token-weight init, nonzero parameter fill,
+  and block-weight BF16 refresh. Runtime JSON now also reports
+  `setup_cuda_event_timing_requested`,
+  `setup_cuda_event_timing_enabled`,
+  `setup_cuda_event_timing_sync_count`, and
+  `setup_cuda_event_timing_skipped_count`; `tools/paired_kernel_speed.py`
+  flattens these records as `setup.cuda_event.*` metrics. This diagnostic
+  intentionally synchronizes between timed setup phases and remains disabled by
+  default, so normal training throughput is unchanged.
+
+  Verification: added native source contract coverage plus paired metric
+  extraction coverage for the new event-timing fields.
+
 - Added `attention_backward_tk_block_size` and
   `attention_backward_tk_block_size_symbol_loaded` to dense GPT
   `block_state_layout`, matching the existing top-level runtime JSON fields.
