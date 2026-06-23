@@ -1828,7 +1828,11 @@ wrapper and `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000` to reject a candidate slower
 than the baseline before running the full GPT trainer. Set
 `NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST=1` to time the candidate before the
 baseline; JSON reports `run_order` so baseline-first and candidate-first checks
-can be compared when the result is close. The JSON also includes
+can be compared when the result is close. Set
+`NFN_LM_HEAD_BACKWARD_DRY_RUN=1` to print the resolved compiled benchmark argv
+without building artifacts or loading CUDA; the native no-Torch verifier covers
+that dry-run so benchmark planning stays out of Python/Torch startup paths. The
+JSON also includes
 `reference_components` with separate logits, CE, dHidden, dWeight, summed
 backward, and summed logits+backward timings for the current raw Tile ABI, which
 is the fastest way to see which part of a new LM-head classifier-backward

@@ -32,6 +32,7 @@ OPTIONAL_DEFAULT_ARTIFACTS = (
     Path("build/nfn_semantic_router_moe_native_train"),
     Path("build/nfn_deepseek_v4_native_train"),
     Path("build/linear_backward_bench"),
+    Path("build/lm_head_backward_bench"),
     Path("build/libnfn_native_train_tile_ops_tk.so"),
 )
 OPTIONAL_DEFAULT_ARTIFACT_GLOBS = (
@@ -515,6 +516,21 @@ DEFAULT_SHELL_ENTRYPOINTS = (
             "NFN_LINEAR_BACKWARD_BENCH_BIN": "/tmp/nfn-linear-bench-stub",
             "NFN_NATIVE_TILE_OPS_LIB": "/tmp/libnfn-native-train-tile-ops-stub.so",
             "NFN_LINEAR_BACKWARD_JSON_OUT": os.devnull,
+        },
+    ),
+    (
+        "bench_lm_head_backward_dry_run",
+        (
+            "bash",
+            "tools/bench_lm_head_backward_candidate.sh",
+        ),
+        {
+            "NFN_LM_HEAD_BACKWARD_DRY_RUN": "1",
+            "NFN_LM_HEAD_BACKWARD_PROFILE": "smoke",
+            "NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST": "1",
+            "NFN_LM_HEAD_BACKWARD_BENCH_BIN": "/tmp/nfn-lm-head-bench-stub",
+            "NFN_NATIVE_TILE_OPS_LIB": "/tmp/libnfn-native-train-tile-ops-stub.so",
+            "NFN_LM_HEAD_BACKWARD_JSON_OUT": os.devnull,
         },
     ),
     (

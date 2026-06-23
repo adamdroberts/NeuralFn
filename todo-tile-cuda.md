@@ -145,7 +145,11 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` /
       `NFN_LM_HEAD_BACKWARD_MAX_RATIO=...` fail-fast gates. Set
       `NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST=1` to rerun close candidates in
-      reverse order; JSON reports `run_order`. The wrapper defaults
+      reverse order; JSON reports `run_order`. Set
+      `NFN_LM_HEAD_BACKWARD_DRY_RUN=1` to print the resolved C++ benchmark argv
+      without building artifacts or loading CUDA; the native no-Torch verifier
+      covers that dry-run and scans `build/lm_head_backward_bench` when present.
+      The wrapper defaults
       `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=auto` so focused runs use the
       dedicated display-disabled NVIDIA GPU when `nvidia-smi` can select one.
       The old row-loss profile reruns against the current wrapper-only strict

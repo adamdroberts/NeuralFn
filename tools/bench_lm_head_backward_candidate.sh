@@ -57,6 +57,7 @@ NO_LOSS="${NFN_LM_HEAD_BACKWARD_NO_LOSS:-${DEFAULT_NO_LOSS}}"
 MAX_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_RATIO:-}"
 REQUIRE_TRUE_FUSED="${NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED:-0}"
 CANDIDATE_FIRST="${NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST:-0}"
+DRY_RUN="${NFN_LM_HEAD_BACKWARD_DRY_RUN:-0}"
 
 select_auto_cuda_device() {
   if ! command -v nvidia-smi >/dev/null 2>&1; then
@@ -140,6 +141,40 @@ if [[ "${#NO_LOSS_ARG[@]}" -gt 0 && "${LOSS_BINS}" != "0" ]]; then
   exit 2
 fi
 
+BENCH_ARGS=(
+  --tile-ops-lib "${TILE_OPS_LIB}"
+  --baseline-symbol "${BASELINE_SYMBOL}"
+  --candidate-symbol "${CANDIDATE_SYMBOL}"
+  --rows "${ROWS}"
+  --hidden-dim "${HIDDEN_DIM}"
+  --vocab "${VOCAB}"
+  --row-stride "${ROW_STRIDE}"
+  --iterations "${ITERATIONS}"
+  --warmup "${WARMUP}"
+  "${NO_LOSS_ARG[@]}"
+  --loss-bins "${LOSS_BINS}"
+  "${CANDIDATE_FIRST_ARG[@]}"
+  --cuda-device "${CUDA_DEVICE}"
+  --json-out "${JSON_OUT}"
+)
+
+case "${DRY_RUN,,}" in
+  1|true|yes|on)
+    printf '%q' "${BENCH_BIN}"
+    for ARG in "${BENCH_ARGS[@]}"; do
+      printf ' %q' "${ARG}"
+    done
+    printf '\n'
+    exit 0
+    ;;
+  0|false|no|off|"")
+    ;;
+  *)
+    echo "Invalid NFN_LM_HEAD_BACKWARD_DRY_RUN='${DRY_RUN}'" >&2
+    exit 2
+    ;;
+esac
+
 if [[ ! -x "${BENCH_BIN}" || "${ROOT_DIR}/neuralfn/csrc/native_train/lm_head_backward_bench.cpp" -nt "${BENCH_BIN}" ]]; then
   bash "${ROOT_DIR}/tools/build_lm_head_backward_bench.sh" "${BENCH_BIN}" >&2
 fi
@@ -148,20 +183,7 @@ if [[ ! -f "${TILE_OPS_LIB}" || "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops
 fi
 
 "${BENCH_BIN}" \
-  --tile-ops-lib "${TILE_OPS_LIB}" \
-  --baseline-symbol "${BASELINE_SYMBOL}" \
-  --candidate-symbol "${CANDIDATE_SYMBOL}" \
-  --rows "${ROWS}" \
-  --hidden-dim "${HIDDEN_DIM}" \
-  --vocab "${VOCAB}" \
-  --row-stride "${ROW_STRIDE}" \
-  --iterations "${ITERATIONS}" \
-  --warmup "${WARMUP}" \
-  "${NO_LOSS_ARG[@]}" \
-  --loss-bins "${LOSS_BINS}" \
-  "${CANDIDATE_FIRST_ARG[@]}" \
-  --cuda-device "${CUDA_DEVICE}" \
-  --json-out "${JSON_OUT}"
+  "${BENCH_ARGS[@]}"
 
 case "${REQUIRE_TRUE_FUSED,,}" in
   1|true|yes|on)

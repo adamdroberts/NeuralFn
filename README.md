@@ -133,7 +133,10 @@ chunk comparison, or
 candidate that is not a real fused kernel or is slower than the baseline. The
 LM-head harness also accepts `NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST=1`; its JSON
 reports `run_order` so close candidates can be checked in both baseline-first
-and candidate-first order under the same external GPU load. The
+and candidate-first order under the same external GPU load. Set
+`NFN_LM_HEAD_BACKWARD_DRY_RUN=1` to print the resolved C++ benchmark command
+without building artifacts, loading CUDA, or touching Torch; the native no-Torch
+verifier uses that dry-run path. The
 wrapper defaults `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=auto`, selecting an
 idle display-disabled NVIDIA GPU when `nvidia-smi` can report one; set it or
 `NFN_LM_HEAD_BACKWARD_CUDA_DEVICE` explicitly to pin the benchmark. If

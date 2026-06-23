@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the native no-Torch dependency verifier to cover the focused
+  LM-head backward benchmark. `tools/bench_lm_head_backward_candidate.sh` now
+  supports `NFN_LM_HEAD_BACKWARD_DRY_RUN=1`, printing the resolved compiled
+  `lm_head_backward_bench` argv without building artifacts or loading CUDA, and
+  `tools/check_native_no_torch_deps.py` runs that dry-run plus scans
+  `build/lm_head_backward_bench` when present.
+
+  Verification: ran focused no-Torch verifier pytest, the verifier JSON command,
+  shell syntax checks for the LM-head wrapper, and `py_compile` for the
+  verifier.
+
 - Added reverse-order timing support to the focused LM-head backward benchmark.
   `lm_head_backward_bench` now accepts `--candidate-first`, emits `run_order`
   in JSON, and `tools/bench_lm_head_backward_candidate.sh` exposes the option

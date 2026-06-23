@@ -234,6 +234,9 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     shell_entrypoints = {entry["name"]: entry for entry in payload["shell_entrypoints"]}
     assert shell_entrypoints["bench_linear_backward_dry_run"]["passed"] is True
     assert "--candidate-symbol" in shell_entrypoints["bench_linear_backward_dry_run"]["stdout"]
+    assert shell_entrypoints["bench_lm_head_backward_dry_run"]["passed"] is True
+    assert "--candidate-first" in shell_entrypoints["bench_lm_head_backward_dry_run"]["stdout"]
+    assert "--candidate-symbol" in shell_entrypoints["bench_lm_head_backward_dry_run"]["stdout"]
     assert shell_entrypoints["bench_native_gpt_linear_hot_matrix_dry_run"]["passed"] is True
     assert "smoke-dinput" in shell_entrypoints["bench_native_gpt_linear_hot_matrix_dry_run"]["stdout"]
     assert "smoke-dweight" in shell_entrypoints["bench_native_gpt_linear_hot_matrix_dry_run"]["stdout"]
@@ -264,6 +267,7 @@ def test_native_no_torch_dependency_verifier_includes_optional_built_artifacts()
     assert Path("build/nfn_gpt2_evo_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/nfn_nanogpt_native_train") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert Path("build/linear_backward_bench") in module.OPTIONAL_DEFAULT_ARTIFACTS
+    assert Path("build/lm_head_backward_bench") in module.OPTIONAL_DEFAULT_ARTIFACTS
     assert "neuralfn/_native*.so" in module.OPTIONAL_DEFAULT_ARTIFACT_GLOBS
 
 
@@ -1503,7 +1507,10 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "NFN_LM_HEAD_BACKWARD_MAX_RATIO" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_DRY_RUN" in wrapper
     assert "CANDIDATE_FIRST_ARG=(--candidate-first)" in wrapper
+    assert "BENCH_ARGS=(" in wrapper
+    assert "printf '%q' \"${BENCH_BIN}\"" in wrapper
     assert "candidate_true_fused_capability is false" in wrapper
     assert "candidate_to_baseline_ms_per_iter_ratio" in wrapper
     assert "candidate_first" in bench_source
