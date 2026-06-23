@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked the existing `lm_head_dweight_before_dhidden` SM120 native wrapper
+  profile as rejected by default after a fresh CUDA 13.3 dedicated-RTX-5090
+  confirmation. A 2-sample probe briefly passed at `0.996095x` train-loop wall
+  time and `1.003923x` train tokens/sec, but the required 3-step/3-sample
+  same-script gate regressed train-loop wall time to `1.002871x` and train
+  tokens/sec to `0.997262x`. The route still activates the intended
+  `serial-dweight-before-dhidden` strategy, but the default remains
+  CE -> dHidden -> dWeight.
+
+  Verification note: ran both paired GPU benchmarks on the dedicated RTX 5090,
+  updated the wrapper fast-fail reason, and refreshed the README plus SDK
+  Tile-CUDA notes.
+
 - Marked the existing `lm_head_concurrent_dhidden_dweight` SM120 native wrapper
   profile as rejected by default after a fresh CUDA 13.3 dedicated-RTX-5090
   confirmation. The candidate still activates the intended two-stream

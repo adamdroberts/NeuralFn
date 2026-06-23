@@ -322,6 +322,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1"
     ;;
   "lm_head_dweight_before_dhidden"|"lm-head-dweight-before-dhidden")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 3-sample same-script confirmation activated the LM-head serial dWeight-before-dHidden schedule but regressed train_loop_wall_ms_per_step to 1.002871x and train tokens/sec to 0.997262x, so the serial dHidden-then-dWeight route remains the default."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1"
     ;;
   "lm_head_pipeline_chunks"|"lm-head-pipeline-chunks")

@@ -561,6 +561,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "lm_head_concurrent_dhidden_dweight" in candidate_bench
     assert "CUDA 13.3 RTX 5090 3-sample same-script confirmation" in candidate_bench
     assert "NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1" in candidate_bench
+    assert "lm_head_dweight_before_dhidden" in candidate_bench
+    assert "NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1" in candidate_bench
     assert 'Path("build/nfn_gpt_native_train_linked")' in no_torch_verifier
 
 
@@ -6614,6 +6616,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "two-nonblocking-cuda-streams-after-ce-event" in gpt2_source_text
     assert "CUDA 13.3 RTX 5090 3-sample same-script confirmation" in candidate_bench_text
     assert "NFN_NATIVE_GPT_LM_HEAD_CONCURRENT_DHIDDEN_DWEIGHT=1" in candidate_bench_text
+    assert "serial dWeight-before-dHidden schedule" in candidate_bench_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1" in candidate_bench_text
     assert "NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS" in gpt2_source_text
     assert "lm_head_reverse_chunk_order_enabled" in gpt2_source_text
     assert "reverse-row-chunk-order-default-cuda-13-3-rtx-5090" in gpt2_source_text

@@ -768,8 +768,9 @@ chunk order during bisection.
 `NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1` is a diagnostic-only
 row-chunk order probe that runs LM-head dWeight before dHidden after CE writes
 dlogits. A CUDA 13.3 dedicated-RTX-5090 same-script wrapper run briefly measured
-`0.997213x` train-loop wall time, but the rebuilt old-vs-new default gate failed
-at `1.005561x`, so the default remains CE -> dHidden -> dWeight. Use
+`0.996095x` train-loop wall time over two samples, but the required 3-sample
+confirmation regressed train-loop wall time to `1.002871x` and train tokens/sec
+to `0.997262x`, so the default remains CE -> dHidden -> dWeight. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_dweight_before_dhidden` to rerun it
 through the same-script paired wrapper and route-change gate.
 `NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1` is a new opt-in LM-head schedule

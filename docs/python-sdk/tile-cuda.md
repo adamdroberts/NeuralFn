@@ -734,8 +734,9 @@ comparisons against the previous always-accumulate path. Runtime JSON reports
 Set `NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1` only for paired LM-head
 row-chunk order bisection. It runs LM-head dWeight before dHidden after CE
 writes dlogits. A CUDA 13.3 dedicated-RTX-5090 same-script wrapper run briefly
-measured `0.997213x` train-loop wall time, but the rebuilt old-vs-new default
-gate failed at `1.005561x`, so the default remains CE -> dHidden -> dWeight.
+measured `0.996095x` train-loop wall time over two samples, but the required
+3-sample confirmation regressed train-loop wall time to `1.002871x` and train
+tokens/sec to `0.997262x`, so the default remains CE -> dHidden -> dWeight.
 Runtime JSON reports `lm_head_dweight_before_dhidden_enabled`; the paired
 wrapper profile `lm_head_dweight_before_dhidden` expands to the same env switch
 for reproducible same-script gates.
