@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a block-wide BF16/BF16 split-BGRADB benchmark profile for dense native
+  GPT training:
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=block_split_bgrad_65536` expands to
+  `NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=768,2304,65536,N,T:768,768,65536,N,T:768,3072,65536,N,T:3072,768,65536,N,T`.
+  The Tile-CUDA BGRADB disable-shape knob still accepts the previous single
+  `m,n,k,opA,opB` value and now also accepts colon/semicolon/whitespace-separated
+  shape lists, so one same-script run can test the dense GPT QKV, attention
+  projection, MLP FC, and MLP projection dWeight+bias buckets against the fused
+  cuBLASLt BGRADB route. The profile is rejected/diagnostic-only: the CUDA 13.3
+  dedicated-RTX-5090 same-script gate changed the expected cuBLASLt BGRADB route
+  counters from `1152` to `288`, but regressed train-loop wall time to
+  `1.036221x`, train tokens/sec to `0.965045x`, block backward to `1.074258x`,
+  MLP FC dWeight+bias to `1.387410x`, and MLP projection dWeight+bias to
+  `1.241028x`, so production defaults are unchanged.
+
+  Verification note: added source-contract coverage for the wrapper expansion
+  and the Tile-CUDA list parser, rebuilt the native Tile ops and native GPT CLI,
+  ran plan-only expansion coverage, and ran the paired GPU benchmark on the
+  dedicated RTX 5090.
+
 - Corrected dense GPT cooperative LM-head strict-kernel availability reporting:
   the placeholder
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` export is

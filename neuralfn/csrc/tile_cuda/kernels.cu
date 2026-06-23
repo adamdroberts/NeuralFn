@@ -3256,6 +3256,67 @@ bool linear_shape_matches(
       shape.op_b == static_cast<int>(op_b);
 }
 
+struct LinearShapeList {
+  std::array<LinearShapeStat, 16> shapes{};
+  int count = 0;
+};
+
+LinearShapeList parse_linear_shape_list(const char* value) {
+  LinearShapeList list{};
+  if (value == nullptr || value[0] == '\0') {
+    return list;
+  }
+  std::array<char, 1024> buffer{};
+  const std::size_t length = std::min(std::strlen(value), buffer.size() - 1);
+  std::memcpy(buffer.data(), value, length);
+  buffer[length] = '\0';
+
+  char* token_start = buffer.data();
+  for (std::size_t index = 0; index <= length; ++index) {
+    char& current = buffer[index];
+    if (current != ':' && current != ';' && current != ' ' &&
+        current != '\t' && current != '\n' && current != '\0') {
+      continue;
+    }
+    const char separator = current;
+    current = '\0';
+    if (token_start[0] != '\0' &&
+        list.count < static_cast<int>(list.shapes.size())) {
+      LinearShapeStat shape{};
+      if (parse_linear_shape_token(token_start, &shape)) {
+        list.shapes[static_cast<std::size_t>(list.count)] = shape;
+        ++list.count;
+      }
+    }
+    if (separator == '\0') {
+      break;
+    }
+    token_start = buffer.data() + index + 1;
+  }
+  return list;
+}
+
+bool linear_shape_list_matches(
+    const LinearShapeList& list,
+    int m,
+    int n,
+    int k,
+    cublasOperation_t op_a,
+    cublasOperation_t op_b) {
+  for (int index = 0; index < list.count; ++index) {
+    if (linear_shape_matches(
+            list.shapes[static_cast<std::size_t>(index)],
+            m,
+            n,
+            k,
+            op_a,
+            op_b)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool trainer_linear_bf16_cublaslt_shape_disabled(
     int m,
     int n,
@@ -3506,16 +3567,14 @@ bool trainer_linear_bf16_bf16_bgrad_disabled_for_shape(
     int k,
     cublasOperation_t op_a,
     cublasOperation_t op_b) {
-  static const LinearShapeStat disabled_shape = []() {
+  static const LinearShapeList disabled_shapes = []() {
     const char* value = std::getenv("NFN_TILE_CUDA_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE");
     if (value == nullptr) {
       value = std::getenv("NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE");
     }
-    LinearShapeStat shape{};
-    parse_linear_shape_token(value, &shape);
-    return shape;
+    return parse_linear_shape_list(value);
   }();
-  return linear_shape_matches(disabled_shape, m, n, k, op_a, op_b);
+  return linear_shape_list_matches(disabled_shapes, m, n, k, op_a, op_b);
 }
 
 bool trainer_linear_bf16_bridge_enabled() {

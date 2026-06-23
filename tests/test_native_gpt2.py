@@ -1355,6 +1355,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_classifier_ce_no_loss": "NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1",
         "lm_head_prepack_bf16_hidden_off": "NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0",
         "mlp_proj_tk_dweight_65536": "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T",
+        "block_split_bgrad_65536": "NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=768,2304,65536,N,T:768,768,65536,N,T:768,3072,65536,N,T:3072,768,65536,N,T",
         "mlp_proj_split_bgrad_65536": "NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=3072,768,65536,N,T",
         "linear_bias_row_chunk_256": "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=256",
         "linear_bias_row_chunk_1024": "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=1024",
@@ -1378,6 +1379,13 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     )
     assert "lm_head_only_candidate_gate=1" in bench_source
     assert 'if [[ "$lm_head_only_candidate_gate" != "1" ]]; then' in bench_source
+
+    tile_source = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text(
+        encoding="utf-8"
+    )
+    assert "LinearShapeList parse_linear_shape_list" in tile_source
+    assert "current != ':' && current != ';'" in tile_source
+    assert "return linear_shape_list_matches(disabled_shapes, m, n, k, op_a, op_b);" in tile_source
 
     for gated_metric in [
         "stage.block_backward.attn_sdpa.total_ms=1.000",

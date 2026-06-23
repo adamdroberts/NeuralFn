@@ -1495,8 +1495,18 @@ The trainer-facing Tile-CUDA linear ABI supports both the default BF16-primary b
 
 Use `NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=m,n,k,opA,opB` or
 `NFN_TILE_CUDA_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=...` for narrower paired
-bisection when a single BF16/BF16 dWeight+bias shape should use the split
-dWeight plus separate bias reducer route without disabling BGRADB globally.
+bisection when BF16/BF16 dWeight+bias shapes should use the split dWeight plus
+separate bias reducer route without disabling BGRADB globally. The value accepts
+one shape or a colon/semicolon/whitespace-separated shape list, so block-wide
+candidate runs can test multiple projection buckets in one paired pass.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=block_split_bgrad_65536` expands to
+`NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=768,2304,65536,N,T:768,768,65536,N,T:768,3072,65536,N,T:3072,768,65536,N,T`
+for the dense GPT QKV, attention projection, MLP FC, and MLP projection
+dWeight+bias buckets. Keep it rejected/diagnostic-only: the CUDA 13.3
+dedicated-RTX-5090 same-script gate changed the expected BGRADB counters from
+`1152` to `288`, but regressed train-loop wall time to `1.036221x`, block
+backward to `1.074258x`, MLP FC dWeight+bias to `1.387410x`, and MLP projection
+dWeight+bias to `1.241028x`, so fused BGRADB remains the default.
 The same-script wrapper profile `mlp_proj_split_bgrad_65536` expands to
 `NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=3072,768,65536,N,T` for the
 hot dense-GPT MLP projection dWeight+bias bucket. Keep it diagnostic-only: the

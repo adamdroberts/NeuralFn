@@ -1199,6 +1199,19 @@ and MLP-projection dWeight+bias gates. Current runtime JSON now reports
 route runs. A stronger CUDA 13.3 dedicated RTX 5090 3-step, 2-sample recheck
 kept it rejected at `1.017138x` train-loop wall and `1.313764x`
 `stage.block_backward.mlp_proj.dweight_bias.total_ms`.
+`block_split_bgrad_65536` expands to
+`NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE=768,2304,65536,N,T:768,768,65536,N,T:768,3072,65536,N,T:3072,768,65536,N,T`.
+That shape-list route tests the dense GPT QKV, attention projection, MLP FC,
+and MLP projection BF16/BF16 dWeight+bias buckets with cuBLAS/TK dWeight plus a
+separate Tile bias reducer in the same paired wrapper run. The underlying
+`NFN_NATIVE_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE` and
+`NFN_TILE_CUDA_LINEAR_BF16_BF16_BGRAD_DISABLE_SHAPE` knobs still accept the old
+single-shape value, and now also accept colon/semicolon/whitespace-separated
+shape lists for block-wide bisection. Keep this profile rejected/diagnostic-only:
+the CUDA 13.3 dedicated-RTX-5090 same-script gate changed the BGRADB counters
+from `1152` to `288`, but regressed train-loop wall time to `1.036221x`, block
+backward to `1.074258x`, MLP FC dWeight+bias to `1.387410x`, and MLP projection
+dWeight+bias to `1.241028x`.
 `lm_head_loss_bins` compares the current train-loss logging default against the
 older row-loss path. The candidate side expands to
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`, the baseline side is forced to
