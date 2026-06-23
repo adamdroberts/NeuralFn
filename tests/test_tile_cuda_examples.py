@@ -961,6 +961,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N" in text
     assert "qkv_forward_bf16_fallback_65536" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=2304,65536,768,T,N" in text
+    assert "regressed the target stage.block_forward.attention.qkv.total_ms to 1.143374x" in text
+    assert "mlp_fc_forward_bf16_fallback_65536" in text
+    assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=3072,65536,768,N,N" in text
+    assert "stage.block_forward.mlp_fc_gelu.total_ms to 1.000722x" in text
     assert "ce_bf16_threads_512" in text
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=512" in text
     assert "lm_head_ce_scalar_streaming_store" in text
@@ -1319,6 +1323,70 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert rejected_qkv_run.returncode == 2
     assert "rejected SM120 candidate" in rejected_qkv_run.stderr
     assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in rejected_qkv_run.stderr
+
+    mlp_fc_forward_fallback_output_path = (
+        tmp_path / "candidate-mlp-fc-forward-fallback-dry-run.json"
+    )
+    mlp_fc_forward_fallback_env = os.environ.copy()
+    mlp_fc_forward_fallback_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "mlp_fc_forward_bf16_fallback_65536",
+            "NFN_SM120_NATIVE_JSON_OUT": str(mlp_fc_forward_fallback_output_path),
+        }
+    )
+
+    mlp_fc_forward_fallback_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=mlp_fc_forward_fallback_env,
+    )
+
+    assert mlp_fc_forward_fallback_dry_run.returncode == 0, (
+        mlp_fc_forward_fallback_dry_run.stderr
+    )
+    mlp_fc_forward_fallback_payload = json.loads(
+        mlp_fc_forward_fallback_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        mlp_fc_forward_fallback_payload["candidate_env"][
+            "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE"
+        ]
+        == "3072,65536,768,N,N"
+    )
+    assert mlp_fc_forward_fallback_payload["metric_ratio_gates"]["enabled"] is False
+
+    rejected_mlp_fc_env = os.environ.copy()
+    rejected_mlp_fc_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "mlp_fc_forward_bf16_fallback_65536",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "rejected-mlp-fc.json"),
+        }
+    )
+
+    rejected_mlp_fc_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=rejected_mlp_fc_env,
+    )
+
+    assert rejected_mlp_fc_run.returncode == 2
+    assert "mlp_fc_forward_bf16_fallback_65536 is a rejected SM120 candidate" in (
+        rejected_mlp_fc_run.stderr
+    )
+    assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
+        rejected_mlp_fc_run.stderr
+    )
 
     min_waves_output_path = tmp_path / "candidate-cublaslt-min-waves-dry-run.json"
     min_waves_env = os.environ.copy()

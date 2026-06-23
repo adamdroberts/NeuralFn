@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the CUDA 13.3 dense GPT one-step stage/shape profile and recorded
+  two forward TK fallback probes as rejected SM120 candidate profiles instead
+  of promoting either. `qkv_forward_bf16_fallback_65536` now records the latest
+  target-stage rejection for
+  `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=2304,65536,768,T,N`:
+  the route reduced TK forward calls but regressed
+  `stage.block_forward.attention.qkv.total_ms` to `1.143374x`.
+  Added `mlp_fc_forward_bf16_fallback_65536`, which expands to
+  `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=3072,65536,768,N,N` and is
+  rejected because it changed no tracked route counters while regressing
+  train-loop wall time to `1.016916x`, block backward to `1.034425x`, and
+  `stage.block_forward.mlp_fc_gelu.total_ms` to `1.000722x`. The TK forward
+  defaults remain unchanged.
+
+  Verification note: wrote the current one-step profile to
+  `/tmp/nfn_current_stage_profile.json`, the QKV fallback candidate result to
+  `/tmp/nfn_qkv_forward_disable_tk_candidate.json`, and the MLP FC fallback
+  candidate result to `/tmp/nfn_mlp_fc_forward_disable_tk_candidate.json`.
+  Updated the SM120 wrapper source-contract and dry-run/rejected-profile tests
+  plus README, SDK Tile CUDA docs, and the CUDA Tile TODO.
+
 - Added a compile-time CUDA Tile-size candidate knob for native optimizer
   support kernels: `NFN_TILE_CUDA_OPTIMIZER_TILE_SIZE=1024|2048|4096`. The
   default remains `1024`, while candidate Tile ops libraries now expose

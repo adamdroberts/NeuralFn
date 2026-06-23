@@ -508,6 +508,12 @@ Native GPT runtime JSON also reports `lm_head_logits_tk_gemm_count`,
 `lm_head_logits_bf16_gemm_count`, so `lm_head_logits_linear_strategy` identifies
 the active LM-head logits backend without enabling the heavier
 `linear_shape_stats` timing path.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_forward_bf16_fallback_65536` and
+`mlp_fc_forward_bf16_fallback_65536` reproduce the current forward-shape
+fallback probes. Both are rejected on CUDA 13.3 RTX 5090: QKV fallback reduced
+TK forward calls but regressed `stage.block_forward.attention.qkv.total_ms` to
+`1.143374x`, while MLP FC fallback did not change tracked route counters and
+regressed train-loop wall to `1.016916x`.
 The SDK default `NativeGpt2RunConfig.lm_head_row_chunk_size` is 32768 rows for
 the local RTX 5090/CUDA 13.3 workstation profile. This reduces default LM-head
 chunk launches at the 64x1024 shape from 8 chunks to 2 and reserves about
@@ -1903,10 +1909,16 @@ LM-head CE to `1.430612x` versus the 1024-thread default. Real reruns require
 available without the opt-in.
 `qkv_forward_bf16_fallback_65536` expands to
 `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=2304,65536,768,T,N` for repeatable
-packed-QKV forward fallback bisection. It stays diagnostic-only: the dedicated
-RTX 5090 stage-timed gate reduced `linear_tk_gemm_count` from `1488` to `1200`
-over three measured steps but regressed train-loop wall time to `1.009016x`
-and block-forward attention time to `1.091020x` versus the TK default.
+packed-QKV forward fallback bisection. It stays diagnostic-only: the latest
+CUDA 13.3 RTX 5090 two-step, two-sample stage-timed gate reduced TK forward
+calls but regressed the target `stage.block_forward.attention.qkv.total_ms` to
+`1.143374x` versus the TK default.
+`mlp_fc_forward_bf16_fallback_65536` expands to
+`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=3072,65536,768,N,N` for repeatable
+MLP FC forward fallback bisection. It also stays diagnostic-only: the CUDA
+13.3 RTX 5090 two-step, two-sample gate did not change tracked route counters
+and regressed train-loop wall to `1.016916x`, block backward to `1.034425x`,
+and the target `stage.block_forward.mlp_fc_gelu.total_ms` to `1.000722x`.
 The same wrapper exposes `qkv_concurrent_dinput_dweight`, which expands to
 `NFN_NATIVE_GPT_BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT=1` for repeatable
 stage-timed QKV side-stream bisections. That profile remains default-off and is
