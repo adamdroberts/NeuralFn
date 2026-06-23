@@ -108,8 +108,14 @@ kernel candidates should first run
 symbol against `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
 inside one CUDA process with event timing, route counters, and a
 `candidate_true_fused_capability` JSON field. Use
-`NFN_LM_HEAD_BACKWARD_ROWS=49152` to exercise the default 49152-row trainer
-chunk scale without involving the full training loop. A post-reinstall wrapper
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` to exercise the default
+49152-row trainer chunk scale, or
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` to exercise the matching
+1024-bin loss-reduction route, without involving the full training loop. Set
+`NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` and
+`NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000` when the harness should fail fast for a
+candidate that is not a real fused kernel or is slower than the baseline. A
+post-reinstall wrapper
 timing check also confirms that
 `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run --native-cuda-print-command`
 and the matching `nfn train ... --native-cuda-dry-run --native-cuda-print-command`

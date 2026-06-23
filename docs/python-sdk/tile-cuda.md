@@ -1707,6 +1707,15 @@ AdamW or gradient-clip improvement and missed unrelated strict hot-stage gates.
 
 Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is metadata-only on the default `compiled-cli` runner: Python builds the compiled C++ argv from the dataset alias/path and prints it directly from the lightweight `train_gpt.py` or `nfn train` wrapper without spawning `nfn_gpt_native_train`. Shard validation or raw-text rejection is left to the compiled frontend for actions that actually enter C++. The inspection path must not import `server.dataset_manager`, NumPy, tiktoken, or Torch, must not write `fineweb_train_*.bin` shards, and must not add the external `--target train_gpt2cu` bridge argument for the default Tile-CUDA backend. The compiled Tile-CUDA frontend also treats `--print-command` as a no-data/no-CUDA action, printing the exact `nfn_gpt_native_train ...` invocation before token-shard resolution, CUDA runtime loading, or driver preflight.
 
+For LM-head backward kernel work, `tools/bench_lm_head_backward_candidate.sh`
+is the focused CUDA gate. `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` selects
+the default 49152-row trainer chunk, and
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` selects the 49152-row,
+1024-bin loss-reduction shape. Set
+`NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` to reject the current sequence
+wrapper and `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000` to reject a candidate slower
+than the baseline before running the full GPT trainer.
+
 When a native smoke or trainer run reports CUDA error 35, the dense GPT C++
 frontend now annotates the error with a runtime/driver versus blocked-device
 hint. For workstation checks, compare sandboxed results with unsandboxed

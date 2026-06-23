@@ -27,8 +27,13 @@ Future updates should append new entries here rather than replacing older notes.
   timing, emits route counters, and keeps
   `candidate_true_fused_capability` separate from symbol availability so the
   current sequence wrapper cannot be mistaken for the missing fused parity
-  kernel. Timed iterations reset logits and gradients before the CUDA event
-  window, so large buffer initialization is not counted as LM-head kernel time.
+  kernel. The wrapper now includes named `smoke`, `trainer-chunk`, and
+  `trainer-loss-bins` profiles plus optional
+  `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` and
+  `NFN_LM_HEAD_BACKWARD_MAX_RATIO=...` gates, so strict kernel candidates can
+  fail fast before a full native training run. Timed iterations reset logits and
+  gradients before the CUDA event window, so large buffer initialization is not
+  counted as LM-head kernel time.
 
   Verification: static native GPT tests cover the harness symbols, JSON fields,
   build wrapper, and Tile ops rebuild path. The harness compiled with CUDA
@@ -37,8 +42,12 @@ Future updates should append new entries here rather than replacing older notes.
   current wrapper-only strict symbol. GPU-visible row-loss runs at 32768 and
   49152 rows kept the current concurrent sequence wrapper rejected at
   `1.002919x` and `1.002258x` respectively, and the 49152-row loss-bin route
-  also rejected it at `1.001214x`. This confirms the remaining work is still a
-  true fused classifier/dHidden/dWeight kernel rather than wrapper scheduling.
+  also rejected it at `1.001214x`. After adding named profiles, CUDA 13.3
+  reruns measured `trainer-chunk` at `1.008311x` and `trainer-loss-bins` at
+  `1.010302x`, with the strict true-fused gate failing on
+  `candidate_true_fused_capability is false`. This confirms the remaining work
+  is still a true fused classifier/dHidden/dWeight kernel rather than wrapper
+  scheduling.
 
 - Added the rejected SM120 native candidate profile `cuda_malloc_async` for the
   existing native async allocator. It expands to baseline

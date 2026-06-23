@@ -114,11 +114,15 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       inside one CUDA process with event timing and cooperative route counters.
       The JSON includes `candidate_true_fused_capability`, so a future symbol
       export alone is not enough to pass the strict fused-kernel evidence gate.
-      A CUDA-visible 49152-row run against the current wrapper-only strict
-      symbol measured `1.002258x` candidate/baseline and
-      `candidate_true_fused_capability: false`, so the wrapper remains rejected
-      at the default trainer chunk scale. The matching 1024-bin loss-bin route
-      measured `1.001214x`, so loss-bin scheduling also does not close the gap.
+      The wrapper also has `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` and
+      `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` profiles plus
+      `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` /
+      `NFN_LM_HEAD_BACKWARD_MAX_RATIO=...` fail-fast gates.
+      CUDA 13.3 profile reruns against the current wrapper-only strict symbol
+      measured `trainer-chunk` at `1.008311x` and `trainer-loss-bins` at
+      `1.010302x`, and `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` failed with
+      `candidate_true_fused_capability is false`; the wrapper remains rejected
+      at the default trainer chunk and loss-bin scales.
     - 2026-06-22 prerequisite: the native trainer no longer treats
       `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16` as an
       untyped `int (*)()` probe. The function pointer now encodes the required

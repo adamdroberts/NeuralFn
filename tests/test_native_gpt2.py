@@ -1445,6 +1445,13 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "-lcudart -ldl" in build_script
     assert "NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_BASELINE_SYMBOL" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_PROFILE" in wrapper
+    assert "trainer-chunk|trainer_chunk" in wrapper
+    assert "trainer-loss-bins|trainer_loss_bins" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_MAX_RATIO" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED" in wrapper
+    assert "candidate_true_fused_capability is false" in wrapper
+    assert "candidate_to_baseline_ms_per_iter_ratio" in wrapper
     assert "tools/build_native_train_tile_ops.sh" in wrapper
     assert "--candidate-symbol" in wrapper
     assert "--baseline-symbol" in wrapper
