@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Promoted dense-GPT native LM-head full BF16 hidden prepack back to the
+  default. `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN` now defaults to `1`,
+  so the LM-head dWeight path packs final-norm hidden once per microbatch
+  instead of per LM-head row chunk. Runtime JSON reports
+  `lm_head_prepack_bf16_hidden_enabled: true` and
+  `lm_head_dweight_strategy:
+  "full-final-norm-bf16-prepack-bf16-dlogit-dweight-first-write-then-accumulate"`
+  on the default path.
+
+  Migration note: set `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0` or
+  `NFN_NATIVE_GPT2_LM_HEAD_PREPACK_BF16_HIDDEN=0` to reproduce the previous
+  per-chunk hidden packing route. The SM120 candidate wrapper profile
+  `lm_head_prepack_bf16_hidden_off` now benchmarks that old route against the
+  promoted default; `lm_head_prepack_bf16_hidden_on` remains available as the
+  inverse recheck and is no longer rejected by default.
+
+  Verification: the dedicated RTX 5090 CUDA 13.3 5-step, 3-sample stage-timed
+  recheck passed strict gates at `0.999726x` train-loop wall,
+  `0.997573x` LM-head backward, `0.999748x` LM-head dHidden, `0.993605x`
+  LM-head dWeight, and `0.987781x` uint16 arena materialization.
+
 - Added a default-off QKV serial-ordering candidate for dense-GPT native
   training. `NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1` runs packed-QKV
   dInput before QKV dWeight+bias, and runtime JSON reports

@@ -1905,38 +1905,31 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "stage.lm_head_backward.ce.total_ms=1.003780x" in ce_vec8_rejected.stderr
     assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in ce_vec8_rejected.stderr
 
-    prepack_on_rejected_env = os.environ.copy()
-    prepack_on_rejected_env.update(
+    prepack_on_dry_run_path = tmp_path / "candidate-prepack-on-dry-run.json"
+    prepack_on_dry_run_env = os.environ.copy()
+    prepack_on_dry_run_env.update(
         {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
             "NFN_SM120_NATIVE_PROFILE_DIR": "none",
             "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
             "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_prepack_bf16_hidden_on",
-            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "candidate-prepack-on-rejected.json"),
+            "NFN_SM120_NATIVE_JSON_OUT": str(prepack_on_dry_run_path),
         }
     )
 
-    prepack_on_rejected = subprocess.run(
+    prepack_on_dry_run = subprocess.run(
         ["bash", str(script)],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
-        env=prepack_on_rejected_env,
+        env=prepack_on_dry_run_env,
     )
 
-    assert prepack_on_rejected.returncode == 2
-    assert (
-        "lm_head_prepack_bf16_hidden_on is a rejected SM120 candidate"
-        in prepack_on_rejected.stderr
-    )
-    assert (
-        "stage.lm_head_backward.dhidden.total_ms=1.000690x"
-        in prepack_on_rejected.stderr
-    )
-    assert (
-        "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1"
-        in prepack_on_rejected.stderr
-    )
+    assert prepack_on_dry_run.returncode == 0, prepack_on_dry_run.stderr
+    prepack_on_payload = json.loads(prepack_on_dry_run_path.read_text(encoding="utf-8"))
+    assert prepack_on_payload["baseline_env"]["NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN"] == "0"
+    assert prepack_on_payload["candidate_env"]["NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN"] == "1"
 
     cublas_handle_rejected_env = os.environ.copy()
     cublas_handle_rejected_env.update(

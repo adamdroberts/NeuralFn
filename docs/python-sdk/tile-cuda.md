@@ -710,10 +710,10 @@ against the BF16 logit overwrite. The BF16 dlogits feed
 `nfn_native_tile_linear_backward_input_bf16_bits_float32` plus the prepacked
 BF16-hidden/BF16-dlogit
 `nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_float32`
-path when full hidden prepack is explicitly enabled. The default
-`NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0` keeps LM-head hidden packing
-per chunk; set it to `1` only to benchmark the older full-microbatch
-final-hidden prepack route. Set
+path with the default full hidden prepack. The default
+`NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` packs final-norm hidden once per
+microbatch; set it to `0` only to benchmark the older per-chunk LM-head hidden
+packing route. Set
 `NFN_NATIVE_GPT_CE_BF16_EXP2=1`, `NFN_NATIVE_GPT2_CE_BF16_EXP2=1`, or
 `NFN_TILE_CUDA_CE_BF16_EXP2=1` only for paired profiling of the BF16 CE+dlogits
 kernel's `exp2f(x * log2(e))` path; the default remains `expf`, and runtime

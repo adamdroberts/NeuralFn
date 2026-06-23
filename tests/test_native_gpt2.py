@@ -6715,7 +6715,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert (
         'env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN",\n'
         '                              "NFN_NATIVE_GPT2_LM_HEAD_PREPACK_BF16_HIDDEN"}),\n'
-        "            false);"
+        "            true);"
     ) in gpt2_source_text
     assert "NFN_NATIVE_GPT_REUSE_FORWARD_LM_HEAD_LOGITS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_REUSE_FORWARD_LM_HEAD_LOGITS" in gpt2_source_text

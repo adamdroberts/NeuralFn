@@ -1257,18 +1257,14 @@ BF16 GEMMEx to cuBLASLt but missed strict gates at `1.000384x` train-loop wall,
 `1.000199x` LM-head dHidden, and `1.001504x` block backward.
 `lm_head_prepack_bf16_hidden_off` pins
 `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` on the baseline and `0` on the
-candidate, making the older full-microbatch BF16 final-norm hidden prepack
-measurable against the current per-chunk LM-head hidden packing default without
-custom paired env wiring. `lm_head_prepack_bf16_hidden_on` is the inverse
-profile: it pins the current per-chunk route to the baseline and the older
-full-prepack route to the candidate for direct default-regression checks. The
-inverse profile is rejected by default after a CUDA 13.3 dedicated RTX 5090
-5-step, 3-sample gate improved train-loop mean to `0.997953x` but failed
-`stage.lm_head_backward.dhidden.total_ms` at `1.000690x`. The
-CUDA 13.3 dedicated RTX 5090 5-step, 3-sample
-gate promoted prepack-off because the opt-out measured train-loop wall time at
-`0.997878x`, total wall time at `0.994429x`, and train tokens/sec at
-`1.002130x`.
+candidate, making the older per-chunk LM-head hidden packing route measurable
+against the current full-microbatch BF16 final-norm hidden prepack default
+without custom paired env wiring. `lm_head_prepack_bf16_hidden_on` is the
+inverse profile for direct default rechecks. The CUDA 13.3 dedicated RTX 5090
+5-step, 3-sample stage-timed recheck promoted full prepack after passing at
+`0.999726x` train-loop wall, `0.997573x` LM-head backward, `0.999748x`
+LM-head dHidden, `0.993605x` LM-head dWeight, and `0.987781x` uint16 arena
+materialization.
 `mlp_proj_tk_dweight_65536` expands to
 `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T`. That profile
 uses the same TK dWeight bridge inside the BF16/BF16 dWeight+bias ABI for the

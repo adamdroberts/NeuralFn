@@ -12094,7 +12094,7 @@ int run_transformer_lm_training_json(
         !lm_head_ce_bf16_exp2_enabled;
     const bool lm_head_bf16_dweight_enabled =
         lm_head_bf16_logits_enabled &&
-            env_flag_enabled_or_default(
+        env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_BF16_DWEIGHT",
                               "NFN_NATIVE_GPT2_LM_HEAD_BF16_DWEIGHT"}),
             true);
@@ -12103,7 +12103,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN",
                               "NFN_NATIVE_GPT2_LM_HEAD_PREPACK_BF16_HIDDEN"}),
-            false);
+            true);
     const bool lm_head_reuse_forward_logits_enabled =
         lm_head_bf16_logits_enabled &&
         env_flag_enabled_or_default(

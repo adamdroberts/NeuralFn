@@ -169,8 +169,6 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0"
     ;;
   "lm_head_prepack_bf16_hidden_on"|"lm-head-prepack-bf16-hidden-on"|"lm_head_full_prepack_bf16_hidden"|"lm-head-full-prepack-bf16-hidden")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 5-step, 3-sample stage-timed gate made full-prepack the candidate against the current per-chunk baseline and improved train_loop_wall_ms_per_step to 0.997953x, but failed the strict LM-head dHidden gate at stage.lm_head_backward.dhidden.total_ms=1.000690x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1"
     ;;
