@@ -1881,7 +1881,14 @@ that rejected full-resident LM-head diagnostic; it expands to
 out at 360s while the safe 32768-row baseline completed. The promoted 49152-row
 LM-head chunk candidate passed the latest 5-step, 3-sample same-script gate at
 `0.992974x` train-loop wall time and `0.998563x` LM-head backward versus the
-old 32768-row route; the 16384-row candidate regressed at `1.008471x`.
+old 32768-row route; the 16384-row candidate regressed at `1.008471x`. The
+inverse rollback profile `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_32768`
+is also rejected by default for real candidate-wrapper launches after the CUDA
+13.3 dedicated RTX 5090 rerun changed the route but missed strict train-loop,
+steady-state, LM-head, block-backward, and MLP-projection gates. Use
+`--lm-head-row-chunk-size 32768` only for manual diagnostics, or set
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for an intentional
+same-script rerun.
 Unsupported template names and custom graph files still report
 `selected-graph-native-trainer-missing` instead of falling back to Torch.
 

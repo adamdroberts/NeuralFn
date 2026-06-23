@@ -1084,6 +1084,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "--lm-head-row-chunk-size 49152" in text
     assert "lm_head_row_chunk_32768" in text
     assert "--lm-head-row-chunk-size 32768" in text
+    assert "1.001939x train_loop_cuda_event_steady_state_wall_ms_per_step" in text
+    assert "1.000885x stage.lm_head_backward.total_ms" in text
     assert "lm_head_row_chunk_65536" in text
     assert "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1" in text
     assert "--lm-head-row-chunk-size 65536" in text
@@ -2299,6 +2301,65 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     )
     assert "1.000304x stage.lm_head_backward.total_ms" in (
         row_loss_sum_rejected.stderr
+    )
+
+    row_chunk_32768_output_path = tmp_path / "candidate-row-chunk-32768-dry-run.json"
+    row_chunk_32768_env = os.environ.copy()
+    row_chunk_32768_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_STAGE_TIMING": "1",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_row_chunk_32768",
+            "NFN_SM120_NATIVE_JSON_OUT": str(row_chunk_32768_output_path),
+        }
+    )
+
+    row_chunk_32768_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=row_chunk_32768_env,
+    )
+
+    assert row_chunk_32768_dry_run.returncode == 0, row_chunk_32768_dry_run.stderr
+    row_chunk_32768_payload = json.loads(
+        row_chunk_32768_output_path.read_text(encoding="utf-8")
+    )
+    assert "--lm-head-row-chunk-size" in row_chunk_32768_payload["baseline_command"]
+    assert "49152" in row_chunk_32768_payload["baseline_command"]
+    assert "--lm-head-row-chunk-size" in row_chunk_32768_payload["candidate_command"]
+    assert "32768" in row_chunk_32768_payload["candidate_command"]
+    assert row_chunk_32768_payload["metric_ratio_gates"]["enabled"] is False
+
+    row_chunk_32768_rejected_env = os.environ.copy()
+    row_chunk_32768_rejected_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_row_chunk_32768",
+            "NFN_SM120_NATIVE_JSON_OUT": str(
+                tmp_path / "candidate-row-chunk-32768-rejected.json"
+            ),
+        }
+    )
+    row_chunk_32768_rejected = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=row_chunk_32768_rejected_env,
+    )
+    assert row_chunk_32768_rejected.returncode == 2
+    assert "lm_head_row_chunk_32768 is a rejected SM120 candidate" in (
+        row_chunk_32768_rejected.stderr
+    )
+    assert "1.000885x stage.lm_head_backward.total_ms" in (
+        row_chunk_32768_rejected.stderr
     )
 
     combined_arena_output_path = tmp_path / "candidate-combined-arena-dry-run.json"

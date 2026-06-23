@@ -481,6 +481,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_EXTRA_ARGS_RAW="${CANDIDATE_EXTRA_ARGS_RAW:+$CANDIDATE_EXTRA_ARGS_RAW }--lm-head-row-chunk-size 49152"
     ;;
   "lm_head_row_chunk_32768"|"lm-head-row-chunk-32768"|"lm_head_old_row_chunk_32768"|"lm-head-old-row-chunk-32768")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed rerun changed LM-head row chunks from 49152 back to 32768 but failed strict gates at 1.000594x train_loop_wall_ms_per_step, 1.001939x train_loop_cuda_event_steady_state_wall_ms_per_step, 1.000885x stage.lm_head_backward.total_ms, 1.000224x stage.block_backward.total_ms, and 1.000409x stage.block_backward.mlp_proj.total_ms."
     BASELINE_EXTRA_ARGS_RAW="${BASELINE_EXTRA_ARGS_RAW:+$BASELINE_EXTRA_ARGS_RAW }--lm-head-row-chunk-size 49152"
     CANDIDATE_EXTRA_ARGS_RAW="${CANDIDATE_EXTRA_ARGS_RAW:+$CANDIDATE_EXTRA_ARGS_RAW }--lm-head-row-chunk-size 32768"
     ;;

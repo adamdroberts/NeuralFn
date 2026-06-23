@@ -401,7 +401,12 @@ The tied LM-head row chunk defaults to 49152 rows on the dedicated RTX
 `--lm-head-row-chunk-size` on the compiled C++ entrypoint or
 `--native-cuda-lm-head-row-chunk-size` from the wrapper/root CLI. Use 32768
 when reproducing the previous workstation default, or 8192 when reproducing
-the older lower-memory route. Effective chunks above 49152 rows require
+the older lower-memory route. The named same-script rollback profile
+`lm_head_row_chunk_32768` is rejected by default for real benchmark launches
+after the CUDA 13.3 dedicated RTX 5090 rerun missed train-loop, steady-state,
+LM-head, block-backward, and MLP-projection gates; set
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for intentional
+diagnostics. Effective chunks above 49152 rows require
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` for explicit diagnostics.
 Loss partials
 are reduced on device before one host loss copy per forward loss, and tied

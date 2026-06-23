@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_32768` as a
+  rejected rollback candidate for normal real launches. The CUDA 13.3 dedicated
+  RTX 5090 3-step, 2-sample stage-timed rerun changed the LM-head row chunk
+  from the current 49152-row route back to 32768 rows, but failed strict gates
+  at `1.000594x` train-loop wall, `1.001939x` steady-state CUDA-event wall,
+  `1.000885x` LM-head backward, `1.000224x` block backward, and `1.000409x`
+  MLP projection. Explicit `--lm-head-row-chunk-size 32768` remains available
+  for manual diagnostics; candidate-wrapper real launches require
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
+
+  Verification: ran the paired native candidate profile unsandboxed on the
+  display-disabled RTX 5090 with selected-GPU locking and no compute processes;
+  updated docs and static candidate-wrapper coverage for the rejected launch and
+  dry-run expansion.
+
 - Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_sum_accumulate`
   as a rejected SM120 candidate for normal real launches. The CUDA 13.3
   dedicated RTX 5090 3-step, 2-sample stage-timed rerun changed the row-loss

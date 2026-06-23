@@ -78,7 +78,12 @@ that rejected diagnostic; it expands to
 the baseline to `--lm-head-row-chunk-size 32768` and the candidate to
 `--lm-head-row-chunk-size 49152`, so the same-script wrapper still compares the
 promoted route against the older route under the same external GPU load. The
-matching `lm_head_row_chunk_32768` profile performs the inverse rollback check.
+matching `lm_head_row_chunk_32768` profile performs the inverse rollback check,
+but real wrapper launches now reject it by default: the CUDA 13.3 dedicated RTX
+5090 rerun changed the route but missed strict train-loop, steady-state,
+LM-head, block-backward, and MLP-projection gates. Use
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for an intentional
+diagnostic rerun.
 Real paired-wrapper runs of timeout-prone LM-head profiles now also
 require `NFN_SM120_NATIVE_ALLOW_TIMEOUT_PRONE_LM_HEAD_PROFILE=1`; dry-run plan
 expansion remains available without that opt-in. The native runner now rejects
