@@ -502,6 +502,36 @@ DEFAULT_NATIVE_SHIM_IMPORT_ENTRYPOINTS = (
         ),
     ),
 )
+DEFAULT_SHELL_ENTRYPOINTS = (
+    (
+        "bench_linear_backward_dry_run",
+        (
+            "bash",
+            "tools/bench_linear_backward_candidate.sh",
+        ),
+        {
+            "NFN_LINEAR_BACKWARD_DRY_RUN": "1",
+            "NFN_LINEAR_BACKWARD_PROFILE": "smoke-dinput",
+            "NFN_LINEAR_BACKWARD_BENCH_BIN": "/tmp/nfn-linear-bench-stub",
+            "NFN_NATIVE_TILE_OPS_LIB": "/tmp/libnfn-native-train-tile-ops-stub.so",
+            "NFN_LINEAR_BACKWARD_JSON_OUT": os.devnull,
+        },
+    ),
+    (
+        "bench_native_gpt_linear_hot_matrix_dry_run",
+        (
+            "bash",
+            "tools/bench_native_gpt_linear_hot_matrix.sh",
+        ),
+        {
+            "NFN_LINEAR_HOT_MATRIX_DRY_RUN": "1",
+            "NFN_LINEAR_HOT_MATRIX_PROFILES": "smoke-dinput smoke-dweight",
+            "NFN_LINEAR_BACKWARD_DRY_RUN": "1",
+            "NFN_LINEAR_BACKWARD_BENCH_BIN": "/tmp/nfn-linear-bench-stub",
+            "NFN_NATIVE_TILE_OPS_LIB": "/tmp/libnfn-native-train-tile-ops-stub.so",
+        },
+    ),
+)
 NATIVE_GPT_CHECKPOINT_MAGIC = 20240326
 NATIVE_GPT_CHECKPOINT_HEADER_INTS = 256
 DEFAULT_MAX_ENTRYPOINT_SECONDS = 2.0
@@ -922,6 +952,44 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
     return entries
 
 
+def shell_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    startup_budget_seconds = max(0.0, float(max_entrypoint_seconds))
+    base_env = os.environ.copy()
+    base_env.setdefault("CUDA_VISIBLE_DEVICES", "0")
+    for name, command, extra_env in DEFAULT_SHELL_ENTRYPOINTS:
+        env = base_env.copy()
+        env.update(extra_env)
+        started = time.perf_counter()
+        proc = subprocess.run(
+            list(command),
+            cwd=repo_root,
+            env=env,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        elapsed_seconds = time.perf_counter() - started
+        startup_within_budget = (
+            True if startup_budget_seconds <= 0.0 else elapsed_seconds <= startup_budget_seconds
+        )
+        entries.append(
+            {
+                "name": name,
+                "command": list(command),
+                "returncode": proc.returncode,
+                "passed": proc.returncode == 0 and startup_within_budget,
+                "elapsed_seconds": elapsed_seconds,
+                "startup_budget_seconds": startup_budget_seconds,
+                "startup_within_budget": startup_within_budget,
+                "stdout": proc.stdout.strip(),
+                "stderr": proc.stderr.strip(),
+            }
+        )
+    return entries
+
+
 def project_dependency_report(repo_root: Path) -> dict[str, object]:
     pyproject = repo_root / "pyproject.toml"
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
@@ -1047,6 +1115,7 @@ def main() -> int:
             artifact_report.append(entry)
 
     python_report: list[dict[str, object]] = []
+    shell_report: list[dict[str, object]] = []
     dependency_report: dict[str, object] | None = None
     requirements_report: dict[str, object] | None = None
     if not args.skip_python_entrypoints:
@@ -1060,6 +1129,11 @@ def main() -> int:
             max_entrypoint_seconds=float(args.max_entrypoint_seconds),
         )
         failed = failed or any(not bool(entry["passed"]) for entry in python_report)
+        shell_report = shell_entrypoint_report(
+            repo_root,
+            max_entrypoint_seconds=float(args.max_entrypoint_seconds),
+        )
+        failed = failed or any(not bool(entry["passed"]) for entry in shell_report)
 
     if args.json:
         print(
@@ -1071,6 +1145,7 @@ def main() -> int:
                     "project_dependencies": dependency_report,
                     "requirements_dependencies": requirements_report,
                     "python_entrypoints": python_report,
+                    "shell_entrypoints": shell_report,
                 },
                 indent=2,
             )
@@ -1106,6 +1181,20 @@ def main() -> int:
                 for dependency in requirements_report["offenders"]:
                     print(f"  requirement dependency: {dependency}", file=sys.stderr)
         for entry in python_report:
+            if entry["passed"]:
+                print(f"{entry['name']}: ok ({float(entry['elapsed_seconds']):.3f}s)")
+            else:
+                print(f"{entry['name']}: failed", file=sys.stderr)
+                if not entry.get("startup_within_budget", True):
+                    print(
+                        "startup budget exceeded: "
+                        f"{float(entry['elapsed_seconds']):.3f}s > "
+                        f"{float(entry['startup_budget_seconds']):.3f}s",
+                        file=sys.stderr,
+                    )
+                if entry["stderr"]:
+                    print(str(entry["stderr"]), file=sys.stderr)
+        for entry in shell_report:
             if entry["passed"]:
                 print(f"{entry['name']}: ok ({float(entry['elapsed_seconds']):.3f}s)")
             else:

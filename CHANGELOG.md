@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the native no-Torch dependency verifier to cover benchmark shell
+  wrappers. `tools/check_native_no_torch_deps.py` now reports
+  `shell_entrypoints`, and `tools/bench_linear_backward_candidate.sh` exposes
+  `NFN_LINEAR_BACKWARD_DRY_RUN=1` so the verifier can dry-run the lower-level
+  linear benchmark plus `tools/bench_native_gpt_linear_hot_matrix.sh` without
+  building artifacts or touching CUDA. This keeps performance-gate command
+  planning inside the same no-Torch/no-graph startup boundary as native training
+  and inference entrypoints.
+
+  Verification: ran the focused verifier pytest, `tools/check_native_no_torch_deps.py
+  --skip-artifacts --json --max-entrypoint-seconds 2.0`, shell syntax checks,
+  and `py_compile` for the verifier.
+
 - Added reverse-order timing support to the native linear-backward C++ benchmark
   and wrapper. `linear_backward_bench` now accepts `--candidate-first`, emits
   `run_order` in JSON, and `tools/bench_linear_backward_candidate.sh` exposes

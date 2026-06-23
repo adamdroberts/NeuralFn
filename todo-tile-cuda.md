@@ -43,6 +43,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
 - [x] Extend the no-Torch dependency verifier across GPT, GPT-2-evo, NanoGPT, `nfn train`, native inference, `neuralfn.native_train`, and public SDK native training exports so legacy handoff surfaces cannot import Torch/NumPy/tiktoken/dataset-manager code before delegating to compiled native CLIs.
   - 2026-06-19 also made the pyproject contract enforce the same boundary: the default package install has no hard dependency on Torch, NumPy, tokenizer, dataset, graph-analysis, or server packages. Those workflows are now explicit extras (`tile-cuda`, `datasets`, `graph`, `server`, `torch`, or `all`), and the no-Torch verifier fails if those packages move back into default dependencies.
   - 2026-06-21 extended the default native artifact scan to built SDK binding modules matching `neuralfn/_native*.so`, so `_native_gpt`, `_native_gpt2`, and `_native_train` cannot accidentally regain `libtorch`, `libc10`, or `libpython` links while the SDK moves to C++ binding dispatch. The same verifier now imports those built modules under the blocked-import harness when present.
+  - 2026-06-23 added `shell_entrypoints` coverage to the verifier for native
+    benchmark planning wrappers. `tools/bench_linear_backward_candidate.sh` now
+    has `NFN_LINEAR_BACKWARD_DRY_RUN=1`, and the verifier dry-runs both that
+    wrapper and `tools/bench_native_gpt_linear_hot_matrix.sh` so benchmark
+    command planning cannot pull in Torch, graph-editor, dataset, build, or CUDA
+    startup work.
 - [x] Add a generic native-train binding command resolver so SDK tests and callers can inspect the compiled argv that `neuralfn._native_train` will spawn without importing Torch, dataset managers, or graph payload paths.
 - [x] Expose gradient/device-buffer fill through the native ABI for trainer-loop zeroing.
 - [x] Expose global gradient norm clip scale finalization and device-scalar gradient scaling through the native ABI.

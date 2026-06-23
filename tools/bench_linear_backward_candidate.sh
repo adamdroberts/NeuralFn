@@ -155,6 +155,7 @@ WARMUP="${NFN_LINEAR_BACKWARD_WARMUP:-${DEFAULT_WARMUP}}"
 BETA="${NFN_LINEAR_BACKWARD_BETA:-0.0}"
 MAX_RATIO="${NFN_LINEAR_BACKWARD_MAX_RATIO:-}"
 CANDIDATE_FIRST="${NFN_LINEAR_BACKWARD_CANDIDATE_FIRST:-0}"
+DRY_RUN="${NFN_LINEAR_BACKWARD_DRY_RUN:-0}"
 
 case "${OPERATION}" in
   dinput-strided)
@@ -229,6 +230,32 @@ case "${CUDA_DEVICE_RAW,,}" in
     ;;
 esac
 
+BENCH_ARGS=(
+  --tile-ops-lib "${TILE_OPS_LIB}"
+  --operation "${OPERATION}"
+  --baseline-symbol "${BASELINE_SYMBOL}"
+  --candidate-symbol "${CANDIDATE_SYMBOL}"
+  --rows "${ROWS}"
+  --input-dim "${INPUT_DIM}"
+  --output-dim "${OUTPUT_DIM}"
+  --grad-out-row-stride "${GRAD_OUT_ROW_STRIDE}"
+  --iterations "${ITERATIONS}"
+  --warmup "${WARMUP}"
+  --beta "${BETA}"
+  --cuda-device "${CUDA_DEVICE}"
+  --json-out "${JSON_OUT}"
+  "${CANDIDATE_FIRST_ARGS[@]}"
+)
+
+if [[ "${DRY_RUN}" == "1" || "${DRY_RUN,,}" == "true" ]]; then
+  printf '%q' "${BENCH_BIN}"
+  for ARG in "${BENCH_ARGS[@]}"; do
+    printf ' %q' "${ARG}"
+  done
+  printf '\n'
+  exit 0
+fi
+
 if [[ ! -x "${BENCH_BIN}" || "${ROOT_DIR}/neuralfn/csrc/native_train/linear_backward_bench.cpp" -nt "${BENCH_BIN}" ]]; then
   bash "${ROOT_DIR}/tools/build_linear_backward_bench.sh" "${BENCH_BIN}" >&2
 fi
@@ -237,20 +264,7 @@ if [[ ! -f "${TILE_OPS_LIB}" || "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops
 fi
 
 "${BENCH_BIN}" \
-  --tile-ops-lib "${TILE_OPS_LIB}" \
-  --operation "${OPERATION}" \
-  --baseline-symbol "${BASELINE_SYMBOL}" \
-  --candidate-symbol "${CANDIDATE_SYMBOL}" \
-  --rows "${ROWS}" \
-  --input-dim "${INPUT_DIM}" \
-  --output-dim "${OUTPUT_DIM}" \
-  --grad-out-row-stride "${GRAD_OUT_ROW_STRIDE}" \
-  --iterations "${ITERATIONS}" \
-  --warmup "${WARMUP}" \
-  --beta "${BETA}" \
-  --cuda-device "${CUDA_DEVICE}" \
-  --json-out "${JSON_OUT}" \
-  "${CANDIDATE_FIRST_ARGS[@]}"
+  "${BENCH_ARGS[@]}"
 
 if [[ -n "${MAX_RATIO}" ]]; then
   python -c 'import json, pathlib, sys
