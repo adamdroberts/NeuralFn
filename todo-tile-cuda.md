@@ -1169,6 +1169,14 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `lm_head_dhidden_bf16_gemm_count`. Future candidates that only change the
     dHidden backend no longer need expensive `linear_shape_stats` timing to
     prove they routed.
+  - 2026-06-23 added matching block-backward dInput route counters to native
+    JSON and paired route-change detection:
+    `block_backward_dinput_tk_gemm_count`,
+    `block_backward_dinput_cublaslt_gemm_count`, and
+    `block_backward_dinput_bf16_gemm_count`. These aggregate the MLP
+    projection, MLP FC, attention projection, and QKV dInput bodies so the next
+    block-backward candidate must prove it moved the hot dInput GEMM route
+    before timing wins are trusted.
   - 2026-06-22 promoted the no-loss LM-head CE specialization to the default
     behind `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` /
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`.

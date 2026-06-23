@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added block-backward dInput route counters to dense GPT native training JSON:
+  `block_backward_dinput_tk_gemm_count`,
+  `block_backward_dinput_cublaslt_gemm_count`, and
+  `block_backward_dinput_bf16_gemm_count`. The counters wrap the MLP
+  projection, MLP FC, attention projection, and QKV dInput bodies without
+  changing execution order, and `tools/paired_kernel_speed.py` now tracks them
+  as route-change counters for future block-backward kernel candidates.
+
+  Verification note: updated paired-speed synthetic JSON tests and native GPT
+  source-contract tests; rebuilt/smoke verification is recorded with the
+  implementation commit.
+
 - Added LM-head dHidden-specific route counters to dense GPT native training
   JSON: `lm_head_dhidden_tk_gemm_count`,
   `lm_head_dhidden_cublaslt_gemm_count`, and

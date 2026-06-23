@@ -269,6 +269,13 @@ same text summary also surfaces optimizer-step support stages:
 `stage.final_norm_backward.total_ms`, `stage.embedding_backward.total_ms`,
 `stage.gradient_zero.total_ms`, `stage.gradient_clip.total_ms`, and
 `stage.adamw_update.total_ms`.
+Dense GPT native JSON also reports block dInput route counters:
+`block_backward_dinput_tk_gemm_count`,
+`block_backward_dinput_cublaslt_gemm_count`, and
+`block_backward_dinput_bf16_gemm_count`. These counters are captured around the
+MLP projection, MLP FC, attention projection, and QKV dInput bodies, and
+`tools/paired_kernel_speed.py` treats them as route-change counters so future
+block-backward candidates must prove the hot dInput GEMM route actually moved.
 For optimizer/gradient-clipping Tile retile candidates, build a temporary Tile
 ops library with
 `NFN_TILE_CUDA_EXTRA_NVCC_FLAGS="-DNFN_TILE_CUDA_OPTIMIZER_TILE_SIZE=2048"`

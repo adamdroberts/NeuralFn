@@ -9902,6 +9902,9 @@ int run_transformer_lm_training_json(
     std::int64_t linear_cublaslt_bgrad_gemm_count = 0;
     std::int64_t linear_cublaslt_bgrad_direct_write_count = 0;
     std::int64_t linear_cublaslt_bgrad_accumulate_count = 0;
+    std::int64_t block_backward_dinput_tk_gemm_count = 0;
+    std::int64_t block_backward_dinput_cublaslt_gemm_count = 0;
+    std::int64_t block_backward_dinput_bf16_gemm_count = 0;
     std::int64_t linear_sgemm_count = 0;
     std::int64_t bf16_to_f32_vec4_count = 0;
     std::int64_t linear_bf16_a_pack_count = 0;
@@ -17299,6 +17302,32 @@ int run_transformer_lm_training_json(
         };
         const std::uint16_t* active_packed_attn_out_bf16 =
             stored_packed_attention != nullptr ? stored_packed_attention->o : tape.packed_attn_out_bf16;
+        auto record_block_dinput_route_counts = [&](
+                                                    std::int64_t tk_before,
+                                                    std::int64_t cublaslt_before,
+                                                    std::int64_t bf16_before) {
+            const std::int64_t tk_after =
+                trainer_linear_tk_gemm_count_fn != nullptr ? trainer_linear_tk_gemm_count_fn() : tk_before;
+            const std::int64_t cublaslt_after =
+                trainer_linear_cublaslt_gemm_count_fn != nullptr ? trainer_linear_cublaslt_gemm_count_fn() : cublaslt_before;
+            const std::int64_t bf16_after =
+                trainer_linear_bf16_gemm_count_fn != nullptr ? trainer_linear_bf16_gemm_count_fn() : bf16_before;
+            block_backward_dinput_tk_gemm_count += std::max<std::int64_t>(0, tk_after - tk_before);
+            block_backward_dinput_cublaslt_gemm_count += std::max<std::int64_t>(0, cublaslt_after - cublaslt_before);
+            block_backward_dinput_bf16_gemm_count += std::max<std::int64_t>(0, bf16_after - bf16_before);
+        };
+        auto run_counted_block_dinput = [&](auto&& body) {
+            const std::int64_t tk_before =
+                trainer_linear_tk_gemm_count_fn != nullptr ? trainer_linear_tk_gemm_count_fn() : 0;
+            const std::int64_t cublaslt_before =
+                trainer_linear_cublaslt_gemm_count_fn != nullptr ? trainer_linear_cublaslt_gemm_count_fn() : 0;
+            const std::int64_t bf16_before =
+                trainer_linear_bf16_gemm_count_fn != nullptr ? trainer_linear_bf16_gemm_count_fn() : 0;
+            body();
+            if (error.empty()) {
+                record_block_dinput_route_counts(tk_before, cublaslt_before, bf16_before);
+            }
+        };
         std::uint16_t* mlp_proj_grad_out_bf16 = nullptr;
         bool mlp_proj_grad_out_bf16_ready = false;
         auto ensure_mlp_proj_grad_out_bf16 = [&]() -> const std::uint16_t* {
@@ -17389,6 +17418,7 @@ int run_transformer_lm_training_json(
             };
             auto run_mlp_proj_dinput = [&]() {
                 run_timed_stage("block_backward.mlp_proj.dinput", [&]() {
+                run_counted_block_dinput([&]() {
                 if (stored_mlp != nullptr && fuse_mlp_proj_dgelu_enabled) {
                     if (error.empty()) {
                         if (elide_mlp_dgelu_float_grad_enabled) {
@@ -17445,6 +17475,7 @@ int run_transformer_lm_training_json(
                             label + ".mlp.proj.backward_input.bf16");
                     }
                 }
+                });
                 });
             };
             if (mlp_proj_dinput_before_dweight_enabled) {
@@ -17529,6 +17560,7 @@ int run_transformer_lm_training_json(
                 });
             };
             auto run_mlp_fc_dinput_body = [&](void* stream) {
+                run_counted_block_dinput([&]() {
                 if (stored_mlp != nullptr && bf16_mlp_grad_handoff_enabled) {
                     if (error.empty()) {
                         run(linear_backward_input_bf16_bits_weight_bf16(
@@ -17544,6 +17576,7 @@ int run_transformer_lm_training_json(
                 } else {
                     if (error.empty()) run(linear_backward_input_weight_bf16(grad_fc_out, block.fc_weight_bf16, grad_ln2, active_rows, kDim, kHidden, stream), label + ".mlp.fc.backward_input.weight_bf16");
                 }
+                });
             };
             auto run_mlp_fc_dinput = [&]() {
                 run_timed_stage("block_backward.mlp_fc.dinput", [&]() {
@@ -17740,6 +17773,7 @@ int run_transformer_lm_training_json(
                 });
             };
             auto run_attn_proj_dinput_body = [&](void* stream) {
+                run_counted_block_dinput([&]() {
                 if (bf16_attention_grad_out_handoff_enabled) {
                     if (error.empty()) {
                         run(linear_backward_input_weight_bf16_to_bf16_bits(
@@ -17755,6 +17789,7 @@ int run_transformer_lm_training_json(
                 } else {
                     if (error.empty()) run(linear_backward_input_weight_bf16(grad_residual1, block.attn_proj_weight_bf16, grad_attn_out, active_rows, kDim, kDim, stream), label + ".attn.out.backward_input.weight_bf16");
                 }
+                });
             };
             auto run_attn_proj_dinput = [&]() {
                 run_timed_stage("block_backward.attn_proj.dinput", [&]() {
@@ -18092,6 +18127,7 @@ int run_transformer_lm_training_json(
                 });
             };
             auto run_qkv_dinput_body = [&](void* stream) {
+                run_counted_block_dinput([&]() {
                 if (bf16_qkv_grad_handoff_enabled) {
                     if (error.empty()) {
                         run(linear_backward_input_bf16_bits_weight_bf16(
@@ -18107,6 +18143,7 @@ int run_transformer_lm_training_json(
                 } else {
                     if (error.empty()) run(linear_backward_input_weight_bf16(grad_qkv, block.qkv_weight_bf16, grad_ln1, active_rows, kDim, kQkvDim, stream), label + ".attn.qkv.backward_input.weight_bf16");
                 }
+                });
             };
             auto run_qkv_dinput = [&]() {
                 run_timed_stage("block_backward.qkv.dinput", [&]() {
@@ -20470,8 +20507,11 @@ int run_transformer_lm_training_json(
                                            : "bf16-shadow-weight-gemmex-forward")
         << "\",\n"
         << "  \"block_backward_input_linear_strategy\": \""
-        << (linear_cublaslt_gemm_count > 0 ? "bf16-shadow-weight-shape-gated-cublaslt-dinput"
-                                           : "bf16-shadow-weight-gemmex-dinput")
+        << (block_backward_dinput_tk_gemm_count > 0
+                ? "tk-sm120-bf16-dinput"
+                : (block_backward_dinput_cublaslt_gemm_count > 0
+                       ? "bf16-shadow-weight-shape-gated-cublaslt-dinput"
+                       : "bf16-shadow-weight-gemmex-dinput"))
         << "\",\n"
         << "  \"block_backward_mlp_proj_dgelu_fusion_enabled\": "
         << (fuse_mlp_proj_dgelu_enabled ? "true" : "false") << ",\n"
@@ -20599,6 +20639,9 @@ int run_transformer_lm_training_json(
         << "  \"lm_head_dhidden_tk_gemm_count\": " << lm_head_dhidden_tk_gemm_count << ",\n"
         << "  \"lm_head_dhidden_cublaslt_gemm_count\": " << lm_head_dhidden_cublaslt_gemm_count << ",\n"
         << "  \"lm_head_dhidden_bf16_gemm_count\": " << lm_head_dhidden_bf16_gemm_count << ",\n"
+        << "  \"block_backward_dinput_tk_gemm_count\": " << block_backward_dinput_tk_gemm_count << ",\n"
+        << "  \"block_backward_dinput_cublaslt_gemm_count\": " << block_backward_dinput_cublaslt_gemm_count << ",\n"
+        << "  \"block_backward_dinput_bf16_gemm_count\": " << block_backward_dinput_bf16_gemm_count << ",\n"
         << "  \"lm_head_dhidden_linear_strategy\": \""
         << (lm_head_bf16_logits_enabled
                 ? (lm_head_dhidden_tk_shape_used

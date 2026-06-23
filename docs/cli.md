@@ -1180,7 +1180,8 @@ native-loop counters into `baseline_native_metrics` or
 `candidate_native_metrics`, including `timing.train_loop_wall_ms`,
 `timing.train_tokens_per_second`, setup time, checkpoint time, total native
 wall time, selected linear/attention kernel counters, LM-head logits/dHidden
-route counters such as `lm_head_dhidden_cublaslt_gemm_count`, emitted
+route counters such as `lm_head_dhidden_cublaslt_gemm_count`, block dInput
+route counters such as `block_backward_dinput_bf16_gemm_count`, emitted
 `timing.setup_timing` and `timing.stage_timing` totals/averages/counts, and paired native-metric ratios
 when both commands expose the same metric. If a child command uses
 `--json-out`, `--profile-json`, or `--stage-profile-json`, the helper reads

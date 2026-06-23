@@ -111,6 +111,9 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
                 "\\\"lm_head_dhidden_tk_gemm_count\\\": 0, "
                 "\\\"lm_head_dhidden_cublaslt_gemm_count\\\": 0, "
                 "\\\"lm_head_dhidden_bf16_gemm_count\\\": 2, "
+                "\\\"block_backward_dinput_tk_gemm_count\\\": 1, "
+                "\\\"block_backward_dinput_cublaslt_gemm_count\\\": 0, "
+                "\\\"block_backward_dinput_bf16_gemm_count\\\": 5, "
                 "\\\"lm_head_classifier_chunk_kernel_available\\\": true, "
                 "\\\"lm_head_classifier_chunk_kernel_enabled\\\": true, "
                 "\\\"lm_head_classifier_chunk_launch_count\\\": 64, "
@@ -218,6 +221,9 @@ def test_paired_kernel_speed_tool_compiles_and_smokes() -> None:
     assert payload["candidate_native_metrics"]["lm_head_dhidden_tk_gemm_count"]["mean"] == 0.0
     assert payload["candidate_native_metrics"]["lm_head_dhidden_cublaslt_gemm_count"]["mean"] == 0.0
     assert payload["candidate_native_metrics"]["lm_head_dhidden_bf16_gemm_count"]["mean"] == 2.0
+    assert payload["candidate_native_metrics"]["block_backward_dinput_tk_gemm_count"]["mean"] == 1.0
+    assert payload["candidate_native_metrics"]["block_backward_dinput_cublaslt_gemm_count"]["mean"] == 0.0
+    assert payload["candidate_native_metrics"]["block_backward_dinput_bf16_gemm_count"]["mean"] == 5.0
     assert payload["candidate_native_metrics"]["lm_head_classifier_chunk_launch_count"]["mean"] == 64.0
     assert payload["candidate_native_metrics"]["lm_head_classifier_last_rows"]["mean"] == 8192.0
     assert payload["candidate_native_metrics"]["lm_head_classifier_last_vocab"]["mean"] == 50257.0
@@ -3470,6 +3476,9 @@ def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> N
         "linear_cublaslt_bgrad_gemm_count": {"mean": 1152.0, "median": 1152.0, "min": 1152.0, "max": 1152.0},
         "linear_cublaslt_bgrad_direct_write_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
         "linear_cublaslt_bgrad_accumulate_count": {"mean": 1152.0, "median": 1152.0, "min": 1152.0, "max": 1152.0},
+        "block_backward_dinput_tk_gemm_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
+        "block_backward_dinput_cublaslt_gemm_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
+        "block_backward_dinput_bf16_gemm_count": {"mean": 384.0, "median": 384.0, "min": 384.0, "max": 384.0},
     }
     candidate = {
         "linear_tk_gemm_count": {"mean": 1344.0, "median": 1344.0, "min": 1344.0, "max": 1344.0},
@@ -3478,13 +3487,16 @@ def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> N
         "linear_cublaslt_bgrad_gemm_count": {"mean": 1152.0, "median": 1152.0, "min": 1152.0, "max": 1152.0},
         "linear_cublaslt_bgrad_direct_write_count": {"mean": 12.0, "median": 12.0, "min": 12.0, "max": 12.0},
         "linear_cublaslt_bgrad_accumulate_count": {"mean": 1140.0, "median": 1140.0, "min": 1140.0, "max": 1140.0},
+        "block_backward_dinput_tk_gemm_count": {"mean": 4.0, "median": 4.0, "min": 4.0, "max": 4.0},
+        "block_backward_dinput_cublaslt_gemm_count": {"mean": 0.0, "median": 0.0, "min": 0.0, "max": 0.0},
+        "block_backward_dinput_bf16_gemm_count": {"mean": 380.0, "median": 380.0, "min": 380.0, "max": 380.0},
     }
 
     changes = module.summarize_native_route_counter_changes(baseline, candidate)
 
     assert changes["has_route_counter_change"] is True
-    assert changes["changed_count"] == 4
-    assert changes["tracked_count"] == 6
+    assert changes["changed_count"] == 6
+    assert changes["tracked_count"] == 9
     assert changes["changed"]["linear_tk_gemm_count"] == {
         "baseline_mean": 1632.0,
         "candidate_mean": 1344.0,
@@ -3509,9 +3521,22 @@ def test_paired_kernel_speed_tool_summarizes_native_route_counter_changes() -> N
         "delta": -12.0,
         "ratio": 1140.0 / 1152.0,
     }
+    assert changes["changed"]["block_backward_dinput_tk_gemm_count"] == {
+        "baseline_mean": 0.0,
+        "candidate_mean": 4.0,
+        "delta": 4.0,
+        "ratio": None,
+    }
+    assert changes["changed"]["block_backward_dinput_bf16_gemm_count"] == {
+        "baseline_mean": 384.0,
+        "candidate_mean": 380.0,
+        "delta": -4.0,
+        "ratio": 380.0 / 384.0,
+    }
     assert changes["unchanged"] == [
         "linear_cublaslt_gemm_count",
         "linear_cublaslt_bgrad_gemm_count",
+        "block_backward_dinput_cublaslt_gemm_count",
     ]
     assert "linear_bf16_gemm_count" in changes["missing"]
 
