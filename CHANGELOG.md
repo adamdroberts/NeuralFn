@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an explicit rejected SM120 benchmark profile for direct cuBLASLt BGRADB
+  first-write bias gradients: `bgrad_first_write_direct` expands to
+  `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1`. The route is not promoted: the
+  CUDA 13.3 dedicated RTX 5090 same-script gate changed route counters from
+  `linear_cublaslt_bgrad_direct_write_count: 0` to `96`, but regressed
+  train-loop wall time to `1.003634x` and train tokens/sec to `0.996521x`.
+
+  Verification note: measured with `tools/paired_kernel_speed.py` over a
+  two-step native dense-GPT TinyStories run with stage timing enabled and the
+  route-change gate active; then added static wrapper coverage so the rejected
+  profile stays discoverable without changing runtime defaults.
+
 - Revalidated the fused padded-vocab token-weight initializer after rebuilding
   the linked native GPT trainer on CUDA 13.3. The route remains opt-in behind
   `NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_PADDED_INIT=1` /

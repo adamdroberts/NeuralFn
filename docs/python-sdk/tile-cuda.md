@@ -795,7 +795,11 @@ and accumulates it into `grad_bias`. Runtime JSON reports
 is active. Set `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1`,
 `NFN_NATIVE_GPT2_BGRAD_FIRST_WRITE_DIRECT=1`, or
 `NFN_TILE_CUDA_LINEAR_BGRAD_FIRST_WRITE_DIRECT=1` only for paired comparisons
-against direct first-write bias gradients.
+against direct first-write bias gradients. The SM120 wrapper profile
+`bgrad_first_write_direct` expands to that flag and is rejected by default:
+the CUDA 13.3 dedicated RTX 5090 same-script gate proved the route counter
+change (`linear_cublaslt_bgrad_direct_write_count: 96`) but regressed
+train-loop wall time to `1.003634x` and tokens/sec to `0.996521x`.
 Set
 `NFN_TILE_CUDA_LINEAR_BF16=1` or
 `NFN_NATIVE_LINEAR_BF16=1` only when profiling the normal linear ABI's BF16

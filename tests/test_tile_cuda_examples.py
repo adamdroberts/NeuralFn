@@ -623,8 +623,12 @@ def test_native_gpt_sm120_candidate_wrapper_applies_common_env_to_both_commands(
     assert "  baseline:" in proc.stdout
     assert "  candidate:" in proc.stdout
     payload = json.loads(output_path.read_text(encoding="utf-8"))
-    assert payload["baseline_env"] == {"NFN_SHARED_PROFILING": "1"}
+    assert payload["baseline_env"] == {
+        "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT": "1",
+        "NFN_SHARED_PROFILING": "1",
+    }
     assert payload["candidate_env"] == {
+        "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT": "1",
         "NFN_SHARED_PROFILING": "1",
         "NFN_CANDIDATE_ONLY": "1",
     }
@@ -665,8 +669,13 @@ def test_native_gpt_sm120_candidate_wrapper_splits_comma_separated_env_assignmen
 
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(output_path.read_text(encoding="utf-8"))
-    assert payload["baseline_env"] == {"NFN_SHARED": "1", "NFN_SHARED_2": "2"}
+    assert payload["baseline_env"] == {
+        "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT": "1",
+        "NFN_SHARED": "1",
+        "NFN_SHARED_2": "2",
+    }
     assert payload["candidate_env"] == {
+        "NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT": "1",
         "NFN_SHARED": "1",
         "NFN_SHARED_2": "2",
         "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE": "768,3072,65536,N,T,0",
@@ -968,6 +977,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in text
     assert "combined_device_arena" in text
     assert "NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=1" in text
+    assert "bgrad_first_write_direct" in text
+    assert "NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1" in text
     assert "qkv_concurrent_dinput_dweight" in text
     assert "mlp_fc_concurrent_dinput_dweight" in text
     assert "attn_proj_concurrent_dinput_dweight" in text
