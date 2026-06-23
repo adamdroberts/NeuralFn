@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a safe BF16-only fallback for
+  `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32`.
+  The hot path still tries the SM120 TK fused dInput+dGELU route first, but
+  unsupported shapes or non-TK builds now fall back to a BF16-output GEMM plus a
+  BF16-bits in-place dGELU kernel instead of silently returning without writing
+  the BF16 gradient handoff buffer.
+
+  Migration note: this is additive and preserves the public ABI. Default RTX
+  5090 dense GPT training should continue to report the TK fused dGELU strategy;
+  the fallback is a correctness guard for bisections and non-default builds.
+
+  Verification: rebuilt the Tile ops library plus both native GPT CLIs; ran the
+  no-Torch verifier; ran focused native GPT source-contract pytest
+  (`2 passed, 73 deselected`); ran a dedicated RTX 5090 one-step linked native
+  smoke that still reported
+  `tk-sm120-fused-dinput-dgelu-reused-bf16-grad-out-bf16-store-bf16-shadow-weight`;
+  and ran a two-sample same-script paired timing check with no strategy changes,
+  no route-counter changes, and `1.009895x` train-loop wall within one-step
+  noise.
+
 - Exported the strict dense GPT cooperative LM-head backward Tile ABI symbol
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` from the
   rebuilt Tile ops library and made linked-binary dry-run preflight handle

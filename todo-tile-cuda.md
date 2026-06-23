@@ -1159,3 +1159,11 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
   - 2026-06-22 earlier check: `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=3072,768,65536,N,T` did not route through the hot block dWeight+bias ABI (`linear_tk_dweight_gemm_count` stayed `0`) because the TK dWeight route only covered the no-bias BF16/BF16 dWeight ABI used by LM-head. The follow-up dWeight+bias wrapper above supersedes that blocker; the profile still must be benchmark-rejected or accepted before any default change.
   - 2026-06-22 rechecked grouped cuBLASLt support after CUDA 13.3: `cublaslt_grouped_probe` reported grouped layout status `0` but grouped matmul execution status `15`. A direct attempt to fold the classic cuBLAS grouped BF16 probe into that profile reproduced CUDA error `700` on the following model arena allocation, so grouped block-backward GEMMs are still blocked on this workstation until grouped execution, not just grouped descriptor creation, passes without poisoning the context.
   - 2026-06-23 reran the non-poisoning `cublaslt_grouped_probe` after the CUDA reinstall: cuBLASLt grouped layout still reports status `0`, grouped matmul execution still reports status `15`, and the classic cuBLAS grouped BF16 probe remains omitted. The wrapper now treats this profile as capability-only by keeping the route-change gate but skipping automatic `setup_wall_ms` ratio gates, so startup timing noise does not make readiness checks fail for the wrong reason.
+  - 2026-06-23 hardened the BF16-only MLP projection dInput+dGELU raw ABI used
+    by the default BF16 MLP grad handoff. The SM120 TK fused route remains the
+    first choice, but if a non-default build or shape misses that route,
+    `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32`
+    now falls back to BF16-output GEMM plus an in-place BF16-bits dGELU kernel
+    instead of leaving the handoff buffer unwritten. This is correctness
+    hardening for fallback/candidate builds, not a promoted throughput fix for
+    the remaining SM120 parity gap.

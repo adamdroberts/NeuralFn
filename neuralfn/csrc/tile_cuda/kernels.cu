@@ -10784,6 +10784,27 @@ __tile_global__ void gelu_backward_inplace_bf16_bits_float32_kernel(
   ct::store_masked(grad + idx, grad_tile * grad_local, mask);
 }
 
+__global__ void gelu_backward_inplace_bf16_bits_to_bf16_bits_float32_kernel(
+    const std::uint16_t* __restrict__ x_bf16_bits,
+    std::uint16_t* __restrict__ grad_bf16_bits,
+    std::int64_t n) {
+  const std::int64_t idx = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (idx >= n) {
+    return;
+  }
+  const float x = bf16_bits_to_f32_device(x_bf16_bits[idx]);
+  const float grad = bf16_bits_to_f32_device(grad_bf16_bits[idx]);
+  constexpr float kHalf = 0.5f;
+  constexpr float kGeluScale = 0.7978845608028654f;
+  constexpr float kGeluCubic = 0.044715f;
+  const float x2 = x * x;
+  const float tanh_out = tanhf(kGeluScale * (x + kGeluCubic * x * x2));
+  const float sech_out = 1.0f - tanh_out * tanh_out;
+  const float grad_local = kHalf * (1.0f + tanh_out) +
+      kHalf * x * sech_out * kGeluScale * (1.0f + 3.0f * kGeluCubic * x2);
+  grad_bf16_bits[idx] = f32_to_bf16_bits_device(grad * grad_local);
+}
+
 __tile_global__ void dropout_forward_float32_kernel(
     const float* __restrict__ x,
     float* __restrict__ out,
@@ -16504,6 +16525,11 @@ void launch_gelu_backward_inplace_bf16_bits_float32(
     float* grad_in_out,
     std::int64_t n,
     cudaStream_t stream);
+void launch_gelu_backward_inplace_bf16_bits_to_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    std::uint16_t* grad_bf16_bits,
+    std::int64_t n,
+    cudaStream_t stream);
 
 void launch_linear_backward_input_dgelu_bf16_bits_float32(
     const float* grad_out,
@@ -16625,6 +16651,29 @@ void launch_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32(
           static_cast<int>(input_dim),
           static_cast<int>(output_dim),
           stream)) {
+    return;
+  }
+  if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
+      cublas_linear_gemm_ex_bf16_bits_ab_to_bf16_bits(
+          weight_bf16_bits,
+          grad_out_bf16_bits,
+          nullptr,
+          grad_x_bf16_bits,
+          static_cast<int>(input_dim),
+          static_cast<int>(rows),
+          static_cast<int>(output_dim),
+          CUBLAS_OP_N,
+          CUBLAS_OP_N,
+          static_cast<int>(input_dim),
+          static_cast<int>(output_dim),
+          static_cast<int>(input_dim),
+          false,
+          stream)) {
+    launch_gelu_backward_inplace_bf16_bits_to_bf16_bits_float32(
+        pre_gelu_bf16_bits,
+        grad_x_bf16_bits,
+        rows * input_dim,
+        stream);
     return;
   }
 #endif
@@ -17691,6 +17740,17 @@ void launch_gelu_backward_inplace_bf16_bits_float32(
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   gelu_backward_inplace_bf16_bits_float32_kernel<<<blocks, 1, 0, stream>>>(
       x_bf16_bits, grad, n);
+}
+
+void launch_gelu_backward_inplace_bf16_bits_to_bf16_bits_float32(
+    const std::uint16_t* x_bf16_bits,
+    std::uint16_t* grad_bf16_bits,
+    std::int64_t n,
+    cudaStream_t stream) {
+  constexpr int threads = 256;
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  gelu_backward_inplace_bf16_bits_to_bf16_bits_float32_kernel<<<blocks, threads, 0, stream>>>(
+      x_bf16_bits, grad_bf16_bits, n);
 }
 
 void launch_dropout_forward_float32(

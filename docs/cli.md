@@ -299,6 +299,9 @@ skips the old FP32 `mlp.fc.grad_out` arena buffer. Runtime JSON reports
 `block_state_layout.mlp_fc_grad_out_float_*` counters. Set
 `NFN_NATIVE_GPT_ELIDE_MLP_DGELU_FLOAT_GRAD=0` to compare against the older
 float-gradient conversion/allocation path.
+If the SM120 TK fused route is unavailable in a non-default Tile build or
+shape, the BF16-only raw ABI falls back to BF16-output GEMM plus in-place
+BF16-bits dGELU instead of leaving the handoff buffer unwritten.
 The older float-gradient path still uses the fused dInput+dGELU ABI and only
 hands the following MLP FC backward a float gradient when the handoff is forced off.
 The raw Tile library also exports

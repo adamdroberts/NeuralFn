@@ -6838,6 +6838,12 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "tk_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_float32" in kernels_text
     assert "launch_linear_backward_input_dgelu_weight_bf16_bits_only_float32" in kernels_text
     assert "launch_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32" in kernels_text
+    assert "gelu_backward_inplace_bf16_bits_to_bf16_bits_float32_kernel" in kernels_text
+    bf16_only_dgelu_body = kernels_text.split(
+        "void launch_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32(", 1
+    )[1].split("\nvoid launch_linear_backward_weight_float32", 1)[0]
+    assert "cublas_linear_gemm_ex_bf16_bits_ab_to_bf16_bits" in bf16_only_dgelu_body
+    assert "launch_gelu_backward_inplace_bf16_bits_to_bf16_bits_float32" in bf16_only_dgelu_body
     assert "trainer_linear_tk_dinput_shape_enabled" in kernels_text
     assert "trainer_linear_tk_dinput_shape_disabled" in kernels_text
     assert 'std::getenv("NFN_TILE_CUDA_LINEAR_TK_DINPUT_ENABLE_SHAPE")' in kernels_text
