@@ -1310,10 +1310,11 @@ optimizer-step CE candidate directly. Runtime JSON reports
 `lm_head_classifier_ce_no_loss_requested` and
 `lm_head_classifier_ce_no_loss_enabled`.
 `lm_head_row_loss_sum_accumulate` expands to
-`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1`; this is now the default
-row-loss tail. `lm_head_row_loss_partial_reduce` expands to
-`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0` for paired checks against
-the older `sum_partials` plus scalar `gradient_accumulate` tail.
+`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` for paired checks against the
+older one-launch sum-accumulate row-loss tail. `lm_head_row_loss_partial_reduce`
+forces the older route as its baseline and expands the candidate side to
+`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0`, which is the current default
+`sum_partials` plus scalar `gradient_accumulate` tail.
 `lm_head_ce_scalar_streaming_store` expands to
 `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1` and
 `NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1` for the narrower BF16 CE

@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed the dense GPT LM-head row-loss tail default back to the partial
+  reduction path. `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE` and the
+  GPT2-prefixed alias now default to `0`, so row losses are reduced with
+  `sum_partials` plus scalar `gradient_accumulate` instead of one
+  `nfn_native_tile_sum_accumulate_float32` launch per row chunk.
+
+  Migration note: set `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` or
+  `NFN_NATIVE_GPT2_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` to reproduce the previous
+  sum-accumulate route. The paired wrapper profile
+  `lm_head_row_loss_partial_reduce` now forces the older sum-accumulate route as
+  its baseline and the promoted partial-reduction route as its candidate.
+
+  Verification note: after the 256-row linear-bias default, the dedicated RTX
+  5090 CUDA 13.3 same-script 5-step, 3-sample gate measured
+  `0.997075x` train-loop wall time, `1.002951x` train tokens/sec, and
+  `0.998257x` total wall time versus the prior sum-accumulate baseline.
+
 - Changed the dense GPT native Tile linear-backward bias reducer default from
   512-row chunks to 256-row chunks. The native trainer JSON and raw Tile CUDA
   fallback now agree on the promoted default through
@@ -1484,16 +1501,12 @@ Future updates should append new entries here rather than replacing older notes.
   `1.313764x` MLP projection dWeight+bias.
 
 - Promoted the native dense GPT LM-head row-loss sum-accumulate tail to the
-  default. `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE` and the
-  GPT2-prefixed alias now default to enabled, replacing the older row-loss
-  `sum_partials` plus scalar `gradient_accumulate` tail with one
-  `nfn_native_tile_sum_accumulate_float32` launch per row chunk. Set the env var
-  to `0` to reproduce the older partial-reduction route; the SM120 paired
-  wrapper now exposes that opt-out as
-  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_partial_reduce`. The
-  CUDA 13.3 dedicated RTX 5090 3-step, 2-sample same-script gate passed at
-  `0.998849x` train-loop wall time, `0.999887x` LM-head backward, `0.998400x`
-  block backward, and `0.999498x` MLP projection versus the prior default.
+  default. This was later superseded after the 256-row linear-bias default:
+  `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE` and the GPT2-prefixed alias
+  now default back to `0`. The historical CUDA 13.3 dedicated RTX 5090 3-step,
+  2-sample same-script gate had passed at `0.998849x` train-loop wall time,
+  `0.999887x` LM-head backward, `0.998400x` block backward, and `0.999498x`
+  MLP projection versus the prior default.
 
 - Rechecked native dense GPT SM120 candidate surfaces after the CUDA 13.3 WSL
   reinstall on the dedicated RTX 5090. The native Tile ops library and

@@ -1858,14 +1858,15 @@ logit before it overwrites the row with dlogits, so the in-place loss path avoid
 an extra post-loss CTA barrier while preserving the same row-loss and dlogit
 outputs.
 The row-loss tail now defaults to
-`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1`, which replaces the generic
-row-loss `sum_partials` plus scalar `gradient_accumulate` launches with one
-`nfn_native_tile_sum_accumulate_float32` launch per row chunk. The CUDA 13.3
-RTX 5090 paired gate measured it at `0.998849x` train-loop wall time and
-`0.999887x` LM-head backward time versus the older partial-reduction tail. Set
-`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0` only to reproduce the older
-row-loss partial-reduction path; the same-script candidate wrapper exposes that
-opt-out as `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_partial_reduce`.
+`NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0`, which keeps the
+`sum_partials` plus scalar `gradient_accumulate` path. The CUDA 13.3 RTX 5090
+same-script gate measured the partial-reduction path at `0.997075x` train-loop
+wall time and `1.002951x` train tokens/sec versus the older sum-accumulate
+tail. Set `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` only to reproduce
+the older one-`nfn_native_tile_sum_accumulate_float32` tail; the same-script
+candidate wrapper exposes the promoted path as
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_partial_reduce` and the old
+route as `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_loss_sum_accumulate`.
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1` is now the default train-loss
 logging path for the BF16/u16 LM-head classifier. The classifier row blocks
 atomically accumulate row losses into 1024 bins, then reduce those bins with
