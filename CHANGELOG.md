@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized`
+  against the current CUDA 13.3 dense-GPT baseline and kept it rejected. The
+  profile still proves the intended no-loss llm.kittens-style CE/dlogits store
+  strategy, but the current dedicated RTX 5090 3-step, 2-sample stage-timed run
+  regressed train-loop wall time, LM-head backward, LM-head CE, and block
+  backward, so the remaining LM-head work is still the strict fused
+  classifier/dHidden/dWeight kernel.
+
+  Verification: `tools/bench_native_gpt_sm120_candidate.sh` was run with
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` and
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized`;
+  the run failed the expected promotion gates at `1.009040x` train-loop wall,
+  `1.001085x` LM-head backward, `1.001185x` LM-head CE, and `1.018917x` block
+  backward.
+
 - Added `NFN_SM120_NATIVE_DISABLE_METRIC_RATIO_GATES` and matching candidate,
   parity, and shared aliases as clearer names for the SM120 native candidate
   wrapper's diagnostic timing-gate bypass. The existing

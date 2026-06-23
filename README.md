@@ -723,11 +723,11 @@ loads plus streaming vec8 stores, with runtime JSON reporting
 `lm_head_ce_no_loss_llmk_style_specialized_enabled`, and
 `lm_head_ce_kernel_strategy:
 no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores`. Keep it
-diagnostic-only. The CUDA 13.3 dedicated RTX 5090 3-step, 3-sample
-same-script gate proved the route and improved train-loop wall time to
-`0.994628x`, but rejected it because `stage.lm_head_backward.total_ms`
-regressed to `1.000785x`, `stage.lm_head_backward.ce.total_ms` to `1.002295x`,
-and `stage.block_backward.mlp_proj.total_ms` to `1.000536x`.
+diagnostic-only. The current CUDA 13.3 dedicated RTX 5090 3-step, 2-sample
+same-script recheck proved the route but rejected it because train-loop wall
+regressed to `1.009040x`, `stage.lm_head_backward.total_ms` to `1.001085x`,
+`stage.lm_head_backward.ce.total_ms` to `1.001185x`, and
+`stage.block_backward.total_ms` to `1.018917x`.
 Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or the
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` benchmark
 profile to request the current cooperative LM-head backward diagnostic path.

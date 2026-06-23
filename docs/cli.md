@@ -870,9 +870,9 @@ to `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1`, keeps
 `--train-loss-every-steps 0`, and reports
 `lm_head_ce_kernel_strategy:
 no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores` when active. The
-CUDA 13.3 dedicated RTX 5090 3-step, 3-sample gate rejected it despite a
-`0.994628x` train-loop wall-time ratio because LM-head total, LM-head CE, and
-MLP projection gates regressed to `1.000785x`, `1.002295x`, and `1.000536x`.
+current CUDA 13.3 dedicated RTX 5090 3-step, 2-sample recheck rejected it at
+`1.009040x` train-loop wall, `1.001085x` LM-head backward, `1.001185x`
+LM-head CE, and `1.018917x` block backward.
 Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` to exercise the current
 cooperative LM-head backward ABI wrapper, or
 `nfn_gpt_native_train --require-cooperative-lm-head-backward` when a

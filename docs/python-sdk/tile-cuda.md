@@ -2037,10 +2037,10 @@ JSON reports `lm_head_ce_no_loss_llmk_style_specialized_requested`,
 `lm_head_ce_no_loss_llmk_style_specialized_enabled`, and
 `lm_head_ce_kernel_strategy:
 no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores`. Keep this route
-diagnostic-only: the CUDA 13.3 dedicated RTX 5090 3-step, 3-sample stage-timed
-gate proved the strategy change and improved train-loop wall time to
-`0.994628x`, but failed strict hot-stage gates at `1.000785x` LM-head
-backward, `1.002295x` LM-head CE, and `1.000536x` MLP projection.
+diagnostic-only: the current CUDA 13.3 dedicated RTX 5090 3-step, 2-sample
+stage-timed recheck proved the strategy change but rejected it at `1.009040x`
+train-loop wall, `1.001085x` LM-head backward, `1.001185x` LM-head CE, and
+`1.018917x` block backward.
 Runtime JSON reports
 `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,

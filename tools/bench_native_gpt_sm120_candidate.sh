@@ -277,7 +277,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_ce_no_loss_llmk_style_specialized"|"lm-head-ce-no-loss-llmk-style-specialized"|"ce_bf16_no_loss_llmk_style_specialized"|"ce-bf16-no-loss-llmk-style-specialized")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-step, 3-sample stage-timed gate proved the no-loss llm.kittens-style CE route and improved train_loop_wall_ms_per_step to 0.994628x, but regressed stage.lm_head_backward.total_ms to 1.000785x, stage.lm_head_backward.ce.total_ms to 1.002295x, and stage.block_backward.mlp_proj.total_ms to 1.000536x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed recheck proved the no-loss llm.kittens-style CE route but regressed train_loop_wall_ms_per_step to 1.009040x, stage.lm_head_backward.total_ms to 1.001085x, stage.lm_head_backward.ce.total_ms to 1.001185x, and stage.block_backward.total_ms to 1.018917x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1"
     COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 0"
