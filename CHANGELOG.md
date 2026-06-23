@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Aligned the generic `neuralfn.native_train` SDK resolver with the dense GPT
+  CLI startup path: `gpt`, `gpt2`, `gpt3`, and `nanogpt` native run configs now
+  choose `build/nfn_gpt_native_train_linked` before
+  `build/nfn_gpt_native_train` when no explicit `NFN_NATIVE_GPT_CLI` or
+  `NFN_NATIVE_TRAIN_CLI` override is set. This keeps SDK-native dense GPT runs
+  on the linked Tile-ops executable by default instead of falling back to the
+  dynamic Tile-ops loader path.
+
+  Migration note: explicit overrides still win. Set `NFN_NATIVE_GPT_CLI` to a
+  candidate dense GPT binary when benchmarking a dynamic Tile-ops build, or set
+  `NFN_NATIVE_TRAIN_CLI` when you intentionally want the unified
+  `nfn_native_train --base-model ...` frontend.
+
+  Verification: focused native SDK resolver pytest passed (`7 passed, 69
+  deselected`), and `python tools/check_native_no_torch_deps.py
+  --skip-artifacts --json` reported `"passed": true` with all native startup
+  entrypoints inside their import/startup budgets.
+
 - Added a safe BF16-only fallback for
   `nfn_native_tile_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_only_float32`.
   The hot path still tries the SM120 TK fused dInput+dGELU route first, but

@@ -12,6 +12,7 @@ import struct
 from types import SimpleNamespace
 
 import neuralfn
+import neuralfn.native_train as native_train_module
 import neuralfn.native_gpt2 as native_gpt2_module
 import pytest
 
@@ -457,6 +458,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
         encoding="utf-8"
     )
     nfn_source = (root / "cli" / "nfn.py").read_text(encoding="utf-8")
+    native_train_sdk_source = (root / "neuralfn" / "native_train.py").read_text(
+        encoding="utf-8"
+    )
     native_train_source = (
         root / "neuralfn" / "csrc" / "native_train" / "nfn_native_train.cpp"
     ).read_text(encoding="utf-8")
@@ -491,6 +495,8 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "nfn_gpt_native_train_linked" in train_gpt_source
     assert "_native_cli_uses_linked_tile_ops" in train_gpt_source
     assert '_append_value(out, "--tile-ops-lib", "linked")' in train_gpt_source
+    assert "DEFAULT_NATIVE_GPT_TRAIN_CLI_LINKED" in native_train_sdk_source
+    assert "nfn_gpt_native_train_linked" in native_train_sdk_source
     assert "nfn_gpt_native_train_linked" in nfn_source
     assert "_native_gpt_cli_uses_linked_tile_ops" in nfn_source
     assert '_append_value_arg(out, "--tile-ops-lib", "linked")' in nfn_source
@@ -2333,6 +2339,47 @@ def test_native_train_run_config_uses_direct_dense_gpt_cli(
     assert args[:4] == ["--model-family", "gpt2", "--tinystories", "--dry-run"]
     assert "--base-model" not in args
     assert "CUDA_MODULE_LOADING=LAZY" in env_output.read_text(encoding="utf-8").splitlines()
+
+
+def test_native_train_run_config_prefers_linked_dense_gpt_cli(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    linked_cli = tmp_path / "nfn_gpt_native_train_linked"
+    dynamic_cli = tmp_path / "nfn_gpt_native_train"
+    linked_cli.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf 'linked\\n' > \"$NFN_TEST_NATIVE_TRAIN_SELECTED\"\n"
+        "printf '%s\\n' \"$@\" > \"$NFN_TEST_NATIVE_TRAIN_ARGS\"\n"
+        "exit 44\n",
+        encoding="utf-8",
+    )
+    dynamic_cli.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf 'dynamic\\n' > \"$NFN_TEST_NATIVE_TRAIN_SELECTED\"\n"
+        "exit 45\n",
+        encoding="utf-8",
+    )
+    linked_cli.chmod(0o755)
+    dynamic_cli.chmod(0o755)
+    output = tmp_path / "native-train-linked-args.txt"
+    selected = tmp_path / "native-train-selected.txt"
+    monkeypatch.delenv("NFN_NATIVE_TRAIN_CLI", raising=False)
+    monkeypatch.delenv("NFN_NATIVE_GPT_CLI", raising=False)
+    monkeypatch.setenv("NFN_NATIVE_TRAIN_BINDING", "0")
+    monkeypatch.setenv("NFN_TEST_NATIVE_TRAIN_ARGS", str(output))
+    monkeypatch.setenv("NFN_TEST_NATIVE_TRAIN_SELECTED", str(selected))
+    monkeypatch.setattr(native_train_module, "DEFAULT_NATIVE_GPT_TRAIN_CLI_LINKED", str(linked_cli))
+    monkeypatch.setattr(native_train_module, "DEFAULT_NATIVE_GPT_TRAIN_CLI", str(dynamic_cli))
+
+    cfg = build_native_train_run_config("gpt3", ["--tinystories", "--dry-run"])
+
+    assert cfg.argv()[:5] == [str(linked_cli), "--model-family", "gpt3", "--tinystories", "--dry-run"]
+    assert run_native_train(cfg, runner="compiled-cli") == 44
+    assert selected.read_text(encoding="utf-8").strip() == "linked"
+    args = output.read_text(encoding="utf-8").splitlines()
+    assert args[:4] == ["--model-family", "gpt3", "--tinystories", "--dry-run"]
+    assert "--base-model" not in args
 
 
 def test_native_train_run_config_uses_direct_family_cli(

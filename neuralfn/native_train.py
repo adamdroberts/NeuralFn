@@ -13,6 +13,7 @@ from typing import Any, Sequence
 
 
 DEFAULT_NATIVE_TRAIN_CLI = "build/nfn_native_train"
+DEFAULT_NATIVE_GPT_TRAIN_CLI_LINKED = "build/nfn_gpt_native_train_linked"
 DEFAULT_NATIVE_GPT_TRAIN_CLI = "build/nfn_gpt_native_train"
 DENSE_GPT_MODEL_FAMILIES = frozenset({"gpt", "gpt2", "gpt3", "nanogpt"})
 NATIVE_TRAIN_FAMILY_TARGETS = {
@@ -132,7 +133,13 @@ def resolve_native_train_family_cli(model_family: str | None, native_train_cli: 
         if env_value:
             return env_value
     repo_root = Path(__file__).resolve().parents[1]
-    default_path = DEFAULT_NATIVE_GPT_TRAIN_CLI if target_name == "nfn_gpt_native_train" else f"build/{target_name}"
+    if target_name == "nfn_gpt_native_train":
+        linked_path = repo_root / DEFAULT_NATIVE_GPT_TRAIN_CLI_LINKED
+        if linked_path.exists():
+            return str(linked_path)
+        default_path = DEFAULT_NATIVE_GPT_TRAIN_CLI
+    else:
+        default_path = f"build/{target_name}"
     family_cli = repo_root / default_path
     if family_cli.exists():
         return str(family_cli)

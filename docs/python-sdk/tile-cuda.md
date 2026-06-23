@@ -2025,6 +2025,12 @@ inspection path through `resolve_native_gpt_binding_command(config)` and
 `resolve_native_gpt2_binding_command(config)`, backed by `resolve_command` /
 `resolve_native_gpt_command` / `resolve_native_gpt2_command` in the C++
 extension.
+For dense GPT families (`gpt`, `gpt2`, `gpt3`, and `nanogpt`), the generic
+`neuralfn.native_train` SDK resolver now chooses
+`build/nfn_gpt_native_train_linked` before `build/nfn_gpt_native_train` when no
+explicit `NFN_NATIVE_GPT_CLI` or `NFN_NATIVE_TRAIN_CLI` override is set. This
+keeps SDK-native runs on the same linked Tile-ops startup path as `nfn train`
+and avoids the avoidable dynamic `dlopen` branch on workstation builds.
 Dense GPT training also requires optimized attention by default. If the Tile
 ABI drops into the scalar attention fallback, the native trainer marks the run
 failed before final checkpoint export and reports
