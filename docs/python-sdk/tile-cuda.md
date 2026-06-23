@@ -313,7 +313,12 @@ disabled; runtime JSON distinguishes it with
 `lm_head_ce_loss_backward_strategy:
 "no-loss-dlogits-public-vocab-no-pad-zero-bf16-u16-targets"`. The paired speed
 tool reports the no-loss chunk counter as a route metric so no-loss benchmarks
-are not mistaken for row-loss or loss-bin train-loss paths.
+are not mistaken for row-loss or loss-bin train-loss paths. This profile is now
+rejected for normal real launches unless
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set: the CUDA 13.3
+dedicated RTX 5090 3-step, 2-sample stage-timed gate changed the route but
+regressed train-loop wall to `1.005933x`, LM-head backward to `1.087310x`, and
+LM-head CE to `1.848303x`.
 
 Native dense-GPT runs also expose cuBLASLt BGRADB route counters:
 `linear_cublaslt_bgrad_gemm_count`,

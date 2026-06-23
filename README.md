@@ -867,7 +867,10 @@ logging. Runtime JSON reports
 `lm_head_classifier_ce_no_loss_enabled`. The same-script profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_classifier_ce_no_loss` forces that
 older generic no-loss CE route on the baseline side and the classifier route on
-the candidate side.
+the candidate side. Keep it diagnostic-only: the CUDA 13.3 dedicated RTX 5090
+3-step, 2-sample stage-timed gate changed the route but rejected default
+promotion at `1.005933x` train-loop wall time, `1.087310x` LM-head backward,
+and `1.848303x` LM-head CE time.
 
 The native dense-GPT BF16 LM-head CE backward path now uses reverse
 row-chunk traversal by default because paired dedicated-RTX-5090 CUDA 13.3
@@ -2032,7 +2035,10 @@ to require raw candidate env overrides: `bf16_attention_grad_out`,
 `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=0`, and keeps train-loss logging
 disabled so the no-loss classifier CE candidate is measured directly. Diagnostic
 profiles make same-script bisection reproducible and attach the relevant
-hot-stage gates automatically.
+hot-stage gates automatically. A real launch now requires
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` because the dedicated RTX
+5090/CUDA 13.3 gate regressed train-loop wall to `1.005933x`, LM-head backward
+to `1.087310x`, and LM-head CE to `1.848303x`.
 Default timing-only optimizer steps use the older no-loss CE+dlogits path, not
 the row-loss or loss-bin tail. Runtime JSON reports that route separately with
 `lm_head_classifier_no_loss_chunk_count`,

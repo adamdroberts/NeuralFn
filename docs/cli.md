@@ -1366,7 +1366,11 @@ build-flag profiles and only records the resolved candidate library path/env.
 disabled, so the paired benchmark measures the default-off no-loss
 optimizer-step CE candidate directly. Runtime JSON reports
 `lm_head_classifier_ce_no_loss_requested` and
-`lm_head_classifier_ce_no_loss_enabled`.
+`lm_head_classifier_ce_no_loss_enabled`. Real benchmark launches now reject this
+profile unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set:
+the CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed gate changed the
+route but regressed train-loop wall to `1.005933x`, LM-head backward to
+`1.087310x`, and LM-head CE to `1.848303x`.
 `lm_head_row_loss_sum_accumulate` expands to
 `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1` for paired checks against the
 older one-launch sum-accumulate row-loss tail. `lm_head_row_loss_partial_reduce`

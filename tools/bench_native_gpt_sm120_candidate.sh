@@ -399,6 +399,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0"
     ;;
   "lm_head_classifier_ce_no_loss"|"lm-head-classifier-ce-no-loss"|"lm_head_no_loss_classifier_ce"|"lm-head-no-loss-classifier-ce")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed gate changed the classifier CE route but regressed train_loop_wall_ms_per_step to 1.005933x, stage.lm_head_backward.total_ms to 1.087310x, and stage.lm_head_backward.ce.total_ms to 1.848303x."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=0"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1"
     ;;

@@ -1214,6 +1214,13 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     MLP-proj backward, failing the stage gates. The candidate profile now
     forces the older generic no-loss CE path on the baseline side and the
     classifier route on the candidate side, so future runs remain explicit.
+  - 2026-06-23 rechecked `lm_head_classifier_ce_no_loss` after the CUDA 13.3
+    WSL reinstall and marked real launches as rejected unless
+    `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set. The 3-step,
+    2-sample dedicated RTX 5090 stage-timed gate changed the route counters and
+    strategies, but regressed train-loop wall to `1.005933x`, LM-head backward
+    to `1.087310x`, and LM-head CE to `1.848303x`. Dry-run expansion remains
+    available for command inspection.
   - 2026-06-22 fixed native dense GPT runtime attribution for the default
     no-loss LM-head CE+dlogits route. Timing-only runs now increment
     `lm_head_classifier_no_loss_chunk_count`, report

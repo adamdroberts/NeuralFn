@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_classifier_ce_no_loss` as
+  a rejected SM120 candidate for normal real launches. The CUDA 13.3 dedicated
+  RTX 5090 3-step, 2-sample stage-timed gate changed the no-loss classifier CE
+  route, but rejected default promotion at `1.005933x` train-loop wall time,
+  `1.087310x` LM-head backward, and `1.848303x` LM-head CE. Dry-run expansion
+  remains available, and explicit reruns require
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
+
+  Verification: ran the paired native candidate profile unsandboxed on the
+  display-disabled RTX 5090 with selected-GPU locking and no compute processes;
+  added focused static coverage for the rejected runtime launch and dry-run
+  expansion.
+
 - Aligned the SM120 candidate wrapper with the existing rejected evidence for
   CE specialization and loss-bin profiles. Real paired runs of
   `lm_head_ce_default_specialized`, `lm_head_ce_llmk_style_specialized`,
