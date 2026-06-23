@@ -1046,7 +1046,9 @@ cooperative sequence ABI against the strict fused-kernel symbol inside one CUDA
 process and emits `reference_components` JSON with decomposed logits, CE,
 dHidden, and dWeight timings for the current raw Tile ABI.
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk`
-selects the 49152-row trainer chunk, while
+selects the 49152-row optimizer no-loss trainer chunk,
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` preserves the older row-loss
+chunk comparison, and
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` selects the same chunk with
 1024 loss bins. Set
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` and

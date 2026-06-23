@@ -119,7 +119,9 @@ inside one CUDA process with event timing, route counters, decomposed
 `reference_components` timings for logits, CE, dHidden, and dWeight, and a
 `candidate_true_fused_capability` JSON field. Use
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` to exercise the default
-49152-row trainer chunk scale, or
+49152-row optimizer no-loss trainer chunk scale,
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` to reproduce the older row-loss
+chunk comparison, or
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` to exercise the matching
 1024-bin loss-reduction route, without involving the full training loop. Set
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` and

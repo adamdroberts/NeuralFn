@@ -1441,6 +1441,9 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in bench_source
     assert "candidate_true_fused_capability" in bench_source
     assert "candidate_to_baseline_ms_per_iter_ratio" in bench_source
+    assert "--no-loss" in bench_source
+    assert '"  \\"no_loss\\": "' in bench_source
+    assert "nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace" in bench_source
     assert "reference_components" in bench_source
     assert "logits_ms_per_iter" in bench_source
     assert "ce_ms_per_iter" in bench_source
@@ -1475,7 +1478,10 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert 'export CUDA_VISIBLE_DEVICES="${SELECTED_CUDA_VISIBLE_DEVICE}"' in wrapper
     assert "NFN_LM_HEAD_BACKWARD_PROFILE" in wrapper
     assert "trainer-chunk|trainer_chunk" in wrapper
+    assert "trainer-row-loss|trainer_row_loss" in wrapper
     assert "trainer-loss-bins|trainer_loss_bins" in wrapper
+    assert "DEFAULT_NO_LOSS=1" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_NO_LOSS" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_MAX_RATIO" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED" in wrapper
     assert "candidate_true_fused_capability is false" in wrapper

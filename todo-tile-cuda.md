@@ -127,17 +127,27 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       inside one CUDA process with event timing and cooperative route counters.
       The JSON includes `candidate_true_fused_capability`, so a future symbol
       export alone is not enough to pass the strict fused-kernel evidence gate.
-      The wrapper also has `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` and
+      The wrapper also has `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk`,
+      `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss`, and
       `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` profiles plus
       `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` /
       `NFN_LM_HEAD_BACKWARD_MAX_RATIO=...` fail-fast gates, and defaults
       `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=auto` so focused runs use the
       dedicated display-disabled NVIDIA GPU when `nvidia-smi` can select one.
-      CUDA 13.3 profile reruns against the current wrapper-only strict symbol
-      measured `trainer-chunk` at `1.008311x` and `trainer-loss-bins` at
-      `1.010302x`, and `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` failed with
+      The old row-loss profile reruns against the current wrapper-only strict
+      symbol measured `trainer-row-loss` at the previously recorded
+      `1.008311x` and `trainer-loss-bins` at `1.010302x`, and
+      `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` failed with
       `candidate_true_fused_capability is false`; the wrapper remains rejected
-      at the default trainer chunk and loss-bin scales.
+      at the trainer chunk and loss-bin scales.
+    - 2026-06-23 changed the focused `trainer-chunk` microbenchmark profile to
+      pass the cooperative no-loss flag and use the no-loss CE reference
+      symbol, matching the optimizer-only native trainer path. Use
+      `trainer-row-loss` when intentionally reproducing the older row-loss
+      comparison. The first updated RTX 5090 run reported `no_loss: true`,
+      `flags: 2`, and no-loss CE reference timing at about `6.49 ms` for the
+      49152-row chunk; `candidate_true_fused_capability` remains false, so this
+      is benchmark coverage rather than a fused-kernel promotion.
     - 2026-06-22 prerequisite: the native trainer no longer treats
       `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16` as an
       untyped `int (*)()` probe. The function pointer now encodes the required

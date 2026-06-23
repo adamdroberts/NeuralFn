@@ -1793,7 +1793,9 @@ Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is metadata-on
 
 For LM-head backward kernel work, `tools/bench_lm_head_backward_candidate.sh`
 is the focused CUDA gate. `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` selects
-the default 49152-row trainer chunk, and
+the default 49152-row optimizer no-loss trainer chunk,
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` preserves the older row-loss
+chunk comparison, and
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` selects the 49152-row,
 1024-bin loss-reduction shape. Set
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` to reject the current sequence

@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Updated the focused LM-head backward benchmark so
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` matches the real optimizer-only
+  native trainer path. The profile now passes the cooperative no-loss flag,
+  uses the no-loss BF16/u16 CE reference symbol, and reports `no_loss: true` in
+  JSON. Added `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` for the previous
+  row-loss comparison, while `trainer-loss-bins` remains the train-loss logging
+  shape.
+
+  Verification: added source-contract coverage for `--no-loss`, the no-loss CE
+  reference symbol, `trainer-row-loss`, and `NFN_LM_HEAD_BACKWARD_NO_LOSS`.
+  Rebuilt `build/lm_head_backward_bench`, ran the updated
+  `trainer-chunk` profile on the dedicated RTX 5090, and confirmed JSON reports
+  `no_loss: true`, `flags: 2`, and no-loss CE reference timing of about
+  `6.49 ms` for the 49152-row chunk. The current strict-symbol candidate is
+  still only the wrapper sequence, with `candidate_true_fused_capability:
+  false`.
+
 - Fixed the opt-in dense GPT cooperative LM-head sequence wrapper so
   optimizer-only steps preserve the normal BF16/u16 no-loss classifier
   CE+dlogits path. The native trainer now passes an explicit cooperative

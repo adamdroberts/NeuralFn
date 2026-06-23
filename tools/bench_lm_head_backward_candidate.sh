@@ -20,21 +20,31 @@ case "${PROFILE}" in
     DEFAULT_ITERATIONS=5
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
+    DEFAULT_NO_LOSS=0
     ;;
   trainer-chunk|trainer_chunk)
     DEFAULT_ROWS=49152
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
+    DEFAULT_NO_LOSS=1
+    ;;
+  trainer-row-loss|trainer_row_loss)
+    DEFAULT_ROWS=49152
+    DEFAULT_ITERATIONS=3
+    DEFAULT_WARMUP=1
+    DEFAULT_LOSS_BINS=0
+    DEFAULT_NO_LOSS=0
     ;;
   trainer-loss-bins|trainer_loss_bins)
     DEFAULT_ROWS=49152
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=1024
+    DEFAULT_NO_LOSS=0
     ;;
   *)
-    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, or trainer-loss-bins)" >&2
+    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, trainer-row-loss, or trainer-loss-bins)" >&2
     exit 2
     ;;
 esac
@@ -43,6 +53,7 @@ ROWS="${NFN_LM_HEAD_BACKWARD_ROWS:-${DEFAULT_ROWS}}"
 ITERATIONS="${NFN_LM_HEAD_BACKWARD_ITERATIONS:-${DEFAULT_ITERATIONS}}"
 WARMUP="${NFN_LM_HEAD_BACKWARD_WARMUP:-${DEFAULT_WARMUP}}"
 LOSS_BINS="${NFN_LM_HEAD_BACKWARD_LOSS_BINS:-${DEFAULT_LOSS_BINS}}"
+NO_LOSS="${NFN_LM_HEAD_BACKWARD_NO_LOSS:-${DEFAULT_NO_LOSS}}"
 MAX_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_RATIO:-}"
 REQUIRE_TRUE_FUSED="${NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED:-0}"
 
@@ -93,6 +104,24 @@ case "${CUDA_DEVICE_RAW,,}" in
     ;;
 esac
 
+case "${NO_LOSS,,}" in
+  1|true|yes|on)
+    NO_LOSS_ARG=(--no-loss)
+    ;;
+  0|false|no|off|"")
+    NO_LOSS_ARG=()
+    ;;
+  *)
+    echo "Invalid NFN_LM_HEAD_BACKWARD_NO_LOSS='${NO_LOSS}'" >&2
+    exit 2
+    ;;
+esac
+
+if [[ "${#NO_LOSS_ARG[@]}" -gt 0 && "${LOSS_BINS}" != "0" ]]; then
+  echo "NFN_LM_HEAD_BACKWARD_NO_LOSS cannot be combined with NFN_LM_HEAD_BACKWARD_LOSS_BINS=${LOSS_BINS}" >&2
+  exit 2
+fi
+
 if [[ ! -x "${BENCH_BIN}" || "${ROOT_DIR}/neuralfn/csrc/native_train/lm_head_backward_bench.cpp" -nt "${BENCH_BIN}" ]]; then
   bash "${ROOT_DIR}/tools/build_lm_head_backward_bench.sh" "${BENCH_BIN}" >&2
 fi
@@ -110,6 +139,7 @@ fi
   --row-stride "${ROW_STRIDE}" \
   --iterations "${ITERATIONS}" \
   --warmup "${WARMUP}" \
+  "${NO_LOSS_ARG[@]}" \
   --loss-bins "${LOSS_BINS}" \
   --cuda-device "${CUDA_DEVICE}" \
   --json-out "${JSON_OUT}"

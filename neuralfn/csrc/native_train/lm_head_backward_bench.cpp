@@ -51,6 +51,16 @@ using LmHeadCeRowLossFn = int (*)(
     std::int64_t,
     float,
     void*);
+using LmHeadCeNoLossFn = int (*)(
+    std::uint16_t*,
+    const std::uint16_t*,
+    float*,
+    float*,
+    std::int64_t,
+    std::int64_t,
+    std::int64_t,
+    float,
+    void*);
 using LinearBackwardInputStridedFn = int (*)(
     const std::uint16_t*,
     const std::uint16_t*,
@@ -94,6 +104,7 @@ struct Options {
     int iterations = 5;
     int warmup = 1;
     int flags = 0;
+    bool no_loss = false;
 };
 
 struct VariantResult {
@@ -131,6 +142,7 @@ struct ComponentResult {
         << "  --row-stride N\n"
         << "  --iterations N\n"
         << "  --warmup N\n"
+        << "  --no-loss\n"
         << "  --loss-bins N\n"
         << "  --cuda-device N\n"
         << "  --json-out PATH\n";
@@ -176,8 +188,17 @@ Options parse_options(int argc, char** argv) {
             options.iterations = static_cast<int>(parse_i64(require_value(arg), arg));
         } else if (arg == "--warmup") {
             options.warmup = static_cast<int>(parse_i64(require_value(arg), arg));
+        } else if (arg == "--no-loss") {
+            if (options.flags != 0) {
+                throw std::runtime_error("--no-loss cannot be combined with --loss-bins");
+            }
+            options.no_loss = true;
+            options.flags = 1 << 1;
         } else if (arg == "--loss-bins") {
             const int loss_bins = static_cast<int>(parse_i64(require_value(arg), arg));
+            if (options.no_loss && loss_bins > 0) {
+                throw std::runtime_error("--loss-bins cannot be combined with --no-loss");
+            }
             if (loss_bins > 0) {
                 options.flags = 1 | (loss_bins << 8);
             }
@@ -408,6 +429,7 @@ double time_component(
 ComponentResult run_reference_components(
     LinearBf16InputWeightBf16OutputFn logits_fn,
     LmHeadCeRowLossFn ce_fn,
+    LmHeadCeNoLossFn ce_no_loss_fn,
     LinearBackwardInputStridedFn dhidden_fn,
     LinearBackwardWeightStridedBetaFn dweight_fn,
     const Options& options,
@@ -451,6 +473,18 @@ ComponentResult run_reference_components(
             cuda_check(cudaMemset(logits, 0, logits_bytes), "reference ce logits memset");
         },
         [&]() {
+            if (options.no_loss) {
+                return ce_no_loss_fn(
+                    logits,
+                    targets,
+                    nullptr,
+                    nullptr,
+                    options.rows,
+                    options.vocab,
+                    options.row_stride,
+                    loss_scale,
+                    nullptr);
+            }
             return ce_fn(
                 logits,
                 targets,
@@ -462,15 +496,27 @@ ComponentResult run_reference_components(
                 nullptr);
         });
     cuda_check(cudaMemset(logits, 0, logits_bytes), "reference dlogits logits memset");
-    const int ce_status = ce_fn(
-        logits,
-        targets,
-        row_losses,
-        options.rows,
-        options.vocab,
-        options.row_stride,
-        loss_scale,
-        nullptr);
+    const int ce_status =
+        options.no_loss
+            ? ce_no_loss_fn(
+                  logits,
+                  targets,
+                  nullptr,
+                  nullptr,
+                  options.rows,
+                  options.vocab,
+                  options.row_stride,
+                  loss_scale,
+                  nullptr)
+            : ce_fn(
+                  logits,
+                  targets,
+                  row_losses,
+                  options.rows,
+                  options.vocab,
+                  options.row_stride,
+                  loss_scale,
+                  nullptr);
     if (ce_status != 0) {
         throw std::runtime_error("reference dlogits preparation returned status " + std::to_string(ce_status));
     }
@@ -552,6 +598,7 @@ std::string render_json(
         << "  \"row_stride\": " << options.row_stride << ",\n"
         << "  \"iterations\": " << options.iterations << ",\n"
         << "  \"warmup\": " << options.warmup << ",\n"
+        << "  \"no_loss\": " << (options.no_loss ? "true" : "false") << ",\n"
         << "  \"flags\": " << options.flags << ",\n"
         << "  \"timed_reset_between_iterations\": false,\n"
         << "  \"candidate_true_fused_capability\": " << (true_fused_capability ? "true" : "false") << ",\n"
@@ -606,6 +653,9 @@ int main(int argc, char** argv) {
         auto reference_ce_fn = load_symbol<LmHeadCeRowLossFn>(
             handle,
             "nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets");
+        auto reference_ce_no_loss_fn = load_symbol<LmHeadCeNoLossFn>(
+            handle,
+            "nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace");
         auto reference_dhidden_fn = load_symbol<LinearBackwardInputStridedFn>(
             handle,
             "nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_float32");
@@ -698,6 +748,7 @@ int main(int argc, char** argv) {
         const ComponentResult reference_components = run_reference_components(
             reference_logits_fn,
             reference_ce_fn,
+            reference_ce_no_loss_fn,
             reference_dhidden_fn,
             reference_dweight_fn,
             options,
