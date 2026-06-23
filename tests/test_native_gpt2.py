@@ -1438,7 +1438,9 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "nfn_native_tile_lm_head_cooperative_sequence_concurrent_count" in bench_source
     assert "nfn_native_tile_lm_head_cooperative_sequence_legacy_count" in bench_source
     assert "cudaEventElapsedTime" in bench_source
-    assert "cudaMemset(logits, 0, logits_bytes)" in bench_source
+    assert "timed_reset_between_iterations" in bench_source
+    assert "timed pre-reset logits memset" in bench_source
+    assert "cudaEventRecord(start)" in bench_source
     assert "neuralfn/csrc/native_train/lm_head_backward_bench.cpp" in build_script
     assert "-lcudart -ldl" in build_script
     assert "NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL" in wrapper

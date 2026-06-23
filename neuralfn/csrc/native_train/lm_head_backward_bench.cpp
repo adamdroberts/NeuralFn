@@ -277,13 +277,14 @@ VariantResult run_variant(
 
     cudaEvent_t start = nullptr;
     cudaEvent_t stop = nullptr;
+    cuda_check(cudaMemset(logits, 0, logits_bytes), "timed pre-reset logits memset");
+    cuda_check(cudaMemset(grad_hidden, 0, grad_hidden_bytes), "timed pre-reset grad_hidden memset");
+    cuda_check(cudaMemset(grad_weight, 0, grad_weight_bytes), "timed pre-reset grad_weight memset");
+    cuda_check(cudaDeviceSynchronize(), name + " timed pre-reset synchronize");
     cuda_check(cudaEventCreate(&start), "cudaEventCreate start");
     cuda_check(cudaEventCreate(&stop), "cudaEventCreate stop");
     cuda_check(cudaEventRecord(start), "cudaEventRecord start");
     for (int i = 0; i < options.iterations; ++i) {
-        cuda_check(cudaMemset(logits, 0, logits_bytes), "timed logits memset");
-        cuda_check(cudaMemset(grad_hidden, 0, grad_hidden_bytes), "timed grad_hidden memset");
-        cuda_check(cudaMemset(grad_weight, 0, grad_weight_bytes), "timed grad_weight memset");
         const int status = fn(
             logits,
             targets,
@@ -360,6 +361,7 @@ std::string render_json(
         << "  \"iterations\": " << options.iterations << ",\n"
         << "  \"warmup\": " << options.warmup << ",\n"
         << "  \"flags\": " << options.flags << ",\n"
+        << "  \"timed_reset_between_iterations\": false,\n"
         << "  \"candidate_true_fused_capability\": " << (true_fused_capability ? "true" : "false") << ",\n"
         << "  \"baseline\": " << variant_json(baseline) << ",\n"
         << "  \"candidate\": " << variant_json(candidate) << ",\n"

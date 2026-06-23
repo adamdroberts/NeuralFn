@@ -14,7 +14,8 @@ Future updates should append new entries here rather than replacing older notes.
   timing, emits route counters, and keeps
   `candidate_true_fused_capability` separate from symbol availability so the
   current sequence wrapper cannot be mistaken for the missing fused parity
-  kernel.
+  kernel. Timed iterations reset logits and gradients before the CUDA event
+  window, so large buffer initialization is not counted as LM-head kernel time.
 
   Verification: static native GPT tests cover the harness symbols, JSON fields,
   build wrapper, and Tile ops rebuild path. The harness compiled with CUDA
