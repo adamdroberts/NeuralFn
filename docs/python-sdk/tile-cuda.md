@@ -558,10 +558,17 @@ environment. The tuple matches the `linear_shape_stats` convention and only
 gates forward/fused-GELU TK calls with fallback paths. CUDA 13.3 builds now try
 the TK BF16 forward bridge by default for no-bias BF16-input/BF16-weight/
 BF16-output GEMMs, including the padded LM-head logits shape
-`50304,32768,768,T,N`, before falling back to cuBLAS GEMMEx. To reproduce the
-older GEMMEx route for paired comparisons, set
-`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N` or
-`NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`.
+`50304,49152,768,T,N` for the current default LM-head row chunk, before falling
+back to cuBLAS GEMMEx. To reproduce the older GEMMEx route for paired
+comparisons, set
+`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N` or
+`NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N`; the older
+32768-row bisection tuple remains
+`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`. The
+current-shape fallback profile is rejected by default: the CUDA 13.3 dedicated
+RTX 5090 2-step, 2-sample stage-timed gate moved `lm_head_logits_tk_gemm_count`
+from 32 to 16 but regressed train-loop wall time to `1.005968x`, block backward
+to `1.009906x`, and MLP projection to `1.000576x`.
 Native GPT runtime JSON also reports `lm_head_logits_tk_gemm_count`,
 `lm_head_logits_cublaslt_gemm_count`, and
 `lm_head_logits_bf16_gemm_count`, so `lm_head_logits_linear_strategy` identifies

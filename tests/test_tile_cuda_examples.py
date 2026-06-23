@@ -1018,6 +1018,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "1.009736x train_loop_wall_ms_per_step" in text
     assert "lm_head_logits_bf16_fallback_32768" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N" in text
+    assert "lm_head_logits_bf16_fallback_49152" in text
+    assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N" in text
+    assert "1.005968x train_loop_wall_ms_per_step" in text
+    assert "lm_head_logits_tk_gemm_count from 32 to 16" in text
     assert "qkv_forward_bf16_fallback_65536" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=2304,65536,768,T,N" in text
     assert "regressed the target stage.block_forward.attention.qkv.total_ms to 1.143374x" in text
@@ -1591,6 +1595,72 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "50304,32768,768,T,N"
     )
     assert logits_fallback_payload["metric_ratio_gates"]["enabled"] is False
+
+    logits_fallback_49152_output_path = (
+        tmp_path / "candidate-logits-fallback-49152-dry-run.json"
+    )
+    logits_fallback_49152_env = os.environ.copy()
+    logits_fallback_49152_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_logits_bf16_fallback_49152",
+            "NFN_SM120_NATIVE_JSON_OUT": str(logits_fallback_49152_output_path),
+        }
+    )
+
+    logits_fallback_49152_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=logits_fallback_49152_env,
+    )
+
+    assert logits_fallback_49152_dry_run.returncode == 0, (
+        logits_fallback_49152_dry_run.stderr
+    )
+    logits_fallback_49152_payload = json.loads(
+        logits_fallback_49152_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        logits_fallback_49152_payload["candidate_env"][
+            "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE"
+        ]
+        == "50304,49152,768,T,N"
+    )
+    assert logits_fallback_49152_payload["metric_ratio_gates"]["enabled"] is False
+
+    rejected_logits_fallback_49152_env = os.environ.copy()
+    rejected_logits_fallback_49152_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_logits_bf16_fallback_49152",
+            "NFN_SM120_NATIVE_JSON_OUT": str(
+                tmp_path / "rejected-logits-fallback-49152.json"
+            ),
+        }
+    )
+
+    rejected_logits_fallback_49152_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=rejected_logits_fallback_49152_env,
+    )
+
+    assert rejected_logits_fallback_49152_run.returncode == 2
+    assert "lm_head_logits_bf16_fallback_49152 is a rejected SM120 candidate" in (
+        rejected_logits_fallback_49152_run.stderr
+    )
+    assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
+        rejected_logits_fallback_49152_run.stderr
+    )
 
     qkv_forward_fallback_output_path = tmp_path / "candidate-qkv-forward-fallback-dry-run.json"
     qkv_forward_fallback_env = os.environ.copy()

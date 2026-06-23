@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_logits_bf16_fallback_49152`
+  for current-shape LM-head logits bisection. The profile expands to
+  `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N`, matching the
+  default 49152-row LM-head chunk measured by the focused benchmark. It is
+  rejected by default: the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample
+  stage-timed gate moved `lm_head_logits_tk_gemm_count` from 32 to 16 but
+  rejected the fallback at `1.005968x` train-loop wall time, `1.009906x` block
+  backward, and `1.000576x` MLP projection. The older 32768-row logits fallback
+  profile remains available for reproducing historical row-chunk measurements.
+
+  Verification: added candidate-wrapper dry-run and rejected-launch coverage for
+  the new profile, ran the focused static tests, and ran the short same-script
+  benchmark on the dedicated GPU.
+
 - Extended the native CUDA LM-head backward benchmark to emit decomposed
   `reference_components` timing for the current raw Tile ABI: classifier CE,
   dHidden, dWeight, their summed backward time, plus the no-bias BF16 LM-head

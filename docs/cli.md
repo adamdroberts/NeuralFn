@@ -1290,7 +1290,15 @@ packed-QKV forward shape can be retested against the cuBLAS/BF16 fallback after
 CUDA or driver changes. Keep that profile diagnostic-only: the dedicated RTX
 5090 same-script run changed `linear_tk_gemm_count` as expected but rejected it
 at `1.009016x` train-loop wall time and `1.091020x`
-`stage.block_forward.attention.total_ms`.
+`stage.block_forward.attention.qkv.total_ms`. For the current default LM-head
+logits row chunk, `lm_head_logits_bf16_fallback_49152` expands to
+`NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N`; the older
+`lm_head_logits_bf16_fallback_32768` profile remains available for reproducing
+pre-49152 row-chunk measurements. The current-shape fallback is rejected by
+default because the CUDA 13.3 dedicated RTX 5090 stage-timed gate moved
+`lm_head_logits_tk_gemm_count` from 32 to 16 but regressed train-loop wall time
+to `1.005968x`, block backward to `1.009906x`, and MLP projection to
+`1.000576x`.
 `lm_head_tk_dweight_32768` expands to
 `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,32768,N,T` for the current
 32768-row LM-head dWeight bucket. Runtime JSON reports
