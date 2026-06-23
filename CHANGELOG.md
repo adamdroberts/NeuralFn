@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Guarded rejected SM120 native GPT candidate profiles in
+  `tools/bench_native_gpt_sm120_candidate.sh`. Real paired benchmark runs of
+  `attention_atomic_dq` and `qkv_forward_bf16_fallback_65536` now fail fast
+  unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set; dry-run
+  plan expansion still works without the opt-in.
+
+  Migration note: no trainer default changed. This only keeps exploratory
+  sweeps from rerunning candidates that current same-script RTX 5090 evidence
+  has already rejected. Set the opt-in when intentionally reproducing those
+  profiles.
+
+  Verification: a CUDA 13.3.33 dedicated RTX 5090 attention/QKV sweep rejected
+  `bf16_attention_grad_out` (`0.995826x` train-loop but failed strict stage
+  gates), `bf16_attention_dprep_grad_out` (`1.001524x` train-loop),
+  `attention_dprep_float_hd64_specialized` (`0.997808x` train-loop but failed
+  strict stage gates), `attention_atomic_dq` (route gate failed), and
+  `qkv_forward_bf16_fallback_65536` (`1.011419x` train-loop). Focused wrapper
+  tests and shell syntax checks were run after the guard change.
+
 - Guarded timeout-prone LM-head SM120 candidate profiles in
   `tools/bench_native_gpt_sm120_candidate.sh`. Real paired benchmark runs of
   `lm_head_pipeline_chunks`, `lm_head_row_chunk_65536`, and

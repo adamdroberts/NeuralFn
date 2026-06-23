@@ -1064,6 +1064,12 @@ native sidecars under `NFN_SM120_NATIVE_SWEEP_OUT_DIR`. Pass profiles as
 arguments or set `NFN_SM120_NATIVE_SWEEP_PROFILES`; set
 `NFN_SM120_NATIVE_SWEEP_ALLOW_FAILURES=1` only when the outer command should
 return success after collecting rejected-candidate evidence.
+Real runs of known rejected named profiles fail fast unless
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set; dry-run plan
+expansion still works without that opt-in. The current guard covers
+`attention_atomic_dq`, whose CUDA 13.3 RTX 5090 rerun failed route detection and
+attention section gates, and `qkv_forward_bf16_fallback_65536`, whose rerun
+regressed train-loop wall time to `1.011419x`.
 The CUDA 13.3.33 linked-trainer startup sweep left all existing startup
 profiles diagnostic-only: `token_weight_vector4_strided` improved token init
 but failed total setup, `token_weight_threaded` only won total setup through
