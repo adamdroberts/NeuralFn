@@ -287,6 +287,8 @@ int nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16(
     int flags,
     void* cuda_stream);
 
+int nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused();
+
 int nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace(
     std::uint16_t* logits,
     const std::uint16_t* targets,

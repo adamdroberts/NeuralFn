@@ -1918,9 +1918,15 @@ The existing
 `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`
 symbol remains the event-ordered sequence wrapper probe. The strict
 co-scheduled implementation exports the separate
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` symbol,
-which makes `lm_head_cooperative_backward_kernel_available` and
-`lm_head_cooperative_backward_fused_kernel_available` true, but the route is not
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` symbol plus
+a nonzero
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+capability. Runtime JSON reports the placeholder symbol as
+`lm_head_cooperative_backward_fused_kernel_symbol_available` and the semantic
+capability as
+`lm_head_cooperative_backward_fused_kernel_capability_available`; only the
+capability path makes `lm_head_cooperative_backward_kernel_available` and
+`lm_head_cooperative_backward_fused_kernel_available` true. The route is not
 promoted by default. The CUDA 13.3 dedicated RTX 5090 one-step, two-sample
 same-script gate proved route execution with 16 cooperative sequence launches,
 but rejected promotion at `1.022567x` train-loop wall and `0.977929x`

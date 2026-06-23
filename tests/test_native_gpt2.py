@@ -1267,7 +1267,11 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head_cooperative_loss_bins_requested" in source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in source
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in source
     assert "lm_head_classifier_backward_true_fused_kernel_bf16_u16" in source
+    assert "lm_head_classifier_backward_true_fused_capability" in source
+    assert "lm_head_cooperative_backward_fused_kernel_symbol_available" in source
+    assert "lm_head_cooperative_backward_fused_kernel_capability_available" in source
     assert (
         "lm_head_cooperative_backward_kernel_enabled\n"
         "                            ? lm_head_classifier_backward_true_fused_kernel_bf16_u16\n"
@@ -1289,6 +1293,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in tile_ops_header
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_source
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_header
+    assert "return 0;" in tile_ops_source
     assert "run_lm_head_classifier_backward_cooperative_sequence_bf16_u16" in tile_ops_source
     assert "LmHeadCooperativeStreams" in tile_ops_source
     assert "cudaStreamWaitEvent" in tile_ops_source

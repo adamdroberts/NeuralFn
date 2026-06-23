@@ -860,8 +860,13 @@ The current wrapper symbol is
 `nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16`; it
 only satisfies `lm_head_cooperative_backward_sequence_wrapper_available`. The
 future hard fused route is probed through
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`; only that
-separate symbol satisfies `lm_head_cooperative_backward_fused_kernel_available`.
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus the
+nonzero
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+capability. Runtime JSON reports
+`lm_head_cooperative_backward_fused_kernel_symbol_available` separately from
+`lm_head_cooperative_backward_fused_kernel_capability_available`; only the
+capability satisfies `lm_head_cooperative_backward_fused_kernel_available`.
 At runtime the compiled trainer also loads that separate true-fused callable
 and uses it only when `lm_head_cooperative_backward_kernel_enabled` is true.
 The sequence-wrapper callable is used only for non-required diagnostic runs, so

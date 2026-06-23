@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Corrected dense GPT cooperative LM-head strict-kernel availability reporting:
+  the placeholder
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` export is
+  no longer enough to satisfy strict fused-kernel routing. Tile ops now expose
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`;
+  the current cooperative sequence wrapper returns `0`, so runtime and
+  `--check-tile-ops` JSON keep
+  `lm_head_cooperative_backward_kernel_available` and
+  `lm_head_cooperative_backward_fused_kernel_available` false until a real
+  single fused classifier/dHidden/dWeight kernel provides both the symbol and a
+  nonzero capability. JSON now also distinguishes
+  `lm_head_cooperative_backward_fused_kernel_symbol_available` from
+  `lm_head_cooperative_backward_fused_kernel_capability_available`.
+
+  **Breaking changes:** JSON consumers that treated
+  `lm_head_cooperative_backward_kernel_available` or
+  `lm_head_cooperative_backward_fused_kernel_available` as evidence that the
+  placeholder symbol existed must migrate to
+  `lm_head_cooperative_backward_fused_kernel_symbol_available` for symbol
+  presence, or keep using the old fields only when they need actual strict
+  fused-kernel availability.
+
+  Verification note: updated native GPT source-contract tests, rebuilt the
+  native Tile ops library and native GPT CLI, and reran strict/check-tile-ops
+  smoke coverage against the rebuilt binary.
+
 - Added a named rejected SM120 benchmark profile for the unsafe asymmetric
   two-chunk LM-head split:
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_49152` expands to

@@ -94,9 +94,11 @@ build. The cooperative LM-head diagnostic wrapper is intentionally separate
 from the future strict fused classifier/dHidden/dWeight callable: wrapper-only
 builds still fail `--require-cooperative-lm-head-backward`, and strict JSON
 availability requires loading
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` rather than
-the existing sequence wrapper. A post-reinstall wrapper timing check also
-confirms that
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus a
+nonzero
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+capability rather than the existing sequence wrapper. A post-reinstall wrapper
+timing check also confirms that
 `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run --native-cuda-print-command`
 returns the compiled C++ delegate in about `0.03s`, so the old Python schedule
 estimation path is not on the current native GPT startup route. A native
@@ -713,8 +715,14 @@ The existing
 is the event-ordered sequence wrapper and only makes
 `lm_head_cooperative_backward_sequence_wrapper_available` true. The strict
 fused-kernel probe uses the separate future symbol
-`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`; only that
-symbol can make `lm_head_cooperative_backward_kernel_available` and
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus the
+nonzero
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+capability. Runtime JSON reports
+`lm_head_cooperative_backward_fused_kernel_symbol_available` for the placeholder
+symbol separately from
+`lm_head_cooperative_backward_fused_kernel_capability_available`; only the
+capability path can make `lm_head_cooperative_backward_kernel_available` and
 `lm_head_cooperative_backward_fused_kernel_available` true.
 Fresh Tile ops builds also export cooperative sequence counters for this
 diagnostic wrapper. Runtime JSON reports
