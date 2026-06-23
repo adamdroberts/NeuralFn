@@ -107,6 +107,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     rejected the wrapper at `1.007071x` train-loop wall, `1.000602x` LM-head
     backward, and `1.001183x` block backward. This is a diagnostic route, not
     the parity kernel.
+  - 2026-06-23 moved the strict
+    `--require-cooperative-lm-head-backward` training guard ahead of cached
+    token-shard resolution and CUDA runtime setup. Missing or placeholder true
+    fused LM-head kernels now fail immediately with a capability error, while
+    `--check-tile-ops --require-cooperative-lm-head-backward` remains the JSON
+    inspection path for strict ABI status.
   - [ ] Implement the actual cooperative LM-head backward Tile ABI that fuses or
     co-schedules classifier dlogit production with dHidden and dWeight work
     without materializing full resident logits or routing tensors through Torch.

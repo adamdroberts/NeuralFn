@@ -1377,6 +1377,15 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head_classifier_backward_true_fused_capability" in source
     assert "lm_head_cooperative_backward_fused_kernel_symbol_available" in source
     assert "lm_head_cooperative_backward_fused_kernel_capability_available" in source
+    assert "cooperative_lm_head_backward_requirement_error" in source
+    assert (
+        "required cooperative LM-head backward true fused Tile kernel is unavailable"
+    ) in source
+    assert "must return true before training starts" in source
+    assert (
+        source.index("cooperative_lm_head_backward_requirement_error(cfg, argv[0])")
+        < source.index("resolve_token_shards(")
+    )
     assert (
         "lm_head_cooperative_backward_kernel_enabled\n"
         "                            ? lm_head_classifier_backward_true_fused_kernel_bf16_u16\n"

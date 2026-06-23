@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Moved the strict dense GPT cooperative LM-head backward training preflight
+  ahead of token-shard resolution and CUDA runtime setup. A real
+  `--train-transformer-lm --require-cooperative-lm-head-backward` launch now
+  opens only the Tile ops library, checks
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`, and
+  requires
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()` to
+  return true before cached datasets or CUDA arenas are touched.
+  `--check-tile-ops --require-cooperative-lm-head-backward` remains the JSON
+  capability inspection path.
+
+  Verification: added focused native GPT source-contract coverage; rebuilt the
+  native GPT CLI; ran strict required training and confirmed it exits before
+  dataset resolution when the current Tile ops library reports the true fused
+  capability as false.
+
 - Extended the native no-Torch dependency verifier to cover benchmark shell
   wrappers. `tools/check_native_no_torch_deps.py` now reports
   `shell_entrypoints`, and `tools/bench_linear_backward_candidate.sh` exposes

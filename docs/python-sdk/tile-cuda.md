@@ -2161,7 +2161,12 @@ real single-kernel or genuinely fused cooperative classifier/dHidden/dWeight
 body lands. The SM120 candidate wrapper labels
 `lm_head_cooperative_backward_required` as a strict probe rather than a
 metric-gated speed candidate. Wrapper-only and placeholder-symbol builds still
-fail the strict guard.
+fail the strict guard. Real `--train-transformer-lm
+--require-cooperative-lm-head-backward` launches now run this strict
+symbol/capability preflight before cached token-shard discovery or CUDA runtime
+setup, so missing fused-kernel builds fail immediately. Use `--check-tile-ops
+--require-cooperative-lm-head-backward` to inspect the same capability as JSON
+without entering the training path.
 The non-required candidate route now explicitly enables the event-ordered
 sequence wrapper and reports
 `lm_head_cooperative_backward_sequence_wrapper_enabled: true`, which lets the

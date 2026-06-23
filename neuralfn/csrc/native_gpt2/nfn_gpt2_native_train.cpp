@@ -3854,6 +3854,48 @@ void* open_tile_ops_library(const std::string& path, int flags, bool* linked_req
     return dlopen(path.c_str(), flags);
 }
 
+std::string cooperative_lm_head_backward_requirement_error(
+    const Config& cfg,
+    const char* program) {
+    if (!cfg.require_cooperative_lm_head_backward) {
+        return {};
+    }
+    const std::string tile_ops = cfg.tile_ops_lib.empty() ? default_tile_ops_lib(program) : cfg.tile_ops_lib;
+    bool linked = false;
+    void* handle = open_tile_ops_library(tile_ops, RTLD_NOW | RTLD_LOCAL, &linked);
+    if (handle == nullptr) {
+        std::ostringstream out;
+        out << "required cooperative LM-head backward true fused Tile kernel is unavailable: "
+            << dl_last_error("dlopen tile ops failed")
+            << "; tile_ops_library=" << tile_ops;
+        return out.str();
+    }
+
+    using LmHeadTrueFusedCapabilityFn = int (*)();
+    void* true_fused_kernel = dlsym(handle, kLmHeadCooperativeBackwardTrueFusedKernelSymbol);
+    auto true_fused_capability =
+        reinterpret_cast<LmHeadTrueFusedCapabilityFn>(
+            dlsym(handle, kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol));
+    const bool capable =
+        true_fused_kernel != nullptr &&
+        true_fused_capability != nullptr &&
+        true_fused_capability() != 0;
+    if (!linked) {
+        dlclose(handle);
+    }
+    if (capable) {
+        return {};
+    }
+
+    std::ostringstream out;
+    out << "required cooperative LM-head backward true fused Tile kernel is unavailable: "
+        << kLmHeadCooperativeBackwardTrueFusedKernelSymbol
+        << " must be present and "
+        << kLmHeadCooperativeBackwardTrueFusedCapabilitySymbol
+        << " must return true before training starts; run --check-tile-ops for capability JSON";
+    return out.str();
+}
+
 bool print_tile_plan(
     const Config& cfg,
     const neuralfn::native_train::TokenShardDataset& dataset,
@@ -23163,6 +23205,20 @@ int main(int argc, char** argv) {
             cfg.train_transformer_lm &&
             !selected_graph_is_native_runnable(cfg)) {
             return print_selected_graph_unsupported_json(cfg);
+        }
+        if (!cfg.print_plan &&
+            !cfg.dry_run &&
+            !cfg.smoke_transformer_lm_step &&
+            !cfg.smoke_embedding_lm_step &&
+            !cfg.checkpoint_metadata_smoke &&
+            cfg.train_transformer_lm &&
+            cfg.require_cooperative_lm_head_backward) {
+            const std::string strict_lm_head_error =
+                cooperative_lm_head_backward_requirement_error(cfg, argv[0]);
+            if (!strict_lm_head_error.empty()) {
+                std::cerr << strict_lm_head_error << "\n";
+                return 2;
+            }
         }
     }
 

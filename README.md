@@ -110,7 +110,11 @@ nonzero
 capability rather than the existing sequence wrapper. The llm.kittens SM120
 reference keeps LM-head logits, classifier CE/dlogits, dHidden, and dWeight as
 separate stages, so this strict fused callable is a candidate optimization gate,
-not a required reference-parity condition. Future LM-head fused kernel
+not a required reference-parity condition. Real training runs that pass
+`--require-cooperative-lm-head-backward` now fail this strict capability check
+before token-shard resolution or CUDA runtime setup; use `--check-tile-ops
+--require-cooperative-lm-head-backward` when you want the detailed capability
+JSON instead of an early process failure. Future LM-head fused kernel
 candidates should first run
 `bash tools/bench_lm_head_backward_candidate.sh`, which builds
 `build/lm_head_backward_bench` and compares the current cooperative sequence
