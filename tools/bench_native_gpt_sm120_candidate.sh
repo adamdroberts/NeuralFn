@@ -667,6 +667,11 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
                 ;;
             esac
             case "$candidate_gate_text" in
+              *LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED*|*lm_head_ce_no_loss_default_specialized*)
+                lm_head_only_candidate_gate=0
+                ;;
+            esac
+            case "$candidate_gate_text" in
               *LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE*|*linear_backward_bias_row_chunk_size*)
                 ;;
               *)

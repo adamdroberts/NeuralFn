@@ -2163,6 +2163,9 @@ keeps `--train-loss-every-steps 0`, and reports
 "no-loss-default-specialized-dlogits-vec8-loads-scalar-stores"`. Set
 `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0` only to compare
 against the older generic no-loss CE+dlogits kernel.
+The wrapper treats that default-route profile as a whole-loop promotion check:
+stage-timed runs also gate `stage.block_backward.total_ms`, so a narrow LM-head
+CE win cannot hide an unrelated block-backward regression.
 The native-vs-native wrapper also forwards the selected-GPU utilization retry
 aliases to the paired benchmark tool: use
 `NFN_SM120_NATIVE_SELECTED_GPU_UTILIZATION_RETRIES`,

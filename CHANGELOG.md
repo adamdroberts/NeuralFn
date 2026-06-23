@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tightened the SM120 native candidate gate for
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`.
+  Stage-timed reruns now treat that default no-loss CE route as a whole-loop
+  promotion check instead of an LM-head-only probe, adding a strict
+  `stage.block_backward.total_ms=1.000` ratio gate alongside the existing
+  train-loop, steady-state, LM-head, and CE gates. This keeps future reruns from
+  accepting a narrow CE win that hides block-backward regression.
+
+  Verification: reran the profile on the dedicated RTX 5090 before the guard
+  change at 3 steps and 3 samples, confirming the route change and current
+  ratios (`0.986210x` train-loop wall, `0.978885x` steady-state CUDA event
+  wall, `0.912827x` LM-head backward, `0.552178x` LM-head CE). Added source
+  contract coverage for the stricter gate.
+
 - Added captured-output native GPT sampler bindings for SDK `.bin`
   inference. Rebuilt `neuralfn._native_gpt` and `neuralfn._native_gpt2`
   modules now expose `run_gpt_capture`, `run_gpt2_capture`, and `run_infer`,

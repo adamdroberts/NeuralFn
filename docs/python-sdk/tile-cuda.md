@@ -362,6 +362,10 @@ keeps train-loss logging disabled, and reports
 "no-loss-default-specialized-dlogits-vec8-loads-scalar-stores"` when active.
 Set `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0` only to compare
 against the older generic no-loss CE+dlogits kernel.
+Because this route is a default optimizer-only CE path rather than a narrow
+experimental probe, the paired SM120 wrapper also gates
+`stage.block_backward.total_ms` for stage-timed reruns of
+`lm_head_ce_no_loss_default_specialized`.
 
 `NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1`,
 `NFN_NATIVE_GPT2_CE_BF16_SCALAR_STREAMING_STORES=1`, and

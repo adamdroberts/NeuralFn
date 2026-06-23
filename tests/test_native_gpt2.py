@@ -1644,6 +1644,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "parse_cublaslt_heuristic_shape_override_token(token_start, &shape)" in tile_source
 
     for gated_metric in [
+        "stage.block_backward.total_ms=1.000",
         "stage.block_backward.attn_sdpa.total_ms=1.000",
         "stage.block_backward.attn_sdpa.to_qkv.total_ms=1.000",
         "stage.block_backward.mlp_proj.dinput.total_ms=1.000",
@@ -1654,6 +1655,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "stage.lm_head_backward.ce.total_ms=1.000",
     ]:
         assert gated_metric in bench_source
+    assert "*LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED*|*lm_head_ce_no_loss_default_specialized*" in bench_source
     assert "AUTO_ATTENTION_SECTION_TIMING=1" in bench_source
     assert '--baseline-env "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1"' in bench_source
     assert '--candidate-env "NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1"' in bench_source
