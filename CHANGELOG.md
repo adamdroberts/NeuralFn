@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_natural_rows` as the
+  native-vs-native wrapper name for the already rejected LM-head CE row-order
+  diagnostic. The profile expands to
+  `NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS=0` and exits as rejected by default:
+  the CUDA 13.3 RTX 5090 same-script parity sample proved the route change but
+  regressed CUDA-event wall time to `1.019563x`, steady-state CUDA-event wall
+  time to `1.019690x`, and tokens/sec to `0.978913x`.
+
+  Verification note: updated the SM120 wrapper source-contract coverage plus
+  CLI, SDK, and CUDA Tile TODO docs; reran wrapper syntax, the focused wrapper
+  pytest, and a dry-run/rejected-profile guard check.
+
 - Added the rejected `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_qkv_dweight_h0_65536`
   wrapper profile for the dense GPT QKV dWeight+bias cuBLASLt plan. The profile
   expands to

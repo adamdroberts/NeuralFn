@@ -965,6 +965,9 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_CE_BF16_THREADS=512" in text
     assert "lm_head_ce_scalar_streaming_store" in text
     assert "NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1" in text
+    assert "lm_head_ce_natural_rows" in text
+    assert "NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS=0" in text
+    assert "regressed CUDA-event wall time to 1.019563x" in text
     assert "lm_head_ce_default_specialized" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_DEFAULT_SPECIALIZED=1" in text
     assert "lm_head_loss_bins" in text

@@ -1680,7 +1680,11 @@ append candidate-only `KEY=VALUE` overrides to the NeuralFn side of the parity
 comparison. This is useful for one-off route checks such as
 `NFN_SM120_PARITY_CANDIDATE_ENV='NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS=0'`,
 which runs the LM-head CE natural-row diagnostic without changing the
-llm.kittens baseline environment.
+llm.kittens baseline environment. For native-vs-native checks, use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_natural_rows`; the wrapper marks
+it rejected by default because the CUDA 13.3 RTX 5090 same-script parity sample
+measured `1.019563x` CUDA-event wall time, `1.019690x` steady-state CUDA-event
+wall time, and `0.978913x` tokens/sec versus the reverse-row default.
 It also mirrors `NFN_SM120_PARITY_ACTIVATION` or the generic
 `NFN_SM120_ACTIVATION` fallback into both sides of the comparison, using
 llm.kittens `-af` and NeuralFn `--native-cuda-activation`.

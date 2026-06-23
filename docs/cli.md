@@ -982,7 +982,14 @@ reproduces the LM-head CE natural-row diagnostic. Compare
 `train_loop_wall_ms_per_step`, the CUDA-event loop fields, and
 `train_tokens_per_second` under the native metrics summaries rather than
 child-process `seconds`; the llm.kittens reference still runs its built-in
-validation passes around short runs. Set
+validation passes around short runs.
+The native-vs-native candidate wrapper exposes the same rejected route as
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_natural_rows`; the profile
+expands to `NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS=0` and is rejected by
+default because the CUDA 13.3 RTX 5090 same-script parity sample regressed
+CUDA-event wall time to `1.019563x`, steady-state CUDA-event wall time to
+`1.019690x`, and tokens/sec to `0.978913x`.
+Set
 `NFN_SM120_PARITY_SAMPLE_EVERY=20000`,
 `NFN_SM120_PARITY_CHECKPOINT_EVERY=200`, and
 `NFN_SM120_PARITY_GENERATE_TOKENS=144` when deliberately reproducing the full

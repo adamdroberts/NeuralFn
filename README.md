@@ -1153,6 +1153,10 @@ append extra `KEY=VALUE` pairs to the NeuralFn candidate command without
 affecting the llm.kittens baseline; for example,
 `NFN_SM120_PARITY_CANDIDATE_ENV='NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS=0'`
 reproduces the LM-head CE natural-row diagnostic.
+The native-vs-native wrapper exposes the same rejected route as
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_natural_rows`, which expands to
+`NFN_NATIVE_GPT_LM_HEAD_CE_REVERSE_ROWS=0` and exits as rejected by default
+unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
 Compare `train_loop_wall_ms_per_step`, the CUDA-event fields, and
 `train_tokens_per_second` in the native metrics block rather than child-process
 `seconds`, because the llm.kittens reference still performs its built-in
