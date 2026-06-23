@@ -22,6 +22,18 @@ Future updates should append new entries here rather than replacing older notes.
   stage-timed rerun exposed the remaining kernel bottlenecks in block backward
   and LM-head backward.
 
+- Exposed `NFN_SM120_NATIVE_AUTO_DISABLE_METRIC_RATIO_GATES=1` for native
+  SM120 candidate diagnostics. The candidate wrapper already had internal
+  profile paths that disabled automatic ratio gates for non-promotable probes;
+  the new public alias lets ad-hoc CUDA 13.3 measurements collect the full
+  paired metrics payload for exploratory candidates without requiring a failed
+  gate exit. Route-change gates and explicit user-provided ratio gates are still
+  controlled separately.
+
+  Verification note: added dry-run wrapper coverage proving the new alias
+  disables automatic ratio thresholds, then reran focused
+  `tests/test_tile_cuda_examples.py` coverage and shell syntax checks.
+
 - Added an explicit rejected SM120 benchmark profile for direct cuBLASLt BGRADB
   first-write bias gradients: `bgrad_first_write_direct` expands to
   `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1`. The route is not promoted: the

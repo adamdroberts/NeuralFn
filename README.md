@@ -392,6 +392,11 @@ also gate `stage.block_backward.qkv.total_ms`; the candidate-only combined
 `stage.block_backward.qkv.dinput_dweight_concurrent.total_ms` substage is still
 reported for inspection, but it cannot be ratio-gated directly because the
 serial baseline emits split dInput and dWeight substages instead.
+Set `NFN_SM120_NATIVE_AUTO_DISABLE_METRIC_RATIO_GATES=1` only for diagnostic
+measurement runs where you intentionally want the wrapper to emit paired
+metrics for a known or exploratory candidate without enforcing the default
+promotion gates. The existing `--require-native-route-change` behavior is
+unchanged; this only disables automatic ratio thresholds.
 For repeatable CUDA/driver bisection of known LM-head dHidden routes, set
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dinput_32768` (or the shorter
 `NFN_SM120_CANDIDATE_PROFILE`) to expand the candidate env to

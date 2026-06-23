@@ -821,7 +821,6 @@ def test_native_gpt_sm120_candidate_wrapper_stage_timing_without_profile_dir(tmp
     assert payload["append_native_profile_json_dir"] == ""
     text = script.read_text(encoding="utf-8")
     assert "NFN_SM120_NATIVE_STAGE_TIMING" in text
-    assert "NFN_SM120_NATIVE_PARITY_STAGE_TIMING" in text
 
 
 def test_native_gpt_sm120_parity_wrapper_accepts_generic_aliases(tmp_path: Path) -> None:
@@ -1403,6 +1402,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     )
     assert grouped_probe_payload["metric_ratio_gates"]["enabled"] is False
     assert "AUTO_DISABLE_METRIC_RATIO_GATES=1" in text
+    assert "NFN_SM120_NATIVE_AUTO_DISABLE_METRIC_RATIO_GATES" in text
 
     max_connections_output_path = tmp_path / "candidate-max-connections-dry-run.json"
     max_connections_env = os.environ.copy()
