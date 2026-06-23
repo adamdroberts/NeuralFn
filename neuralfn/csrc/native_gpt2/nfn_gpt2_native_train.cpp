@@ -20483,6 +20483,16 @@ int run_transformer_lm_training_json(
         << (lm_head_classifier_ce_no_loss_requested ? "true" : "false") << ",\n"
         << "  \"lm_head_classifier_ce_no_loss_enabled\": "
         << (lm_head_ce_no_loss_runtime_enabled ? "true" : "false") << ",\n"
+        << "  \"lm_head_classifier_fusion_scope\": \""
+        << (lm_head_bf16_logits_enabled && lm_head_public_vocab_ce_enabled
+                ? "ce-dlogits-only-logits-dhidden-dweight-remain-separate"
+                : "legacy-ce-path-logits-dhidden-dweight-remain-separate")
+        << "\",\n"
+        << "  \"lm_head_schedule_parity_status\": \""
+        << (lm_head_cooperative_backward_kernel_enabled
+                ? "cooperative-lm-head-schedule-enabled"
+                : "missing-fused-logits-ce-dhidden-dweight-schedule")
+        << "\",\n"
         << "  \"lm_head_classifier_no_loss_chunk_count\": "
         << lm_head_classifier_no_loss_chunk_count << ",\n"
         << "  \"lm_head_ce_backward_strategy\": \""

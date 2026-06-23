@@ -753,7 +753,11 @@ Runtime JSON reports
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`,
 `lm_head_cooperative_backward_sequence_wrapper_enabled`, and
-`lm_head_cooperative_backward_strategy`. The strict cooperative ABI remains
+`lm_head_cooperative_backward_strategy`. Runtime JSON also reports
+`lm_head_classifier_fusion_scope` and `lm_head_schedule_parity_status` so
+paired benchmarks distinguish the existing CE/dlogits fusion from the still
+missing fused logits/CE/dHidden/dWeight LM-head schedule needed for parity. The
+strict cooperative ABI remains
 default-off and non-promoted; the current strict symbol is measurable
 co-scheduling groundwork until a later single-kernel or truly fused parity body
 passes the same-script gates.

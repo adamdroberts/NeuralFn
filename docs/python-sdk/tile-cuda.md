@@ -2007,7 +2007,10 @@ Runtime JSON reports
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`,
 `lm_head_cooperative_backward_sequence_wrapper_enabled`, and
-`lm_head_cooperative_backward_strategy`.
+`lm_head_cooperative_backward_strategy`. Runtime JSON also reports
+`lm_head_classifier_fusion_scope` and `lm_head_schedule_parity_status`, which
+the paired benchmark treats as strategy values so CE-only changes are not
+mistaken for the missing fused logits/CE/dHidden/dWeight LM-head schedule.
 Rebuilt Tile ops libraries export the probed symbol with a typed C ABI contract
 for the future cooperative route: BF16 logit/dlogit chunk, u16 targets,
 optional row losses, BF16/float hidden inputs, BF16/float token weights,

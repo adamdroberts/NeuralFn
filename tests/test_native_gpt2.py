@@ -7001,6 +7001,10 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         "            true);"
     ) in gpt2_source_text
     assert "lm_head_ce_kernel_strategy" in gpt2_source_text
+    assert "lm_head_classifier_fusion_scope" in gpt2_source_text
+    assert "ce-dlogits-only-logits-dhidden-dweight-remain-separate" in gpt2_source_text
+    assert "lm_head_schedule_parity_status" in gpt2_source_text
+    assert "missing-fused-logits-ce-dhidden-dweight-schedule" in gpt2_source_text
     assert "default-specialized-row-loss-vec8-loads-scalar-stores" in gpt2_source_text
     assert "default-specialized-loss-bins-vec8-loads-scalar-stores" in gpt2_source_text
     assert "no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores" in gpt2_source_text

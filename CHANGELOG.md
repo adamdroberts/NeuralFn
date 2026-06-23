@@ -2534,6 +2534,15 @@ Future updates should append new entries here rather than replacing older notes.
   `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16`; no stub
   is exported today.
 
+- Added explicit native dense-GPT runtime reporting for the LM-head classifier
+  fusion scope. Runtime JSON and paired benchmark strategy summaries now include
+  `lm_head_classifier_fusion_scope` and `lm_head_schedule_parity_status`, making
+  it clear when a candidate only changes the existing CE/dlogits classifier
+  fusion versus the still-missing fused logits/CE/dHidden/dWeight schedule.
+
+  Migration note: no runtime route changed. These fields are additive JSON
+  reporting fields for native trainer diagnostics.
+
   Migration note: this is a default-off strictness flag, not a replacement
   kernel. Normal training keeps the current native CUDA Tile path. Use the flag
   only for parity/preflight checks that must reject the current LM-head

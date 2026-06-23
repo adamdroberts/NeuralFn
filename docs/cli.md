@@ -894,7 +894,10 @@ Runtime JSON reports `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_route_integrated`,
 `lm_head_cooperative_backward_kernel_enabled`,
 `lm_head_cooperative_backward_sequence_wrapper_enabled`, and
-`lm_head_cooperative_backward_strategy`.
+`lm_head_cooperative_backward_strategy`. The same runtime JSON includes
+`lm_head_classifier_fusion_scope` and `lm_head_schedule_parity_status` so
+same-script candidate reports can separate CE/dlogits fusion from a true
+logits/CE/dHidden/dWeight LM-head schedule change.
 The Tile symbol is no longer an untyped probe in rebuilt ops libraries: its C
 ABI receives the BF16 logit/dlogit chunk, u16 targets, row-loss buffer,
 BF16/float hidden inputs, BF16/float token weights, dHidden, dWeight, shape

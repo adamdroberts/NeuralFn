@@ -3828,6 +3828,8 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
                 "lm_head_dhidden_linear_strategy": "bf16-cublas-gemmex",
                 "lm_head_ce_loss_backward_strategy": "separate-loss-partials-reduction-then-dlogits",
                 "lm_head_ce_bf16_threads_per_row": 1024,
+                "lm_head_classifier_fusion_scope": "ce-dlogits-only-logits-dhidden-dweight-remain-separate",
+                "lm_head_schedule_parity_status": "missing-fused-logits-ce-dhidden-dweight-schedule",
                 "lm_head_cooperative_backward_required": True,
                 "lm_head_cooperative_backward_abi_wrapper_available": True,
                 "lm_head_cooperative_backward_sequence_wrapper_available": True,
@@ -3926,6 +3928,8 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
     assert metrics["lm_head_dhidden_linear_strategy"] == "bf16-cublas-gemmex"
     assert metrics["lm_head_ce_loss_backward_strategy"] == "separate-loss-partials-reduction-then-dlogits"
     assert metrics["lm_head_ce_bf16_threads_per_row"] == 1024
+    assert metrics["lm_head_classifier_fusion_scope"] == "ce-dlogits-only-logits-dhidden-dweight-remain-separate"
+    assert metrics["lm_head_schedule_parity_status"] == "missing-fused-logits-ce-dhidden-dweight-schedule"
     assert metrics["lm_head_cooperative_backward_required"] is True
     assert metrics["lm_head_cooperative_backward_abi_wrapper_available"] is True
     assert metrics["lm_head_cooperative_backward_sequence_wrapper_available"] is True
@@ -3992,6 +3996,8 @@ def test_paired_kernel_speed_tool_reads_native_json_out_sidecar(tmp_path: Path) 
         "lm_head_dhidden_linear_strategy": ["bf16-cublas-gemmex"],
         "lm_head_ce_loss_backward_strategy": ["separate-loss-partials-reduction-then-dlogits"],
         "lm_head_ce_bf16_threads_per_row": ["1024"],
+        "lm_head_classifier_fusion_scope": ["ce-dlogits-only-logits-dhidden-dweight-remain-separate"],
+        "lm_head_schedule_parity_status": ["missing-fused-logits-ce-dhidden-dweight-schedule"],
         "lm_head_cooperative_backward_strategy": ["missing-required-sm120-parity-kernel"],
         "lm_head_cooperative_backward_required": ["true"],
         "lm_head_cooperative_backward_abi_wrapper_available": ["true"],
