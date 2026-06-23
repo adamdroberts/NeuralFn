@@ -17,7 +17,12 @@ Future updates should append new entries here rather than replacing older notes.
 
   Verification: `bash -n tools/bench_native_gpt_sm120_parity.sh`, focused
   native GPT wrapper tests, and a dry-run parity plan confirmed the candidate
-  env includes `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` by default.
+  env includes `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` by default. A
+  GPU-visible 3-step parity run on the dedicated RTX 5090 selected the idle
+  compute GPU, confirmed zero compute processes before and after the sample,
+  and measured NeuralFn at `0.970733x` train-loop wall time and `1.022057x`
+  tokens/sec versus llm.kittens, while the steady-state CUDA-event slice
+  remained slower at `1.015231x`.
 
 - Rechecked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized`
   against the current CUDA 13.3 dense-GPT baseline and kept it rejected. The

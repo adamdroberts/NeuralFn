@@ -85,15 +85,14 @@ expansion remains available without that opt-in. The native runner now rejects
 LM-head chunks above 49152 rows before launching CUDA unless
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` is set for explicit paired
 diagnostics. The
-current staged CUDA 13.3.33
-10-step parity sample on the dedicated RTX 5090 measured NeuralFn at
-`2564.590 ms/step` versus llm.kittens at `2447.451 ms/step`
-(`1.047862x` train-loop wall time, `0.952442x` tokens/sec); the latest
-instrumentation-free strict-gate sample measured a still-open gap at
-`1.019517x` with NeuralFn at `2499.550 ms/step` versus llm.kittens at
-`2451.837 ms/step`. The remaining gap is still native GPU kernel work rather than
-Torch, Python, or graph-editor execution. Because parity samples can move with
-reference-run noise, keep using
+current CUDA 13.3.33
+3-step parity sample on the dedicated RTX 5090 measured NeuralFn at
+`2514.607 ms/step` versus llm.kittens at `2590.420 ms/step`
+(`0.970733x` train-loop wall time, `1.022057x` tokens/sec) with default
+NeuralFn CUDA-event train-loop timing enabled. Its steady-state CUDA-event
+slice still measured `1.015231x`, so remaining work is still native GPU
+kernel throughput rather than Torch, Python, or graph-editor execution.
+Because parity samples can move with reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
 build. The cooperative LM-head diagnostic wrapper is intentionally separate
 from the future strict fused classifier/dHidden/dWeight callable: wrapper-only
