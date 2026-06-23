@@ -999,6 +999,10 @@ Set `NFN_SM120_PARITY_ATTENTION_SECTION_TIMING=1` (or generic
 packed-attention backward split. This adds
 `NFN_NATIVE_GPT_ATTENTION_BACKWARD_SECTION_TIMING=1` only to the NeuralFn
 candidate command; the llm.kittens baseline is unchanged.
+The native candidate wrapper also has a rejected
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_bwd_block_32` profile that builds
+a temporary Tile ops library with `-DLLMK_SM120_ATTN_BWD_BLOCK=32` for explicit
+SM120 packed-attention backward block-size reruns.
 If attention backward section timing is enabled, paired summaries include the
 native `attention_backward_dprep_timing_*` and
 `attention_backward_tk_timing_*` counters next to the `stage.*` buckets and

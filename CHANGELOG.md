@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added rejected native candidate profile
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_bwd_block_32` for repeatable
+  SM120 packed-attention backward block-size bisection. The profile expands to a
+  temporary Tile ops build with `-DLLMK_SM120_ATTN_BWD_BLOCK=32` and auto-enables
+  attention section timing for paired comparisons. It remains rejected by
+  default: the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample same-script gate
+  measured `attention_backward_tk_timing_us=1.000555x`, missed the strict
+  `stage.block_backward.mlp_proj.total_ms` gate at `1.000293x`, and showed no
+  tracked route-counter or strategy-label change.
+
+  Verification: ran the same-script candidate benchmark with a temporary
+  block-32 Tile ops build on the dedicated RTX 5090, then added static wrapper
+  coverage for the named rejected profile.
+
 - Added `NFN_SM120_PARITY_ATTENTION_SECTION_TIMING=1` (with generic fallback
   `NFN_SM120_ATTENTION_SECTION_TIMING=1`) to
   `tools/bench_native_gpt_sm120_parity.sh`. The switch adds

@@ -501,6 +501,13 @@ current CUDA 13.3 dedicated RTX 5090 2-step diagnostic run reported
 `attention_backward_tk_timing_us=1078455` across 192 packed-backward launches,
 so the default attention gap is dominated by the TK backward section rather than
 the dprep launch.
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=attention_bwd_block_32` compiles a
+diagnostic candidate Tile ops library with `-DLLMK_SM120_ATTN_BWD_BLOCK=32` for
+repeatable packed-attention TK block-size bisection. Keep it rejected by
+default: the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample same-script gate
+measured `attention_backward_tk_timing_us=1.000555x` and missed the strict
+`stage.block_backward.mlp_proj.total_ms` gate at `1.000293x`, while tracked
+route counters and strategy labels stayed unchanged.
 QKV side-stream candidates mentioning `BLOCK_QKV_CONCURRENT_DINPUT_DWEIGHT`
 also gate `stage.block_backward.qkv.total_ms`; the candidate-only combined
 `stage.block_backward.qkv.dinput_dweight_concurrent.total_ms` substage is still
