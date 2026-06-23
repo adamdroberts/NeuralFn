@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the current SM120 llm.kittens parity measurement after the linked
+  native default and CE-profile cleanup. On the dedicated idle RTX 5090,
+  `NFN_SM120_PARITY_STEPS=5 NFN_SM120_PARITY_SAMPLES=1
+  NFN_SM120_PARITY_WARMUP=0 NFN_SM120_PARITY_PROFILE_DIR=none
+  bash tools/bench_native_gpt_sm120_parity.sh` measured llm.kittens at
+  `2451.552 ms/step` and NeuralFn at `2495.740 ms/step`, or `1.018025x`
+  train-loop wall and `0.981253x` tokens/sec.
+
+  Verification note: recorded the no-stage parity result in
+  `todo-tile-cuda.md`; the gap remains attributed to fused/cooperative
+  LM-head/block-backward kernel work rather than launch-shape retunes.
+
 - Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linked_startup` (alias:
   `linked_tile_ops`) to `tools/bench_native_gpt_sm120_candidate.sh`. The
   profile compares `build/nfn_gpt_native_train` against
