@@ -1023,6 +1023,10 @@ binary with `--tile-ops-lib linked` to resolve Tile ABI symbols from
 `RTLD_DEFAULT` instead of calling `dlopen` on the shared object inside the
 trainer. JSON reports `tile_ops_dlopen_binding_strategy:
 "RTLD_DEFAULT-linked"` and keeps the same required-symbol scan fields. When
+running direct no-data smokes, `--smoke-tile-ops` and
+`--smoke-optimizer-step` also treat `--tile-ops-lib linked` as `RTLD_DEFAULT`
+instead of trying to `dlopen` a file named `linked`.
+When
 `build/nfn_gpt_native_train_linked` exists, the normal Python and C++ dense GPT
 dispatchers prefer it automatically and the linked binary self-selects
 `--tile-ops-lib linked` from its executable name. Set `NFN_NATIVE_GPT_CLI`,

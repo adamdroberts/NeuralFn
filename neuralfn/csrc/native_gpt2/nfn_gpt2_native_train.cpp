@@ -1420,6 +1420,8 @@ std::string normalize_backend(std::string value);
 std::string dl_last_error(const char* fallback);
 std::vector<std::string> cuda_runtime_candidates(const Config& cfg);
 std::string default_tile_ops_lib(const char* program);
+bool linked_tile_ops_requested(std::string_view path);
+void* open_tile_ops_library(const std::string& path, int flags, bool* linked_requested);
 std::vector<BufferPlan> build_native_gpt_checkpoint_layout(
     std::int64_t max_seq_len,
     std::int64_t padded_vocab_size,
@@ -1544,7 +1546,8 @@ int print_native_checkpoint_load_smoke_json(const Config& cfg, const char* progr
     using CudaDeviceSynchronizeFn = int (*)();
     using CudaGetErrorStringFn = const char* (*)(int);
 
-    void* tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    bool linked_tile_ops = false;
+    void* tile_handle = open_tile_ops_library(tile_lib_path, RTLD_NOW | RTLD_LOCAL, &linked_tile_ops);
     void* cuda_handle = nullptr;
     Bf16BitsToFloat32Fn bf16_to_float = nullptr;
     CudaMallocFn cuda_malloc = nullptr;
@@ -1569,7 +1572,7 @@ int print_native_checkpoint_load_smoke_json(const Config& cfg, const char* progr
         }
     };
 
-    if (tile_handle == nullptr) {
+    if (tile_handle == nullptr && !linked_tile_ops) {
         error = dl_last_error("dlopen tile ops failed");
     } else {
         tile_loaded = true;
@@ -1649,7 +1652,7 @@ int print_native_checkpoint_load_smoke_json(const Config& cfg, const char* progr
     if (device_float != nullptr && cuda_free != nullptr) {
         cuda_free(device_float);
     }
-    if (tile_handle != nullptr) {
+    if (tile_handle != nullptr && !linked_tile_ops) {
         dlclose(tile_handle);
     }
     if (cuda_handle != nullptr) {
@@ -3826,6 +3829,25 @@ std::string default_tile_ops_lib(const char* program) {
     return "libnfn_native_train_tile_ops.so";
 }
 
+bool linked_tile_ops_requested(std::string_view path) {
+    const std::string normalized = normalize_backend(std::string(path));
+    return normalized == "linked" ||
+        normalized == "builtin" ||
+        normalized == "rtld-default" ||
+        normalized == "rtld_default";
+}
+
+void* open_tile_ops_library(const std::string& path, int flags, bool* linked_requested) {
+    const bool linked = linked_tile_ops_requested(path);
+    if (linked_requested != nullptr) {
+        *linked_requested = linked;
+    }
+    if (linked) {
+        return RTLD_DEFAULT;
+    }
+    return dlopen(path.c_str(), flags);
+}
+
 bool print_tile_plan(
     const Config& cfg,
     const neuralfn::native_train::TokenShardDataset& dataset,
@@ -4513,7 +4535,8 @@ int print_tile_ops_smoke_json(const Config& cfg, const char* program) {
     using CudaDeviceSynchronizeFn = int (*)();
     using CudaGetErrorStringFn = const char* (*)(int);
 
-    void* tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    bool linked_tile_ops = false;
+    void* tile_handle = open_tile_ops_library(tile_lib_path, RTLD_NOW | RTLD_LOCAL, &linked_tile_ops);
     void* cuda_handle = nullptr;
     FillFn fill = nullptr;
     CudaMallocFn cuda_malloc = nullptr;
@@ -4531,7 +4554,7 @@ int print_tile_ops_smoke_json(const Config& cfg, const char* program) {
         return out.str();
     };
 
-    if (tile_handle == nullptr) {
+    if (tile_handle == nullptr && !linked_tile_ops) {
         error = dl_last_error("dlopen tile ops failed");
     } else {
         tile_loaded = true;
@@ -4620,7 +4643,7 @@ int print_tile_ops_smoke_json(const Config& cfg, const char* program) {
     if (cuda_handle != nullptr) {
         dlclose(cuda_handle);
     }
-    if (tile_handle != nullptr) {
+    if (tile_handle != nullptr && !linked_tile_ops) {
         dlclose(tile_handle);
     }
 
@@ -4723,7 +4746,8 @@ int print_optimizer_smoke_json(const Config& cfg, const char* program) {
     using CudaDeviceSynchronizeFn = int (*)();
     using CudaGetErrorStringFn = const char* (*)(int);
 
-    void* tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    bool linked_tile_ops = false;
+    void* tile_handle = open_tile_ops_library(tile_lib_path, RTLD_NOW | RTLD_LOCAL, &linked_tile_ops);
     void* cuda_handle = nullptr;
     FillFn fill = nullptr;
     AdamWFn adamw = nullptr;
@@ -4742,7 +4766,7 @@ int print_optimizer_smoke_json(const Config& cfg, const char* program) {
         return out.str();
     };
 
-    if (tile_handle == nullptr) {
+    if (tile_handle == nullptr && !linked_tile_ops) {
         error = dl_last_error("dlopen tile ops failed");
     } else {
         tile_loaded = true;
@@ -4927,7 +4951,7 @@ int print_optimizer_smoke_json(const Config& cfg, const char* program) {
     if (cuda_handle != nullptr) {
         dlclose(cuda_handle);
     }
-    if (tile_handle != nullptr) {
+    if (tile_handle != nullptr && !linked_tile_ops) {
         dlclose(tile_handle);
     }
 

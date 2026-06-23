@@ -517,13 +517,19 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     )
 
     assert "linked_tile_ops_requested" in source
+    assert "open_tile_ops_library" in source
     assert 'executable_name == "nfn_gpt_native_train_linked"' in source
     assert 'return "linked";' in source
+    assert "bool linked_tile_ops_requested(std::string_view path)" in source
+    assert "void* open_tile_ops_library(const std::string& path, int flags, bool* linked_requested)" in source
     assert 'normalized_tile_lib_path == "linked"' in source
     assert 'normalized_tile_lib_path == "builtin"' in source
     assert 'normalized_tile_lib_path == "rtld-default"' in source
     assert 'normalized_tile_lib_path == "rtld_default"' in source
     assert "tile_handle = RTLD_DEFAULT" in source
+    assert "open_tile_ops_library(tile_lib_path, RTLD_NOW | RTLD_LOCAL, &linked_tile_ops)" in source
+    assert "if (tile_handle == nullptr && !linked_tile_ops)" in source
+    assert "tile_handle != nullptr && !linked_tile_ops" in source
     assert "RTLD_DEFAULT-linked" in source
     assert "if (!linked_tile_ops_requested && tile_handle == nullptr)" in source
     assert "tile_handle != nullptr && !linked_tile_ops_requested" in source

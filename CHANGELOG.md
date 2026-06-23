@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed direct linked dense-GPT no-data CUDA smokes so `--tile-ops-lib linked`
+  resolves Tile ABI symbols from `RTLD_DEFAULT` instead of attempting to
+  `dlopen("linked")`. This covers `--smoke-tile-ops`,
+  `--smoke-optimizer-step`, and the checkpoint-load smoke helper while
+  preserving the existing dynamic `--tile-ops-lib PATH` behavior.
+
+  Verification note: rebuilt `build/nfn_gpt_native_train` and
+  `build/nfn_gpt_native_train_linked`; reran the linked fill and optimizer CUDA
+  smokes on the dedicated RTX 5090 outside the sandbox and both passed with
+  `tile_ops_library: "linked"` / `loaded: true`. The explicit dynamic
+  `build/libnfn_native_train_tile_ops.so` fill smoke also passed. A sandboxed
+  dynamic smoke still reports CUDA error 35, confirming that specific failure is
+  sandbox GPU access rather than a CUDA install/runtime failure.
+
 - Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_natural_rows` as the
   native-vs-native wrapper name for the already rejected LM-head CE row-order
   diagnostic. The profile expands to

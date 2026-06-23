@@ -1421,7 +1421,11 @@ For dedicated workstation runs that should avoid the in-process Tile ops
 symbols through `RTLD_DEFAULT`, while preserving the same explicit symbol scan
 and JSON telemetry. Runtime JSON reports
 `tile_ops_dlopen_binding_strategy: "RTLD_DEFAULT-linked"` and a near-zero
-`tile_ops_dlopen_wall_ms`. The native Python SDK, `train_gpt.py`, `nfn train`,
+`tile_ops_dlopen_wall_ms`. Direct no-data preflight smokes such as
+`--smoke-tile-ops` and `--smoke-optimizer-step` also treat `linked` as
+`RTLD_DEFAULT` instead of trying to open a file named `linked`, so the linked
+binary can verify CUDA fill and AdamW kernels before any dataset is resolved.
+The native Python SDK, `train_gpt.py`, `nfn train`,
 `nfn-native-train`, and the GPT-2-evo native delegate now prefer
 `build/nfn_gpt_native_train_linked` when it exists and no explicit
 `NFN_NATIVE_GPT_CLI` / `NFN_NATIVE_GPT2_CLI` override is set; the linked binary
