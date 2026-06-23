@@ -958,6 +958,14 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_LINEAR_BF16_GEMM_EX_FAST_16BF_SHAPE=768,32768,50304,N,N" in text
     assert "lm_head_tk_dweight_32768" in text
     assert "NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,32768,N,T" in text
+    assert "bf16_attention_grad_out" in text
+    assert "NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1" in text
+    assert "0.995826x train_loop_wall_ms_per_step" in text
+    assert "bf16_attention_dprep_grad_out" in text
+    assert "NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1" in text
+    assert "1.005344x train_loop_wall_ms_per_step" in text
+    assert "attention_dprep_float_hd64_specialized" in text
+    assert "NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_FLOAT_HD64_SPECIALIZED=1" in text
     assert "lm_head_prepack_bf16_hidden_off" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0" in text
@@ -1315,6 +1323,42 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
         rejected_linear_bias_1024_run.stderr
     )
+
+    rejected_attention_profiles = (
+        "bf16_attention_grad_out",
+        "bf16_attention_dprep_grad_out",
+        "attention_dprep_float_hd64_specialized",
+    )
+    for rejected_attention_profile in rejected_attention_profiles:
+        rejected_attention_env = os.environ.copy()
+        rejected_attention_env.update(
+            {
+                "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+                "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+                "NFN_SM120_NATIVE_CANDIDATE_PROFILE": rejected_attention_profile,
+                "NFN_SM120_NATIVE_JSON_OUT": str(
+                    tmp_path / f"rejected-{rejected_attention_profile}.json"
+                ),
+            }
+        )
+
+        rejected_attention_run = subprocess.run(
+            ["bash", str(script)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            env=rejected_attention_env,
+        )
+
+        assert rejected_attention_run.returncode == 2
+        assert (
+            f"{rejected_attention_profile} is a rejected SM120 candidate"
+            in rejected_attention_run.stderr
+        )
+        assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
+            rejected_attention_run.stderr
+        )
 
     ln_chunk_64_output_path = tmp_path / "candidate-ln-row-chunk-64-dry-run.json"
     ln_chunk_64_env = os.environ.copy()

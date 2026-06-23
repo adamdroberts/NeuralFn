@@ -318,12 +318,18 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_TILE_OPS_BUILD_FLAGS="${CANDIDATE_TILE_OPS_BUILD_FLAGS:+$CANDIDATE_TILE_OPS_BUILD_FLAGS }-DLLMK_SM120_ATOMIC_DQ"
     ;;
   "bf16_attention_grad_out"|"bf16-attention-grad-out"|"attention_bf16_grad_out"|"attention-bf16-grad-out")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script sweep measured this attention BF16 grad-out handoff at 0.995826x train_loop_wall_ms_per_step, but rejected it because strict stage gates regressed."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1"
     ;;
   "bf16_attention_dprep_grad_out"|"bf16-attention-dprep-grad-out"|"attention_bf16_dprep_grad_out"|"attention-bf16-dprep-grad-out")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gates rejected the BF16 dprep-only attention grad-out route: the latest gate measured 1.005344x train_loop_wall_ms_per_step, 1.010632x stage.block_backward.total_ms, and 1.044177x attention backward."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_BF16_ATTENTION_DPREP_GRAD_OUT=1"
     ;;
   "attention_dprep_float_hd64_specialized"|"attention-dprep-float-hd64-specialized"|"float_attention_dprep_hd64"|"float-attention-dprep-hd64")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 RTX 5090 same-script gate proved the float HD64 dprep route and improved dprep timing, but rejected default promotion because adjacent hot-stage gates regressed."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_FLOAT_HD64_SPECIALIZED=1"
     ;;
   "mlp_proj_dinput_before_dweight"|"mlp-proj-dinput-before-dweight")

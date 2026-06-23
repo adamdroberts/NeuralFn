@@ -150,6 +150,12 @@ only for the packed-attention dprep/backward wrapper, without switching the
 attention projection dInput kernel to a BF16 output. Runtime JSON reports
 `attention_backward_bf16_dprep_grad_out_enabled` and
 `attention_backward_grad_out_dtype: "bf16-dprep-pack"` when this path is active.
+The SM120 wrapper profiles `bf16_attention_grad_out`,
+`bf16_attention_dprep_grad_out`, and
+`attention_dprep_float_hd64_specialized` are rejected diagnostics on the current
+CUDA 13.3 RTX 5090 route, so real paired-wrapper launches require
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; dry-run expansion remains
+available for route inspection.
 
 On the SM120 workstation this defaults to `NFN_TILE_CUDA_USE_TK_ATTENTION=1`,
 `NFN_TILE_CUDA_ARCH=sm_120a`, and links the local llm.kittens /

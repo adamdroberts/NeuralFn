@@ -17,6 +17,17 @@ Future updates should append new entries here rather than replacing older notes.
   Verification: focused pytest coverage confirmed the wrapper still expands the
   profiles in dry-run mode and rejects real benchmark launches by default.
 
+- Enforced the same rejection policy for stale attention bisection profiles.
+  `bf16_attention_grad_out`, `bf16_attention_dprep_grad_out`, and
+  `attention_dprep_float_hd64_specialized` now require
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for real paired-wrapper
+  launches. These profiles remain useful for reproducing prior attention
+  route measurements, but current CUDA 13.3 RTX 5090 evidence rejected them on
+  strict train-loop or hot-stage gates.
+
+  Verification: focused pytest coverage confirmed the attention profiles fail
+  before launch by default and still expose their route flags in the wrapper.
+
 - Changed the dense GPT LM-head row-loss tail default back to the partial
   reduction path. `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE` and the
   GPT2-prefixed alias now default to `0`, so row losses are reduced with
