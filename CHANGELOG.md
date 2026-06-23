@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Changed `tools/install_native_gpt2_commands.sh` so installed
+  `nfn-gpt-native`, `nfn-gpt-native-train`, `nfn-gpt2-native`, and
+  `nfn-gpt2-native-train` symlinks prefer the linked dense-GPT native CLI when
+  one is available. This brings installed no-Python GPT commands in line with
+  the already-linked default used by `train_gpt.py`, `nfn train`, and SDK
+  dispatch. `NFN_NATIVE_GPT_CLI` still wins as an explicit override;
+  `NFN_NATIVE_GPT_LINKED_CLI` can point the installer at a linked binary outside
+  `build/`.
+
+  Verification note: a same-script startup-only comparison of dynamic versus
+  linked GPT CLI paths on the dedicated RTX 5090 measured linked setup at about
+  `0.839149x` of dynamic setup wall time, then the installer regression test was
+  updated to assert linked symlink resolution.
+
 - Corrected the CLI and CUDA Tile TODO documentation for the native dense-GPT
   allocation default. The runtime and README/SDK docs already reflected
   `NFN_NATIVE_GPT_COMBINED_DEVICE_ARENA=0`; `docs/cli.md` and two checklist

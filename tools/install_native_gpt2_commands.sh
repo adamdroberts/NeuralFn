@@ -4,7 +4,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PYTHON:-python}"
 BIN_DIR="${NFN_NATIVE_GPT2_BIN_DIR:-$("${PYTHON_BIN}" -c 'import sysconfig; print(sysconfig.get_path("scripts"))')}"
-NATIVE_CLI="${NFN_NATIVE_GPT_CLI:-${ROOT_DIR}/build/nfn_gpt_native_train}"
+if [[ -n "${NFN_NATIVE_GPT_CLI:-}" ]]; then
+  NATIVE_CLI="${NFN_NATIVE_GPT_CLI}"
+elif [[ -n "${NFN_NATIVE_GPT_LINKED_CLI:-}" ]]; then
+  NATIVE_CLI="${NFN_NATIVE_GPT_LINKED_CLI}"
+elif [[ -x "${ROOT_DIR}/build/nfn_gpt_native_train_linked" ]]; then
+  NATIVE_CLI="${ROOT_DIR}/build/nfn_gpt_native_train_linked"
+else
+  NATIVE_CLI="${ROOT_DIR}/build/nfn_gpt_native_train"
+fi
 COMPAT_NATIVE_CLI="${NFN_NATIVE_GPT2_CLI:-${ROOT_DIR}/build/nfn_gpt2_native_train}"
 NATIVE_TRAIN_CLI="${NFN_NATIVE_TRAIN_CLI:-${ROOT_DIR}/build/nfn_native_train}"
 LAUNCHER="${NFN_NATIVE_GPT2_LAUNCHER:-${ROOT_DIR}/build/nfn_gpt2_tile_train}"

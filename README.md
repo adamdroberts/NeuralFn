@@ -1419,6 +1419,13 @@ also self-selects `linked` from its executable name. Keep using the normal
 PATH`, when you need to swap Tile ops libraries at runtime for candidate
 bisections.
 
+`tools/install_native_gpt2_commands.sh` and `cli/install.sh` also prefer the
+linked dense-GPT CLI for installed `nfn-gpt-native`,
+`nfn-gpt-native-train`, `nfn-gpt2-native`, and `nfn-gpt2-native-train`
+symlinks when the linked binary exists. Set `NFN_NATIVE_GPT_CLI` for an
+explicit command override, or `NFN_NATIVE_GPT_LINKED_CLI` when the linked
+binary lives outside `build/`.
+
 The native SM120 candidate wrapper forces `--train-loss-every-steps 1` for
 LM-head loss-bin profiles so the old and new commands both execute the logged
 loss-accumulation tail being compared. This keeps `lm_head_loss_bins`,

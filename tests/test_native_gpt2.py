@@ -8743,6 +8743,7 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
         pytest.skip("c++ compiler not available")
     root = Path(__file__).resolve().parents[1]
     native_cli = tmp_path / "nfn_gpt_native_train"
+    linked_native_cli = tmp_path / "nfn_gpt_native_train_linked"
     compat_native_cli = tmp_path / "nfn_gpt2_native_train"
     native_train_cli = tmp_path / "nfn_native_train"
     launcher = tmp_path / "nfn_gpt2_tile_train"
@@ -8757,6 +8758,16 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
         check=False,
     )
     assert build_cli.returncode == 0, build_cli.stderr
+    linked_native_cli.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"${1:-}\" == \"--help\" ]]; then\n"
+        "  printf '%s\\n' 'Native no-Python dense GPT trainer'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exec \"${NFN_TEST_DYNAMIC_NATIVE_CLI}\" \"$@\"\n",
+        encoding="utf-8",
+    )
+    linked_native_cli.chmod(0o755)
     build_compat_cli = subprocess.run(
         ["bash", str(root / "tools" / "build_native_gpt2_cli.sh"), str(compat_native_cli)],
         cwd=root,
@@ -8797,7 +8808,9 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     bin_dir = tmp_path / "bin"
     env = os.environ.copy()
     env["NFN_NATIVE_GPT2_BIN_DIR"] = str(bin_dir)
-    env["NFN_NATIVE_GPT_CLI"] = str(native_cli)
+    env.pop("NFN_NATIVE_GPT_CLI", None)
+    env["NFN_NATIVE_GPT_LINKED_CLI"] = str(linked_native_cli)
+    env["NFN_TEST_DYNAMIC_NATIVE_CLI"] = str(native_cli)
     env["NFN_NATIVE_GPT2_CLI"] = str(compat_native_cli)
     env["NFN_NATIVE_TRAIN_CLI"] = str(native_train_cli)
     env["NFN_NATIVE_GPT2_LAUNCHER"] = str(launcher)
@@ -8831,10 +8844,10 @@ def test_native_gpt2_command_installer_links_temp_bin(tmp_path: Path) -> None:
     assert linked_launcher.is_symlink()
     assert linked_nanogpt_underscore.is_symlink()
     assert linked_nanogpt.is_symlink()
-    assert linked_native.resolve() == native_cli
-    assert linked_train.resolve() == native_cli
-    assert linked_gpt_native.resolve() == native_cli
-    assert linked_gpt_train.resolve() == native_cli
+    assert linked_native.resolve() == linked_native_cli
+    assert linked_train.resolve() == linked_native_cli
+    assert linked_gpt_native.resolve() == linked_native_cli
+    assert linked_gpt_train.resolve() == linked_native_cli
     assert linked_gpt2_compat.resolve() == compat_native_cli
     assert linked_unified.resolve() == native_train_cli
     assert linked_launcher.resolve() == launcher

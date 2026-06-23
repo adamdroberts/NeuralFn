@@ -226,9 +226,12 @@ Full `--train-transformer-lm` runs also emit `cuda_runtime_preflight` before
 allocation and fail early when the driver is unavailable or older than the
 loaded CUDA runtime.
 Build the SDK binding with `bash tools/build_native_gpt2_binding.sh`, the
-launcher with `bash tools/build_native_gpt2_launcher.sh`, and the no-Python
-cached-shard CLI with `bash tools/build_native_gpt_cli.sh`; that CLI links the
-shared no-Torch `token_shards.cpp` resolver. Build the unified
+launcher with `bash tools/build_native_gpt2_launcher.sh`, the no-Python
+cached-shard CLI with `bash tools/build_native_gpt_cli.sh`, and the linked
+cached-shard CLI with `bash tools/build_native_gpt_cli_linked.sh`; those CLIs
+link the shared no-Torch `token_shards.cpp` resolver. Installed GPT command
+symlinks prefer the linked CLI when it exists, matching the lower-startup Python
+dispatch path. Build the unified
 native frontend with `bash tools/build_native_train_cli.sh`; it dispatches dense GPT aliases
 to the cached-shard CLI and sends NanoGPT defaults to that same transformer-LM
 trainer with `--template-name nanogpt`, while explicit `--train-token-lm`

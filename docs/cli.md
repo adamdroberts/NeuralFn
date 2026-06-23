@@ -1015,6 +1015,13 @@ dispatchers prefer it automatically and the linked binary self-selects
 dynamic route for same-script kernel candidate comparisons that intentionally
 replace the Tile ops `.so` at runtime.
 
+`tools/install_native_gpt2_commands.sh` uses the same startup-oriented default
+for installed command symlinks: `nfn-gpt-native`, `nfn-gpt-native-train`,
+`nfn-gpt2-native`, and `nfn-gpt2-native-train` point at the linked dense-GPT
+CLI when it exists. `NFN_NATIVE_GPT_CLI` remains an explicit override, and
+`NFN_NATIVE_GPT_LINKED_CLI` points the installer at a linked binary outside
+`build/`.
+
 Native GPT startup initializes the tied token FP32 master weight and persistent
 BF16 LM-head shadow in a single CUDA Tile ABI call,
 `nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32`, when the
