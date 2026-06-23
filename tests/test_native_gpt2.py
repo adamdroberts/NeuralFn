@@ -52,6 +52,7 @@ from neuralfn.native_gpt2 import (
 from neuralfn.native_train import (
     NativeTrainRunnerStatus,
     build_native_train_run_config,
+    exec_native_train,
     native_train_model_registry,
     native_train_runner_status,
     resolve_native_train_binding_command,
@@ -2319,6 +2320,41 @@ def test_native_train_run_config_and_subprocess_runner(
     assert "--tile-ops-lib" in token_lm_args
     assert "--dataset-alias" in token_lm_args
     assert "--max-steps" in token_lm_args
+
+
+def test_exec_native_train_replaces_process_with_compiled_cli(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = tmp_path / "nfn_native_train"
+    cli.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    cli.chmod(0o755)
+    monkeypatch.setenv("NFN_NATIVE_TRAIN_CLI", str(cli))
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
+    monkeypatch.delenv("CUDA_DEVICE_MAX_CONNECTIONS", raising=False)
+    monkeypatch.delenv("CUDA_MODULE_LOADING", raising=False)
+    observed: dict[str, object] = {}
+
+    def fake_execvpe(file: str, argv: list[str], env: dict[str, str]) -> None:
+        observed["file"] = file
+        observed["argv"] = argv
+        observed["env"] = env
+        raise SystemExit(0)
+
+    monkeypatch.setattr(native_train_module.os, "execvpe", fake_execvpe)
+    cfg = build_native_train_run_config("gpt", ["--tinystories", "--dry-run"])
+
+    with pytest.raises(SystemExit) as exc:
+        exec_native_train(cfg, runner="compiled-cli")
+
+    assert exc.value.code == 0
+    assert observed["file"] == str(cli)
+    assert observed["argv"] == [str(cli), "--base-model", "gpt", "--tinystories", "--dry-run"]
+    env = observed["env"]
+    assert isinstance(env, dict)
+    assert env["CUDA_VISIBLE_DEVICES"] == ""
+    assert env["CUDA_DEVICE_MAX_CONNECTIONS"] == "1"
+    assert env["CUDA_MODULE_LOADING"] == "LAZY"
 
 
 def test_native_train_run_config_uses_direct_dense_gpt_cli(

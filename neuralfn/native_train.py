@@ -285,6 +285,14 @@ def resolve_native_train_binding_command(config: NativeTrainRunConfig) -> list[s
     return [str(item) for item in resolver(config.to_dict())]
 
 
+def _native_train_subprocess_env(config: NativeTrainRunConfig) -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("CUDA_VISIBLE_DEVICES", config.cuda_visible_devices)
+    env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", config.cuda_device_max_connections)
+    env.setdefault("CUDA_MODULE_LOADING", "LAZY")
+    return env
+
+
 def run_native_train(config: NativeTrainRunConfig, *, runner: str = "auto") -> int:
     status = native_train_runner_status(runner)
     if status.resolved == "binding":
@@ -294,12 +302,21 @@ def run_native_train(config: NativeTrainRunConfig, *, runner: str = "auto") -> i
         return int(binding_runner(config.to_dict()))
     if not status.available:
         raise RuntimeError(f"Native train CLI requested but unavailable: {status.reason}")
-    env = os.environ.copy()
-    env.setdefault("CUDA_VISIBLE_DEVICES", config.cuda_visible_devices)
-    env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", config.cuda_device_max_connections)
-    env.setdefault("CUDA_MODULE_LOADING", "LAZY")
-    proc = subprocess.run(config.argv(), env=env, check=False)
+    proc = subprocess.run(config.argv(), env=_native_train_subprocess_env(config), check=False)
     return int(proc.returncode)
+
+
+def exec_native_train(config: NativeTrainRunConfig, *, runner: str = "compiled-cli") -> int:
+    """Replace the current Python process with the compiled native trainer."""
+
+    status = native_train_runner_status(runner)
+    if status.resolved == "binding":
+        raise ValueError("exec_native_train requires runner='compiled-cli' or 'subprocess'; use run_native_train for binding")
+    if not status.available:
+        raise RuntimeError(f"Native train CLI requested but unavailable: {status.reason}")
+    argv = config.argv()
+    os.execvpe(argv[0], argv, _native_train_subprocess_env(config))
+    return 127
 
 
 def native_train_model_registry(*, native_train_cli: str | None = None) -> dict[str, Any]:

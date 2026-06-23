@@ -56,7 +56,7 @@ from neuralfn import (
     build_native_gpt_compiled_cli_run_config, build_native_gpt_run_config, is_native_gpt_checkpoint,
     NativeTrainRunConfig, NativeTrainRunnerStatus,
     build_native_gpt2_compiled_cli_run_config, build_native_gpt2_run_config, is_native_gpt2_checkpoint,
-    build_native_train_run_config, exec_native_gpt, exec_native_gpt2,
+    build_native_train_run_config, exec_native_gpt, exec_native_gpt2, exec_native_train,
     latest_native_gpt_checkpoint, native_gpt_parameter_count,
     latest_native_gpt2_checkpoint, native_gpt2_parameter_count,
     native_gpt_runner_status, read_native_gpt_checkpoint_info,
@@ -242,7 +242,10 @@ back to the compiled CLI.
 The CLI subprocess fallback also defaults `CUDA_VISIBLE_DEVICES=0` and
 `CUDA_DEVICE_MAX_CONNECTIONS=1` only when the caller has not supplied those
 environment variables; set `NativeTrainRunConfig.cuda_visible_devices` or the
-environment to target another CUDA GPU.
+environment to target another CUDA GPU. Use `exec_native_train(config)` when a
+generic SDK launcher should `execvpe` the selected compiled native trainer and
+remove the Python parent process entirely; keep `run_native_train(...)` when you
+need the C++ binding route or a returned exit code.
 
 ## Modules
 

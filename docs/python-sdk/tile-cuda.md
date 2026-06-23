@@ -2031,6 +2031,12 @@ For dense GPT families (`gpt`, `gpt2`, `gpt3`, and `nanogpt`), the generic
 explicit `NFN_NATIVE_GPT_CLI` or `NFN_NATIVE_TRAIN_CLI` override is set. This
 keeps SDK-native runs on the same linked Tile-ops startup path as `nfn train`
 and avoids the avoidable dynamic `dlopen` branch on workstation builds.
+`exec_native_train(config)` is the generic SDK process-replacement handoff: it
+resolves the same compiled native command as `run_native_train(...,
+runner="compiled-cli")`, sets the CUDA environment defaults, then calls
+`execvpe` so long-running training does not retain a Python parent. The binding
+route remains available through `run_native_train(..., runner="auto")` when the
+caller needs a returned status code.
 Dense GPT training also requires optimized attention by default. If the Tile
 ABI drops into the scalar attention fallback, the native trainer marks the run
 failed before final checkpoint export and reports

@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `exec_native_train(config, runner="compiled-cli")` to the public Python
+  SDK. Generic native-training launch scripts can now replace the current
+  Python process with the selected compiled C++ trainer through `execvpe`, using
+  the same native command resolution and CUDA environment defaults as
+  `run_native_train(..., runner="compiled-cli")`. `run_native_train(...)`
+  remains the path for C++ binding or subprocess callers that need a returned
+  exit code.
+
+  Migration note: no existing call sites are broken. Use `exec_native_train`
+  when the goal is a pure compiled-trainer process boundary; use
+  `run_native_train` when the caller needs to stay resident or inspect a return
+  code.
+
+  Verification: focused native SDK tests and the no-Torch dependency verifier
+  were run.
+
 - Added the named SM120 native GPT candidate profile
   `lm_head_prepack_bf16_hidden_off`. The profile pins the baseline to
   `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` and the candidate to `0`, so
