@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cublaslt_dhidden_32768`
+  as a rejected SM120 candidate. The profile still expands to the shape-gated
+  cuBLASLt dHidden route for `768,32768,50304,N,N`, but real runs now require
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`. The CUDA 13.3
+  dedicated RTX 5090 3-step, 3-sample stage-timed gate moved 48 LM-head
+  dHidden calls from BF16 GEMMEx to cuBLASLt, but failed strict gates at
+  `train_loop_wall_ms_per_step=1.000384x`,
+  `stage.lm_head_backward.dhidden.total_ms=1.000199x`, and
+  `stage.block_backward.total_ms=1.001504x`.
+
+  Verification note: wrote the paired result to
+  `/tmp/nfn_lm_head_cublaslt_dhidden_candidate.json`; updated wrapper
+  rejected-profile guards plus README, CLI docs, and CUDA Tile TODO notes.
+
 - Added a diagnostic no-loss llm.kittens-style LM-head CE+dlogits route behind
   `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1` and the paired
   wrapper profile

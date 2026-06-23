@@ -569,6 +569,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "lm_head_tk_dinput_32768" in candidate_bench
     assert "routed LM-head dHidden through TK dInput" in candidate_bench
     assert "stage.lm_head_backward.dhidden.total_ms to 1.132973x" in candidate_bench
+    assert "lm_head_cublaslt_dhidden_32768" in candidate_bench
+    assert "moved 48 LM-head dHidden calls from BF16 GEMMEx to cuBLASLt" in candidate_bench
+    assert "stage.block_backward.total_ms to 1.001504x" in candidate_bench
     assert "lm_head_dhidden_fast16bf_32768" in candidate_bench
     assert "stage.lm_head_backward.total_ms to 1.004489x" in candidate_bench
     assert "stage.lm_head_backward.dhidden.total_ms stayed flat at 1.000265x" in candidate_bench

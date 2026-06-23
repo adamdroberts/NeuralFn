@@ -150,6 +150,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_TK_DINPUT_ENABLE_SHAPE=768,32768,50304,N,N"
     ;;
   "lm_head_cublaslt_dhidden_32768"|"lm-head-cublaslt-dhidden-32768")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-step, 3-sample stage-timed gate moved 48 LM-head dHidden calls from BF16 GEMMEx to cuBLASLt but regressed train_loop_wall_ms_per_step to 1.000384x, stage.lm_head_backward.dhidden.total_ms to 1.000199x, and stage.block_backward.total_ms to 1.001504x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1 NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,32768,50304,N,N,0"
     ;;
   "lm_head_dhidden_fast16bf_32768"|"lm-head-dhidden-fast16bf-32768"|"lm_head_dhidden_gemmex_fast16bf_32768"|"lm-head-dhidden-gemmex-fast16bf-32768")

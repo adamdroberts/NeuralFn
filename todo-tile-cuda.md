@@ -1154,6 +1154,14 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     generic no-loss path is active. The paired speed tool includes the no-loss
     chunk counter in native route changes, so future candidate gates do not
     mistake no-loss timings for row-loss or loss-bin train-loss work.
+  - 2026-06-23 rejected the shape-gated cuBLASLt substitution for the current
+    LM-head dHidden bucket. `lm_head_cublaslt_dhidden_32768` moved 48 calls from
+    BF16 GEMMEx to cuBLASLt on the CUDA 13.3 dedicated RTX 5090 3-step,
+    3-sample stage-timed gate, but failed strict gates at `1.000384x`
+    train-loop wall, `1.000199x` LM-head dHidden, and `1.001504x` block
+    backward. This keeps backend substitution out of the default path and
+    reinforces that the remaining parity work needs a real fused/cooperative
+    classifier-backward implementation.
   - 2026-06-22 promoted the no-loss LM-head CE specialization to the default
     behind `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` /
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`.

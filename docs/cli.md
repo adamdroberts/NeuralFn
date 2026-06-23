@@ -1232,6 +1232,13 @@ at `1.009016x` train-loop wall time and `1.091020x`
 same-script benchmark moved 80 dWeight GEMMs from cuBLASLt to TK but rejected
 the route at `1.022262x` train-loop wall time and `1.279309x`
 `stage.lm_head_backward.dweight.total_ms`.
+`lm_head_cublaslt_dhidden_32768` expands to
+`NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=768,32768,50304,N,N`,
+`NFN_NATIVE_LINEAR_BF16_CUBLASLT_EXTRA_LARGE_K=1`, and heuristic `0` for the
+current 32768-row LM-head dHidden bucket. It is rejected by default: the CUDA
+13.3 dedicated RTX 5090 3-step, 3-sample stage-timed gate moved 48 calls from
+BF16 GEMMEx to cuBLASLt but missed strict gates at `1.000384x` train-loop wall,
+`1.000199x` LM-head dHidden, and `1.001504x` block backward.
 `lm_head_prepack_bf16_hidden_off` pins
 `NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1` on the baseline and `0` on the
 candidate, making the default-on full-microbatch BF16 final-norm hidden prepack
