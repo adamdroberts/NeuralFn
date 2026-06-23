@@ -117,7 +117,8 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       A CUDA-visible 49152-row run against the current wrapper-only strict
       symbol measured `1.002258x` candidate/baseline and
       `candidate_true_fused_capability: false`, so the wrapper remains rejected
-      at the default trainer chunk scale.
+      at the default trainer chunk scale. The matching 1024-bin loss-bin route
+      measured `1.001214x`, so loss-bin scheduling also does not close the gap.
     - 2026-06-22 prerequisite: the native trainer no longer treats
       `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16` as an
       untyped `int (*)()` probe. The function pointer now encodes the required

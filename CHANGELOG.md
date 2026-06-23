@@ -21,10 +21,11 @@ Future updates should append new entries here rather than replacing older notes.
   build wrapper, and Tile ops rebuild path. The harness compiled with CUDA
   13.3, and a tiny GPU-visible unsandboxed smoke confirmed JSON output,
   sequence counters, and `candidate_true_fused_capability: false` for the
-  current wrapper-only strict symbol. GPU-visible runs at 32768 and 49152 rows
-  kept the current concurrent sequence wrapper rejected at `1.002919x` and
-  `1.002258x` respectively, which confirms the remaining work is still a true
-  fused classifier/dHidden/dWeight kernel rather than wrapper scheduling.
+  current wrapper-only strict symbol. GPU-visible row-loss runs at 32768 and
+  49152 rows kept the current concurrent sequence wrapper rejected at
+  `1.002919x` and `1.002258x` respectively, and the 49152-row loss-bin route
+  also rejected it at `1.001214x`. This confirms the remaining work is still a
+  true fused classifier/dHidden/dWeight kernel rather than wrapper scheduling.
 
 - Added the rejected SM120 native candidate profile `cuda_malloc_async` for the
   existing native async allocator. It expands to baseline
