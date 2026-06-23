@@ -1473,6 +1473,31 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "512"
     )
     assert ce_threads_payload["metric_ratio_gates"]["enabled"] is False
+    assert "1.430612x" in text
+    assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in text
+
+    ce_threads_rejected_env = os.environ.copy()
+    ce_threads_rejected_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "ce_bf16_threads_512",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "candidate-ce-threads-rejected.json"),
+        }
+    )
+
+    ce_threads_rejected = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=ce_threads_rejected_env,
+    )
+
+    assert ce_threads_rejected.returncode == 2
+    assert "ce_bf16_threads_512 is a rejected SM120 candidate" in ce_threads_rejected.stderr
+    assert "stage.lm_head_backward.ce.total_ms to 1.430612x" in ce_threads_rejected.stderr
 
     ce_vec8_output_path = tmp_path / "candidate-ce-vec8-dry-run.json"
     ce_vec8_env = os.environ.copy()

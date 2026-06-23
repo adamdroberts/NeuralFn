@@ -362,9 +362,12 @@ the opt-out regressed train-loop wall time to `1.001656x`,
 `stage.lm_head_backward.dweight.total_ms` to `1.006903x`. The named
 `ce_bf16_threads_512` profile expands to
 `NFN_NATIVE_GPT_CE_BF16_THREADS=512` for repeatable CE row-block bisection and
-stays diagnostic-only after the dedicated RTX 5090 gate regressed CE time to
-`1.144675x` and train-loop wall time to `1.002998x` versus the 1024-thread
-default. `lm_head_ce_loss_bins_default_specialized` expands to loss-bin
+stays diagnostic-only after the latest dedicated RTX 5090 gate changed
+`lm_head_ce_bf16_threads_per_row` from `1024` to `512` but regressed
+train-loop wall to `1.012086x`, LM-head backward to `1.051608x`, and LM-head
+CE to `1.430612x` versus the 1024-thread default. Real reruns require
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; dry-run expansion stays
+available without the opt-in. `lm_head_ce_loss_bins_default_specialized` expands to loss-bin
 reduction plus `NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED=1` for
 repeatable loss-bin CE branch-specialization checks; the current dedicated RTX
 5090 3-step, 3-sample gate proved the route and passed train-loop wall

@@ -2477,14 +2477,15 @@ Future updates should append new entries here rather than replacing older notes.
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_dhidden_fast16bf_32768` through
   `tools/bench_native_gpt_sm120_candidate.sh`.
 
-- Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=ce_bf16_threads_512` for
-  reproducible BF16 cross-entropy row-block bisection. It expands to
-  `NFN_NATIVE_GPT_CE_BF16_THREADS=512` and receives the existing
-  stage-timed CE gate automatically because the candidate text includes
-  `CE_BF16`. It remains rejected as a default: the dedicated RTX 5090
-  same-script gate measured `1.144675x` `stage.lm_head_backward.ce.total_ms`,
-  `1.017380x` total LM-head backward, `1.016928x` block backward, and
-  `1.002998x` train-loop wall time versus the 1024-thread default.
+- Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=ce_bf16_threads_512` as rejected
+  by default. It remains available for reproducible BF16 cross-entropy
+  row-block bisection, expanding to `NFN_NATIVE_GPT_CE_BF16_THREADS=512`, but
+  real reruns now require `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`
+  while dry-run expansion remains available without the opt-in. The latest
+  dedicated RTX 5090 stage-timed rerun proved the intended strategy change
+  (`lm_head_ce_bf16_threads_per_row: 512`) and rejected it at `1.012086x`
+  train-loop wall, `1.051608x` total LM-head backward, and `1.430612x`
+  LM-head CE versus the 1024-thread default.
   Verification: wrapper dry-run tests assert the profile expansion and CE gate,
   and the candidate was measured with
   `tools/bench_native_gpt_sm120_candidate.sh`.

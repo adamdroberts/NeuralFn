@@ -1867,10 +1867,13 @@ the paired benchmark wrapper. The CUDA 13.3 dedicated RTX 5090 one-step probe
 proved the route active but rejected it at `1.019937x` train-loop wall and
 `1.229754x` MLP projection dWeight+bias.
 `ce_bf16_threads_512` expands to `NFN_NATIVE_GPT_CE_BF16_THREADS=512` for
-repeatable BF16 CE row-block bisection. It stays diagnostic-only: the dedicated
-RTX 5090 stage-timed gate regressed CE time to `1.144675x`, total LM-head
-backward to `1.017380x`, block backward to `1.016928x`, and train-loop wall
-time to `1.002998x` versus the 1024-thread default.
+repeatable BF16 CE row-block bisection. It stays diagnostic-only: the latest
+dedicated RTX 5090 stage-timed rerun changed
+`lm_head_ce_bf16_threads_per_row` from `1024` to `512`, but regressed
+train-loop wall to `1.012086x`, total LM-head backward to `1.051608x`, and
+LM-head CE to `1.430612x` versus the 1024-thread default. Real reruns require
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; dry-run expansion stays
+available without the opt-in.
 `qkv_forward_bf16_fallback_65536` expands to
 `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=2304,65536,768,T,N` for repeatable
 packed-QKV forward fallback bisection. It stays diagnostic-only: the dedicated

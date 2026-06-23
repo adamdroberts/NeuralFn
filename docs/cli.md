@@ -1327,6 +1327,14 @@ readiness check exit nonzero.
 The profile intentionally omits `NFN_NATIVE_GPT_PROBE_CUBLAS_GROUPED_BF16_GEMM`
 because the current CUDA stack still leaves the trainer context unusable after
 that unsupported probe.
+`ce_bf16_threads_512` expands to `NFN_NATIVE_GPT_CE_BF16_THREADS=512` for
+repeatable LM-head CE row-block bisection. It is rejected by default: the latest
+dedicated RTX 5090 stage-timed rerun changed
+`lm_head_ce_bf16_threads_per_row` from `1024` to `512`, but regressed
+train-loop wall to `1.012086x`, LM-head backward to `1.051608x`, and LM-head
+CE to `1.430612x` versus the 1024-thread default. Real reruns require
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`; dry-run expansion stays
+available without the opt-in.
 `lm_head_ce_vec8_io` expands to
 `NFN_NATIVE_GPT_CE_BF16_VEC_LOADS=1 NFN_NATIVE_GPT_CE_BF16_VEC_STORES=1` for
 the normal no-loss LM-head classifier path. It keeps the default vec8 BF16
