@@ -1278,6 +1278,18 @@ Native GPT launchers also default `CUDA_MODULE_LOADING=LAZY` when the variable i
 
 Benchmark-mode native GPT runs with `--native-cuda-sample-every 0` also skip the two post-train diagnostic device-to-host samples for token weight and clip scale. Runtime JSON reports `post_train_diagnostic_samples_elided: true`, `post_train_diagnostic_sample_d2h_count: 0`, and `post_train_diagnostic_sample_d2h_count_elided: 2`; pass a positive sample cadence when you intentionally want those end-of-run diagnostics. Dense GPT startup loads the Tile ops library with lazy dynamic binding while still checking every required ABI symbol explicitly; runtime JSON reports `tile_ops_dlopen_binding_strategy: "RTLD_LAZY"`, `tile_ops_dlopen_wall_ms`, `tile_ops_required_symbol_scan_wall_ms`, and `tile_ops_typed_symbol_load_wall_ms`. CUDA runtime setup similarly reports `cuda_runtime_symbol_load_wall_ms` and `cuda_runtime_version_preflight_wall_ms`. Startup JSON also reports `setup_timing_accounted_ms`, `setup_timing_unattributed_ms`, and `setup_timing_record_count` beside `setup_wall_ms`, so CUDA 13.3 startup bisections can separate explicitly timed arena/kernel phases from loader, symbol-resolution, and other pre-loop host overhead. The setup timing array includes pre-loop records for `setup.load_tile_ops`, `setup.load_cuda_runtime`, and `setup.cuda_runtime_symbols` before the arena materialization records.
 
+For dedicated workstation runs that should avoid the in-process Tile ops
+`dlopen` cost, build the linked GPT native CLI with
+`bash tools/build_native_gpt_cli_linked.sh` and run it with
+`--tile-ops-lib linked`. That binary links
+`build/libnfn_native_train_tile_ops.so` directly and resolves required ABI
+symbols through `RTLD_DEFAULT`, while preserving the same explicit symbol scan
+and JSON telemetry. Runtime JSON reports
+`tile_ops_dlopen_binding_strategy: "RTLD_DEFAULT-linked"` and a near-zero
+`tile_ops_dlopen_wall_ms`; keep using the normal
+`tools/build_native_gpt_cli.sh` binary when you need to swap Tile ops libraries
+at runtime for candidate bisections.
+
 The native SM120 candidate wrapper forces `--train-loss-every-steps 1` for
 LM-head loss-bin profiles so the old and new commands both execute the logged
 loss-accumulation tail being compared. This keeps `lm_head_loss_bins`,

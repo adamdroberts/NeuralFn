@@ -441,6 +441,37 @@ def test_native_gpt_transformer_lm_reports_opt_in_async_allocator() -> None:
     assert "cudaMalloc transformer_lm_combined_device_arena" in source
 
 
+def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (
+        root
+        / "neuralfn"
+        / "csrc"
+        / "native_gpt2"
+        / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
+    linked_build = (root / "tools" / "build_native_gpt_cli_linked.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "linked_tile_ops_requested" in source
+    assert 'normalized_tile_lib_path == "linked"' in source
+    assert 'normalized_tile_lib_path == "builtin"' in source
+    assert 'normalized_tile_lib_path == "rtld-default"' in source
+    assert 'normalized_tile_lib_path == "rtld_default"' in source
+    assert "tile_handle = RTLD_DEFAULT" in source
+    assert "RTLD_DEFAULT-linked" in source
+    assert "if (!linked_tile_ops_requested && tile_handle == nullptr)" in source
+    assert "tile_handle != nullptr && !linked_tile_ops_requested" in source
+    assert "tile_ops_dlopen_wall_ms" in source
+    assert "tile_ops_dlopen_binding_strategy" in source
+
+    assert "nfn_gpt_native_train_linked" in linked_build
+    assert "libnfn_native_train_tile_ops.so" in linked_build
+    assert "-Wl,--no-as-needed" in linked_build
+    assert "-Wl,-rpath" in linked_build
+
+
 def test_native_gpt_cli_supports_json_output_file_aliases() -> None:
     source = (
         Path(__file__).resolve().parents[1]
@@ -4284,12 +4315,12 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["token_weight_bf16_initial_refresh_fusion_enabled"] is True
     assert train_transformer_payload["token_weight_bf16_initial_refresh_elided"] is False
     assert train_transformer_payload["token_weight_host_materialization"] is False
-    assert train_transformer_payload["float_allocation_strategy"] == "single-arena"
+    assert train_transformer_payload["float_allocation_strategy"] == "combined-transformer-device-arena"
     assert train_transformer_payload["float_allocation_cuda_malloc_count"] == 0
     assert train_transformer_payload["float_allocation_request_count"] == 0
     assert train_transformer_payload["float_arena_requested_elements"] == 0
     assert train_transformer_payload["float_arena_allocated_elements"] == 0
-    assert train_transformer_payload["uint16_allocation_strategy"] == "single-arena"
+    assert train_transformer_payload["uint16_allocation_strategy"] == "combined-transformer-device-arena"
     assert train_transformer_payload["uint16_allocation_cuda_malloc_count"] == 0
     assert train_transformer_payload["uint16_allocation_request_count"] == 0
     assert train_transformer_payload["uint16_arena_requested_elements"] == 0

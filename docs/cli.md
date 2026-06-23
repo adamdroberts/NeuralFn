@@ -966,6 +966,17 @@ or `nanogpt`, the dispatcher also preserves the wrapper spelling
 `--native-cuda-no-checkpoint` in the printed/native argv for compatibility with
 native-cuda command inspection tests.
 
+For startup measurements where the Tile ops library itself is not being
+swapped, `bash tools/build_native_gpt_cli_linked.sh` builds
+`build/nfn_gpt_native_train_linked` with
+`build/libnfn_native_train_tile_ops.so` as a direct dependency. Invoke that
+binary with `--tile-ops-lib linked` to resolve Tile ABI symbols from
+`RTLD_DEFAULT` instead of calling `dlopen` on the shared object inside the
+trainer. JSON reports `tile_ops_dlopen_binding_strategy:
+"RTLD_DEFAULT-linked"` and keeps the same required-symbol scan fields. Use the
+regular `nfn_gpt_native_train --tile-ops-lib PATH` route for same-script kernel
+candidate comparisons that intentionally replace the Tile ops `.so` at runtime.
+
 Native GPT startup initializes the tied token FP32 master weight and persistent
 BF16 LM-head shadow in a single CUDA Tile ABI call,
 `nfn_native_tile_init_gpt2_token_weight_with_bf16_shadow_float32`, when the

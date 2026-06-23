@@ -1414,6 +1414,7 @@ float bf16_bits_to_float_host(std::uint16_t bits) {
 
 template <typename Fn>
 Fn load_symbol(void* handle, const char* name);
+std::string normalize_backend(std::string value);
 std::string dl_last_error(const char* fallback);
 std::vector<std::string> cuda_runtime_candidates(const Config& cfg);
 std::string default_tile_ops_lib(const char* program);
@@ -9757,6 +9758,12 @@ int run_transformer_lm_training_json(
         : 1;
     const std::int64_t effective_train_batch_tokens = grad_accum_steps * microbatch_tokens;
     const std::string tile_lib_path = cfg.tile_ops_lib.empty() ? default_tile_ops_lib(program) : cfg.tile_ops_lib;
+    const std::string normalized_tile_lib_path = normalize_backend(tile_lib_path);
+    const bool linked_tile_ops_requested =
+        normalized_tile_lib_path == "linked" ||
+        normalized_tile_lib_path == "builtin" ||
+        normalized_tile_lib_path == "rtld-default" ||
+        normalized_tile_lib_path == "rtld_default";
     neuralfn::native_train::BatchPlan batch_plan;
     std::string error;
     try {
@@ -10800,7 +10807,8 @@ int run_transformer_lm_training_json(
     CudaEventRecordFn cuda_event_record = nullptr;
     CudaEventElapsedTimeFn cuda_event_elapsed_time = nullptr;
     CudaEventDestroyFn cuda_event_destroy = nullptr;
-    const char* tile_ops_dlopen_binding_strategy = "RTLD_LAZY";
+    const char* tile_ops_dlopen_binding_strategy =
+        linked_tile_ops_requested ? "RTLD_DEFAULT-linked" : "RTLD_LAZY";
     double tile_ops_dlopen_wall_ms = 0.0;
     double tile_ops_required_symbol_scan_wall_ms = 0.0;
     double tile_ops_typed_symbol_load_wall_ms = 0.0;
@@ -10842,9 +10850,13 @@ int run_transformer_lm_training_json(
     run_setup_timed("setup.load_tile_ops", [&]() {
         if (error.empty()) {
             const auto tile_ops_dlopen_start = Clock::now();
-            tile_handle = dlopen(tile_lib_path.c_str(), RTLD_LAZY | RTLD_LOCAL);
+            if (linked_tile_ops_requested) {
+                tile_handle = RTLD_DEFAULT;
+            } else {
+                tile_handle = dlopen(tile_lib_path.c_str(), RTLD_LAZY | RTLD_LOCAL);
+            }
             tile_ops_dlopen_wall_ms = elapsed_ms(tile_ops_dlopen_start, Clock::now());
-            if (tile_handle == nullptr) {
+            if (!linked_tile_ops_requested && tile_handle == nullptr) {
                 error = dl_last_error("dlopen tile ops failed");
             } else {
                 tile_loaded = true;
@@ -19504,9 +19516,9 @@ int run_transformer_lm_training_json(
     } else if (cuda_handle != nullptr) {
         runtime_library_dlclose_skipped_count += 1;
     }
-    if (tile_handle != nullptr && !skip_exit_device_free_enabled) {
+    if (tile_handle != nullptr && !linked_tile_ops_requested && !skip_exit_device_free_enabled) {
         dlclose(tile_handle);
-    } else if (tile_handle != nullptr) {
+    } else if (tile_handle != nullptr && !linked_tile_ops_requested) {
         runtime_library_dlclose_skipped_count += 1;
     }
     cleanup_wall_ms = elapsed_ms(cleanup_start_time, Clock::now());

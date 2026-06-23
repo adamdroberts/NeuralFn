@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a linked dense GPT native CLI build path for workstation runs that do
+  not need to hot-swap the Tile ops shared object. `bash
+  tools/build_native_gpt_cli_linked.sh` builds
+  `build/nfn_gpt_native_train_linked` with
+  `build/libnfn_native_train_tile_ops.so` as a direct dependency, and
+  `--tile-ops-lib linked` tells the trainer to resolve Tile ABI symbols through
+  `RTLD_DEFAULT` instead of calling `dlopen` on the library path. Runtime JSON
+  reports `tile_ops_dlopen_binding_strategy: "RTLD_DEFAULT-linked"` while
+  keeping the required-symbol scan and timing fields.
+
+  Migration note: this is additive. Existing `nfn_gpt_native_train
+  --tile-ops-lib PATH` runs keep the dynamic `RTLD_LAZY` path, which remains the
+  correct route for same-script candidate benchmarks that replace the Tile ops
+  `.so` at runtime.
+
+  Verification: native GPT CLI build, linked native GPT CLI build, linked
+  startup-only TinyStories smoke, a 4-sample native-vs-native startup benchmark
+  on the dedicated RTX 5090 that measured candidate setup wall at `0.877545x`
+  baseline, focused native GPT source-contract pytest, no-Torch verifier, and
+  `git diff --check`.
+
 - Fixed dense GPT token-weight startup bisection profiles so default-on
   initializer switches compare a real baseline and candidate instead of
   measuring the current default against itself. `token_weight_vector4_strided`
