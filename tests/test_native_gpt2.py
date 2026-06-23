@@ -565,7 +565,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "nfn_gpt_native_train_linked" in parity_bench
     assert 'NFN_NATIVE_TILE_OPS_ARG="linked"' in parity_bench
     assert '--tile-ops-lib "$NFN_NATIVE_TILE_OPS_ARG"' in parity_bench
-    assert 'TRAIN_LOOP_EVENT_TIMING="${NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING:-${NFN_SM120_TRAIN_LOOP_EVENT_TIMING:-0}}"' in parity_bench
+    assert 'TRAIN_LOOP_EVENT_TIMING="${NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING:-${NFN_SM120_TRAIN_LOOP_EVENT_TIMING:-1}}"' in parity_bench
     assert 'paired_args+=(--candidate-env "NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1")' in parity_bench
     assert "nfn_gpt_native_train_linked" in candidate_bench
     assert "tile_ops_arg_for" in candidate_bench

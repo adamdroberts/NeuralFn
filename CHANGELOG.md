@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Restored default NeuralFn CUDA-event train-loop timing in
+  `tools/bench_native_gpt_sm120_parity.sh`. Same-script llm.kittens parity JSON
+  now includes `train_loop_cuda_event_wall_ms_per_step`,
+  `train_loop_cuda_event_first_step_wall_ms_per_step`, and
+  `train_loop_cuda_event_steady_state_wall_ms_per_step` from the NeuralFn side
+  without requiring an extra env var. Set
+  `NFN_SM120_PARITY_TRAIN_LOOP_EVENT_TIMING=0` or generic
+  `NFN_SM120_TRAIN_LOOP_EVENT_TIMING=0` to opt out for timing-only bisections.
+
+  Verification: `bash -n tools/bench_native_gpt_sm120_parity.sh`, focused
+  native GPT wrapper tests, and a dry-run parity plan confirmed the candidate
+  env includes `NFN_NATIVE_GPT_TRAIN_LOOP_EVENT_TIMING=1` by default.
+
 - Rechecked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_llmk_style_specialized`
   against the current CUDA 13.3 dense-GPT baseline and kept it rejected. The
   profile still proves the intended no-loss llm.kittens-style CE/dlogits store
