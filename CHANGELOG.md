@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a native CUDA LM-head backward benchmark harness,
+  `tools/bench_lm_head_backward_candidate.sh`, backed by
+  `neuralfn/csrc/native_train/lm_head_backward_bench.cpp`. The harness loads
+  `libnfn_native_train_tile_ops.so`, runs the baseline cooperative sequence
+  symbol and candidate strict fused symbol in the same CUDA process with event
+  timing, emits route counters, and keeps
+  `candidate_true_fused_capability` separate from symbol availability so the
+  current sequence wrapper cannot be mistaken for the missing fused parity
+  kernel.
+
+  Verification: static native GPT tests cover the harness symbols, JSON fields,
+  build wrapper, and Tile ops rebuild path. The harness compiled with CUDA
+  13.3, and a tiny GPU-visible unsandboxed smoke confirmed JSON output,
+  sequence counters, and `candidate_true_fused_capability: false` for the
+  current wrapper-only strict symbol.
+
 - Added the rejected SM120 native candidate profile `cuda_malloc_async` for the
   existing native async allocator. It expands to baseline
   `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=0` versus candidate `=1`, but remains

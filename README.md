@@ -101,7 +101,15 @@ availability requires loading
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus a
 nonzero
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
-capability rather than the existing sequence wrapper. A post-reinstall wrapper
+capability rather than the existing sequence wrapper. Future LM-head fused
+kernel candidates should first run
+`bash tools/bench_lm_head_backward_candidate.sh`, which builds
+`build/lm_head_backward_bench` and compares the current cooperative sequence
+symbol against `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
+inside one CUDA process with event timing, route counters, and a
+`candidate_true_fused_capability` JSON field. Use
+`NFN_LM_HEAD_BACKWARD_ROWS=32768` to exercise the default 49152-row trainer
+chunk scale without involving the full training loop. A post-reinstall wrapper
 timing check also confirms that
 `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run --native-cuda-print-command`
 returns the compiled C++ delegate in about `0.03s`, so the old Python schedule

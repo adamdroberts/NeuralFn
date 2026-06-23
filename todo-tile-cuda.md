@@ -104,6 +104,16 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
   - [ ] Implement the actual cooperative LM-head backward Tile ABI that fuses or
     co-schedules classifier dlogit production with dHidden and dWeight work
     without materializing full resident logits or routing tensors through Torch.
+    - 2026-06-23 added the native CUDA microbenchmark harness for this exact
+      handoff: `bash tools/bench_lm_head_backward_candidate.sh` builds
+      `build/lm_head_backward_bench`, loads
+      `libnfn_native_train_tile_ops.so`, and compares
+      `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16`
+      against
+      `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
+      inside one CUDA process with event timing and cooperative route counters.
+      The JSON includes `candidate_true_fused_capability`, so a future symbol
+      export alone is not enough to pass the strict fused-kernel evidence gate.
     - 2026-06-22 prerequisite: the native trainer no longer treats
       `nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16` as an
       untyped `int (*)()` probe. The function pointer now encodes the required

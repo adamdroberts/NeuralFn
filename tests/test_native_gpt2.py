@@ -1417,6 +1417,37 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head_dweight_strided_vocab_gemm_count" in speed_tool
 
 
+def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None:
+    root = Path(__file__).resolve().parents[1]
+    bench_source = (
+        root / "neuralfn" / "csrc" / "native_train" / "lm_head_backward_bench.cpp"
+    ).read_text(encoding="utf-8")
+    build_script = (root / "tools" / "build_lm_head_backward_bench.sh").read_text(
+        encoding="utf-8"
+    )
+    wrapper = (root / "tools" / "bench_lm_head_backward_candidate.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "using LmHeadBackwardFn = int (*)(" in bench_source
+    assert "nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16" in bench_source
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in bench_source
+    assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in bench_source
+    assert "candidate_true_fused_capability" in bench_source
+    assert "candidate_to_baseline_ms_per_iter_ratio" in bench_source
+    assert "nfn_native_tile_lm_head_cooperative_sequence_launch_count" in bench_source
+    assert "nfn_native_tile_lm_head_cooperative_sequence_concurrent_count" in bench_source
+    assert "nfn_native_tile_lm_head_cooperative_sequence_legacy_count" in bench_source
+    assert "cudaEventElapsedTime" in bench_source
+    assert "cudaMemset(logits, 0, logits_bytes)" in bench_source
+    assert "neuralfn/csrc/native_train/lm_head_backward_bench.cpp" in build_script
+    assert "-lcudart -ldl" in build_script
+    assert "NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_BASELINE_SYMBOL" in wrapper
+    assert "tools/build_native_train_tile_ops.sh" in wrapper
+    assert "--candidate-symbol" in wrapper
+    assert "--baseline-symbol" in wrapper
+
+
 def test_native_gpt_cuda_error_35_reports_runtime_visibility_hint() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
