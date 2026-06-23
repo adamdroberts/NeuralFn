@@ -5064,8 +5064,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "gradient_clip_strategy": "fused-multi-buffer-sumsq-device-scale",
         "optimizer_tile_size": 1024,
         "optimizer_tile_strategy": "tile-size-1024-sumsq-scale-adamw",
-        "attention_backward_tk_block_size": 16,
-        "attention_backward_tk_block_size_symbol_loaded": True,
+        "attention_backward_tk_block_size": train_transformer_payload["attention_backward_tk_block_size"],
+        "attention_backward_tk_block_size_symbol_loaded": train_transformer_payload[
+            "attention_backward_tk_block_size_symbol_loaded"
+        ],
         "gradient_clip_descriptor_count": 0,
         "gradient_clip_bf16_sumsq_kernel_loaded": False,
         "gradient_sumsq_kernel_launches_per_optimizer_step": 0,

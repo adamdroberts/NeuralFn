@@ -6,6 +6,15 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `attention_backward_tk_block_size` and
+  `attention_backward_tk_block_size_symbol_loaded` to dense GPT
+  `block_state_layout`, matching the existing top-level runtime JSON fields.
+  This keeps kernel-strategy metadata colocated with the optimizer tile strategy
+  and other block-loop flags used by native plan/profile consumers.
+
+  Verification: reran the previously failing focused native GPT C++ CLI test
+  slice after updating the JSON renderer.
+
 - Added a trainer-facing Tile ABI and native GPT JSON diagnostic for the
   compiled SM120 TK attention-backward block size:
   `nfn_native_tile_attention_backward_tk_block_size()`,

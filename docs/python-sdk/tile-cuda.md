@@ -711,8 +711,9 @@ and synchronizes the stream to report dprep and TK backward totals/counts as
 The trainer-facing ABI also reports the compiled TK backward block size through
 `nfn_native_tile_attention_backward_tk_block_size()`. Dense GPT runtime JSON
 emits `attention_backward_tk_block_size` and
-`attention_backward_tk_block_size_symbol_loaded`; the paired benchmark strategy
-gate tracks the field so temporary builds with
+`attention_backward_tk_block_size_symbol_loaded` both at the top level and
+inside `block_state_layout`; the paired benchmark strategy gate tracks the field
+so temporary builds with
 `-DLLMK_SM120_ATTN_BWD_BLOCK=16|32|64` are visible even if their launch counters
 match the default route. The `attention_bwd_block_32` and
 `attention_bwd_block_64` SM120 candidate profiles are rejected by default unless

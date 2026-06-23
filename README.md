@@ -356,8 +356,9 @@ Packed-attention TK backward block-size candidates are reported the same way:
 the trainer-facing Tile ABI exports
 `nfn_native_tile_attention_backward_tk_block_size()`, native runtime JSON emits
 `attention_backward_tk_block_size` plus
-`attention_backward_tk_block_size_symbol_loaded`, and the paired benchmark
-strategy gate tracks the value so compile-time
+`attention_backward_tk_block_size_symbol_loaded` at the top level and under
+`block_state_layout`, and the paired benchmark strategy gate tracks the value
+so compile-time
 `-DLLMK_SM120_ATTN_BWD_BLOCK=N` builds are visible even when env flags and
 launch counters are otherwise unchanged.
 When a command exits nonzero and `--continue-on-error` is not set, the helper now

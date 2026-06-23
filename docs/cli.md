@@ -1015,7 +1015,8 @@ same gate proves the route changes to `64` but regresses
 `stage.block_backward.total_ms` to `5.034009x`, and
 `attention_backward_tk_timing_us` to `24.139285x`. Native JSON reports
 `attention_backward_tk_block_size` and
-`attention_backward_tk_block_size_symbol_loaded`, and
+`attention_backward_tk_block_size_symbol_loaded` at the top level and inside
+`block_state_layout`, and
 `tools/paired_kernel_speed.py` treats the block size as a strategy value so a
 compile-time block-size candidate is visible in the same-script comparison.
 If attention backward section timing is enabled, paired summaries include the
