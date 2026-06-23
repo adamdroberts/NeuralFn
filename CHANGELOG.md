@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Enforced existing SM120 rejection evidence for stale row-chunk benchmark
+  profiles. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=layernorm_affine_row_chunk_512`
+  and `linear_bias_row_chunk_1024` now fail before launching a real benchmark
+  unless `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set; dry-run
+  expansion still works for inspection. This keeps same-script GPU comparisons
+  focused on viable native Tile candidates instead of rerunning routes that were
+  already rejected on the CUDA 13.3 dedicated RTX 5090.
+
+  Verification: focused pytest coverage confirmed the wrapper still expands the
+  profiles in dry-run mode and rejects real benchmark launches by default.
+
 - Changed the dense GPT LM-head row-loss tail default back to the partial
   reduction path. `NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE` and the
   GPT2-prefixed alias now default to `0`, so row losses are reduced with

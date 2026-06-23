@@ -976,6 +976,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "stage.block_backward.mlp_proj.total_ms to 1.000296x" in text
     assert "layernorm_affine_row_chunk_512" in text
     assert "NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=512" in text
+    assert "1.019837x train_loop_wall_ms_per_step" in text
+    assert "linear_bias_row_chunk_1024" in text
+    assert "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=1024" in text
+    assert "1.009736x train_loop_wall_ms_per_step" in text
     assert "lm_head_logits_bf16_fallback_32768" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N" in text
     assert "qkv_forward_bf16_fallback_65536" in text
@@ -1255,6 +1259,62 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         == "512"
     )
     assert ln_chunk_payload["metric_ratio_gates"]["enabled"] is False
+
+    rejected_ln_chunk_512_env = os.environ.copy()
+    rejected_ln_chunk_512_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "layernorm_affine_row_chunk_512",
+            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "rejected-ln-row-chunk-512.json"),
+        }
+    )
+
+    rejected_ln_chunk_512_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=rejected_ln_chunk_512_env,
+    )
+
+    assert rejected_ln_chunk_512_run.returncode == 2
+    assert "layernorm_affine_row_chunk_512 is a rejected SM120 candidate" in (
+        rejected_ln_chunk_512_run.stderr
+    )
+    assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
+        rejected_ln_chunk_512_run.stderr
+    )
+
+    rejected_linear_bias_1024_env = os.environ.copy()
+    rejected_linear_bias_1024_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "linear_bias_row_chunk_1024",
+            "NFN_SM120_NATIVE_JSON_OUT": str(
+                tmp_path / "rejected-linear-bias-row-chunk-1024.json"
+            ),
+        }
+    )
+
+    rejected_linear_bias_1024_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=rejected_linear_bias_1024_env,
+    )
+
+    assert rejected_linear_bias_1024_run.returncode == 2
+    assert "linear_bias_row_chunk_1024 is a rejected SM120 candidate" in (
+        rejected_linear_bias_1024_run.stderr
+    )
+    assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
+        rejected_linear_bias_1024_run.stderr
+    )
 
     ln_chunk_64_output_path = tmp_path / "candidate-ln-row-chunk-64-dry-run.json"
     ln_chunk_64_env = os.environ.copy()
