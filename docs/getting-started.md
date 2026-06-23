@@ -60,6 +60,10 @@ and no-Python cached-shard CLI once:
 bash tools/build_native_gpt2_all.sh
 ```
 
+The all-in-one build refreshes `libnfn_native_train_tile_ops.so` before building
+`nfn_gpt_native_train_linked`, so the linked compiled GPT fast path uses the
+current CUDA Tile kernels.
+
 Installing the local CLI with `cli/install.sh` runs that native build step
 automatically unless you pass `--no-native`, then links `nfn-gpt-native` into
 the active Python scripts directory.

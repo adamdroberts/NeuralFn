@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Reordered `tools/build_native_gpt2_all.sh` so
+  `libnfn_native_train_tile_ops.so` is rebuilt before
+  `nfn_gpt_native_train_linked`. The SDK and CLI prefer the linked dense GPT
+  binary when it exists to avoid the runtime Tile-ops `dlopen` startup path, so
+  the all-in-one native build now guarantees that preferred binary links against
+  the current CUDA Tile kernels instead of any stale shared library left in
+  `build/`.
+
+  Verification note: added a source-level regression assertion for the build
+  order in the linked Tile ops loader test.
+
 - Added `NFN_NATIVE_LINEAR_TK_DINPUT_DEFAULT_BLOCK=1` /
   `NFN_TILE_CUDA_LINEAR_TK_DINPUT_DEFAULT_BLOCK=1` as an opt-in diagnostic route
   for block-sized GPT BF16-gradient/BF16-weight dInput shapes. The gate is

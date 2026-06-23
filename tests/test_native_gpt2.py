@@ -555,6 +555,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "linked_build_path" in gpt2_evo_source
     assert "GPT_LINKED_CLI_OUT" in build_all
     assert "build_native_gpt_cli_linked.sh" in build_all
+    assert build_all.index("build_native_train_tile_ops.sh") < build_all.index(
+        "build_native_gpt_cli_linked.sh"
+    )
     assert "build_native_gpt_cli_linked.sh" in rebuild_sm120
     assert "nfn_gpt_native_train_linked" in parity_bench
     assert 'NFN_NATIVE_TILE_OPS_ARG="linked"' in parity_bench

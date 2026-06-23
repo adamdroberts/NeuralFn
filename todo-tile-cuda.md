@@ -1119,6 +1119,12 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
   names now go straight to `NFN_NATIVE_<FAMILY>_CLI`, `build/nfn_<family>_native_train`,
   or an installed family binary; the CLI only injects `--base-model` when it
   deliberately falls back to the unified `nfn_native_train` frontend.
+- [x] Fixed the all-in-one native build order so
+  `tools/build_native_gpt2_all.sh` rebuilds `libnfn_native_train_tile_ops.so`
+  before `nfn_gpt_native_train_linked`. The SDK/CLI prefer the linked dense GPT
+  binary for lower startup overhead, so the preferred compiled path now links
+  against the current Tile kernels instead of a stale library from an earlier
+  build.
 - [x] Rejected `NFN_NATIVE_GPT_BGRAD_FIRST_WRITE_DIRECT=1` as a current block-backward default. A 5-step, 2-sample probe initially passed mean gates, but the stronger dedicated RTX 5090 5-step, 5-sample same-script run failed the hot-metric gates with `1.001094x` train-loop wall time and `1.002842x` `stage.block_backward.total_ms`; keep the BGRADB direct first-write path diagnostic-only unless a future implementation adds stronger route attribution and a durable win.
 - [x] Rejected the MLP projection side-stream schedule as a current block-backward direction. A temporary native candidate launched independent MLP projection dInput+dGELU and dWeight+bias on the existing non-blocking block-backward streams after the BF16 grad-out pack. The CUDA 13.3 RTX 5090 same-script gate verified the path but rejected it at `1.007390x` train-loop wall time, `1.013009x` `stage.block_backward.total_ms`, and `1.029721x` `stage.block_backward.mlp_proj.total_ms`; the diagnostic code was removed rather than kept default-off.
 - [x] Rejected temporary full-row LM-head allocation as a workaround for the resident full-logit memory cliff. The async-free prototype kept enough pool pressure that `block_backward.attn_sdpa` collapsed to about `9057 ms` in a one-step smoke; the sync `cudaMalloc`/`cudaFree` variant released memory before block backward but spent about `902 ms` in `lm_head_backward` for a single `65536`-token microbatch, including about `195 ms` allocation and `115 ms` free time. This confirms the parity fix cannot be a per-microbatch full-logit allocation; it needs a fused/cooperative row-chunked classifier-backward kernel that keeps the current resident cap.

@@ -37,6 +37,12 @@ else
   bash "${ROOT_DIR}/tools/build_native_gpt2_launcher.sh"
 fi
 
+if [[ -n "${NATIVE_TILE_OPS_OUT}" ]]; then
+  bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" "${NATIVE_TILE_OPS_OUT}"
+else
+  bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh"
+fi
+
 if [[ -n "${GPT_CLI_OUT}" ]]; then
   bash "${ROOT_DIR}/tools/build_native_gpt_cli.sh" "${GPT_CLI_OUT}"
 else
@@ -59,12 +65,6 @@ if [[ -n "${NATIVE_TRAIN_OUT}" ]]; then
   bash "${ROOT_DIR}/tools/build_native_train_cli.sh" "${NATIVE_TRAIN_OUT}"
 else
   bash "${ROOT_DIR}/tools/build_native_train_cli.sh"
-fi
-
-if [[ -n "${NATIVE_TILE_OPS_OUT}" ]]; then
-  bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" "${NATIVE_TILE_OPS_OUT}"
-else
-  bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh"
 fi
 
 if [[ -n "${MISSING_TRAINERS_OUT_DIR}" ]]; then
