@@ -7,14 +7,15 @@ Future updates should append new entries here rather than replacing older notes.
 ## Unreleased
 
 - Short-circuited direct `cli/scripts/train_gpt.py --native-cuda-dry-run
+  --native-cuda-print-command` and top-level `nfn train ... --native-cuda-dry-run
   --native-cuda-print-command` inspection requests after the lightweight Python
-  shim translates arguments. The shim now prints the compiled C++ command
-  itself and does not spawn `nfn_gpt_native_train` for pure command inspection;
+  shims translate arguments. The shims now print the compiled C++ command
+  themselves and do not spawn `nfn_gpt_native_train` for pure command inspection;
   plan printing, Tile checks, smoke commands, startup-only runs, and real
   training still execute or `exec` the compiled frontend.
 
-  Verification: a regression test uses a native binary that would exit 99 if
-  spawned and confirms the inspection path returns 0. Direct timing on this
+  Verification: regression tests use a native binary that would exit 99 if
+  spawned and confirm both inspection paths return 0. Direct timing on this
   workstation dropped from about `0.15s` to about `0.04s`, and
   `tools/check_native_no_torch_deps.py --skip-artifacts --json` still passes.
 

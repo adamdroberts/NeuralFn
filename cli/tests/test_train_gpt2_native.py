@@ -823,6 +823,39 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("--train-transformer-lm", proc.stdout)
         self.assertEqual("", proc.stderr)
 
+    def test_nfn_train_print_command_dry_run_stops_before_native_spawn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            native_cli = Path(tmp) / "nfn_gpt_native_train"
+            native_cli.write_text("#!/usr/bin/env bash\nexit 99\n", encoding="utf-8")
+            native_cli.chmod(0o755)
+            env = os.environ.copy()
+            env.pop("PYTHONPATH", None)
+            env["NFN_NATIVE_GPT_CLI"] = str(native_cli)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(NEURALFN_ROOT / "cli" / "nfn.py"),
+                    "train",
+                    "--tinystories",
+                    "--native-cuda-dry-run",
+                    "--native-cuda-print-command",
+                    "--no-checkpoint",
+                ],
+                cwd=NEURALFN_ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("nfn_gpt_native_train", proc.stdout)
+        self.assertIn("--dry-run", proc.stdout)
+        self.assertIn("--print-command", proc.stdout)
+        self.assertIn("--train-transformer-lm", proc.stdout)
+        self.assertEqual("", proc.stderr)
+
     def test_nfn_train_gpt2_direct_compiled_cli_preserves_template_and_graph_selectors(self) -> None:
         code = textwrap.dedent(
             f"""

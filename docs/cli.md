@@ -1506,8 +1506,10 @@ runner, and explicit `--native-cuda-runner auto` uses the same direct compiled
 C++ fast path for dense GPT `train_gpt.py` and `nfn train` commands. `python cli/scripts/train_gpt.py --tinystories --native-cuda-dry-run
 --native-cuda-print-command` builds the compiled C++ argv from the dataset
 alias/path and prints that argv directly from the lightweight wrapper without
-spawning `nfn_gpt_native_train`; shard validation is left to C++ for commands
-that actually enter the compiled frontend. The inspection shortcut does not import
+spawning `nfn_gpt_native_train`; top-level `nfn train ... --native-cuda-dry-run
+--native-cuda-print-command` uses the same no-spawn inspection shortcut. Shard
+validation is left to C++ for commands that actually enter the compiled
+frontend. The inspection shortcut does not import
 `server.dataset_manager`, NumPy, tiktoken, or Torch and does not materialize
 raw-text token shards before printing the command. The default Tile-CUDA
 command does not include the external `--target train_gpt2cu` bridge argument.
