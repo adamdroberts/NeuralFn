@@ -481,7 +481,8 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_DWEIGHT_BEFORE_DHIDDEN=1"
     ;;
   "lm_head_pipeline_chunks"|"lm-head-pipeline-chunks")
-    TIMEOUT_PRONE_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 short 3-step, 2-sample stage-timed rerun activated the double-buffered LM-head pipeline schedule but the candidate command timed out after 300 seconds, so this side-stream pipeline remains rejected until the cross-stream ownership model is redesigned or replaced by a true fused/cooperative LM-head kernel."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_PIPELINE_CHUNKS=1"
     ;;
   "lm_head_overlap_last_dweight"|"lm-head-overlap-last-dweight"|"lm_head_last_dweight_overlap"|"lm-head-last-dweight-overlap")

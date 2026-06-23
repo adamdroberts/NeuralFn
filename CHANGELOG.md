@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Reclassified `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_pipeline_chunks`
+  from timeout-prone to rejected by default. A current CUDA 13.3 dedicated RTX
+  5090 short 3-step, 2-sample stage-timed rerun timed out the candidate command
+  after 300 seconds, confirming that the side-stream LM-head pipeline is not a
+  viable default path.
+
+  Verification: ran the intentional native-vs-native pipeline-chunks rerun with
+  `NFN_SM120_NATIVE_ALLOW_TIMEOUT_PRONE_LM_HEAD_PROFILE=1` and observed the
+  candidate timeout; dry-run and shell checks cover the updated wrapper path.
+
 - Refreshed the rejected `lm_head_loss_bins` native GPT benchmark profile after
   the CUDA reinstall on the dedicated RTX 5090. The wrapper rejection reason now
   reflects the current 2026-06-24 evidence: the route improves steady-state

@@ -1040,7 +1040,12 @@ the old full side-stream synchronization before slot reuse, but remains an
 opt-in candidate: the follow-up one-step same-script RTX 5090 run proved
 `lm_head_pipeline_slot_event_wait_count: 32` and
 `lm_head_pipeline_done_event_record_count: 32`, but still regressed native
-train-loop wall time to `18.448472x` versus the serial baseline.
+train-loop wall time to `18.448472x` versus the serial baseline. A 2026-06-24
+CUDA 13.3 dedicated RTX 5090 short 3-step, 2-sample stage-timed rerun timed
+out the candidate command after 300 seconds, so the wrapper now treats
+`lm_head_pipeline_chunks` as rejected by default; use
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for intentional
+diagnostics.
 `NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1` is a narrower opt-in LM-head
 schedule candidate. It queues only the last processed row chunk's LM-head
 dWeight accumulation on the dWeight side stream after CE, runs dHidden on the
