@@ -8,7 +8,10 @@ OUT="${1:-${ROOT_DIR}/build/nfn_gpt_native_train_linked}"
 TILE_OPS_LIB="${NFN_NATIVE_TRAIN_TILE_OPS_LIB:-${ROOT_DIR}/build/libnfn_native_train_tile_ops.so}"
 CXX_BIN="${CXX:-c++}"
 
-if [[ ! -f "${TILE_OPS_LIB}" ]]; then
+if [[ ! -f "${TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu" -nt "${TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu" -nt "${TILE_OPS_LIB}" ||
+      "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h" -nt "${TILE_OPS_LIB}" ]]; then
   bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" "${TILE_OPS_LIB}"
 fi
 

@@ -85,6 +85,7 @@ NATIVE_METRIC_PATHS = (
     ),
     ("linear_tk_gemm_count", ("linear_tk_gemm_count",)),
     ("linear_tk_dweight_gemm_count", ("linear_tk_dweight_gemm_count",)),
+    ("linear_tk_dgelu_dinput_gemm_count", ("linear_tk_dgelu_dinput_gemm_count",)),
     ("linear_cublaslt_gemm_count", ("linear_cublaslt_gemm_count",)),
     ("linear_cublaslt_bgrad_gemm_count", ("linear_cublaslt_bgrad_gemm_count",)),
     (
@@ -409,6 +410,7 @@ NATIVE_METRIC_PATHS = (
 NATIVE_ROUTE_COUNTER_KEYS = (
     "linear_tk_gemm_count",
     "linear_tk_dweight_gemm_count",
+    "linear_tk_dgelu_dinput_gemm_count",
     "linear_cublaslt_gemm_count",
     "linear_cublaslt_bgrad_gemm_count",
     "linear_cublaslt_bgrad_direct_write_count",
@@ -592,6 +594,7 @@ NATIVE_TEXT_METRIC_KEYS = (
     "train_loss_microbatch_host_d2h_copies_elided_per_logged_step",
     "linear_tk_gemm_count",
     "linear_tk_dweight_gemm_count",
+    "linear_tk_dgelu_dinput_gemm_count",
     "linear_cublaslt_gemm_count",
     "linear_cublaslt_bgrad_gemm_count",
     "linear_cublaslt_bgrad_direct_write_count",

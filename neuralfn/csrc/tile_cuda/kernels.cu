@@ -125,6 +125,7 @@ std::atomic<std::int64_t> g_linear_bf16_gemm_fast16bf_request_count{0};
 std::atomic<std::int64_t> g_linear_tk_gemm_count{0};
 std::atomic<std::int64_t> g_linear_tk_float_out_gemm_count{0};
 std::atomic<std::int64_t> g_linear_tk_dweight_gemm_count{0};
+std::atomic<std::int64_t> g_linear_tk_dgelu_dinput_gemm_count{0};
 std::atomic<std::int64_t> g_linear_cublaslt_gemm_count{0};
 std::atomic<std::int64_t> g_linear_cublaslt_bgrad_gemm_count{0};
 std::atomic<std::int64_t> g_linear_cublaslt_bgrad_direct_write_count{0};
@@ -2488,7 +2489,7 @@ cublasHandle_t trainer_linear_cublas_handle(cudaStream_t stream) {
   return handle;
 }
 
-bool trainer_linear_cublas_prewarm(cudaStream_t stream) {
+bool trainer_linear_cublas_prewarm_internal(cudaStream_t stream) {
   return trainer_linear_cublas_handle(stream) != nullptr;
 }
 
@@ -5463,6 +5464,7 @@ bool tk_linear_backward_input_dgelu_bf16_bits_float32(
   launch_bf16_bits_to_float32_internal(grad_x_bf16_bits, grad_x, elements, stream);
   const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  g_linear_tk_dgelu_dinput_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
   record_linear_shape_stat(2, input_dim, rows, output_dim, CUBLAS_OP_N, CUBLAS_OP_N, elapsed_us);
   return true;
@@ -5534,6 +5536,7 @@ bool tk_linear_backward_input_dgelu_weight_bf16_bits_float32(
   }
   const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  g_linear_tk_dgelu_dinput_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
   record_linear_shape_stat(2, input_dim, rows, output_dim, CUBLAS_OP_N, CUBLAS_OP_N, elapsed_us);
   return true;
@@ -5587,6 +5590,7 @@ bool tk_linear_backward_input_dgelu_bf16_bits_weight_bf16_bits_float32(
       true);
   const std::int64_t elapsed_us = finish_linear_shape_timing(&timing);
   g_linear_tk_gemm_count.fetch_add(1, std::memory_order_relaxed);
+  g_linear_tk_dgelu_dinput_gemm_count.fetch_add(1, std::memory_order_relaxed);
   g_linear_bf16_gemm_count.fetch_add(1, std::memory_order_relaxed);
   record_linear_shape_stat(2, input_dim, rows, output_dim, CUBLAS_OP_N, CUBLAS_OP_N, elapsed_us);
   return true;
@@ -19177,6 +19181,7 @@ void reset_trainer_linear_launch_stats() {
   g_linear_tk_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_tk_float_out_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_tk_dweight_gemm_count.store(0, std::memory_order_relaxed);
+  g_linear_tk_dgelu_dinput_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_cublaslt_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_cublaslt_bgrad_gemm_count.store(0, std::memory_order_relaxed);
   g_linear_cublaslt_bgrad_direct_write_count.store(0, std::memory_order_relaxed);
@@ -19206,6 +19211,15 @@ void reset_trainer_linear_bf16_cache() {
   std::lock_guard<std::mutex> lock(g_trainer_linear_bf16_workspace_mutex);
   invalidate_trainer_linear_bf16_cache(g_trainer_linear_bf16_workspace);
   g_linear_bf16_cache_reset_count.fetch_add(1, std::memory_order_relaxed);
+#endif
+}
+
+bool trainer_linear_cublas_prewarm(cudaStream_t stream) {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return trainer_linear_cublas_prewarm_internal(stream);
+#else
+  (void)stream;
+  return false;
 #endif
 }
 
@@ -19244,6 +19258,14 @@ std::int64_t trainer_linear_tk_float_out_gemm_count() {
 std::int64_t trainer_linear_tk_dweight_gemm_count() {
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   return g_linear_tk_dweight_gemm_count.load(std::memory_order_relaxed);
+#else
+  return 0;
+#endif
+}
+
+std::int64_t trainer_linear_tk_dgelu_dinput_gemm_count() {
+#if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
+  return g_linear_tk_dgelu_dinput_gemm_count.load(std::memory_order_relaxed);
 #else
   return 0;
 #endif

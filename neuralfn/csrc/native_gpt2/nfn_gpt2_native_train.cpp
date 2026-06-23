@@ -3312,6 +3312,7 @@ std::vector<std::string> required_tile_symbols() {
         "nfn_native_tile_trainer_linear_tk_gemm_count",
         "nfn_native_tile_trainer_linear_tk_float_out_gemm_count",
         "nfn_native_tile_trainer_linear_tk_dweight_gemm_count",
+        "nfn_native_tile_trainer_linear_tk_dgelu_dinput_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count",
@@ -4384,6 +4385,7 @@ bool print_tile_plan(
         << "  \"stored_packed_attention_backward_kernel_launches\": 0,\n"
         << "  \"linear_bf16_gemm_count\": 0,\n"
         << "  \"linear_tk_gemm_count\": 0,\n"
+        << "  \"linear_tk_dgelu_dinput_gemm_count\": 0,\n"
         << "  \"linear_cublaslt_gemm_count\": 0,\n"
         << "  \"linear_cublaslt_bgrad_gemm_count\": 0,\n"
         << "  \"linear_cublaslt_bgrad_direct_write_count\": 0,\n"
@@ -9903,6 +9905,7 @@ int run_transformer_lm_training_json(
     std::int64_t linear_tk_gemm_count = 0;
     std::int64_t linear_tk_float_out_gemm_count = 0;
     std::int64_t linear_tk_dweight_gemm_count = 0;
+    std::int64_t linear_tk_dgelu_dinput_gemm_count = 0;
     std::int64_t linear_cublaslt_gemm_count = 0;
     std::int64_t linear_cublaslt_bgrad_gemm_count = 0;
     std::int64_t linear_cublaslt_bgrad_direct_write_count = 0;
@@ -10187,6 +10190,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_trainer_linear_tk_gemm_count",
         "nfn_native_tile_trainer_linear_tk_float_out_gemm_count",
         "nfn_native_tile_trainer_linear_tk_dweight_gemm_count",
+        "nfn_native_tile_trainer_linear_tk_dgelu_dinput_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count",
         "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count",
@@ -10795,6 +10799,7 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_tk_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_tk_float_out_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_tk_dweight_gemm_count_fn = nullptr;
+    TrainerLinearStatsCountFn trainer_linear_tk_dgelu_dinput_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_cublaslt_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_cublaslt_bgrad_gemm_count_fn = nullptr;
     TrainerLinearStatsCountFn trainer_linear_cublaslt_bgrad_direct_write_count_fn = nullptr;
@@ -11293,6 +11298,8 @@ int run_transformer_lm_training_json(
                     tile_handle, "nfn_native_tile_trainer_linear_tk_float_out_gemm_count");
                 trainer_linear_tk_dweight_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_tk_dweight_gemm_count");
+                trainer_linear_tk_dgelu_dinput_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
+                    tile_handle, "nfn_native_tile_trainer_linear_tk_dgelu_dinput_gemm_count");
                 trainer_linear_cublaslt_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
                     tile_handle, "nfn_native_tile_trainer_linear_cublaslt_gemm_count");
                 trainer_linear_cublaslt_bgrad_gemm_count_fn = load_symbol<TrainerLinearStatsCountFn>(
@@ -19525,6 +19532,9 @@ int run_transformer_lm_training_json(
     if (trainer_linear_tk_dweight_gemm_count_fn != nullptr) {
         linear_tk_dweight_gemm_count = trainer_linear_tk_dweight_gemm_count_fn();
     }
+    if (trainer_linear_tk_dgelu_dinput_gemm_count_fn != nullptr) {
+        linear_tk_dgelu_dinput_gemm_count = trainer_linear_tk_dgelu_dinput_gemm_count_fn();
+    }
     std::ostringstream lm_head_tk_dweight_shape_expected;
     lm_head_tk_dweight_shape_expected << kDim << "," << kPaddedVocab << ","
                                       << lm_head_chunk_rows << ",N,T";
@@ -20859,6 +20869,8 @@ int run_transformer_lm_training_json(
         << "  \"linear_tk_gemm_count\": " << linear_tk_gemm_count << ",\n"
         << "  \"linear_tk_float_out_gemm_count\": " << linear_tk_float_out_gemm_count << ",\n"
         << "  \"linear_tk_dweight_gemm_count\": " << linear_tk_dweight_gemm_count << ",\n"
+        << "  \"linear_tk_dgelu_dinput_gemm_count\": "
+        << linear_tk_dgelu_dinput_gemm_count << ",\n"
         << "  \"linear_cublaslt_gemm_count\": " << linear_cublaslt_gemm_count << ",\n"
         << "  \"linear_cublaslt_bgrad_gemm_count\": "
         << linear_cublaslt_bgrad_gemm_count << ",\n"

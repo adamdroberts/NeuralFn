@@ -1327,6 +1327,11 @@ The ordering profiles `mlp_proj_dinput_before_dweight`,
 matching execution counters in the same route-counter summary, so rejected
 scheduling candidates can be reproduced with proof that the alternate order
 actually ran.
+Compile-time dGELU candidates also have a dedicated route counter:
+`linear_tk_dgelu_dinput_gemm_count`. The paired benchmark prints and ratios it,
+and includes it in `native_route_counter_changes`, so `tk_dgelu_dinput` and
+`tk_dgelu_approx_tanh` runs cannot pass the route-change gate merely because a
+temporary Tile library was rebuilt.
 `lm_head_classifier_ce_no_loss` expands to
 `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1`, forces the baseline side to
 `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=0`, and keeps train-loss logging

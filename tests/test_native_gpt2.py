@@ -541,6 +541,9 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert "-Wl,--export-dynamic" in linked_build
     assert "-Wl,--no-as-needed" in linked_build
     assert "-Wl,-rpath" in linked_build
+    assert '"${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu" -nt "${TILE_OPS_LIB}"' in linked_build
+    assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu" -nt "${TILE_OPS_LIB}"' in linked_build
+    assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h" -nt "${TILE_OPS_LIB}"' in linked_build
     assert "nfn_gpt_native_train_linked" in train_gpt_source
     assert "_native_cli_uses_linked_tile_ops" in train_gpt_source
     assert '_append_value(out, "--tile-ops-lib", "linked")' in train_gpt_source
@@ -3421,6 +3424,9 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert "nfn_native_tile_trainer_linear_tk_gemm_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_tk_float_out_gemm_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_tk_dweight_gemm_count" in tile_payload["available_native_kernels"]
+    assert "nfn_native_tile_trainer_linear_tk_dgelu_dinput_gemm_count" in tile_payload[
+        "available_native_kernels"
+    ]
     assert "nfn_native_tile_trainer_linear_cublaslt_gemm_count" in tile_payload["available_native_kernels"]
     assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count" in tile_payload["available_native_kernels"]
     assert (
@@ -6761,6 +6767,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "nfn_native_tile_trainer_linear_tk_gemm_count" in header_text
     assert "nfn_native_tile_trainer_linear_tk_float_out_gemm_count" in header_text
     assert "nfn_native_tile_trainer_linear_tk_dweight_gemm_count" in header_text
+    assert "nfn_native_tile_trainer_linear_tk_dgelu_dinput_gemm_count" in header_text
     assert "nfn_native_tile_trainer_linear_cublaslt_gemm_count" in header_text
     assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count" in header_text
     assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count" in header_text
@@ -7083,6 +7090,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "bf16_to_f32_vec4_count" in gpt2_source_text
     assert "linear_tk_float_out_gemm_count" in gpt2_source_text
     assert "linear_tk_dweight_gemm_count" in gpt2_source_text
+    assert "linear_tk_dgelu_dinput_gemm_count" in gpt2_source_text
     assert "linear_shape_stats" in gpt2_source_text
     assert '\\"total_us\\"' in gpt2_source_text
     assert '\\"avg_us\\"' in gpt2_source_text
@@ -7121,6 +7129,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "trainer_linear_tk_gemm_count" in kernels_text
     assert "trainer_linear_tk_float_out_gemm_count" in kernels_text
     assert "trainer_linear_tk_dweight_gemm_count" in kernels_text
+    assert "trainer_linear_tk_dgelu_dinput_gemm_count" in kernels_text
+    assert "g_linear_tk_dgelu_dinput_gemm_count.fetch_add" in kernels_text
     assert "trainer_linear_cublaslt_bgrad_gemm_count" in kernels_text
     assert "trainer_linear_cublaslt_bgrad_direct_write_count" in kernels_text
     assert "trainer_linear_cublaslt_bgrad_accumulate_count" in kernels_text
@@ -8586,6 +8596,7 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
         assert "nfn_native_tile_trainer_linear_tk_gemm_count" in exported
         assert "nfn_native_tile_trainer_linear_tk_float_out_gemm_count" in exported
         assert "nfn_native_tile_trainer_linear_tk_dweight_gemm_count" in exported
+        assert "nfn_native_tile_trainer_linear_tk_dgelu_dinput_gemm_count" in exported
         assert "nfn_native_tile_trainer_linear_cublaslt_gemm_count" in exported
         assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_gemm_count" in exported
         assert "nfn_native_tile_trainer_linear_cublaslt_bgrad_direct_write_count" in exported

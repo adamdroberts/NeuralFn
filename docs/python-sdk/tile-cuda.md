@@ -979,6 +979,13 @@ the llm.kittens `matmul_backward` order, and runtime JSON reports
 default because the dedicated RTX 5090 5-step, 3-sample paired benchmark
 measured `1.000405x` train-loop wall time and `0.999602x` tokens/sec versus the
 current dWeight+bias-first order.
+Native dense-GPT JSON also reports `linear_tk_dgelu_dinput_gemm_count`, which
+tracks successful TK fused dInput+dGELU launches separately from the generic
+`linear_tk_gemm_count`. The SM120 candidate wrapper treats this as a route
+counter for compile-time Tile profiles such as `tk_dgelu_dinput` and
+`tk_dgelu_approx_tanh`; the CUDA 13.3 dedicated RTX 5090 5-step, 3-sample
+rerun kept `tk_dgelu_dinput` rejected because the counter did not move and
+`stage.lm_head_backward.total_ms` missed the strict gate at `1.000159x`.
 `NFN_NATIVE_GPT_MLP_FC_DINPUT_BEFORE_DWEIGHT=1` is the matching diagnostic
 ordering switch for MLP FC backward. It runs dInput before dWeight+bias and
 reports `block_backward_mlp_fc_dinput_before_dweight_enabled`, but remains

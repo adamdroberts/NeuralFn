@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a dedicated dense-GPT native diagnostic counter for TK fused
+  dInput+dGELU launches. Tile ops now exports
+  `nfn_native_tile_trainer_linear_tk_dgelu_dinput_gemm_count`, the compiled
+  native GPT trainer loads it and reports `linear_tk_dgelu_dinput_gemm_count`
+  in both plan and real-training JSON, and `tools/paired_kernel_speed.py`
+  treats the field as a native route counter. This makes compile-time Tile
+  candidates such as `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_dgelu_dinput`
+  observable instead of hiding them inside the aggregate
+  `linear_tk_gemm_count`.
+
+  Migration note: no default training behavior changes. The counter is
+  diagnostic and keeps the existing TK dGELU candidate profiles default-off.
+  The same change fixes the Tile ops cuBLAS prewarm export boundary exposed by
+  the forced rebuild, and `tools/build_native_gpt_cli_linked.sh` now rebuilds
+  `libnfn_native_train_tile_ops.so` when the CUDA kernels or native Tile ABI
+  files are newer than the shared object before relinking the trainer.
+
+  Verification: the dedicated RTX 5090 CUDA 13.3 5-step, 3-sample stage-timed
+  rerun of `tk_dgelu_dinput` stayed rejected. The route counter did not move,
+  `native_route_counter_changes` failed as intended, and the strict
+  `stage.lm_head_backward.total_ms` gate measured `1.000159x` even though
+  train-loop wall time measured `0.997858x`. A forced Tile ops rebuild plus
+  linked-trainer rebuild succeeded, and a one-step GPU smoke reported
+  `linear_tk_dgelu_dinput_gemm_count=96` and
+  `linear_cublas_handle_prewarm_available=true`.
+
 - Promoted the dense-GPT native LM-head row chunk from 32768 to 49152 rows on
   the dedicated RTX 5090/CUDA 13.3 Tile-CUDA route. The compiled C++ trainer,
   Python SDK handoff defaults, and `train_gpt_native.py` now default

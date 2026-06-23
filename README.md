@@ -472,12 +472,13 @@ candidate library with `-DLLMK_SM120_FORWARD_N96=0` to reroute eligible
 llm.kittens forward GEMM shapes away from the N96 path. Stage-timed dGELU
 candidates also gate
 `stage.block_backward.mlp_proj.dinput.total_ms=1.000`. These are still
-candidate-only routes: NeuralFn's CUDA 13.3 same-script `tk_dgelu_dinput`
-profile passed the 3-step, 3-sample gate, but the longer 10-step, 3-sample gate
-rejected promotion because `stage.block_backward.total_ms` measured `1.000689x`
-even while `stage.block_backward.mlp_proj.dinput.total_ms` stayed faster at
-`0.983891x`. The llm.kittens same-session notes show the same pattern of
-short-run wins but rejected stable defaults after longer gates.
+candidate-only routes. Runtime JSON reports
+`linear_tk_dgelu_dinput_gemm_count`, and the paired benchmark treats it as a
+route counter so build-flag candidates cannot be accepted on timing noise when
+the fused dGELU route does not actually launch. The current CUDA 13.3 dedicated
+RTX 5090 5-step, 3-sample rerun kept `tk_dgelu_dinput` rejected: no tracked
+strategy changed, the dGELU counter did not move, and the strict LM-head stage
+gate measured `1.000159x` even though train-loop wall time was `0.997858x`.
 The llm.kittens parity wrapper accepts the same stage-timing aliases as the
 native candidate wrapper: set `NFN_SM120_NATIVE_STAGE_TIMING=1`,
 `NFN_SM120_NATIVE_PARITY_STAGE_TIMING=1`, `NFN_SM120_PARITY_STAGE_TIMING=1`, or
@@ -568,7 +569,8 @@ kernel-candidate results show whether a route actually changed. It also emits
 `native_strategy_value_changes`, comparing those categorical strategy fields
 between baseline and candidate, and `native_route_counter_changes`, comparing
 tracked route counters such as TK, cuBLASLt, BF16 GEMM, LM-head logits, BF16
-packing/cache, and attention launch counts between baseline and candidate. If
+packing/cache, fused TK dGELU dInput launches, and attention launch counts
+between baseline and candidate. If
 candidate-specific environment knobs
 are set but those counters do not change, the text report warns that timing-only
 improvements should be treated as noise until a route counter change, strategy
@@ -1922,6 +1924,12 @@ regression checks against the older row-loss tail.
 For native GEMM profiling, set `NFN_NATIVE_LINEAR_SHAPE_STATS=1`, `NFN_TILE_CUDA_LINEAR_SHAPE_STATS=1`, `NFN_NATIVE_GPT_LINEAR_SHAPE_STATS=1`, or `NFN_NATIVE_GPT2_LINEAR_SHAPE_STATS=1` before running `nfn_gpt_native_train`. The Tile ops ABI records successful linear dispatch buckets and the GPT runtime JSON reports `linear_shape_stats` entries with `path_name`, `m`, `n`, `k`, transpose flags, call counts, `total_us`, and `avg_us` for TK BF16, TK float-output conversion, fused TK GELU/dGELU, cuBLASLt, cuBLAS GEMMEx BF16, and SGEMM paths. When the rebuilt v2 stats ABI is available, cuBLASLt rows also include `cublaslt_selected_heuristic`, `cublaslt_returned_heuristics`, and `cublaslt_workspace_bytes`, which prevents no-op heuristic overrides from being mistaken for real route changes. Timing uses CUDA events and synchronizes measured GEMMs, with a host-synchronized fallback for fused TK GELU rows whose helper dispatch is not captured by the stream event path, so leave this disabled for normal training; it is intended for paired kernel-candidate profiling on the dedicated compute GPU. For normal runs, use `linear_cublaslt_plan_cache` instead: it reports cached cuBLASLt shape, heuristic, workspace, and epilogue metadata without enabling synchronized GEMM timing. The dense GPT runtime also reports LM-head-specific logits and dHidden route counters: `lm_head_logits_tk_gemm_count`, `lm_head_logits_cublaslt_gemm_count`, `lm_head_logits_bf16_gemm_count`, `lm_head_dhidden_tk_gemm_count`, `lm_head_dhidden_cublaslt_gemm_count`, and `lm_head_dhidden_bf16_gemm_count`; `lm_head_dhidden_linear_strategy` uses those counters even when `linear_shape_stats` is off. `tools/paired_kernel_speed.py` also prints and ratios native backend counters such as `linear_tk_gemm_count`, `linear_cublaslt_gemm_count`, `linear_cublaslt_bgrad_gemm_count`, `linear_cublaslt_bgrad_direct_write_count`, `linear_cublaslt_bgrad_accumulate_count`, `linear_bf16_gemm_count`, `linear_bf16_gemm_fast16bf_request_count`, the LM-head logits/dHidden counters, and attention TK launch counts, so an active backend, BGRADB epilogue, or compute-type candidate is visible even when the higher-level strategy label is unchanged.
 
 Run SM120 parity and candidate benchmarks only from a shell with real WSL GPU driver access. If `nvidia-smi` reports "GPU access blocked by the operating system" or the native JSON reports `cudaDriverGetVersion` as `0`, the result is an execution-environment failure rather than a kernel result; rerun the same command with GPU-visible execution before accepting or rejecting a candidate. `tools/paired_kernel_speed.py` now also takes a per-selected-GPU lock at `/tmp/nfn_paired_kernel_speed_gpu_<device>.lock` for measured runs, so two same-GPU paired benchmarks cannot overlap and contaminate each other before `nvidia-smi` observes a compute process. The default lock fails fast; pass `--gpu-benchmark-lock-timeout-seconds N` to wait, or `--no-gpu-benchmark-lock` only for intentionally unmanaged measurements. The utilization guard still rejects active compute load immediately, but it now retries transient high `nvidia-smi` utilization samples on an otherwise idle selected GPU; tune this with `--selected-gpu-utilization-retries` and `--selected-gpu-utilization-retry-interval-seconds` when a WSL/NVML idle poll spikes without compute processes.
+
+`tools/build_native_gpt_cli_linked.sh` relinks the native GPT trainer against
+`build/libnfn_native_train_tile_ops.so`. It now rebuilds that Tile ops library
+automatically when `kernels.cu`, `tile_ops.cu`, or `tile_ops.h` is newer than
+the shared object, so new Tile ABI counters and kernel symbols are not hidden
+behind a stale linked trainer.
 
 `tools/bench_native_gpt_sm120_candidate.sh` accepts the native-specific `NFN_SM120_NATIVE_*` controls, the shorter `NFN_SM120_CANDIDATE_*` controls, and the shared parity-wrapper `NFN_SM120_PARITY_*` controls for common benchmark shape fields such as steps, samples, warmup, profile directory, stage timing, GPU selection, JSON output, and dry-run plan. Native-specific names win over candidate names, which win over parity names. Candidate-only env and candidate-only extra args stay separate, so `NFN_SM120_NATIVE_CANDIDATE_ENV` / `NFN_SM120_CANDIDATE_ENV` and `NFN_SM120_NATIVE_CANDIDATE_EXTRA_ARGS` / `NFN_SM120_CANDIDATE_EXTRA_ARGS` still affect only the candidate command. This keeps quick parity-to-native bisections from silently falling back to the candidate wrapper defaults of 10 steps, 3 samples, and 1 warmup.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linked_startup` (alias:
