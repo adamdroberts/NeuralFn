@@ -47,6 +47,19 @@ Future updates should append new entries here rather than replacing older notes.
   `1.000283x`, LM-head backward `1.000252x`, block backward `1.001255x`, and
   MLP projection backward `1.000923x`.
 
+- Refreshed the native dense GPT SM120 parity baseline after the prewarm audits.
+
+  Verification: reran
+  `NFN_SM120_PARITY_STEPS=3 NFN_SM120_PARITY_SAMPLES=2
+  NFN_SM120_PARITY_WARMUP=1 NFN_SM120_PARITY_STAGE_TIMING=1
+  bash tools/bench_native_gpt_sm120_parity.sh` on the dedicated RTX 5090 with
+  zero compute processes before/after the samples. llm.kittens measured
+  `2471.550 ms/step`; NeuralFn measured `2546.256667 ms/step`, or
+  `1.030315x` train-loop wall time, `1.012454x` steady-state CUDA-event time,
+  and `0.970295x` tokens/sec. The remaining largest NeuralFn buckets were
+  block backward (`3820.990 ms`), model/block forward (`1981.310 ms` /
+  `1970.060 ms`), and LM-head backward (`1756.410 ms`).
+
 - Breaking changes: corrected the strict LM-head cooperative fused-kernel
   capability contract. The exported Tile ops symbol
   `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` still
