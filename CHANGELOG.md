@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Rechecked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linked_startup` after the CUDA
+  13.3 WSL reinstall on the dedicated RTX 5090. The same-script startup-only
+  comparison still favors `build/nfn_gpt_native_train_linked` over the dynamic
+  Tile-ops loader path: 5 measured samples, 1 warmup, idle display-disabled
+  GPU, zero compute processes before every sample, and `setup_wall_ms` passed
+  at `0.866699x`. As expected for this linkage-only profile, hot native route
+  counters and strategy values did not change.
+
+  Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linked_startup
+  NFN_SM120_NATIVE_SAMPLES=5 NFN_SM120_NATIVE_WARMUP=1 bash
+  tools/bench_native_gpt_sm120_candidate.sh`.
+
 - Marked `lm_head_prepack_bf16_hidden_off` as a rejected SM120 candidate
   profile. The route changed LM-head dWeight staging from the default
   full-final-norm BF16 prepack to the older per-chunk BF16 packing path, but
