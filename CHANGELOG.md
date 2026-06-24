@@ -215,12 +215,17 @@ Future updates should append new entries here rather than replacing older notes.
   still reports grouped layout support
   (`linear_cublaslt_grouped_layout_probe_status: 0`), but grouped matmul
   execution remains unsupported
-  (`linear_cublaslt_grouped_matmul_probe_status: 15`). No block-backward
-  grouped-GEMM route was enabled; grouped execution remains blocked until the
-  execution probe returns success.
+  (`linear_cublaslt_grouped_matmul_probe_status: 15`). The 3-step, 2-sample
+  stage-timed rerun completed with zero compute processes before each sample,
+  left normal hot route counters unchanged, and only changed the grouped-probe
+  telemetry. No block-backward grouped-GEMM route was enabled; grouped
+  execution remains blocked until the execution probe returns success.
 
   Verification: ran
-  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe NFN_SM120_NATIVE_STEPS=1 NFN_SM120_NATIVE_SAMPLES=1 NFN_SM120_NATIVE_WARMUP=0 bash tools/bench_native_gpt_sm120_candidate.sh`.
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1 bash
+  tools/bench_native_gpt_sm120_candidate.sh`.
 
 - Aligned the SM120 native GPT benchmark wrapper with existing rejected-profile
   verdicts for `lm_head_prepack_bf16_hidden_on`,
