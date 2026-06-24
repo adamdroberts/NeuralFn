@@ -684,6 +684,17 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     captured once, replayed three times, fell back zero times, and stayed flat
     at `1.000358x`, so CUDA Graph replay is measurable but still not a default
     LM-head speed win at the real chunk shape.
+    A full-loop
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` rerun with
+    the new counters proved the strict graph route executed
+    (`lm_head_fused_graph_capture_success_count=3`,
+    `lm_head_fused_graph_cache_hit_count=45`,
+    `lm_head_fused_graph_replay_success_count=48`, and no sequence-wrapper
+    launches), but rejected it even more clearly at `1.100254x` train-loop wall,
+    `1.069816x` steady-state CUDA-event timing, and
+    `1.295083x stage.lm_head_backward.total_ms`. Keep the graph body as ABI and
+    benchmark groundwork only; the default still needs a lower-overhead LM-head
+    implementation.
   - 2026-06-24 rechecked the standalone LM-head cooperative backward candidate
     after the CUDA 13.3 reinstall. `tools/bench_lm_head_backward_candidate.sh`
     at trainer-chunk shape reported `candidate_true_fused_capability=false` and
