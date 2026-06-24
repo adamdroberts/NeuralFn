@@ -217,6 +217,10 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       The wrapper defaults
       `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=auto` so focused runs use the
       dedicated display-disabled NVIDIA GPU when `nvidia-smi` can select one.
+      The JSON also reports `candidate_sequence_wrapper_only` and
+      `candidate_strict_symbol_is_placeholder_sequence`, and the true-fused
+      requirement gate now fails with a specific CE/dHidden/dWeight sequencing
+      reason when the strict symbol is still only the placeholder wrapper.
       The old row-loss profile reruns against the current wrapper-only strict
       symbol measured `trainer-row-loss` at the previously recorded
       `1.008311x` and `trainer-loss-bins` at `1.010302x`, and

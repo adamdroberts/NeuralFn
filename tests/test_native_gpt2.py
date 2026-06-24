@@ -1515,6 +1515,11 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in bench_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in bench_source
     assert "candidate_true_fused_capability" in bench_source
+    assert "candidate_sequence_wrapper_only" in bench_source
+    assert "candidate_strict_symbol_is_placeholder_sequence" in bench_source
+    assert "ce_launch_count > 0" in bench_source
+    assert "dhidden_launch_count > 0" in bench_source
+    assert "dweight_launch_count > 0" in bench_source
     assert "candidate_to_baseline_ms_per_iter_ratio" in bench_source
     assert "--no-loss" in bench_source
     assert '"  \\"no_loss\\": "' in bench_source
@@ -1566,6 +1571,7 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "CANDIDATE_FIRST_ARG=(--candidate-first)" in wrapper
     assert "BENCH_ARGS=(" in wrapper
     assert "printf '%q' \"${BENCH_BIN}\"" in wrapper
+    assert "candidate strict symbol is still sequencing CE/dHidden/dWeight" in wrapper
     assert "candidate_true_fused_capability is false" in wrapper
     assert "candidate_to_baseline_ms_per_iter_ratio" in wrapper
     assert "candidate_first" in bench_source

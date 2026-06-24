@@ -190,6 +190,8 @@ case "${REQUIRE_TRUE_FUSED,,}" in
     python -c 'import json, pathlib, sys
 data = json.loads(pathlib.Path(sys.argv[1]).read_text())
 if not data.get("candidate_true_fused_capability", False):
+    if data.get("candidate_sequence_wrapper_only", False):
+        raise SystemExit("candidate strict symbol is still sequencing CE/dHidden/dWeight; candidate_true_fused_capability is false")
     raise SystemExit("candidate_true_fused_capability is false")
 ' "${JSON_OUT}"
     ;;

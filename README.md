@@ -124,7 +124,12 @@ candidates should first run
 symbol against `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
 inside one CUDA process with event timing, route counters, decomposed
 `reference_components` timings for logits, CE, dHidden, and dWeight, and a
-`candidate_true_fused_capability` JSON field. Use
+`candidate_true_fused_capability` JSON field. The same JSON also reports
+`candidate_sequence_wrapper_only` and
+`candidate_strict_symbol_is_placeholder_sequence`, so
+`NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` distinguishes a real fused
+classifier-backward kernel from the current strict-symbol placeholder that
+still sequences CE, dHidden, and dWeight launches. Use
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` to exercise the default
 49152-row optimizer no-loss trainer chunk scale,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` to reproduce the older row-loss

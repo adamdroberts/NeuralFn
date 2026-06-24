@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tightened the focused LM-head backward microbenchmark contract for future
+  fused classifier-backward kernels. The JSON now reports
+  `candidate_sequence_wrapper_only` and
+  `candidate_strict_symbol_is_placeholder_sequence` when the strict candidate
+  symbol still expands to the existing CE/dHidden/dWeight launch sequence, and
+  `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` now fails with that specific
+  reason instead of only saying the capability flag is false.
+
+  Verification: ran the focused source-contract pytest for the LM-head
+  benchmark/wrapper, rebuilt `build/lm_head_backward_bench`, ran the native
+  no-Torch verifier, and confirmed
+  `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1 NFN_LM_HEAD_BACKWARD_PROFILE=smoke`
+  fails with the new placeholder-sequence reason.
+
 - Rechecked the non-poisoning `cublaslt_grouped_probe` native GPT capability
   profile after the current CUDA 13.3 rebuilds. The dedicated RTX 5090 run
   still reports grouped layout support
