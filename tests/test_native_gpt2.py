@@ -6678,6 +6678,63 @@ def test_native_gpt2_build_all_script_supports_temp_outputs(tmp_path: Path) -> N
     assert (Path(env["NFN_NATIVE_MISSING_TRAINERS_OUT_DIR"]) / "nfn_llama_native_train").exists()
 
 
+def test_native_gpt_cuda_tile_startup_smoke_without_torch(tmp_path: Path) -> None:
+    if os.environ.get("NFN_NATIVE_TILE_CUDA_TEST") != "1":
+        pytest.skip("set NFN_NATIVE_TILE_CUDA_TEST=1 to run native CUDA Tile smoke coverage")
+    root = Path(__file__).resolve().parents[1]
+    cli = root / "build" / "nfn_gpt_native_train"
+    tile_ops = root / "build" / "libnfn_native_train_tile_ops.so"
+    if not cli.exists():
+        pytest.skip("build/nfn_gpt_native_train is not built")
+    if not tile_ops.exists():
+        pytest.skip("build/libnfn_native_train_tile_ops.so is not built")
+
+    dataset_path = _write_uint16_shard_dataset(tmp_path)
+    proc = subprocess.run(
+        [
+            str(cli),
+            "--dataset-alias",
+            str(dataset_path),
+            "--train-transformer-lm",
+            "--startup-only",
+            "--no-checkpoint",
+            "--tile-ops-lib",
+            str(tile_ops),
+            "--batch-size",
+            "1",
+            "--train-seq-len",
+            "2",
+            "--max-steps",
+            "0",
+            "--eval-every-steps",
+            "0",
+            "--eval-batches",
+            "0",
+        ],
+        cwd=root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    assert payload["passed"] is True
+    assert payload["status"] == "native-transformer-lm-startup-ready"
+    assert payload["backend"] == "tile-cuda"
+    assert payload["loaded"] is True
+    assert payload["cuda_runtime_loaded"] is True
+    assert payload["startup_only"] is True
+    assert payload["steps_completed"] == 0
+    assert payload["lm_head_classifier_strategy_contract"]["graph_editor_tensor_flow"] is False
+    assert payload["lm_head_classifier_strategy_contract"]["torch_required"] is False
+    assert payload["layer_evo"]["graph_editor_tensor_flow"] is False
+    assert payload["native_geometry_contract"]["selector_native_runnable"] is True
+    assert payload["tile_ops_library"] == str(tile_ops)
+    assert "nfn_native_tile_scaled_dot_product_attention_packed_qkv_bf16_float32" in payload["kernels"]
+
+
 def test_large_row_reduction_fallbacks_use_tiled_dweight_and_shared_bias_chunks() -> None:
     root = Path(__file__).resolve().parents[1]
     kernels_text = (root / "neuralfn" / "csrc" / "tile_cuda" / "kernels.cu").read_text()

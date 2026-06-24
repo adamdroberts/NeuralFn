@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added an opt-in no-Torch native CUDA Tile startup smoke test for the compiled
+  dense GPT trainer. `NFN_NATIVE_TILE_CUDA_TEST=1 python -m pytest
+  tests/test_native_gpt2.py -q -k
+  native_gpt_cuda_tile_startup_smoke_without_torch` now creates a tiny uint16
+  shard dataset and executes `build/nfn_gpt_native_train
+  --train-transformer-lm --startup-only --no-checkpoint` against
+  `build/libnfn_native_train_tile_ops.so`. The assertions cover CUDA runtime
+  and Tile ops loading, native startup-only status, zero optimizer steps, no
+  graph-editor tensor flow, and no Torch requirement in the runtime contracts.
+  This gives CUDA/driver reinstall verification a native C++ trainer check
+  instead of relying only on the older Torch extension smoke.
+
+  Verification: default sandboxed run skips unless `NFN_NATIVE_TILE_CUDA_TEST=1`
+  is set; unsandboxed RTX 5090 run passed the new smoke. Also verified
+  `nvidia-smi -L` sees the dedicated RTX 5090, `NFN_TILE_CUDA_TEST=1 python -m
+  pytest tests/test_tile_cuda_gpu.py -q` passes the existing Torch-extension
+  smoke, and the focused native CUDA/tile slice passed `12 passed, 1 skipped,
+  68 deselected`.
+
 - Revisited the CUDA 13.3 native trainer verification set after the WSL toolkit
   reinstall. The broad dense GPT native suite now completes cleanly on the
   current tree, and the no-Torch verifier still proves that GPT/GPT-2-evo,
