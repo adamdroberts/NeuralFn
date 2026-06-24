@@ -645,8 +645,12 @@ For compile-time Tile ops candidates, set
 candidate `libnfn_native_train_tile_ops.so` with those extra nvcc flags and
 compares it against the baseline library without overwriting `build/`. The
 dry-run plan path does not build that temporary shared object; it resolves the
-generated candidate path and env split only, so build-flag profiles can be
-inspected without launching nvcc or CUDA work. The
+generated candidate path, env split, and paired-run `metadata` fields only, so
+build-flag profiles can be inspected without launching nvcc or CUDA work.
+Measured and dry-run JSON now include wrapper metadata such as
+`candidate_profile`, `candidate_tile_ops_build_flags`, and
+`candidate_route_change_gate`, making saved benchmark artifacts self-contained.
+The
 named profiles `tk_dgelu_dinput` and `tk_dgelu_approx_tanh` are now
 rejected/no-op historical diagnostics. The current linked SM120 baseline
 already uses the fused TK MLP projection dInput+dGELU route and reports

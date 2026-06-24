@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added generic `--metadata KEY=VALUE` support to `tools/paired_kernel_speed.py`
+  and wired the SM120 native candidate wrapper to record
+  `candidate_profile`, `candidate_tile_ops_build_flags`, and
+  `candidate_route_change_gate` in dry-run and measured JSON/text output. Saved
+  candidate artifacts now carry the exact temporary Tile ops build flags used
+  for compile-time kernel candidates instead of requiring reviewers to recover
+  them from shell history or wrapper source.
+
+  Verification: added paired-tool dry-run coverage and SM120 wrapper dry-run
+  assertions for metadata, then reran the focused candidate-wrapper tests.
+
 - Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=llmk_sm120_reference_flags` to the
   native SM120 candidate wrapper. The profile builds a temporary Tile ops
   library with the documented llm.kittens SM120 reference macro bundle

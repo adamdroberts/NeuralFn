@@ -976,6 +976,15 @@ case "${STAGE_TIMING,,}" in
 esac
 
 paired_args=()
+if [[ -n "$CANDIDATE_PROFILE" ]]; then
+  paired_args+=(--metadata "candidate_profile=$CANDIDATE_PROFILE")
+fi
+if [[ -n "$CANDIDATE_TILE_OPS_BUILD_FLAGS" ]]; then
+  paired_args+=(--metadata "candidate_tile_ops_build_flags=$CANDIDATE_TILE_OPS_BUILD_FLAGS")
+fi
+if [[ "$FORCE_DISABLE_ROUTE_CHANGE" == "1" ]]; then
+  paired_args+=(--metadata "candidate_route_change_gate=disabled")
+fi
 common_env_items=()
 baseline_env_items=()
 candidate_env_items=()

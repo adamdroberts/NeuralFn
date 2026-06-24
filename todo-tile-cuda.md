@@ -627,6 +627,12 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `stage.block_backward.mlp_proj.dinput.total_ms` missed at `1.000032x`. Use
     the profile to prove generated-code movement before changing NeuralFn's
     default build flags.
+  - 2026-06-24 added paired benchmark metadata for compile-time candidate
+    provenance. `tools/paired_kernel_speed.py --metadata KEY=VALUE` now writes
+    wrapper-level details into dry-run and measured JSON/text output, and the
+    SM120 native candidate wrapper records `candidate_profile`,
+    `candidate_tile_ops_build_flags`, and `candidate_route_change_gate` so
+    saved benchmark artifacts identify the exact temporary Tile ops build.
   - 2026-06-24 rechecked the standalone LM-head cooperative backward candidate
     after the CUDA 13.3 reinstall. `tools/bench_lm_head_backward_candidate.sh`
     at trainer-chunk shape reported `candidate_true_fused_capability=false` and

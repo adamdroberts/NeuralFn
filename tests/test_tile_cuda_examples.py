@@ -322,6 +322,8 @@ def test_paired_kernel_speed_tool_dry_run_plan_does_not_launch_commands() -> Non
             "--cuda-visible-devices",
             "0",
             "--require-idle-selected-gpu",
+            "--metadata",
+            "candidate_profile=unit_dry_run",
             "--dry-run-plan",
             "--json-out",
             str(output_path),
@@ -334,8 +336,10 @@ def test_paired_kernel_speed_tool_dry_run_plan_does_not_launch_commands() -> Non
 
     assert proc.returncode == 0, proc.stderr
     assert "dry_run_plan: true" in proc.stdout
+    assert 'metadata: {"candidate_profile": "unit_dry_run"}' in proc.stdout
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["dry_run_plan"] is True
+    assert payload["metadata"] == {"candidate_profile": "unit_dry_run"}
     assert payload["baseline_command"] == ["definitely_missing_baseline_command", "--old"]
     assert payload["candidate_command"] == ["definitely_missing_candidate_command", "--new"]
     assert payload["sample_order_plan"] == [
@@ -1377,6 +1381,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     tk_dgelu_payload = json.loads(tk_dgelu_output_path.read_text(encoding="utf-8"))
     assert tk_dgelu_payload["baseline_env"]["NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU"] == "0"
     assert tk_dgelu_payload["candidate_env"]["NFN_NATIVE_GPT_FUSE_MLP_PROJ_DGELU"] == "1"
+    assert tk_dgelu_payload["metadata"]["candidate_profile"] == "tk_dgelu_dinput"
+    assert "-DLLMK_SM120_USE_TK_FUSED_DGELU_DINP" in tk_dgelu_payload["metadata"][
+        "candidate_tile_ops_build_flags"
+    ]
     assert any(
         str(part).startswith("/tmp/nfn_sm120_candidate_tile_ops_tk_dgelu_dinput_")
         for part in tk_dgelu_payload["candidate_command"]

@@ -975,6 +975,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--json", action="store_true", help="Print JSON instead of a text summary.")
     parser.add_argument("--json-out", default="", help="Write the JSON payload to this file.")
     parser.add_argument(
+        "--metadata",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help=(
+            "Attach arbitrary run metadata to the text and JSON output. Repeat for multiple "
+            "fields; useful for wrapper-level candidate profile or build-flag details."
+        ),
+    )
+    parser.add_argument(
         "--append-native-profile-json-dir",
         default="",
         help=(
@@ -2679,6 +2689,7 @@ def resolve_cuda_visible_devices(
 def build_payload(args: argparse.Namespace) -> dict[str, object]:
     baseline_env = parse_env_overrides(args.baseline_env, option_name="--baseline-env")
     candidate_env = parse_env_overrides(args.candidate_env, option_name="--candidate-env")
+    metadata = parse_env_overrides(args.metadata, option_name="--metadata")
     metric_ratio_limits = [
         *parse_metric_ratio_limits(
             args.max_candidate_ratio,
@@ -2757,6 +2768,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             "gpu_benchmark_lock_timeout_seconds": gpu_lock_timeout_seconds,
             "gpu_benchmark_lock_acquired": False,
             "command_timeout_seconds": timeout_seconds,
+            "metadata": metadata,
             "gpu_before": gpu_before,
             "baseline_command": baseline.argv,
             "candidate_command": candidate.argv,
@@ -2950,6 +2962,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "gpu_benchmark_lock_timeout_seconds": gpu_lock_timeout_seconds,
         "gpu_benchmark_lock_acquired": gpu_lock_acquired,
         "command_timeout_seconds": timeout_seconds,
+        "metadata": metadata,
         "gpu_before": gpu_before,
         "gpu_after": gpu_after,
         "gpu_sample_summary": gpu_sample_summary,
@@ -3011,6 +3024,9 @@ def print_text(payload: dict[str, object]) -> None:
             "  candidate: "
             f"{shlex.join([str(item) for item in payload.get('candidate_command', [])])}"
         )
+        metadata = payload.get("metadata")
+        if isinstance(metadata, dict) and metadata:
+            print(f"  metadata: {json.dumps(metadata, sort_keys=True)}")
         order_plan = payload.get("sample_order_plan")
         if isinstance(order_plan, list):
             rendered = [
@@ -3044,6 +3060,9 @@ def print_text(payload: dict[str, object]) -> None:
             f"path={payload.get('gpu_benchmark_lock_path', '')} "
             f"timeout={payload.get('gpu_benchmark_lock_timeout_seconds', 0.0)}"
         )
+    metadata = payload.get("metadata")
+    if isinstance(metadata, dict) and metadata:
+        print(f"  metadata: {json.dumps(metadata, sort_keys=True)}")
     baseline_env = payload.get("baseline_env")
     candidate_env = payload.get("candidate_env")
     if isinstance(baseline_env, dict) and baseline_env:
