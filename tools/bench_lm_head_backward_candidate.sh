@@ -10,9 +10,11 @@ VOCAB="${NFN_LM_HEAD_BACKWARD_VOCAB:-50257}"
 ROW_STRIDE="${NFN_LM_HEAD_BACKWARD_ROW_STRIDE:-50304}"
 CUDA_VISIBLE_DEVICES_VALUE="${NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES:-${CUDA_VISIBLE_DEVICES:-dedicated}}"
 CUDA_DEVICE_RAW="${NFN_LM_HEAD_BACKWARD_CUDA_DEVICE:-auto}"
-BASELINE_SYMBOL="${NFN_LM_HEAD_BACKWARD_BASELINE_SYMBOL:-nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16}"
-CANDIDATE_SYMBOL="${NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL:-nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16}"
+BASELINE_SYMBOL_OVERRIDE="${NFN_LM_HEAD_BACKWARD_BASELINE_SYMBOL:-}"
+CANDIDATE_SYMBOL_OVERRIDE="${NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL:-}"
 PROFILE="${NFN_LM_HEAD_BACKWARD_PROFILE:-smoke}"
+DEFAULT_BASELINE_SYMBOL="nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16"
+DEFAULT_CANDIDATE_SYMBOL="nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16"
 
 case "${PROFILE}" in
   smoke)
@@ -38,6 +40,24 @@ case "${PROFILE}" in
     DEFAULT_NO_LOSS=1
     DEFAULT_REQUIRE_TRUE_FUSED=1
     ;;
+  trainer-chunk-cublaslt|trainer_chunk_cublaslt|trainer-cublaslt|trainer_cublaslt)
+    DEFAULT_ROWS=32768
+    DEFAULT_ITERATIONS=3
+    DEFAULT_WARMUP=1
+    DEFAULT_LOSS_BINS=0
+    DEFAULT_NO_LOSS=1
+    DEFAULT_REQUIRE_TRUE_FUSED=0
+    DEFAULT_CANDIDATE_SYMBOL="nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16"
+    ;;
+  trainer-row-loss-cublaslt|trainer_row_loss_cublaslt)
+    DEFAULT_ROWS=32768
+    DEFAULT_ITERATIONS=3
+    DEFAULT_WARMUP=1
+    DEFAULT_LOSS_BINS=0
+    DEFAULT_NO_LOSS=0
+    DEFAULT_REQUIRE_TRUE_FUSED=0
+    DEFAULT_CANDIDATE_SYMBOL="nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16"
+    ;;
   trainer-row-loss|trainer_row_loss)
     DEFAULT_ROWS=32768
     DEFAULT_ITERATIONS=3
@@ -55,10 +75,13 @@ case "${PROFILE}" in
     DEFAULT_REQUIRE_TRUE_FUSED=0
     ;;
   *)
-    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, trainer-chunk-strict, trainer-row-loss, or trainer-loss-bins)" >&2
+    echo "Unknown NFN_LM_HEAD_BACKWARD_PROFILE='${PROFILE}' (expected smoke, trainer-chunk, trainer-chunk-strict, trainer-chunk-cublaslt, trainer-row-loss, trainer-row-loss-cublaslt, or trainer-loss-bins)" >&2
     exit 2
     ;;
 esac
+
+BASELINE_SYMBOL="${BASELINE_SYMBOL_OVERRIDE:-${DEFAULT_BASELINE_SYMBOL}}"
+CANDIDATE_SYMBOL="${CANDIDATE_SYMBOL_OVERRIDE:-${DEFAULT_CANDIDATE_SYMBOL}}"
 
 ROWS="${NFN_LM_HEAD_BACKWARD_ROWS:-${DEFAULT_ROWS}}"
 ITERATIONS="${NFN_LM_HEAD_BACKWARD_ITERATIONS:-${DEFAULT_ITERATIONS}}"

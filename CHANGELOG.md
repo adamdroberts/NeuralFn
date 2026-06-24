@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- `tools/bench_lm_head_backward_candidate.sh` now has named
+  `trainer-chunk-cublaslt` and `trainer-row-loss-cublaslt` profiles. These
+  profiles compare the current cooperative LM-head sequence baseline against
+  `nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16`
+  without requiring ad hoc symbol environment overrides, while still allowing
+  `NFN_LM_HEAD_BACKWARD_BASELINE_SYMBOL` and
+  `NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL` to override the resolved symbols.
+
+  Migration note: no training default changed. The new profiles are focused
+  CUDA microbench gates for LM-head kernel work before a candidate is promoted
+  into the full native GPT trainer.
+
+  Verification: ran `bash -n tools/bench_lm_head_backward_candidate.sh`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "lm_head_backward_microbench"`; ran
+  `NFN_LM_HEAD_BACKWARD_DRY_RUN=1
+  NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-cublaslt bash
+  tools/bench_lm_head_backward_candidate.sh`; ran
+  `NFN_LM_HEAD_BACKWARD_DRY_RUN=1
+  NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss-cublaslt bash
+  tools/bench_lm_head_backward_candidate.sh`; ran the CUDA 13.3 dedicated RTX
+  5090 `trainer-chunk-cublaslt` microbench in baseline-first order and measured
+  the cuBLASLt candidate at `1.470042x` the current cooperative baseline; reran
+  candidate-first and measured `1.463026x`; ran `git diff --check`.
+
 - The SM120 native-vs-native candidate wrapper now has an explicit
   `lm_head_row_chunk_8192` rejected profile. The profile compares the old
   lower-memory 8192-row tied LM-head route against the current 32768-row

@@ -1811,9 +1811,14 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "NFN_LM_HEAD_BACKWARD_PROFILE" in wrapper
     assert "trainer-chunk|trainer_chunk" in wrapper
     assert "trainer-chunk-strict|trainer_chunk_strict" in wrapper
+    assert "trainer-chunk-cublaslt|trainer_chunk_cublaslt" in wrapper
     assert "DEFAULT_REQUIRE_TRUE_FUSED=1" in wrapper
     assert "trainer-row-loss|trainer_row_loss" in wrapper
+    assert "trainer-row-loss-cublaslt|trainer_row_loss_cublaslt" in wrapper
     assert "trainer-loss-bins|trainer_loss_bins" in wrapper
+    assert "DEFAULT_CANDIDATE_SYMBOL" in wrapper
+    assert "BASELINE_SYMBOL_OVERRIDE" in wrapper
+    assert "CANDIDATE_SYMBOL_OVERRIDE" in wrapper
     assert "DEFAULT_NO_LOSS=1" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_NO_LOSS" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_MAX_RATIO" in wrapper

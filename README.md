@@ -200,23 +200,31 @@ inside one CUDA process with event timing, route counters, decomposed
 captured CE, dHidden, and dWeight work through a CUDA Graph. This makes
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` distinguish sequence wrappers,
 CUDA Graph wrappers, and a future real fused kernel. CUDA 13.3 retesting can
-also compare the explicit cuBLASLt LM-head candidate by setting
+also compare the explicit cuBLASLt LM-head candidate with
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-cublaslt` or
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss-cublaslt`, or by setting
 `NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL=nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16`;
 that symbol runs the same CE/dlogits stage and then forces the strided
 cuBLASLt dHidden and dWeight ABI calls, while the JSON keeps reporting the
 older generic component timings and the explicit `reference_cublaslt_components`
 timings in the same process. It is a candidate measurement route, not a strict
-true-fused kernel.
-CUDA Graph wrappers, and a future real fused kernel. The CUDA 13.3 dedicated RTX 5090
-`trainer-chunk` microbench measured the strict graph candidate at
+true-fused kernel. The CUDA 13.3 dedicated RTX 5090 no-loss trainer-chunk
+microbench rejected that cuBLASLt cooperative route: baseline-first measured
+`1.470042x` candidate/baseline time and candidate-first measured `1.463026x`.
+The CUDA 13.3 dedicated RTX 5090 `trainer-chunk` microbench measured the strict
+graph candidate at
 `35.783084 ms/iter` versus `35.776438 ms/iter` for the legacy cooperative
 symbol (`1.000186x`). Use
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` to exercise the default
 32768-row optimizer no-loss trainer chunk scale,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict` to run that same shape with
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` enabled by default,
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-cublaslt` to compare that same
+optimizer chunk against the cuBLASLt cooperative candidate,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` to reproduce the older row-loss
 chunk comparison, or
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss-cublaslt` to compare that
+row-loss shape against the cuBLASLt cooperative candidate, or
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` to exercise the matching
 1024-bin loss-reduction route, without involving the full training loop. Set
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` and

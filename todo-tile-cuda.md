@@ -372,6 +372,15 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       `candidate_strict_symbol_is_placeholder_sequence`, and the true-fused
       requirement gate now fails with a specific CE/dHidden/dWeight sequencing
       reason when the strict symbol is still only the placeholder wrapper.
+    - 2026-06-24 added named
+      `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-cublaslt` and
+      `trainer-row-loss-cublaslt` microbench profiles for the existing
+      `nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16`
+      candidate. The dedicated RTX 5090 no-loss trainer-chunk checks rejected
+      the cuBLASLt cooperative route: baseline-first measured `1.470042x`
+      candidate/baseline time and candidate-first measured `1.463026x`, so this
+      remains a diagnostic route rather than the fused/cooperative LM-head
+      solution.
       The old row-loss profile reruns against the current wrapper-only strict
       symbol measured `trainer-row-loss` at the previously recorded
       `1.008311x` and `trainer-loss-bins` at `1.010302x`, and
