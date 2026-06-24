@@ -6947,6 +6947,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     )
     assert evo_delegate_print_command.returncode == 0
     assert str(fake_gpt) in evo_delegate_print_command.stdout
+    assert evo_delegate_print_command.stdout.count(str(fake_gpt)) == 1
     assert "--train-transformer-lm" in evo_delegate_print_command.stdout
     assert "--layer-evo" in evo_delegate_print_command.stdout
     assert "--tile-cuda-activation-dtype nvfp4" in evo_delegate_print_command.stdout
