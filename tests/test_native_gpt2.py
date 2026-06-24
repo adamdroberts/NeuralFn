@@ -691,6 +691,28 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
     assert 'Path("build/linear_backward_bench")' in no_torch_verifier
 
 
+def test_native_gpt_transformer_lm_smoke_uses_linked_tile_ops_loader() -> None:
+    root = Path(__file__).resolve().parents[1]
+    source = (
+        root
+        / "neuralfn"
+        / "csrc"
+        / "native_gpt2"
+        / "nfn_gpt2_native_train.cpp"
+    ).read_text(encoding="utf-8")
+    body = source.split("int print_transformer_lm_step_smoke_json(", 1)[1].split(
+        "int print_norm_residual_step_smoke_json(", 1
+    )[0]
+
+    assert (
+        "open_tile_ops_library(tile_lib_path, RTLD_NOW | RTLD_LOCAL, &linked_tile_ops)"
+        in body
+    )
+    assert "if (tile_handle == nullptr && !linked_tile_ops)" in body
+    assert "if (tile_handle != nullptr && !linked_tile_ops)" in body
+    assert "dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL)" not in body
+
+
 def test_native_gpt_cli_supports_json_output_file_aliases() -> None:
     source = (
         Path(__file__).resolve().parents[1]

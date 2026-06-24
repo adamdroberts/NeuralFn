@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed linked Tile-ops resolution for dense GPT embedding LM and transformer
+  LM smoke/training paths. `--tile-ops-lib linked` now uses the linked-aware
+  `RTLD_DEFAULT` loader in `--smoke-embedding-lm-step`,
+  `--train-embedding-lm`, and `--smoke-transformer-lm-step` instead of trying
+  to `dlopen` a file literally named `linked`; the linked binary still skips
+  `dlclose` for that sentinel.
+
+  Verification: added a focused source regression test for the transformer LM
+  smoke loader, rebuilt the linked native GPT CLI, and reran the linked
+  transformer-LM smoke against cached TinyStories shards.
+
 - **Breaking changes: SM120 benchmark wrappers require a dedicated GPU by
   default** -- `tools/paired_kernel_speed.py`,
   `tools/bench_native_gpt_sm120_parity.sh`,
