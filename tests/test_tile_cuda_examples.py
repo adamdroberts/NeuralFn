@@ -1065,6 +1065,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "lm_head_prepack_bf16_hidden_on" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=1" in text
     assert "NFN_NATIVE_GPT_LM_HEAD_PREPACK_BF16_HIDDEN=0" in text
+    assert "full-final-norm BF16 prepack to per-chunk BF16 packing" in text
+    assert "stage.lm_head_backward.total_ms to 1.055161x" in text
     assert "cublas_handle_prewarm" in text
     assert "NFN_NATIVE_GPT_PREWARM_CUBLAS_HANDLE=1" in text
     assert "train_loop_wall_ms_per_step to 1.000699x" in text
@@ -1519,6 +1521,35 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     )
     assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
         rejected_linear_bias_256_run.stderr
+    )
+
+    rejected_lm_prepack_off_env = os.environ.copy()
+    rejected_lm_prepack_off_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_prepack_bf16_hidden_off",
+            "NFN_SM120_NATIVE_JSON_OUT": str(
+                tmp_path / "rejected-lm-head-prepack-bf16-hidden-off.json"
+            ),
+        }
+    )
+
+    rejected_lm_prepack_off_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=rejected_lm_prepack_off_env,
+    )
+
+    assert rejected_lm_prepack_off_run.returncode == 2
+    assert "lm_head_prepack_bf16_hidden_off is a rejected SM120 candidate" in (
+        rejected_lm_prepack_off_run.stderr
+    )
+    assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
+        rejected_lm_prepack_off_run.stderr
     )
 
     rejected_attention_profiles = (

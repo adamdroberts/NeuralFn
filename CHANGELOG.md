@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked `lm_head_prepack_bf16_hidden_off` as a rejected SM120 candidate
+  profile. The route changed LM-head dWeight staging from the default
+  full-final-norm BF16 prepack to the older per-chunk BF16 packing path, but
+  the CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed gate regressed
+  train-loop wall to `1.049342x`, steady-state CUDA-event step time to
+  `1.064113x`, `stage.lm_head_backward.total_ms` to `1.055161x`, dHidden to
+  `1.000521x`, and dWeight to `1.008148x`. The full-microbatch BF16 final-norm
+  hidden prepack remains the default.
+
+  Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prepack_bf16_hidden_off
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1 bash
+  tools/bench_native_gpt_sm120_candidate.sh` on the idle display-disabled RTX
+  5090 with zero compute processes before and after paired samples.
+
 - Marked `linear_bias_row_chunk_256` as a rejected/stale SM120 candidate
   profile. The Tile-CUDA default remains 256-row linear-bias reductions, but
   the wrapper profile now compares that current route against a legacy 512-row
