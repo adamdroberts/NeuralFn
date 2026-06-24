@@ -2293,9 +2293,9 @@ changes. This prevents no-loss training benchmarks from being misread as fused
 row-loss/loss-bin runs.
 `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` is the default for
 that no-loss path after the RTX 5090 gates passed. A 2026-06-24 CUDA 13.3
-same-script rerun on the dedicated compute GPU measured the specialized Tile
-kernel at `0.968164x` train-loop wall, `0.979934x` steady-state CUDA-event
-wall, `1.032888x` tokens/sec, `0.913491x` LM-head backward, and `0.553762x`
+same-script confirmation on the dedicated compute GPU measured the specialized
+Tile kernel at `0.974381x` train-loop wall, `0.979044x` steady-state CUDA-event
+wall, `1.026347x` tokens/sec, `0.912845x` LM-head backward, and `0.551704x`
 LM-head CE versus the older generic no-loss kernel. The named wrapper profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`
 forces the baseline to `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0`,

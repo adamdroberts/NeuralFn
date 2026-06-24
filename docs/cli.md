@@ -1615,9 +1615,9 @@ That default no-loss CE path is
 `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1`; use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized` to
 compare it against the older generic no-loss CE+dlogits kernel. The 2026-06-24
-CUDA 13.3 dedicated RTX 5090 same-script recheck passed at `0.968164x`
-train-loop wall, `0.979934x` steady-state CUDA-event wall, `1.032888x`
-tokens/sec, `0.913491x` LM-head backward, and `0.553762x` LM-head CE.
+CUDA 13.3 dedicated RTX 5090 same-script confirmation passed at `0.974381x`
+train-loop wall, `0.979044x` steady-state CUDA-event wall, `1.026347x`
+tokens/sec, `0.912845x` LM-head backward, and `0.551704x` LM-head CE.
 `lm_head_cooperative_loss_bins` adds
 `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`,
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`, and

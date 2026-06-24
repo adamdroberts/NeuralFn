@@ -68,13 +68,13 @@ Future updates should append new entries here rather than replacing older notes.
   `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0`, kept train-loss
   logging disabled, proved the strategy change through
   `lm_head_ce_no_loss_default_specialized_*` and `lm_head_ce_kernel_strategy`,
-  and passed whole-loop gates at `0.968164x` train-loop wall, `0.979934x`
-  steady-state CUDA-event wall, `1.032888x` tokens/sec, `0.913491x` LM-head
-  backward, `0.553762x` LM-head CE, and `0.984587x` block backward versus the
+  and passed whole-loop gates at `0.974381x` train-loop wall, `0.979044x`
+  steady-state CUDA-event wall, `1.026347x` tokens/sec, `0.912845x` LM-head
+  backward, `0.551704x` LM-head CE, and `0.994358x` block backward versus the
   older generic no-loss CE+dlogits path.
 
   Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized
-  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_STEPS=5 NFN_SM120_NATIVE_SAMPLES=3
   NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1 bash
   tools/bench_native_gpt_sm120_candidate.sh` on the idle display-disabled RTX
   5090 with zero compute processes before and after paired samples.
