@@ -6,34 +6,15 @@ from pathlib import Path
 import sys
 from typing import Any, Callable
 
-import torch
-
 from cli_utils import artifact_path, create_argument_parser
-from neuralfn.torch_backend import CompiledTorchGraph
-
-from infer_jepa_semantic import (
-    add_raw_text_tokenizer_arguments,
+from infer_gpt2 import (
+    DEFAULT_DATASET_ALIAS,
     add_dataset_download_arguments,
-    autocast_enabled_for,
-    configure_console_logging,
-    dataset_download_kwargs_from_args,
-    decode_tokens,
-    describe_token,
-    find_logits_trace_key,
-    load_compiled_inference_graph,
-    log_tokenizer_status,
-    resolve_autocast_dtype,
-    resolve_inference_dataset_alias,
-    resolve_inference_tokenizer_context,
-    resolve_raw_text_encoding_name,
-    resolve_prompt_tokens,
+    add_dataset_selector_arguments,
+    add_raw_text_tokenizer_arguments,
     repetition_penalty_arg,
-    sample_next_token,
-    top_p_arg,
 )
-from train_jepa_semantic import add_dataset_selector_arguments, resolve_dataset_selector_args
 
-DEFAULT_DATASET_ALIAS = "willdepueoai__parameter-golf__sp1024__train1"
 DEFAULT_WEIGHTS_ARTIFACT = artifact_path("llama_fast.pt")
 DEFAULT_GRAPH_ARTIFACT = DEFAULT_WEIGHTS_ARTIFACT.with_suffix(".json")
 
@@ -42,6 +23,13 @@ LOGGER = logging.getLogger("llama_fast_infer")
 
 def log_stage(message: str) -> None:
     LOGGER.info(message)
+
+
+def top_p_arg(raw: str) -> float:
+    value = float(raw)
+    if value <= 0.0 or value > 1.0:
+        raise argparse.ArgumentTypeError("--top-p must be in the range (0, 1].")
+    return value
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -86,7 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def generate_sequence(
-    compiled: CompiledTorchGraph,
+    compiled,
     *,
     tokenizer,
     prompt_ids: list[int],
@@ -104,6 +92,16 @@ def generate_sequence(
     log_every: int = 0,
     log: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
+    import torch
+
+    from infer_jepa_semantic import (
+        autocast_enabled_for,
+        decode_tokens,
+        describe_token,
+        find_logits_trace_key,
+        sample_next_token,
+    )
+
     generated = list(prompt_ids)
     resolved_logits_key: str | None = None
     use_amp = autocast_enabled_for(device, amp_dtype)
@@ -164,8 +162,25 @@ def generate_sequence(
 
 
 def main() -> int:
-    configure_console_logging()
     args = build_parser().parse_args()
+
+    import torch
+
+    from infer_jepa_semantic import (
+        configure_console_logging,
+        dataset_download_kwargs_from_args,
+        decode_tokens,
+        load_compiled_inference_graph,
+        log_tokenizer_status,
+        resolve_autocast_dtype,
+        resolve_inference_dataset_alias,
+        resolve_inference_tokenizer_context,
+        resolve_raw_text_encoding_name,
+        resolve_prompt_tokens,
+    )
+    from train_jepa_semantic import resolve_dataset_selector_args
+
+    configure_console_logging()
     resolve_dataset_selector_args(args)
 
     log_stage("Starting llama_fast inference")

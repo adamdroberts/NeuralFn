@@ -2007,7 +2007,10 @@ present in `build/` and built SDK binding modules matching `neuralfn/_native*.so
 and `neuralfn.native_gpt*` imports under an import blocker for `torch`, NumPy,
 tiktoken, `server.dataset_manager`, and `nfn_impl`. When built, the compiled
 `neuralfn._native_gpt`, `neuralfn._native_gpt2`, and `neuralfn._native_train`
-binding modules are imported under the same blocker. The checker also has a
+binding modules are imported under the same blocker. It also checks the
+graph-backed family inference help paths for LLaMA-fast, LLaMA-megakernel,
+MixLLaMA-fast, and NanoGPT so parser-only usage stays in the lightweight CLI
+layer until graph-backed generation is actually requested. The checker also has a
 `shell_entrypoints` section for native benchmark wrappers and runs
 `tools/bench_linear_backward_candidate.sh` plus
 `tools/bench_native_gpt_linear_hot_matrix.sh` in dry-run mode, so benchmark

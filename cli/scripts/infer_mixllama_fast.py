@@ -5,34 +5,15 @@ import logging
 from pathlib import Path
 import sys
 
-import torch
-
 from cli_utils import artifact_path, create_argument_parser
-from neuralfn.torch_backend import CompiledTorchGraph
-
-from infer_jepa_semantic import (
-    add_raw_text_tokenizer_arguments,
+from infer_gpt2 import (
+    DEFAULT_DATASET_ALIAS,
     add_dataset_download_arguments,
-    autocast_enabled_for,
-    configure_console_logging,
-    dataset_download_kwargs_from_args,
-    decode_tokens,
-    describe_token,
-    find_logits_trace_key,
-    load_compiled_inference_graph,
-    log_tokenizer_status,
-    resolve_autocast_dtype,
-    resolve_inference_dataset_alias,
-    resolve_inference_artifact_defaults,
-    resolve_inference_tokenizer_context,
-    resolve_raw_text_encoding_name,
-    resolve_prompt_tokens,
+    add_dataset_selector_arguments,
+    add_raw_text_tokenizer_arguments,
     repetition_penalty_arg,
-    sample_next_token,
 )
-from train_jepa_semantic import add_dataset_selector_arguments, resolve_dataset_selector_args
 
-DEFAULT_DATASET_ALIAS = "willdepueoai__parameter-golf__sp1024__train1"
 DEFAULT_WEIGHTS_ARTIFACT = artifact_path("mixllama_fast.pt")
 DEFAULT_GRAPH_ARTIFACT = DEFAULT_WEIGHTS_ARTIFACT.with_suffix(".json")
 
@@ -58,7 +39,12 @@ def default_graph_artifact(*, megakernel: bool) -> Path:
 
 
 def resolve_mode_defaults(args: argparse.Namespace) -> argparse.Namespace:
-    return resolve_inference_artifact_defaults(args, mode_name=mode_name(megakernel=bool(args.megakernel)))
+    graph_was_explicit = bool(getattr(args, "graph", ""))
+    if not graph_was_explicit:
+        args.graph = str(default_graph_artifact(megakernel=bool(args.megakernel)))
+    if not getattr(args, "weights", "") and not graph_was_explicit:
+        args.weights = str(default_weights_artifact(megakernel=bool(args.megakernel)))
+    return args
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -103,8 +89,29 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    configure_console_logging()
     args = build_parser().parse_args()
+
+    import torch
+
+    from infer_jepa_semantic import (
+        autocast_enabled_for,
+        configure_console_logging,
+        dataset_download_kwargs_from_args,
+        decode_tokens,
+        describe_token,
+        find_logits_trace_key,
+        load_compiled_inference_graph,
+        log_tokenizer_status,
+        resolve_autocast_dtype,
+        resolve_inference_dataset_alias,
+        resolve_inference_tokenizer_context,
+        resolve_raw_text_encoding_name,
+        resolve_prompt_tokens,
+        sample_next_token,
+    )
+    from train_jepa_semantic import resolve_dataset_selector_args
+
+    configure_console_logging()
     resolve_dataset_selector_args(args)
     resolve_mode_defaults(args)
 

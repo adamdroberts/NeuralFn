@@ -5,32 +5,13 @@ import logging
 from pathlib import Path
 import sys
 
-import torch
-
 from cli_utils import artifact_path, create_argument_parser
-from neuralfn.torch_backend import CompiledTorchGraph
-
-from infer_jepa_semantic import (
-    add_raw_text_tokenizer_arguments,
-    add_dataset_download_arguments,
-    configure_console_logging,
-    dataset_download_kwargs_from_args,
-    decode_tokens,
-    load_compiled_inference_graph,
-    log_tokenizer_status,
-    repetition_penalty_arg,
-    resolve_autocast_dtype,
-    resolve_inference_dataset_alias,
-    resolve_inference_tokenizer_context,
-    resolve_raw_text_encoding_name,
-    resolve_prompt_tokens,
-)
-from infer_llama_fast import generate_sequence
-from train_jepa_semantic import (
+from infer_gpt2 import (
     DEFAULT_DATASET_ALIAS,
+    add_dataset_download_arguments,
     add_dataset_selector_arguments,
-    resolve_dataset_selector_args,
-    resolve_or_download_dataset,
+    add_raw_text_tokenizer_arguments,
+    repetition_penalty_arg,
 )
 
 LOGGER = logging.getLogger("llama_megakernel_infer")
@@ -105,8 +86,26 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    configure_console_logging()
     args = build_parser().parse_args()
+
+    import torch
+
+    from infer_jepa_semantic import (
+        configure_console_logging,
+        dataset_download_kwargs_from_args,
+        decode_tokens,
+        load_compiled_inference_graph,
+        log_tokenizer_status,
+        resolve_autocast_dtype,
+        resolve_inference_dataset_alias,
+        resolve_inference_tokenizer_context,
+        resolve_raw_text_encoding_name,
+        resolve_prompt_tokens,
+    )
+    from infer_llama_fast import generate_sequence
+    from train_jepa_semantic import resolve_dataset_selector_args
+
+    configure_console_logging()
     resolve_dataset_selector_args(args)
     resolve_mode_defaults(args)
 

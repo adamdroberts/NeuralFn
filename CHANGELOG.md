@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Kept legacy graph-backed family inference help paths out of the Torch runtime.
+  `infer_llama_fast.py`, `infer_llama_megakernel.py`,
+  `infer_mixllama_fast.py`, and `infer_nanogpt.py` now build their parsers from
+  lightweight GPT CLI helpers and defer Torch, graph-backed inference helpers,
+  and dataset selector runtime imports until after `argparse` has handled
+  parser-only requests such as `--help`. The native no-Torch verifier now
+  asserts those help paths under the same import blocker used for native GPT
+  train/infer dispatch, so regressions that import Torch, NumPy, tokenizers,
+  dataset-manager modules, or graph-backed runtime helpers during parser
+  startup fail the gate.
+
+  Migration note: graph-backed inference behavior is unchanged when generation
+  is actually requested; this only narrows parser/help startup dependencies.
+
+  Verification: ran direct `--help` checks for the four inference scripts, then
+  ran `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`, which passed.
+
 - Made the dense GPT native CLI build scripts freshness-aware. Direct
   `tools/build_native_gpt_cli.sh` and
   `tools/build_native_gpt_cli_linked.sh` now skip the expensive host C++

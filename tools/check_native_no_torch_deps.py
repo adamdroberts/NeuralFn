@@ -1105,6 +1105,38 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
                 ),
             ),
             (
+                "infer_llama_fast_help_no_torch",
+                (
+                    sys.executable,
+                    "cli/scripts/infer_llama_fast.py",
+                    "--help",
+                ),
+            ),
+            (
+                "infer_llama_megakernel_help_no_torch",
+                (
+                    sys.executable,
+                    "cli/scripts/infer_llama_megakernel.py",
+                    "--help",
+                ),
+            ),
+            (
+                "infer_mixllama_fast_help_no_torch",
+                (
+                    sys.executable,
+                    "cli/scripts/infer_mixllama_fast.py",
+                    "--help",
+                ),
+            ),
+            (
+                "infer_nanogpt_help_no_torch",
+                (
+                    sys.executable,
+                    "cli/scripts/infer_nanogpt.py",
+                    "--help",
+                ),
+            ),
+            (
                 "nfn_infer_native_info",
                 (
                     sys.executable,
