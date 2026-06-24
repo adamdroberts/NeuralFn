@@ -1199,6 +1199,18 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     display-disabled GPU index from `nvidia-smi` instead of exporting the
     literal string `CUDA_VISIBLE_DEVICES=dedicated`, which hid all CUDA devices
     from `cudaSetDevice`.
+  - 2026-06-24 reran the trainer-chunk LM-head backward microbench after the
+    selector fix:
+    `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk
+    NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST=1
+    NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_trainer_chunk_current.json
+    bash tools/bench_lm_head_backward_candidate.sh`. The benchmark now reaches
+    CUDA, but the strict candidate still reports
+    `candidate_true_fused_capability: false`,
+    `candidate_sequence_wrapper_only: true`, and
+    `candidate_to_baseline_ms_per_iter_ratio: 1.001063`, so the next parity
+    slice remains a real fused/cooperative LM-head classifier-backward kernel
+    rather than another wrapper/default promotion.
   - 2026-06-23 hardened the focused LM-head and linear-backward benchmark
     wrappers so `CUDA_VISIBLE_DEVICES=auto` falls back to device `0` when
     `nvidia-smi` cannot query GPUs. This preserves a useful C++ CUDA error in
