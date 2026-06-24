@@ -1769,6 +1769,11 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "candidate-first" in bench_source
     assert "baseline-first" in bench_source
     assert "tools/build_native_train_tile_ops.sh" in wrapper
+    assert "TILE_OPS_DEPS=(" in wrapper
+    assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu"' in wrapper
+    assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h"' in wrapper
+    assert '"${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu"' in wrapper
+    assert 'if [[ "${DEP}" -nt "${TILE_OPS_LIB}" ]]; then' in wrapper
     assert "--candidate-symbol" in wrapper
     assert "--baseline-symbol" in wrapper
 
@@ -1857,6 +1862,11 @@ def test_native_gpt_linear_backward_microbench_profiles_block_and_lm_head_shapes
     assert "NFN_LINEAR_BACKWARD_REQUIRE_ROUTE_CHANGE" in wrapper
     assert "candidate_symbol_changed is false; candidate and baseline symbols are identical" in wrapper
     assert "tools/build_native_train_tile_ops.sh" in wrapper
+    assert "TILE_OPS_DEPS=(" in wrapper
+    assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu"' in wrapper
+    assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h"' in wrapper
+    assert '"${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu"' in wrapper
+    assert 'if [[ "${DEP}" -nt "${TILE_OPS_LIB}" ]]; then' in wrapper
     assert "--grad-out-row-stride" in wrapper
     matrix_wrapper = (root / "tools" / "bench_native_gpt_linear_hot_matrix.sh").read_text(
         encoding="utf-8"

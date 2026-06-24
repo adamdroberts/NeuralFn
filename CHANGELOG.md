@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- The standalone LM-head and linear backward CUDA benchmark wrappers now treat
+  `neuralfn/csrc/native_train/tile_ops.h` as a Tile ops shared-library rebuild
+  dependency, alongside `tile_ops.cu` and `tile_cuda/kernels.cu`. This prevents
+  header-only Tile ABI edits from running against a stale
+  `libnfn_native_train_tile_ops.so` during focused CUDA retests.
+
+  Migration note: no runtime default changed. Benchmark wrappers may rebuild
+  the Tile ops library one extra time after header edits.
+
+  Verification: ran `bash -n tools/bench_lm_head_backward_candidate.sh`; ran
+  `bash -n tools/bench_linear_backward_candidate.sh`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "lm_head_backward_microbench or
+  linear_backward_microbench"`; ran `NFN_LM_HEAD_BACKWARD_DRY_RUN=1 bash
+  tools/bench_lm_head_backward_candidate.sh`; ran
+  `NFN_LINEAR_BACKWARD_DRY_RUN=1 bash tools/bench_linear_backward_candidate.sh`.
+
 - Added reference-ratio gates to the standalone LM-head backward microbenchmark.
   `lm_head_backward_bench` now emits
   `candidate_to_reference_summed_ms_per_iter_ratio`,

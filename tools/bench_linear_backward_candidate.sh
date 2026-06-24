@@ -260,7 +260,23 @@ fi
 if [[ ! -x "${BENCH_BIN}" || "${ROOT_DIR}/neuralfn/csrc/native_train/linear_backward_bench.cpp" -nt "${BENCH_BIN}" ]]; then
   bash "${ROOT_DIR}/tools/build_linear_backward_bench.sh" "${BENCH_BIN}" >&2
 fi
-if [[ ! -f "${TILE_OPS_LIB}" || "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu" -nt "${TILE_OPS_LIB}" || "${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu" -nt "${TILE_OPS_LIB}" ]]; then
+TILE_OPS_DEPS=(
+  "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu"
+  "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h"
+  "${ROOT_DIR}/neuralfn/csrc/tile_cuda/kernels.cu"
+)
+REBUILD_TILE_OPS=0
+if [[ ! -f "${TILE_OPS_LIB}" ]]; then
+  REBUILD_TILE_OPS=1
+else
+  for DEP in "${TILE_OPS_DEPS[@]}"; do
+    if [[ "${DEP}" -nt "${TILE_OPS_LIB}" ]]; then
+      REBUILD_TILE_OPS=1
+      break
+    fi
+  done
+fi
+if [[ "${REBUILD_TILE_OPS}" == "1" ]]; then
   bash "${ROOT_DIR}/tools/build_native_train_tile_ops.sh" "${TILE_OPS_LIB}" >&2
 fi
 
