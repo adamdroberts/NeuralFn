@@ -71,6 +71,7 @@ struct Config {
     std::string backend = "tile-cuda";
     std::string tile_ops_lib;
     std::string activation = "gelu";
+    std::string tile_cuda_activation_dtype = "nvfp4";
     std::string template_name = "gpt";
     std::string graph_file;
     std::string json_out_path;
@@ -488,6 +489,8 @@ void print_usage(const char* program) {
         << "  --evo-layer-population N         Evo candidate population; default 8\n"
         << "  --evo-layer-mutation-scale X     Evo mutation scale; default 0.02\n"
         << "  --no-layer-evo                   Disable native layer-evo cadence\n"
+        << "  --tile-cuda-activation-dtype nvfp4|float32|none\n"
+        << "                                     Preserve native activation dtype intent in plan/runtime JSON; default nvfp4\n"
         << "Dataset default: roneneldan__TinyStories__TinyStoriesV2-GPT4.\n"
         << "SM120 defaults match llm.kittens/train-sm120.sh: -v 250 -b 64 -t 1024 -d 524288 -l 0.0006 -q 0.0 -c 0.1 -u 60 -x 20000.\n";
 }
@@ -1374,6 +1377,20 @@ std::string lower_activation(std::string value) {
     }
     if (value == "sd_prelu" || value == "sdprelu") {
         value = "sd-prelu";
+    }
+    return value;
+}
+
+std::string normalize_tile_cuda_activation_dtype(std::string value) {
+    for (char& ch : value) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    if (value == "fp32") {
+        value = "float32";
+    }
+    if (value != "nvfp4" && value != "float32" && value != "none") {
+        std::cerr << "--tile-cuda-activation-dtype must be nvfp4, float32, or none\n";
+        std::exit(2);
     }
     return value;
 }
@@ -4159,6 +4176,8 @@ bool print_tile_plan(
         << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
         << "  \"native_geometry_contract\": " << native_dense_gpt_geometry_contract_json(cfg) << ",\n"
         << "  \"native_cuda_activation\": \"" << json_escape(cfg.activation) << "\",\n"
+        << "  \"tile_cuda\": {\"activation_dtype\": \""
+        << json_escape(cfg.tile_cuda_activation_dtype) << "\"},\n"
         << "  \"template_known\": " << (shipped_template ? "true" : "false") << ",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
         << "  \"selected_graph_native_runnable\": " << (native_runnable ? "true" : "false") << ",\n"
@@ -4539,6 +4558,8 @@ int print_selected_graph_unsupported_json(
         << "  \"architecture_contract\": \"" << json_escape(dense_gpt_architecture_contract(cfg)) << "\",\n"
         << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
         << "  \"native_cuda_activation\": \"" << json_escape(cfg.activation) << "\",\n"
+        << "  \"tile_cuda\": {\"activation_dtype\": \""
+        << json_escape(cfg.tile_cuda_activation_dtype) << "\"},\n"
         << "  \"template_known\": " << (shipped_template ? "true" : "false") << ",\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(support_status) << "\",\n"
         << "  \"selected_graph_native_runnable\": false,\n"
@@ -20376,6 +20397,8 @@ int run_transformer_lm_training_json(
         << "  \"model_family_context_policy\": \"" << json_escape(model_family_context_policy(cfg)) << "\",\n"
         << "  \"native_geometry_contract\": " << native_dense_gpt_geometry_contract_json(cfg) << ",\n"
         << "  \"native_cuda_activation\": \"" << json_escape(cfg.activation) << "\",\n"
+        << "  \"tile_cuda\": {\"activation_dtype\": \""
+        << json_escape(cfg.tile_cuda_activation_dtype) << "\"},\n"
         << "  \"selected_graph_support_status\": \"" << json_escape(selected_graph_support_status(cfg)) << "\",\n"
         << "  \"selected_graph_native_runnable\": " << (selected_graph_is_native_runnable(cfg) ? "true" : "false") << ",\n"
         << "  \"status\": \""
@@ -23043,6 +23066,12 @@ int main(int argc, char** argv) {
             cfg.activation = lower_activation(require_value(argc, argv, &i, arg));
         } else if (arg.rfind("--activation=", 0) == 0) {
             cfg.activation = lower_activation(value_after_equals("--activation="));
+        } else if (arg == "--tile-cuda-activation-dtype") {
+            cfg.tile_cuda_activation_dtype =
+                normalize_tile_cuda_activation_dtype(require_value(argc, argv, &i, arg));
+        } else if (arg.rfind("--tile-cuda-activation-dtype=", 0) == 0) {
+            cfg.tile_cuda_activation_dtype =
+                normalize_tile_cuda_activation_dtype(value_after_equals("--tile-cuda-activation-dtype="));
         } else if (arg == "--moa-interval" || arg == "--native-cuda-moa-interval") {
             cfg.moa_interval = parse_int(require_value(argc, argv, &i, arg), arg);
         } else if (arg == "--allow-train-val-fallback" || arg == "--native-cuda-allow-train-val-fallback") {
@@ -23106,6 +23135,8 @@ int main(int argc, char** argv) {
     }
     cfg.model_family = canonical_dense_gpt_model_family(model_selector);
     cfg.activation = lower_activation(cfg.activation);
+    cfg.tile_cuda_activation_dtype =
+        normalize_tile_cuda_activation_dtype(cfg.tile_cuda_activation_dtype);
     cfg.template_name = normalize_template_name(cfg.template_name);
     apply_template_activation_defaults(cfg);
     if (!valid_activation(cfg.activation)) {

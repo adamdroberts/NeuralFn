@@ -3125,6 +3125,8 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
             "--dry-run",
             "--eval-every-steps",
             "1000",
+            "--tile-cuda-activation-dtype",
+            "nvfp4",
         ],
         text=True,
         stdout=subprocess.PIPE,
@@ -5983,6 +5985,13 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert gpt2_evo.exists()
     nanogpt = tmp_path / "nfn_nanogpt_native_train"
     assert nanogpt.exists()
+    dense_gpt_source = (root / "neuralfn" / "csrc" / "native_gpt2" / "nfn_gpt2_native_train.cpp").read_text(
+        encoding="utf-8"
+    )
+    assert "std::string tile_cuda_activation_dtype = \"nvfp4\";" in dense_gpt_source
+    assert "--tile-cuda-activation-dtype nvfp4|float32|none" in dense_gpt_source
+    assert '\\"tile_cuda\\": {\\"activation_dtype\\": \\"' in dense_gpt_source.replace("\n", "")
+    assert "json_escape(cfg.tile_cuda_activation_dtype)" in dense_gpt_source
     fake_gpt = tmp_path / "nfn_gpt_native_train"
     fake_gpt.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$@\"\n", encoding="utf-8")
     fake_gpt.chmod(0o755)
@@ -6654,6 +6663,7 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert str(fake_gpt) in evo_delegate_print_command.stdout
     assert "--train-transformer-lm" in evo_delegate_print_command.stdout
     assert "--layer-evo" in evo_delegate_print_command.stdout
+    assert "--tile-cuda-activation-dtype nvfp4" in evo_delegate_print_command.stdout
     assert "--dataset-alias /tmp/native-cache" in evo_delegate_print_command.stdout
     assert "--eval-every-steps 1000" in evo_delegate_print_command.stdout
     assert "--native-cuda-print-command" not in evo_delegate_print_command.stdout

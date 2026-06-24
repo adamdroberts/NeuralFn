@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed the GPT-2 evo native delegate so `--tile-cuda-activation-dtype nvfp4`
+  is preserved when `nfn_gpt2_evo_native_train` prints or execs the dense GPT
+  CUDA Tile trainer with `--train-transformer-lm --layer-evo`. The dense native
+  GPT trainer now accepts `--tile-cuda-activation-dtype nvfp4|float32|none`,
+  defaults it to `nvfp4`, validates bad values, and reports
+  `tile_cuda.activation_dtype` in plan, unsupported-selection, and train JSON.
+  This keeps the GPT-2 evo NVFP4 activation intent visible through the compiled
+  no-Torch path instead of dropping it at the family delegate boundary.
+
+  Verification: rebuilt the affected C++ frontends, checked the direct
+  `train_gpt2_evo.py --native-cuda-dry-run --native-cuda-print-command` output,
+  and reran the focused native GPT-2 executable wrapper tests.
+
 - Added a combined logged-loss diagnostic candidate profile,
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins_bf16_workspace_prewarm`,
   to compare LM-head loss-bin reduction plus BF16 workspace prewarm in the same

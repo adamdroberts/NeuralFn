@@ -640,6 +640,9 @@ The GPT-2 evo compiled preflight accepts the same selector aliases. It reports
 `template_name`, `graph_file`, `template_known`,
 `selected_graph_support_status`, `selected_graph_native_runnable`, and the
 synchronized shipped template catalog before any graph-backed runtime import.
+It also preserves `--tile-cuda-activation-dtype nvfp4|float32|none` through the
+compiled dense GPT delegate; the dense trainer reports the selected value under
+`tile_cuda.activation_dtype` in plan/runtime JSON.
 Dense GPT-2-compatible selectors, including `gpt2_modern`, report
 `native-dense-gpt-layer-evo-delegate`; structurally different templates report
 `template-native-trainer-missing`; custom graph files report

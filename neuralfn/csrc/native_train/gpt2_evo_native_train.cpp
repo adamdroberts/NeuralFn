@@ -981,6 +981,10 @@ Gpt2EvoPlan parse_args(int argc, char** argv, bool* print_plan, bool* dry_run, b
             plan.tile_activation_dtype = value_for(arg);
             continue;
         }
+        if (arg.rfind("--tile-cuda-activation-dtype=", 0) == 0) {
+            plan.tile_activation_dtype = after_equals("--tile-cuda-activation-dtype=");
+            continue;
+        }
         if (arg == "--tile-ops-lib" || arg == "--native-cuda-tile-ops-lib") {
             plan.tile_ops_lib = value_for(arg);
             continue;
@@ -1062,6 +1066,8 @@ std::vector<std::string> dense_gpt_delegate_args(const Gpt2EvoPlan& plan, const 
     args.push_back(std::to_string(plan.learning_rate));
     args.push_back("--weight-decay");
     args.push_back(std::to_string(plan.weight_decay));
+    args.push_back("--tile-cuda-activation-dtype");
+    args.push_back(plan.tile_activation_dtype);
     if (!plan.tile_ops_lib.empty()) {
         args.push_back("--tile-ops-lib");
         args.push_back(plan.tile_ops_lib);
