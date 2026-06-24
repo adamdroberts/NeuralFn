@@ -287,13 +287,18 @@ when unset before executing native trainers or loading Tile CUDA libraries,
 matching the dense GPT C++ trainer. Existing user-provided
 `CUDA_MODULE_LOADING` values still take precedence.
 
-`NativeGpt2RunConfig.lm_head_row_chunk_size` defaults to 49152 and forwards
-`--lm-head-row-chunk-size` through `compiled_cli_argv()`; pass 32768, 8192,
-6144, or 4096 explicitly to reproduce older smaller-workspace profiles. The C++ transformer-LM
+`NativeGpt2RunConfig.lm_head_row_chunk_size` defaults to 32768 and forwards
+`--lm-head-row-chunk-size` through `compiled_cli_argv()`; pass 49152 to
+reproduce the rejected larger-chunk route, or pass 8192, 6144, or 4096
+explicitly to reproduce older smaller-workspace profiles. The C++ transformer-LM
 loop uses that bounded full-vocab tied LM-head workspace and reduces CE loss
 partials on device with `nfn_native_tile_sum_partials_float32`, so training and
 validation loss copy one device scalar to the host instead of copying once per
-row chunk. Tied LM-head dWeight chunks accumulate directly into the optimizer-step
+microbatch row chunk. Breaking-change note: the SDK default was 49152 before the CUDA
+13.3 dedicated RTX 5090 confirmation restored 32768; remove manual 32768
+overrides that only restored the old default, and pass 49152 explicitly only
+for historical diagnostics.
+Tied LM-head dWeight chunks accumulate directly into the optimizer-step
 `accum_grad_token_weight` buffer with
 `nfn_native_tile_linear_backward_weight_accumulate_float32` instead of using a
 full-vocab scratch gradient buffer per chunk or per microbatch. The JSON reports
@@ -446,11 +451,13 @@ check reports probe support instead of setup timing noise. The profile
 deliberately omits the classic cuBLAS
 grouped BF16 probe because the CUDA 13.3 recheck showed it still poisons the
 selected CUDA context before model allocation when unsupported.
-CUDA 13.3.33 post-reinstall paired checks keep 49152 rows as the default.
-Retesting `--lm-head-row-chunk-size 8192` against the earlier 32768-row route
-regressed train-loop wall time to `1.001841x` despite slightly improving the
-isolated LM-head stage. Use 8192 only as an explicit lower-memory reproduction
-knob, not as the workstation default.
+CUDA 13.3.33 post-reinstall paired checks restore 32768 rows as the default.
+The 49152-row confirmation regressed train-loop wall to `1.012983x` and block
+backward to `1.025087x` versus 32768 rows. Retesting
+`--lm-head-row-chunk-size 8192` against the earlier 32768-row route regressed
+train-loop wall time to `1.001841x` despite slightly improving the isolated
+LM-head stage. Use 8192 only as an explicit lower-memory reproduction knob,
+not as the workstation default.
 `NFN_NATIVE_GPT_LM_HEAD_REVERSE_CHUNKS` /
 `NFN_NATIVE_GPT2_LM_HEAD_REVERSE_CHUNKS` controls LM-head row-chunk traversal
 and reports `lm_head_reverse_chunk_order_enabled` plus
@@ -623,12 +630,12 @@ fallback probes. Both are rejected on CUDA 13.3 RTX 5090: QKV fallback reduced
 TK forward calls but regressed `stage.block_forward.attention.qkv.total_ms` to
 `1.143374x`, while MLP FC fallback did not change tracked route counters and
 regressed train-loop wall to `1.016916x`.
-The SDK default `NativeGpt2RunConfig.lm_head_row_chunk_size` is 49152 rows for
-the local RTX 5090/CUDA 13.3 workstation profile. This reduces default LM-head
-chunk launches at the 64x1024 shape from 8 chunks to 2 and reserves about
-4.95GB of resident BF16 logit workspace. Set `lm_head_row_chunk_size=32768` or
-pass `--lm-head-row-chunk-size 32768` to reproduce the previous workstation
-default, or use 8192 to reproduce the older lower-memory route. Effective
+The SDK default `NativeGpt2RunConfig.lm_head_row_chunk_size` is 32768 rows for
+the local RTX 5090/CUDA 13.3 workstation profile. This keeps the default
+LM-head chunk count at 2 and uses about 3.30GB of resident BF16 logit
+workspace at the 64x1024 shape. Set `lm_head_row_chunk_size=49152` or pass
+`--lm-head-row-chunk-size 49152` only to reproduce the rejected larger-chunk
+route, or use 8192 to reproduce the older lower-memory route. Effective
 LM-head chunks above 49152 rows are rejected before CUDA
 launch unless `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` is set for
 explicit diagnostics; runtime JSON reports `lm_head_row_chunk_safe_cap` and
@@ -1839,10 +1846,10 @@ Wrapper-level `--native-cuda-dry-run --native-cuda-print-command` is metadata-on
 
 For LM-head backward kernel work, `tools/bench_lm_head_backward_candidate.sh`
 is the focused CUDA gate. `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` selects
-the default 49152-row optimizer no-loss trainer chunk,
+the default 32768-row optimizer no-loss trainer chunk,
 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-row-loss` preserves the older row-loss
 chunk comparison, and
-`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` selects the 49152-row,
+`NFN_LM_HEAD_BACKWARD_PROFILE=trainer-loss-bins` selects the 32768-row,
 1024-bin loss-reduction shape. Set
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` to reject the current sequence
 wrapper and `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000` to reject a candidate slower
@@ -2015,14 +2022,14 @@ that rejected full-resident LM-head diagnostic; it expands to
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` plus
 `--lm-head-row-chunk-size 65536`, and the latest dedicated RTX 5090 rerun timed
 out at 360s while the safe 32768-row baseline completed. The promoted 49152-row
-LM-head chunk candidate passed the latest 5-step, 3-sample same-script gate at
-`0.992974x` train-loop wall time and `0.998563x` LM-head backward versus the
-old 32768-row route; the 16384-row candidate regressed at `1.008471x`. The
-inverse rollback profile `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_32768`
-is also rejected by default for real candidate-wrapper launches after the CUDA
-13.3 dedicated RTX 5090 rerun changed the route but missed strict train-loop,
+LM-head chunk route is no longer the default: the 2026-06-24 confirmation
+regressed train-loop wall to `1.012983x` and block backward to `1.025087x`
+versus 32768 rows. The 16384-row candidate regressed at `1.008471x`. The
+historical profile `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_49152`
+is rejected by default for real candidate-wrapper launches after the CUDA
+13.3 dedicated RTX 5090 confirmation changed the route but missed strict train-loop,
 steady-state, LM-head, block-backward, and MLP-projection gates. Use
-`--lm-head-row-chunk-size 32768` only for manual diagnostics, or set
+`--lm-head-row-chunk-size 49152` only for manual diagnostics, or set
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for an intentional
 same-script rerun.
 Unsupported template names and custom graph files still report

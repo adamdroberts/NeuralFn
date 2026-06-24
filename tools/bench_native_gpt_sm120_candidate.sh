@@ -186,7 +186,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_tk_dweight_49152"|"lm-head-tk-dweight-49152")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 current-shape 2-step, 2-sample stage-timed gate moved linear_tk_dweight_gemm_count from 0 to 16 for the 49152-row LM-head chunk but regressed train_loop_wall_ms_per_step to 1.303473x, stage.lm_head_backward.dweight.total_ms to 1.201790x, and stage.block_backward.total_ms to 1.557413x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 historical-shape 2-step, 2-sample stage-timed gate moved linear_tk_dweight_gemm_count from 0 to 16 for the 49152-row LM-head chunk but regressed train_loop_wall_ms_per_step to 1.303473x, stage.lm_head_backward.dweight.total_ms to 1.201790x, and stage.block_backward.total_ms to 1.557413x."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,49152,N,T"
     ;;
   "lm_head_prepack_bf16_hidden_off"|"lm-head-prepack-bf16-hidden-off"|"lm_head_no_prepack_bf16_hidden"|"lm-head-no-prepack-bf16-hidden")
@@ -255,13 +255,11 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=1024"
     ;;
   "lm_head_logits_bf16_fallback_32768"|"lm-head-logits-bf16-fallback-32768")
-    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 recheck showed this older 32768-row logits fallback no longer matches the active 49152-row LM-head logits shape: tracked route counters, strategy strings, linear shape stats, and cuBLASLt plan cache entries did not change, so the native route-change gate failed."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N"
     ;;
   "lm_head_logits_bf16_fallback_49152"|"lm-head-logits-bf16-fallback-49152")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2-step, 2-sample stage-timed gate disabled TK for the current 49152-row LM-head logits shape and moved lm_head_logits_tk_gemm_count from 32 to 16, but rejected it at 1.005968x train_loop_wall_ms_per_step, 1.009906x stage.block_backward.total_ms, and 1.000576x stage.block_backward.mlp_proj.total_ms."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2-step, 2-sample stage-timed gate disabled TK for the historical 49152-row LM-head logits shape and moved lm_head_logits_tk_gemm_count from 32 to 16, but rejected it at 1.005968x train_loop_wall_ms_per_step, 1.009906x stage.block_backward.total_ms, and 1.000576x stage.block_backward.mlp_proj.total_ms."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N"
     ;;
   "qkv_forward_bf16_fallback_65536"|"qkv-forward-bf16-fallback-65536"|"packed_qkv_forward_bf16_fallback_65536"|"packed-qkv-forward-bf16-fallback-65536")
@@ -568,12 +566,14 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_EXTRA_ARGS_RAW="${CANDIDATE_EXTRA_ARGS_RAW:+$CANDIDATE_EXTRA_ARGS_RAW }--lm-head-row-chunk-size 65536"
     ;;
   "lm_head_row_chunk_49152"|"lm-head-row-chunk-49152")
+    REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
+    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 confirmation compared the 49152-row LM-head route against the restored 32768-row default. It changed lm_head_classifier_last_rows from 32768 to 49152, but regressed train_loop_wall_ms_per_step to 1.012983x and stage.block_backward.total_ms to 1.025087x; use 49152 only for historical diagnostics."
     BASELINE_EXTRA_ARGS_RAW="${BASELINE_EXTRA_ARGS_RAW:+$BASELINE_EXTRA_ARGS_RAW }--lm-head-row-chunk-size 32768"
     CANDIDATE_EXTRA_ARGS_RAW="${CANDIDATE_EXTRA_ARGS_RAW:+$CANDIDATE_EXTRA_ARGS_RAW }--lm-head-row-chunk-size 49152"
     ;;
   "lm_head_row_chunk_32768"|"lm-head-row-chunk-32768"|"lm_head_old_row_chunk_32768"|"lm-head-old-row-chunk-32768")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed rerun changed LM-head row chunks from 49152 back to 32768 but failed strict gates at 1.000594x train_loop_wall_ms_per_step, 1.001939x train_loop_cuda_event_steady_state_wall_ms_per_step, 1.000885x stage.lm_head_backward.total_ms, 1.000224x stage.block_backward.total_ms, and 1.000409x stage.block_backward.mlp_proj.total_ms."
+    REJECTED_CANDIDATE_REASON="The Tile-CUDA default is 32768 LM-head rows again after the CUDA 13.3 dedicated RTX 5090 confirmation rejected the 49152-row route; this profile is kept only to reproduce the historical 49152-vs-32768 pair."
     BASELINE_EXTRA_ARGS_RAW="${BASELINE_EXTRA_ARGS_RAW:+$BASELINE_EXTRA_ARGS_RAW }--lm-head-row-chunk-size 49152"
     CANDIDATE_EXTRA_ARGS_RAW="${CANDIDATE_EXTRA_ARGS_RAW:+$CANDIDATE_EXTRA_ARGS_RAW }--lm-head-row-chunk-size 32768"
     ;;

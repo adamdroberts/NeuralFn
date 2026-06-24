@@ -102,7 +102,7 @@ case "${PROFILE}" in
     ;;
   lm-head-dinput|lm_head_dinput)
     DEFAULT_OPERATION="dinput-strided"
-    DEFAULT_ROWS=49152
+    DEFAULT_ROWS=32768
     DEFAULT_INPUT_DIM=768
     DEFAULT_OUTPUT_DIM=50257
     DEFAULT_GRAD_OUT_ROW_STRIDE=50304
@@ -111,7 +111,7 @@ case "${PROFILE}" in
     ;;
   lm-head-dinput-cublaslt|lm_head_dinput_cublaslt)
     DEFAULT_OPERATION="dinput-strided"
-    DEFAULT_ROWS=49152
+    DEFAULT_ROWS=32768
     DEFAULT_INPUT_DIM=768
     DEFAULT_OUTPUT_DIM=50257
     DEFAULT_GRAD_OUT_ROW_STRIDE=50304
@@ -121,7 +121,7 @@ case "${PROFILE}" in
     ;;
   lm-head-dweight|lm_head_dweight)
     DEFAULT_OPERATION="dweight-strided"
-    DEFAULT_ROWS=49152
+    DEFAULT_ROWS=32768
     DEFAULT_INPUT_DIM=768
     DEFAULT_OUTPUT_DIM=50257
     DEFAULT_GRAD_OUT_ROW_STRIDE=50304
@@ -130,7 +130,7 @@ case "${PROFILE}" in
     ;;
   lm-head-dweight-cublaslt|lm_head_dweight_cublaslt)
     DEFAULT_OPERATION="dweight-strided"
-    DEFAULT_ROWS=49152
+    DEFAULT_ROWS=32768
     DEFAULT_INPUT_DIM=768
     DEFAULT_OUTPUT_DIM=50257
     DEFAULT_GRAD_OUT_ROW_STRIDE=50304

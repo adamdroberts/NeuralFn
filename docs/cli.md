@@ -418,15 +418,15 @@ The public GPT-2 tokenizer vocab stays 50,257, while the native tied token
 embedding/LM-head tensor is padded to 50,304 rows for GEMM-friendly layout;
 training JSON reports both `vocab: 50257` and `padded_vocab: 50304`, and
 `--dry-run` / `--print-plan` reports `shape.padded_vocab_size: 50304`.
-The tied LM-head row chunk defaults to 49152 rows on the dedicated RTX
+The tied LM-head row chunk defaults to 32768 rows on the dedicated RTX
 5090/CUDA 13.3 workstation route and can be overridden with
 `--lm-head-row-chunk-size` on the compiled C++ entrypoint or
-`--native-cuda-lm-head-row-chunk-size` from the wrapper/root CLI. Use 32768
-when reproducing the previous workstation default, or 8192 when reproducing
-the older lower-memory route. The named same-script rollback profile
-`lm_head_row_chunk_32768` is rejected by default for real benchmark launches
-after the CUDA 13.3 dedicated RTX 5090 rerun missed train-loop, steady-state,
-LM-head, block-backward, and MLP-projection gates; set
+`--native-cuda-lm-head-row-chunk-size` from the wrapper/root CLI. Use 49152
+only when reproducing the rejected larger-chunk route, or 8192 when reproducing
+the older lower-memory route. The named same-script profile
+`lm_head_row_chunk_49152` is rejected by default for real benchmark launches
+after the CUDA 13.3 dedicated RTX 5090 confirmation regressed train-loop wall
+time and block-backward timing versus 32768 rows; set
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for intentional
 diagnostics. Effective chunks above 49152 rows require
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` for explicit diagnostics.

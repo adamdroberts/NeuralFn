@@ -23,21 +23,21 @@ case "${PROFILE}" in
     DEFAULT_NO_LOSS=0
     ;;
   trainer-chunk|trainer_chunk)
-    DEFAULT_ROWS=49152
+    DEFAULT_ROWS=32768
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=1
     ;;
   trainer-row-loss|trainer_row_loss)
-    DEFAULT_ROWS=49152
+    DEFAULT_ROWS=32768
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=0
     DEFAULT_NO_LOSS=0
     ;;
   trainer-loss-bins|trainer_loss_bins)
-    DEFAULT_ROWS=49152
+    DEFAULT_ROWS=32768
     DEFAULT_ITERATIONS=3
     DEFAULT_WARMUP=1
     DEFAULT_LOSS_BINS=1024

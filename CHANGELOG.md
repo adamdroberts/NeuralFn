@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- **Breaking changes:** restored the default dense GPT native LM-head row chunk
+  from `49152` rows to `32768` rows in the Python SDK config builders, the
+  `train_gpt_native.py` compiled-CLI wrapper defaults, focused LM-head/linear
+  benchmark helpers, and the compiled C++ trainer default. The safe explicit
+  cap remains `49152`, so callers can still pass `--lm-head-row-chunk-size
+  49152` or `NativeGpt2RunConfig(lm_head_row_chunk_size=49152, ...)` for
+  historical diagnostics, but default workstation training now uses 32768-row
+  chunks again. Migration: remove any manual `32768` override that was only
+  restoring the old default; add an explicit `49152` override only when
+  reproducing the rejected larger-chunk route.
+
+  Verification: the CUDA 13.3 dedicated RTX 5090 confirmation compared
+  `lm_head_row_chunk_49152` against the restored 32768 baseline over 5 steps,
+  3 samples, 1 warmup, and stage timing on an idle display-disabled GPU with
+  zero compute processes before every sample. The larger chunk regressed
+  `train_loop_wall_ms_per_step` to `1.012983x` and
+  `stage.block_backward.total_ms` to `1.025087x`, while LM-head backward stayed
+  flat at `0.999268x`. A shorter 3-step, 2-sample check had already failed
+  train-loop, steady-state CUDA-event, block-backward, and MLP-projection
+  gates.
+
 - Rechecked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linked_startup` after the CUDA
   13.3 WSL reinstall on the dedicated RTX 5090. The same-script startup-only
   comparison still favors `build/nfn_gpt_native_train_linked` over the dynamic
@@ -493,11 +514,11 @@ Future updates should append new entries here rather than replacing older notes.
   2-sample stage-timed native-vs-native candidate benchmark on the idle
   display-disabled RTX 5090 with zero compute processes before every sample.
 
-- Added and rejected the current-shape
+- Added and rejected the historical 49152-row
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_tk_dweight_49152` profile for
   dense GPT LM-head TK dWeight bisection. The older
-  `lm_head_tk_dweight_32768` profile still reproduces the historical
-  32768-row chunk, while the new profile targets the active 49152-row chunk
+  `lm_head_tk_dweight_32768` profile targets the restored default
+  32768-row chunk, while this profile targets the rejected 49152-row chunk
   with `NFN_NATIVE_LINEAR_TK_DWEIGHT_ENABLE_SHAPE=768,50304,49152,N,T`.
   The dedicated RTX 5090 gate proved the route change
   (`linear_tk_dweight_gemm_count: 0 -> 16`) but rejected the candidate at
@@ -529,14 +550,11 @@ Future updates should append new entries here rather than replacing older notes.
   tools/bench_native_gpt_sm120_candidate.sh` on an idle display-disabled RTX
   5090 with zero compute processes before every sample.
 
-- Reclassified `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_logits_bf16_fallback_32768`
-  as a rejected historical diagnostic under the current 49152-row LM-head
-  default. The CUDA 13.3 dedicated RTX 5090 recheck applied
-  `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N`, but no
-  active route counters, strategy strings, linear shape stats, or cuBLASLt plan
-  cache entries changed, so the native route-change gate failed. Use
-  `lm_head_logits_bf16_fallback_49152` when intentionally checking the current
-  LM-head logits fallback route.
+- Superseded the earlier `lm_head_logits_bf16_fallback_32768` stale-shape
+  rejection after restoring the default LM-head row chunk to 32768 rows. That
+  profile now targets the active logits shape again. Use
+  `lm_head_logits_bf16_fallback_49152` only when intentionally checking the
+  rejected historical 49152-row LM-head logits fallback route.
 
   Verification: ran a short 3-step, 1-sample native-vs-native paired benchmark
   on the idle dedicated RTX 5090 with route-change and stage-timing gates
@@ -904,14 +922,14 @@ Future updates should append new entries here rather than replacing older notes.
   attention section timing enabled.
 
 - Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_logits_bf16_fallback_49152`
-  for current-shape LM-head logits bisection. The profile expands to
+  for 49152-row LM-head logits bisection. The profile expands to
   `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N`, matching the
-  default 49152-row LM-head chunk measured by the focused benchmark. It is
+  historical 49152-row LM-head chunk measured by the focused benchmark. It is
   rejected by default: the CUDA 13.3 dedicated RTX 5090 2-step, 2-sample
   stage-timed gate moved `lm_head_logits_tk_gemm_count` from 32 to 16 but
   rejected the fallback at `1.005968x` train-loop wall time, `1.009906x` block
-  backward, and `1.000576x` MLP projection. The older 32768-row logits fallback
-  profile remains available for reproducing historical row-chunk measurements.
+  backward, and `1.000576x` MLP projection. The 32768-row logits fallback
+  profile now targets the restored default row-chunk shape.
 
   Verification: added candidate-wrapper dry-run and rejected-launch coverage for
   the new profile, ran the focused static tests, and ran the short same-script
@@ -957,15 +975,10 @@ Future updates should append new entries here rather than replacing older notes.
   contract; ran shell syntax checks, compiled the bench with CUDA 13.3, and ran
   smoke profile timing on the dedicated RTX 5090.
 
-- Marked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_row_chunk_32768` as a
-  rejected rollback candidate for normal real launches. The CUDA 13.3 dedicated
-  RTX 5090 3-step, 2-sample stage-timed rerun changed the LM-head row chunk
-  from the current 49152-row route back to 32768 rows, but failed strict gates
-  at `1.000594x` train-loop wall, `1.001939x` steady-state CUDA-event wall,
-  `1.000885x` LM-head backward, `1.000224x` block backward, and `1.000409x`
-  MLP projection. Explicit `--lm-head-row-chunk-size 32768` remains available
-  for manual diagnostics; candidate-wrapper real launches require
-  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`.
+- Superseded the earlier `lm_head_row_chunk_32768` rejected-rollback note after
+  the longer CUDA 13.3 dedicated RTX 5090 confirmation restored 32768 rows as
+  the default. The inverse `lm_head_row_chunk_49152` profile is now the rejected
+  historical route for normal real launches.
 
   Verification: ran the paired native candidate profile unsandboxed on the
   display-disabled RTX 5090 with selected-GPU locking and no compute processes;

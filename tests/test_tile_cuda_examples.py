@@ -1096,7 +1096,6 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "historical baseline reproduction" in text
     assert "lm_head_logits_bf16_fallback_32768" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N" in text
-    assert "older 32768-row logits fallback no longer matches the active 49152-row LM-head logits shape" in text
     assert "lm_head_logits_bf16_fallback_49152" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,49152,768,T,N" in text
     assert "1.005968x train_loop_wall_ms_per_step" in text
@@ -1167,10 +1166,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "NFN_NATIVE_GPT_LM_HEAD_OVERLAP_LAST_DWEIGHT=1" in text
     assert "lm_head_row_chunk_49152" in text
     assert "--lm-head-row-chunk-size 49152" in text
+    assert "regressed train_loop_wall_ms_per_step to 1.012983x" in text
     assert "lm_head_row_chunk_32768" in text
     assert "--lm-head-row-chunk-size 32768" in text
-    assert "1.001939x train_loop_cuda_event_steady_state_wall_ms_per_step" in text
-    assert "1.000885x stage.lm_head_backward.total_ms" in text
+    assert "Tile-CUDA default is 32768 LM-head rows again" in text
     assert "lm_head_row_chunk_65536" in text
     assert "NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1" in text
     assert "--lm-head-row-chunk-size 65536" in text
@@ -1741,30 +1740,39 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     )
     assert logits_fallback_payload["metric_ratio_gates"]["enabled"] is False
 
-    logits_fallback_rejected_env = os.environ.copy()
-    logits_fallback_rejected_env.update(
+    logits_fallback_32768_output_path = (
+        tmp_path / "candidate-logits-fallback-32768-dry-run.json"
+    )
+    logits_fallback_32768_env = os.environ.copy()
+    logits_fallback_32768_env.update(
         {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
             "NFN_SM120_NATIVE_PROFILE_DIR": "none",
             "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
             "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_logits_bf16_fallback_32768",
-            "NFN_SM120_NATIVE_JSON_OUT": str(tmp_path / "candidate-logits-fallback-32768-rejected.json"),
+            "NFN_SM120_NATIVE_JSON_OUT": str(logits_fallback_32768_output_path),
         }
     )
 
-    logits_fallback_rejected = subprocess.run(
+    logits_fallback_32768_dry_run = subprocess.run(
         ["bash", str(script)],
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
-        env=logits_fallback_rejected_env,
+        env=logits_fallback_32768_env,
     )
-    assert logits_fallback_rejected.returncode == 2
-    assert "lm_head_logits_bf16_fallback_32768 is a rejected SM120 candidate" in (
-        logits_fallback_rejected.stderr
+    assert logits_fallback_32768_dry_run.returncode == 0, (
+        logits_fallback_32768_dry_run.stderr
     )
-    assert "no longer matches the active 49152-row LM-head logits shape" in (
-        logits_fallback_rejected.stderr
+    logits_fallback_32768_payload = json.loads(
+        logits_fallback_32768_output_path.read_text(encoding="utf-8")
+    )
+    assert (
+        logits_fallback_32768_payload["candidate_env"][
+            "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE"
+        ]
+        == "50304,32768,768,T,N"
     )
 
     logits_fallback_49152_output_path = (
@@ -2639,7 +2647,7 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "lm_head_row_chunk_32768 is a rejected SM120 candidate" in (
         row_chunk_32768_rejected.stderr
     )
-    assert "1.000885x stage.lm_head_backward.total_ms" in (
+    assert "Tile-CUDA default is 32768 LM-head rows again" in (
         row_chunk_32768_rejected.stderr
     )
 
@@ -2970,6 +2978,31 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "--lm-head-row-chunk-size" in split_row_payload["candidate_command"]
     assert "49152" in split_row_payload["candidate_command"]
     assert split_row_payload["metric_ratio_gates"]["enabled"] is False
+
+    split_row_rejected_env = os.environ.copy()
+    split_row_rejected_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_row_chunk_49152",
+            "NFN_SM120_NATIVE_JSON_OUT": str(
+                tmp_path / "candidate-row-chunk-49152-rejected.json"
+            ),
+        }
+    )
+    split_row_rejected = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=split_row_rejected_env,
+    )
+    assert split_row_rejected.returncode == 2
+    assert "lm_head_row_chunk_49152 is a rejected SM120 candidate" in (
+        split_row_rejected.stderr
+    )
+    assert "train_loop_wall_ms_per_step to 1.012983x" in split_row_rejected.stderr
 
     full_resident_output_path = tmp_path / "candidate-lm-head-full-resident-reuse-dry-run.json"
     full_resident_env = os.environ.copy()
