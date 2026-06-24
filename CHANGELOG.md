@@ -6,6 +6,21 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the rejected `lm_head_cooperative_backward` SM120 candidate
+  evidence with the new same-window triad benchmark. The CUDA 13.3.33 RTX 5090
+  run compared current native, cooperative LM-head CUDA Graph replay, and
+  llm.kittens in one selected-GPU lock. The cooperative candidate regressed
+  current native at `1.015026x` train-loop wall, `1.005839x` steady-state
+  CUDA-event timing, and `0.985194x` train tokens/sec, and measured
+  `1.018312x` wall versus llm.kittens, so the profile remains rejected until a
+  true fused/cooperative LM-head kernel body replaces the diagnostic graph
+  replay route.
+
+  Verification: ran `python tools/paired_kernel_speed.py` in triad mode with
+  current native baseline, `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`
+  candidate, and `/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu`
+  reference, writing `/tmp/nfn_sm120_triad_coop_5step.json`.
+
 - Added optional third-command reference mode to `tools/paired_kernel_speed.py`.
   Native kernel candidate runs can now pass `--reference "COMMAND"` and
   `--reference-env KEY=VALUE` to rotate baseline, candidate, and external

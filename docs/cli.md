@@ -1038,9 +1038,11 @@ capability satisfies `lm_head_cooperative_backward_fused_kernel_available`.
 At runtime the compiled trainer also loads that separate true-fused callable
 and uses it only when `lm_head_cooperative_backward_kernel_enabled` is true.
 The route remains opt-in: the focused strict-symbol microbench passes, but the
-full CUDA 13.3 RTX 5090 native-vs-native `lm_head_cooperative_backward` gate
-rejected it at `1.080550x` train-loop wall, `1.067318x` steady-state
-CUDA-event step time, and `1.294653x` LM-head backward.
+current CUDA 13.3.33 RTX 5090 same-window triad
+`lm_head_cooperative_backward` gate rejects it at `1.015026x` current-native
+train-loop wall, `1.005839x` current-native steady-state CUDA-event step time,
+`0.985194x` current-native train tokens/sec, and `1.018312x` wall versus the
+llm.kittens reference.
 The sequence-wrapper callable is used only for non-required diagnostic runs, so
 adding or rebuilding the wrapper symbol cannot accidentally satisfy
 `--require-cooperative-lm-head-backward`.

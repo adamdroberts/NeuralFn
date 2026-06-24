@@ -1151,15 +1151,14 @@ cooperative ABI remains default-off and non-promoted. The focused LM-head
 microbench keeps distinguishing the CUDA Graph wrapper from a future real
 single-kernel capability; current Tile ops return false from
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
-The full CUDA 13.3 dedicated RTX 5090 native-vs-native gate rejected
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` after the
-aligned padded-vocab route fix at `0.990440x` train-loop wall because
-steady-state CUDA-event timing still regressed to `1.002035x` and LM-head
-backward to `1.001066x`; the 2026-06-24 rerun remained rejected at
-`1.002204x` train-loop wall and `1.000412x` steady-state CUDA-event time even
-though LM-head backward alone reached `0.999819x`. Treat the current CUDA Graph
+The current CUDA 13.3.33 dedicated RTX 5090 same-window triad gate rejects
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward`: the
+cooperative LM-head CUDA Graph path regressed the current native baseline at
+`1.015026x` train-loop wall, `1.005839x` steady-state CUDA-event time, and
+`0.985194x` train tokens/sec, while also landing at `1.018312x` wall versus the
+llm.kittens reference in the same locked GPU run. Treat the current CUDA Graph
 body as ABI groundwork until a later single-kernel or lower-overhead fused
-optimization body passes the same-script gates.
+optimization body passes the triad and same-script native gates.
 The probed Tile symbol is now exported by the rebuilt ops library with a typed
 C ABI contract for this diagnostic wrapper: it accepts the BF16 logit/dlogit
 chunk, u16 targets, optional row-loss buffer, BF16/float hidden inputs,

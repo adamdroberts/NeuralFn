@@ -714,7 +714,7 @@ case "${CANDIDATE_PROFILE,,}" in
     ;;
   "lm_head_cooperative_backward"|"lm-head-cooperative-backward")
     REJECTED_CANDIDATE_PROFILE="$CANDIDATE_PROFILE"
-    REJECTED_CANDIDATE_REASON="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample gate activated the strict cooperative LM-head CUDA Graph path with aligned padded-vocab dHidden/dWeight GEMMs and improved train_loop_wall_ms_per_step to 0.990440x, but rejected promotion because steady-state CUDA-event timing regressed to 1.002035x and stage.lm_head_backward.total_ms to 1.001066x."
+    REJECTED_CANDIDATE_REASON="CUDA 13.3.33 dedicated RTX 5090 2026-06-24 same-window triad gate activated the cooperative LM-head CUDA Graph path but regressed current native train_loop_wall_ms_per_step to 1.015026x, steady-state CUDA-event timing to 1.005839x, train_tokens_per_second to 0.985194x, and candidate-over-llm.kittens wall to 1.018312x; keep it rejected until a true fused/cooperative kernel body replaces the diagnostic graph replay route."
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1"
     ;;
   "lm_head_cooperative_no_loss_backward"|"lm-head-cooperative-no-loss-backward"|"lm_head_cooperative_backward_no_loss"|"lm-head-cooperative-backward-no-loss")
