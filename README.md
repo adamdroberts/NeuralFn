@@ -2256,7 +2256,7 @@ entries did not change. The dedicated RTX 5090 check for LM-head dHidden shape
 `768,8192,50304,N,N` measured this allow-list route slower than GEMMEx, so it
 remains diagnostic-only.
 
-The compiled trainer, SDK, Python wrappers, and root CLI all share that 8192-row LM-head chunk default. Use the explicit LM-head row-chunk flags only when reproducing an older smaller-workspace profile or profiling a new candidate.
+The compiled trainer, SDK, Python wrappers, and root CLI all share the 32768-row LM-head chunk default. Use the explicit LM-head row-chunk flags only when reproducing rejected larger/smaller-workspace profiles or profiling a new candidate.
 
 For BF16 LM-head CE profiling, `NFN_NATIVE_GPT_CE_BF16_EXP2=1`, `NFN_NATIVE_GPT2_CE_BF16_EXP2=1`, or `NFN_TILE_CUDA_CE_BF16_EXP2=1` switches the in-place BF16 CE+dlogits kernel from `expf` to `exp2f(x * log2(e))`. The default remains `expf`; runtime JSON reports `lm_head_ce_bf16_exp2_enabled`, and the dedicated RTX 5090 paired check measured the exp2 candidate noise-equivalent/slightly slower.
 
@@ -2302,14 +2302,19 @@ compile-time token-init tile sizes against the 4096 default: 8192 measured
 `1.016591x` in startup-only paired runs, so token-init retile work is not the
 next useful startup path.
 
-The 8192-row tied LM-head chunk default remains the current local optimum on
+The 32768-row tied LM-head chunk default remains the current local optimum on
 the dedicated RTX 5090. A CUDA 13.3.33 post-reinstall stage-timed sweep rejected
 `--lm-head-row-chunk-size 16384` (`1.016019x` train-loop wall,
 `1.062838x` LM-head backward, with dHidden at `1.244198x`) and
 `--lm-head-row-chunk-size 4096` (`1.004875x` train-loop wall; CE improved to
-`0.961277x` but dWeight regressed to `1.039507x`). Keep row-chunk flags for
-reproducing older profiles; the remaining LM-head gap needs a fused/cooperative
-classifier-backward kernel or a materially different GEMM route.
+`0.961277x` but dWeight regressed to `1.039507x`). A fresh CUDA 13.3 dedicated
+RTX 5090 same-script comparison also rejected the old lower-memory 8192-row
+route: startup-only setup improved to `0.847026x` and BF16 logit chunk bytes
+dropped to `0.25x`, but the 3-step training gate regressed train-loop wall to
+`1.000927x`, steady-state CUDA-event step time to `1.000640x`, and LM-head
+backward to `1.028710x`. Keep row-chunk flags for reproducing older profiles;
+the remaining LM-head gap needs a fused/cooperative classifier-backward kernel
+or a materially different GEMM route.
 
 For the trainer-facing BF16 cuBLASLt block GEMMs, NeuralFn now selects cuBLASLt heuristic index 1 by default when that candidate is available on the workstation RTX 5090 shape. Use `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_INDEX=N` or `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_INDEX=N` only for paired kernel profiling. Set `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_POLICY=min_waves` / `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_POLICY=min_waves` to compare against the llm.kittens-style lowest-waves selector, or `max_waves` to compare against the highest-waves selector; explicit index overrides still win. For a narrow hot-shape bisection, set `NFN_TILE_CUDA_CUBLASLT_HEURISTIC_SHAPE=m,n,k,opA,opB,index` or `NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=m,n,k,opA,opB,index`; the shape-specific override applies only to the matching cuBLASLt plan and leaves the default/global heuristic selection in place for every other GEMM. The shape override value also accepts colon/semicolon/whitespace-separated entries for multi-shape paired bisection. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_block_dinput_h3_65536` uses that list form to pin the dense GPT `768,65536,3072,N,N` and `768,65536,2304,N,N` dInput plans to heuristic `3`, but it is rejected: the CUDA 13.3 RTX 5090 3-sample confirmation changed only those intended plans and regressed train-loop wall time to `1.005964x`, LM-head backward to `1.011344x`, block backward to `1.004976x`, and MLP projection total to `1.010875x`.
 

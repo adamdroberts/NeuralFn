@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- The SM120 native-vs-native candidate wrapper now has an explicit
+  `lm_head_row_chunk_8192` rejected profile. The profile compares the old
+  lower-memory 8192-row tied LM-head route against the current 32768-row
+  default and is blocked by default like the other rejected row-chunk profiles.
+  README and SDK Tile-CUDA docs now consistently describe 32768 as the shared
+  compiled-trainer, Python SDK, wrapper, and root-CLI default.
+
+  Migration note: no runtime default changed. Use
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only when intentionally
+  reproducing the 8192-row low-memory diagnostic route.
+
+  Verification: ran a CUDA 13.3 dedicated RTX 5090 startup-only paired check
+  with baseline `--lm-head-row-chunk-size 32768` and candidate
+  `--lm-head-row-chunk-size 8192`; startup setup improved to `0.847026x` and
+  BF16 logit chunk bytes dropped to `0.25x`, but the numeric route gate did not
+  apply to this startup-only probe. Ran a 3-step, 2-sample stage-timed paired
+  training check with the same baseline and candidate; metric gates rejected the
+  candidate because train-loop wall time regressed to `1.000927x`, steady-state
+  CUDA-event step time regressed to `1.000640x`, and LM-head backward regressed
+  to `1.028710x`.
+
 - The standalone LM-head and linear backward benchmark wrappers now rebuild
   their C++ benchmark binaries when `tile_ops.h` is newer than the executable,
   in addition to rebuilding on matching benchmark-source changes. This closes

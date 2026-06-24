@@ -2761,6 +2761,65 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
         row_chunk_32768_rejected.stderr
     )
 
+    low_memory_row_output_path = tmp_path / "candidate-row-chunk-8192-dry-run.json"
+    low_memory_row_env = os.environ.copy()
+    low_memory_row_env.update(
+        {
+            "NFN_SM120_NATIVE_DRY_RUN_PLAN": "1",
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_STAGE_TIMING": "1",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_row_chunk_8192",
+            "NFN_SM120_NATIVE_JSON_OUT": str(low_memory_row_output_path),
+        }
+    )
+
+    low_memory_row_dry_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=low_memory_row_env,
+    )
+
+    assert low_memory_row_dry_run.returncode == 0, low_memory_row_dry_run.stderr
+    low_memory_row_payload = json.loads(
+        low_memory_row_output_path.read_text(encoding="utf-8")
+    )
+    assert "--lm-head-row-chunk-size" in low_memory_row_payload["baseline_command"]
+    assert "32768" in low_memory_row_payload["baseline_command"]
+    assert "--lm-head-row-chunk-size" in low_memory_row_payload["candidate_command"]
+    assert "8192" in low_memory_row_payload["candidate_command"]
+    assert low_memory_row_payload["metric_ratio_gates"]["enabled"] is False
+
+    low_memory_row_rejected_env = os.environ.copy()
+    low_memory_row_rejected_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "lm_head_row_chunk_8192",
+            "NFN_SM120_NATIVE_JSON_OUT": str(
+                tmp_path / "candidate-row-chunk-8192-rejected.json"
+            ),
+        }
+    )
+    low_memory_row_rejected = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=low_memory_row_rejected_env,
+    )
+    assert low_memory_row_rejected.returncode == 2
+    assert "lm_head_row_chunk_8192 is a rejected SM120 candidate" in (
+        low_memory_row_rejected.stderr
+    )
+    assert "stage.lm_head_backward.total_ms to 1.028710x" in (
+        low_memory_row_rejected.stderr
+    )
+
     combined_arena_output_path = tmp_path / "candidate-combined-arena-dry-run.json"
     combined_arena_env = os.environ.copy()
     combined_arena_env.update(

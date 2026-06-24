@@ -701,7 +701,11 @@ the local RTX 5090/CUDA 13.3 workstation profile. This keeps the default
 LM-head chunk count at 2 and uses about 3.30GB of resident BF16 logit
 workspace at the 64x1024 shape. Set `lm_head_row_chunk_size=49152` or pass
 `--lm-head-row-chunk-size 49152` only to reproduce the rejected larger-chunk
-route, or use 8192 to reproduce the older lower-memory route. Effective
+route. Set `lm_head_row_chunk_size=8192` only for rejected low-memory
+diagnostics: the CUDA 13.3 dedicated RTX 5090 same-script gate improved
+startup-only setup to `0.847026x` and cut BF16 logit chunk bytes to `0.25x`,
+but the 3-step training gate regressed train-loop wall time to `1.000927x` and
+LM-head backward to `1.028710x` as chunk count increased from 2 to 8. Effective
 LM-head chunks above 49152 rows are rejected before CUDA
 launch unless `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` is set for
 explicit diagnostics; runtime JSON reports `lm_head_row_chunk_safe_cap` and
