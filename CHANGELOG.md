@@ -6,6 +6,22 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Promoted the SM120 native `lm_head_loss_bins` benchmark profile out of the
+  rejected-candidate guard for train-loss logging comparisons. The wrapper still
+  compares the current loss-bin path against the older row-loss tail by forcing
+  baseline `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0`, candidate `=1`, and
+  `--train-loss-every-steps 1` on both sides, but it no longer aborts before
+  measurement. This is a benchmark/workflow classification change; the trainer
+  already requested the loss-bin route by default whenever train-loss logging
+  executes.
+
+  Verification: reran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins` on the CUDA 13.3
+  dedicated RTX 5090 for 3 steps, 2 samples, stage timing on. The route counter
+  moved `lm_head_classifier_loss_bin_launch_count` from `0` to `48`, and the
+  candidate passed gates at `0.964602x` train-loop wall, `0.977001x`
+  steady-state CUDA-event timing, and `0.909318x` LM-head backward.
+
 - Added strict LM-head CUDA Graph observability to native dense GPT Tile-CUDA
   training. Rebuilt Tile ops libraries now export graph capture/cache/replay
   counters for

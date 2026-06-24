@@ -1442,12 +1442,14 @@ the CUDA 13.3 dedicated-RTX-5090 same-script gate changed the BGRADB counters
 from `1152` to `288`, but regressed train-loop wall time to `1.036221x`, block
 backward to `1.074258x`, MLP FC dWeight+bias to `1.387410x`, and MLP projection
 dWeight+bias to `1.241028x`.
-`lm_head_loss_bins` compares the current train-loss logging default against the
+`lm_head_loss_bins` is the accepted train-loss logging comparison against the
 older row-loss path. The candidate side expands to
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`, the baseline side is forced to
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0`, and the wrapper applies
 `--train-loss-every-steps 1` to both sides so the route counter is meaningful.
-Set `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` manually only for regression
+The 2026-06-24 CUDA 13.3 RTX 5090 rerun measured `0.964602x` train-loop wall
+and `0.909318x` LM-head backward with loss-bin launches moving `0 -> 48`. Set
+`NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` manually only for regression
 checks against the older row-loss tail.
 When `--native-stage-timing` is used through the paired speed tool or the SM120
 candidate wrapper, linked dense GPT commands named `nfn_gpt_native_train_linked`

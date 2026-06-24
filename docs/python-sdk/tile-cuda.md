@@ -362,7 +362,10 @@ into a fixed bin workspace before one
 `lm_head_classifier_loss_bin_launch_count`. The named wrapper profile is
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins`; the wrapper forces its
 baseline command to `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` so it still
-measures the new default against the older row-loss route. Set
+measures the new default against the older row-loss route. The 2026-06-24 CUDA
+13.3 RTX 5090 rerun promoted this profile out of the rejected-profile guard
+after measuring `0.964602x` train-loop wall, `0.977001x` steady-state
+CUDA-event timing, and `0.909318x` LM-head backward. Set
 `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` manually only for regression
 checks against the older row-loss tail.
 `NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1` is a default-off candidate for

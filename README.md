@@ -474,12 +474,13 @@ steady-state CUDA-event slice instead of passing only on first-step or setup
 movement. Set `NFN_SM120_NATIVE_TRAIN_LOOP_EVENT_TIMING=0` or
 `NFN_SM120_CANDIDATE_TRAIN_LOOP_EVENT_TIMING=0` for a timing-only rerun without
 native CUDA-event records.
-The 2026-06-24 CUDA 13.3 dedicated RTX 5090 refresh kept
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins` rejected by default even
-though it improved the steady-state CUDA-event slice (`0.978956x`) and LM-head
-backward (`0.909128x`): the strict total train-loop wall gate still missed at
-`1.000274x`. Treat this profile as diagnostic evidence for the remaining
-cooperative LM-head work, not as a promoted default.
+The 2026-06-24 CUDA 13.3 dedicated RTX 5090 refresh now keeps
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins` as the accepted
+train-loss logging comparison. The same-script 3-step, 2-sample gate forces
+`--train-loss-every-steps 1`, moves
+`lm_head_classifier_loss_bin_launch_count` from `0` to `48`, and measured
+`0.964602x` train-loop wall, `0.977001x` steady-state CUDA-event timing, and
+`0.909318x` LM-head backward versus the older row-loss tail.
 Set `NFN_SM120_STAGE_TIMING=1` or the wrapper-specific stage-timing aliases to
 collect native CUDA-event stage buckets even when `NFN_SM120_PROFILE_DIR=none`;
 profile sidecars and stage attribution are independent controls.

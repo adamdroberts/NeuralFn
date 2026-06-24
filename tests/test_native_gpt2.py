@@ -1802,7 +1802,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         in bench_source
     )
     assert (
-        "normal no-train-loss throughput does not execute the loss-bin tail"
+        'COMMON_EXTRA_ARGS_RAW="${COMMON_EXTRA_ARGS_RAW:+$COMMON_EXTRA_ARGS_RAW }--train-loss-every-steps 1"'
         in bench_source
     )
     assert (
