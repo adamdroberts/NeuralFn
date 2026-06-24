@@ -447,7 +447,7 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("NUMPY_LOADED False", proc.stdout)
         self.assertIn("TIKTOKEN_LOADED False", proc.stdout)
 
-    def test_native_cached_shard_default_runner_uses_compiled_cli(self) -> None:
+    def test_native_cached_shard_print_command_stays_metadata_only(self) -> None:
         code = textwrap.dedent(
             f"""
             import json
@@ -516,12 +516,10 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         )
 
         self.assertEqual(0, proc.returncode, proc.stderr)
-        self.assertIn(
-            "NATIVE_CLI_ENV CUDA_VISIBLE_DEVICES=0 CUDA_DEVICE_MAX_CONNECTIONS=1 CUDA_MODULE_LOADING=LAZY",
-            proc.stdout,
-        )
+        self.assertNotIn("NATIVE_CLI_ENV", proc.stdout)
+        self.assertIn("nfn_gpt_native_train", proc.stdout)
         self.assertIn("--dataset-alias", proc.stdout)
-        self.assertRegex(proc.stdout, r"--dataset-alias\n/tmp/.*/tiny")
+        self.assertRegex(proc.stdout, r"--dataset-alias /tmp/.*/tiny")
         self.assertNotIn("--target ", proc.stdout)
         self.assertNotIn("train_gpt2cu", proc.stdout)
         self.assertIn("--train-transformer-lm", proc.stdout)
