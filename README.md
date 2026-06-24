@@ -2313,6 +2313,11 @@ steady-state CUDA-event timing to `1.000147x`, and LM-head dWeight to
 already applies `CUDA_DEVICE_MAX_CONNECTIONS=1` to both sides, and
 `tk_dgelu_dinput` / `tk_dgelu_approx_tanh`, which are now no-ops because the
 linked SM120 baseline already uses the fused TK dGELU dInput route, and
+`tk_sm120_super_m7`, whose CUDA 13.3 dedicated RTX 5090 gate rebuilt Tile ops
+with `LLMK_SM120_SUPER_M=7` and `LLMK_SM120_DINP_SUPER_M=7`, proved the
+compile-time strategy changed from `8` to `7`, but regressed steady-state
+CUDA-event step time to `1.000992x`, LM-head backward to `1.000168x`, and MLP
+projection total to `1.001198x`, and
 `lm_head_cooperative_backward`, whose CUDA 13.3 RTX 5090 rerun activated the
 cooperative LM-head sequence wrapper but regressed train-loop wall time to
 `1.005235x` and LM-head backward to `1.103379x`, and

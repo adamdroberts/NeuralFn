@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_sm120_super_m7` as a reproducible
+  rejected compile-time Tile ops profile. The profile rebuilds the candidate
+  Tile library with `LLMK_SM120_SUPER_M=7` and
+  `LLMK_SM120_DINP_SUPER_M=7` so generated TK GEMM swizzle changes can be
+  measured through the same native-vs-native wrapper instead of one-off shell
+  overrides.
+
+  Verification: reran the profile on the CUDA 13.3 dedicated RTX 5090 for 3
+  steps, 2 samples, 1 warmup, and stage timing. The route-change gate passed
+  through the new strategy telemetry (`super_m` and `dinput_super_m` changed
+  from `8` to `7`), but the profile remains rejected because steady-state
+  CUDA-event timing regressed to `1.000992x`, LM-head backward to `1.000168x`,
+  and MLP projection total to `1.001198x`.
+
 - Added native GPT JSON telemetry for SM120 TK GEMM compile-time settings:
   `linear_tk_sm120_k_tile`, `linear_tk_sm120_grad_k_tile`,
   `linear_tk_sm120_super_m`, `linear_tk_sm120_dinput_super_m`,

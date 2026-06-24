@@ -1844,6 +1844,10 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "-DLLMK_SM120_FAST_DGELU=1" in bench_source
     assert "-DLLMK_SM120_LAYERNORM_BWD_BLOCKS_PER_SM=1" in bench_source
     assert "FORCE_DISABLE_ROUTE_CHANGE=1" in bench_source
+    assert '"tk_sm120_super_m7"|"tk-sm120-super-m7"' in bench_source
+    assert "-DLLMK_SM120_SUPER_M=7 -DLLMK_SM120_DINP_SUPER_M=7" in bench_source
+    assert "strategy telemetry changed super_m and dinput_super_m from 8 to 7" in bench_source
+    assert "steady-state CUDA-event timing regressed to 1.000992x" in bench_source
     assert "CUDA 13.3 RTX 5090 same-script gate moved 192 MLP projection dWeight calls to TK" in bench_source
     assert "lm_head_only_candidate_gate=1" in bench_source
     assert 'if [[ "$lm_head_only_candidate_gate" != "1" ]]; then' in bench_source
