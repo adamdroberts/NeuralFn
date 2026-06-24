@@ -6,6 +6,13 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Corrected the compiled NanoGPT diagnostic trainer help text so
+  `--eval-batches` and `--eval-batch-size` report the actual defaults, 20 and
+  64, instead of stale smaller smoke values.
+
+  Verification: ran `python -m pytest tests/test_native_gpt2.py -q -k
+  "nanogpt"` and `git diff --check`.
+
 - Aligned dense GPT native validation defaults across the fast Python wrapper,
   Python native harness, SDK handoff, and compiled C++ trainer. The default
   validation cadence remains every 250 optimizer steps, but the validation loss

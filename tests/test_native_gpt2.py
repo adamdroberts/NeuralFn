@@ -6464,7 +6464,9 @@ def test_missing_family_native_trainers_build_and_unified_frontend_dispatches(tm
     assert "--train-token-lm" in help_proc.stdout
     assert "--eval-every-steps N" in help_proc.stdout
     assert "--eval-batches N" in help_proc.stdout
+    assert "Validation batches per eval, default 20" in help_proc.stdout
     assert "--eval-batch-size N" in help_proc.stdout
+    assert "Validation microbatch rows, default 64" in help_proc.stdout
     assert "--tile-ops-lib PATH" in help_proc.stdout
     assert "--cuda-runtime-lib PATH" in help_proc.stdout
 
