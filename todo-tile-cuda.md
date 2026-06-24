@@ -433,6 +433,25 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `stage.train.model_forward.total_ms=1996.405`, and
     `stage.lm_head_backward.total_ms=1756.295`. This keeps the open parity
     work focused on fused/cooperative LM-head and block-backward kernels.
+  - 2026-06-24 refreshed the short stage-timed parity sample after the MLP
+    next-LN1 guard and train-loss counter cleanup:
+    `NFN_SM120_PARITY_STEPS=3 NFN_SM120_PARITY_SAMPLES=1
+    NFN_SM120_PARITY_WARMUP=1 NFN_SM120_PARITY_STAGE_TIMING=1
+    NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES=0
+    NFN_SM120_PARITY_JSON_OUT=/tmp/nfn_sm120_parity_continue_20260624.json
+    NFN_SM120_PARITY_PROFILE_DIR=/tmp/nfn_sm120_parity_continue_20260624_profiles
+    bash tools/bench_native_gpt_sm120_parity.sh`. The selected RTX 5090 had
+    display disabled, zero compute processes, 0% utilization before every
+    sample, and the benchmark lock held. llm.kittens measured
+    `2576.893333 ms/step`; NeuralFn measured `2587.400000 ms/step`, or
+    `1.004077x` train-loop wall, `1.015852x` steady-state CUDA-event wall, and
+    `0.990007x` tokens/sec. Current hot NeuralFn buckets over three steps are
+    `stage.block_backward.total_ms=3961.880`,
+    `stage.train.model_forward.total_ms=1968.420`,
+    `stage.lm_head_backward.total_ms=1751.740`,
+    `stage.block_backward.mlp_proj.total_ms=979.072`,
+    `stage.block_backward.attn_sdpa.total_ms=804.018`, and
+    `stage.block_backward.mlp_fc.total_ms=787.053`.
   - 2026-06-23 rechecked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_dgelu_dinput`
     after the row-chunk 49152 promotion and CUDA 13.3 setup. The 5-step,
     3-sample stage-timed same-script run measured `0.997858x` train-loop wall
