@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Updated top-level native GPT checkpoint inference so `nfn infer --checkpoint
+  model_########.bin --prompt-tokens ...` calls
+  `run_native_gpt_checkpoint_sampler()` instead of rebuilding its own
+  `subprocess.run()` command. The CLI now shares the SDK runner policy:
+  prefer the built C++ capture binding when available, then fall back to the
+  compiled `nfn_gpt_native_train --sample-checkpoint` CLI. Output formatting is
+  unchanged, and the path still runs before graph-backed inference, Torch,
+  NumPy, dataset manager, or graph-editor tensor flow.
+
+  Verification: added a source-level regression test and ran focused native
+  inference tests plus the no-Torch verifier.
+
 - Added a default-off LM-head BF16 hidden staging diagnostic:
   `NFN_NATIVE_GPT_LM_HEAD_BF16_HIDDEN_FROM_FINAL_NORM=1` asks the final
   LayerNorm forward kernel to write the full BF16 LM-head hidden buffer while

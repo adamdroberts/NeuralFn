@@ -895,7 +895,8 @@ graph-backed implementation module is loaded.
 
 Native checkpoint inference uses the same direct boundary for token-id prompts:
 `nfn infer --native-checkpoint PATH --prompt-tokens IDS` and
-`nfn infer --checkpoint PATH --prompt-tokens IDS` exec the compiled
+`nfn infer --checkpoint PATH --prompt-tokens IDS` call the SDK native sampler
+helper, which prefers the C++ capture binding and falls back to the compiled
 `nfn_gpt_native_train --sample-checkpoint` path before importing `infer_gpt`,
 Torch, graph-backed inference helpers, NumPy, tiktoken, or dataset managers.
 `PATH` may be either a native `model_########.bin` file or a native training

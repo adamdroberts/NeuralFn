@@ -1577,10 +1577,13 @@ path is inactive.
 Top-level native checkpoint token-id inference now dispatches directly from
 `nfn infer --native-checkpoint PATH --prompt-tokens IDS` or
 `nfn infer --checkpoint PATH --prompt-tokens IDS` to the compiled
-`nfn_gpt_native_train --sample-checkpoint` frontend. This path runs before
-`infer_gpt`, graph-backed inference, Torch, NumPy, tiktoken, or dataset-manager
-imports; text prompts can still use GPT-2 tokenization when tiktoken is
-available, but `--prompt-tokens` is the no-tokenizer native path.
+`nfn_gpt_native_train --sample-checkpoint` frontend. The master CLI calls
+`run_native_gpt_checkpoint_sampler()`, so it prefers the built C++ capture
+binding when available and falls back to the compiled CLI only when the binding
+is absent. This path runs before `infer_gpt`, graph-backed inference, Torch,
+NumPy, tiktoken, or dataset-manager imports; text prompts can still use GPT-2
+tokenization when tiktoken is available, but `--prompt-tokens` is the
+no-tokenizer native path.
 
 When `libnfn_native_train_tile_ops.so` is built without the trainer cuBLAS linear fast path, large-row linear dWeight fallbacks now use a shared-memory 2D tiled CUDA kernel for float32-output dWeight accumulation across float32/BF16 activation and gradient combinations. The normal workstation build still tries cuBLAS/cuBLASLt first; the tiled fallback only replaces the older row-chunked atomic dWeight reduction after those GEMM routes are unavailable. Bias-only fallback reductions keep the shared row-chunk path.
 

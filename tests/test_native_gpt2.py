@@ -394,6 +394,15 @@ def test_native_gpt_checkpoint_sampler_sdk_builds_no_torch_command(
     assert "Generated token ids: [1, 2, 3]" in rendered
 
 
+def test_nfn_native_checkpoint_sampler_uses_sdk_binding_helper() -> None:
+    source = (Path(__file__).resolve().parents[1] / "cli" / "nfn.py").read_text(encoding="utf-8")
+    function_body = source.rsplit("def _run_lightweight_native_gpt_sampler(", 1)[1].split("\ndef ", 1)[0]
+
+    assert "run_native_gpt_checkpoint_sampler" in function_body
+    assert "native_gpt_checkpoint_sampler_argv" not in function_body
+    assert "subprocess.run" not in function_body
+
+
 def test_packed_qkv_attention_backward_chunks_large_batches() -> None:
     source = (
         Path(__file__).resolve().parents[1]
