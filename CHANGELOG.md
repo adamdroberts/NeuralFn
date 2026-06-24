@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_public_vocab_strided_gemm`
+  as the reproducible same-script wrapper for the default-off public-vocab
+  strided LM-head dHidden/dWeight GEMM diagnostic. The profile pins the
+  baseline to `NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=0`, routes the
+  candidate through `=1`, and adds direct LM-head dHidden/dWeight stage gates
+  so future CUDA/cuBLAS reruns cannot treat an unchanged or slower route as a
+  valid kernel improvement.
+
+  Migration note: no default training behavior changes. The route remains
+  rejected because the CUDA 13.3 dedicated RTX 5090 same-binary paired run
+  measured `1.117352x` train-loop wall and `0.895573x` tokens/sec versus the
+  aligned padded-vocab route.
+
+  Verification: added static wrapper coverage for the new profile/env
+  expansion and dry-ran the rejected profile plan to confirm the candidate
+  command expands without requiring the rejected-profile opt-in.
+
 - Extended the standalone LM-head backward microbench JSON with per-variant
   CUDA Graph evidence for the strict cooperative ABI:
   `graph_capture_attempt_count`, `graph_capture_success_count`,

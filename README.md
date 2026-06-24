@@ -2312,6 +2312,10 @@ block backward to `1.001504x`,
 prepack to final LayerNorm output but regressed train-loop wall to `1.009000x`,
 steady-state CUDA-event timing to `1.000147x`, and LM-head dWeight to
 `1.000293x`,
+`lm_head_public_vocab_strided_gemm`, whose CUDA 13.3 dedicated RTX 5090
+same-binary paired run routed padded LM-head dHidden/dWeight chunks through
+logical public-vocab strided GEMMs but regressed train-loop wall to
+`1.117352x` and tokens/sec to `0.895573x`,
 `cuda_device_max_connections_1`, which is a no-op because the paired wrapper
 already applies `CUDA_DEVICE_MAX_CONNECTIONS=1` to both sides, and
 `tk_dgelu_dinput` / `tk_dgelu_approx_tanh`, which are now no-ops because the
