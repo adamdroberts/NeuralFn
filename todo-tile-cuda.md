@@ -97,6 +97,12 @@ Real training tensors must not pass through graph editor node objects.
   `tools/bench_native_gpt_sm120_candidate.sh` or
   `tools/bench_native_gpt_sm120_parity.sh` so baseline and candidate execute in
   the same script under the same external GPU load.
+  - 2026-06-24 hardened `tools/bench_native_gpt_sm120_parity.sh` against
+    no-op profile evidence: it now exits before GPU work when
+    `NFN_SM120_PARITY_CANDIDATE_PROFILE` or `NFN_SM120_PARITY_PROFILE` is set.
+    Use the native-vs-native candidate wrapper for named profile expansion, or
+    pass explicit `NFN_SM120_PARITY_CANDIDATE_ENV` values when comparing
+    NeuralFn against llm.kittens.
   - 2026-06-24 added metadata-only `nfn kernels list --kind ... --status ...`
     filters on both the lightweight Torch-free CLI path and the full CLI path.
     `nfn kernels list --status host_only --kind module --json` now emits only

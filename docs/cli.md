@@ -1139,6 +1139,14 @@ The parity wrapper also accepts generic `NFN_SM120_*` fallbacks such as
 `NFN_SM120_STEPS`, `NFN_SM120_SAMPLES`, `NFN_SM120_WARMUP`,
 `NFN_SM120_CUDA_VISIBLE_DEVICES`, `NFN_SM120_PROFILE_DIR`, and
 `NFN_SM120_JSON_OUT`; parity-specific names win when both are set.
+Named native route profiles are not expanded by the llm.kittens parity
+wrapper. If `NFN_SM120_PARITY_CANDIDATE_PROFILE` or
+`NFN_SM120_PARITY_PROFILE` is set, the wrapper exits before any GPU work so a
+profile typo cannot produce no-op speed evidence. Use
+`tools/bench_native_gpt_sm120_candidate.sh` with
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE` for named native-vs-native bisection, or
+set `NFN_SM120_PARITY_CANDIDATE_ENV` explicitly for a
+NeuralFn-vs-llm.kittens env change.
 `NFN_SM120_PARITY_CUDA_VISIBLE_DEVICES` defaults to `dedicated`, which requires
 an idle display-disabled NVIDIA GPU for mixed display/compute workstations; set
 it to `auto` only when fallback to the lowest-utilization NVIDIA GPU is

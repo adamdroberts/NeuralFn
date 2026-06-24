@@ -529,6 +529,11 @@ The SM120 wrappers also accept generic `NFN_SM120_*` names such as
 `NFN_SM120_CUDA_VISIBLE_DEVICES`, `NFN_SM120_PROFILE_DIR`, and
 `NFN_SM120_JSON_OUT` as the lowest-priority fallback, so a copied parity or
 candidate command does not silently return to default step/sample counts.
+Named candidate profiles are intentionally limited to
+`tools/bench_native_gpt_sm120_candidate.sh`. The llm.kittens parity wrapper
+refuses `NFN_SM120_PARITY_CANDIDATE_PROFILE` / `NFN_SM120_PARITY_PROFILE`
+instead of silently ignoring them; use `NFN_SM120_PARITY_CANDIDATE_ENV` for an
+explicit NeuralFn-vs-llm.kittens env change.
 For kernel promotion work that must compare both the previous NeuralFn native
 route and the llm.kittens reference in the same GPU-load window,
 `tools/paired_kernel_speed.py` accepts an optional `--reference

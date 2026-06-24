@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Hardened the llm.kittens SM120 parity wrapper against no-op candidate
+  profiles. `tools/bench_native_gpt_sm120_parity.sh` now fails before launching
+  GPU work when `NFN_SM120_PARITY_CANDIDATE_PROFILE` or
+  `NFN_SM120_PARITY_PROFILE` is set, because named profiles are expanded by
+  `tools/bench_native_gpt_sm120_candidate.sh`, not by the
+  NeuralFn-vs-llm.kittens parity wrapper. Use
+  `NFN_SM120_PARITY_CANDIDATE_ENV` for explicit parity-side env changes. This
+  prevents a typo or copied native profile command from producing misleading
+  baseline-vs-unchanged-candidate speed evidence.
+
+  Verification: ran `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "linked_tile_ops_loader"`; ran
+  `bash -n tools/bench_native_gpt_sm120_parity.sh`; ran
+  `NFN_SM120_PARITY_PROFILE=lm_head_pipeline_chunks
+  NFN_SM120_PARITY_DRY_RUN_PLAN=1 bash tools/bench_native_gpt_sm120_parity.sh`
+  and confirmed it exits with status 2 before GPU work; ran `git diff --check`.
+
 - Fixed the standalone native linear and LM-head backward benchmark wrappers so
   their default `dedicated` CUDA selector resolves to the idle display-disabled
   GPU index from `nvidia-smi` before launch. Previously those wrappers exported
