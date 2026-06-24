@@ -460,6 +460,16 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `cuda_runtime_version_preflight_wall_ms` at `119.471 ms` on the first side
     and `110.187 ms` on the second side, so this avoids adding preflight cost to
     raw startup bisections.
+  - 2026-06-24 rechecked the standalone LM-head cooperative backward candidate
+    after the CUDA 13.3 reinstall. `tools/bench_lm_head_backward_candidate.sh`
+    at trainer-chunk shape reported `candidate_true_fused_capability=false` and
+    measured `1.010998x` candidate/baseline in baseline-first order, `0.997661x`
+    in candidate-first order, and `1.002528x` with row-loss recording. The
+    candidate is noise-level to slower because it only schedules CE, dHidden,
+    and dWeight as a cross-stream sequence; it is not the true fused kernel the
+    integrated trainer gate requires. Keep `lm_head_cooperative_backward` out of
+    defaults until `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+    returns true and a same-script benchmark shows a durable win.
   - 2026-06-23 rechecked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_dgelu_dinput`
     after the row-chunk 49152 promotion and CUDA 13.3 setup. The 5-step,
     3-sample stage-timed same-script run measured `0.997858x` train-loop wall
