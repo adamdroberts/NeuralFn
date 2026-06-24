@@ -1654,6 +1654,8 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "candidate_true_fused_capability" in bench_source
     assert "candidate_sequence_wrapper_only" in bench_source
     assert "candidate_strict_symbol_is_placeholder_sequence" in bench_source
+    assert "candidate_cuda_graph_wrapper_only" in bench_source
+    assert "graph_replay_success_count > 0" in bench_source
     assert "ce_launch_count > 0" in bench_source
     assert "dhidden_launch_count > 0" in bench_source
     assert "dweight_launch_count > 0" in bench_source
@@ -1722,6 +1724,7 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "BENCH_ARGS=(" in wrapper
     assert "printf '%q' \"${BENCH_BIN}\"" in wrapper
     assert "candidate strict symbol is still sequencing CE/dHidden/dWeight" in wrapper
+    assert "candidate strict symbol is a CUDA Graph wrapper around CE/dHidden/dWeight" in wrapper
     assert "candidate_true_fused_capability is false" in wrapper
     assert "candidate_to_baseline_ms_per_iter_ratio" in wrapper
     assert "candidate_first" in bench_source

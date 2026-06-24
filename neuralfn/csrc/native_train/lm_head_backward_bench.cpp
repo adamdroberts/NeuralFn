@@ -604,6 +604,13 @@ std::string render_json(
     const bool candidate_strict_symbol_is_placeholder_sequence =
         candidate_sequence_wrapper_only &&
         candidate.symbol == "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16";
+    const bool candidate_cuda_graph_wrapper_only =
+        !true_fused_capability &&
+        candidate.graph_replay_count > 0 &&
+        candidate.graph_replay_success_count > 0 &&
+        candidate.ce_launch_count == 0 &&
+        candidate.dhidden_launch_count == 0 &&
+        candidate.dweight_launch_count == 0;
     auto variant_json = [](const VariantResult& value) {
         std::ostringstream out;
         out << "{"
@@ -645,6 +652,7 @@ std::string render_json(
         << "  \"candidate_true_fused_capability\": " << (true_fused_capability ? "true" : "false") << ",\n"
         << "  \"candidate_sequence_wrapper_only\": " << (candidate_sequence_wrapper_only ? "true" : "false") << ",\n"
         << "  \"candidate_strict_symbol_is_placeholder_sequence\": " << (candidate_strict_symbol_is_placeholder_sequence ? "true" : "false") << ",\n"
+        << "  \"candidate_cuda_graph_wrapper_only\": " << (candidate_cuda_graph_wrapper_only ? "true" : "false") << ",\n"
         << "  \"reference_components\": {"
         << "\"logits_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.logits_ms_per_iter << ","
         << "\"ce_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.ce_ms_per_iter << ","

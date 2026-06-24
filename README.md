@@ -184,9 +184,11 @@ inside one CUDA process with event timing, route counters, decomposed
 `reference_components` timings for logits, CE, dHidden, and dWeight, and a
 `candidate_true_fused_capability` JSON field. The same JSON also reports
 `candidate_sequence_wrapper_only` and
-`candidate_strict_symbol_is_placeholder_sequence`, so
-`NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` distinguishes the graph-fused
-strict callable from wrapper-only builds. The CUDA 13.3 dedicated RTX 5090
+`candidate_strict_symbol_is_placeholder_sequence`, plus
+`candidate_cuda_graph_wrapper_only` for the current strict symbol that replays
+captured CE, dHidden, and dWeight work through a CUDA Graph. This makes
+`NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` distinguish sequence wrappers,
+CUDA Graph wrappers, and a future real fused kernel. The CUDA 13.3 dedicated RTX 5090
 `trainer-chunk` microbench measured the strict graph candidate at
 `35.783084 ms/iter` versus `35.776438 ms/iter` for the legacy cooperative
 symbol (`1.000186x`). Use

@@ -6,6 +6,32 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the LM-head backward microbench strict diagnostics with
+  `candidate_cuda_graph_wrapper_only`. The JSON now distinguishes three
+  non-production strict-symbol states: a sequence wrapper, a CUDA Graph wrapper
+  around CE/dHidden/dWeight launches, and a future real fused kernel. The
+  `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` gate now names the CUDA Graph
+  wrapper explicitly instead of failing with only the generic
+  `candidate_true_fused_capability is false` message.
+
+  Migration note: no runtime training behavior changes. This only improves the
+  standalone LM-head benchmark and documentation used to validate future fused
+  kernel work.
+
+  Verification: ran `bash -n tools/bench_lm_head_backward_candidate.sh`; ran
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict
+  NFN_LM_HEAD_BACKWARD_DRY_RUN=1 bash
+  tools/bench_lm_head_backward_candidate.sh`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "lm_head_backward_microbench or
+  cooperative_abi"`; ran the CUDA 13.3 dedicated-GPU strict profile once with
+  `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict
+  NFN_LM_HEAD_BACKWARD_ITERATIONS=1 NFN_LM_HEAD_BACKWARD_WARMUP=0
+  NFN_LM_HEAD_BACKWARD_JSON_OUT=/tmp/nfn_lm_head_strict_continue.json bash
+  tools/bench_lm_head_backward_candidate.sh`, which exited nonzero as expected
+  with `candidate_true_fused_capability: false` and one CUDA Graph
+  capture/replay.
+
 - Added `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk-strict` to
   `tools/bench_lm_head_backward_candidate.sh`. It uses the same 32768-row
   no-loss trainer-chunk LM-head backward shape as `trainer-chunk`, but defaults
