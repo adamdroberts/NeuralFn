@@ -1350,6 +1350,15 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
   unsandboxed `nvidia-smi` plus `--cuda-runtime-lib` /
   `NFN_CUDA_RUNTIME_LIB`. The same optimizer smoke passes unsandboxed with all
   148 AdamW buffer updates.
+- [x] Revisited the native trainer test surface after the CUDA 13.3 reinstall.
+  `python -m pytest tests/test_native_gpt2.py -q` now passes
+  `80 passed, 1 skipped in 351.39s`, and
+  `python tools/check_native_no_torch_deps.py --skip-artifacts --json
+  --max-entrypoint-seconds 2.0` still passes across GPT/GPT-2-evo, NanoGPT,
+  `nfn train`, native inference, SDK exports, binding imports, and benchmark
+  dry-run entrypoints without importing Torch/NumPy/tiktoken/dataset-manager or
+  graph-runtime shims. `tests/test_tile_cuda_gpu.py` remains skipped in this
+  environment, so it is not a live CUDA regression signal.
 - [ ] Close the remaining SM120 parity gap with new kernel work, not more default-switch promotion. The next high-value implementation target is the LM-head classifier/backward contract reported in runtime JSON: fuse or otherwise co-schedule row-chunked BF16 logits, public-vocab CE/dlogits, dHidden, and dWeight so the default path is closer to llm.kittens' full-resident fused classifier without triggering the full-logit memory cliff.
   - 2026-06-23 added the dedicated linear-backward microbench to keep the next
     kernel work honest: candidate dInput/dWeight symbols for block backward and

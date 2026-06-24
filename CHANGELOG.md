@@ -6,6 +6,20 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Revisited the CUDA 13.3 native trainer verification set after the WSL toolkit
+  reinstall. The broad dense GPT native suite now completes cleanly on the
+  current tree, and the no-Torch verifier still proves that GPT/GPT-2-evo,
+  NanoGPT, `nfn train`, native inference, SDK exports, native binding imports,
+  and native benchmark dry-runs stay on the compiled native/TILE-CUDA dispatch
+  path without importing Torch, NumPy, tiktoken, dataset-manager, or graph
+  runtime entrypoints.
+
+  Verification: `python -m pytest tests/test_native_gpt2.py -q` passed
+  `80 passed, 1 skipped in 351.39s`; `python -m pytest
+  tests/test_tile_cuda_gpu.py -q` remains skipped in this environment; and
+  `python tools/check_native_no_torch_deps.py --skip-artifacts --json
+  --max-entrypoint-seconds 2.0` passed.
+
 - Changed `tools/bench_native_gpt_sm120_candidate.sh` so CUDA runtime/driver
   version preflight is opt-in instead of injected into every native-vs-native
   candidate run. The compiled dense GPT trainer already leaves
