@@ -6,6 +6,34 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off native dense GPT LM-head diagnostic route behind
+  `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_CORRECTIONS`,
+  `NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_CORRECTIONS`, or
+  `NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_CORRECTIONS`. The route replaces the
+  no-loss BF16 classifier CE dlogit write with probability-only dlogits, then
+  applies the target subtraction with separate Tile CUDA dHidden and dWeight
+  correction kernels. Native JSON now reports
+  `lm_head_prob_only_corrections_requested`,
+  `lm_head_prob_only_corrections_available`,
+  `lm_head_prob_only_corrections_enabled`,
+  `lm_head_prob_only_corrections_chunk_count`,
+  `lm_head_prob_only_dhidden_correction_launch_count`, and
+  `lm_head_prob_only_dweight_correction_launch_count`.
+
+  Migration note: no default behavior changes. The same-script profile
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_corrections` is
+  rejected by default for real reruns unless
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
+
+  Verification: rebuilt `libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train_linked`; ran the focused candidate-wrapper test
+  and `tools/check_native_no_torch_deps.py --max-entrypoint-seconds 2`; then
+  ran the CUDA 13.3 dedicated RTX 5090 same-script profile for 3 steps, 2
+  samples, 1 warmup, and stage timing. The route changed strategy to
+  `no-loss-prob-only-dlogits-plus-target-corrections`, but the gate rejected it
+  at `1.005050x` LM-head backward and `1.000994x` steady-state CUDA-event step
+  time.
+
 - Added diagnostic cuBLASLt plan-prewarm mode selection for native dense GPT
   training. The native trainer now accepts
   `NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE`,
