@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- The standalone LM-head and linear backward benchmark wrappers now rebuild
+  their C++ benchmark binaries when `tile_ops.h` is newer than the executable,
+  in addition to rebuilding on matching benchmark-source changes. This closes
+  the stale microbench path exposed by the native artifact freshness gate.
+
+  Migration note: no training default changed. Focused benchmark runs may spend
+  one extra short build after Tile ABI header edits instead of measuring stale
+  benchmark harness code.
+
+  Verification: ran `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "lm_head_backward_microbench or
+  linear_backward_microbench"`; ran `bash -n
+  tools/bench_lm_head_backward_candidate.sh`; ran `bash -n
+  tools/bench_linear_backward_candidate.sh`; ran
+  `NFN_LM_HEAD_BACKWARD_DRY_RUN=1 bash
+  tools/bench_lm_head_backward_candidate.sh`; ran
+  `NFN_LINEAR_BACKWARD_DRY_RUN=1 bash tools/bench_linear_backward_candidate.sh`;
+  ran `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --json`.
+
 - `tools/check_native_no_torch_deps.py` now checks native artifact freshness by
   default. In addition to `ldd` and import-blocker checks, the gate fails when
   present native GPT trainers, linked Tile ops trainers, Tile ops shared

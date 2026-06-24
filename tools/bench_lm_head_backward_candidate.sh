@@ -190,7 +190,22 @@ case "${DRY_RUN,,}" in
     ;;
 esac
 
-if [[ ! -x "${BENCH_BIN}" || "${ROOT_DIR}/neuralfn/csrc/native_train/lm_head_backward_bench.cpp" -nt "${BENCH_BIN}" ]]; then
+BENCH_DEPS=(
+  "${ROOT_DIR}/neuralfn/csrc/native_train/lm_head_backward_bench.cpp"
+  "${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h"
+)
+REBUILD_BENCH=0
+if [[ ! -x "${BENCH_BIN}" ]]; then
+  REBUILD_BENCH=1
+else
+  for DEP in "${BENCH_DEPS[@]}"; do
+    if [[ "${DEP}" -nt "${BENCH_BIN}" ]]; then
+      REBUILD_BENCH=1
+      break
+    fi
+  done
+fi
+if [[ "${REBUILD_BENCH}" == "1" ]]; then
   bash "${ROOT_DIR}/tools/build_lm_head_backward_bench.sh" "${BENCH_BIN}" >&2
 fi
 TILE_OPS_DEPS=(

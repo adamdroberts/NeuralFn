@@ -233,9 +233,11 @@ and candidate-first order under the same external GPU load. Set
 `NFN_LM_HEAD_BACKWARD_DRY_RUN=1` to print the resolved C++ benchmark command
 without building artifacts, loading CUDA, or touching Torch; the native no-Torch
 verifier uses that dry-run path. The standalone LM-head and linear backward
-benchmark wrappers rebuild `libnfn_native_train_tile_ops.so` when
-`tile_ops.cu`, `tile_ops.h`, or `tile_cuda/kernels.cu` is newer than the shared
-library, so header-only Tile ABI edits are not measured against stale kernels.
+benchmark wrappers rebuild their C++ benchmark binaries when `tile_ops.h` or
+the matching benchmark source changes, and rebuild
+`libnfn_native_train_tile_ops.so` when `tile_ops.cu`, `tile_ops.h`, or
+`tile_cuda/kernels.cu` is newer than the shared library, so header-only Tile ABI
+edits are not measured against stale harnesses or kernels.
 The full SM120 parity and native-candidate wrappers also refresh the default
 `nfn_gpt_native_train` or `nfn_gpt_native_train_linked` binary before non-dry
 runs when the native GPT source, token shard resolver, or linked Tile ABI inputs

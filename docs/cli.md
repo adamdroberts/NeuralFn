@@ -1230,10 +1230,12 @@ defaults `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=dedicated`, which requires a
 display-disabled NVIDIA GPU through `nvidia-smi`; set it to `auto` only when
 fallback to the lowest-utilization NVIDIA GPU is acceptable, or set it or
 `NFN_LM_HEAD_BACKWARD_CUDA_DEVICE` explicitly for manual pinning. The focused
-LM-head and linear backward wrappers rebuild `libnfn_native_train_tile_ops.so`
-when `tile_ops.cu`, `tile_ops.h`, or `tile_cuda/kernels.cu` is newer than the
-shared library, which keeps header-only Tile ABI changes from being benchmarked
-against stale binaries. The full SM120 parity and native-candidate wrappers
+LM-head and linear backward wrappers rebuild their C++ benchmark binaries when
+`tile_ops.h` or the matching benchmark source changes, and rebuild
+`libnfn_native_train_tile_ops.so` when `tile_ops.cu`, `tile_ops.h`, or
+`tile_cuda/kernels.cu` is newer than the shared library. This keeps header-only
+Tile ABI changes from being benchmarked against stale harnesses or kernels. The
+full SM120 parity and native-candidate wrappers
 also refresh their default `nfn_gpt_native_train` or
 `nfn_gpt_native_train_linked` binary before non-dry runs when the native GPT
 source, token shard resolver, or linked Tile ABI inputs are newer. User-pinned

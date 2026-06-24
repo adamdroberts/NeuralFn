@@ -1828,6 +1828,10 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "CANDIDATE_FIRST_ARG=(--candidate-first)" in wrapper
     assert "BENCH_ARGS=(" in wrapper
     assert "printf '%q' \"${BENCH_BIN}\"" in wrapper
+    assert "BENCH_DEPS=(" in wrapper
+    assert '"${ROOT_DIR}/neuralfn/csrc/native_train/lm_head_backward_bench.cpp"' in wrapper
+    assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h"' in wrapper
+    assert 'if [[ "${DEP}" -nt "${BENCH_BIN}" ]]; then' in wrapper
     assert "candidate strict symbol is still sequencing CE/dHidden/dWeight" in wrapper
     assert "candidate strict symbol is a CUDA Graph wrapper around CE/dHidden/dWeight" in wrapper
     assert "candidate_true_fused_capability is false" in wrapper
@@ -1930,6 +1934,10 @@ def test_native_gpt_linear_backward_microbench_profiles_block_and_lm_head_shapes
     assert "NFN_LINEAR_BACKWARD_MAX_RATIO" in wrapper
     assert "NFN_LINEAR_BACKWARD_REQUIRE_ROUTE_CHANGE" in wrapper
     assert "candidate_symbol_changed is false; candidate and baseline symbols are identical" in wrapper
+    assert "BENCH_DEPS=(" in wrapper
+    assert '"${ROOT_DIR}/neuralfn/csrc/native_train/linear_backward_bench.cpp"' in wrapper
+    assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.h"' in wrapper
+    assert 'if [[ "${DEP}" -nt "${BENCH_BIN}" ]]; then' in wrapper
     assert "tools/build_native_train_tile_ops.sh" in wrapper
     assert "TILE_OPS_DEPS=(" in wrapper
     assert '"${ROOT_DIR}/neuralfn/csrc/native_train/tile_ops.cu"' in wrapper
