@@ -1058,7 +1058,9 @@ training JSON and in `tools/paired_kernel_speed.py` route-change detection, so
 `lm_head_cooperative_backward` candidate runs can prove graph replay happened
 instead of only proving the cooperative route was requested. Missing older
 Tile ops symbols report zero; this does not promote the graph body as a
-default training route.
+default training route. Successful strict graph replay does not increment the
+legacy `lm_head_cooperative_sequence_*` counters; those counters identify the
+diagnostic sequence wrapper or graph fallback path.
 `NFN_NATIVE_GPT_LM_HEAD_FUSED_LOSS_BACKWARD=0` (or the GPT-2 alias
 `NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD=0`) disables the default fused
 loss-accumulate+dlogits classifier path for same-script bisection, making

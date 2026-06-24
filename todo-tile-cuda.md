@@ -301,7 +301,10 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       `lm_head_fused_graph_replay_success_count`, and
       `lm_head_fused_graph_fallback_count`. This closes the evidence gap for
       graph-vs-fallback candidate runs; it does not close the parity gap or
-      promote the CUDA Graph body as the default.
+      promote the CUDA Graph body as the default. The strict graph path no
+      longer increments legacy `lm_head_cooperative_sequence_*` counters on
+      successful replay, so those counters continue to identify only the
+      diagnostic sequence wrapper or graph fallback.
     - 2026-06-23 changed the focused `trainer-chunk` microbenchmark profile to
       pass the cooperative no-loss flag and use the no-loss CE reference
       symbol, matching the optimizer-only native trainer path. Use

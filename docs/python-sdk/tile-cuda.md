@@ -160,7 +160,9 @@ for the optional
 symbols; older Tile ops libraries that do not export them leave the reported
 values at zero. `tools/paired_kernel_speed.py` treats them as native
 route-change counters so LM-head cooperative candidates can prove graph replay
-or fallback directly.
+or fallback directly. Successful strict graph replay leaves the legacy
+`lm_head_cooperative_sequence_*` counters at zero; those counters are for the
+diagnostic sequence wrapper or graph fallback path.
 
 Use `bash tools/bench_native_gpt_linear_hot_matrix.sh` when a candidate needs to
 cover the current native GPT hot linear path instead of one shape. The matrix

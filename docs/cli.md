@@ -1004,7 +1004,9 @@ CUDA Graph counters:
 `lm_head_fused_graph_cache_entry_count`, `lm_head_fused_graph_replay_count`,
 `lm_head_fused_graph_replay_success_count`, and
 `lm_head_fused_graph_fallback_count`. Older Tile ops libraries that do not
-export those optional C ABI symbols leave the values at zero.
+export those optional C ABI symbols leave the values at zero. Successful
+strict graph replay leaves `lm_head_cooperative_sequence_*` at zero; nonzero
+sequence counters mean the diagnostic wrapper or graph fallback path ran.
 
 `nfn train --tinystories` takes the same compiled dense GPT route when `--base-model gpt` is omitted.
 

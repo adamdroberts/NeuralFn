@@ -27,12 +27,17 @@ Future updates should append new entries here rather than replacing older notes.
   `bash tools/rebuild_native_sm120.sh`,
   `python tools/check_native_no_torch_deps.py --max-entrypoint-seconds 2`,
   and `nm -D build/libnfn_native_train_tile_ops.so` confirmed the exported
-  graph-counter symbols. A one-step
+  graph-counter symbols. After the graph/sequence counter split, a one-step
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` probe with
   metric-ratio gates disabled recorded baseline graph counters at zero and
   candidate counters at 3 capture attempts, 3 capture successes, 13 cache hits,
   3 cache entries, 16 graph replays, 16 replay successes, and 0 fallbacks; the
-  native route-change gate passed.
+  candidate legacy cooperative sequence counters stayed at zero and the native
+  route-change gate passed.
+  The strict graph route no longer increments the legacy
+  `lm_head_cooperative_sequence_*` counters on successful graph replay; those
+  counters are reserved for the diagnostic sequence wrapper and graph fallback
+  path.
 
 - Added a strict LM-head cooperative backward callable for native dense GPT
   Tile-CUDA training. The exported

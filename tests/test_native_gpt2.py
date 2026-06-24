@@ -1512,6 +1512,15 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head_cooperative_sequence_launch_count" in source
     assert "lm_head_fused_graph_replay_success_count" in source
     assert "g_lm_head_fused_graph_fallback_count" in tile_ops_source
+    strict_fused_body = tile_ops_source.split(
+        "int nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16",
+        1,
+    )[1].split(
+        "int nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused",
+        1,
+    )[0]
+    assert "g_lm_head_cooperative_sequence_launch_count.fetch_add" not in strict_fused_body
+    assert "g_lm_head_fused_graph_fallback_count.fetch_add" in strict_fused_body
     assert "return include_symbol_check ? (loaded && all_symbols && plan_passed) : false;" in source
     assert "const bool lm_head_cooperative_backward_route_integrated = false;" not in source
     bench_source = (root / "tools" / "bench_native_gpt_sm120_candidate.sh").read_text(

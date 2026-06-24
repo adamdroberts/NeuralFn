@@ -5664,14 +5664,6 @@ int nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16(
         row_stride < vocab) {
         return static_cast<int>(cudaErrorInvalidValue);
     }
-    g_lm_head_cooperative_sequence_launch_count.fetch_add(1, std::memory_order_relaxed);
-    g_lm_head_cooperative_sequence_concurrent_count.fetch_add(1, std::memory_order_relaxed);
-    g_lm_head_cooperative_sequence_ce_launch_count.fetch_add(1, std::memory_order_relaxed);
-    g_lm_head_cooperative_sequence_dhidden_launch_count.fetch_add(1, std::memory_order_relaxed);
-    g_lm_head_cooperative_sequence_dweight_launch_count.fetch_add(1, std::memory_order_relaxed);
-    if ((flags & kLmHeadCooperativeFlagLossBins) != 0) {
-        g_lm_head_cooperative_sequence_loss_bin_count.fetch_add(1, std::memory_order_relaxed);
-    }
     const LmHeadBackwardGraphKey key{
         logits_bf16,
         targets_u16,
