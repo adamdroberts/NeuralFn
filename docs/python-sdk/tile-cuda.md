@@ -2362,6 +2362,10 @@ and the public SDK native training exports.
 It also executes the guarded legacy training scripts with no native flags
 against stubbed native CLIs, proving their default direct-script path enters
 native C++ before importing Torch or the Python dataset/runtime stack.
+The same verifier now covers dense GPT `nfn train` dispatch with an explicit
+`--template-name` and with a custom `--graph-file`, so universal GPT trainer
+selection cannot regress into the graph-backed Python runtime while only the
+architecture selector changes.
 The generic compiled binding must expose both a runner symbol and a command
 resolver symbol; `resolve_native_train_binding_command(config)` returns the
 argv that `neuralfn._native_train` will spawn so SDK callers can assert the

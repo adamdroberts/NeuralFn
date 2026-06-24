@@ -81,6 +81,11 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     wrapper and `tools/bench_native_gpt_linear_hot_matrix.sh` so benchmark
     command planning cannot pull in Torch, graph-editor, dataset, build, or CUDA
     startup work.
+  - 2026-06-24 extended the verifier across universal dense GPT architecture
+    selection: `nfn train --template-name gpt2_moa` and `nfn train
+    --base-model gpt3 --graph-file ...` now run under the same import blocker
+    and stubbed compiled CLI, proving template/custom-graph selection stays on
+    the native command path instead of importing the graph-backed runtime.
 - [x] Add a generic native-train binding command resolver so SDK tests and callers can inspect the compiled argv that `neuralfn._native_train` will spawn without importing Torch, dataset managers, or graph payload paths.
 - [x] Expose gradient/device-buffer fill through the native ABI for trainer-loop zeroing.
 - [x] Expose global gradient norm clip scale finalization and device-scalar gradient scaling through the native ABI.

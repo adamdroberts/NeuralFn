@@ -1191,8 +1191,9 @@ semantic-router MoE, DeepSeek-V4, explicit `nfn train --tinystories`, default
 programmatic `nfn.main([...], stdin_isatty=..., stdout_isatty=...)` native
 training, top-level `nfn train --base-model ...` family dispatch for GPT-2 evo,
 NanoGPT token-LM, LLaMA, MixLLaMA, JEPA, semantic-router MoE, and DeepSeek-V4,
-installed `nfn:main` console-entry native inference, and SDK native training
-handoff surfaces still run under an import blocker for
+explicit dense GPT template selection with `--template-name`, dense GPT custom
+graph selection with `--graph-file`, installed `nfn:main` console-entry native
+inference, and SDK native training handoff surfaces still run under an import blocker for
 Torch, NumPy, `tiktoken`, dataset manager imports, `train_gpt_native`, and
 `infer_gpt`, and `nfn_impl`. The verifier also covers the native benchmark shell
 wrappers in dry-run mode, including `tools/bench_linear_backward_candidate.sh`

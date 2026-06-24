@@ -682,6 +682,23 @@ def _write_native_checkpoint_stub(root: Path) -> Path:
     return checkpoint
 
 
+def _write_native_graph_stub(root: Path) -> Path:
+    graph = root / "native-custom-gpt-graph.json"
+    graph.write_text(
+        json.dumps(
+            {
+                "name": "native-custom-gpt-graph",
+                "nodes": [],
+                "edges": [],
+                "input_node_ids": [],
+                "output_node_ids": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return graph
+
+
 def _write_import_blocker(root: Path) -> None:
     root.joinpath("sitecustomize.py").write_text(
         dedent(
@@ -715,6 +732,7 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
         _write_import_blocker(temp_root)
         native_cli = _write_native_cli_stub(temp_root)
         native_checkpoint = _write_native_checkpoint_stub(temp_root)
+        native_graph = _write_native_graph_stub(temp_root)
         env = os.environ.copy()
         env["NFN_NATIVE_GPT_CLI"] = str(native_cli)
         env["NFN_NATIVE_GPT2_CLI"] = str(native_cli)
@@ -753,6 +771,38 @@ def python_entrypoint_report(repo_root: Path, *, max_entrypoint_seconds: float) 
                     "--native-cuda-dry-run",
                     "--native-cuda-print-command",
                     "--native-cuda-no-checkpoint",
+                ),
+            ),
+            (
+                "nfn_train_gpt_template_name_command",
+                (
+                    sys.executable,
+                    "cli/nfn.py",
+                    "train",
+                    "--base-model",
+                    "gpt",
+                    "--tinystories",
+                    "--template-name",
+                    "gpt2_moa",
+                    "--native-cuda-dry-run",
+                    "--native-cuda-print-command",
+                    "--no-checkpoint",
+                ),
+            ),
+            (
+                "nfn_train_gpt_custom_graph_command",
+                (
+                    sys.executable,
+                    "cli/nfn.py",
+                    "train",
+                    "--base-model",
+                    "gpt3",
+                    "--tinystories",
+                    "--graph-file",
+                    str(native_graph),
+                    "--native-cuda-dry-run",
+                    "--native-cuda-print-command",
+                    "--no-checkpoint",
                 ),
             ),
             (

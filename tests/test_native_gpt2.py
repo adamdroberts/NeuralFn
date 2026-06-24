@@ -217,6 +217,13 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
         assert entrypoints[name]["startup_within_budget"] is True
     assert entrypoints["nfn_train_fast_command"]["passed"] is True
     assert entrypoints["nfn_train_default_fast_command"]["passed"] is True
+    assert entrypoints["nfn_train_gpt_template_name_command"]["passed"] is True
+    assert "--template-name gpt2_moa" in entrypoints["nfn_train_gpt_template_name_command"]["stdout"]
+    assert "--native-cuda-activation moa" in entrypoints["nfn_train_gpt_template_name_command"]["stdout"]
+    assert entrypoints["nfn_train_gpt_custom_graph_command"]["passed"] is True
+    assert "--model-family gpt" in entrypoints["nfn_train_gpt_custom_graph_command"]["stdout"]
+    assert "--graph-file" in entrypoints["nfn_train_gpt_custom_graph_command"]["stdout"]
+    assert "--train-seq-len 2048" not in entrypoints["nfn_train_gpt_custom_graph_command"]["stdout"]
     assert entrypoints["infer_gpt_native_info"]["passed"] is True
     assert entrypoints["infer_gpt_native_sample_prompt_tokens"]["passed"] is True
     assert entrypoints["nfn_infer_native_info"]["passed"] is True

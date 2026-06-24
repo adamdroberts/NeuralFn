@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the native no-Torch verifier to cover universal dense GPT
+  architecture selection. It now runs `nfn train` through the import-blocked
+  fast path with an explicit `--template-name gpt2_moa` and with a custom
+  `--graph-file` on the GPT-3 model-family alias, using a stubbed compiled
+  native CLI. The assertions check that the template route forwards the MoA
+  activation selector and that custom graph selection prevents the GPT-3
+  2048-context default from being injected over the graph-owned architecture.
+
+  Verification: ran
+  `python -m pytest tests/test_native_gpt2.py::test_native_no_torch_dependency_verifier_covers_python_entrypoints -q`.
+
 - Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=qkv_dinput_ln64` as a rejected
   same-script benchmark profile for the current closest block-backward
   near-miss: QKV dInput-before-dWeight plus a 64-row LayerNorm affine reducer.

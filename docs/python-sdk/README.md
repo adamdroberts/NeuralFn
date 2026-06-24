@@ -85,7 +85,8 @@ default native GPT, GPT-2-evo, NanoGPT, LLaMA fast/megakernel, MixLLaMA, JEPA
 semantic, semantic-router MoE, DeepSeek-V4, explicit `nfn train --tinystories`,
 default `nfn train`, programmatic `nfn.main([...], stdin_isatty=...,
 stdout_isatty=...)` native training, top-level per-family `nfn train
---base-model ...` dispatch, and native inference entrypoints under an import
+--base-model ...` dispatch, explicit dense GPT `--template-name` selection,
+dense GPT `--graph-file` custom graph selection, and native inference entrypoints under an import
 blocker for `torch`, NumPy, tiktoken, `server.dataset_manager`, and `nfn_impl`,
 plus a 2-second-per-entrypoint startup budget. The JSON report
 includes `elapsed_seconds`, `startup_budget_seconds`, and
