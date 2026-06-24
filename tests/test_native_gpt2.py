@@ -7623,6 +7623,14 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "qkv-fc-bf16-dweight-staging-direct-bf16-param-adamw" in gpt2_source_text
     assert "adamw_bf16_param_bf16_grad_kernel_loaded" in gpt2_source_text
     assert "block_weight_bf16_gradient_storage_strategy" in gpt2_source_text
+    assert "optimized_optimizer_contract_loaded" in gpt2_source_text
+    assert "optimized_optimizer_contract_error" in gpt2_source_text
+    assert "missing optimized many-tensor/device-scale AdamW Tile-CUDA symbols" in gpt2_source_text
+    assert "optimized_optimizer_contract_loaded =\n                    fill_many != nullptr" in gpt2_source_text
+    assert "adamw_many_with_device_scale != nullptr" in gpt2_source_text
+    assert "adamw_many_with_device_scale_bf16_shadow != nullptr" in gpt2_source_text
+    assert "adamw_many_with_device_scale_bf16_param != nullptr" in gpt2_source_text
+    assert "adamw_many_with_device_scale_bf16_param_bf16_grad != nullptr" in gpt2_source_text
     assert "NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_SHADOW" in gpt2_source_text
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_INIT" in gpt2_source_text
     assert "NFN_NATIVE_GPT_FUSE_TOKEN_WEIGHT_BF16_ADAMW_REFRESH" in gpt2_source_text

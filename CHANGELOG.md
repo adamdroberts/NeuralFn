@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Made the dense native GPT optimizer route a hard optimized-kernel contract.
+  Full transformer training now requires the many-tensor AdamW kernels, BF16
+  primary/shadow AdamW kernels, BF16-gradient AdamW kernel, many-buffer sumsq
+  kernels, and device clip-scale kernel to load from the trainer-facing
+  Tile-CUDA ABI. Runtime JSON reports
+  `optimized_optimizer_contract_loaded` and
+  `optimized_optimizer_contract_error`, so benchmark gates can assert that the
+  trainer is using fused device-scale optimizer kernels instead of falling back
+  to scalar or per-buffer update paths.
+
+  Migration note: this is intentionally stricter for the local native CUDA
+  trainer. Rebuild `build/libnfn_native_train_tile_ops.so` and the native GPT
+  CLI if startup fails with
+  `missing optimized many-tensor/device-scale AdamW Tile-CUDA symbols`.
+
+  Verification: ran `python tools/check_native_no_torch_deps.py
+  --skip-artifacts --json` and `git diff --check`. A focused
+  `tests/test_native_gpt2.py` source-coverage run and native GPT CLI rebuild
+  were attempted, but the local GCC build/test process did not complete cleanly
+  in this session; the contract is covered by source assertions in
+  `tests/test_native_gpt2.py`.
+
 - Added first-class SM120 candidate coverage for the token-weight BF16-pattern
   vector4 shadow writer. The native trainer now reports
   `token_weight_bf16_pattern_init_requested` and labels the selected strategy as

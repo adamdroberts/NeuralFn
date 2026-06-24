@@ -10155,6 +10155,8 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_dhidden_strided_vocab_gemm_count = 0;
     std::int64_t lm_head_dweight_strided_vocab_gemm_count = 0;
     std::int64_t lm_head_ce_bf16_threads_per_row = 0;
+    // Resolved by the Tile-CUDA ABI from NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS,
+    // NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS, or the NFN_TILE_CUDA_* alias.
     std::int64_t lm_head_prob_only_target_correction_threads = 0;
     std::int64_t lm_head_classifier_chunk_launch_count = 0;
     std::int64_t lm_head_classifier_loss_bin_launch_count = 0;
@@ -11187,6 +11189,8 @@ int run_transformer_lm_training_json(
     AdamWManyWithDeviceScaleBf16ShadowFn adamw_many_with_device_scale_bf16_shadow = nullptr;
     AdamWManyWithDeviceScaleBf16ParamFn adamw_many_with_device_scale_bf16_param = nullptr;
     AdamWManyWithDeviceScaleBf16ParamBf16GradFn adamw_many_with_device_scale_bf16_param_bf16_grad = nullptr;
+    bool optimized_optimizer_contract_loaded = false;
+    std::string optimized_optimizer_contract_error;
     CudaMallocFn cuda_malloc = nullptr;
     CudaFreeFn cuda_free = nullptr;
     CudaMemcpyFn cuda_memcpy = nullptr;
@@ -11901,8 +11905,21 @@ int run_transformer_lm_training_json(
                     load_symbol<AdamWManyWithDeviceScaleBf16ParamFn>(
                         tile_handle,
                         "nfn_native_tile_adamw_step_many_with_device_scale_bf16_param_float32");
-                    tile_ops_typed_symbol_load_wall_ms =
-                        elapsed_ms(typed_symbol_load_start, Clock::now());
+                optimized_optimizer_contract_loaded =
+                    fill_many != nullptr &&
+                    sumsq_partials_many != nullptr &&
+                    clip_scale != nullptr &&
+                    adamw_many_with_device_scale != nullptr &&
+                    adamw_many_with_device_scale_bf16_shadow != nullptr &&
+                    adamw_many_with_device_scale_bf16_param != nullptr &&
+                    adamw_many_with_device_scale_bf16_param_bf16_grad != nullptr;
+                if (!optimized_optimizer_contract_loaded) {
+                    optimized_optimizer_contract_error =
+                        "missing optimized many-tensor/device-scale AdamW Tile-CUDA symbols";
+                    error = optimized_optimizer_contract_error;
+                }
+                tile_ops_typed_symbol_load_wall_ms =
+                    elapsed_ms(typed_symbol_load_start, Clock::now());
                 }
             }
         }
@@ -22013,6 +22030,10 @@ int run_transformer_lm_training_json(
                 ? "\"qkv-fc-bf16-accumulation-buffer\""
                 : "\"float32-accumulation-buffer\"")
         << ",\n"
+        << "  \"optimized_optimizer_contract_loaded\": "
+        << (optimized_optimizer_contract_loaded ? "true" : "false") << ",\n"
+        << "  \"optimized_optimizer_contract_error\": \""
+        << json_escape(optimized_optimizer_contract_error) << "\",\n"
         << "  \"adamw_bf16_param_bf16_grad_kernel_loaded\": "
         << (adamw_many_with_device_scale_bf16_param_bf16_grad != nullptr ? "true" : "false") << ",\n"
         << "  \"block_weight_bf16_shadow_fused_adamw_refresh_enabled\": "
@@ -23002,6 +23023,10 @@ int run_transformer_lm_training_json(
                 ? "\"qkv-fc-bf16-accumulation-buffer\""
                 : "\"float32-accumulation-buffer\"")
         << ",\n"
+        << "    \"optimized_optimizer_contract_loaded\": "
+        << (optimized_optimizer_contract_loaded ? "true" : "false") << ",\n"
+        << "    \"optimized_optimizer_contract_error\": \""
+        << json_escape(optimized_optimizer_contract_error) << "\",\n"
         << "    \"adamw_bf16_param_bf16_grad_kernel_loaded\": "
         << (adamw_many_with_device_scale_bf16_param_bf16_grad != nullptr ? "true" : "false") << ",\n"
         << "    \"adamw_descriptor_count\": " << adamw_descriptor_count << ",\n"

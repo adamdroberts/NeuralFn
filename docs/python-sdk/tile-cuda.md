@@ -935,6 +935,14 @@ metadata. Unsupported geometry still reports
 `custom-graph-native-trainer-missing` or
 `template-native-trainer-missing`; arbitrary non-dense graph topologies and
 non-GPT vocabularies are not native until matching compiled trainers exist.
+Dense native GPT training now requires the optimized trainer-facing optimizer
+ABI at startup. The compiled runner must load the many-tensor AdamW,
+BF16-primary/shadow AdamW, BF16-gradient AdamW, many-buffer sumsq, and device
+clip-scale symbols before it starts CUDA setup for full training. Runtime JSON
+reports `optimized_optimizer_contract_loaded` and
+`optimized_optimizer_contract_error`; if this contract is false, rebuild
+`build/libnfn_native_train_tile_ops.so` and the native GPT CLI so the SDK does
+not silently fall back to scalar or per-buffer optimizer kernels.
 The mixed float32-hidden/BF16-grad dWeight+bias ABI now uses the cuBLASLt bgrad
 epilogue route by default for supported QKV profiling shapes; set
 `NFN_NATIVE_GPT_FUSE_FLOAT32_BF16_DWEIGHT_BGRAD=0` or
