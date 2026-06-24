@@ -2738,20 +2738,25 @@ The platform foundation now adds:
 ### Install Python dependencies
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt       # lean native/core SDK, no Python deps
+pip install -r requirements-full.txt  # optional full server/dataset stack
 ```
 
-The default requirements intentionally do not install Torch. Native dense GPT
-training and dataset-cache preparation do not require it. The aggregate `.[all]`
-extra is also Torch-free, and the package no longer exposes a `.[torch]` extra.
-Legacy graph-backed Torch workflows require a separately managed PyTorch install
-outside NeuralFn's package metadata.
+The default requirements file is intentionally empty apart from guidance
+comments: native dense GPT training and the core SDK do not require Torch,
+NumPy, FastAPI, tokenizers, datasets, or graph-analysis packages. Use
+`requirements-full.txt` only when you want the full Python server/dataset
+workstation stack. The aggregate `.[all]` extra is also Torch-free, and the
+package no longer exposes a `.[torch]` extra. Legacy graph-backed Torch
+workflows require a separately managed PyTorch install outside NeuralFn's
+package metadata.
 
 After rebuilding native training artifacts, run the dependency gate to verify
-the default package metadata and `requirements.txt` still keep Torch out of
-hard dependencies, the aggregate `.[all]` extra remains Torch-free, no `torch`
-extra is advertised, the compiled artifacts still avoid Torch, c10, and Python
-runtime libraries, and default native GPT Python training and inference entrypoints can construct their compiled-C++ commands or
+the default package metadata and `requirements.txt` still keep Torch and the
+heavy server/dataset/graph packages out of hard dependencies, the aggregate
+`.[all]` extra remains Torch-free, no `torch` extra is advertised, the compiled
+artifacts still avoid Torch, c10, and Python runtime libraries, and default
+native GPT Python training and inference entrypoints can construct their compiled-C++ commands or
 inspect native checkpoints while imports of `torch`, NumPy, tiktoken,
 `server.dataset_manager`, and `nfn_impl` are blocked.
 By default the artifact scan checks the required native GPT trainer and raw Tile

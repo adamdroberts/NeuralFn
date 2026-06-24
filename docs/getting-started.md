@@ -15,6 +15,15 @@ From the repository root:
 pip install -r requirements.txt
 ```
 
+`requirements.txt` is intentionally lean for native/core SDK work and contains
+no installable Python packages. Use explicit extras for the workflow you need,
+or install the full Python platform stack when you are running the server,
+dataset materialization, and graph helper surfaces:
+
+```bash
+pip install -r requirements-full.txt
+```
+
 ## Install the NeuralFn SDK package
 
 If you want to build against `neuralfn` from another project, install the repo
@@ -36,11 +45,11 @@ The editable package install includes the shipped semantic vocabulary JSON
 files under `neuralfn/data/semantic/`, so SDK consumers can use the semantic
 routing presets without copying those assets manually.
 
-The default editable install is intentionally lean and does not pull in NumPy,
-FastAPI, tokenizers, datasets, graph-analysis packages, MCP dependencies, or
-Torch. Add the extras you need for platform, dataset, graph, or native CUDA
-workflows; legacy graph-backed PyTorch workflows require a separately managed
-PyTorch install outside NeuralFn's package metadata.
+The default editable install and default requirements are intentionally lean and
+do not pull in NumPy, FastAPI, tokenizers, datasets, graph-analysis packages,
+MCP dependencies, or Torch. Add the extras you need for platform, dataset,
+graph, or native CUDA workflows; legacy graph-backed PyTorch workflows require
+a separately managed PyTorch install outside NeuralFn's package metadata.
 
 CUDA Tile native build tooling is separate from Torch and only adds the build
 helper dependency:

@@ -37,10 +37,11 @@ The root install no longer pulls in Torch by default. Root `nfn --help` /
 no-argument startup, `nfn train|infer|eval --help`, `nfn kernels ... --help`,
 `nfn kernels list [--json]`, CUDA Tile registry metadata, and native GPT-2
 compatibility training do not import it. Install
-`pip install -e ".[torch]"` for graph-backed training/inference and
-`pip install -e ".[tile-cuda]"` for Torch-free native CUDA Tile build tooling.
-Install both extras only when intentionally using the graph-backed PyTorch Tile
-extension loader.
+`pip install -e ".[tile-cuda]"` for Torch-free native CUDA Tile build tooling,
+`pip install -e ".[datasets]"` for tokenization/cache preparation, or
+`pip install -e ".[server]"` for the editor/backend. NeuralFn no longer exposes
+a `.[torch]` extra; legacy graph-backed PyTorch training/inference requires a
+separately managed PyTorch install outside NeuralFn package metadata.
 
 ## Workflow model
 

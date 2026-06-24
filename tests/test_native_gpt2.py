@@ -188,9 +188,22 @@ def test_native_no_torch_dependency_verifier_covers_python_entrypoints() -> None
     assert requirements_dependencies["passed"] is True
     assert requirements_dependencies["offenders"] == []
     assert requirements_dependencies["forbidden_dependency_prefixes"] == [
+        "alembic",
+        "datasets",
+        "fastapi",
+        "mcp",
+        "networkx",
+        "numpy",
+        "pydantic",
+        "pymysql",
+        "python-multipart",
+        "redis",
+        "sqlalchemy",
+        "tiktoken",
         "torch",
         "torchvision",
         "torchaudio",
+        "uvicorn",
     ]
     entrypoints = {entry["name"]: entry for entry in payload["python_entrypoints"]}
     assert entrypoints["train_gpt_fast_command"]["passed"] is True

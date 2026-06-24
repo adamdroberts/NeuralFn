@@ -6,6 +6,24 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Split NeuralFn's default requirements from the optional full Python platform
+  stack. `requirements.txt` is now a lean native/core guidance file with no
+  installable packages, while the previous server/dataset/graph dependency set
+  lives in `requirements-full.txt`. The native no-Torch verifier now enforces
+  that default requirements stay free of Torch and the heavy server/dataset/
+  graph dependencies (`numpy`, FastAPI, datasets, tokenizers, MCP, SQLAlchemy,
+  and related packages), matching the lean `pyproject.toml` default install.
+  Documentation now points native training users at explicit extras or
+  `requirements-full.txt` only when those Python surfaces are needed.
+
+  Verification: ran `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py --skip-artifacts --json`,
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python
+  tools/check_native_no_torch_deps.py`, and
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py::test_native_no_torch_dependency_verifier_covers_python_entrypoints
+  tests/test_native_dependencies.py -q`.
+
 - Made guarded native training command inspection metadata-only. Legacy
   script guards such as `cli/scripts/train_gpt2_evo.py` now handle plain
   `--native-cuda-dry-run --native-cuda-print-command` by printing the resolved

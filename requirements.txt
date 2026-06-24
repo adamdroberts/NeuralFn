@@ -1,13 +1,12 @@
-numpy>=1.24
-fastapi>=0.100
-uvicorn>=0.23
-networkx>=3.0
-pydantic>=2.0
-sqlalchemy>=2.0
-alembic>=1.13
-redis>=5.0
-PyMySQL>=1.1
-datasets>=2.14
-tiktoken>=0.5
-python-multipart>=0.0.6
-mcp>=1.0.0
+# NeuralFn's default install is intentionally lean.
+#
+# The native/core SDK and compiled CUDA training entrypoints do not need
+# Python package dependencies here. Install optional extras explicitly:
+#
+#   pip install -e ".[tile-cuda]"   # CUDA Tile build helper
+#   pip install -e ".[datasets]"    # HF datasets, tiktoken, NumPy
+#   pip install -e ".[graph]"       # graph analysis/runtime helpers
+#   pip install -e ".[server]"      # FastAPI/editor/MCP backend
+#   pip install -r requirements-full.txt
+#
+# Torch is intentionally not listed in any NeuralFn requirements file.
