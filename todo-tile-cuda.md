@@ -1536,11 +1536,12 @@ Goal: add fp16, fp8, and NVFP4 CUDA Tile variants for every covered kernel where
     `stage.block_backward.total_ms`, preventing a CE-only pass from hiding
     unrelated block-backward regression.
     2026-06-24 refreshed the same default on the current clean tree with a
-    3-step, 3-sample same-script RTX 5090 gate. The route change was visible in
+    3-step, 2-sample same-script RTX 5090 gate. The route change was visible in
     `lm_head_ce_no_loss_default_specialized_*` and `lm_head_ce_kernel_strategy`,
-    and the candidate passed whole-loop gates at `0.986338x` train-loop wall,
-    `0.977844x` steady-state CUDA-event wall, `1.013917x` tokens/sec, and
-    `0.987834x` total wall versus the generic no-loss CE+dlogits baseline.
+    and the candidate passed whole-loop gates at `0.968164x` train-loop wall,
+    `0.979934x` steady-state CUDA-event wall, `1.032888x` tokens/sec,
+    `0.913491x` LM-head backward, `0.553762x` LM-head CE, and `0.984587x`
+    block backward versus the generic no-loss CE+dlogits baseline.
   - 2026-06-22 promoted the LM-head loss-bin train-loss reduction route to the default after the stronger CUDA 13.3 dedicated RTX 5090 same-script check proved a durable logged-loss path win. `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_loss_bins` now forces its baseline command to `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` and candidate command to `=1`, so it still compares the new default against the older row-loss route. The 3-step, 2-sample check measured `0.977282x` train-loop wall time, `1.023250x` tokens/sec, `0.909537x` LM-head backward, and `0.541619x` LM-head CE, with `lm_head_classifier_loss_bin_launch_count` moving from `0` to `48`. Set `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=0` only for regression checks against the older row-loss tail.
   - 2026-06-22 rechecked the latest CUDA Toolkit 13.3 for WSL install on the dedicated RTX 5090. Sandboxed `nvidia-smi` still reports OS-blocked NVML, but the unsandboxed GPU path reports NVIDIA-SMI `610.43.02`, CUDA UMD `13.3`, no compute processes, and the parity harness runs successfully with selected-GPU locking. A one-step, stage-timed same-script comparison measured llm.kittens at `2651.960 ms/step` and NeuralFn at `2692.140 ms/step`, or `1.015151x` train-loop wall time and `0.985078x` tokens/sec. The remaining hot buckets are now `block_backward` (`1260.570 ms`), `train.model_forward` (`765.722 ms`), and `lm_head_backward` (`639.129 ms`), not CUDA setup, Torch startup, graph-editor node flow, or external GPU load.
   - 2026-06-22 kept the latest existing side-stream schedules diagnostic-only on the dedicated RTX 5090. `lm_head_concurrent_dhidden_dweight` proved the two-stream LM-head schedule but measured `1.000742x` train-loop wall time and `1.007977x` LM-head backward in the one-step gate. `qkv_concurrent_dinput_dweight` proved the block QKV side-stream route but regressed to `1.022447x` train-loop wall time and `1.049762x` block backward. Do not promote these switches; the next useful work is still a real fused/cooperative LM-head or block-backward kernel route.

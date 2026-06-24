@@ -387,6 +387,11 @@ Because this route is a default optimizer-only CE path rather than a narrow
 experimental probe, the paired SM120 wrapper also gates
 `stage.block_backward.total_ms` for stage-timed reruns of
 `lm_head_ce_no_loss_default_specialized`.
+The 2026-06-24 CUDA 13.3 dedicated RTX 5090 same-script recheck kept this as
+the default: the profile passed at `0.968164x` train-loop wall,
+`0.979934x` steady-state CUDA-event wall, `1.032888x` tokens/sec,
+`0.913491x` LM-head backward, and `0.553762x` LM-head CE versus the older
+generic no-loss CE+dlogits path.
 
 `NFN_NATIVE_GPT_CE_BF16_SCALAR_STREAMING_STORES=1`,
 `NFN_NATIVE_GPT2_CE_BF16_SCALAR_STREAMING_STORES=1`, and
