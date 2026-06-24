@@ -70,6 +70,17 @@ Real training tensors must not pass through graph editor node objects.
   are still `stage.block_backward.total_ms` (`3856.435 ms`),
   `stage.block_forward.total_ms` (`1965.470 ms`), and
   `stage.lm_head_backward.total_ms` (`1753.965 ms`).
+- [x] Refresh parity after the latest CUDA reinstall/catalog commits and fix
+  the parity wrapper shape override. The 2026-06-24 2-step, 1-sample,
+  stage-timed same-script run on the display-disabled RTX 5090 measured
+  NeuralFn at `2584.085 ms/step` versus llm.kittens at `2505.865 ms/step`
+  (`1.031215x` train-loop wall, `0.968518x` tokens/sec), with steady-state
+  CUDA-event timing at `1.014173x`. The selected GPU had zero compute
+  processes before and after. `tools/bench_native_gpt_sm120_parity.sh` now
+  wires `NFN_SM120_PARITY_TRAIN_BATCH_TOKENS` /
+  `NFN_SM120_TRAIN_BATCH_TOKENS` into both llm.kittens `-d` and NeuralFn
+  `--train-batch-tokens`, so future shape bisection preserves same-script
+  parity instead of silently using hardcoded `524288` on both sides.
 - [ ] Close the remaining SM120 parity gap with measured native kernel changes,
   not Torch/Python/graph-editor workarounds. Every candidate must run through
   `tools/bench_native_gpt_sm120_candidate.sh` or
