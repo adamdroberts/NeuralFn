@@ -5607,6 +5607,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     assert train_transformer_payload["token_weight_threaded_init_enabled"] is False
     assert train_transformer_payload["token_weight_vector4_init_enabled"] is True
     assert train_transformer_payload["token_weight_vector4_strided_init_requested"] is False
+    assert train_transformer_payload["token_weight_bf16_pattern_init_requested"] is False
     assert train_transformer_payload["token_weight_fast_int32_init_enabled"] is False
     assert train_transformer_payload["token_weight_init_legacy_mod17_enabled"] is False
     assert train_transformer_payload["token_weight_bf16_initial_refresh_fusion_enabled"] is True
@@ -5834,6 +5835,7 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "linear_bias_gradient_scratch_buffers_allocated": False,
         "linear_bias_gradient_microbatch_full_copy_elided": True,
         "linear_backward_bias_row_chunk_size": 256,
+        "linear_backward_bias_threads_per_block": 256,
         "position_gradient_accumulation_direct": True,
         "position_gradient_scratch_buffer_allocated": False,
         "position_gradient_microbatch_full_copy_elided": True,

@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added first-class SM120 candidate coverage for the token-weight BF16-pattern
+  vector4 shadow writer. The native trainer now reports
+  `token_weight_bf16_pattern_init_requested` and labels the selected strategy as
+  `device-vector4-power2-deterministic-fused-bf16-pattern-shadow` when
+  `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` is active. The paired
+  wrapper exposes `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_bf16_pattern`,
+  comparing baseline pattern init off against candidate pattern init on.
+
+  Migration note: no training default changed. The profile remains rejected by
+  default because the current CUDA 13.3.33 dedicated RTX 5090 5-sample
+  startup-only revalidation improved mean setup wall time to `0.954257x` and
+  mean token-weight initialization to `0.913903x`, but token-weight init was
+  unstable with median `1.021956x` and max `1.095803x` versus the
+  conversion-based vector4 BF16-shadow writer. Use
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for deliberate
+  post-kernel or post-toolchain revalidation.
+
+  Verification: ran `bash -n tools/bench_native_gpt_sm120_candidate.sh`; ran
+  focused native GPT and candidate-wrapper pytest coverage in the NeuralFn
+  environment; rebuilt `build/nfn_gpt_native_train`,
+  `build/nfn_gpt2_native_train`, and `build/nfn_gpt_native_train_linked`; ran
+  the dry-run plan for `NFN_SM120_NATIVE_CANDIDATE_PROFILE=token_weight_bf16_pattern`;
+  ran the dedicated RTX 5090 5-sample startup-only paired revalidation; and ran
+  `git diff --check`.
+
 - Fixed `build/lm_head_backward_bench` reference component timing so logits, CE,
   dHidden, and dWeight probes run the configured warmup count before timed
   iterations. The benchmark JSON now reports `reference_component_warmup`,

@@ -351,9 +351,11 @@ initializer to the vector4 CUDA Tile route; set
 the previous fast int32 path. The alternative BF16-pattern vector4 shadow
 writer remains diagnostic-only behind
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` or
-`NFN_TILE_CUDA_TOKEN_WEIGHT_BF16_PATTERN_INIT=1`; the CUDA 13.3 RTX 5090
-startup gate rejected it as slower than the conversion-based vector4 shadow
-writer.
+`NFN_TILE_CUDA_TOKEN_WEIGHT_BF16_PATTERN_INIT=1`. The current CUDA 13.3.33
+dedicated RTX 5090 5-sample startup-only recheck improved mean setup wall and
+mean token-weight init, but kept the route diagnostic-only because token-weight
+init remained unstable with median and max regressions versus the
+conversion-based vector4 shadow writer.
 The opt-in vector4-strided token-weight initializer
 (`NFN_TILE_CUDA_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1` /
 `NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_STRIDED_INIT=1`) is also diagnostic-only:
@@ -2483,6 +2485,8 @@ BF16-shadow padded-zero opt-in variant, `token_weight_padded_init_fusion_request
 `token_weight_padded_init_fusion_enabled`,
 `token_weight_padding_zero_launches_elided`,
 `token_weight_threaded_init_enabled`, `token_weight_vector4_init_enabled`,
+`token_weight_vector4_strided_init_requested`,
+`token_weight_bf16_pattern_init_requested`,
 `token_weight_fast_int32_init_enabled`, and
 `token_weight_host_materialization: false`.
 

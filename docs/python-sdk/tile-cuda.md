@@ -2447,7 +2447,8 @@ fused/cooperative LM-head kernel is integrated.
 
 Startup-only token-weight initializer bisections can use the same profile
 mechanism. `token_weight_vector4_strided`, `token_weight_threaded`,
-`token_weight_fast_int32`, and `token_weight_two_pass_bf16` expand to the
+`token_weight_bf16_pattern`, `token_weight_fast_int32`, and
+`token_weight_two_pass_bf16` expand to the
 matching native GPT token-initializer env flags and are intended for paired
 `NFN_SM120_NATIVE_STARTUP_ONLY=1` runs. The profiles now force explicit
 baseline/candidate envs for default-on switches; for example,
@@ -2471,12 +2472,16 @@ post-kernel-change revalidation.
 `token_weight_two_pass_bf16` is rejected for the same reason: the current
 startup-only rerun kept setup wall time flat (`0.996873x`) but regressed token
 initialization to `1.017739x` versus the fused BF16-shadow vector4 default.
-For a direct check of the rejected vector4 BF16 pattern writer, set
-`NFN_SM120_NATIVE_STARTUP_ONLY=1` and put
-`NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=1` in
-`NFN_SM120_NATIVE_CANDIDATE_ENV`; the wrapper will gate
-`setup.token_weight_init.total_ms` because the candidate env mentions
-token-weight initialization.
+The `token_weight_bf16_pattern` profile compares
+`NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT=0` against candidate `=1` and
+labels the candidate route as
+`device-vector4-power2-deterministic-fused-bf16-pattern-shadow` in native JSON.
+It remains rejected by default: the CUDA 13.3.33 dedicated RTX 5090 5-sample
+startup-only revalidation improved mean setup wall time to `0.954257x` and mean
+token-weight initialization to `0.913903x`, but token-weight init was unstable
+with median `1.021956x` and max `1.095803x`. Set
+`NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for deliberate
+post-kernel-change revalidation.
 
 Full GPT-2 `--train-transformer-lm` runs report a `cuda_runtime_preflight`
 object. Set `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT=1` or

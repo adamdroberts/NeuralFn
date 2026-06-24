@@ -21008,7 +21008,9 @@ int run_transformer_lm_training_json(
                                  : (token_weight_vector4_init_enabled
                                         ? (token_weight_vector4_strided_init_requested
                                                ? "device-vector4-strided-power2-deterministic-fused-bf16-shadow"
-                                               : "device-vector4-power2-deterministic-fused-bf16-shadow")
+                                               : (token_weight_bf16_pattern_init_requested
+                                                      ? "device-vector4-power2-deterministic-fused-bf16-pattern-shadow"
+                                                      : "device-vector4-power2-deterministic-fused-bf16-shadow"))
                                         : "device-tile-power2-deterministic-fused-bf16-shadow"))
                           : (token_weight_threaded_init_enabled
                                  ? "device-threaded-power2-deterministic"
@@ -22523,6 +22525,8 @@ int run_transformer_lm_training_json(
         << (token_weight_vector4_init_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_vector4_strided_init_requested\": "
         << (token_weight_vector4_strided_init_requested ? "true" : "false") << ",\n"
+        << "  \"token_weight_bf16_pattern_init_requested\": "
+        << (token_weight_bf16_pattern_init_requested ? "true" : "false") << ",\n"
         << "  \"token_weight_fast_int32_init_enabled\": "
         << (token_weight_fast_int32_init_enabled ? "true" : "false") << ",\n"
         << "  \"token_weight_init_legacy_mod17_enabled\": "

@@ -3411,6 +3411,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
             "baseline": {"NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT": "0"},
             "candidate": {"NFN_NATIVE_GPT_TOKEN_WEIGHT_THREADED_INIT": "1"},
         },
+        "token_weight_bf16_pattern": {
+            "baseline": {"NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT": "0"},
+            "candidate": {"NFN_NATIVE_GPT_TOKEN_WEIGHT_BF16_PATTERN_INIT": "1"},
+        },
         "token_weight_fast_int32": {
             "baseline": {"NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT": "1"},
             "candidate": {"NFN_NATIVE_GPT_TOKEN_WEIGHT_VECTOR4_INIT": "0"},
