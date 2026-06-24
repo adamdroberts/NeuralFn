@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a profiling-only LM-head backward candidate symbol,
+  `nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16`.
+  It keeps the existing CE/dlogits stage but forces the strided cuBLASLt
+  dHidden and dWeight ABI calls so CUDA 13.3 retests can compare that route
+  against the older cooperative sequence without changing training defaults.
+  The standalone `lm_head_backward_bench` JSON now reports
+  `reference_cublaslt_components` alongside the existing generic
+  `reference_components` timings.
+
+  Migration note: no default trainer route changed. Use
+  `NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL=nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16`
+  with `tools/bench_lm_head_backward_candidate.sh` to benchmark the candidate.
+
+  Verification: rebuilt `build/lm_head_backward_bench` and
+  `build/libnfn_native_train_tile_ops.so`; ran the focused LM-head source test;
+  ran the CUDA-visible trainer-chunk benchmark on the dedicated RTX 5090. The
+  cuBLASLt candidate reported
+  `candidate_to_baseline_ms_per_iter_ratio: 1.468288`, so it remains rejected
+  and non-default. The rebuilt graph-wrapper candidate reported
+  `candidate_cuda_graph_wrapper_only: true` and ratio `1.002721`.
+
 - Direct `train_gpt_native.py` compiled-cli handoffs now defer dataset alias/path
   validation to the compiled C++ resolver for all normal no-download runs, not
   just dry runs. This removes Python `meta.json` reads and shard probing from

@@ -188,6 +188,14 @@ inside one CUDA process with event timing, route counters, decomposed
 `candidate_cuda_graph_wrapper_only` for the current strict symbol that replays
 captured CE, dHidden, and dWeight work through a CUDA Graph. This makes
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` distinguish sequence wrappers,
+CUDA Graph wrappers, and a future real fused kernel. CUDA 13.3 retesting can
+also compare the explicit cuBLASLt LM-head candidate by setting
+`NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL=nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16`;
+that symbol runs the same CE/dlogits stage and then forces the strided
+cuBLASLt dHidden and dWeight ABI calls, while the JSON keeps reporting the
+older generic component timings and the explicit `reference_cublaslt_components`
+timings in the same process. It is a candidate measurement route, not a strict
+true-fused kernel.
 CUDA Graph wrappers, and a future real fused kernel. The CUDA 13.3 dedicated RTX 5090
 `trainer-chunk` microbench measured the strict graph candidate at
 `35.783084 ms/iter` versus `35.776438 ms/iter` for the legacy cooperative

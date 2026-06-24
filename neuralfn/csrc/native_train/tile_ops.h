@@ -343,6 +343,25 @@ int nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16(
     int flags,
     void* cuda_stream);
 
+int nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16(
+    std::uint16_t* logits_bf16,
+    const std::uint16_t* targets_u16,
+    float* row_losses,
+    const std::uint16_t* hidden_bf16,
+    const float* hidden_float,
+    const std::uint16_t* token_weight_bf16,
+    const float* token_weight_float,
+    float* grad_hidden,
+    float* grad_weight,
+    std::int64_t rows,
+    std::int64_t hidden_dim,
+    std::int64_t vocab,
+    std::int64_t row_stride,
+    float loss_scale,
+    float dweight_beta,
+    int flags,
+    void* cuda_stream);
+
 int nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16(
     std::uint16_t* logits_bf16,
     const std::uint16_t* targets_u16,

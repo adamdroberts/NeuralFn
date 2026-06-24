@@ -1552,6 +1552,13 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "strict-cooperative-abi-cuda-graph-ce-dhidden-dweight" in source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_fused_bf16_u16" in tile_ops_header
+    assert "nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16" in tile_ops_source
+    assert "nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16" in tile_ops_header
+    assert "cublaslt_linear_backward_input_bf16_bits_weight_bf16_strided_float32" in tile_ops_source
+    assert (
+        "cublaslt_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta"
+        in tile_ops_source
+    )
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_source
@@ -1658,8 +1665,10 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     )
     assert "using LmHeadBackwardFn = int (*)(" in bench_source
     assert "nfn_native_tile_lm_head_classifier_backward_cooperative_bf16_u16" in bench_source
+    assert "nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16" in bench_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16" in bench_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in bench_source
+    assert "reference_cublaslt_components" in bench_source
     assert "candidate_true_fused_capability" in bench_source
     assert "candidate_sequence_wrapper_only" in bench_source
     assert "candidate_strict_symbol_is_placeholder_sequence" in bench_source

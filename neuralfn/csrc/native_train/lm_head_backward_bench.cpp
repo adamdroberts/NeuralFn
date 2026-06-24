@@ -144,6 +144,7 @@ struct ComponentResult {
         << "  --tile-ops-lib PATH\n"
         << "  --baseline-symbol NAME\n"
         << "  --candidate-symbol NAME\n"
+        << "     e.g. nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16\n"
         << "  --rows N\n"
         << "  --hidden-dim N\n"
         << "  --vocab N\n"
@@ -593,7 +594,8 @@ std::string render_json(
     bool true_fused_capability,
     const VariantResult& baseline,
     const VariantResult& candidate,
-    const ComponentResult& reference_components) {
+    const ComponentResult& reference_components,
+    const ComponentResult& reference_cublaslt_components) {
     const double ratio =
         baseline.ms_per_iter > 0.0 ? candidate.ms_per_iter / baseline.ms_per_iter : 0.0;
     const bool candidate_sequence_wrapper_only =
@@ -661,6 +663,14 @@ std::string render_json(
         << "\"summed_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.summed_ms_per_iter << ","
         << "\"summed_with_logits_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_components.summed_with_logits_ms_per_iter
         << "},\n"
+        << "  \"reference_cublaslt_components\": {"
+        << "\"logits_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_cublaslt_components.logits_ms_per_iter << ","
+        << "\"ce_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_cublaslt_components.ce_ms_per_iter << ","
+        << "\"dhidden_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_cublaslt_components.dhidden_ms_per_iter << ","
+        << "\"dweight_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_cublaslt_components.dweight_ms_per_iter << ","
+        << "\"summed_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_cublaslt_components.summed_ms_per_iter << ","
+        << "\"summed_with_logits_ms_per_iter\":" << std::fixed << std::setprecision(6) << reference_cublaslt_components.summed_with_logits_ms_per_iter
+        << "},\n"
         << "  \"baseline\": " << variant_json(baseline) << ",\n"
         << "  \"candidate\": " << variant_json(candidate) << ",\n"
         << "  \"candidate_to_baseline_ms_per_iter_ratio\": " << std::fixed << std::setprecision(6) << ratio << "\n"
@@ -727,6 +737,12 @@ int main(int argc, char** argv) {
         auto reference_dweight_fn = load_symbol<LinearBackwardWeightStridedBetaFn>(
             handle,
             "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_float32_beta");
+        auto reference_cublaslt_dhidden_fn = load_symbol<LinearBackwardInputStridedFn>(
+            handle,
+            "nfn_native_tile_linear_backward_input_bf16_bits_weight_bf16_strided_cublaslt_float32");
+        auto reference_cublaslt_dweight_fn = load_symbol<LinearBackwardWeightStridedBetaFn>(
+            handle,
+            "nfn_native_tile_linear_backward_weight_accumulate_bf16_bits_bf16_bits_strided_cublaslt_float32_beta");
 
         const std::size_t logits_bytes =
             static_cast<std::size_t>(options.rows * options.row_stride) * sizeof(std::uint16_t);
@@ -820,9 +836,29 @@ int main(int argc, char** argv) {
             static_cast<const std::uint16_t*>(token_weight_bf16.get()),
             static_cast<float*>(grad_hidden.get()),
             static_cast<float*>(grad_weight.get()));
+        const ComponentResult reference_cublaslt_components = run_reference_components(
+            reference_logits_fn,
+            reference_ce_fn,
+            reference_ce_no_loss_fn,
+            reference_cublaslt_dhidden_fn,
+            reference_cublaslt_dweight_fn,
+            options,
+            static_cast<std::uint16_t*>(logits.get()),
+            static_cast<const std::uint16_t*>(targets.get()),
+            static_cast<float*>(row_losses.get()),
+            static_cast<const std::uint16_t*>(hidden_bf16.get()),
+            static_cast<const std::uint16_t*>(token_weight_bf16.get()),
+            static_cast<float*>(grad_hidden.get()),
+            static_cast<float*>(grad_weight.get()));
 
         const std::string json =
-            render_json(options, true_fused_capability() != 0, baseline, candidate, reference_components);
+            render_json(
+                options,
+                true_fused_capability() != 0,
+                baseline,
+                candidate,
+                reference_components,
+                reference_cublaslt_components);
         if (!options.json_out.empty()) {
             std::filesystem::path out_path(options.json_out);
             if (!out_path.parent_path().empty()) {

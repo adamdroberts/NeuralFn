@@ -1040,6 +1040,13 @@ parity/preflight run must require the strict cooperative LM-head backward ABI.
 Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_CUDA_GRAPH=0` only for paired
 diagnostics that need to force the sequence wrapper instead of the cached graph
 wrapper while keeping the cooperative LM-head route requested.
+The standalone LM-head benchmark can also test the explicit cuBLASLt candidate
+without changing trainer defaults:
+`NFN_LM_HEAD_BACKWARD_CANDIDATE_SYMBOL=nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16
+bash tools/bench_lm_head_backward_candidate.sh`. The benchmark JSON includes
+both `reference_components` for the current generic component calls and
+`reference_cublaslt_components` for the forced cuBLASLt dHidden/dWeight calls,
+so CUDA/driver retests compare old and candidate kernels inside one process.
 Rebuilt Tile ops libraries export
 the strict `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
 callable, but current CUDA 13.3 builds return `0` from
