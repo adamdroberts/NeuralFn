@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Tightened the cuBLASLt grouped matmul execution probe to use 32-bit grouped
+  rows/columns/leading-dimension arrays, matching cuBLASLt's documented
+  default grouped descriptor integer width. This keeps the smoke test closer
+  to the supported descriptor contract while preserving the existing public
+  metric fields and request environment variables.
+
+  Migration note: no default training route changed. The strict grouped
+  preflight still fails on the dedicated RTX 5090 because layout creation
+  succeeds (`linear_cublaslt_grouped_layout_probe_status: 0`) but grouped
+  execution remains unsupported
+  (`linear_cublaslt_grouped_matmul_probe_status: 15`). A temporary explicit
+  64-bit grouped-width experiment returned status `7`, so grouped block
+  dWeight/BGRADB work remains blocked on cuBLASLt execution support.
+
+  Verification: rebuilt `build/libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train_linked`, ran the focused grouped-probe native
+  GPT source-contract pytest, and reran
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe_required` on the
+  display-disabled RTX 5090 with no compute processes. The strict profile
+  exited nonzero as intended with `layout_status=0 matmul_status=15`.
+
 - Refreshed the CUDA 13.3 dedicated RTX 5090 evidence for the default-off
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` diagnostic
   path after the workstation CUDA reinstall. The same-script 3-step,

@@ -113,6 +113,13 @@ Real training tensors must not pass through graph editor node objects.
     dWeight/BGRADB work blocked until execution status is `0`; the active
     parity direction remains a true fused/cooperative LM-head kernel or another
     measured block-backward Tile kernel route.
+  - 2026-06-24 tightened the cuBLASLt grouped matmul probe to use 32-bit
+    grouped rows/columns/leading-dimension arrays, matching cuBLASLt's default
+    grouped descriptor integer width. The strict
+    `cublaslt_grouped_probe_required` profile still fails correctly with
+    layout status `0` and matmul status `15`; a temporary explicit 64-bit
+    grouped-width experiment returned status `7`, so grouped block dWeight and
+    BGRADB work remains blocked on execution support, not descriptor creation.
   - 2026-06-24 added list parsing for
     `NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE` /
     `NFN_TILE_CUDA_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE` and the paired

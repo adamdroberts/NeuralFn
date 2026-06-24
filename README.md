@@ -852,7 +852,8 @@ The separate cuBLASLt grouped execution smoke is opt-in via
 `NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1`,
 `NFN_NATIVE_GPT2_PROBE_CUBLASLT_GROUPED_MATMUL=1`, or
 `NFN_TILE_CUDA_LINEAR_CUBLASLT_GROUPED_MATMUL_PROBE=1`. It uses grouped
-cuBLASLt matrix layouts plus device pointer arrays and reports
+cuBLASLt matrix layouts with 32-bit grouped shape arrays plus device pointer
+arrays and reports
 `linear_cublaslt_grouped_matmul_probe_available`,
 `linear_cublaslt_grouped_matmul_probe_requested`,
 `linear_cublaslt_grouped_matmul_probe_status`, and
@@ -868,7 +869,11 @@ still reports layout status `0` and grouped matmul status `15`; a later
 one-step dedicated RTX 5090 rerun after the CUDA reinstall reported the same
 `0`/`15` probe result. The 2026-06-24 dedicated RTX 5090 3-step, 2-sample
 stage-timed rerun also kept the normal hot route counters unchanged, so this
-remains capability telemetry rather than a training route. The wrapper keeps
+remains capability telemetry rather than a training route. A follow-up strict
+preflight with the 32-bit grouped shape-array probe also returned `0`/`15`;
+forcing explicit 64-bit grouped shape-array widths returned status `7`, so the
+grouped route remains blocked on cuBLASLt execution support rather than shape
+descriptor allocation. The wrapper keeps
 the native route-change gate but disables automatic timing-ratio gates for this
 capability-only profile, so startup noise cannot hide the probe status.
 Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe_required` when a

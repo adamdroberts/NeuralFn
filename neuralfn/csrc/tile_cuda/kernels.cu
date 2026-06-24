@@ -19874,15 +19874,15 @@ int trainer_linear_cublaslt_grouped_matmul_probe_status() {
   const void** a_ptrs_device = nullptr;
   const void** b_ptrs_device = nullptr;
   void** c_ptrs_device = nullptr;
-  std::int64_t* a_rows_device = nullptr;
-  std::int64_t* a_cols_device = nullptr;
-  std::int64_t* a_ld_device = nullptr;
-  std::int64_t* b_rows_device = nullptr;
-  std::int64_t* b_cols_device = nullptr;
-  std::int64_t* b_ld_device = nullptr;
-  std::int64_t* c_rows_device = nullptr;
-  std::int64_t* c_cols_device = nullptr;
-  std::int64_t* c_ld_device = nullptr;
+  std::int32_t* a_rows_device = nullptr;
+  std::int32_t* a_cols_device = nullptr;
+  std::int32_t* a_ld_device = nullptr;
+  std::int32_t* b_rows_device = nullptr;
+  std::int32_t* b_cols_device = nullptr;
+  std::int32_t* b_ld_device = nullptr;
+  std::int32_t* c_rows_device = nullptr;
+  std::int32_t* c_cols_device = nullptr;
+  std::int32_t* c_ld_device = nullptr;
   cublasLtMatmulDesc_t matmul_desc = nullptr;
   cublasLtMatrixLayout_t a_desc = nullptr;
   cublasLtMatrixLayout_t b_desc = nullptr;
@@ -19931,15 +19931,15 @@ int trainer_linear_cublaslt_grouped_matmul_probe_status() {
     }
   };
 
-  const std::array<std::int64_t, group_count> a_rows = {m_host[0], m_host[1]};
-  const std::array<std::int64_t, group_count> a_cols = {k_host[0], k_host[1]};
-  const std::array<std::int64_t, group_count> a_ld = {a_ld_host[0], a_ld_host[1]};
-  const std::array<std::int64_t, group_count> b_rows = {k_host[0], k_host[1]};
-  const std::array<std::int64_t, group_count> b_cols = {n_host[0], n_host[1]};
-  const std::array<std::int64_t, group_count> b_ld = {b_ld_host[0], b_ld_host[1]};
-  const std::array<std::int64_t, group_count> c_rows = {m_host[0], m_host[1]};
-  const std::array<std::int64_t, group_count> c_cols = {n_host[0], n_host[1]};
-  const std::array<std::int64_t, group_count> c_ld = {c_ld_host[0], c_ld_host[1]};
+  const std::array<std::int32_t, group_count> a_rows = {m_host[0], m_host[1]};
+  const std::array<std::int32_t, group_count> a_cols = {k_host[0], k_host[1]};
+  const std::array<std::int32_t, group_count> a_ld = {a_ld_host[0], a_ld_host[1]};
+  const std::array<std::int32_t, group_count> b_rows = {k_host[0], k_host[1]};
+  const std::array<std::int32_t, group_count> b_cols = {n_host[0], n_host[1]};
+  const std::array<std::int32_t, group_count> b_ld = {b_ld_host[0], b_ld_host[1]};
+  const std::array<std::int32_t, group_count> c_rows = {m_host[0], m_host[1]};
+  const std::array<std::int32_t, group_count> c_cols = {n_host[0], n_host[1]};
+  const std::array<std::int32_t, group_count> c_ld = {c_ld_host[0], c_ld_host[1]};
 
   for (int i = 0; i < group_count && status == 0; ++i) {
     cuda_step(cudaMalloc(reinterpret_cast<void**>(&a_device[i]), a_elements * sizeof(std::uint16_t)));
@@ -19961,29 +19961,29 @@ int trainer_linear_cublaslt_grouped_matmul_probe_status() {
   cuda_step(cudaMalloc(reinterpret_cast<void**>(&a_ptrs_device), sizeof(a_ptrs_host)));
   cuda_step(cudaMalloc(reinterpret_cast<void**>(&b_ptrs_device), sizeof(b_ptrs_host)));
   cuda_step(cudaMalloc(reinterpret_cast<void**>(&c_ptrs_device), sizeof(c_ptrs_host)));
-  cuda_step(cudaMalloc(reinterpret_cast<void**>(&a_rows_device), sizeof(std::int64_t) * group_count));
-  cuda_step(cudaMalloc(reinterpret_cast<void**>(&a_cols_device), sizeof(std::int64_t) * group_count));
-  cuda_step(cudaMalloc(reinterpret_cast<void**>(&a_ld_device), sizeof(std::int64_t) * group_count));
-  cuda_step(cudaMalloc(reinterpret_cast<void**>(&b_rows_device), sizeof(std::int64_t) * group_count));
-  cuda_step(cudaMalloc(reinterpret_cast<void**>(&b_cols_device), sizeof(std::int64_t) * group_count));
-  cuda_step(cudaMalloc(reinterpret_cast<void**>(&b_ld_device), sizeof(std::int64_t) * group_count));
-  cuda_step(cudaMalloc(reinterpret_cast<void**>(&c_rows_device), sizeof(std::int64_t) * group_count));
-  cuda_step(cudaMalloc(reinterpret_cast<void**>(&c_cols_device), sizeof(std::int64_t) * group_count));
-  cuda_step(cudaMalloc(reinterpret_cast<void**>(&c_ld_device), sizeof(std::int64_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&a_rows_device), sizeof(std::int32_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&a_cols_device), sizeof(std::int32_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&a_ld_device), sizeof(std::int32_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&b_rows_device), sizeof(std::int32_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&b_cols_device), sizeof(std::int32_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&b_ld_device), sizeof(std::int32_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&c_rows_device), sizeof(std::int32_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&c_cols_device), sizeof(std::int32_t) * group_count));
+  cuda_step(cudaMalloc(reinterpret_cast<void**>(&c_ld_device), sizeof(std::int32_t) * group_count));
   if (status != 0) return fail(status);
 
   cuda_step(cudaMemcpy(a_ptrs_device, a_ptrs_host, sizeof(a_ptrs_host), cudaMemcpyHostToDevice));
   cuda_step(cudaMemcpy(b_ptrs_device, b_ptrs_host, sizeof(b_ptrs_host), cudaMemcpyHostToDevice));
   cuda_step(cudaMemcpy(c_ptrs_device, c_ptrs_host, sizeof(c_ptrs_host), cudaMemcpyHostToDevice));
-  cuda_step(cudaMemcpy(a_rows_device, a_rows.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
-  cuda_step(cudaMemcpy(a_cols_device, a_cols.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
-  cuda_step(cudaMemcpy(a_ld_device, a_ld.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
-  cuda_step(cudaMemcpy(b_rows_device, b_rows.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
-  cuda_step(cudaMemcpy(b_cols_device, b_cols.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
-  cuda_step(cudaMemcpy(b_ld_device, b_ld.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
-  cuda_step(cudaMemcpy(c_rows_device, c_rows.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
-  cuda_step(cudaMemcpy(c_cols_device, c_cols.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
-  cuda_step(cudaMemcpy(c_ld_device, c_ld.data(), sizeof(std::int64_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(a_rows_device, a_rows.data(), sizeof(std::int32_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(a_cols_device, a_cols.data(), sizeof(std::int32_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(a_ld_device, a_ld.data(), sizeof(std::int32_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(b_rows_device, b_rows.data(), sizeof(std::int32_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(b_cols_device, b_cols.data(), sizeof(std::int32_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(b_ld_device, b_ld.data(), sizeof(std::int32_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(c_rows_device, c_rows.data(), sizeof(std::int32_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(c_cols_device, c_cols.data(), sizeof(std::int32_t) * group_count, cudaMemcpyHostToDevice));
+  cuda_step(cudaMemcpy(c_ld_device, c_ld.data(), sizeof(std::int32_t) * group_count, cudaMemcpyHostToDevice));
   if (status != 0) return fail(status);
 
   cublas_step(cublasLtMatmulDescCreate(&matmul_desc, CUBLAS_COMPUTE_32F_FAST_16BF, CUDA_R_32F));
