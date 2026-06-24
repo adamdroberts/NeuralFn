@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- **Breaking changes: native GPT dataset downloads are explicit opt-in** --
+  `cli/scripts/train_gpt_native.py` now defaults `--download-if-missing` to
+  false, and the canonical `train_gpt.py` wrapper keeps local
+  `--pretraining-file` adapters strict instead of re-enabling hidden
+  downloads. Before this change, a missing native GPT dataset alias could pull
+  `server.dataset_manager` into the launch path by default. Now native GPT
+  training expects cached uint16 shards or a direct shard/cache path unless the
+  caller passes `--download-if-missing`. Migration: prepare the cache as a
+  setup step, pass `--dataset-alias /path/to/cache`, or add
+  `--download-if-missing` when a Python download/materialization step is
+  intentional.
+
+  Verification: added a parser/default startup test that imports
+  `train_gpt_native.build_parser()`, confirms the default is false and the
+  explicit flag is true, and checks that neither `server.dataset_manager` nor
+  Torch is imported. Ran the focused native GPT startup slice, the pretraining
+  file flag suite, `tests/test_native_dependencies.py`, and
+  `tools/check_native_no_torch_deps.py --skip-artifacts --json`.
+
 - Added named rejected SM120 candidate profiles for packed-attention dprep
   warp-count retesting: `attention_dprep_warps_2` expands to
   `NFN_NATIVE_GPT_PACKED_ATTENTION_DPREP_WARPS=2`, and

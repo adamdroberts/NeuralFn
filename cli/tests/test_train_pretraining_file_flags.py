@@ -52,7 +52,10 @@ class TrainPretrainingFileFlagTest(unittest.TestCase):
                 with self.subTest(script=module_name):
                     args = self.parse_args(module, ["--pretraining-file", str(corpus)])
                     self.assertEqual(resolved_corpus, args.pretraining_file)
-                    self.assertTrue(args.download_if_missing)
+                    if module_name == "train_gpt2":
+                        self.assertFalse(args.download_if_missing)
+                    else:
+                        self.assertTrue(args.download_if_missing)
                     adapter_dir = Path(args.dataset_alias)
                     self.assertTrue(adapter_dir.is_dir())
                     self.assertTrue((adapter_dir / "meta.json").exists())

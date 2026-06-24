@@ -437,6 +437,12 @@ The shared dataset-resolution flow is:
 2. if it is missing, attempt an auto-download
 3. continue on success, or surface the original download / validator error
 
+Native GPT cached-shard training is stricter: `train_gpt.py`,
+`train_gpt2.py`, and `train_gpt_native.py` do not auto-download missing
+datasets by default. Prepare shards ahead of time, pass a direct cache path, or
+opt in explicitly with `--download-if-missing` when you want the Python dataset
+manager involved before the compiled CUDA Tile trainer launches.
+
 Standard cached-variant aliases like
 `owner__repo__variant__trainN` are enough for automatic downloads on their own.
 For non-standard aliases, pass the download contract explicitly:
@@ -703,8 +709,10 @@ python scripts/train_jepa_semantic.py \
 The script will:
 
 - reuse the cached dataset from `~/.cache/nfn/datasets/` when it already exists
-- auto-download a missing cached alias by default when its download contract can
-  be derived from the alias or explicit flags
+- auto-download a missing cached alias by default in the graph-backed sibling
+  harnesses when its download contract can be derived from the alias or
+  explicit flags; native GPT cached-shard training requires explicit
+  `--download-if-missing`
 - honor `--all-train-rows` by keeping partial final batches, finishing full
   epochs, and rounding `--max-steps` up to the next epoch boundary, with a
   2-epoch floor when the script defaults are left unchanged

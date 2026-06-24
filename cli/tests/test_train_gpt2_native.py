@@ -17,6 +17,44 @@ NEURALFN_ROOT = ROOT.parent
 
 
 class TrainGpt2NativeStartupTest(unittest.TestCase):
+    def test_native_gpt_dataset_download_is_explicit_opt_in(self) -> None:
+        code = textwrap.dedent(
+            f"""
+            from pathlib import Path
+            import sys
+
+            root = Path({str(NEURALFN_ROOT)!r})
+            sys.path.insert(0, str(root / "cli" / "scripts"))
+            sys.path.insert(0, str(root))
+
+            from train_gpt_native import build_parser
+
+            default_args = build_parser().parse_args([])
+            explicit_args = build_parser().parse_args(["--download-if-missing"])
+            print("DEFAULT_DOWNLOAD", default_args.download_if_missing)
+            print("EXPLICIT_DOWNLOAD", explicit_args.download_if_missing)
+            print("DATASET_MANAGER_LOADED", "server.dataset_manager" in sys.modules)
+            print("TORCH_LOADED", "torch" in sys.modules)
+            """
+        )
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            cwd=NEURALFN_ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertIn("DEFAULT_DOWNLOAD False", proc.stdout)
+        self.assertIn("EXPLICIT_DOWNLOAD True", proc.stdout)
+        self.assertIn("DATASET_MANAGER_LOADED False", proc.stdout)
+        self.assertIn("TORCH_LOADED False", proc.stdout)
+
     def test_nfn_root_help_does_not_import_torch(self) -> None:
         for argv in (["--help"], ["--help-style", "verbose", "--help"], []):
             with self.subTest(argv=argv):

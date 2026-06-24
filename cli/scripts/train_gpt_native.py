@@ -308,7 +308,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tinystories", action="store_true")
     parser.add_argument("--dataset", choices=("tinystories", "golf1", "golf10"), default=None)
     parser.add_argument("--dataset-alias", default=env_str("DATASET_ALIAS", NATIVE_GPT_DEFAULTS["dataset_alias"]))
-    parser.add_argument("--download-if-missing", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--download-if-missing", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--dataset-hf-path", default=env_str("DATASET_HF_PATH", NATIVE_GPT_DEFAULTS["dataset_hf_path"]))
     parser.add_argument("--dataset-variant", default=None)
     parser.add_argument("--dataset-train-shards", type=int, default=None)

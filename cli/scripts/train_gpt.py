@@ -776,7 +776,7 @@ def resolve_pretraining_file_dataset(args: argparse.Namespace) -> str | None:
     (adapter_dir / "meta.json").write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
     args.pretraining_file = str(corpus)
     args.dataset_alias = str(adapter_dir)
-    args.download_if_missing = True
+    args.download_if_missing = False
     args.raw_text_selected = True
     if not getattr(args, "raw_text_encoding_name", None):
         _apply_raw_text_tokenizer(args, "gpt2")
