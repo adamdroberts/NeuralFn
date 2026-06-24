@@ -5659,3 +5659,55 @@ def test_paired_kernel_speed_tool_terminates_process_group() -> None:
     assert returncode != 0
     time.sleep(1.2)
     assert not marker_path.exists()
+
+
+def test_paired_kernel_speed_tool_interrupt_terminates_active_child_group(tmp_path: Path) -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    marker_path = tmp_path / "grandchild-survived.txt"
+    child_script = tmp_path / "interrupt_grandchild.py"
+    spawner_script = tmp_path / "interrupt_spawner.py"
+    child_script.write_text(
+        "import time\n"
+        "from pathlib import Path\n"
+        "time.sleep(2.0)\n"
+        f"Path({str(marker_path)!r}).write_text('alive')\n",
+        encoding="utf-8",
+    )
+    spawner_script.write_text(
+        "import subprocess\n"
+        "import sys\n"
+        "import time\n"
+        f"subprocess.Popen([sys.executable, {str(child_script)!r}])\n"
+        "time.sleep(20)\n",
+        encoding="utf-8",
+    )
+
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('baseline-ok')\"",
+            "--candidate",
+            f"{sys.executable} {spawner_script}",
+            "--samples",
+            "1",
+            "--warmup",
+            "0",
+            "--command-timeout-seconds",
+            "30",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    time.sleep(1.0)
+    proc.send_signal(signal.SIGINT)
+    stdout, stderr = proc.communicate(timeout=10.0)
+
+    assert proc.returncode != 0
+    assert "interrupted while running candidate; terminated child process group" in (
+        stdout + stderr
+    )
+    time.sleep(2.5)
+    assert not marker_path.exists()

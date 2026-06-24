@@ -6,6 +6,16 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Hardened `tools/paired_kernel_speed.py` interrupt handling. Ctrl-C while a
+  measured baseline or candidate command is active now terminates that command's
+  process group and exits with a concise interruption message instead of
+  re-raising `KeyboardInterrupt` with a Python traceback.
+
+  Verification: ran `python -m pytest tests/test_tile_cuda_examples.py -q -k
+  "paired_kernel_speed_tool_interrupt_terminates_active_child_group or
+  paired_kernel_speed_tool_terminates_process_group"`, `python -m py_compile
+  tools/paired_kernel_speed.py`, and `git diff --check`.
+
 - Added the rejected
   `NFN_SM120_NATIVE_CANDIDATE_PROFILE=full_activation_tape` paired benchmark
   profile for no-recompute diagnostics. The profile forces baseline

@@ -1786,7 +1786,9 @@ def run_once(
     except KeyboardInterrupt:
         if "proc" in locals():
             terminate_process_group(proc, first_signal=signal.SIGTERM, wait_seconds=2.0)
-        raise
+        raise SystemExit(
+            f"interrupted while running {command.name}; terminated child process group"
+        ) from None
     except BaseException:
         if "proc" in locals():
             terminate_process_group(proc, first_signal=signal.SIGTERM, wait_seconds=2.0)

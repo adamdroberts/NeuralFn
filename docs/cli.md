@@ -551,6 +551,9 @@ candidate `=1`, then relies on paired output metrics
 changed from scratch recompute to the larger full-forward tape. It is rejected
 by default because the RTX 5090 diagnostic removed backward recompute but ran
 slower than the default stored-activation scratch-recompute route.
+When a paired benchmark is interrupted with Ctrl-C, the tool now terminates the
+active child process group and exits with a concise interruption message, so a
+long native CUDA candidate does not continue running after the wrapper exits.
 Set `NFN_NATIVE_GPT_CUDA_MALLOC_ASYNC=1` only for allocator profiling. It routes
 the same large native GPT device arenas through CUDA runtime `cudaMallocAsync`
 and frees them with `cudaFreeAsync` when those symbols are available, falling
