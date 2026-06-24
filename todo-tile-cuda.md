@@ -49,6 +49,16 @@ Real training tensors must not pass through graph editor node objects.
   `stage.block_backward.attn_sdpa.to_qkv.total_ms`,
   `stage.block_backward.mlp_proj.total_ms`, QKV backward, and
   `stage.lm_head_backward.total_ms`.
+- [x] Refresh the stronger current parity sample after the linked rebuilds and
+  latest candidate rejections. The 2026-06-24 CUDA 13.3.33 5-step, 3-sample,
+  1-warmup same-script run measured NeuralFn at `2525.500 ms/step` versus
+  llm.kittens at `2465.055 ms/step` (`1.024520x` train-loop wall,
+  `0.975643x` tokens/sec), with the steady-state CUDA-event slice at
+  `1.014749x` and first-step CUDA-event slice at `1.061982x`. The selected RTX
+  5090 was idle before and after every sample, with no compute processes. Native
+  setup averaged `634.259 ms`, mainly float arena materialization
+  (`265.065 ms`), token weight initialization (`158.416 ms`), uint16 arena
+  materialization (`124.713 ms`), and cuBLASLt plan prewarm (`74.021 ms`).
 - [ ] Close the remaining SM120 parity gap with measured native kernel changes,
   not Torch/Python/graph-editor workarounds. Every candidate must run through
   `tools/bench_native_gpt_sm120_candidate.sh` or
@@ -113,6 +123,18 @@ Real training tensors must not pass through graph editor node objects.
     CUDA-event timing, and `1.000293x` LM-head dWeight. Keep it
     diagnostic-only; the remaining LM-head parity work is still a real
     fused/cooperative classifier-backward kernel, not moving the prepack cost.
+  - 2026-06-24 rechecked
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_workspace_prewarm` on the current
+    rebuilt linked native trainer. The 5-step, 3-sample, 1-warmup same-script
+    run changed only setup/prewarm counters
+    (`linear_bf16_workspace_prewarm_requested/success_count: 0 -> 1`) and
+    failed the route-change gate. It measured `0.999466x` train-loop wall and
+    `0.999417x` steady-state CUDA-event timing, but setup regressed to
+    `1.005087x` and strict stage gates missed at
+    `stage.lm_head_backward.total_ms=1.000361x` and
+    `stage.block_backward.mlp_proj.total_ms=1.001043x`. Keep it
+    diagnostic-only; it is neither a startup fix nor a parity-closing hot
+    kernel route.
 
 ## Native C++ trainer ABI
 

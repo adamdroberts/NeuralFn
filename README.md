@@ -90,16 +90,21 @@ expansion remains available without that opt-in. The native runner now rejects
 LM-head chunks above 49152 rows before launching CUDA unless
 `NFN_NATIVE_GPT_ALLOW_UNSAFE_LM_HEAD_ROW_CHUNK=1` is set for explicit paired
 diagnostics. The
-current CUDA 13.3.33 rebuilt 3-step, 2-sample parity refresh on the dedicated
-RTX 5090 measured NeuralFn at `2520.777 ms/step` versus llm.kittens at
-`2544.537 ms/step` (`0.991139x` train-loop wall time, `1.004545x`
-tokens/sec) with no compute processes on the selected GPU. The same run still
-measured the NeuralFn steady-state CUDA-event slice slower at `1.013462x`, so
-the remaining parity gap is steady-state kernel throughput in block backward
-and LM-head internals, not Torch, Python, startup, graph-editor execution, or
-external GPU load. The rebuilt JSON confirmed the promoted default route with
-`block_state_layout.layer_norm_backward_affine_row_chunk_size=128` and
-`block_backward_qkv_dinput_before_dweight_count=288`.
+current CUDA 13.3.33 rebuilt 5-step, 3-sample parity refresh on the dedicated
+RTX 5090 measured NeuralFn at `2525.500 ms/step` versus llm.kittens at
+`2465.055 ms/step` (`1.024520x` train-loop wall time, `0.975643x`
+tokens/sec) with no compute processes on the selected GPU. The same run
+measured the NeuralFn steady-state CUDA-event slice slower at `1.014749x`, and
+the first-step CUDA-event slice slower at `1.061982x`. Native setup was
+`634.259 ms`, dominated by float arena materialization (`265.065 ms`), token
+weight initialization (`158.416 ms`), uint16 arena materialization
+(`124.713 ms`), and cuBLASLt plan prewarm (`74.021 ms`). The remaining parity
+gap is native kernel throughput in block backward, model forward, and LM-head
+internals plus first-step prewarm effects, not Torch, Python, graph-editor
+execution, or external GPU load. The rebuilt JSON confirmed the selected GPU
+was idle before and after every sample and reported the promoted default route
+with `block_state_layout.layer_norm_backward_affine_row_chunk_size=128` and
+`block_backward_qkv_dinput_before_dweight_count=480`.
 Because parity samples can move with reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
 build. The cooperative LM-head diagnostic wrapper is intentionally separate

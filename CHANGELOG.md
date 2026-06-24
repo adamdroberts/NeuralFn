@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the current CUDA 13.3.33 RTX 5090 parity evidence after the linked
+  native rebuilds and recent candidate rejections. A 5-step, 3-sample,
+  1-warmup same-script run measured NeuralFn at `2525.500 ms/step` versus
+  llm.kittens at `2465.055 ms/step` (`1.024520x` train-loop wall,
+  `0.975643x` tokens/sec), with steady-state CUDA-event timing at `1.014749x`
+  and first-step timing at `1.061982x`. The selected RTX 5090 was idle before
+  and after every sample with zero compute processes. Native setup averaged
+  `634.259 ms`, mostly float arena materialization (`265.065 ms`), token
+  weight initialization (`158.416 ms`), uint16 arena materialization
+  (`124.713 ms`), and cuBLASLt plan prewarm (`74.021 ms`). This keeps the
+  remaining work assigned to native hot-kernel throughput and first-step
+  setup/prewarm behavior, not Torch, Python, graph-editor execution, or
+  external GPU load.
+
+- Rechecked `NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_workspace_prewarm` on the
+  current linked native trainer and kept it rejected/default-off. The same
+  5-step, 3-sample, 1-warmup gate changed only setup/prewarm counters, measured
+  `0.999466x` train-loop wall and `0.999417x` steady-state CUDA-event timing,
+  but regressed setup to `1.005087x` and still missed strict LM-head and MLP
+  projection gates. The profile remains diagnostic-only because it is not a
+  real hot training route change and does not fix startup.
+
 - Kept `NFN_NATIVE_GPT_BF16_ATTENTION_GRAD_OUT=1` as a rejected/default-off
   dense GPT native candidate after a longer CUDA 13.3 dedicated RTX 5090 rerun.
   The route still proves the intended kernel change by moving attention

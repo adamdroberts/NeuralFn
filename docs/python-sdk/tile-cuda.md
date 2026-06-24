@@ -601,6 +601,14 @@ real runs because the CUDA 13.3 dedicated RTX 5090 gate regressed strict timing
 metrics; use dry-run mode or
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only for intentional
 rechecks.
+The BF16 GEMMEx workspace prewarm profile remains diagnostic-only on the current
+CUDA 13.3.33 RTX 5090 stack. A 5-step, 3-sample rerun with the rebuilt linked
+native trainer changed only setup/prewarm counters and failed the route-change
+gate; it measured `0.999466x` train-loop wall time and `0.999417x`
+steady-state CUDA-event timing, but setup regressed to `1.005087x` and strict
+stage gates still missed at `stage.lm_head_backward.total_ms=1.000361x` and
+`stage.block_backward.mlp_proj.total_ms=1.001043x`. Do not promote this route
+as a startup fix or a parity fix; use it only for deliberate prewarm bisection.
 For one-shape TK forward bisection from the SDK, pass
 `NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` or
 `NFN_TILE_CUDA_LINEAR_TK_FORWARD_DISABLE_SHAPE=m,n,k,opA,opB` in the same
