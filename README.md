@@ -61,8 +61,19 @@ CUDA Toolkit 13.3.33 WSL reinstall, the dedicated RTX 5090 path is correctness
 green for the revisited native and Tile CUDA gates. After reinstalling the WSL
 CUDA toolkit (`cuda-toolkit-13-3`), the GPU-visible full suite passed with
 `1185 passed, 4 skipped, 20 warnings, 468 subtests passed`; the focused native/Tile CUDA
-gates, GPT template preset suite, and native no-Torch guard all pass. Dense GPT
-native training now routes the no-bias BF16 LM-head logits GEMM through the TK
+gates, GPT template preset suite, and native no-Torch guard all pass.
+The post-reinstall paired llm.kittens parity check on the display-disabled RTX
+5090 used 3 optimizer steps, one interleaved sample, and stage timing with the
+selected GPU idle before and after the run. It measured llm.kittens at
+`213188.666667` tokens/sec and NeuralFn native GPT at `208073` tokens/sec,
+or `1.023900x` NeuralFn train-loop wall time versus the llm.kittens step log.
+The same CUDA 13.3.33 recheck left both `llmk_sm120_reference_flags` and
+`mlp_proj_dinput_before_dweight` rejected: the former missed train-loop,
+steady-state, LM-head, and MLP-projection gates, while the latter improved
+short-run wall time but regressed steady-state timing and MLP projection
+dInput attribution. Keep both as diagnostic profiles unless a later same-script
+gate passes all hot-stage and steady-state criteria.
+Dense GPT native training now routes the no-bias BF16 LM-head logits GEMM through the TK
 BF16 forward bridge by default for the
 default `50304,32768,768,T,N` row-chunk shape. The default tied LM-head row
 chunk is restored to 32768 rows for the workstation 5090 profile after the

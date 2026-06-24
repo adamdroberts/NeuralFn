@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Re-ran the post-CUDA reinstall SM120 parity and candidate gates on the
+  dedicated RTX 5090. The current NeuralFn native GPT default remains close to
+  llm.kittens but is still slightly slower on the 3-step stage-timed parity
+  check: llm.kittens reported `213188.666667` tokens/sec and NeuralFn reported
+  `208073` tokens/sec, with NeuralFn train-loop wall time at `1.023900x` the
+  llm.kittens step log. The selected GPU was display-disabled, idle before and
+  after the run, and locked by the paired benchmark wrapper.
+
+  Migration note: no defaults changed. `llmk_sm120_reference_flags` and
+  `mlp_proj_dinput_before_dweight` remain rejected diagnostic profiles. The
+  former still misses train-loop, steady-state, LM-head, and MLP-projection
+  gates; the latter improves short-run total wall time but regresses
+  steady-state timing and MLP projection dInput attribution.
+
+  Verification: ran the CUDA-visible
+  `tools/bench_native_gpt_sm120_parity.sh` parity command with stage timing;
+  intentionally reran the two rejected candidate profiles with strict ratio
+  gates; ran `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q`, which passed `87 passed, 2 skipped`.
+
 - Added a profiling-only LM-head backward candidate symbol,
   `nfn_native_tile_lm_head_classifier_backward_cooperative_cublaslt_bf16_u16`.
   It keeps the existing CE/dlogits stage but forces the strided cuBLASLt
