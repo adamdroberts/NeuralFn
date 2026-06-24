@@ -871,6 +871,10 @@ stage-timed rerun also kept the normal hot route counters unchanged, so this
 remains capability telemetry rather than a training route. The wrapper keeps
 the native route-change gate but disables automatic timing-ratio gates for this
 capability-only profile, so startup noise cannot hide the probe status.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe_required` when a
+future grouped-GEMM implementation needs a hard prerequisite gate: it runs the
+same non-poisoning probes but exits nonzero unless both layout and grouped
+matmul statuses are `0`.
 It intentionally does not request the classic cuBLAS grouped BF16 probe because the
 CUDA 13.3 recheck showed that unsupported route still poisons the selected CUDA
 context before the trainer can allocate model arenas.

@@ -44,6 +44,21 @@ Future updates should append new entries here rather than replacing older notes.
   `NFN_SM120_NATIVE_WARMUP=0`, and `NFN_SM120_NATIVE_STAGE_TIMING=1` through
   `tools/bench_native_gpt_sm120_candidate.sh`.
 
+- Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe_required`
+  for grouped-GEMM implementation preflights. It runs the same non-poisoning
+  cuBLASLt grouped layout and grouped matmul probes as
+  `cublaslt_grouped_probe`, then exits nonzero unless both probe statuses are
+  `0`.
+
+  Migration note: no trainer default changes. Use the normal
+  `cublaslt_grouped_probe` profile for telemetry and the required profile only
+  when grouped execution is a hard prerequisite for a candidate patch.
+
+  Verification: ran `bash -n tools/bench_native_gpt_sm120_candidate.sh`, a
+  dry-run plan for the new profile, and the focused native GPT wrapper
+  source-contract pytest. The real one-step dedicated RTX 5090 strict-profile
+  run exited nonzero as intended with `layout_status=0 matmul_status=15`.
+
 - Added a default-off dense GPT startup/memory diagnostic sub-route behind
   `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_INPUT_LN1_BACKWARD`,
   `NFN_NATIVE_GPT2_BF16_PERSISTENT_BLOCK_INPUT_LN1_BACKWARD`, or

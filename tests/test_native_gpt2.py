@@ -1845,6 +1845,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "cublaslt_block_dinput": "NFN_NATIVE_LINEAR_BF16_CUBLASLT_ENABLE_SHAPE=3072,65536,768,N,N:768,65536,3072,N,N:768,65536,2304,N,N:768,65536,768,N,N",
         "cublaslt_block_dinput_h3_65536": "NFN_NATIVE_LINEAR_CUBLASLT_HEURISTIC_SHAPE=768,65536,3072,N,N,3:768,65536,2304,N,N,3",
         "lm_head_public_vocab_strided_gemm": "NFN_NATIVE_GPT_LM_HEAD_PUBLIC_VOCAB_STRIDED_GEMM=1",
+        "cublaslt_grouped_probe_required": "NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_LAYOUT=1 NFN_NATIVE_GPT_PROBE_CUBLASLT_GROUPED_MATMUL=1",
         "lm_head_row_loss_sum_accumulate": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=1",
         "lm_head_row_loss_partial_reduce": "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE=0",
         "lm_head_cooperative_no_loss_backward": "NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1 NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS=1 NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1",
@@ -1854,6 +1855,11 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         assert profile in bench_source
         assert env_assignment in bench_source
     assert "PUBLIC_VOCAB_STRIDED_GEMM" in bench_source
+    assert "STRICT_GROUPED_CUBLASLT_PROBE=1" in bench_source
+    assert "required cuBLASLt grouped probe failed" in bench_source
+    assert "grouped layout and grouped matmul probe statuses are both 0" in bench_source
+    assert 'data.get("candidate_native_metrics", {})' in bench_source
+    assert "linear_cublaslt_grouped_matmul_probe_status" in bench_source
     assert "stage.lm_head_backward.dhidden.total_ms=1.000" in bench_source
     assert "stage.lm_head_backward.dweight.total_ms=1.000" in bench_source
     assert (

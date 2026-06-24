@@ -819,6 +819,15 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     still returned `0`, and grouped matmul execution still returned `15`.
     Keep grouped block-backward work blocked; descriptor creation is not enough
     to start replacing the existing per-shape GEMMs.
+  - 2026-06-24 added
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=cublaslt_grouped_probe_required` as a
+    fail-fast prerequisite gate for future grouped-GEMM implementation work. It
+    expands to the same non-poisoning layout/matmul probes as
+    `cublaslt_grouped_probe`, but fails after the paired run unless both
+    `linear_cublaslt_grouped_layout_probe_status` and
+    `linear_cublaslt_grouped_matmul_probe_status` are `0`. Use the normal
+    profile for telemetry and the required profile only when grouped execution
+    is a hard dependency for a candidate patch.
   - 2026-06-24 added the reproducible rejected wrapper profile
     `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_public_vocab_strided_gemm`.
     It compares the default aligned padded-vocab LM-head dHidden/dWeight GEMMs
