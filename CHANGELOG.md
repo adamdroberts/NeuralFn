@@ -6,6 +6,17 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the SM120 native dense GPT parity baseline after the CUDA WSL
+  reinstall and dedicated RTX 5090 setup. The current CUDA 13.3.33 same-script
+  run measures NeuralFn at `1.015299x` train-loop wall time and `1.011877x`
+  steady-state CUDA-event timing versus the llm.kittens reference, with no
+  compute processes on the selected GPU. Stage attribution still points at
+  native GPU throughput in block backward and LM-head backward, not Torch,
+  Python, graph-editor tensor flow, startup, or external GPU load.
+
+  Verification: reran `tools/bench_native_gpt_sm120_parity.sh` with
+  GPU-idle checks and a stage-timed attribution pass on the dedicated RTX 5090.
+
 - Fixed the GPT-2 evo native delegate so `--tile-cuda-activation-dtype nvfp4`
   is preserved when `nfn_gpt2_evo_native_train` prints or execs the dense GPT
   CUDA Tile trainer with `--train-transformer-lm --layer-evo`. The dense native

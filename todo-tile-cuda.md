@@ -33,6 +33,28 @@ Real training tensors must not pass through graph editor node objects.
 - [x] Add an assertion helper for tests: no training forward/backward path may read editor position, viewport, React store, or mutable graph-editor metadata.
 - [x] Keep editor graph objects as control-plane data only: authoring, serialization, validation, and compile-time planning.
 
+## Current SM120 parity baseline
+
+- [x] Refresh the native-vs-llm.kittens parity measurement after the CUDA WSL
+  reinstall and dedicated RTX 5090 setup. The 2026-06-24 CUDA 13.3.33
+  3-step/1-sample same-script run measured NeuralFn at `2512.313 ms/step`
+  versus llm.kittens at `2474.457 ms/step` (`1.015299x` train-loop wall,
+  `0.984089x` tokens/sec), with the steady-state CUDA-event slice at
+  `1.011877x`. The selected GPU was idle before and after the run, with no
+  compute processes.
+- [x] Refresh stage attribution under the same stack. The 2-step stage-timed
+  run measured `1.008363x` train-loop wall and `1.015418x` steady-state
+  CUDA-event timing. Remaining hot buckets are native kernel throughput:
+  `stage.block_backward.total_ms`, `stage.block_forward.total_ms`,
+  `stage.block_backward.attn_sdpa.to_qkv.total_ms`,
+  `stage.block_backward.mlp_proj.total_ms`, QKV backward, and
+  `stage.lm_head_backward.total_ms`.
+- [ ] Close the remaining SM120 parity gap with measured native kernel changes,
+  not Torch/Python/graph-editor workarounds. Every candidate must run through
+  `tools/bench_native_gpt_sm120_candidate.sh` or
+  `tools/bench_native_gpt_sm120_parity.sh` so baseline and candidate execute in
+  the same script under the same external GPU load.
+
 ## Native C++ trainer ABI
 
 This section tracks the raw no-Torch C ABI used by compiled model trainers. It is separate from the PyTorch extension bindings and autograd wrappers.
