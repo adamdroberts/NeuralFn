@@ -360,6 +360,20 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       train-loop wall improved to `0.990440x` and graph replay succeeded 48
       times, but steady-state CUDA-event timing regressed to `1.002035x` and
       LM-head backward to `1.001066x`.
+      A later CUDA 13.3 dedicated RTX 5090 rerun on 2026-06-24 used
+      `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+      NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward
+      NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+      NFN_SM120_NATIVE_WARMUP=1 NFN_SM120_NATIVE_STAGE_TIMING=1` and again
+      rejected promotion: the cooperative wrapper route counters changed
+      (`lm_head_cooperative_sequence_*: 0 -> 48`) and
+      `stage.lm_head_backward.total_ms` improved to `0.999819x`, but
+      `train_loop_wall_ms_per_step` regressed to `1.002204x`,
+      steady-state CUDA-event step time regressed to `1.000412x`, and
+      `stage.block_backward.mlp_proj.total_ms` regressed to `1.002147x`.
+      Keep the graph/sequence route rejected and replace it with an actual
+      lower-overhead fused classifier/dHidden/dWeight body before any default
+      promotion.
     - 2026-06-23 changed the focused `trainer-chunk` microbenchmark profile to
       pass the cooperative no-loss flag and use the no-loss CE reference
       symbol, matching the optimizer-only native trainer path. Use

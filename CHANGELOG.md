@@ -6,6 +6,28 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the CUDA 13.3 dedicated RTX 5090 evidence for the default-off
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` diagnostic
+  path after the workstation CUDA reinstall. The same-script 3-step,
+  2-sample, 1-warmup run selected GPU 0 with display disabled and no compute
+  processes, activated the cooperative LM-head sequence route, and improved
+  `stage.lm_head_backward.total_ms` to `0.999819x`, but still rejected
+  promotion because `train_loop_wall_ms_per_step` regressed to `1.002204x` and
+  steady-state CUDA-event step time regressed to `1.000412x`.
+
+  Migration note: no code path or default behavior changed. The existing
+  cooperative LM-head graph/sequence route remains diagnostic-only; parity work
+  should replace it with a lower-overhead fused classifier/dHidden/dWeight Tile
+  body instead of promoting the current wrapper.
+
+  Verification: intentionally reran the rejected profile with
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`,
+  `NFN_SM120_NATIVE_STEPS=3`, `NFN_SM120_NATIVE_SAMPLES=2`,
+  `NFN_SM120_NATIVE_WARMUP=1`, and `NFN_SM120_NATIVE_STAGE_TIMING=1`. The
+  wrapper failed the metric ratio gates exactly on train-loop wall and
+  steady-state CUDA-event timing, while the selected GPU stayed idle before and
+  after every sample.
+
 - Added a default-off dense GPT startup/memory diagnostic sub-route behind
   `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_INPUT_LN1_BACKWARD`,
   `NFN_NATIVE_GPT2_BF16_PERSISTENT_BLOCK_INPUT_LN1_BACKWARD`, or

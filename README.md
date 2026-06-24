@@ -355,7 +355,11 @@ The strict/cooperative LM-head backward ABI now also uses the aligned padded
 GEMM route for its dHidden and dWeight work so
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` measures the
 cooperative wrapper itself rather than implicitly enabling the rejected strided
-public-vocab route.
+public-vocab route. A CUDA 13.3 dedicated RTX 5090 rerun on 2026-06-24 still
+kept that profile rejected: it activated the cooperative wrapper and slightly
+improved `stage.lm_head_backward.total_ms` to `0.999819x`, but missed
+promotion at `1.002204x` train-loop wall and `1.000412x` steady-state
+CUDA-event step time.
 Dense GPT native training also now defaults to eliding the unused FP32
 attention-projection and MLP-projection scratch-tape buffers when BF16
 projection-residual is active. Set
@@ -1063,14 +1067,18 @@ Runtime JSON reports
 paired benchmarks distinguish the reference-parity separate-stage LM-head
 schedule from optional cooperative/fused candidate probes. The strict
 cooperative ABI remains default-off and non-promoted. The focused LM-head
-microbench proves the strict symbol is no longer a placeholder, but the full
-CUDA 13.3 dedicated RTX 5090 native-vs-native gate rejected
+microbench keeps distinguishing the CUDA Graph wrapper from a future real
+single-kernel capability; current Tile ops return false from
+`nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
+The full CUDA 13.3 dedicated RTX 5090 native-vs-native gate rejected
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` after the
 aligned padded-vocab route fix at `0.990440x` train-loop wall because
 steady-state CUDA-event timing still regressed to `1.002035x` and LM-head
-backward to `1.001066x`. Treat the current CUDA Graph body as ABI groundwork
-until a later single-kernel or lower-overhead fused optimization body passes
-the same-script gates.
+backward to `1.001066x`; the 2026-06-24 rerun remained rejected at
+`1.002204x` train-loop wall and `1.000412x` steady-state CUDA-event time even
+though LM-head backward alone reached `0.999819x`. Treat the current CUDA Graph
+body as ABI groundwork until a later single-kernel or lower-overhead fused
+optimization body passes the same-script gates.
 The probed Tile symbol is now exported by the rebuilt ops library with a typed
 C ABI contract for this diagnostic wrapper: it accepts the BF16 logit/dlogit
 chunk, u16 targets, optional row-loss buffer, BF16/float hidden inputs,
