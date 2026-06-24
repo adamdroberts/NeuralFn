@@ -2257,6 +2257,19 @@ The split route's separate Tile bias reducer now defaults to a 256-row reduction
 chunk. Set `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`,
 `NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N`, or
 `NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=N` only for paired diagnostics.
+The same reducer accepts a diagnostic thread-count override with
+`NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS=N`,
+`NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_THREADS=N`, or
+`NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_THREADS=N`; accepted values are `128`,
+`256`, `512`, and `1024`, and the default stays `256`. Native training JSON
+reports the resolved value as
+`block_state_layout.linear_backward_bias_threads_per_block`. Keep
+`linear_bias_threads_512` rejected unless intentionally reproducing the failed
+gate: the 2026-06-24 CUDA 13.3 dedicated RTX 5090 3-step, 2-sample run changed
+the route from 256 to 512 threads and improved train-loop wall time to
+`0.989155x` and block backward to `0.961836x`, but failed strict gates at
+`1.000446x` steady-state CUDA-event step time and `1.066923x` MLP FC
+dWeight+bias.
 `linear_bias_row_chunk_256` now needs
 `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for intentional
 reproduction against the older 512-row baseline, and `linear_bias_row_chunk_1024`

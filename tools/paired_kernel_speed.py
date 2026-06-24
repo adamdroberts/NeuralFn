@@ -564,6 +564,10 @@ NATIVE_METRIC_PATHS = (
         ("block_state_layout", "linear_backward_bias_row_chunk_size"),
     ),
     (
+        "block_state_layout.linear_backward_bias_threads_per_block",
+        ("block_state_layout", "linear_backward_bias_threads_per_block"),
+    ),
+    (
         "block_state_layout.optimizer_tile_size",
         ("block_state_layout", "optimizer_tile_size"),
     ),
@@ -702,6 +706,7 @@ NATIVE_ROUTE_COUNTER_KEYS = (
     "stored_residual1_activation_bytes",
     "block_state_layout.layer_norm_backward_affine_row_chunk_size",
     "block_state_layout.linear_backward_bias_row_chunk_size",
+    "block_state_layout.linear_backward_bias_threads_per_block",
     "linear_bf16_a_pack_count",
     "linear_bf16_a_cache_hit_count",
     "attention_forward_tk_launch_count",
@@ -830,6 +835,7 @@ NATIVE_STRATEGY_METRIC_KEYS = (
     "attention_residual_ln2_strategy",
     "stored_packed_attention_lse_enabled",
     "block_state_layout.linear_backward_bias_row_chunk_size",
+    "block_state_layout.linear_backward_bias_threads_per_block",
     "optimizer_tile_size",
     "optimizer_tile_strategy",
     "block_state_layout.optimizer_tile_size",

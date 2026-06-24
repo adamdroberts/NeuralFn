@@ -6,6 +6,33 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added diagnostic launch-width routing for the Tile linear-backward BF16 bias
+  reducer used by split block dWeight+bias profiling. The kernels now honor
+  `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS`,
+  `NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_THREADS`, and
+  `NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_THREADS` with accepted values `128`,
+  `256`, `512`, and `1024`; invalid or missing values keep the default `256`.
+  Dense GPT JSON reports the resolved value as
+  `block_state_layout.linear_backward_bias_threads_per_block`, the native paired
+  benchmark treats it as route evidence, and the SM120 wrapper exposes
+  `linear_bias_threads_512` as a rejected diagnostic profile.
+
+  Migration note: no trainer default changed. The 512-thread route is blocked by
+  default because the CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed
+  gate improved train-loop wall time to `0.989155x` and block backward to
+  `0.961836x`, but failed strict gates at `1.000446x` steady-state CUDA-event
+  step time and `1.066923x` MLP FC dWeight+bias. Use
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` only to reproduce that
+  rejected comparison.
+
+  Verification: rebuilt `libnfn_native_train_tile_ops.so`,
+  `build/nfn_gpt_native_train`, `build/nfn_gpt_native_train_linked`,
+  `build/nfn_gpt2_native_train`, `build/linear_backward_bench`,
+  `build/lm_head_backward_bench`, and `build/libnfn_native_train_tile_ops_tk.so`;
+  confirmed the exported Tile symbol with `nm`; ran the native no-Torch stale
+  artifact guard; ran syntax checks for the candidate wrapper and Python paired
+  metric script; and ran the dedicated RTX 5090 paired benchmark above.
+
 - Added `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS`,
   `NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS`, and
   `NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS` for the no-loss

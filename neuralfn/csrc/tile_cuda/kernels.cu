@@ -679,6 +679,31 @@ std::int64_t linear_backward_bias_row_chunk_size() {
   return value;
 }
 
+int linear_backward_bias_threads_per_block_value() {
+  static const int value = []() {
+    const char* raw = std::getenv("NFN_TILE_CUDA_LINEAR_BACKWARD_BIAS_THREADS");
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS");
+    }
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT2_LINEAR_BACKWARD_BIAS_THREADS");
+    }
+    if (raw == nullptr || raw[0] == '\0') {
+      return 256;
+    }
+    char* end = nullptr;
+    const long parsed = std::strtol(raw, &end, 10);
+    if (end == raw || (end != nullptr && *end != '\0')) {
+      return 256;
+    }
+    if (parsed == 128 || parsed == 256 || parsed == 512 || parsed == 1024) {
+      return static_cast<int>(parsed);
+    }
+    return 256;
+  }();
+  return value;
+}
+
 __global__ void store_mlp_activations_bf16_float32_kernel(
     const float* __restrict__ ln2_out,
     const float* __restrict__ fc_out,
@@ -14526,6 +14551,10 @@ __global__ void jepa_mask_int64_kernel(
 
 }  // namespace
 
+int linear_backward_bias_threads_per_block() {
+  return linear_backward_bias_threads_per_block_value();
+}
+
 bool cublaslt_linear_backward_input_bf16_bits_weight_bf16_strided_float32(
     const std::uint16_t* grad_out_bf16_bits,
     const std::uint16_t* weight_bf16_bits,
@@ -17721,7 +17750,7 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_b
           x_bf16_bits, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, beta, stream)) {
     const std::int64_t kRowChunkSize = linear_backward_bias_row_chunk_size();
     const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
-    constexpr int threads = 256;
+    const int threads = linear_backward_bias_threads_per_block_value();
     const int bias_blocks = static_cast<int>((output_dim + threads - 1) / threads);
     dim3 bias_grid(static_cast<unsigned int>(bias_blocks), static_cast<unsigned int>(row_chunks), 1);
     linear_backward_bias_chunked_atomic_bf16_bits_float32_kernel<<<bias_grid, threads, 0, stream>>>(
@@ -17754,7 +17783,7 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_b
             stream)) {
       const std::int64_t kRowChunkSize = linear_backward_bias_row_chunk_size();
       const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
-      constexpr int threads = 256;
+      const int threads = linear_backward_bias_threads_per_block_value();
       const int bias_blocks = static_cast<int>((output_dim + threads - 1) / threads);
       dim3 bias_grid(static_cast<unsigned int>(bias_blocks), static_cast<unsigned int>(row_chunks), 1);
       linear_backward_bias_chunked_atomic_bf16_bits_float32_kernel<<<bias_grid, threads, 0, stream>>>(
@@ -17794,7 +17823,7 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_float32_b
       nullptr, x_bf16_bits, nullptr, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, true, true, beta != 0.0f, stream);
   const std::int64_t kRowChunkSize = linear_backward_bias_row_chunk_size();
   const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
-  constexpr int threads = 256;
+  const int threads = linear_backward_bias_threads_per_block_value();
   const int bias_blocks = static_cast<int>((output_dim + threads - 1) / threads);
   dim3 bias_grid(static_cast<unsigned int>(bias_blocks), static_cast<unsigned int>(row_chunks), 1);
   linear_backward_bias_chunked_atomic_bf16_bits_float32_kernel<<<bias_grid, threads, 0, stream>>>(
@@ -17811,6 +17840,7 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_to_bf16_b
     std::int64_t output_dim,
     cudaStream_t stream) {
   constexpr int threads = 256;
+  const int bias_threads = linear_backward_bias_threads_per_block_value();
 #if defined(NFN_TILE_CUDA_USE_CUBLAS_LINEAR)
   if (fits_cublas_int(rows) && fits_cublas_int(input_dim) && fits_cublas_int(output_dim) &&
       cublas_linear_gemm_ex_bf16_bits_ab_to_bf16_bits_accumulate(
@@ -17828,9 +17858,9 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_to_bf16_b
           stream)) {
     const std::int64_t kRowChunkSize = linear_backward_bias_row_chunk_size();
     const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
-    const int bias_blocks = static_cast<int>((output_dim + threads - 1) / threads);
+    const int bias_blocks = static_cast<int>((output_dim + bias_threads - 1) / bias_threads);
     dim3 bias_grid(static_cast<unsigned int>(bias_blocks), static_cast<unsigned int>(row_chunks), 1);
-    linear_backward_bias_chunked_atomic_bf16_bits_float32_kernel<<<bias_grid, threads, 0, stream>>>(
+    linear_backward_bias_chunked_atomic_bf16_bits_float32_kernel<<<bias_grid, bias_threads, 0, stream>>>(
         grad_out_bf16_bits, grad_bias, output_dim, rows, kRowChunkSize);
     return;
   }
@@ -17841,9 +17871,9 @@ void launch_linear_backward_weight_bias_accumulate_bf16_bits_bf16_bits_to_bf16_b
       x_bf16_bits, grad_out_bf16_bits, grad_weight_bf16_bits, n, rows, input_dim, output_dim);
   const std::int64_t kRowChunkSize = linear_backward_bias_row_chunk_size();
   const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
-  const int bias_blocks = static_cast<int>((output_dim + threads - 1) / threads);
+  const int bias_blocks = static_cast<int>((output_dim + bias_threads - 1) / bias_threads);
   dim3 bias_grid(static_cast<unsigned int>(bias_blocks), static_cast<unsigned int>(row_chunks), 1);
-  linear_backward_bias_chunked_atomic_bf16_bits_float32_kernel<<<bias_grid, threads, 0, stream>>>(
+  linear_backward_bias_chunked_atomic_bf16_bits_float32_kernel<<<bias_grid, bias_threads, 0, stream>>>(
       grad_out_bf16_bits, grad_bias, output_dim, rows, kRowChunkSize);
 }
 
@@ -18121,7 +18151,7 @@ void launch_linear_backward_weight_bias_accumulate_float32_bf16_bits_beta(
       x, nullptr, nullptr, grad_out_bf16_bits, grad_weight, rows, input_dim, output_dim, false, true, beta != 0.0f, stream);
   const std::int64_t kRowChunkSize = linear_backward_bias_row_chunk_size();
   const std::int64_t row_chunks = (rows + kRowChunkSize - 1) / kRowChunkSize;
-  constexpr int threads = 256;
+  const int threads = linear_backward_bias_threads_per_block_value();
   const int bias_blocks = static_cast<int>((output_dim + threads - 1) / threads);
   dim3 bias_grid(static_cast<unsigned int>(bias_blocks), static_cast<unsigned int>(row_chunks), 1);
   linear_backward_bias_chunked_atomic_bf16_bits_float32_kernel<<<bias_grid, threads, 0, stream>>>(
