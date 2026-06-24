@@ -1984,6 +1984,9 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
     assert "-DLLMK_SM120_DWEIGHT_SUPER_M=2" in bench_source
     assert "-DLLMK_SM120_FAST_DGELU=1" in bench_source
     assert "-DLLMK_SM120_LAYERNORM_BWD_BLOCKS_PER_SM=1" in bench_source
+    assert "post-rebuild 5-step, 2-sample stage-timed gate" in bench_source
+    assert "train-loop wall to 0.995837x" in bench_source
+    assert "steady-state CUDA-event timing missed at 1.000937x" in bench_source
     assert "FORCE_DISABLE_ROUTE_CHANGE=1" in bench_source
     assert '"tk_sm120_super_m7"|"tk-sm120-super-m7"' in bench_source
     assert "-DLLMK_SM120_SUPER_M=7 -DLLMK_SM120_DINP_SUPER_M=7" in bench_source

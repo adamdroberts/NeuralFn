@@ -828,6 +828,13 @@ Future updates should append new entries here rather than replacing older notes.
   to `1.005630x`, but failed promotion on `1.000331x` steady-state CUDA-event
   timing and `1.000032x stage.block_backward.mlp_proj.dinput.total_ms`.
 
+  CUDA 13.3.33 post-rebuild verification on 2026-06-24 kept the profile
+  rejected: the 5-step, 2-sample stage-timed gate improved train-loop wall to
+  `0.995837x`, train tokens/sec to `1.004176x`, and block backward to
+  `0.991665x`, but still changed no tracked route or strategy counters and
+  missed promotion on `1.000937x` steady-state CUDA-event timing, `1.006521x`
+  MLP FC, and `1.008280x` QKV.
+
 - Refreshed the rejected SM120 native
   `attn_proj_dinput_before_dweight` candidate evidence after the CUDA 13.3
   rebuilds. The route remains default-off even though it materially improves the
