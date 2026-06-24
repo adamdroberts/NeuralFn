@@ -1791,6 +1791,9 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=512"'
         in bench_source
     )
+    assert "The Tile-CUDA default remains 256" in bench_source
+    assert "1.002081x steady-state CUDA-event step time" in bench_source
+    assert "1.000470x stage.block_backward.mlp_fc.dweight_bias.total_ms" in bench_source
     assert (
         'BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_FUSE_LN2_BF16_OUT=1"'
         in bench_source

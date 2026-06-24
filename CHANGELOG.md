@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Marked `linear_bias_row_chunk_256` as a rejected/stale SM120 candidate
+  profile. The Tile-CUDA default remains 256-row linear-bias reductions, but
+  the wrapper profile now compares that current route against a legacy 512-row
+  baseline only for historical reproduction and requires
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` for real reruns. The
+  CUDA 13.3 dedicated RTX 5090 3-step, 2-sample stage-timed gate changed
+  `block_state_layout.linear_backward_bias_row_chunk_size` from 512 to 256 and
+  improved train-loop wall to `0.993823x`, but failed strict gates at
+  `1.002081x` steady-state CUDA-event step time and `1.000470x`
+  `stage.block_backward.mlp_fc.dweight_bias.total_ms`.
+
+  Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=linear_bias_row_chunk_256
+  NFN_SM120_NATIVE_STEPS=3 NFN_SM120_NATIVE_SAMPLES=2
+  NFN_SM120_NATIVE_WARMUP=0 NFN_SM120_NATIVE_STAGE_TIMING=1 bash
+  tools/bench_native_gpt_sm120_candidate.sh` on the idle display-disabled RTX
+  5090 with zero compute processes before and after paired samples.
+
 - Extended the no-Torch native training verifier to cover direct
   `cli/scripts/train_gpt2.py` compatibility execution, not just the canonical
   `train_gpt.py` helper functions and `nfn train` dispatch. The verifier now

@@ -1090,6 +1090,8 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "linear_bias_row_chunk_1024" in text
     assert "NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_ROW_CHUNK_SIZE=1024" in text
     assert "1.009736x train_loop_wall_ms_per_step" in text
+    assert "The Tile-CUDA default remains 256" in text
+    assert "historical baseline reproduction" in text
     assert "lm_head_logits_bf16_fallback_32768" in text
     assert "NFN_NATIVE_LINEAR_TK_FORWARD_DISABLE_SHAPE=50304,32768,768,T,N" in text
     assert "older 32768-row logits fallback no longer matches the active 49152-row LM-head logits shape" in text
@@ -1488,6 +1490,35 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     )
     assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
         rejected_linear_bias_1024_run.stderr
+    )
+
+    rejected_linear_bias_256_env = os.environ.copy()
+    rejected_linear_bias_256_env.update(
+        {
+            "NFN_SM120_NATIVE_PROFILE_DIR": "none",
+            "NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES": "7",
+            "NFN_SM120_NATIVE_CANDIDATE_PROFILE": "linear_bias_row_chunk_256",
+            "NFN_SM120_NATIVE_JSON_OUT": str(
+                tmp_path / "rejected-linear-bias-row-chunk-256.json"
+            ),
+        }
+    )
+
+    rejected_linear_bias_256_run = subprocess.run(
+        ["bash", str(script)],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        env=rejected_linear_bias_256_env,
+    )
+
+    assert rejected_linear_bias_256_run.returncode == 2
+    assert "linear_bias_row_chunk_256 is a rejected SM120 candidate" in (
+        rejected_linear_bias_256_run.stderr
+    )
+    assert "NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1" in (
+        rejected_linear_bias_256_run.stderr
     )
 
     rejected_attention_profiles = (
