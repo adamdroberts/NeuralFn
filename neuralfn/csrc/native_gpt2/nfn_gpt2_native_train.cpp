@@ -4076,7 +4076,7 @@ bool print_tile_plan(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD",
                               "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_BACKWARD"}),
-            false);
+            true);
     const bool cooperative_lm_head_loss_bins_requested =
         cooperative_lm_head_backward_requested &&
         env_flag_enabled_or_default(
@@ -12478,7 +12478,7 @@ int run_transformer_lm_training_json(
         env_flag_enabled_or_default(
             env_or_empty_any({"NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD",
                               "NFN_NATIVE_GPT2_LM_HEAD_COOPERATIVE_BACKWARD"}),
-            false);
+            true);
     const bool lm_head_cooperative_loss_bins_requested =
         lm_head_cooperative_backward_requested &&
         env_flag_enabled_or_default(

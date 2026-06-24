@@ -1094,12 +1094,15 @@ same-script recheck proved the route but rejected it because train-loop wall
 regressed to `1.009040x`, `stage.lm_head_backward.total_ms` to `1.001085x`,
 `stage.lm_head_backward.ce.total_ms` to `1.001185x`, and
 `stage.block_backward.total_ms` to `1.018917x`.
-Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or the
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` benchmark
-profile to request the cooperative LM-head backward path. The non-strict
-fallback remains the event-ordered sequence wrapper: it still launches the
-existing CE, dHidden, and dWeight kernels and is rejected by default as a speed
-candidate. The separate strict callable symbol
+Dense GPT training now requests the non-strict cooperative LM-head backward
+route by default. On current CUDA 13.3 RTX 5090 builds this selects the cached
+CUDA Graph wrapper when the strict callable symbol is available, reducing the
+normal classifier chunk launches while still replaying the optimized CE,
+dHidden, and dWeight kernels. Set
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` only for bisection back to the
+separate-stage LM-head schedule, or use
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` to remeasure
+the route in the paired benchmark wrapper. The separate strict callable symbol
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` is present
 for the future fused body, but the current cached CUDA Graph body is not a true
 single-kernel/cooperative implementation. Its capability probe
@@ -1119,16 +1122,15 @@ Wrapper-only or missing-capability builds still fail this strict guard and repor
 `abi-wrapper-sequences-existing-ce-dhidden-dweight-kernels-not-parity` instead
 of marking the route integrated.
 For optimizer-only steps that do not record train loss, the diagnostic
-sequence wrapper now passes the explicit no-loss cooperative flag and reuses the
+CUDA Graph wrapper passes the explicit no-loss cooperative flag and reuses the
 normal BF16/u16 no-loss classifier CE+dlogits kernel instead of forcing the
 row-loss CE path. Validation and train-loss logging still use the row-loss or
-loss-bin routes when requested. This makes
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` a fairer
-same-script comparison of CE+dHidden+dWeight sequencing, but it remains
-default-off until the paired gate proves an actual speed win.
-The first linked-trainer rerun after this correction confirmed the candidate
-reports the no-loss CE strategy, but still rejected the wrapper at `1.117578x`
-train-loop wall and `1.294010x` LM-head backward on the dedicated RTX 5090.
+loss-bin routes when requested. After the CUDA Toolkit 13.3 reinstall, the
+dedicated RTX 5090 3-step, 2-sample same-script rerun measured the default
+graph replay route at `0.989305x` train-loop wall, `1.000461x` steady-state
+CUDA-event timing, and `1.010931x` train tokens/sec versus the previous native
+separate-stage route, while reducing classifier chunk launches from `48` to
+`3` for the measured run.
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_loss_bins` enables the
 same strict cooperative ABI plus `NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1`
 and `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_LOSS_BINS=1`; the wrapper also applies
@@ -1155,19 +1157,18 @@ Runtime JSON reports
 `lm_head_cooperative_backward_strategy`. Runtime JSON also reports
 `lm_head_classifier_fusion_scope` and `lm_head_schedule_parity_status` so
 paired benchmarks distinguish the reference-parity separate-stage LM-head
-schedule from optional cooperative/fused candidate probes. The strict
-cooperative ABI remains default-off and non-promoted. The focused LM-head
-microbench keeps distinguishing the CUDA Graph wrapper from a future real
+schedule from optional cooperative/fused candidate probes. The non-strict CUDA
+Graph replay route is default-on; the strict true-fused ABI remains opt-in and
+non-promoted. The focused LM-head microbench keeps distinguishing the CUDA
+Graph wrapper from a future real
 single-kernel capability; current Tile ops return false from
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
-The current CUDA 13.3.33 dedicated RTX 5090 same-window triad gate rejects
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward`: the
-cooperative LM-head CUDA Graph path regressed the current native baseline at
-`1.015026x` train-loop wall, `1.005839x` steady-state CUDA-event time, and
-`0.985194x` train tokens/sec, while also landing at `1.018312x` wall versus the
-llm.kittens reference in the same locked GPU run. Treat the current CUDA Graph
-body as ABI groundwork until a later single-kernel or lower-overhead fused
-optimization body passes the triad and same-script native gates.
+The CUDA Graph body is still ABI groundwork rather than the final fused kernel:
+same-script reports must keep showing
+`lm_head_cooperative_backward_kernel_enabled: false` and
+`lm_head_cooperative_backward_strategy:
+diagnostic-cuda-graph-ce-dhidden-dweight-not-single-kernel` until a later
+single-kernel body passes the strict capability probe.
 The probed Tile symbol is now exported by the rebuilt ops library with a typed
 C ABI contract for this diagnostic wrapper: it accepts the BF16 logit/dlogit
 chunk, u16 targets, optional row-loss buffer, BF16/float hidden inputs,
@@ -1190,12 +1191,12 @@ than executing a true fused classifier-backward kernel. Runtime JSON reports
 `lm_head_cooperative_backward_fused_kernel_capability_available`; only the
 capability path can make `lm_head_cooperative_backward_kernel_available` and
 `lm_head_cooperative_backward_fused_kernel_available` true.
-The non-required `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` route can still
-exercise the CUDA Graph body when the strict symbol is present. In that case
+The non-required `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD` route exercises
+the CUDA Graph body by default when the strict symbol is present. In that case
 runtime JSON reports `lm_head_cooperative_backward_cuda_graph_available: true`,
 `lm_head_cooperative_backward_cuda_graph_enabled: true`, a diagnostic
-`lm_head_cooperative_backward_strategy`, and graph replay counters; this is
-still default-off and does not satisfy `--require-cooperative-lm-head-backward`.
+`lm_head_cooperative_backward_strategy`, and graph replay counters; this still
+does not satisfy `--require-cooperative-lm-head-backward`.
 Fresh Tile ops builds also export cooperative sequence counters for this
 diagnostic wrapper. Runtime JSON reports
 `lm_head_cooperative_sequence_launch_count`,

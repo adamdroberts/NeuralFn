@@ -3480,12 +3480,17 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
     }
     assert default_payload["selected_graph_native_runnable"] is True
     assert default_payload["checkpoint_export_enabled"] is True
-    assert default_payload["lm_head_cooperative_backward_sequence_wrapper_available"] is False
+    assert default_payload["lm_head_cooperative_backward_requested"] is True
+    assert default_payload["lm_head_cooperative_backward_sequence_wrapper_available"] is True
     assert default_payload["lm_head_cooperative_backward_kernel_available"] is False
     assert default_payload["lm_head_cooperative_backward_fused_kernel_available"] is False
-    assert default_payload["lm_head_cooperative_backward_route_integrated"] is False
+    assert default_payload["lm_head_cooperative_backward_route_integrated"] is True
     assert default_payload["lm_head_cooperative_backward_kernel_enabled"] is False
-    assert default_payload["lm_head_cooperative_backward_strategy"] == "missing-required-sm120-parity-kernel"
+    assert default_payload["lm_head_cooperative_backward_cuda_graph_enabled"] is True
+    assert (
+        default_payload["lm_head_cooperative_backward_strategy"]
+        == "diagnostic-cuda-graph-ce-dhidden-dweight-not-single-kernel"
+    )
     assert default_payload["validation_shards_required"] is True
     assert default_payload["validation_shards_resolved"] is True
     assert default_payload["lm_head_row_chunk_size"] == 32768
@@ -4948,6 +4953,10 @@ def test_native_gpt2_cpp_cli_builds_and_uses_sm120_defaults(tmp_path: Path) -> N
         "candidate_loss_transport": "device-to-device",
         "candidate_loss_device_copy_count": 0,
         "candidate_loss_host_roundtrips_elided": 0,
+        "workspace_allocation_strategy": "float-arena-plus-int64-device",
+        "float_workspace_request_count": 0,
+        "float_workspace_cuda_mallocs_elided": 0,
+        "int64_workspace_cuda_malloc_count": 0,
         "required_next_step": "expand candidate targets beyond block ln1.weight when broader evo mutations are enabled",
     }
     assert train_transformer_payload["vocab"] == 50257

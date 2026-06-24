@@ -528,10 +528,14 @@ The non-strict cooperative sequence wrapper preserves the optimizer hot-path CE
 mode: when a native GPT step is not recording train loss, the trainer sets the
 cooperative no-loss flag and the wrapper calls the normal BF16/u16 no-loss
 classifier CE+dlogits kernel before dHidden and dWeight. Row-loss and loss-bin
-collection remain selected only for validation/train-loss logging paths. Treat
-this as fairer diagnostic attribution for
-`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1`, not as promotion of the
-cooperative route.
+collection remain selected only for validation/train-loss logging paths. Dense
+GPT training requests this non-strict route by default after the CUDA Toolkit
+13.3 reinstall because the dedicated RTX 5090 3-step, 2-sample same-script
+rerun measured the cached CUDA Graph route at `0.989305x` train-loop wall,
+`1.000461x` steady-state CUDA-event timing, and `1.010931x` train tokens/sec
+versus the previous native separate-stage route. Set
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` only when reproducing the older
+separate-stage schedule.
 
 `NativeGptRunConfig.train_loss_every_steps` and
 `NativeGpt2RunConfig.train_loss_every_steps` default to `0` and forward
@@ -2252,21 +2256,20 @@ a no-op: the paired SM120 wrapper already sets `CUDA_DEVICE_MAX_CONNECTIONS=1`
 for both the baseline and candidate commands, matching the llm.kittens SM120
 launcher policy, so it cannot prove a candidate-only kernel or scheduling
 change.
-Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` or
-`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` to exercise
-the current cooperative LM-head backward ABI wrapper. The named profile is
-rejected by default because the CUDA 13.3 RTX 5090 same-script rerun activated
-the sequence wrapper but regressed train-loop wall time to `1.005235x` and
-LM-head backward to `1.103379x`. Use
+Dense GPT training now exercises the current non-strict cooperative LM-head
+backward ABI wrapper by default. Use
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` to disable it for bisection, or
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward` to remeasure
+it against the previous separate-stage schedule. Use
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_cooperative_backward_required` or
 pass `--require-cooperative-lm-head-backward` to the compiled dense GPT CLI
 when a parity/preflight run must require the strict cooperative LM-head backward
 Tile ABI. Rebuilt Tile ops libraries export the strict
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` callable,
-and current CUDA 13.3 builds return `1` from
+but current CUDA 13.3 builds return `0` from
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
-That means the required guard is now a strict ABI preflight for the cached CUDA
-Graph body. The SM120 candidate wrapper labels
+That means the required guard still fails until a true fused capability replaces
+the cached CUDA Graph body. The SM120 candidate wrapper labels
 `lm_head_cooperative_backward_required` as a strict probe rather than a
 metric-gated speed candidate. Wrapper-only and missing-capability builds still
 fail the strict guard. Real `--train-transformer-lm
@@ -2324,20 +2327,19 @@ probe uses the separate
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` symbol plus
 a nonzero result from
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
-Current CUDA 13.3 builds return `1` from that capability probe and replay the
-cached graph when `lm_head_cooperative_backward_kernel_enabled` is true. Runtime
-JSON reports
+Current CUDA 13.3 builds return `0` from that capability probe because the
+callable replays a cached graph rather than executing one fused classifier
+backward kernel. The non-strict default path can still enable graph replay and
+reports `lm_head_cooperative_backward_cuda_graph_enabled: true`, but keeps
+`lm_head_cooperative_backward_kernel_enabled: false`. Runtime JSON reports
 `lm_head_cooperative_backward_fused_kernel_symbol_available` separately from the
 semantic capability,
 `lm_head_cooperative_backward_fused_kernel_capability_available`; only the
 capability path makes `lm_head_cooperative_backward_kernel_available` and
-`lm_head_cooperative_backward_fused_kernel_available` true. The route is not
-promoted by default. The focused strict-symbol microbench measured
-`35.783084 ms/iter` versus `35.776438 ms/iter` for the legacy cooperative
-symbol (`1.000186x`) on the dedicated CUDA 13.3 RTX 5090, but the full
-same-script `lm_head_cooperative_backward` gate rejected the graph route at
-`1.080550x` train-loop wall, `1.067318x` steady-state CUDA-event step time, and
-`1.294653x` LM-head backward.
+`lm_head_cooperative_backward_fused_kernel_available` true. The route is now
+promoted only as the non-strict CUDA Graph replay default. The strict
+true-fused route remains unavailable until the capability probe returns
+nonzero.
 The sequence wrapper also reports launch counters in the native training JSON:
 `lm_head_cooperative_sequence_launch_count`,
 `lm_head_cooperative_sequence_ce_launch_count`,

@@ -995,22 +995,27 @@ no-loss-llmk-style-dlogits-vec8-loads-streaming-vec8-stores` when active. The
 current CUDA 13.3 dedicated RTX 5090 3-step, 2-sample recheck rejected it at
 `1.009040x` train-loop wall, `1.001085x` LM-head backward, `1.001185x`
 LM-head CE, and `1.018917x` block backward.
-Use `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=1` to exercise the current
-cooperative LM-head backward ABI wrapper, or
+Dense GPT training requests the non-strict cooperative LM-head backward route by
+default. On current CUDA 13.3 RTX 5090 builds that route uses the cached CUDA
+Graph wrapper when the strict callable symbol is present, while still reporting
+that it is not a true fused/cooperative kernel. Set
+`NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` only for bisection back to the
+separate-stage LM-head schedule, or pass
 `nfn_gpt_native_train --require-cooperative-lm-head-backward` when a
 parity/preflight run must require the strict cooperative LM-head backward ABI.
-The flag is default-off for normal training. Rebuilt Tile ops libraries export
+Rebuilt Tile ops libraries export
 the strict `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
-callable, and current CUDA 13.3 builds return `1` from
+callable, but current CUDA 13.3 builds return `0` from
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
-That strict callable captures the optimized CE, dHidden, and dWeight launches
+The callable captures the optimized CE, dHidden, and dWeight launches
 into a cached CUDA Graph per row-chunk pointer/shape/beta/flag tuple. It is not
-a monolithic single CUDA kernel, but `--require-cooperative-lm-head-backward`
-now verifies that graph-fused ABI instead of benchmarking the older CE plus
-dHidden plus dWeight sequence as if it were fused.
-The non-required candidate path can still enable the event-ordered sequence
-wrapper and reports `lm_head_cooperative_backward_sequence_wrapper_enabled:
-true`; wrapper-only builds fail the strict guard.
+a monolithic single CUDA kernel, so `--require-cooperative-lm-head-backward`
+still fails until a real fused capability replaces the graph wrapper.
+The non-required default path reports
+`lm_head_cooperative_backward_cuda_graph_enabled: true`,
+`lm_head_cooperative_backward_route_integrated: true`, and
+`lm_head_cooperative_backward_kernel_enabled: false`; wrapper-only builds fail
+the strict guard.
 Runtime JSON reports `lm_head_cooperative_backward_required`,
 `lm_head_cooperative_backward_requested`,
 `lm_head_cooperative_backward_abi_wrapper_available`,
@@ -1038,19 +1043,19 @@ strict graph-fused route is probed through
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16` plus a
 nonzero result from
 `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`.
-Current CUDA 13.3 builds return `1` from that capability probe. Runtime JSON
+Current CUDA 13.3 builds return `0` from that capability probe. Runtime JSON
 reports `lm_head_cooperative_backward_fused_kernel_symbol_available`
 separately from
 `lm_head_cooperative_backward_fused_kernel_capability_available`; only the
 capability satisfies `lm_head_cooperative_backward_fused_kernel_available`.
 At runtime the compiled trainer also loads that separate true-fused callable
 and uses it only when `lm_head_cooperative_backward_kernel_enabled` is true.
-The route remains opt-in: the focused strict-symbol microbench passes, but the
-current CUDA 13.3.33 RTX 5090 same-window triad
-`lm_head_cooperative_backward` gate rejects it at `1.015026x` current-native
-train-loop wall, `1.005839x` current-native steady-state CUDA-event step time,
-`0.985194x` current-native train tokens/sec, and `1.018312x` wall versus the
-llm.kittens reference.
+The non-strict route is now the normal dense GPT default after the CUDA Toolkit
+13.3 reinstall: the dedicated RTX 5090 3-step, 2-sample same-script rerun
+measured the graph replay route at `0.989305x` train-loop wall,
+`1.000461x` steady-state CUDA-event timing, and `1.010931x` train tokens/sec
+versus the previous native separate-stage route. The strict fused-kernel route
+remains unavailable and opt-in.
 The sequence-wrapper callable is used only for non-required diagnostic runs, so
 adding or rebuilding the wrapper symbol cannot accidentally satisfy
 `--require-cooperative-lm-head-backward`.

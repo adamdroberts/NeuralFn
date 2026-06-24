@@ -118,6 +118,42 @@ Future updates should append new entries here rather than replacing older notes.
   candidate, and `/mnt/disk2/dev/open-source/llm.kittens/train_gpt2cu`
   reference, writing `/tmp/nfn_sm120_triad_coop_5step.json`.
 
+- Promoted the non-strict dense GPT cooperative LM-head CUDA Graph replay route
+  to the default after reinstalling CUDA Toolkit 13.3 and rerunning the
+  dedicated RTX 5090 same-script candidate gate. Normal dense GPT plan/runtime
+  JSON now reports `lm_head_cooperative_backward_requested: true`,
+  `lm_head_cooperative_backward_cuda_graph_enabled: true`,
+  `lm_head_cooperative_backward_route_integrated: true`, and
+  `lm_head_cooperative_backward_kernel_enabled: false` when the graph wrapper
+  is available. The strict true-fused capability remains unavailable:
+  `nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused()`
+  still returns `0`, and `--require-cooperative-lm-head-backward` continues to
+  fail until a real fused classifier/dHidden/dWeight kernel replaces the CUDA
+  Graph body. Set `NFN_NATIVE_GPT_LM_HEAD_COOPERATIVE_BACKWARD=0` to reproduce
+  the older separate-stage LM-head schedule.
+
+  Verification: rebuilt `build/nfn_gpt_native_train` and
+  `build/nfn_gpt_native_train_linked`, ran the focused native GPT
+  cooperative/default reporting tests, generated normal and linked print-plan
+  JSON showing the default graph replay route, and reran
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1
+  NFN_SM120_CANDIDATE_PROFILE=lm_head_cooperative_backward
+  NFN_SM120_CANDIDATE_STEPS=3 NFN_SM120_CANDIDATE_SAMPLES=2
+  NFN_SM120_CANDIDATE_CUDA_VISIBLE_DEVICES=dedicated
+  bash tools/bench_native_gpt_sm120_candidate.sh`. The CUDA 13.3 dedicated RTX
+  5090 rerun measured the graph route at `0.989305x` train-loop wall,
+  `1.000461x` steady-state CUDA-event timing, and `1.010931x` train
+  tokens/sec versus the previous native separate-stage route, with classifier
+  chunk launches reduced from `48` to `3`. A fresh one-sample
+  `tools/bench_native_gpt_sm120_parity.sh` rerun after rebuilding the linked
+  binary confirmed the default runtime route against llm.kittens:
+  `lm_head_cooperative_backward_cuda_graph_enabled: true`,
+  `lm_head_classifier_chunk_launch_count: 3`,
+  `lm_head_fused_graph_replay_success_count: 48`, and
+  `lm_head_cooperative_backward_kernel_enabled: false`; that same parity sample
+  measured NeuralFn at `1.008685x` train-loop wall and `0.986721x` train
+  tokens/sec versus the external llm.kittens reference.
+
 - Added optional third-command reference mode to `tools/paired_kernel_speed.py`.
   Native kernel candidate runs can now pass `--reference "COMMAND"` and
   `--reference-env KEY=VALUE` to rotate baseline, candidate, and external
