@@ -2101,6 +2101,18 @@ per-profile symbol-change guard, and aggregate JSON reports
 `candidate_symbol_changed_count`, `same_symbol_profile_count`,
 `measurement_only_profile_count`, and `route_change_failure_reason` so
 same-symbol baseline repeats are clearly marked as measurement-only evidence.
+The no-loss LM-head prob-only correction kernels expose their post-GEMM
+target-correction launch shape through
+`NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS`,
+`NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS`, or
+`NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS`; accepted values are
+`128`, `256`, `512`, and `1024`, with 512 as the default. Dense GPT JSON reports
+`lm_head_prob_only_target_correction_threads`, and the paired speed route-change
+gate treats it as hot route evidence. The
+`lm_head_prob_only_combined_corrections_threads_512` SM120 profile keeps a
+forced 256-versus-512 comparison for that diagnostic route; the 512-thread
+launch passed the CUDA 13.3 RTX 5090 3-step, 2-sample gate, but the broader
+prob-only CE route remains diagnostic-only.
 Setup-only/prewarm route counters remain visible in `native_route_counter_changes`
 but do not satisfy the required gate by themselves. The JSON reports
 `has_hot_route_counter_change`, `hot_changed`, and `setup_only_changed`, and

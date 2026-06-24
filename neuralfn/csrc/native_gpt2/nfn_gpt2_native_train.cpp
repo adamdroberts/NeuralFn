@@ -10135,6 +10135,7 @@ int run_transformer_lm_training_json(
     std::int64_t lm_head_dhidden_strided_vocab_gemm_count = 0;
     std::int64_t lm_head_dweight_strided_vocab_gemm_count = 0;
     std::int64_t lm_head_ce_bf16_threads_per_row = 0;
+    std::int64_t lm_head_prob_only_target_correction_threads = 0;
     std::int64_t lm_head_classifier_chunk_launch_count = 0;
     std::int64_t lm_head_classifier_loss_bin_launch_count = 0;
     std::int64_t lm_head_classifier_no_loss_chunk_count = 0;
@@ -10470,6 +10471,7 @@ int run_transformer_lm_training_json(
         "nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_bf16_bits_u16_targets",
         "nfn_native_tile_token_cross_entropy_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets",
         "nfn_native_tile_token_cross_entropy_bf16_threads_per_row",
+        "nfn_native_tile_lm_head_prob_only_target_correction_threads",
         "nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace",
         "nfn_native_tile_lm_head_classifier_backward_loss_inplace_strided_no_pad_zero_bf16_bits_u16_targets",
         "nfn_native_tile_lm_head_classifier_backward_row_losses_inplace_strided_no_pad_zero_bf16_bits_u16_targets",
@@ -11080,6 +11082,7 @@ int run_transformer_lm_training_json(
     TrainerLinearStatsCountFn trainer_linear_cublaslt_plan_cache_count_fn = nullptr;
     TrainerLinearCublasLtPlanCacheEntryFn trainer_linear_cublaslt_plan_cache_entry_fn = nullptr;
     TrainerLinearStatsCountFn token_cross_entropy_bf16_threads_per_row_fn = nullptr;
+    TrainerLinearStatsCountFn lm_head_prob_only_target_correction_threads_fn = nullptr;
     TrainerLinearStatsResetFn lm_head_classifier_stats_reset = nullptr;
     TrainerLinearStatsCountFn lm_head_classifier_chunk_launch_count_fn = nullptr;
     TrainerLinearStatsCountFn lm_head_classifier_last_rows_fn = nullptr;
@@ -11658,6 +11661,10 @@ int run_transformer_lm_training_json(
                     load_symbol<TrainerLinearStatsCountFn>(
                         tile_handle,
                         "nfn_native_tile_token_cross_entropy_bf16_threads_per_row");
+                lm_head_prob_only_target_correction_threads_fn =
+                    load_symbol<TrainerLinearStatsCountFn>(
+                        tile_handle,
+                        "nfn_native_tile_lm_head_prob_only_target_correction_threads");
                 lm_head_classifier_stats_reset = load_symbol<TrainerLinearStatsResetFn>(
                     tile_handle, "nfn_native_tile_lm_head_classifier_stats_reset");
                 lm_head_classifier_chunk_launch_count_fn = load_symbol<TrainerLinearStatsCountFn>(
@@ -20405,6 +20412,9 @@ int run_transformer_lm_training_json(
     if (token_cross_entropy_bf16_threads_per_row_fn != nullptr) {
         lm_head_ce_bf16_threads_per_row = token_cross_entropy_bf16_threads_per_row_fn();
     }
+    if (lm_head_prob_only_target_correction_threads_fn != nullptr) {
+        lm_head_prob_only_target_correction_threads = lm_head_prob_only_target_correction_threads_fn();
+    }
     const bool lm_head_ce_llmk_style_specialized_runtime_enabled =
         lm_head_ce_llmk_style_specialized_enabled &&
         lm_head_ce_bf16_threads_per_row == 1024;
@@ -21212,6 +21222,8 @@ int run_transformer_lm_training_json(
         << (lm_head_ce_bf16_exp2_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_bf16_threads_per_row\": "
         << lm_head_ce_bf16_threads_per_row << ",\n"
+        << "  \"lm_head_prob_only_target_correction_threads\": "
+        << lm_head_prob_only_target_correction_threads << ",\n"
         << "  \"lm_head_ce_bf16_vec_loads_enabled\": "
         << (lm_head_ce_bf16_vec_loads_enabled ? "true" : "false") << ",\n"
         << "  \"lm_head_ce_bf16_vec_stores_enabled\": "

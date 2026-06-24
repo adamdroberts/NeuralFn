@@ -25,6 +25,7 @@ std::int64_t attention_tk_workspace_row_capacity();
 std::int64_t token_cross_entropy_workspace_allocation_count();
 std::int64_t token_cross_entropy_workspace_row_capacity();
 std::int64_t token_cross_entropy_bf16_threads_per_row();
+std::int64_t lm_head_prob_only_target_correction_threads();
 void reset_lm_head_classifier_chunk_stats();
 std::int64_t lm_head_classifier_chunk_launch_count();
 std::int64_t lm_head_classifier_last_rows();
@@ -2210,6 +2211,10 @@ std::int64_t nfn_native_tile_token_cross_entropy_workspace_row_capacity() {
 
 std::int64_t nfn_native_tile_token_cross_entropy_bf16_threads_per_row() {
     return neuralfn::tile_cuda::token_cross_entropy_bf16_threads_per_row();
+}
+
+std::int64_t nfn_native_tile_lm_head_prob_only_target_correction_threads() {
+    return neuralfn::tile_cuda::lm_head_prob_only_target_correction_threads();
 }
 
 void nfn_native_tile_lm_head_classifier_stats_reset() {

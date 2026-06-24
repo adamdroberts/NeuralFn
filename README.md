@@ -166,6 +166,18 @@ target-correction launch. It is also rejected by default: the CUDA 13.3
 dedicated RTX 5090 3-step, 2-sample stage-timed gate changed the strategy to
 `no-loss-prob-only-dlogits-plus-combined-target-correction`, but regressed
 train-loop wall time to `1.006574x` and LM-head backward to `1.003646x`.
+Within that diagnostic route, the combined target-correction kernel now
+defaults to 512 threads instead of 256. Override
+`NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS`,
+`NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS`, or
+`NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS` with `128`, `256`,
+`512`, or `1024` for paired bisection. The native JSON reports
+`lm_head_prob_only_target_correction_threads`, and
+`NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_combined_corrections_threads_512`
+keeps the forced 256-versus-512 comparison available. The CUDA 13.3 dedicated
+RTX 5090 3-step, 2-sample gate passed that isolated launch-shape comparison at
+`0.988300x` train-loop wall time and `0.999215x` LM-head backward, but this
+does not promote the broader prob-only CE route as the normal training path.
 Because parity samples can move with reference-run noise, keep using
 `tools/bench_native_gpt_sm120_parity.sh` before declaring final parity on a new
 build. The cooperative LM-head diagnostic wrapper is intentionally separate

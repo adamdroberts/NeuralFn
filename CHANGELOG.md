@@ -6,6 +6,36 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS`,
+  `NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS`, and
+  `NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS` for the no-loss
+  LM-head prob-only target-correction CUDA kernels. Accepted values are `128`,
+  `256`, `512`, and `1024`; the default for those correction kernels is now
+  512 threads instead of the previous hardcoded 256. Dense GPT JSON reports the
+  resolved value as `lm_head_prob_only_target_correction_threads`, and
+  `tools/paired_kernel_speed.py` treats it as hot route evidence. The SM120
+  candidate wrapper now includes
+  `lm_head_prob_only_combined_corrections_threads_512`, which isolates the
+  forced 256-versus-512 comparison while disabling cooperative LM-head and
+  fused CE so the intended correction kernel actually runs.
+
+  Migration note: normal dense GPT training defaults are unchanged because the
+  cooperative LM-head route remains the default and bypasses this diagnostic
+  prob-only path. This change only affects runs that explicitly select the
+  prob-only LM-head correction routes.
+
+  Verification: rebuilt `libnfn_native_train_tile_ops.so`,
+  `build/nfn_gpt_native_train`, and `build/nfn_gpt_native_train_linked`; ran
+  focused native GPT unit coverage; ran a one-step CUDA smoke confirming
+  `lm_head_prob_only_combined_correction_launch_count=16` and
+  `lm_head_prob_only_target_correction_threads=512`; ran the CUDA 13.3
+  dedicated RTX 5090 3-step, 2-sample paired gate for
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_prob_only_combined_corrections_threads_512`.
+  The 512-thread candidate passed route-change and metric gates at `0.988300x`
+  train-loop wall time, `0.997678x` steady-state CUDA-event step time,
+  `0.999215x` LM-head backward, and `0.999998x` LM-head CE versus the
+  256-thread baseline.
+
 - Hardened `tools/bench_native_gpt_linear_hot_matrix.sh` so aggregate JSON now
   reports `candidate_symbol_changed_count`, `same_symbol_profile_count`,
   `measurement_only_profile_count`, `route_change_required`,

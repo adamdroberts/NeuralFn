@@ -230,6 +230,36 @@ int cross_entropy_bf16_threads_per_row() {
   return value;
 }
 
+int lm_head_prob_only_target_correction_threads_value() {
+  static const int value = []() {
+    const char* raw = std::getenv("NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS");
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS");
+    }
+    if (raw == nullptr) {
+      raw = std::getenv("NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS");
+    }
+    if (raw == nullptr || raw[0] == '\0') {
+      return 512;
+    }
+    char* end = nullptr;
+    const long parsed = std::strtol(raw, &end, 10);
+    if (end == raw || (end != nullptr && *end != '\0')) {
+      return 512;
+    }
+    switch (parsed) {
+      case 128:
+      case 256:
+      case 512:
+      case 1024:
+        return static_cast<int>(parsed);
+      default:
+        return 512;
+    }
+  }();
+  return value;
+}
+
 bool cross_entropy_bf16_vec_stores_enabled() {
   static const bool value = []() {
     const char* raw = std::getenv("NFN_TILE_CUDA_CE_BF16_VEC_STORES");
@@ -14614,6 +14644,10 @@ std::int64_t token_cross_entropy_bf16_threads_per_row() {
   return static_cast<std::int64_t>(cross_entropy_bf16_threads_per_row());
 }
 
+std::int64_t lm_head_prob_only_target_correction_threads() {
+  return static_cast<std::int64_t>(lm_head_prob_only_target_correction_threads_value());
+}
+
 void launch_unary_float32(const float* x, float* out, std::int64_t n, int op, cudaStream_t stream) {
   const int blocks = static_cast<int>((n + kTileSize - 1) / kTileSize);
   unary_float32_kernel<<<blocks, 1, 0, stream>>>(x, out, n, op);
@@ -18944,7 +18978,7 @@ void launch_lm_head_prob_only_dhidden_target_correction_bf16_bits(
     std::int64_t token_weight_row_stride,
     float loss_scale,
     cudaStream_t stream) {
-  constexpr int threads = 256;
+  const int threads = lm_head_prob_only_target_correction_threads_value();
   const std::int64_t total = rows * hidden_dim;
   if (total <= 0) {
     return;
@@ -18963,7 +18997,7 @@ void launch_lm_head_prob_only_dweight_target_correction_bf16_bits(
     std::int64_t grad_weight_row_stride,
     float loss_scale,
     cudaStream_t stream) {
-  constexpr int threads = 256;
+  const int threads = lm_head_prob_only_target_correction_threads_value();
   const std::int64_t total = rows * hidden_dim;
   if (total <= 0) {
     return;
@@ -18985,7 +19019,7 @@ void launch_lm_head_prob_only_combined_target_correction_bf16_bits(
     std::int64_t grad_weight_row_stride,
     float loss_scale,
     cudaStream_t stream) {
-  constexpr int threads = 256;
+  const int threads = lm_head_prob_only_target_correction_threads_value();
   const std::int64_t total = rows * hidden_dim;
   if (total <= 0) {
     return;

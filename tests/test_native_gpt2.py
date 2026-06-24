@@ -1648,6 +1648,9 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "nfn_native_tile_lm_head_classifier_backward_fused_graph_prewarm_bf16_u16" in tile_ops_header
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_source
     assert "nfn_native_tile_lm_head_classifier_backward_fused_kernel_is_true_fused" in tile_ops_header
+    assert "nfn_native_tile_lm_head_prob_only_target_correction_threads" in tile_ops_source
+    assert "nfn_native_tile_lm_head_prob_only_target_correction_threads" in tile_ops_header
+    assert "lm_head_prob_only_target_correction_threads" in source
     assert "cudaGraphLaunch(exec, stream)" in tile_ops_source
     assert "prewarm_lm_head_classifier_backward_graph_bf16_u16" in tile_ops_source
     assert "cudaStreamCreateWithFlags" in tile_ops_source
@@ -1740,6 +1743,7 @@ def test_native_gpt_lm_head_cooperative_abi_is_typed_and_opt_in() -> None:
     assert "lm_head_cooperative_backward_sequence_wrapper_enabled" in speed_tool
     assert "lm_head_cooperative_backward_cuda_graph_enabled" in speed_tool
     assert "lm_head_cooperative_backward_graph_prewarm_enabled" in speed_tool
+    assert "lm_head_prob_only_target_correction_threads" in speed_tool
     assert "lm_head_fused_graph_replay_success_count" in speed_tool
     assert "lm_head_fused_graph_fallback_count" in speed_tool
     assert "lm_head_fused_graph_prewarm_success_count" in speed_tool
@@ -2057,6 +2061,7 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         "lm_head_ce_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_prob_only_corrections": "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_CORRECTIONS=1",
         "lm_head_prob_only_combined_corrections": "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS=1",
+        "lm_head_prob_only_combined_corrections_threads_512": "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS=512",
         "lm_head_ce_no_loss_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED=1",
         "lm_head_ce_loss_bins_llmk_style_specialized": "NFN_NATIVE_GPT_LM_HEAD_LOSS_BIN_REDUCTION=1 NFN_NATIVE_GPT_LM_HEAD_CE_LLMK_STYLE_SPECIALIZED=1",
         "cublaslt_plan_prewarm_block_only": "NFN_NATIVE_GPT_PREWARM_CUBLASLT_PLAN_MODE=block_only",
@@ -2080,6 +2085,8 @@ def test_native_sm120_candidate_wrapper_covers_attention_and_ordering_profiles()
         assert profile in bench_source
         assert env_assignment in bench_source
     assert "PUBLIC_VOCAB_STRIDED_GEMM" in bench_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS=256" in bench_source
+    assert "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS=512" in bench_source
     assert "STRICT_GROUPED_CUBLASLT_PROBE=1" in bench_source
     assert "required cuBLASLt grouped probe failed" in bench_source
     assert "grouped layout and grouped matmul probe statuses are both 0" in bench_source
@@ -8042,6 +8049,9 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_TILE_CUDA_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_CE_NO_LOSS_LLMK_STYLE_SPECIALIZED" in kernels_text
+    assert "NFN_TILE_CUDA_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS" in kernels_text
+    assert "lm_head_prob_only_target_correction_threads()" in kernels_text
+    assert "return 512;" in kernels_text
     assert "NFN_TILE_CUDA_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED" in kernels_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_CE_LOSS_BINS_DEFAULT_SPECIALIZED" in kernels_text
@@ -8613,6 +8623,8 @@ def test_native_train_tile_ops_builds_torch_free_c_abi(tmp_path: Path) -> None:
     assert "NFN_NATIVE_GPT2_LM_HEAD_FUSED_LOSS_BACKWARD" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_CLASSIFIER_CE_NO_LOSS" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_CLASSIFIER_CE_NO_LOSS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS" in gpt2_source_text
+    assert "NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_TARGET_CORRECTION_THREADS" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_REDUCTION" in gpt2_source_text
     assert "NFN_NATIVE_GPT2_LM_HEAD_ROW_LOSS_REDUCTION" in gpt2_source_text
     assert "NFN_NATIVE_GPT_LM_HEAD_ROW_LOSS_SUM_ACCUMULATE" in gpt2_source_text
