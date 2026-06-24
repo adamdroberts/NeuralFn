@@ -131,6 +131,7 @@ TIMEOUT_PRONE_CANDIDATE_PROFILE=""
 REJECTED_CANDIDATE_PROFILE=""
 REJECTED_CANDIDATE_REASON=""
 CANDIDATE_NOTE=""
+PROMOTED_QKV_LN128_PROFILE=0
 STRICT_PROBE_CANDIDATE_PROFILE=""
 STRICT_GROUPED_CUBLASLT_PROBE=0
 AUTO_ATTENTION_SECTION_TIMING=0
@@ -514,6 +515,7 @@ case "${CANDIDATE_PROFILE,,}" in
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1"
     ;;
   "qkv_dinput_ln128"|"qkv-dinput-ln128"|"qkv_dinput_before_dweight_ln128"|"qkv-dinput-before-dweight-ln128"|"qkv_order_ln128"|"qkv-order-ln128")
+    PROMOTED_QKV_LN128_PROFILE=1
     CANDIDATE_NOTE="CUDA 13.3 dedicated RTX 5090 2026-06-24 3-step, 2-sample stage-timed gate promoted this combined route as the default because it improved train_loop_wall_ms_per_step to 0.989784x, steady-state CUDA-event time to 0.995384x, train_tokens_per_second to 1.010326x, and stage.block_backward.total_ms to 0.986375x versus the old 256-row/QKV-dWeight-first route."
     BASELINE_ENV_RAW="${BASELINE_ENV_RAW:+$BASELINE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=0 NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=256"
     CANDIDATE_ENV_RAW="${CANDIDATE_ENV_RAW:+$CANDIDATE_ENV_RAW }NFN_NATIVE_GPT_QKV_DINPUT_BEFORE_DWEIGHT=1 NFN_NATIVE_GPT_LAYERNORM_AFFINE_ROW_CHUNK_SIZE=128"
@@ -722,6 +724,8 @@ ALLOW_REJECTED_CANDIDATE_PROFILE="$(env_or_alias NFN_SM120_NATIVE_ALLOW_REJECTED
 ENFORCE_REJECTED_CANDIDATE_RATIO_GATES="$(env_or_alias NFN_SM120_NATIVE_ENFORCE_REJECTED_CANDIDATE_RATIO_GATES NFN_SM120_ENFORCE_REJECTED_CANDIDATE_RATIO_GATES 0)"
 MAX_CANDIDATE_RATIO_RAW="$(env_or_alias NFN_SM120_NATIVE_MAX_CANDIDATE_RATIO NFN_SM120_CANDIDATE_MAX_CANDIDATE_RATIO "")"
 MIN_CANDIDATE_RATIO_RAW="$(env_or_alias NFN_SM120_NATIVE_MIN_CANDIDATE_RATIO NFN_SM120_CANDIDATE_MIN_CANDIDATE_RATIO "")"
+USER_MAX_CANDIDATE_RATIO_RAW="$MAX_CANDIDATE_RATIO_RAW"
+USER_MIN_CANDIDATE_RATIO_RAW="$MIN_CANDIDATE_RATIO_RAW"
 if [[ -n "$REJECTED_CANDIDATE_PROFILE" ]]; then
   case "${DRY_RUN_PLAN,,}:${ALLOW_REJECTED_CANDIDATE_PROFILE,,}" in
     1:*|true:*|yes:*|on:*|*:1|*:true|*:yes|*:on)
@@ -959,6 +963,36 @@ if [[ -z "$MAX_CANDIDATE_RATIO_RAW" ]]; then
         ;;
     esac
   fi
+fi
+if [[ "$PROMOTED_QKV_LN128_PROFILE" == "1" &&
+      -z "$USER_MAX_CANDIDATE_RATIO_RAW" &&
+      "$AUTO_DISABLE_METRIC_RATIO_GATES" == "0" &&
+      "$STARTUP_ONLY" != "1" &&
+      "$STARTUP_ONLY" != "true" &&
+      "$STARTUP_ONLY" != "yes" &&
+      "$STARTUP_ONLY" != "on" ]]; then
+  MAX_CANDIDATE_RATIO_RAW="train_loop_wall_ms_per_step=1.000"
+  case "${TRAIN_LOOP_EVENT_TIMING,,}" in
+    "1"|"true"|"yes"|"on")
+      if [[ "$STEPS" =~ ^[0-9]+$ && "$STEPS" -gt 1 ]]; then
+        MAX_CANDIDATE_RATIO_RAW+=" train_loop_cuda_event_steady_state_wall_ms_per_step=1.000"
+      fi
+      ;;
+  esac
+  case "${STAGE_TIMING,,}" in
+    "1"|"true"|"yes"|"on")
+      MAX_CANDIDATE_RATIO_RAW+=" stage.block_backward.total_ms=1.000"
+      ;;
+  esac
+fi
+if [[ "$PROMOTED_QKV_LN128_PROFILE" == "1" &&
+      -z "$USER_MIN_CANDIDATE_RATIO_RAW" &&
+      "$AUTO_DISABLE_METRIC_RATIO_GATES" == "0" &&
+      "$STARTUP_ONLY" != "1" &&
+      "$STARTUP_ONLY" != "true" &&
+      "$STARTUP_ONLY" != "yes" &&
+      "$STARTUP_ONLY" != "on" ]]; then
+  MIN_CANDIDATE_RATIO_RAW="train_tokens_per_second=1.000"
 fi
 
 if [[ ! -x "$NFN_NATIVE_GPT_TRAIN_BIN" ]]; then

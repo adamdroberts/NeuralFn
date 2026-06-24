@@ -112,7 +112,9 @@ Real training tensors must not pass through graph editor node objects.
     not a rejected profile requiring an override, and compares the current
     default QKV dInput-before-dWeight plus 128-row LayerNorm affine path against
     the old 256-row/QKV-dWeight-first route while emitting `candidate_note`
-    metadata in paired results.
+    metadata in paired results. Its promoted-profile gates now match the
+    promotion evidence: train-loop wall, steady-state CUDA-event wall, total
+    block backward, and train tokens/sec.
   - 2026-06-24 rechecked `lm_head_row_loss_partial_reduce` after the CUDA
     reinstall and dedicated RTX 5090 setup. The paired 3-step, 2-sample run
     changed only the row-loss accumulation strategy

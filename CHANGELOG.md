@@ -11,11 +11,14 @@ Future updates should append new entries here rather than replacing older notes.
   `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1`, compares the current
   QKV dInput-before-dWeight plus 128-row LayerNorm affine default against the
   old 256-row/QKV-dWeight-first baseline in the same script, and records a
-  `candidate_note` metadata field. The standalone QKV-only and 64-row variants
-  remain rejected profiles.
+  `candidate_note` metadata field. Its default gates now match the promotion
+  evidence: train-loop wall, steady-state CUDA-event wall, total block backward,
+  and train tokens/sec. The standalone QKV-only and 64-row variants remain
+  rejected profiles.
 
   Verification: ran shell syntax checks, the focused native GPT candidate
-  wrapper tests, and the Tile-CUDA benchmark wrapper assertion slice.
+  wrapper tests, the Tile-CUDA benchmark wrapper assertion slice, and a short
+  RTX 5090 paired smoke for `qkv_dinput_ln128`.
 
 - **Breaking changes: native GPT dataset downloads are explicit opt-in** --
   `cli/scripts/train_gpt_native.py` now defaults `--download-if-missing` to
