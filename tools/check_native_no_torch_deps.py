@@ -142,6 +142,17 @@ DEFAULT_PYTHON_ENTRYPOINTS = (
         ),
     ),
     (
+        "train_gpt_native_metadata_missing_alias_command",
+        (
+            sys.executable,
+            "cli/scripts/train_gpt_native.py",
+            "--dataset-alias",
+            "missing_alias_for_cpp_resolver",
+            "--no-download-if-missing",
+            "--native-cuda-print-plan",
+        ),
+    ),
+    (
         "train_gpt_template_catalog_command",
         (
             sys.executable,

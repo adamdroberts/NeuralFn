@@ -2476,7 +2476,8 @@ Run `python tools/check_native_no_torch_deps.py --skip-artifacts --json` to
 verify the Python handoff layer stays Torch-free. The gate stubs the native
 CLIs and blocks imports of Torch, NumPy, `tiktoken`, dataset manager modules,
 `infer_gpt`, `train_gpt_native`, and `nfn_impl` while checking GPT, direct
-`train_gpt_native.py` compiled-cli dry-run handoff, GPT-2-evo, NanoGPT, explicit
+`train_gpt_native.py` compiled-cli dry-run and missing-alias metadata handoffs,
+GPT-2-evo, NanoGPT, explicit
 `nfn train --tinystories`, default `nfn train`, programmatic
 `nfn.main([...], stdin_isatty=..., stdout_isatty=...)` native training, native
 inference, top-level per-family `nfn train --base-model ...` dispatch,

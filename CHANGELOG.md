@@ -18,7 +18,8 @@ Future updates should append new entries here rather than replacing older notes.
 
   Verification: added a focused CLI test proving a missing dataset alias with
   `--native-cuda-print-plan` reaches a native C++ CLI stub, retained the
-  `NFN_DATASETS_DIR` dry-run handoff check, and ran the focused test slice plus
+  `NFN_DATASETS_DIR` dry-run handoff check, added the same missing-alias metadata
+  path to the no-Torch dependency verifier, and ran the focused test slice plus
   `py_compile`.
 
 - Breaking changes: native `.bin` checkpoint inference no longer imports
