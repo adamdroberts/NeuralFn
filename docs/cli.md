@@ -1178,8 +1178,9 @@ trainer. JSON reports `tile_ops_dlopen_binding_strategy:
 running direct no-data smokes, `--smoke-tile-ops` and
 `--smoke-optimizer-step` also treat `--tile-ops-lib linked` as `RTLD_DEFAULT`
 instead of trying to `dlopen` a file named `linked`. The same linked sentinel
-is honored by the embedding LM and transformer LM smoke/training paths that
-load the raw Tile ABI, including `--smoke-transformer-lm-step`.
+is honored by the native GPT smoke/training paths that load the raw Tile ABI,
+including checkpoint, attention, MLP, transformer-block, embedding-LM, and
+transformer-LM diagnostics.
 When
 `build/nfn_gpt_native_train_linked` exists, the normal Python and C++ dense GPT
 dispatchers prefer it automatically and the linked binary self-selects

@@ -585,6 +585,7 @@ def test_native_gpt_transformer_lm_supports_linked_tile_ops_loader() -> None:
 
     assert "linked_tile_ops_requested" in source
     assert "open_tile_ops_library" in source
+    assert "dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL)" not in source
     assert 'executable_name == "nfn_gpt_native_train_linked"' in source
     assert 'return "linked";' in source
     assert "bool linked_tile_ops_requested(std::string_view path)" in source

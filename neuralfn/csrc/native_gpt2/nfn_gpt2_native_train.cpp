@@ -1809,6 +1809,7 @@ int print_native_checkpoint_logits_smoke_json(const Config& cfg, const char* pro
     using CudaDeviceSynchronizeFn = int (*)();
     using CudaGetErrorStringFn = const char* (*)(int);
 
+    bool linked_tile_ops = false;
     void* tile_handle = nullptr;
     void* cuda_handle = nullptr;
     Bf16BitsToFloat32Fn bf16_to_float = nullptr;
@@ -1837,8 +1838,8 @@ int print_native_checkpoint_logits_smoke_json(const Config& cfg, const char* pro
         }
     };
 
-    tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
-    if (tile_handle == nullptr) {
+    tile_handle = open_tile_ops_library(tile_lib_path, RTLD_NOW | RTLD_LOCAL, &linked_tile_ops);
+    if (tile_handle == nullptr && !linked_tile_ops) {
         error = dl_last_error("dlopen tile ops failed");
     } else {
         tile_loaded = true;
@@ -2022,7 +2023,7 @@ int print_native_checkpoint_logits_smoke_json(const Config& cfg, const char* pro
             }
         }
     }
-    if (tile_handle != nullptr) {
+    if (tile_handle != nullptr && !linked_tile_ops) {
         dlclose(tile_handle);
     }
     if (cuda_handle != nullptr) {
@@ -2310,6 +2311,7 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
     using CudaDeviceSynchronizeFn = int (*)();
     using CudaGetErrorStringFn = const char* (*)(int);
 
+    bool linked_tile_ops = false;
     void* tile_handle = nullptr;
     void* cuda_handle = nullptr;
     Bf16BitsToFloat32Fn bf16_to_float = nullptr;
@@ -2342,8 +2344,8 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
         }
     };
 
-    tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
-    if (tile_handle == nullptr) {
+    tile_handle = open_tile_ops_library(tile_lib_path, RTLD_NOW | RTLD_LOCAL, &linked_tile_ops);
+    if (tile_handle == nullptr && !linked_tile_ops) {
         error = dl_last_error("dlopen tile ops failed");
     } else {
         tile_loaded = true;
@@ -2954,7 +2956,7 @@ int print_native_checkpoint_qkv_smoke_json(const Config& cfg, const char* progra
             }
         }
     }
-    if (tile_handle != nullptr) {
+    if (tile_handle != nullptr && !linked_tile_ops) {
         dlclose(tile_handle);
     }
     if (cuda_handle != nullptr) {
@@ -5135,7 +5137,8 @@ int print_lm_step_smoke_json(const Config& cfg, const char* program) {
     using CudaDeviceSynchronizeFn = int (*)();
     using CudaGetErrorStringFn = const char* (*)(int);
 
-    void* tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    bool linked_tile_ops = false;
+    void* tile_handle = open_tile_ops_library(tile_lib_path, RTLD_NOW | RTLD_LOCAL, &linked_tile_ops);
     void* cuda_handle = nullptr;
     FillFn fill = nullptr;
     TokenEmbeddingFn token_embedding = nullptr;
@@ -5162,7 +5165,7 @@ int print_lm_step_smoke_json(const Config& cfg, const char* program) {
         return out.str();
     };
 
-    if (tile_handle == nullptr) {
+    if (tile_handle == nullptr && !linked_tile_ops) {
         error = dl_last_error("dlopen tile ops failed");
     } else {
         tile_loaded = true;
@@ -5411,7 +5414,7 @@ int print_lm_step_smoke_json(const Config& cfg, const char* program) {
     if (cuda_handle != nullptr) {
         dlclose(cuda_handle);
     }
-    if (tile_handle != nullptr) {
+    if (tile_handle != nullptr && !linked_tile_ops) {
         dlclose(tile_handle);
     }
 
@@ -6779,7 +6782,8 @@ int print_attention_step_smoke_json(const Config& cfg, const char* program) {
     using CudaDeviceSynchronizeFn = int (*)();
     using CudaGetErrorStringFn = const char* (*)(int);
 
-    void* tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    bool linked_tile_ops = false;
+    void* tile_handle = open_tile_ops_library(tile_lib_path, RTLD_NOW | RTLD_LOCAL, &linked_tile_ops);
     void* cuda_handle = nullptr;
     FillFn fill = nullptr;
     SplitQkvFn split_qkv = nullptr;
@@ -6805,7 +6809,7 @@ int print_attention_step_smoke_json(const Config& cfg, const char* program) {
         return out.str();
     };
 
-    if (tile_handle == nullptr) {
+    if (tile_handle == nullptr && !linked_tile_ops) {
         error = dl_last_error("dlopen tile ops failed");
     } else {
         tile_loaded = true;
@@ -7175,7 +7179,7 @@ int print_attention_step_smoke_json(const Config& cfg, const char* program) {
     if (cuda_handle != nullptr) {
         dlclose(cuda_handle);
     }
-    if (tile_handle != nullptr) {
+    if (tile_handle != nullptr && !linked_tile_ops) {
         dlclose(tile_handle);
     }
 
@@ -7286,7 +7290,8 @@ int print_mlp_step_smoke_json(const Config& cfg, const char* program) {
     using CudaDeviceSynchronizeFn = int (*)();
     using CudaGetErrorStringFn = const char* (*)(int);
 
-    void* tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    bool linked_tile_ops = false;
+    void* tile_handle = open_tile_ops_library(tile_lib_path, RTLD_NOW | RTLD_LOCAL, &linked_tile_ops);
     void* cuda_handle = nullptr;
     FillFn fill = nullptr;
     LinearFn linear = nullptr;
@@ -7310,7 +7315,7 @@ int print_mlp_step_smoke_json(const Config& cfg, const char* program) {
         return out.str();
     };
 
-    if (tile_handle == nullptr) {
+    if (tile_handle == nullptr && !linked_tile_ops) {
         error = dl_last_error("dlopen tile ops failed");
     } else {
         tile_loaded = true;
@@ -7579,7 +7584,7 @@ int print_mlp_step_smoke_json(const Config& cfg, const char* program) {
     if (cuda_handle != nullptr) {
         dlclose(cuda_handle);
     }
-    if (tile_handle != nullptr) {
+    if (tile_handle != nullptr && !linked_tile_ops) {
         dlclose(tile_handle);
     }
 
@@ -7775,7 +7780,8 @@ int print_transformer_block_step_smoke_json(const Config& cfg, const char* progr
     using CudaDeviceSynchronizeFn = int (*)();
     using CudaGetErrorStringFn = const char* (*)(int);
 
-    void* tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    bool linked_tile_ops = false;
+    void* tile_handle = open_tile_ops_library(tile_lib_path, RTLD_NOW | RTLD_LOCAL, &linked_tile_ops);
     void* cuda_handle = nullptr;
     FillFn fill = nullptr;
     GradientAccumulateFn gradient_accumulate = nullptr;
@@ -7811,7 +7817,7 @@ int print_transformer_block_step_smoke_json(const Config& cfg, const char* progr
         return out.str();
     };
 
-    if (tile_handle == nullptr) {
+    if (tile_handle == nullptr && !linked_tile_ops) {
         error = dl_last_error("dlopen tile ops failed");
     } else {
         tile_loaded = true;
@@ -8746,7 +8752,7 @@ int print_transformer_block_step_smoke_json(const Config& cfg, const char* progr
     if (cuda_handle != nullptr) {
         dlclose(cuda_handle);
     }
-    if (tile_handle != nullptr) {
+    if (tile_handle != nullptr && !linked_tile_ops) {
         dlclose(tile_handle);
     }
 
@@ -22944,7 +22950,8 @@ int print_norm_residual_step_smoke_json(const Config& cfg, const char* program) 
     using CudaDeviceSynchronizeFn = int (*)();
     using CudaGetErrorStringFn = const char* (*)(int);
 
-    void* tile_handle = dlopen(tile_lib_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    bool linked_tile_ops = false;
+    void* tile_handle = open_tile_ops_library(tile_lib_path, RTLD_NOW | RTLD_LOCAL, &linked_tile_ops);
     void* cuda_handle = nullptr;
     FillFn fill = nullptr;
     GradientAccumulateFn gradient_accumulate = nullptr;
@@ -22968,7 +22975,7 @@ int print_norm_residual_step_smoke_json(const Config& cfg, const char* program) 
         return out.str();
     };
 
-    if (tile_handle == nullptr) {
+    if (tile_handle == nullptr && !linked_tile_ops) {
         error = dl_last_error("dlopen tile ops failed");
     } else {
         tile_loaded = true;
@@ -23249,7 +23256,7 @@ int print_norm_residual_step_smoke_json(const Config& cfg, const char* program) 
     if (cuda_handle != nullptr) {
         dlclose(cuda_handle);
     }
-    if (tile_handle != nullptr) {
+    if (tile_handle != nullptr && !linked_tile_ops) {
         dlclose(tile_handle);
     }
 

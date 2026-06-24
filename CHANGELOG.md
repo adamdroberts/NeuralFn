@@ -6,6 +6,19 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended linked Tile-ops resolution to every native GPT smoke helper that
+  loads the raw Tile ABI with `RTLD_NOW`, including checkpoint logits/QKV, LM,
+  attention, MLP, transformer block, and norm/residual diagnostics. The source
+  test now rejects any remaining direct `dlopen(tile_lib_path, RTLD_NOW)` call
+  so the linked binary cannot regress to treating `linked` as a shared-object
+  pathname.
+
+  Verification: rebuilt `build/nfn_gpt_native_train_linked`, reran the focused
+  linked-loader pytest slice, ran the linked raw-smoke sweep
+  (`--smoke-tile-ops`, optimizer, LM, attention, MLP, norm/residual,
+  transformer block, embedding LM, transformer LM), and verified linked
+  checkpoint logits/QKV smokes against an existing native checkpoint.
+
 - Fixed linked Tile-ops resolution for dense GPT embedding LM and transformer
   LM smoke/training paths. `--tile-ops-lib linked` now uses the linked-aware
   `RTLD_DEFAULT` loader in `--smoke-embedding-lm-step`,
