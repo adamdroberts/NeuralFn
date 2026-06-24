@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Fixed `build/lm_head_backward_bench` reference component timing so logits, CE,
+  dHidden, and dWeight probes run the configured warmup count before timed
+  iterations. The benchmark JSON now reports `reference_component_warmup`,
+  keeping `reference_components` and `reference_cublaslt_components` from
+  silently including first-use CUDA/cuBLAS/TK setup while candidate and baseline
+  variants are already warmed.
+
+  Migration note: no trainer default changed. This is a benchmark evidence fix
+  for LM-head kernel development, so older standalone component timings that
+  lacked `reference_component_warmup` may have included lazy setup cost.
+
+  Verification: rebuilt `build/lm_head_backward_bench`; ran the focused native
+  GPT source-level microbench test; ran shell syntax and diff checks; ran the
+  dedicated RTX 5090 `NFN_LM_HEAD_BACKWARD_PROFILE=trainer-chunk` microbench
+  and confirmed `reference_component_warmup: 1`, warmed reference logits at
+  `13.532032 ms/iter`, and the strict symbol still behaving as a CUDA Graph
+  wrapper (`candidate_true_fused_capability: false`,
+  `candidate_cuda_graph_wrapper_only: true`) with a `1.000975x`
+  candidate/baseline ratio.
+
 - Added diagnostic launch-width routing for the Tile linear-backward BF16 bias
   reducer used by split block dWeight+bias profiling. The kernels now honor
   `NFN_NATIVE_GPT_LINEAR_BACKWARD_BIAS_THREADS`,

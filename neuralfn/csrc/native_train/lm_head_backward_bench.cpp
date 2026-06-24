@@ -424,8 +424,18 @@ VariantResult run_variant(
 double time_component(
     const std::string& label,
     int iterations,
+    int warmup,
     const std::function<void()>& prepare,
     const std::function<int()>& launch) {
+    for (int i = 0; i < warmup; ++i) {
+        prepare();
+        cuda_check(cudaDeviceSynchronize(), label + " warmup prepare synchronize");
+        const int status = launch();
+        if (status != 0) {
+            throw std::runtime_error(label + " warmup returned status " + std::to_string(status));
+        }
+        cuda_check(cudaDeviceSynchronize(), label + " warmup synchronize");
+    }
     double total_ms = 0.0;
     for (int i = 0; i < iterations; ++i) {
         prepare();
@@ -477,6 +487,7 @@ ComponentResult run_reference_components(
     result.logits_ms_per_iter = time_component(
         "reference.logits",
         options.iterations,
+        options.warmup,
         [&]() {
             cuda_check(cudaMemset(logits, 0, logits_bytes), "reference logits output memset");
         },
@@ -495,6 +506,7 @@ ComponentResult run_reference_components(
     result.ce_ms_per_iter = time_component(
         "reference.ce_row_losses",
         options.iterations,
+        options.warmup,
         [&]() {
             cuda_check(cudaMemset(logits, 0, logits_bytes), "reference ce logits memset");
         },
@@ -550,6 +562,7 @@ ComponentResult run_reference_components(
     result.dhidden_ms_per_iter = time_component(
         "reference.dhidden",
         options.iterations,
+        options.warmup,
         [&]() {
             cuda_check(cudaMemset(grad_hidden, 0, grad_hidden_bytes), "reference dhidden grad memset");
         },
@@ -567,6 +580,7 @@ ComponentResult run_reference_components(
     result.dweight_ms_per_iter = time_component(
         "reference.dweight",
         options.iterations,
+        options.warmup,
         [&]() {
             cuda_check(cudaMemset(grad_weight, 0, grad_weight_bytes), "reference dweight grad memset");
         },
@@ -663,6 +677,7 @@ std::string render_json(
         << "  \"row_stride\": " << options.row_stride << ",\n"
         << "  \"iterations\": " << options.iterations << ",\n"
         << "  \"warmup\": " << options.warmup << ",\n"
+        << "  \"reference_component_warmup\": " << options.warmup << ",\n"
         << "  \"no_loss\": " << (options.no_loss ? "true" : "false") << ",\n"
         << "  \"flags\": " << options.flags << ",\n"
         << "  \"run_order\": \"" << (options.candidate_first ? "candidate-first" : "baseline-first") << "\",\n"

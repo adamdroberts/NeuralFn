@@ -205,7 +205,10 @@ should first run
 symbol against `nfn_native_tile_lm_head_classifier_backward_fused_kernel_bf16_u16`
 inside one CUDA process with event timing, route counters, decomposed
 `reference_components` timings for logits, CE, dHidden, and dWeight, and a
-`candidate_true_fused_capability` JSON field. The same JSON also reports
+`candidate_true_fused_capability` JSON field. Reference component timings honor
+the same `--warmup` count as the baseline/candidate variants and report that
+count as `reference_component_warmup`, so those numbers do not include first-use
+CUDA/cuBLAS/TK setup. The same JSON also reports
 `candidate_sequence_wrapper_only` and
 `candidate_strict_symbol_is_placeholder_sequence`, plus
 `candidate_cuda_graph_wrapper_only` for the current strict symbol that replays

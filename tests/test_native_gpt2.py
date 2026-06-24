@@ -1782,6 +1782,9 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "candidate_to_reference_cublaslt_summed_ms_per_iter_ratio" in bench_source
     assert "candidate_to_reference_summed_with_logits_ms_per_iter_ratio" in bench_source
     assert "candidate_to_reference_cublaslt_summed_with_logits_ms_per_iter_ratio" in bench_source
+    assert '"  \\"reference_component_warmup\\": "' in bench_source
+    assert "label + \" warmup prepare synchronize\"" in bench_source
+    assert "label + \" warmup synchronize\"" in bench_source
     assert "--no-loss" in bench_source
     assert '"  \\"no_loss\\": "' in bench_source
     assert "nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace" in bench_source

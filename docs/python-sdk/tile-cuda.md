@@ -1967,7 +1967,9 @@ JSON also includes
 `reference_components` with separate logits, CE, dHidden, dWeight, summed
 backward, and summed logits+backward timings for the current raw Tile ABI, which
 is the fastest way to see which part of a new LM-head classifier-backward
-candidate actually moved. The wrapper defaults
+candidate actually moved. These reference component timings use the configured
+warmup count too, reported as `reference_component_warmup`, so they do not
+silently include first-use CUDA/cuBLAS/TK setup. The wrapper defaults
 `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=dedicated`, requiring a
 display-disabled NVIDIA GPU through `nvidia-smi`; set it to `auto` only when
 fallback to the lowest-utilization NVIDIA GPU is acceptable. Explicit pinning
