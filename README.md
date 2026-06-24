@@ -529,6 +529,17 @@ The SM120 wrappers also accept generic `NFN_SM120_*` names such as
 `NFN_SM120_CUDA_VISIBLE_DEVICES`, `NFN_SM120_PROFILE_DIR`, and
 `NFN_SM120_JSON_OUT` as the lowest-priority fallback, so a copied parity or
 candidate command does not silently return to default step/sample counts.
+For kernel promotion work that must compare both the previous NeuralFn native
+route and the llm.kittens reference in the same GPU-load window,
+`tools/paired_kernel_speed.py` accepts an optional `--reference
+"REFERENCE_COMMAND"` plus `--reference-env KEY=VALUE`. With that third command
+the tool rotates baseline, candidate, and reference order per sample and emits
+`reference_over_baseline`, `candidate_over_reference`,
+`reference_native_metrics`, `reference_over_baseline_native_metrics`, and
+`candidate_over_reference_native_metrics` beside the existing
+candidate-over-baseline fields. Use this when a candidate should be accepted
+only if it improves the old native route and remains competitive with the
+external llm.kittens timing under the same selected-GPU lock.
 Native candidate wrapper runs leave `NFN_NATIVE_GPT_CUDA_VERSION_PREFLIGHT`
 unset by default, matching normal workstation training startup. Set
 `NFN_SM120_NATIVE_CUDA_VERSION_PREFLIGHT=1` when a diagnostic sweep should fail

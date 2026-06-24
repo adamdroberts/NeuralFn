@@ -4335,6 +4335,80 @@ def test_paired_kernel_speed_tool_fails_metric_ratio_gate() -> None:
     assert "metric ratio gate failed: stage.lm_head_backward.total_ms" in proc.stderr
 
 
+def test_paired_kernel_speed_tool_supports_reference_command() -> None:
+    script = Path("tools/paired_kernel_speed.py")
+    output_path = Path(tempfile.mkdtemp()) / "paired-reference.json"
+    baseline_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 10.0}"
+        "}"
+    )
+    candidate_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 11.0}"
+        "}"
+    )
+    reference_json = (
+        "{"
+        "\\\"steps_completed\\\": 1, "
+        "\\\"timing\\\": {\\\"train_loop_wall_ms\\\": 9.0}"
+        "}"
+    )
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--baseline",
+            f"{sys.executable} -c \"print('{baseline_json}')\"",
+            "--candidate",
+            f"{sys.executable} -c \"print('{candidate_json}')\"",
+            "--reference",
+            f"{sys.executable} -c \"print('{reference_json}')\"",
+            "--reference-env",
+            "NFN_REFERENCE_KIND=llm-kittens",
+            "--samples",
+            "3",
+            "--warmup",
+            "0",
+            "--json-out",
+            str(output_path),
+            "--cuda-visible-devices",
+            "",
+            "--cuda-device-max-connections",
+            "",
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert proc.returncode == 0
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["reference_env"] == {"NFN_REFERENCE_KIND": "llm-kittens"}
+    assert [row["order"] for row in payload["paired_samples"]] == [
+        ["baseline", "candidate", "reference"],
+        ["candidate", "reference", "baseline"],
+        ["reference", "baseline", "candidate"],
+    ]
+    assert payload["reference_native_metrics"]["train_loop_wall_ms_per_step"]["mean"] == 9.0
+    assert payload["candidate_over_baseline_native_metrics"][
+        "train_loop_wall_ms_per_step"
+    ]["mean"] == 1.1
+    assert payload["reference_over_baseline_native_metrics"][
+        "train_loop_wall_ms_per_step"
+    ]["mean"] == 0.9
+    assert payload["candidate_over_reference_native_metrics"][
+        "train_loop_wall_ms_per_step"
+    ]["mean"] == 11.0 / 9.0
+    assert "reference_env" in proc.stdout
+    assert "reference_seconds" in proc.stdout
+    assert "candidate_over_reference_native_metrics" in proc.stdout
+
+
 def test_paired_kernel_speed_tool_fails_metric_ratio_gate_by_median() -> None:
     script = Path("tools/paired_kernel_speed.py")
     tmp = Path(tempfile.mkdtemp())

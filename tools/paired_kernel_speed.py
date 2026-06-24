@@ -4,6 +4,9 @@
 This is intended for CUDA kernel experiments where external GPU load can change
 over time. It alternates baseline and candidate command order across samples and
 reports paired ratios instead of timing each variant in separate manual runs.
+An optional reference command can be included when a candidate must be judged
+against both the older native route and an external implementation such as
+llm.kittens in one locked GPU run.
 """
 
 from __future__ import annotations
@@ -1096,6 +1099,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--baseline", required=True, help="Older/baseline command, shell-quoted as one string.")
     parser.add_argument("--candidate", required=True, help="Candidate command, shell-quoted as one string.")
     parser.add_argument(
+        "--reference",
+        default="",
+        help=(
+            "Optional external reference command, shell-quoted as one string. When set, "
+            "each sample runs baseline, candidate, and reference in rotated order and "
+            "reports reference_over_baseline plus candidate_over_reference ratios."
+        ),
+    )
+    parser.add_argument(
         "--baseline-env",
         action="append",
         default=[],
@@ -1108,6 +1120,13 @@ def parse_args() -> argparse.Namespace:
         default=[],
         metavar="KEY=VALUE",
         help="Environment override applied only to the candidate command. Repeat for multiple variables.",
+    )
+    parser.add_argument(
+        "--reference-env",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Environment override applied only to the optional reference command.",
     )
     parser.add_argument("--samples", type=int, default=5, help="Paired samples to collect.")
     parser.add_argument("--warmup", type=int, default=1, help="Warmup command pairs before measurement.")
@@ -1835,6 +1854,15 @@ def ordered_pair(sample_index: int, baseline: TimedCommand, candidate: TimedComm
     return [candidate, baseline]
 
 
+def ordered_commands(sample_index: int, commands: Sequence[TimedCommand]) -> list[TimedCommand]:
+    if len(commands) == 2:
+        return ordered_pair(sample_index, commands[0], commands[1])
+    if not commands:
+        return []
+    offset = sample_index % len(commands)
+    return list(commands[offset:]) + list(commands[:offset])
+
+
 def summarize(values: Sequence[float]) -> dict[str, float]:
     return {
         "mean": mean(values),
@@ -1885,31 +1913,36 @@ def summarize_categorical_metric_rows(rows: Sequence[dict[str, object]], command
 
 def summarize_metric_ratios(
     rows: Sequence[dict[str, object]],
-    baseline_summary: dict[str, dict[str, float]],
-    candidate_summary: dict[str, dict[str, float]],
+    denominator_summary: dict[str, dict[str, float]],
+    numerator_summary: dict[str, dict[str, float]],
+    *,
+    denominator_name: str = "baseline",
+    numerator_name: str = "candidate",
 ) -> dict[str, dict[str, float]]:
     ratios_by_metric: dict[str, list[float]] = {}
-    shared_metrics = set(baseline_summary).intersection(candidate_summary)
+    shared_metrics = set(denominator_summary).intersection(numerator_summary)
     for row in rows:
-        baseline = row.get("baseline")
-        candidate = row.get("candidate")
-        if not isinstance(baseline, dict) or not isinstance(candidate, dict):
+        denominator = row.get(denominator_name)
+        numerator = row.get(numerator_name)
+        if not isinstance(denominator, dict) or not isinstance(numerator, dict):
             continue
-        baseline_metrics = baseline.get("native_metrics")
-        candidate_metrics = candidate.get("native_metrics")
-        if not isinstance(baseline_metrics, dict) or not isinstance(candidate_metrics, dict):
+        denominator_metrics = denominator.get("native_metrics")
+        numerator_metrics = numerator.get("native_metrics")
+        if not isinstance(denominator_metrics, dict) or not isinstance(numerator_metrics, dict):
             continue
         for key in shared_metrics:
-            baseline_value = baseline_metrics.get(key)
-            candidate_value = candidate_metrics.get(key)
+            denominator_value = denominator_metrics.get(key)
+            numerator_value = numerator_metrics.get(key)
             if (
-                isinstance(baseline_value, (int, float))
-                and not isinstance(baseline_value, bool)
-                and isinstance(candidate_value, (int, float))
-                and not isinstance(candidate_value, bool)
-                and float(baseline_value) != 0.0
+                isinstance(denominator_value, (int, float))
+                and not isinstance(denominator_value, bool)
+                and isinstance(numerator_value, (int, float))
+                and not isinstance(numerator_value, bool)
+                and float(denominator_value) != 0.0
             ):
-                ratios_by_metric.setdefault(key, []).append(float(candidate_value) / float(baseline_value))
+                ratios_by_metric.setdefault(key, []).append(
+                    float(numerator_value) / float(denominator_value)
+                )
     return {key: summarize(values) for key, values in ratios_by_metric.items() if values}
 
 
@@ -2853,6 +2886,7 @@ def resolve_cuda_visible_devices(
 def build_payload(args: argparse.Namespace) -> dict[str, object]:
     baseline_env = parse_env_overrides(args.baseline_env, option_name="--baseline-env")
     candidate_env = parse_env_overrides(args.candidate_env, option_name="--candidate-env")
+    reference_env = parse_env_overrides(args.reference_env, option_name="--reference-env")
     metadata = parse_env_overrides(args.metadata, option_name="--metadata")
     metric_ratio_limits = [
         *parse_metric_ratio_limits(
@@ -2868,6 +2902,13 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
     ]
     baseline = TimedCommand("baseline", shlex.split(args.baseline), baseline_env)
     candidate = TimedCommand("candidate", shlex.split(args.candidate), candidate_env)
+    reference_command_text = str(args.reference or "").strip()
+    reference = (
+        TimedCommand("reference", shlex.split(reference_command_text), reference_env)
+        if reference_command_text
+        else None
+    )
+    measured_commands = [baseline, candidate] + ([reference] if reference is not None else [])
     samples = max(1, args.samples)
     warmup = max(0, args.warmup)
     timeout_seconds = float(args.command_timeout_seconds or 0.0)
@@ -2907,7 +2948,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         order_plan = [
             {
                 "sample": sample_index + 1,
-                "order": [command.name for command in ordered_pair(sample_index, baseline, candidate)],
+                "order": [
+                    command.name
+                    for command in ordered_commands(sample_index, measured_commands)
+                ],
             }
             for sample_index in range(samples)
         ]
@@ -2938,8 +2982,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             "gpu_before": gpu_before,
             "baseline_command": baseline.argv,
             "candidate_command": candidate.argv,
+            "reference_command": reference.argv if reference is not None else [],
             "baseline_env": baseline.env_overrides,
             "candidate_env": candidate.env_overrides,
+            "reference_env": reference.env_overrides if reference is not None else {},
             "append_native_profile_json_dir": str(profile_json_dir) if profile_json_dir is not None else "",
             "native_stage_timing": bool(args.native_stage_timing),
             "metric_ratio_gates": {
@@ -3004,7 +3050,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                 snapshot_supplier=gpu_snapshot,
                 phase=f"warmup pair {warmup_index + 1}",
             )
-            for command in ordered_pair(warmup_index, baseline, candidate):
+            for command in ordered_commands(warmup_index, measured_commands):
                 command_gpu_before = snapshot_and_enforce_selected_gpu_guards(
                     cuda_visible_devices,
                     require_idle=bool(args.require_idle_selected_gpu),
@@ -3031,7 +3077,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         sample_rows: list[dict[str, object]] = []
         baseline_seconds: list[float] = []
         candidate_seconds: list[float] = []
+        reference_seconds: list[float] = []
         ratios: list[float] = []
+        reference_over_baseline_ratios: list[float] = []
+        candidate_over_reference_ratios: list[float] = []
         for sample_index in range(samples):
             sample_gpu_before = gpu_snapshot()
             sample_gpu_before = enforce_selected_gpu_guards(
@@ -3054,7 +3103,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
                 "gpu_before": sample_gpu_before,
             }
             by_name: dict[str, dict[str, object]] = {}
-            for command in ordered_pair(sample_index, baseline, candidate):
+            for command in ordered_commands(sample_index, measured_commands):
                 order_names.append(command.name)
                 command_gpu_before = snapshot_and_enforce_selected_gpu_guards(
                     cuda_visible_devices,
@@ -3087,13 +3136,35 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
             row["baseline"] = by_name["baseline"]
             row["candidate"] = by_name["candidate"]
             row["candidate_over_baseline"] = ratios[-1]
+            if reference is not None:
+                reference_time = float(by_name["reference"]["seconds"])
+                reference_seconds.append(reference_time)
+                reference_over_baseline = (
+                    reference_time / baseline_time if baseline_time else float("inf")
+                )
+                candidate_over_reference = (
+                    candidate_time / reference_time if reference_time else float("inf")
+                )
+                reference_over_baseline_ratios.append(reference_over_baseline)
+                candidate_over_reference_ratios.append(candidate_over_reference)
+                row["reference"] = by_name["reference"]
+                row["reference_over_baseline"] = reference_over_baseline
+                row["candidate_over_reference"] = candidate_over_reference
             row["gpu_after"] = gpu_snapshot()
             sample_rows.append(row)
         gpu_after = gpu_snapshot()
         baseline_native_metrics = summarize_metric_rows(sample_rows, "baseline")
         candidate_native_metrics = summarize_metric_rows(sample_rows, "candidate")
+        reference_native_metrics = (
+            summarize_metric_rows(sample_rows, "reference") if reference is not None else {}
+        )
         baseline_native_metric_values = summarize_categorical_metric_rows(sample_rows, "baseline")
         candidate_native_metric_values = summarize_categorical_metric_rows(sample_rows, "candidate")
+        reference_native_metric_values = (
+            summarize_categorical_metric_rows(sample_rows, "reference")
+            if reference is not None
+            else {}
+        )
         native_route_counter_changes = summarize_native_route_counter_changes(
             baseline_native_metrics,
             candidate_native_metrics,
@@ -3134,8 +3205,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "gpu_sample_summary": gpu_sample_summary,
         "baseline_command": baseline.argv,
         "candidate_command": candidate.argv,
+        "reference_command": reference.argv if reference is not None else [],
         "baseline_env": baseline.env_overrides,
         "candidate_env": candidate.env_overrides,
+        "reference_env": reference.env_overrides if reference is not None else {},
         "append_native_profile_json_dir": str(profile_json_dir) if profile_json_dir is not None else "",
         "native_stage_timing": bool(args.native_stage_timing),
         "baseline_seconds": summarize(baseline_seconds),
@@ -3143,8 +3216,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         "candidate_over_baseline": summarize(ratios),
         "baseline_native_metrics": baseline_native_metrics,
         "candidate_native_metrics": candidate_native_metrics,
+        "reference_native_metrics": reference_native_metrics,
         "baseline_native_metric_values": baseline_native_metric_values,
         "candidate_native_metric_values": candidate_native_metric_values,
+        "reference_native_metric_values": reference_native_metric_values,
         "native_route_counter_changes": native_route_counter_changes,
         "native_strategy_value_changes": native_strategy_value_changes,
         "native_linear_shape_stats": native_linear_shape_stats,
@@ -3156,6 +3231,22 @@ def build_payload(args: argparse.Namespace) -> dict[str, object]:
         ),
         "paired_samples": sample_rows,
     }
+    if reference is not None:
+        payload["reference_seconds"] = summarize(reference_seconds)
+        payload["reference_over_baseline"] = summarize(reference_over_baseline_ratios)
+        payload["candidate_over_reference"] = summarize(candidate_over_reference_ratios)
+        payload["reference_over_baseline_native_metrics"] = summarize_metric_ratios(
+            sample_rows,
+            baseline_native_metrics,
+            reference_native_metrics,
+            numerator_name="reference",
+        )
+        payload["candidate_over_reference_native_metrics"] = summarize_metric_ratios(
+            sample_rows,
+            reference_native_metrics,
+            candidate_native_metrics,
+            denominator_name="reference",
+        )
     payload["metric_ratio_gates"] = evaluate_metric_ratio_limits(payload, metric_ratio_limits)
     payload["native_route_change_gate"] = evaluate_native_route_change_gate(
         required=bool(args.require_native_route_change),
@@ -3190,6 +3281,12 @@ def print_text(payload: dict[str, object]) -> None:
             "  candidate: "
             f"{shlex.join([str(item) for item in payload.get('candidate_command', [])])}"
         )
+        reference_command = payload.get("reference_command")
+        if isinstance(reference_command, list) and reference_command:
+            print(
+                "  reference: "
+                f"{shlex.join([str(item) for item in reference_command])}"
+            )
         metadata = payload.get("metadata")
         if isinstance(metadata, dict) and metadata:
             print(f"  metadata: {json.dumps(metadata, sort_keys=True)}")
@@ -3231,10 +3328,13 @@ def print_text(payload: dict[str, object]) -> None:
         print(f"  metadata: {json.dumps(metadata, sort_keys=True)}")
     baseline_env = payload.get("baseline_env")
     candidate_env = payload.get("candidate_env")
+    reference_env = payload.get("reference_env")
     if isinstance(baseline_env, dict) and baseline_env:
         print(f"  baseline_env: {json.dumps(baseline_env, sort_keys=True)}")
     if isinstance(candidate_env, dict) and candidate_env:
         print(f"  candidate_env: {json.dumps(candidate_env, sort_keys=True)}")
+    if isinstance(reference_env, dict) and reference_env:
+        print(f"  reference_env: {json.dumps(reference_env, sort_keys=True)}")
     shape_stats = payload.get("native_linear_shape_stats")
     has_shape_plan_change = (
         isinstance(shape_stats, dict)
@@ -3270,6 +3370,8 @@ def print_text(payload: dict[str, object]) -> None:
     paired_samples = payload.get("paired_samples")
     if isinstance(paired_samples, list):
         timeout_counts = {"baseline": 0, "candidate": 0}
+        if isinstance(payload.get("reference_command"), list) and payload.get("reference_command"):
+            timeout_counts["reference"] = 0
         sample_process_counts: list[int] = []
         for row in paired_samples:
             if not isinstance(row, dict):
@@ -3283,10 +3385,10 @@ def print_text(payload: dict[str, object]) -> None:
                 processes = gpu_before_sample.get("compute_processes")
                 if isinstance(processes, list):
                     sample_process_counts.append(len(processes))
-        if timeout_counts["baseline"] or timeout_counts["candidate"]:
+        if any(timeout_counts.values()):
             print(
                 "  command_timeouts: "
-                f"baseline={timeout_counts['baseline']} candidate={timeout_counts['candidate']}"
+                + " ".join(f"{name}={count}" for name, count in timeout_counts.items())
             )
         if sample_process_counts:
             print(
@@ -3316,14 +3418,21 @@ def print_text(payload: dict[str, object]) -> None:
                     f"    {key}: mean={stats['mean']:.6f} median={stats['median']:.6f} "
                     f"min={stats['min']:.6f} max={stats['max']:.6f}"
                 )
-    for key in ("baseline_seconds", "candidate_seconds", "candidate_over_baseline"):
+    timing_keys = ["baseline_seconds", "candidate_seconds", "candidate_over_baseline"]
+    if isinstance(payload.get("reference_command"), list) and payload.get("reference_command"):
+        timing_keys.extend(
+            ["reference_seconds", "reference_over_baseline", "candidate_over_reference"]
+        )
+    for key in timing_keys:
+        if key not in payload:
+            continue
         stats = payload[key]
         assert isinstance(stats, dict)
         print(
             f"  {key}: mean={stats['mean']:.6f} median={stats['median']:.6f} "
             f"min={stats['min']:.6f} max={stats['max']:.6f}"
         )
-    for section in ("baseline_native_metrics", "candidate_native_metrics"):
+    for section in ("baseline_native_metrics", "candidate_native_metrics", "reference_native_metrics"):
         metrics = payload.get(section)
         if not isinstance(metrics, dict) or not metrics:
             continue
@@ -3335,7 +3444,11 @@ def print_text(payload: dict[str, object]) -> None:
                     f"    {key}: mean={stats['mean']:.6f} median={stats['median']:.6f} "
                     f"min={stats['min']:.6f} max={stats['max']:.6f}"
                 )
-    for section in ("baseline_native_metric_values", "candidate_native_metric_values"):
+    for section in (
+        "baseline_native_metric_values",
+        "candidate_native_metric_values",
+        "reference_native_metric_values",
+    ):
         values = payload.get(section)
         if not isinstance(values, dict) or not values:
             continue
@@ -3522,6 +3635,18 @@ def print_text(payload: dict[str, object]) -> None:
     ratios = payload.get("candidate_over_baseline_native_metrics")
     if isinstance(ratios, dict) and ratios:
         print("  candidate_over_baseline_native_metrics:")
+        for key in NATIVE_TEXT_METRIC_KEYS:
+            stats = ratios.get(key)
+            if isinstance(stats, dict):
+                print(
+                    f"    {key}: mean={stats['mean']:.6f} median={stats['median']:.6f} "
+                    f"min={stats['min']:.6f} max={stats['max']:.6f}"
+                )
+    for section in ("reference_over_baseline_native_metrics", "candidate_over_reference_native_metrics"):
+        ratios = payload.get(section)
+        if not isinstance(ratios, dict) or not ratios:
+            continue
+        print(f"  {section}:")
         for key in NATIVE_TEXT_METRIC_KEYS:
             stats = ratios.get(key)
             if isinstance(stats, dict):

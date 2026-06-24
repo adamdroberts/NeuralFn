@@ -6,6 +6,27 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added optional third-command reference mode to `tools/paired_kernel_speed.py`.
+  Native kernel candidate runs can now pass `--reference "COMMAND"` and
+  `--reference-env KEY=VALUE` to rotate baseline, candidate, and external
+  reference commands inside the same selected-GPU lock. JSON/text output now
+  includes `reference_seconds`, `reference_over_baseline`,
+  `candidate_over_reference`, `reference_native_metrics`,
+  `reference_over_baseline_native_metrics`, and
+  `candidate_over_reference_native_metrics`, while existing two-command
+  candidate-vs-baseline behavior remains unchanged. This is intended for
+  SM120 GPT kernel promotion checks that need to compare the candidate against
+  both the older NeuralFn route and the llm.kittens reference without a
+  separate external-GPU-load window.
+
+  Verification: ran `python -m py_compile tools/paired_kernel_speed.py`, a
+  CPU-only triad smoke command writing `/tmp/nfn_triad_smoke.json`, and
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_tile_cuda_examples.py -q -k
+  "paired_kernel_speed_tool_supports_reference_command or
+  paired_kernel_speed_tool_fails_metric_ratio_gate or
+  paired_kernel_speed_tool_records_command_timeout"`.
+
 - Corrected the paired speed extractor paths for the full activation tape
   diagnostic so `activation_tape_count`, `full_activation_tape_enabled`,
   `backward_recompute_blocks`, `final_block_backward_recompute_elided`, and

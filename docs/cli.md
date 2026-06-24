@@ -759,6 +759,16 @@ cuBLASLt plan-cache entry also changes.
 Stored activation reservation changes are treated as route evidence rather
 than generic timing noise because reducing those buffers can force recompute
 and change hot kernel counts even when startup-only samples look faster.
+When a kernel candidate also needs to be judged against the external
+llm.kittens reference in the same locked window, pass `--reference
+"REFERENCE_COMMAND"` plus optional `--reference-env KEY=VALUE`. The tool then
+runs baseline, candidate, and reference in rotated order for each sample and
+adds `reference_seconds`, `reference_over_baseline`,
+`candidate_over_reference`, `reference_native_metrics`,
+`reference_over_baseline_native_metrics`, and
+`candidate_over_reference_native_metrics` to the JSON/text output. Shape and
+cuBLASLt plan attribution remain baseline-vs-candidate because those sections
+are for proving the native route change being promoted.
 
 Persistent block-output preservation in the compiled GPT trainer writes the MLP
 residual-add output directly into each non-final block's persistent
@@ -1278,7 +1288,12 @@ or kernel-load cost out of the reported samples. It sets
 `--cuda-device-max-connections ""` to leave that environment unchanged. Pass
 repeatable `--baseline-env KEY=VALUE` or `--candidate-env KEY=VALUE` flags for
 environment-gated kernel candidates; these overrides apply only to that side of
-the pair and are recorded in the JSON/text output. Use repeatable
+the pair and are recorded in the JSON/text output. Add `--reference
+"LLM_KITTENS_OR_OTHER_REFERENCE_COMMAND"` and repeatable `--reference-env
+KEY=VALUE` when the same run must compare current native baseline, native
+candidate, and an external reference without a separate GPU-load window; the
+JSON includes both candidate-over-baseline and candidate-over-reference native
+metric ratios. Use repeatable
 `--max-candidate-ratio [STAT:]METRIC=RATIO` gates for hot metrics that must not
 regress, and `--min-candidate-ratio [STAT:]METRIC=RATIO` gates for metrics that
 must stay at or above baseline, such as `train_tokens_per_second` or required
