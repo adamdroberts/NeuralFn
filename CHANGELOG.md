@@ -6,6 +6,36 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added a default-off dense GPT startup/memory diagnostic sub-route behind
+  `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_INPUT_LN1_BACKWARD`,
+  `NFN_NATIVE_GPT2_BF16_PERSISTENT_BLOCK_INPUT_LN1_BACKWARD`, or
+  `NFN_TILE_CUDA_BF16_PERSISTENT_BLOCK_INPUT_LN1_BACKWARD`. When paired with
+  `NFN_NATIVE_GPT_BF16_PERSISTENT_BLOCK_OUTPUTS=1`, the native runner now lets
+  LN1 residual backward consume cached BF16 inter-block outputs directly when
+  saved packed-attention LN1 and residual1 BF16 caches prove the FP32 restore
+  is unnecessary. Native JSON reports
+  `bf16_persistent_block_input_ln1_backward_requested`,
+  `bf16_persistent_block_input_ln1_backward_enabled`, and
+  `bf16_persistent_block_input_ln1_backward_count`; the paired benchmark
+  analyzer now treats that count as a hot route-change counter.
+
+  Migration note: no default behavior changes. The same-script profile
+  `NFN_SM120_NATIVE_CANDIDATE_PROFILE=bf16_persistent_block_outputs_direct_ln1`
+  is rejected by default for real reruns unless
+  `NFN_SM120_NATIVE_ALLOW_REJECTED_CANDIDATE_PROFILE=1` is set.
+
+  Verification: rebuilt `libnfn_native_train_tile_ops.so` and
+  `build/nfn_gpt_native_train_linked`; ran `bash -n
+  tools/bench_native_gpt_sm120_candidate.sh`, `python3 -m py_compile
+  tools/paired_kernel_speed.py`, a dry-run plan for the new profile, and real
+  CUDA 13.3 dedicated RTX 5090 one-step and 3-step/2-sample stage-timed gates.
+  The final gate proved the route (`bf16_persistent_block_input_ln1_backward`
+  changed from `0` to `264` uses and the request/enabled flags flipped to
+  `true`) and improved `stage.block_backward.ln1_residual.total_ms` to
+  `0.890572x`, but rejected promotion at `1.029093x` train-loop wall time,
+  `1.002462x` steady-state CUDA-event step time, and `1.048736x` block
+  backward.
+
 - Added a default-off native dense GPT LM-head diagnostic route behind
   `NFN_NATIVE_GPT_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS`,
   `NFN_NATIVE_GPT2_LM_HEAD_PROB_ONLY_COMBINED_CORRECTIONS`, or
