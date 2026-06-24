@@ -120,6 +120,13 @@ struct VariantResult {
     std::int64_t concurrent_count = 0;
     std::int64_t legacy_count = 0;
     std::int64_t loss_bin_count = 0;
+    std::int64_t graph_capture_attempt_count = 0;
+    std::int64_t graph_capture_success_count = 0;
+    std::int64_t graph_cache_hit_count = 0;
+    std::int64_t graph_cache_entry_count = 0;
+    std::int64_t graph_replay_count = 0;
+    std::int64_t graph_replay_success_count = 0;
+    std::int64_t graph_fallback_count = 0;
 };
 
 struct ComponentResult {
@@ -303,6 +310,13 @@ VariantResult run_variant(
     CountFn concurrent_count,
     CountFn legacy_count,
     CountFn loss_bin_count,
+    CountFn graph_capture_attempt_count,
+    CountFn graph_capture_success_count,
+    CountFn graph_cache_hit_count,
+    CountFn graph_cache_entry_count,
+    CountFn graph_replay_count,
+    CountFn graph_replay_success_count,
+    CountFn graph_fallback_count,
     const Options& options,
     std::uint16_t* logits,
     const std::uint16_t* targets,
@@ -394,6 +408,13 @@ VariantResult run_variant(
     result.concurrent_count = concurrent_count();
     result.legacy_count = legacy_count();
     result.loss_bin_count = loss_bin_count();
+    result.graph_capture_attempt_count = graph_capture_attempt_count();
+    result.graph_capture_success_count = graph_capture_success_count();
+    result.graph_cache_hit_count = graph_cache_hit_count();
+    result.graph_cache_entry_count = graph_cache_entry_count();
+    result.graph_replay_count = graph_replay_count();
+    result.graph_replay_success_count = graph_replay_success_count();
+    result.graph_fallback_count = graph_fallback_count();
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
     return result;
@@ -596,7 +617,14 @@ std::string render_json(
             << "\"dweight_launch_count\":" << value.dweight_launch_count << ","
             << "\"concurrent_count\":" << value.concurrent_count << ","
             << "\"legacy_count\":" << value.legacy_count << ","
-            << "\"loss_bin_count\":" << value.loss_bin_count
+            << "\"loss_bin_count\":" << value.loss_bin_count << ","
+            << "\"graph_capture_attempt_count\":" << value.graph_capture_attempt_count << ","
+            << "\"graph_capture_success_count\":" << value.graph_capture_success_count << ","
+            << "\"graph_cache_hit_count\":" << value.graph_cache_hit_count << ","
+            << "\"graph_cache_entry_count\":" << value.graph_cache_entry_count << ","
+            << "\"graph_replay_count\":" << value.graph_replay_count << ","
+            << "\"graph_replay_success_count\":" << value.graph_replay_success_count << ","
+            << "\"graph_fallback_count\":" << value.graph_fallback_count
             << "}";
         return out.str();
     };
@@ -662,6 +690,20 @@ int main(int argc, char** argv) {
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_cooperative_sequence_legacy_count");
         auto loss_bin_count =
             load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_cooperative_sequence_loss_bin_count");
+        auto graph_capture_attempt_count =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_fused_graph_capture_attempt_count");
+        auto graph_capture_success_count =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_fused_graph_capture_success_count");
+        auto graph_cache_hit_count =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_fused_graph_cache_hit_count");
+        auto graph_cache_entry_count =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_fused_graph_cache_entry_count");
+        auto graph_replay_count =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_fused_graph_replay_count");
+        auto graph_replay_success_count =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_fused_graph_replay_success_count");
+        auto graph_fallback_count =
+            load_symbol<CountFn>(handle, "nfn_native_tile_lm_head_fused_graph_fallback_count");
         auto reference_logits_fn = load_symbol<LinearBf16InputWeightBf16OutputFn>(
             handle,
             "nfn_native_tile_linear_bf16_input_weight_bf16_output_float32");
@@ -729,6 +771,13 @@ int main(int argc, char** argv) {
                 concurrent_count,
                 legacy_count,
                 loss_bin_count,
+                graph_capture_attempt_count,
+                graph_capture_success_count,
+                graph_cache_hit_count,
+                graph_cache_entry_count,
+                graph_replay_count,
+                graph_replay_success_count,
+                graph_fallback_count,
                 options,
                 static_cast<std::uint16_t*>(logits.get()),
                 static_cast<const std::uint16_t*>(targets.get()),

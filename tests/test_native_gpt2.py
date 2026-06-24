@@ -1584,6 +1584,16 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "nfn_native_tile_lm_head_cooperative_sequence_launch_count" in bench_source
     assert "nfn_native_tile_lm_head_cooperative_sequence_concurrent_count" in bench_source
     assert "nfn_native_tile_lm_head_cooperative_sequence_legacy_count" in bench_source
+    assert "graph_capture_attempt_count" in bench_source
+    assert "graph_capture_success_count" in bench_source
+    assert "graph_cache_hit_count" in bench_source
+    assert "graph_cache_entry_count" in bench_source
+    assert "graph_replay_count" in bench_source
+    assert "graph_replay_success_count" in bench_source
+    assert "graph_fallback_count" in bench_source
+    assert "nfn_native_tile_lm_head_fused_graph_capture_attempt_count" in bench_source
+    assert "nfn_native_tile_lm_head_fused_graph_replay_success_count" in bench_source
+    assert "nfn_native_tile_lm_head_fused_graph_fallback_count" in bench_source
     assert "cudaEventElapsedTime" in bench_source
     assert "timed_reset_between_iterations" in bench_source
     assert "timed pre-reset logits memset" in bench_source

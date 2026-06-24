@@ -656,6 +656,14 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     now report `linear_tk_sm120_*` tile/swizzle/dGELU settings, which lets
     compile-time Tile ops candidates prove generated-kernel changes even when
     their route counters remain constant.
+  - 2026-06-24 extended `tools/bench_lm_head_backward_candidate.sh` output via
+    `neuralfn/csrc/native_train/lm_head_backward_bench.cpp` so each
+    baseline/candidate variant includes CUDA Graph evidence:
+    `graph_capture_attempt_count`, `graph_capture_success_count`,
+    `graph_cache_hit_count`, `graph_cache_entry_count`, `graph_replay_count`,
+    `graph_replay_success_count`, and `graph_fallback_count`. Future strict
+    LM-head ABI probes now prove graph replay directly in the standalone
+    candidate-vs-old microbench before entering a full native training gate.
   - 2026-06-24 rechecked the standalone LM-head cooperative backward candidate
     after the CUDA 13.3 reinstall. `tools/bench_lm_head_backward_candidate.sh`
     at trainer-chunk shape reported `candidate_true_fused_capability=false` and

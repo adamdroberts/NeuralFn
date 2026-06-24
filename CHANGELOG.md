@@ -6,6 +6,18 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Extended the standalone LM-head backward microbench JSON with per-variant
+  CUDA Graph evidence for the strict cooperative ABI:
+  `graph_capture_attempt_count`, `graph_capture_success_count`,
+  `graph_cache_hit_count`, `graph_cache_entry_count`, `graph_replay_count`,
+  `graph_replay_success_count`, and `graph_fallback_count`. This makes
+  `tools/bench_lm_head_backward_candidate.sh` show whether the candidate strict
+  symbol actually captured/replayed the graph body or fell back to the sequence
+  wrapper, matching the evidence already available in full native trainer JSON.
+
+  Verification: added static microbench coverage for the new graph counter
+  fields and Tile ABI symbols.
+
 - Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=tk_sm120_super_m7` as a reproducible
   rejected compile-time Tile ops profile. The profile rebuilds the candidate
   Tile library with `LLMK_SM120_SUPER_M=7` and
