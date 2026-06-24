@@ -336,7 +336,11 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
       graph replay was active (`lm_head_fused_graph_replay_success_count=32`)
       and strided public-vocab counters stayed at zero; train-loop wall
       improved to `0.976058x`, but promotion still failed at `1.000188x`
-      steady-state CUDA-event timing and `1.002085x` LM-head backward.
+      steady-state CUDA-event timing and `1.002085x` LM-head backward. A
+      stronger 3-step, 2-sample profile kept the route diagnostic-only:
+      train-loop wall improved to `0.990440x` and graph replay succeeded 48
+      times, but steady-state CUDA-event timing regressed to `1.002035x` and
+      LM-head backward to `1.001066x`.
     - 2026-06-23 changed the focused `trainer-chunk` microbenchmark profile to
       pass the cooperative no-loss flag and use the no-loss CE reference
       symbol, matching the optimizer-only native trainer path. Use

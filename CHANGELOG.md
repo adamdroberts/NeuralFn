@@ -30,7 +30,11 @@ Future updates should append new entries here rather than replacing older notes.
   (`lm_head_dhidden_strided_vocab_gemm_count=0`,
   `lm_head_dweight_strided_vocab_gemm_count=0`) and improved train-loop wall to
   `0.976058x`, but still failed promotion gates at `1.000188x` steady-state
-  CUDA-event timing and `1.002085x` LM-head backward.
+  CUDA-event timing and `1.002085x` LM-head backward. A stronger 3-step,
+  2-sample rerun kept the same conclusion: train-loop wall improved to
+  `0.990440x` and graph replay succeeded 48 times, but promotion remained
+  rejected at `1.002035x` steady-state CUDA-event timing and `1.001066x`
+  LM-head backward.
 
 - Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_public_vocab_strided_gemm`
   as the reproducible same-script wrapper for the default-off public-vocab
