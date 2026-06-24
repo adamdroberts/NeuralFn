@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import subprocess
+import shlex
 import shutil
 import sys
 
@@ -85,6 +86,27 @@ _NATIVE_VALUE_ALIASES = {
     "--native-cuda-generate-tokens": "--native-cuda-generate-tokens",
     "--native-cuda-activation": "--native-cuda-activation",
     "--native-cuda-moa-interval": "--native-cuda-moa-interval",
+}
+_NATIVE_EXECUTION_FLAGS = {
+    "--check-tile-ops",
+    "--print-plan",
+    "--sample-token-batch",
+    "--smoke-attention-step",
+    "--smoke-embedding-lm-step",
+    "--smoke-embedding-norm-step",
+    "--smoke-evo-kernels",
+    "--smoke-fused-qkv-attention-step",
+    "--smoke-lm-step",
+    "--smoke-mlp-step",
+    "--smoke-norm-residual-step",
+    "--smoke-optimizer-step",
+    "--smoke-qkv-layout-step",
+    "--smoke-tile-ops",
+    "--smoke-token-train-step",
+    "--smoke-training-loop-step",
+    "--smoke-transformer-block-step",
+    "--smoke-transformer-lm-step",
+    "--startup-only",
 }
 
 
@@ -198,6 +220,13 @@ def reject_torch_training_by_default(
     env.setdefault("CUDA_VISIBLE_DEVICES", "0")
     env.setdefault("CUDA_DEVICE_MAX_CONNECTIONS", "1")
     env.setdefault("CUDA_MODULE_LOADING", "LAZY")
+    if (
+        "--dry-run" in command
+        and "--print-command" in command
+        and not any(flag in command for flag in _NATIVE_EXECUTION_FLAGS)
+    ):
+        print(shlex.join(command))
+        raise SystemExit(0)
     if any(flag in sys.argv[1:] for flag in ("--dry-run", "--native-cuda-dry-run", "--print-command", "--native-cuda-print-command")):
         raise SystemExit(subprocess.run(command, env=env, check=False).returncode)
     try:

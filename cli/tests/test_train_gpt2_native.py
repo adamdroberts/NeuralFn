@@ -1827,6 +1827,48 @@ class TrainGpt2NativeStartupTest(unittest.TestCase):
         self.assertIn("gpt2-moa", proc.stdout)
         self.assertNotIn("--base-model", proc.stdout)
 
+    def test_train_gpt2_evo_print_command_is_metadata_only_without_native_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            native_evo = Path(tmpdir) / "nfn_gpt2_evo_native_train"
+            native_evo.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf 'SHOULD_NOT_EXEC_NATIVE\\n'\n"
+                "exit 23\n",
+                encoding="utf-8",
+            )
+            native_evo.chmod(0o755)
+            env = os.environ.copy()
+            env["NFN_NATIVE_GPT2_EVO_CLI"] = str(native_evo)
+            env.pop("PYTHONPATH", None)
+            env.pop("NFN_ALLOW_TORCH_TRAINING", None)
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(NEURALFN_ROOT / "cli" / "scripts" / "train_gpt2_evo.py"),
+                    "--tinystories",
+                    "--native-cuda-dry-run",
+                    "--native-cuda-print-command",
+                    "--eval-every-steps",
+                    "1000",
+                ],
+                cwd=NEURALFN_ROOT,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertNotIn("SHOULD_NOT_EXEC_NATIVE", proc.stdout)
+        self.assertIn(str(native_evo), proc.stdout)
+        self.assertIn("--tinystories", proc.stdout)
+        self.assertIn("--dry-run", proc.stdout)
+        self.assertIn("--print-command", proc.stdout)
+        self.assertNotIn("--native-cuda-dry-run", proc.stdout)
+        self.assertNotIn("--native-cuda-print-command", proc.stdout)
+        self.assertIn("--eval-every-steps 1000", proc.stdout)
+
     def test_train_nanogpt_direct_script_defaults_to_native_transformer_lm(self) -> None:
         code = textwrap.dedent(
             f"""

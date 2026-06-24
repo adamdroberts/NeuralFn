@@ -6,6 +6,26 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Made guarded native training command inspection metadata-only. Legacy
+  script guards such as `cli/scripts/train_gpt2_evo.py` now handle plain
+  `--native-cuda-dry-run --native-cuda-print-command` by printing the resolved
+  native command directly instead of spawning the native binary. Requests that
+  include real native actions, including `--native-cuda-print-plan`,
+  `--native-cuda-startup-only`, `--native-cuda-check-tile-ops`, or smoke flags,
+  still execute the native preflight/action path. This keeps command inspection
+  fast and avoids avoidable CUDA/native process setup while preserving native
+  validation behavior.
+
+  Verification: ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  cli/tests/test_train_gpt2_native.py -q -k
+  "gpt2_evo_direct_script_prefers_family_native_preflight or
+  gpt2_evo_direct_script_normalizes_native_cuda_preflight_aliases or
+  gpt2_evo_print_command_is_metadata_only_without_native_action"` and
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k
+  "native_training_guard_sets_dedicated_cuda_device_default"`.
+
 - Made dense native GPT activation dtype reporting explicit. Plan, unsupported
   selection, runtime, and GPT2-evo preflight JSON now distinguish
   `tile_cuda.requested_activation_dtype` from
