@@ -2209,7 +2209,10 @@ the row-loss or loss-bin tail. Runtime JSON reports that route separately with
 changes. This prevents no-loss training benchmarks from being misread as fused
 row-loss/loss-bin runs.
 `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` is the default for
-that no-loss path after the 5-sample RTX 5090 gate passed. The named wrapper profile
+that no-loss path after the RTX 5090 gates passed. A 2026-06-24 CUDA 13.3
+same-script rerun on the dedicated compute GPU measured the specialized Tile
+kernel at `0.986338x` train-loop wall, `0.977844x` steady-state CUDA-event
+wall, and `0.987834x` total wall versus the older generic no-loss kernel. The named wrapper profile
 `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized`
 forces the baseline to `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0`,
 keeps `--train-loss-every-steps 0`, and reports

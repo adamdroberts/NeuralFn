@@ -6,6 +6,25 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Refreshed the promoted
+  `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=1` dense GPT default
+  on the dedicated RTX 5090. The same-script wrapper compared the current
+  default-specialized no-loss CE+dlogits Tile kernel against the generic
+  no-loss path, proved the active route change through
+  `lm_head_ce_no_loss_default_specialized_*` and
+  `lm_head_ce_kernel_strategy`, and passed the whole-loop gates at
+  `0.986338x` train-loop wall, `0.977844x` steady-state CUDA-event wall, and
+  `0.987834x` total wall. This keeps the optimized CUDA Tile kernel as the
+  workstation default while preserving
+  `NFN_NATIVE_GPT_LM_HEAD_CE_NO_LOSS_DEFAULT_SPECIALIZED=0` for rollback
+  bisection against the older generic kernel.
+
+  Verification: `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_ce_no_loss_default_specialized
+  NFN_SM120_NATIVE_SAMPLES=3 NFN_SM120_NATIVE_STEPS=3
+  NFN_SM120_NATIVE_WARMUP=1 NFN_SM120_NATIVE_CUDA_VISIBLE_DEVICES=0 bash
+  tools/bench_native_gpt_sm120_candidate.sh` on an idle display-disabled RTX
+  5090 with zero compute processes before every sample.
+
 - Reclassified `NFN_SM120_NATIVE_CANDIDATE_PROFILE=lm_head_logits_bf16_fallback_32768`
   as a rejected historical diagnostic under the current 49152-row LM-head
   default. The CUDA 13.3 dedicated RTX 5090 recheck applied
