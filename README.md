@@ -221,7 +221,12 @@ chunk comparison, or
 1024-bin loss-reduction route, without involving the full training loop. Set
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` and
 `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000` when the harness should fail fast for a
-candidate that is not a real fused kernel or is slower than the baseline. The
+candidate that is not a real fused kernel or is slower than the baseline. Add
+`NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_RATIO=1.000` or
+`NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO=1.000` when the candidate
+must also beat the explicit CE+dHidden+dWeight reference sequence measured in
+the same process; the matching `*_WITH_LOGITS_RATIO` variants compare against
+the reference sequence plus its logits GEMM. The
 LM-head harness also accepts `NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST=1`; its JSON
 reports `run_order` so close candidates can be checked in both baseline-first
 and candidate-first order under the same external GPU load. Set

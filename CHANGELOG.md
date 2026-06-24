@@ -6,6 +6,31 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added reference-ratio gates to the standalone LM-head backward microbenchmark.
+  `lm_head_backward_bench` now emits
+  `candidate_to_reference_summed_ms_per_iter_ratio`,
+  `candidate_to_reference_summed_with_logits_ms_per_iter_ratio`,
+  `candidate_to_reference_cublaslt_summed_ms_per_iter_ratio`, and
+  `candidate_to_reference_cublaslt_summed_with_logits_ms_per_iter_ratio`.
+  `tools/bench_lm_head_backward_candidate.sh` can gate those values with
+  `NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_RATIO`,
+  `NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_WITH_LOGITS_RATIO`,
+  `NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO`, and
+  `NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_WITH_LOGITS_RATIO`.
+
+  Migration note: no training default changed. These gates are for proving
+  future true fused LM-head candidates before running the full native GPT
+  parity wrapper.
+
+  Verification: ran `bash -n tools/bench_lm_head_backward_candidate.sh`; ran
+  `/home/adam/miniconda3/envs/NeuralFn/bin/python -m pytest
+  tests/test_native_gpt2.py -q -k "lm_head_backward_microbench"`; rebuilt
+  `build/lm_head_backward_bench`; ran a CUDA-visible one-iteration LM-head
+  smoke benchmark on the dedicated RTX 5090 and verified the new JSON fields;
+  reran it with `NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO=1.000` and
+  confirmed the wrapper exited nonzero when the candidate ratio exceeded the
+  cap.
+
 - Re-ran the post-CUDA reinstall SM120 parity and candidate gates on the
   dedicated RTX 5090. The current NeuralFn native GPT default remains close to
   llm.kittens but is still slightly slower on the 3-step stage-timed parity

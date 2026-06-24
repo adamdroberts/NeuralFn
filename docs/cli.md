@@ -1221,7 +1221,11 @@ chunk comparison, and
 1024 loss bins. Set
 `NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED=1` and
 `NFN_LM_HEAD_BACKWARD_MAX_RATIO=1.000` for a fail-fast gate before running the
-full parity wrapper. Like the full SM120 wrapper, this focused benchmark
+full parity wrapper. Add `NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_RATIO=1.000` or
+`NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO=1.000` to require the
+candidate to beat the same-process CE+dHidden+dWeight reference sequence; the
+matching `*_WITH_LOGITS_RATIO` variants include the reference logits GEMM in
+the denominator. Like the full SM120 wrapper, this focused benchmark
 defaults `NFN_LM_HEAD_BACKWARD_CUDA_VISIBLE_DEVICES=dedicated`, which requires a
 display-disabled NVIDIA GPU through `nvidia-smi`; set it to `auto` only when
 fallback to the lowest-utilization NVIDIA GPU is acceptable, or set it or

@@ -66,6 +66,10 @@ WARMUP="${NFN_LM_HEAD_BACKWARD_WARMUP:-${DEFAULT_WARMUP}}"
 LOSS_BINS="${NFN_LM_HEAD_BACKWARD_LOSS_BINS:-${DEFAULT_LOSS_BINS}}"
 NO_LOSS="${NFN_LM_HEAD_BACKWARD_NO_LOSS:-${DEFAULT_NO_LOSS}}"
 MAX_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_RATIO:-}"
+MAX_REFERENCE_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_RATIO:-}"
+MAX_REFERENCE_WITH_LOGITS_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_WITH_LOGITS_RATIO:-}"
+MAX_CUBLASLT_REFERENCE_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO:-}"
+MAX_CUBLASLT_REFERENCE_WITH_LOGITS_RATIO="${NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_WITH_LOGITS_RATIO:-}"
 REQUIRE_TRUE_FUSED="${NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED:-${DEFAULT_REQUIRE_TRUE_FUSED:-0}}"
 CANDIDATE_FIRST="${NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST:-0}"
 DRY_RUN="${NFN_LM_HEAD_BACKWARD_DRY_RUN:-0}"
@@ -219,3 +223,32 @@ if ratio > limit:
     raise SystemExit(f"candidate_to_baseline_ms_per_iter_ratio {ratio:.6f} exceeds limit {limit:.6f}")
 ' "${JSON_OUT}" "${MAX_RATIO}"
 fi
+
+check_json_ratio() {
+  local key="$1"
+  local limit="$2"
+  if [[ -z "${limit}" ]]; then
+    return 0
+  fi
+  python -c 'import json, pathlib, sys
+path, key, limit_raw = sys.argv[1], sys.argv[2], sys.argv[3]
+data = json.loads(pathlib.Path(path).read_text())
+ratio = float(data[key])
+limit = float(limit_raw)
+if ratio > limit:
+    raise SystemExit(f"{key} {ratio:.6f} exceeds limit {limit:.6f}")
+' "${JSON_OUT}" "${key}" "${limit}"
+}
+
+check_json_ratio \
+  "candidate_to_reference_summed_ms_per_iter_ratio" \
+  "${MAX_REFERENCE_RATIO}"
+check_json_ratio \
+  "candidate_to_reference_summed_with_logits_ms_per_iter_ratio" \
+  "${MAX_REFERENCE_WITH_LOGITS_RATIO}"
+check_json_ratio \
+  "candidate_to_reference_cublaslt_summed_ms_per_iter_ratio" \
+  "${MAX_CUBLASLT_REFERENCE_RATIO}"
+check_json_ratio \
+  "candidate_to_reference_cublaslt_summed_with_logits_ms_per_iter_ratio" \
+  "${MAX_CUBLASLT_REFERENCE_WITH_LOGITS_RATIO}"

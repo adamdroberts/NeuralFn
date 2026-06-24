@@ -598,6 +598,22 @@ std::string render_json(
     const ComponentResult& reference_cublaslt_components) {
     const double ratio =
         baseline.ms_per_iter > 0.0 ? candidate.ms_per_iter / baseline.ms_per_iter : 0.0;
+    const double candidate_reference_ratio =
+        reference_components.summed_ms_per_iter > 0.0
+            ? candidate.ms_per_iter / reference_components.summed_ms_per_iter
+            : 0.0;
+    const double candidate_reference_with_logits_ratio =
+        reference_components.summed_with_logits_ms_per_iter > 0.0
+            ? candidate.ms_per_iter / reference_components.summed_with_logits_ms_per_iter
+            : 0.0;
+    const double candidate_cublaslt_reference_ratio =
+        reference_cublaslt_components.summed_ms_per_iter > 0.0
+            ? candidate.ms_per_iter / reference_cublaslt_components.summed_ms_per_iter
+            : 0.0;
+    const double candidate_cublaslt_reference_with_logits_ratio =
+        reference_cublaslt_components.summed_with_logits_ms_per_iter > 0.0
+            ? candidate.ms_per_iter / reference_cublaslt_components.summed_with_logits_ms_per_iter
+            : 0.0;
     const bool candidate_sequence_wrapper_only =
         !true_fused_capability &&
         candidate.ce_launch_count > 0 &&
@@ -673,7 +689,15 @@ std::string render_json(
         << "},\n"
         << "  \"baseline\": " << variant_json(baseline) << ",\n"
         << "  \"candidate\": " << variant_json(candidate) << ",\n"
-        << "  \"candidate_to_baseline_ms_per_iter_ratio\": " << std::fixed << std::setprecision(6) << ratio << "\n"
+        << "  \"candidate_to_baseline_ms_per_iter_ratio\": " << std::fixed << std::setprecision(6) << ratio << ",\n"
+        << "  \"candidate_to_reference_summed_ms_per_iter_ratio\": "
+        << std::fixed << std::setprecision(6) << candidate_reference_ratio << ",\n"
+        << "  \"candidate_to_reference_summed_with_logits_ms_per_iter_ratio\": "
+        << std::fixed << std::setprecision(6) << candidate_reference_with_logits_ratio << ",\n"
+        << "  \"candidate_to_reference_cublaslt_summed_ms_per_iter_ratio\": "
+        << std::fixed << std::setprecision(6) << candidate_cublaslt_reference_ratio << ",\n"
+        << "  \"candidate_to_reference_cublaslt_summed_with_logits_ms_per_iter_ratio\": "
+        << std::fixed << std::setprecision(6) << candidate_cublaslt_reference_with_logits_ratio << "\n"
         << "}\n";
     return out.str();
 }

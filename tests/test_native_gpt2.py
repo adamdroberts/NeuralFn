@@ -1687,6 +1687,10 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "dhidden_launch_count > 0" in bench_source
     assert "dweight_launch_count > 0" in bench_source
     assert "candidate_to_baseline_ms_per_iter_ratio" in bench_source
+    assert "candidate_to_reference_summed_ms_per_iter_ratio" in bench_source
+    assert "candidate_to_reference_cublaslt_summed_ms_per_iter_ratio" in bench_source
+    assert "candidate_to_reference_summed_with_logits_ms_per_iter_ratio" in bench_source
+    assert "candidate_to_reference_cublaslt_summed_with_logits_ms_per_iter_ratio" in bench_source
     assert "--no-loss" in bench_source
     assert '"  \\"no_loss\\": "' in bench_source
     assert "nfn_native_tile_lm_head_classifier_backward_inplace_strided_no_pad_zero_bf16_bits_u16_targets_with_workspace" in bench_source
@@ -1744,6 +1748,11 @@ def test_native_gpt_lm_head_backward_microbench_compares_strict_symbol() -> None
     assert "DEFAULT_NO_LOSS=1" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_NO_LOSS" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_MAX_RATIO" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_RATIO" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_MAX_REFERENCE_WITH_LOGITS_RATIO" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_RATIO" in wrapper
+    assert "NFN_LM_HEAD_BACKWARD_MAX_CUBLASLT_REFERENCE_WITH_LOGITS_RATIO" in wrapper
+    assert "check_json_ratio" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_REQUIRE_TRUE_FUSED" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_CANDIDATE_FIRST" in wrapper
     assert "NFN_LM_HEAD_BACKWARD_DRY_RUN" in wrapper
