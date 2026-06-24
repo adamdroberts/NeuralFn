@@ -6,6 +6,23 @@ Future updates should append new entries here rather than replacing older notes.
 
 ## Unreleased
 
+- Added `NFN_SM120_NATIVE_CANDIDATE_PROFILE=llmk_sm120_reference_flags` to the
+  native SM120 candidate wrapper. The profile builds a temporary Tile ops
+  library with the documented llm.kittens SM120 reference macro bundle
+  (`LLMK_SM120_USE_CUBLASLT_GEMM`, attention block sizes, TK GEMM tile sizes,
+  dWeight swizzle, fast/approx dGELU, dprep, memory, and LayerNorm backward
+  knobs) without overwriting `build/`. It disables route-change enforcement
+  because most of those values already match header defaults or NeuralFn's
+  default SM120 build flags, while leaving the same paired timing gates active
+  so generated-code changes must still prove a speed win before promotion.
+
+  Verification: added static/dry-run wrapper coverage and reran the profile on
+  the CUDA 13.3 dedicated RTX 5090 for 3 steps, 2 samples, 1 warmup, and stage
+  timing. The temporary reference-flags library changed no tracked route or
+  strategy counters. It improved train-loop wall to `0.994499x` and tokens/sec
+  to `1.005630x`, but failed promotion on `1.000331x` steady-state CUDA-event
+  timing and `1.000032x stage.block_backward.mlp_proj.dinput.total_ms`.
+
 - Refreshed the rejected SM120 native
   `attn_proj_dinput_before_dweight` candidate evidence after the CUDA 13.3
   rebuilds. The route remains default-off even though it materially improves the

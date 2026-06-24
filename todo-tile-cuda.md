@@ -614,6 +614,19 @@ This section tracks the raw no-Torch C ABI used by compiled model trainers. It i
     `cuda_runtime_version_preflight_wall_ms` at `119.471 ms` on the first side
     and `110.187 ms` on the second side, so this avoids adding preflight cost to
     raw startup bisections.
+  - 2026-06-24 added
+    `NFN_SM120_NATIVE_CANDIDATE_PROFILE=llmk_sm120_reference_flags` for
+    same-script macro-alignment checks against the documented llm.kittens SM120
+    reference build. The profile compiles a temporary Tile ops library with the
+    full reference macro bundle, disables route-change enforcement because most
+    values match current header/default settings, and still keeps timing gates
+    active. The CUDA 13.3 dedicated RTX 5090 3-step, 2-sample gate changed no
+    tracked route or strategy counters and rejected default promotion: wall time
+    improved to `0.994499x` and tokens/sec to `1.005630x`, but steady-state
+    CUDA-event timing missed at `1.000331x` and
+    `stage.block_backward.mlp_proj.dinput.total_ms` missed at `1.000032x`. Use
+    the profile to prove generated-code movement before changing NeuralFn's
+    default build flags.
   - 2026-06-24 rechecked the standalone LM-head cooperative backward candidate
     after the CUDA 13.3 reinstall. `tools/bench_lm_head_backward_candidate.sh`
     at trainer-chunk shape reported `candidate_true_fused_capability=false` and

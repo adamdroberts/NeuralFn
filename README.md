@@ -669,6 +669,21 @@ Runtime JSON reports
 `linear_tk_dgelu_dinput_gemm_count`, and the paired benchmark treats it as a
 route counter so compile-flag candidates cannot be accepted on timing noise
 when they do not change the fused dGELU route.
+Use `NFN_SM120_NATIVE_CANDIDATE_PROFILE=llmk_sm120_reference_flags` to rebuild
+a temporary candidate Tile ops library with the documented llm.kittens SM120
+reference macro bundle, including `LLMK_SM120_USE_CUBLASLT_GEMM`,
+`LLMK_SM120_ATTN_FWD_BLOCK=32`, `LLMK_SM120_ATTN_BWD_BLOCK=16`,
+`LLMK_SM120_DWEIGHT_SUPER_M=2`, `LLMK_SM120_FAST_DGELU=1`,
+`LLMK_SM120_APPROX_DGELU_TANH=1`, `LLMK_SM120_DPREP_WARPS=3`, and
+`LLMK_SM120_LAYERNORM_BWD_BLOCKS_PER_SM=1`. The profile disables route-change
+enforcement because most of those values already match header defaults or
+NeuralFn's default build flags; it still uses the same paired timing gates, so
+do not promote it unless the generated-kernel candidate beats the current
+default in the same script. The CUDA 13.3 dedicated RTX 5090 3-step, 2-sample
+gate changed no tracked route or strategy counters and rejected the reference
+bundle as a default: train-loop wall improved to `0.994499x` and tokens/sec to
+`1.005630x`, but steady-state CUDA-event timing missed at `1.000331x` and
+`stage.block_backward.mlp_proj.dinput.total_ms` missed at `1.000032x`.
 The llm.kittens parity wrapper accepts the same stage-timing aliases as the
 native candidate wrapper: set `NFN_SM120_NATIVE_STAGE_TIMING=1`,
 `NFN_SM120_NATIVE_PARITY_STAGE_TIMING=1`, `NFN_SM120_PARITY_STAGE_TIMING=1`, or

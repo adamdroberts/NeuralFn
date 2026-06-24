@@ -1148,6 +1148,10 @@ def test_native_gpt_sm120_candidate_wrapper_defaults_measured_candidate_gates(tm
     assert "-DLLMK_SM120_FORWARD_N96=0" in text
     assert "stage.lm_head_backward.total_ms=1.001484x" in text
     assert "stage.block_backward.mlp_proj.total_ms=1.001994x" in text
+    assert "llmk_sm120_reference_flags" in text
+    assert "-DLLMK_SM120_DWEIGHT_SUPER_M=2" in text
+    assert "-DLLMK_SM120_FAST_DGELU=1" in text
+    assert "-DLLMK_SM120_LAYERNORM_BWD_BLOCKS_PER_SM=1" in text
     assert "cuda_device_max_connections_1" in text
     assert "CUDA_DEVICE_MAX_CONNECTIONS=1" in text
     assert "combined_device_arena" in text
